@@ -128,6 +128,46 @@
     <p class="text-muted small mb-2">{{ active.description }}</p>
   {% endif %}
 
+  {% if can_edit and active and not active.builtin %}
+  <details class="small mb-2" id="an-edit-board">
+    <summary class="text-muted">{{ _('Edit board') }}</summary>
+    <form method="post" action="{{ url_for('monitor_analytics.update_board', bid=active.id) }}"
+          class="row g-2 align-items-end mt-1" data-turbo="false">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="_redirect" value="1">
+      <div class="col-md-3">
+        <label class="form-label small mb-1">{{ _('Title') }}</label>
+        <input name="title" class="form-control form-control-sm" maxlength="120"
+               value="{{ active.title }}" required>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small mb-1">{{ _('Description') }}</label>
+        <input name="description" class="form-control form-control-sm" maxlength="400"
+               value="{{ active.description }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">{{ _('Default range') }}</label>
+        <select name="default_range" class="form-select form-select-sm">
+          {% for r in ranges %}
+            <option value="{{ r }}" {{ 'selected' if r == active.default_range }}>{{ r }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">{{ _('Auto refresh') }}</label>
+        <select name="refresh_s" class="form-select form-select-sm">
+          {% for v, label in [(0, _('Manual refresh')), (30, _('Every 30 s')), (60, _('Every minute')), (300, _('Every 5 min'))] %}
+            <option value="{{ v }}" {{ 'selected' if v == active.refresh_s }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-1">
+        <button class="btn btn-sm btn-outline-primary w-100">{{ _('Save') }}</button>
+      </div>
+    </form>
+  </details>
+  {% endif %}
+
   <div id="an-grid" class="an-grid"></div>
 </div>
 
@@ -309,6 +349,7 @@
         class="row g-2 align-items-end"
         data-turbo="false">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="_redirect" value="1">
     <div class="col-md-4">
       <label class="form-label small mb-1">{{ _('New board') }}</label>
       <input name="title" class="form-control form-control-sm"

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
@@ -203,6 +203,10 @@ def create_board():
     db.session.add(board)
     db.session.commit()
     log_action('analytics.board.create', board.slug, {"title": board.title})
+    if request.form.get('_redirect'):
+        # The page's native "Create board" form: land on the new board
+        # instead of showing the JSON envelope the script callers read.
+        return redirect(url_for('monitor_analytics.index', board=board.slug))
     return jsonify({"ok": True, "board": board.to_dict()})
 
 
@@ -233,6 +237,8 @@ def update_board(bid: int):
         board.refresh_s = _int(request.form.get('refresh_s'), 0, 0, 3600)
     db.session.commit()
     log_action('analytics.board.update', board.slug, {"title": board.title})
+    if request.form.get('_redirect'):
+        return redirect(url_for('monitor_analytics.index', board=board.slug))
     return jsonify({"ok": True, "board": board.to_dict()})
 
 

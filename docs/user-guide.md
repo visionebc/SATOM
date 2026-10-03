@@ -627,7 +627,9 @@ Prevention — plus the profile itself under Policy → Web Protection Profile
   explanation under every Action dropdown.
 - **Regex Lab:** every regex-capable field has a `.*` button that opens a
   server-side regex tester with curated examples per section; the tested
-  pattern writes back into the field.
+  pattern writes back into the field. Its rewrite preview numbers captures the
+  way FortiWeb and FortiADC do: `$0` is the **first** `( … )` group, `$1` the
+  second.
 - Profile-level editing shows each sub-policy as a dropdown with Edit/＋,
   down to six levels of nesting.
 
@@ -2069,9 +2071,10 @@ uploads the file. Details:
 ## 23. Studio: custom views, plugins & Lua
 
 Three admin-only authoring tools, grouped under **Studio**. In the Global ADOM
-they sit at Administrator → Studio; in the FortiWeb and FortiADC ADOMs the same
-two authoring pages plus the read side (**Custom Views**) appear in their own
-**Plugins** nav group.
+they have their own **Studio** nav group; in the FortiWeb and FortiADC ADOMs the
+same two authoring pages plus the read side (**Custom Views**) appear in their
+own **Plugins** nav group. Every entry is shown only to holders of its own
+`studio.*` key, so a menu link never answers 403.
 
 They are gated by **three separate permissions** — `studio.python_console`,
 `studio.plugin_studio` and `studio.lua_studio` — which are *not* the same thing
@@ -2129,7 +2132,9 @@ the ADOM you are in.
 > **Custom Views is ADOM-scoped; Plugin Studio is not.** The read-side gallery
 > ("Custom Views") is only surfaced in the FortiWeb and FortiADC ADOMs, and every
 > plugin is stamped with the ADOM it was authored in. The *authoring* pages are
-> reachable from the Global ADOM too, under Administrator → Studio.
+> reachable from the Global ADOM too, under Studio. Draft and testing views
+> (and the editor's live preview) open for holders of `studio.plugin_studio`;
+> everyone else sees published views only.
 
 ### 23.2 Lua Studio
 
@@ -2154,7 +2159,9 @@ in that order. Targets are **FortiWeb "Web Scripting"** and **FortiADC
   *would* be sent (endpoint, method, content field, body) and contacts nothing.
   A real push needs **both** `config_write` **and** an explicit confirmation, and
   the lint gate runs again first — a script that does not parse is refused before
-  any transport is opened.
+  any transport is opened. A real push also needs a **target appliance** saved
+  on the script; without one it is refused, and the script is never stamped
+  `deployed`.
 - The dry-run plan is marked **not verified**: the scripting wire format has not
   been round-tripped live on this fleet, which is exactly why the default is a
   preview and the real push asks twice.
@@ -4302,9 +4309,10 @@ truth. Full design write-up: `docs/ai-advisor.md`.
 **Settings → AI Advisor** (`advisor.configure`, admin-only) has three
 switches, all off on a fresh install: **Enable AI Advisor**, **Allow
 read-only tool calls**, and **Allow external providers**. A local Ollama
-provider (`ollama-local`) is seeded automatically the first time the page is
-opened — enabling the feature and leaving the other two switches off is
-enough to chat entirely within the LAN.
+provider (`ollama-local`, base URL `http://localhost:11434`) is seeded
+**disabled** the first time the page is opened: edit it, point it at your
+Ollama host and save it — saving enables it. With the feature enabled and the
+other two switches off, chat stays entirely within the LAN.
 
 ### 33.2 Providers
 
@@ -4737,12 +4745,14 @@ measured and what it only derived.
 Two ways in:
 
 * **Paste PEM.** A certificate, a fullchain, or an `openssl s_client -showcerts`
-  transcript pasted whole. Optionally a hostname to check and the private key.
-  Nothing leaves the process.
+  transcript pasted whole. Optionally a hostname to check, the private key and,
+  for an encrypted key, its passphrase. Nothing leaves the process.
 * **Probe a host.** SATOM opens a TLS connection and reads what the server
   presents. Appliances from your inventory are one click; any other host:port
   requires the `monitoring.probe_free` permission and every probe — including
-  every refusal — is written to the audit log.
+  every refusal — is written to the audit log. An optional **SNI / hostname**
+  field sends a different name than the target in the TLS handshake and checks
+  the certificate against it.
 
 What it reports:
 
@@ -4803,17 +4813,29 @@ page that lets a client supply the evidence lets a client author the exception.
 To save, open the same entry in **Attack Search → the entry → Carve-out**: the
 recommendation is identical and the evidence is device-read.
 
+Two optional fields: **Web Protection Profile** names that profile in the
+"where on the device" path shown under each carve-out, and **Decode a payload on
+its own** peels the encoding layers off a value you paste without a log entry.
+
 ### 37.3 Transaction tracer
 
 Three legs, answering *is it the WAF or is it the app?*
 
-* **Leg A** — SATOM to the VIP, through the appliance. Measured.
+* **Leg A** — SATOM to the VIP, through the appliance. Measured. Type the VIP;
+  the inventory picker offers each appliance's **management address on its
+  configured port**, which is the device itself, not a virtual server behind it.
 * **Leg B** — what the appliance *forwards*. **Derived from its configuration,
   never measured.** SATOM is not in that path. Every row names the object and
   field it came from, and a field this firmware does not carry is listed under
   *settings SATOM did not read* rather than shown as "disabled".
 * **Leg C** — SATOM straight to the backend, bypassing the appliance, carrying
   **the same `Host` header as leg A**. That is what makes the two comparable.
+  A backend typed without a scheme is HTTPS on port 443 or 8443 and plain HTTP
+  on any other port; write `https://` to force TLS.
+
+Leg B reads FortiWeb server policies, so only FortiWeb appliances are offered
+for it. **Correlate attack log** looks for entries in the trace window whose
+source is the address this server traced from.
 
 The diff gives one sentence:
 
@@ -4844,7 +4866,10 @@ echoed back. Set-Cookie is reduced to its flags: the flags are the finding, the
 value is a session credential.
 
 **Destinations.** Inventory appliances are always available. A free `host:port`
-requires `monitoring.probe_free`. Cloud instance-metadata addresses
+— and a backend for leg C is always one — requires `monitoring.probe_free`; a
+trace with only an inventory leg A needs nothing more. In both tools a holder of
+the Administrator `user_manage` key passes the free-target check too: it can
+grant itself the granular key anyway. Cloud instance-metadata addresses
 (`169.254.169.254` and its siblings, including the `::ffff:` spelling) are
 refused in every mode and that refusal is not configurable. Names are resolved
 once and the **address** is dialled, with the hostname carried separately as

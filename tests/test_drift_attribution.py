@@ -263,8 +263,8 @@ def test_a_failed_faz_device_action_is_not_a_write(app):
 
 
 def test_a_read_through_the_api_console_is_not_a_write(app):
-    """``faz_api.execute`` / ``adc_api.execute`` are logged for EVERY verb,
-    GET included. A read cannot change a config."""
+    """``faz_api.execute`` / ``adc_api.execute`` rows written before
+    2026-10-03 include reads (GET). A read cannot change a config."""
     with app.app_context():
         _mk("dev-get", kind="fortiadc")
         _two_versions("dev-get")
@@ -282,6 +282,30 @@ def test_a_post_through_the_api_console_is_a_write(app):
         f = _drift_for("dev-post")
         assert f["severity"] == alerts.SEV_INFO
         assert "adc_api.execute" in f["detail"]
+
+
+def test_a_faz_json_rpc_write_verb_is_a_write(app):
+    """The FortiAnalyzer console logs JSON-RPC verbs (``set``/``add``/...),
+    not HTTP methods; an applied ``set`` is a receipt like a POST."""
+    with app.app_context():
+        _mk("dev-fazset", kind="fortianalyzer")
+        _two_versions("dev-fazset")
+        _audit("faz_api.execute", min_ago=30, target="dev-fazset",
+               extra={"method": "set", "endpoint": "/dvmdb/x", "error": None})
+        f = _drift_for("dev-fazset")
+        assert f["severity"] == alerts.SEV_INFO
+        assert "faz_api.execute" in f["detail"]
+
+
+def test_a_refused_adc_console_write_is_not_a_write(app):
+    """The ADC console now logs refused writes too, with the device error."""
+    with app.app_context():
+        _mk("dev-adcerr", kind="fortiadc")
+        _two_versions("dev-adcerr")
+        _audit("adc_api.execute", min_ago=30, target="dev-adcerr",
+               extra={"method": "POST", "endpoint": "/api/x",
+                      "error": "HTTP 400"})
+        assert _drift_for("dev-adcerr")["severity"] == alerts.SEV_WARNING
 
 
 def test_a_write_to_a_neighbour_never_credits_this_device(app):

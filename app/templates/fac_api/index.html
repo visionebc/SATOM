@@ -39,6 +39,16 @@
               <button type="button" class="btn btn-sm btn-link p-0 text-start fac-pick"
                       data-endpoint="{{ lg }}" style="font-size:12px;">{{ lg }}</button>
               <code class="text-muted ms-auto" style="font-size:11px;">{{ reg.get(lg, '') }}</code>
+              {% set row = db_rows.get(lg) if can_edit else none %}
+              {% if row %}
+              <form method="post" action="{{ url_for('fac_api.toggle_endpoint', id=row.id) }}"
+                    data-js="disable-endpoint" data-name="{{ row.name }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-outline-secondary py-0"
+                        title="{{ _('Disable catalog endpoint (soft delete)') }}" style="font-size:11px;">
+                  <i class="bi bi-eye-slash"></i></button>
+              </form>
+              {% endif %}
             </div>
             {% endfor %}
           {% endfor %}
@@ -57,6 +67,16 @@
           <button type="button" class="btn btn-sm btn-link p-0 text-start fac-pick"
                   data-endpoint="{{ e.name }}" style="font-size:12px;">{{ e.name }}</button>
           <code class="text-muted ms-auto" style="font-size:11px;">{{ e.urn }}</code>
+          {% set row = db_rows.get(e.name) if can_edit else none %}
+          {% if row %}
+          <form method="post" action="{{ url_for('fac_api.toggle_endpoint', id=row.id) }}"
+                data-js="disable-endpoint" data-name="{{ row.name }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-outline-secondary py-0"
+                    title="{{ _('Disable catalog endpoint (soft delete)') }}" style="font-size:11px;">
+              <i class="bi bi-eye-slash"></i></button>
+          </form>
+          {% endif %}
         </div>
         {% endfor %}
       </div>
@@ -115,7 +135,7 @@
           <label class="form-label" style="font-size:11px;">{{ _('Method') }}</label>
           <select class="form-select form-select-sm" id="fac-method">
             {% for m in methods %}
-            <option value="{{ m }}">{{ m }}</option>
+            <option value="{{ m }}"{% if m != 'GET' and not can_write %} disabled{% endif %}>{{ m }}</option>
             {% endfor %}
           </select>
         </div>
@@ -172,6 +192,15 @@
   var methodSel = document.getElementById('fac-method');
   var applyWrap = document.getElementById('fac-apply-wrap');
   var runBtn    = document.getElementById('fac-run');
+  // Bound before the no-appliance early return: the catalog renders without a fleet.
+  document.addEventListener('submit', function (ev) {
+    var form = ev.target.closest('[data-js="disable-endpoint"]');
+    if (!form) return;
+    if (!window.confirm('Disable endpoint "' + form.dataset.name + '"?\n\nServices resolving this name will fail loudly until it is restored. The row is kept (soft delete) and can be restored from the "Disabled" list.')) {
+      ev.preventDefault();
+    }
+  });
+
   if (!runBtn) return;
 
   var WRITE = ['POST', 'PUT', 'PATCH', 'DELETE'];

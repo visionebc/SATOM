@@ -350,6 +350,7 @@ def test_writes_are_dry_run_unless_apply_is_explicit(monkeypatch):
     class _Appl:
         id, kind, name = 1, "fortiauthenticator", "fac01"
         host, port = "192.0.2.1", 443
+        fw_version = ""
 
     monkeypatch.setattr(fac_api, "visible_appliance_or_404", lambda _i: _Appl())
     monkeypatch.setattr(fac_api, "current_user", _U())
@@ -364,7 +365,10 @@ def test_writes_are_dry_run_unless_apply_is_explicit(monkeypatch):
             "/fac/api/execute", method="POST",
             data={"appliance_id": "1", "endpoint": "/api/v1/localusers/",
                   "method": "DELETE", "body": ""}):
-        resp = fac_api.execute.__wrapped__()
+        # Every decorator layer off (login_required AND the registry.view
+        # gate added on 2026-10-03): the bare view, with the stub user.
+        import inspect
+        resp = inspect.unwrap(fac_api.execute)()
     payload = resp.get_json() if hasattr(resp, "get_json") else resp
     assert payload["ok"] is True
     assert payload["dry_run"] is True, "a write escaped without apply=true"

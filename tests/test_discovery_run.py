@@ -745,8 +745,8 @@ def test_kind_check_is_a_real_second_lock(app):
 
 
 def test_registration_refuses_a_product_with_no_editable_catalog(app):
-    """FortiAnalyzer / FortiAuthenticator catalogs are seeded and have no
-    editor; accepting a write for them would create rows nothing renders."""
+    """FortiAnalyzer / FortiAuthenticator catalogs have hand editors but no
+    discovery run; a bulk registration for them is refused."""
     from app.views import _discovery
 
     with app.test_request_context("/x", method="POST",

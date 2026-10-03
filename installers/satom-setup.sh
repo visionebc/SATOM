@@ -200,12 +200,14 @@ installer_version() {  # installer_version FILE -> its top-level VERSION="x.y.z"
 }
 fetch() { curl -fsSL --retry 3 --connect-timeout 15 "$@"; }
 
-password_ok() {  # >= 10 characters and at least 3 of: lowercase, uppercase, digits, symbols
-    local p="$1" n=0
-    [ "${#p}" -ge 10 ] || { warn "At least 10 characters."; return 1; }
-    [[ "$p" =~ [a-z] ]] && n=$((n+1)); [[ "$p" =~ [A-Z] ]] && n=$((n+1))
-    [[ "$p" =~ [0-9] ]] && n=$((n+1)); [[ "$p" =~ [^a-zA-Z0-9] ]] && n=$((n+1))
-    [ "$n" -ge 3 ] || { warn "Use at least 3 kinds: lowercase, uppercase, digits, symbols."; return 1; }
+# The ONE password policy (app/auth/password_policy.py): 12..1024 characters,
+# length only -- no character-class rule. Repeated here because this script
+# runs before the app is installed.
+PW_MIN=12; PW_MAX=1024
+password_ok() {  # 12..1024 characters
+    local p="$1"
+    [ "${#p}" -ge "$PW_MIN" ] || { warn "At least ${PW_MIN} characters."; return 1; }
+    [ "${#p}" -le "$PW_MAX" ] || { warn "At most ${PW_MAX} characters."; return 1; }
     [[ "$p" == *"'"* ]] && { warn "The single quote (') is not allowed."; return 1; }
     return 0
 }

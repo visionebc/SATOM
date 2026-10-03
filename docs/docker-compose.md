@@ -130,8 +130,8 @@ falls back to a default: `native`, or `docker` when an existing Docker install
 is detected.
 
 The `admin` password is taken from `SATOM_ADMIN_PASSWORD` if it is set. It must
-be at least 10 characters, use at least three of the four character classes
-(lower, upper, digit, symbol) and contain no single quote. If it is unset, the
+be 12 to 1024 characters long (length is the only rule; no character classes)
+and contain no single quote. If it is unset, the
 script generates a password and writes it **only** to
 `/root/satom-admin-password.txt` (mode 0600).
 

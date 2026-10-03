@@ -62,9 +62,9 @@
             <input type="text" class="form-control form-control-sm font-monospace" id="fw-rxlab-pattern"
                    placeholder="e.g. ^/admin(/.*)?$" autocomplete="off" spellcheck="false">
             <div id="fw-rxlab-rewrite-row" class="mt-2 d-none">
-              <label class="form-label small fw-bold mb-1">Replacement <span class="text-muted fw-normal">(use $0 $1 … for captures)</span></label>
+              <label class="form-label small fw-bold mb-1">Replacement <span class="text-muted fw-normal">(use $0 $1 … for captures; $0 is the first group)</span></label>
               <input type="text" class="form-control form-control-sm font-monospace" id="fw-rxlab-replacement"
-                     placeholder="e.g. /new-shop/$1" autocomplete="off" spellcheck="false">
+                     placeholder="e.g. /new-shop/$0" autocomplete="off" spellcheck="false">
             </div>
             <div class="form-check form-check-inline mt-2">
               <input class="form-check-input" type="checkbox" id="fw-rxlab-ci">
@@ -211,7 +211,7 @@
         let html = '✓ ' + esc(s.slice(0, a)) + '<mark>' + esc(s.slice(a, b)) + '</mark>' + esc(s.slice(b));
         if (r.groups && r.groups.length) {
           html += ' <span class="text-muted">(' +
-            r.groups.map((g, i) => '$' + (i + 1) + '=' + esc(g === null ? '∅' : g)).join(', ') + ')</span>';
+            r.groups.map((g, i) => '$' + i + '=' + esc(g === null ? '∅' : g)).join(', ') + ')</span>';
         }
         return '<div class="font-monospace small text-success">' + html + '</div>';
       }).join('');
@@ -241,7 +241,7 @@
           '<span class="text-success fw-bold">' + esc(r.output === null ? '∅' : r.output) + '</span>';
         if (r.groups && r.groups.length) {
           html += '<br><span class="text-muted ps-3">' +
-            r.groups.map((g, i) => '$' + (i + 1) + '=' + esc(g === null ? '∅' : g)).join(', ') + '</span>';
+            r.groups.map((g, i) => '$' + i + '=' + esc(g === null ? '∅' : g)).join(', ') + '</span>';
         }
         return html + '</div>';
       }).join('');

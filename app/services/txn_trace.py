@@ -121,6 +121,13 @@ def send(ip: str, port: int, *, host: str, path: str = "/", scheme: str = "https
             return out
         t_tcp = time.perf_counter()
         out["timing"]["tcp_ms"] = round((t_tcp - t_start) * 1000, 1)
+        # The address THIS server left from. It is what the appliance logs as
+        # ``src`` for leg A, so it is what attack-log correlation must match
+        # on -- the dialled ``ip`` is the destination and matches by accident.
+        try:
+            out["request"]["src_ip"] = sock.getsockname()[0]
+        except OSError:
+            pass
 
         if scheme == "https":
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)

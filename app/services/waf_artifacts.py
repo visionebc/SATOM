@@ -1,4 +1,4 @@
-"""File-backed WAF objects: read them off a device, keep them, push them back.
+"""File-backed WAF objects: read them off a device or take an upload, and keep them.
 
 Seven API-Protection object types carry no content in the configuration. Their
 cmdb record is a NAME and nothing else, so the generic tree-clone engine — which
@@ -36,8 +36,10 @@ omission is a product decision, not a gap we can route around.
 
 So for those three a device→device clone of the CONTENT cannot exist, and the
 only correct architecture is the one here: **SATOM keeps the artifact**. It is
-captured whenever a device does allow the read, or uploaded by an operator, and
-pushed from the store to any destination.
+captured whenever a device does allow the read, or uploaded by an operator. Its
+content reaches a device only when the clone/migrate engine CREATES the object
+there (``policy_ops._push_artifact``); there is no standalone push from the
+store.
 
 ``can_view`` is NOT the predictor and must not be used as one: scripting objects
 report ``can_view: 0`` and read back byte-identical.

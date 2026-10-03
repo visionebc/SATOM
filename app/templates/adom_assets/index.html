@@ -99,6 +99,11 @@ fam:{{ sec }}:{{ fam }}{% for p in paths %}|grp:{{ sec }}:{{ p }}{% endfor %}
         </td>
       </tr>
     {% endfor %}
+    {% if fv.backups > fv.files | length %}
+      <tr data-files-capped><td colspan="4" class="text-muted">
+        {{ _('Showing the %(shown)d newest of %(total)d files in this folder.', shown=fv.files|length, total=fv.backups) }}
+      </td></tr>
+    {% endif %}
     </tbody>
   </table>
   {% endfor %}

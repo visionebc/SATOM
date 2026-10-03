@@ -266,7 +266,8 @@ def _plan_for(kind: str, rows: list[Row]) -> _Plan:
         if u.total and not r.decided:
             raise ClassificationError(
                 f"'{old}' is still used by {u.appliances} appliance(s), "
-                f"{u.baselines} baseline(s) and {u.segments} segment(s). "
+                f"{u.baselines} baseline(s), {u.segments} segment(s) and "
+                f"{u.line_profiles} line profile(s). "
                 f"Choose what happens to them before removing it.")
 
     report = Report(

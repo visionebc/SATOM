@@ -55,6 +55,7 @@
                 <span class="fw-badge fw-badge-info" title="{{ _('appliances') }}">{{ u.appliances }} {{ _('appl.') }}</span>
                 <span class="fw-badge fw-badge-info" title="{{ _('baseline combos') }}">{{ u.baselines }} {{ _('combo') }}</span>
                 <span class="fw-badge fw-badge-info" title="{{ _('network segments') }}">{{ u.segments }} {{ _('seg.') }}</span>
+                {% if u.line_profiles %}<span class="fw-badge fw-badge-info" title="{{ _('line profiles') }}">{{ u.line_profiles }} {{ _('profile') }}</span>{% endif %}
               {% elif row.orig %}
                 <span class="text-muted" style="font-size:12px;">{{ _('not referenced') }}</span>
               {% else %}

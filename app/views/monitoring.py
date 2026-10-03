@@ -186,6 +186,11 @@ def satom():
     return render_template('monitoring/satom.html')
 
 
+# Read by services.concept_map: the map links this page into the Global ADOM
+# instead of advertising a link that bounces from a product ADOM.
+satom.__global_only__ = True
+
+
 @bp.route('/data')
 @login_required
 @require_permission(Permission.VIEW)
@@ -296,7 +301,8 @@ def hw_scan():
 @login_required
 @require_permission(Permission.VIEW)
 def infra():
-    """Cross-node + off-box infrastructure health (HA peers, Gitea, backup-server).
+    """Cross-node + off-box infrastructure health (HA peers, the Git repository,
+    the external backup server).
     Network probes with short timeouts — fetched by the card AFTER page render,
     never during a page load.
 
@@ -305,6 +311,9 @@ def infra():
         return jsonify({"error": "global ADOM only"}), 403
     from ..services import infra_health
     return jsonify(infra_health.snapshot())
+
+
+infra.__global_only__ = True
 
 
 @bp.route('/encryption')
@@ -321,3 +330,6 @@ def encryption():
         return jsonify({"error": "global ADOM only"}), 403
     from ..services import encryption_health
     return jsonify(encryption_health.snapshot())
+
+
+encryption.__global_only__ = True

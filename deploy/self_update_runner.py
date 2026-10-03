@@ -21,6 +21,7 @@ import re
 import socket
 import subprocess
 import time
+import tempfile
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -1552,6 +1553,60 @@ def service_action(req_path):
                   state_after=_svc_active(unit), error=str(e))
 
 
+# Settings -> Node TLS -> Postgres SSL. The web process runs as the service
+# account and cannot become the postgres OS user, so the ALTER SYSTEM is done
+# here, as root, after re-validating the two values against the SAME rules as
+# app/services/pg_ssl.py (this module must not import the app package).
+_PG_PROTOCOLS = ("TLSv1.2", "TLSv1.3")
+_PG_CIPHER_RE = re.compile(r"^[A-Za-z0-9:+!_,@=\- ]{1,255}$")
+
+
+def pg_ssl_apply(req_path):
+    """Apply ssl_min_protocol_version / ssl_ciphers on the local Postgres."""
+    req = json.loads(Path(req_path).read_text())
+    uid = req.get("id") or Path(req_path).stem
+    st = Status(uid, req)
+    try:
+        os.remove(req_path)  # dequeue so the .path unit stops re-firing
+    except OSError:
+        pass
+    st.d["kind"] = "pg_ssl"
+    proto = (req.get("min_protocol") or "").strip()
+    ciphers = (req.get("ciphers") or "").strip()
+    if proto not in _PG_PROTOCOLS or (ciphers and not _PG_CIPHER_RE.match(ciphers)):
+        st.step("validate", False, "refused: protocol %r / cipher string" % proto)
+        st.finish("failed", error="invalid Postgres SSL policy")
+        return
+    st.step("validate", True, "min %s, ciphers %s (requested by %s)"
+            % (proto, ciphers or "(unchanged)", req.get("requested_by") or "?"))
+    stmts = ["ALTER SYSTEM SET ssl_min_protocol_version = '%s';" % proto]
+    if ciphers:
+        stmts.append("ALTER SYSTEM SET ssl_ciphers = '%s';" % ciphers)
+    stmts.append("SELECT pg_reload_conf();")
+    fd, path = tempfile.mkstemp(suffix=".sql", dir="/tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write("\n".join(stmts) + "\n")
+        os.chmod(path, 0o644)
+        r = subprocess.run(["runuser", "-u", "postgres", "--", "psql",
+                            "-v", "ON_ERROR_STOP=1", "-f", path],
+                           capture_output=True, text=True, timeout=60)
+        ok = r.returncode == 0
+        st.step("ALTER SYSTEM + reload", ok, (r.stderr or r.stdout or "").strip()[-400:])
+        if ok:
+            st.finish("success", min_protocol=proto, ciphers=ciphers)
+        else:
+            st.finish("failed", error="psql exited %s" % r.returncode)
+    except Exception as e:  # noqa: BLE001
+        st.step("ERROR", False, str(e))
+        st.finish("failed", error=str(e))
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
 def main():
     for rp in sorted(glob.glob(str(REQ / "*.json"))):
         try:
@@ -1568,6 +1623,8 @@ def main():
                 package_change(rp)
             elif kind == "service":
                 service_action(rp)
+            elif kind == "pg_ssl":
+                pg_ssl_apply(rp)
             else:
                 process(rp)
         except Exception:

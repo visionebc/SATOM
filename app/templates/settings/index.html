@@ -2785,7 +2785,10 @@
         var body='min_protocol='+encodeURIComponent(document.getElementById('nt-min-proto').value)+
                  '&ciphers='+encodeURIComponent(document.getElementById('nt-ciphers').value);
         post('{{ url_for("settings.save_pg_ssl") }}', body).then(function(d){
-          document.getElementById('nt-pg-msg').innerHTML=d.ok?'<span class="text-success">Applied on '+esc((d.result||{}).node||'')+'.</span>':'<span class="text-danger">'+esc(d.error)+'</span>';
+          var r=d.result||{};
+          document.getElementById('nt-pg-msg').innerHTML=!d.ok?'<span class="text-danger">'+esc(d.error)+'</span>':
+            (r.queued?'<span class="text-success">Queued on '+esc(r.node||'')+' (request '+esc(r.queued)+'): the root updater applies it and reloads Postgres within a few seconds — see Software Update for the outcome.</span>'
+                     :'<span class="text-success">Applied on '+esc(r.node||'')+'.</span>');
           loadState();});});
       loadState();
     })();

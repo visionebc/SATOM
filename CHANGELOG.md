@@ -6,6 +6,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Security — privileged node actions left no audit row (2026-10-03)
+
+System backup create, restore and delete, git bundle create, settings and
+delete, firmware pull, code rollback, software update apply, deploy-automation
+mode, HA mode, standby promotion and HA node registry changes now write an
+audit row (with the outcome, failures included). So do the root CLI's
+`admin reset-password` and `admin unlock`, under the user `cli/root`, noting
+when the command re-activated a disabled account. Every failed local sign-in
+now writes `login.fail`; before, only the attempt that tripped the lockout
+was recorded.
+
 ### Security — by-id routes served rows the lists hide (2026-10-03)
 
 Device lists are cut to what the user may see: maintenance devices are hidden

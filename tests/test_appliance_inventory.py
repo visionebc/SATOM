@@ -358,8 +358,23 @@ def test_appliance_pages_draw_only_the_verbs_the_user_holds(app, client):
     assert "ADOM (vdom)" in html
     det = client.get(f"/appliances/{fw}", headers={"X-ADOM": "global"}).get_data(as_text=True)
     assert f"/appliances/{fw}/edit" not in det
-    assert f"/backups/{fw}" not in det
+    # read-only holds backups.view: the vault LIST is open to it (no verbs)
+    assert f"/backups/{fw}" in det
     assert "/appliances/flash-reports" in det
+    from app.models import Profile, User
+    with app.app_context():
+        p = Profile(name="p-no-backups", is_system=False)
+        p.permission_set = {"appliances.view"}
+        db.session.add(p)
+        db.session.commit()
+        u = User(username="no-backups", role="readonly", is_active=True, profile_id=p.id)
+        u.set_password("pw")
+        db.session.add(u)
+        db.session.commit()
+        nb = u.id
+    login(client, nb, product="global")
+    det = client.get(f"/appliances/{fw}", headers={"X-ADOM": "global"}).get_data(as_text=True)
+    assert f"/backups/{fw}" not in det
     login(client, admin_user_id(app), product="global")
     html = client.get("/appliances/", headers={"X-ADOM": "global"}).get_data(as_text=True)
     assert '<button class="btn btn-fw-primary" data-js="open-add-appliance">' in html and f"/appliances/{fw}/delete" in html

@@ -57,7 +57,8 @@ def test_fw06_a_carve_out_is_not_deletable_through_another_device(app, client, o
         exc = s.add(devs["seen"], wpp_mkey="wpp-x", exc_type="signature_filter_item",
                     payload={"signature_id": "010000001"})
         eid = exc.id
-    r = client.post(f"/exceptions/{other}/delete", json={"exc_id": eid})
+    r = client.post(f"/exceptions/{other}/guarded-delete",
+                    json={"exc_id": eid, "acknowledge": True})
     assert r.status_code == 404
     with app.app_context():
         assert s.get(eid) is not None, "a carve-out was deleted through a foreign URL"

@@ -331,7 +331,8 @@ def test_version_routes_round_trip(app, client):
     with app.app_context():
         assert s.get(eid).payload_dict == {"signature_id": "1"}
 
-    r = client.post(f"/exceptions/{aid}/delete", json={"exc_id": eid})
+    r = client.post(f"/exceptions/{aid}/guarded-delete",
+                    json={"exc_id": eid, "acknowledge": True})
     assert r.get_json()["ok"]
     r = client.get(f"/exceptions/{aid}/restorable")
     items = r.get_json()["items"]

@@ -388,6 +388,8 @@
 <script src="{{ url_for('static', filename='js/regex_lab.js') }}" nonce="{{ csp_nonce }}"></script>
 <script nonce="{{ csp_nonce }}">
 const EXC_AID = {{ appliance.id }};
+// The assistant opinion is advisor.use; without it only SATOM's own analysis runs.
+const EXC_USE_MODEL = {{ 'true' if current_user.can('advisor.use') else 'false' }};
 function fwPost(url, payload){
   return fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}).then(r=>r.json());
 }
@@ -1023,7 +1025,7 @@ function adviseExc(){
     wpp_mkey: document.getElementById('exc-wpp').value,
     server_policy: (getMulti('exc-policies')[0] || ''),
     problem: document.getElementById('exc-problem').value,
-    use_model: true
+    use_model: EXC_USE_MODEL
   }).then(function(d){
     if (!d.ok){ box.innerHTML = '<span class="text-danger">' + esc(d.error || 'failed') + '</span>'; return; }
     const a = d.advice, ex = a.explain;

@@ -109,7 +109,70 @@ def test_save_and_delete_route(client, app):
     assert j["ok"] and j["id"]
     with app.app_context():
         assert len(s.list_exceptions(aid)) == 1
-    d = client.post(f"/exceptions/{aid}/delete", json={"exc_id": j["id"]}).get_json()
+    d = client.post(f"/exceptions/{aid}/guarded-delete",
+                    json={"exc_id": j["id"], "acknowledge": True}).get_json()
     assert d["ok"]
     with app.app_context():
         assert s.list_exceptions(aid) == []
+
+
+# ── audit 2026-10-03: legacy delete gone, model advice needs advisor.use ───
+def test_the_unguarded_legacy_delete_route_is_gone(app, client):
+    from app.services import wpp_exceptions as s
+    aid = _make_appliance(app)
+    with app.app_context():
+        eid = s.add(aid, wpp_mkey="wpp-x", exc_type="signature_filter_item",
+                    payload={"signature_id": "1"}).id
+    login(client, admin_user_id(app))
+    r = client.post(f"/exceptions/{aid}/delete", json={"exc_id": eid})
+    assert r.status_code in (404, 405)
+    with app.app_context():
+        assert s.get(eid) is not None
+
+
+def _advice_spy(monkeypatch):
+    from app.services import exception_advice
+    calls = []
+
+    def _fake(*a, **k):
+        calls.append(k.get("use_model"))
+        return {"explain": {}, "concerns": [], "model": None}
+
+    monkeypatch.setattr(exception_advice, "analyse", _fake)
+    return calls
+
+
+def test_model_advice_needs_advisor_use(app, client, monkeypatch):
+    from tests.conftest import make_user
+    calls = _advice_spy(monkeypatch)
+    aid = _make_appliance(app)
+    login(client, make_user(app, username="ro-adv", role="readonly"))
+    body = {"exc_type": "signature_filter_item",
+            "fields": {"signature_id": "1"}, "use_model": True}
+    r = client.post(f"/exceptions/{aid}/advice", json=body)
+    assert r.status_code == 403
+    assert calls == []
+    # the deterministic half stays open to the same user
+    body["use_model"] = False
+    r = client.post(f"/exceptions/{aid}/advice", json=body)
+    assert r.status_code == 200 and r.get_json()["ok"]
+    assert calls == [False]
+
+
+def test_model_advice_runs_for_an_advisor_user(app, client, monkeypatch):
+    calls = _advice_spy(monkeypatch)
+    aid = _make_appliance(app)
+    login(client, admin_user_id(app))
+    r = client.post(f"/exceptions/{aid}/advice", json={
+        "exc_type": "signature_filter_item",
+        "fields": {"signature_id": "1"}, "use_model": True})
+    assert r.status_code == 200 and r.get_json()["ok"]
+    assert calls == [True]
+
+
+def test_the_page_only_asks_for_the_model_with_advisor_use():
+    import pathlib
+    body = (pathlib.Path(__file__).resolve().parents[1]
+            / "app/templates/exceptions/list.html").read_text()
+    assert "current_user.can('advisor.use')" in body
+    assert "use_model: true" not in body

@@ -423,3 +423,46 @@ def test_docs_never_cite_a_deploy_path_that_does_not_exist(path: Path) -> None:
     assert not dangling, (
         "%s cites deploy path(s) that do not exist in this repository: %s"
         % (path.relative_to(ROOT), ", ".join(dangling)))
+
+
+# --------------------------------------------------------------------------
+# installer drop-ins: the same derived set as the runner
+# --------------------------------------------------------------------------
+def _installer_function(name: str) -> str:
+    src = INSTALLER.read_text(encoding="utf-8")
+    start = src.index(name + "() {")
+    end = src.index("\n}\n", start) + 3
+    return src[start:end]
+
+
+def test_the_installer_pins_every_unprivileged_unit_to_the_service_account(tmp_path):
+    """With a custom SATOM_APP_USER, install-satom.sh once left
+    satom-integrations.service on the template's User=satom (its hand-kept
+    drop-in list missed it), so the hook runner failed with 217/USER until the
+    first self-update. The installer now derives the set like the runner:
+    every deploy/*.service except the root updater, plus the HA datasync unit."""
+    import shutil
+    import subprocess
+
+    bash = shutil.which("bash")
+    if not bash:
+        pytest.skip("bash not available")
+    etc = tmp_path / "etc"
+    etc.mkdir()
+    units = {p.name for p in DEPLOY.glob("*.service")} | {"satom-ha-datasync.service"}
+    for u in units:
+        (etc / u).write_text("[Service]\nUser=root\n")
+    fn = _installer_function("satom_enforce_unit_user").replace(
+        "/etc/systemd/system", str(etc))
+    script = ("systemctl() { :; }\nok() { :; }\nAPP_DIR=%s\nAPP_USER=svc-custom\n%s\n"
+              "satom_enforce_unit_user\n" % (ROOT, fn))
+    r = subprocess.run([bash, "-c", script], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "satom-integrations.service" in units  # the unit that was missed
+    for u in sorted(units):
+        drop = etc / (u + ".d") / "10-app-user.conf"
+        if u == PRIVILEGED_UNIT:
+            assert not drop.exists(), "the updater must stay root"
+        else:
+            assert drop.exists(), "%s keeps the template User= at install" % u
+            assert "User=svc-custom" in drop.read_text()

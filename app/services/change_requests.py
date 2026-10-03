@@ -110,10 +110,18 @@ def revoke_approval(cr_id, by: str, detail: str = "") -> bool:
 
 
 def approve(cr_id: int, by: str) -> ChangeRequest:
-    """Approve a CR (stamps ``approved_by`` / ``approved_at``)."""
+    """Approve a CR (stamps ``approved_by`` / ``approved_at``).
+
+    Only a ``draft`` can be approved. Approving anything else would flip a
+    completed / failed / cancelled change back to ``approved``, announce it to
+    the integrations again and re-materialize its rollout plan.
+    """
     cr = db.session.get(ChangeRequest, cr_id)
     if cr is None:
         raise ValueError("change request not found")
+    if cr.status != "draft":
+        raise ValueError("Only a draft change request can be approved "
+                         "(this one is %s)." % cr.status)
     # Freeze the change-type wording AS APPROVED. From here on the document
     # prints these words, not whatever Administration -> Change Types says
     # later. Best-effort: an approval is a decision a human made, and a failure
@@ -141,10 +149,18 @@ def approve(cr_id: int, by: str) -> ChangeRequest:
 
 
 def cancel(cr_id: int, by: str, reason: str = "") -> ChangeRequest:
-    """Cancel a CR and disable its bound scheduled action (so it won't fire)."""
+    """Cancel a CR and disable its bound scheduled action (so it won't fire).
+
+    A closed CR (completed / failed / cancelled) is refused: cancelling it
+    would overwrite the recorded outcome. ``in_progress`` stays cancellable as
+    the way out of a run that never reports back.
+    """
     cr = db.session.get(ChangeRequest, cr_id)
     if cr is None:
         raise ValueError("change request not found")
+    if cr.status in ChangeRequest.TERMINAL:
+        raise ValueError("This change request is already %s; its outcome "
+                         "cannot be changed." % cr.status)
     if cr.scheduled_action_id:
         action = db.session.get(ScheduledAction, cr.scheduled_action_id)
         if action is not None:

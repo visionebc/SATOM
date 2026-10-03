@@ -104,7 +104,7 @@ def test_concept_keys_are_unique_and_endpoints_appear_once():
 
 def test_the_concept_key_is_structural_identity_and_is_not_translated():
     """Same rule as ``data-nav-group`` (§68): translating an identifier breaks
-    every consumer keyed on it — here, the ``?c=`` deep link and the SVG's
+    every consumer keyed on it — here, the ``#cm-c-<key>`` section anchor and the SVG's
     per-cluster dimming."""
     src = open(cmap.__file__).read()
     tree = ast.parse(src)

@@ -66,6 +66,13 @@ MAX_BUDGET_S = 600.0
 #: different object, not a drifted one, and the extra rows say nothing new.
 MAX_FIELD_ROWS = 40
 
+
+def _field_rows(fields: list) -> dict:
+    """The page's capped field list, plus the full list the export writes."""
+    return {"fields": fields[:MAX_FIELD_ROWS], "fields_all": list(fields),
+            "truncated": max(0, len(fields) - MAX_FIELD_ROWS)}
+
+
 #: Fields that are per-box bookkeeping, not configuration. ``id`` is assigned
 #: by the appliance when a sub-table row is created, so two identical rows on
 #: two boxes carry different ids — comparing it would mark every by-parent row
@@ -372,8 +379,7 @@ def compare_package(src_node, dst_node, via: str) -> dict:
         "src_name": src_item.mkey,
         "dst_name": dst_item.mkey,
         "state": "same" if same and not renamed else ("renamed" if same else "changed"),
-        "fields": root_fields[:MAX_FIELD_ROWS],
-        "truncated": max(0, len(root_fields) - MAX_FIELD_ROWS),
+        **_field_rows(root_fields),
         "package": {
             "src_objects": len(src_map),
             "dst_objects": len(dst_map),
@@ -464,11 +470,9 @@ def _subrow_rows(via, src_node, dst_node) -> list:
             "src_name": src_row.mkey if src_row else "",
             "dst_name": dst_row.mkey if dst_row else "",
             "state": "only_source" if src_row is not None else "only_destination",
-            "fields": [{"field": k, "src": v if src_row is not None else "",
-                        "dst": "" if src_row is not None else v}
-                       for k, v in sorted(_fields(item.payload).items())
-                       ][:MAX_FIELD_ROWS],
-            "truncated": 0,
+            **_field_rows([{"field": k, "src": v if src_row is not None else "",
+                            "dst": "" if src_row is not None else v}
+                           for k, v in sorted(_fields(item.payload).items())]),
             "package": None,
         })
     return rows
@@ -489,11 +493,10 @@ def compare_trees(src_tree: dict, dst_tree: dict) -> list:
                 "src_name": item.mkey if src_node else "",
                 "dst_name": item.mkey if dst_node else "",
                 "state": "only_source" if src_node else "only_destination",
-                "fields": [{"field": k, "src": v if src_node else "",
-                            "dst": "" if src_node else v}
-                           for k, v in sorted(_fields(item.payload).items())
-                           ][:MAX_FIELD_ROWS],
-                "truncated": 0, "package": None,
+                **_field_rows([{"field": k, "src": v if src_node else "",
+                                "dst": "" if src_node else v}
+                               for k, v in sorted(_fields(item.payload).items())]),
+                "package": None,
             })
             return
 
@@ -522,8 +525,7 @@ def compare_trees(src_tree: dict, dst_tree: dict) -> list:
             "urn": src_item.urn,
             "src_name": src_item.mkey, "dst_name": dst_item.mkey,
             "state": "changed" if fields else ("renamed" if renamed else "same"),
-            "fields": fields[:MAX_FIELD_ROWS],
-            "truncated": max(0, len(fields) - MAX_FIELD_ROWS),
+            **_field_rows(fields),
             "package": None,
         })
         rows.extend(_subrow_rows(via, src_node, dst_node))
@@ -731,7 +733,8 @@ def to_tsv(report: dict) -> str:
                 if not pkg:
                     out.append("\t".join(base + ["", "", ""]))
                 continue
-            for fld in row["fields"]:
+            # The page shows at most MAX_FIELD_ROWS; the export has them all.
+            for fld in row.get("fields_all") or row["fields"]:
                 out.append("\t".join(base + [fld["field"], fld["src"],
                                              fld["dst"]]))
     return "\n".join(out) + "\n"

@@ -42,8 +42,13 @@ def _truthy(val: str | None) -> bool:
 
 @bp.route('/')
 @login_required
+@require_permission(Permission.USER_MANAGE)
 def index():
-    """Render the box tree, the registry cross-reference and coverage stats."""
+    """Render the box tree, the registry cross-reference and coverage stats.
+
+    user_manage, like its only menu entry (the API hub in the sidebar) and
+    the overlay save below.
+    """
     overlay = store.get_json(_OVERLAY_KEY, {})
     show_urn = _truthy(request.args.get('urns'))
 

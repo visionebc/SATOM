@@ -44,8 +44,10 @@
           class="d-flex align-items-center gap-1 mb-0">
       {% if show_urn %}<input type="hidden" name="urns" value="1">{% endif %}
       <label class="text-muted mb-0" style="font-size:12px;">{{ _('Firmware') }}</label>
+      {# Submitted by the nonced page script (data-js hook): the CSP blocks
+         inline on* handlers, so an onchange here never fired. #}
       <select name="scope" class="form-select form-select-sm" style="width:auto;"
-              onchange="this.form.submit()">
+              data-js="scope-select">
         <option value="">{{ _('none chosen — CLI evidence unfiltered') }}</option>
         {% for v in scope_versions %}
           <option value="{{ v }}" {% if scope == v %}selected{% endif %}>{{ v }}</option>
@@ -54,7 +56,7 @@
           <option value="{{ ln }}" {% if scope == ln %}selected{% endif %}>{{ ln }} ({{ _('line rollup') }})</option>
         {% endfor %}
       </select>
-      <noscript><button class="btn btn-sm btn-fw-outline" type="submit">{{ _('Apply') }}</button></noscript>
+      <button class="btn btn-sm btn-fw-secondary" type="submit">{{ _('Apply') }}</button>
     </form>
     {% if show_urn %}
       <a class="btn btn-fw-outline btn-sm" href="{{ url_for('structure.index') }}">
@@ -429,6 +431,10 @@
 
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">
+(function () {
+  var sel = document.querySelector('[data-js="scope-select"]');
+  if (sel) sel.addEventListener('change', function () { sel.form.submit(); });
+})();
 function filterXref(q) {
   q = q.toLowerCase();
   document.querySelectorAll('#xrefTable tbody tr').forEach(function (row) {

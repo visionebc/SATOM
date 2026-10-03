@@ -1,0 +1,8 @@
+{# Appliances — the device registry. Listed with the other fleet/device
+   entries rather than under Administrator: opening the list needs
+   appliances.view and registering a device needs config_write, neither of
+   which is an administrator key. #}
+{% if current_user and current_user.can('appliances.view') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'appliances' else '' }}" href="{{ url_for('appliances.index') }}">
+  <i class="bi bi-server fw-nav-icon"></i><span>{{ _('Appliances') }}</span></a>
+{% endif %}

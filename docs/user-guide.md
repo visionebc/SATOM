@@ -122,7 +122,9 @@ be minimised to one line (**−**) and restored (**□**, or a click on its titl
 the choice lasts for the browser session.
 
 **Notifications.** The bell in the top bar collects job results and system
-notices, scoped to the product you are working in.
+notices, scoped to the product you are working in. The bell's *Clear* only marks
+them read; **Clear all** on the Notifications page deletes them (after a
+confirmation).
 
 ## 3. Products (ADOMs)
 
@@ -173,7 +175,9 @@ maintenance devices, so this can never hand you a device the picker hides.
 
 ## 4. Registering and operating devices
 
-**Appliances** (Administrator → Appliances, or Global dashboard):
+**Appliances** (sidebar → Fleet → Appliances in each ADOM, Global → Appliances in
+the Global ADOM, or the Global dashboard). The entry is shown to anyone holding
+`appliances.view`; adding or editing a device still needs `config_write`:
 
 1. **Add appliance** — name, host/IP, port, kind (fortiweb / fortiadc /
    fortiauthenticator / fortianalyzer), credentials (stored encrypted), TLS
@@ -3542,7 +3546,8 @@ an endpoint, choose a method, supply a JSON body, execute.
 - **POST / PUT / DELETE / PATCH require the `registry.execute_write` permission**
   and are refused with that message otherwise. Note that this is a *separate*
   permission from `registry.edit`: one lets you change the catalog, the other
-  lets you fire writes at a device through it.
+  lets you fire writes at a device through it. The internal pass-through under
+  `/api/fw/<id>/proxy/…` and `/api/adc/<id>/proxy/…` applies the same rule.
 - Every execution is audited with the method and endpoint.
 - The device's own response is shown as it came back — a device error is rendered
   as the device's error, never smoothed into an empty result.

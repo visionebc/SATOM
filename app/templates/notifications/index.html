@@ -20,6 +20,17 @@
       {{ _('Background jobs, bug-report updates and other alerts raised for your account.') }}
     </p>
   </div>
+  {% if notifications %}
+  <div>
+    <form method="POST" action="{{ url_for('notifications.clear') }}" class="m-0" id="fw-notif-clear-form"
+          data-confirm="{{ _('Delete all your notifications? This cannot be undone.') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-sm btn-outline-danger">
+        <i class="bi bi-trash me-1"></i>{{ _('Clear all') }}
+      </button>
+    </form>
+  </div>
+  {% endif %}
 </div>
 
 <div class="fw-card">
@@ -82,4 +93,12 @@ a.fw-notif-link:hover { background:var(--fw-content-bg); text-decoration:none; }
 .fw-notif-time { color:var(--fw-text-secondary); font-size:11px; margin-top:2px; opacity:.85; }
 .fw-notif-chev { color:var(--fw-text-secondary); align-self:center; flex:0 0 auto; }
 </style>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var f = document.getElementById('fw-notif-clear-form');
+  if (f) f.addEventListener('submit', function (e) {
+    if (!window.confirm(f.getAttribute('data-confirm'))) e.preventDefault();
+  });
+})();
+</script>
 {% endblock %}

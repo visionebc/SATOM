@@ -16591,8 +16591,8 @@ because no container ever ran Alembic.
   unguarded migrations (`ae0c4a5637e6`, `6a13b09b7e79`, `ha01clusters1`,
   `3061f34de667`) use it in `upgrade()`. `downgrade()` keeps plain `op`, since
   a downgrade that silently skips a drop is worse than one that fails.
-- `install-satom.sh` (and the dev `deploy/install.sh`) run
-  `flask db stamp head` after `create-db`, and die if it fails.
+- `install-satom.sh` runs
+  `flask db stamp head` after `create-db`, and dies if it fails.
 - `self_update_runner.py`: both `flask db upgrade` calls raise
   `MIGRATION_FAILED`. The rollback restores code and dependencies, and the
   message says the database is not rolled back and names the restore commands.

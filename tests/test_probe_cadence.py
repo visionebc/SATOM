@@ -173,3 +173,97 @@ def test_probe_page_renders_collapsible_cards(client, url):
                   "satom.probecards.open", "dp-caret", "dp-hchip"):
         assert token in html, "%s missing from %s" % (token, url)
     assert "function toggleDev(" in html
+
+
+# ------------------------------------------- one cadence, stated one way ---
+
+def test_sweep_cadence_is_stated_as_three_minutes_everywhere():
+    """The seed plan sweeps every 3 minutes; the action summary and the
+    Service Monitor docstring used to say five."""
+    from app.services import scheduled_actions as sa
+    from app.views import service_monitor
+
+    summary = sa.ALL_ACTIONS["deep_monitor"].summary
+    assert "EVERY 3 MINUTES" in summary
+    assert "EVERY 5 MINUTES" not in summary
+    assert "every three minutes" in service_monitor.__doc__
+    assert "every five minutes" not in service_monitor.__doc__
+
+
+def test_new_probe_defaults_to_the_sweep_tick(app):
+    from app.models import MonitorProbe, db
+
+    with app.app_context():
+        p = MonitorProbe(kind="cpu", name="fresh", enabled=True)
+        db.session.add(p)
+        db.session.commit()
+        assert p.interval_min == dm.DEFAULT_PROBE_INTERVAL_MIN
+
+
+@pytest.mark.parametrize("url", ["/monitoring/deep/", "/monitoring/services/"])
+def test_add_form_interval_defaults_to_the_sweep_tick(client, url):
+    from tests.conftest import admin_user_id, login
+
+    login(client, admin_user_id(client.application))
+    html = client.get(url).get_data(as_text=True)
+    m = re.search(r'name="interval_min" id="dpFint" value="(\d+)"', html)
+    assert m, "interval input missing"
+    assert int(m.group(1)) == dm.DEFAULT_PROBE_INTERVAL_MIN
+
+
+def test_create_without_interval_uses_the_sweep_tick(client, app):
+    from app.models import MonitorProbe
+    from tests.conftest import admin_user_id, login
+
+    login(client, admin_user_id(app), product="global")
+    r = client.post("/monitoring/deep/probe",
+                    data={"kind": "https", "name": "vip", "interval_min": "0",
+                          "url": "https://192.0.2.9/"})
+    assert r.status_code == 200
+    pid = r.get_json()["probe"]["id"]
+    with app.app_context():
+        assert MonitorProbe.query.get(pid).interval_min == dm.DEFAULT_PROBE_INTERVAL_MIN
+
+
+def test_https_discovery_creates_probes_on_the_tick(app):
+    from app.models import Appliance, MonitorProbe, db
+
+    with app.app_context():
+        a = Appliance(name="fwcad", host="192.0.2.5", kind="fortiweb",
+                      username="admin")
+        a.password = "pw"
+        db.session.add(a)
+        db.session.commit()
+        orig = dm.resolve_targets_from_cache
+        dm.resolve_targets_from_cache = lambda ap, session=None: [
+            {"url": "https://192.0.2.90/", "policy": "pol", "enabled": True,
+             "note": ""}]
+        try:
+            assert dm.discover_https_probes(a)["created"] == 1
+        finally:
+            dm.resolve_targets_from_cache = orig
+        p = MonitorProbe.query.filter_by(appliance_id=a.id).one()
+        assert p.interval_min == dm.DEFAULT_PROBE_INTERVAL_MIN
+
+
+# ------------------------------------ product notes follow KIND_PRODUCTS ---
+
+_LABEL = {"fortiweb": "FortiWeb", "fortiadc": "FortiADC",
+          "fortianalyzer": "FortiAnalyzer",
+          "fortiauthenticator": "FortiAuthenticator"}
+
+
+def test_cpu_note_names_every_product_the_kind_is_offered_on(tpl):
+    i = tpl.index("<code>get system performance</code>")
+    note = tpl[i:tpl.index("</div>", i)]
+    for product in dm.KIND_PRODUCTS["cpu"]:
+        assert _LABEL[product] in note, "%s missing from the CPU note" % product
+
+
+def test_rest_discovery_note_is_not_fortiweb_only(tpl):
+    i = tpl.index("<b>{{ _('REST telemetry') }}</b>")
+    note = tpl[i:tpl.index("</label>", i)]
+    assert "FortiWeb only" not in note
+    products = {p for k in dm.API_KINDS for p in dm.KIND_PRODUCTS[k]}
+    for product in products:
+        assert _LABEL[product] in note

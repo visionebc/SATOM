@@ -456,3 +456,29 @@ def test_reset_series_clears_samples_and_buckets(app):
         assert out["samples"] > 0 and out["rollups"] > 0
         assert MonitorSample.query.filter_by(probe_id=pid).count() == 0
         assert MonitorRollup.query.filter_by(probe_id=pid).count() == 0
+
+
+def test_a_muted_probe_offers_unmute_and_it_lifts_the_suppression(client, admin_id, app):
+    """The unmute route used to have no caller: a muted probe could only be
+    lifted by editing it or by waiting for the expiry."""
+    from datetime import datetime, timedelta
+    login(client, admin_id, product="global")
+    html = client.get("/monitoring/deep/").get_data(as_text=True)
+    # rendered row action, dispatched by the generic dp-act handler to
+    # BASE + '/probe/' + id + '/' + act
+    assert 'data-act="unmute"' in html
+    assert "(BASE + '/probe/' + id + '/' + act)" in html
+    with app.app_context():
+        p = MonitorProbe(kind="https", name="muted", url="https://192.0.2.7/",
+                         suppress_until=datetime.utcnow() + timedelta(hours=2),
+                         suppress_reason="change window")
+        db.session.add(p)
+        db.session.commit()
+        pid = p.id
+    row = [x for x in client.get("/monitoring/deep/data").get_json()["probes"]
+           if x["id"] == pid][0]
+    assert row["suppressed"] is True
+    r = client.post(f"/monitoring/deep/probe/{pid}/unmute")
+    assert r.status_code == 200 and r.get_json()["ok"] is True
+    with app.app_context():
+        assert MonitorProbe.query.get(pid).suppress_until is None

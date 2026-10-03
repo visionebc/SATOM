@@ -71,3 +71,46 @@ def test_database_page_renders_er_diagram(client, app):
     data = json.loads(m.group(1).decode())
     assert isinstance(data.get("tables"), list) and len(data["tables"]) >= 1
     assert "edges" in data
+
+
+# --- Documentation Center audit, 2026-10-03 (AD-56) -------------------------
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT username FROM users",
+    "SELECT row_to_json(u) FROM users u",
+    'SELECT * FROM "Users"',
+    "SELECT t.* FROM public.users t(a, b, c)",
+    "SELECT name FROM profiles WHERE id IN (SELECT profile_id FROM users)",
+    "WITH x AS (SELECT token_hash AS h FROM api_tokens) SELECT h FROM x",
+    "SELECT value FROM app_settings",
+])
+def test_queries_on_credential_tables_are_refused_and_audited(app, sql):
+    from app.models import AuditLog
+    with app.app_context():
+        res = D.run_query(sql)
+        assert res["error"].startswith("refused"), (sql, res)
+        assert res["rows"] == []
+        assert AuditLog.query.filter_by(action="database.query_refused").count() == 1
+
+
+def test_a_table_name_inside_a_string_literal_is_not_a_reference(app):
+    with app.app_context():
+        res = D.run_query("SELECT 'users' AS label, name FROM profiles")
+        assert res["error"] == "" and res["rows"], res
+
+
+def test_alias_masking_still_applies_to_ordinary_tables(app):
+    with app.app_context():
+        res = D.run_query("SELECT name, 'x' AS password FROM profiles")
+        assert res["error"] == ""
+        assert all(r[1] == "••• (hidden)" for r in res["rows"])
+
+
+def test_the_console_endpoint_returns_the_refusal(client, app):
+    login(client, admin_user_id(app))
+    r = client.post("/database/query", json={"sql": "SELECT password_hash AS x FROM users"})
+    body = r.get_json()
+    assert "refused" in (body.get("error") or ""), body
+    assert "scrypt" not in r.get_data(as_text=True)

@@ -42,7 +42,9 @@ def test_report_crud_and_dashboard(client, app):
     body = {"name": "Smoke report", "description": "test",
             "definition": {"widgets": [
                 {"title": "One", "sql": "SELECT 1 AS n", "viz": "stat"},
-                {"title": "Tbl", "sql": "SELECT username FROM users",
+                # users is a credential table and refused by the console
+                # (AD-56, 2026-10-03); profiles is an ordinary one.
+                {"title": "Tbl", "sql": "SELECT name FROM profiles",
                  "viz": "table"},
             ]}}
     r = client.post("/database/reports/save", json=body)
@@ -58,7 +60,7 @@ def test_report_crud_and_dashboard(client, app):
     data = client.get(f"/database/reports/{rid}/data").get_json()
     assert data["name"] == "Smoke report"
     assert data["widgets"][0]["stat"] == "1"
-    assert data["widgets"][1]["columns"] == ["username"]
+    assert data["widgets"][1]["columns"] == ["name"]
 
     # update keeps the same id
     body["id"] = rid
@@ -85,11 +87,11 @@ def test_report_pdf_export(client, app):
     login(client, admin_user_id(app))
     r = client.post("/database/reports/save", json={
         "name": "PDF report", "definition": {"widgets": [
-            {"title": "Stat", "sql": "SELECT COUNT(*) AS users FROM users",
+            {"title": "Stat", "sql": "SELECT COUNT(*) AS n FROM profiles",
              "viz": "stat"},
-            {"title": "Bar", "sql": "SELECT username, id FROM users",
-             "viz": "bar", "x": "username", "y": "id"},
-            {"title": "Rows", "sql": "SELECT id, username FROM users",
+            {"title": "Bar", "sql": "SELECT name, id FROM profiles",
+             "viz": "bar", "x": "name", "y": "id"},
+            {"title": "Rows", "sql": "SELECT id, name FROM profiles",
              "viz": "table"},
         ]}})
     rid = r.get_json()["id"]

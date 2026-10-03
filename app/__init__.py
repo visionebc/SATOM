@@ -244,7 +244,7 @@ def create_app(config_override: object | None = None) -> Flask:
         # linked from BOTH product ADOMs — none of them are URL-scoped.
         fortiweb_scoped = {
             'workspace', 'objedit', 'regex_lab', 'server_objects',
-            'web_protection', 'exceptions', 'attack_search', 'backups', 'logs',
+            'web_protection', 'exceptions', 'attack_search', 'logs',
             'import_backup', 'section_config', 'section_catalog',
             'signatures', 'structure',
             'segments',
@@ -270,6 +270,10 @@ def create_app(config_override: object | None = None) -> Flask:
             # CR is visible in an ADOM when it names a device that ADOM can see
             # (views.change_requests._cr_in_scope), by-id routes included.
             'provisioning', 'registry', 'api_explorer',
+            # 'backups' left this set on 2026-10-03: the vault is per DEVICE
+            # (FortiADC rows have one too), and pinning it to FortiWeb made
+            # "View Backups" on a FortiADC from Global a 404. Rows are scoped
+            # by visible_appliance_or_404 + require_device_scope instead.
         }
         hdr = (request.headers.get('X-ADOM') or '').strip().lower()
         # Explicit per-navigation ADOM pin via query string. Hard links /

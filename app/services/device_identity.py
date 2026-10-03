@@ -225,6 +225,30 @@ def retire(name_or_slug: str, note: str = "") -> dict:
             "retired_at": row.retired_at.isoformat(timespec="seconds")}
 
 
+def deregister(appliance, note: str = "de-registered from SATOM") -> str:
+    """Delete an appliance row the one way every caller must: identity
+    recorded and retired first, datasheet PDF removed, then the row (its
+    interfaces cascade). Shared by the UI delete and ``DELETE /api/appliances``
+    so the REST path no longer leaves an orphaned identity and PDF behind.
+    Returns the deleted appliance's name. Commits."""
+    from ..extensions import db
+    from . import datasheets
+    name = appliance.name
+    # Record the identity BEFORE the row goes: everything hanging off
+    # appliances.id is ON DELETE CASCADE, so after the delete there is nothing
+    # left to read a serial or a model from -- and its backups are still on
+    # the server, still needing an owner.
+    try:
+        observe(appliance)
+        retire(name, note=note)
+    except Exception:  # noqa: BLE001 -- never block a delete on bookkeeping
+        db.session.rollback()
+    datasheets.delete(appliance.id)
+    db.session.delete(appliance)
+    db.session.commit()
+    return name
+
+
 def reconcile() -> dict:
     """Give every appliance and every SoT device a row. Idempotent.
 

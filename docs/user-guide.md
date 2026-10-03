@@ -202,7 +202,8 @@ the Global ADOM, or the Global dashboard). The entry is shown to anyone holding
    device's full configuration in the local cache (recorded as a harvest with
    trigger `rediscovery`, so Device health counts it); also records the
    firmware. Hardware is NOT collected here: use **Scan hardware (SSH)** on
-   Device health. Run it after registering and after any large out-of-band
+   Device health (FortiWeb only: the scan is the FortiWeb `diagnose hardware`
+   battery, so the button is not offered in the other ADOMs). Run it after registering and after any large out-of-band
    change. With *Capture full WPP + policy depth* on, the deep pass shows which
    server policy or WPP it is walking and how many are left.
 4. **Deep capture** — a deeper sweep that walks each server policy's whole
@@ -1930,7 +1931,7 @@ the first-boot dialog described in 21.2.
 | Mode | What it does | Advantages | Disadvantages |
 |---|---|---|---|
 | **Full** | Address, DNS, machine, boot, walks the first-boot dialog over the serial console, registers the appliance, applies the configuration profile. | No human step at all. Repeatable and auditable end to end — every action lands in the run log. | **Proxmox only.** The most moving parts, so the widest surface for a mid-run failure; this is what rollback exists for. |
-| **Semi** | Builds and boots, then stops. You complete the first-boot dialog on the hypervisor console and resume the run. | Works on **every** backend, including a free-licensed ESXi. The one manual step is the one a human is genuinely required for. | Not unattended — the run waits until somebody acts on it. |
+| **Semi** | Builds and boots, then stops. You complete the first-boot dialog on the hypervisor console and resume the run; the resume checks the box answers on its address, registers it and finishes the profile. | Works on **every** backend, including a free-licensed ESXi. The one manual step is the one a human is genuinely required for. | Not unattended — the run waits until somebody acts on it. |
 | **DHCP** | Builds and boots; the appliance takes a lease, SATOM finds it there and carries on. | Unattended without needing a serial console. | Needs DHCP reachable from that network, and the appliance ends up on an address you did not choose. Not every appliance takes a lease on its factory configuration. |
 | **VM only** | Creates and powers on the machine. Stops. | Smallest blast radius. The right choice when another team or tool configures the appliance. | No address, no DNS, no registration — nothing else in SATOM knows the machine exists until you add it. |
 | **Config only** | No hypervisor involved: reserve the address, issue the certificate, register and apply the profile against a machine that already exists. | Needs **no hypervisor at all** — the path for physical appliances and for anything built outside SATOM. | You built the machine, so its CPU, memory, disk and network are outside the run log and outside the audit trail. |
@@ -3417,12 +3418,14 @@ order they are pushed in.
 A profile also carries a **scope** — zone, line, department — drawn from the
 Classification vocabulary. That is what later lets a baseline match devices.
 
-**Secrets are entered at apply time and are never persisted.** Elements that
-carry secret material are flagged sensitive, and saving the profile **strips**
-every secret-looking field out of the stored body — recursively — before it is
-written. The RADIUS shared secret, admin passwords and SNMPv3 auth/priv keys are
-supplied again at apply time. A template is a thing that gets versioned, shared,
-exported and reviewed; a template is not a place for a password.
+**Secrets are never persisted and are not pushed.** Elements that carry secret
+material are flagged sensitive, and saving the profile **strips** every
+secret-looking field out of the stored body — recursively — before it is
+written. A deployment therefore pushes those elements without their secrets:
+the apply preview names them, and the RADIUS shared secret, admin passwords and
+SNMPv3 auth/priv keys are set on each device afterwards. A template is a thing
+that gets versioned, shared, exported and reviewed; a template is not a place
+for a password.
 
 Saving stores the profile as a **versioned Template of kind `system-profile`**
 (§29). Editing it creates a **new version** rather than overwriting the old one.

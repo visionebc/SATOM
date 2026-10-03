@@ -67,15 +67,18 @@ def _render(**kw):
     return render_template("console/index.html", **ctx)
 
 
-def sc_presets() -> dict[str, str]:
-    """Read-only starting points, reused from the troubleshooting battery.
+def sc_presets() -> dict[str, dict[str, str]]:
+    """Read-only starting points per product, reused from each product's
+    troubleshooting battery: ``{kind: {label: command}}``. The page offers
+    only the set that matches the picked appliance.
 
     Deliberately all reads. A preset that writes is a button that changes an
     appliance with one click, and the whole design of the disruptive tier is
     that a write is something somebody typed on purpose.
     """
+    from ..services.adc_ops import TROUBLESHOOT_ADC
     from ..services.ssh_ops import TROUBLESHOOT
-    return dict(TROUBLESHOOT)
+    return {"fortiweb": dict(TROUBLESHOOT), "fortiadc": dict(TROUBLESHOOT_ADC)}
 
 
 @bp.route("/")

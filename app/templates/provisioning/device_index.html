@@ -21,7 +21,9 @@
   <div class="d-flex gap-2">
     <a class="btn btn-fw-secondary" href="{{ url_for('provisioning.index') }}">
       <i class="bi bi-sliders me-1"></i>{{ _('System Provisioning') }}</a>
+    {% if current_user.can('config_write') %}
     <button class="btn btn-fw-primary" id="dp-new-btn"><i class="bi bi-plus-lg me-1"></i>{{ _('New machine') }}</button>
+    {% endif %}
   </div>
 </div>
 
@@ -239,9 +241,19 @@
     });
   }
   function tok() { return document.querySelector('#dp-form [name=csrf_token]').value; }
+  // Preflight / Run / Roll back need config_write; a read-only viewer gets
+  // the list without the verbs instead of buttons that answer 403.
+  var CAN_WRITE = {{ 'true' if current_user.can('config_write') else 'false' }};
   function post(url, body) {
     return fetch(url, {method: 'POST', headers: {'X-CSRFToken': tok()}, body: body})
-      .then(function (r) { return r.json().catch(function () { return {ok: false, error: 'bad response'}; }); });
+      .then(function (r) {
+        // A refusal (403, 409, 500...) must never read as an answer: a body
+        // that is not JSON, or JSON without "ok", becomes an explicit failure.
+        return r.json().then(function (d) {
+          if (!r.ok) { d.ok = false; d.error = d.error || ('HTTP ' + r.status); }
+          return d;
+        }, function () { return {ok: false, error: 'HTTP ' + r.status + ' (unexpected response)'}; });
+      });
   }
   function statusBadge(s) {
     var m = {done: 'success', running: 'primary', paused: 'warning',
@@ -264,13 +276,13 @@
         '<td>' + esc(r.mgmt_ip || '—') + '</td>' +
         '<td>' + statusBadge(r.status) +
           (r.error ? '<div class="small text-muted">' + esc(r.error.slice(0, 120)) + '</div>' : '') + '</td>' +
-        '<td class="text-end">' +
+        '<td class="text-end">' + (!CAN_WRITE ? '<span class="text-muted small">read-only</span>' :
           '<button class="btn btn-sm btn-outline-secondary" data-dp-pre="' + r.id + '">Preflight</button> ' +
           (r.status === 'done' || r.status === 'aborted' ? '' :
             '<button class="btn btn-sm btn-outline-primary" data-dp-run="' + r.id + '">' +
             (r.status === 'paused' ? 'Resume' : 'Run') + '</button> ') +
           (r.status === 'aborted' ? '' :
-            '<button class="btn btn-sm btn-outline-danger" data-dp-rb="' + r.id + '">Roll back</button>') +
+            '<button class="btn btn-sm btn-outline-danger" data-dp-rb="' + r.id + '">Roll back</button>')) +
         '</td></tr>';
     }).join('');
   }
@@ -283,7 +295,8 @@
       '<div class="alert alert-' + (kind || 'info') + ' small mb-0">' + html + '</div>';
   }
 
-  document.getElementById('dp-new-btn').addEventListener('click', function () {
+  var newBtn = document.getElementById('dp-new-btn');
+  if (newBtn) newBtn.addEventListener('click', function () {
     var c = document.getElementById('dp-form-card');
     c.style.display = (c.style.display === 'none') ? '' : 'none';
   });
@@ -312,7 +325,12 @@
     var id;
     if ((id = el.getAttribute('data-dp-pre'))) {
       post('/device-provisioning/' + id + '/preflight').then(function (d) {
-        var p = d.preflight || {};
+        if (!d.ok || !d.preflight) {
+          document.getElementById('dp-form-card').style.display = '';
+          msg('<strong>Preflight did not run:</strong> ' + esc(d.error || 'no answer'), 'danger');
+          return;
+        }
+        var p = d.preflight;
         var body = '<div class="fw-semibold mb-1">Plan: ' +
           (p.plan || []).map(esc).join(' &rarr; ') + '</div>';
         if ((p.blockers || []).length) {

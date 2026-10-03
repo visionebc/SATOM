@@ -1365,10 +1365,14 @@ def start(appliance, by: str = "", deep: bool = False,
     initial progress dict.
     """
     cur = status(appliance.id)
-    if cur and cur.get("state") == "running":
+    # Every live phase counts: a sweep in its deep or CLI phase is still the
+    # run that owns the snapshot and the stop flag cleared below.
+    if cur and cur.get("state") in ACTIVE_STATES:
         # guard against a stuck 'running' flag: only block if it looks live (<15 min)
         try:
-            age = time.time() - datetime.fromisoformat(cur["started"]).timestamp()
+            # ``started`` is naive UTC: compare it with UTC, never with the
+            # host's local clock (that skewed the age by the zone offset).
+            age = (datetime.utcnow() - datetime.fromisoformat(cur["started"])).total_seconds()
         except Exception:  # noqa: BLE001
             age = 0
         if age < 900:

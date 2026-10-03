@@ -184,7 +184,7 @@
       {% if appliance.is_cluster_member and current_user.can('config_write') %}
       <a href="{{ url_for('appliances.failover', id=appliance.id) }}" class="btn btn-fw-secondary btn-sm text-danger" title="{{ _('This node belongs to an HA cluster: hand its primary role over, or give it back') }}"><i class="bi bi-arrow-left-right me-1"></i>{{ _('HA Failover') }}</a>
       {% endif %}
-      {% if current_user.can('backup') %}
+      {% if current_user.can('appliances.apply') %}
       <a href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm"><i class="bi bi-clipboard-check me-1"></i>{{ _('Upgrade Prep') }}</a>
       {% endif %}
       {% if appliance.kind == 'fortiweb' %}

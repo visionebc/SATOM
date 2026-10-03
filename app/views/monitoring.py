@@ -66,7 +66,6 @@ def _device_payload(warn: float, crit: float) -> tuple[list[dict], list[dict], l
     from ..services.hardware import hardware_map
 
     hw = hardware_map()
-    stale_h = devhealth.stale_hours()
     visible = visible_appliances().order_by(Appliance.name).all()
     # One pass, reused twice: fleet() also applies the retired-placeholder rule
     # and the ordering, so the section and the cards cannot disagree.
@@ -77,8 +76,12 @@ def _device_payload(warn: float, crit: float) -> tuple[list[dict], list[dict], l
     ha_by_id = {r.get("id"): r for r in roll.get("devices", [])}
     devices, alerts, health_alerts = [], [], []
     for a in visible:
-        # Gathering lives in device_health so the alert engine grades identically.
-        caps = devhealth.capacity_rows(a, warn, crit)
+        # Gathering lives in device_health so the alert engine grades identically:
+        # per-product capacity warn/crit and roll-up limits, as collect_for does.
+        scope = devhealth.scope_of(a)
+        lim = devhealth.limits(scope)
+        dev_warn, dev_crit = devhealth.thresholds(scope)
+        caps = devhealth.capacity_rows(a, dev_warn, dev_crit)
         for row in caps:
             if row['status'] in ('warn', 'crit'):
                 alerts.append({'appliance_id': a.id, 'appliance': a.name,
@@ -90,7 +93,7 @@ def _device_payload(warn: float, crit: float) -> tuple[list[dict], list[dict], l
             fresh = read_layer.freshness_label(meta) if meta else 'no local data'
         except Exception:
             fresh = 'unknown'
-        health = devhealth.collect(a, caps, meta, hours=stale_h)
+        health = devhealth.collect(a, caps, meta, lim=lim)
         worst = health['status']
         for r in health['reasons']:
             if r['status'] in ('warn', 'crit'):
@@ -161,8 +164,12 @@ def index():
     healthy?") for different readers, and only the second is Global-only. One
     page had to hide half of itself in every product ADOM.
     """
+    from ..services.product_scope import session_product, GLOBAL
     try:
-        can_scan = current_user.can(Permission.CONFIG_WRITE)
+        # The SSH battery is FortiWeb-only (see hw_scan): no button where it
+        # has nothing to scan.
+        can_scan = (current_user.can(Permission.CONFIG_WRITE)
+                    and (session_product() or GLOBAL) in (GLOBAL, 'fortiweb'))
     except Exception:
         can_scan = False
     return render_template('monitoring/index.html', can_scan=can_scan,
@@ -279,11 +286,17 @@ def _run_hw_scan(app, job_id, ids, user_id, uname, link, product=""):
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
 def hw_scan():
-    """Fleet hardware inventory scan (read-only SSH battery) as a background job."""
-    visible = [a.id for a in visible_appliances().all()]
+    """Fleet hardware inventory scan (read-only SSH battery) as a background job.
+
+    FortiWeb only: the battery is FortiWeb ``diagnose hardware`` commands, and
+    sending it to a FortiADC/FortiAnalyzer/FortiAuthenticator is one SSH login
+    per box for output nothing can parse."""
+    visible = [a.id for a in visible_appliances().all()
+               if (a.kind or 'fortiweb') == 'fortiweb']
     ids = [i for i in request.form.getlist('id', type=int) if i in visible] or visible
     if not ids:
-        return jsonify({"error": "no visible appliance to scan"}), 400
+        return jsonify({"error": "no visible FortiWeb appliance to scan "
+                                 "(the hardware scan is FortiWeb-only)"}), 400
     uname = getattr(current_user, 'username', '') or ''
     uid = getattr(current_user, 'id', None)
     job = jobsvc.create_job("hardware_scan", "Hardware scan — fleet",

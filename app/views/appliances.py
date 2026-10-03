@@ -374,7 +374,11 @@ def edit_save(id):
         appliance.maintenance = request.form.get('maintenance') == 'on'
     # HA: a member node's identity is managed from its cluster, not here; only
     # a top-level row (standalone or node 0) toggles cluster/mode/vip.
-    if not appliance.is_cluster_member:
+    # Only a form that RENDERS the HA block may change it: the quick-edit
+    # dialog on the list has no HA fields, and reading their absence as
+    # "unchecked" dissolved every cluster edited from there.
+    ha_posted = bool(request.form.get('ha_present')) or 'is_cluster' in request.form
+    if not appliance.is_cluster_member and ha_posted:
         is_cluster, ha_mode, ha_vip = _parse_ha(request.form)
         appliance.is_cluster = is_cluster
         appliance.ha_mode = ha_mode
@@ -399,7 +403,10 @@ def edit_save(id):
             return redirect(url_for('appliances.edit', id=appliance.id))
 
     # -- physical interfaces: replace-all from posted rows ----------------
-    _rebuild_interfaces(appliance)
+    # Same rule as HA: only a form that carries the interface table replaces
+    # it. The list dialog posts none, and an absent table is not an empty one.
+    if request.form.get('interfaces_present') or 'if_name' in request.form:
+        _rebuild_interfaces(appliance)
 
     db.session.commit()
     log_action('appliance.update', target=appliance.name)
@@ -473,20 +480,10 @@ def set_maintenance(id):
 @require_permission(Permission.CONFIG_WRITE)
 def delete(id):
     appliance = visible_appliance_or_404(id)
-    name = appliance.name
-    # Record the identity BEFORE the row goes: everything hanging off
-    # appliances.id is ON DELETE CASCADE, so after the delete there is nothing
-    # left to read a serial or a model from — and its backups are still on the
-    # server, still needing an owner.
-    try:
-        from ..services import device_identity as _ident
-        _ident.observe(appliance)
-        _ident.retire(name, note='de-registered from SATOM')
-    except Exception:  # noqa: BLE001 — never block a delete on bookkeeping
-        db.session.rollback()
-    datasheets.delete(appliance.id)  # drop the PDF file (interfaces cascade via FK)
-    db.session.delete(appliance)
-    db.session.commit()
+    from ..services import device_identity as _ident
+    # Identity retired, datasheet removed, row deleted -- the same helper the
+    # REST delete uses.
+    name = _ident.deregister(appliance)
     log_action('appliance.delete', target=name)
     flash(f'Appliance {name} deleted. Its identity, configuration history and '
           f'backups on the server are kept — see Administration → Stored Assets.',
@@ -808,7 +805,7 @@ def console_run(id):
 # -- 4. Upgrade Preparation (read-only) -------------------------------------
 @bp.route('/<int:id>/upgrade/prep')
 @login_required
-@require_permission(Permission.BACKUP)
+@require_permission('appliances.apply')
 @require_device_scope
 def upgrade_prep(id):
     appliance = _managed_or_404(id)
@@ -821,7 +818,7 @@ def upgrade_prep(id):
 
 @bp.route('/<int:id>/upgrade/prep/run', methods=['POST'])
 @login_required
-@require_permission(Permission.BACKUP)
+@require_permission('appliances.apply')
 @require_device_scope
 def upgrade_prep_run(id):
     appliance = _managed_or_404(id)
@@ -931,7 +928,7 @@ def _prep_payload(prep, *, result=None, stored=True) -> dict:
 
 @bp.route('/<int:id>/upgrade/prep/<int:prep_id>.json')
 @login_required
-@require_permission(Permission.BACKUP)
+@require_permission('appliances.apply')
 def upgrade_prep_show(id, prep_id):
     """Read back one RECORDED pre-flight run.
 

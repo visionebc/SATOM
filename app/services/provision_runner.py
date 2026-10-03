@@ -53,6 +53,14 @@ MODE_STEPS: dict[str, tuple[str, ...]] = {
                     "onboarded", "cert_installed", "profile_applied", "done"),
 }
 
+#: What a RESUME runs after a mode's designed handoff. Semi pauses at
+#: ``booted`` for the human first-boot dialog; "press Resume" then has to
+#: reach the box and finish the pipeline, not re-pause at the same step.
+MODE_RESUME_STEPS: dict[str, tuple[str, ...]] = {
+    "semi": ("reachable", "onboarded", "cert_installed", "profile_applied",
+             "done"),
+}
+
 #: Why each mode stops where it does — printed verbatim when a run pauses, so
 #: "why did it stop?" never needs a support round trip.
 MODE_STOP_REASON = {
@@ -420,6 +428,11 @@ def advance(run: ProvisionRun, *, max_steps: int = 20) -> ProvisionRun:
     plan = list(MODE_STEPS.get(run.mode, MODE_STEPS["semi"]))
     if run.status in ("done", "aborted"):
         return run
+    resume = MODE_RESUME_STEPS.get(run.mode)
+    if resume and plan and run.step == plan[-1]:
+        # The handoff was reached on an earlier pass: this call is the
+        # operator's Resume, so the plan continues past it.
+        plan += list(resume)
     run.status = "running"
     run.error = ""
     db.session.commit()

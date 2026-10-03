@@ -1174,9 +1174,22 @@ def approve(id):
 def schedule(id):
     _cr_in_scope_or_404(id)
     try:
-        action_id = svc.schedule_change_request(id, current_user.username)
+        # Honour the rollout plan saved on the change (rounds and gap), the
+        # same one approval materialises; without it this button scheduled
+        # every appliance in a single round.
+        row = db.session.get(ChangeRequest, id)
+        if row is not None and not row.device_ids_list:
+            # A draft may be written without appliances; an executable change
+            # bound to nothing resolves to zero targets and fails in its window.
+            raise ValueError('This change names no appliance. Add the '
+                             'appliances it acts on before scheduling it.')
+        plan = svc.rollout_plan(row)
+        action_id = svc.schedule_change_request(
+            id, current_user.username, per_round=plan.get('size'),
+            round_gap_minutes=plan.get('gap'))
         log_action('change_request.schedule', target=str(id),
-                   detail=f'scheduled_action={action_id}')
+                   detail=f'scheduled_action={action_id}'
+                          + (f' rounds={plan.get("total")}' if plan else ''))
         flash(f'Change request scheduled — bound action #{action_id}.', 'success')
     except ValueError as exc:
         flash(str(exc), 'danger')

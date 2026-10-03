@@ -75,7 +75,7 @@
           <select class="form-select fw-form-control mb-2" name="appliance_id" id="appliance_id" required>
             <option value="">{{ _('— pick one —') }}</option>
             {% for a in appliances %}
-            <option value="{{ a.id }}" data-name="{{ a.name }}"
+            <option value="{{ a.id }}" data-name="{{ a.name }}" data-kind="{{ a.kind or 'fortiweb' }}"
                     {{ 'selected' if selected_id == a.id else '' }}>
               {{ a.name }} — {{ a.host }}{% if a.kind %} ({{ a.kind }}){% endif %}
               {%- if a.host and a.host.endswith('.invalid') %} · retired{% endif %}
@@ -98,10 +98,16 @@
             <label class="fw-form-label" for="preset">{{ _('Insert a read-only preset') }}</label>
             <select class="form-select fw-form-control" id="preset">
               <option value="">{{ _('— presets —') }}</option>
-              {% for label, cmd in presets.items() %}
-              <option value="{{ cmd }}">{{ label }} — {{ cmd }}</option>
+              {% set preset_names = {'fortiweb': 'FortiWeb', 'fortiadc': 'FortiADC'} %}
+              {% for kind, items in presets.items() %}
+              <optgroup label="{{ preset_names.get(kind, kind) }}" data-kind="{{ kind }}">
+                {% for label, cmd in items.items() %}
+                <option value="{{ cmd }}">{{ label }} — {{ cmd }}</option>
+                {% endfor %}
+              </optgroup>
               {% endfor %}
             </select>
+            <div class="text-muted mt-1" style="font-size:11.5px;">{{ _('Presets follow the product of the picked appliance. There are none for FortiAnalyzer or FortiAuthenticator.') }}</div>
           </div>
 
           <div class="form-check mt-2">
@@ -324,6 +330,19 @@
   var preset = document.getElementById('preset');
   var script = document.getElementById('script');
   if (!preset || !script) return;
+  // Offer only the presets of the picked appliance's product.
+  var pick = document.getElementById('appliance_id');
+  function syncPresets() {
+    var opt = pick && pick.options[pick.selectedIndex];
+    var kind = opt ? (opt.getAttribute('data-kind') || '') : '';
+    preset.querySelectorAll('optgroup').forEach(function (g) {
+      var on = !kind || g.getAttribute('data-kind') === kind;
+      g.hidden = !on;
+      g.disabled = !on;
+    });
+  }
+  if (pick) pick.addEventListener('change', syncPresets);
+  syncPresets();
   preset.addEventListener('change', function () {
     if (!preset.value) return;
     script.value = (script.value.replace(/\s*$/, '') + '\n' + preset.value).replace(/^\n/, '');

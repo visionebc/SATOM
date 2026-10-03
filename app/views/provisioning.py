@@ -7,8 +7,9 @@ whole fleet through the shared dry-run -> canary-apply machinery.
 
 Discipline (mirrors the desktop): nothing touches a device until ``apply`` runs,
 and even then the operator first sees a per-device dry-run preview and must
-explicitly confirm the real write. Secrets are entered at apply time and are
-never persisted in the template (``save_profile`` strips them).
+explicitly confirm the real write. Secrets are never persisted in the template
+(``save_profile`` strips them) and are not pushed by an apply: the preview
+names the sensitive elements so the operator sets them on the device after.
 
 Every route requires an authenticated user holding ``CONFIG_WRITE``.
 """
@@ -248,6 +249,9 @@ def apply(template_id: int):
         return redirect(url_for('provisioning.index'))
 
     confirmed = request.form.get('confirm') == '1'
+    # Their secret fields were stripped on save; say so before the push.
+    secret_items = [it.label or it.endpoint for it in profile.items
+                    if prov._item_is_sensitive(it)]
 
     if not confirmed:
         preview = prov.apply(profile, device_ids, dry_run=True)
@@ -256,7 +260,7 @@ def apply(template_id: int):
         return render_template(
             'provisioning/apply.html',
             phase='preview', prof_name=profile.name, template_id=template_id,
-            preview=preview, result=None,
+            preview=preview, result=None, secret_items=secret_items,
             mode=mode, device_ids=device_ids,
             target_desc=target_desc, target_count=len(target_appliances),
             target_hostname=target_hostname, change_id=change_id,

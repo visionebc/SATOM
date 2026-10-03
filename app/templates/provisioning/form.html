@@ -81,7 +81,7 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-sliders me-2 text-accent"></i>{{ 'Edit' if template_id else 'New' }} system profile</h1>
-    <p class="text-muted mb-0" style="font-size:13px;">{{ _('An ordered list of provisioning elements — each maps a configuration object (any section) to a JSON payload. Add / reorder / remove elements, then save as a versioned profile and apply to one device or the fleet (dry-run → canary). Secret fields (passwords, shared secrets) are stripped on save and re-entered at apply time.') }}</p>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('An ordered list of provisioning elements — each maps a configuration object (any section) to a JSON payload. Add / reorder / remove elements, then save as a versioned profile and apply to one device or the fleet (dry-run → canary). Secret fields (passwords, shared secrets) are stripped on save and are not pushed by a deployment; set them on each device afterwards.') }}</p>
   </div>
   <a class="btn btn-fw-outline" href="{{ url_for('provisioning.index') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Back') }}</a>
 </div>
@@ -197,7 +197,7 @@ function onKeyChange(sel) {
     if (flag === '1') { bits.push('singleton — PUT the whole object (no mkey)'); }
     else { bits.push('collection — creates a new object, or set mkey to update'); }
     if (opt.getAttribute('data-sensitive') === '1') {
-      bits.push('⚠ secret — do not type the secret here; it is captured at apply time and never saved');
+      bits.push('⚠ secret — do not type the secret here; it is stripped on save and not pushed, so set it on each device afterwards');
     }
     note.textContent = bits.join('  ·  ');
   }

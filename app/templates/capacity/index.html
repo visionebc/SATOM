@@ -25,9 +25,10 @@
   {% for m in missing_models %}
   <form method="post" action="{{ url_for('capacity.add_model') }}" class="d-inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="product" value="{{ m.product }}">
     <input type="hidden" name="model" value="{{ m.model }}">
     <input type="hidden" name="firmware_major" value="{{ m.fw }}">
-    <button class="btn btn-sm btn-outline-primary ms-1">＋ {{ m.model }} ({{ m.fw }})</button>
+    <button class="btn btn-sm btn-outline-primary ms-1">＋ {{ m.model }} ({{ m.fw }}, {{ m.product }})</button>
   </form>
   {% endfor %}
 </div>
@@ -40,6 +41,12 @@
       <div class="col-auto">
         <label class="form-label text-muted small mb-1">{{ _('Model / SKU (e.g. FortiWeb-VM02, FWB-600F)') }}</label>
         <input name="model" class="form-control form-control-sm" placeholder="{{ _('FortiWeb-VM04') }}">
+      </div>
+      <div class="col-auto">
+        <label class="form-label text-muted small mb-1">{{ _('Product') }}</label>
+        <select name="product" class="form-select form-select-sm">
+          {% for key, label in (product_options or []) %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+        </select>
       </div>
       <div class="col-auto">
         <label class="form-label text-muted small mb-1">{{ _('Firmware major') }}</label>
@@ -64,6 +71,7 @@
       <form method="post" action="{{ url_for('capacity.delete_model') }}"
             data-confirm="Remove ALL limit rows for {{ model }} ({{ fw }})?">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="product" value="{{ product }}">
         <input type="hidden" name="model" value="{{ model }}">
         <input type="hidden" name="firmware_major" value="{{ fw }}">
         <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>

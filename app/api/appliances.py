@@ -196,9 +196,9 @@ def update_appliance(id):
 @require_permission(Permission.CONFIG_WRITE)
 def delete_appliance(id):
     appliance = visible_appliance_or_404(id)
-    name = appliance.name
-    db.session.delete(appliance)
-    db.session.commit()
+    from ..services import device_identity as _ident
+    # Same delete as the UI: identity retired and datasheet removed too.
+    name = _ident.deregister(appliance)
     log_action('api.appliance.delete', detail=f'Deleted appliance {name}')
     return jsonify({'deleted': True, 'id': id})
 

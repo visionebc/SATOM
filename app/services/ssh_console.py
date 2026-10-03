@@ -594,6 +594,20 @@ def _safe_token(t: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "-", (t or "device")).strip("-") or "device"
 
 
+def diagnostic_battery_for(appliance) -> Callable | None:
+    """The read-only diagnostic capture that matches the appliance's product,
+    or None when SATOM has none for it. The FortiWeb battery sent to a
+    FortiADC/FortiAnalyzer/FortiAuthenticator is a list of commands that box
+    does not have."""
+    kind = (getattr(appliance, "kind", "") or "fortiweb").lower()
+    if kind == "fortiweb":
+        return ssh_ops.capture_health
+    if kind == "fortiadc":
+        from . import adc_ops
+        return adc_ops.capture_health
+    return None
+
+
 def build_tac_bundle(appliance, transcript: str, *, stamp: str,
                      include_diagnostics: bool = True,
                      ticket: str = "", note: str = "",
@@ -615,8 +629,11 @@ def build_tac_bundle(appliance, transcript: str, *, stamp: str,
     diagnostics = ""
     diag_note = ""
     if include_diagnostics:
+        grab = capture or diagnostic_battery_for(appliance)
         try:
-            grab = capture or ssh_ops.capture_health
+            if grab is None:
+                raise LookupError("SATOM has no read-only diagnostic battery for "
+                                  f"{getattr(appliance, 'kind', '') or 'this product'}")
             blocks = grab(appliance)
             diagnostics = "\n\n".join(
                 f"===== {c} =====\n{o}".rstrip() for c, o in blocks.items())

@@ -492,7 +492,8 @@
         <div class="fw-nav-group-body">
           {# ADOM list is DB-driven (branding registry) — every active non-global ADOM shows here automatically. #}
           {% for _k, _p in products.items() if _k != 'global' %}
-          {% if may_open('product.enter') %}
+          {# every ADOM home needs a view key; a profile without one has nowhere to land #}
+          {% if may_open('product.enter') and current_user.can('view') %}
           <a class="fw-nav-item" href="{{ url_for('product.enter', key=_k) }}">
             <img src="{{ url_for('static', filename=_p.mark) }}" alt="" class="fw-nav-icon" style="width:16px;height:16px;"><span>{{ _p.name }}</span></a>
           {% endif %}

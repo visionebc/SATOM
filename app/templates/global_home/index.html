@@ -28,7 +28,7 @@
   {% for _a in adoms %}
   <div class="col-6 col-lg-3">
     <a class="fw-card d-block h-100 text-decoration-none" style="padding:16px 18px;"
-       href="{{ url_for('product.enter', key=_a.key) }}">
+       {% if current_user.can('view') %}href="{{ url_for('product.enter', key=_a.key) }}"{% endif %}>
       <div class="d-flex align-items-center gap-2 text-muted" style="font-size:12px;">
         <img src="{{ url_for('static', filename=_a.mark) }}" alt="" style="width:18px;height:18px;">
         {{ _a.name }} ADOM</div>

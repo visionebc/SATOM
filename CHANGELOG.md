@@ -619,6 +619,12 @@ template.
 Administration → Naming answered with an error page when opened from the
 Global ADOM.
 
+### Fixed — Log Collection link for read-only users (2026-10-03)
+
+The FortiWeb sidebar offered Log Collection to read-only users, who then got
+an access-denied page: collecting logs needs edit rights. The entry now shows
+only to users who can open it.
+
 ## [2.10.1] - 2026-10-03
 
 ### Fixed — Stop did not stop a running deep capture (2026-10-03)

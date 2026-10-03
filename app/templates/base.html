@@ -996,8 +996,10 @@
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'backups' else '' }}" href="{{ url_for('backups.index') }}">
             <i class="bi bi-cloud-arrow-down fw-nav-icon"></i><span>{{ _('Device Backups') }}</span></a>
           {% endif %}
+          {% if current_user.can('config_write') %}
           <a class="fw-nav-item" href="{{ url_for('logs.index') }}">
             <i class="bi bi-journal-text fw-nav-icon"></i><span>{{ _('Log Collection') }}</span></a>
+          {% endif %}
           {% if current_user.can('backups.restore') %}
           <a class="fw-nav-item" href="{{ url_for('import_backup.index') }}">
             <i class="bi bi-file-earmark-arrow-up fw-nav-icon"></i><span>{{ _('Import Backup') }}</span></a>

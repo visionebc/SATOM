@@ -14,7 +14,7 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-sliders me-2 text-accent"></i>{{ _('System Provisioning') }}</h1>
-    <p class="text-muted mb-0" style="font-size:13px;">Author a baseline system profile (DNS, NTP, RADIUS, SNMP, admins…) once, then preview &amp; push it to one device or the whole fleet. Secrets are entered at apply time, never stored.</p>
+    <p class="text-muted mb-0" style="font-size:13px;">Author a baseline system profile (DNS, NTP, RADIUS, SNMP, admins…) once, then preview &amp; push it to one device or the whole fleet. Secret fields (passwords, shared secrets) are never stored and are not pushed: set them on each device after the deployment.</p>
   </div>
   <div class="d-flex gap-2">
     <a class="btn btn-fw-secondary" href="{{ url_for('provisioning.baselines') }}"><i class="bi bi-diagram-3 me-1"></i>{{ _('Baselines') }}</a>

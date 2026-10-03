@@ -378,12 +378,17 @@ def compatible_images(appliance) -> list:
     """Stored :class:`FirmwareImage` rows that can upgrade ``appliance``.
 
     Matched by product (``kind``) and model (blank image model = universal),
-    newest version first. Pure DB read — no device call.
+    upgrade images only (never an install image), newest version first.
+    Pure DB read — no device call.
     """
     from ..models_firmware import FirmwareImage
     kind = (getattr(appliance, "kind", "") or "fortiweb").strip().lower()
     rows = FirmwareImage.query.filter(FirmwareImage.product == kind).all()
-    matches = [fw for fw in rows if _platform_matches(getattr(fw, "platform", "") or "", appliance)]
+    # Install images (qcow2/ova/...) build a NEW VM; they are never a flash
+    # payload. Upgrade Flow filters them the same way.
+    matches = [fw for fw in rows
+               if (getattr(fw, "image_kind", "") or "upgrade") == "upgrade"
+               and _platform_matches(getattr(fw, "platform", "") or "", appliance)]
     matches.sort(key=lambda fw: _version_key(fw.version), reverse=True)
     return matches
 

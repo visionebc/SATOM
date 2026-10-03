@@ -71,10 +71,21 @@
     <i class="bi bi-exclamation-triangle-fill" style="margin-top:2px;"></i>
     <div>
       <strong>{{ _('This is a dry-run preview — nothing has been written yet.') }}</strong>
-      {{ _('Confirming below will push the requests shown here to') }} <strong>{{ _('LIVE devices') }}</strong>{{ _('. The write is canary-gated: the first device runs alone and, if it fails, the rest are skipped. Secrets in sensitive items are applied live but are never stored in the profile.') }}
+      {{ _('Confirming below will push the requests shown here to') }} <strong>{{ _('LIVE devices') }}</strong>{{ _('. The write is canary-gated: the first device runs alone and, if it fails, the rest are skipped.') }}
     </div>
   </div>
 
+  {% if secret_items %}
+  <div class="fw-alert fw-alert-warning d-flex align-items-start gap-2 mb-3" style="font-size:13.5px;">
+    <i class="bi bi-key-fill" style="margin-top:2px;"></i>
+    <div>
+      <strong>{{ _('Secrets are not part of this deployment.') }}</strong>
+      {{ _('These elements carry secret fields that were stripped when the profile was saved, so they are pushed without them:') }}
+      {% for s in secret_items %}<code>{{ s }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.
+      {{ _('Set the passwords and shared secrets on each device afterwards.') }}
+    </div>
+  </div>
+  {% endif %}
   {% if preview %}
     {% for dev in preview %}{{ device_block(dev) }}{% endfor %}
 

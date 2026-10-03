@@ -322,10 +322,17 @@ def baseline_push_items(baseline: Baseline) -> list:
     """Flatten every composing template's body into ``iter_push_items`` rows,
     in baseline order (section by section). Reused by the apply path."""
     from .bulk import iter_push_items
+    from . import provisioning as prov
     items: list = []
     for link in baseline.items:
         t = Template.query.get(link.template_id)
-        if t is not None:
+        if t is None:
+            continue
+        if t.kind == Template.KIND_SYSTEM:
+            # A system profile body is {"items": [...]}: build its writes the
+            # way System Provisioning does, or the combo pushes nothing.
+            items.extend(prov.push_items(prov.SystemProfile.from_template(t)))
+        else:
             items.extend(iter_push_items(t.body_dict))
     return items
 

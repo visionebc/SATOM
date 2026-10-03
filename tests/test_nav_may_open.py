@@ -56,7 +56,8 @@ def test_no_sidebar_link_answers_403(app, client, who):
         login(client, make_user(app, username="nav-" + who, role=who))
     links, rendered = _sidebar_links(client)
     assert rendered, "no page with a sidebar rendered -- the scan saw nothing"
-    refused = sorted(h for h in links if client.get(h).status_code == 403)
+    refused = sorted(h for h in links
+                     if client.get(h, follow_redirects=True).status_code == 403)
     assert not refused, f"{who}: the sidebar offers pages that answer 403: {refused}"
 
 

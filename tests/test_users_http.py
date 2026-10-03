@@ -12,8 +12,8 @@ def test_create_user_with_profile_assigns_and_syncs_role(app, client):
     _admin_login(app, client)
     op_pid = profile_id(app, "operator")
     client.post("/users/", data={
-        "username": "alice", "password": "secret123",
-        "confirm_password": "secret123", "profile_id": str(op_pid),
+        "username": "alice", "password": "secret-123456",
+        "confirm_password": "secret-123456", "profile_id": str(op_pid),
     }, follow_redirects=True)
     from app.models import User
     with app.app_context():
@@ -28,8 +28,8 @@ def test_create_user_with_profile_assigns_and_syncs_role(app, client):
 def test_create_user_legacy_role_still_works(app, client):
     _admin_login(app, client)
     client.post("/users/", data={
-        "username": "bobby", "password": "secret123",
-        "confirm_password": "secret123", "role": "operator",
+        "username": "bobby", "password": "secret-123456",
+        "confirm_password": "secret-123456", "role": "operator",
     }, follow_redirects=True)
     from app.models import User
     with app.app_context():

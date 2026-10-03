@@ -29,10 +29,15 @@ def test_change_password_refuses_a_short_password(app, client):
     client.post("/settings/change-password", data={
         "current_password": "pw", "new_password": "abc", "confirm_password": "abc"})
     assert _pw_ok(app, uid, "pw"), "a 3-character password was accepted"
+    # The ONE policy is 12 characters (AD-06/GS-03/TR-18): 11 is refused...
     client.post("/settings/change-password", data={
-        "current_password": "pw", "new_password": "longenough1",
-        "confirm_password": "longenough1"})
-    assert _pw_ok(app, uid, "longenough1"), "control: a valid change still works"
+        "current_password": "pw", "new_password": "elevenchars",
+        "confirm_password": "elevenchars"})
+    assert _pw_ok(app, uid, "pw"), "an 11-character password was accepted"
+    client.post("/settings/change-password", data={
+        "current_password": "pw", "new_password": "twelve-chars",
+        "confirm_password": "twelve-chars"})
+    assert _pw_ok(app, uid, "twelve-chars"), "control: a 12-character change still works"
 
 
 def test_add_user_refuses_a_short_password(app, client):

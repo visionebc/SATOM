@@ -268,9 +268,9 @@ def test_password_reset_flow(client, app):
         token = twofa.make_reset_token(uid)
     # Use the token to set a new password.
     r = client.post(f"/auth/reset/{token}",
-                    data={"new_password": "BrandNew123", "confirm_password": "BrandNew123"},
+                    data={"new_password": "BrandNew1234", "confirm_password": "BrandNew1234"},
                     follow_redirects=False)
     assert r.status_code in (302, 303)
     with app.app_context():
         u = db.session.get(User, uid)
-        assert u.check_password("BrandNew123") is True
+        assert u.check_password("BrandNew1234") is True

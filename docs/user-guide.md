@@ -2603,7 +2603,15 @@ no longer enforced, and offers a button to clear the dead row.
 
 ### 26.3 Users and Profiles
 
-**Users** is the account list — create, edit, disable, reset, assign a profile.
+**Users** is the account list — create, disable, delete, assign a profile, and
+per row: **Reset password** (local accounts only; 12 to 1024 characters),
+**Clear 2FA** (shown when the account has two-factor enabled) and **Unlock**
+(shown when the account has failed sign-ins or is locked out; it clears the
+counter and the lock and nothing else — a disabled account stays disabled).
+Every action needs *Manage users* and lands in the audit log. A profile that
+holds only *View users* sees the same list read-only, with no controls; the
+sidebar shows it a **Users** entry. The **Admins** counter counts the accounts
+that can manage both users and profiles.
 
 **Profiles** is the one that matters for §1: the three named profiles
 (*readonly*, *operator*, *admin*) are **seeded, not hard-coded**. This page

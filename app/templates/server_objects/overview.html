@@ -74,12 +74,14 @@
               <i class="bi bi-magic me-1"></i>{{ _('Generate') }}
             </a>
             {% endif %}
+            {% if current_user.can('config_write') %}
             <a class="btn btn-secondary btn-sm"
                href="{{ url_for('server_objects.import_object', id=appliance.id, type=selected.logical) }}">
               <i class="bi bi-upload me-1"></i>{{ _('Import') }}
             </a>
+            {% endif %}
           </div>
-          {% else %}
+          {% elif current_user.can('config_write') %}
           <a class="btn btn-fw-primary btn-sm"
              href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=selected.collection, title=selected.label, create=1) }}">
             <i class="bi bi-plus-lg me-1"></i>New {{ selected.label }}
@@ -112,11 +114,13 @@
         <span class="text-muted small ms-2">{{ rows|length }} object(s)</span>
         {% if freshness %}
         <span class="badge bg-dark border ms-2" title="{{ _('Served from the local source of truth') }}"><i class="bi bi-database me-1"></i>{{ freshness }}</span>
+        {% if current_user.can('config_write') %}
         <form method="post" action="{{ url_for('server_objects.refresh', id=appliance.id) }}" class="d-inline ms-1">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="type" value="{{ selected.logical }}">
           <button type="submit" class="btn btn-outline-light btn-sm" title="{{ _('Pull live config from the device') }}"><i class="bi bi-arrow-clockwise"></i></button>
         </form>
+        {% endif %}
         {% endif %}
       </div>
 
@@ -144,7 +148,7 @@
                    href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=selected.collection, mkey=r.name, title=selected.label) }}">
                   <i class="bi bi-pencil"></i> {{ 'View' if selected.read_only else 'Edit' }}
                 </a>
-                {% if not selected.read_only %}
+                {% if not selected.read_only and current_user.can('config_write') %}
                 <button class="btn btn-sm btn-fw-danger"
                         data-js="so-delete" data-collection="{{ selected.collection }}" data-mkey="{{ r.name }}">
                   <i class="bi bi-trash"></i>

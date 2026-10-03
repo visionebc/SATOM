@@ -217,6 +217,7 @@ def appliance(appliance_id):
 
 @bp.route('/<int:appliance_id>/refresh', methods=['POST'])
 @login_required
+@require_permission('config_write')
 def refresh(appliance_id):
     """Pull live config from the device into the local source of truth (cache +
     JSON backup), then return to the Server Policy list. DB-first reads serve
@@ -756,22 +757,6 @@ def create_ref(appliance_id):
     res = FortiWebOps(appl).create('/api/v2.0/cmdb/' + ep, {'data': payload}, dry_run=not do_apply)
     return jsonify(ok=res.ok, dry_run=res.get('dry_run'),
                    request=res.get('request'), error=res.get('error', ''))
-
-
-@bp.route('/<int:appliance_id>/browse/<path:endpoint_path>')
-@login_required
-def browse(appliance_id, endpoint_path):
-    appl = visible_appliance_or_404(appliance_id)
-    data = None
-    error = None
-    try:
-        client = client_for(appl)
-        resp = client.api_call('GET', '/' + endpoint_path)
-        data = resp.json()
-    except Exception as exc:
-        error = str(exc)
-    return render_template('workspace/browse.html', appliance=appl, endpoint_path=endpoint_path,
-                           data=data, error=error)
 
 
 # ─────────────────────────── CREATE Server Policy ────────────────────────────

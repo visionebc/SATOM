@@ -176,3 +176,20 @@ def test_the_page_only_asks_for_the_model_with_advisor_use():
             / "app/templates/exceptions/list.html").read_text()
     assert "current_user.can('advisor.use')" in body
     assert "use_model: true" not in body
+
+
+def test_a_viewer_gets_no_write_buttons_on_the_carve_out_page(app, client):
+    from tests.conftest import make_user
+    from app.services import wpp_exceptions as s
+    aid = _make_appliance(app)
+    with app.app_context():
+        s.add(aid, wpp_mkey="wpp-x", exc_type="signature_filter_item",
+              payload={"signature_id": "1"})
+    login(client, make_user(app, username="ro-exc", role="readonly"))
+    h = client.get(f"/exceptions/{aid}").get_data(as_text=True)
+    assert 'data-js="exc-delete">' not in h
+    assert 'data-js="exc-inject" title' not in h
+    assert 'data-js="exc-history" title' in h  # reading history stays open
+    login(client, admin_user_id(app))
+    h = client.get(f"/exceptions/{aid}").get_data(as_text=True)
+    assert 'data-js="exc-delete">' in h and 'data-js="exc-inject" title' in h

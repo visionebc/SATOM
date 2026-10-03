@@ -265,9 +265,10 @@ _WS = ROOT / "app/templates/workspace"
 #: ``workspace.index`` always redirects (to the current device, or to
 #: /architecture/ when none is selected), so the template never reaches a
 #: browser today. It is guarded anyway so a revival does not resurrect the
-#: address chip — but nothing here proves it renders. ``browse.html`` and
-#: ``policies.html`` were both verified over real HTTP against the live node.
-@pytest.mark.parametrize("name", ["index.html", "browse.html", "policies.html"])
+#: address chip — but nothing here proves it renders. ``policies.html`` was
+#: verified over real HTTP against the live node. (``browse.html`` was removed
+#: with the raw API browse route, 2026-10-03.)
+@pytest.mark.parametrize("name", ["index.html", "policies.html"])
 def test_workspace_chrome_prints_the_hostname(name):
     body = (_WS / name).read_text(encoding="utf-8", errors="replace")
     assert "display_host" in body, (
@@ -280,7 +281,7 @@ def test_workspace_chrome_prints_the_hostname(name):
 
 def test_the_tooltip_has_a_single_author():
     """Three templates writing this sentence is how its halves drift."""
-    for name in ("index.html", "browse.html", "policies.html"):
+    for name in ("index.html", "policies.html"):
         body = (_WS / name).read_text(encoding="utf-8", errors="replace")
         assert "Hostname reported by" not in body, (
             f"{name} inlines the tooltip text instead of calling host_title")

@@ -3107,12 +3107,17 @@ Monitoring → SATOM health (§14.1) points here.
 - **State** shows the current certificate, its subject and expiry, the node
   hostname it was issued for, the renew mode, and the Postgres SSL policy.
 - **Issue** mints one from the internal CA. **Import** takes a cert + key PEM
-  pair (plus an optional chain) for a certificate issued elsewhere. **Renew**
-  forces the renewal pass now instead of waiting for the timer.
-- **Renew mode** decides what happens to an *imported* certificate as it ages:
-  `alert` (warn only — you renew it wherever it came from) or `autopull` (fetch
-  and install the new material from a configured SFTP source). **Autopull** also
-  has a one-off *test now* button that ignores the mode gate.
+  pair (plus an optional chain) for a certificate issued elsewhere. **Renew
+  now** forces the renewal pass for a certificate issued by the internal CA; it
+  is greyed out for an imported one, which it cannot renew.
+- **Renewal of an imported certificate** (its own card) decides what happens to
+  an *imported* certificate as it ages: *Alert only* (you renew it wherever it
+  came from) or *Automatic pull* (fetch the renewed files over SSH from the
+  source host and paths you enter, check the key matches, install). **Test
+  now** runs one pull immediately, whatever the mode.
+- An imported certificate is the one kind that is **shared** between HA nodes:
+  the nightly pass publishes it from the node serving it and installs it on the
+  peer. CA-issued certificates name their own node and stay node-local.
 - **PostgreSQL SSL policy** — minimum protocol version and cipher list for the
   replication/database channel, applied from this tab.
 

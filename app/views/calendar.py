@@ -296,8 +296,11 @@ def _collect(view: str, anchor: date, flt) -> dict:
                 f"{len(disabled)} disabled automation(s) are not drawn: "
                 + ", ".join(sorted((a.name or a.action) for a in disabled)))
 
+    # Runs of THIS ADOM's actions only -- the same scope_query cut as the
+    # automation band above; the run table itself carries no product.
     q = (ScheduledActionRun.query
-         .filter(ScheduledActionRun.started_at >= start,
+         .filter(ScheduledActionRun.action_id.in_([a.id for a in every] or [-1]),
+                 ScheduledActionRun.started_at >= start,
                  ScheduledActionRun.started_at < end)
          .order_by(ScheduledActionRun.started_at.desc()))
     if not flt.draws_runs:
@@ -312,7 +315,7 @@ def _collect(view: str, anchor: date, flt) -> dict:
             notes.append(
                 f"{total} runs happened in this range; the {len(runs)} most "
                 f"recent are drawn. Open Scheduled Actions → History for the rest.")
-        rows_by_id = {a.id: a for a in ScheduledAction.query.all()}
+        rows_by_id = {a.id: a for a in every}
         # The owner of a run is the owner of the action that produced it, so
         # filtering to one band does not leave that band's history behind in
         # the other. Applied AFTER the MAX_RUNS note, which is about the read

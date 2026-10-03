@@ -148,7 +148,7 @@ def console_context(status: str = "live", health: dict = None) -> dict:
         q = q.filter(SentinelIncident.status == status)
     rows = [i for i in q.order_by(SentinelIncident.score.desc(),
                                   SentinelIncident.opened_at.desc())
-            .limit(300).all() if not names or i.device in names or not i.device]
+            .limit(300).all() if _shows(i, names)]
     return {
         "incidents": [i.to_dict() for i in rows],
         "stats": s["incident"].stats(days=7),
@@ -158,6 +158,13 @@ def console_context(status: str = "live", health: dict = None) -> dict:
         "bands": {"observe": SentinelIncident.BAND_OBSERVE,
                   "recommend": SentinelIncident.BAND_RECOMMEND,
                   "semi_auto": SentinelIncident.BAND_SEMI_AUTO}}
+
+
+def _shows(inc, names) -> bool:
+    """The console's visibility rule, in ONE place: the poll and the incident
+    page used to skip it, so an incident hidden from the list was one URL (or
+    one poll) away."""
+    return not names or inc.device in names or not inc.device
 
 
 @bp.route("/")
@@ -173,10 +180,12 @@ def index():
 def data():
     """Poll target for the console. Same numbers, no page reload."""
     s = _svc()
+    names = _visible_names()
     rows = (SentinelIncident.query
             .filter(SentinelIncident.status.in_([SentinelIncident.STATUS_OPEN,
                                                  SentinelIncident.STATUS_VERIFYING]))
             .order_by(SentinelIncident.score.desc()).limit(300).all())
+    rows = [i for i in rows if _shows(i, names)]
     return jsonify({"incidents": [i.to_dict() for i in rows],
                     "stats": s["incident"].stats(days=7),
                     "health": _health()})
@@ -316,6 +325,8 @@ def recompute():
 def incident_view(iid):
     s = _svc()
     inc = SentinelIncident.query.get_or_404(iid)
+    if not _shows(inc, _visible_names()):
+        abort(404)
     proposal = s["actions"].recommend(inc)
     gates = {key: s["actions"].evaluate(inc, key)
              for key in s["actions"].CATALOG}

@@ -16,6 +16,7 @@ from flask_login import login_required, current_user
 
 from ..extensions import db
 from ..models import LuaScript, Permission, Appliance
+from ..models import visible_appliances, visible_appliance_or_404
 from ..services import lua_studio as lua
 from ..services import lua_examples as examples
 from ..services.audit import log_action
@@ -41,8 +42,14 @@ def superadmin_required(fn):
 
 
 def _appliances(target):
-    return (Appliance.query.filter_by(kind=target)
+    return (visible_appliances(Appliance.query.filter_by(kind=target))
             .order_by(Appliance.name).all())
+
+
+def _script_or_404(sid: int) -> LuaScript:
+    """One script by id, in THIS ADOM only (the list is scope_query'd)."""
+    return (scope_query(LuaScript.query, LuaScript.product)
+            .filter_by(id=sid).first_or_404())
 
 
 @bp.route("/")
@@ -68,7 +75,7 @@ def new():
 @bp.route("/<int:sid>/edit")
 @superadmin_required
 def edit(sid):
-    script = LuaScript.query.get_or_404(sid)
+    script = _script_or_404(sid)
     return render_template("lua_studio/editor.html", script=script,
                            target=script.target,
                            appliances=_appliances(script.target),
@@ -87,7 +94,7 @@ def save(sid=None):
         return redirect(url_for("lua_studio.new"))
     target = f.get("target") if f.get("target") in LuaScript.TARGETS else "fortiweb"
     if sid:
-        script = LuaScript.query.get_or_404(sid)
+        script = _script_or_404(sid)
     else:
         script = LuaScript(created_by=current_user.username, product=stamp())
         db.session.add(script)
@@ -96,7 +103,8 @@ def save(sid=None):
     script.deploy_object = (f.get("deploy_object") or "").strip()
     script.code = f.get("code") or ""
     aid = f.get("appliance_id")
-    script.appliance_id = int(aid) if (aid or "").isdigit() else None
+    script.appliance_id = (visible_appliance_or_404(int(aid)).id
+                           if (aid or "").isdigit() else None)
     db.session.commit()
     log_action("lua.save", target=script.name, extra={"id": script.id})
     flash(f"Saved “{script.name}”.", "success")
@@ -117,7 +125,7 @@ def analyze():
 @bp.route("/<int:sid>/mark-tested", methods=["POST"])
 @superadmin_required
 def mark_tested(sid):
-    script = LuaScript.query.get_or_404(sid)
+    script = _script_or_404(sid)
     lint = lua.lint(script.code, script.target)
     report = lua.analyze(script.code, script.target)
     script.analysis = json.dumps({"lint": lint, "analysis": report})
@@ -136,7 +144,7 @@ def set_status(sid):
     """Lifecycle transitions with gates: draft <-> tested. ``deployed`` is set
     ONLY by a successful real deploy — you can't stamp it by hand. Promoting to
     ``tested`` re-runs the lint gate."""
-    script = LuaScript.query.get_or_404(sid)
+    script = _script_or_404(sid)
     new_status = request.form.get("status")
     if new_status not in ("draft", "tested"):
         abort(400)
@@ -160,12 +168,12 @@ def set_status(sid):
 @superadmin_required
 def deploy(sid):
     """Dry-run by default; a real push needs config_write + confirm=yes."""
-    script = LuaScript.query.get_or_404(sid)
+    script = _script_or_404(sid)
     perms = getattr(current_user, "effective_permissions", set())
     want_real = request.form.get("confirm") == "yes"
     if want_real and Permission.CONFIG_WRITE not in perms:
         abort(403)
-    appliance = (Appliance.query.get(script.appliance_id)
+    appliance = (visible_appliance_or_404(script.appliance_id)
                  if script.appliance_id else None)
     dry = not want_real
     # Always lint before any push.
@@ -186,7 +194,7 @@ def deploy(sid):
 @bp.route("/<int:sid>/delete", methods=["POST"])
 @superadmin_required
 def delete(sid):
-    script = LuaScript.query.get_or_404(sid)
+    script = _script_or_404(sid)
     db.session.delete(script)
     db.session.commit()
     log_action("lua.delete", target=script.name)

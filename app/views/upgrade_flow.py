@@ -836,6 +836,10 @@ def page_context(posted=None) -> dict:
                .filter(ChangeRequest.wave_group.isnot(None),
                        ChangeRequest.wave_group != '')
                .order_by(ChangeRequest.id.desc()).limit(60).all()):
+        # Same visibility rule as the change list below: a wave that names
+        # only devices this operator cannot see is not listed.
+        if not _visible_to_me(cr):
+            continue
         group = seen_groups.get(cr.wave_group)
         if group is None:
             if len(seen_groups) >= 5:

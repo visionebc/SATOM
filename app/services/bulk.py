@@ -185,9 +185,13 @@ class BulkRunner:
         self.items = items
 
     def _appliances(self, device_ids):
-        if device_ids:
-            return Appliance.query.filter(Appliance.id.in_(device_ids)).all()
-        return Appliance.query.all()
+        # Explicit ids only. An empty list used to mean "every appliance in
+        # the table" -- other ADOMs and maintenance devices included, because a
+        # background job has no user to scope by. Callers resolve the visible
+        # set while they still have the request and pass it in.
+        if not device_ids:
+            return []
+        return Appliance.query.filter(Appliance.id.in_(device_ids)).all()
 
     def preview(self, device_ids) -> list[dict]:
         """Dry-run across all targets — pure, no device contact."""

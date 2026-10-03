@@ -39,6 +39,13 @@ def _dev_opts_json() -> str:
     return json.dumps(opts).replace("</", "<\\/")
 
 
+def _plugin_or_404(pid: int) -> Plugin:
+    """One plugin by id, in THIS ADOM only -- the list is scope_query'd, so a
+    by-id route that is not would serve another ADOM's plugin one URL away."""
+    return (scope_query(Plugin.query, Plugin.product)
+            .filter_by(id=pid).first_or_404())
+
+
 def superadmin_required(fn):
     """Gate: only a super-admin may author plugins. In this app that is a user
     with the full admin capability set (``User.is_admin_capable`` — USER_MANAGE
@@ -75,7 +82,7 @@ def new():
 @bp.route("/<int:pid>/edit")
 @superadmin_required
 def edit(pid):
-    plugin = Plugin.query.get_or_404(pid)
+    plugin = _plugin_or_404(pid)
     return render_template("plugins/editor.html", plugin=plugin,
                            datasets=sandbox.dataset_catalog(),
                            examples_json=_examples_json(),
@@ -96,7 +103,7 @@ def save(pid=None):
     ds = f.getlist("datasets")
     ds = [k for k in ds if k in sandbox.DATASETS]  # entitlement filter
     if pid:
-        plugin = Plugin.query.get_or_404(pid)
+        plugin = _plugin_or_404(pid)
     else:
         plugin = Plugin(created_by=current_user.username, product=stamp())
         plugin.slug = _unique_slug(sandbox.slugify(name))
@@ -127,7 +134,7 @@ def set_status(pid):
       never be promoted to every engineer's Custom Views.
     * Demoting back to ``draft``/``testing`` is always allowed.
     """
-    plugin = Plugin.query.get_or_404(pid)
+    plugin = _plugin_or_404(pid)
     new_status = request.form.get("status")
     if new_status not in Plugin.STATUSES:
         abort(400)
@@ -158,7 +165,7 @@ def set_status(pid):
 @bp.route("/<int:pid>/delete", methods=["POST"])
 @superadmin_required
 def delete(pid):
-    plugin = Plugin.query.get_or_404(pid)
+    plugin = _plugin_or_404(pid)
     slug = plugin.slug
     db.session.delete(plugin)
     db.session.commit()
@@ -175,7 +182,7 @@ def frame(pid):
 
     A PUBLISHED plugin is viewable by any signed-in user (the whole point is
     engineer efficiency); draft/testing stays author-only (super-admin)."""
-    plugin = Plugin.query.get_or_404(pid)
+    plugin = _plugin_or_404(pid)
     if plugin.status != "published" and not getattr(
             current_user, "is_admin_capable", False):
         abort(403)
@@ -192,8 +199,10 @@ def frame(pid):
     resp.headers["Content-Type"] = "text/html; charset=utf-8"
     # The plugin's own JS is inline user code; it is safe because the iframe is
     # a sandboxed OPAQUE origin (no allow-same-origin) — it cannot reach the app.
+    # Images are data: only: `img-src https:` let plugin JS beacon the
+    # datasets it renders to any external host (an <img src> per row).
     resp.headers["Content-Security-Policy"] = (
-        "default-src 'none'; style-src 'unsafe-inline'; img-src data: https:; "
+        "default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
         "script-src 'unsafe-inline'; font-src data:; sandbox allow-scripts")
     resp.headers["X-Frame-Options"] = "SAMEORIGIN"
     return resp
@@ -222,7 +231,7 @@ def preview():
     resp = make_response(doc)
     resp.headers["Content-Type"] = "text/html; charset=utf-8"
     resp.headers["Content-Security-Policy"] = (
-        "default-src 'none'; style-src 'unsafe-inline'; img-src data: https:; "
+        "default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
         "script-src 'unsafe-inline'; font-src data:; sandbox allow-scripts")
     return resp
 
@@ -241,7 +250,8 @@ def gallery():
 @bp.route("/view/<slug>")
 @login_required
 def view(slug):
-    plugin = Plugin.query.filter_by(slug=slug).first_or_404()
+    plugin = (scope_query(Plugin.query, Plugin.product)
+              .filter_by(slug=slug).first_or_404())
     if plugin.status != "published" and not getattr(
             current_user, "is_admin_capable", False):
         abort(403)  # testing/draft are author-only previews

@@ -4,6 +4,7 @@ from . import bp
 from ..models import Appliance, db, Permission, visible_appliances, visible_appliance_or_404
 from ..auth.decorators import require_permission
 from ..services.audit import log_action
+from ..services import product_scope
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
@@ -113,6 +114,10 @@ def create_appliance():
 
     if not name or not host:
         return jsonify({'error': 'name and host are required'}), 400
+    # Same rule as the web form (appliances.create): a posted kind is not a
+    # way into another ADOM.
+    if not product_scope.may_assign_kind(kind):
+        return jsonify({'error': f'kind {kind!r} cannot be created in this ADOM'}), 400
 
     if Appliance.query.filter_by(name=name).first():
         return jsonify({'error': f'Appliance with name {name!r} already exists'}), 409
@@ -152,7 +157,10 @@ def update_appliance(id):
     if 'name' in data:
         appliance.name = data['name'].strip()
     if 'kind' in data:
-        appliance.kind = data['kind'].strip()
+        new_kind = data['kind'].strip()
+        if new_kind != appliance.kind and not product_scope.may_assign_kind(new_kind):
+            return jsonify({'error': f'kind {new_kind!r} cannot be assigned in this ADOM'}), 400
+        appliance.kind = new_kind
     if 'host' in data:
         appliance.host = data['host'].strip()
     if 'port' in data:

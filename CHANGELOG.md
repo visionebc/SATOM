@@ -6,6 +6,57 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Security — by-id routes served rows the lists hide (2026-10-03)
+
+Device lists are cut to what the user may see: maintenance devices are hidden
+from whoever lacks *View maintenance devices*, and each ADOM shows only its own
+product. About thirty routes skipped that cut, so the same rows were one URL
+(or one posted id) away. Each now applies the list's rule and answers 404:
+
+- **FortiWeb:** a carve-out could be edited or deleted through another
+  device's URL; template apply, AppID assign and dismissing an AI proposal
+  accepted any device id; Stored Assets could delete another ADOM's backup.
+- **Devices:** firmware reports listed and opened reports for every device;
+  firmware download/delete ignored the ADOM; the REST API could create or move
+  a device into another ADOM; System Provisioning's *Entire fleet* and baseline
+  apply wrote to every appliance in the table, not the visible ones (an empty
+  id list no longer means "all" anywhere in the bulk runner); Upgrade Flow
+  listed every batched rollout.
+- **Monitoring:** Analysis deep reads, drill-downs and *Run deep capture*
+  covered every device; Log Collection listed and served every saved log.
+- **Automation:** process runs, the recent-runs list and the calendar's run
+  history crossed ADOMs; edit leases could be taken on any device.
+- **Tools:** plugins and Lua scripts loaded by id or slug from any ADOM; Lua
+  accepted and deployed to any device; plugin and Python Console datasets
+  returned every device's rows, and the audit dataset ignored *View audit
+  log*; the plugin frame allowed `https:` images, an outbound channel for
+  the data it renders (now `data:` only); Sentinel's poll and incident page
+  showed incidents of hidden devices.
+- **Registry:** the FortiWeb endpoint toggle could flip another product's
+  catalog row.
+
+### Security — read pages answered any signed-in user (2026-10-03)
+
+About 80 routes carried only a sign-in check, so a custom profile with no
+read permission at all (or with only *Manage users*) could open the audit
+trail, every Monitoring page (device health, metrics, deep and service
+monitors, analytics, reports, search, architecture, collection, analysis),
+the API Explorer and the FortiADC / FortiAnalyzer / FortiAuthenticator API
+consoles, the internal `/api/fw|adc/<id>/proxy` relay, the appliance list and
+detail pages, Device Provisioning and the Sentinel settings page. Each route
+now names its permission: **View audit log** for the audit trail, **View
+registry** for the API consoles and the proxy, **View appliances** for the
+inventory, **View operations** for Device Provisioning, and any read
+permission for the rest. The Audit Log menu entry follows its page's
+permission.
+
+Firmware upgrade, boot-partition switch, upgrade scheduling and HA failover
+were gated on any edit permission (for example *Edit protection*); they now
+need **Run appliance actions**.
+
+The three built-in profiles are unchanged: Read-only, Operator and Admin hold
+every permission these gates ask for.
+
 ### Security — AI Advisor history left the LAN unredacted (2026-10-03)
 
 Only the newest message was redacted before an external send. The earlier

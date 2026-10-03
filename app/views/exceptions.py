@@ -186,7 +186,9 @@ def save(id):
 
     if exc_id:
         existing = store.get(int(exc_id))
-        if existing is None:
+        # The id comes from the body, the device from the URL: without this
+        # check a carve-out of a device the user cannot see is editable by id.
+        if existing is None or existing.appliance_id != appliance.id:
             return jsonify(ok=False, error='not found'), 404
         errors = store.validate_payload(existing.exc_type, payload)
         if errors:
@@ -210,9 +212,12 @@ def save(id):
 @bp.route('/<int:id>/delete', methods=['POST'])
 @require_permission('config_write')
 def delete(id):
-    visible_appliance_or_404(id)
+    appliance = visible_appliance_or_404(id)
     body = request.get_json(silent=True) or {}
-    ok = store.delete(int(body.get('exc_id') or 0),
+    exc = store.get(int(body.get('exc_id') or 0))
+    if exc is None or exc.appliance_id != appliance.id:
+        return jsonify(ok=False, error='not found'), 404
+    ok = store.delete(exc.id,
                       author=getattr(current_user, 'username', '') or '',
                       note=(body.get('note') or ''))
     return jsonify(ok=ok)

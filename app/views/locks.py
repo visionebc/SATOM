@@ -12,6 +12,7 @@ from __future__ import annotations
 from flask import Blueprint, request, jsonify
 from flask_login import login_required, current_user
 
+from ..models import visible_appliance_or_404
 from ..services import lock_service
 
 bp = Blueprint("locks", __name__, url_prefix="/api/locks")
@@ -33,6 +34,10 @@ def _args():
         appliance_id = int(appliance_id)
     except (TypeError, ValueError):
         appliance_id = None
+    if appliance_id is not None:
+        # A lease names a device: one this user cannot see (maintenance,
+        # another ADOM) is a 404 here like on every other by-id route.
+        visible_appliance_or_404(appliance_id)
     return appliance_id, resource_key
 
 
@@ -85,6 +90,7 @@ def status():
         appliance_id = int(request.args.get("appliance_id"))
     except (TypeError, ValueError):
         return jsonify(ok=False, error="appliance_id required"), 400
+    visible_appliance_or_404(appliance_id)
     key = request.args.get("resource_key")
     if not key:
         return jsonify(ok=False, error="resource_key required"), 400

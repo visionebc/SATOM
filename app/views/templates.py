@@ -225,6 +225,14 @@ def apply(template_id: int):
     confirm = request.form.get('confirm') == '1'
     wants_json = (request.form.get('format') == 'json'
                   or 'application/json' in (request.headers.get('Accept') or ''))
+    # The picker only offers visible devices; the POST is checked against the
+    # same set, so a hand-made id (a maintenance device, another ADOM's) is
+    # refused instead of reaching the bulk runner, which does not re-check.
+    visible_ids = {a.id for a in visible_appliances().all()}
+    if any(d not in visible_ids for d in device_ids):
+        if wants_json:
+            return jsonify({'ok': False, 'error': 'Unknown appliance.'}), 404
+        abort(404)
     # Single-device apply works on any status (operations.template_apply, already
     # enforced above). Multi-device = fleet rollout: needs operations.apply AND an
     # APPROVED template. This is the "approved != deployed; fleet rollout is a

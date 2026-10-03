@@ -71,6 +71,22 @@ def _proc_or_404(pid: int) -> Process:
     return proc
 
 
+def _run_or_404(rid: int) -> ProcessRun:
+    """A run by id, under its process's ADOM rule (the same one as
+    :func:`_proc_or_404`). A run whose process is gone is shown only in
+    Global, which is the one console that sees every process."""
+    row = db.session.get(ProcessRun, rid)
+    if row is None:
+        abort(404)
+    proc = db.session.get(Process, row.process_id) if row.process_id else None
+    if proc is None:
+        if session_product() != GLOBAL:
+            abort(404)
+    elif not engine.may_run_here(proc):
+        abort(404)
+    return row
+
+
 def _action_catalog():
     """Catalogue actions a process step may invoke, already cut to what it may.
 
@@ -139,8 +155,10 @@ def index():
     for proc in rows:
         last[proc.id] = (ProcessRun.query.filter_by(process_id=proc.id)
                          .order_by(ProcessRun.started_at.desc()).first())
-    runs = (ProcessRun.query.order_by(ProcessRun.started_at.desc())
-            .limit(15).all())
+    # Only runs of the processes this ADOM lists: the same cut as `rows`.
+    runs = (ProcessRun.query
+            .filter(ProcessRun.process_id.in_([p.id for p in rows] or [-1]))
+            .order_by(ProcessRun.started_at.desc()).limit(15).all())
     return render_template("process/index.html", processes=rows, last=last,
                            runs=runs, product_key=session_product(),
                            is_global=session_product() == GLOBAL)
@@ -335,9 +353,7 @@ def run(pid):
 @login_required
 @require_permission("view")
 def run_detail(rid):
-    row = db.session.get(ProcessRun, rid)
-    if row is None:
-        abort(404)
+    row = _run_or_404(rid)
     gate = ""
     if row.status == WAITING:
         for n in (row.graph or {}).get("nodes", []):
@@ -351,9 +367,7 @@ def run_detail(rid):
 @login_required
 @require_permission("config_write")
 def run_resume(rid):
-    row = db.session.get(ProcessRun, rid)
-    if row is None:
-        abort(404)
+    row = _run_or_404(rid)
     if row.status != WAITING:
         flash("That run is not waiting for an answer.", "warning")
         return redirect(url_for("process.run_detail", rid=rid))

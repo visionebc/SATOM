@@ -301,10 +301,14 @@ def combo_unassign(baseline_id: int, template_id: int) -> Baseline:
     return b
 
 
-def matching_devices(baseline: Baseline) -> list[Appliance]:
+def matching_devices(baseline: Baseline, query=None) -> list[Appliance]:
     """Appliances whose classification matches the baseline scope. An empty
-    facet on the baseline means "any" for that facet."""
-    q = Appliance.query
+    facet on the baseline means "any" for that facet.
+
+    ``query`` narrows the candidates first; the web views pass
+    ``visible_appliances()`` so a baseline never reaches a device the user
+    cannot see (another ADOM, maintenance)."""
+    q = Appliance.query if query is None else query
     if (baseline.zone or "").strip():
         q = q.filter(Appliance.zone == baseline.zone)
     if (baseline.line or "").strip():

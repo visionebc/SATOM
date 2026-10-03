@@ -19,6 +19,9 @@
    and the route enforces it — the entry is simply not offered elsewhere.
    Collection moved OUT of here into Administrator (partials/nav_collection.html):
    it sets collection policy, it does not display a measurement.
+   2026-10-03: a config_write holder WITHOUT user_manage (no Administrator group)
+   gets the same partial at the end of this submenu, since editing collection
+   needs config_write and the page was otherwise reachable only by URL.
    ========================================================================= #}
 <div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['monitoring','metrics','analysis','deep_monitor','service_monitor','monitor_analytics','monitor_reports'] }}" data-nav-subgroup="Monitoring">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-activity fw-nav-icon"></i><span>{{ _('Monitoring') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
@@ -57,5 +60,8 @@
       <i class="bi bi-graph-up-arrow fw-nav-icon"></i><span>{{ _('Analytics') }}</span></a>
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'monitor_reports' else '' }}" href="{{ url_for('monitor_reports.index', _adom=product.key) }}">
       <i class="bi bi-file-earmark-bar-graph fw-nav-icon"></i><span>{{ _('Reports') }}</span></a>
+    {% if current_user and current_user.can('config_write') and not current_user.can('user_manage') %}
+    {% include "partials/nav_collection.html" %}
+    {% endif %}
   </div>
 </div>

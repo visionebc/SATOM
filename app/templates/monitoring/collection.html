@@ -1,15 +1,18 @@
 {% extends "base.html" %}
 {% block title %}Collection — Administrator{% endblock %}
 {% block content %}
+{% set can_write = current_user.can('config_write') %}
 <div class="fw-page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
   <div>
     <h4 class="mb-1"><i class="bi bi-cloud-download me-2"></i>{{ _('Metrics collection') }}</h4>
     <p class="text-muted mb-0" style="font-size:13px;">{{ _('One row per (device, collector). Each collector turns ONE device call into many series in the local metrics store — the interval is yours to set, per target. Devices in maintenance are skipped automatically.') }}</p>
   </div>
+  {% if can_write %}
   <form method="post" action="{{ url_for('metrics_admin.run_now') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button class="btn btn-fw-primary btn-sm"><i class="bi bi-play-fill me-1"></i>{{ _('Run sweep now') }}</button>
   </form>
+  {% endif %}
 </div>
 
 <div class="card mb-3"><div class="card-header"><strong><i class="bi bi-database-check me-1"></i>{{ _('Metrics store (VictoriaMetrics, this node)') }}</strong></div>
@@ -23,8 +26,121 @@
       {% if vm.series is not none %}<span>{{ _('Series:') }} <strong>{{ vm.series }}</strong></span>{% endif %}
       <span class="text-muted">{{ _('Raw retention 396 days at full resolution — no rollup averaging.') }}</span>
     </div>
+    {# Peer dual-write: whether this node's samples also exist on the peer. #}
+    <div class="d-flex flex-wrap gap-3 align-items-center small mt-2" id="mc-peer">
+      <span>{{ _('Peer dual-write:') }}
+        {% if not peer.enabled %}<span class="fw-badge fw-badge-secondary">{{ _('off') }}</span>
+        {% elif peer.redundant %}<span class="fw-badge fw-badge-success">{{ peer.state }}</span>
+        {% elif peer.alarm %}<span class="fw-badge fw-badge-danger">{{ peer.state }}</span>
+        {% else %}<span class="fw-badge fw-badge-secondary">{{ peer.state }}</span>{% endif %}
+      </span>
+      {% if peer.enabled %}
+      <span>{{ _('Peer:') }} <code>{{ peer.host or '—' }}</code></span>
+      <span>{{ _('Last success:') }} {{ (peer.last_success_at or '')|replace('T', ' ') or _('never') }}</span>
+      {% if peer.consecutive_failures %}<span class="text-danger">{{ _('Consecutive failures:') }} {{ peer.consecutive_failures }}</span>{% endif %}
+      {% if peer.last_error %}<span class="text-muted">{{ peer.last_error|truncate(120) }}</span>{% endif %}
+      {% endif %}
+    </div>
   </div>
 </div>
+
+{# Store snapshots + per-node store state. Both are fetched after the page
+   (/snapshots asks the local store, /stores asks the peer) so a render never
+   waits on store or peer I/O. Snapshots never expire, so the list sits next
+   to the trigger and deletion is explicit. #}
+<div class="card mb-3" id="mc-store-card"
+     data-snapshots-url="{{ url_for('metrics_admin.snapshots') }}"
+     data-stores-url="{{ url_for('metrics_admin.stores') }}"
+     data-snapshot-post="{{ url_for('metrics_admin.snapshot') }}"
+     data-can-write="{{ '1' if can_write else '0' }}">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong><i class="bi bi-camera me-1"></i>{{ _('Store snapshots and nodes') }}</strong>
+    {% if can_write %}
+    <form method="post" action="{{ url_for('metrics_admin.snapshot') }}" class="m-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-camera me-1"></i>{{ _('Take snapshot') }}</button>
+    </form>
+    {% endif %}
+  </div>
+  <div class="card-body py-2 small">
+    <div class="mb-2"><strong>{{ _('Nodes') }}</strong>
+      <ul class="mb-0" id="mc-stores"><li class="text-muted">{{ _('Loading…') }}</li></ul></div>
+    <div><strong>{{ _('Snapshots') }}</strong>
+      <ul class="mb-0" id="mc-snapshots"><li class="text-muted">{{ _('Loading…') }}</li></ul></div>
+  </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var card = document.getElementById('mc-store-card');
+  if (!card) { return; }
+  var canWrite = card.dataset.canWrite === '1';
+  var csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+  function li(text, cls) {
+    var el = document.createElement('li');
+    el.textContent = text;
+    if (cls) { el.className = cls; }
+    return el;
+  }
+  fetch(card.dataset.storesUrl, {credentials: 'same-origin'})
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      var ul = document.getElementById('mc-stores');
+      ul.textContent = '';
+      (d.nodes || []).forEach(function (n) {
+        var s = n.store || {};
+        var txt = (n.node || '?') + (n.is_local ? ' (this node)' : '') + ': ' +
+                  (s.state || '?') + (s.series != null ? ' · ' + s.series + ' series' : '') +
+                  (n.last_write_at ? ' · last write ' + n.last_write_at : '') +
+                  (s.detail ? ' · ' + s.detail : '');
+        ul.appendChild(li(txt, s.up ? '' : 'text-muted'));
+      });
+      if (!ul.children.length) { ul.appendChild(li('No node reported.', 'text-muted')); }
+    })
+    .catch(function () {
+      var ul = document.getElementById('mc-stores');
+      ul.textContent = '';
+      ul.appendChild(li('Could not read the node stores.', 'text-danger'));
+    });
+  fetch(card.dataset.snapshotsUrl, {credentials: 'same-origin'})
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      var ul = document.getElementById('mc-snapshots');
+      ul.textContent = '';
+      if (!d.ok) {
+        ul.appendChild(li('Could not list snapshots' + (d.detail ? ': ' + d.detail : '.'), 'text-danger'));
+        return;
+      }
+      (d.snapshots || []).forEach(function (name) {
+        var row = li(name + ' ', 'font-monospace');
+        if (canWrite) {
+          var f = document.createElement('form');
+          f.method = 'post';
+          f.action = card.dataset.snapshotPost;
+          f.className = 'd-inline';
+          var t = document.createElement('input');
+          t.type = 'hidden'; t.name = 'csrf_token'; t.value = csrf;
+          var n = document.createElement('input');
+          n.type = 'hidden'; n.name = 'delete'; n.value = name;
+          var b = document.createElement('button');
+          b.className = 'btn btn-sm btn-outline-danger py-0';
+          b.textContent = 'Delete';
+          f.addEventListener('submit', function (ev) {
+            if (!window.confirm('Delete snapshot ' + name + '?')) { ev.preventDefault(); }
+          });
+          f.appendChild(t); f.appendChild(n); f.appendChild(b);
+          row.appendChild(f);
+        }
+        ul.appendChild(row);
+      });
+      if (!ul.children.length) { ul.appendChild(li('No snapshots.', 'text-muted')); }
+    })
+    .catch(function () {
+      var ul = document.getElementById('mc-snapshots');
+      ul.textContent = '';
+      ul.appendChild(li('Could not list snapshots.', 'text-danger'));
+    });
+})();
+</script>
 
 <div class="card">
   <div class="card-header"><strong><i class="bi bi-collection me-1"></i>{{ _('Scrape targets') }}</strong></div>
@@ -58,10 +174,10 @@
           <td class="small">{{ collectors[t.collector].label if t.collector in collectors else t.collector }}</td>
           <td>
             <div class="input-group input-group-sm">
-              <input type="number" class="form-control" name="interval_min" form="sv-{{ t.id }}" value="{{ t.interval_min }}" min="1" max="1440" style="max-width:80px;">
+              <input type="number" class="form-control" name="interval_min" form="sv-{{ t.id }}" value="{{ t.interval_min }}" min="1" max="1440" style="max-width:80px;"{{ '' if can_write else ' disabled' }}>
               {% if t.params.top_n %}
               <span class="input-group-text">{{ _('top') }}</span>
-              <input type="number" class="form-control" name="top_n" form="sv-{{ t.id }}" value="{{ t.params.top_n }}" min="1" max="200" style="max-width:70px;">
+              <input type="number" class="form-control" name="top_n" form="sv-{{ t.id }}" value="{{ t.params.top_n }}" min="1" max="200" style="max-width:70px;"{{ '' if can_write else ' disabled' }}>
               {% endif %}
             </div>
           </td>
@@ -71,9 +187,11 @@
              row has one visual language. #}
           <td class="text-nowrap">
             {% if t.enabled %}<span class="badge bg-success">{{ _('on') }}</span>{% else %}<span class="badge bg-secondary">{{ _('off') }}</span>{% endif %}
+            {% if can_write %}
             <button class="btn btn-outline-light btn-sm py-0 ms-1" form="tg-{{ t.id }}"
                     title="{{ 'Stop collecting this target' if t.enabled else 'Start collecting this target' }}">
               <i class="bi {{ 'bi-pause-fill' if t.enabled else 'bi-play-fill' }} me-1"></i>{{ 'Disable' if t.enabled else 'Enable' }}</button>
+            {% endif %}
           </td>
           <td class="small">{{ t.last_run_at|replace('T', ' ') or '—' }}</td>
           <td class="small">
@@ -85,7 +203,9 @@
           <td class="small">{{ t.last_series }}</td>
           <td class="small">{{ t.last_ms }}</td>
           <td class="text-end">
+            {% if can_write %}
             <button class="btn btn-outline-light btn-sm py-0" form="sv-{{ t.id }}" title="{{ _('save interval / top-N') }}"><i class="bi bi-check2"></i></button>
+            {% endif %}
           </td>
         </tr>
       {% endfor %}

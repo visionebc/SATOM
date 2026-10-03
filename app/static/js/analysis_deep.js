@@ -285,7 +285,7 @@
     $("anamPng").addEventListener("click", exportPNG);
     modalEl().addEventListener("click", function (e) { if (e.target === modalEl()) closeModal(); });
     $("deepReload").addEventListener("click", loadDeep);
-    $("deepRun").addEventListener("click", runFleetDeep);
+    if ($("deepRun")) $("deepRun").addEventListener("click", runFleetDeep);  // config_write only
     $("deepKind").addEventListener("change", loadDrillObjects);
     $("deepObj").addEventListener("change", loadDrill);
     // expose for the matrix/sub charts so the generic ⤢ also opens deep charts

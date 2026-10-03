@@ -21,6 +21,7 @@
     left rail. A header full of navigation is how the actions get lost.
   #}
   <div class="d-flex gap-2">
+    {% if current_user.can('config_write') %}
     <button class="btn btn-fw-primary btn-sm" type="button" data-add-verb="upload"
             data-bs-toggle="modal" data-bs-target="#artUploadModal"
             title="{{ _('Store a file you supply. Touches no appliance — and it is the ONLY way XML Schema, WSDL and gRPC IDL can ever enter the store.') }}">
@@ -33,6 +34,7 @@
             data-bs-toggle="modal" data-bs-target="#artCaptureModal"
             title="{{ _('Read the object off this device and keep a copy. Read-only on the appliance, and only for the four kinds it will return.') }}">
       <i class="bi bi-download me-1"></i>{{ _('Capture from device') }}</button>
+    {% endif %}
   </div>
 </div>
 
@@ -351,7 +353,7 @@
         <input class="form-control form-control-sm" name="budget" value="25" style="max-width:90px">
       </div>
       <button class="btn btn-fw-primary btn-sm"
-              title="{{ _('Walk this device\'s server policies now and re-record which file-backed objects each one needs. Read-only against the appliance.') }}">
+              {% if not current_user.can('config_write') %}disabled {% endif %}title="{{ _('Walk this device\'s server policies now and re-record which file-backed objects each one needs. Read-only against the appliance.') }}">
         <i class="bi bi-arrow-repeat me-1"></i>{{ _('Refresh') }}</button>
     </form>
   </div>

@@ -19,7 +19,8 @@
        one answers who across the estate holds a given carve-out. #}
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('waf.exceptions') }}">
       <i class="bi bi-globe2 me-1"></i>{{ _('Fleet inventory') }}</a>
-    <button class="btn btn-sm btn-outline-primary" data-js="open-detect"><i class="bi bi-search me-1"></i>{{ _('Detect on device') }}</button>
+    {% set _can_write = current_user.can('config_write') %}
+    <button class="btn btn-sm btn-outline-primary" data-js="open-detect"{% if not _can_write %} disabled title="{{ _('Needs the config_write permission') }}"{% endif %}><i class="bi bi-search me-1"></i>{{ _('Detect on device') }}</button>
   </div>
 </div>
 <p class="text-muted">{{ _('Desired-state carve-outs authored in the manager and bound to a Server Policy. FortiWeb can\'t record which policy a shared-profile carve-out is for — this does.') }}
@@ -132,14 +133,16 @@
             <td>{% for p in it.policy_names %}<span class="badge bg-secondary me-1">{{ p }}</span>{% else %}<span class="text-muted">{{ _('unbound') }}</span>{% endfor %}</td>
             <td class="small text-muted">{{ it.reason or '' }}</td>
             <td class="text-nowrap">
+              {% if _can_write %}
               <button class="btn btn-sm btn-outline-secondary" data-js="exc-edit">{{ _('Edit') }}</button>
               <button class="btn btn-sm btn-outline-primary" data-js="exc-inject" title="{{ _('Push to device') }}">{{ _('Inject') }}</button>
               <button class="btn btn-sm btn-outline-primary" data-js="exc-deploy" title="{{ _('Place on other FortiWebs') }}">{{ _('Deploy') }}</button>
+              {% endif %}
               <button class="btn btn-sm btn-outline-secondary" data-js="exc-history" title="{{ _('Versions and rollback') }}"><i class="bi bi-clock-history"></i></button>
               {# NOT a plain delete any more: the button opens the impact
                  report first, because a carve-out on a shared profile takes
                  the waiver away from policies that never appear in this row. #}
-              <button class="btn btn-sm btn-outline-danger" data-js="exc-delete">{{ _('Delete') }}</button>
+              {% if _can_write %}<button class="btn btn-sm btn-outline-danger" data-js="exc-delete">{{ _('Delete') }}</button>{% endif %}
             </td>
           </tr>
           {% else %}
@@ -286,7 +289,7 @@
          where a false positive most needs waiving. #}
       <button class="btn btn-sm btn-outline-info" data-js="advise-exc">
         <i class="bi bi-stars me-1"></i>{{ _('Analyse before implementing') }}</button>
-      <button class="btn btn-sm btn-fw-primary" data-js="save-exc"><i class="bi bi-check2-circle me-1"></i>{{ _('Save carve-out') }}</button>
+      <button class="btn btn-sm btn-fw-primary" data-js="save-exc"{% if not _can_write %} disabled title="{{ _('Needs the config_write permission') }}"{% endif %}><i class="bi bi-check2-circle me-1"></i>{{ _('Save carve-out') }}</button>
       <span id="exc-msg" class="ms-2 small"></span>
     </div>
   </div>

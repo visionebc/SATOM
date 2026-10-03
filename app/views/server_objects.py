@@ -249,6 +249,7 @@ def import_object(id):
 
 @bp.route('/<int:id>/refresh', methods=['POST'])
 @login_required
+@require_permission('config_write')
 def refresh(id):
     """Pull live config into the local source of truth, then return to the
     selected Server Objects type (DB-first)."""

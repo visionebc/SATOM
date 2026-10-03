@@ -738,6 +738,9 @@ def object_page(kind: str, name: str):
     blob = wa.load(current.sha256)
     text, clean = af.decode(blob or b"")
     editable, why_not = af.editability(blob)
+    if editable and not current_user.can("config_write"):
+        # The save route is config_write; a viewer gets the read-only view.
+        editable, why_not = False, "saving a version needs the config_write permission"
 
     b_row = _pick("b", rows[0])
     a_row = _pick("a", rows[1] if len(rows) > 1 else rows[0])

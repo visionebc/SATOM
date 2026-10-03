@@ -133,12 +133,14 @@
           <td class="text-nowrap">
             <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.blob', row_id=v.id) }}"><i class="bi bi-download"></i></a>
             <a class="btn btn-fw-outline btn-sm" target="_blank" href="{{ url_for('artifacts.raw', row_id=v.id) }}"><i class="bi bi-box-arrow-up-right"></i></a>
+            {% if current_user.can('config_write') %}
             <form method="post" action="{{ url_for('artifacts.delete') }}" class="d-inline"
                   onsubmit="return confirm('{{ _('Delete this version? The blob survives if another version shares its content.') }}')">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="id" value="{{ v.id }}">
               <button class="btn btn-fw-danger btn-sm"><i class="bi bi-trash"></i></button>
             </form>
+            {% endif %}
           </td>
         </tr>
       {% endfor %}

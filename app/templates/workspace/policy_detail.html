@@ -13,6 +13,17 @@
 {% from "workspace/_fields.html" import fld, savebar, switch %}
 
 {% block content %}
+{% if not current_user.can('config_write') %}
+{# Read-only viewer: every save/create route behind these controls needs
+   config_write. Hidden with CSS rather than removed, so the page script that
+   binds them keeps finding its elements. #}
+<style nonce="{{ csp_nonce }}">
+.fw-save, .fw-cr-save, .fw-cr-delete, .fw-create, .fw-edit-ref,
+[data-js="cr-new-open"], [data-js="cr-add-row"], [data-js="save-scope"],
+[data-js="pool-new-open"], [data-js="apply-pending"] { display: none !important; }
+</style>
+<div class="fw-alert fw-alert-info mb-2" data-readonly-note>{{ _('Read-only: changing this policy needs the config_write permission.') }}</div>
+{% endif %}
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title">

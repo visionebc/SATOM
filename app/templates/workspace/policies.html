@@ -68,9 +68,10 @@
     </div>
   </div>
   <div class="d-flex gap-2">
-    {% if appliance %}<a href="{{ url_for('workspace.new_policy', appliance_id=appliance.id) }}" class="btn btn-fw-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>{{ _('New Server Policy') }}</a>
+    {% set _can_write = current_user.can('config_write') %}
+    {% if appliance and _can_write %}<a href="{{ url_for('workspace.new_policy', appliance_id=appliance.id) }}" class="btn btn-fw-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>{{ _('New Server Policy') }}</a>
     <a href="{{ url_for('spo_wizard.index', appliance_id=appliance.id) }}" class="btn btn-fw-outline btn-sm"><i class="bi bi-magic me-1"></i>{{ _('From a line profile') }}</a>{% endif %}
-    {% if appliance %}
+    {% if appliance and _can_write %}
     <form method="post" action="{{ url_for('workspace.refresh', appliance_id=appliance.id) }}" style="display:inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="btn btn-fw-outline btn-sm"
@@ -79,7 +80,9 @@
       </button>
     </form>
     {% endif %}
-    <a href="{{ url_for('workspace.index') }}" class="btn btn-secondary btn-sm">
+    {# workspace.index redirects straight back to the current device; the
+       architecture map is where a different device is picked. #}
+    <a href="{{ url_for('architecture.index') }}" class="btn btn-secondary btn-sm">
       <i class="bi bi-chevron-left me-1"></i>{{ _('Change Appliance') }}
     </a>
   </div>
@@ -172,12 +175,16 @@
 <div id="bulkBar" class="fw-alert fw-alert-info d-none align-items-center justify-content-between mb-2" style="gap:12px;">
   <span><strong id="bulkCount">0</strong> {{ _('selected') }}</span>
   <div class="d-flex gap-2 flex-wrap">
+    {% if _can_write %}
     <button type="button" class="btn btn-sm btn-outline-success fw-bulk-action" data-action="enable"><i class="bi bi-play-fill me-1"></i>{{ _('Enable') }}</button>
     <button type="button" class="btn btn-sm btn-outline-warning fw-bulk-action" data-action="disable"><i class="bi bi-pause-fill me-1"></i>{{ _('Disable') }}</button>
     <button type="button" class="btn btn-sm btn-outline-primary fw-bulk-action" data-action="clone_here"><i class="bi bi-files me-1"></i>{{ _('Clone here') }}</button>
     <button type="button" class="btn btn-sm btn-outline-primary fw-bulk-action" data-action="clone_to" {{ 'disabled' if not other_appliances }} title="{{ 'No other FortiWeb registered' if not other_appliances else 'Clone to another FortiWeb' }}"><i class="bi bi-box-arrow-up-right me-1"></i>{{ _('Clone to…') }}</button>
     <button type="button" class="btn btn-sm btn-outline-info fw-bulk-action" data-action="migrate_to" {{ 'disabled' if not other_appliances }} title="{{ 'No other FortiWeb registered' if not other_appliances else 'Migrate to another FortiWeb (disables the source)' }}"><i class="bi bi-arrow-left-right me-1"></i>{{ _('Migrate to…') }}</button>
     <button type="button" class="btn btn-sm btn-outline-danger fw-bulk-action" data-action="delete"><i class="bi bi-trash me-1"></i>{{ _('Delete') }}</button>
+    {% else %}
+    <span class="text-muted small">{{ _('Read-only: policy actions need the config_write permission.') }}</span>
+    {% endif %}
   </div>
 </div>
 
@@ -247,6 +254,7 @@
                class="btn btn-sm btn-outline-primary btn-sm-icon" title="{{ _('View / Edit Detail') }}">
               <i class="bi bi-eye"></i>
             </a>
+            {% if _can_write %}
             <div class="dropdown d-inline-block">
               <button class="btn btn-sm btn-outline-secondary btn-sm-icon" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="{{ _('Actions') }}">
                 <i class="bi bi-three-dots-vertical"></i>
@@ -264,6 +272,7 @@
                 <li><button class="dropdown-item text-danger fw-row-action" data-action="delete" data-policy="{{ pname }}"><i class="bi bi-trash me-2"></i>{{ _('Delete') }}</button></li>
               </ul>
             </div>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}

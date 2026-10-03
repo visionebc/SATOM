@@ -32,6 +32,7 @@ def _check_write_permission():
 
 @bp.route('/fw/<int:id>/proxy/<path:endpoint_path>', methods=['GET', 'POST', 'PUT', 'DELETE'])
 @login_required
+@require_permission('registry.view')
 def fortiweb_proxy(id, endpoint_path):
     perm_error = _check_write_permission()
     if perm_error:
@@ -64,6 +65,7 @@ def fortiweb_proxy(id, endpoint_path):
 
 @bp.route('/adc/<int:id>/proxy/<path:endpoint_path>', methods=['GET', 'POST', 'PUT', 'DELETE'])
 @login_required
+@require_permission('registry.view')
 def fortiadc_proxy(id, endpoint_path):
     perm_error = _check_write_permission()
     if perm_error:

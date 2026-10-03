@@ -29,6 +29,7 @@ def parse_entry_id(raw: str):
 
 @bp.route('/')
 @login_required
+@require_permission('audit.view')
 def index():
     from ..models import AuditLog, User
 

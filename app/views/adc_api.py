@@ -61,6 +61,7 @@ def _edit_context() -> dict:
 
 @bp.route('/')
 @login_required
+@require_permission('registry.view')
 def index():
     fleet = (visible_appliances().filter_by(kind='fortiadc')
              .order_by(Appliance.name).all())
@@ -129,6 +130,7 @@ def discovery_load():
 
 @bp.route('/execute', methods=['POST'])
 @login_required
+@require_permission('registry.view')
 def execute():
     appliance_id = request.form.get('appliance_id', type=int)
     endpoint = (request.form.get('endpoint') or '').strip()
@@ -333,6 +335,7 @@ def cli_coverage_capture():
 
 @bp.route('/cli-coverage/probe', methods=['POST'])
 @login_required
+@require_permission('registry.view')
 def cli_coverage_probe():
     """Ask the device which candidate REST path exists for a CLI-only block.
 

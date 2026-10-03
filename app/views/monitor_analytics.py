@@ -86,6 +86,7 @@ def _window():
 # --------------------------------------------------------------------------- #
 @bp.route('/')
 @login_required
+@require_permission(Permission.VIEW)
 def index():
     boards = _boards()
     slug = request.args.get('board') or (boards[0].slug if boards else '')
@@ -103,6 +104,7 @@ def index():
 
 @bp.route('/data')
 @login_required
+@require_permission(Permission.VIEW)
 def data():
     """Every panel of one board, over one consistent window."""
     board = _get_board(request.args.get('board', ''))
@@ -121,6 +123,7 @@ def data():
 
 @bp.route('/panel/<int:pid>/data')
 @login_required
+@require_permission(Permission.VIEW)
 def panel_data(pid: int):
     """One panel, refreshed on its own (per-panel range, auto-refresh)."""
     panel = MonitorPanel.query.get(pid)
@@ -155,12 +158,14 @@ def _get_board_of(panel):
 
 @bp.route('/catalog')
 @login_required
+@require_permission(Permission.VIEW)
 def catalog():
     return jsonify({"ok": True, **ma.metric_catalog()})
 
 
 @bp.route('/cadence')
 @login_required
+@require_permission(Permission.VIEW)
 def cadence():
     """Declared vs effective collection cadence for every visible probe."""
     return jsonify({"ok": True, **ma.cadence_report()})

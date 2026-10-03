@@ -4,6 +4,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, date
 from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required
+from ..models import Permission
+from ..auth.decorators import require_permission
 
 
 def _classify_endpoint(endpoint: str) -> str:
@@ -125,6 +127,7 @@ def _prev_range(dt_from, dt_to):
 
 @bp.route('/')
 @login_required
+@require_permission(Permission.VIEW)
 def index():
     period = request.args.get('period', '7d')
     date_from_str = request.args.get('date_from', '')
@@ -160,6 +163,7 @@ def index():
 
 @bp.route('/api/data')
 @login_required
+@require_permission(Permission.VIEW)
 def api_data():
     """Return JSON metrics for the selected date range."""
     from ..models import AuditLog, ChangeHistory, Appliance, db

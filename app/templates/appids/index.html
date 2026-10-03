@@ -84,7 +84,7 @@
           <div class="col-md-6"><label class="form-label">{{ _('File') }}</label>
             <input type="file" name="catalog_file" id="catalogFile" class="form-control form-control-sm" accept=".csv,.tsv,.txt,.pdf" required></div>
           <div class="col-md-3"><button type="button" id="previewBtn" class="btn btn-fw-outline btn-sm w-100">Preview &amp; map</button></div>
-          <div class="col-md-3 form-check mt-4"><input class="form-check-input" type="checkbox" name="has_header" value="1" id="hasHeader" checked>
+          <div class="col-md-3 form-check mt-4"><input type="hidden" name="has_header" value="0"><input class="form-check-input" type="checkbox" name="has_header" value="1" id="hasHeader" checked>
             <label class="form-check-label" for="hasHeader">{{ _('First row is a header') }}</label></div>
         </div>
 

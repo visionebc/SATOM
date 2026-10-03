@@ -117,7 +117,9 @@ def index():
         'explicit_id': explicit_id,
         'primary_fields': attack_log.PRIMARY_FIELDS,
         'table_columns': attack_log.TABLE_COLUMNS,
-        'ai_enabled': advisor.enabled(),
+        # The AI routes are advisor.use; offering the buttons to a user who
+        # lacks it only produces a 403 after the click.
+        'ai_enabled': advisor.enabled() and current_user.can('advisor.use'),
         'ref': None,
         'appliance': None,
         'rows': None,

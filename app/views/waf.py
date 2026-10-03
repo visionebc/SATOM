@@ -518,7 +518,7 @@ def api_summary():
 #: free-form ``next=``: an open redirect is an open redirect even when the
 #: form it hangs off only produces a download.
 _EXPORT_BACK: tuple[str, ...] = ("index", "inventory", "profiles", "coverage",
-                                 "artifacts")
+                                 "artifacts", "exceptions")
 
 
 @bp.context_processor

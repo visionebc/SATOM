@@ -195,8 +195,19 @@ def assign():
     except (TypeError, ValueError):
         flash("Pick an AppID and a device.", "warning")
         return redirect(url_for("appids.index"))
-    visible_appliance_or_404(appliance_id)
+    appl = visible_appliance_or_404(appliance_id)
     policy = request.form.get("server_policy", "").strip()
+    if policy and appl.kind == "fortiweb":
+        # A typed name was bound as-is; billing then pointed at a policy the
+        # device does not have. Checked against the local store (last sync).
+        from ..services import read_layer
+        rows, _meta = read_layer.read_policies(appl)
+        known = {str(r.get("name") or "") for r in rows}
+        if policy not in known:
+            flash(f"{appl.name} has no server policy named {policy!r} in the "
+                  "local store. Refresh the device from Server Policy if it "
+                  "was created recently.", "warning")
+            return redirect(url_for("appids.index"))
     try:
         row = svc.assign(app_id_pk=app_id_pk, appliance_id=appliance_id,
                          server_policy=policy, by=_who())
@@ -246,8 +257,11 @@ def _mapping_from_form() -> dict:
         name, col = name.strip(), col.strip()
         if name and col:
             extra[name] = col
+    # The page sends a hidden "0" before the checkbox, so an UNticked box is
+    # still a value; a request with no has_header at all keeps the default.
+    hh = request.form.getlist("has_header")
     return {
-        "has_header": request.form.get("has_header", "1") == "1",
+        "has_header": ("1" in hh) if hh else True,
         "fields": fields,
         "extra": extra,
     }

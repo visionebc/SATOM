@@ -10,7 +10,6 @@
 #
 #   scripts/install.sh      the README's own quick start — gunicorn on :8000,
 #                           plain HTTP, no proxy at all
-#   deploy/install.sh       legacy bootstrap, same shape
 #   deploy/docker/          the stack published :80 and DELEGATED TLS to a
 #                           reverse proxy the operator had to supply
 #

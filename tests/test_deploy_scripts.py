@@ -26,9 +26,8 @@ DEPLOY = Path(__file__).resolve().parent.parent / "deploy"
 
 # Scripts that do NOT run on an already-installed node (there is no venv yet)
 # or that are explicitly legacy. Every exemption has to be justified here.
-EXEMPT = {
-    "install.sh",  # legacy bootstrap: runs BEFORE the venv exists
-}
+# (Empty since the legacy deploy/install.sh bootstrap was deleted, 2026-10-03.)
+EXEMPT: set[str] = set()
 
 SHELL_SCRIPTS = sorted(p for p in DEPLOY.glob("*.sh") if p.name not in EXEMPT)
 

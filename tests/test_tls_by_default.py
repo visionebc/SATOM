@@ -2,14 +2,17 @@
 
 WHAT THIS GUARDS, AND WHY NOTHING ELSE DOES
 -------------------------------------------
-There are five install paths in this repository and they were not equal. The
+There are four install paths in this repository and they were not equal. The
 turnkey installer (installers/install-satom.sh) has always issued an internal
-CA and put nginx in front of gunicorn. Three others did not:
+CA and put nginx in front of gunicorn. Two others did not:
 
   scripts/install.sh   the README's own quick start -- gunicorn on 0.0.0.0:8000
-  deploy/install.sh    legacy bootstrap, same shape
   deploy/docker/       published :80 and DELEGATED TLS to a proxy the operator
                        had to supply
+
+(A fifth, the legacy deploy/install.sh bootstrap, was deleted on 2026-10-03:
+it installed the unit as root on 0.0.0.0 with a SQLite database. Use
+installers/install-satom.sh.)
 
 Nothing failed. Each of those installs came up, answered /healthz 200 and
 reported success. What they could not do is accept a password: the app runs
@@ -57,7 +60,6 @@ COMPOSE = DEPLOY / "docker" / "compose.yaml"
 #: application behind TLS. A new installer added here without TLS fails.
 HOST_INSTALLERS = (
     ROOT / "scripts" / "install.sh",
-    DEPLOY / "install.sh",
     TURNKEY,
 )
 
@@ -140,7 +142,7 @@ def test_every_host_installer_provisions_tls(script: pathlib.Path):
     )
 
 
-@pytest.mark.parametrize("script", (ROOT / "scripts" / "install.sh", DEPLOY / "install.sh"),
+@pytest.mark.parametrize("script", (ROOT / "scripts" / "install.sh",),
                          ids=lambda p: str(p.relative_to(ROOT)))
 def test_the_simple_installers_delegate_to_the_shared_provisioner(script: pathlib.Path):
     """Not 'they do TLS somehow' -- they do it through the ONE implementation.
@@ -632,3 +634,16 @@ def test_an_installer_update_reloads_the_proxy():
     upd = body[body.index('if [ "$upgrading" -eq 1 ]; then'):]
     upd = upd[:upd.index("return")]
     assert upd.index("kill -s HUP proxy") > upd.index("up -d --remove-orphans")
+
+
+def test_the_legacy_deploy_bootstrap_is_gone():
+    """deploy/install.sh installed the root / 0.0.0.0 unit with a SQLite URI --
+    the opposite of the privilege model and the Postgres-only runtime. It was
+    deleted rather than aligned: installers/install-satom.sh is the host
+    installer. Nothing shipped may point at it again."""
+    assert not (DEPLOY / "install.sh").exists()
+    hits = []
+    for path in list((ROOT / "docs").glob("*.md")) + [ROOT / "README.md", BOOTSTRAP]:
+        if "deploy/install.sh" in path.read_text(encoding="utf-8"):
+            hits.append(str(path.relative_to(ROOT)))
+    assert not hits, "still pointing at the deleted legacy bootstrap: %s" % hits

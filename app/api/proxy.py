@@ -24,9 +24,13 @@ WRITE_METHODS = {'POST', 'PUT', 'DELETE', 'PATCH'}
 
 
 def _check_write_permission():
+    """A raw write through the proxy is the same act as a raw write from the
+    API Explorer, so it needs the same key: ``registry.execute_write`` (the
+    coarse ``config_write`` alone would let an operator do arbitrary appliance
+    REST writes the Explorer refuses them)."""
     if request.method.upper() in WRITE_METHODS:
-        if not current_user.can(Permission.CONFIG_WRITE):
-            return jsonify({'error': 'CONFIG_WRITE permission required'}), 403
+        if not current_user.can('registry.execute_write'):
+            return jsonify({'error': 'registry.execute_write permission required'}), 403
     return None
 
 

@@ -233,7 +233,7 @@ else:
     print("  ha_nodes.json: %s was already registered" % ip)
 PYNODES
     else:
-        warn "${APP_DIR}/venv/bin/python not found — register the standby by hand in Software Update → HA nodes"
+        warn "${APP_DIR}/venv/bin/python not found — register the standby by hand in High Availability → Add node"
     fi
 
     echo ""
@@ -1650,11 +1650,16 @@ fi
 # templates declare User=root and the self-update runner copies them again on
 # every update — without the drop-in, the first update would put the app back
 # on root.
+# The unit list is DERIVED, the same way self_update_runner.NONROOT_UNITS is:
+# every deploy/*.service except the root updater, plus the generated HA datasync
+# unit. A hand-kept list here once missed satom-integrations / satom-responder,
+# so with a custom SATOM_APP_USER the hook runner kept the template's User=satom
+# until the first self-update.
 satom_enforce_unit_user() {                                          # [PFDROPIN]
-    local unit d
-    for unit in satom.service satom-scheduler.service satom-reconciler.service \
-                satom-alerts.service satom-cert-renew.service \
-                satom-metrics.service satom-ha-datasync.service; do
+    local unit d src
+    for src in "$APP_DIR"/deploy/*.service satom-ha-datasync.service; do
+        unit="${src##*/}"
+        [ "$unit" = "satom-updater.service" ] && continue
         [ -f "/etc/systemd/system/$unit" ] || continue
         d="/etc/systemd/system/${unit}.d"
         install -d -m 0755 "$d"

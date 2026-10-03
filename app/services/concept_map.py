@@ -24,8 +24,8 @@ Three rules hold this file honest, and each has a test in
    are structural identity (same lesson as ``data-nav-group``, safeguards §68);
    only ``label``/``blurb`` are display text.
 
-Concept keys are stable — they appear in URLs (``/map/?c=waf``) and in the
-saved-search of anyone who bookmarks a cluster.
+Concept keys are stable — they are the section anchors in URLs
+(``/map/#cm-c-waf``), which anyone who bookmarks a cluster has saved.
 """
 from __future__ import annotations
 
@@ -722,6 +722,19 @@ def required_permission(endpoint: str, app=None):
     return getattr(fn, "__required_permission__", None) if fn else None
 
 
+def global_only(endpoint: str, app=None) -> bool:
+    """True when the view only answers in the Global ADOM.
+
+    Read off the ``__global_only__`` stamp the view carries (same rule as the
+    permission: the view states it, this file never re-declares it). Such a
+    page enforces the ADOM in its body, so a plain link opened from a product
+    ADOM would bounce; :func:`build` pins its link to the Global ADOM instead.
+    """
+    app = app or current_app
+    fn = app.view_functions.get(endpoint)
+    return bool(getattr(fn, "__global_only__", False)) if fn else False
+
+
 def _visible(page, user, app) -> bool:
     perm = required_permission(page["endpoint"], app)
     if perm is None:
@@ -748,7 +761,10 @@ def build(user=None, app=None) -> list[dict]:
         # indistinguishable from "this page does not exist", which is the one
         # thing the map must never say wrongly. :func: reports
         # dangling entries; this raises on anything it could not have caught.
-        href = url_for(page["endpoint"])
+        if global_only(page["endpoint"], app):
+            href = url_for(page["endpoint"], _adom="global")
+        else:
+            href = url_for(page["endpoint"])
         by_concept.setdefault(page["concept"], []).append({
             "endpoint": page["endpoint"], "label": page["label"],
             "blurb": page["blurb"], "keywords": page["keywords"],

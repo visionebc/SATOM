@@ -49,11 +49,12 @@ def test_users_index_shows_profile_column(app, client):
     assert "profile_id" in body               # add-user picker
 
 
-def test_user_edit_page_renders_profile_picker(app, client):
+def test_user_edit_page_is_gone_the_list_carries_the_profile_picker(app, client):
+    # /users/<id>/edit was unreachable from the UI and removed in the
+    # 2026-10-03 audit (AD-61); the Change Profile modal on the list covers it.
     _admin(app, client)
-    r = client.get(f"/users/{admin_user_id(app)}/edit")
-    assert r.status_code == 200
-    assert 'name="profile_id"' in r.get_data(as_text=True)
+    assert client.get(f"/users/{admin_user_id(app)}/edit").status_code == 404
+    assert 'id="formChangeProfile"' in client.get("/users/").get_data(as_text=True)
 
 
 def test_home_is_global_dashboard_when_logged_in(app, client):

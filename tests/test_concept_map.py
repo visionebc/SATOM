@@ -163,7 +163,8 @@ def test_the_stamp_does_not_replace_the_gate(app, client):
 
 def test_required_permission_reads_the_view_not_the_registry(app):
     with app.app_context():
-        assert cmap.required_permission("users.index", app) == "user_manage"
+        # users.index opened to users.view (read-only list) in the 2026-10-03 audit (AD-02).
+        assert cmap.required_permission("users.index", app) == "users.view"
         assert cmap.required_permission("auth.profile", app) is None
         # search.index carried no gate until the 2026-10-03 audit (MO-06).
         assert cmap.required_permission("search.index", app) == "view"

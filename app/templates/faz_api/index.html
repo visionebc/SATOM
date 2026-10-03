@@ -237,7 +237,7 @@
           <div class="d-flex gap-2">
             <select id="sel-method" class="form-select fw-form-control" style="width:110px; flex-shrink:0;">
               {% for v in verbs %}
-              <option{% if v != 'get' and not can_write %} disabled{% endif %}>{{ v }}</option>
+              <option value="{{ v }}"{% if v != 'get' and not can_write %} disabled{% endif %}>{{ v }}</option>
               {% endfor %}
             </select>
             <input type="text" id="inp-path" class="form-control fw-form-control"
@@ -248,6 +248,14 @@
             <i class="bi bi-info-circle me-1"></i>Verbs other than <code>get</code> need the "Execute write API calls" permission.
           </div>
           {% endif %}
+          <div class="form-check mt-2" id="faz-apply-wrap" style="display:none;">
+            <input class="form-check-input" type="checkbox" id="faz-apply"
+                   {{ '' if can_write else 'disabled' }}>
+            <label class="form-check-label" for="faz-apply" style="font-size:12px;">
+              {{ _('Apply') }} <span class="text-muted">{{ _('(really write)') }}</span></label>
+            <div class="text-muted" style="font-size:11px;">
+              {{ _('Writes are dry-run by default: without Apply the console shows the request and sends nothing.') }}</div>
+          </div>
           <div id="selected-urn" class="text-muted mt-1" style="font-size:11px;"></div>
           <div class="mt-1">
             <small class="text-muted">{{ _('Common urls:') }}</small>
@@ -403,6 +411,8 @@ async function runRequest() {
     form.set('endpoint', path);
     form.set('method', method);
     if (bodyTxt) form.set('body', bodyTxt);
+    const applyEl = document.getElementById('faz-apply');
+    if (method !== 'get' && applyEl && applyEl.checked) form.set('apply', '1');
 
     const r  = await fetch('{{ url_for("faz_api.execute") }}', {
       method: 'POST',
@@ -415,19 +425,18 @@ async function runRequest() {
     const ms = Date.now() - t0;
     const j  = await r.json();
 
-    if (j.ok) {
-      // JSON-RPC rides HTTP 200 — surface the device status code instead.
-      let code = '—';
-      try {
-        const res = j.result && j.result.result;
-        const one = Array.isArray(res) ? res[0] : res;
-        if (j.result && j.result.error) code = 'ERR ' + j.result.error.code;
-        else if (one && one.status && one.status.code !== undefined) code = 'code ' + one.status.code;
-        else code = 'OK';
-      } catch (e) { code = 'OK'; }
-      const isErr = String(code).indexOf('ERR') === 0 || /code -\d/.test(String(code));
+    if (j.ok && j.dry_run) {
+      statusEl.textContent = 'Dry run';
+      statusEl.className   = 'fw-badge fw-badge-warning';
+      respEl.innerHTML = syntaxHighlight(JSON.stringify({note: j.note, request: j.request}, null, 2));
+      addHistory(method, (j.path || path).split('?')[0], 'DRY');
+    } else if (j.ok) {
+      // JSON-RPC rides HTTP 200 — the server reports the device status code.
+      const code = j.device_error ? 'ERR ' + (j.status === null || j.status === undefined ? '' : j.status)
+                                  : 'code ' + (j.status === null || j.status === undefined ? 0 : j.status);
       statusEl.textContent = code;
-      statusEl.className   = 'fw-badge ' + (isErr ? 'fw-badge-danger' : 'fw-badge-success');
+      statusEl.className   = 'fw-badge ' + (j.device_error ? 'fw-badge-danger' : 'fw-badge-success');
+      if (j.device_error) statusEl.title = j.device_error;
       const formatted = typeof j.result === 'object' ? JSON.stringify(j.result, null, 2) : String(j.result);
       respEl.innerHTML = syntaxHighlight(formatted);
       addHistory(method, (j.path || path).split('?')[0], code);
@@ -509,6 +518,13 @@ function renderHistory() {
 function loadHistory(method, path) {
   document.getElementById('sel-method').value = method;
   document.getElementById('inp-path').value   = path;
+  syncApply();
+}
+
+// The Apply box only means something for a write; a read is never dry-run.
+function syncApply() {
+  const wrap = document.getElementById('faz-apply-wrap');
+  if (wrap) wrap.style.display = document.getElementById('sel-method').value === 'get' ? 'none' : '';
 }
 
 function clearHistory() {
@@ -533,6 +549,7 @@ function loadEndpoint(method, path) {
   if (pathEl)   pathEl.value   = path;
   if (urnEl)    urnEl.textContent = 'URN: ' + path;
   if (pathEl)   pathEl.focus();
+  syncApply();
 }
 
 function copyUrn(urn) {
@@ -570,6 +587,8 @@ document.addEventListener('keydown', function (e) {
   document.getElementById('btn-execute').addEventListener('click', function (event) { runRequest(); });
   document.querySelector('[data-js="clear-history"]').addEventListener('click', function (event) { clearHistory(); });
   document.querySelector('[data-js="copy-response"]').addEventListener('click', function (event) { copyResponse(); });
+  document.getElementById('sel-method').addEventListener('change', syncApply);
+  syncApply();
 
   document.querySelectorAll('#apiTree .api-tree-leaf-btn').forEach(function (btn) {
     btn.addEventListener('click', function (event) { loadEndpoint(this.dataset.method, this.dataset.path); });

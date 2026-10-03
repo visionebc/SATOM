@@ -41,7 +41,7 @@ from ..extensions import db
 from ..models import (Appliance, Permission, RegistryEndpoint,
                       visible_appliances, visible_appliance_or_404)
 from ..registry import loader
-from ..services import fac_menu
+from ..services import fac_menu, registry_write
 from ..services.audit import log_action
 from . import _clicoverage
 
@@ -184,28 +184,28 @@ def save_endpoint():
     upgrade moves a resource — no code change, no deploy."""
     name = (request.form.get('name') or '').strip()
     urn = (request.form.get('urn') or '').strip()
-    if not _NAME_RE.match(name):
-        flash('Invalid endpoint name.', 'danger')
-        return redirect(url_for('fac_api.index'))
-    if not _PATH_RE.match(urn):
-        flash('URN must be a path under /api/v1/.', 'danger')
-        return redirect(url_for('fac_api.index'))
 
+    # Upsert by name: an existing row (enabled or not) is re-pointed in place.
     row = RegistryEndpoint.query.filter_by(
-        product='fortiauthenticator', name=name).first()
+        product='fortiauthenticator', name=name).first() if name else None
     before = row.urn if row else None
-    if row is None:
-        row = RegistryEndpoint(product='fortiauthenticator', api_version='v1',
-                               name=name, urn=urn)
-        db.session.add(row)
+    # The ONE catalog writer (validation, duplicate check, cache drop). It
+    # never touches ``enabled``: re-pointing a disabled endpoint leaves it
+    # disabled until someone restores it on purpose.
+    ok, msg, row = registry_write.save_endpoint(
+        product='fortiauthenticator', name=name, urn=urn,
+        api_version=row.api_version if row else '',
+        row_id=row.id if row else None, actor=current_user.username)
+    if not ok:
+        flash(msg, 'danger')
+        return redirect(url_for('fac_api.index'))
+    log_action('fac_api.registry_save', name,
+               {'from': before, 'to': urn, 'enabled': row.enabled})
+    if row.enabled:
+        flash(f'Endpoint {name} saved.', 'success')
     else:
-        row.urn = urn
-        row.enabled = True
-    row.updated_by = current_user.username
-    db.session.commit()
-    loader.invalidate_fac_cache()
-    log_action('fac_api.registry_save', name, {'from': before, 'to': urn})
-    flash(f'Endpoint {name} saved.', 'success')
+        flash(f'Endpoint {name} saved; it is still disabled — restore it to use it.',
+              'warning')
     return redirect(url_for('fac_api.index'))
 
 

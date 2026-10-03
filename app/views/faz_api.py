@@ -18,13 +18,16 @@ legacy vs apiver-3 envelope from the URL family — see
 * right — a live console: pick a FortiAnalyzer, a verb, a logical endpoint
   (or a raw ``/…`` JSON-RPC url) and a JSON ``data`` body.
 
-All writes are audited. The registry is 2D (``product='fortianalyzer'``), so
-this never touches the FortiWeb/FortiADC catalogs.
+**Console writes are DRY-RUN BY DEFAULT**, exactly like the FortiAuthenticator
+console: a mutating verb returns the request it would send and changes nothing
+until ``apply=true`` is passed. Every applied write is audited, including the
+ones the device refused; reads are not audited. The registry is 2D
+(``product='fortianalyzer'``), so this never touches the FortiWeb/FortiADC
+catalogs.
 """
 from __future__ import annotations
 
 import json
-import re
 
 from flask import (Blueprint, abort, flash, jsonify, redirect, render_template,
                    request, url_for)
@@ -36,13 +39,12 @@ from ..extensions import db
 from ..models import Appliance, Permission, RegistryEndpoint
 from ..models import visible_appliances, visible_appliance_or_404
 from ..registry import loader
-from ..services import faz_menu
+from ..services import faz_menu, registry_write
 from ..services.audit import log_action
 from . import _clicoverage
 
 bp = Blueprint('faz_api', __name__, url_prefix='/faz/api')
 
-_NAME_RE = re.compile(r'^[A-Za-z0-9_.\-]+$')
 # JSON-RPC verbs (lowercase on the wire); everything but 'get' mutates.
 _VERBS = ('get', 'exec', 'add', 'set', 'update', 'delete')
 _WRITE_VERBS = {'exec', 'add', 'set', 'update', 'delete'}
@@ -100,6 +102,7 @@ def execute():
     endpoint = (request.form.get('endpoint') or '').strip()
     verb = (request.form.get('method') or 'get').lower()
     body_raw = (request.form.get('body') or '').strip()
+    apply_ = (request.form.get('apply') or '').lower() in ('1', 'true', 'on', 'yes')
 
     if not appliance_id or not endpoint:
         return jsonify(ok=False, error='Appliance and endpoint are required.')
@@ -130,6 +133,15 @@ def execute():
         except ValueError as exc:
             return jsonify(ok=False, error=f'Invalid JSON body: {exc}')
 
+    preview = {'method': verb, 'path': path, 'body': body}
+    write = verb in _WRITE_VERBS
+
+    # DRY RUN — the default for every mutating verb. Nothing is sent.
+    if write and not apply_:
+        return jsonify(ok=True, dry_run=True, path=path, request=preview,
+                       note=('Dry run — nothing was sent. Re-submit with Apply '
+                             'to perform this write on the device.'))
+
     try:
         client = FortiAnalyzerClient(appliance)
         raw = client.api_call(verb, path, body)
@@ -137,11 +149,38 @@ def execute():
             client.logout()
         except Exception:  # noqa: BLE001 — best-effort session hygiene
             pass
-        log_action('faz_api.execute', target=appliance.name,
-                   extra={'method': verb, 'endpoint': path})
-        return jsonify(ok=True, status=200, path=path, result=raw)
     except Exception as exc:  # noqa: BLE001
-        return jsonify(ok=False, error=str(exc))
+        if write:
+            log_action('faz_api.execute', target=appliance.name,
+                       extra={'method': verb, 'endpoint': path, 'error': str(exc)})
+        return jsonify(ok=False, error=str(exc), request=preview)
+
+    # JSON-RPC rides HTTP 200 whatever happened; the outcome is the envelope's
+    # status code (0 = success), so that is what the console reports.
+    code, device_err = _rpc_outcome(raw)
+    if write:
+        log_action('faz_api.execute', target=appliance.name,
+                   extra={'method': verb, 'endpoint': path, 'error': device_err})
+    return jsonify(ok=True, dry_run=False, status=code, device_error=device_err,
+                   path=path, request=preview, result=raw)
+
+
+def _rpc_outcome(raw):
+    """``(code, error)`` of a JSON-RPC envelope: the device status code
+    (``result[0].status.code`` legacy, ``result.status.code`` apiver-3, the
+    ``error.code`` of a JSON-RPC 2.0 error) and the error text, or None."""
+    _data, err = FortiAnalyzerClient._unwrap(raw)
+    code = None
+    if isinstance(raw, dict):
+        if isinstance(raw.get('error'), dict):
+            code = raw['error'].get('code')
+        else:
+            res = raw.get('result')
+            if isinstance(res, list):
+                res = res[0] if res else {}
+            if isinstance(res, dict):
+                code = (res.get('status') or {}).get('code')
+    return code, err
 
 
 # --------------------------------------------------------------------------- #
@@ -161,40 +200,23 @@ def registry_save():
     urn = (request.form.get('urn') or '').strip()
     api_version = (request.form.get('api_version') or 'jsonrpc').strip() or 'jsonrpc'
 
-    if not name or not urn:
-        flash('Name and URN are both required.', 'danger')
-        return _back()
-    if not _NAME_RE.match(name):
-        flash('Endpoint name may only contain letters, digits, "_", "-" and ".".', 'danger')
-        return _back()
-    if not urn.startswith('/'):
-        flash('URN must be an absolute JSON-RPC url (e.g. /dvmdb/device).', 'danger')
-        return _back()
-
-    row = None
+    before, action = None, 'registry.faz_endpoint_create'
     if rid:
-        row = db.session.get(RegistryEndpoint, rid)
-        if row is None or row.product != 'fortianalyzer':
+        existing = db.session.get(RegistryEndpoint, rid)
+        if existing is None or existing.product != 'fortianalyzer':
             abort(404)
+        action = 'registry.faz_endpoint_update'
+        before = {'name': existing.name, 'urn': existing.urn,
+                  'api_version': existing.api_version}
 
-    dup = RegistryEndpoint.query.filter_by(
-        product='fortianalyzer', api_version=api_version, name=name).first()
-    if dup is not None and (row is None or dup.id != row.id):
-        flash(f'An endpoint named "{name}" already exists ({dup.urn}).', 'danger')
+    # The ONE catalog writer (validation, duplicate check, cache drop).
+    ok, msg, _row = registry_write.save_endpoint(
+        product='fortianalyzer', name=name, urn=urn, api_version=api_version,
+        row_id=rid, actor=current_user.username)
+    if not ok:
+        flash(msg, 'danger')
         return _back()
 
-    if row is None:
-        row = RegistryEndpoint(product='fortianalyzer', api_version=api_version)
-        db.session.add(row)
-        action, before = 'registry.faz_endpoint_create', None
-    else:
-        action = 'registry.faz_endpoint_update'
-        before = {'name': row.name, 'urn': row.urn, 'api_version': row.api_version}
-
-    row.name, row.urn, row.api_version = name, urn, api_version
-    row.updated_by = current_user.username
-    db.session.commit()
-    loader.invalidate_faz_cache()
     log_action(action, target=name, extra={'urn': urn, 'api_version': api_version,
                                            'before': before})
     flash(f'FortiAnalyzer endpoint "{name}" saved.', 'success')

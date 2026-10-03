@@ -268,10 +268,12 @@
           <label class="fw-form-label">Method &amp; Path <span class="text-danger">*</span></label>
           <div class="d-flex gap-2">
             <select id="sel-method" class="form-select fw-form-control" style="width:100px; flex-shrink:0;">
-              <option>GET</option>
-              <option{% if not can_write %} disabled{% endif %}>POST</option>
-              <option{% if not can_write %} disabled{% endif %}>PUT</option>
-              <option{% if not can_write %} disabled{% endif %}>{{ _('DELETE') }}</option>
+              {# value= is the wire verb; the label stays untranslated too, so a
+                 localised UI can never send "ELIMINAR" as the HTTP method. #}
+              <option value="GET">GET</option>
+              {% for m in ('POST', 'PUT', 'PATCH', 'DELETE') %}
+              <option value="{{ m }}"{% if not can_write %} disabled{% endif %}>{{ m }}</option>
+              {% endfor %}
             </select>
             <input type="text" id="inp-path" class="form-control fw-form-control"
                    placeholder="{{ _('/api/load_balance_virtual_server or a logical name') }}">
@@ -281,6 +283,14 @@
             <i class="bi bi-info-circle me-1"></i>{{ _('Write methods need the "Execute write API calls" permission.') }}
           </div>
           {% endif %}
+          <div class="form-check mt-2" id="adc-apply-wrap" style="display:none;">
+            <input class="form-check-input" type="checkbox" id="adc-apply"
+                   {{ '' if can_write else 'disabled' }}>
+            <label class="form-check-label" for="adc-apply" style="font-size:12px;">
+              {{ _('Apply') }} <span class="text-muted">{{ _('(really write)') }}</span></label>
+            <div class="text-muted" style="font-size:11px;">
+              {{ _('Writes are dry-run by default: without Apply the console shows the request and sends nothing.') }}</div>
+          </div>
           <div id="selected-urn" class="text-muted mt-1" style="font-size:11px;"></div>
           <div class="mt-1">
             <small class="text-muted">{{ _('Common paths:') }}</small>
@@ -436,6 +446,8 @@ async function runRequest() {
     form.set('method', method);
     if (mkey) form.set('mkey', mkey);
     if (bodyTxt && method !== 'GET' && method !== 'DELETE') form.set('body', bodyTxt);
+    const applyEl = document.getElementById('adc-apply');
+    if (method !== 'GET' && applyEl && applyEl.checked) form.set('apply', '1');
 
     const r  = await fetch('{{ url_for("adc_api.execute") }}', {
       method: 'POST',
@@ -448,7 +460,12 @@ async function runRequest() {
     const ms = Date.now() - t0;
     const j  = await r.json();
 
-    if (j.ok) {
+    if (j.ok && j.dry_run) {
+      statusEl.textContent = 'Dry run';
+      statusEl.className   = 'fw-badge fw-badge-warning';
+      respEl.innerHTML = syntaxHighlight(JSON.stringify({note: j.note, request: j.request}, null, 2));
+      addHistory(method, (j.path || path).split('?')[0], 'DRY');
+    } else if (j.ok) {
       statusEl.textContent = 'HTTP ' + j.status;
       statusEl.className   = 'fw-badge ' + (j.status < 400 ? 'fw-badge-success' : 'fw-badge-danger');
       const formatted = typeof j.result === 'object' ? JSON.stringify(j.result, null, 2) : String(j.result);
@@ -532,6 +549,13 @@ function renderHistory() {
 function loadHistory(method, path) {
   document.getElementById('sel-method').value = method;
   document.getElementById('inp-path').value   = path;
+  syncApply();
+}
+
+// The Apply box only means something for a write; a read is never dry-run.
+function syncApply() {
+  const wrap = document.getElementById('adc-apply-wrap');
+  if (wrap) wrap.style.display = document.getElementById('sel-method').value === 'GET' ? 'none' : '';
 }
 
 function clearHistory() {
@@ -556,6 +580,7 @@ function loadEndpoint(method, path) {
   if (pathEl)   pathEl.value   = path;
   if (urnEl)    urnEl.textContent = 'URN: ' + path;
   if (pathEl)   pathEl.focus();
+  syncApply();
 }
 
 function copyUrn(urn) {
@@ -593,6 +618,8 @@ document.addEventListener('keydown', function (e) {
   document.getElementById('btn-execute').addEventListener('click', function (event) { runRequest(); });
   document.querySelector('[data-js="clear-history"]').addEventListener('click', function (event) { clearHistory(); });
   document.querySelector('[data-js="copy-response"]').addEventListener('click', function (event) { copyResponse(); });
+  document.getElementById('sel-method').addEventListener('change', syncApply);
+  syncApply();
 
   document.querySelectorAll('#apiTree .api-tree-leaf-btn').forEach(function (btn) {
     btn.addEventListener('click', function (event) { loadEndpoint(this.dataset.method, this.dataset.path); });

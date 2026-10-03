@@ -113,3 +113,74 @@ def test_delete_row_dryrun(client, app):
     assert j["ok"] and j["dry_run"], j
     assert j["request"]["method"] == "DELETE"
     assert j["request"]["path"].endswith("&sub_mkey=3")
+
+
+# --------------------------------------------------------------------------- #
+#  Edit lease enforced server-side (audit AU-22) and on the inline path (AU-25)  #
+# --------------------------------------------------------------------------- #
+def _hold(app, aid, key, owner="alice"):
+    from tests.conftest import make_user
+    from app.services import lock_service
+    uid = make_user(app, owner, role="operator")
+    with app.app_context():
+        ok, _info = lock_service.acquire(aid, key, user_id=uid, owner_label=owner)
+        assert ok
+
+
+_WRITES = [
+    ("save-object", {"collection": "server-policy/server-pool", "mkey": "pool-x",
+                     "fields": {"comment": "hi"}}),
+    ("delete-object", {"collection": "server-policy/server-pool", "mkey": "pool-x"}),
+    ("save-row", {"collection": "server-policy/server-pool/pserver-list",
+                  "parent": "pool-x", "fields": {"port": "80"}}),
+    ("delete-row", {"collection": "server-policy/server-pool/pserver-list",
+                    "parent": "pool-x", "sub_id": 3}),
+]
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("route,body", _WRITES, ids=[w[0] for w in _WRITES])
+def test_a_write_over_another_users_lease_is_refused(client, app, route, body):
+    aid = _make_appliance(app)
+    _hold(app, aid, "server-policy/server-pool:pool-x")
+    login(client, admin_user_id(app))
+    r = client.post(f"/objedit/{aid}/{route}", json=dict(body, apply=True))
+    assert r.status_code == 409, (r.status_code, r.get_json())
+    j = r.get_json()
+    assert j["ok"] is False and "alice" in j["error"]
+
+
+@pytest.mark.parametrize("route,body", _WRITES, ids=[w[0] for w in _WRITES])
+def test_the_lease_holder_still_saves(client, app, route, body):
+    from app.services import lock_service
+    aid = _make_appliance(app)
+    admin = admin_user_id(app)
+    with app.app_context():
+        assert lock_service.acquire(aid, "server-policy/server-pool:pool-x",
+                                    user_id=admin, owner_label="admin")[0]
+    login(client, admin)
+    r = client.post(f"/objedit/{aid}/{route}", json=body)
+    assert r.status_code == 200, (r.status_code, r.get_json())
+    assert r.get_json()["dry_run"]
+
+
+def test_a_lease_on_another_object_does_not_block(client, app):
+    aid = _make_appliance(app)
+    _hold(app, aid, "server-policy/server-pool:pool-other")
+    login(client, admin_user_id(app))
+    r = client.post(f"/objedit/{aid}/save-object", json=_WRITES[0][1])
+    assert r.status_code == 200
+
+
+def test_the_inline_editor_carries_the_lease_guard(client, app):
+    aid = _make_appliance(app)
+    login(client, admin_user_id(app))
+    for extra in ("&partial=1", ""):
+        r = client.get(f"/objedit/{aid}/edit?collection=server-policy/server-pool"
+                       f"&mkey=pool-x&title=Pool{extra}")
+        h = r.get_data(as_text=True)
+        assert h.count('class="fw-lock-guard"') == 1, extra
+        assert 'data-resource-key="server-policy/server-pool:pool-x"' in h
+        assert "js/lock.js" in h

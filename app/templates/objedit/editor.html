@@ -11,9 +11,7 @@
 {% endblock %}
 
 {% block content %}
-{% if not create %}
-<div id="lock-guard" data-appliance-id="{{ appliance.id }}" data-resource-key="{{ collection }}:{{ mkey }}"></div>
-{% endif %}
+{# The edit-lease guard lives in _body.html so the inline (?partial=1) editor
+   takes and shows the lease exactly like this page does. #}
 {% include "objedit/_body.html" %}
-{% if not create %}<script src="{{ url_for('static', filename='js/lock.js') }}"></script>{% endif %}
 {% endblock %}

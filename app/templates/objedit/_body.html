@@ -6,6 +6,9 @@
 {# ===================================================================== #}
 <div class="fw-objedit" data-fw-objedit data-collection="{{ collection }}"
      data-mkey="{{ mkey }}" data-title="{{ title }}"{% if create %} data-create="1"{% endif %}>
+{% if not create and not error %}
+<div class="fw-lock-guard" data-appliance-id="{{ appliance.id }}" data-resource-key="{{ collection }}:{{ mkey }}"></div>
+{% endif %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h4 class="mb-0">{{ 'New ' ~ title if create else title }} <span class="text-muted">{{ mkey }}</span></h4>
   <code class="small text-muted">{{ collection }}</code>
@@ -331,4 +334,7 @@ function deleteRow(btn){
   });
 })();
 </script>
+{% if not create and not error %}
+<script src="{{ url_for('static', filename='js/lock.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endif %}
 </div>{# /.fw-objedit #}

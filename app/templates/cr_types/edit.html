@@ -170,7 +170,7 @@
       {% endif %}
     </p>
     <form method="post" action="{{ url_for('cr_types.delete', key=key, _adom=product.key) }}"
-          onsubmit="return confirm('{{ 'Reset' if builtin else 'Delete' }} {{ key }}?');">
+          data-fw-confirm-form="{{ ('Reset' if builtin else 'Delete') ~ ' ' ~ key ~ '?' }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="btn btn-sm btn-outline-danger">{{ 'Reset to shipped wording' if builtin else 'Delete change type' }}</button>
     </form>

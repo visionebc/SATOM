@@ -400,3 +400,30 @@ def test_residue_is_judged_against_the_source_not_a_list_of_known_shapes():
     """A source that legitimately contains ``>>`` must not be rejected."""
     assert translator._fence_residue("resultado >> fichero", "output >> file") == ""
     assert translator._fence_residue("resultado >> fichero", "output to file")
+
+
+# --------------------------------------------------------------------------- #
+#  Locality follows the base URL, not the provider kind                        #
+# --------------------------------------------------------------------------- #
+def _only(monkeypatch, prov, *, external_allowed):
+    monkeypatch.setattr(translator.advisor, "get_provider", lambda k: prov)
+    monkeypatch.setattr(translator.advisor, "default_provider_key", lambda: prov["key"])
+    monkeypatch.setattr(translator.advisor, "external_allowed", lambda: external_allowed)
+
+
+def test_an_ollama_on_a_public_host_is_external(monkeypatch):
+    """The kind used to decide: an Ollama on a public address skipped the
+    "Allow external providers" gate and the external flag."""
+    prov = {"key": "remote", "kind": "ollama", "base_url": "http://8.8.8.8:11434"}
+    # (a public literal: Python counts TEST-NET ranges as private)
+    _only(monkeypatch, prov, external_allowed=False)
+    with pytest.raises(translator.TranslationError, match="external providers are disabled"):
+        translator._resolve()
+    _only(monkeypatch, prov, external_allowed=True)
+    assert translator._resolve() == (prov, True)
+
+
+def test_an_ollama_on_loopback_stays_local(monkeypatch):
+    prov = {"key": "local", "kind": "ollama", "base_url": "http://127.0.0.1:11434"}
+    _only(monkeypatch, prov, external_allowed=False)
+    assert translator._resolve() == (prov, False)

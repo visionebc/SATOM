@@ -506,3 +506,23 @@ window.fwSync = fwSync;
     }
   });
 })();
+
+// ============================================================
+// Data-attribute behaviours (the CSP sets script-src-attr 'none', so inline
+// on*= handlers never run; templates declare the behaviour instead)
+// ============================================================
+document.addEventListener('DOMContentLoaded', function () {
+  // <select data-fw-autosubmit>: submit the owning form on change
+  document.querySelectorAll('[data-fw-autosubmit]').forEach(function (el) {
+    el.addEventListener('change', function () { if (el.form) { el.form.submit(); } });
+  });
+  // <span data-fw-copy="text">: copy the value, flash a check mark
+  document.querySelectorAll('[data-fw-copy]').forEach(function (el) {
+    el.addEventListener('click', function () {
+      var label = el.textContent;
+      if (navigator.clipboard) { navigator.clipboard.writeText(el.getAttribute('data-fw-copy')); }
+      el.textContent = '✓';
+      setTimeout(function () { el.textContent = label; }, 1200);
+    });
+  });
+});

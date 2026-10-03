@@ -194,3 +194,47 @@ def test_the_admin_console_menu_script_is_nonced(app, client):
     head = html[: html.index("satom.settingsnav.open.v1")]
     tag = head[head.rindex("<script") :]
     assert "nonce=" in tag, "the menu's accordion script carries no nonce"
+
+
+# --------------------------------------------------------------------------- #
+#  Inline event-handler attributes                                             #
+# --------------------------------------------------------------------------- #
+# The CSP sets script-src-attr 'none', so an on*= attribute never runs. Three
+# delete forms still carried onsubmit="return confirm(...)": the confirm was
+# blocked and the delete went through without asking (found 2026-10-03).
+_HANDLER = re.compile(r"<[a-zA-Z][^<>]*?\s(on[a-z]{3,})\s*=\s*[\"']", re.S)
+
+
+def _handler_offenders(src_by_path) -> list[str]:
+    out = []
+    for rel, src in src_by_path:
+        clean = _uncommented(src)
+        for m in _HANDLER.finditer(clean):
+            out.append(f"{rel}:{clean.count(chr(10), 0, m.start()) + 1} {m.group(1)}")
+    return out
+
+
+def _all_templates():
+    for dirpath, _dirs, files in os.walk(TEMPLATES):
+        for fn in sorted(files):
+            if fn.endswith(".html"):
+                path = os.path.join(dirpath, fn)
+                with open(path, encoding="utf-8") as fh:
+                    yield os.path.relpath(path, TEMPLATES), fh.read()
+
+
+def test_no_template_uses_an_inline_event_handler():
+    bad = _handler_offenders(_all_templates())
+    assert not bad, (
+        "inline on*= handlers are blocked by script-src-attr 'none' and fail "
+        "silently (a confirm() that never asks). Use data-fw-confirm-form, "
+        "data-fw-confirm, data-fw-autosubmit or data-fw-copy, or a nonced "
+        "script: " + ", ".join(bad)
+    )
+
+
+def test_the_handler_scan_can_see_a_violation():
+    assert _handler_offenders([("x.html", '<form onsubmit="return confirm(1)">')])
+    assert _handler_offenders([("x.html", "<img src=a\n     onerror='hide()'>")])
+    assert not _handler_offenders([("x.html", '<form data-fw-confirm-form="Sure?">')])
+    assert not _handler_offenders([("x.html", "{# never write onclick=\"x\" #}")])

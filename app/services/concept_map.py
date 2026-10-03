@@ -567,6 +567,9 @@ EXCLUDED: dict[str, str] = {
     # JSON feeds consumed by a page's own JS.
     "advisor.attachable": "json feed",
     "advisor.tools": "json feed", "advisor.usage": "json feed",
+    # Fetched by the Software Update page's own JS after it renders.
+    "self_update.package_feed": "json feed",
+    "self_update.apipack_inspect": "json feed",
     "analysis.data": "json feed", "analysis.inventory": "json feed",
     "analysis.deep_objects": "json feed", "analysis.faz_ops": "json feed",
     "analysis.freshness": "json feed", "analysis.orphans": "json feed",

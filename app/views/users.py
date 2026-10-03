@@ -52,9 +52,11 @@ def _is_last_admin(user: User) -> bool:
     )
 
 
-def _commit_unless_orphans_admins(action_label: str, target: str) -> bool:
+def _commit_unless_orphans_admins(action_label: str, target: str,
+                                  extra: dict | None = None) -> bool:
     """Flush the pending change; commit if at least one admin-capable user
-    remains, otherwise roll back. Returns True on commit."""
+    remains, otherwise roll back. Returns True on commit. Writes the ONE audit
+    row for the change (callers pass their details in ``extra``)."""
     db.session.flush()
     if access.active_admin_count() == 0:
         db.session.rollback()
@@ -62,18 +64,24 @@ def _commit_unless_orphans_admins(action_label: str, target: str) -> bool:
               '(no remaining user could manage users AND profiles).', 'danger')
         return False
     db.session.commit()
-    log_action(action_label, target=target)
+    log_action(action_label, target=target, extra=extra)
     return True
 
 
 @bp.route('/')
 @login_required
-@require_permission(Permission.USER_MANAGE)
 def index():
+    """The user list. Read-only for ``users.view``; every action on it stays
+    behind ``users.manage`` (the buttons are hidden without it)."""
+    if not (current_user.can('users.view') or current_user.can(Permission.USER_MANAGE)):
+        abort(403)
     User = _get_user_model()
     users = User.query.order_by(User.username).all()
     return render_template('users/index.html', users=users,
                            profiles=_profiles_for_picker())
+
+
+index.__required_permission__ = 'users.view'
 
 
 @bp.route('/', methods=['POST'])
@@ -127,44 +135,6 @@ def create():
     return redirect(url_for('users.index'))
 
 
-@bp.route('/<int:id>/edit')
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def edit(id):
-    User = _get_user_model()
-    user = User.query.get_or_404(id)
-    return render_template('users/edit.html', user=user,
-                           profiles=_profiles_for_picker())
-
-
-@bp.route('/<int:id>/edit', methods=['POST'])
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def edit_save(id):
-    User = _get_user_model()
-    user = User.query.get_or_404(id)
-    user.username = request.form.get('username', user.username).strip()
-
-    profile_id = (request.form.get('profile_id') or '').strip()
-    if profile_id and profile_id.isdigit():
-        profile = db.session.get(Profile, int(profile_id))
-        if profile is not None:
-            _assign_profile(user, profile)
-    else:
-        role = request.form.get('role', user.role).strip()
-        if role in VALID_ROLES:
-            sp = _system_profile(perm.role_to_profile_name(role))
-            if sp is not None:
-                _assign_profile(user, sp)
-            else:
-                user.role = role
-
-    if not _commit_unless_orphans_admins('user.update', user.username):
-        return redirect(url_for('users.index'))
-    flash(f'User {user.username} updated.', 'success')
-    return redirect(url_for('users.index'))
-
-
 @bp.route('/<int:id>/profile', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
@@ -182,10 +152,9 @@ def set_profile(id):
 
     old = user.profile.name if user.profile else user.role
     _assign_profile(user, profile)
-    if not _commit_unless_orphans_admins('user.profile.set', user.username):
+    if not _commit_unless_orphans_admins('user.profile.set', user.username,
+                                         extra={'from': old, 'to': profile.name}):
         return redirect(url_for('users.index'))
-    log_action('user.profile.set', target=user.username,
-               extra={'from': old, 'to': profile.name})
     flash(f'{user.username} is now on profile “{profile.name}”.', 'success')
     return redirect(url_for('users.index'))
 
@@ -216,9 +185,16 @@ def delete(id):
 def reset_password(id):
     User = _get_user_model()
     user = User.query.get_or_404(id)
+    if not user.is_local:
+        flash(f'{user.username} signs in through the directory; its password '
+              'is changed there, not in SATOM.', 'danger')
+        return redirect(url_for('users.index'))
     new_password = request.form.get('new_password', '')
     if password_problem(new_password):
         flash(password_problem(new_password), 'danger')
+        return redirect(url_for('users.index'))
+    if new_password != request.form.get('confirm_password', new_password):
+        flash('Passwords do not match.', 'danger')
         return redirect(url_for('users.index'))
     user.set_password(new_password)
     db.session.commit()
@@ -244,6 +220,26 @@ def clear_2fa(id):
     return redirect(url_for('users.index'))
 
 
+@bp.route('/<int:id>/unlock', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def unlock(id):
+    """Clear a sign-in lockout (failed-attempt counter and lock expiry).
+
+    Touches nothing else: a disabled or pending-approval account stays
+    disabled -- enabling it is the separate Enable action."""
+    User = _get_user_model()
+    user = User.query.get_or_404(id)
+    was = {'failed_logins': user.failed_logins or 0,
+           'locked_until': user.locked_until.isoformat() if user.locked_until else None}
+    user.failed_logins = 0
+    user.locked_until = None
+    db.session.commit()
+    log_action('user.unlock', target=user.username, extra=was)
+    flash(f'Sign-in lockout cleared for {user.username}.', 'success')
+    return redirect(url_for('users.index'))
+
+
 @bp.route('/<int:id>/toggle-active', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
@@ -261,29 +257,4 @@ def toggle_active(id):
     state = 'enabled' if user.is_active else 'disabled'
     log_action('user.enabled.set', target=user.username, extra={'state': state})
     flash(f'User {user.username} {state}.', 'success')
-    return redirect(url_for('users.index'))
-
-
-@bp.route('/<int:id>/role', methods=['POST'])
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def role(id):
-    """Legacy role switcher — maps the chosen role to its system profile."""
-    User = _get_user_model()
-    user = User.query.get_or_404(id)
-    new_role = request.form.get('role', '').strip()
-    if new_role not in VALID_ROLES:
-        flash(f'Invalid role: {new_role}.', 'danger')
-        return redirect(url_for('users.index'))
-    sp = _system_profile(perm.role_to_profile_name(new_role))
-    old_role = user.role
-    if sp is not None:
-        _assign_profile(user, sp)
-    else:
-        user.role = new_role
-    if not _commit_unless_orphans_admins('user.role.set', user.username):
-        return redirect(url_for('users.index'))
-    log_action('user.role.set', target=user.username,
-               extra={'from': old_role, 'to': user.role})
-    flash(f'Role for {user.username} updated to {user.role}.', 'success')
     return redirect(url_for('users.index'))

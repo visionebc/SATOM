@@ -1081,6 +1081,11 @@
         <a class="fw-nav-item {{ 'active' if _g_api }}" href="{{ url_for('registry.index') }}">
           <i class="bi bi-code-slash fw-nav-icon"></i><span>API</span></a>
         {% endif %}
+        {% if current_user and current_user.can('users.view') and not current_user.can('user_manage') %}
+        {# Read-only user list for users.view holders; managers reach it from the Administrator group / Settings. #}
+        <a class="fw-nav-item {{ 'active' if request.blueprint == 'users' else '' }}" href="{{ url_for('users.index') }}">
+          <i class="bi bi-people fw-nav-icon"></i><span>{{ _('Users') }}</span></a>
+        {% endif %}
         <div class="fw-nav-divider"></div>
         <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('settings.') else '' }}"
            href="{{ url_for('settings.index') }}">

@@ -1,5 +1,7 @@
 <!-- Reusable Users management panel — used by the standalone /users page AND
-     the Settings → Users tab. Needs `users` + `profiles` in context. -->
+     the Settings → Users tab. Needs `users` + `profiles` in context.
+     Read-only for `users.view`; every control needs `user_manage`. -->
+{% set _can_manage_users = current_user and current_user.can('user_manage') %}
 
 <!-- Stats -->
 <div class="row g-3 mb-4">
@@ -17,9 +19,9 @@
       <div class="fw-stat-icon fw-stat-icon-danger"><i class="bi bi-shield-fill"></i></div>
       <div>
         <div class="fw-stat-value">
-          {{ users|selectattr('role','equalto','admin')|list|length if users else 0 }}
+          {{ users|selectattr('is_admin_capable')|list|length if users else 0 }}
         </div>
-        <div class="fw-stat-label">{{ _('Admins') }}</div>
+        <div class="fw-stat-label" title="{{ _('Users who can manage both users and profiles') }}">{{ _('Admins') }}</div>
       </div>
     </div>
   </div>
@@ -59,9 +61,13 @@
     <option value="operator">{{ _('Operator') }}</option>
     <option value="readonly">{{ _('Read Only') }}</option>
   </select>
+  {% if _can_manage_users %}
   <button class="btn btn-fw-primary ms-auto" data-bs-toggle="modal" data-bs-target="#modalAddUser">
     <i class="bi bi-person-plus me-1"></i>{{ _('Add User') }}
   </button>
+  {% else %}
+  <span class="ms-auto text-muted" style="font-size:12px;"><i class="bi bi-eye me-1"></i>{{ _('Read-only view') }}</span>
+  {% endif %}
 </div>
 
 <!-- Users Table -->
@@ -74,7 +80,7 @@
         <th>{{ _('Created') }}</th>
         <th>{{ _('Last Login') }}</th>
         <th>{{ _('Status') }}</th>
-        <th class="actions-col">{{ _('Actions') }}</th>
+        {% if _can_manage_users %}<th class="actions-col">{{ _('Actions') }}</th>{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -118,8 +124,39 @@
                 <span class="fw-status-dot"></span>{{ _('Disabled') }}
               </span>
             {% endif %}
+            {% if u.locked_until or u.failed_logins %}
+              <span class="fw-badge fw-badge-warning ms-1" title="{{ _('Failed sign-ins') }}: {{ u.failed_logins or 0 }}">
+                <i class="bi bi-lock me-1"></i>{{ _('Locked') if u.locked_until else (u.failed_logins ~ ' ' ~ _('failed')) }}
+              </span>
+            {% endif %}
           </td>
+          {% if _can_manage_users %}
           <td class="actions-col">
+            {% if u.locked_until or u.failed_logins %}
+              <form method="POST" action="{{ url_for('users.unlock', id=u.id) }}" style="display:inline;"
+                    data-fw-confirm-form="Clear the sign-in lockout of '{{ u.username }}'?">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-outline-warning btn-sm-icon me-1" title="{{ _('Unlock') }}">
+                  <i class="bi bi-unlock"></i>
+                </button>
+              </form>
+            {% endif %}
+            {% if u.is_local %}
+              <button class="btn btn-sm btn-outline-secondary btn-sm-icon me-1"
+                      title="{{ _('Reset password') }}" data-js="reset-password"
+                      data-user-id="{{ u.id }}" data-username="{{ u.username }}">
+                <i class="bi bi-key"></i>
+              </button>
+            {% endif %}
+            {% if u.totp_enabled %}
+              <form method="POST" action="{{ url_for('users.clear_2fa', id=u.id) }}" style="display:inline;"
+                    data-fw-confirm-form="Clear two-factor authentication for '{{ u.username }}'? They will sign in with their password only until they enrol again.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Clear 2FA') }}">
+                  <i class="bi bi-phone"></i>
+                </button>
+              </form>
+            {% endif %}
             {% if not (current_user and u.id == current_user.id) %}
               <form method="POST" action="{{ url_for('users.toggle_active', id=u.id) }}" style="display:inline;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -146,18 +183,21 @@
               <span class="text-muted" style="font-size:12px;">{{ _('Current user') }}</span>
             {% endif %}
           </td>
+          {% endif %}
         </tr>
         {% endfor %}
       {% else %}
         <tr>
-          <td colspan="6">
+          <td colspan="{{ 6 if _can_manage_users else 5 }}">
             <div class="fw-empty-state">
               <div class="fw-empty-state-icon"><i class="bi bi-people"></i></div>
               <div class="fw-empty-state-title">{{ _('No users found') }}</div>
+              {% if _can_manage_users %}
               <div class="fw-empty-state-text">{{ _('Add the first user to grant access to SATOM.') }}</div>
               <button class="btn btn-fw-primary mt-2" data-bs-toggle="modal" data-bs-target="#modalAddUser">
                 <i class="bi bi-person-plus me-1"></i>{{ _('Add User') }}
               </button>
+              {% endif %}
             </div>
           </td>
         </tr>
@@ -166,6 +206,7 @@
   </table>
 </div>
 
+{% if _can_manage_users %}
 <!-- ADD USER MODAL -->
 <div class="modal fade fw-modal" id="modalAddUser" tabindex="-1" aria-labelledby="modalAddUserLabel" aria-hidden="true">
   <div class="modal-dialog">
@@ -201,7 +242,7 @@
               {% endfor %}
             </select>
             <div class="text-muted" style="font-size:11px;">
-              {{ _('Defines exactly what the user can do. Manage profiles under Admin → Profiles.') }}
+              {{ _('Defines exactly what the user can do. Manage profiles under Settings → Access & Identity → Profiles.') }}
             </div>
           </div>
         </div>
@@ -243,6 +284,33 @@
   </div>
 </div>
 
+<!-- RESET PASSWORD MODAL -->
+<div class="modal fade fw-modal" id="modalResetPassword" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-key me-2"></i>{{ _('Reset password') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" id="formResetPassword">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-body">
+          <p class="mb-3">{{ _('New password for') }} <strong id="reset-username"></strong>:</p>
+          <input type="password" class="form-control mb-2" name="new_password" placeholder="{{ _('At least 12 characters') }}"
+                 required minlength="12" maxlength="1024" autocomplete="new-password">
+          <input type="password" class="form-control" name="confirm_password" placeholder="{{ _('Repeat password') }}"
+                 required autocomplete="new-password">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-primary">{{ _('Set password') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <script nonce="{{ csp_nonce }}">
 function filterUsers(q) {
   q = q.toLowerCase();
@@ -273,6 +341,13 @@ function openProfileModal(userId, username, currentProfileId) {
       filterUsers(document.getElementById('userSearch').value);
     });
   }
+  document.querySelectorAll('[data-js="reset-password"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) {
+      document.getElementById('reset-username').textContent = this.dataset.username;
+      document.getElementById('formResetPassword').action = '/users/' + this.dataset.userId + '/reset-password';
+      API.openModal('modalResetPassword');
+    });
+  });
   document.querySelectorAll('[data-js="change-profile"]').forEach(function (btn) {
     btn.addEventListener('click', function (event) {
       var pid = this.dataset.profileId;

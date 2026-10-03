@@ -185,14 +185,14 @@
       {% if current_user.can('appliances.apply') %}
       <a href="{{ url_for('appliances.console', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm"><i class="bi bi-terminal me-1"></i>{{ _('Console') }}</a>
       {% endif %}
-      {% if appliance.is_cluster_member and current_user.can('config_write') %}
+      {% if appliance.is_cluster_member and current_user.can('appliances.apply') %}
       <a href="{{ url_for('appliances.failover', id=appliance.id) }}" class="btn btn-fw-secondary btn-sm text-danger" title="{{ _('This node belongs to an HA cluster: hand its primary role over, or give it back') }}"><i class="bi bi-arrow-left-right me-1"></i>{{ _('HA Failover') }}</a>
       {% endif %}
       {% if current_user.can('appliances.apply') %}
       <a href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm"><i class="bi bi-clipboard-check me-1"></i>{{ _('Upgrade Prep') }}</a>
       {% endif %}
       {% if appliance.kind == 'fortiweb' %}
-      {% if current_user.can('config_write') %}
+      {% if current_user.can('appliances.apply') %}
       <a href="{{ url_for('appliances.upgrade', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm text-warning"><i class="bi bi-cloud-arrow-up me-1"></i>{{ _('Upgrade') }}</a>
       <a href="{{ url_for('appliances.downgrade', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm text-warning" title="{{ _('Boot this appliance from its alternate firmware partition (rollback / downgrade — real in-app push + reboot)') }}"><i class="bi bi-hdd-stack me-1"></i>{{ _('Boot Partition') }}</a>
       {% endif %}
@@ -226,7 +226,7 @@
     {% if appliance.ha_mode == 'vip' %}<span class="text-muted ms-2 small">VIP {{ appliance.ha_vip or appliance.host }}</span>{% endif %}
   </div>
   <div class="card-body">
-    {% if current_user.can('config_write') and owns_device_scope(appliance) %}
+    {% if current_user.can('appliances.apply') and owns_device_scope(appliance) %}
     <div class="d-flex flex-wrap gap-2 mb-3">
       <a href="{{ url_for('appliances.failover', id=appliance.id) }}" class="btn btn-fw-secondary btn-sm text-danger"
          title="{{ _('Hand the primary role to the peer, or give it back — readiness check, live run inside an approved change window, or plan it') }}"><i class="bi bi-arrow-left-right me-1"></i>{{ _('HA Failover') }}</a>

@@ -685,13 +685,18 @@ def save_general():
             app_name=request.form.get('app_name', ''),
             default_kind=request.form.get('default_kind', ''),
             session_timeout=request.form.get('session_timeout', 60),
-            poll_interval=request.form.get('poll_interval', 30),
-            show_raw_config=request.form.get('show_raw_config') == 'on',
             log_levels=request.form.getlist('log_levels'),
             timezone=request.form.get('timezone', ''),
-            log_format=request.form.get('log_format', 'plain'),
+            log_format=request.form.get('log_format', 'detailed'),
             env_mode=request.form.get('env_mode', ''),
         )
+        # Take effect now: the idle lock re-reads its timeout, and the log
+        # file handler gets the new levels/format (this worker; the others
+        # pick the timeout up within 30 s and the log settings at restart).
+        from ..auth import session_lock
+        from ..errors import apply_log_settings
+        session_lock.invalidate_cache()
+        apply_log_settings()
         log_action('settings.general', detail='Updated general settings')
         flash('General settings saved.', 'success')
     except Exception as exc:  # noqa: BLE001

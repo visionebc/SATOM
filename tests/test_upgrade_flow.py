@@ -386,8 +386,25 @@ def test_the_supported_products_are_derived_from_the_action_not_re_listed(app):
     from app.services import scheduled_actions as sa
     from app.views import upgrade_flow
 
-    assert upgrade_flow.prep_kinds() == \
-        tuple(sa.ALL_ACTIONS["upgrade_prep"].products)
+    # The flow runs end to end: products the pre-flight covers AND the
+    # change's action can flash (owner decision 2026-10-03: no ADC flash path,
+    # so stage 1 is FortiWeb only).
+    assert upgrade_flow.prep_kinds() == tuple(
+        p for p in sa.ALL_ACTIONS["upgrade_prep"].products
+        if p in sa.ALL_ACTIONS[upgrade_flow.CR_ACTION].products)
+    assert upgrade_flow.prep_kinds() == ("fortiweb",)
+
+
+def test_stage_one_does_not_offer_a_fortiadc_it_cannot_flash(app, client):
+    with app.app_context():
+        _mk_appliance("flow-fw", kind="fortiweb")
+        adc = _mk_appliance("flow-adc", kind="fortiadc")
+        aid = adc.id
+    login(client, admin_user_id(app), product="global")
+    body = client.get("/web/upgrade-flow/").get_data(as_text=True)
+    assert "flow-fw" in body
+    assert 'name="device_ids" value="%d"' % aid not in body
+    assert "FortiADC has no flash path" in body
 
 
 def test_the_page_lists_eligible_devices_and_their_latest_run(app, client):
@@ -494,8 +511,8 @@ def test_the_automation_menu_offers_the_flow_where_it_can_run():
     with open(nav, encoding="utf-8") as fh:
         text = fh.read()
     assert "upgrade_flow.index" in text
-    assert "'fortiweb', 'fortiadc'" in text, \
-        "the menu entry is not scoped to the products the pre-upgrade supports"
+    assert "product.key == 'fortiweb' and current_user.can('backup')" in text, \
+        "the menu entry is not scoped to the products the flow can run against"
     assert "can('backup')" in text, \
         "the link is not gated on the permission the page requires — it leads " \
         "to a 403"

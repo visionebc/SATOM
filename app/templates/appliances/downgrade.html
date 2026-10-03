@@ -16,6 +16,13 @@
     Leave <b>{{ _('Dry run') }}</b> {{ _('checked to validate without sending anything.') }}
   </div>
 </div>
+<div class="fw-alert fw-alert-warning d-flex align-items-start gap-2">
+  <i class="bi bi-shield-exclamation mt-1"></i>
+  <div>
+    <b>{{ _('Emergency path — no change request.') }}</b>
+    {{ _('Unlike Upgrade and HA failover, a boot-partition flash does not need an approved change request in its window, so it can be used to roll back when a change has gone wrong. A live flash requires an explicit acknowledgement, and the attempt and its outcome are written to the audit log.') }}
+  </div>
+</div>
 
 {% if result %}
 <div class="card shadow-sm mb-3">
@@ -87,6 +94,10 @@
         <div class="form-check mb-2">
           <input class="form-check-input" type="checkbox" name="confirm_maturity" id="confirm_maturity">
           <label class="form-check-label" for="confirm_maturity">Confirm maturity change (Feature&harr;Mature, e.g. 8.0&rarr;7.6)</label>
+        </div>
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" name="ack_no_change_control" id="ack_no_change_control">
+          <label class="form-check-label" for="ack_no_change_control"><b>{{ _('I understand this live flash bypasses change control (no change request) and is audited') }}</b></label>
         </div>
         <label class="form-label small">Type the appliance name <code>{{ appliance.name }}</code> to authorise the live reboot:</label>
         <input class="form-control" type="text" name="confirm_name" autocomplete="off" placeholder="{{ appliance.name }}">

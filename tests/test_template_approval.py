@@ -310,3 +310,32 @@ def test_provisioning_list_hides_approve_reject_without_the_permission(app, clie
     login(client, admin_user_id(app))
     body = client.get("/provisioning/").get_data(as_text=True)
     assert f"/provisioning/{tid}/approve" in body
+
+
+def test_provisioning_live_apply_refuses_an_unapproved_profile(app, client, monkeypatch):
+    """Approval is what makes a system profile fleet-deployable; the live
+    apply used to ignore it. The dry-run preview stays open."""
+    from tests.conftest import make_user, profile_id, login
+    import app.views.provisioning as pv
+    calls = []
+    monkeypatch.setattr(pv.prov, "apply",
+                        lambda profile, ids, **kw: (calls.append(kw.get("dry_run")) or
+                                                    ([] if kw.get("dry_run") else
+                                                     {"canary": [], "rest": [], "aborted": False})))
+    tid = _system_profile(app, status="pending")
+    (d1,) = _devices(app, 1)
+    login(client, make_user(app, username="op-live", role="operator",
+                            profile_id=profile_id(app, "operator")))
+    form = {"target_hostname": "fw-new", "change_id": "CHG-2", "mode": "selected",
+            "device_ids": str(d1)}
+    assert client.post(f"/provisioning/{tid}/apply", data=form).status_code == 200
+    assert calls == [True]
+    r = client.post(f"/provisioning/{tid}/apply", data=dict(form, confirm="1"),
+                    follow_redirects=True)
+    assert "only an approved system profile can be deployed live" in r.get_data(as_text=True)
+    assert calls == [True], "a pending profile was written to a live device"
+    from app.services import templates as lib
+    with app.app_context():
+        lib.approve_template(tid, reviewer="admin")
+    r = client.post(f"/provisioning/{tid}/apply", data=dict(form, confirm="1"))
+    assert r.status_code == 200 and calls == [True, False]

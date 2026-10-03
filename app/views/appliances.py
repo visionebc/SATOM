@@ -1,4 +1,3 @@
-import json
 import os
 
 from werkzeug.utils import secure_filename
@@ -1182,71 +1181,6 @@ def upgrade_push(id):
                            scout=scout)
 
 
-@bp.route('/<int:id>/upgrade/schedule', methods=['POST'])
-@login_required
-@require_permission('appliances.apply')
-@require_device_scope
-def upgrade_schedule(id):
-    """Record a one-shot scheduled firmware upgrade carrying the chosen stored
-    image. The dedicated scheduler sidecar fires it at the set time. NOTE: the
-    headless upgrade executor is a guarded stub today (it will NOT auto-flash),
-    so this records the intent + the validated image — see the page note."""
-    from datetime import datetime  # noqa: F401 (kept for parity / future use)
-    from ..models import ScheduledAction
-    from ..services.scheduler import compute_next_run
-
-    appliance, _ = _fortiweb_or_404(id)
-    if appliance is None:
-        flash('Not a FortiWeb appliance.', 'danger')
-        return redirect(url_for('appliances.detail', id=id))
-
-    image = _selected_compatible_image(appliance, request.form.get('image_id'))
-    if image is None:
-        flash('Select a compatible firmware image from the repository first.', 'danger')
-        return redirect(url_for('appliances.upgrade', id=id))
-
-    when = (request.form.get('when') or '').strip()
-    if not when:
-        flash('Pick a date and time for the scheduled upgrade.', 'danger')
-        return redirect(url_for('appliances.upgrade', id=id))
-    # Same clock as every other window field in the product: the operator types
-    # local time, the scheduler stores UTC. Storing the raw datetime-local value
-    # booked the flash in whatever offset the console happened to be in.
-    when_utc = store.parse_local(when)
-    if when_utc is None:
-        flash('That is not a valid date and time.', 'danger')
-        return redirect(url_for('appliances.upgrade', id=id))
-    schedule = {"at": when_utc.isoformat()}
-    next_run = compute_next_run('once', schedule)
-    if next_run is None:
-        flash(f'The scheduled time must be in the future ({store.tz_name()}).', 'danger')
-        return redirect(url_for('appliances.upgrade', id=id))
-
-    confirm_maturity = request.form.get('confirm_maturity') == 'on'
-    action = ScheduledAction(
-        name=f"Upgrade {appliance.name} -> {image.version}",
-        scope='admin', action='upgrade',
-        targets=json.dumps([appliance.id]),
-        params=json.dumps({
-            "image_id": image.id,
-            "image_filename": image.filename,
-            "image_version": image.version,
-            "confirm_maturity": confirm_maturity,
-        }),
-        schedule_kind='once', schedule=json.dumps(schedule),
-        enabled=True, next_run=next_run,
-        created_by=getattr(current_user, 'username', '') or '',
-    )
-    db.session.add(action)
-    db.session.commit()
-    log_action('appliance.upgrade_schedule', target=appliance.name,
-               extra={"image_id": image.id, "version": image.version, "at": when})
-    flash(f'Scheduled upgrade of {appliance.name} to {image.version} at {when} '
-          f'({store.tz_name()}). '
-          'Unattended flashing is gated — review it under Scheduled Actions.', 'success')
-    return redirect(url_for('appliances.upgrade', id=id))
-
-
 # -- Async firmware flash (upgrade/downgrade) via the background-jobs framework -
 def _wants_json() -> bool:
     """AJAX path \u2014 the browser's fetch sets this header (or an ajax=1 field)."""
@@ -1374,6 +1308,17 @@ def _flash_worker(app, job_id, appliance_id, image_id, filename,
     from ..services import notifications as notify
     K = notify.Notification
     verb = 'Downgrade' if kind == 'downgrade' else 'Upgrade'
+
+    def _audit_failed(appliance, msg):
+        # The outcome of a live flash is audited either way; a failure used to
+        # leave only the job record.
+        try:
+            log_action(f'appliance.{kind}.failed', target=appliance.name,
+                       extra={'outcome': 'failure', 'image_id': image_id,
+                              'error': (msg or '')[:300]})
+        except Exception:  # noqa: BLE001
+            pass
+
     with app.app_context():
         appliance = Appliance.query.get(appliance_id)
         image = FirmwareImage.query.get(image_id)
@@ -1433,6 +1378,7 @@ def _flash_worker(app, job_id, appliance_id, image_id, filename,
             if not result.get("ok"):
                 msg = result.get("message", "the appliance did not accept the flash")
                 jobsvc.finish_error(job_id, msg)
+                _audit_failed(appliance, msg)
                 if user_id:
                     notify.push(user_id, f"{verb} not started: {appliance.name}",
                                 kind=K.KIND_ERROR, body=msg[:400], link=link)
@@ -1448,6 +1394,7 @@ def _flash_worker(app, job_id, appliance_id, image_id, filename,
                        f"(~{int(rec.get('elapsed_s', 0))}s). The flash may still be in progress "
                        f"\u2014 check the console.")
                 jobsvc.finish_error(job_id, msg)
+                _audit_failed(appliance, msg)
                 if user_id:
                     notify.push(user_id, f"{verb}: {appliance.name} not back yet",
                                 kind=K.KIND_WARNING, body=msg[:400], link=link)
@@ -1461,6 +1408,7 @@ def _flash_worker(app, job_id, appliance_id, image_id, filename,
                        f"uploaded but NOT installed - the box did not accept this flash / "
                        f"upgrade path, so the firmware is unchanged.")
                 jobsvc.finish_error(job_id, msg)
+                _audit_failed(appliance, msg)
                 if user_id:
                     notify.push(user_id, f"{verb} not applied: {appliance.name}",
                                 kind=K.KIND_ERROR, body=msg[:400], link=link)
@@ -1550,6 +1498,7 @@ def _flash_worker(app, job_id, appliance_id, image_id, filename,
                     _extra["backup"] = (before_snap.get("backup") or {}).get("name")
                 if isinstance(redisc, dict) and not redisc.get("error"):
                     _extra["rediscovered"] = redisc.get("objects")
+                _extra["outcome"] = "success"
                 log_action(f'appliance.{kind}.complete', target=appliance.name,
                            extra=_extra)
             except Exception:  # noqa: BLE001
@@ -1561,6 +1510,8 @@ def _flash_worker(app, job_id, appliance_id, image_id, filename,
                             body=done[:400], link=(report_url or link))
         except Exception as exc:  # noqa: BLE001
             jobsvc.finish_error(job_id, f"{type(exc).__name__}: {exc}"[:300])
+            if not dry_run:
+                _audit_failed(appliance, f"{type(exc).__name__}: {exc}")
             if user_id:
                 notify.push(user_id, f"{verb} failed: {getattr(appliance, 'name', '?')}",
                             kind=K.KIND_ERROR, body=str(exc)[:400], link=link)
@@ -1678,6 +1629,30 @@ def downgrade_push(id):
     dry_run = request.form.get('dry_run') == 'on'
     confirm_maturity = request.form.get('confirm_maturity') == 'on'
 
+    # Boot Partition is the EMERGENCY path: unlike Upgrade and HA failover it
+    # needs no approved change request (owner decision 2026-10-03), so a live
+    # flash requires an explicit acknowledgement that it bypasses change
+    # control, and the decision is audited with its outcome.
+    if not dry_run:
+        ack = request.form.get('ack_no_change_control') == 'on'
+        named = (request.form.get('confirm_name', '') or '').strip() == appliance.name
+        if not ack:
+            log_action('appliance.downgrade', target=appliance.name,
+                       extra={'outcome': 'refused', 'image_id': image.id,
+                              'version': image.version,
+                              'reason': 'change-control bypass not acknowledged'})
+            msg = ('A live boot-partition flash bypasses change control. Tick the '
+                   'acknowledgement to proceed.')
+            if _wants_json():
+                return jsonify({"error": msg}), 400
+            flash(msg, 'danger')
+            return redirect(url_for('appliances.downgrade', id=id))
+        if named:
+            log_action('appliance.downgrade', target=appliance.name,
+                       extra={'outcome': 'started', 'image_id': image.id,
+                              'version': image.version,
+                              'change_control': 'bypassed (emergency path, acknowledged)'})
+
     if _wants_json():
         return _spawn_flash_job(appliance, image, 'downgrade', dry_run, confirm_maturity)
 
@@ -1716,8 +1691,10 @@ def downgrade_push(id):
 
     if not dry_run:
         log_action('appliance.downgrade', target=appliance.name,
-                   extra={'image_id': image.id, 'version': image.version,
-                          'from': result.get('firmware_before', '')})
+                   extra={'outcome': 'success' if result.get('ok') else 'failure',
+                          'image_id': image.id, 'version': image.version,
+                          'from': result.get('firmware_before', ''),
+                          'change_control': 'bypassed (emergency path, acknowledged)'})
     fw, images, relations, default_id, older_exists = _downgrade_context(appliance)
     return render_template('appliances/downgrade.html', appliance=appliance,
                            firmware=result.get('firmware_before', '') or fw,
@@ -1728,7 +1705,9 @@ def downgrade_push(id):
 # ===========================================================================
 #  Restore — admin-only config restore from the backup vault or an uploaded
 #  .conf. Destructive (the box applies the config + reboots): dry_run default,
-#  hostname hard-confirm, automatic pre-restore backup, audit. USER_MANAGE only.
+#  hostname hard-confirm, automatic pre-restore backup, audit. Every route needs
+#  users.manage AND backups.restore (owner decision 2026-10-03: the key gates
+#  restore; the seeded admin holds both, the operator does not hold users.manage).
 # ===========================================================================
 def _restore_context(appliance):
     """Current firmware (best-effort, no failure) + this appliance's vault entries."""
@@ -1747,6 +1726,7 @@ def _restore_context(appliance):
 @bp.route('/<int:id>/restore')
 @login_required
 @require_permission(Permission.USER_MANAGE)
+@require_permission('backups.restore')
 @require_device_scope
 def restore(id):
     appliance = _managed_or_404(id)
@@ -1760,6 +1740,7 @@ def restore(id):
 @bp.route('/<int:id>/restore/upload', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
+@require_permission('backups.restore')
 @require_device_scope
 def restore_upload(id):
     appliance = _managed_or_404(id)
@@ -1793,6 +1774,7 @@ def restore_upload(id):
 @bp.route('/<int:id>/restore/fetch', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
+@require_permission('backups.restore')
 @require_device_scope
 def restore_fetch(id):
     """Pull a fresh backup off the device into the vault (best-effort)."""
@@ -1815,6 +1797,7 @@ def restore_fetch(id):
 @bp.route('/<int:id>/restore/<int:backup_id>/download')
 @login_required
 @require_permission(Permission.USER_MANAGE)
+@require_permission('backups.restore')
 @require_device_scope
 def restore_download(id, backup_id):
     cb = ConfigBackup.query.filter_by(id=backup_id, appliance_id=id).first()
@@ -1826,6 +1809,7 @@ def restore_download(id, backup_id):
 @bp.route('/<int:id>/restore/<int:backup_id>/delete', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
+@require_permission('backups.restore')
 @require_device_scope
 def restore_delete(id, backup_id):
     from ..services import backup as backup_svc
@@ -1842,6 +1826,7 @@ def restore_delete(id, backup_id):
 @bp.route('/<int:id>/restore/run', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
+@require_permission('backups.restore')
 @require_device_scope
 def restore_run(id):
     appliance = _managed_or_404(id)
@@ -1910,8 +1895,13 @@ def restore_run(id):
         flash(f'Cannot connect to {appliance.name}: {type(exc).__name__}: {exc}', 'danger')
         return redirect(url_for('appliances.restore', id=id))
 
-    # Automatic pre-restore backup — the rollback net (real runs only, best-effort).
+    # Automatic pre-restore backup -- the rollback net (live runs only, taken
+    # over the device REST backup). If it cannot be taken the live restore is
+    # ABORTED, unless the operator explicitly ticked "Restore without a
+    # pre-restore backup" -- which is audited either way.
     pre_backup = None
+    skipped_pre = ''
+    without_pre = request.form.get('skip_pre_backup') == 'on'
     if not dry_run:
         try:
             pre = backup_svc.fetch_device_backup(
@@ -1919,7 +1909,19 @@ def restore_run(id):
                 created_by=getattr(current_user, 'username', '') or '')
             pre_backup = pre.filename
         except Exception as exc:
-            pre_backup = f'(skipped: {type(exc).__name__})'
+            why = f'{type(exc).__name__}: {exc}'[:200]
+            if not without_pre:
+                log_action('appliance.restore', target=appliance.name,
+                           extra={'outcome': 'refused', 'filename': filename,
+                                  'pre_backup_error': why,
+                                  'reason': 'pre-restore backup failed'})
+                flash(f'Live restore aborted: the pre-restore backup could not be '
+                      f'taken ({why}). Nothing was sent to {appliance.name}. Fix the '
+                      f'device backup, or tick "Restore without a pre-restore backup" '
+                      f'to proceed without a rollback copy.', 'danger')
+                return redirect(url_for('appliances.restore', id=id))
+            skipped_pre = why
+            pre_backup = f'(none: {type(exc).__name__}; restored without a pre-restore backup)'
 
     try:
         result = backup_svc.restore(client, data, filename, password=password, dry_run=dry_run)
@@ -1929,7 +1931,10 @@ def restore_run(id):
 
     if not dry_run:
         log_action('appliance.restore', target=appliance.name,
-                   extra={'filename': filename, 'pre_backup': pre_backup,
+                   extra={'outcome': 'success' if result.get('ok') else 'failure',
+                          'filename': filename, 'pre_backup': pre_backup,
+                          'without_pre_backup': bool(skipped_pre),
+                          'pre_backup_error': skipped_pre or None,
                           'ok': result.get('ok')})
     fw, backups = _restore_context(appliance)
     return render_template('appliances/restore.html', appliance=appliance, firmware=fw,

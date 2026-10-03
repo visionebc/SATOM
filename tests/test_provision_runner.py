@@ -586,3 +586,14 @@ def test_semi_resume_continues_past_the_first_boot_handoff(app, session, monkeyp
         pr.advance(run)
         assert run.status == "done", (run.status, run.error)
         assert calls[-4:] == ["reachable", "onboarded", "cert_installed", "profile_applied"]
+
+
+def test_the_mode_table_claims_only_what_the_steps_do(app, client):
+    """No step walks a serial console dialog and none discovers a DHCP lease;
+    the table used to say both."""
+    login(client, admin_user_id(app), product="global")
+    html = client.get("/device-provisioning/").get_data(as_text=True)
+    assert "walks the first-boot dialog over the serial console" not in html
+    assert "SATOM finds it at that address" not in html
+    assert "It does not discover the lease." in html
+    assert "first-boot dialog is not scripted" in html

@@ -248,3 +248,102 @@ def test_restore_download_returns_stored_bytes(app, client):
     resp = client.get(f"/appliances/{aid}/restore/{bid}/download")
     assert resp.status_code == 200
     assert resp.data == b"CONFDATA"
+
+
+# --------------------------------------------------------------------------- #
+# 5) owner decisions 2026-10-03: restore = users.manage AND backups.restore;   #
+#    a live restore aborts when the pre-restore backup fails (audited override)#
+# --------------------------------------------------------------------------- #
+def _custom(app, name, keys):
+    from app.models import Profile, User, db
+    with app.app_context():
+        p = Profile(name=f"p-{name}", is_system=False)
+        p.permission_set = set(keys)
+        db.session.add(p)
+        db.session.commit()
+        u = User(username=name, role="readonly", is_active=True, profile_id=p.id)
+        u.set_password("pw")
+        db.session.add(u)
+        db.session.commit()
+        return u.id
+
+
+def test_restore_needs_users_manage_and_backups_restore(app, client):
+    aid = _appliance(app)
+    base = {"appliances.view"}
+    login(client, _custom(app, "only-users", base | {"users.manage"}))
+    assert client.get(f"/appliances/{aid}/restore").status_code == 403
+    assert client.post(f"/appliances/{aid}/restore/run", data={"dry_run": "on"}).status_code == 403
+    login(client, _custom(app, "only-restore", base | {"backups.restore"}))
+    assert client.get(f"/appliances/{aid}/restore").status_code == 403
+    login(client, _custom(app, "both", base | {"users.manage", "backups.restore"}))
+    assert client.get(f"/appliances/{aid}/restore").status_code == 200
+    det = client.get(f"/appliances/{aid}").get_data(as_text=True)
+    assert f"/appliances/{aid}/restore" in det
+
+
+class _NoDeviceClient:
+    pass
+
+
+def _live(client, aid, **extra):
+    data = {"confirm_name": "fw3",
+            "config_file": (io.BytesIO(b"#config-version=FWB\nconfig system"), "fw3.conf")}
+    data.update(extra)
+    return client.post(f"/appliances/{aid}/restore/run", data=data,
+                       content_type="multipart/form-data", follow_redirects=True)
+
+
+def _rig(monkeypatch, *, pre_fails):
+    from app.models import Appliance
+    from app.services import backup as backup_svc
+    sent = []
+    monkeypatch.setattr(Appliance, "build_client", lambda self, timeout=0: _NoDeviceClient())
+
+    def _pre(*a, **k):
+        if pre_fails:
+            raise RuntimeError("errcode -901")
+        from types import SimpleNamespace
+        return SimpleNamespace(filename="pre.conf")
+    monkeypatch.setattr(backup_svc, "fetch_device_backup", _pre)
+
+    def _restore(client, data, filename, password=None, dry_run=True):
+        sent.append(filename)
+        return {"dry_run": dry_run, "filename": filename, "size": len(data),
+                "endpoint": "x", "encrypted": False, "ok": True, "message": "ok"}
+    monkeypatch.setattr(backup_svc, "restore", _restore)
+    return sent
+
+
+def test_live_restore_aborts_when_the_pre_restore_backup_fails(app, client, monkeypatch):
+    from app.models import AuditLog
+    aid = _appliance(app)
+    sent = _rig(monkeypatch, pre_fails=True)
+    login(client, _admin(app))
+    body = _live(client, aid).get_data(as_text=True)
+    assert sent == [], "the restore was sent without its rollback copy"
+    assert "Live restore aborted" in body
+    with app.app_context():
+        row = AuditLog.query.filter_by(action="appliance.restore").one()
+        assert "refused" in row.extra and "-901" in row.extra
+
+
+def test_live_restore_without_pre_backup_needs_the_box_and_is_audited(app, client, monkeypatch):
+    from app.models import AuditLog
+    aid = _appliance(app)
+    sent = _rig(monkeypatch, pre_fails=True)
+    login(client, _admin(app))
+    body = _live(client, aid, skip_pre_backup="on").get_data(as_text=True)
+    assert sent == ["fw3.conf"]
+    assert "LIVE RESTORE" in body
+    with app.app_context():
+        row = AuditLog.query.filter_by(action="appliance.restore").one()
+        assert "'without_pre_backup': True" in row.extra
+
+
+def test_live_restore_with_a_pre_backup_proceeds(app, client, monkeypatch):
+    aid = _appliance(app)
+    sent = _rig(monkeypatch, pre_fails=False)
+    login(client, _admin(app))
+    body = _live(client, aid).get_data(as_text=True)
+    assert sent == ["fw3.conf"] and "pre.conf" in body

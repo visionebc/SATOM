@@ -103,7 +103,6 @@ def test_every_route_of_the_read_modules_names_its_permission(app):
     # actions, not "any edit key" (coarse config_write).
     ("appliances.upgrade", "appliances.apply"),
     ("appliances.upgrade_push", "appliances.apply"),
-    ("appliances.upgrade_schedule", "appliances.apply"),
     ("appliances.upgrade_advisory", "appliances.apply"),
     ("appliances.downgrade", "appliances.apply"),
     ("appliances.downgrade_push", "appliances.apply"),

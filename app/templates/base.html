@@ -986,12 +986,16 @@
                 <i class="bi bi-file-diff fw-nav-icon"></i><span>{{ _('Config Compare') }}</span></a>
             </div>
           </div>
+          {% if current_user.can('backups.view') %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'backups' else '' }}" href="{{ url_for('backups.index') }}">
             <i class="bi bi-cloud-arrow-down fw-nav-icon"></i><span>{{ _('Device Backups') }}</span></a>
+          {% endif %}
           <a class="fw-nav-item" href="{{ url_for('logs.index') }}">
             <i class="bi bi-journal-text fw-nav-icon"></i><span>{{ _('Log Collection') }}</span></a>
+          {% if current_user.can('backups.restore') %}
           <a class="fw-nav-item" href="{{ url_for('import_backup.index') }}">
             <i class="bi bi-file-earmark-arrow-up fw-nav-icon"></i><span>{{ _('Import Backup') }}</span></a>
+          {% endif %}
           {# Template Library needs only operations.view; administrators reach it
              under Administrator, everyone else who may open it finds it here. #}
           {% if current_user and current_user.can('operations.view') and not current_user.can('user_manage') %}

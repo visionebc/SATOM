@@ -511,3 +511,138 @@ def test_a_fortiadc_vault_opens_from_global_and_stays_out_of_fortiweb(app, clien
     assert "adc-vault" in r.get_data(as_text=True)
     r = client.get("/backups/%d" % adc, headers={"X-ADOM": "fortiweb"})
     assert r.status_code == 404
+
+
+# --- backups.view / backups.create / backup (owner decision 2026-10-03) ------
+def _keys_user(app, name, keys):
+    from app.extensions import db
+    from app.models import Profile, User
+    with app.app_context():
+        p = Profile(name=f"p-{name}", is_system=False)
+        p.permission_set = set(keys)
+        db.session.add(p)
+        db.session.commit()
+        u = User(username=name, role="readonly", is_active=True, profile_id=p.id)
+        u.set_password("pw")
+        db.session.add(u)
+        db.session.commit()
+        return u.id
+
+
+def _vault_row(app, aid):
+    from app.services import backup as backup_svc
+    with app.app_context():
+        return backup_svc.store_bytes(appliance_id=aid, appliance_name="vault-box",
+                                      data=b"#config-version=FWB\nconfig x",
+                                      filename="v.conf", source="upload",
+                                      created_by="t").id
+
+
+def test_backups_view_lists_the_vault_without_its_verbs(app, client):
+    from conftest import make_user, profile_id
+    aid = _mk(app, "vault-box", host="192.0.2.40")
+    bid = _vault_row(app, aid)
+    login(client, make_user(app, username="ro-vault", role="readonly",
+                            profile_id=profile_id(app, "readonly")))
+    r = client.get("/backups/%d" % aid)
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "v.conf" in html
+    assert "/backups/%d/download/%d" % (aid, bid) not in html
+    assert "/backups/%d/delete/%d" % (aid, bid) not in html
+    assert "/backups/%d/create" % aid not in html
+    assert client.get("/backups/%d/download/%d" % (aid, bid)).status_code == 403
+    assert client.post("/backups/%d/delete/%d" % (aid, bid)).status_code == 403
+    assert client.post("/backups/%d/create" % aid).status_code == 403
+
+
+def test_backup_download_needs_backups_create(app, client):
+    aid = _mk(app, "vault-box", host="192.0.2.40")
+    bid = _vault_row(app, aid)
+    login(client, _keys_user(app, "restorer", {"backups.view", "backups.restore",
+                                               "appliances.view"}))
+    assert client.get("/backups/%d" % aid).status_code == 200
+    assert client.get("/backups/%d/download/%d" % (aid, bid)).status_code == 403
+    login(client, _keys_user(app, "creator", {"backups.view", "backups.create",
+                                              "appliances.view"}))
+    r = client.get("/backups/%d/download/%d" % (aid, bid))
+    assert r.status_code == 200 and r.data.startswith(b"#config-version")
+
+
+def test_import_backup_is_a_backups_restore_tool(app, client):
+    login(client, _keys_user(app, "cw-only", {"protection.edit", "appliances.view"}))
+    assert client.get("/import-backup/").status_code == 403
+    login(client, _keys_user(app, "imp", {"backups.restore", "appliances.view"}))
+    assert client.get("/import-backup/").status_code == 200
+
+
+# --- Boot Partition: emergency path without a CR, acknowledged and audited --
+def _image(app):
+    from app.extensions import db
+    from app.models_firmware import FirmwareImage
+    with app.app_context():
+        row = FirmwareImage(product="fortiweb", image_kind="upgrade", version="7.6.1",
+                            filename="FWB_7.6.1.out", stored_path="/tmp/none",
+                            size_bytes=1, sha256="", uploaded_by="t")
+        db.session.add(row)
+        db.session.commit()
+        return row.id
+
+
+def test_live_boot_partition_needs_the_change_control_bypass_ack(app, client, monkeypatch):
+    from flask import jsonify
+    from app.models import AuditLog
+    from app.views import appliances as av
+    aid = _mk(app, "bootbox", host="192.0.2.41")
+    iid = _image(app)
+    spawned = []
+    monkeypatch.setattr(av, "_spawn_flash_job",
+                        lambda *a, **k: (spawned.append(a[2]), jsonify({"job_id": "j"}))[1])
+    login(client, admin_user_id(app))
+    hdr = {"X-Requested-With": "XMLHttpRequest"}
+    form = {"image_id": str(iid), "confirm_name": "bootbox"}
+    r = client.post("/appliances/%d/downgrade" % aid, data=form, headers=hdr)
+    assert r.status_code == 400 and "bypasses change control" in r.get_json()["error"]
+    assert spawned == []
+    r = client.post("/appliances/%d/downgrade" % aid,
+                    data=dict(form, ack_no_change_control="on"), headers=hdr)
+    assert r.status_code == 200 and spawned == ["downgrade"]
+    # a dry run needs no acknowledgement
+    r = client.post("/appliances/%d/downgrade" % aid,
+                    data={"image_id": str(iid), "dry_run": "on"}, headers=hdr)
+    assert r.status_code == 200 and spawned == ["downgrade", "downgrade"]
+    with app.app_context():
+        rows = [x.extra for x in AuditLog.query.filter_by(action="appliance.downgrade")
+                .order_by(AuditLog.id).all()]
+    assert "'refused'" in rows[0] and "'started'" in rows[1]
+    assert "bypassed" in rows[1]
+    page = client.get("/appliances/%d/downgrade" % aid).get_data(as_text=True)
+    assert "Emergency path" in page and 'name="ack_no_change_control"' in page
+
+
+def test_a_view_only_user_sees_no_console_run_and_no_console_link(app, client):
+    from conftest import make_user, profile_id
+    aid = _mk(app, "consolebox", host="192.0.2.42")
+    login(client, make_user(app, username="ro-con", role="readonly",
+                            profile_id=profile_id(app, "readonly")))
+    page = client.get("/appliances/%d/console" % aid)
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert 'id="console-run"' not in html and 'id="console-readonly"' in html
+    assert "/appliances/%d/console\"" % aid not in client.get(
+        "/appliances/%d" % aid).get_data(as_text=True)
+    assert "/appliances/%d/console\"" % aid not in client.get(
+        "/appliances/").get_data(as_text=True)
+    login(client, admin_user_id(app))
+    html = client.get("/appliances/%d/console" % aid).get_data(as_text=True)
+    assert 'id="console-run"' in html and 'id="console-readonly"' not in html
+
+
+def test_the_upgrade_page_no_longer_schedules_an_unrunnable_flash(app, client):
+    aid = _mk(app, "upgbox", host="192.0.2.43")
+    login(client, admin_user_id(app))
+    html = client.get("/appliances/%d/upgrade" % aid).get_data(as_text=True)
+    assert "Schedule for later" not in html and "upgrade/schedule" not in html
+    assert "/upgrade-flow/" in html
+    assert client.post("/appliances/%d/upgrade/schedule" % aid,
+                       data={"when": "2030-01-01T00:00"}).status_code in (404, 405)

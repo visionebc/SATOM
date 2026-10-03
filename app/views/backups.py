@@ -27,9 +27,13 @@ from ..services.audit import log_action
 bp = Blueprint('backups', __name__, url_prefix='/backups')
 
 
+# Who may do what here (owner decision, 2026-10-03): LISTING the vault is
+# backups.view (metadata only); create / upload / delete stay on the coarse
+# backup key; DOWNLOAD needs backups.create, because a download is the full
+# device configuration.
 @bp.route('/')
 @login_required
-@require_permission(Permission.BACKUP)
+@require_permission('backups.view')
 def index():
     from ..services import device_context as _dc
     from ..models import chassis_device_row
@@ -45,7 +49,7 @@ def index():
 
 @bp.route('/<int:id>')
 @login_required
-@require_permission(Permission.BACKUP)
+@require_permission('backups.view')
 @require_device_scope
 def list_backups(id):
     appliance = visible_appliance_or_404(id)
@@ -164,7 +168,7 @@ def upload_backup(id):
 
 @bp.route('/<int:id>/download/<int:backup_id>')
 @login_required
-@require_permission(Permission.BACKUP)
+@require_permission('backups.create')
 @require_device_scope
 def download_backup(id, backup_id):
     cb = ConfigBackup.query.filter_by(id=backup_id, appliance_id=id).first_or_404()

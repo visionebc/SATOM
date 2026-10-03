@@ -381,8 +381,10 @@
           {% include "partials/nav_process.html" %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'database' else '' }}" href="{{ url_for('database.index') }}">
             <i class="bi bi-hdd fw-nav-icon"></i><span>{{ _('Database') }}</span></a>
+          {% if current_user.can('studio.python_console') %}
           <a class="fw-nav-item {{ 'active' if request.endpoint == 'database.py_console_page' else '' }}" href="{{ url_for('database.py_console_page') }}">
             <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Python Console') }}</span></a>
+          {% endif %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'naming' else '' }}" href="{{ url_for('naming.index', product='fortiadc') }}">
             <i class="bi bi-tag fw-nav-icon"></i><span>{{ _('Naming') }}</span></a>
           <a class="fw-nav-item {{ 'active' if request.endpoint == 'adc.signatures' else '' }}" href="{{ url_for('adc.signatures') }}">
@@ -442,7 +444,7 @@
 
       {% if current_user and current_user.can('user_manage') %}
       {# Custom Views (Plugin Studio) are ADOM-scoped (FortiWeb/FortiADC) — not surfaced in the Global ADOM. #}
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['audit','users','appids','classification','line_profiles','database','system_backup','self_update','ha','reports','plugins','lua_studio'] }}" data-nav-group="Administrator">
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['audit','users','appids','classification','line_profiles','database','system_backup','self_update','ha','reports'] }}" data-nav-group="Administrator">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('Administrator') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           {% include "partials/nav_audit.html" %}
@@ -473,27 +475,31 @@
             <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('High Availability') }}</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'reports' else '' }}" href="{{ url_for('reports.inbox') }}">
             <i class="bi bi-bug fw-nav-icon"></i><span>{{ _('Bug Reports') }}</span></a>
-          {% set _can_pyc = current_user.can('studio.python_console') %}
-          {% set _can_plg = current_user.can('studio.plugin_studio') %}
-          {% set _can_lua = current_user.can('studio.lua_studio') %}
-          {% if _can_pyc or _can_plg or _can_lua %}
-          <div class="fw-nav-subgroup {{ 'open' if request.endpoint == 'database.py_console_page' or request.blueprint in ['plugins','lua_studio'] }}" data-nav-subgroup="Studio">
-            <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-code-slash fw-nav-icon"></i><span>{{ _('Studio') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-            <div class="fw-nav-subgroup-body">
-              {% if _can_pyc %}
-              <a class="fw-nav-item {{ 'active' if request.endpoint == 'database.py_console_page' else '' }}" href="{{ url_for('database.py_console_page') }}">
-                <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Python Console') }}</span></a>
-              {% endif %}
-              {% if _can_plg %}
-              <a class="fw-nav-item {{ 'active' if request.blueprint == 'plugins' and request.endpoint != 'plugins.gallery' else '' }}" href="{{ url_for('plugins.index') }}">
-                <i class="bi bi-puzzle fw-nav-icon"></i><span>{{ _('Plugin Studio') }}</span></a>
-              {% endif %}
-              {% if _can_lua %}
-              <a class="fw-nav-item {{ 'active' if request.blueprint == 'lua_studio' else '' }}" href="{{ url_for('lua_studio.index') }}">
-                <i class="bi bi-braces fw-nav-icon"></i><span>{{ _('Lua Studio') }}</span></a>
-              {% endif %}
-            </div>
-          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {# Studio sits OUTSIDE the user_manage block: each entry follows its own
+         studio.* key, so a custom profile holding one reaches it without
+         Administrator rights. #}
+      {% set _can_pyc = current_user.is_authenticated and current_user.can('studio.python_console') %}
+      {% set _can_plg = current_user.is_authenticated and current_user.can('studio.plugin_studio') %}
+      {% set _can_lua = current_user.is_authenticated and current_user.can('studio.lua_studio') %}
+      {% if _can_pyc or _can_plg or _can_lua %}
+      <div class="fw-nav-group {{ 'open' if request.endpoint == 'database.py_console_page' or request.blueprint in ['plugins','lua_studio'] }}" data-nav-group="Studio">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-code-slash fw-nav-section-icon" style="color:#8b5cf6;"></i><span>{{ _('Studio') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          {% if _can_pyc %}
+          <a class="fw-nav-item {{ 'active' if request.endpoint == 'database.py_console_page' else '' }}" href="{{ url_for('database.py_console_page') }}">
+            <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Python Console') }}</span></a>
+          {% endif %}
+          {% if _can_plg %}
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'plugins' and request.endpoint != 'plugins.gallery' else '' }}" href="{{ url_for('plugins.index') }}">
+            <i class="bi bi-puzzle fw-nav-icon"></i><span>{{ _('Plugin Studio') }}</span></a>
+          {% endif %}
+          {% if _can_lua %}
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'lua_studio' else '' }}" href="{{ url_for('lua_studio.index') }}">
+            <i class="bi bi-braces fw-nav-icon"></i><span>{{ _('Lua Studio') }}</span></a>
           {% endif %}
         </div>
       </div>
@@ -1020,9 +1026,11 @@
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.endpoint == 'plugins.gallery' else '' }}" href="{{ url_for('plugins.gallery') }}">
             <i class="bi bi-grid-1x2 fw-nav-icon"></i><span>{{ _('Custom Views') }}</span></a>
-          {% if current_user and current_user.is_admin_capable %}
+          {% if current_user.is_authenticated and current_user.can('studio.plugin_studio') %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'plugins' and request.endpoint != 'plugins.gallery' else '' }}" href="{{ url_for('plugins.index') }}">
             <i class="bi bi-puzzle fw-nav-icon"></i><span>{{ _('Plugin Studio') }}</span></a>
+          {% endif %}
+          {% if current_user.is_authenticated and current_user.can('studio.lua_studio') %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'lua_studio' else '' }}" href="{{ url_for('lua_studio.index') }}">
             <i class="bi bi-braces fw-nav-icon"></i><span>{{ _('Lua Studio') }}</span></a>
           {% endif %}

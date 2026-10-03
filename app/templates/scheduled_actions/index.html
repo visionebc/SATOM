@@ -154,7 +154,7 @@
             {% endif %}
           </td>
           <td style="font-size:13px;">
-            {{ a.next_run.strftime('%Y-%m-%d %H:%M') if a.next_run else '—' }}
+            {{ a.next_run|localtime('%Y-%m-%d %H:%M %Z') if a.next_run else '—' }}
           </td>
           <td>
             {# "running" comes from the run lease (running_at), not from
@@ -168,9 +168,10 @@
               <span class="fw-badge fw-badge-danger">{{ _('failed') }}</span>
             {% elif a.last_status == 'skipped' %}
               <span class="fw-badge fw-badge-secondary">{{ _('skipped') }}</span>
+            {% elif a.last_status == 'running' %}
+              <span class="fw-badge fw-badge-info">{{ _('running') }}</span>
             {% elif a.last_status == 'missed' %}
-              <span class="fw-badge fw-badge-warning"
-                    title="{{ _('The run window passed while the scheduler was down and catch-up is off; the action rolled forward to its next run.') }}">{{ _('missed') }}</span>
+              <span class="fw-badge fw-badge-warning" title="{{ _('The scheduler was not running at the due time and catch-up is off, so this run was skipped.') }}">{{ _('missed') }}</span>
             {% else %}
               <span class="text-muted">—</span>
             {% endif %}

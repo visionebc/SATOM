@@ -185,7 +185,15 @@ def _build_schedule(kind: str) -> dict:
     """
     f = request.form
     if kind == 'once':
-        return {"at": (f.get('once_at') or '').strip()}
+        # Typed in the console timezone like every other wall-clock field;
+        # stored as naive UTC because that is what the scheduler compares it
+        # with (and what a change request's own one-shot already stores).
+        raw = (f.get('once_at') or '').strip()
+        if not raw:
+            return {"at": ""}
+        from ..services import settings_store
+        at = settings_store.parse_local(raw)
+        return {"at": at.isoformat() if at is not None else ""}
     if kind == 'interval':
         return {"every": max(1, _to_int(f.get('interval_every'), 1)),
                 "unit": f.get('interval_unit') or 'minutes'}
@@ -246,7 +254,14 @@ def _schedule_summary(kind: str, spec: dict) -> str:
     """One-line, human description of a schedule for the list page."""
     spec = spec or {}
     if kind == 'once':
-        return f"Once at {spec.get('at') or '—'}"
+        at = spec.get('at')
+        if at:
+            from ..services import settings_store
+            try:
+                return f"Once at {settings_store.to_local(at, '%Y-%m-%d %H:%M %Z')}"
+            except Exception:  # noqa: BLE001
+                pass
+        return f"Once at {at or '—'}"
     if kind == 'interval':
         return f"Every {spec.get('every', 1)} {spec.get('unit', 'minutes')}"
     if kind == 'daily':
@@ -380,6 +395,20 @@ def _apply_form(action: ScheduledAction) -> bool:
     return True
 
 
+def _schedule_for_form(action: ScheduledAction | None) -> dict:
+    """The stored schedule with a one-shot ``at`` (naive UTC) shown back in the
+    console timezone, the inverse of :func:`_build_schedule`."""
+    schedule = dict(action.schedule_dict) if action else {}
+    at = schedule.get('at')
+    if at:
+        from ..services import settings_store
+        try:
+            schedule['at'] = settings_store.to_local(at, '%Y-%m-%dT%H:%M')
+        except Exception:  # noqa: BLE001 - show the raw value rather than 500
+            pass
+    return schedule
+
+
 def _form_context(action: ScheduledAction | None) -> dict:
     # The roster follows the ADOM. The hardcoded ``kind='fortiweb'`` rendered an
     # EMPTY device list in every other ADOM — no error, no message, just a form
@@ -397,7 +426,8 @@ def _form_context(action: ScheduledAction | None) -> dict:
         appliances=appliances,
         selected_targets=set(action.targets_list) if action else set(),
         schedule_kinds=SCHEDULE_KINDS,
-        schedule=action.schedule_dict if action else {},
+        schedule=_schedule_for_form(action),
+        tz_name=_tz(),
         params_text=(json.dumps(action.params_dict, indent=2)
                      if action and action.params_dict
                      and action.action != 'custom_rest' else ''),

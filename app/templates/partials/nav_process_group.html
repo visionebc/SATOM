@@ -1,0 +1,17 @@
+{# ============================================================================
+   Process for users WITHOUT user_manage (audit 2026-10-03).
+
+   partials/nav_process.html is gated on `view`, but every copy of it sits
+   inside an Administrator group that only user_manage renders, so a
+   read-only user or an operator never saw the entry although the page is
+   open to them. base.html renders this in the {% else %} of each
+   Administrator block: the same single entry, in a group of its own.
+   ========================================================================= #}
+{% if current_user and current_user.can('view') %}
+<div class="fw-nav-group {{ 'open' if request.blueprint == 'process' }}" data-nav-group="Process">
+  <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-diagram-3 fw-nav-section-icon" style="color:#8b5cf6;"></i><span>{{ _('Automation') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-group-body">
+    {% include "partials/nav_process.html" %}
+  </div>
+</div>
+{% endif %}

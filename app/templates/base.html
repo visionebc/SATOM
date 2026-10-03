@@ -403,6 +403,7 @@
             <i class="bi bi-people fw-nav-icon"></i><span>{{ _('Users') }}</span></a>
         </div>
       </div>
+      {% else %}{% include "partials/nav_process_group.html" %}
       {% endif %}
 
       {% elif product.key == 'global' %}
@@ -511,6 +512,7 @@
           {% endif %}
         </div>
       </div>
+      {% else %}{% include "partials/nav_process_group.html" %}
       {% endif %}
 
       {% elif product.key == 'fortianalyzer' %}
@@ -577,6 +579,7 @@
             <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Network Segment') }}</span></a>
         </div>
       </div>
+      {% else %}{% include "partials/nav_process_group.html" %}
       {% endif %}
 
 
@@ -645,6 +648,7 @@
             <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Network Segment') }}</span></a>
         </div>
       </div>
+      {% else %}{% include "partials/nav_process_group.html" %}
       {% endif %}
 
 
@@ -1030,6 +1034,7 @@
             <i class="bi bi-key fw-nav-icon"></i><span>{{ _('API Tokens') }}</span></a>
         </div>
       </div>
+      {% else %}{% include "partials/nav_process_group.html" %}
       {% endif %}
 
       {% endif %}

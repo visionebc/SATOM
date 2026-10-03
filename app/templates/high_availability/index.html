@@ -462,7 +462,7 @@
         var t2 = document.createElementNS(NS, 'text');
         t2.setAttribute('x', mx); t2.setAttribute('y', (y1 + y2) / 2 + 8);
         t2.setAttribute('text-anchor', 'middle'); t2.setAttribute('class', 'ha-edge-sub');
-        t2.textContent = 'WAL replication + staged deploy';
+        t2.textContent = MODE === 'ha' ? 'WAL replication + staged deploy' : 'no replication';
         svg.appendChild(t2);
       });
     });

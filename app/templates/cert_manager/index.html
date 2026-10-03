@@ -34,7 +34,11 @@
 {% if not configured %}
 <div class="alert alert-warning" role="alert" style="font-size:13px;">
   <i class="bi bi-exclamation-triangle me-1"></i>
+  {% if protocol == 'acme' %}
+  {{ _('The ACME issuer is not configured yet. Open') }} <a href="{{ url_for('cert_manager.settings') }}">{{ _('Settings') }}</a> {{ _('to enter the ACME directory, account and DNS provider.') }}
+  {% else %}
   {{ _('The ADCS connection and at least one class template are not configured yet. Open') }} <a href="{{ url_for('cert_manager.settings') }}">{{ _('Settings') }}</a> {{ _('to enter your CA host, name, enrolment account and the per-class signing command.') }}
+  {% endif %}
 </div>
 {% endif %}
 
@@ -74,7 +78,6 @@
           </td>
           <td>
             {% if c.status == 'active' %}<span class="fw-badge fw-badge-success">{{ _('active') }}</span>
-            {% elif c.status == 'expiring' %}<span class="fw-badge fw-badge-warning">{{ _('expiring') }}</span>
             {% elif c.status == 'superseded' %}<span class="fw-badge fw-badge-secondary">{{ _('superseded') }}</span>
             {% elif c.status == 'revoked' %}<span class="fw-badge fw-badge-danger">{{ _('revoked') }}</span>
             {% else %}<span class="fw-badge fw-badge-info">{{ _('pending') }}</span>{% endif %}
@@ -93,14 +96,14 @@
               <div class="fw-empty-state-icon"><i class="bi bi-shield-lock"></i></div>
               <div class="fw-empty-state-title">{{ _('No managed certificates yet') }}</div>
               <div class="fw-empty-state-text">
-                {{ _('Create your first certificate — generate a CSR, sign it at your ADCS, and deploy it to a FortiWeb.') }}
+                {{ _('Create your first certificate — generate a CSR, have it signed by your CA (ACME or ADCS, as configured), and deploy it to an appliance.') }}
               </div>
               {% if configured %}
               <a class="btn btn-fw-primary mt-2" href="{{ url_for('cert_manager.new') }}">
                 <i class="bi bi-plus-lg me-1"></i>{{ _('New Certificate') }}</a>
               {% else %}
               <a class="btn btn-fw-primary mt-2" href="{{ url_for('cert_manager.settings') }}">
-                <i class="bi bi-gear me-1"></i>{{ _('Configure ADCS first') }}</a>
+                <i class="bi bi-gear me-1"></i>{{ _('Configure the CA first') }}</a>
               {% endif %}
             </div>
           </td>

@@ -3311,8 +3311,10 @@ The two tabs any signed-in user gets.
   password first.
 - **Recovery email** — used by *Forgot password* on the sign-in page to send a
   reset link. It needs server email (§26.6) configured to be worth anything.
-- **Security status** and your **active session**, with a clean sign-out.
-- **Change Password** — current, new, confirm.
+- Your **active session**, with a clean sign-out. (The hard-coded "Security
+  status" checklist that sat here was removed: it computed nothing. The live
+  checks are on Monitoring → SATOM health.)
+- **Change Password** — current, new, confirm; 12 to 1024 characters.
 
 Directory-backed accounts see an explicit note instead of these controls: they
 manage password and MFA at the directory.

@@ -674,3 +674,21 @@ def test_an_appliance_of_the_WRONG_product_comes_back_the_same_way(isolated, cli
         "no sweep was started, so the card must not poll one")
     assert no_device["started"] == 0, (
         "the product check must refuse BEFORE the device is touched")
+
+
+def test_the_structure_view_is_gated_like_its_menu_entry(client, app):
+    """Its only entry point (the API hub link) is user_manage; the view was
+    open to any signed-in user."""
+    from tests.conftest import make_user
+    login(client, make_user(app, username="ro-struct", role="readonly"))
+    assert client.get("/web/structure/").status_code == 403
+    login(client, admin_user_id(app))
+    assert client.get("/web/structure/").status_code == 200
+
+
+def test_the_firmware_selector_has_no_inline_handler():
+    body = io.open(os.path.join(ROOT, "app/templates/structure/index.html"),
+                   encoding="utf-8").read()
+    assert 'onchange="this.form.submit()"' not in body
+    assert 'data-js="scope-select"' in body
+    assert "<noscript><button" not in body

@@ -122,3 +122,94 @@ def test_token_scope_targets_resolves_bindings(session):
     targets = svc.token_scope_targets(["APP-1"], product="fortiweb")
     assert targets == {(a.id, "pol-x"), (a.id, "pol-y")}
     assert svc.token_scope_targets(["APP-NONE"]) == set()
+
+
+# --------------------------------------------------------------------------- #
+#  audit 2026-10-03: header checkbox, policy existence on assign               #
+# --------------------------------------------------------------------------- #
+def test_an_unticked_header_box_imports_the_first_row(app, client):
+    """An unticked checkbox is not submitted; the server defaulted to "has a
+    header" and silently dropped the first record."""
+    import io
+    from tests.conftest import admin_user_id, login
+    login(client, admin_user_id(app))
+    data = {"has_header": "0", "map_app_id": "0", "map_customer": "1",
+            "catalog_file": (io.BytesIO(b"APP-FIRST,Acme\nAPP-SECOND,Beta\n"),
+                             "cat.csv")}
+    r = client.post("/web/appids/import", data=data,
+                    content_type="multipart/form-data")
+    assert r.status_code == 302
+    with app.app_context():
+        names = {a.app_id for a in AppId.query.all()}
+        assert {"APP-FIRST", "APP-SECOND"} <= names
+        assert svc.get_mapping()["has_header"] is False
+
+
+def test_a_ticked_header_box_still_skips_the_header(app, client):
+    import io
+    from tests.conftest import admin_user_id, login
+    login(client, admin_user_id(app))
+    data = {"has_header": ["0", "1"], "map_app_id": "AppID",
+            "catalog_file": (io.BytesIO(b"AppID\nAPP-ONLY\n"), "cat.csv")}
+    client.post("/web/appids/import", data=data,
+                content_type="multipart/form-data")
+    with app.app_context():
+        assert {a.app_id for a in AppId.query.all()} == {"APP-ONLY"}
+
+
+def _cached_policy(app, aid, name):
+    from app.models_cache import DeviceObject, DeviceSnapshot
+    with app.app_context():
+        snap = DeviceSnapshot(appliance_id=aid, layer="config")
+        db.session.add(snap)
+        db.session.flush()
+        db.session.add(DeviceObject(
+            appliance_id=aid, snapshot_id=snap.id, layer="config",
+            section="Server Policy", logical_name="server_policy",
+            mkey=name, payload={"name": name}, depth=0))
+        db.session.commit()
+
+
+def _assign_setup(app):
+    with app.app_context():
+        a = Appliance(name="fw-asg", host="192.0.2.5", kind="fortiweb",
+                      username="admin")
+        a.password = "pw"
+        db.session.add(a)
+        db.session.commit()
+        pk = svc.create_manual(app_id="APP-ASG").id
+        return a.id, pk
+
+
+def test_assign_refuses_a_policy_the_device_does_not_have(app, client):
+    from tests.conftest import admin_user_id, login
+    aid, pk = _assign_setup(app)
+    _cached_policy(app, aid, "pol-real")
+    login(client, admin_user_id(app))
+    client.post("/web/appids/assign", data={
+        "app_id_pk": str(pk), "appliance_id": str(aid),
+        "server_policy": "pol-typo"})
+    with app.app_context():
+        assert svc.binding_for(aid, "pol-typo") is None
+
+
+def test_assign_binds_a_policy_the_device_has(app, client):
+    from tests.conftest import admin_user_id, login
+    aid, pk = _assign_setup(app)
+    _cached_policy(app, aid, "pol-real")
+    login(client, admin_user_id(app))
+    client.post("/web/appids/assign", data={
+        "app_id_pk": str(pk), "appliance_id": str(aid),
+        "server_policy": "pol-real"})
+    with app.app_context():
+        assert svc.binding_for(aid, "pol-real") is not None
+
+
+def test_the_header_checkbox_has_a_hidden_fallback():
+    import pathlib
+    body = (pathlib.Path(__file__).resolve().parents[1]
+            / "app/templates/appids/index.html").read_text("utf-8")
+    i = body.index('id="hasHeader"')
+    before = body[:i]
+    assert before.rfind('<input type="hidden" name="has_header" value="0">') \
+        > before.rfind("<div")

@@ -538,6 +538,21 @@ def test_a_capped_field_list_says_how_many_were_hidden():
          "subrows": []})
     assert len(rows[0]["fields"]) == cc.MAX_FIELD_ROWS
     assert rows[0]["truncated"] == 5
+    # ...and the export, which the page promises "has all of them", does.
+    tsv = cc.to_tsv({"lines": [{"lineno": 1, "rows": rows}]})
+    for i in range(cc.MAX_FIELD_ROWS + 5):
+        assert "\tf%02d\t" % i in tsv, "f%02d missing from the export" % i
+
+
+def test_an_object_on_one_side_only_exports_every_field():
+    payload = {"name": "a", **{"g%02d" % i: "v" for i in range(cc.MAX_FIELD_ROWS + 3)}}
+    rows = cc.compare_trees(
+        {"item": _fake("u/y", "y", payload=payload, depth=0), "children": [],
+         "subrows": []}, {})
+    assert rows[0]["state"] == "only_source"
+    assert rows[0]["truncated"] == len(rows[0]["fields_all"]) - cc.MAX_FIELD_ROWS > 0
+    tsv = cc.to_tsv({"lines": [{"lineno": 1, "rows": rows}]})
+    assert "\tg%02d\t" % (cc.MAX_FIELD_ROWS + 2) in tsv
 
 
 def test_a_row_whose_parent_vanished_is_still_reported():

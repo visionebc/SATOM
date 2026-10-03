@@ -600,3 +600,38 @@ def test_the_search_form_aligns_from_the_top():
     submit_col = form[form.index('<button type="submit"') - 400:]
     assert "form-label" in submit_col[:400], (
         "the Search button has no label-height spacer above it")
+
+
+def _page_data(app, client, monkeypatch, user_id):
+    import json
+    import re
+    from app.extensions import db
+    from app.models import Appliance
+    from app.services import advisor, attack_log
+    with app.app_context():
+        a = Appliance(name="fw-ai", host="192.0.2.14", port=443, username="u")
+        a.password = "p"
+        db.session.add(a)
+        db.session.commit()
+        aid = a.id
+    row = {"msg_id": "000000031305", "policy": "pol-x", "main_type": "x",
+           "sub_type": "N/A", "src": "192.0.2.1", "dst": "192.0.2.2",
+           "action": "Alert_Deny", "rel_time": "2026-08-08 00:00:00"}
+    monkeypatch.setattr(attack_log, "search_by_msg_id", lambda ap, m: [row])
+    monkeypatch.setattr(advisor, "enabled", lambda: True)
+    login(client, user_id)
+    html = client.get("/waf/attack-search/?q=000000031305&appliance_id=%d"
+                      % aid).get_data(as_text=True)
+    m = re.search(r'id="atk-page-data">(.*?)</script>', html, re.S)
+    return json.loads(m.group(1))
+
+
+def test_ai_buttons_are_offered_with_advisor_use(app, client, monkeypatch):
+    assert _page_data(app, client, monkeypatch,
+                      admin_user_id(app))["ai_enabled"] is True
+
+
+def test_ai_buttons_are_hidden_without_advisor_use(app, client, monkeypatch):
+    from tests.conftest import make_user
+    uid = make_user(app, username="ro-atk", role="readonly")
+    assert _page_data(app, client, monkeypatch, uid)["ai_enabled"] is False

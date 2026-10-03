@@ -686,3 +686,13 @@ def test_the_artifact_export_keeps_its_policy_count_a_count(app, client, fleet):
     for row in rows:
         assert row["Policies naming it"].isdigit(), row
     assert any(row["Which policies"] for row in rows), "names column never filled"
+
+
+def test_an_empty_export_from_fleet_exceptions_returns_to_that_page(
+        app, client, fleet):
+    """The Fleet Exceptions page posts back=exceptions; the allow-list lacked
+    it, so the operator landed on the Overview instead."""
+    resp = _get(client, "/waf/export?fmt=csv&back=exceptions",
+                admin_user_id(app))
+    assert resp.status_code == 302
+    assert resp.headers["Location"].rstrip("/").endswith("/waf/exceptions")

@@ -47,15 +47,18 @@
     </a>
   </div>
   <div class="col-6 col-lg-3">
-    <a class="fw-card d-block h-100 text-decoration-none" style="padding:16px 18px;"
-       href="{{ url_for('cert_manager.index') }}">
+    {# Certificate Manager is user_manage-only: the tile links there only for
+       those who can open it (2026-10-03 audit, AD-31). #}
+    {% set _cm_link = current_user and current_user.can('user_manage') %}
+    <{{ 'a' if _cm_link else 'div' }} class="fw-card d-block h-100 text-decoration-none" style="padding:16px 18px;"
+       {% if _cm_link %}href="{{ url_for('cert_manager.index') }}"{% endif %}>
       <div class="d-flex align-items-center gap-2 text-muted" style="font-size:12px;">
         <i class="bi bi-shield-lock"></i> {{ _('Certificates') }}</div>
       <div class="h3 mb-0 mt-1">{{ certs.total }}</div>
       <div class="text-muted" style="font-size:12px;">
         {% if certs.expiring %}<span class="text-warning">{{ certs.expiring }} expiring &le;30d</span>
-        {% else %}none expiring &le;30d{% endif %} &rsaquo;</div>
-    </a>
+        {% else %}none expiring &le;30d{% endif %}{% if _cm_link %} &rsaquo;{% endif %}</div>
+    </{{ 'a' if _cm_link else 'div' }}>
   </div>
 </div>
 
@@ -70,8 +73,8 @@
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('fleet_objects.index') }}"><i class="bi bi-box-seam me-1"></i>{{ _('Fleet Objects') }}</a>
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('metrics.index') }}"><i class="bi bi-bar-chart-line me-1"></i>{{ _('Metrics') }}</a>
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('jobs.manager') }}"><i class="bi bi-list-task me-1"></i>{{ _('Jobs') }}</a>
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('cert_manager.index') }}"><i class="bi bi-shield-lock me-1"></i>{{ _('Certificate Manager') }}</a>
     {% if current_user and current_user.can('user_manage') %}
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('cert_manager.index') }}"><i class="bi bi-shield-lock me-1"></i>{{ _('Certificate Manager') }}</a>
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('appliances.index') }}"><i class="bi bi-server me-1"></i>{{ _('Appliances') }}</a>
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('audit.index') }}"><i class="bi bi-clipboard-check me-1"></i>{{ _('Audit Log') }}</a>
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('users.index') }}"><i class="bi bi-people me-1"></i>{{ _('Users') }}</a>

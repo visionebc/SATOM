@@ -163,12 +163,14 @@
             <button type="button" class="btn btn-sm btn-outline-secondary"
                     data-bs-toggle="modal" data-bs-target="#editTok{{ t.id }}">{{ _('Edit') }}</button>
             {% if not t.revoked %}
-            <form method="post" action="{{ url_for('api_tokens.revoke', id=t.id) }}" class="d-inline">
+            <form method="post" action="{{ url_for('api_tokens.revoke', id=t.id) }}" class="d-inline"
+                  data-fw-confirm-form="Revoke token '{{ t.name }}'? Every client using it stops working immediately.">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-sm btn-outline-warning" type="submit">{{ _('Revoke') }}</button>
             </form>
             {% endif %}
-            <form method="post" action="{{ url_for('api_tokens.delete', id=t.id) }}" class="d-inline">
+            <form method="post" action="{{ url_for('api_tokens.delete', id=t.id) }}" class="d-inline"
+                  data-fw-confirm-form="Delete token '{{ t.name }}'? This cannot be undone.">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-sm btn-outline-danger" type="submit">{{ _('Delete') }}</button>
             </form>
@@ -233,7 +235,7 @@
 
             <div class="col-md-6">
               <label class="form-label d-block">{{ _('Capabilities') }}
-                <span class="text-muted small">{{ _('(what — all unchecked = no restriction)') }}</span></label>
+                <span class="text-muted small">{{ _('(what — unchecked = every catalog action; object writes are always explicit)') }}</span></label>
               {% for c in capabilities %}
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="capabilities" value="{{ c }}"

@@ -124,6 +124,7 @@ def index():
         rows=rows,
         lifecycle=_lifecycle,
         configured=store.cert_manager_configured(),
+        protocol=store.cert_manager_protocol(),
         class_labels=store.CERT_CLASS_LABELS,
         device_rows=device["rows"],
         device_offline=device_offline,
@@ -349,6 +350,7 @@ def new():
         appliances=_deploy_targets(),
         classes=[(c, store.CERT_CLASS_LABELS[c]) for c in store.CERT_CLASSES],
         configured=store.cert_manager_configured(),
+        protocol=store.cert_manager_protocol(),
     )
 
 

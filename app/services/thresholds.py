@@ -150,7 +150,7 @@ MEASURE: dict[str, tuple[Field, ...]] = {
         Field("warn_num", "Policy sessions warning", "num", 0, "sessions",
               "MEASURED CAVEAT: on short-lived HTTP this counter stays near "
               "zero under heavy load (594–657 conn/s against 0–3 sessions on "
-              "fortiweb08). A threshold here rarely fires; conn/s is what "
+              "a lab appliance). A threshold here rarely fires; conn/s is what "
               "moves. 0 disables."),
         Field("crit_num", "Policy sessions critical", "num", 0, "sessions",
               "0 disables."),

@@ -1872,10 +1872,10 @@ class ManagedCertificate(db.Model):
 
     # pending  -> generated + signed + deployed, not yet bound to any policy
     # active   -> currently the bound/live cert
-    # expiring -> active but inside the renew-before window
     # superseded -> a newer cert replaced it (old one kept for the window)
     # revoked  -> revoked at the CA
-    STATUSES = ("pending", "active", "expiring", "superseded", "revoked")
+    # (Nearness to expiry is not a status: the list shows days left, coloured.)
+    STATUSES = ("pending", "active", "superseded", "revoked")
     CLASSES = ("server", "clientserver", "client")
 
     id = db.Column(db.Integer, primary_key=True)

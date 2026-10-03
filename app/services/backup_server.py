@@ -9,7 +9,7 @@ firmware store (``FirmwareImage``) so a restore/downgrade can be driven from
 the console without re-uploading by hand.
 
 Connection settings come from ``settings_store.backup_server()`` (Settings →
-SoT & Backup); the password is Fernet-encrypted at rest. Paramiko is already
+Source of Truth & Backup -> Backup Server); the password is Fernet-encrypted at rest. Paramiko is already
 a dependency (``ssh_ops`` uses it for the FortiWeb CLI battery).
 """
 from __future__ import annotations
@@ -34,7 +34,7 @@ def _connect(cfg: dict | None = None):
     import paramiko  # lazy, same convention as ssh_ops
     cfg = cfg or store.backup_server(reveal_secret=True)
     if not cfg.get("host") or not cfg.get("username"):
-        raise RuntimeError("backup server not configured (Settings → SoT & Backup)")
+        raise RuntimeError("backup server not configured (Settings → Source of Truth & Backup → Backup Server)")
     t = paramiko.Transport((cfg["host"], int(cfg.get("port") or 22)))
     t.connect(username=cfg["username"], password=cfg.get("password") or "")
     return t, paramiko.SFTPClient.from_transport(t)
@@ -568,7 +568,7 @@ def push_bundle(local_path: str, remote_name: str | None = None,
         cfg = store.backup_server(reveal_secret=True)
         if not cfg.get("configured"):
             return {"ok": False, "detail": "backup server not configured "
-                                           "(Settings → SoT & Backup)"}
+                                           "(Settings → Source of Truth & Backup → Backup Server)"}
         sys_path = remote_dir or cfg.get("system_path") or "/system"
         local_size = os.path.getsize(local_path)
         t, sftp = _connect(cfg)
@@ -609,7 +609,7 @@ def push_sot_blobs(paths: list) -> dict:
         cfg = store.backup_server(reveal_secret=True)
         if not cfg.get("configured"):
             return {"ok": False, "detail": "backup server not configured "
-                                           "(Settings → SoT & Backup)"}
+                                           "(Settings → Source of Truth & Backup → Backup Server)"}
         sys_path = cfg.get("system_path") or "/system"
         dest = posixpath.join(sys_path, "sot")
         t, sftp = _connect(cfg)
@@ -657,7 +657,7 @@ def push_log_archive(paths: list) -> dict:
         cfg = store.backup_server(reveal_secret=True)
         if not cfg.get("configured"):
             return {"ok": False, "detail": "backup server not configured "
-                                           "(Settings -> SoT & Backup)"}
+                                           "(Settings -> Source of Truth & Backup -> Backup Server)"}
         sys_path = cfg.get("system_path") or "/system"
         dest = posixpath.join(sys_path, "sot-log")
         t, sftp = _connect(cfg)

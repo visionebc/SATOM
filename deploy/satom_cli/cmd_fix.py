@@ -46,6 +46,10 @@ SEED_PLAN = [
      {"every": 3, "unit": "minutes"}, {}, "global"),
     ("metrics_scrape", "Fleet metrics — scrape to the local store", "interval",
      {"every": 3, "unit": "minutes"}, {}, "global"),
+    # The Metrics page's daily inventory trend exists only if this runs once a
+    # day. 23:50 records the day's closing counts. Local cache only, no device.
+    ("inventory_snapshot", "Daily inventory snapshot (Metrics trend)", "daily",
+     {"time": "23:50"}, {}, "global"),
     # Period summaries. Each fires AFTER its period has closed, so it describes
     # a COMPLETE window: a daily report fired at 23:00 would summarise a day
     # still an hour from finishing, and "throughput fell 80 %" would mean

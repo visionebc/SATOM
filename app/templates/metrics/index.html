@@ -444,7 +444,7 @@
     if(!hasData){
       ctx.canvas.parentElement.innerHTML = INV_IS_ADC
         ? '<p class="text-muted text-center small py-4">FortiADC inventory is counted live (cards above); the daily trend needs a snapshot pipeline, which FortiADC does not have yet.</p>'
-        : '<p class="text-muted text-center small py-4">No inventory snapshots yet. A snapshot is recorded once per day &mdash; schedule the &ldquo;Record inventory snapshot&rdquo; action (Automation) to build the daily trend.</p>';
+        : '<p class="text-muted text-center small py-4">No inventory snapshots yet. A snapshot is recorded once per day by the &ldquo;Record inventory snapshot&rdquo; scheduled action (seeded daily at 23:50 on new installations; on older ones run <code>satom execute seed actions</code> or schedule it in Automation).</p>';
       return;
     }
     const mk = (label,key,color,bg)=>({label,data:d[key]||[],borderColor:color,backgroundColor:bg,borderWidth:2,tension:.3,pointRadius:3,pointHoverRadius:5,fill:true});

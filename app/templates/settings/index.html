@@ -5146,29 +5146,6 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 })();
 
-// --- Naming live preview (mirrors services.naming.slugify / render_one) ---
-function namingSlugify(addr) {
-  var s = (addr || '').trim().toLowerCase();
-  s = s.replace(/^[a-z][a-z0-9+.\-]*:\/\//, '');
-  s = s.split('/')[0].split('?')[0].split(':')[0];
-  s = s.replace(/[^a-z0-9]+/g, '-');
-  return s.replace(/^-+|-+$/g, '');
-}
-function refreshNaming() {
-  var sampleEl = document.getElementById('naming-sample');
-  if (!sampleEl) return;
-  var slug = namingSlugify(sampleEl.value);
-  var slugEl = document.getElementById('naming-slug');
-  if (slugEl) slugEl.textContent = 'slug: ' + (slug || '∅');
-  document.querySelectorAll('.naming-input').forEach(function (inp) {
-    var key = inp.getAttribute('data-key');
-    var pv = document.getElementById('pv_' + key);
-    if (!pv) return;
-    var pat = inp.value.trim() || inp.getAttribute('placeholder') || '';
-    pv.textContent = pat ? pat.replace('{name}', slug).substring(0, 63) : '(default)';
-  });
-}
-
 // --- Network segment row add ---
 var CLS = {
   zones: {{ classification.zones | tojson }},
@@ -5252,7 +5229,6 @@ function checkStrength(pwd) {
   text.style.color = colors[score];
 }
 
-document.addEventListener('DOMContentLoaded', refreshNaming);
 
 // Git tab helpers
 function gitConfigure() {

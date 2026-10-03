@@ -888,21 +888,10 @@ def delete_acme_provider(slug):
     return redirect(url_for('settings.index') + '#tab-certmgr')
 
 
-@bp.route('/naming', methods=['POST'])
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def save_naming():
-    if request.form.get('action') == 'reset':
-        store.reset_naming()
-        log_action('settings.naming', detail='Reset naming to defaults')
-        flash('Naming patterns restored to defaults.', 'success')
-        return redirect(url_for('settings.index') + '#tab-naming')
-    scheme = {e.key: request.form.get('nm_' + e.key, '') for e in naming.NAMING_ELEMENTS}
-    store.save_naming(scheme)
-    log_action('settings.naming',
-               detail=f'{len([v for v in scheme.values() if v.strip()])} patterns')
-    flash('Naming patterns saved.', 'success')
-    return redirect(url_for('settings.index') + '#tab-naming')
+# The legacy POST /settings/naming is GONE (2026-10-03). Settings has no
+# Naming tab; the Naming page (naming.save) is the one writer, per product.
+# The old route wrote every element of BOTH products into the FortiWeb key,
+# so a partial post wiped FortiWeb's overrides.
 
 
 # The blob-textarea POST that used to live here is GONE. It was already

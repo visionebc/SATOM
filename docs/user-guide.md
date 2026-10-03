@@ -106,7 +106,10 @@ render from that cache in milliseconds and show a freshness badge like
 
 - the UI works even when a device is **down, slow, or license-locked**;
 - what you see can be *behind* the box — press the **refresh/live** control
-  (⟳ / "refresh from device") when you need the current truth;
+  (⟳ / "refresh from device") when you need the current truth. A refresh is a
+  full device sync, so it needs `config_write` on every page that offers it
+  (Server Policy, Server Objects, Web Protection, the configuration sections);
+  read-only users see the cached data and no refresh button;
 - after you save a change through the app, the affected page re-reads live, so
   your own edits are never stale.
 
@@ -287,7 +290,18 @@ preview it" path past a blocker; allowing one is how a blocker becomes advisory.
 names are compared with the appliance's own object list at plan time, not with a
 cached copy — a run that dies after reserving an address is worse than one that
 never started. An **unreachable device is itself a blocker**, not an assumption
-that the box is empty.
+that the box is empty. The same live read confirms that the line's **Web
+Protection Profile exists on the device**; a missing profile blocks the plan
+(deploy the template first) instead of failing at the last step.
+
+**Names follow Administrator → Naming.** Object names are rendered from the
+saved Naming patterns for the device's product, falling back to the defaults
+for any element left empty. When the wizard issues a certificate, the created
+policy serves HTTPS with it (predefined `HTTPS` service + that certificate).
+
+**Line profiles** are declared on Global ADOM → Administrator → **Line
+Profiles** and are always filed as FortiWeb profiles — the product the wizard
+reads them for.
 
 **It refuses to guess.** A segment the chosen line does not receive is refused
 — the wrong-network failure this feature exists to prevent. When a line offers
@@ -659,6 +673,14 @@ Other tools on the page:
   and import them as desired-state, bound to the right policy.
 - **Alignment report** — device → policy → profile → exceptions, with stale
   detection; exportable.
+- **Analyse before implementing** — SATOM's own deterministic analysis of the
+  draft is available to anyone who can open the page; the assistant's opinion
+  (the draft is sent to the configured AI provider) is added only for users
+  holding `advisor.use`.
+
+Authoring, injecting, deploying, deleting and detecting need `config_write`;
+without it the page is read-only and those buttons are hidden or disabled.
+Deleting always goes through the impact check (the guarded delete).
 
 ### 9.1 Search Attack ID — from a block page to a reviewed carve-out
 
@@ -3457,7 +3479,9 @@ approved subset, arranged the way FortiWeb arranges it.
 
 ### 29.1 The Template Library
 
-FortiWeb ADOM → Administrator → **Template Library**. A template is a named,
+FortiWeb ADOM → Administrator → **Template Library** (users without
+`user_manage` who hold `operations.view` find it under **Operations**). A
+template is a named,
 **versioned** blob of desired state of a given kind (web-protection profile,
 system profile, and the other configuration kinds). Editing never overwrites:
 saving produces a **new version** of the same kind and name, and the previous

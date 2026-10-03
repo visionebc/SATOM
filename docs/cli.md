@@ -313,7 +313,7 @@ challenge.
 | `execute backup git` | `git bundle --all`, including the parked safety refs |
 | `execute restore db <bundle> --yes` | Stops the writers, restores, restarts, verifies `/healthz` |
 | `execute admin reset-password <user>` | Asked interactively; never in `argv` |
-| `execute admin unlock <user>` | Clears a lockout without touching the password |
+| `execute admin unlock <user>` | Clears a lockout; leaves the password and the enabled flag alone |
 | `execute scheduler run\|enable\|disable <id>` | One action, now |
 | `execute maintenance <device> <on\|off>` | Park or un-park an appliance |
 | `execute support bundle` | Every diagnostic, journal and unit file in one `0600` archive |
@@ -487,8 +487,8 @@ Everything that changes state. **Root required.** Without it each command refuse
 | `satom execute backup db` | yes | — | pg_dump the application database into data/system_backups/. |
 | `satom execute backup git` | yes | — | git bundle --all, including the parked safety refs. |
 | `satom execute restore db <file> --yes` | yes | ! | Replace the database from a bundle. Dumps the current one first. |
-| `satom execute admin reset-password <username>` | yes | — | Set a password (asked interactively, never in argv). |
-| `satom execute admin unlock <username>` | yes | — | Clear a lockout without touching the password. |
+| `satom execute admin reset-password <username>` | yes | — | Set a password (asked interactively, never in argv); re-enables the account. |
+| `satom execute admin unlock <username>` | yes | — | Clear a lockout. Touches neither the password nor the enabled flag. |
 | `satom execute scheduler run <action-id>` | yes | — | Fire one action NOW as a manual run. |
 | `satom execute scheduler enable <action-id>` | yes | — | Enable one action. |
 | `satom execute scheduler disable <action-id>` | yes | — | Disable one action. |

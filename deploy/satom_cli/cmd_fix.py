@@ -577,21 +577,28 @@ def repair_jobs(ctx, args):
 _PW_CODE = """
 import json, sys
 from app import create_app
+from app.auth.password_policy import password_problem
 from app.models import AuditLog, User
 from app.extensions import db
 arg = json.loads(sys.stdin.read())
 app = create_app()
 with app.app_context():
     u = User.query.filter_by(username=arg["user"]).first()
+    problem = password_problem(arg["password"]) if arg.get("password") else ""
     if not u:
         print(json.dumps({"error": "no such user"}))
+    elif problem:
+        print(json.dumps({"error": problem, "policy": True}))
     else:
         was_active = bool(u.is_active)
         if arg.get("password"):
             u.set_password(arg["password"])
+            # A password reset is the recovery path: it re-enables the
+            # account. A plain unlock only clears the lockout and leaves a
+            # disabled or pending-approval account as it is.
+            u.is_active = True
         u.failed_logins = 0
         u.locked_until = None
-        u.is_active = True
         # A root-shell account write is still an account write: it lands in
         # the same audit trail as the web console's, under "cli/root".
         db.session.add(AuditLog(
@@ -628,10 +635,7 @@ def admin_reset_password(ctx, args):
         pw2 = getpass.getpass("Repeat: ")
         if pw1 != pw2:
             return Result("bad", "the two entries differ — nothing changed", exit_code=2)
-        if len(pw1) < 12:
-            return Result("bad", "refusing a password shorter than 12 characters",
-                          exit_code=2)
-        generated = False
+        generated = False  # the app applies the password policy (_PW_CODE)
     else:
         alphabet = string.ascii_letters + string.digits + "!@#%^*-_=+"
         pw1 = "".join(secrets.choice(alphabet) for _ in range(20))
@@ -642,7 +646,8 @@ def admin_reset_password(ctx, args):
         r.lines("error", err.splitlines()[-10:])
         return r
     if res.get("error"):
-        return Result("bad", "%s: %s" % (username, res["error"]), exit_code=1)
+        return Result("bad", "%s: %s" % (username, res["error"]),
+                      exit_code=2 if res.get("policy") else 1)
     r = Result("ok", "password reset for %s" % username)
     r.rows("", [("role", res.get("role", "?")),
                 ("auth source", res.get("auth_source", "local")),
@@ -660,7 +665,7 @@ def admin_reset_password(ctx, args):
 
 
 def admin_unlock(ctx, args):
-    """Clear a lockout without touching the password."""
+    """Clear a lockout without touching the password or the enabled flag."""
     if not args:
         r = Result("bad", "usage: execute admin unlock <username>", exit_code=2)
         r.lines("accounts", ["  satom get user list"])
@@ -673,7 +678,9 @@ def admin_unlock(ctx, args):
     if res.get("error"):
         return Result("bad", "%s: %s" % (args[0], res["error"]), exit_code=1)
     r = Result("ok", "unlocked %s" % args[0])
-    r.rows("", [("failed logins", "0"), ("locked until", "cleared"), ("active", "yes")])
+    r.rows("", [("failed logins", "0"), ("locked until", "cleared")])
+    r.note("A disabled account stays disabled; enable it in Users, or use "
+           "reset-password, which also re-enables it.")
     return r
 
 

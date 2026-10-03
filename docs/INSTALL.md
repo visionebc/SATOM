@@ -235,8 +235,8 @@ It checks the OS (Debian 12/13, Ubuntu
 and 443 and Internet egress, detects an existing or half-finished install
 (update, reinstall or resume), and then asks **once** for everything: native or
 Docker, role, DNS name(s), HTTPS port, certificate (the node's own or an
-imported one) and the `admin` password — typed twice, at least 10 characters
-and three character classes; left empty, one is generated and written only to
+imported one) and the `admin` password — typed twice, 12 to 1024 characters
+(length is the only rule; no character classes); left empty, one is generated and written only to
 `/root/satom-admin-password.txt` (`0600`), never to a log. `--yes` runs it
 unattended from `SETUP_*` variables (or `--answers FILE`). It ends with a
 summary in `/root/satom-setup-summary.txt`; its log is

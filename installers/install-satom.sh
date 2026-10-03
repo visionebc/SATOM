@@ -810,7 +810,9 @@ else
         ask_secret ADMIN_PASS "Password for the console 'admin' user: "
         ask_secret ADMIN_PASS2 "Repeat the password: "
         if [ "$ADMIN_PASS" != "$ADMIN_PASS2" ]; then warn "Passwords do not match"; ADMIN_PASS=""; continue; fi
-        if [ "${#ADMIN_PASS}" -lt 8 ]; then warn "Minimum 8 characters"; ADMIN_PASS=""; fi
+        # The ONE password policy (app/auth/password_policy.py): 12..1024 characters, length only.
+        if [ "${#ADMIN_PASS}" -lt 12 ]; then warn "Minimum 12 characters"; ADMIN_PASS=""; continue; fi
+        if [ "${#ADMIN_PASS}" -gt 1024 ]; then warn "Maximum 1024 characters"; ADMIN_PASS=""; fi
     done
 fi
 

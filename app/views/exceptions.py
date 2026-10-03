@@ -209,20 +209,6 @@ def save(id):
     return jsonify(ok=True, id=exc.id)
 
 
-@bp.route('/<int:id>/delete', methods=['POST'])
-@require_permission('config_write')
-def delete(id):
-    appliance = visible_appliance_or_404(id)
-    body = request.get_json(silent=True) or {}
-    exc = store.get(int(body.get('exc_id') or 0))
-    if exc is None or exc.appliance_id != appliance.id:
-        return jsonify(ok=False, error='not found'), 404
-    ok = store.delete(exc.id,
-                      author=getattr(current_user, 'username', '') or '',
-                      note=(body.get('note') or ''))
-    return jsonify(ok=ok)
-
-
 @bp.route('/<int:id>/purge', methods=['POST'])
 @require_permission('config_write')
 def purge(id):
@@ -416,6 +402,13 @@ def advice(id):
     """
     appliance = visible_appliance_or_404(id)
     body = request.get_json(silent=True) or {}
+    use_model = bool(body.get('use_model'))
+    # SATOM's deterministic findings stay open to whoever can open the
+    # carve-out; sending the draft to an AI provider is advisor.use, the same
+    # gate as every other AI route.
+    if use_model and not current_user.can('advisor.use'):
+        return jsonify(ok=False, error='the assistant opinion requires the '
+                                       'advisor.use permission'), 403
     exc_type = (body.get('exc_type') or '').strip()
     if not store.type_for(exc_type):
         return jsonify(ok=False, error='unknown carve-out type'), 400
@@ -437,7 +430,7 @@ def advice(id):
         exc_type, payload, wpp=wpp, policy=policy,
         problem=(body.get('problem') or ''), scope_verdict=scope_verdict,
         provider_key=(body.get('provider') or ''),
-        use_model=bool(body.get('use_model')))
+        use_model=use_model)
     return jsonify(ok=True, advice=res, scope=scope_verdict,
                    suggestions=exception_advice.type_suggestions(
                        body.get('problem') or ''))

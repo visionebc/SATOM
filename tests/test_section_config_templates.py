@@ -94,3 +94,45 @@ def test_section_page_hides_other_object_types_templates(client, app, monkeypatc
     assert resp.status_code == 200
     assert "hostname-baseline" in html      # the Global type's own template shows
     assert "ntp-baseline" not in html       # the NTP template is hidden here
+
+
+def _sidebar_html(app, client, role):
+    from tests.conftest import login, make_user
+    from app.models import Appliance, db
+    with app.app_context():
+        a = Appliance(name="fw-nav", kind="fortiweb", host="127.0.0.1",
+                      port=443, username="admin", verify_ssl=False)
+        a.password = "secret"
+        db.session.add(a)
+        db.session.commit()
+        aid = a.id
+    login(client, make_user(app, username="u-" + role, role=role),
+          product="fortiweb")
+    with client.session_transaction() as s:
+        s["appliance_id"] = str(aid)
+    resp = client.get(f"/exceptions/{aid}")
+    assert resp.status_code == 200
+    return resp.get_data(as_text=True)
+
+
+def test_waf_protection_areas_are_hidden_without_config_write(app, client):
+    """Every /configuration/ page needs config_write; a menu entry that
+    always 403s is not a menu entry."""
+    html = _sidebar_html(app, client, "readonly")
+    assert "/configuration/api_protection" not in html
+
+
+def test_waf_protection_areas_are_shown_with_config_write(app, client):
+    html = _sidebar_html(app, client, "operator")
+    assert "/configuration/api_protection" in html
+
+
+def test_section_links_carry_no_ignored_device_param():
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1] / "app/templates"
+    for rel in ("base.html", "section_config/index.html",
+                "section_config/section.html"):
+        body = (root / rel).read_text()
+        for line in body.splitlines():
+            if "section_config." in line:
+                assert "device=" not in line, (rel, line)

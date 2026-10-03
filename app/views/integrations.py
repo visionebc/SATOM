@@ -347,8 +347,43 @@ def hook_detail(slug):
                 versions=raw.get("versions", []))
     # recent() is global and newest-first; this page wants only this hook's runs.
     runs = [r for r in mod.recent(200) if r.get("slug") == slug][:20]
+    # Names only: whether a value is stored, never the value itself.
+    stored = set(mod.list_secret_names())
     return render_template("integrations/hook.html", hook=hook,
-                           events=mod.EVENTS, recent=runs)
+                           events=mod.EVENTS, recent=runs,
+                           secrets_stored=stored)
+
+
+@bp.route("/hooks/<slug>/secret", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def hook_secret(slug):
+    """Store the VALUE of one secret this hook declares. Write-only: the value
+    is encrypted into the vault and never rendered, flashed or logged; the
+    page only ever learns whether a value is stored."""
+    mod, error = _hooks()
+    if mod is None:
+        flash(error or "integrations unavailable", "danger")
+        return redirect(url_for("integrations.index"))
+    raw = mod.get_hook(slug)
+    if raw is None:
+        flash("Hook not found.", "warning")
+        return redirect(url_for("integrations.index"))
+    declared = [str(s).upper() for s in ((raw.get("meta") or {}).get("secrets") or [])]
+    name = (request.form.get("name") or "").strip().upper()
+    value = request.form.get("value") or ""
+    if name not in declared:
+        flash("Secret not saved: this hook does not declare that name. Add it "
+              "to the secrets list and save the hook first.", "danger")
+        return redirect(url_for("integrations.hook_detail", slug=slug))
+    try:
+        # set_secret writes the audit row (integration.secret.set, name only).
+        mod.set_secret(name, value, by=_who())
+    except ValueError as exc:
+        flash(f"Secret not saved: {exc}", "danger")
+        return redirect(url_for("integrations.hook_detail", slug=slug))
+    flash(f"Secret {name} stored. Its value is not shown again.", "success")
+    return redirect(url_for("integrations.hook_detail", slug=slug))
 
 
 @bp.route("/hooks/save", methods=["POST"])

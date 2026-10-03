@@ -50,16 +50,22 @@ def run(ctx):
         },
         headers={"Authorization": "Bearer " + ctx.secret("CRM_TOKEN")},
     )
-    if resp.status_code >= 300:
+    if resp.status >= 300:
         # Return the failure rather than raising: the operator needs the CRM's
         # own words, and an exception would only report ours.
-        return ctx.result(False, {"detail": "CRM said %s" % resp.status_code})
+        return ctx.result(False, {"detail": "CRM said %s" % resp.status})
 
     ticket = resp.json()
     ctx.log("opened %s" % ticket.get("id"))
     # Keys SATOM understands: crq_ref / crq_url are written back onto the
     # change request, so the ticket is one click away from the CR page.
     return ctx.result(True, {"crq_ref": ticket["id"], "crq_url": ticket.get("url", "")})
+
+
+# hook.py runs as a plain script: nothing calls run() unless this file does.
+if __name__ == "__main__":
+    from satom_sdk import ctx as _ctx
+    run(_ctx)
 '''
 
 TELEGRAM = '''"""Send an alert to a Telegram chat.
@@ -94,10 +100,16 @@ def run(ctx):
         json={"chat_id": CHAT_ID, "text": text[:4096],
               "disable_web_page_preview": True},
     )
-    if resp.status_code >= 300:
+    if resp.status >= 300:
         return ctx.result(False, {"detail": "telegram %s: %s" % (
-            resp.status_code, resp.text[:200])})
+            resp.status, resp.text[:200])})
     return ctx.result(True, {"chat_id": CHAT_ID})
+
+
+# hook.py runs as a plain script: nothing calls run() unless this file does.
+if __name__ == "__main__":
+    from satom_sdk import ctx as _ctx
+    run(_ctx)
 '''
 
 SLACK = '''"""Post an alert to a Slack channel.
@@ -137,10 +149,16 @@ def run(ctx):
     # Slack answers 200 with the body "ok"; anything else is a body worth
     # reading. A 200 with "invalid_payload" is still a delivery that did not
     # happen, so check the text and not only the status.
-    if resp.status_code >= 300 or resp.text.strip() != "ok":
+    if resp.status >= 300 or resp.text.strip() != "ok":
         return ctx.result(False, {"detail": "slack %s: %s" % (
-            resp.status_code, resp.text[:200])})
+            resp.status, resp.text[:200])})
     return ctx.result(True, {})
+
+
+# hook.py runs as a plain script: nothing calls run() unless this file does.
+if __name__ == "__main__":
+    from satom_sdk import ctx as _ctx
+    run(_ctx)
 '''
 
 TEAMS = '''"""Post an alert to a Microsoft Teams channel.
@@ -189,10 +207,16 @@ def run(ctx):
             "content": card,
         }]},
     )
-    if resp.status_code >= 300:
+    if resp.status >= 300:
         return ctx.result(False, {"detail": "teams %s: %s" % (
-            resp.status_code, resp.text[:200])})
+            resp.status, resp.text[:200])})
     return ctx.result(True, {})
+
+
+# hook.py runs as a plain script: nothing calls run() unless this file does.
+if __name__ == "__main__":
+    from satom_sdk import ctx as _ctx
+    run(_ctx)
 '''
 
 #: slug -> starter.  ``event`` preselects the editor's binding, ``secrets`` is

@@ -4598,7 +4598,10 @@ What that buys you, and what it costs:
   out at 03:00 inside a window.
 - A hook receives only the secrets it declares, by name, through
   `ctx.secret("NAME")`. One it did not declare is not in its environment to
-  leak. Never paste a token into the script itself.
+  leak. Never paste a token into the script itself. Once the hook is saved,
+  its **Secret values** card stores each declared value encrypted
+  (Administrators only, audited, write-only: the page shows *stored* or
+  *not set*, never the value).
 - Captured output is redacted (declared secret values are masked) and then
   truncated before it is stored.
 - The result comes back through `ctx.result(ok, data)`, not from what the script
@@ -4608,8 +4611,11 @@ What that buys you, and what it costs:
   the outcome appears in the runs table a moment later. A dry run will queue a
   hook that is switched off — testing before enabling is the point.
 
-Keys SATOM understands in a `change.requested` result: `crq_ref` and `crq_url`,
-which are written onto the change request so the ticket is one click away.
+Keys SATOM understands in a `change.requested` result: `crq_ref` and `crq_url`.
+When the run succeeds, the runner writes them onto the change request so the
+ticket is one click away (a link that is not `http(s)://` is dropped, and a
+closed change is left untouched). The run's status notes whether it was
+recorded.
 
 > **HA:** `satom-integrations.path` must be enabled on **both** nodes. A standby
 > whose watcher is disabled accepts queued work and never runs it — silently.

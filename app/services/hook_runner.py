@@ -232,6 +232,57 @@ def kill_process_group(proc: subprocess.Popen, grace: float = KILL_GRACE) -> Non
 
 
 # ---------------------------------------------------------------------------
+#  CRQ write-back
+# ---------------------------------------------------------------------------
+def write_back_crq(event: str, payload: dict, data: Any, *, slug: str = "") -> str:
+    """Record the ticket a ``change.requested`` hook reported on its CR.
+
+    The hook itself cannot reach the database (that is the sandbox); THIS
+    process can, so the documented result keys ``crq_ref`` / ``crq_url`` are
+    turned into :func:`cr_orchestrator.record_crq` here, after the hook said
+    ``ok``. Returns a one-line note for the status file ("" when there was
+    nothing to record). Never raises: a write-back problem must not turn a
+    hook that worked into a failed run.
+    """
+    if event != "change.requested" or not isinstance(data, dict):
+        return ""
+    ref = str(data.get("crq_ref") or "").strip()
+    if not ref:
+        return ""
+    url = str(data.get("crq_url") or "").strip()
+    if url and not url.lower().startswith(("http://", "https://")):
+        # Rendered as an <a href> on the CR page: same rule as the manual form.
+        url = ""
+    try:
+        from flask import has_app_context
+        if not has_app_context():
+            return "crq_ref %s NOT recorded: no database context" % ref
+        from ..models import ChangeRequest, db
+        from . import cr_orchestrator
+        try:
+            cr_id = int((payload or {}).get("cr_id"))
+        except (TypeError, ValueError):
+            return "crq_ref %s NOT recorded: the payload names no cr_id" % ref
+        cr = db.session.get(ChangeRequest, cr_id)
+        if cr is None:
+            return "crq_ref %s NOT recorded: change request %s no longer exists" % (ref, cr_id)
+        if cr.status in ChangeRequest.TERMINAL:
+            return ("crq_ref %s NOT recorded: change request %s is %s"
+                    % (ref, cr_id, cr.status))
+        if (cr.crq_ref or "").strip() == ref[:128] and (cr.crq_url or "") == url[:512]:
+            return "crq_ref %s already recorded" % ref
+        cr_orchestrator.record_crq(cr, ref, url, by="hook:%s" % (slug or "?"))
+        return "crq_ref %s recorded on change request %s" % (ref, cr_id)
+    except Exception as exc:  # noqa: BLE001 - see docstring
+        try:
+            from ..models import db
+            db.session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return "crq_ref %s NOT recorded: %s" % (ref, exc)
+
+
+# ---------------------------------------------------------------------------
 #  running one hook
 # ---------------------------------------------------------------------------
 def run_request(req: dict[str, Any], *,
@@ -382,13 +433,19 @@ def run_request(req: dict[str, Any], *,
             note = "declared secret(s) not configured: %s" % ", ".join(missing)
             error = (error + " | " if error else "") + note
 
+        clean_data = _redact_obj(data, secrets)
+        crq_note = ""
+        if status == "ok":
+            crq_note = write_back_crq(event, payload, clean_data, slug=slug)
+
         return write_status(
             request_id, slug=slug, event=event, status=status,
             started_at=started_wall, finished_at=_utcnow(),
             duration_ms=int((time.monotonic() - t0) * 1000),
             exit_code=exit_code, stdout=out_txt,
-            data=_redact_obj(data, secrets), error=error,
-            result_reported=ok_flag is not None, secrets_missing=missing)
+            data=clean_data, error=error,
+            result_reported=ok_flag is not None, secrets_missing=missing,
+            crq_writeback=crq_note)
     finally:
         if resfd >= 0:
             try:

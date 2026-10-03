@@ -101,6 +101,40 @@
   </div>
 </form>
 
+{% if hook.slug and hook.slug != 'new' and hook.secrets %}
+<div class="card mb-3" id="hook-secrets">
+  <div class="card-header"><strong>{{ _('Secret values') }}</strong></div>
+  <div class="card-body">
+    <div class="form-text mb-2">
+      {{ _('Write-only: a value is stored encrypted and never shown again. Saving a name that already has a value replaces it.') }}
+    </div>
+    <ul class="list-unstyled small mb-2">
+      {% for name in hook.secrets %}
+      <li><code>{{ name }}</code>
+        {% if name|upper in (secrets_stored or []) %}<span class="fw-badge fw-badge-success ms-1">{{ _('stored') }}</span>
+        {% else %}<span class="fw-badge fw-badge-warning ms-1">{{ _('not set') }}</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    <form method="post" action="{{ url_for('integrations.hook_secret', slug=hook.slug) }}" class="row g-2 align-items-end" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Secret') }}</label>
+        <select class="form-select form-select-sm" name="name">
+          {% for name in hook.secrets %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label small">{{ _('Value') }}</label>
+        <input class="form-control form-control-sm" type="password" name="value" autocomplete="new-password" required>
+      </div>
+      <div class="col-md-3">
+        <button class="btn btn-sm btn-fw-primary"><i class="bi bi-key me-1"></i>{{ _('Store value') }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
 {% if hook.slug and hook.slug != 'new' %}
 <div class="card">
   <div class="card-header"><strong>{{ _('Recent runs') }}</strong></div>

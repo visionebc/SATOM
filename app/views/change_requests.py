@@ -1272,8 +1272,10 @@ def request_crq(id):
             and tracker.get('backend', 'none') != 'none':
         flash(tracker['detail'] + '.', 'info')
     if result.get('dispatched'):
-        flash(f"Queued {result['dispatched']} integration hook(s). The ticket "
-              f"reference appears here once your system answers.", 'success')
+        flash(f"Queued {result['dispatched']} integration hook(s). A hook that "
+              f"returns crq_ref (and optionally crq_url) in its result writes "
+              f"the ticket reference here once your system answers; otherwise "
+              f"use Record to enter it by hand.", 'success')
         # What the ticket actually CARRIES, said here rather than left to be
         # discovered in the receiving system. A bulk change whose evidence
         # covers eleven of twenty appliances is not a failure — but nobody

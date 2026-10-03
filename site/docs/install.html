@@ -478,8 +478,8 @@ sudo bash satom-setup.sh --help     # every option and SETUP_* variable
 and 443 and Internet egress, detects an existing or half-finished install
 (update, reinstall or resume), and then asks <strong>once</strong> for everything: native or
 Docker, role, DNS name(s), HTTPS port, certificate (the node's own or an
-imported one) and the <code>admin</code> password — typed twice, at least 10 characters
-and three character classes; left empty, one is generated and written only to
+imported one) and the <code>admin</code> password — typed twice, 12 to 1024 characters
+(length is the only rule; no character classes); left empty, one is generated and written only to
 <code>/root/satom-admin-password.txt</code> (<code>0600</code>), never to a log. <code>--yes</code> runs it
 unattended from <code>SETUP_*</code> variables (or <code>--answers FILE</code>). It ends with a
 summary in <code>/root/satom-setup-summary.txt</code>; its log is
@@ -505,7 +505,7 @@ than installing an application that cannot start.</p>
   first). Roles: standalone, primary, standby — a standby needs Docker Compose
   ≥ 2.24.4. Update by re-running the script; <code>--uninstall</code> stops the stack and
   keeps the data, <code>--uninstall --purge</code> deletes it. <strong>The Docker variant
-  disables the four host-only web actions</strong> — Software Update &amp; HA,
+  disables the five host-only web actions</strong> — Software Update, HA promotion,
   service control, certificate activation and systemd unit health (§2.3,
   <code>app/runtime.py</code>); if you need them, install natively. Every <code>SETUP_*</code>
   variable of this mode, the files it writes and how to operate the result:
@@ -636,8 +636,8 @@ instead of shipping them broken — <strong>unless the optional operations agent
 enabled</strong>. The agent (<code>deploy/docker/compose.agent.yaml</code>, off by default) is
 one extra container that holds the Docker socket; the web only drops a request
 into a volume, and the agent re-validates it against a closed list and does the
-work. With it, the four come back in the console under <strong>System → Container
-operations</strong>:</p>
+work. With it, four of the five come back in the console under <strong>System → Container
+operations</strong> (HA promotion stays refused):</p>
 <table>
 <thead>
 <tr>

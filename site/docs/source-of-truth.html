@@ -545,7 +545,13 @@ test_type_fields_route</code> — both failing BEFORE this work, untouched/out o
   race-safe via the <code>uq_resource_lock_dev_key</code> unique constraint), <code>views/locks.py</code>
   (<code>/api/locks/acquire|heartbeat|release|steal|status</code>), <code>static/js/lock.js</code>
   (acquire → 30s heartbeat → banner + "Take over" + save-guard → release on
-  unload), wired into the objedit editor. 12 tests.</li>
+  unload), wired into the objedit editor. 12 tests.
+  <em>2026-10-03:</em> acquire / heartbeat / steal need <code>config_write</code> (a read-only
+  user can no longer take an operator's lease); the objedit save-object,
+  save-row, delete-row and delete-object endpoints answer <strong>409</strong> when another
+  user holds the object's lease (server-side, not only in lock.js); the guard
+  lives in the shared editor body so the inline (<code>?partial=1</code>) editor takes and
+  shows the lease too, and gives it back when its panel is closed.</li>
 <li><strong>Phase 5 — Approval write-path + write-through.</strong> <code>services/write_through.py</code>
   (<code>diff_object</code> before/after vs cache for the approval preview; <code>local_update</code>/
   <code>local_delete</code> keep the cache consistent after an approved write WITHOUT a full

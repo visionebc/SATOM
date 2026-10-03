@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-10-03
+
 ### Security — gunicorn answered plain HTTP on every interface after an update (2026-10-03)
 
 The shipped `satom.service` bound gunicorn to `0.0.0.0:8000` and relied on

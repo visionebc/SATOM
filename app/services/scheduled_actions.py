@@ -464,9 +464,13 @@ ADMIN_ACTIONS: list[ActionSpec] = [
         # This is the same shape as upgrade_prep shipping destructive-and-
         # ungated while the gate watched only 'upgrade'.
         requires_change_request=True,
-        summary="Run the firmware upgrade at a FIXED date/time. DESTRUCTIVE. "
-                "Authorized by an approved Change Request inside its maintenance "
-                "window (change_requests.cr_runnable).",
+        summary="Change-request bound firmware upgrade at a FIXED date/time, "
+                "authorized by an approved Change Request inside its "
+                "maintenance window (change_requests.cr_runnable). The "
+                "scheduled executor does NOT flash yet: each target is "
+                "reported 'not executed' and the change closes as failed. "
+                "Flash live from the appliance's firmware page inside the "
+                "window; that run closes the change.",
     ),
     ActionSpec(
         "reboot", "Reboot the appliance (DESTRUCTIVE)", "admin",
@@ -1448,12 +1452,14 @@ def _do_ha_failover(appliance, params: dict, dry_run: bool) -> dict:
 
 
 def _do_upgrade(appliance, params: dict, dry_run: bool) -> dict:
-    """Firmware upgrade. The FULL flash runbook (upload .out, reboot, monitor
-    recovery, validate services) is NOT part of the headless web service layer
-    yet - there is no web ``upgrade`` service to call. Authorization (an approved
-    Change Request inside its window) is enforced upstream in
-    :func:`execute_and_record` via ``change_requests.cr_runnable``; here we
-    deliberately do NOT flash. Guarded stub pending the upgrade-runbook port."""
+    """Firmware upgrade - scheduled path. The FULL flash runbook (upload .out,
+    reboot, monitor recovery, validate services) runs only from the LIVE
+    firmware page (``views.appliances`` flash worker), which closes the change
+    request itself. This headless executor deliberately does NOT flash: it
+    reports every target as not executed, so a scheduled upgrade change closes
+    as failed and says why. Authorization (an approved Change Request inside
+    its window) is enforced upstream in :func:`execute_and_record` via
+    ``change_requests.cr_runnable``."""
     who = getattr(appliance, "name", "device")
     return {
         "ok": False,

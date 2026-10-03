@@ -1167,13 +1167,16 @@ def upgrade_push(id):
         )
     except Exception as exc:
         if cr is not None:
-            crsvc.finish(cr, 'error', by='operator',
-                         summary=f'{type(exc).__name__}: {exc}'[:2000])
+            crsvc.finish_device(cr, appliance.id, 'error', by='operator',
+                                summary=f'{type(exc).__name__}: {exc}'[:2000])
         flash(f'Upgrade failed: {type(exc).__name__}: {exc}', 'danger')
         return redirect(url_for('appliances.upgrade', id=id))
     if cr is not None:
-        crsvc.finish(cr, 'ok' if result.get('ok') else 'error', by='operator',
-                     summary=(result.get('message') or '')[:2000])
+        # Per appliance: a change naming several appliances closes once each
+        # of them has a result, not after the first one.
+        crsvc.finish_device(cr, appliance.id,
+                            'ok' if result.get('ok') else 'error', by='operator',
+                            summary=(result.get('message') or '')[:2000])
 
     images = upg.compatible_images(appliance)
     return render_template('appliances/upgrade.html', appliance=appliance,
@@ -1321,7 +1324,7 @@ def flash_reports():
                            reports=reports, focus=focus)
 
 
-def _flash_under_change(app, job_id, cr_id, run):
+def _flash_under_change(app, job_id, cr_id, run, appliance_id=None):
     """Run a live flash INSIDE its change request and close that change with the
     real outcome.
 
@@ -1353,8 +1356,9 @@ def _flash_under_change(app, job_id, cr_id, run):
                 status = job.get('status')
                 outcome = 'ok' if status == jobsvc.SUCCESS else (status or 'unknown')
                 summary = (job.get('error') or job.get('message') or '')[:2000]
-                crsvc.finish(cr_id, outcome, by='firmware-job',
-                             summary=summary or f'firmware job {status}')
+                crsvc.finish_device(cr_id, appliance_id, outcome,
+                                    by='firmware-job',
+                                    summary=summary or f'firmware job {status}')
             except Exception as exc:  # noqa: BLE001
                 log_exception(exc, context='appliances.flash_cr_finish')
 
@@ -1604,7 +1608,8 @@ def _spawn_flash_job(appliance, image, kind, dry_run, confirm_maturity, cr=None,
             app, jid, cr_id,
             lambda: _flash_worker(app, jid, appliance.id, image.id, image.filename,
                                   dry_run, confirm_maturity, kind, user_id, link,
-                                  cr_id)))
+                                  cr_id),
+            appliance_id=appliance.id))
     return jsonify({"job_id": job["id"], "scout": scout_meta})
 
 
@@ -2102,8 +2107,9 @@ def failover_run(id):
                 detail=f'Interactive HA failover ({direction}) of {appliance.name}')
     result = sa.run_action(sa.get_spec(FAILOVER_ACTION), appliance,
                            {'direction': direction}, dry_run=False)
-    crsvc.finish(cr, 'ok' if result.get('ok') else 'error', by='operator',
-                 summary=(result.get('summary') or '')[:2000])
+    crsvc.finish_device(cr, appliance.id, 'ok' if result.get('ok') else 'error',
+                        by='operator',
+                        summary=(result.get('summary') or '')[:2000])
     log_action('appliance.failover', target=appliance.name,
                extra={'direction': direction, 'cr': cr.ref or cr.id,
                       'ok': bool(result.get('ok'))})

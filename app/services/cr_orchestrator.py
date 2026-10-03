@@ -336,8 +336,8 @@ def open_window(cr, *, by: str = "scheduler") -> dict:
         detail += f" - {reasons}"
     _log(cr, f"maintenance window: {detail}")
     _event(cr, "window_opened", by, detail)
-    _dispatch_quiet("window.opening", cr, by=by, extra={
-        "action": cr.action, "policies": _policy_names(cr)})
+    # window.opening is NOT dispatched here: it describes the change starting,
+    # not NetBox answering, so on_start emits it whether or not NetBox exists.
     return {"ok": bool(refs) and not failures, "opened": len(refs),
             "failed": len(failures), "sent": True, "detail": detail}
 
@@ -374,10 +374,21 @@ def close_window(cr, *, ok: bool, summary: str = "", by: str = "scheduler") -> d
     _log(cr, f"maintenance window close: {detail}"
              + (f" - {'; '.join(failures)}" if failures else ""))
     _event(cr, "window_closed", by, detail)
-    _dispatch_quiet("window.closing", cr, by=by,
-                    extra={"outcome": "ok" if ok else "failed",
-                           "result_summary": summary})
+    # window.closing is emitted by on_finish, NetBox or not - see on_start.
     return {"ok": not failures, "detail": detail}
+
+
+#: The ``outcome`` values the event catalog documents for window.closing.
+WINDOW_OUTCOMES = ("completed", "failed", "cancelled", "in_progress")
+
+
+def window_outcome(cr, ok: bool) -> str:
+    """The CR's own status when it is one the catalog names, else the run's
+    verdict spelled the catalog's way (never the internal "ok")."""
+    status = (getattr(cr, "status", "") or "").strip()
+    if status in WINDOW_OUTCOMES:
+        return status
+    return "completed" if ok else "failed"
 
 
 # --------------------------------------------------------------------------- #
@@ -392,6 +403,13 @@ def on_start(cr, *, by: str = "scheduler") -> None:
         open_window(cr, by=by)
     except Exception as exc:  # noqa: BLE001 - external systems must not abort a change
         _safe_log(cr, f"window open raised: {exc}")
+    # The hook event belongs to the change, not to NetBox: it fires on every
+    # authorized start, with or without a configured NetBox.
+    try:
+        _dispatch_quiet("window.opening", cr, by=by, extra={
+            "action": cr.action, "policies": _policy_names(cr)})
+    except Exception as exc:  # noqa: BLE001
+        _safe_log(cr, f"window.opening dispatch raised: {exc}")
 
 
 def on_finish(cr, outcome: str, *, summary: str = "", by: str = "scheduler") -> None:
@@ -403,6 +421,11 @@ def on_finish(cr, outcome: str, *, summary: str = "", by: str = "scheduler") -> 
         close_window(cr, ok=ok, summary=summary, by=by)
     except Exception as exc:  # noqa: BLE001
         _safe_log(cr, f"window close raised: {exc}")
+    try:
+        _dispatch_quiet("window.closing", cr, by=by, extra={
+            "outcome": window_outcome(cr, ok), "result_summary": summary})
+    except Exception as exc:  # noqa: BLE001
+        _safe_log(cr, f"window.closing dispatch raised: {exc}")
     try:
         _dispatch_per_device(cr, ok=ok, summary=summary, by=by)
     except Exception as exc:  # noqa: BLE001
@@ -609,4 +632,5 @@ __all__ = [
     "request_crq", "record_crq", "record_external_approval", "external_gate",
     "announce_approved",
     "open_window", "close_window", "on_start", "on_finish",
+    "WINDOW_OUTCOMES", "window_outcome",
 ]

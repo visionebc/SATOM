@@ -18,11 +18,11 @@ runner imports it without dragging in Flask, and every DB touch (audit rows,
 the secret vault) is a lazy import inside a function guarded by try/except.
 
 WHAT LIVES WHERE
-    data/integrations/<slug>/hook.py             the author's source
-    data/integrations/<slug>/meta.json           name/event/enabled/timeout/secrets
-    data/integrations/<slug>/versions/<ts>.py    every previous source
-    data/integration-requests/<request_id>.json  the queue the runner drains
-    data/integration-status/<request_id>.json    what the UI polls
+    data/integrations/hooks/<slug>/hook.py             the author's source
+    data/integrations/hooks/<slug>/meta.json           name/event/enabled/timeout/secrets
+    data/integrations/hooks/<slug>/versions/<ts>.py    every previous source
+    data/integrations/queue/<request_id>.json          the queue the runner drains
+    data/integrations/status/<request_id>.json         what the UI polls
 """
 from __future__ import annotations
 
@@ -650,7 +650,7 @@ def dispatch(event: str, payload: dict[str, Any], *, by: str = "system",
     order. ``status`` is ``queued`` (or ``dry-run``). It is NEVER ``ok``,
     because nothing has run: this function does not execute, import, exec,
     fork or spawn. It writes JSON. The systemd ``.path`` unit watching
-    ``data/integration-requests/`` is what turns a file into a process, in a
+    ``data/integrations/queue/`` is what turns a file into a process, in a
     different unit, as a different, unprivileged concern.
 
     ``dry_run=True`` resolves the hook list and returns it WITHOUT writing

@@ -1,6 +1,6 @@
 """``satom_sdk`` — the tiny surface a user hook is allowed to see.
 
-The author writes ``data/integrations/<slug>/hook.py`` and starts it with::
+The author writes ``data/integrations/hooks/<slug>/hook.py`` and starts it with::
 
     from satom_sdk import ctx
 

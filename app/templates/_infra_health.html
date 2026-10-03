@@ -38,7 +38,7 @@
 <div class="ih-grid" id="ihGrid">
   {# Infra tiles (HA nodes · Git · backup) — filled by this partial's fetch below. #}
   <div id="ihBody" style="display:contents">
-    <div class="text-muted small">{{ _('Probing nodes, Gitea and backup-server…') }}</div>
+    <div class="text-muted small">{{ _('Probing nodes, the Git repository and the backup server…') }}</div>
   </div>
   {# Filled ONLY on /monitoring by renderSystem() (Database + Services & redundancy),
      so those cards flow into the SAME grid as the backup card. Inert/empty elsewhere. #}
@@ -50,6 +50,14 @@
   'use strict';
   function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  var T_GIT = {{ _('Git repository')|tojson }};
+  var T_BACKUP = {{ _('Backup server')|tojson }};
+  var T_WHERE = {{ _('Settings → Source of Truth & Backup → Backup Server')|tojson }};
+  {% if current_user.is_authenticated and current_user.can('user_manage') %}
+  var BACKUP_WHERE = '<a href="'+esc({{ (url_for('settings.index') ~ '#tab-backupsrv')|tojson }})+'">'+esc(T_WHERE)+'</a>';
+  {% else %}
+  var BACKUP_WHERE = esc(T_WHERE);
+  {% endif %}
   function cls(p){return p==null?'ih-mut':p>=90?'ih-crit':p>=75?'ih-warn':'ih-ok';}
   function tcls(p){return p==null?'ih-t-mut':p>=90?'ih-t-crit':p>=75?'ih-t-warn':'ih-t-ok';}
   function bar(p){var w=p==null?0:Math.min(100,p);
@@ -91,7 +99,7 @@
     var ok=g.reachable, last=g.reports_last;
     return card(
       '<div class="d-flex justify-content-between align-items-start">'+
-        '<b>'+dot(ok)+'<i class="bi bi-git me-1"></i>Git repo (Gitea)</b>'+
+        '<b>'+dot(ok)+'<i class="bi bi-git me-1"></i>'+esc(T_GIT)+'</b>'+
         '<span class="ih-badge '+(ok?'ih-b-pri':'ih-b-off')+'">'+(ok?'available':'unreachable')+'</span></div>'+
       '<div class="text-muted small mb-2">'+esc(g.base||g.remote||'—')+'</div>'+
       '<div class="ih-svc"><span>branch</span><span>'+esc(g.branch)+
@@ -105,14 +113,14 @@
   function backupTile(b){
     if(!b || !b.configured){
       return card('<div class="d-flex justify-content-between align-items-start">'+
-        '<b><i class="bi bi-hdd-network me-1"></i>Backup server</b>'+
+        '<b><i class="bi bi-hdd-network me-1"></i>'+esc(T_BACKUP)+'</b>'+
         '<span class="ih-badge ih-b-off">not configured</span></div>'+
-        '<div class="text-muted small">Settings &rarr; SoT &amp; Backup</div>');
+        '<div class="text-muted small">'+BACKUP_WHERE+'</div>');
     }
     var ok=b.reachable, dk=b.disk;
     return card(
       '<div class="d-flex justify-content-between align-items-start">'+
-        '<b>'+dot(ok)+'<i class="bi bi-hdd-network me-1"></i>Backup server (backup-server)</b>'+
+        '<b>'+dot(ok)+'<i class="bi bi-hdd-network me-1"></i>'+esc(T_BACKUP)+'</b>'+
         '<span class="ih-badge '+(ok?'ih-b-pri':'ih-b-off')+'">'+(ok?'available':'unreachable')+'</span></div>'+
       '<div class="text-muted small mb-2">'+esc(b.host||'')+(b.port?':'+b.port:'')+' · SFTP</div>'+
       (dk?caprow('Disk',dk.pct,dk.used_gb+' / '+dk.total_gb+' GB · '+dk.pct+'%'):

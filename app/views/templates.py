@@ -1,9 +1,12 @@
 """Templates — desired-state library admin page (web port of the desktop
 Settings → WPP Templates console).
 
-Admin-only: templates are authored by admins and pushed on demand. Applying a
-template to a live appliance is a separate, audited action and is intentionally
-not wired here yet (the library is useful standalone as versioned desired state).
+Gated per action, not admin-only: ``operations.view`` lists and opens
+templates, ``operations.template_save`` creates / edits / clones / deletes them,
+``operations.template_approve`` approves, rejects or withdraws approval, and
+``operations.template_apply`` applies one to appliances (dry-run preview first,
+live write only with ``confirm=1``; a multi-device rollout also needs
+``operations.apply`` and an approved template).
 """
 from __future__ import annotations
 

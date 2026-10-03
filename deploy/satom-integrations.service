@@ -1,5 +1,5 @@
 # Integration-hooks runner. Triggered by satom-integrations.path when
-# data/integration-requests/ becomes non-empty. Same shape as
+# data/integrations/queue/ becomes non-empty. Same shape as
 # satom-updater.service (oneshot, WorkingDirectory=/opt/satom, ExecStart through
 # the app venv) with ONE deliberate inversion: satom-updater runs as root
 # because it installs unit files and restarts services; THIS unit executes

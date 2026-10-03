@@ -157,14 +157,20 @@
             {{ a.next_run.strftime('%Y-%m-%d %H:%M') if a.next_run else '—' }}
           </td>
           <td>
-            {% if a.last_status == 'ok' %}
+            {# "running" comes from the run lease (running_at), not from
+               last_status: last_status only ever holds a FINISHED outcome
+               (ok / failed / skipped) or "missed" (overdue, no catch-up). #}
+            {% if a.running_at %}
+              <span class="fw-badge fw-badge-info">{{ _('running') }}</span>
+            {% elif a.last_status == 'ok' %}
               <span class="fw-badge fw-badge-success">{{ _('ok') }}</span>
             {% elif a.last_status == 'failed' %}
               <span class="fw-badge fw-badge-danger">{{ _('failed') }}</span>
             {% elif a.last_status == 'skipped' %}
               <span class="fw-badge fw-badge-secondary">{{ _('skipped') }}</span>
-            {% elif a.last_status == 'running' %}
-              <span class="fw-badge fw-badge-info">{{ _('running') }}</span>
+            {% elif a.last_status == 'missed' %}
+              <span class="fw-badge fw-badge-warning"
+                    title="{{ _('The run window passed while the scheduler was down and catch-up is off; the action rolled forward to its next run.') }}">{{ _('missed') }}</span>
             {% else %}
               <span class="text-muted">—</span>
             {% endif %}

@@ -5,7 +5,7 @@ when SATOM raises a change.
 WHY THIS EXISTS ALONGSIDE THE PYTHON HOOKS
 ------------------------------------------
 Before this module the ONLY way to get a SATOM change into a ticketing system
-was for the operator to write ``data/integrations/<slug>/hook.py`` against the
+was for the operator to write ``data/integrations/hooks/<slug>/hook.py`` against the
 ``change.requested`` event. That is the right tool for a bespoke in-house CRM —
 it is the wrong tool for the three trackers almost everybody actually runs.
 Asking a network operator to write and maintain Python (and to get its retry,

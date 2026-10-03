@@ -668,3 +668,34 @@ def test_a_read_only_operator_can_read_but_not_run(app, client):
     assert client.post("/process/%d/run" % pid).status_code in (302, 403)
     with app.app_context():
         assert ProcessRun.query.count() == 0, "a read-only user started a run"
+
+
+_HOME = {"global": "/", "fortiweb": "/web/", "fortiadc": "/adc/",
+         "fortianalyzer": "/faz/", "fortiauthenticator": "/fac/"}
+
+
+@pytest.mark.parametrize("product", ["fortiweb", "fortiadc", "fortianalyzer",
+                                     "fortiauthenticator", "global"])
+@pytest.mark.parametrize("role", ["readonly", "operator"])
+def test_process_is_in_the_menu_without_user_manage(app, client, product, role):
+    """AU-18: the entry is gated on `view` but was only rendered inside the
+    user_manage Administrator group, so readonly/operator never saw it."""
+    from tests.conftest import make_user, profile_id
+    uid = make_user(app, f"u-{role}", role=role, profile_id=profile_id(app, role))
+    login(client, uid, product=product)
+    html = client.get(_HOME[product] + "?_adom=" + product,
+                      follow_redirects=True).get_data(as_text=True)
+    side = html.split('<aside id="fw-sidebar"', 1)[-1].split("</aside>", 1)[0]
+    assert 'href="/process/' in side or "/process/?" in side, product
+    assert side.count('data-nav-group="Process"') == 1
+
+
+@pytest.mark.parametrize("product", ["fortiweb", "fortiadc", "fortianalyzer",
+                                     "fortiauthenticator", "global"])
+def test_an_admin_sees_process_once_in_the_administrator_group(app, client, product):
+    login(client, admin_user_id(app), product=product)
+    html = client.get(_HOME[product] + "?_adom=" + product,
+                      follow_redirects=True).get_data(as_text=True)
+    side = html.split('<aside id="fw-sidebar"', 1)[-1].split("</aside>", 1)[0]
+    assert 'data-nav-group="Process"' not in side
+    assert side.count('href="/process/') == 1

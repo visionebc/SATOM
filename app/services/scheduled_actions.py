@@ -256,7 +256,7 @@ ADMIN_ACTIONS: list[ActionSpec] = [
     ActionSpec(
         "device_sync", "Sync device to local source of truth", "admin",
         needs_targets=True, products=("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator"),
-        summary="Read each target FortiWeb/FortiADC/FortiAnalyzer's full config "
+        summary="Read each target FortiWeb/FortiADC/FortiAnalyzer/FortiAuthenticator's full config "
                 "(REST or JSON-RPC) and refresh the local Postgres "
                 "source-of-truth cache + per-device JSON backup "
                 "(services.device_sync). DB-first reads serve the UI from this. "
@@ -267,7 +267,7 @@ ADMIN_ACTIONS: list[ActionSpec] = [
         needs_targets=True, products=("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator"),
         summary="Like Sync, plus UPLOAD the versioned SoT store's new blobs to "
                 "the external backup server (off-box versioned backup). Covers "
-                "FortiWeb, FortiADC and FortiAnalyzer. Use for the scheduled "
+                "FortiWeb, FortiADC, FortiAnalyzer and FortiAuthenticator. Use for the scheduled "
                 "off-box source-of-truth copy.",
     ),
     ActionSpec(
@@ -307,7 +307,8 @@ ADMIN_ACTIONS: list[ActionSpec] = [
         summary="Run every enabled deep monitor whose interval has elapsed: "
                 "synthetic HTTPS against each watched server policy, the "
                 "interface IP/link fingerprint, and the proxyd process read "
-                "(services.deep_monitor). Schedule EVERY 3 MINUTES — the page "
+                "(services.deep_monitor). Schedule EVERY 3 MINUTES (the seed plan's "
+                "cadence) — the page "
                 "only shows samples this sweep records. Contacts appliances "
                 "read-only (HTTP GET + `diagnose system top`).",
     ),

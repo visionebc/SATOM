@@ -15871,8 +15871,8 @@ msgstr "sin programar"
 msgid "Task name"
 msgstr "Nombre de la tarea"
 
-msgid "Virtual machines per round"
-msgstr "Máquinas virtuales por ronda"
+msgid "Appliances per round"
+msgstr "Dispositivos por ronda"
 
 #, python-format
 msgid "1–%(max)s. The rest carry over to the next round."

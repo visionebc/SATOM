@@ -306,7 +306,7 @@
       </div>
 
       <div class="col-md-3">
-        <label class="form-label small">{{ _('Virtual machines per round') }}</label>
+        <label class="form-label small">{{ _('Appliances per round') }}</label>
         <input class="form-control form-control-sm" type="number" name="per_round"
                min="1" max="{{ nb_max_per_round }}"
                value="{{ (nb_task.params_dict.get('per_round', nb_default_per_round)) if nb_task else nb_default_per_round }}">

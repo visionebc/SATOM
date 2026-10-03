@@ -200,8 +200,16 @@ def test_the_confirmation_exists_in_spanish(app):
          "calendar.", "se ha agregado a las acciones programadas"),
         ("The task “%(name)s” was saved, but it is DISABLED: it will not run and "
          "it is not drawn on the calendar.", "no se dibuja en el calendario"),
-        ("Virtual machines per round", "Máquinas virtuales por ronda"),
+        ("Appliances per round", "Dispositivos por ronda"),
     ):
         msg = cat.get(msgid)
         assert msg is not None, "not in the es catalogue: %r" % msgid
         assert must in msg.string
+
+
+def test_the_round_field_counts_appliances(app, client):
+    """AU-26: the parameter is appliances per round, not virtual machines."""
+    login(client, admin_user_id(app))
+    html = client.get(PAGE).get_data(as_text=True)
+    assert "Appliances per round" in html
+    assert "Virtual machines per round" not in html

@@ -1554,11 +1554,11 @@ Server Policy for operators):
   |---|---|
   | Source of truth | `device_sync` (refresh the local cache from a device), `device_inspect` (sync **and** push the SoT off-box), `deep_capture`, `signature_sync` |
   | Backups | `backup` (on-device config backup), `system_backup` (the manager's own `pg_dump` bundle, optionally pushed to the backup server) |
-  | Monitoring — all four are the ones §14 asks you to schedule | `metrics_scrape` (the Collection sweep, §14.7 — **every 3 minutes**), `deep_monitor` (the deep-monitor probe sweep, §14.3 — **every 3 minutes**), `monitor_report` (the period summary, §14.9 — *after* the period closes), `inventory_snapshot` (daily inventory counts for §14.2) |
+  | Monitoring — all four are the ones §14 asks you to schedule | `metrics_scrape` (the Collection sweep, §14.7 — **every 3 minutes**), `deep_monitor` (the deep-monitor probe sweep, §14.3 — **every 3 minutes**, the seed plan's cadence), `monitor_report` (the period summary, §14.9 — *after* the period closes), `inventory_snapshot` (daily inventory counts for §14.2) |
   | Certificates | `cert_scan`, the three `cert_manager_*` renewals (server / client+server / client), `cert_lifecycle` (the revoke-and-cleanup sweep) |
   | Health | `health_check`, `ha_check`, `stats` |
   | Catalog | `appid_import` (the nightly AppID feed, §25) |
-  | Firmware | `upgrade_prep` (backup + health, flashes nothing) and the full `upgrade` — destructive, fixed date/time, and only inside an approved Change Request window |
+  | Firmware | `upgrade_prep` (backup + health, flashes nothing) and `upgrade` — fixed date/time, only inside an approved Change Request window; the scheduled executor does **not** flash yet (it reports each target *not executed*), so flash live from the Upgrade page (§36.6) |
   | Escape hatch | `custom_rest` — any FortiWeb REST request you define; GET is a live read, writes go through the snapshot + audit + dry-run path |
 
   Two notes on reading that list. **There is no separate `service_monitor`
@@ -1574,7 +1574,11 @@ Server Policy for operators):
   swap a server-policy certificate.
 - Schedules: interval / daily / weekly / monthly / once, with catch-up
   semantics and a run history per action. A dedicated scheduler sidecar fires
-  them; **Run now** is always available.
+  them; **Run now** is always available. Every wall-clock field — including the
+  one-time **Run at** — is in the console timezone (Settings → General), and
+  the list shows **Next run** in that timezone with its zone. A run the
+  scheduler was not up for, on an action without catch-up, shows as
+  **missed**.
 
 **Change Requests** (maintenance windows):
 
@@ -5777,7 +5781,9 @@ describe, so putting it away would hide the premise of every count below it.
 
 ## 42. Process: procedures the system walks for you
 
-**Administrator → Process**, in every ADOM.
+**Administrator → Process**, in every ADOM. Users without the user-manage
+permission (read-only, operator) find the same entry under its own
+**Automation** group in the sidebar.
 
 A recovery plan that lives in a document is a plan nobody has run. Process is
 where you draw one as a diagram and let SATOM walk it: each step asks a

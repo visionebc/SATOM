@@ -560,3 +560,65 @@ def test_the_two_map_entries_do_not_describe_the_same_thing(app):
     a, b = by_ep["automations.index"], by_ep["scheduled_actions.index"]
     assert a["label"] != b["label"]
     assert a["blurb"] != b["blurb"]
+
+
+# --------------------------------------------------------------------------- #
+#  Documentation Center audit 2026-10-03: timezone + status rendering            #
+# --------------------------------------------------------------------------- #
+def _zurich(app):
+    from app.services import settings_store as store
+    with app.app_context():
+        store.set_str(store.K_TIMEZONE, "Europe/Zurich")
+
+
+def test_a_one_shot_is_read_in_the_console_timezone(app, client):
+    """AU-06: 'Run at' was stored verbatim and compared to UTC."""
+    from datetime import datetime, timedelta
+    from app.models import ScheduledAction
+    from app.services import settings_store as store
+    _zurich(app)
+    local = (datetime.utcnow() + timedelta(days=3)).strftime("%Y-%m-%dT22:00")
+    login(client, _admin(app))
+    client.post("/web/scheduled-actions/new",
+                data={"name": "one shot", "action": "system_backup",
+                      "schedule_kind": "once", "once_at": local, "enabled": "on"})
+    with app.app_context():
+        row = ScheduledAction.query.filter_by(name="one shot").first()
+        assert row is not None
+        expected = store.parse_local(local)
+        assert row.schedule_dict["at"] == expected.isoformat()
+        assert row.next_run == expected
+        assert expected.strftime("%H:%M") != "22:00"   # Zurich is never UTC
+        rid = row.id
+    form = client.get(f"/web/scheduled-actions/{rid}/edit").get_data(as_text=True)
+    assert f'value="{local}"' in form
+    assert "Europe/Zurich" in form
+
+
+def test_next_run_is_shown_in_the_console_timezone(app, client):
+    """AU-15: the list printed naive UTC with no zone."""
+    from datetime import datetime
+    from app.extensions import db
+    from app.models import ScheduledAction
+    _zurich(app)
+    rid = _mk(app, "tz row", "system_backup")
+    with app.app_context():
+        row = db.session.get(ScheduledAction, rid)
+        row.next_run = datetime(2031, 1, 15, 12, 0)
+        db.session.commit()
+    login(client, _admin(app))
+    page = _page(client.get("/web/scheduled-actions/").get_data(as_text=True))
+    assert "2031-01-15 13:00 CET" in page
+
+
+def test_a_missed_run_is_rendered(app, client):
+    """AU-16: last_status 'missed' showed as an empty dash."""
+    from app.extensions import db
+    from app.models import ScheduledAction
+    rid = _mk(app, "missed row", "system_backup")
+    with app.app_context():
+        db.session.get(ScheduledAction, rid).last_status = "missed"
+        db.session.commit()
+    login(client, _admin(app))
+    page = _page(client.get("/web/scheduled-actions/").get_data(as_text=True))
+    assert ">missed</span>" in page

@@ -223,7 +223,7 @@
 
           <!-- ONCE -->
           <div class="sched-group" data-kind="once">
-            <label class="fw-form-label">{{ _('Run at') }}</label>
+            <label class="fw-form-label">{{ _('Run at') }} <span class="text-muted">({{ tz_name }})</span></label>
             <input type="datetime-local" class="form-control" name="once_at"
                    value="{{ schedule.get('at', '')[:16] }}">
           </div>

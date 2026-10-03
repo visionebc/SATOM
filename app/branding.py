@@ -6,10 +6,10 @@ identity and scope:
 * ``global``    — the fleet-wide console at ``/`` spanning both products.
 * ``fortiweb``  — the full Web Application Firewall manager (under ``/web``).
 * ``fortiadc``  — Application Delivery Controller (under ``/adc``).
-* ``fortiauthenticator`` (under ``/fac``) / ``fortianalyzer`` (under ``/faz``)
-  — full ADOMs with their own home and menus (seeded ``placeholder: False``).
-* any future or custom ADOM marked ``placeholder`` — selectable and branded
-  (own colored banner), scaffold dashboard only.
+* ``fortianalyzer`` — FortiAnalyzer, live over its JSON-RPC API (under ``/faz``).
+* ``fortiauthenticator`` — FortiAuthenticator, live over its REST API (under
+  ``/fac``). Both are real ADOMs (``placeholder`` False); the placeholder
+  scaffold dashboard remains only for a future ADOM added in Settings → ADOMs.
 
 **As of 2026-07-12 the registry lives in the ``adoms`` table** (model
 ``models_adom.Adom``), edited from Settings → ADOMs. This module reads that
@@ -96,9 +96,9 @@ _FALLBACK: list[dict] = [
         "tagline": "Logging & Analytics",
         "mark": "img/fortianalyzer-mark.svg",
         "description": "Centralized logging, reporting and security analytics "
-                       "across the fabric — Fleet, Firmware and Administration "
-                       "live; Configuration/Operation/Automation scaffolded "
-                       "until the JSON-RPC backend is wired.",
+                       "across the fabric — Device Manager, FortiView, Log "
+                       "View, Incidents & Events and Reports live over the "
+                       "JSON-RPC API, plus Fleet, Firmware and Administration.",
         "active": True, "placeholder": False, "banner_default": "amber",
         "cap_banner": True, "cap_tokens": True, "cap_firmware": True,
         "cap_naming": False, "cap_regex": False,
@@ -279,13 +279,35 @@ def naming_products() -> _LiveSeq:
 
 
 # ── seeding (called at boot, after db.create_all) ────────────────────────────
+#: ``(key, description)`` pairs a past seed shipped and that are now false. A
+#: row still holding one VERBATIM is refreshed to the current seed text on boot
+#: (the seed is otherwise insert-only); an operator-edited text never matches.
+_RETIRED_DESCRIPTIONS = (
+    ("fortianalyzer",
+     "Centralized logging, reporting and security analytics across the "
+     "fabric — Fleet, Firmware and Administration live; "
+     "Configuration/Operation/Automation scaffolded until the JSON-RPC "
+     "backend is wired."),
+)
+
+
 def seed_defaults() -> int:
     """Insert-only seed of the canonical ADOMs. Existing rows (operator edits)
     are never touched. Returns the number of rows inserted."""
     from .extensions import db
     from .models_adom import Adom
     added = 0
-    existing = {a.key for a in Adom.query.all()}
+    rows = {a.key: a for a in Adom.query.all()}
+    existing = set(rows)
+    refreshed = 0
+    for key, old in _RETIRED_DESCRIPTIONS:
+        # Verbatim old seed text = never edited by an operator, so the
+        # corrected seed may replace it. Any other text is left alone.
+        row = rows.get(key)
+        if row is not None and (row.description or "") == old:
+            row.description = next(d["description"] for d in _FALLBACK
+                                   if d["key"] == key)
+            refreshed += 1
     for i, d in enumerate(_FALLBACK):
         if d["key"] in existing:
             continue
@@ -303,7 +325,7 @@ def seed_defaults() -> int:
         )
         db.session.add(a)
         added += 1
-    if added:
+    if added or refreshed:
         db.session.commit()
         invalidate()
     return added

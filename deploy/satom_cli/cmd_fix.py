@@ -573,7 +573,7 @@ def repair_jobs(ctx, args):
 _PW_CODE = """
 import json, sys
 from app import create_app
-from app.models import User
+from app.models import AuditLog, User
 from app.extensions import db
 arg = json.loads(sys.stdin.read())
 app = create_app()
@@ -582,11 +582,19 @@ with app.app_context():
     if not u:
         print(json.dumps({"error": "no such user"}))
     else:
+        was_active = bool(u.is_active)
         if arg.get("password"):
             u.set_password(arg["password"])
         u.failed_logins = 0
         u.locked_until = None
         u.is_active = True
+        # A root-shell account write is still an account write: it lands in
+        # the same audit trail as the web console's, under "cli/root".
+        db.session.add(AuditLog(
+            username="cli/root",
+            action="cli.reset_password" if arg.get("password") else "cli.unlock",
+            target=u.username,
+            extra=json.dumps({"reactivated": not was_active})))
         db.session.commit()
         print(json.dumps({"ok": True, "role": u.role,
                           "auth_source": u.auth_source or "local"}))

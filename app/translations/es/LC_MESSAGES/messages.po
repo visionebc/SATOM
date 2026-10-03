@@ -994,7 +994,7 @@ msgstr "Agregar AppID"
 #: app/templates/appliances/index.html:24
 #: app/templates/appliances/index.html:191
 #: app/templates/appliances/index.html:235
-#: app/templates/appliances/index.html:342 app/templates/backups/index.html:62
+#: app/templates/appliances/index.html:342
 #: app/templates/exceptions/index.html:64 app/templates/logs/index.html:51
 #: app/templates/server_objects/index.html:50
 #: app/templates/signatures/index.html:85 app/templates/workspace/index.html:76
@@ -1010,7 +1010,6 @@ msgstr "Agregar IP"
 msgid "Add User"
 msgstr "Agregar Usuario"
 
-#: app/templates/backups/index.html:60
 msgid "Add a FortiWeb appliance to start managing backups."
 msgstr "Agregar un dispositivo FortiWeb para comenzar a gestionar las copias de seguridad."
 
@@ -2033,7 +2032,6 @@ msgstr "Copia de seguridad obsoleta (horas)"
 msgid "Backup vault"
 msgstr "Caja de copia de seguridad"
 
-#: app/templates/backups/index.html:9 app/templates/backups/index.html:16
 #: app/templates/backups/list.html:9 app/templates/system_backup/index.html:272
 msgid "Backups"
 msgstr "Copias de seguridad"
@@ -2702,7 +2700,7 @@ msgstr "Verifique que sus copias no estén todas en un hipervisor."
 msgid "Checked"
 msgstr "Comprobado"
 
-#: app/templates/analysis/dashboard.html:30 app/templates/backups/index.html:33
+#: app/templates/analysis/dashboard.html:30
 #: app/templates/backups/list.html:27 app/templates/exceptions/index.html:47
 #: app/templates/server_objects/index.html:33
 #: app/templates/workspace/index.html:33
@@ -5606,7 +5604,7 @@ msgstr "Mantén presionada Ctrl/Cmd para seleccionar varios. El primer dispositi
 #: app/templates/appliances/index.html:7
 #: app/templates/architecture/index.html:7
 #: app/templates/attack_search/index.html:31 app/templates/audit/index.html:7
-#: app/templates/auth/profile.html:6 app/templates/backups/index.html:7
+#: app/templates/auth/profile.html:6
 #: app/templates/backups/list.html:7 app/templates/cert_manager/detail.html:7
 #: app/templates/cert_manager/device_cert.html:7
 #: app/templates/cert_manager/index.html:7
@@ -6559,7 +6557,6 @@ msgstr "Gestión de filas VIP..."
 msgid "Manage application users and roles"
 msgstr "Administrar usuarios y roles de aplicaciones"
 
-#: app/templates/backups/index.html:46
 msgid "Manage backups"
 msgstr "Administrar copias de seguridad"
 
@@ -7307,7 +7304,7 @@ msgstr "No hay dispositivos disponibles"
 #: app/templates/api_explorer/index.html:179
 #: app/templates/appliances/index.html:188
 #: app/templates/architecture/_picker.html:113
-#: app/templates/architecture/index.html:90 app/templates/backups/index.html:59
+#: app/templates/architecture/index.html:90
 #: app/templates/exceptions/index.html:63
 #: app/templates/server_objects/index.html:49
 msgid "No appliances configured"
@@ -10393,7 +10390,6 @@ msgstr "Seleccionar todo (visible)"
 msgid "Select an appliance to browse its Server Objects — servers, services, certificates, SSL ciphers, IP groups and more."
 msgstr "Selecciona un dispositivo para navegar por sus objetos de servidor — servidores, servicios, certificados, cifrados SSL, grupos de IPs y más."
 
-#: app/templates/backups/index.html:17
 msgid "Select an appliance to manage its configuration backups"
 msgstr "Seleccione un dispositivo para gestionar las copias de seguridad de su configuración"
 

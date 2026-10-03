@@ -576,7 +576,7 @@
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'firmware' else '' }}" href="{{ url_for('firmware.index', _adom='fortianalyzer') }}">
             <i class="bi bi-cpu fw-nav-icon"></i><span>{{ _('Firmware') }}</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'segments' else '' }}" href="{{ url_for('segments.index') }}">
-            <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Network Segment') }}</span></a>
+            <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Network Segments') }}</span></a>
         </div>
       </div>
       {% else %}{% include "partials/nav_process_group.html" %}
@@ -645,7 +645,7 @@
           {% include "partials/nav_console.html" %}
           {% include "partials/nav_process.html" %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'segments' else '' }}" href="{{ url_for('segments.index') }}">
-            <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Network Segment') }}</span></a>
+            <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Network Segments') }}</span></a>
         </div>
       </div>
       {% else %}{% include "partials/nav_process_group.html" %}

@@ -994,7 +994,7 @@ msgstr "AppID hinzufügen"
 #: app/templates/appliances/index.html:24
 #: app/templates/appliances/index.html:191
 #: app/templates/appliances/index.html:235
-#: app/templates/appliances/index.html:342 app/templates/backups/index.html:62
+#: app/templates/appliances/index.html:342
 #: app/templates/exceptions/index.html:64 app/templates/logs/index.html:51
 #: app/templates/server_objects/index.html:50
 #: app/templates/signatures/index.html:85 app/templates/workspace/index.html:76
@@ -1010,7 +1010,6 @@ msgstr "IP-Adresse hinzufügen"
 msgid "Add User"
 msgstr "Benutzer hinzufügen"
 
-#: app/templates/backups/index.html:60
 msgid "Add a FortiWeb appliance to start managing backups."
 msgstr "Fügen Sie ein FortiWeb-Gerät hinzu, um die Verwaltung von Backups zu starten."
 
@@ -2033,7 +2032,6 @@ msgstr "Backup veralteter Daten (Stunden)"
 msgid "Backup vault"
 msgstr "Backup-Schatzkammer"
 
-#: app/templates/backups/index.html:9 app/templates/backups/index.html:16
 #: app/templates/backups/list.html:9 app/templates/system_backup/index.html:272
 msgid "Backups"
 msgstr "Sicherungen"
@@ -2700,7 +2698,7 @@ msgstr "Überprüfen Sie, dass Ihre Kopien nicht alle auf einem Hypervisor liege
 msgid "Checked"
 msgstr "Überprüft"
 
-#: app/templates/analysis/dashboard.html:30 app/templates/backups/index.html:33
+#: app/templates/analysis/dashboard.html:30
 #: app/templates/backups/list.html:27 app/templates/exceptions/index.html:47
 #: app/templates/server_objects/index.html:33
 #: app/templates/workspace/index.html:33
@@ -5604,7 +5602,7 @@ msgstr "Halten Sie Ctrl/Cmd gedrückt, um mehrere auszuwählen. Das erste ausgew
 #: app/templates/appliances/index.html:7
 #: app/templates/architecture/index.html:7
 #: app/templates/attack_search/index.html:31 app/templates/audit/index.html:7
-#: app/templates/auth/profile.html:6 app/templates/backups/index.html:7
+#: app/templates/auth/profile.html:6
 #: app/templates/backups/list.html:7 app/templates/cert_manager/detail.html:7
 #: app/templates/cert_manager/device_cert.html:7
 #: app/templates/cert_manager/index.html:7
@@ -6557,7 +6555,6 @@ msgstr "Verwalten Sie VIP-Zeilen..."
 msgid "Manage application users and roles"
 msgstr "Verwalten Sie Anwendungsbenutzer und -rollen"
 
-#: app/templates/backups/index.html:46
 msgid "Manage backups"
 msgstr "Backups verwalten"
 
@@ -7305,7 +7302,7 @@ msgstr "Keine Geräte verfügbar"
 #: app/templates/api_explorer/index.html:179
 #: app/templates/appliances/index.html:188
 #: app/templates/architecture/_picker.html:113
-#: app/templates/architecture/index.html:90 app/templates/backups/index.html:59
+#: app/templates/architecture/index.html:90
 #: app/templates/exceptions/index.html:63
 #: app/templates/server_objects/index.html:49
 msgid "No appliances configured"
@@ -10391,7 +10388,6 @@ msgstr "Alle auswählen (sichtbar)"
 msgid "Select an appliance to browse its Server Objects — servers, services, certificates, SSL ciphers, IP groups and more."
 msgstr "Wählen Sie ein Gerät aus, um seine Serverobjekte zu durchsuchen – Server, Dienste, Zertifikate, SSL-Verschlüsselungen, IP-Gruppen und mehr."
 
-#: app/templates/backups/index.html:17
 msgid "Select an appliance to manage its configuration backups"
 msgstr "Wählen Sie ein Gerät aus, um seine Konfigurationssicherungen zu verwalten"
 

@@ -21,9 +21,11 @@
     <a href="{{ url_for('appliances.flash_reports') }}" class="btn fw-btn-secondary">
       <i class="bi bi-clipboard-data me-1"></i>{{ _('Firmware Reports') }}
     </a>
+    {% if current_user.can('config_write') %}
     <button class="btn btn-fw-primary" data-js="open-add-appliance">
       <i class="bi bi-plus-lg me-1"></i>{{ _('Add Appliance') }}
     </button>
+    {% endif %}
   </div>
 </div>
 
@@ -140,7 +142,7 @@
                     data-test-id="{{ a.id }}">
               <i class="bi bi-lightning"></i>
             </button>
-            {% if a.kind == 'fortiweb' %}
+            {% if a.kind in ('fortiweb', 'fortiadc') %}
             <a href="{{ url_for('appliances.inspector', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Policy Inspector') }}"><i class="bi bi-diagram-2"></i></a>
             <a href="{{ url_for('appliances.rediscover', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ 'Rediscovery' if has_snapshot(a.id) else 'Discovery' }}"><i class="bi {{ 'bi-arrow-repeat' if has_snapshot(a.id) else 'bi-binoculars' }}"></i></a>
             {% if device_scope %}
@@ -148,7 +150,7 @@
             {% if current_user.can('appliances.apply') %}
             <a href="{{ url_for('appliances.upgrade_prep', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Upgrade Preparation') }}"><i class="bi bi-clipboard-check"></i></a>
             {% endif %}
-            {% if current_user.can('config_write') %}
+            {% if a.kind == 'fortiweb' and current_user.can('config_write') %}
             <a href="{{ url_for('appliances.upgrade', id=a.id) }}" class="btn btn-sm btn-outline-warning btn-sm-icon me-1" title="{{ _('Upgrade Firmware') }}"><i class="bi bi-cloud-arrow-up"></i></a>
             {% endif %}
             {% elif owner %}
@@ -157,6 +159,7 @@
             {% endif %}
             {% endif %}
 {{ maintenance_toggle(a, 'index') }}
+            {% if current_user.can('config_write') %}
             <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1"
                     title="{{ _('Edit') }}"
                     data-js="edit-appliance"
@@ -172,6 +175,7 @@
                 <i class="bi bi-trash"></i>
               </button>
             </form>
+            {% endif %}
           </td>
 {% endmacro %}
 
@@ -184,7 +188,7 @@
         <th>{{ _('Kind') }}</th>
         <th>{{ _('Host') }}</th>
         <th>{{ _('Port') }}</th>
-        <th>VDOM</th>
+        <th>{{ _('ADOM (vdom)') }}</th>
         <th>{{ _('Tags') }}</th>
         <th>{{ _('Status') }}</th>
         <th class="actions-col">{{ _('Actions') }}</th>
@@ -245,9 +249,11 @@
               <div class="fw-empty-state-icon"><i class="bi bi-server"></i></div>
               <div class="fw-empty-state-title">{{ _('No appliances configured') }}</div>
               <div class="fw-empty-state-text">{{ _('Add your first FortiWeb appliance to get started.') }}</div>
+              {% if current_user.can('config_write') %}
               <button class="btn btn-fw-primary" data-js="open-add-appliance">
                 <i class="bi bi-plus-lg me-1"></i>{{ _('Add Appliance') }}
               </button>
+              {% endif %}
             </div>
           </td>
         </tr>
@@ -329,7 +335,7 @@
               <input type="password" class="form-control fw-form-control" name="password" placeholder="••••••••" required>
             </div>
             <div class="col-md-6">
-              <label class="fw-form-label">{{ _('VDOM (optional)') }}</label>
+              <label class="fw-form-label">{{ _('ADOM (vdom, optional)') }}</label>
               <input type="text" class="form-control fw-form-control" name="vdom" placeholder="{{ _('root') }}">
             </div>
             <div class="col-md-6">
@@ -466,7 +472,7 @@
               <input type="password" class="form-control" name="password" placeholder="••••••••">
             </div>
             <div class="col-md-6">
-              <label class="fw-form-label">VDOM</label>
+              <label class="fw-form-label">{{ _('ADOM (vdom)') }}</label>
               <input type="text" class="form-control" name="vdom" id="edit-vdom">
             </div>
             <div class="col-md-6">

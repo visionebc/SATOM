@@ -54,7 +54,7 @@
       </div>
       {% endif %}
       <button id="redisc-start" class="btn fw-btn-primary"><i class="bi bi-play-fill me-1"></i>Start {{ 'rediscovery' if snapshot else 'discovery' }}</button>
-      <button id="redisc-stop" class="btn btn-outline-danger d-none" title="{{ _('Stops after the endpoint being read returns. No snapshot is written; the previous one is kept.') }}"><i class="bi bi-stop-fill me-1"></i>{{ _('Stop') }}</button>
+      <button id="redisc-stop" class="btn btn-outline-danger d-none" title="{{ _('Stops after the request in flight returns. During the endpoint sweep no snapshot is written and the previous one is kept; during the deep pass or the CLI capture the snapshot is already saved and only the remaining work is skipped.') }}"><i class="bi bi-stop-fill me-1"></i>{{ _('Stop') }}</button>
     </div>
   </div>
 </div>

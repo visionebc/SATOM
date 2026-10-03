@@ -6,7 +6,9 @@
   <h4><i class="bi bi-server me-2"></i>{{ appliance.name }}</h4>
   <div class="d-flex gap-2">
     {{ maintenance_toggle(appliance, 'detail', 'labeled') }}
+    {% if current_user.can('config_write') %}
     <a href="{{ url_for('appliances.edit', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">{{ _('Edit') }}</a>
+    {% endif %}
     <button class="btn fw-btn-primary btn-sm" data-js="test-conn">{{ _('Test Connection') }}</button>
   </div>
 </div>
@@ -36,7 +38,7 @@
       <dt class="col-sm-4">{{ _('Username') }}</dt><dd class="col-sm-8">{{ appliance.username }}</dd>
       <dt class="col-sm-4">{{ _('SSL Verify') }}</dt><dd class="col-sm-8">{{ 'Yes' if appliance.verify_ssl else 'No' }}</dd>
       <dt class="col-sm-4">{{ _('Firmware') }}</dt><dd class="col-sm-8">{{ appliance.firmware or '—' }}</dd>
-      {% if appliance.vdom %}<dt class="col-sm-4">VDOM</dt><dd class="col-sm-8">{{ appliance.vdom }}</dd>{% endif %}
+      {% if appliance.vdom %}<dt class="col-sm-4">{{ _('ADOM (vdom)') }}</dt><dd class="col-sm-8">{{ appliance.vdom }}</dd>{% endif %}
       {% if appliance.department %}<dt class="col-sm-4">{{ _('Dept') }}</dt><dd class="col-sm-8">{{ appliance.department }}</dd>{% endif %}
       {% if appliance.zone %}<dt class="col-sm-4">{{ _('Zone') }}</dt><dd class="col-sm-8">{{ appliance.zone }}</dd>{% endif %}
     </dl></div>
@@ -48,12 +50,12 @@
       {% set bk_owner = appliance if owns_device_scope(appliance) else device_scope_owner(appliance) %}
       {% if appliance.kind == 'fortiadc' %}
       <a href="{{ url_for('adc.use_device', id=appliance.id) }}" class="btn fw-btn-primary">{{ _('Browse Virtual Servers') }}</a>
-      {% if bk_owner %}<a href="{{ url_for('backups.list_backups', id=bk_owner.id) }}" class="btn btn-fw-secondary"{% if bk_owner.id != appliance.id %} title="{{ _('One backup covers every ADOM of this appliance') }}"{% endif %}>{{ _('View Backups') }}{% if bk_owner.id != appliance.id %} <span class="fw-tag ms-1">{{ bk_owner.name }}</span>{% endif %}</a>{% endif %}
+      {% if bk_owner and current_user.can('backup') %}<a href="{{ url_for('backups.list_backups', id=bk_owner.id) }}" class="btn btn-fw-secondary"{% if bk_owner.id != appliance.id %} title="{{ _('One backup covers every ADOM of this appliance') }}"{% endif %}>{{ _('View Backups') }}{% if bk_owner.id != appliance.id %} <span class="fw-tag ms-1">{{ bk_owner.name }}</span>{% endif %}</a>{% endif %}
       <a href="{{ url_for('adc_api.index') }}" class="btn fw-btn-secondary">{{ _('API Console') }}</a>
       {% else %}
       <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}" class="btn fw-btn-primary">{{ _('Browse Server Policies') }}</a>
       {# FortiAuthenticator: no backup transport, and its ADOM gate does not admit the Backups pages #}
-      {% if bk_owner and appliance.kind != 'fortiauthenticator' %}<a href="{{ url_for('backups.list_backups', id=bk_owner.id) }}" class="btn btn-fw-secondary"{% if bk_owner.id != appliance.id %} title="{{ _('One backup covers every ADOM of this appliance') }}"{% endif %}>{{ _('View Backups') }}{% if bk_owner.id != appliance.id %} <span class="fw-tag ms-1">{{ bk_owner.name }}</span>{% endif %}</a>{% endif %}
+      {% if bk_owner and appliance.kind != 'fortiauthenticator' and current_user.can('backup') %}<a href="{{ url_for('backups.list_backups', id=bk_owner.id) }}" class="btn btn-fw-secondary"{% if bk_owner.id != appliance.id %} title="{{ _('One backup covers every ADOM of this appliance') }}"{% endif %}>{{ _('View Backups') }}{% if bk_owner.id != appliance.id %} <span class="fw-tag ms-1">{{ bk_owner.name }}</span>{% endif %}</a>{% endif %}
       <a href="{{ url_for('analysis.dashboard', id=appliance.id) }}" class="btn fw-btn-secondary">{{ _('Analysis / FortiView') }}</a>
       {% endif %}
     </div>
@@ -163,7 +165,7 @@
       </table>
     </div>
     {% else %}
-    <p class="text-muted mb-0">{{ _('No interfaces documented. Use') }} <a href="{{ url_for('appliances.edit', id=appliance.id) }}">{{ _('Edit') }}</a> {{ _('to add them.') }}</p>
+    <p class="text-muted mb-0">{% if current_user.can('config_write') %}{{ _('No interfaces documented. Use') }} <a href="{{ url_for('appliances.edit', id=appliance.id) }}">{{ _('Edit') }}</a> {{ _('to add them.') }}{% else %}{{ _('No interfaces documented.') }}{% endif %}</p>
     {% endif %}
   </div>
 </div>
@@ -195,8 +197,8 @@
       {% endif %}
       {% if current_user.can('user_manage') %}
       <a href="{{ url_for('appliances.restore', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm text-danger" title="{{ _('Manage this appliance\'s configuration-backup vault and restore a saved config (admin only)') }}"><i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Restore') }}</a>
-      <a href="{{ url_for('appliances.flash_reports', appliance_id=appliance.id) }}" class="btn fw-btn-secondary btn-sm" title="Before/after firmware upgrade & boot-partition reports for this appliance"><i class="bi bi-clipboard-data me-1"></i>{{ _('Firmware Reports') }}</a>
       {% endif %}
+      <a href="{{ url_for('appliances.flash_reports', appliance_id=appliance.id) }}" class="btn fw-btn-secondary btn-sm" title="Before/after firmware upgrade & boot-partition reports for this appliance"><i class="bi bi-clipboard-data me-1"></i>{{ _('Firmware Reports') }}</a>
       {% endif %}
     </div>
     {% if not owns_device_scope(appliance) %}

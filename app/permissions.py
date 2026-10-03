@@ -91,7 +91,9 @@ GRANULAR_PERMISSIONS: list[dict] = [
     _p("appliances.view", "View appliances", "See the appliance inventory"),
     _p("appliances.edit", "Edit appliances", "Add, edit or delete appliances"),
     _p("appliances.apply", "Run appliance actions",
-       "Console, rediscovery, policy inspector, upgrade preparation & upgrade"),
+       "Run console commands, start/stop rediscovery, upgrade preparation, "
+       "upgrade, boot partition and HA failover (viewing the Policy Inspector "
+       "and rediscovery status needs only View appliances)"),
     _p("appliances.view_maintenance", "View maintenance devices",
        "See appliances placed in maintenance mode (hidden from operators)", admin_only=True),
 

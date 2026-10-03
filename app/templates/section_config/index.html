@@ -26,7 +26,7 @@
   {% for s in sections %}
   <div class="col-12 col-sm-6 col-lg-4">
     <a class="fw-card h-100 text-decoration-none d-block"
-       href="{{ url_for('section_config.section', section_key=s.key, device=device_id) }}"
+       href="{{ url_for('section_config.section', section_key=s.key) }}"
        style="color:inherit;">
       <div class="fw-card-body">
         <div class="d-flex align-items-start justify-content-between">

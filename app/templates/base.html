@@ -873,6 +873,9 @@
              A flat group (single leaf == its label) is a direct link; the rest
              nest. Every leaf opens the section browser with ?type=<logical> and
              the shared deep objedit editor. Device-scoped. #}
+          {# The protection-area pages are config_write (section_config), so
+             the entries are shown only to users who can open them. #}
+          {% if current_user and current_user.can('config_write') %}
           {% for area in waf_sections_nav %}
           {% set _area_active = request.endpoint == 'section_config.section' and request.view_args and request.view_args.get('section_key') == area.key %}
           <details class="fw-so-parent" {{ 'open' if _area_active }}>
@@ -900,6 +903,7 @@
             </div>
           </details>
           {% endfor %}
+          {% endif %}
         </div>
       </div>
 
@@ -933,7 +937,7 @@
                 <div class="fw-so-nav-items">
                   {% for item in group.items %}
                   <a class="fw-nav-item fw-so-nav-item {{ 'active' if _sec_active and request.args.get('type') == item.logical else '' }}"
-                     href="{{ url_for('section_config.section', section_key=s.key, device=current_appliance.id, type=item.logical) }}">
+                     href="{{ url_for('section_config.section', section_key=s.key, type=item.logical) }}">
                     <i class="bi {{ item.icon }} fw-nav-icon"></i><span>{{ item.label }}</span>
                     {% if item.read_only %}<i class="bi bi-eye fw-so-nav-ro" title="{{ _('Read-only (predefined)') }}"></i>{% endif %}
                   </a>

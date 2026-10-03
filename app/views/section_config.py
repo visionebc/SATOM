@@ -11,9 +11,9 @@ edited in place several levels deep — exactly the Server Objects experience.
 
 Sections without a curated menu fall back to the registry-derived object-type
 catalog (data-only, no device). The per-section config-template library (author /
-clone / apply-to-fleet) is kept on every section. Reads are open to any signed-in
-user via the menu; New/Edit/Delete are ``config_write`` + audited + dry-run
-default, exactly like ``objedit``.
+clone / apply-to-fleet) is kept on every section. Every route here, reads
+included, needs ``config_write`` (the sidebar entries are hidden without it);
+New/Edit/Delete are audited + dry-run default, exactly like ``objedit``.
 """
 from __future__ import annotations
 
@@ -97,7 +97,8 @@ def index():
 def section(section_key: str):
     """One section: a live object browser (when it has a menu) + its template lib.
 
-    ``?device=<id>`` picks the appliance to browse; ``?type=<logical>`` selects a
+    The appliance is the session-selected one (device-first nav); a
+    ``?device=`` query argument is ignored. ``?type=<logical>`` selects a
     menu leaf, whose live objects are listed and linked into the ``objedit``
     editor. Sections with no curated menu keep the static object-type catalog.
     """

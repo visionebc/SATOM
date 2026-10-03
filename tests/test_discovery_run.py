@@ -427,9 +427,9 @@ def test_adc_write_invalidates_the_menu_cache_too(app):
     with app.app_context():
         adc_menu.invalidate()
         adc_menu.menu()
-        assert adc_menu._build.cache_info().currsize == 1, "menu() stopped caching"
+        assert adc_menu._cache is not None, "menu() stopped caching"
         registry_write.invalidate("fortiadc")
-        assert adc_menu._build.cache_info().currsize == 0, (
+        assert adc_menu._cache is None, (
             "the FortiADC menu cache is never invalidated")
 
 

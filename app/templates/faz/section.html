@@ -94,9 +94,11 @@
   </div>
   {% else %}
   <div class="fw-toolbar mb-2 d-flex align-items-center gap-2 flex-wrap">
+    {# Never on the Devices tab: dvmdb_device is read-only (faz_objform._READ_ONLY);
+       devices are added on the FortiAnalyzer and authorized from the toolbar. #}
     {% if editable and tab.can_create %}
     <button type="button" class="btn btn-sm btn-fw-primary" id="faz-create">
-      <i class="bi bi-plus-lg me-1"></i>{{ 'Add Device' if is_devices else 'Create New' }}</button>
+      <i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }}</button>
     {% endif %}
     {% if is_devices %}
     <div class="fw-toolbar-group" role="group" aria-label="{{ _('Device actions') }}">
@@ -107,11 +109,6 @@
       <button type="button" class="btn btn-sm btn-outline-light" id="fazdev-hide" disabled
               title="{{ _('Hide the selected device(s) from this view') }}">
         <i class="bi bi-eye-slash me-1"></i>{{ _('Hide') }}</button>
-      {% if editable %}
-      <button type="button" class="btn btn-sm btn-outline-light" id="fazdev-edit" disabled
-              title="{{ _('Edit the selected device (single selection)') }}">
-        <i class="bi bi-pencil me-1"></i>{{ _('Edit') }}</button>
-      {% endif %}
       {% if can_write %}
       <button type="button" class="btn btn-sm btn-fw-danger" id="fazdev-delete" disabled
               title="{{ _('Delete the selected device(s) — exec /dvm/cmd/del/dev-list') }}">
@@ -458,8 +455,6 @@
       var b = document.getElementById(id);
       if (b) b.disabled = (n === 0);
     });
-    var eb = document.getElementById('fazdev-edit');
-    if (eb) eb.disabled = (n !== 1);
   }
   function applyHidden() {
     var set = hiddenSet();
@@ -521,7 +516,9 @@
       return fetch(ACT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
-        body: JSON.stringify({ action: pending.action, names: pending.names, apply: !!apply })
+        body: JSON.stringify({ action: pending.action, names: pending.names,
+                               adom: ((document.getElementById('fazdev-adom') || {}).value || 'root').trim(),
+                               apply: !!apply })
       }).then(function (r) { return r.json(); });
     }
     function show(j) {
@@ -551,7 +548,11 @@
       mBody.innerHTML = '<div class="fw-alert ' + (action === 'delete' ? 'fw-alert-danger' : 'fw-alert-warning') +
         '" style="font-size:13px;">This will run <code>' +
         (action === 'authorize' ? 'exec /dvm/cmd/add/dev-list' : 'exec /dvm/cmd/del/dev-list') +
-        '</code> against <strong>' + esc(names.join(', ')) + '</strong>. Preview the exact request first.</div>';
+        '</code> against <strong>' + esc(names.join(', ')) + '</strong>. Preview the exact request first.</div>' +
+        // The FortiAnalyzer ADOM the command runs in. The device list spans
+        // every FAZ ADOM, so the target cannot be assumed to be root.
+        '<label class="form-label mt-2" for="fazdev-adom" style="font-size:12px;">FortiAnalyzer ADOM</label>' +
+        '<input class="form-control form-control-sm" id="fazdev-adom" value="root" style="max-width:240px;">';
       mResult.innerHTML = '';
       modal.style.display = 'block';
     }
@@ -564,16 +565,6 @@
     if (dBtn) dBtn.addEventListener('click', function () { var n = selNames(); if (n.length) openModal('delete', n); });
   }
 
-  // Toolbar Edit — reuse the per-row edit modal for the single selected device
-  var editBtn = document.getElementById('fazdev-edit');
-  if (editBtn) editBtn.addEventListener('click', function () {
-    var names = selNames();
-    if (names.length !== 1) return;
-    var sel = (window.CSS && CSS.escape) ? CSS.escape(names[0]) : names[0].replace(/"/g, '\\"');
-    var row = table.querySelector('tr.fazdev-row[data-devname="' + sel + '"]');
-    var rowEdit = row && row.querySelector('.faz-edit-row');
-    if (rowEdit) rowEdit.click();
-  });
   // Export device list -> CSV (client-side, visible columns only)
   var expBtn = document.getElementById('fazdev-export');
   if (expBtn) expBtn.addEventListener('click', function () {

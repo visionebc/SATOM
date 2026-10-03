@@ -216,7 +216,10 @@ def object_detail(logical):
                     'label': adc_objform.row_label(r),
                     'groups': adc_objform.field_groups(r),
                 } for r in rows],
-                'blank_groups': adc_objform.field_groups(blank, keep_mkey=True),
+                # The curated create seed FIRST (required child fields such as
+                # a pool member's real_server_id), then the sibling keys + mkey:
+                # on an empty table the siblings alone offered only mkey.
+                'blank_groups': adc_objform.create_field_groups(st['logical'], blank),
             })
 
     return render_template('adc/object.html', appliance=appliance,

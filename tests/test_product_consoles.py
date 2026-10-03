@@ -299,3 +299,92 @@ def test_fac_page_offers_disable_and_gates_write_methods(app, client):
     assert '<option value="DELETE" disabled>' in html
     assert '<option value="GET">' in html
     assert "/fac/api/endpoint/toggle/" not in html
+
+
+# --------------------------------------------------------------------------- #
+#  ADC caches follow the loader in every worker                               #
+# --------------------------------------------------------------------------- #
+
+def test_adc_menu_and_editor_follow_a_new_loader_map(app, monkeypatch):
+    """Another worker's edit reaches this one as a NEW loader map (TTL
+    refresh); no invalidate() is ever called here."""
+    from app.registry import loader
+    from app.services import adc_menu, adc_objform
+    with app.app_context():
+        reg1 = dict(loader.load_adc_registry())
+        assert "load_balance_pool" in reg1
+        monkeypatch.setattr(loader, "load_adc_registry", lambda: reg1)
+        tabs = {t.logical for g in adc_menu.menu() for i in g.items for t in i.tabs}
+        assert "load_balance_pool" in tabs
+        assert adc_objform.is_known("load_balance_pool")
+
+        reg2 = {k: v for k, v in reg1.items() if k != "load_balance_pool"}
+        monkeypatch.setattr(loader, "load_adc_registry", lambda: reg2)
+        tabs = {t.logical for g in adc_menu.menu() for i in g.items for t in i.tabs}
+        assert "load_balance_pool" not in tabs
+        assert not adc_objform.is_known("load_balance_pool")
+    adc_menu.invalidate()
+    adc_objform.invalidate()
+
+
+def test_loader_invalidation_drops_the_editor_views(app):
+    from app.registry import loader
+    from app.services import adc_objform
+    with app.app_context():
+        adc_objform.is_known("load_balance_pool")
+        assert adc_objform._views is not None
+        loader.invalidate_adc_cache()
+        assert adc_objform._views is None
+
+
+# --------------------------------------------------------------------------- #
+#  ADC object editor: first child row of an empty table                       #
+# --------------------------------------------------------------------------- #
+
+def test_empty_pool_offers_the_required_member_fields(app, client, monkeypatch):
+    """The add-row form of an EMPTY pool used to offer only ``mkey``; saving
+    then failed "Missing required field(s): real_server_id"."""
+    from app.views import adc
+
+    class _Client:
+        def __init__(self, appliance):
+            pass
+
+        def get_object(self, logical, mkey):
+            return {"mkey": mkey, "type": "ipv4"}
+
+        def list_with_error(self, logical, **kw):
+            return [], None
+
+    monkeypatch.setattr(adc, "FortiADCClient", _Client)
+    _appl(app, "fortiadc", "adc01")
+    login(client, admin_user_id(app), product="fortiadc")
+    html = client.get("/adc/obj/load_balance_pool?mkey=p1").get_data(as_text=True)
+    new_row = html[html.index('class="adc-row-scope adc-row-new'):]
+    new_row = new_row[:new_row.index("</details>")]
+    assert 'data-key="real_server_id"' in new_row
+    assert "No field template is known" not in html
+
+
+# --------------------------------------------------------------------------- #
+#  FortiAnalyzer Device Manager: the ADOM is sent, not assumed               #
+# --------------------------------------------------------------------------- #
+
+def test_faz_device_action_targets_the_chosen_adom(app, client):
+    _appl(app, "fortianalyzer", "faz01")
+    login(client, admin_user_id(app), product="fortianalyzer")
+    j = client.post("/faz/device-action", json={
+        "action": "authorize", "names": ["fgt1"], "adom": "FortiGate"}).get_json()
+    assert j["ok"] is True and j["dry_run"] is True
+    assert j["request"]["body"]["adom"] == "FortiGate"
+    r = client.post("/faz/device-action", json={
+        "action": "delete", "names": ["fgt1"], "adom": "../x y"})
+    assert r.status_code == 400
+
+
+def test_faz_device_toolbar_sends_the_adom():
+    import os
+    src = open(os.path.join(os.path.dirname(__file__), "..", "app", "templates",
+                            "faz", "section.html")).read()
+    assert 'id="fazdev-adom"' in src
+    assert "adom: ((document.getElementById('fazdev-adom')" in src

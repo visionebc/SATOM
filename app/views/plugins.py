@@ -47,9 +47,8 @@ def _plugin_or_404(pid: int) -> Plugin:
 
 
 def superadmin_required(fn):
-    """Gate: only a super-admin may author plugins. In this app that is a user
-    with the full admin capability set (``User.is_admin_capable`` — USER_MANAGE
-    plus profile management), the same bar the anti-lockout guard uses."""
+    """Gate: authoring needs the granular ``studio.plugin_studio`` key (seeded
+    on the admin profile only; a custom profile may carry it too)."""
     @wraps(fn)
     @login_required
     def wrapper(*a, **kw):
@@ -181,13 +180,14 @@ def frame(pid):
     and meant to be embedded ONLY via <iframe sandbox="allow-scripts">.
 
     A PUBLISHED plugin is viewable by any signed-in user (the whole point is
-    engineer efficiency); draft/testing stays author-only (super-admin)."""
+    engineer efficiency); draft/testing stays with the authors -- holders of
+    ``studio.plugin_studio``, the same key that opens the editor."""
     plugin = _plugin_or_404(pid)
-    if plugin.status != "published" and not getattr(
-            current_user, "is_admin_capable", False):
+    if plugin.status != "published" and not current_user.can(
+            "studio.plugin_studio"):
         abort(403)
     live = request.args.get("live")  # unsaved-body preview from the editor
-    if live is not None and not getattr(current_user, "is_admin_capable", False):
+    if live is not None and not current_user.can("studio.plugin_studio"):
         abort(403)  # live-render of arbitrary source is an author-only tool
     src = live if live is not None else plugin.jinja
     keys = plugin.datasets
@@ -252,8 +252,8 @@ def gallery():
 def view(slug):
     plugin = (scope_query(Plugin.query, Plugin.product)
               .filter_by(slug=slug).first_or_404())
-    if plugin.status != "published" and not getattr(
-            current_user, "is_admin_capable", False):
+    if plugin.status != "published" and not current_user.can(
+            "studio.plugin_studio"):
         abort(403)  # testing/draft are author-only previews
     param_defs = sandbox.param_options(plugin.param_defs, plugin.product)
     initial = sandbox.resolve_params(plugin.param_defs, request.args)

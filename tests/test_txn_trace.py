@@ -482,3 +482,132 @@ def test_panel_does_not_rebuild_curl_itself():
         js = fh.read()
     assert "r.d.curl" in js
     assert "--resolve" not in js, "the panel is composing its own curl line"
+
+
+# --------------------------------------------------------------------------- #
+#  Documentation Center audit, 2026-10-03                                      #
+# --------------------------------------------------------------------------- #
+def _device(app, name="fw-local", kind="fortiweb", host="127.0.0.1", port=9):
+    from app.extensions import db
+    from app.models import Appliance
+    with app.app_context():
+        a = Appliance(name=name, kind=kind, host=host, port=port,
+                      username="u", password_enc="")
+        a.password = "pw"
+        db.session.add(a)
+        db.session.commit()
+        return a.id
+
+
+def test_an_inventory_trace_without_a_backend_needs_no_free_permission(app, client):
+    """The panel names a mode for leg C even when the backend is empty. That
+    used to refuse every trace from a user without the free permission, so
+    readonly/operator could not use the tracer at all."""
+    _device(app)
+    uid = make_user(app, username="ro-inv", role="readonly")
+    login(client, uid)
+    r = client.post("/txn-trace/run", json={
+        "method": "GET", "mode_a": "inventory", "vip": "127.0.0.1:9",
+        "mode_c": "free", "backend": ""})
+    assert r.status_code == 200, r.get_json()
+    d = r.get_json()
+    assert d["ok"] and [l["leg"] for l in d["legs"]] == [tt.LEG_A]
+
+
+def test_a_typed_backend_still_needs_the_free_permission(app, client):
+    _device(app)
+    uid = make_user(app, username="ro-be", role="readonly")
+    login(client, uid)
+    r = client.post("/txn-trace/run", json={
+        "method": "GET", "mode_a": "inventory", "vip": "127.0.0.1:9",
+        "mode_c": "free", "backend": "127.0.0.1:9"})
+    assert r.status_code == 403
+
+
+@pytest.mark.parametrize("raw,scheme", [
+    ("127.0.0.1:8080", "http"),     # the old placeholder shape: plain HTTP
+    ("127.0.0.1", "http"),
+    ("127.0.0.1:443", "https"),
+    ("127.0.0.1:8443", "https"),
+    ("https://127.0.0.1:8080", "https"),  # an explicit scheme wins
+])
+def test_a_schemeless_backend_is_https_only_on_a_tls_port(app, raw, scheme):
+    from app.views.txn_trace import _resolve
+    with app.test_request_context():
+        dest, got, _path, err = _resolve(ng.MODE_FREE, raw, {}, default_port=80,
+                                         plain_unless_tls_port=True)
+    assert err is None and got == scheme
+
+
+def test_leg_a_keeps_the_https_default_for_a_typed_port(app):
+    from app.views.txn_trace import _resolve
+    with app.test_request_context():
+        _d, got, _p, err = _resolve(ng.MODE_FREE, "127.0.0.1:8080", {})
+    assert err is None and got == "https"
+
+
+def test_each_leg_records_the_egress_address_it_left_from():
+    """Attack-log correlation matches the appliance's ``src`` -- the tracer's
+    own address. The dialled ``ip`` is the destination."""
+    import socket
+    import threading
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    port = srv.getsockname()[1]
+
+    def answer():
+        conn, _ = srv.accept()
+        conn.recv(4096)
+        conn.sendall(b"HTTP/1.0 200 OK\r\nContent-Length: 2\r\n\r\nok")
+        conn.close()
+    t = threading.Thread(target=answer, daemon=True)
+    t.start()
+    try:
+        out = tt.send("127.0.0.1", port, host="h.example", scheme="http",
+                      timeout=3)
+    finally:
+        t.join(3)
+        srv.close()
+    assert out["ok"] and out["status"] == 200
+    assert out["request"]["src_ip"] == "127.0.0.1"
+
+
+def test_panel_correlates_on_the_egress_address():
+    with open(JS, encoding="utf-8") as fh:
+        js = fh.read()
+    assert "(l.request || {}).src_ip" in js
+    assert "(l.request || {}).ip)" not in js
+
+
+def test_derive_refuses_a_device_that_is_not_a_fortiweb(app, client):
+    aid = _device(app, name="adc-1", kind="fortiadc", host="adc-1.invalid", port=443)
+    login(client, admin_user_id(app), product="global")
+    r = client.post("/txn-trace/derive", json={"appliance_id": aid,
+                                               "policy": "vs-shop"})
+    assert r.status_code == 400
+    assert "FortiWeb" in r.get_json()["error"]
+
+
+def test_panel_offers_only_fortiweb_devices_for_leg_b():
+    with open(JS, encoding="utf-8") as fh:
+        js = fh.read()
+    assert "filter(a => a.kind === 'fortiweb')" in js
+
+
+def test_inventory_leg_a_is_labelled_as_the_management_address_on_its_port():
+    """An inventory pick dials the appliance's management host. It is not a
+    VIP, and it is on the port the inventory records, not always 443."""
+    with open(JS, encoding="utf-8") as fh:
+        js = fh.read()
+    assert "(a.port || 443)" in js and "management" in js
+    assert "Leg A — VIP (through the appliance)" not in js
+
+
+def test_the_run_endpoint_traces_a_schemeless_backend_port_as_http(app, client):
+    login(client, admin_user_id(app))
+    r = client.post("/txn-trace/run", json={
+        "method": "GET", "mode_c": "free", "backend": "127.0.0.1:9"})
+    assert r.status_code == 200, r.get_json()
+    leg_c = r.get_json()["legs"][0]
+    assert leg_c["leg"] == tt.LEG_C and leg_c["request"]["scheme"] == "http"

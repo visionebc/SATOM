@@ -42,14 +42,15 @@
 
       '<div class="row g-2">' +
       '<div class="col-md-6">' +
-      '<label class="form-label small fw-bold mb-1">Leg A — VIP (through the appliance)</label>' +
+      '<label class="form-label small fw-bold mb-1">Leg A — through the appliance</label>' +
       '<div class="input-group">' +
       '<select id="fw-tt-vipinv" class="form-select form-select-sm" style="max-width:45%"></select>' +
       '<input id="fw-tt-vip" class="form-control form-control-sm" placeholder="or https://shop.example.com">' +
       '</div></div>' +
       '<div class="col-md-6">' +
       '<label class="form-label small fw-bold mb-1">Leg C — backend (bypassing the appliance)</label>' +
-      '<input id="fw-tt-backend" class="form-control form-control-sm" placeholder="192.0.2.90:8080">' +
+      '<input id="fw-tt-backend" class="form-control form-control-sm" placeholder="backend.example:8080">' +
+      '<div class="form-text">No scheme: HTTPS on port 443 or 8443, plain HTTP on any other port.</div>' +
       '</div>' +
       '<div class="col-md-3">' +
       '<label class="form-label small fw-bold mb-1">Method</label>' +
@@ -115,11 +116,17 @@
       .then(r => r.json()).then(d => {
         if (!d || !d.ok) return;
         CTX = d;
-        const opts = (d.appliances || []).map(a =>
-          '<option value="' + esc(a.host) + '">' + esc(a.name) + ' — ' + esc(a.host) + '</option>').join('');
-        $('fw-tt-vipinv').innerHTML = '<option value="">— free target —</option>' + opts;
-        $('fw-tt-devinv').innerHTML = '<option value="">— pick —</option>' +
-          (d.appliances || []).map(a =>
+        // An inventory pick is the appliance's MANAGEMENT address on its
+        // configured port, not a VIP: SATOM knows the device, not the virtual
+        // servers behind it. Type the VIP in the free field for that.
+        const opts = (d.appliances || []).map(a => {
+          const hp = (String(a.host).indexOf(':') >= 0 ? '[' + a.host + ']' : a.host) + ':' + (a.port || 443);
+          return '<option value="' + esc(hp) + '">' + esc(a.name) + ' — management ' + esc(hp) + '</option>';
+        }).join('');
+        $('fw-tt-vipinv').innerHTML = '<option value="">— VIP typed on the right —</option>' + opts;
+        // Leg B reads FortiWeb server policies: only FortiWeb devices can answer.
+        $('fw-tt-devinv').innerHTML = '<option value="">— pick a FortiWeb —</option>' +
+          (d.appliances || []).filter(a => a.kind === 'fortiweb').map(a =>
             '<option value="' + a.id + '">' + esc(a.name) + '</option>').join('');
         $('fw-tt-method').innerHTML =
           d.safe_methods.map(m => '<option>' + esc(m) + '</option>').join('') +
@@ -127,6 +134,8 @@
         if (!d.may_free) {
           $('fw-tt-vip').disabled = true;
           $('fw-tt-vip').placeholder = 'free targets need the ' + d.free_permission + ' permission';
+          $('fw-tt-backend').disabled = true;
+          $('fw-tt-backend').placeholder = 'a backend is a free target: needs ' + d.free_permission;
         }
       }).catch(() => {});
   }
@@ -158,7 +167,7 @@
       '<span class="spinner-border spinner-border-sm me-2"></span>Tracing…</div>';
     post('/txn-trace/run', {
       mode_a: $('fw-tt-vipinv').value ? 'inventory' : 'free',
-      mode_c: 'free',
+      mode_c: backend ? 'free' : 'inventory',
       vip: vip, backend: backend,
       method: $('fw-tt-method').value,
       path: $('fw-tt-path').value.trim() || '/',
@@ -337,7 +346,9 @@
       $('fw-tt-err').textContent = 'Trace first, then pick the appliance whose attack log to search.';
       return;
     }
-    const ips = lastLegs.map(l => (l.request || {}).ip).filter(Boolean);
+    // The tracer's EGRESS address (the source the appliance logged), not the
+    // address each leg dialled.
+    const ips = lastLegs.map(l => (l.request || {}).src_ip).filter(Boolean);
     post('/txn-trace/correlate', {
       appliance_id: Number(id), window: lastWindow, source_ips: ips
     }).then(r => {

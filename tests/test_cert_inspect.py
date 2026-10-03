@@ -11,6 +11,7 @@ signature verification is the only reason the link table is trustworthy.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -508,3 +509,30 @@ def test_verdict_is_the_worst_severity_present(pki):
     assert ci.analyse(ci.split_pem(pki["leaf"] + pki["int"] + pki["root"]),
                       source="chain")["verdict"] in ("ok", "warn", "crit")
     assert ci.analyse(ci.split_pem(pki["leaf"]), source="chain")["verdict"] == "crit"
+
+
+# --------------------------------------------------------------------------- #
+#  Documentation Center audit, 2026-10-03                                      #
+# --------------------------------------------------------------------------- #
+def test_panel_sends_the_key_passphrase_and_the_sni_override():
+    """The service accepted both; the panel sent neither, so an encrypted key
+    could only ever end in 'supply its passphrase' with nowhere to type it."""
+    with open(JS, encoding="utf-8") as fh:
+        js = fh.read()
+    assert 'id="fw-ci-pass" type="password"' in js
+    assert "passphrase: $('fw-ci-pass').value" in js
+    assert 'id="fw-ci-sni"' in js and "sni: sni" in js
+
+
+def test_paste_with_an_encrypted_key_and_its_passphrase_matches(app, client, pki):
+    _sh("openssl pkey -in leaf.key -aes256 -passout pass:s3cret -out leaf.enc.key",
+        pki["dir"])
+    with open(os.path.join(pki["dir"], "leaf.enc.key")) as fh:
+        enc = fh.read()
+    login(client, admin_user_id(app))
+    r = client.post("/cert-inspect/paste",
+                    json={"pem": pki["leaf"], "key": enc, "passphrase": "s3cret"})
+    assert r.status_code == 200
+    assert r.get_json()["private_key"]["match"] is True
+    r = client.post("/cert-inspect/paste", json={"pem": pki["leaf"], "key": enc})
+    assert "passphrase" in (r.get_json()["private_key"].get("error") or "")

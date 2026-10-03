@@ -188,7 +188,7 @@ def test_info_only_divergence_does_not_block():
 def test_core_verdict_is_unchanged_by_the_wrapper():
     r = regex_lab.test_pattern(r"^/admin(/.*)?$", ["/admin/x", "/public/y"])
     assert r["matched"] == 1 and r["total"] == 2
-    w = regex_lab.render_rewrite(r"^/old/(.*)$", r"/new/$1", ["/old/i/42"])
+    w = regex_lab.render_rewrite(r"^/old/(.*)$", r"/new/$0", ["/old/i/42"])
     assert w["results"][0]["output"] == "/new/i/42"
 
 

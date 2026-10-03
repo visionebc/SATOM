@@ -32,6 +32,10 @@ MAX_HEADERS = 24
 
 
 def _may_free() -> bool:
+    """Free targets need :data:`net_guard.FREE_PERMISSION`. A holder of the
+    coarse ``user_manage`` key passes too, on purpose and as in the certificate
+    inspector: it can grant itself the granular key anyway, so refusing it here
+    would only lock admins of a custom profile out of the tool."""
     try:
         perms = set(current_user.effective_permissions or ())
     except Exception:  # noqa: BLE001
@@ -72,12 +76,25 @@ def _clean_headers(raw) -> dict:
     return out
 
 
-def _resolve(mode: str, raw: str, inventory: dict, default_port: int = 443):
-    """``(dest, scheme, path, error_response)``."""
+#: Ports a schemeless backend is assumed to speak TLS on. Any other port typed
+#: without ``https://`` is traced as plain HTTP.
+TLS_PORTS = (443, 8443)
+
+
+def _resolve(mode: str, raw: str, inventory: dict, default_port: int = 443,
+             plain_unless_tls_port: bool = False):
+    """``(dest, scheme, path, error_response)``.
+
+    ``plain_unless_tls_port`` is the backend rule: ``host:8080`` with no scheme
+    is a plain-HTTP backend far more often than a TLS one, so only 443/8443
+    (or an explicit ``https://``) are traced as HTTPS."""
     try:
         parsed = net_guard.parse_target(raw, default_port=default_port)
     except net_guard.TargetError as exc:
         return None, "", "", (jsonify(ok=False, error=str(exc)), 400)
+    if plain_unless_tls_port and "://" not in raw \
+            and parsed["port"] not in TLS_PORTS:
+        parsed["scheme"] = "http"
     try:
         dest = net_guard.resolve_target(parsed["host"], parsed["port"], mode=mode,
                                         inventory_hosts=list(inventory.keys()))
@@ -135,7 +152,11 @@ def run():
                 "server. Tick the confirmation to send it." % method),
                 needs_confirmation=True), 409
 
-    if (mode_a == net_guard.MODE_FREE or mode_c == net_guard.MODE_FREE) \
+    # Only a leg that is actually traced can need the free permission: the
+    # panel always names a mode for both legs, and an empty backend must not
+    # turn an inventory-only trace into a refusal.
+    if ((vip_raw and mode_a == net_guard.MODE_FREE)
+            or (backend_raw and mode_c == net_guard.MODE_FREE)) \
             and not _may_free():
         log_action("txn_trace.denied", target=(vip_raw or backend_raw)[:200],
                    extra={"reason": "free target without "
@@ -162,7 +183,8 @@ def run():
 
     if backend_raw:
         dest, scheme, tpath, err = _resolve(mode_c, backend_raw, inventory,
-                                            default_port=80)
+                                            default_port=80,
+                                            plain_unless_tls_port=True)
         if err:
             return err
         # The SAME Host as leg A when there is one — a leg C carrying the
@@ -220,6 +242,12 @@ def derive():
                        error="Pick an appliance and a server policy."), 400
     from ..models import visible_appliance_or_404
     appliance = visible_appliance_or_404(appliance_id)
+    if appliance.kind != "fortiweb":
+        # The derivation reads FortiWeb server-policy objects; a FortiADC (or
+        # any other kind) can only fail it, so say so instead of a 502.
+        return jsonify(ok=False, error=(
+            "Leg B is derived from FortiWeb server policies; %s is a %s."
+            % (appliance.name, appliance.kind))), 400
     try:
         from ..clients.fortiweb import FortiWebClient
         client = FortiWebClient(appliance)

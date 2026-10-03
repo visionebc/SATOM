@@ -203,14 +203,6 @@ def attach_exceptions(appliance_id):
     return jsonify(ok=True, content=items)
 
 
-@bp.route("/attach/sot-search")
-@login_required
-@require_permission('advisor.use')
-def attach_sot_search():
-    q = request.args.get("q", "")
-    return jsonify(ok=True, content=svc.tool_sot_search(q))
-
-
 @bp.route("/usage")
 @login_required
 @require_permission('advisor.use')

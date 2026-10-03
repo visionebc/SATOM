@@ -9,10 +9,10 @@ touches it. So the destination is a security decision, not a form field.
 
 The product answer (decided 2026-08-17, by the user, explicitly) is BOTH modes:
 
-* ``inventory`` — the destination is an appliance SATOM already manages, or a
-  pool member SATOM read from that appliance's live config. Nothing arrives
-  from the browser except an id, so there is no forgery surface at all. Default,
-  one click.
+* ``inventory`` — the destination is the management address of an appliance
+  SATOM already manages (the callers build the inventory from the visible
+  appliances' hosts; pool members are not included). Only a host already in
+  that list can be dialled, so there is no forgery surface. Default, one click.
 * ``free`` — an arbitrary ``host:port`` typed by the operator. Deliberately
   allowed: the destinations that matter during an incident (a backend not in a
   pool yet, an edge proxy, a partner endpoint) are by definition NOT in the

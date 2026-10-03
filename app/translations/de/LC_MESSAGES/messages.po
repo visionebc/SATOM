@@ -13779,12 +13779,12 @@ msgid "http-01 — web authentication"
 msgstr "http-01 — Web-Authentifizierung"
 
 #: app/templates/settings/_ai.html:51
-msgid "http://192.0.2.34:11434 or https://api.openai.com/v1"
-msgstr "http://192.0.2.34:11434 oder https://api.openai.com/v1"
+msgid "http://ollama.example:11434 or https://api.openai.com/v1"
+msgstr "http://ollama.example:11434 oder https://api.openai.com/v1"
 
 #: app/templates/partials/release_notes_modal.html:96
-msgid "http://192.0.2.66:3002"
-msgstr "http://192.0.2.66:3002"
+msgid "http://firecrawl.example:3002"
+msgstr "http://firecrawl.example:3002"
 
 #: app/templates/monitoring/_probe_page.html:314
 msgid "https://192.0.2.80:443/"

@@ -252,36 +252,9 @@ def report_pdf(report_id: int):
 # Python over the SAME curated, masked, SELECT-only datasets the plugins use
 # (services.plugin_sandbox.load_datasets). The sandbox has NO secrets, NO
 # network and NO app filesystem — the security contract is pinned by
-# tests/test_py_console.py. Every run is audited. USER_MANAGE only.
-_PYC_EXAMPLES = {
-    "fleet": {
-        "datasets": ["fleet_appliances"],
-        "src": "from collections import Counter\n\n"
-               "rows = data['fleet_appliances']['rows']\n"
-               "by_kind = Counter(r['kind'] for r in rows)\n"
-               "for kind, n in by_kind.most_common():\n"
-               "    print(f\"{kind:12} {n}\")\n"
-               "print('total', len(rows))\n",
-    },
-    "policies": {
-        "datasets": ["server_policies_full"],
-        "src": "rows = data['server_policies_full']['rows']\n"
-               "missing = [r for r in rows if not r.get('wpp')]\n"
-               "print(f\"{len(missing)} of {len(rows)} policies have NO WAF profile\")\n"
-               "for r in missing:\n"
-               "    print(' -', r['device'], '/', r['policy'])\n",
-    },
-    "expiry": {
-        "datasets": ["certificates"],
-        "src": "rows = [r for r in data['certificates']['rows'] if r.get('not_after')]\n"
-               "rows.sort(key=lambda r: str(r['not_after']))\n"
-               "print('Soonest-expiring certificates:')\n"
-               "for r in rows[:15]:\n"
-               "    print(r['not_after'], '·', r.get('common_name'))\n",
-    },
-}
-
-
+# tests/test_py_console.py. Every run is audited. Gated on the granular
+# ``studio.python_console`` key (seeded on the admin profile only); the
+# examples come from services.py_examples.
 @bp.route("/py-console")
 @login_required
 @require_permission("studio.python_console")

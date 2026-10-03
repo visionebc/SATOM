@@ -481,8 +481,6 @@
           addAttachment('exceptions:' + payload, 'Exceptions on appliance ' + payload,
                         JSON.stringify(d.content));
         });
-      } else if (attach === 'lua'){
-        addAttachment('lua:' + payload, 'Lua script ' + payload, payload);
       }
       return;
     }

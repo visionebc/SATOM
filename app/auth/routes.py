@@ -21,6 +21,7 @@ from . import bp
 from ..models import User, Permission
 from ..extensions import db, limiter, real_client_ip
 from ..services.audit import log_action
+from .password_policy import password_problem
 from ..services import settings_store as store
 from ..services import user_settings_store as user_store
 from ..branding import PRODUCTS as _BRAND_PRODUCTS
@@ -275,8 +276,8 @@ def reset_password(token):
     if request.method == 'POST':
         new_password = request.form.get('new_password', '')
         confirm = request.form.get('confirm_password', '')
-        if not new_password or len(new_password) < 8:
-            flash('Password must be at least 8 characters.', 'danger')
+        if password_problem(new_password):
+            flash(password_problem(new_password), 'danger')
         elif new_password != confirm:
             flash('Passwords do not match.', 'danger')
         else:
@@ -303,8 +304,8 @@ def profile():
 
         if not current_user.check_password(current_password):
             flash('Current password is incorrect.', 'danger')
-        elif len(new_password) < 8:
-            flash('New password must be at least 8 characters.', 'danger')
+        elif password_problem(new_password):
+            flash(password_problem(new_password), 'danger')
         elif new_password != confirm_password:
             flash('New passwords do not match.', 'danger')
         else:

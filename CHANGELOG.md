@@ -6,6 +6,33 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Security — gunicorn answered plain HTTP on every interface after an update (2026-10-03)
+
+The shipped `satom.service` bound gunicorn to `0.0.0.0:8000` and relied on
+the installer to rewrite it to loopback. Every self-update copies the unit
+again without that rewrite, so after the first update the application
+answered plain HTTP on port 8000 from the network, next to the nginx TLS
+endpoint. The unit now binds `127.0.0.1:8000` itself. The System Backup page's
+peer comparison, the one peer probe that used port 8000 directly, now goes
+through the node vhost on 8443 like the others.
+
+**Already-installed nodes keep the old unit until their next update**, which
+installs the corrected one. To close it now, set the bind in
+`/etc/systemd/system/satom.service` to `127.0.0.1:8000`, then run
+`systemctl daemon-reload && systemctl restart satom`.
+
+### Security — password minimum and API-token scopes (2026-10-03)
+
+Settings → Change Password, Add User and an administrator's password reset
+accepted any non-empty password while their placeholders said "at least 8
+characters". Every web path now enforces the same 8-character minimum.
+
+An API token could be minted or edited with a scope its owner does not hold
+(for example `admin` for an operator), and the WAF carve-out listing honoured
+that `admin` scope to list every author's carve-outs. Minting and editing now
+refuse such scopes, and the listing also checks that the owner can use
+`admin`.
+
 ### Security — privileged node actions left no audit row (2026-10-03)
 
 System backup create, restore and delete, git bundle create, settings and

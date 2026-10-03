@@ -136,7 +136,7 @@ def waf_list_exceptions():
         return err
 
     want_all = request.args.get("all") in ("1", "true", "yes")
-    if want_all and not tok.has_scope("admin"):
+    if want_all and not tok.owner_may_use("admin"):
         return _err(403, "insufficient_scope",
                     "Listing every carve-out requires the 'admin' scope.")
 
@@ -162,7 +162,7 @@ def waf_get_exception(exc_id):
     appliance, err = _fortiweb_or_error(exc.appliance_id)
     if err:
         return err
-    if not guard.owned_by(exc, tok) and not tok.has_scope("admin"):
+    if not guard.owned_by(exc, tok) and not tok.owner_may_use("admin"):
         return _err(404, "not_found", "No such carve-out.")
     return jsonify(_exception_json(exc, appliance=appliance))
 

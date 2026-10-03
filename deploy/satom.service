@@ -13,7 +13,7 @@ EnvironmentFile=/opt/satom/.env
 # instead of the provider's own "request timed out" -- the diagnosable error
 # is replaced by the opaque one. The advisor also streams, so a normal reply
 # legitimately holds a sync worker for as long as the model is generating.
-ExecStart=/opt/satom/venv/bin/gunicorn --workers 4 --bind 0.0.0.0:8000 --timeout 600 --access-logfile /var/log/satom/access.log --error-logfile /var/log/satom/error.log wsgi:app
+ExecStart=/opt/satom/venv/bin/gunicorn --workers 4 --bind 127.0.0.1:8000 --timeout 600 --access-logfile /var/log/satom/access.log --error-logfile /var/log/satom/error.log wsgi:app
 Restart=always
 RestartSec=5
 

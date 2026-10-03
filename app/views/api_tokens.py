@@ -17,7 +17,7 @@ from ..extensions import db
 from ..models import Permission, User
 from ..models import AppId
 from ..models_api_token import (CAPABILITIES, SCOPES, VALID_PRODUCTS, ApiToken,
-                                mint_token)
+                                SCOPE_REQUIRED_PERMISSION, mint_token)
 from ..services.audit import log_action
 
 bp = Blueprint("api_tokens", __name__, url_prefix="/api-tokens",
@@ -36,6 +36,14 @@ def _render_index(**extra):
                new_token=None)
     ctx.update(extra)
     return render_template("api_tokens/index.html", **ctx)
+
+
+def _scopes_owner_lacks(owner, scopes) -> list[str]:
+    """Scopes whose mapped permission (SCOPE_REQUIRED_PERMISSION) the owner
+    does not hold. Minting them made a token that looked more powerful than it
+    was -- and the one handler that branched on ``admin`` honoured it."""
+    return [s for s in scopes
+            if owner is None or not owner.can(SCOPE_REQUIRED_PERMISSION.get(s, ""))]
 
 
 @bp.route("/", methods=["GET"])
@@ -68,6 +76,11 @@ def create():
         flash("Invalid product.", "danger")
         return redirect(url_for("api_tokens.index"))
     scopes = [s for s in scopes if s in SCOPES] or ["read"]
+    denied = _scopes_owner_lacks(owner, scopes)
+    if denied:
+        flash(f"{owner.username} cannot hold the {', '.join(denied)} scope(s): "
+              "a token never carries more than its owner may do.", "danger")
+        return redirect(url_for("api_tokens.index"))
 
     expires_at = None
     if days and days > 0:
@@ -106,6 +119,10 @@ def edit(id):
 
     if product not in VALID_PRODUCTS:
         flash("Invalid product.", "danger")
+        return redirect(url_for("api_tokens.index"))
+    denied = _scopes_owner_lacks(tok.owner, scopes)
+    if denied:
+        flash(f"The owner cannot hold the {', '.join(denied)} scope(s).", "danger")
         return redirect(url_for("api_tokens.index"))
 
     if name:

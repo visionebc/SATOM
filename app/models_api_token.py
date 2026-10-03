@@ -201,6 +201,18 @@ class ApiToken(db.Model):
             return False
         return any(_SCOPE_RANK.get(s, -1) >= want for s in self.scope_list)
 
+    def owner_may_use(self, needed: str) -> bool:
+        """``has_scope`` AND the owner still holds the permission that scope
+        maps to (SCOPE_REQUIRED_PERMISSION). ``token_required`` checks this for
+        the scope an endpoint declares; a handler that branches on a HIGHER
+        scope (``admin`` widening a listing) must ask this, not ``has_scope``,
+        or an admin-scope token owned by an operator reads like an admin."""
+        if not self.has_scope(needed):
+            return False
+        perm = SCOPE_REQUIRED_PERMISSION.get(needed)
+        owner = self.owner
+        return bool(perm is None or (owner is not None and owner.can(perm)))
+
     # ---------------------------------------------- capabilities + AppID scope
     @property
     def capability_list(self) -> list[str]:

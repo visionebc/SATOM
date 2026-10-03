@@ -26,6 +26,7 @@ from flask import (Blueprint, render_template, request, flash, redirect, url_for
 from flask_login import login_required, current_user
 
 from ..auth.decorators import require_permission
+from ..auth.password_policy import password_problem
 from ..extensions import csrf
 from ..models import db, Permission, User, Profile, Appliance
 from ..services import naming, settings_store as store
@@ -1236,8 +1237,8 @@ def change_password():
 
     if not current_user.check_password(current_password):
         flash('Current password is incorrect.', 'danger')
-    elif not new_password:
-        flash('New password cannot be empty.', 'danger')
+    elif password_problem(new_password):
+        flash(password_problem(new_password), 'danger')
     elif new_password != confirm_password:
         flash('New passwords do not match.', 'danger')
     else:

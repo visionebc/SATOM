@@ -152,7 +152,7 @@
             {% if current_user.can('appliances.apply') %}
             <a href="{{ url_for('appliances.upgrade_prep', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Upgrade Preparation') }}"><i class="bi bi-clipboard-check"></i></a>
             {% endif %}
-            {% if a.kind == 'fortiweb' and current_user.can('config_write') %}
+            {% if a.kind == 'fortiweb' and current_user.can('appliances.apply') %}
             <a href="{{ url_for('appliances.upgrade', id=a.id) }}" class="btn btn-sm btn-outline-warning btn-sm-icon me-1" title="{{ _('Upgrade Firmware') }}"><i class="bi bi-cloud-arrow-up"></i></a>
             {% endif %}
             {% elif owner %}

@@ -38,3 +38,28 @@ def test_readonly_cannot_start_rediscovery(app, client):
     login(client, ro)
     r = client.post(f"/appliances/{aid}/rediscover/start")
     assert r.status_code == 403
+
+
+def test_device_flash_and_failover_buttons_follow_appliances_apply(app, client):
+    """The Upgrade, Boot Partition and HA Failover pages need appliances.apply;
+    the buttons were drawn for any edit key, so a protection-only editor
+    clicked into a 403 (Documentation Center docs pass, 2026-10-03)."""
+    from tests.test_access_gates_audit import _zero_key_user
+    from app.extensions import db
+    from app.models import Appliance
+    with app.app_context():
+        a = Appliance(name="fw-btn", kind="fortiweb", host="192.0.2.7", port=443,
+                      username="u", password_enc="x", verify_ssl=False)
+        db.session.add(a)
+        db.session.commit()
+        aid = a.id
+    login(client, _zero_key_user(app, "prot-editor",
+                                 keys={"protection.edit", "appliances.view"}))
+    html = client.get(f"/appliances/{aid}").get_data(as_text=True)
+    assert f"/appliances/{aid}/upgrade" not in html
+    assert f"/appliances/{aid}/downgrade" not in html
+    client.get("/auth/logout")
+    login(client, make_user(app, username="op-btn", role="operator"))
+    html = client.get(f"/appliances/{aid}").get_data(as_text=True)
+    assert f"/appliances/{aid}/upgrade" in html      # positive control
+    assert f"/appliances/{aid}/downgrade" in html

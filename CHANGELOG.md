@@ -642,6 +642,14 @@ The sidebar, the top-bar search and the home shortcuts now ask the page's own
 permission before showing a link, so a profile is never offered a page that
 then refuses it.
 
+### Fixed — firmware and failover buttons, Lua Studio deploy refusals (2026-10-03)
+
+The Upgrade, Boot Partition and HA Failover buttons on the appliance pages were
+shown to anyone with an edit permission, but those pages need *Apply appliance
+changes*; they now show only to users who can open them. Lua Studio showed an
+empty red "Deploy result" when a deploy was refused (no target appliance, or
+the script failed lint); it now shows the reason.
+
 ## [2.10.1] - 2026-10-03
 
 ### Fixed — Stop did not stop a running deep capture (2026-10-03)

@@ -132,3 +132,14 @@ def test_adc_admin_group_hides_the_python_console_without_its_key(app, client):
     assert "/database/py-console" not in html
     login(client, admin_user_id(app), product="fortiadc")
     assert "/database/py-console" in _sidebar(client, "/adc/?_adom=fortiadc")
+
+
+def test_the_lua_editor_shows_a_top_level_deploy_refusal():
+    """Refusals ("No target appliance…", "Lint failed…") are answered as a
+    top-level ``error``; the editor only read ``result.error`` and showed an
+    empty red "Deploy result"."""
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[1] / "app" / "templates"
+           / "lua_studio" / "editor.html").read_text()
+    body = src.split("function doDeploy", 1)[1].split("\n  }\n", 1)[0]
+    assert "d.error" in body

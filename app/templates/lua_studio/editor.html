@@ -138,8 +138,10 @@
       .then(function(r){return r.json();}).then(function(d){
         var r = d.result || {};
         var h = '<div class="'+(d.ok?'an-ok':'an-err')+'">'+(d.dry_run?'Dry-run plan':'Deploy result')+'</div>';
-        if (r.error) h += '<div class="an-err">'+esc(r.error)+'</div>';
-        h += '<pre class="an-pre">'+esc(JSON.stringify(r.body_preview||r, null, 2))+'</pre>';
+        // refusals (no target, lint failed) come back as a top-level error
+        var err = r.error || d.error;
+        if (err) h += '<div class="an-err">'+esc(err)+'</div>';
+        if (d.result) h += '<pre class="an-pre">'+esc(JSON.stringify(r.body_preview||r, null, 2))+'</pre>';
         if (r.note) h += '<div class="an-warn">'+esc(r.note)+'</div>';
         out.innerHTML = h;
         if (real && d.ok) setTimeout(function(){ location.reload(); }, 800);

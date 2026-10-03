@@ -152,11 +152,16 @@ def compare():
 def create():
     include_reports = request.form.get("include_reports") == "on"
     publish_git = request.form.get("publish_git") == "on"
+    # The page offers "push to the backup server" ticked by default when one
+    # is configured; until 2026-10-03 the manual path never pushed at all.
+    push_server = request.form.get("push_server") == "on"
     res = system_backup.create_backup(include_reports=include_reports,
-                                      publish_git=publish_git, label="manual")
+                                      publish_git=publish_git, push_server=push_server,
+                                      label="manual")
     log_action("system_backup.create", target=res.get("name") or "",
                extra={"ok": bool(res.get("ok")), "include_reports": include_reports,
-                      "publish_git": publish_git, "detail": str(res.get("detail", ""))[:200]})
+                      "publish_git": publish_git, "push_server": push_server,
+                      "detail": str(res.get("detail", ""))[:200]})
     if res["ok"]:
         flash(f"Backup created: {res['name']} ({res['size']//1024} KB) — {res['detail']}",
               "success")
@@ -241,7 +246,23 @@ def code_rollback():
     if target == info.get("sha", "")[:len(target)]:
         flash("Already running that revision.", "info")
         return redirect(url_for("system_backup.index"))
-    uid = su.request_update(target, current_user.username, origin="code-rollback")
+    # Same staged-rollout safeguard as Software Update -> Apply: on a primary
+    # with peers, the standby must run this revision (and pass its health
+    # check) first. A rollback is an update to an older commit, not an exception.
+    others = [n for n in su.load_nodes() if n.get("name") != su.this_node_name()]
+    if su.node_role() == "primary" and others and not su.can_apply_to_primary(target):
+        log_action("system.code_rollback", target=target,
+                   extra={"refused": "staged-rollout", "from": info.get("sha", "")[:12]})
+        flash("Blocked by the staged-rollout safeguard: roll the STANDBY back to "
+              "this revision and let it pass its health check first, then the "
+              "PRIMARY unlocks.", "warning")
+        return redirect(url_for("system_backup.index"))
+    from .. import runtime
+    try:
+        uid = su.request_update(target, current_user.username, origin="code-rollback")
+    except runtime.CapabilityUnavailable as exc:
+        flash(exc.reason, "warning")
+        return redirect(url_for("system_backup.index"))
     log_action("system.code_rollback", target=target,
                extra={"request": uid, "from": info.get("sha", "")[:12]})
     flash(f"Code rollback to {target} queued ({uid}) — follow it on the "

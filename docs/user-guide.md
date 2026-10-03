@@ -968,7 +968,13 @@ This page is the missing third position: name the CA and keep the check on.
   says so honestly.
 - **System Backup & Restore** (Global → Administrator) backs up the **manager
   itself**: a `pg_dump` of the database plus the reports tree in one bundle,
-  with a verified restore path.
+  with a verified restore path. **Create backup now** also pushes the bundle to
+  the backup server when one is configured (the box is ticked by default).
+  **Code rollback** on the same page is an update to an older commit and obeys
+  the same staged-rollout safeguard as Software Update → Apply: on a primary
+  with a standby, roll the standby back first. On a container install both
+  code rollback and offline update packages are refused with the reason
+  (deploy a new image tag instead).
 - Pre-upgrade/downgrade backups land in the same vault automatically.
 
 **Off-box copies — the source of truth and the external server.** The vault above

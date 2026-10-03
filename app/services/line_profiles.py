@@ -141,6 +141,27 @@ def profile_for(line: str, product: str = "fortiweb"):
             .first())
 
 
+def adopt_global_profiles() -> int:
+    """Re-file profiles saved under the Global ADOM as FortiWeb profiles.
+
+    The page used to store rows under the session ADOM, so a profile saved
+    from the Global menu landed under ``product='global'`` — a product no
+    device has, so the line wizard never read it. A row is moved only when
+    FortiWeb has no profile for that line yet; a clash is left in place
+    rather than overwriting a declaration. Idempotent. Returns rows moved.
+    """
+    from ..extensions import db
+    from ..models_lineprofile import LineProfile
+    moved = 0
+    for row in LineProfile.query.filter(LineProfile.product == "global").all():
+        if profile_for(row.line, "fortiweb") is None:
+            row.product = "fortiweb"
+            moved += 1
+    if moved:
+        db.session.commit()
+    return moved
+
+
 def _resolve_wpp(plan: LinePlan, template_id: int | None) -> None:
     """Attach the WPP template, and say exactly why it cannot be used.
 

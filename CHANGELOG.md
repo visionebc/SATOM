@@ -111,6 +111,491 @@ providers" switch and the export log. Locality now comes from the base URL:
 only loopback, link-local and private addresses (or `localhost`) count as
 local, and a host name that does not resolve counts as external.
 
+### Security — one password policy: 12 to 1024 characters (2026-10-03)
+
+The web console, the root CLI and the two installers each had their own rule
+(8, 12, 8, and 10 characters with three character classes). There is now one
+policy everywhere: at least 12 and at most 1024 characters, length only — no
+character-class rule. It applies to Add User, an administrator's password
+reset, Change Password, the reset link, `satom execute admin reset-password`,
+`install-satom.sh` and the guided `satom-setup.sh` (which still accepts the
+same answer-file keys). Existing passwords are not re-validated; the rule
+applies the next time a password is set.
+
+### Security — Session Lock is now enforced (2026-10-03)
+
+Settings → General → *Session Lock (minutes)* was saved but never applied: a
+signed-in browser stayed signed in for weeks. It is now an idle timeout. A
+browser session with no activity for that long is signed out on its next
+request with *"Your session was locked after N minutes of inactivity."*
+(script callers get a JSON 401), and the lock is recorded in the audit log.
+Background refreshes — the notification bell, job progress, status badges,
+edit-lock heartbeats and other timed panel reloads — do not count as
+activity, so a tab left open still locks. API tokens are not affected.
+
+### Security — Sentinel and Scout settings are admin-only end to end (2026-10-03)
+
+The Sentinel and Scout settings panes were shown only to administrators, but
+their save actions accepted any user who could change configuration, so an
+operator could change them — including switching Scout off site-wide — with
+a direct request. Saving now requires user management, like the panes.
+
+### Security — database tools refuse queries on credential tables (2026-10-03)
+
+The SQL console masks sensitive columns by the name of the result column, so
+an alias or `row_to_json(...)` could reveal password hashes and secrets. A
+query in the console, a CSV export or a report widget that references a
+credential table — users, API tokens, application settings, hypervisor
+targets, DNS backends, provisioning runs — is now refused before it runs,
+and the refusal is audited. Column masking is unchanged for every other
+table.
+
+### Security — Edit locks (2026-10-03)
+
+Taking, keeping or taking over an edit lock now requires the Configure permission, so a read-only user can no longer take an operator's lock. The object editor's save and delete calls are refused while another user holds the object's lock, instead of the lock being a browser-side warning only, and the inline editor on configuration pages takes and shows the lock like the full-page editor.
+
+### Security — The AI opinion on a draft exception needs the AI Advisor permission (2026-10-03)
+
+"Analyse before implementing" still gives SATOM's own analysis to anyone who can open the exception. Sending the draft to the AI provider for the assistant's opinion now requires `advisor.use`, the same permission as every other AI feature. The Attack ID page also shows its AI buttons only to users who hold that permission. An old delete endpoint for exceptions was removed: it skipped the impact check and wrote no audit entry, and nothing in the interface used it.
+
+### Security — Device refresh and raw device reads tightened (2026-10-03)
+
+"Refresh from device" on Server Policy and Server Objects runs a full device sync, so it now needs `config_write`. That matches the refresh on Web Protection and the configuration sections. An address that forwarded any read request to a device using SATOM's own device credentials was removed. Nothing in the interface used it.
+
+### Security — Raw API proxy writes need the API-write permission (2026-10-03)
+
+Write calls (POST, PUT, DELETE) sent through the internal appliance proxy under
+`/api/fw/` and `/api/adc/` now require **Execute write API calls**
+(`registry.execute_write`), the permission the API Explorer already requires for
+the same raw writes. Before, the broader configuration-write permission was
+enough, so operators could make arbitrary appliance REST writes through the proxy
+that the Explorer would have refused. Read calls are unchanged.
+
+### Security — "Fetch MAC addresses" requires edit rights and is audited (2026-10-03)
+
+The Architecture device card's "Fetch MAC addresses" logs in to the appliance over SSH and updates the stored interface inventory, but any signed-in viewer could run it. It now requires `config_write`, the same as the Device health hardware scan, and every run is written to the audit log with its outcome. The button is hidden from users who cannot use it.
+
+### Added — Change ticket reference written back from a hook (2026-10-03)
+
+When a hook bound to `change.requested` succeeds and its result carries `crq_ref` (and optionally `crq_url`), the reference is now recorded on the change request, as the starter and the Request CRQ message always promised. A link that is not `http(s)://` is dropped and a closed change is left untouched; the run's status says whether the reference was recorded.
+
+### Added — Secret values for integration hooks (2026-10-03)
+
+The hook editor gains a write-only **Secret values** card for Administrators: each secret the hook declares can be given its value, which is stored encrypted, audited by name and never shown again (the card only says *stored* or *not set*). Before, values could only come from environment variables on the node.
+
+### Added — External change approval can be recorded (2026-10-03)
+
+A change request in **External** approval mode could never run, because nothing recorded the external verdict. Integrations now send it with `POST /api/v1/change-requests/<id>/external-approval` (admin-scope token; changes outside the token's ADOM are not found; manual-mode and closed changes are refused; every call is audited). An Administrator can also record or withdraw the verdict by hand on the change's External change record card.
+
+### Added — "Clear all" on the Notifications page (2026-10-03)
+
+The Notifications page now has a **Clear all** button. After you confirm, it
+permanently deletes all your notifications. The bell's *Clear* still only marks
+them read.
+
+### Added — Collection page: peer replication status and store snapshots (2026-10-03)
+
+The Collection page now shows whether this node's samples are also being written to the peer node: replication state, peer, last success and consecutive failures. A new "Store snapshots and nodes" card shows the state of each node's metrics store and lists existing store snapshots. Users with edit rights can take a snapshot or delete one. Deleting a snapshot is now audited.
+
+### Changed — Users page: read-only list, Unlock, Reset password, Clear 2FA (2026-10-03)
+
+The *View users* permission now opens the user list read-only, with no
+controls, and gives its holders a Users entry in the sidebar; every action
+still needs *Manage users*. Each row now offers **Reset password** (local
+accounts, with confirmation), **Clear 2FA** (when enabled) and **Unlock**
+(when the account has failed sign-ins or is locked out) — all audited. Unlock
+clears the lockout and nothing else: a disabled account stays disabled. The
+root CLI's `execute admin unlock` now behaves the same way;
+`reset-password` still re-enables the account. A profile change is logged
+once instead of twice, and the Admins counter counts the accounts that can
+manage both users and profiles. The unreachable per-user edit page and legacy
+role endpoint were removed — the Change Profile dialog covers them.
+
+### Changed — General settings: log levels and format take effect; dead fields removed (2026-10-03)
+
+The *Log Levels* and *Log Format* settings are now applied to the application
+log file at start-up and immediately on save (plain, detailed or JSON lines;
+every format keeps the timestamp). The *Status Poll Interval* and *Show raw
+JSON* fields were removed from the form because nothing ever read them.
+
+### Changed — neutral defaults for Sentinel AI and the system-backup schedule (2026-10-03)
+
+Sentinel's AI model endpoint now ships empty, and AI reasoning stays off until
+an endpoint is configured, even when its switch is on. The seeded nightly
+system-backup schedule on new installations no longer names a specific
+backup host.
+
+### Changed — Node TLS renewal controls (2026-10-03)
+
+Settings → Node TLS has a new *Renewal of an imported certificate* card: choose
+*Alert only* or *Automatic pull*, enter the SSH source and file paths, and run
+**Test now**. *Renew now* is offered only for a certificate issued by the
+internal CA, and the page now explains that an imported certificate is shared
+between HA nodes.
+
+### Changed — Administration screens tidied (2026-10-03)
+
+The Profiles tab needs *Manage profiles*; Certificate Manager links appear
+only to users who can open it; the API Tokens link appears in every ADOM
+whose product supports tokens; revoking or deleting an API token asks for
+confirmation; logo and favicon pickers accept every format the server
+accepts; saving DNS Lookup returns to its tab; the static "Security Status"
+checklist (which computed nothing) is gone; the HA diagram no longer claims
+replication on a standalone node; and shipped examples and help texts no
+longer carry deployment-specific host names, addresses or schedule numbers.
+Two unused settings endpoints for naming and segments were removed — their
+editors live on their own pages.
+
+### Changed — Backup vault and restore permissions (2026-10-03)
+
+The "View backups" permission now does what it says: it opens the Device Backups list (metadata only), so read-only users can see which backups exist. Creating, uploading and deleting backups still need a backup create or restore permission, and downloading a backup, which is the full device configuration, needs "Create backups". The appliance Restore page now needs both "Manage users" and "Restore backups", and Import Backup needs "Restore backups"; operators and administrators keep the access they had. Buttons and menu entries you cannot use are no longer shown. Upgrade Preparation is now granted by "Run appliance actions", the permission whose description already listed it.
+
+### Changed — Safer live restore and Boot Partition (2026-10-03)
+
+A live configuration restore is now aborted when the automatic pre-restore backup (taken over the device REST API) cannot be made, so a restore never runs without a rollback copy by accident. If the device's REST backup cannot work, tick "Restore without a pre-restore backup"; that choice is recorded in the audit log. Boot Partition remains the emergency path that needs no change request, but a live flash now requires ticking an acknowledgement that it bypasses change control, the page says so, and every attempt and its outcome are written to the audit log.
+
+### Changed — Firmware scheduling goes through Upgrade Flow (2026-10-03)
+
+The "Schedule for later" card on the single-appliance Upgrade page has been removed: the action it created could never run. Use Upgrade Flow, which raises a change request with its window and schedules the upgrade once approved. Existing scheduled entries are left as they are. Upgrade Flow now covers FortiWeb only, because SATOM has no firmware flash path for FortiADC; the page says so, and FortiADC pre-upgrade checks remain available from the appliance page.
+
+### Changed — Console, provisioning approval and appliance pages (2026-10-03)
+
+The appliance SSH console no longer offers a Run button to users who cannot run commands; they see the presets with a read-only notice, and the console link is hidden for them. Operators can now find the Device Console in the Automation menu. A system profile can only be deployed live once it is approved (its preview stays available), and Approve/Reject are only shown to users who may approve. The Appliances list and detail pages show Add, Edit, Delete and View Backups only to users who hold those permissions, offer the Policy Inspector and Rediscovery on FortiADC rows too, show Firmware Reports consistently, and label the vdom field as "ADOM (vdom)". The Device Provisioning mode table now describes what Full and DHCP modes really do (no scripted first-boot dialog, no lease discovery).
+
+### Changed — Wording fixes (2026-10-03)
+
+The Rediscovery Stop tooltip explains that a stop during the deep pass or CLI capture keeps the snapshot already saved. The console's refusal message names the checkbox the page actually shows. Capacity validation messages match the checks, and the capacity table highlights usage at your configured warning level instead of a fixed 80 percent. The "Network Segments" menu entry has one name everywhere, and the container-operations hint points at Global, Administrator, Container operations. The "Run appliance actions" and "Restore backups" permission descriptions now say what they unlock.
+
+### Changed — Read-only users see read-only pages (2026-10-03)
+
+Users without `config_write` no longer see buttons that would only fail with an error. This applies to Server Policy, the policy editor, Exceptions, Web Protection, Server Objects and WAF artifacts. Some buttons are greyed out instead of hidden, and the policy editor says it is read-only. The WAF protection areas in the sidebar are shown only to users who can open them. Users who hold `operations.view` but are not administrators now find the Template Library under Operations.
+
+### Changed — Wording and leftovers (2026-10-03)
+
+The classification catalog counts line profiles when it reports where a value is used. The Fleet Objects header now says the data comes from SATOM's local copy of each device's configuration. A scheduled-action description and the artifact store's notes no longer describe features that were removed. An unused naming save route and the matching script on the Settings page were removed. Example placeholders use neutral names.
+
+### Changed — Appliances sits with the fleet entries in the sidebar (2026-10-03)
+
+The **Appliances** entry has moved from the Administrator group into each ADOM's
+Fleet group, and into the Global group of the Global ADOM. Anyone who can view
+appliances now sees it, not only administrators. Adding or editing a device still
+requires configuration-write access.
+
+### Changed — Documentation corrections (2026-10-03)
+
+The sample nginx virtual host now allows uploads up to 400 MB, matching the
+largest update package the application accepts. `docs/INSTALL.md` now gives the
+same count of host-only actions that the container runtime gives up everywhere
+(five; four of them come back with the operations agent). Developer comments on
+integration hook paths, the template permissions, placeholder ADOMs, Concept Map
+deep links and directory sign-in profiles were corrected too.
+
+### Changed — Scout: a typed Published host follows the free-target rule (2026-10-03)
+
+Scout dialled any host typed into "Published host", which bypassed the permission the certificate inspector and transaction tracer require for free targets. A typed host is now dialled only if the appliance publishes it (its own address or one of its VIPs), unless you hold `monitoring.probe_free` or user management. Leaving the field blank and using the object's VIP works as before. Read-only and operator users can no longer have Scout probe an arbitrary typed host.
+
+### Changed — Daily inventory snapshot is part of the seeded schedule (2026-10-03)
+
+The Metrics page's daily inventory trend only appears when the "Record inventory snapshot" action runs every day, and until now you had to schedule it yourself. `satom execute seed actions` now creates it, daily at 23:50, and `diagnose install` lists it with the other minimum protections. Existing schedules are never changed. On an older node, run the seed command to add the missing row.
+
+### Changed — Monitoring controls follow your permissions (2026-10-03)
+
+Operators who can edit collection settings but are not administrators now find **Collection** at the end of the Monitoring menu. Before, the page could only be reached by typing its URL. On the Collection page, Run sweep now, Enable/Disable, Save and the interval fields are shown only to users who can change them. On Analysis, "Save pattern" is shown only to administrators and "Run deep capture" only to users with edit rights. Deep monitors and Service Monitor gain an **Unmute** action on muted probes.
+
+### Changed — Neutral examples in the interface (2026-10-03)
+
+The DNS Lookup, probe form and installation health screens used placeholders and labels from the network this product was built on. They now use generic examples (`app.example.com`, `192.0.2.10`) and refer to "the backup target". The CPU/memory and discovery notes on the probe pages now list every product each reading is available on, including FortiAuthenticator.
+
+### Changed — FortiADC and FortiAnalyzer API consoles are dry-run by default (2026-10-03)
+
+The FortiADC and FortiAnalyzer API consoles now treat writes the way the FortiAuthenticator console always has: a POST, PUT, PATCH or DELETE (or a FortiAnalyzer write verb) returns a preview of the exact request (method, path and body) and sends nothing until you tick **Apply**. The three consoles also share one audit policy: every applied write is recorded, including the ones the device refused (the refusal is stored as the error), and reads are no longer written to the audit log. Change attribution now recognises FortiAnalyzer write verbs, so an applied FortiAnalyzer write can explain a configuration change.
+
+### Changed — One catalog writer for every product (2026-10-03)
+
+The FortiAnalyzer and FortiAuthenticator endpoint catalogs are now saved through the same writer as FortiWeb and FortiADC, so names, URIs and duplicates are checked the same way everywhere (a FortiAuthenticator URI must stay under `/api/v1/`). Re-pointing a disabled FortiAuthenticator endpoint no longer re-enables it silently, and enabled FortiAuthenticator endpoints can now be disabled from the page. Users without the "Execute write API calls" permission see the FortiAuthenticator write methods disabled, as on the other consoles.
+
+### Changed — API and Signatures entries in the product menus (2026-10-03)
+
+The FortiADC, FortiAnalyzer and FortiAuthenticator menus show their API console under **API → Registry & console** to every user who may open it (the "View registry" permission); before, FortiAuthenticator showed it to everyone and the other two only to user administrators. The FortiADC **Signatures** overview moved from Administrator to the Web Application Firewall group and opens to users with "View protection", so read-only and operator users can now see it.
+
+### Changed — Wording (2026-10-03)
+
+The Naming page marks FortiADC patterns as reference only (the FortiADC editor and wizard do not apply them). The FortiAnalyzer workspace description and dashboard no longer call its sections scaffolds; an installation still showing the old seeded description gets the new one on the next start (an edited description is kept). The FortiAuthenticator dashboard points to Administrator → Appliances.
+
+### Changed — False-positive explainer fields (2026-10-03)
+
+The explainer has two optional fields: a Web Protection Profile, named in the
+"where on the device" path now shown under each carve-out, and a payload
+decoder that peels encoding layers off a value pasted without a log entry.
+
+### Changed — AI Advisor default provider (2026-10-03)
+
+On first use the AI Advisor used to create a local Ollama provider pointing at
+a fixed private address. On new installations it is now created disabled,
+pointing at `http://localhost:11434`; edit it in Settings → AI Advisor, set
+your Ollama host and save it to enable it. Until then the advisor, document
+translation and the exception assistant say the provider is disabled instead
+of sending anything. Existing providers are unchanged. The provider and
+fetch-endpoint placeholders no longer show private addresses.
+
+### Fixed — Audit Log paging, "To" date and CSV export (2026-10-03)
+
+The Audit Log never showed its page controls, so entries beyond the first
+page were unreachable; it now pages and keeps the filters. The *To* date now
+includes the whole day. **Export CSV** used to link back to the page; it now
+downloads the entries matching the current filters.
+
+### Fixed — settings and administration tools (2026-10-03)
+
+- Hour thresholds saved as decimals ("12.0") were silently ignored by the
+  alert engine, which fell back to its defaults; they are honoured now.
+- *Enable email sending* off now really stops every outgoing mail (alerts,
+  bug reports, Certificate Manager, change-request notices, reset links);
+  only the *Send test email* button still sends.
+- Deleting an ADOM asks for confirmation again (the prompt was blocked by the
+  content security policy).
+- A new LDAP bind password is stored where sign-in reads it when a secrets
+  vault is in use; saving the Authentication form no longer resets tuned LDAP
+  and RADIUS timeouts to 8 seconds.
+- Certificate Manager issuance over ACME no longer demands an ADCS class
+  template; the ADCS request id the signer prints is recorded for revocation;
+  the pages name the configured protocol and the target appliance.
+- Importing the same theme a third time no longer fails.
+- Built-in database reports offer *Clone* instead of an *Edit* that could not
+  save; *Export CSV* in the SQL console exports what is in the editor even
+  before *Run*.
+- Re-enabling a FortiAnalyzer menu group brings its items back.
+- Code rollback on System Backup obeys the staged-rollout safeguard of
+  Software Update, and on a container installation code rollback and offline
+  update packages are refused with the reason instead of failing.
+- *Create backup now* can push the bundle to the backup server (ticked by
+  default when one is configured).
+
+### Fixed — Integration hook starters actually run (2026-10-03)
+
+The four starters offered by the hook editor (CRM change ticket, Telegram, Slack, Microsoft Teams) only defined a `run(ctx)` function and never called it, so a saved starter did nothing and its runs were still shown as *ok*. They also checked a `status_code` attribute the SDK response does not have. Starters now run when the hook fires, read `resp.status`, and report a non-2xx answer as a failed run with the receiving system's own words.
+
+### Fixed — Change request lifecycle (2026-10-03)
+
+- Only a draft change request can be approved, and a completed or failed change can no longer be rewritten to cancelled. Hiding the buttons had not prevented either.
+- Pressing **Schedule** after the maintenance window has started now starts the run a minute later (rounds keep their spacing) instead of creating a task that never fires; after the window has closed it is refused.
+- A firmware upgrade or failover run live from an appliance page closes its change only when every appliance the change names has a result. Previously the first appliance closed the whole change and the others could no longer be run under it. A failed appliance can be retried inside the window.
+- Documentary change types (and changes still in progress after their window) can be closed with **Mark completed** / **Mark failed**; before, nothing could close a documentary change.
+- **Mark notified** sends the maintenance notice to the change's own recipients instead of always to the e-mail default, and the notice card describes that correctly.
+- The `window.opening` and `window.closing` hook events now fire when a change starts and finishes even without NetBox, and `window.closing` reports the documented outcome (`completed` / `failed`).
+- A change page for a firmware upgrade now states that the scheduler does not flash firmware and that appliances are flashed live from their Upgrade page.
+
+### Fixed — Scheduled actions and menus (2026-10-03)
+
+- A one-time **Run at** is entered and shown in the console timezone (the field names the zone); it used to be read as UTC and fired off by the timezone offset. **Next run** in the list is shown in the console timezone with its zone, and a run skipped while the scheduler was down shows as **missed** instead of a blank.
+- **Process** now appears in the sidebar for read-only users and operators, in its own Automation group; it was only drawn inside the Administrator group.
+- The NetBox reconciliation field is labelled **Appliances per round**, the sync action descriptions include FortiAuthenticator, and the deep-monitor sweep description matches its 3-minute default schedule.
+
+### Fixed — Appliance quick edit no longer wipes interfaces and HA settings (2026-10-03)
+
+Saving an appliance from the Edit dialog on the Appliances list deleted every documented interface and dissolved an HA cluster, because that dialog carries neither field set. Interfaces and HA settings are now changed only by a form that actually shows them (the full edit page); the quick edit leaves them alone.
+
+### Fixed — Firmware, rediscovery and device health (2026-10-03)
+
+The Upgrade and Boot Partition image pickers no longer offer install images (qcow2, ova and the like), which build a new VM and are not a flash payload. A second rediscovery can no longer start while the first one is still in its deep or CLI phase, and starting one no longer cancels a pending Stop. A FortiADC discovery that meets refused credentials now stops after one failed login, as FortiWeb already did, instead of trying every endpoint and risking an account lockout. Device health on the Monitoring page now grades each appliance with its own product's capacity and staleness limits, the same ones the alert engine uses. The hardware scan only targets FortiWeb appliances, the only product its command battery is written for, and the button is hidden where nothing can be scanned.
+
+### Fixed — Backups, deletion and console across products (2026-10-03)
+
+"View Backups" for a FortiADC opened from the Global ADOM no longer ends on a "not found" page. Deleting an appliance through the REST API now retires its identity and removes its datasheet, exactly like the delete button. The Device Console presets and the diagnostics attached to a support bundle now match the appliance's product (FortiADC gets its own commands; FortiAnalyzer and FortiAuthenticator get none, and the bundle says so) instead of always sending FortiWeb commands. Adding a model on the Capacity Limits page records it for the product you choose, and removing a model only removes that product's rows.
+
+### Fixed — Rollouts, change requests and provisioning (2026-10-03)
+
+A rollout split into several rounds is no longer closed by its first round: the change stays open until the last round succeeds, and a failed round still fails it so the remaining rounds do not flash. The Schedule button on a change request now honours the rollout plan saved on it. Upgrade Flow refuses to raise a change without appliances, a change naming no appliance can no longer be scheduled, and stage 1 offers each multi-ADOM appliance once (on the row that owns the device actions). On Device Provisioning a refused or failed preflight is shown as an error instead of "Nothing blocks this run", and the run buttons are only shown to users who may use them; Semi mode's Resume now carries on past first boot to registration and profile instead of pausing again. System Provisioning no longer promises secrets "entered at apply time": secrets are stripped when a profile is saved and are not pushed, and the deploy preview names the elements that will go out without them. Combos built from system profiles now push the profile's settings instead of nothing.
+
+### Fixed — Line profiles now reach the line wizard (2026-10-03)
+
+Line profiles saved from their menu entry in the Global ADOM were filed under the Global ADOM. That is a product no device belongs to, so the wizard never used them and the Web Protection Profile drop-down was empty. The page now always files them as FortiWeb profiles, and profiles saved earlier are moved over at startup. The move is skipped when FortiWeb already has its own profile for the same line. Errors on the page now show as red alerts instead of blue notices that disappear on their own.
+
+### Fixed — The line wizard uses your naming patterns, binds its certificate and checks the profile first (2026-10-03)
+
+Object names now come from the patterns saved under Administrator → Naming. Before, the wizard used the built-in defaults even when the patterns had been changed. A certificate issued by the wizard is now attached to the server policy it creates, which serves HTTPS with it. The wizard also checks during planning that the line's Web Protection Profile exists on the device. If the profile is missing, the plan is blocked before any address is reserved or any DNS record or certificate is created.
+
+### Fixed — Stored Assets no longer reports "never pushed" when the backup server cannot be read (2026-10-03)
+
+When the backup server is unreachable or not configured, devices now show as "unknown" with the reason. Before, they were graded "never pushed", which contradicted the page banner. Folders with more files than the summary lists now say "Showing the N newest of M files".
+
+### Fixed — Creating and cloning server policies (2026-10-03)
+
+The New Server Policy form now includes the Web Protection Profile field. Its AppID picker lists the AppID catalog for administrators. Creating the policy for real, not as a preview, assigns the chosen AppID and records the assignment in the audit log. Bulk clones keep the profile name suffix you type. The delete dialog now says that objects used only by the deleted policy are deleted with it. The preview names the real reason each kept object is kept. "Change Appliance" now opens the device map instead of returning to the same device.
+
+### Fixed — Template rollout and canary order (2026-10-03)
+
+Approving a Web Protection Profile template now deploys it to FortiWeb devices only. Before, the rollout also targeted FortiADC, FortiAnalyzer and FortiAuthenticator devices visible in the Global ADOM. The canary of a template apply is now the first device you selected, as the page says. Messages that pointed at a "WPP Templates" or "Settings → Signatures" menu now name the real entries, Template Library and Administrator → Signatures.
+
+### Fixed — Config Compare, exports, AppIDs and Structure (2026-10-03)
+
+The Config Compare export now contains every differing field. The page still shows only the first ones. The Fleet Exceptions export now returns you to that page when nothing was selected. On the AppIDs page, unticking "First row is a header" now works, so files without a header keep their first record. Assigning a FortiWeb policy also checks that the device has that policy in SATOM's local copy of its configuration. The Structure page's firmware selector works again. It is now limited to administrators, like the menu entry that leads to it.
+
+### Fixed — Change requests keep their final outcome (2026-10-03)
+
+Only a **draft** change request can be approved now. Approving a completed,
+failed or cancelled change used to set it back to *approved*, notify the
+integrations again and re-create its rollout plan. Cancelling a completed, failed
+or already cancelled change request is also refused, so its recorded outcome
+can't be overwritten. A change that is still in progress can be cancelled as
+before.
+
+### Fixed — Postgres SSL tuning works when the console runs as the service account (2026-10-03)
+
+Settings → Node TLS → *Apply protocol & ciphers* failed on every install where
+the web application runs as the unprivileged service account, because it tried
+to switch to the `postgres` user directly. The change now goes to the privileged
+updater on the same node. The updater checks the values again, applies them and
+reloads Postgres, and the page says the request was queued. The outcome appears
+under Software Update with the other updater requests. In the container
+runtime the action is refused with an explanation.
+
+### Fixed — Installer pins every service to a custom service account (2026-10-03)
+
+With a custom service account (`SATOM_APP_USER`), the installer now applies the
+account to every SATOM service except the updater. It reads the service list from
+the shipped unit templates, as the self-update runner does. Previously the
+integration hook runner kept the default account until the first update, so hooks
+did not run on those installs.
+
+### Fixed — Concept Map links to Global-only pages (2026-10-03)
+
+From a product ADOM, the Concept Map listed SATOM Health, Infrastructure Health
+and Encryption Posture, but opening them redirected back to the device pages.
+These links now open in the Global ADOM, where the pages actually load.
+
+### Fixed — Smaller interface corrections (2026-10-03)
+
+- The "/" key now opens Search from any page that shows the top-bar search
+  button, as the button's tooltip says. On the Search page it still focuses the
+  search box.
+- The infrastructure health card no longer shows internal host names. It
+  uses the labels "Git repository" and "Backup server", and when the backup
+  server isn't configured it points to **Settings → Source of Truth & Backup →
+  Backup Server**, linked for administrators.
+- Scheduled Actions shows a **missed** badge when a run was skipped because it
+  was overdue and catch-up is off. The **running** badge now shows while an
+  action is actually running.
+- The profile page no longer accepts a hidden password-change submission.
+  Passwords are changed in Settings → My Account.
+- The installer's standby hint now points to High Availability → Add node.
+- `satom show sudoers` no longer mentions a `config` command group that doesn't
+  exist.
+
+### Fixed — Global Search filters now apply (2026-10-03)
+
+The Appliance and Object Type selectors on Global Search were ignored: every search swept every visible appliance and every object collection. The results page now searches only the chosen appliance and only the chosen object type (server policies, virtual servers, pools, protection profiles or exceptions; on FortiADC the matching virtual-server, pool and WAF-profile collections), and the refine box on the results page keeps both filters.
+
+### Fixed — Analytics boards: creating and editing from the page (2026-10-03)
+
+"Create board" used to leave the browser on a raw JSON response. It now opens the new board. Custom boards also gain an "Edit board" form for the title, description, default range and auto-refresh; built-in boards stay read-only and keep their Duplicate button.
+
+### Fixed — New probes follow the three-minute sweep (2026-10-03)
+
+New deep-monitor and Service Monitor probes defaulted to a 5-minute interval, which under the 3-minute sweep actually ran every 6 minutes. The add-probe form, HTTPS policy discovery and new probes created without an interval now default to 3 minutes. The scheduled-action description and the documentation now state the 3-minute cadence consistently. Existing probes keep their configured interval.
+
+### Fixed — FortiADC response-time series no longer pose as per-service data (2026-10-03)
+
+FortiADC's device-wide client RTT, server RTT and application response time were stored under the per-policy metric names, so the Service drill-down appeared to cover FortiADC virtual servers while its RTT panels never matched one. They are now stored as `satom_adc_client_rtt_ms`, `satom_adc_server_rtt_ms` and `satom_adc_app_response_ms`. Custom panels that queried the old names for FortiADC need to switch to the new ones. History already recorded under the old names stays where it is.
+
+### Fixed — Monitoring reports show the fleet metrics section (2026-10-03)
+
+Period reports already computed a fleet section from the metrics store (min / average / maximum per device and metric, policies that were down, and collectors that failed), but only the JSON export showed it. The report page, the plain-text and e-mail body, and the CSV export now include it. If the metrics store could not be reached, the report says so rather than showing empty figures.
+
+### Fixed — FortiADC API console method selector (2026-10-03)
+
+The method list now sends the real HTTP verb whatever the interface language. In a translated interface DELETE used to be sent as the translated word, which bypassed the write permission check and reached the device as an unknown verb; the server now refuses any method it does not know. PATCH, which the server already accepted, is offered in the list.
+
+### Fixed — FortiAnalyzer API console status (2026-10-03)
+
+The console reports the device's JSON-RPC status code and error instead of always saying 200.
+
+### Fixed — FortiADC object editor (2026-10-03)
+
+The first member of an empty pool can be added from the form: the add-row form now shows the required fields (such as the real server) instead of only the name. Registry edits now reach the FortiADC editor and sidebar in every worker within a minute, not only in the worker that served the edit, and no longer need a restart.
+
+### Fixed — FortiAnalyzer Device Manager ADOM (2026-10-03)
+
+Authorize and Delete in the Device Manager now run in the FortiAnalyzer ADOM you enter in the dialog (default `root`) instead of always targeting `root`. The Devices tab no longer carries an "Add Device" label or an Edit button that could never be used.
+
+### Fixed — Transaction tracer: legs, permissions and correlation (2026-10-03)
+
+A user without the free-target permission could not run any trace: the panel
+always declared the backend leg as a free target, even when the backend field
+was empty, so every request was refused while the message claimed inventory
+destinations remained available. The permission is now checked only for the
+legs actually traced, and the backend field is disabled for users who cannot
+use it.
+
+A backend typed as `host:port` without a scheme was traced over HTTPS on any
+port other than 80. It is now HTTPS only on 443 and 8443 and plain HTTP
+otherwise; type `https://` to force TLS. The inventory picker for leg A is now
+labelled as what it is, the appliance's management address, and dials the
+port recorded in the inventory instead of always 443. Leg B lists only
+FortiWeb devices (it reads FortiWeb server policies); any other kind is
+refused with a clear message instead of a read failure. Attack-log
+correlation now matches on the address the tracer left from, which is what
+the appliance logs as the source, instead of the destination it dialled.
+
+### Fixed — Certificate inspector: key passphrase and SNI fields (2026-10-03)
+
+An encrypted private key always ended in "supply its passphrase" because the
+panel had nowhere to type one. The Paste tab now has a passphrase field and
+the Probe tab an optional SNI / hostname field.
+
+### Fixed — Lua Studio: a real deploy without a target (2026-10-03)
+
+Confirming a real deploy on a script with no target appliance returned the
+dry-run plan and marked the script "deployed" although nothing was sent. It is
+now refused with a message asking for a target, and the script keeps its
+status.
+
+### Fixed — Plugin drafts and the Studio menus follow the Studio permissions (2026-10-03)
+
+Draft and testing custom views, and the editor's live preview, required full
+administrator capability instead of the Plugin Studio permission, so an author
+given only that permission could not preview their own work. They now follow
+`studio.plugin_studio`.
+
+In the Global ADOM the Studio entries (Python Console, Plugin Studio, Lua
+Studio) were nested inside the Administrator group, invisible to anyone
+without user management. They now have their own Studio group, and every
+Studio link in every ADOM is shown only to holders of its own permission, so
+no menu entry answers 403.
+
+### Fixed — Regex lab rewrite preview numbering (2026-10-03)
+
+The rewrite preview treated `$0` as the whole match, while FortiWeb and
+FortiADC number replacement captures from zero (`$0` is the first `( … )`
+group). The preview, the examples, the cheat sheet and the group labels now
+use the appliance numbering, and a reference to a group the pattern does not
+have says so. Rewrite strings written for the old preview (`$1` for the first
+group) need to be shifted down by one.
+
+### Removed — Unused firmware upload API and template (2026-10-03)
+
+The chunked, resumable firmware upload endpoints, which no page used, have been removed together with an unused Backups page template. Firmware uploads keep working as before and continue in the background while you navigate.
+
+### Removed — Legacy `deploy/install.sh` (2026-10-03)
+
+The old development bootstrap script has been removed. It installed the
+application service as root on all interfaces with a SQLite database, which
+contradicts the privilege model and the PostgreSQL-only runtime. Use
+`installers/install-satom.sh` (or the guided `satom-setup.sh`) instead.
+
+### Removed — Unused Analysis dashboard template (2026-10-03)
+
+An old Analysis dashboard template was still shipped, though no page used it (its address already redirects to Analysis). It has been removed.
+
+### Removed — Firmware and Backups pages in the FortiADC and FortiAuthenticator workspaces (2026-10-03)
+
+The firmware library is no longer reachable from the FortiADC and FortiAuthenticator workspaces, and the backup vault is no longer reachable from the FortiAuthenticator workspace: neither menu linked them and no path can flash or back up those devices with them. The links that pointed there are hidden.
+
+### Removed — Unused AI Advisor attachment endpoint (2026-10-03)
+
+The `/advisor/attach/sot-search` endpoint, which no page called, is removed.
+The advisor model keeps its configuration search tool.
+
 ## [2.10.1] - 2026-10-03
 
 ### Fixed — Stop did not stop a running deep capture (2026-10-03)

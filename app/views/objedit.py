@@ -435,7 +435,7 @@ def _template_lock_error(coll, name):
     from ..services.templates import managed_wpp_names
     if str(name) in managed_wpp_names():
         return ('"%s" is a template-managed profile. Edit it in Administrator '
-                '→ WPP Templates — saving an approved template deploys the '
+                '→ Template Library — saving an approved template deploys the '
                 'change to ALL devices.' % name)
     return ''
 

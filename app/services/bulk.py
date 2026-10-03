@@ -191,7 +191,16 @@ class BulkRunner:
         # set while they still have the request and pass it in.
         if not device_ids:
             return []
-        return Appliance.query.filter(Appliance.id.in_(device_ids)).all()
+        rows = Appliance.query.filter(Appliance.id.in_(device_ids)).all()
+        # IN (...) returns rows in no particular order; the caller's order is
+        # the contract (the FIRST selected device is the canary).
+        pos = {}
+        for i, d in enumerate(device_ids):
+            try:
+                pos.setdefault(int(d), i)
+            except (TypeError, ValueError):
+                continue
+        return sorted(rows, key=lambda a: pos.get(a.id, len(pos)))
 
     def preview(self, device_ids) -> list[dict]:
         """Dry-run across all targets — pure, no device contact."""

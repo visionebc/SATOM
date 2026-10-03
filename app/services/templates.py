@@ -86,7 +86,7 @@ def managed_wpp_names() -> set[str]:
 
     A profile whose name matches an approved ``web-protection-profile`` template
     is TEMPLATE-MANAGED: it is read-only everywhere except Administrator →
-    WPP Templates, and editing it there deploys to the whole fleet. This is the
+    Template Library, and editing it there deploys to the whole fleet. This is the
     team rule that keeps per-device drift out of templated profiles.
     """
     rows = (Template.query

@@ -1,5 +1,5 @@
 """Templates — desired-state library admin page (web port of the desktop
-Settings → WPP Templates console).
+Administrator → Template Library console).
 
 Gated per action, not admin-only: ``operations.view`` lists and opens
 templates, ``operations.template_save`` creates / edits / clones / deletes them,
@@ -299,6 +299,17 @@ def apply(template_id: int):
     return redirect(_safe_next(url_for('templates.index')))
 
 
+def _wpp_rollout_targets() -> list[int]:
+    """The devices an approved WPP template rolls out to: visible FortiWebs.
+
+    ``visible_appliances()`` in the Global or FortiWeb ADOM also returns
+    FortiADC / FortiAnalyzer / FortiAuthenticator rows, which have no Web
+    Protection Profile to receive.
+    """
+    return [a.id for a in visible_appliances()
+            .filter(Appliance.kind == 'fortiweb').all()]
+
+
 @bp.route('/<int:template_id>/approve', methods=['POST'])
 @login_required
 @require_permission('operations.template_approve')
@@ -323,7 +334,7 @@ def approve(template_id: int):
     from flask import current_app
     if (row.kind == Template.KIND_WEB_PROTECTION
             and not current_app.config.get('TESTING')):
-        device_ids = [a.id for a in visible_appliances().all()]
+        device_ids = _wpp_rollout_targets()
         items = iter_push_items(row.body_dict)
         if device_ids and items:
             from ..services.bulk import start_apply_job

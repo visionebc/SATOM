@@ -42,7 +42,7 @@
     {% if not catalog_ready %}
     <div class="fw-alert fw-alert-warning d-flex align-items-center gap-2 mb-3">
       <i class="bi bi-exclamation-triangle-fill"></i>
-      <div>{{ _('No signature database cached — signature names/descriptions and the search need it. Sync it once in') }} <a href="{{ url_for('signatures.index') }}" class="alert-link">{{ _('Settings → Signatures') }}</a>.</div>
+      <div>{{ _('No signature database cached — signature names/descriptions and the search need it. Sync it once in') }} <a href="{{ url_for('signatures.index') }}" class="alert-link">{{ _('Administrator → Signatures') }}</a>.</div>
     </div>
     {% endif %}
 

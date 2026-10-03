@@ -346,7 +346,7 @@ def sig_search(id, name):
     if catalog is None:
         return jsonify(ok=False, total=0, rows=[],
                        error='No signature catalog cached — sync it in '
-                             'Settings → Signatures first.')
+                             'Administrator → Signatures first.')
     state, src = _sig_state(appliance, name, force_live=force_live)
     # sig id → sub-row id (needed to DELETE a disable / alert-only row).
     disabled = {str(r.get('signature_id') or '').strip():
@@ -436,7 +436,7 @@ def set_pref():
 #  the WPP's ~40 sub-policy references on THIS device, recreate the ones that    #
 #  are missing under the new name, and VALIDATE (skip) the ones that already     #
 #  exist. Save-as-template stores the same deep snapshot as a PENDING template   #
-#  the admin approves in Settings -> WPP Templates (the existing workflow).      #
+#  the admin approves in Administrator -> Template Library (the existing workflow).      #
 # --------------------------------------------------------------------------- #
 def _wpp_plan(appliance, source, new_name):
     """Build a dry-run plan for a deep WPP clone on ``appliance`` (read-only)."""
@@ -542,7 +542,7 @@ def clone_apply(id):
 @require_permission('operations.template_save')
 def save_as_template(id):
     """Save a WPP (deep) to the template library as a PENDING draft. The admin
-    approves it in Settings -> WPP Templates — same workflow as every template."""
+    approves it in Administrator -> Template Library — same workflow as every template."""
     appliance = visible_appliance_or_404(id)
     data = request.get_json(silent=True) or {}
     source = (data.get('source') or '').strip()

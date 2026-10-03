@@ -988,6 +988,12 @@
             <i class="bi bi-journal-text fw-nav-icon"></i><span>{{ _('Log Collection') }}</span></a>
           <a class="fw-nav-item" href="{{ url_for('import_backup.index') }}">
             <i class="bi bi-file-earmark-arrow-up fw-nav-icon"></i><span>{{ _('Import Backup') }}</span></a>
+          {# Template Library needs only operations.view; administrators reach it
+             under Administrator, everyone else who may open it finds it here. #}
+          {% if current_user and current_user.can('operations.view') and not current_user.can('user_manage') %}
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'templates' else '' }}" href="{{ url_for('templates.index') }}">
+            <i class="bi bi-collection fw-nav-icon"></i><span>{{ _('Template Library') }}</span></a>
+          {% endif %}
         </div>
       </div>
 

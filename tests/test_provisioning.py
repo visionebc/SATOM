@@ -264,18 +264,20 @@ def test_the_list_is_filtered_in_the_query_not_the_template(app):
     assert ".filter(" in code
 
 
-def test_both_upload_paths_take_the_product_from_the_adom(app):
+def test_the_upload_path_takes_the_product_from_the_adom(app):
     """Scope comes from the request, never from a field the client controls —
     a hand-crafted POST could otherwise file a FortiWeb image under FortiADC.
-    Both endpoints, because they are two independent code paths."""
+    The resumable upload API was removed on 2026-10-03 (nothing called it), so
+    the multipart handler is the one upload path left."""
     src = (pathlib.Path(__file__).resolve().parents[1]
            / "app" / "views" / "firmware.py").read_text()
     code = "\n".join(l for l in src.splitlines()
                      if not l.strip().startswith("#"))
-    # once in the multipart handler, once in the resumable one
-    assert code.count('_adom in _PRODUCTS:') == 2, \
-        "an upload path is missing the ADOM overrule"
-    assert code.count("product = _adom") == 2
+    assert code.count('@bp.route("/upload"') == 1, \
+        "a second upload endpoint appeared: give it the ADOM overrule too"
+    assert code.count('_adom in _PRODUCTS:') == 1, \
+        "the upload path is missing the ADOM overrule"
+    assert code.count("product = _adom") == 1
 
 
 def test_firmware_is_reachable_only_from_the_adoms_that_link_it():

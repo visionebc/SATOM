@@ -338,3 +338,36 @@ def test_settings_page_renders_the_csr_card_and_paste_mode(app, client):
                  'id="nt-mode-file"', "/settings/node-cert/csr/CSRID/discard",
                  'id="nt-activate"', "close every browser window", "/jobs/JOBID"):
         assert mark in html, mark
+
+
+# --- Documentation Center audit, 2026-10-03 (AD-32, AD-33, AD-62) -----------
+def test_node_tls_page_exposes_renew_mode_and_autopull_test(app, client):
+    login(client, admin_user_id(app))
+    html = client.get("/settings/").get_data(as_text=True)
+    assert 'id="nt-renew-mode-form"' in html
+    assert 'name="renew_mode"' in html and 'value="autopull"' in html
+    assert 'id="nt-autopull-test"' in html
+    # the controls post to the two routes that had no UI
+    assert "/settings/node-cert/renew-mode" in html
+    assert "/settings/node-cert/autopull" in html
+    assert "never replicated" not in html
+
+
+def test_saving_the_renewal_form_persists_mode_and_source(app, client):
+    login(client, admin_user_id(app))
+    r = client.post("/settings/node-cert/renew-mode", data={
+        "renew_mode": "autopull", "ssh_host": "certs.example.com", "ssh_port": "2222",
+        "ssh_user": "certbot", "ssh_auth": "key", "remote_cert": "/c.pem",
+        "remote_key": "/k.pem", "remote_chain": ""})
+    assert r.get_json()["ok"] is True
+    with app.app_context():
+        assert cs.renew_mode() == "autopull"
+        cfg = cs.autopull_config()
+        assert (cfg["ssh_host"], cfg["ssh_port"], cfg["configured"]) == ("certs.example.com", 2222, True)
+
+
+def test_renew_now_is_only_offered_for_a_ca_issued_certificate():
+    from pathlib import Path
+    tpl = (Path(__file__).resolve().parent.parent / "app/templates/settings/index.html").read_text()
+    i = tpl.index("var rb=document.getElementById('nt-renew-btn');")
+    assert "if(c.source!=='issued'){rb.disabled=true;" in tpl[i:i + 300]

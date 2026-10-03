@@ -2482,7 +2482,7 @@
               <button class="btn btn-sm btn-outline-secondary" id="nt-renew-btn"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Renew now') }}</button>
             </div>
             <div id="nt-cert-msg" class="mt-2" style="font-size:12px;"></div>
-            <div class="text-muted mt-2" style="font-size:11px;">{{ _('Node-local — each HA node serves its own hostname\'s cert (never replicated). CA-issued certs auto-renew nightly; imported certs alert on expiry only.') }}</div>
+            <div class="text-muted mt-2" style="font-size:11px;">{{ _('CA-issued certificates are node-local (each HA node serves its own host name) and auto-renew nightly. An imported certificate is shared: the nightly pass publishes it from the node that serves it and installs it on the peer. Imported certificates alert on expiry, or are fetched again automatically when Automatic pull is set below.') }}</div>
           </div>
         </div>
       </div>
@@ -2561,6 +2561,52 @@
       </div>
 
       <div class="col-lg-6">
+        <div class="fw-card" id="nt-renewal-card">
+          <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-arrow-clockwise me-2 text-accent"></i>{{ _('Renewal of an imported certificate') }}</span></div>
+          <div class="fw-card-body">
+            <form id="nt-renew-mode-form">
+              <div class="mb-2"><label class="form-label" style="font-size:12px;">{{ _('When an imported certificate nears expiry') }}</label>
+                <select name="renew_mode" id="nt-renew-mode" class="form-select form-select-sm">
+                  <option value="alert">{{ _('Alert only') }}</option>
+                  <option value="autopull">{{ _('Automatic pull (fetch the renewed files over SSH and install them)') }}</option>
+                </select></div>
+              <div id="nt-autopull-fields">
+                <div class="row g-2 mb-2">
+                  <div class="col-8"><label class="form-label" style="font-size:12px;">{{ _('Source host') }}</label>
+                    <input type="text" name="ssh_host" class="form-control form-control-sm font-monospace" placeholder="certs.example.com"></div>
+                  <div class="col-4"><label class="form-label" style="font-size:12px;">{{ _('SSH port') }}</label>
+                    <input type="number" name="ssh_port" class="form-control form-control-sm" min="1" max="65535" placeholder="22"></div>
+                  <div class="col-6"><label class="form-label" style="font-size:12px;">{{ _('SSH user') }}</label>
+                    <input type="text" name="ssh_user" class="form-control form-control-sm"></div>
+                  <div class="col-6"><label class="form-label" style="font-size:12px;">{{ _('Authentication') }}</label>
+                    <select name="ssh_auth" class="form-select form-select-sm">
+                      <option value="key">{{ _('Key file on this node') }}</option>
+                      <option value="password">{{ _('Password') }}</option>
+                    </select></div>
+                  <div class="col-6"><label class="form-label" style="font-size:12px;">{{ _('Key file path') }}</label>
+                    <input type="text" name="ssh_key_path" class="form-control form-control-sm font-monospace"></div>
+                  <div class="col-6"><label class="form-label" style="font-size:12px;">{{ _('Password') }} <span class="text-muted">{{ _('(blank = keep)') }}</span></label>
+                    <input type="password" name="ssh_password" class="form-control form-control-sm" autocomplete="new-password"></div>
+                </div>
+                <div class="mb-2"><label class="form-label" style="font-size:12px;">{{ _('Remote certificate path') }}</label>
+                  <input type="text" name="remote_cert" class="form-control form-control-sm font-monospace"></div>
+                <div class="mb-2"><label class="form-label" style="font-size:12px;">{{ _('Remote private key path') }}</label>
+                  <input type="text" name="remote_key" class="form-control form-control-sm font-monospace"></div>
+                <div class="mb-2"><label class="form-label" style="font-size:12px;">{{ _('Remote chain path (optional)') }}</label>
+                  <input type="text" name="remote_chain" class="form-control form-control-sm font-monospace"></div>
+              </div>
+              <div class="d-flex gap-2 flex-wrap">
+                <button class="btn btn-sm btn-fw-primary" type="submit"><i class="bi bi-save me-1"></i>{{ _('Save renewal settings') }}</button>
+                <button class="btn btn-sm btn-outline-secondary" type="button" id="nt-autopull-test"><i class="bi bi-play me-1"></i>{{ _('Test now') }}</button>
+              </div>
+            </form>
+            <div id="nt-renew-mode-msg" class="mt-2" style="font-size:12px;"></div>
+            <div class="text-muted mt-2" style="font-size:11px;">{{ _('Test now runs one pull immediately, whatever the mode: it fetches the files, checks the key matches, and installs them only when they are newer than the certificate served (nginx is reloaded in that case).') }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-6">
         <div class="fw-card">
           <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-hdd-network me-2 text-accent"></i>{{ _('Node-to-node encryption (Postgres replication)') }}</span></div>
           <div class="fw-card-body">
@@ -2623,9 +2669,53 @@
           if(p.ciphers!=null) document.getElementById('nt-ciphers').value=p.ciphers;
           var cn=document.getElementById('nt-csr-cn');if(cn&&!cn.value) cn.value=d.hostname||'';
           renderCsrs(d.csrs||[]);
+          // Renew now only acts on a CA-issued certificate; offering it (and its
+          // nginx-reload warning) for an imported one promised a renewal that
+          // never happens.
+          var rb=document.getElementById('nt-renew-btn');
+          if(c.source!=='issued'){rb.disabled=true;rb.title='Only a certificate issued by the internal CA can be renewed here — re-import, or use Automatic pull below';}
+          else{rb.disabled=false;rb.title='';}
+          fillRenewal(d.renew_mode||'alert', d.autopull||{});
         }).catch(function(){document.getElementById('nt-cert-loading').textContent='Failed to load node TLS state.';});
       }
       function busy(btn,on){btn.disabled=on;}
+      // ---- renewal of an imported certificate (renew mode + autopull) ----
+      function renewFieldsShown(){
+        document.getElementById('nt-autopull-fields').style.display=
+          document.getElementById('nt-renew-mode').value==='autopull'?'':'none';
+      }
+      function fillRenewal(mode, ap){
+        var f=document.getElementById('nt-renew-mode-form');
+        document.getElementById('nt-renew-mode').value=mode;
+        ['ssh_host','ssh_port','ssh_user','ssh_auth','ssh_key_path','remote_cert','remote_key','remote_chain'].forEach(function(k){
+          if(f.elements[k]&&ap[k]!=null&&!f.elements[k].dataset.touched) f.elements[k].value=ap[k];});
+        renewFieldsShown();
+      }
+      document.getElementById('nt-renew-mode').addEventListener('change',renewFieldsShown);
+      document.getElementById('nt-renew-mode-form').addEventListener('input',function(e){
+        if(e.target&&e.target.dataset) e.target.dataset.touched='1';});
+      document.getElementById('nt-renew-mode-form').addEventListener('submit',function(e){
+        e.preventDefault();
+        var msg=document.getElementById('nt-renew-mode-msg');
+        post('{{ url_for("settings.node_cert_renew_mode") }}', new FormData(this), true).then(function(d){
+          msg.innerHTML=d.ok?'<span class="text-success"><i class="bi bi-check-circle me-1"></i>Saved — mode: '+esc(d.renew_mode)+'</span>'
+                            :'<span class="text-danger">'+esc(d.error||'Refused.')+'</span>';
+          if(d.ok){this.querySelectorAll('[data-touched]').forEach(function(el){delete el.dataset.touched;});
+            this.elements['ssh_password'].value='';}
+        }.bind(this)).catch(function(){msg.innerHTML='<span class="text-danger">The request did not reach the server.</span>';});
+      });
+      document.getElementById('nt-autopull-test').addEventListener('click',function(){
+        var btn=this, msg=document.getElementById('nt-renew-mode-msg');
+        if(!confirm('Run one automatic pull now? If the source holds a newer certificate it is installed and nginx is reloaded on this node.')) return;
+        busy(btn,true); msg.innerHTML='<span class="text-muted">Pulling…</span>';
+        post('{{ url_for("settings.node_cert_autopull") }}','',false).then(function(d){
+          busy(btn,false);
+          var r=d.result||{};
+          msg.innerHTML=(d.ok?'<span class="text-success"><i class="bi bi-check-circle me-1"></i>':'<span class="text-danger"><i class="bi bi-x-circle me-1"></i>')+
+            esc(d.error||r.reason||(r.pulled?'Pulled and installed.':'Done.'))+'</span>';
+          loadState();
+        }).catch(function(){busy(btn,false);msg.innerHTML='<span class="text-danger">The request did not reach the server.</span>';});
+      });
       // ---- activation as a followed job: every step, the reload, and what to
       // do when the browser loses the connection because the certificate changed.
       var NT_JOB='{{ url_for("jobs.get", job_id="JOBID") }}';

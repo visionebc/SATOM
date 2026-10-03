@@ -455,6 +455,12 @@ test_type_fields_route` — both failing BEFORE this work, untouched/out of scop
   (`/api/locks/acquire|heartbeat|release|steal|status`), `static/js/lock.js`
   (acquire → 30s heartbeat → banner + "Take over" + save-guard → release on
   unload), wired into the objedit editor. 12 tests.
+  *2026-10-03:* acquire / heartbeat / steal need `config_write` (a read-only
+  user can no longer take an operator's lease); the objedit save-object,
+  save-row, delete-row and delete-object endpoints answer **409** when another
+  user holds the object's lease (server-side, not only in lock.js); the guard
+  lives in the shared editor body so the inline (`?partial=1`) editor takes and
+  shows the lease too, and gives it back when its panel is closed.
 - **Phase 5 — Approval write-path + write-through.** `services/write_through.py`
   (`diff_object` before/after vs cache for the approval preview; `local_update`/
   `local_delete` keep the cache consistent after an approved write WITHOUT a full

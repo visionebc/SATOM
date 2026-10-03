@@ -12,7 +12,8 @@ from __future__ import annotations
 from flask import Blueprint, request, jsonify
 from flask_login import login_required, current_user
 
-from ..models import visible_appliance_or_404
+from ..auth.decorators import require_permission
+from ..models import Permission, visible_appliance_or_404
 from ..services import lock_service
 
 bp = Blueprint("locks", __name__, url_prefix="/api/locks")
@@ -43,6 +44,9 @@ def _args():
 
 @bp.route("/acquire", methods=["POST"])
 @login_required
+# Only someone who can save may hold (or take over) an edit lease: a
+# read-only user taking an operator's lease blocked the operator's save.
+@require_permission(Permission.CONFIG_WRITE)
 def acquire():
     appliance_id, key = _args()
     if appliance_id is None or not key:
@@ -54,6 +58,7 @@ def acquire():
 
 @bp.route("/heartbeat", methods=["POST"])
 @login_required
+@require_permission(Permission.CONFIG_WRITE)
 def heartbeat():
     appliance_id, key = _args()
     if appliance_id is None or not key:
@@ -74,6 +79,7 @@ def release():
 
 @bp.route("/steal", methods=["POST"])
 @login_required
+@require_permission(Permission.CONFIG_WRITE)
 def steal():
     appliance_id, key = _args()
     if appliance_id is None or not key:

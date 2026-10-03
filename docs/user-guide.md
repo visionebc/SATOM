@@ -2377,7 +2377,11 @@ rendered at all, so the menu never offers a section that is not there.
 | **Scout** | Settings · Architecture |
 
 The **AI Advisor** panel additionally needs `advisor.configure`; an admin
-without it does not see the entry.
+without it does not see the entry. **Sentinel** and **Scout** settings are
+admin-only end to end: saving them (including Scout's site-wide on/off switch)
+needs *Manage users*, the same as seeing the panes. Sentinel's AI reasoning
+ships with an empty model endpoint and stays off until one is set (for example
+`http://localhost:11434`), even if its switch is on.
 
 **Integrations is a page, not a pane**, and its row carries the leaving arrow
 (↗) for that reason: clicking it replaces the console instead of switching a

@@ -79,7 +79,9 @@ RESPONSE_SCHEMA = {
 
 
 def enabled() -> bool:
-    return bool(config.get("ai_enabled"))
+    """On only when switched on AND a model endpoint is configured: the
+    endpoint ships empty, so the feature stays off until someone sets it."""
+    return bool(config.get("ai_enabled")) and bool(str(config.get("ai_url") or "").strip())
 
 
 def build_prompt(incident, evidence: list, context: dict | None = None) -> str:

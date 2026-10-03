@@ -217,9 +217,11 @@ SPEC: list[dict] = [
              "computed before it runs and stand whether it answers, fails or "
              "times out. Off, incidents lose the narrative and nothing else "
              "changes."},
-    {"key": "ai_url", "kind": "str", "default": "http://192.0.2.72:11434",
+    {"key": "ai_url", "kind": "str", "default": "",
      "group": "ai", "label": "Local model endpoint (Ollama / OpenAI-compatible)",
-     "hint": "Base URL of the model host; the narrative call is a POST to "
+     "hint": "Base URL of the model host, e.g. http://localhost:11434. Empty "
+             "(the default) keeps AI reasoning off even when it is switched "
+             "on. The narrative call is a POST to "
              "{url}/api/chat. Local by intent — incident detail (addresses, "
              "signatures, topology, timing) must not leave the fleet to buy a "
              "paragraph of prose. If the host is unreachable the call returns "

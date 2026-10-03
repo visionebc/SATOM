@@ -3283,7 +3283,7 @@ def _scout_docs_context() -> dict:
 
 @bp.route('/sentinel', methods=['POST'])
 @login_required
-@require_permission('config_write')
+@require_permission(Permission.USER_MANAGE)  # admin-only, like the pane (AD-19/MO-09)
 def save_sentinel():
     """Persist the Sentinel settings posted by the generic form.
 
@@ -3346,7 +3346,7 @@ def save_sentinel():
 
 @bp.route('/scout', methods=['POST'])
 @login_required
-@require_permission('config_write')
+@require_permission(Permission.USER_MANAGE)  # admin-only, like the pane (AD-19/MO-09)
 def save_scout():
     """Persist Scout's SITE settings.
 

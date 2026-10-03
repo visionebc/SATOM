@@ -1467,7 +1467,7 @@ def save_system_backup_schedule(value) -> dict:
     if row is None:
         created = True
         row = ScheduledAction(
-            name="Nightly system backup (Postgres + JSON -> backup-server)",
+            name="Nightly system backup (Postgres + JSON)",
             scope="admin", product="fortiweb", action=SYSTEM_BACKUP_ACTION,
             targets="[]", params=json.dumps({"push_server": True}),
             enabled=True, catch_up=True,

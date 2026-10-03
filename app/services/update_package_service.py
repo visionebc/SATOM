@@ -485,6 +485,15 @@ def request_package_apply(name: str, by: str, *, allow_downgrade: bool = False,
     at a path of the caller's choosing.
     """
     from . import self_update as su
+    from .. import runtime
+
+    # The same refusal as the git path (self_update.request_update): the
+    # privileged runner installs units and restarts services as root, which a
+    # container does not have -- there the update is a new image tag.
+    runtime.require("self_update")
+    if runtime.is_container_runtime():
+        raise runtime.CapabilityUnavailable("self_update",
+                                            runtime.CONTAINER_UPDATE_REDIRECT)
 
     pkg = safe_name(name)
     if not (upload_dir() / pkg).is_file():

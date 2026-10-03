@@ -130,3 +130,19 @@ def test_section_page_has_save_as_template_wiring(client, app):
     assert "modalSaveAsTemplate" in h
     assert "/save-template" in h
     assert "const SECTION_KEY" in h
+
+
+def test_the_template_lock_names_the_real_menu(app, monkeypatch):
+    """The refusal pointed at 'Administrator → WPP Templates', a menu entry
+    that does not exist."""
+    import pathlib
+    from app.views import objedit
+    monkeypatch.setattr("app.services.templates.managed_wpp_names",
+                        lambda: {"wpp-gold"})
+    with app.app_context():
+        msg = objedit._template_lock_error(
+            "waf/web-protection-profile.inline-protection", "wpp-gold")
+    assert "Administrator → Template Library" in msg
+    page = (pathlib.Path(__file__).resolve().parents[1]
+            / "app/templates/web_protection/overview.html").read_text("utf-8")
+    assert "WPP Templates" not in page

@@ -25,12 +25,15 @@
       <div class="d-flex align-items-center gap-2">
         <span class="badge bg-dark border" title="{{ _('Served from the local source of truth') }}">
           <i class="bi bi-database me-1"></i>{{ freshness or 'no local data' }}</span>
+        {% set _can_write = current_user.can('config_write') %}
+        {% if _can_write %}
         <form method="post" action="{{ url_for('web_protection.refresh', id=appliance.id) }}" class="d-inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="next" value="{{ url_for('web_protection.overview', id=appliance.id) }}">
           <button type="submit" class="btn btn-outline-light btn-sm" title="{{ _('Pull live config from the device into the cache') }}">
             <i class="bi bi-arrow-clockwise me-1"></i>{{ _('Refresh') }}</button>
         </form>
+        {% endif %}
       </div>
     </div>
 
@@ -60,10 +63,12 @@
     <div class="tab-content">
       <div class="tab-pane fade show active" id="tab-inline">
         <div class="fw-toolbar mb-2 d-flex align-items-center gap-3 flex-wrap">
+          {% if _can_write %}
           <a class="btn btn-fw-primary btn-sm"
              href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/web-protection-profile.inline-protection', title='Web Protection Profile', create=1) }}">
             <i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }}
           </a>
+          {% endif %}
           <div class="fw-search-box">
             <i class="bi bi-search search-icon"></i>
             <input type="text" id="wpp-search" placeholder="{{ _('Search profiles…') }}">
@@ -100,7 +105,7 @@
                     {% else %}—{% endif %}
                     {% if is_default %}<span class="fw-badge fw-badge-secondary ms-1" title="{{ _('FortiWeb predefined profile') }}">{{ _('Default') }}</span>{% endif %}
                     {% if is_managed %}<span class="fw-badge fw-badge-warning ms-1"
-                       title="{{ _('Template-managed: read-only here. Edit in Administrator → WPP Templates — approving a change there deploys it to ALL devices.') }}"><i class="bi bi-lock-fill me-1"></i>{{ _('Template') }}</span>{% endif %}
+                       title="{{ _('Template-managed: read-only here. Edit in Administrator → Template Library — approving a change there deploys it to ALL devices.') }}"><i class="bi bi-lock-fill me-1"></i>{{ _('Template') }}</span>{% endif %}
                   </td>
                   <td>
                     {% if p.get('signature-rule') or p.get('signature_rule') %}
@@ -113,7 +118,7 @@
                     {% if pname %}
                     {% if is_managed %}
                     <a href="{{ url_for('templates.index', kind='web-protection-profile') }}"
-                       class="btn btn-sm btn-outline-warning" title="{{ _('Template-managed: edit in Administrator → WPP Templates (deploys to ALL devices)') }}">
+                       class="btn btn-sm btn-outline-warning" title="{{ _('Template-managed: edit in Administrator → Template Library (deploys to ALL devices)') }}">
                       <i class="bi bi-lock"></i>
                     </a>
                     {% else %}
@@ -122,11 +127,13 @@
                       <i class="bi bi-pencil"></i>
                     </a>
                     {% endif %}
+                    {% if _can_write %}
                     <button type="button" class="btn btn-sm btn-outline-info"
                             title="{{ _('Deep-clone this profile on this device') }}"
                             data-js="open-clone-modal" data-profile="{{ pname }}">
                       <i class="bi bi-files"></i>
                     </button>
+                    {% endif %}
                     <button type="button" class="btn btn-sm btn-outline-warning"
                             title="{{ _('Save as a template (admin approval, then fleet deploy)') }}"
                             data-js="open-template-modal" data-profile="{{ pname }}">
@@ -149,10 +156,12 @@
 
       <div class="tab-pane fade" id="tab-offline">
         <div class="fw-toolbar mb-2 d-flex align-items-center gap-3 flex-wrap">
+          {% if _can_write %}
           <a class="btn btn-fw-primary btn-sm"
              href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/web-protection-profile.offline-protection', title='Offline Protection Profile', create=1) }}">
             <i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }}
           </a>
+          {% endif %}
         </div>
         <div class="fw-table-wrapper">
           <table class="fw-table">
@@ -166,14 +175,14 @@
                   <td class="fw-semibold">{{ pname or '—' }}
                     {% if p.get('can_view') == 1 %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('Default') }}</span>{% endif %}
                     {% if is_managed %}<span class="fw-badge fw-badge-warning ms-1"
-                       title="{{ _('Template-managed: read-only here. Edit in Administrator → WPP Templates.') }}"><i class="bi bi-lock-fill me-1"></i>{{ _('Template') }}</span>{% endif %}
+                       title="{{ _('Template-managed: read-only here. Edit in Administrator → Template Library.') }}"><i class="bi bi-lock-fill me-1"></i>{{ _('Template') }}</span>{% endif %}
                   </td>
                   <td>{{ p.get('signature-rule') or '—' }}</td>
                   <td>
                     {% if pname %}
                     {% if is_managed %}
                     <a href="{{ url_for('templates.index', kind='web-protection-profile') }}"
-                       class="btn btn-sm btn-outline-warning" title="{{ _('Template-managed: edit in Administrator → WPP Templates') }}"><i class="bi bi-lock"></i></a>
+                       class="btn btn-sm btn-outline-warning" title="{{ _('Template-managed: edit in Administrator → Template Library') }}"><i class="bi bi-lock"></i></a>
                     {% else %}
                     <a href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/web-protection-profile.offline-protection', mkey=pname, title='Offline Protection Profile') }}"
                        class="btn btn-sm btn-outline-secondary" title="{{ _('Edit profile') }}"><i class="bi bi-pencil"></i></a>
@@ -246,7 +255,7 @@
       <div class="modal-body">
         <p class="text-muted" style="font-size:13px;">
           {{ _('Save') }} <strong id="tpl-source"></strong> {{ _('from') }} <strong>{{ appliance.name }}</strong> {{ _('into the template library. It lands as') }} <strong>{{ _('pending') }}</strong>{{ _('; an admin approves it in') }}
-          <strong>{{ _('WPP Templates') }}</strong> {{ _('and it then becomes available to deploy across the fleet.') }}
+          <strong>{{ _('Template Library') }}</strong> {{ _('and it then becomes available to deploy across the fleet.') }}
         </p>
         <div class="mb-3">
           <label class="fw-form-label">{{ _('Template name') }} <span class="text-danger">*</span></label>
@@ -416,7 +425,7 @@ function cloneWppSaveTemplate() {
     if (!d.ok) { _cloneStatus('Save failed: ' + (d.error || 'unknown'), 'error'); return; }
     _cloneStatus('<i class="bi bi-bookmark-check"></i><div>Saved template <strong>' + d.name +
       '</strong> (v' + d.version + ') as <strong>' + d.status + '</strong>. An admin can approve it in ' +
-      '<a href="' + URL_TEMPLATES + '" class="alert-link">WPP Templates</a>.</div>', 'ok');
+      '<a href="' + URL_TEMPLATES + '" class="alert-link">Template Library</a>.</div>', 'ok');
   }).catch(function (e) { _busy('clone-tpl-btn', false); _cloneStatus('Save error: ' + e, 'error'); });
 }
 
@@ -448,7 +457,7 @@ function saveTplConfirm() {
     if (!d.ok) { _tplStatus('Save failed: ' + _esc(d.error || 'unknown'), 'error'); return; }
     _tplStatus('<i class="bi bi-bookmark-check"></i><div>Saved template <strong>' + _esc(d.name) +
       '</strong> (v' + _esc(d.version) + ') as <strong>' + _esc(d.status) + '</strong>. An admin can approve it in ' +
-      '<a href="' + URL_TEMPLATES + '" class="alert-link">WPP Templates</a> for fleet deploy.</div>', 'ok');
+      '<a href="' + URL_TEMPLATES + '" class="alert-link">Template Library</a> for fleet deploy.</div>', 'ok');
   }).catch(function (e) { _busy('tpl-save-btn', false); _tplStatus('Save error: ' + _esc(e), 'error'); });
 }
 

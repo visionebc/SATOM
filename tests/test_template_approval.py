@@ -194,3 +194,68 @@ def test_templates_index_renders(app, client):
     r = client.get("/templates/")
     assert r.status_code == 200
     assert b"Status" in r.data  # the new Status column header
+
+
+def test_the_canary_is_the_first_selected_device(app):
+    """``IN (...)`` returns rows in table order; the page promises the FIRST
+    SELECTED device is the canary."""
+    from app.extensions import db
+    from app.models import Appliance
+    from app.services.bulk import BulkRunner
+    with app.app_context():
+        ids = []
+        for n in ("fw-a", "fw-b", "fw-c"):
+            a = Appliance(name=n, kind="fortiweb", host="192.0.2.1",
+                          port=443, username="u", password_enc="x",
+                          verify_ssl=False)
+            db.session.add(a)
+            db.session.commit()
+            ids.append(a.id)
+        picked = [ids[2], ids[0], ids[1]]
+        devs = BulkRunner([])._appliances(picked)
+        assert [d.id for d in devs] == picked
+
+
+def test_an_approved_wpp_rolls_out_to_fortiwebs_only(app):
+    """Approval auto-deploys a WPP template; FortiADC/FAZ/FAC rows visible in
+    the Global ADOM have no profile to receive it."""
+    from flask import session
+    from flask_login import login_user
+    from app.extensions import db
+    from app.models import Appliance, User
+    from app.views import templates as tv
+    with app.app_context():
+        ids = {}
+        for n, k in (("fw-x", "fortiweb"), ("adc-x", "fortiadc"),
+                     ("faz-x", "fortianalyzer")):
+            a = Appliance(name=n, kind=k, host="192.0.2.2", port=443,
+                          username="u", password_enc="x", verify_ssl=False)
+            db.session.add(a)
+            db.session.commit()
+            ids[k] = a.id
+        admin = User.query.filter_by(username="admin").first()
+        with app.test_request_context("/"):
+            session["product"] = "global"
+            login_user(admin)
+            assert tv._wpp_rollout_targets() == [ids["fortiweb"]]
+
+
+def test_an_operator_has_a_menu_entry_for_the_template_library(app, client):
+    """The route needs operations.view; the only link sat in the user_manage
+    Administrator group."""
+    from tests.conftest import login, make_user
+    from app.extensions import db
+    from app.models import Appliance
+    with app.app_context():
+        a = Appliance(name="fw-menu", kind="fortiweb", host="192.0.2.3",
+                      port=443, username="u", password_enc="x",
+                      verify_ssl=False)
+        db.session.add(a)
+        db.session.commit()
+        aid = a.id
+    login(client, make_user(app, username="op-tpl", role="operator"))
+    import re
+    h = client.get(f"/exceptions/{aid}").get_data(as_text=True)
+    m = re.search(r'href="([^"]*/templates/)"', h)
+    assert m, "no Template Library entry for an operator"
+    assert client.get(m.group(1)).status_code == 200

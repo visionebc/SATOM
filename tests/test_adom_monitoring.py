@@ -281,3 +281,25 @@ def test_probe_now_in_global_covers_the_whole_fleet(client, admin_id, fleet,
         assert {p.appliance.kind for p in probes} == set(fleet)
         assert all(p.kind not in ("sessions", "policy_sessions", "throughput",
                                   "transactions") for p in probes)
+
+
+# --------------------------------------------------------------------------
+# Analysis write controls render only for users who can use them
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("role,regex,deep", [
+    ("readonly", False, False),
+    ("operator", False, True),
+    ("admin", True, True),
+])
+def test_analysis_write_controls_follow_permissions(client, app, role, regex, deep):
+    from tests.conftest import make_user
+    uid = make_user(app, username="ana-" + role, role=role)
+    login(client, uid, product="global")
+    r = client.get("/analysis/", headers={"X-ADOM": "global"})
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert 'id="deepReload"' in body, "positive control: the deep panel rendered"
+    assert ('action="/analysis/appid-regex"' in body
+            or "Save pattern" in body) is regex
+    assert ('id="deepRun"' in body) is deep

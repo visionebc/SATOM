@@ -101,6 +101,10 @@ def test_default_bearing_modules_name_no_internal_host(module_path):
     "app/templates/settings/_ai.html",
     "app/templates/partials/release_notes_modal.html",
     "app/static/js/txn_trace.js",
+    # Placeholders and loading text are shipped UI copy too.
+    "app/templates/dns_lookup/index.html",
+    "app/templates/monitoring/_probe_page.html",
+    "app/templates/_infra_health.html",
 ])
 def test_shipped_artefacts_are_generic(artefact):
     """These are executed or served verbatim on somebody else's machine.
@@ -180,3 +184,16 @@ def test_overlay_is_present_on_a_real_deployment():
         "publication-rules.local.json is missing: documentation redaction is "
         "running with generic rules only. Restore it before publishing.")
     assert pubdoc._load_overlay().get("redactions"), "overlay is empty"
+
+
+@pytest.mark.parametrize("artefact, token", [
+    ("app/templates/dns_lookup/index.html", "10.0.0."),
+    ("app/templates/monitoring/_probe_page.html", "10.0.0."),
+    ("app/templates/monitoring/_probe_page.html", "fw6 "),
+    ("app/templates/_infra_health.html", "backup-server"),
+])
+def test_ui_placeholders_name_no_lab_host(artefact, token):
+    """Placeholders use RFC 2606 / RFC 5737 names, never a lab address or a
+    host label from the network this product was built on."""
+    text = (ROOT / artefact).read_text(encoding="utf-8")
+    assert token not in text, "%s still ships %r" % (artefact, token)

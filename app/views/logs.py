@@ -22,7 +22,7 @@ from ..auth.decorators import require_permission
 from ..models import Appliance, Permission
 from ..models import visible_appliances, visible_appliance_or_404
 from ..services import logcollect
-from ..services.ssh_ops import TROUBLESHOOT, ReadOnlyViolation
+from ..services.ssh_ops import ReadOnlyViolation
 from ..services.audit import log_action
 
 bp = Blueprint('logs', __name__, url_prefix='/logs')
@@ -45,7 +45,6 @@ def index():
         history=logcollect.history(),
         progress=logcollect.status(),
         battery=logcollect.DIAGNOSTIC_COMMANDS,
-        presets=TROUBLESHOOT,
     )
 
 

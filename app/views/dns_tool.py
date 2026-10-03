@@ -3,7 +3,7 @@
 The Global ADOM sees the whole fleet; a concrete ADOM (fortiweb / fortiadc)
 gets the SAME tool with the LB output cut to its own product — that scoping
 is inherited from ``visible_appliances()`` inside ``dns_tool.fleet_lb_rows``.
-DNS servers are variable, managed in Settings → admin console.
+DNS servers are variable, managed in Settings → Network & DNS → DNS Lookup.
 """
 from __future__ import annotations
 

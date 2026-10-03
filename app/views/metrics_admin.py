@@ -53,8 +53,9 @@ def index():
         collectors=mc.COLLECTORS,
         gaps=mc.coverage_gaps(visible_appliances().all()),
         vm=vm_store.health(),
-        # Local journal read only — no peer I/O on a render. The cross-node
-        # picture is /stores, fetched after the page.
+        # Local journal read only — no peer I/O on a render (rendered as the
+        # peer dual-write line). The cross-node picture is /stores, fetched
+        # after the page by the store card.
         peer=mc.peer_health(),
     )
 
@@ -227,11 +228,14 @@ def peer_store():
 def snapshot():
     """Take a hot snapshot (hardlink tree — instant, near-free) of the local
     store. Nothing expires these: the unit carries no ``-snapshotsMaxAge``, so
-    the list is shown next to the trigger and deletion is explicit."""
+    the list (fetched from ``/snapshots`` by the Collection page's store card)
+    is shown next to the trigger and deletion is explicit."""
     from ..services import audit
     from ..services import metrics_collect as mc
     if request.form.get("delete"):
         res = mc.snapshot_delete(request.form["delete"])
+        audit.log_action("metrics_snapshot_delete", request.form["delete"][:200],
+                         {"ok": res["ok"], "detail": res.get("detail", "")})
         flash("Snapshot deleted" if res["ok"] else
               "Snapshot delete failed: %s" % res["detail"],
               "success" if res["ok"] else "danger")

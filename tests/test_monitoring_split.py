@@ -555,3 +555,95 @@ def test_the_monitoring_submenu_reopens_on_the_analysis_page():
     nav = NAV_MON.read_text()
     open_list = nav.split('data-nav-subgroup="Monitoring"', 1)[0]
     assert "'analysis'" in open_list
+
+
+# ---------------------------------------------------------------------------
+# 5. Collection for operators: reachable from the nav, controls by permission
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def collection_target(app):
+    from app.models_metrics import ScrapeTarget
+    with app.app_context():
+        a = _appliance(name="coll-box")
+        db.session.add(ScrapeTarget(appliance_id=a.id, collector="box",
+                                    interval_min=3, enabled=True))
+        db.session.commit()
+
+
+def _collection_page(client, app, role):
+    from tests.conftest import make_user
+    uid = make_user(app, username="coll-" + role, role=role)
+    login(client, uid, product="global")
+    r = client.get("/monitoring/collection/", headers={"X-ADOM": "global"})
+    assert r.status_code == 200
+    return r.get_data(as_text=True)
+
+
+def test_operator_reaches_collection_from_the_monitoring_menu(client, app):
+    body = _collection_page(client, app, "operator")
+    assert body.count('href="/monitoring/collection/') == 1
+    assert 'data-nav-group="Administrator"' not in body
+
+
+def test_readonly_has_no_collection_menu_entry(client, app):
+    body = _collection_page(client, app, "readonly")
+    assert 'href="/monitoring/collection/' not in body
+
+
+def test_admin_sees_collection_once_under_administrator(client, admin_id, app):
+    login(client, admin_id, product="global")
+    body = client.get("/monitoring/collection/",
+                      headers={"X-ADOM": "global"}).get_data(as_text=True)
+    assert body.count('href="/monitoring/collection/') == 1
+
+
+def test_readonly_sees_no_collection_write_controls(client, app,
+                                                    collection_target):
+    body = _collection_page(client, app, "readonly")
+    assert "coll-box" in body, "positive control: the target row rendered"
+    assert "Run sweep now" not in body
+    assert "Take snapshot" not in body
+    assert 'form="tg-' not in body.replace('name="interval_min" form="sv-', '')
+    assert 'title="save interval / top-N"' not in body
+    assert 'data-can-write="0"' in body
+
+
+def test_operator_sees_collection_write_controls(client, app, collection_target):
+    body = _collection_page(client, app, "operator")
+    assert "coll-box" in body
+    assert "Run sweep now" in body
+    assert "Take snapshot" in body
+    assert 'form="tg-' in body
+    assert 'data-can-write="1"' in body
+
+
+def test_collection_renders_peer_and_store_card(client, app, admin_id,
+                                                monkeypatch):
+    from app.services import metrics_collect as mc
+    monkeypatch.setattr(mc, "peer_health", lambda: {
+        "enabled": True, "host": "peer.example", "state": "unreachable",
+        "redundant": False, "alarm": True, "consecutive_failures": 4,
+        "last_success_at": None, "last_error": "timed out"})
+    login(client, admin_id, product="global")
+    body = client.get("/monitoring/collection/",
+                      headers={"X-ADOM": "global"}).get_data(as_text=True)
+    assert 'id="mc-peer"' in body
+    assert "peer.example" in body and "unreachable" in body
+    assert "Consecutive failures:" in body
+    assert 'data-snapshots-url="/monitoring/collection/snapshots"' in body
+    assert 'data-stores-url="/monitoring/collection/stores"' in body
+
+
+def test_snapshot_delete_is_audited(client, app, admin_id, monkeypatch):
+    from app.models import AuditLog
+    from app.services import metrics_collect as mc
+    monkeypatch.setattr(mc, "snapshot_delete",
+                        lambda name: {"ok": True, "detail": ""})
+    login(client, admin_id, product="global")
+    r = client.post("/monitoring/collection/snapshot",
+                    data={"delete": "20261003-AAAA"})
+    assert r.status_code == 302
+    with app.app_context():
+        assert AuditLog.query.filter_by(
+            action="metrics_snapshot_delete").count() == 1

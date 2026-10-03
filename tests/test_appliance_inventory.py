@@ -114,6 +114,49 @@ def test_edit_replaces_interfaces(app, logged_in):
         assert [i.name for i in a.interfaces] == ["mgmt"]
 
 
+def test_list_dialog_edit_keeps_interfaces_and_ha(app, logged_in):
+    """The quick-edit dialog on the appliance list posts neither the interface
+    table nor the HA block; saving it must not wipe either."""
+    aid = _make_appliance(app, name="fw-quick")
+    with app.app_context():
+        a = Appliance.query.get(aid)
+        a.is_cluster, a.ha_mode, a.ha_vip = True, "vip", "192.0.2.50"
+        db.session.add(ApplianceInterface(appliance_id=aid, name="port1"))
+        db.session.commit()
+    r = logged_in.post(f"/appliances/{aid}/edit", data={
+        "name": "fw-quick", "host": "192.0.2.50", "username": "admin",
+        "tags": "edited",
+    })
+    assert r.status_code in (302, 303)
+    with app.app_context():
+        a = Appliance.query.get(aid)
+        assert a.tags == "edited"
+        assert [i.name for i in a.interfaces] == ["port1"]
+        assert a.is_cluster is True and a.ha_mode == "vip" and a.ha_vip == "192.0.2.50"
+
+
+def test_full_edit_page_can_clear_interfaces_and_ha(app, logged_in):
+    """The full edit page carries markers, so an emptied table and an
+    unticked HA box are real edits."""
+    aid = _make_appliance(app, name="fw-full")
+    with app.app_context():
+        a = Appliance.query.get(aid)
+        a.is_cluster, a.ha_mode = True, "per_node"
+        db.session.add(ApplianceInterface(appliance_id=aid, name="port1"))
+        db.session.commit()
+    page = logged_in.get(f"/appliances/{aid}/edit")
+    assert b'name="interfaces_present"' in page.data
+    assert b'name="ha_present"' in page.data
+    logged_in.post(f"/appliances/{aid}/edit", data={
+        "name": "fw-full", "host": "192.0.2.99", "username": "admin",
+        "interfaces_present": "1", "ha_present": "1",
+    })
+    with app.app_context():
+        a = Appliance.query.get(aid)
+        assert a.interfaces == []
+        assert not a.is_cluster and a.ha_mode is None
+
+
 def test_delete_cascades_interfaces(app, logged_in):
     aid = _make_appliance(app, name="fw-del")
     with app.app_context():
@@ -269,3 +312,30 @@ def test_a_failed_mac_fetch_is_audited_too(app, logged_in, monkeypatch):
     with app.app_context():
         assert AuditLog.query.filter_by(
             action="architecture.fetch_macs").count() == 1
+
+
+@pytest.mark.parametrize("via", ["ui", "api"])
+def test_ui_and_rest_delete_both_retire_identity_and_drop_datasheet(app, logged_in, via):
+    """``DELETE /api/appliances/<id>`` does what the UI delete does: the device
+    identity is retired (its backups keep an owner) and the PDF is removed."""
+    from app.models_identity import DeviceIdentity
+    from app.services import device_identity
+    aid = _make_appliance(app, name="fw-gone")
+    logged_in.post(f"/appliances/{aid}/edit", data={
+        "name": "fw-gone", "host": "192.0.2.99", "username": "admin",
+        "datasheet": (io.BytesIO(_PDF), "spec.pdf"),
+    }, content_type="multipart/form-data")
+    with app.app_context():
+        pdf = datasheets.path_for(aid)
+    import os
+    assert os.path.exists(pdf)
+    if via == "api":
+        r = logged_in.delete(f"/api/appliances/{aid}")
+        assert r.status_code == 200 and r.get_json()["deleted"] is True
+    else:
+        assert logged_in.post(f"/appliances/{aid}/delete").status_code in (302, 303)
+    with app.app_context():
+        assert Appliance.query.get(aid) is None
+        row = DeviceIdentity.query.filter_by(slug=device_identity.slug_for("fw-gone")).first()
+        assert row is not None and row.retired_at is not None
+    assert not os.path.exists(pdf)

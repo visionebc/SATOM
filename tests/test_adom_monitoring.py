@@ -224,22 +224,33 @@ def _capture_job(monkeypatch, module):
 @pytest.mark.parametrize("adom", ADOMS)
 def test_hardware_scan_targets_only_this_adom(client, admin_id, fleet, adom,
                                               monkeypatch):
+    """The battery is FortiWeb-only: the FortiWeb ADOM scans its box, every
+    other ADOM has nothing to scan and starts no job."""
     from app.views import monitoring as mon
     captured = _capture_job(monkeypatch, mon)
     login(client, admin_id, product=adom)
     r = client.post("/monitoring/hw-scan", headers={"X-ADOM": adom})
-    assert r.status_code == 200, r.get_data(as_text=True)
-    assert captured["meta"]["ids"] == [fleet[adom]]
+    if adom == "fortiweb":
+        assert r.status_code == 200, r.get_data(as_text=True)
+        assert captured["meta"]["ids"] == [fleet[adom]]
+    else:
+        assert r.status_code == 400 and "FortiWeb-only" in r.get_json()["error"]
+        assert "meta" not in captured
+    page = client.get("/monitoring/", headers={"X-ADOM": adom}).get_data(as_text=True)
+    assert ('id="monScanBtn"' in page) == (adom == "fortiweb")
 
 
 def test_hardware_scan_covers_the_fleet_in_global(client, admin_id, fleet,
                                                   monkeypatch):
+    """Global scans every visible FortiWeb and never an ADC/FAZ box."""
     from app.views import monitoring as mon
     captured = _capture_job(monkeypatch, mon)
     login(client, admin_id, product="global")
     r = client.post("/monitoring/hw-scan", headers={"X-ADOM": "global"})
     assert r.status_code == 200
-    assert set(captured["meta"]["ids"]) >= set(fleet.values())
+    assert fleet["fortiweb"] in captured["meta"]["ids"]
+    assert fleet["fortiadc"] not in captured["meta"]["ids"]
+    assert fleet["fortianalyzer"] not in captured["meta"]["ids"]
 
 
 @pytest.mark.parametrize("adom", ADOMS)

@@ -423,6 +423,18 @@ def _item_to_push_node(item: ProvisionItem) -> dict[str, Any]:
     }
 
 
+def push_items(profile: SystemProfile) -> list[dict]:
+    """The ordered ``{action, endpoint, mkey, data}`` push items of a profile.
+
+    THE one translation of a system profile into device writes, shared by
+    :func:`apply` and by combo (baseline) apply. A profile body is
+    ``{"items": [...]}``, which the generic ``iter_push_items`` walker reads as
+    a node without an endpoint, i.e. zero writes."""
+    from .bulk import iter_push_items
+    nodes = [_item_to_push_node(it) for it in profile.items if it.endpoint]
+    return iter_push_items(nodes)
+
+
 def apply(profile: SystemProfile, device_ids, *, dry_run: bool = True,
           canary: int = 1):
     """Apply ``profile`` to ``device_ids`` via the shared fleet machinery.
@@ -439,14 +451,12 @@ def apply(profile: SystemProfile, device_ids, *, dry_run: bool = True,
 
     Each write snapshots + audits inside ``FortiWebOps``. Must run inside the
     Flask app context (``BulkRunner`` queries ``Appliance`` and writes
-    ``ChangeHistory``). Payloads are hygiene-sanitized per endpoint; secrets in
-    the items are applied live but are never persisted (see :func:`save_profile`).
+    ``ChangeHistory``). Payloads are hygiene-sanitized per endpoint; a saved
+    profile carries no secrets (see :func:`save_profile`), so none are pushed.
     """
-    from .bulk import BulkRunner, iter_push_items
+    from .bulk import BulkRunner
 
-    nodes = [_item_to_push_node(it) for it in profile.items if it.endpoint]
-    items = iter_push_items(nodes)
-    runner = BulkRunner(items)
+    runner = BulkRunner(push_items(profile))
     if dry_run:
         return runner.preview(device_ids)
     return runner.apply(device_ids, canary=max(1, canary))
@@ -464,5 +474,6 @@ __all__ = [
     "all_specs",
     "section_for",
     "save_profile",
+    "push_items",
     "apply",
 ]

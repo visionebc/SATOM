@@ -443,6 +443,32 @@ def test_a_failed_battery_does_not_lose_the_transcript(diag):
     assert "box stopped answering" in _member(meta["path"], "DIAGNOSTICS-MISSING.txt")
 
 
+def test_the_battery_follows_the_product(diag, monkeypatch):
+    """A FortiADC gets the ADC battery, a FortiAnalyzer gets none (and the
+    bundle says so) -- never the FortiWeb commands."""
+    from app.services import adc_ops, ssh_ops
+    assert sc.diagnostic_battery_for(_APP) is ssh_ops.capture_health
+    adc = SimpleNamespace(**dict(vars(_APP), name="adc1", kind="fortiadc"))
+    assert sc.diagnostic_battery_for(adc) is adc_ops.capture_health
+    faz = SimpleNamespace(**dict(vars(_APP), name="faz1", kind="fortianalyzer"))
+    assert sc.diagnostic_battery_for(faz) is None
+    monkeypatch.setattr(ssh_ops, "capture_health",
+                        lambda a: pytest.fail("FortiWeb battery sent to a FortiAnalyzer"))
+    meta = sc.build_tac_bundle(faz, "$ get system status\nok", stamp="20260908-120003")
+    assert not meta["diagnostics_included"]
+    assert "no read-only diagnostic battery" in _member(meta["path"], "DIAGNOSTICS-MISSING.txt")
+
+
+def test_the_console_offers_presets_per_product(app, client):
+    from tests.conftest import admin_user_id, login
+    from app.services.adc_ops import TROUBLESHOOT_ADC
+    login(client, admin_user_id(app), product="global")
+    html = client.get("/console/").get_data(as_text=True)
+    assert 'optgroup label="FortiWeb" data-kind="fortiweb"' in html
+    assert 'optgroup label="FortiADC" data-kind="fortiadc"' in html
+    assert next(iter(TROUBLESHOOT_ADC.values())) in html
+
+
 # ============================================================ THE MENU ====
 
 def test_the_console_is_in_every_admin_block():

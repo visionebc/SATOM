@@ -526,3 +526,31 @@ def test_the_json_payload_points_at_the_flow_too(app, client):
     url = j["cr_url"]
     assert "upgrade-flow" in url, "the fresh-run button still opens the old form"
     assert "device=%d" % aid in url and "prep=%d" % pid in url
+
+
+def _custom_user(app, name, keys):
+    from app.models import Profile, User
+    with app.app_context():
+        p = Profile(name=f"p-{name}", is_system=False)
+        p.permission_set = set(keys)
+        db.session.add(p)
+        db.session.commit()
+        u = User(username=name, role="readonly", is_active=True, profile_id=p.id)
+        u.set_password("pw")
+        db.session.add(u)
+        db.session.commit()
+        return u.id
+
+
+def test_upgrade_prep_is_an_appliance_action_not_a_backup_right(app, client):
+    """appliances.apply ("... upgrade preparation & upgrade") opens the
+    pre-flight; a backups-only profile does not."""
+    aid, pid = _appliance_with_prep(app)
+    login(client, _custom_user(app, "prep_apply", {"appliances.view", "appliances.apply"}))
+    assert client.get("/appliances/%d/upgrade/prep" % aid).status_code == 200
+    r = client.get("/appliances/%d/upgrade/prep/%d.json" % (aid, pid))
+    assert r.status_code == 200 and r.get_json()["ok"] is True
+    login(client, _custom_user(app, "prep_backup", {"appliances.view", "backups.create"}))
+    assert client.get("/appliances/%d/upgrade/prep" % aid).status_code == 403
+    r = client.post("/appliances/%d/upgrade/prep/run" % aid)
+    assert r.status_code == 403

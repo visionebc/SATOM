@@ -406,6 +406,29 @@ def test_the_page_lists_eligible_devices_and_their_latest_run(app, client):
     assert "not clean" in body, "a failed verdict rendered as a pass"
 
 
+def test_the_picker_offers_the_chassis_once_not_every_adom_row(app, client):
+    """A multi-ADOM FortiWeb is one box: stage 1 offers the row that owns the
+    device verbs and refuses a posted ADOM row."""
+    from app.extensions import db
+    with app.app_context():
+        root = _mk_appliance("chassis9", host="192.0.2.9")
+        root.vdom = "root"
+        adom = _mk_appliance("chassis9@adom_b", host="192.0.2.9")
+        adom.vdom = "adom_b"
+        db.session.commit()
+        rid, aid = root.id, adom.id
+    login(client, admin_user_id(app))
+    body = client.get("/web/upgrade-flow/").get_data(as_text=True)
+    assert 'name="device_ids" value="%d"' % rid in body
+    assert 'name="device_ids" value="%d"' % aid not in body
+    from app.views import upgrade_flow as uf
+    with app.test_request_context():
+        from flask_login import login_user
+        from app.models import User
+        login_user(User.query.filter_by(username="admin").first())
+        assert [d.id for d in uf._eligible()] == [rid]
+
+
 def test_the_page_is_light_chrome(app, client):
     """SATOM has no dark theme. A translucent slate card renders here as an
     opaque grey slab and dark-theme pastel pills land at ~1.4:1 on white."""
@@ -1091,6 +1114,42 @@ def test_a_refusal_creates_nothing(app, client):
                     window_end="2026-10-02T22:00")
     with app.app_context():
         assert ChangeRequest.query.count() == before
+
+
+def test_a_change_without_appliances_is_refused_by_stage_two(app, client):
+    """An upgrade change naming no appliance resolves to zero targets at fire
+    time; stage 2 refuses it and creates nothing."""
+    from app.models import ChangeRequest
+
+    with app.app_context():
+        before = ChangeRequest.query.count()
+    login(client, admin_user_id(app))
+    resp = _post_stage_two(client)
+    assert resp.status_code == 200
+    assert "Pick at least one appliance" in resp.get_data(as_text=True)
+    with app.app_context():
+        assert ChangeRequest.query.count() == before
+
+
+def test_a_change_without_appliances_cannot_be_scheduled(app, client):
+    from app.extensions import db
+    from app.models import ScheduledAction
+    from datetime import timedelta
+
+    with app.app_context():
+        cr = _mk_cr([])
+        cr.status = "approved"
+        cr.window_start = datetime.utcnow() + timedelta(minutes=10)
+        cr.window_end = datetime.utcnow() + timedelta(hours=1)
+        db.session.commit()
+        cid = cr.id
+    login(client, admin_user_id(app), product="global")
+    resp = client.post("/web/change-requests/%d/schedule" % cid,
+                       follow_redirects=True)
+    assert "names no appliance" in resp.get_data(as_text=True)
+    with app.app_context():
+        assert not [r for r in ScheduledAction.query.all()
+                    if r.params_dict.get("change_request_id") == cid]
 
 
 def test_a_refusal_keeps_the_run_each_appliance_cited(app, client):

@@ -32,3 +32,28 @@ def test_apply_preview_lists_matching_devices(client, app):
     assert r.status_code == 200
     assert b"fw1" in r.data        # in scope
     assert b"fw2" not in r.data    # out of scope
+
+
+def test_a_combo_of_system_profiles_pushes_their_items(app):
+    """A system-profile body is {"items": [...]}; the generic walker read it as
+    a node without an endpoint and the combo pushed nothing."""
+    import json
+    from app.models import db, Template
+    from app.services import baselines as B
+    from app.services import provisioning as prov
+    body = {"line": "8.0", "items": [
+        {"key": "dns", "endpoint": "/api/v2.0/cmdb/system/dns",
+         "data": {"primary": "192.0.2.2"}, "singleton": True},
+        {"key": "ntp", "endpoint": "/api/v2.0/cmdb/system/ntp",
+         "data": {"server": "pool"}, "mkey": "1"},
+    ]}
+    with app.app_context():
+        t = Template(kind=Template.KIND_SYSTEM, name="sys-combo", version=1,
+                     body=json.dumps(body), status=Template.STATUS_APPROVED)
+        db.session.add(t); db.session.commit()
+        b = B.create_baseline("Sys", template_ids=[t.id])
+        items = B.baseline_push_items(b)
+        assert [i["endpoint"] for i in items] == ["/api/v2.0/cmdb/system/dns",
+                                                  "/api/v2.0/cmdb/system/ntp"]
+        assert [i["action"] for i in items] == ["update", "update"]
+        assert items == prov.push_items(prov.SystemProfile.from_template(t))

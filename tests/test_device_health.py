@@ -215,3 +215,33 @@ def test_monitoring_feed_carries_health(client, app, dev):
     assert row["worst"] != "ok"
     assert row["health"]["status"] == row["worst"]
     assert row["health"]["reasons"]
+
+
+def test_monitoring_feed_grades_each_device_with_its_product_limits(client, app, monkeypatch):
+    """The page grades like the alert engine: capacity warn/crit and roll-up
+    limits come from each device's OWN product, not one global pair."""
+    with app.app_context():
+        for name, kind in (("fw-lim", "fortiweb"), ("adc-lim", "fortiadc")):
+            a = Appliance(name=name, host="10.0.0.%d" % (len(name) + 10),
+                          kind=kind, username="admin")
+            a.password = "pw"
+            db.session.add(a)
+        db.session.commit()
+        uid = User.query.filter_by(username="admin").first().id
+    seen = {}
+    monkeypatch.setattr(dh, "thresholds",
+                        lambda scope="": {"fortiadc": (11.0, 22.0)}.get(scope, (80.0, 95.0)))
+
+    def _rows(appliance, warn, crit):
+        seen[appliance.kind] = (warn, crit)
+        return []
+    monkeypatch.setattr(dh, "capacity_rows", _rows)
+    real_limits = dh.limits
+    monkeypatch.setattr(dh, "limits", lambda scope="": dict(
+        real_limits(scope), stale_hours=99.0 if scope == "fortiadc" else 6.0))
+    login(client, uid, product="global")
+    d = client.get("/monitoring/data").get_json()
+    assert seen == {"fortiweb": (80.0, 95.0), "fortiadc": (11.0, 22.0)}
+    by_name = {x["name"]: x for x in d["devices"]}
+    assert by_name["adc-lim"]["health"]["limits"]["stale_hours"] == 99.0
+    assert by_name["fw-lim"]["health"]["limits"]["stale_hours"] == 6.0

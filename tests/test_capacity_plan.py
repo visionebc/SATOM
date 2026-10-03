@@ -94,3 +94,41 @@ def test_uncapped_object_types_are_reported_never_silently_skipped():
 def test_an_empty_plan_checks_nothing_and_allows():
     ok, msgs, unchecked = capacity.check_plan_headroom(FakeAppliance(), {})
     assert (ok, msgs, unchecked) == (True, [], [])
+
+
+# --- Capacity Limits admin page: Add / Delete model carry the product -------
+
+def test_add_model_creates_rows_for_the_chosen_product(app, client):
+    from tests.conftest import admin_user_id, login
+    from app.models import CapacityLimit
+    login(client, admin_user_id(app), product="global")
+    r = client.post("/capacity/add-model", data={
+        "product": "fortiadc", "model": "FortiADC-VM", "firmware_major": "8.0"},
+        headers={"X-ADOM": "global"})
+    assert r.status_code in (302, 303)
+    with app.app_context():
+        rows = CapacityLimit.query.filter_by(model="FortiADC-VM").all()
+        assert rows and {x.product for x in rows} == {"fortiadc"}
+    # A product this ADOM may not create is refused.
+    login(client, admin_user_id(app), product="fortiweb")
+    client.post("/capacity/add-model", data={
+        "product": "fortiadc", "model": "Sneaky", "firmware_major": "8.0"},
+        headers={"X-ADOM": "fortiweb"})
+    with app.app_context():
+        assert CapacityLimit.query.filter_by(model="Sneaky").count() == 0
+
+
+def test_delete_model_removes_one_products_catalog_only(app, client):
+    from tests.conftest import admin_user_id, login
+    from app.models import CapacityLimit
+    with app.app_context():
+        capacity.ensure_rows_for("Shared-1", "7.6", product="fortiweb")
+        capacity.ensure_rows_for("Shared-1", "7.6", product="fortiadc")
+    login(client, admin_user_id(app), product="global")
+    r = client.post("/capacity/delete-model", data={
+        "product": "fortiadc", "model": "Shared-1", "firmware_major": "7.6"},
+        headers={"X-ADOM": "global"})
+    assert r.status_code in (302, 303)
+    with app.app_context():
+        left = {x.product for x in CapacityLimit.query.filter_by(model="Shared-1")}
+        assert left == {"fortiweb"}

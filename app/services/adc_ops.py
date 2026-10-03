@@ -36,12 +36,18 @@ TROUBLESHOOT_ADC: dict[str, str] = {
 HEALTH_BATTERY_ADC: list[str] = list(TROUBLESHOOT_ADC.values())
 
 
-def health_text(appliance) -> str:
-    """The ADC diagnostic battery rendered as one labelled text blob."""
+def capture_health(appliance, *, timeout: float = 25.0) -> dict[str, str]:
+    """Run the ADC read-only battery -> ``{command: output}`` (same shape as
+    ``ssh_ops.capture_health``, which is the FortiWeb battery)."""
     from .ssh_ops import FortiWebReadonlySSH
 
-    with FortiWebReadonlySSH(appliance, timeout=25.0) as ssh:
-        out = ssh.run_battery(HEALTH_BATTERY_ADC)
+    with FortiWebReadonlySSH(appliance, timeout=timeout) as ssh:
+        return ssh.run_battery(HEALTH_BATTERY_ADC)
+
+
+def health_text(appliance) -> str:
+    """The ADC diagnostic battery rendered as one labelled text blob."""
+    out = capture_health(appliance)
     blocks = [f"===== {cmd} =====\n{text}".rstrip() for cmd, text in out.items()]
     return "\n\n".join(blocks)
 
@@ -131,12 +137,44 @@ def make_probe(appliance):
 
     ``make_fetcher`` is kept for callers that only want rows.
     """
+    import httpx
+
+    from ..clients.base import DeviceAuthError, response_summary
     from ..clients.fortiadc import FortiADCClient
 
     client = FortiADCClient(appliance, timeout=20.0)
 
+    def _refused(resp) -> DeviceAuthError:
+        detail = response_summary(resp)
+        return DeviceAuthError(
+            f"HTTP {resp.status_code}: the appliance rejected the credentials"
+            + (f" ({detail})" if detail else "")
+            + " — check the username and password on the appliance record and"
+              " that the admin account is not locked out")
+
+    def _login():
+        # A refused login raised on EVERY endpoint before, i.e. one failed
+        # admin login per endpoint. DeviceAuthError is the one error the
+        # sweep stops on.
+        try:
+            client.login()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (401, 403):
+                raise _refused(exc.response) from None
+            raise
+
     def _probe(ep: dict):
+        if not client._token:
+            _login()
         resp = client._api("GET", ep["urn"])
+        if resp.status_code == 401:
+            # One fresh login decides: an expired token is renewed and the
+            # read retried once; refused credentials stop the sweep.
+            client._token = None
+            _login()
+            resp = client._api("GET", ep["urn"])
+            if resp.status_code == 401:
+                raise _refused(resp)
         if resp.status_code == 404:
             return [], "absent", "HTTP 404 (path not served)"
         err = client._device_error(resp)
@@ -360,7 +398,7 @@ def resolve_targets(client) -> list[ServiceTarget]:
     return targets
 
 
-__all__ = ["TROUBLESHOOT_ADC", "HEALTH_BATTERY_ADC", "health_text",
+__all__ = ["TROUBLESHOOT_ADC", "HEALTH_BATTERY_ADC", "capture_health", "health_text",
            "firmware_string", "inspect_vs", "inspect_all", "build_vs_node",
            "resolve_targets", "discovery_plan", "make_fetcher",
            "model_inventory"]

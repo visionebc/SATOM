@@ -62,29 +62,41 @@ def index():
     groups = _grouped_rows()
     usage = _fleet_usage()
     fleet = []
-    known = {(m, f) for (_p, f, m) in groups}
+    known = {(p, m, f) for (p, f, m) in groups}
     for a in visible_appliances().order_by(Appliance.name).all():
         fw = capsvc.firmware_major(a.firmware)
-        if a.model and fw and (a.model, fw) not in known:
-            if (a.model, fw) not in [(x['model'], x['fw']) for x in fleet]:
-                fleet.append({'model': a.model, 'fw': fw})
+        product = a.kind or capsvc.PRODUCT_DEFAULT
+        if a.model and fw and (product, a.model, fw) not in known:
+            if (product, a.model, fw) not in [(x['product'], x['model'], x['fw']) for x in fleet]:
+                fleet.append({'product': product, 'model': a.model, 'fw': fw})
     labels = dict(capsvc.object_types_ordered())
+    from ..services import product_scope
     return render_template('capacity/index.html', groups=groups, usage=usage,
-                           missing_models=fleet, labels=labels)
+                           missing_models=fleet, labels=labels,
+                           product_options=product_scope.creatable_kinds())
 
 
 @bp.route('/add-model', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def add_model():
+    from ..services import product_scope
     model = (request.form.get('model') or '').strip()
     fw = (request.form.get('firmware_major') or '').strip()
     if not model or not fw:
         flash('Model and firmware major are both required.', 'danger')
         return redirect(url_for('capacity.index'))
-    n = capsvc.ensure_rows_for(model, fw)
-    log_action('capacity.model_add', f'{model}/{fw}', detail=f'{n} object-type rows')
-    flash(f'Added {model} ({fw}) — {n} object types ready to configure.', 'success')
+    # The catalog is per product: rows created without one were always
+    # FortiWeb rows, invisible from the product the model belongs to.
+    offered = [k for k, _ in product_scope.creatable_kinds()]
+    product = (request.form.get('product') or '').strip().lower() or (
+        offered[0] if len(offered) == 1 else capsvc.PRODUCT_DEFAULT)
+    if product not in offered:
+        flash(f'This ADOM cannot add capacity rows for {product}.', 'danger')
+        return redirect(url_for('capacity.index'))
+    n = capsvc.ensure_rows_for(model, fw, product=product)
+    log_action('capacity.model_add', f'{product}/{model}/{fw}', detail=f'{n} object-type rows')
+    flash(f'Added {model} ({fw}, {product}) — {n} object types ready to configure.', 'success')
     return redirect(url_for('capacity.index'))
 
 
@@ -153,10 +165,17 @@ def save():
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def delete_model():
+    from ..services.product_scope import scope_query
     model = (request.form.get('model') or '').strip()
     fw = (request.form.get('firmware_major') or '').strip()
-    n = CapacityLimit.query.filter_by(model=model, firmware_major=fw).delete()
+    product = (request.form.get('product') or '').strip().lower() or capsvc.PRODUCT_DEFAULT
+    # One product's catalog only, and only one this ADOM can see: the same
+    # model name may exist for two products.
+    q = scope_query(CapacityLimit.query, CapacityLimit.product).filter(
+        CapacityLimit.model == model, CapacityLimit.firmware_major == fw,
+        CapacityLimit.product == product)
+    n = q.delete(synchronize_session=False)
     db.session.commit()
-    log_action('capacity.model_delete', f'{model}/{fw}', detail=f'{n} rows removed')
+    log_action('capacity.model_delete', f'{product}/{model}/{fw}', detail=f'{n} rows removed')
     flash(f'Removed {model} ({fw}) — {n} rows.', 'success')
     return redirect(url_for('capacity.index'))

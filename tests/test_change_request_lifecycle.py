@@ -220,6 +220,52 @@ def test_executor_fails_the_change_request_when_the_action_explodes(app, monkeyp
         assert cr.status == "failed"
 
 
+def _round_action(cr, index, total):
+    from app.extensions import db
+    row = _mk_action(cr)
+    row.params = json.dumps({"change_request_id": cr.id,
+                             "round_index": index, "round_total": total})
+    db.session.commit()
+    return row
+
+
+def test_only_the_last_round_closes_a_multi_round_change(app, monkeypatch):
+    """Round 1 of 2 used to finish() the shared change, so round 2 was refused
+    as "change request is completed" and never touched its appliances."""
+    from app.services import scheduled_actions as sa
+
+    with app.app_context():
+        cr = _mk_cr(status="scheduled")
+        r1, r2 = _round_action(cr, 1, 2), _round_action(cr, 2, 2)
+        fired = []
+        monkeypatch.setattr(sa, "_run_targets",
+                            lambda row, *a, **k: (fired.append(row.id) or
+                                                  ("ok", "round done", ["done"])))
+        assert sa.execute_and_record(r1, trigger="schedule").status == "ok"
+        assert cr.status == "in_progress"
+        assert sa.execute_and_record(r2, trigger="schedule").status == "ok"
+        assert fired == [r1.id, r2.id]
+        assert cr.status == "completed"
+        assert _events(cr) == ["in_progress", "completed"]
+
+
+def test_a_failed_early_round_still_fails_the_change(app, monkeypatch):
+    """A failed round closes the change as failed, so later rounds refuse
+    instead of flashing on after a failure."""
+    from app.services import scheduled_actions as sa
+
+    with app.app_context():
+        cr = _mk_cr(status="scheduled")
+        r1, r2 = _round_action(cr, 1, 2), _round_action(cr, 2, 2)
+        monkeypatch.setattr(sa, "_run_targets",
+                            lambda *a, **k: ("failed", "flash aborted", ["boom"]))
+        sa.execute_and_record(r1, trigger="schedule")
+        assert cr.status == "failed"
+        monkeypatch.setattr(sa, "_run_targets",
+                            lambda *a, **k: pytest.fail("round 2 ran after a failure"))
+        assert sa.execute_and_record(r2, trigger="schedule").status == "skipped"
+
+
 def test_a_gated_fire_leaves_the_change_request_untouched(app, monkeypatch):
     """Outside the window the run is skipped and the CR must NOT move.
 
@@ -737,3 +783,39 @@ def test_mark_notified_mails_the_changes_own_recipients(app, client, monkeypatch
     r = client.post(f"/change-requests/{cid}/mark-notified", data={})
     assert r.status_code == 302
     assert seen["to"] == ["c1@x.io", "c2@x.io"]
+
+
+def test_scheduling_from_the_change_page_keeps_the_saved_rollout_plan(app, client):
+    """The Schedule button read no plan: a change planned as two rounds of two
+    was scheduled as one round of four."""
+    from app.extensions import db
+    from app.models import Appliance, ScheduledAction, User
+    from app.services import change_requests as svc
+    from tests.conftest import login
+
+    with app.app_context():
+        ids = []
+        for i in range(4):
+            a = Appliance(name=f"plan-{i}", host=f"10.0.3.{i + 1}", kind="fortiweb",
+                          username="admin")
+            a.password = "pw"
+            db.session.add(a)
+            db.session.flush()
+            ids.append(a.id)
+        db.session.commit()
+        cr = _mk_cr(status="approved", device_ids=ids,
+                    params={svc.PLAN_KEY: {"size": 2, "gap": 10, "total": 2}})
+        cr.window_start = datetime.utcnow() + timedelta(minutes=5)
+        cr.window_end = datetime.utcnow() + timedelta(hours=2)
+        db.session.commit()
+        cr_id = cr.id
+        uid = User.query.filter_by(username="admin").first().id
+    login(client, uid, product="global")
+    r = client.post(f"/change-requests/{cr_id}/schedule")
+    assert r.status_code in (302, 303)
+    with app.app_context():
+        rows = [r for r in ScheduledAction.query.all()
+                if r.params_dict.get("change_request_id") == cr_id]
+        assert len(rows) == 2, [r.name for r in rows]
+        assert sorted(len(r.targets_list) for r in rows) == [2, 2]
+        assert {r.params_dict.get("round_total") for r in rows} == {2}

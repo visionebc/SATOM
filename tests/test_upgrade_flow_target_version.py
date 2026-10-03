@@ -1276,3 +1276,14 @@ def test_a_sweep_that_skipped_a_box_is_not_reported_green(app, client,
     block = body[body.rfind("<div", 0, at):at]
     assert "fw-alert-warning" in block, f"summary rendered as: {block[:160]}"
     assert "fw-alert-success" not in block
+
+
+def test_single_device_flash_picker_never_offers_an_install_image(app):
+    """Upgrade / Boot Partition pick from ``upgrade.compatible_images``; an
+    install image (qcow2/ova...) builds a new VM and is no flash payload."""
+    from app.services import upgrade as upg
+    with app.app_context():
+        a = _mk_appliance("fw-picker")
+        good = _mk_image("7.6.9", kind="upgrade")
+        _mk_image("8.0.1", kind="install")
+        assert [fw.id for fw in upg.compatible_images(a)] == [good.id]

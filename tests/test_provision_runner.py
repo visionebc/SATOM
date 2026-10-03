@@ -542,3 +542,47 @@ def test_a_run_cannot_relabel_its_own_adom(app, client, session):
                           "product": "fortiweb"})
     assert r.status_code == 200, r.data[:300]
     assert r.get_json()["run"]["product"] == "fortiadc"
+
+
+def test_the_page_never_reads_a_refused_preflight_as_a_clean_one(app, client):
+    """A 403/409/500 used to fall through to "Nothing blocks this run." in
+    green; viewers without config_write get no verbs at all."""
+    from conftest import make_user
+    login(client, admin_user_id(app), product="global")
+    html = client.get("/device-provisioning/").get_data(as_text=True)
+    assert "var CAN_WRITE = true;" in html
+    assert 'id="dp-new-btn"' in html
+    assert "Preflight did not run:" in html
+    assert "if (!r.ok) { d.ok = false;" in html
+    login(client, make_user(app, username="dp_ro", role="readonly"), product="global")
+    r = client.get("/device-provisioning/")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "var CAN_WRITE = false;" in html
+    assert 'id="dp-new-btn"' not in html
+
+
+def test_semi_resume_continues_past_the_first_boot_handoff(app, session, monkeypatch):
+    """Semi pauses at ``booted`` and tells the operator to press Resume;
+    Resume used to re-pause at once because the plan ended there."""
+    calls = []
+
+    def _ok(step):
+        def fn(run):
+            calls.append(step)
+            return pr.StepResult(True, step)
+        return fn
+    for step in set(pr.MODE_STEPS["semi"]) | set(pr.MODE_RESUME_STEPS["semi"]):
+        monkeypatch.setitem(pr.STEP_FUNCS, step, _ok(step))
+    with app.app_context():
+        from app.models_provision import ProvisionRun
+        run = ProvisionRun(product="fortiweb", name="semi-r", mode="semi",
+                           mgmt_ip="192.0.2.200")
+        session.add(run)
+        session.commit()
+        pr.advance(run)
+        assert run.status == "paused" and run.step == "booted"
+        assert "reachable" not in calls
+        pr.advance(run)
+        assert run.status == "done", (run.status, run.error)
+        assert calls[-4:] == ["reachable", "onboarded", "cert_installed", "profile_applied"]

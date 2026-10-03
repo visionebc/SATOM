@@ -95,6 +95,34 @@ def test_a_leftover_flag_does_not_stop_the_next_run(app, monkeypatch):
         assert not (rediscovery._dev_dir(a.id) / rediscovery._STOP_FILE).exists()
 
 
+@pytest.mark.parametrize("phase", ["deep-running", "cli-running"])
+def test_a_second_start_is_refused_while_a_later_phase_runs(app, monkeypatch, phase):
+    """The start guard covers every live phase, and a refused start leaves
+    the live run's pending Stop alone."""
+    from datetime import datetime
+    with app.app_context():
+        a = Appliance(name="fw-busy", kind="fortiweb", host="fw-busy.test",
+                      port=443, username="admin", verify_ssl=False)
+        a.password = "x"
+        db.session.add(a)
+        db.session.commit()
+        rediscovery._write_json(rediscovery._dev_dir(a.id) / "progress.json",
+                                {"state": phase, "pid": os.getpid(),
+                                 "host": rediscovery._HOST,
+                                 "started": datetime.utcnow().isoformat()})
+        flag = rediscovery._dev_dir(a.id) / rediscovery._STOP_FILE
+        rediscovery._write_json(flag, {"by": "op"})
+        monkeypatch.setattr(rediscovery, "plan_for", lambda _a: PLAN)
+        started = []
+        monkeypatch.setattr(rediscovery.threading, "Thread",
+                            lambda target, args, daemon, kwargs=None: SimpleNamespace(
+                                start=lambda: started.append(args)))
+        res = rediscovery.start(a)
+        assert res["started"] is False and "already running" in res["reason"]
+        assert started == []
+        assert flag.exists(), "a refused start cleared the live run's Stop"
+
+
 def test_stop_before_the_deep_pass_keeps_the_snapshot(app, monkeypatch):
     aid = 42
     monkeypatch.setattr(rediscovery, "_probe_fortiweb", _probe_stopping_at(5, aid))

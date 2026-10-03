@@ -259,3 +259,41 @@ def test_an_operator_has_a_menu_entry_for_the_template_library(app, client):
     m = re.search(r'href="([^"]*/templates/)"', h)
     assert m, "no Template Library entry for an operator"
     assert client.get(m.group(1)).status_code == 200
+
+
+# --- System Provisioning apply (/provisioning/<id>/apply) -------------------
+
+def _system_profile(app, status="pending"):
+    from app.models import Template
+    from app.services import templates as lib
+    body = {"line": "8.0", "items": [
+        {"key": "dns", "endpoint": "system_dns", "data": {"primary": "192.0.2.2"},
+         "singleton": True, "label": "DNS"},
+        {"key": "radius", "endpoint": "user_radius_user", "data": {"server": "r1"},
+         "label": "RADIUS server", "sensitive": True},
+    ]}
+    with app.app_context():
+        row = lib.save_template(Template.KIND_SYSTEM, "sys-prof", body, author="bob")
+        if status == Template.STATUS_APPROVED:
+            lib.approve_template(row.id, reviewer="admin")
+        return row.id
+
+
+def test_provisioning_preview_says_secrets_are_not_pushed(app, client, monkeypatch):
+    """The page used to promise secrets "entered at apply time"; the apply
+    reads none. The preview now names the elements pushed without them."""
+    from tests.conftest import admin_user_id, login
+    import app.views.provisioning as pv
+    monkeypatch.setattr(pv.prov, "apply", lambda profile, ids, **kw: [])
+    tid = _system_profile(app)
+    (d1,) = _devices(app, 1)
+    login(client, admin_user_id(app))
+    r = client.post(f"/provisioning/{tid}/apply", data={
+        "target_hostname": "fw-new", "change_id": "CHG-1", "mode": "selected",
+        "device_ids": str(d1)})
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert "Secrets are not part of this deployment." in body
+    assert "<code>RADIUS server</code>" in body
+    assert "<code>DNS</code>" not in body
+    assert "entered at apply time" not in client.get("/provisioning/").get_data(as_text=True)

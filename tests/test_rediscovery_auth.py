@@ -223,3 +223,57 @@ def test_discovery_run_still_absorbs_any_other_error():
     assert calls == ["a", "b"]
     assert res["errors"] == 1
     assert f.candidates[0].detail == "RuntimeError: boom"
+
+
+# --- FortiADC -----------------------------------------------------------------
+
+def _adc_snap(aid=71):
+    return SimpleNamespace(id=aid, name="adc-auth", host="adc-auth.test", port=443,
+                           verify_ssl=False, username="admin", password="x",
+                           vdom="", kind="fortiadc")
+
+
+def _adc_device(monkeypatch, answer):
+    from app.clients.fortiadc import FortiADCClient
+    calls = []
+
+    def _request(self, method, path, **kwargs):
+        calls.append(path)
+        resp = answer(path, len(calls))
+        resp.request = httpx.Request(method, "https://adc-auth.test" + path)
+        return resp
+    monkeypatch.setattr(FortiADCClient, "_request", _request)
+    return calls
+
+
+def test_adc_bad_credentials_stop_the_sweep_after_one_failed_login(app, monkeypatch):
+    """A FortiADC that refuses the login stops the sweep instead of sending
+    one failed admin login per endpoint."""
+    aid = 71
+    prev = _previous(aid)
+    monkeypatch.setattr(rediscovery, "_device_firmware", lambda *a, **k: "")
+    calls = _adc_device(monkeypatch, lambda p, n: httpx.Response(401, text="denied"))
+    rediscovery._run(_adc_snap(aid), by="t", plan=PLAN)
+    assert calls == ["/api/user/login"], calls
+    st = rediscovery.status(aid)
+    assert st["state"] == rediscovery.FAILED
+    assert "rejected the credentials" in st["error"]
+    assert json.loads(prev.read_text())["generated_at"] == "earlier"
+
+
+def test_adc_expired_token_is_renewed_once_and_the_sweep_goes_on(app, monkeypatch):
+    aid = 72
+    monkeypatch.setattr(rediscovery, "_device_firmware", lambda *a, **k: "8.0.3")
+    state = {"expired": True}
+
+    def answer(path, n):
+        if path == "/api/user/login":
+            return httpx.Response(200, json={"token": "t"})
+        if path == PLAN[1]["urn"] and state["expired"]:
+            state["expired"] = False
+            return httpx.Response(401, text="expired")
+        return httpx.Response(200, json={"payload": [{"mkey": "a"}]})
+    calls = _adc_device(monkeypatch, answer)
+    rediscovery._run(_adc_snap(aid), by="t", plan=PLAN)
+    assert calls.count("/api/user/login") == 2, calls
+    assert rediscovery.status(aid)["state"] == "done"

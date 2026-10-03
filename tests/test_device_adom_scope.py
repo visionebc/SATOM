@@ -499,3 +499,15 @@ def test_the_five_tiles_fit_one_row():
     block = src[:src.index("fw-toolbar")]
     assert "row-cols-xl-5" in block
     assert "col-md-3 col-sm-6" not in block
+
+
+def test_a_fortiadc_vault_opens_from_global_and_stays_out_of_fortiweb(app, client):
+    """"View Backups" for a FortiADC reached from Global used to be re-pinned
+    to the FortiWeb ADOM, where the ADC row is invisible: a 404."""
+    adc = _mk(app, "adc-vault", host="192.0.2.76", kind="fortiadc")
+    login(client, admin_user_id(app), product="global")
+    r = client.get("/backups/%d" % adc, headers={"X-ADOM": "global"})
+    assert r.status_code == 200, r.status_code
+    assert "adc-vault" in r.get_data(as_text=True)
+    r = client.get("/backups/%d" % adc, headers={"X-ADOM": "fortiweb"})
+    assert r.status_code == 404

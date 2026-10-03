@@ -1837,6 +1837,14 @@ def execute_and_record(action_row, *, trigger: str = "schedule"):
     # still read them when the try dies on its very first statement.
     cr_bound_id = None
     cr_gated = False
+    # A rollout split into rounds is N actions bound to ONE change. Only the
+    # last round may close it on success; an earlier round that closed it made
+    # every later round refuse with "change request is completed".
+    try:
+        _p = action_row.params_dict
+        more_rounds = (_as_int(_p.get("round_index")) or 1) < (_as_int(_p.get("round_total")) or 1)
+    except Exception:  # noqa: BLE001 - a bad params blob is judged below
+        more_rounds = False
     try:
         spec = get_spec(action_row.action)
         if spec is None:
@@ -1918,7 +1926,10 @@ def execute_and_record(action_row, *, trigger: str = "schedule"):
     # notice. Isolated on purpose: a bookkeeping or SMTP failure here must never
     # roll back the run row nor strand the lease - that is precisely how an
     # over-long label once killed a WPP clone already written to the device.
-    if cr_bound_id is not None and not cr_gated:
+    # A round that is not the last and went well leaves the change open
+    # (in_progress) for the next round; a failed round still closes it as
+    # failed, so the remaining rounds refuse instead of flashing on.
+    if cr_bound_id is not None and not cr_gated and not (more_rounds and status == "ok"):
         try:
             from . import change_requests
             # finish() now closes the NetBox window, dispatches the outcome

@@ -455,11 +455,17 @@ def scout_reviews(devices, preps) -> dict:
 
 
 def _eligible():
+    """Appliances stage 1 may pre-flight: visible, of a product the action
+    runs against, and the row that OWNS the device-wide verbs. The other ADOM
+    rows of a multi-ADOM chassis are the same box, and firmware verbs are
+    refused on them everywhere else (``require_device_scope``)."""
+    from ..models import owns_device_scope
     kinds = prep_kinds()
     query = visible_appliances()
     if kinds:
         query = query.filter(Appliance.kind.in_(kinds))
-    return query.order_by(Appliance.name.asc()).all()
+    return [a for a in query.order_by(Appliance.name.asc()).all()
+            if owns_device_scope(a)]
 
 
 def preselect_device(raw, devices):
@@ -1015,6 +1021,13 @@ def change():
     """
     from .change_requests import _parse_dt, create_change_request
     posted = submitted_fields(request.form)
+    if not posted['device_ids']:
+        # An upgrade change with no appliance resolves to zero targets at
+        # fire time and closes as failed inside its window.
+        flash('Pick at least one appliance for the change. Nothing was created.',
+              'danger')
+        return render_template('upgrade_flow/index.html',
+                               **page_context(posted=posted))
     cr, error = create_change_request({
         'title': posted['title'],
         # Read from the module, never from the post. The flow raises the
@@ -1599,6 +1612,13 @@ def prep():
     if len(devices) != len(ids):
         flash('One or more selected appliances do not exist or are not '
               'visible to you. Nothing was started.', 'danger')
+        return redirect(url_for('upgrade_flow.index'))
+    from ..models import owns_device_scope
+    adom_rows = [d for d in devices if not owns_device_scope(d)]
+    if adom_rows:
+        flash('Pre-upgrade acts on the whole appliance; run it on the device '
+              'row, not on ADOM row(s) ' + ', '.join(d.name for d in adom_rows)
+              + '. Nothing was started.', 'danger')
         return redirect(url_for('upgrade_flow.index'))
 
     # PER APPLIANCE, and last, because every check above is about the

@@ -31,7 +31,7 @@ GATED_MODULES = {
     "app.views.monitor_analytics": None,
     "app.views.monitor_reports": None,
     "app.views.search": "view",
-    "app.views.architecture": "view",
+    "app.views.architecture": None,   # reads are view; the SSH MAC fetch is config_write
     "app.views.metrics_admin": None,
     "app.views.analysis": None,
     "app.views.api_explorer": None,
@@ -111,6 +111,11 @@ def test_every_route_of_the_read_modules_names_its_permission(app):
     ("appliances.failover_preflight", "appliances.apply"),
     ("appliances.failover_run", "appliances.apply"),
     ("appliances.failover_schedule", "appliances.apply"),
+    # MO-14: the MAC fetch logs in to the device over SSH and writes the
+    # interface inventory — same gate as the Device health hardware scan.
+    ("architecture.device_macs", "config_write"),
+    ("architecture.device_detail", "view"),
+    ("architecture.index", "view"),
 ])
 def test_named_routes_carry_their_gate(app, endpoint, perm):
     view = app.view_functions[endpoint]

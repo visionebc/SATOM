@@ -144,7 +144,10 @@ def device_detail(id):
     data['iface_cache'] = inv['cache']
     data['mac_fetched_at'] = inv['mac_fetched_at']
     data['firmware'] = a.firmware or ''
-    data['macs_url'] = url_for('architecture.device_macs', id=a.id)
+    # The MAC probe opens an SSH session to the device: offered only to
+    # config_write holders (same gate as the Device health hardware scan).
+    data['macs_url'] = (url_for('architecture.device_macs', id=a.id)
+                        if current_user.can(Permission.CONFIG_WRITE) else None)
     data['detail_url'] = url_for('appliances.detail', id=a.id)
     data['datasheet_url'] = (
         url_for('appliances.datasheet', id=a.id) if a.datasheet_filename else None
@@ -154,18 +157,24 @@ def device_detail(id):
 
 @bp.route('/device/<int:id>/macs', methods=['POST'])
 @login_required
-@require_permission(Permission.VIEW)
+@require_permission(Permission.CONFIG_WRITE)
 def device_macs(id):
     """Probe the appliance for hardware addresses (read-only CLI over SSH).
 
     Explicitly user-triggered: the card itself is DB-only and must stay instant,
     and an SSH round-trip against a powered-off or license-locked box would
-    otherwise hang the modal.
+    otherwise hang the modal. It logs in to the device and writes the
+    interface inventory, so it needs config_write (as the Device health
+    hardware scan does) and is audited with its outcome.
     """
     from ..services import interface_inventory
+    from ..services.audit import log_action
 
     a = visible_appliance_or_404(id)
     res = interface_inventory.refresh_macs(a)
+    log_action('architecture.fetch_macs', a.name,
+               {'ok': bool(res.get('ok')), 'count': res.get('count'),
+                'error': (res.get('error') or '')[:200]})
     if not res['ok']:
         return jsonify(ok=False, error=res['error']), 502
     return jsonify(ok=True, count=res['count'],

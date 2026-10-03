@@ -216,3 +216,56 @@ def test_detail_and_architecture_pages_render(app, logged_in):
     r2 = logged_in.get("/architecture/")
     assert r2.status_code == 200
     assert b"deviceModal" in r2.data
+
+
+# --- MAC fetch: config_write, audited, offered only to writers ---------------
+
+def _user_client(client, app, role):
+    from tests.conftest import make_user, login
+    uid = make_user(app, username="arch-" + role, role=role)
+    login(client, uid)
+    return client
+
+
+def test_readonly_cannot_fetch_macs_and_is_not_offered_it(app, client, monkeypatch):
+    from app.services import interface_inventory
+    called = []
+    monkeypatch.setattr(interface_inventory, "refresh_macs",
+                        lambda a: called.append(a) or {"ok": True, "count": 0})
+    aid = _make_appliance(app, name="fw-ro-mac")
+    c = _user_client(client, app, "readonly")
+    d = c.get(f"/architecture/device/{aid}").get_json()
+    assert d["name"] == "fw-ro-mac"
+    assert d["macs_url"] is None
+    r = c.post(f"/architecture/device/{aid}/macs")
+    assert r.status_code in (302, 403)
+    assert called == [], "the SSH probe ran for a user without config_write"
+
+
+def test_operator_fetches_macs_and_it_is_audited(app, client, monkeypatch):
+    from app.models import AuditLog
+    from app.services import interface_inventory
+    monkeypatch.setattr(interface_inventory, "refresh_macs",
+                        lambda a: {"ok": True, "count": 2})
+    aid = _make_appliance(app, name="fw-op-mac")
+    c = _user_client(client, app, "operator")
+    d = c.get(f"/architecture/device/{aid}").get_json()
+    assert d["macs_url"].endswith(f"/architecture/device/{aid}/macs")
+    r = c.post(f"/architecture/device/{aid}/macs")
+    assert r.status_code == 200 and r.get_json()["count"] == 2
+    with app.app_context():
+        row = AuditLog.query.filter_by(action="architecture.fetch_macs").one()
+        assert row.target == "fw-op-mac"
+
+
+def test_a_failed_mac_fetch_is_audited_too(app, logged_in, monkeypatch):
+    from app.models import AuditLog
+    from app.services import interface_inventory
+    monkeypatch.setattr(interface_inventory, "refresh_macs",
+                        lambda a: {"ok": False, "error": "ssh refused"})
+    aid = _make_appliance(app, name="fw-bad-mac")
+    r = logged_in.post(f"/architecture/device/{aid}/macs")
+    assert r.status_code == 502
+    with app.app_context():
+        assert AuditLog.query.filter_by(
+            action="architecture.fetch_macs").count() == 1

@@ -217,7 +217,7 @@ def walked(app, client, monkeypatch):
     monkeypatch.setattr(sl, "run", fake_run)
     monkeypatch.setattr(sl, "default_ports", fake_ports)
 
-    def go(form=None, store=None):
+    def go(form=None, store=None, user_id=None):
         from app.models import Appliance
         from app.extensions import db
         with app.app_context():
@@ -231,7 +231,7 @@ def walked(app, client, monkeypatch):
                 db.session.add(row)
                 db.session.commit()
             aid = row.id
-        login(client, admin_user_id(app))
+        login(client, user_id or admin_user_id(app))
         body = {"appliance_id": str(aid), "policy": "pol-x",
                 "hostname": "svc.example.test"}
         body.update(form or {})
@@ -458,3 +458,14 @@ def test_a_configured_size_and_patience_reach_the_analyzer(monkeypatch):
     seen = _border(monkeypatch, faz_limit=750, faz_timeout=55.0)
     assert seen["limit"] == 750
     assert seen["timeout"] == 55.0
+
+
+def test_a_typed_host_is_free_only_for_probe_free_holders(walked, app):
+    """Scout used to dial ANY typed Published host (net_guard free mode)
+    without the permission the certificate inspector requires for that."""
+    from tests.conftest import make_user
+    assert walked()["ports"]["may_free"] is True          # admin
+    ro = make_user(app, username="scoutro", role="readonly")
+    seen = walked(user_id=ro)
+    assert "opts" in seen, "the readonly walk never reached the engine"
+    assert seen["ports"]["may_free"] is False

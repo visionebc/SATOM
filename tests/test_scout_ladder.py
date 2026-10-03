@@ -413,7 +413,7 @@ def test_a_typed_front_end_wins_over_a_derived_one():
 
 
 def test_a_refused_front_end_target_is_reported_and_not_dialled_anyway():
-    def guard(host, port):
+    def guard(host, port, **kw):
         raise ValueError("metadata address")
     ctx = sl.Ctx(target=sl.Target(appliance=Appl(), policy="p",
                                   hostname="bad.example"),
@@ -586,3 +586,65 @@ def test_the_template_uses_the_light_theme_badges_only():
                    "rgba(30,41,59"):
         assert pastel not in src, (
             "dark-theme pills land at ~1.4:1 on this product's white cards")
+
+
+# --------------------------------------------------------------------------- #
+#  A typed Published host is held to the inventory without probe_free           #
+# --------------------------------------------------------------------------- #
+def _guard_modes(monkeypatch):
+    from app.services import net_guard
+    seen = []
+
+    def fake_resolve(host, port, *, mode=net_guard.MODE_INVENTORY,
+                     inventory_hosts=()):
+        seen.append((host, mode, list(inventory_hosts)))
+        if mode == net_guard.MODE_INVENTORY and host not in inventory_hosts:
+            raise net_guard.TargetError("%s is not in the inventory" % host)
+        return {"host": host, "port": port, "ip": "192.0.2.1"}
+
+    monkeypatch.setattr(net_guard, "resolve_target", fake_resolve)
+    return seen
+
+
+def test_a_typed_host_needs_probe_free(monkeypatch):
+    from app.services import net_guard
+    seen = _guard_modes(monkeypatch)
+    ctx = sl.Ctx(target=sl.Target(appliance=Appl(host="192.0.2.13"),
+                                  policy="p", hostname="evil.example"),
+                 opts=sl.Options(), ports=sl.default_ports(may_free=False))
+    assert sl._endpoint(ctx) is None
+    assert "monitoring.probe_free" in ctx.state["endpoint_error"]
+    assert seen[0][1] == net_guard.MODE_INVENTORY
+    assert "192.0.2.13" in seen[0][2]
+
+
+def test_a_typed_inventory_host_is_allowed_without_probe_free(monkeypatch):
+    from app.services import net_guard
+    seen = _guard_modes(monkeypatch)
+    ctx = sl.Ctx(target=sl.Target(appliance=Appl(host="192.0.2.13"),
+                                  policy="p", hostname="192.0.2.13"),
+                 opts=sl.Options(), ports=sl.default_ports())
+    ep = sl._endpoint(ctx)
+    assert ep and ep["ip"] == "192.0.2.1"
+    assert seen[0][1] == net_guard.MODE_INVENTORY
+
+
+def test_a_typed_host_is_free_with_probe_free(monkeypatch):
+    from app.services import net_guard
+    seen = _guard_modes(monkeypatch)
+    ctx = sl.Ctx(target=sl.Target(appliance=Appl(), policy="p",
+                                  hostname="any.example"),
+                 opts=sl.Options(), ports=sl.default_ports(may_free=True))
+    assert sl._endpoint(ctx)["host"] == "any.example"
+    assert seen[0][1] == net_guard.MODE_FREE
+
+
+def test_a_derived_front_end_is_not_held_to_the_inventory(monkeypatch):
+    from app.services import net_guard
+    seen = _guard_modes(monkeypatch)
+    ports = sl.default_ports(may_free=False)
+    ports["front_end"] = lambda a, p: {"host": "vip.example", "port": 443}
+    ctx = sl.Ctx(target=sl.Target(appliance=Appl(), policy="p"),
+                 opts=sl.Options(), ports=ports)
+    assert sl._endpoint(ctx)["host"] == "vip.example"
+    assert seen[0][1] == net_guard.MODE_FREE

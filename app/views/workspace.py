@@ -171,10 +171,9 @@ def appliance(appliance_id):
             # badge prompts a refresh rather than auto-hitting the device.
             from ..services import read_layer
             policies, meta = read_layer.read_policies(appl)
-        elif appl.kind == 'fortiadc':
-            client = client_for(appl)
-            raw = client.list_virtual_servers()
-            policies = raw.get('payload', [])
+        # No FortiADC branch: this blueprint is FortiWeb-scoped (the product
+        # gate) and visible_appliance_or_404 hides ADC boxes from that ADOM;
+        # FortiADC virtual servers live in the adc blueprint.
     except Exception as exc:
         error = str(exc)
     from ..services import read_layer as _rl

@@ -462,6 +462,31 @@ def test_faz_device_toolbar_sends_the_adom():
     assert "adom: ((document.getElementById('fazdev-adom')" in src
 
 
+# --------------------------------------------------------------------------- #
+#  Stale FortiAnalyzer seed text                                              #
+# --------------------------------------------------------------------------- #
+
+def test_the_stale_faz_description_is_refreshed_but_an_edit_is_kept(app):
+    from app import branding
+    from app.extensions import db
+    from app.models_adom import Adom
+    old = branding._RETIRED_DESCRIPTIONS[0][1]
+    with app.app_context():
+        row = Adom.query.filter_by(key="fortianalyzer").first()
+        assert "scaffold" not in row.description
+        row.description = old
+        db.session.commit()
+        branding.seed_defaults()
+        row = Adom.query.filter_by(key="fortianalyzer").first()
+        assert row.description != old and "JSON-RPC API" in row.description
+
+        row.description = "Our analyzer"
+        db.session.commit()
+        branding.seed_defaults()
+        assert Adom.query.filter_by(key="fortianalyzer").first().description \
+            == "Our analyzer"
+
+
 def test_adc_naming_patterns_are_marked_reference_only(app, client):
     login(client, admin_user_id(app), product="fortiadc")
     html = client.get("/naming/?product=fortiadc").get_data(as_text=True)

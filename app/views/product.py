@@ -1,4 +1,5 @@
-"""Product / ADOM selection gate (Global vs FortiWeb vs FortiADC)."""
+"""Product / ADOM selection gate (Global, FortiWeb, FortiADC, FortiAnalyzer,
+FortiAuthenticator, and any future ADOM from Settings → ADOMs)."""
 from __future__ import annotations
 
 from flask import (Blueprint, redirect, render_template, request, session,
@@ -20,9 +21,8 @@ def _home_for(key: str):
     if key == 'fortiauthenticator':
         return redirect(url_for('fac.index'))
     if get_product(key).get('placeholder'):
-        # Placeholder ADOMs (future or custom ADOMs; FortiAuthenticator and
-        # FortiAnalyzer have real homes above) have no backend yet — land on
-        # the shared scaffold dashboard.
+        # Placeholder ADOMs (a future ADOM added in Settings → ADOMs) have no
+        # backend yet — land on the shared scaffold dashboard.
         return redirect(url_for('product.placeholder_home'))
     return redirect(url_for('fortiweb_home'))
 

@@ -28,6 +28,7 @@ from ..services import scout_config
 from ..services import scout_objects
 from ..services import scout_ladder as sl
 from ..services.audit import log_action
+from .cert_inspect import _may_free
 
 bp = Blueprint("scout", __name__, url_prefix="/scout")
 
@@ -217,7 +218,8 @@ def index():
             analyzer=analyzer, faz_adom=opts.faz_adom,
             faz_devid=opts.faz_devid, faz_vdom=opts.faz_vdom,
             faz_limit=int(dflt["faz_limit"]),
-            faz_timeout=float(dflt["faz_timeout"])))
+            faz_timeout=float(dflt["faz_timeout"]),
+            may_free=_may_free()))
     except sl.ScoutRefused as exc:
         ctx["error"] = str(exc)
         return render_template("scout/index.html", **ctx)

@@ -1074,6 +1074,8 @@
         $('dmDetailLink').href = d.detail_url || '#';
 
         var btn = $('dmMacBtn');
+        // No macs_url = the user may not run the SSH probe (config_write).
+        btn.classList.toggle('d-none', !d.macs_url);
         btn.disabled = false;
         $('dmMacBtnTxt').textContent = d.mac_fetched_at ? 'Refresh MAC addresses' : 'Fetch MAC addresses';
         btn.onclick = function () { dmFetchMacs(d); };

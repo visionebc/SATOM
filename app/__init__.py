@@ -369,11 +369,12 @@ def create_app(config_override: object | None = None) -> Flask:
                        # question, answered once by
                        # process_engine.visible_processes (Process.products).
                        'process',
-                       # Firmware is product-scoped by row (2026-08-06): each
-                       # ADOM sees and uploads only its own images. It used to
-                       # be reachable from FortiAnalyzer only, which is why the
-                       # FAZ ADOM could see FortiWeb images.
-                       'firmware', 'device_provision',
+                       # NOT firmware (2026-10-03): the Firmware pages are an
+                       # image vault, and no path flashes a FortiADC with
+                       # those images (upgrade.push_firmware is FortiWeb's
+                       # handshake). The ADC sidebar never linked it; an image
+                       # vault for a box nothing can flash was URL-only.
+                       'device_provision',
                        # Scheduled Actions is mirrored into every ADOM
                        # (2026-08-10). Rows carry ScheduledAction.product
                        # and the catalog is cut to the actions whose
@@ -461,7 +462,11 @@ def create_app(config_override: object | None = None) -> Flask:
             fac_bps = {'concept_map', 'fac', 'fac_api', 'appliances', 'settings', 'audit', 'jobs',
                        'notifications', 'profiles', 'users',
                        'advisor', 'adom_assets', 'console',   # see the adc_bps note
-                       'database', 'locks', 'segments', 'firmware',
+                       # NOT firmware / backups (2026-10-03): the FAC
+                       # sidebar offers neither, the seeded cap_firmware is
+                       # False and services/backup.py has no
+                       # FortiAuthenticator transport — both were URL-only.
+                       'database', 'locks', 'segments',
                        'device_provision',
                        # Change Types is an Administration page, mirrored
                        # into every ADOM for the same reason Change Requests
@@ -483,7 +488,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        # can only schedule work it can also see.
                        'scheduled_actions',
                        'architecture', 'metrics', 'search', 'analysis',
-                       'fleet_objects', 'dns_tool', 'backups',
+                       'fleet_objects', 'dns_tool',
                        # Mirrored per-ADOM monitoring (2026-07-28) — scoping is
                        # by device kind, so a FAC session sees only FAC boxes.
                        'monitoring', 'deep_monitor', 'service_monitor',

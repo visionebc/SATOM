@@ -352,7 +352,8 @@
       </div>
 
       {% for g in adc_nav %}
-      {% set _g_active = g.items|selectattr('key', 'equalto', _adc_item)|list %}
+      {% set _g_active = g.items|selectattr('key', 'equalto', _adc_item)|list
+                         or (g.key == 'waf' and request.endpoint == 'adc.signatures') %}
       <div class="fw-nav-group {{ 'open' if _g_active }}" data-nav-group="{{ g.label }}">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi {{ g.icon }} fw-nav-section-icon" style="color:#10b981;"></i><span>{{ g.label }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
@@ -361,14 +362,23 @@
              href="{{ url_for('adc.menu_page', item_key=item.key) }}">
             <i class="bi {{ item.icon }} fw-nav-icon"></i><span>{{ item.label }}</span></a>
           {% endfor %}
+          {# The live signature-policy overview: a WAF read, so it sits with the
+             WAF pages and opens to protection.view (views/adc.py). #}
+          {% if g.key == 'waf' and current_user and current_user.can('protection.view') %}
+          <a class="fw-nav-item {{ 'active' if request.endpoint == 'adc.signatures' else '' }}" href="{{ url_for('adc.signatures') }}">
+            <i class="bi bi-fingerprint fw-nav-icon"></i><span>{{ _('Signatures') }}</span></a>
+          {% endif %}
         </div>
       </div>
       {% endfor %}
 
+      {# API — registry catalog + live console (registry.view) #}
+      {% include 'partials/nav_product_api.html' %}
+
       {% include 'partials/nav_automation.html' %}
 
       {% if current_user and current_user.can('user_manage') %}
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['audit','users','templates','naming','capacity','database'] or request.endpoint == 'adc.signatures' }}" data-nav-group="Administrator">
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['audit','users','templates','naming','capacity','database'] }}" data-nav-group="Administrator">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('Administrator') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           {% include "partials/nav_audit.html" %}
@@ -387,8 +397,6 @@
           {% endif %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'naming' else '' }}" href="{{ url_for('naming.index', product='fortiadc') }}">
             <i class="bi bi-tag fw-nav-icon"></i><span>{{ _('Naming') }}</span></a>
-          <a class="fw-nav-item {{ 'active' if request.endpoint == 'adc.signatures' else '' }}" href="{{ url_for('adc.signatures') }}">
-            <i class="bi bi-fingerprint fw-nav-icon"></i><span>{{ _('Signatures') }}</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'templates' else '' }}" href="{{ url_for('templates.index') }}">
             <i class="bi bi-collection fw-nav-icon"></i><span>{{ _('Template Library') }}</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'users' else '' }}" href="{{ url_for('users.index') }}">
@@ -547,6 +555,9 @@
       </div>
       {% endfor %}
 
+      {# API — registry catalog + live console (registry.view) #}
+      {% include 'partials/nav_product_api.html' %}
+
       {# Administrator — Audit log / Firmware / Network segment #}
       {% include 'partials/nav_automation.html' %}
 
@@ -614,14 +625,8 @@
       </div>
       {% endfor %}
 
-      {# API — registry catalog + live console #}
-      <div class="fw-nav-group {{ 'open' if request.blueprint == 'fac_api' }}" data-nav-group="API">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-braces fw-nav-section-icon" style="color:#0891b2;"></i><span>API</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'fac_api' else '' }}" href="{{ url_for('fac_api.index') }}">
-            <i class="bi bi-terminal fw-nav-icon"></i><span>Registry &amp; console</span></a>
-        </div>
-      </div>
+      {# API — registry catalog + live console (registry.view) #}
+      {% include 'partials/nav_product_api.html' %}
 
       {# Administrator — Audit log / Network segment #}
       {% include 'partials/nav_automation.html' %}
@@ -1049,16 +1054,12 @@
           <i class="bi bi-book fw-nav-icon"></i><span>{{ _('Documentation') }}</span>
           <i class="bi bi-box-arrow-up-right fw-nav-icon" style="margin-left:auto; opacity:.5; font-size:11px;"></i></a>
         {# API is product-scoped by agreement: FortiWeb gets the registry hub,
-           FortiADC its own API console — both pinned here below Documentation.
-           The Global ADOM gets none (clicking it would silently jump the ADOM). #}
+           pinned here below Documentation. FortiADC / FortiAnalyzer /
+           FortiAuthenticator draw their console as an "API" group in their own
+           menu (partials/nav_product_api.html, registry.view). The Global ADOM
+           gets none (clicking it would silently jump the ADOM). #}
         {% if product.key == 'fortiweb' and current_user and current_user.can('user_manage') %}
         <a class="fw-nav-item {{ 'active' if _g_api }}" href="{{ url_for('registry.index') }}">
-          <i class="bi bi-code-slash fw-nav-icon"></i><span>API</span></a>
-        {% elif product.key == 'fortiadc' and current_user and current_user.can('user_manage') %}
-        <a class="fw-nav-item {{ 'active' if request.blueprint == 'adc_api' }}" href="{{ url_for('adc_api.index') }}">
-          <i class="bi bi-code-slash fw-nav-icon"></i><span>API</span></a>
-        {% elif product.key == 'fortianalyzer' and current_user and current_user.can('user_manage') %}
-        <a class="fw-nav-item {{ 'active' if request.blueprint == 'faz_api' }}" href="{{ url_for('faz_api.index') }}">
           <i class="bi bi-code-slash fw-nav-icon"></i><span>API</span></a>
         {% endif %}
         <div class="fw-nav-divider"></div>

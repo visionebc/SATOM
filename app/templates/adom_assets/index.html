@@ -580,7 +580,11 @@ fam:{{ sec }}:{{ fam }}{% for p in paths %}|grp:{{ sec }}:{{ p }}{% endfor %}
         {{ _('held here to be installed onto a device — grouped by family only: an image on a shelf is not installed anywhere, so it has no line, zone or department') }}
       </span>
     </button>
+    {# The FortiADC and FortiAuthenticator ADOM gates do not admit the
+       Firmware pages (app/__init__.py), so no link there. #}
+    {% if product.key not in ('fortiadc', 'fortiauthenticator') %}
     <a class="text-muted" style="font-size:12px;" href="{{ url_for('firmware.index') }}">{{ _('Infrastructure → Firmware') }} <i class="bi bi-box-arrow-up-right"></i></a>
+    {% endif %}
   </div>
   <div class="fw-sec-body" id="body-firmware">
   <div class="table-responsive">
@@ -627,7 +631,9 @@ fam:{{ sec }}:{{ fam }}{% for p in paths %}|grp:{{ sec }}:{{ p }}{% endfor %}
           {{ _('this ADOM holds %(n)s image(s).', n=data.totals.firmware) }}
         {% else %}
           {{ _('No firmware images stored for this ADOM.') }}
+          {% if product.key not in ('fortiadc', 'fortiauthenticator') %}
           <a href="{{ url_for('firmware.index') }}">{{ _('Infrastructure → Firmware') }}</a>
+          {% endif %}
         {% endif %}
       </td></tr>
     {% endfor %}

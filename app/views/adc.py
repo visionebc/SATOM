@@ -130,7 +130,7 @@ def menu_page(item_key):
 # --------------------------------------------------------------------------- #
 @bp.route('/signatures')
 @login_required
-@require_permission(Permission.USER_MANAGE)
+@require_permission('protection.view')
 def signatures():
     """FortiADC Web Attack Signature policies — one row per signature set with
     its enabled category / sub-category counts, disabled-signature count and

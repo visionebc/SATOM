@@ -42,6 +42,14 @@
     </div>
   </div>
   <div class="fw-card-body">
+    {% if current_product == 'fortiadc' %}
+    {# The ADC object editor and the guided virtual-server wizard do not apply
+       or validate these patterns (views/adc.py imports no naming code). #}
+    <div class="alert alert-secondary py-2 mb-3" style="font-size:12.5px;">
+      <i class="bi bi-info-circle me-1"></i><strong>{{ _('Reference only.') }}</strong>
+      {{ _('FortiADC patterns document your convention; the FortiADC object editor and the virtual-server wizard do not fill in or check names from them.') }}
+    </div>
+    {% endif %}
     <div class="row g-2 align-items-center mb-3" style="max-width:560px;">
       <div class="col-auto"><label class="fw-form-label mb-0">{{ _('Sample web address') }}</label></div>
       <div class="col">

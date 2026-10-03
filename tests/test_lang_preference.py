@@ -24,7 +24,7 @@ import re
 
 import pytest
 
-from app.models import UserSetting, db
+from app.models import User, UserSetting, db
 from app.services import cr_document as doc
 from app.services import langs as lang_registry
 from app.services import ui_locale
@@ -218,19 +218,27 @@ def test_saving_from_the_profile_page_stores_the_choice(app, client, admin):
 
 
 def test_saving_a_language_does_not_require_the_password(app, client, admin):
-    """The guard against folding this back into the profile POST, which
+    """The guard against folding this into a password handler, which
     validates ``current_password`` and would demand one to change a display
     preference -- or tempt the next editor to relax that check for everyone."""
     r = client.post("/auth/profile/language", data={"lang": "es"})
     assert r.status_code in (302, 303)
     with app.app_context():
         assert ustore.language(admin) == "es"
-    # And the password handler is still the password handler.
-    r2 = client.post("/auth/profile", data={"current_password": "",
-                                            "new_password": "abcdefgh",
-                                            "confirm_password": "abcdefgh"})
-    assert r2.status_code == 200
-    assert "incorrect" in r2.get_data(as_text=True).lower()
+
+
+def test_the_profile_page_no_longer_changes_passwords(app, client, admin):
+    """/auth/profile is GET only. The password form lives in Settings -> My
+    Account; the old POST branch was a second, unlinked password path."""
+    with app.app_context():
+        before = db.session.get(User, admin).password_hash
+    r = client.post("/auth/profile", data={"current_password": "x",
+                                           "new_password": "a-new-long-password",
+                                           "confirm_password": "a-new-long-password"})
+    assert r.status_code == 405
+    with app.app_context():
+        assert db.session.get(User, admin).password_hash == before
+    assert client.get("/auth/profile").status_code == 200
 
 
 def test_clearing_from_the_page_round_trips(app, client, admin):

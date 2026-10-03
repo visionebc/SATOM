@@ -7,7 +7,9 @@ Sign-in resolution (see ``services.auth_store`` / ``directory_auth``):
    fall through to a directory (protects the seed admin from an AD same-name).
 2. Otherwise — a brand-new username, or an existing **external** row — the
    configured directory backend (AD / LDAP / RADIUS) is asked to bind. On
-   success the local row is just-in-time provisioned (operator profile).
+   success the local row is just-in-time provisioned with the global default
+   profile (readonly unless changed), created disabled when directory sign-ups
+   require approval.
 3. Local accounts with **TOTP** enabled get a second-factor challenge before the
    session is established (directory accounts do MFA at the directory).
 """
@@ -294,27 +296,12 @@ def reset_password(token):
 # ---------------------------------------------------------------------------
 # Profile
 # ---------------------------------------------------------------------------
-@bp.route('/profile', methods=['GET', 'POST'])
+@bp.route('/profile')
 @login_required
 def profile():
-    if request.method == 'POST':
-        current_password = request.form.get('current_password', '')
-        new_password = request.form.get('new_password', '')
-        confirm_password = request.form.get('confirm_password', '')
-
-        if not current_user.check_password(current_password):
-            flash('Current password is incorrect.', 'danger')
-        elif password_problem(new_password):
-            flash(password_problem(new_password), 'danger')
-        elif new_password != confirm_password:
-            flash('New passwords do not match.', 'danger')
-        else:
-            current_user.set_password(new_password)
-            db.session.commit()
-            log_action('password_change', target=current_user.username)
-            flash('Password updated successfully.', 'success')
-            return redirect(url_for('auth.profile'))
-
+    """Show the profile page. GET only: the password is changed in
+    Settings -> My Account (``settings.change_password``); each preference on
+    this page posts to its own small route below."""
     from ..services import cr_document, lang_policy, langs as lang_registry
     from ..services import bookmarks as bookmarks_svc
     is_admin = bool(current_user and current_user.can(Permission.USER_MANAGE))
@@ -357,11 +344,10 @@ def profile():
 def save_language():
     """Store (or clear) the signed-in user's language preference.
 
-    Deliberately NOT part of the profile POST above: that handler validates the
-    current password and flashes "Current password is incorrect" when it is
-    absent. Saving a language through it would demand a password to change a
-    display preference -- or, worse, tempt the next editor to relax the
-    password check for everyone.
+    A route of its own, like every preference on the profile page: a shared
+    handler that also changed the password would demand a password to change a
+    display preference -- or tempt the next editor to relax the password check
+    for everyone.
     """
     from ..services import lang_policy
 
@@ -387,9 +373,9 @@ def save_language():
 def save_calendar_pref():
     """Switch the Calendar page and its nav entry on or off, for this user only.
 
-    Separate from the profile POST for the same reason as the language and
-    bookmark forms: that handler validates the current password, so routing a
-    display preference through it would demand a password to hide a menu entry.
+    Separate route for the same reason as the language and bookmark forms: a
+    shared handler that also changed the password would demand a password to
+    hide a menu entry.
 
     AN UNCHECKED CHECKBOX SENDS NOTHING. The value is therefore read as
     "present == on", never as a string compared against 'on'/'1'/'true' -- a
@@ -417,11 +403,9 @@ def save_calendar_pref():
 def save_bookmark_view():
     """Store this user's bookmarks grouping order.
 
-    Separate from the profile POST for the same reason as the language form:
-    that handler validates the current password and flashes "Current password
-    is incorrect" when it is absent, so routing a display preference through it
-    would either demand a password to re-order a sidebar or tempt the next
-    editor to weaken the password check for everybody.
+    Separate route for the same reason as the language form: a shared handler
+    that also changed the password would either demand a password to re-order a
+    sidebar or tempt the next editor to weaken the password check for everybody.
 
     The submitted order is validated by the service, never trusted: an
     unchecked value would leave :func:`services.bookmarks.lens_for` — which is

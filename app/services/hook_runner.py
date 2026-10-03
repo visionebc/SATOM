@@ -1,7 +1,7 @@
 """Integration Hooks — the half that actually runs user Python.
 
 Imported by ``satom-integrations.service``, the systemd oneshot that
-``satom-integrations.path`` fires whenever ``data/integration-requests/``
+``satom-integrations.path`` fires whenever ``data/integrations/queue/``
 becomes non-empty. Structurally this is ``satom-updater.{path,service}``; the
 one deliberate inversion is privilege. The updater's runner is ROOT because it
 installs files and restarts units. This runner executes code an operator typed
@@ -496,7 +496,7 @@ def _push_app_context():
 
 
 def main() -> int:
-    """Drain ``data/integration-requests/``. Entry point of the systemd unit.
+    """Drain ``data/integrations/queue/``. Entry point of the systemd unit.
 
     Bounded at :data:`MAX_DRAIN` per invocation: the ``.path`` unit is
     ``DirectoryNotEmpty=``, so anything left re-fires us instead of one oneshot

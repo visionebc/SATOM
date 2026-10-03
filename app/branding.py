@@ -6,8 +6,10 @@ identity and scope:
 * ``global``    — the fleet-wide console at ``/`` spanning both products.
 * ``fortiweb``  — the full Web Application Firewall manager (under ``/web``).
 * ``fortiadc``  — Application Delivery Controller (under ``/adc``).
-* ``fortiauthenticator`` / ``fortianalyzer`` — placeholder ADOMs: selectable
-  and branded (own colored banner), scaffold dashboard only.
+* ``fortiauthenticator`` (under ``/fac``) / ``fortianalyzer`` (under ``/faz``)
+  — full ADOMs with their own home and menus (seeded ``placeholder: False``).
+* any future or custom ADOM marked ``placeholder`` — selectable and branded
+  (own colored banner), scaffold dashboard only.
 
 **As of 2026-07-12 the registry lives in the ``adoms`` table** (model
 ``models_adom.Adom``), edited from Settings → ADOMs. This module reads that

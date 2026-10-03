@@ -103,7 +103,7 @@ def sudoers(ctx, args):
         "%s ALL=(root) /usr/local/sbin/satom" % acct,
     ])
     r.lines("what this grants", [
-        "Everything under 'execute' and 'config': service control, venv and unit",
+        "Everything under 'execute': service control, venv and unit",
         "reinstall, queued code/pip updates, promote, cert operations.",
         "It does NOT grant a shell: the CLI has no 'run arbitrary command' verb,",
         "and package installs go through the curated allowlist, not free-form pip.",

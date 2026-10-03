@@ -169,3 +169,17 @@ def test_server_names_drop_the_catch_all_and_bare_ips():
 def test_server_names_are_collected_from_every_block():
     txt = "server {\n server_name a.example.tld;\n}\nserver {\n server_name b.example.tld;\n}"
     assert cmd_checks.vhost_server_names(txt) == ["a.example.tld", "b.example.tld"]
+
+
+def test_the_sample_vhost_accepts_the_largest_upload_the_app_accepts():
+    """The sample once said 50M while the app takes update packages up to
+    MAX_UPLOAD_BYTES (400 MB): a host configured from it answers a valid
+    package with an nginx 413 the app never sees."""
+    import re as _re
+    from app.services.update_package_service import MAX_UPLOAD_BYTES
+    sizes = _re.findall(r"client_max_body_size\s+(\d+)([kKmMgG]?)\s*;",
+                        SAMPLE.read_text(encoding="utf-8"))
+    assert sizes, "the sample sets no client_max_body_size -- nginx defaults to 1M"
+    mult = {"": 1, "k": 1024, "m": 1024 ** 2, "g": 1024 ** 3}
+    for num, unit in sizes:
+        assert int(num) * mult[unit.lower()] >= MAX_UPLOAD_BYTES

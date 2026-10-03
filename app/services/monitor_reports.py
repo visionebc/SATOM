@@ -602,7 +602,38 @@ def render_text(body: dict) -> str:
                             inc["device"] or "-", inc["probe"]))
         if len(body["incidents"]) > 40:
             lines.append("  … %d more" % (len(body["incidents"]) - 40))
+    lines.extend(_fleet_text(body.get("fleet")))
     return "\n".join(lines)
+
+
+def _fleet_text(fleet) -> list:
+    """The metrics-store section (min/avg/max per series, policies down,
+    failing collectors). Older reports carry no ``fleet`` key: nothing to say."""
+    if not fleet:
+        return []
+    out = ["", "Fleet metrics (metrics store)", "-" * 60]
+    if not fleet.get("available"):
+        out.append("  NOT AVAILABLE — %s" % (fleet.get("detail")
+                                             or "metrics store unreachable"))
+        return out
+    for m in fleet.get("metrics") or []:
+        if not m.get("rows"):
+            continue
+        out.append("  %s%s" % (m["label"], " (%s)" % m["unit"] if m.get("unit") else ""))
+        for r in m["rows"]:
+            out.append("    %-34s min %-12s avg %-12s max %-12s"
+                       % (str(r["series"])[:34], _fmt(r.get("min"), m.get("unit", "")),
+                          _fmt(r.get("avg"), m.get("unit", "")),
+                          _fmt(r.get("max"), m.get("unit", ""))))
+    downs = fleet.get("down_policies") or []
+    out.append("  Policies down in the window: %d" % len(downs))
+    for d in downs[:40]:
+        out.append("    %s / %s" % (d.get("device") or "-", d.get("policy") or "-"))
+    failed = fleet.get("failed_collectors") or []
+    out.append("  Failing collectors: %d" % len(failed))
+    for f in failed[:40]:
+        out.append("    %s / %s" % (f.get("device") or "-", f.get("collector") or "-"))
+    return out
 
 
 def to_csv(body: dict) -> str:
@@ -621,6 +652,29 @@ def to_csv(body: dict) -> str:
                     r["last"], r["healthy_pct"], r["worst"], r["breaches"],
                     r["changes"], r.get("prev_avg"), r.get("delta_avg_pct"),
                     r["source"]])
+    # The metrics-store section, in the same flat shape: one row per series
+    # (kind ``fleet``), then one per policy down / collector failing.
+    fleet = body.get("fleet") or {}
+    if fleet.get("available"):
+        for m in fleet.get("metrics") or []:
+            for r in m.get("rows") or []:
+                w.writerow([r["series"], m["label"], "fleet", m["key"],
+                            m.get("unit", ""), "", r.get("min"), r.get("avg"),
+                            "", r.get("max"), "", "", "", "", "", "", "",
+                            "metrics_store"])
+        for d in fleet.get("down_policies") or []:
+            w.writerow([d.get("device", ""), d.get("policy", ""),
+                        "fleet_policy_down", "satom_policy_up", "", "", "", "",
+                        "", "", "", "", "down", "", "", "", "", "metrics_store"])
+        for f in fleet.get("failed_collectors") or []:
+            w.writerow([f.get("device", ""), f.get("collector", ""),
+                        "fleet_collector_failed", "satom_scrape_up", "", "", "",
+                        "", "", "", "", "", "error", "", "", "", "",
+                        "metrics_store"])
+    elif fleet:
+        w.writerow(["", "fleet metrics", "fleet", "", "", "", "", "", "", "",
+                    "", "", "no data", "", "", "", "",
+                    "metrics_store: " + (fleet.get("detail") or "unavailable")])
     return buf.getvalue()
 
 

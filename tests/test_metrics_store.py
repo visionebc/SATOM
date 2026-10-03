@@ -367,6 +367,18 @@ def test_seed_and_checks_agree_about_metrics_scrape():
     assert "metrics_scrape" in {row[0] for row in cmd_fix.SEED_PLAN}
 
 
+def test_the_seed_plan_records_the_daily_inventory_snapshot():
+    """The Metrics page's daily inventory trend is fed ONLY by this action;
+    it used to be left to the operator to schedule by hand."""
+    sys.path.insert(0, str(REPO / "deploy"))
+    from satom_cli import cmd_checks, cmd_fix
+    rows = [r for r in cmd_fix.SEED_PLAN if r[0] == "inventory_snapshot"]
+    assert len(rows) == 1
+    _key, _name, kind, sched, params, product = rows[0]
+    assert (kind, sched, params, product) == ("daily", {"time": "23:50"}, {}, "global")
+    assert "inventory_snapshot" in cmd_checks.MIN_ACTIONS
+
+
 def test_collection_page_renders(app, client):
     from conftest import admin_user_id, login
     from app.services import metrics_collect as mc
@@ -378,3 +390,115 @@ def test_collection_page_renders(app, client):
     assert r.status_code == 200
     html = r.get_data(as_text=True)
     assert "Scrape targets" in html and "fwm" in html
+
+
+# ── the fleet section is RENDERED, not only stored ───────────────────────────
+
+def _fleet_body(fleet):
+    return {"totals": {"probes": 0, "devices": 0, "samples": 0,
+                       "healthy_pct": None, "worst": "unknown",
+                       "incidents": 0, "changes": 0, "breaches": 0,
+                       "silent": 0, "measured_probes": 0},
+            "devices": [], "probes": [], "incidents": [], "silent": [],
+            "period": "daily", "period_label": "Daily",
+            "from": "2026-10-01T00:00:00", "to": "2026-10-02T00:00:00",
+            "no_data": True, "fleet": fleet}
+
+
+_FLEET = {"available": True, "detail": "", "product": "", "policy_scope": True,
+          "metrics": [{"key": "cpu", "label": "CPU", "unit": "%",
+                       "rows": [{"series": "fwb1", "min": 3.0, "avg": 41.5,
+                                 "max": 97.25}]}],
+          "down_policies": [{"device": "fwb1", "policy": "shop-policy"}],
+          "failed_collectors": [{"device": "fwb2", "collector": "traffic"}]}
+
+
+def test_report_text_renders_the_fleet_section():
+    from app.services import monitor_reports as mrep
+    txt = mrep.render_text(_fleet_body(_FLEET))
+    assert "Fleet metrics" in txt
+    assert "fwb1" in txt and "41.5 %" in txt and "97.25 %" in txt
+    assert "Policies down in the window: 1" in txt and "shop-policy" in txt
+    assert "Failing collectors: 1" in txt and "fwb2 / traffic" in txt
+    off = mrep.render_text(_fleet_body({"available": False,
+                                        "detail": "connection refused"}))
+    assert "NOT AVAILABLE" in off and "connection refused" in off
+
+
+def test_report_csv_carries_the_fleet_rows():
+    import csv
+    import io
+    from app.services import monitor_reports as mrep
+    rows = list(csv.reader(io.StringIO(mrep.to_csv(_fleet_body(_FLEET)))))
+    head = rows[0]
+    fleet = [dict(zip(head, r)) for r in rows[1:]]
+    cpu = [r for r in fleet if r["kind"] == "fleet"][0]
+    assert (cpu["device"], cpu["metric"], cpu["min"], cpu["avg"], cpu["max"]) == (
+        "fwb1", "cpu", "3.0", "41.5", "97.25")
+    assert any(r["kind"] == "fleet_policy_down" and r["probe"] == "shop-policy"
+               for r in fleet)
+    assert any(r["kind"] == "fleet_collector_failed" and r["device"] == "fwb2"
+               for r in fleet)
+    assert all(len(r) == len(head) for r in rows)
+
+
+def test_report_page_renders_the_fleet_section(app, client):
+    import json as _json
+    from app.extensions import db
+    from app.models_analytics import MonitorReport
+    from tests.conftest import admin_user_id, login
+    with app.app_context():
+        row = MonitorReport(period="daily", period_start=datetime(2026, 10, 1),
+                            period_end=datetime(2026, 10, 2), product="",
+                            title="Daily", worst_status="unknown",
+                            payload=_json.dumps(_fleet_body(_FLEET)))
+        db.session.add(row)
+        db.session.commit()
+        rid = row.id
+    login(client, admin_user_id(app), product="global")
+    r = client.get("/monitoring/reports/%d" % rid)
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert 'id="rep-fleet"' in html
+    assert "97.25" in html and "shop-policy" in html and "traffic" in html
+
+
+# ── FortiADC: device-level aggregates never borrow per-policy names ─────────
+
+def test_adc_device_rtt_is_published_under_adc_names(monkeypatch):
+    """``vs_status`` is a vdom aggregate with no ``policy`` label. Published as
+    ``satom_policy_*_rtt_ms`` it sat under FortiWeb's per-policy names and the
+    Service drill-down's ``policy=~"$policy"`` panels never matched it."""
+    from app.clients import fortiadc
+    from app.services import metrics_collect as mc
+
+    class _Adc:
+        def __init__(self, appliance, timeout=None):
+            pass
+
+        def login(self):
+            pass
+
+        def vs_status(self, vdom="root"):
+            return {"current_sessions": 4, "client_rtt": 11, "server_rtt": 22,
+                    "app_response": 33}
+
+        def vs_list(self, vdom="root"):
+            return [{"name": "vs-shop", "status": "up", "current_sessions": 2}]
+
+        def pool_member_list(self, vdom="root"):
+            return []
+
+    class _Appl:
+        name, kind = "adc1", "fortiadc"
+
+    monkeypatch.setattr(fortiadc, "FortiADCClient", _Adc)
+    lines = [l for l in mc._collect_vservers(_Appl(), {}, 1) if l]
+    names = {l.split("{", 1)[0]: l for l in lines}
+    assert names["satom_adc_client_rtt_ms"].split()[1] == "11"
+    assert names["satom_adc_server_rtt_ms"].split()[1] == "22"
+    assert names["satom_adc_app_response_ms"].split()[1] == "33"
+    # every satom_policy_* series is per virtual server
+    for l in lines:
+        if l.startswith("satom_policy_") and not l.startswith("satom_policy_count"):
+            assert 'policy="vs-shop"' in l, l

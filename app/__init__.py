@@ -2803,7 +2803,10 @@ def _seed_analytics_boards() -> None:
             "position": 8, "product": "",
             "description": "One published service — FortiWeb server policy or "
                            "FortiADC virtual server. The policy picker is "
-                           "scoped to the device picked above.",
+                           "scoped to the device picked above. RTT, app "
+                           "response and throughput are per-policy FortiWeb "
+                           "readings; FortiADC publishes those only per "
+                           "device (satom_adc_*), not per virtual server.",
             "default_range": "24h",
             "mode": "metricsql",
             "variables": [

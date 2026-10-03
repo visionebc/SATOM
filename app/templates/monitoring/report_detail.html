@@ -165,6 +165,44 @@
 </div>
 {% endif %}
 
+{% set fl = b.fleet %}
+{% if fl %}
+<div class="fw-card p-0 mb-3" id="rep-fleet">
+  <div class="an-card-head"><div class="an-card-title">
+    {{ _('Fleet metrics (metrics store)') }}</div></div>
+  {% if not fl.available %}
+  <p class="an-nodata small px-3 py-2 mb-0">
+    <i class="bi bi-exclamation-triangle me-1"></i>{{ _('Not available:') }} {{ fl.detail or _('metrics store unreachable') }}</p>
+  {% else %}
+  <div class="an-table-wrap">
+    <table class="an-table mb-0">
+      <thead><tr><th>{{ _('Metric') }}</th><th>{{ _('Series') }}</th>
+        <th class="an-num">{{ _('Min') }}</th><th class="an-num">{{ _('Avg') }}</th><th class="an-num">{{ _('Max') }}</th></tr></thead>
+      <tbody>
+      {% for m in fl.metrics %}{% for r in m.rows %}
+        <tr>
+          <td class="text-muted" style="font-size:.74rem">{{ m.label }}{% if m.unit %} ({{ m.unit }}){% endif %}</td>
+          <td>{{ r.series }}</td>
+          <td class="an-num">{{ '%g'|format(r.min) if r.min is not none else '—' }}</td>
+          <td class="an-num">{{ '%g'|format(r.avg) if r.avg is not none else '—' }}</td>
+          <td class="an-num">{{ '%g'|format(r.max) if r.max is not none else '—' }}</td>
+        </tr>
+      {% endfor %}{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="px-3 py-2 small">
+    {% if fl.policy_scope %}
+    <div><b>{{ _('Policies down in the window:') }}</b> {{ fl.down_policies|length }}
+      {% if fl.down_policies %}<ul class="mb-1">{% for d in fl.down_policies %}<li>{{ d.device or '—' }} · {{ d.policy }}</li>{% endfor %}</ul>{% endif %}</div>
+    {% endif %}
+    <div><b>{{ _('Failing collectors:') }}</b> {{ fl.failed_collectors|length }}
+      {% if fl.failed_collectors %}<ul class="mb-0">{% for f in fl.failed_collectors %}<li>{{ f.device or '—' }} · {{ f.collector }}</li>{% endfor %}</ul>{% endif %}</div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if b.incidents %}
 <div class="fw-card p-0">
   <div class="an-card-head"><div class="an-card-title">

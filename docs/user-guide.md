@@ -1633,7 +1633,12 @@ Global → Administrator → **Database** (admin only):
 - **ER diagram** — a live, professional database diagram (crow's-foot
   notation, domain-colored, searchable, draggable, exportable SVG).
 - **Tables browser + SQL console** — read-only introspection with sensitive
-  columns masked.
+  columns masked. A query (console, CSV export or report widget) that names a
+  credential table — `users`, `api_tokens`, `app_settings`,
+  `hypervisor_targets`, `dns_backends`, `provision_runs` — is refused before it
+  runs and the refusal is audited (`database.query_refused`): column masking
+  keys on the result column's name, which `row_to_json(...)` or an alias can
+  change.
 
 ## 17. Product workspaces
 

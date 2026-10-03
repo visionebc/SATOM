@@ -444,7 +444,10 @@ WALK_HELP: dict[str, dict] = {
                 "blank and Scout derives it from the object's VIP on the "
                 "device, which is the normal case. Type one when the ticket "
                 "names a host the device's own configuration does not. A typed "
-                "value wins over the derived one for every rung below it.",
+                "value wins over the derived one for every rung below it. "
+                "Without the 'monitoring.probe_free' permission (or user "
+                "management) a typed host must be one this appliance publishes "
+                "(its address or one of its VIPs); anything else is refused.",
     },
     "port": {
         "label": "Port",

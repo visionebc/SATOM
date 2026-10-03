@@ -1076,7 +1076,12 @@ def _endpoint(ctx: Ctx):
         guard = ctx.port("authorise_target")
         if guard is not None:
             try:
-                res = guard(ep["host"], ep["port"]) or {}
+                # ``typed``: the operator typed this host. A derived one comes
+                # from the appliance's own configuration; a typed one is free
+                # text and is held to the inventory unless the user may dial
+                # free targets (``default_ports(may_free=...)``).
+                res = guard(ep["host"], ep["port"], typed=not ep["derived"],
+                            appliance=t.appliance, policy=t.policy) or {}
                 ep["ip"] = str(res.get("ip") or ep["ip"])
             except Exception as exc:              # noqa: BLE001
                 ctx.state["endpoint_error"] = str(exc)
@@ -1160,7 +1165,8 @@ def run(target: Target, opts: Options | None = None, ports: dict | None = None,
 #  Wiring — the ONLY place that knows which module owns which question          #
 # --------------------------------------------------------------------------- #
 def default_ports(*, analyzer=None, faz_adom: str = "root", faz_devid: str = "",
-                  faz_vdom: str = "", faz_limit=None, faz_timeout=None) -> dict:
+                  faz_vdom: str = "", faz_limit=None, faz_timeout=None,
+                  may_free: bool = False) -> dict:
     """Bind the rungs to the services that already own their judgements.
 
     Every import is local. The ladder must stay importable — and testable —
@@ -1208,9 +1214,50 @@ def default_ports(*, analyzer=None, faz_adom: str = "root", faz_devid: str = "",
                 break
         return out
 
-    def _authorise(host, port):
+    def _inventory_hosts(appliance, policy):
+        """What this appliance publishes: its own address and every front-end
+        its configuration (or, failing that, its live listing) names."""
+        hosts = {str(getattr(appliance, "host", "") or "")}
+        kind = str(getattr(appliance, "kind", "") or "")
+        targets = None
+        try:
+            client = _client(appliance)
+            if kind == "fortiadc":
+                from . import adc_ops
+                targets = adc_ops.resolve_targets(client)
+            else:
+                from . import service_probe
+                targets = service_probe.resolve_targets_from_client(client)
+        except Exception:                         # noqa: BLE001
+            targets = None
+        for t in targets or []:
+            hosts.add(str(getattr(t, "host", "") or ""))
+        if kind != "fortiadc":
+            for r in (_live_objects(appliance) or []):
+                hosts.add(str(r.get("vserver") or "").strip().split("/")[0].strip())
+        return [h for h in hosts if h]
+
+    def _authorise(host, port, *, typed=False, appliance=None, policy=None):
+        """Same rule as the certificate inspector: a host the OPERATOR typed is
+        dialled freely only by holders of ``monitoring.probe_free`` (or user
+        management); everyone else is held to the appliance's own inventory.
+        A derived front-end comes from the device's configuration."""
         from . import net_guard
-        return net_guard.resolve_target(host, int(port), mode=net_guard.MODE_FREE)
+        if not typed or may_free:
+            return net_guard.resolve_target(host, int(port),
+                                            mode=net_guard.MODE_FREE)
+        try:
+            return net_guard.resolve_target(
+                host, int(port), mode=net_guard.MODE_INVENTORY,
+                inventory_hosts=_inventory_hosts(appliance, policy))
+        except net_guard.TargetError as exc:
+            if "not in the inventory" in str(exc):
+                raise net_guard.TargetError(
+                    "%s is not published by this appliance. Typing an "
+                    "arbitrary host needs the '%s' permission; leave Published "
+                    "host blank to use the object's VIP."
+                    % (host, net_guard.FREE_PERMISSION)) from None
+            raise
 
     def _live_rows(appliance):
         """What the appliance says it is serving RIGHT NOW, or ``None``.

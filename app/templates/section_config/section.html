@@ -2,13 +2,13 @@
 
 {% block title %}{{ section.label }} — FortiWeb Configuration{% endblock %}
 
-{% set back_url = url_for('section_config.section', section_key=section.key, device=device_id) %}
+{% set back_url = url_for('section_config.section', section_key=section.key) %}
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
   <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <a href="{{ url_for('section_config.index', device=device_id) }}">{{ _('Configuration') }}</a>
+  <a href="{{ url_for('section_config.index') }}">{{ _('Configuration') }}</a>
   <span class="separator">/</span>
   <span>{{ section.label }}</span>
   {% if selected %}<span class="separator">/</span><span>{{ selected.label }}</span>{% endif %}
@@ -36,7 +36,7 @@
       <span class="mono text-muted" style="font-size:12px;">kind: {{ kind }}</span>
     </div>
   </div>
-  <a href="{{ url_for('section_config.index', device=device_id) }}" class="btn btn-fw-outline btn-sm">
+  <a href="{{ url_for('section_config.index') }}" class="btn btn-fw-outline btn-sm">
     <i class="bi bi-arrow-left me-1"></i>{{ _('All sections') }}
   </a>
 </div>
@@ -66,7 +66,7 @@
         {% for it in active_group.items %}
         <li class="nav-item">
           <a class="nav-link {{ 'active' if selected and it.logical == selected.logical else '' }}"
-             href="{{ url_for('section_config.section', section_key=section.key, device=device_id, type=it.logical) }}">
+             href="{{ url_for('section_config.section', section_key=section.key, type=it.logical) }}">
             <i class="bi {{ it.icon }} me-1"></i>{{ it.label }}
             {% if it.read_only %}<i class="bi bi-eye ms-1 text-muted" title="{{ _('Read-only') }}"></i>{% endif %}
           </a>

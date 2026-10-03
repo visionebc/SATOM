@@ -596,6 +596,29 @@ The firmware library is no longer reachable from the FortiADC and FortiAuthentic
 The `/advisor/attach/sot-search` endpoint, which no page called, is removed.
 The advisor model keeps its configuration search tool.
 
+### Security — document translation honours "Allow external providers" for remote Ollama (2026-10-03)
+
+Translating a change-request document decided whether the AI provider leaves
+the network from its kind alone, so an Ollama provider on a public host was
+treated as local: no "Allow external providers" check and no external flag on
+the run. It now uses the same rule as the AI Advisor: only a base URL whose
+host is loopback, link-local or private counts as local.
+
+### Fixed — delete confirmations that never asked (2026-10-03)
+
+Deleting a process, a change type or a WAF artifact version asked for
+confirmation through an inline handler that the page's Content Security
+Policy blocks, so the delete went through without asking. These forms now use
+the standard confirmation, and two more inline handlers (a CLI-coverage
+evidence selector and the copy badge in the problem-report inbox) were moved
+to the same mechanism. A test now refuses any inline event handler in a
+template.
+
+### Fixed — Naming page in the Global ADOM (2026-10-03)
+
+Administration → Naming answered with an error page when opened from the
+Global ADOM.
+
 ## [2.10.1] - 2026-10-03
 
 ### Fixed — Stop did not stop a running deep capture (2026-10-03)

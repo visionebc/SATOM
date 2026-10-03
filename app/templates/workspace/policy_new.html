@@ -16,13 +16,16 @@
   <div class="fw-card-body"><div class="fw-fld-grid" style="grid-template-columns:minmax(280px,460px) minmax(280px,460px);">
     <div class="fw-fld"><label class="fw-fld-label">{{ _('Policy name') }} <span class="fw-key">{{ _('name') }}</span></label>
       <input type="text" class="form-control form-control-sm" id="policyName" placeholder="{{ _('e.g. pol-myapp') }}" required></div>
+    {% if current_user.can('user_manage') %}
     <div class="fw-fld"><label class="fw-fld-label">{{ _('AppID') }} <span class="text-muted">(billing &amp; token scope)</span></label>
       <select class="form-select form-select-sm" id="appIdSel">
         <option value="">{{ _('— none —') }}</option>
         {% for a in appid_catalog %}
         <option value="{{ a.id }}">{{ a.app_id }}{% if a.customer %} — {{ a.customer }}{% endif %}</option>
         {% endfor %}
-      </select></div>
+      </select>
+      <div class="form-text">{{ _('Bound when the policy is created on the device.') }}</div></div>
+    {% endif %}
   </div></div>
 </div>
 
@@ -58,6 +61,10 @@
 {# ── Policy fields ── #}
 <div class="fw-card mb-3"><div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-shield-lock me-2 text-accent"></i>{{ _('Policy settings') }}</span></div>
   <div class="fw-card-body" id="policyScope">
+    {# The profile is hoisted out of the field groups by the view; it is
+       picked here and posted with the rest of the policy fields. #}
+    <div class="fw-group"><div class="fw-group-title">{{ _('Web Protection Profile') }}</div>
+      <div class="fw-fld-grid">{{ fld(wpp_field, false) }}</div></div>
     {% for g in policy_groups %}<details class="fw-group" {{ 'open' if g.title in ['Network Configuration','HTTPS/SSL','Security'] }}>
       <summary class="fw-group-title">{{ g.title }} <span class="text-muted">({{ g.fields|length }})</span></summary>
       <div class="fw-fld-grid mt-2">{% for f in g.fields %}{{ fld(f) }}{% endfor %}</div></details>{% endfor %}

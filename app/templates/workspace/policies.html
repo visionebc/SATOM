@@ -457,6 +457,14 @@
     migrate_to: 'Migrate to another FortiWeb'
   };
   var NEEDS_DEST = { clone_to: 1, migrate_to: 1 };
+  // The reasons services.policy_graph._skip_reason emits for kept objects.
+  var SKIP_REASON_LABELS = {
+    'wpp-subtree': 'Web Protection Profile (never auto-deleted)',
+    'certificate': 'certificate (never auto-deleted)',
+    'ssl-ciphers': 'SSL cipher group (never auto-deleted)',
+    'service': 'service (never auto-deleted)',
+    'system-object': 'system object (never auto-deleted)'
+  };
 
   // ── Filtering ──────────────────────────────────────────────────────────────
   // Text filters accept a plain case-insensitive substring OR a regular
@@ -673,7 +681,7 @@
     document.getElementById('actionModalTitle').textContent = LABELS[action] + ' — ' + policies.length + ' polic' + (many ? 'ies' : 'y');
     var intro = { enable: 'Enable the selected server polic{y}.',
       disable: 'Disable the selected server polic{y} (traffic stops; the object is kept).',
-      delete: 'DELETE the selected server polic{y}. Shared objects (WPP, pool, certificate, service) are kept.',
+      delete: 'DELETE the selected server polic{y}. Objects used only by this policy (virtual server, VIP, server pool…) are deleted with it; Web Protection Profiles, certificates, services and objects shared with other policies are kept. The preview lists both.',
       clone_here: 'Deep-clone the whole policy tree on THIS FortiWeb under a new name. Existing objects are validated (not overwritten); the copy is left DISABLED.',
       clone_to: 'Deep-clone the whole policy tree onto ANOTHER FortiWeb. Existing objects on the destination are validated (not overwritten); the copy is left DISABLED.',
       migrate_to: 'Clone the policy tree onto another FortiWeb and, only if that lands cleanly, DISABLE the source (the source is kept — never deleted).'
@@ -1144,8 +1152,8 @@
               reasonLabel = names.length
                 ? 'shared with: <span style="color:#cbd5e1;">' + names.map(esc).join(', ') + '</span>'
                 : 'shared &mdash; used by other policies';
-            } else if (obj.reason === 'always_skip') {
-              reasonLabel = 'exempt from auto-deletion';
+            } else if (SKIP_REASON_LABELS[obj.reason]) {
+              reasonLabel = SKIP_REASON_LABELS[obj.reason];
             } else { reasonLabel = esc(obj.reason || ''); }
             cpHtml += '<div style="padding:1px 0;padding-left:10px;color:#94a3b8;">&#9675; ' + esc(obj.label || obj.mkey)
               + ' <span style="color:#64748b;font-size:11px;">&mdash; ' + reasonLabel + '</span></div>';

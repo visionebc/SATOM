@@ -616,6 +616,7 @@ EXCLUDED: dict[str, str] = {
     "settings.thresholds_state": "json feed", "settings.trust_store_state": "json feed",
     "system_backup.external_content": "json feed", "system_backup.external_diff": "json feed",
     "system_backup.external_download": "file download",
+    "audit.export_csv": "file download — the Export CSV button on audit.index",
     "registry.api_versions_export": "file download",
     "registry.api_versions_export_pdf": "file download",
     "adc_api.api_versions_export": "file download",

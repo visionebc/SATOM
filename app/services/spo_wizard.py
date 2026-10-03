@@ -184,7 +184,10 @@ def build_plan(appliance, *, line: str, web_address: str,
             "no_web_address", "a web address is required — every object name "
             "is derived from it"))
         return plan
-    plan.names = naming.render_names(web_address, None, product)
+    # The operator's saved patterns (Administrator -> Naming) win over the
+    # defaults; passing None here once made that page a no-op for the wizard.
+    plan.names = naming.render_names(
+        web_address, store.naming_overrides(product), product)
     # The naming scheme is operator-editable, and a key that is missing or
     # renders empty does NOT crash — it produces an object called "", which
     # FortiWeb accepts far enough to be confusing. Refuse instead. (This
@@ -196,7 +199,7 @@ def build_plan(appliance, *, line: str, web_address: str,
         plan.blockers.append(Blocker(
             "naming_incomplete",
             "the naming scheme produced no name for: " + ", ".join(missing)
-            + " — fix it in Settings -> Naming"))
+            + " — fix it in Administrator -> Naming"))
 
     # -- which SERVER pool -------------------------------------------------
     plan.pool_mode = pool_mode if pool_mode in POOL_MODES else POOL_NEW
@@ -434,7 +437,7 @@ def _collision_check(appliance, plan: SpoPlan) -> None:
     we cannot read is how a run discovers at step four that step one was
     impossible.
     """
-    from ..views.workspace import EP_POOL
+    from ..views.workspace import EP_POOL, EP_WPP
     from .policy_ops import EP_POLICY
     want = (plan.names.get("server_policy") or "").strip()
     if not want:
@@ -447,6 +450,10 @@ def _collision_check(appliance, plan: SpoPlan) -> None:
         # and both would otherwise fail at the object step — after the address
         # was reserved, the record published and the certificate issued.
         pools = set(client.cmdb_names(EP_POOL) or [])
+        # The line's WPP is bound by NAME; a profile the device lacks makes
+        # the policy create fail at the last step, after DNS and the cert.
+        wpps = (set(client.cmdb_names(EP_WPP) or [])
+                if plan.wpp_template_name else set())
     except Exception as exc:  # noqa: BLE001 — a probe must not 500 the page
         plan.blockers.append(Blocker(
             "device_unreachable",
@@ -466,6 +473,12 @@ def _collision_check(appliance, plan: SpoPlan) -> None:
             f"a server pool named {plan.pool_name!r} already exists on "
             f"{getattr(appliance, 'name', 'this device')} — bind it instead "
             "of creating a second one with the same name"))
+    if plan.wpp_template_name and plan.wpp_template_name not in wpps:
+        plan.blockers.append(Blocker(
+            "wpp_not_on_device",
+            f"the line's Web Protection Profile {plan.wpp_template_name!r} "
+            f"does not exist on {getattr(appliance, 'name', 'this device')} "
+            "— deploy the template to the device first"))
     if want in names:
         plan.blockers.append(Blocker(
             "policy_exists",
@@ -613,8 +626,11 @@ def apply_plan(appliance, plan: SpoPlan, *, dry_run: bool = True,
                 return fail(f"DNS provider refused the record: {exc}")
 
     # -- 3. certificate ---------------------------------------------------
+    #: The issued certificate's name; the policy below serves HTTPS with it.
+    cert_name = ""
     if plan.issue_cert:
         if dry_run:
+            cert_name = "<issued at apply>"
             steps.append(RunStep(
                 STEP_CERT, "Issue the certificate",
                 detail=f"would issue a {plan.cert_class} certificate for "
@@ -628,6 +644,7 @@ def apply_plan(appliance, plan: SpoPlan, *, dry_run: bool = True,
                 steps.append(RunStep(STEP_CERT, "Issue the certificate",
                                      ok=False, detail=res.get("error", "")))
                 return fail(f"certificate issuance failed: {res.get('error')}")
+            cert_name = str(res.get("name") or "")
             steps.append(RunStep(STEP_CERT, "Issue the certificate",
                                  detail=f"issued {res.get('name')}"))
             # Deliberately NOT compensated on a later failure — see the module
@@ -637,7 +654,7 @@ def apply_plan(appliance, plan: SpoPlan, *, dry_run: bool = True,
                 "automatically")
 
     # -- 4. the device objects -------------------------------------------
-    payload = object_payload(plan, vip)
+    payload = object_payload(plan, vip, certificate=cert_name)
     if dry_run:
         steps.append(RunStep(STEP_OBJECTS, "Create the policy objects",
                              detail=f"{len(payload['steps'])} objects: "
@@ -676,8 +693,12 @@ def apply_plan(appliance, plan: SpoPlan, *, dry_run: bool = True,
             "compensated": [], "stranded": stranded}
 
 
-def object_payload(plan: SpoPlan, vip: str) -> dict:
+def object_payload(plan: SpoPlan, vip: str, certificate: str = "") -> dict:
     """The ordered device writes, built from the plan.
+
+    ``certificate`` is the name of the certificate issued in the same run: the
+    policy then serves HTTPS with it (predefined ``HTTPS`` service). Without
+    it the policy carries no certificate, as before.
 
     Endpoints come from ``views.workspace._CREATE_EPS`` rather than a second
     copy: two lists of FortiWeb endpoints is two things to keep correct.
@@ -708,6 +729,9 @@ def object_payload(plan: SpoPlan, vip: str) -> dict:
               "server-pool": pool}
     if plan.wpp_template_name:
         policy["web-protection-profile"] = plan.wpp_template_name
+    if certificate:
+        policy["https-service"] = "HTTPS"
+        policy["certificate"] = certificate
     steps.append(("Server Policy", _CREATE_EPS["policy"], policy, None))
     return {"steps": steps}
 

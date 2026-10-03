@@ -112,10 +112,13 @@ def env(app, monkeypatch):
 
 
 class _Client:
-    def __init__(self, names):
+    def __init__(self, names, wpps=("wpp-retail",)):
         self._names = names
+        self._wpps = list(wpps)
 
     def cmdb_names(self, endpoint):
+        if "web-protection-profile" in endpoint:
+            return list(self._wpps)
         return list(self._names)
 
 
@@ -905,3 +908,66 @@ def test_the_form_sends_the_two_choices():
     frag = src[start:src.index("function post(", start)]
     assert "ipam_backend_id: $('w-ipam-backend').value" in frag
     assert "dns_backend_id: $('w-dns-backend').value" in frag
+
+
+# ---------------------------------------------------------------------------
+# audit 2026-10-03: naming, certificate binding, WPP on the device
+# ---------------------------------------------------------------------------
+def test_saved_naming_patterns_drive_the_wizard_names(app, env):
+    """Administrator -> Naming was a no-op for the wizard: it rendered the
+    defaults only."""
+    with app.app_context():
+        store.save_naming({"server_policy": "pol-custom-{name}"}, "fortiweb")
+    plan = _plan(app, env, address="198.51.100.50")
+    assert plan.names["server_policy"].startswith("pol-custom-")
+
+
+def test_the_naming_blocker_points_at_the_real_page(app, env, monkeypatch):
+    monkeypatch.setattr(wiz.naming, "render_names",
+                        lambda *a, **k: {"server_policy": ""})
+    plan = _plan(app, env, address="192.0.2.1")
+    detail = [b.detail for b in plan.blockers
+              if b.code == "naming_incomplete"][0]
+    assert "Administrator -> Naming" in detail
+
+
+def test_an_issued_certificate_is_bound_on_the_policy(app, env, monkeypatch):
+    from app.services import cert_manager, fortiweb_ops
+    monkeypatch.setattr(cert_manager, "create_certificate",
+                        lambda *a, **k: {"ok": True, "name": "cert-server-shop"})
+    seen = []
+
+    def _create(self, ep, data, **k):
+        seen.append((ep, data["data"]))
+        return fortiweb_ops.OpResult({"ok": True})
+
+    monkeypatch.setattr(fortiweb_ops.FortiWebOps, "create", _create)
+    plan = _plan(app, env, address="198.51.100.50", issue_cert=True)
+    assert plan.ok, _codes(plan)
+    with app.app_context():
+        res = wiz.apply_plan(_appl(app, env), plan, dry_run=False)
+    assert res["ok"] is True, res
+    policy = seen[-1][1]
+    assert policy["certificate"] == "cert-server-shop"
+    assert policy["https-service"] == "HTTPS"
+
+
+def test_no_certificate_means_no_https_binding(app, env):
+    plan = _plan(app, env, address="198.51.100.50")
+    with app.app_context():
+        policy = wiz.object_payload(plan, "198.51.100.50")["steps"][-1][2]
+    assert "certificate" not in policy and "https-service" not in policy
+
+
+def test_a_wpp_missing_on_the_device_blocks_before_anything_is_built(
+        app, env, monkeypatch):
+    with app.app_context():
+        appl = _appl(app, env)
+        monkeypatch.setattr(type(appl), "build_client",
+                            lambda self, **kw: _Client([], wpps=["other"]))
+    assert "wpp_not_on_device" in _codes(_plan(app, env, address="198.51.100.50"))
+
+
+def test_a_wpp_present_on_the_device_does_not_block(app, env):
+    assert "wpp_not_on_device" not in _codes(
+        _plan(app, env, address="198.51.100.50"))

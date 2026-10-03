@@ -516,3 +516,55 @@ def test_deleting_says_what_the_line_falls_back_to(app, client, catalog):
     assert "falls back to matching segments by name" in body
     with app.app_context():
         assert lp.profile_for("retail") is None
+
+
+# ---------------------------------------------------------------------------
+# 10. the Global menu entry files rows where the wizard reads them
+# ---------------------------------------------------------------------------
+def test_a_profile_saved_from_the_global_adom_is_a_fortiweb_profile(
+        app, client, catalog):
+    """The only menu entry lives in the Global ADOM. Rows saved there were
+    filed under 'global', a product no device has, so the wizard (which reads
+    ``appl.kind``) never used them."""
+    from conftest import admin_user_id, login
+    tid = _tpl(app)
+    login(client, admin_user_id(app), product="global")
+    r = client.post("/web/line-profiles/save",
+                    data={"line": "retail", "segments": ["dmz-web"],
+                          "cert_class": "server",
+                          "wpp_template_id": str(tid)})
+    assert r.status_code == 302
+    with app.app_context():
+        assert LineProfile.query.filter_by(product="global").count() == 0
+        assert lp.line_plan("retail", "fortiweb").source == "declared"
+
+
+def test_the_global_page_offers_the_fortiweb_templates(app, client, catalog):
+    from conftest import admin_user_id, login
+    _tpl(app, name="wpp-visible-from-global")
+    login(client, admin_user_id(app), product="global")
+    body = client.get("/web/line-profiles/").get_data(as_text=True)
+    assert "wpp-visible-from-global" in body
+
+
+def test_legacy_global_rows_are_refiled_without_overwriting(app, catalog):
+    _profile(app, line="retail", product="global")
+    _profile(app, line="lab", segments=("lab-only",), product="global")
+    _profile(app, line="lab", segments=(), product="fortiweb")
+    with app.app_context():
+        assert lp.adopt_global_profiles() == 1
+        assert lp.profile_for("retail", "fortiweb") is not None
+        # the clash stays where it was: FortiWeb's own declaration wins
+        assert lp.profile_for("lab", "fortiweb").segments() == []
+        assert lp.profile_for("lab", "global") is not None
+        assert lp.adopt_global_profiles() == 0
+
+
+def test_errors_flash_as_danger_not_info(app, client, catalog):
+    from conftest import admin_user_id, login
+    login(client, admin_user_id(app))
+    r = client.post("/web/line-profiles/save", data={"line": ""},
+                    follow_redirects=True)
+    body = r.get_data(as_text=True)
+    assert "No line was given." in body
+    assert "fw-alert-danger" in body

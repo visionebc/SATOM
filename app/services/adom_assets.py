@@ -536,6 +536,13 @@ def collect(product: str = "", *, now: datetime | None = None,
                             key=_STATE_RANK.index)
             label = next(v["state_label"] for v in views
                          if v["state"] == state_key)
+        elif not inv.get("reachable"):
+            # No folders because the server could not be READ, not because
+            # the device never pushed: grading that "never" is the false
+            # alarm the page banner promises not to raise.
+            state_key = "unknown"
+            label = ("server unreachable" if inv.get("configured")
+                     else "no backup server")
         else:
             state_key, label = grade(None, False)
 

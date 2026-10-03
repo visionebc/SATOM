@@ -765,9 +765,19 @@ def test_an_unreachable_server_reads_as_unknown_not_as_no_backups(app, monkeypat
                             lambda: {"configured": True, "reachable": False,
                                      "host": "fm.example", "error": "timeout",
                                      "devices": [], "firmware": []})
+        from app.extensions import db
+        from app.models_identity import DeviceIdentity
+        db.session.add(DeviceIdentity(slug="fw77", name="fw77",
+                                      product="fortiweb", names='["fw77"]'))
+        db.session.commit()
         data = adom_assets.collect("")
         assert data["server"]["reachable"] is False
         assert data["server"]["error"] == "timeout"
+        # The device rows must say "unknown", not "never pushed": an
+        # unreadable server is not evidence that nothing was ever pushed.
+        row = [r for r in data["rows"] if r["slug"] == "fw77"][0]
+        assert row["state"] == "unknown"
+        assert row["state_label"] == "server unreachable"
 
 
 def test_a_folder_no_device_claims_is_still_shown(app, monkeypatch):

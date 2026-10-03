@@ -51,15 +51,18 @@ class _Client:
     guard from one that matched the wrong collection.
     """
 
-    def __init__(self, policies=(), pools=()):
+    def __init__(self, policies=(), pools=(), wpps=("wpp-retail",)):
         self.policies = list(policies)
         self.pools = list(pools)
+        self.wpps = list(wpps)
         self.seen: list[str] = []
 
     def cmdb_names(self, endpoint):
         self.seen.append(endpoint)
         if "server-pool" in endpoint:
             return list(self.pools)
+        if "web-protection-profile" in endpoint:
+            return list(self.wpps)
         return list(self.policies)
 
 

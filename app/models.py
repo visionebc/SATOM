@@ -2663,7 +2663,7 @@ class MonitorProbe(db.Model):
     crit_num = db.Column(db.Float, nullable=True, default=None)
 
     timeout_s = db.Column(db.Integer, nullable=False, default=10)
-    interval_min = db.Column(db.Integer, nullable=False, default=5)
+    interval_min = db.Column(db.Integer, nullable=False, default=3)
     retention = db.Column(db.Integer, nullable=False, default=500)
 
     # Targeted, EXPIRING suppression. A probe that is suppressed still runs,

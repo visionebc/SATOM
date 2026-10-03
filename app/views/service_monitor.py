@@ -33,7 +33,7 @@ carrying", and both come from ONE ``GET /api/v1/systeminfo/`` (measured at
 
 What is deliberately NOT split: the storage (``monitor_probe`` /
 ``monitor_sample``), the runner (``services.deep_monitor.run_probe``) and the
-``deep_monitor`` scheduled action, which sweeps both pages every five minutes.
+``deep_monitor`` scheduled action, which sweeps both pages every three minutes.
 Two runners would mean two sweeps and two sets of samples for the same box.
 
 The daemon-restart check (``proxyd``, PID-set fingerprint) stays in Deep

@@ -158,10 +158,12 @@ def products_for(kind: str) -> tuple:
 #    ``status.systemresource``, ``policystatus`` and ``policytraffic`` all
 #    answer 200. So these probes cover exactly the devices whose hourly
 #    ``device_sync`` has been failing for days.
-#  * They are FortiWeb-only. FortiADC and FortiAnalyzer expose runtime
-#    telemetry under entirely different paths; a shared implementation would
-#    have produced silent zeroes on those products rather than an error, so
-#    discovery refuses to create them and the runner reports ``error``.
+#  * They exist on FortiWeb (sessions / throughput / transactions) and on
+#    FortiAuthenticator (licence headroom / FortiToken pools) only -- see
+#    KIND_PRODUCTS. FortiADC and FortiAnalyzer expose runtime telemetry under
+#    entirely different paths; a shared implementation would have produced
+#    silent zeroes on those products rather than an error, so discovery
+#    refuses to create them and the runner reports ``error``.
 API_KINDS = ("sessions", "policy_sessions", "throughput", "transactions",
              "licence", "tokens")
 
@@ -1910,7 +1912,7 @@ def due_probes(*, session=None, force: bool = False) -> list:
         if p.last_run_at is None:
             out.append(p)
             continue
-        if now - p.last_run_at >= timedelta(minutes=max(1, int(p.interval_min or 5))):
+        if now - p.last_run_at >= timedelta(minutes=max(1, int(p.interval_min or DEFAULT_PROBE_INTERVAL_MIN))):
             out.append(p)
     return out
 
@@ -2209,7 +2211,8 @@ def discover_https_probes(appliance, *, session=None) -> dict:
         session.add(MonitorProbe(
             appliance_id=appliance.id, kind="https",
             name=f"{appliance.name} · {t['policy']}"[:120],
-            target=t["policy"], url=url, enabled=t["enabled"], interval_min=5,
+            target=t["policy"], url=url, enabled=t["enabled"],
+            interval_min=DEFAULT_PROBE_INTERVAL_MIN,
             note=t["note"][:250]))
         have.add(url)
         created += 1

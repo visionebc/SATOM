@@ -332,6 +332,106 @@ def test_the_preview_is_what_actually_gets_sent(app, monkeypatch):
             "the operator approved a different string than the one that was sent")
 
 
+def _all_text(messages):
+    return "\n".join(m["content"] for m in messages)
+
+
+def test_earlier_turns_are_redacted_before_an_external_send(app, monkeypatch):
+    """Redacting only the newest message is not redaction: the earlier turns
+    travel with it, and the stored rows are the operator's raw text. The
+    assistant turn is checked too -- a model can echo an address back."""
+    from app.services import advisor
+
+    with app.app_context():
+        key = _seed(kind="openai", external_on=True)
+        seen = {}
+
+        def fake(kind, *, base_url, api_key, model, system, messages):
+            seen["messages"] = messages
+            return _Reply("the VIP 192.0.2.77 looks fine")
+
+        monkeypatch.setattr(advisor, "_provider_send", fake)
+        conv = advisor.create_conversation("admin", provider_key=key)
+        advisor.send_message(conv, "admin", "check the policy on 192.0.2.248")
+        advisor.send_message(conv, "admin", "and now?")
+        sent = _all_text(seen["messages"])
+        assert len(seen["messages"]) == 3, "the earlier turns were not sent at all"
+        assert "192.0.2.248" not in sent, "an earlier user turn left the LAN unredacted"
+        assert "192.0.2.77" not in sent, "an earlier assistant turn left the LAN unredacted"
+
+
+def test_switching_a_local_conversation_to_an_external_provider_redacts_it(
+        app, monkeypatch):
+    """A conversation started on the LAN model holds raw text by design. The
+    moment it is pointed at an external provider, all of it must be redacted."""
+    from app.extensions import db
+    from app.services import advisor
+
+    with app.app_context():
+        local = _seed(kind="ollama", key="loc", external_on=True)
+        ext = _seed(kind="anthropic", key="ext", external_on=True)
+        seen = _capture(monkeypatch)
+        conv = advisor.create_conversation("admin", provider_key=local)
+        advisor.send_message(conv, "admin", "the box at 192.0.2.248 drops traffic")
+        assert "192.0.2.248" in _all_text(seen["messages"])
+        conv.provider_key = ext
+        db.session.commit()
+        advisor.send_message(conv, "admin", "summarise")
+        assert "192.0.2.248" not in _all_text(seen["messages"]), (
+            "local history was handed to an external provider verbatim")
+
+
+def test_the_preview_counts_the_history_that_goes_with_the_message(app, monkeypatch):
+    from app.services import advisor
+
+    with app.app_context():
+        key = _seed(kind="openai", external_on=True)
+        _capture(monkeypatch)
+        conv = advisor.create_conversation("admin", provider_key=key)
+        advisor.send_message(conv, "admin", "host 192.0.2.248")
+        preview = advisor.preview_outbound(conv, "no identifiers here")
+        assert preview["history_turns"] == 2
+        assert preview["redaction_count"] >= 1, (
+            "the operator was told nothing would be redacted while history was")
+
+
+def test_an_ollama_provider_on_a_public_host_is_external(app, monkeypatch):
+    """The provider KIND says nothing about where the endpoint lives."""
+    from app.models_advisor import AdvisorExportLog
+    from app.services import advisor
+    from app.services.advisor_providers import ProviderError
+
+    with app.app_context():
+        advisor.save_provider(key="far", kind="ollama", label="far",
+                              base_url="http://8.8.8.8:11434", model="m", api_key=None)
+        advisor.set_flags(enabled_=True, external=False)
+        seen = _capture(monkeypatch)
+        conv = advisor.create_conversation("admin", provider_key="far")
+        with pytest.raises(ProviderError):
+            advisor.send_message(conv, "admin", "hello from 192.0.2.248")
+        assert "messages" not in seen, "a public Ollama skipped the external switch"
+
+        advisor.set_flags(enabled_=True, external=True)
+        advisor.send_message(conv, "admin", "hello from 192.0.2.248")
+        assert "192.0.2.248" not in _all_text(seen["messages"])
+        assert AdvisorExportLog.query.count() == 1
+
+
+def test_an_unresolvable_ollama_host_is_not_assumed_local(app, monkeypatch):
+    from app.services import advisor
+
+    def boom(*a, **k):
+        raise OSError("no such host")
+
+    monkeypatch.setattr(advisor.socket, "getaddrinfo", boom)
+    assert advisor.leaves_lan({"kind": "ollama",
+                               "base_url": "http://ollama.example.invalid:11434"})
+    assert not advisor.leaves_lan({"kind": "ollama",
+                                   "base_url": "http://127.0.0.1:11434"})
+    assert not advisor.leaves_lan({"kind": "ollama",
+                                   "base_url": "http://192.0.2.34:11434"})
+
+
 # ---------------------------------------------------------------------------
 # proposals extracted from a model reply
 # ---------------------------------------------------------------------------

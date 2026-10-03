@@ -71,7 +71,7 @@
           <td style="font-size:13px; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ p.note or '—' }}</td>
           <td style="font-size:13px;">{{ p.updated_at.strftime('%Y-%m-%d %H:%M') if p.updated_at else '—' }}</td>
           <td class="actions-col">
-            {% if p.status == 'pending' %}
+            {% if p.status == 'pending' and current_user.can('operations.template_approve') %}
             <form method="POST" action="{{ url_for('provisioning.approve_profile', template_id=p.id) }}" style="display:inline;">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-sm btn-outline-success btn-sm-icon me-1" title="{{ _('Approve') }}"><i class="bi bi-check-lg"></i></button>

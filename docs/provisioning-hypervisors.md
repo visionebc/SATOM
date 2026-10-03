@@ -108,8 +108,8 @@ Before this change the firmware repository modelled only the first: a single
 media. `FirmwareImage` now carries `image_kind` (`upgrade` | `install`,
 defaulting to `upgrade` because every pre-existing row is one) and, for
 install images, `hypervisor` (`kvm` | `vmware`). Accepted extensions follow
-the kind, in **both** upload paths — the multipart one and the resumable
-chunked one, which had two independent copies of the same hardcoded check.
+the kind on the upload path. (A second, resumable chunked upload API that no
+page called carried its own copy of the check; it has been removed.)
 
 Offering the wrong artefact is not a validation nicety. An operator who picks
 an upgrade file to build a new VM learns about it from a machine that will not

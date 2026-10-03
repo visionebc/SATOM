@@ -216,11 +216,10 @@ def forget(product: str, version: str) -> tuple:
 def _image_versions(product: str) -> dict:
     """``{version: [filename, ...]}`` from the firmware vault.
 
-    Derived from the ``FirmwareImage`` table on every read (RULE 3). There are
-    TWO code paths that create those rows — the plain ``upload`` view and the
-    chunked ``assemble_upload`` — and hooking both would be one refactor away
-    from a version that silently never gets declared. Querying the table has
-    one call site and cannot drift.
+    Derived from the ``FirmwareImage`` table on every read (RULE 3). Hooking
+    the code path that creates those rows (the ``upload`` view) would be one
+    refactor away from a version that silently never gets declared. Querying
+    the table has one call site and cannot drift.
     """
     from ..models_firmware import FirmwareImage
 

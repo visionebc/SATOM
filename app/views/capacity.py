@@ -71,9 +71,14 @@ def index():
                 fleet.append({'product': product, 'model': a.model, 'fw': fw})
     labels = dict(capsvc.object_types_ordered())
     from ..services import product_scope
+    from ..services import device_health as devhealth
+    # The "in use" highlight follows the configured capacity warning level
+    # of each product (Thresholds page), not a hard-coded 80 %.
+    warn_pct = {p: devhealth.thresholds(p)[0] for (p, _f, _m) in groups}
     return render_template('capacity/index.html', groups=groups, usage=usage,
                            missing_models=fleet, labels=labels,
-                           product_options=product_scope.creatable_kinds())
+                           product_options=product_scope.creatable_kinds(),
+                           warn_pct=warn_pct)
 
 
 @bp.route('/add-model', methods=['POST'])
@@ -120,7 +125,7 @@ def save():
             if hard is not None and hard < 0:
                 raise ValueError
         except ValueError:
-            errors.append(f'{row.model}/{row.object_type}: hard max must be a positive integer')
+            errors.append(f'{row.model}/{row.object_type}: hard max must be a non-negative integer')
             continue
 
         opcap, pct = None, None
@@ -130,7 +135,7 @@ def save():
                 if opcap < 0:
                     raise ValueError
             except ValueError:
-                errors.append(f'{row.model}/{row.object_type}: cap must be a positive integer')
+                errors.append(f'{row.model}/{row.object_type}: cap must be a non-negative integer')
                 continue
             if hard is not None and opcap > hard:
                 errors.append(f'{row.model}/{row.object_type}: cap {opcap} exceeds hard max {hard}')
@@ -141,7 +146,7 @@ def save():
                 if not (0 < pct <= 100):
                     raise ValueError
             except ValueError:
-                errors.append(f'{row.model}/{row.object_type}: percent must be 1–100')
+                errors.append(f'{row.model}/{row.object_type}: percent must be greater than 0 and at most 100')
                 continue
 
         if (row.hard_max, row.operational_cap, row.cap_percent) != (hard, opcap, pct):

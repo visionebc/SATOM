@@ -39,10 +39,32 @@ GATED_MODULES = {
     "app.views.faz_api": None,
     "app.views.fac_api": None,
     "app.views.device_provision": None,
+    # Device-content reads (2026-10-03, found by a production smoke with a
+    # zero-key profile): login-only routes that served device configuration.
+    "app.views.workspace": None,
+    "app.views.web_protection": None,
+    "app.views.waf": None,
+    "app.views.exceptions": None,
+    "app.views.artifacts": None,
+    "app.views.server_objects": None,
+    "app.views.objedit": None,
+    "app.views.spo_wizard": None,
+    "app.views.fleet_objects": None,
+    "app.views.attack_search": None,
+    "app.views.adc": None,
+    "app.views.faz": None,
+    "app.views.fac": None,
+    "app.views.registry": None,
+    "app.views.sentinel": None,
+    "app.views.dns_tool": None,
+    "app.views.txn_trace": None,
+    "app.views.cert_inspect": None,
 }
 
 # Node-to-node endpoints authenticated by the HA peer gate, not by a session.
-PEER_ENDPOINTS = {"metrics_admin.peer_ingest", "metrics_admin.peer_store"}
+# The Sentinel blocklist feed is fetched by firewalls: no session, token-gated.
+PEER_ENDPOINTS = {"metrics_admin.peer_ingest", "metrics_admin.peer_store",
+                  "sentinel.blocklist_feed"}
 
 
 def _zero_key_user(app, name="nokeys", keys=()):
@@ -173,3 +195,18 @@ def test_the_operator_still_passes_the_flash_gate(app, client):
     op = make_user(app, "op", role="operator", profile_id=profile_id(app, "operator"))
     login(client, op)
     assert client.get(f"/appliances/{aid}/upgrade").status_code != 403
+
+
+@pytest.mark.parametrize("path", ["/web/workspace/{aid}", "/web/server-objects/",
+                                  "/registry/", "/adc/", "/sentinel/"])
+def test_device_content_pages_refuse_a_profile_without_keys(app, client, path):
+    """A custom profile with no keys was served device configuration."""
+    aid = _appliance(app)
+    login(client, _zero_key_user(app, "nokeys-content"))
+    r = client.get(path.format(aid=aid))
+    assert r.status_code == 403, (path, r.status_code)
+    # the seeded readonly profile still opens it (holds every *.view key)
+    client.get("/auth/logout")
+    login(client, make_user(app, username="ro-content", role="readonly"))
+    r = client.get(path.format(aid=aid), follow_redirects=True)
+    assert r.status_code == 200, (path, r.status_code)

@@ -350,6 +350,7 @@ def _safe_back(raw: str, fallback: str) -> str:
 
 @bp.route("/")
 @login_required
+@require_permission('protection.view')
 def index():
     """Statistics, cut by (device, ADOM) — plus the reference the numbers need.
 
@@ -503,6 +504,7 @@ def capture():
 
 @bp.route("/blob/<int:row_id>")
 @login_required
+@require_permission('protection.view')
 def blob(row_id: int):
     """The stored bytes, for an operator who needs to check what SATOM holds."""
     from ..models_artifacts import WafArtifact
@@ -522,6 +524,7 @@ def blob(row_id: int):
 
 @bp.route("/api/list")
 @login_required
+@require_permission('protection.view')
 def api_list():
     """The stored versions of THIS pair as JSON — the inventory's own universe.
 
@@ -692,6 +695,7 @@ def delete():
 # --------------------------------------------------------------------------- #
 @bp.route("/object/<kind>/<path:name>")
 @login_required
+@require_permission('protection.view')
 def object_page(kind: str, name: str):
     """The file itself — something FortiWeb's own GUI cannot show.
 
@@ -796,6 +800,7 @@ def _parse_iso(value: str):
 
 @bp.route("/raw/<int:row_id>")
 @login_required
+@require_permission('protection.view')
 def raw(row_id: int):
     """Inline view (not a download) — the browser renders it as plain text."""
     from ..models_artifacts import WafArtifact
@@ -821,6 +826,7 @@ USAGE_FILTERS = ("", "used", "orphan", "stale")
 
 @bp.route("/inventory")
 @login_required
+@require_permission('protection.view')
 def inventory():
     """Everything held BY ONE (device, ADOM), its users, and what blocks a move.
 
@@ -1027,6 +1033,7 @@ def refresh_refs():
 
 @bp.route("/api/refs")
 @login_required
+@require_permission('protection.view')
 def api_refs():
     """Which policies of THIS pair name an artifact.
 
@@ -1059,6 +1066,7 @@ def api_refs():
 
 @bp.route("/api/coverage/<int:appliance_id>/<path:policy>")
 @login_required
+@require_permission('protection.view')
 def api_coverage(appliance_id: int, policy: str):
     """Machine-readable migration verdict for ONE policy of THIS pair.
 
@@ -1078,6 +1086,7 @@ def api_coverage(appliance_id: int, policy: str):
 
 @bp.route("/audit")
 @login_required
+@require_permission('protection.view')
 def audit():
     """Everything SATOM knows, per DEVICE — on screen, as JSON, or as CSV.
 

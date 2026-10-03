@@ -629,6 +629,24 @@ def create_app(config_override: object | None = None) -> Flask:
         return bool(appl is not None and _o(appl))
 
     @app.template_global()
+    def may_open(endpoint):
+        """Whether the current user passes *endpoint*'s require_permission.
+
+        Sidebar entries ask this instead of repeating the key by hand: the
+        stamp the route enforces is the only source, so a link can no longer
+        be offered to a profile the page then answers 403 to. Endpoints with
+        no stamp (login-only, or gated in the body) stay visible."""
+        from flask_login import current_user
+        from .services.concept_map import required_permission
+        perm = required_permission(endpoint, app)
+        if perm is None:
+            return True
+        try:
+            return bool(current_user.is_authenticated and current_user.can(perm))
+        except Exception:  # noqa: BLE001 - an odd user object hides the link, never 500s
+            return False
+
+    @app.template_global()
     def device_scope_owner(appl):
         """The sibling that DOES carry those verbs, for a pointer link.
 

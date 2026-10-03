@@ -37,6 +37,7 @@ def _clipboards(results, servers, columns):
 
 @bp.route("/", methods=["GET", "POST"])
 @login_required
+@require_permission('network.view')
 def index():
     servers = [s for s in dns_tool.dns_servers() if s.get("enabled", True)]
     opts = {"lb": True, "quick": False, "exact": False, "ttl": False}

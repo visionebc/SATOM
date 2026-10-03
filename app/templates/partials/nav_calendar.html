@@ -26,6 +26,8 @@
    to do with what the user chose.
    ========================================================================= #}
 {% if current_user and current_user.can('user_manage') and calendar_on|default(true) %}
+{% if may_open('calendar_plan.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'calendar_plan' else '' }}" href="{{ url_for('calendar_plan.index') }}">
   <i class="bi bi-calendar3 fw-nav-icon"></i><span>{{ _('Calendar') }}</span></a>
+{% endif %}
 {% endif %}

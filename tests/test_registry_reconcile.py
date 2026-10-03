@@ -233,7 +233,7 @@ def _adc_probe(app, monkeypatch, resp):
 
     class _Fake(adc_mod.FortiADCClient):
         def __init__(self, *a, **k):  # noqa: D107 — no login in a unit test
-            pass
+            self._token = "unit-test"   # a logged-in client; make_probe renews only on 401
 
         def _api(self, method, urn, *a, **k):  # noqa: ARG002
             return resp

@@ -4635,7 +4635,11 @@ Create the change request as usual and set **Approval**:
 - **External** — an integration must approve it. This is **fail-closed**: the
   change cannot run until your system explicitly approves. Unreachable, slow and
   no answer all count as *not approved*. Withdrawing an approval makes it
-  un-runnable again.
+  un-runnable again. Your system records the verdict with
+  `POST /api/v1/change-requests/<id>/external-approval` (an `admin`-scope
+  token, see the API v1 guide); a board that answers by mail or phone can be
+  recorded by an Administrator on the **External change record** card
+  (*Record external approval* / *Withdraw*), attributed and audited.
 
 Once the window opens and the change starts running, SATOM opens the NetBox
 window, runs the change, closes the window from the outcome, fires the hooks,

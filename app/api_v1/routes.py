@@ -8,6 +8,8 @@ Deliberately NARROW and read-biased. What it exposes:
 * ``GET  /api/v1/actions``                  — the caller-created scheduled actions
 * ``POST /api/v1/actions/<id>/run``         — trigger a NON-destructive action
 * ``GET  /api/v1/actions/runs/<run_id>``    — poll a run's outcome
+* ``POST /api/v1/change-requests/<id>/external-approval`` — the external
+  approver's verdict on a change in External mode (``admin`` scope)
 
 What it does NOT expose, by construction: firmware upgrade / flash / reboot and
 any action flagged ``danger`` in the catalog — no scope can reach them.
@@ -317,6 +319,69 @@ def get_run(run_id):
         "summary": run.summary or "",
         "started_at": run.started_at.isoformat() if run.started_at else None,
         "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Change requests — the external approver's verdict (added 2026-10-03)
+# ---------------------------------------------------------------------------
+# The ONE writer of external_approved_at for an integration. A change in
+# "External" approval mode is runnable only after this records ``approved:
+# true``; ``approved: false`` withdraws an earlier approval. Needs the 'admin'
+# scope, i.e. an owner holding user_manage - the same permission that approves
+# a change in the console. A change outside the token's ADOM is a 404, a
+# change that is not in External mode or is already closed is a 409, and every
+# answer that changes nothing is audited as a refusal.
+
+def _cr_visible_to_token(cr) -> bool:
+    ids = cr.device_ids_list
+    if not ids:
+        return True
+    visible = {row[0] for row in visible_appliances(user=_owner())
+               .with_entities(Appliance.id).all()}
+    return any(i in visible for i in ids)
+
+
+@bp.route("/change-requests/<int:id>/external-approval", methods=["POST"])
+@limiter.limit("30 per minute")
+@token_required("admin")
+def change_request_external_approval(id):
+    from ..models import ChangeRequest
+    from ..services import cr_orchestrator
+
+    cr = db.session.get(ChangeRequest, id)
+    if cr is None or not _cr_visible_to_token(cr):
+        return jsonify({"error": "not_found", "message": "No such change request."}), 404
+    body = request.get_json(silent=True) or {}
+    approved = body.get("approved")
+    if not isinstance(approved, bool):
+        return jsonify({"error": "bad_request",
+                        "message": "'approved' must be true or false."}), 400
+    detail = str(body.get("detail") or "")[:500]
+    who = str(body.get("by") or g.api_token.name or "integration").strip()
+    by = ("api:" + who)[:64]
+    target = cr.ref or f"CR #{cr.id}"
+    mode = (cr.approval_mode or "manual").strip().lower()
+    refusal = None
+    if mode != "external":
+        refusal = ("not_external", "This change request is not in External "
+                   "approval mode; it is approved in SATOM. Nothing was recorded.")
+    elif cr.status in ChangeRequest.TERMINAL:
+        refusal = ("closed", f"This change request is already {cr.status}. "
+                   "Nothing was recorded.")
+    if refusal:
+        log_action("api.change_request.external_approval_refused", target=target,
+                   extra=audit_extra(reason=refusal[0], approved=approved))
+        return jsonify({"error": refusal[0], "message": refusal[1]}), 409
+    cr_orchestrator.record_external_approval(cr, approved=approved, by=by,
+                                             detail=detail)
+    log_action("api.change_request.external_approval", target=target,
+               extra=audit_extra(approved=approved, by=by, detail=detail))
+    return jsonify({
+        "ok": True, "id": cr.id, "ref": cr.ref or "", "approved": approved,
+        "external_approved_at": (cr.external_approved_at.isoformat()
+                                 if cr.external_approved_at else None),
+        "external_approved_by": cr.external_approved_by or "",
     })
 
 

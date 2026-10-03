@@ -248,6 +248,24 @@ Poll a run's outcome.
 }
 ```
 
+### `POST /change-requests/<id>/external-approval`
+The external change authority's verdict on a change request whose approval
+mode is **External**. Needs the **`admin`** scope (owner holds
+`user_manage`). Body: `{"approved": true|false, "by": "CAB", "detail": "CHG-7"}`
+— `approved` is required and must be a JSON boolean; `by` (default: the token
+name) is recorded as `api:<by>`. `false` withdraws an earlier approval, which
+makes the change un-runnable again.
+
+| answer | when |
+|---|---|
+| `200` `{"ok": true, "external_approved_at": …}` | recorded |
+| `400 bad_request` | `approved` missing or not a boolean |
+| `404 not_found` | no such change, or it names no appliance visible to the token's ADOM |
+| `409 not_external` / `409 closed` | the change is approved in SATOM (Manual mode), or already completed / failed / cancelled — nothing recorded |
+
+Every call is audited (`api.change_request.external_approval`, refusals as
+`…_refused`).
+
 ---
 
 ## 4. A complete example — drain / restore a backend

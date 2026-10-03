@@ -312,6 +312,20 @@
                 <span class="fw-badge fw-badge-warning">{{ _('waiting for external approval') }}</span>
                 <div class="text-muted">{{ _('This change cannot run until the external authority approves it. No answer is not an approval.') }}</div>
               {% endif %}
+              <div class="text-muted mt-1">{{ _('Integrations record the verdict with POST /api/v1/change-requests/%(id)s/external-approval (admin-scope token).', id=cr.id) }}</div>
+              {% if crv.can_act and not terminal %}
+              <form method="post" action="{{ url_for('change_requests.external_approval', id=cr.id) }}" class="d-flex flex-wrap gap-2 mt-2"
+                    data-fw-confirm-form="{{ _('Record this external verdict by hand? It is attributed to you and audited.') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="back" value="{{ crv.back }}">
+                <input type="text" class="form-control form-control-sm" style="max-width:220px;" name="detail" placeholder="{{ _('Reference / note (optional)') }}">
+                {% if cr.external_approved_at %}
+                <button type="submit" name="decision" value="withdraw" class="btn btn-sm btn-outline-danger">{{ _('Withdraw external approval') }}</button>
+                {% else %}
+                <button type="submit" name="decision" value="approve" class="btn btn-sm btn-outline-success">{{ _('Record external approval') }}</button>
+                {% endif %}
+              </form>
+              {% endif %}
             {% else %}
               <span class="fw-badge fw-badge-secondary">{{ _('manual (approved in SATOM)') }}</span>
             {% endif %}

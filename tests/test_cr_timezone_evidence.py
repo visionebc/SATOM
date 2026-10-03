@@ -635,8 +635,10 @@ def test_the_flash_job_closes_its_change_through_one_seam():
     assert "_flash_under_change" in src
     seam = src.split("def _flash_under_change", 1)[1].split("\ndef ", 1)[0]
     assert "finally:" in seam
-    assert "crsvc.start(" in seam and "crsvc.finish(" in seam
+    # finish_device: per appliance, so a multi-appliance change is closed by
+    # its last appliance, not its first (audit AU-08).
+    assert "crsvc.start(" in seam and "crsvc.finish_device(" in seam
     # The worker itself must NOT also stamp the change: two writers to one
     # lifecycle is how they disagree.
     worker = src.split("def _flash_worker", 1)[1].split("\ndef ", 1)[0]
-    assert "crsvc.finish(" not in worker
+    assert "crsvc.finish(" not in worker and "crsvc.finish_device(" not in worker

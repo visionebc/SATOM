@@ -165,7 +165,8 @@ EVENTS: dict[str, dict[str, Any]] = {
     },
     "window.opening": {
         "description": "The maintenance window of a scheduled CR just opened; "
-                       "the bound action is about to run.",
+                       "the bound action is about to run. Fires on every "
+                       "start, whether or not NetBox is configured.",
         "payload": {
             "cr_id": "int", "title": "str", "action": "str",
             "device_ids": "list[int]", "policies": "list[str]",
@@ -180,8 +181,8 @@ EVENTS: dict[str, dict[str, Any]] = {
         },
     },
     "window.closing": {
-        "description": "The maintenance window ended (or the CR reached a "
-                       "terminal state inside it).",
+        "description": "The CR's run finished and its maintenance window "
+                       "ended. Fires whether or not NetBox is configured.",
         "payload": {
             "cr_id": "int", "title": "str",
             "outcome": "str — completed | failed | cancelled | in_progress",

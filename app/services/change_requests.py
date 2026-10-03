@@ -19,6 +19,7 @@ device.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timedelta
 
 from ..models import (Appliance, ChangeRequest, ChangeRequestEvent,
@@ -120,8 +121,10 @@ def approve(cr_id: int, by: str) -> ChangeRequest:
     if cr is None:
         raise ValueError("change request not found")
     if cr.status != "draft":
-        raise ValueError("Only a draft change request can be approved "
-                         "(this one is %s)." % cr.status)
+        # Hiding the button is not a guard: a direct POST used to re-approve a
+        # cancelled or finished change and make it runnable again.
+        raise ValueError(f"Only a draft change request can be approved; this "
+                         f"one is {cr.status}. Nothing was changed.")
     # Freeze the change-type wording AS APPROVED. From here on the document
     # prints these words, not whatever Administration -> Change Types says
     # later. Best-effort: an approval is a decision a human made, and a failure
@@ -159,8 +162,10 @@ def cancel(cr_id: int, by: str, reason: str = "") -> ChangeRequest:
     if cr is None:
         raise ValueError("change request not found")
     if cr.status in ChangeRequest.TERMINAL:
-        raise ValueError("This change request is already %s; its outcome "
-                         "cannot be changed." % cr.status)
+        # A completed or failed change is the record of what happened;
+        # rewriting it to "cancelled" would erase that record.
+        raise ValueError(f"This change request is already {cr.status} and "
+                         f"cannot be cancelled. Nothing was changed.")
     if cr.scheduled_action_id:
         action = db.session.get(ScheduledAction, cr.scheduled_action_id)
         if action is not None:
@@ -233,8 +238,8 @@ def plannable(cr) -> tuple[bool, str]:
     if _sa.get_spec(cr.action) is None:
         return False, (
             f"'{cr.action}' is a documentary change type: it has no automated "
-            f"executor. Carry the work out during the window and close this "
-            f"change request by hand.")
+            f"executor. Carry the work out during the window, then close "
+            f"this change request with Mark completed / Mark failed.")
     return True, ""
 
 
@@ -262,8 +267,8 @@ def schedulable(cr) -> tuple[bool, str]:
     if _sa.get_spec(cr.action) is None:
         return False, (
             f"'{cr.action}' is a documentary change type: it has no automated "
-            f"executor. Carry the work out during the window and close this "
-            f"change request by hand.")
+            f"executor. Carry the work out during the window, then close "
+            f"this change request with Mark completed / Mark failed.")
     return True, ""
 
 
@@ -344,6 +349,21 @@ def plan_rounds(cr, per_round=None, round_gap_minutes=None):
 
     starts = [cr.window_start + timedelta(minutes=gap * k)
               for k in range(len(rounds))]
+    # A window that has already begun: a one-shot "at" in the past gets no
+    # next_run, so the scheduler would never pick it up and the change would
+    # sit at "scheduled" with nothing to fire. Shift the rounds to start a
+    # minute from now (keeping their spacing) while the window is still open;
+    # refuse when it has already closed.
+    now = datetime.utcnow()
+    if cr.window_end is not None and now >= cr.window_end:
+        raise ValueError(
+            f"This change's maintenance window closed at "
+            f"{_fmt_window(cr.window_end)}, so there is no time left to run it. "
+            f"Move the window. Nothing was scheduled.")
+    earliest = now + timedelta(minutes=1)
+    if starts[0] < earliest:
+        shift = earliest - starts[0]
+        starts = [at + shift for at in starts]
     # A round that starts after the window closes is REFUSED here, not left to
     # be skipped at fire time: cr_runnable would answer "after the maintenance
     # window" at 02:00, to nobody, and those appliances would simply never be
@@ -588,6 +608,99 @@ def finish(cr_or_id, outcome: str, by: str = "scheduler", summary: str = ""):
     from . import cr_orchestrator
     cr_orchestrator.on_finish(cr, outcome, summary=summary, by=by)
     return cr
+
+
+#: Timeline kind for ONE appliance's outcome inside a multi-appliance change.
+DEVICE_RESULT = "device_result"
+_DEVICE_RESULT_RE = re.compile(r"^appliance=(\d+) outcome=(\w+)")
+
+
+def device_results(cr) -> dict:
+    """``{appliance_id: outcome}`` recorded by :func:`finish_device` (the
+    latest per appliance wins, so a retried appliance replaces its failure)."""
+    out: dict = {}
+    rows = (ChangeRequestEvent.query.filter_by(cr_id=cr.id, kind=DEVICE_RESULT)
+            .order_by(ChangeRequestEvent.id).all())
+    for ev in rows:
+        m = _DEVICE_RESULT_RE.match(ev.detail or "")
+        if m:
+            out[int(m.group(1))] = m.group(2)
+    return out
+
+
+def finish_device(cr_or_id, appliance_id, outcome: str, by: str = "operator",
+                  summary: str = ""):
+    """Record ONE appliance's outcome of a live run and close the change only
+    once every appliance it names has an outcome.
+
+    A live firmware push (or failover) acts on one appliance. Closing the
+    whole change from that one result made a multi-appliance change unusable
+    after its first appliance: the change was completed (or failed) and no
+    longer authorized the others. A one-appliance change closes at once,
+    exactly as before."""
+    cr = _resolve(cr_or_id)
+    if cr is None or cr.status in ChangeRequest.TERMINAL:
+        return cr
+    ids = [i for i in cr.device_ids_list if _as_int(i) is not None]
+    aid = _as_int(appliance_id)
+    if len(ids) <= 1 or aid not in [_as_int(i) for i in ids]:
+        return finish(cr, outcome, by=by, summary=summary)
+    outcome = outcome if outcome == "ok" else (outcome or "error")
+    db.session.add(ChangeRequestEvent(
+        cr_id=cr.id, kind=DEVICE_RESULT, by=by,
+        detail=(f"appliance={aid} outcome={outcome}: "
+                f"{summary or outcome}")[:2000],
+        ts=datetime.utcnow()))
+    db.session.commit()
+    results = device_results(cr)
+    pending = [i for i in ids if _as_int(i) not in results]
+    if pending:
+        return cr
+    failed = [i for i in ids if results.get(_as_int(i)) != "ok"]
+    names = {a.id: a.name for a in
+             Appliance.query.filter(Appliance.id.in_(ids)).all()}
+    total = (f"{len(ids) - len(failed)}/{len(ids)} appliance(s) ok")
+    if failed:
+        total += "; failed: " + ", ".join(names.get(_as_int(i), f"#{i}")
+                                           for i in failed)
+    return finish(cr, "ok" if not failed else "error", by=by, summary=total)
+
+
+def close_by_hand(cr_id, outcome: str, by: str, summary: str = ""):
+    """Close a change whose work was carried out by a person.
+
+    Allowed for a documentary change type (no executor exists, so nothing else
+    can ever close it) once it is approved, and for any change still
+    ``in_progress`` after its window ended (a multi-appliance change where not
+    every appliance was run). ``outcome`` is ``completed`` or ``failed``."""
+    cr = db.session.get(ChangeRequest, _as_int(cr_id))
+    if cr is None:
+        raise ValueError("change request not found")
+    if outcome not in ("completed", "failed"):
+        raise ValueError("Choose completed or failed. Nothing was changed.")
+    if cr.status in ChangeRequest.TERMINAL:
+        raise ValueError(f"This change request is already {cr.status}. "
+                         f"Nothing was changed.")
+    from . import scheduled_actions as _sa
+    documentary = _sa.get_spec(cr.action) is None
+    now = datetime.utcnow()
+    overrun = (cr.status == "in_progress" and cr.window_end is not None
+               and now > cr.window_end)
+    if not (documentary or overrun):
+        raise ValueError("This change is closed by its own run. Only a "
+                         "documentary change, or one still in progress after "
+                         "its window ended, is closed by hand. Nothing was "
+                         "changed.")
+    if cr.status not in _RUNNABLE_STATES:
+        raise ValueError("Approve the change request before closing it. "
+                         "Nothing was changed.")
+    from . import cr_orchestrator
+    ext_ok, ext_reason = cr_orchestrator.external_gate(cr, now)
+    if not ext_ok:
+        raise ValueError(f"Not approved: {ext_reason}. Nothing was changed.")
+    note = (summary or "").strip() or f"Closed by hand as {outcome}"
+    return finish(cr, "ok" if outcome == "completed" else "error", by=by,
+                  summary=note)
 
 
 def cr_runnable(cr, now: datetime | None = None) -> tuple[bool, str]:
@@ -899,6 +1012,10 @@ def _as_int(value) -> int | None:
 
 __all__ = [
     "RISKS",
+    "DEVICE_RESULT",
+    "device_results",
+    "finish_device",
+    "close_by_hand",
     "WINDOW_INVERTED",
     "validate_window",
     "revoke_approval",

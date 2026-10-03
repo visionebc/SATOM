@@ -86,7 +86,7 @@ def test_window_events_emit_every_required_key(app, monkeypatch):
         orch._dispatch_quiet("window.opening", cr, by="t",
                              extra={"action": cr.action, "policies": []})
         orch._dispatch_quiet("window.closing", cr, by="t",
-                             extra={"outcome": "ok", "result_summary": "s"})
+                             extra={"outcome": "completed", "result_summary": "s"})
         for event, payload in seen:
             missing = _required_keys(event) - set(payload)
             assert not missing, f"{event}: documented but never sent {sorted(missing)}"
@@ -288,3 +288,27 @@ def test_the_emitter_set_is_discovered_not_named():
     for hardcoded in ("cr_orchestrator", "alerts.py"):
         assert hardcoded not in src.split('"""')[2], \
             "_emitter_sources names a module: %s" % hardcoded
+
+
+@pytest.mark.parametrize("outcome,expected", [("ok", "completed"),
+                                              ("error", "failed")])
+def test_window_events_fire_without_netbox_and_name_a_catalog_outcome(
+        app, monkeypatch, outcome, expected):
+    """AU-04 / AU-05: window.* are change events, not NetBox echoes, and the
+    closing outcome is one of the values the catalog documents."""
+    from app.services import change_requests as crs
+    from app.services import netbox_client as netbox
+    from app.services.integration_hooks import EVENTS
+    with app.app_context():
+        monkeypatch.setattr(netbox, "is_configured", lambda: False)
+        cr = _cr(status="scheduled")
+        seen = _capture(monkeypatch)
+        crs.start(cr, by="t")
+        crs.finish(cr, outcome, by="t", summary="s")
+        events = [e for e, _ in seen]
+        assert events.count("window.opening") == 1, events
+        assert events.count("window.closing") == 1, events
+        closing = [p for e, p in seen if e == "window.closing"][0]
+        assert closing["outcome"] == expected
+        documented = EVENTS["window.closing"]["payload"]["outcome"]
+        assert closing["outcome"] in documented

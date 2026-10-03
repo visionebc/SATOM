@@ -519,3 +519,221 @@ def test_every_declared_status_has_something_that_writes_it(app):
     assert not missing, (
         f"{sorted(missing)} are declared in ChangeRequest.STATUSES but nothing "
         f"in change_requests.py ever assigns them — a CR can never reach them")
+
+
+# --------------------------------------------------------------------------- #
+#  Documentation Center audit 2026-10-03 (AU-08 .. AU-14)                       #
+# --------------------------------------------------------------------------- #
+def _two_appliances():
+    from app.extensions import db
+    from app.models import Appliance
+    out = []
+    for name in ("fw-a", "fw-b"):
+        a = Appliance(name=name, host="192.0.2.%d" % (len(out) + 30),
+                      username="admin", password_enc="x")
+        db.session.add(a)
+        out.append(a)
+    db.session.commit()
+    return out
+
+
+@pytest.mark.parametrize("status", ["cancelled", "completed", "failed",
+                                    "approved", "scheduled", "in_progress"])
+def test_only_a_draft_can_be_approved(session, status):
+    """AU-10: a direct POST used to re-approve a closed change."""
+    from app.services import change_requests as svc
+    cr = _mk_cr(status=status)
+    with pytest.raises(ValueError):
+        svc.approve(cr.id, by="approver")
+    assert cr.status == status
+
+
+def test_a_draft_still_approves(session):
+    from app.services import change_requests as svc
+    cr = _mk_cr(status="draft")
+    svc.approve(cr.id, by="approver")
+    assert cr.status == "approved"
+
+
+@pytest.mark.parametrize("status", ["completed", "failed", "cancelled"])
+def test_a_closed_change_cannot_be_cancelled(session, status):
+    """AU-11: cancel() rewrote completed/failed records to cancelled."""
+    from app.services import change_requests as svc
+    cr = _mk_cr(status=status)
+    with pytest.raises(ValueError):
+        svc.cancel(cr.id, by="op")
+    assert cr.status == status
+
+
+def test_an_open_change_still_cancels(session):
+    from app.services import change_requests as svc
+    cr = _mk_cr(status="approved")
+    svc.cancel(cr.id, by="op")
+    assert cr.status == "cancelled"
+
+
+def test_scheduling_inside_a_started_window_still_fires(session):
+    """AU-9: a past window_start gave a one-shot with next_run None."""
+    from app.extensions import db
+    from app.models import ScheduledAction
+    from app.services import change_requests as svc
+    cr = _mk_cr(status="approved", action="device_sync")   # started 5 min ago
+    action_id = svc.schedule_change_request(cr.id, by="op")
+    row = db.session.get(ScheduledAction, action_id)
+    assert row.next_run is not None
+    assert row.next_run > datetime.utcnow()
+    assert row.next_run <= cr.window_end
+
+
+def test_scheduling_after_the_window_closed_is_refused(session):
+    from app.extensions import db
+    from app.services import change_requests as svc
+    cr = _mk_cr(status="approved", action="device_sync")
+    cr.window_start = datetime.utcnow() - timedelta(hours=3)
+    cr.window_end = datetime.utcnow() - timedelta(hours=1)
+    db.session.commit()
+    with pytest.raises(ValueError, match="closed"):
+        svc.schedule_change_request(cr.id, by="op")
+    assert cr.status == "approved"
+
+
+def test_a_future_window_keeps_its_start(session):
+    from app.extensions import db
+    from app.models import ScheduledAction
+    from app.services import change_requests as svc
+    cr = _mk_cr(status="approved", action="device_sync")
+    start = datetime.utcnow() + timedelta(days=1)
+    cr.window_start, cr.window_end = start, start + timedelta(hours=2)
+    db.session.commit()
+    row = db.session.get(ScheduledAction, svc.schedule_change_request(cr.id, by="op"))
+    assert abs((row.next_run - start).total_seconds()) < 1
+
+
+def test_a_multi_appliance_change_closes_after_its_last_appliance(session):
+    """AU-08: one appliance's live run closed the whole change."""
+    from app.services import change_requests as svc
+    a, b = _two_appliances()
+    cr = _mk_cr(status="in_progress", device_ids=[a.id, b.id])
+    svc.finish_device(cr, a.id, "ok", summary="a done")
+    assert cr.status == "in_progress"
+    assert svc.device_results(cr) == {a.id: "ok"}
+    svc.finish_device(cr, b.id, "ok", summary="b done")
+    assert cr.status == "completed"
+    assert "2/2" in (cr.result_summary or "")
+
+
+def test_a_failed_appliance_fails_the_change_and_is_named(session):
+    from app.services import change_requests as svc
+    a, b = _two_appliances()
+    cr = _mk_cr(status="in_progress", device_ids=[a.id, b.id])
+    svc.finish_device(cr, a.id, "error", summary="boom")
+    assert cr.status == "in_progress"
+    svc.finish_device(cr, b.id, "ok")
+    assert cr.status == "failed"
+    assert "fw-a" in (cr.result_summary or "")
+
+
+def test_a_retried_appliance_replaces_its_failure(session):
+    from app.services import change_requests as svc
+    a, b = _two_appliances()
+    cr = _mk_cr(status="in_progress", device_ids=[a.id, b.id])
+    svc.finish_device(cr, a.id, "error")
+    svc.finish_device(cr, a.id, "ok")
+    svc.finish_device(cr, b.id, "ok")
+    assert cr.status == "completed"
+
+
+def test_a_single_appliance_change_closes_at_once(session):
+    from app.services import change_requests as svc
+    a, _b = _two_appliances()
+    cr = _mk_cr(status="in_progress", device_ids=[a.id])
+    svc.finish_device(cr, a.id, "ok")
+    assert cr.status == "completed"
+
+
+def test_the_live_paths_record_per_appliance():
+    """Every live caller in appliances.py goes through finish_device."""
+    src = open(os.path.join(REPO, "app", "views", "appliances.py"),
+               encoding="utf-8").read()
+    tree = ast.parse(src)
+    finish_calls = [n for n in ast.walk(tree)
+                    if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                    and n.func.attr == "finish"
+                    and getattr(n.func.value, "id", "") == "crsvc"]
+    assert finish_calls == []
+
+
+def test_a_documentary_change_is_closed_by_hand(session):
+    """AU-14: nothing could ever close a documentary change."""
+    from app.services import change_requests as svc
+    cr = _mk_cr(status="approved", action="cable_swap_by_hand")
+    svc.close_by_hand(cr.id, "completed", by="op", summary="swapped")
+    assert cr.status == "completed"
+    assert cr.result_summary == "swapped"
+
+
+def test_an_executable_change_inside_its_window_is_not_closed_by_hand(session):
+    from app.services import change_requests as svc
+    cr = _mk_cr(status="approved", action="device_sync")
+    with pytest.raises(ValueError):
+        svc.close_by_hand(cr.id, "completed", by="op")
+    assert cr.status == "approved"
+
+
+def test_an_overrun_change_can_be_closed_by_hand(session):
+    from app.extensions import db
+    from app.services import change_requests as svc
+    cr = _mk_cr(status="in_progress", action="upgrade")
+    cr.window_end = datetime.utcnow() - timedelta(minutes=1)
+    db.session.commit()
+    svc.close_by_hand(cr.id, "failed", by="op")
+    assert cr.status == "failed"
+
+
+def test_closing_by_hand_needs_an_approval(session):
+    from app.services import change_requests as svc
+    cr = _mk_cr(status="draft", action="cable_swap_by_hand")
+    with pytest.raises(ValueError):
+        svc.close_by_hand(cr.id, "completed", by="op")
+    ext = _mk_cr(status="approved", action="cable_swap_by_hand",
+                 approval_mode="external")
+    with pytest.raises(ValueError):
+        svc.close_by_hand(ext.id, "completed", by="op")
+    assert cr.status == "draft" and ext.status == "approved"
+
+
+def test_close_by_hand_route_needs_user_manage_and_closes(app, client):
+    from conftest import admin_user_id, login, make_user, profile_id
+    from app.extensions import db
+    from app.models import ChangeRequest
+    with app.app_context():
+        cid = _mk_cr(status="approved", action="cable_swap_by_hand").id
+    uid = make_user(app, "op", role="operator", profile_id=profile_id(app, "operator"))
+    login(client, uid)
+    client.post(f"/change-requests/{cid}/close-by-hand", data={"outcome": "completed"})
+    with app.app_context():
+        assert db.session.get(ChangeRequest, cid).status == "approved"
+    login(client, admin_user_id(app))
+    page = client.get(f"/change-requests/{cid}")
+    assert b"close-by-hand" in page.data
+    r = client.post(f"/change-requests/{cid}/close-by-hand", data={"outcome": "completed"})
+    assert r.status_code == 302
+    with app.app_context():
+        assert db.session.get(ChangeRequest, cid).status == "completed"
+
+
+def test_mark_notified_mails_the_changes_own_recipients(app, client, monkeypatch):
+    """AU-12: the form posts no list, so the CR's notify_to must be used."""
+    from conftest import admin_user_id, login
+    from app.services import email_service
+    seen = {}
+    monkeypatch.setattr(email_service, "is_configured", lambda: True)
+    monkeypatch.setattr(email_service, "send_email",
+                        lambda to, subject, body, **k: seen.update(to=to)
+                        or {"ok": True, "detail": "sent"})
+    with app.app_context():
+        cid = _mk_cr(status="approved", notify_to="c1@x.io; c2@x.io").id
+    login(client, admin_user_id(app))
+    r = client.post(f"/change-requests/{cid}/mark-notified", data={})
+    assert r.status_code == 302
+    assert seen["to"] == ["c1@x.io", "c2@x.io"]

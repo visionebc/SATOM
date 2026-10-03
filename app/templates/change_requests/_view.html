@@ -45,6 +45,10 @@
     <span class="fw-badge fw-badge-warning" title="{{ _('This change type has no automated executor') }}">
       <i class="bi bi-hand-index me-1"></i>{{ _('Carried out by hand') }}</span>
     {% endif %}
+    {% if cr.action == 'upgrade' and not terminal %}
+    <span class="fw-badge fw-badge-warning" title="{{ _('The scheduled executor does not flash firmware: a scheduled upgrade closes as failed. Flash live from each appliance\'s firmware page inside the window; each run is recorded here and the change closes when every appliance has a result.') }}">
+      <i class="bi bi-exclamation-triangle me-1"></i>{{ _('Flashed live, not by the scheduler') }}</span>
+    {% endif %}
     {% if cr.status in ['approved', 'scheduled'] and crv.executable %}
     <form method="POST" action="{{ url_for('change_requests.schedule', id=cr.id) }}" style="display:inline;"
           data-fw-confirm-form="Bind a one-shot scheduled action at the window start for this change request?">
@@ -54,6 +58,18 @@
         <i class="bi bi-calendar-check me-1"></i>{{ 'Re-schedule' if cr.status == 'scheduled' else 'Schedule' }}
       </button>
     </form>
+    {% endif %}
+
+    {% if crv.closable_by_hand %}
+    {% for oc, label, icon, cls in [('completed', _('Mark completed'), 'bi-check2-all', 'btn-outline-success'), ('failed', _('Mark failed'), 'bi-x-octagon', 'btn-outline-danger')] %}
+    <form method="POST" action="{{ url_for('change_requests.close_by_hand', id=cr.id) }}" style="display:inline;"
+          data-fw-confirm-form="{{ _('Close this change request as %(outcome)s? This cannot be undone.', outcome=oc) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="back" value="{{ crv.back }}">
+      <input type="hidden" name="outcome" value="{{ oc }}">
+      <button type="submit" class="btn btn-sm {{ cls }}"><i class="bi {{ icon }} me-1"></i>{{ label }}</button>
+    </form>
+    {% endfor %}
     {% endif %}
 
     {% if cr.notify_status != 'sent' and not terminal %}
@@ -444,7 +460,7 @@
       <div class="fw-card-body">
         <pre style="background:#0d1626; color:#e2e8f0; padding:12px; border-radius:8px;
                     max-height:420px; overflow:auto; font-size:12.5px; white-space:pre-wrap;">{{ crv.notice }}</pre>
-        <div class="form-text">{{ _('Client-facing draft — sending is out of scope; use "Mark notified" once delivered.') }}</div>
+        <div class="form-text">{{ _('Client-facing draft. "Mark notified" e-mails this notice to the change\'s recipients when Settings → Email is configured; otherwise it only records the notice as sent.') }}</div>
       </div>
     </div>
   </div>

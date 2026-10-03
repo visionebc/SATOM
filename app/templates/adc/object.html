@@ -131,15 +131,13 @@
   <details class="adc-row-scope adc-row-new mt-2 border rounded p-2 border-primary-subtle"
            data-logical="{{ st.logical }}" data-pkey="{{ mkey }}">
     <summary class="fw-group-head text-primary">＋ Add {{ st.label }} row</summary>
-    {% if st.blank_groups %}
-      {% for sec in st.blank_groups %}
-        <div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false) }}{% endfor %}</div>
-      {% endfor %}
-      <div class="mt-2"><button type="button" class="btn btn-sm btn-fw-primary"
-        data-js="adc-create-row">{{ _('Create row') }}</button></div>
-    {% else %}
-      <p class="text-muted small mb-0 mt-2">{{ _('No field template is known for this child table yet — no sibling rows exist to derive it from. Use the Raw JSON editor below, or create the first row on a device that already has one.') }}</p>
-    {% endif %}
+    {# blank_groups always carries at least the row's mkey (plus the curated
+       create seed), so there is no "no template" state to render. #}
+    {% for sec in st.blank_groups %}
+      <div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false) }}{% endfor %}</div>
+    {% endfor %}
+    <div class="mt-2"><button type="button" class="btn btn-sm btn-fw-primary"
+      data-js="adc-create-row">{{ _('Create row') }}</button></div>
     <div class="adc-result"></div>
   </details>
   {% endif %}

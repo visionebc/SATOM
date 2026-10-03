@@ -146,19 +146,22 @@ def _adc_db_registry() -> dict | None:
 
 
 def invalidate_adc_cache() -> None:
-    """Drop the FortiADC catalog AND the GUI menu grouped from it.
+    """Drop the FortiADC catalog AND the views derived from it.
 
-    ``adc_menu`` memoises its grouping of this catalog; dropping one cache
-    and not the other puts a new endpoint in the catalog and leaves it out
-    of the menu -- present and invisible. One owner, so no caller can do
-    half of it.
+    ``adc_menu`` memoises its grouping of this catalog and ``adc_objform`` its
+    editor allow-list + child-table index; dropping one cache and not the
+    others puts a new endpoint in the catalog and leaves it out of the menu
+    or the editor -- present and invisible (or disabled and still editable).
+    One owner, so no caller can do half of it. Both are also keyed on this
+    map's identity, so the OTHER workers converge on the TTL refresh.
     """
     _adc_db_cache["map"] = None
     _adc_db_cache["ts"] = 0.0
     invalidate_build_views("fortiadc")
-    from ..services import adc_menu  # lazy: adc_menu reads this module
+    from ..services import adc_menu, adc_objform  # lazy: both read this module
 
     adc_menu.invalidate()
+    adc_objform.invalidate()
 
 
 def load_adc_registry() -> dict:

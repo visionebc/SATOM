@@ -32,7 +32,6 @@ registry matching — no Flask, no device.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
 
 
 @dataclass(frozen=True)
@@ -421,12 +420,31 @@ _TREE = (
 )
 
 
-@lru_cache(maxsize=1)
+#: ``(registry map, resolved tree)`` — keyed on the IDENTITY of the loader's
+#: map rather than memoised for the life of the process. The loader swaps in a
+#: new map after an edit in this worker AND on its TTL refresh in every other
+#: gunicorn worker, so the sidebar converges everywhere within that window;
+#: an ``lru_cache`` was only ever cleared in the worker that served the POST.
+_cache: tuple | None = None
+
+
 def _build() -> tuple[AdcGroup, ...]:
-    """Resolve the static tree against the fortiadc registry; a logical the
-    registry doesn't carry is silently dropped (same contract as wp_menu)."""
+    """The resolved tree for the loader's current catalog (rebuilt only when
+    that catalog object changes)."""
+    global _cache
     from ..registry import loader
     reg = loader.load_adc_registry()
+    hit = _cache
+    if hit is not None and hit[0] is reg:
+        return hit[1]
+    tree = _resolve(reg)
+    _cache = (reg, tree)
+    return tree
+
+
+def _resolve(reg: dict) -> tuple[AdcGroup, ...]:
+    """Resolve the static tree against the fortiadc registry; a logical the
+    registry doesn't carry is silently dropped (same contract as wp_menu)."""
     groups = []
     for gkey, glabel, gicon, items in _TREE:
         built_items = []
@@ -451,7 +469,8 @@ def menu() -> tuple[AdcGroup, ...]:
 
 def invalidate() -> None:
     """Drop the cached tree (after a registry edit)."""
-    _build.cache_clear()
+    global _cache
+    _cache = None
 
 
 def find_item(item_key: str) -> tuple[AdcGroup, AdcItem] | None:

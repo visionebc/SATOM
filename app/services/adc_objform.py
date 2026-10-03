@@ -25,7 +25,6 @@ ADC save endpoints (dry-run preview default, like every FortiWeb write path).
 """
 from __future__ import annotations
 
-from functools import lru_cache
 from typing import Any
 
 _TOGGLE_VALS = {"enable", "disable"}
@@ -34,26 +33,46 @@ _TOGGLE_VALS = {"enable", "disable"}
 # --------------------------------------------------------------------------- #
 #  Registry allow-list + child-table derivation                                #
 # --------------------------------------------------------------------------- #
-@lru_cache(maxsize=1)
+#: ``(registry map, known logicals, child index)`` — keyed on the IDENTITY of
+#: the loader's map, not memoised forever. The loader swaps in a new map on
+#: every edit in this worker and on its TTL refresh in every other gunicorn
+#: worker, so a registry edit reaches the editor everywhere within that window
+#: instead of only in the worker that served the POST (until a restart).
+_views: tuple | None = None
+
+
+def _registry_views() -> tuple:
+    global _views
+    from ..registry import loader
+    reg = loader.load_adc_registry()
+    v = _views
+    if v is None or v[0] is not reg:
+        known = frozenset(reg)
+        v = (reg, known, _derive_child_index(known))
+        _views = v
+    return v
+
+
 def known_logicals() -> frozenset:
     """Every fortiadc registry logical (objects AND child tables) — the
     security allow-list: the editor may only touch a logical in this set."""
-    from ..registry import loader
-    return frozenset(loader.load_adc_registry())
+    return _registry_views()[1]
 
 
 def is_known(logical: str) -> bool:
     return (logical or "").strip() in known_logicals()
 
 
-@lru_cache(maxsize=1)
 def _child_index() -> dict[str, tuple[dict, ...]]:
+    return _registry_views()[2]
+
+
+def _derive_child_index(reg: frozenset) -> dict[str, tuple[dict, ...]]:
     """``parent logical -> (child-table descriptor, ...)`` from the registry.
 
     A logical ``P_child_S`` is a child table of ``P`` only when ``P`` is itself
     a registered logical (so a phantom prefix never masquerades as a parent).
     """
-    reg = known_logicals()
     idx: dict[str, list[dict]] = {}
     for logical in reg:
         if "_child_" not in logical:
@@ -92,8 +111,8 @@ def subtables_for(logical: str) -> list[dict]:
 
 def invalidate() -> None:
     """Drop the cached registry views (after a registry edit)."""
-    known_logicals.cache_clear()
-    _child_index.cache_clear()
+    global _views
+    _views = None
 
 
 # --------------------------------------------------------------------------- #

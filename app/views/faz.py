@@ -24,6 +24,8 @@ automatically.
 """
 from __future__ import annotations
 
+import re
+
 from flask import (Blueprint, abort, jsonify, redirect, render_template,
                    request, url_for)
 from flask_login import current_user, login_required
@@ -191,6 +193,10 @@ def _write_request(op: str, urn: str, mkey_fld: str, mkey: str, fields: dict):
 _DEVICE_ACTIONS = ('authorize', 'delete')
 
 
+#: A FortiAnalyzer ADOM name as the toolbar sends it (root, FortiGate, ...).
+_ADOM_RE = re.compile(r'^[A-Za-z0-9_.\-]{1,64}$')
+
+
 def _device_action_request(action: str, names: list, adom: str):
     """(verb, url, data) for one Device Manager command."""
     if action == 'authorize':
@@ -280,6 +286,8 @@ def device_action():
 
     if action not in _DEVICE_ACTIONS:
         return jsonify(ok=False, error=f'unknown action: {action}'), 400
+    if not _ADOM_RE.match(adom):
+        return jsonify(ok=False, error=f'invalid FortiAnalyzer ADOM name: {adom}'), 400
     if not names:
         return jsonify(ok=False, error='no devices selected'), 400
 

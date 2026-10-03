@@ -95,6 +95,10 @@ def _resolve(provider_key: str = "") -> tuple[dict, bool]:
     if not provider:
         raise TranslationError(
             "no AI provider configured — add one in Settings → AI Advisor")
+    if provider.get("enabled") is False:
+        raise TranslationError(
+            "the AI provider is disabled — review and save it in Settings → "
+            "AI Advisor to enable it")
     external = provider.get("kind") != "ollama"
     if external and not advisor.external_allowed():
         raise TranslationError(

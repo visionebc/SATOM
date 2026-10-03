@@ -1,7 +1,7 @@
 {# AI Advisor settings — provider registry + feature flags. Self-contained:
    fetches its own state from /settings/ai/state instead of riding the main
    index() context, so this tab cannot regress the rest of that 2000+ line
-   view. Gated by the caller on current_user.can('ai_configure'). #}
+   view. Gated by the caller on current_user.can('advisor.configure'). #}
 <div id="ai-settings-root">
   <div class="fw-card">
     <div class="fw-card-header"><h2 class="fw-card-title">{{ _('AI Advisor') }}</h2></div>
@@ -48,7 +48,7 @@
             <option value="anthropic">{{ _('Anthropic (Claude Messages API)') }}</option>
           </select>
         </div>
-        <div class="col-md-6"><label class="form-label">{{ _('Base URL') }}</label><input class="form-control" id="ai-p-url" placeholder="{{ _('http://192.0.2.34:11434 or https://api.openai.com/v1') }}"></div>
+        <div class="col-md-6"><label class="form-label">{{ _('Base URL') }}</label><input class="form-control" id="ai-p-url" placeholder="{{ _('http://ollama.example:11434 or https://api.openai.com/v1') }}"></div>
         <div class="col-md-3"><label class="form-label">{{ _('Model') }}</label><input class="form-control" id="ai-p-model" placeholder="{{ _('qwen2.5-coder:32b') }}"></div>
         <div class="col-md-3"><label class="form-label">{{ _('API key') }} <span class="text-secondary">{{ _('(blank = keep / not needed for Ollama)') }}</span></label><input type="password" class="form-control" id="ai-p-key-secret"></div>
       </div>
@@ -90,6 +90,7 @@
         row.innerHTML =
           '<div><strong>' + esc(p.label) + '</strong> <span class="fw-badge fw-badge-secondary">' + esc(p.kind) + '</span>' +
           (p.key === d.default_provider_key ? ' <span class="fw-badge fw-badge-success">default</span>' : '') +
+          (p.enabled === false ? ' <span class="fw-badge fw-badge-warning">disabled: edit and save to enable</span>' : '') +
           '<div class="text-secondary" style="font-size:11.5px">' + esc(p.base_url) + ' &middot; ' + esc(p.model) +
           (p.has_secret ? ' &middot; key set' : '') + '</div></div>' +
           '<div class="d-flex gap-2">' +

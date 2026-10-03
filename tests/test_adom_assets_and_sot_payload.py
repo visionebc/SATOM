@@ -864,3 +864,25 @@ def test_the_page_renders_for_an_admin(app, client, monkeypatch):
     # badge at ~1.4:1 and "never pushed" becomes unreadable.
     for dark in ("#080d1a", "backdrop-filter", "rgba(30,41,59"):
         assert dark not in html, "dark-theme chrome leaked onto a light page"
+
+
+def test_a_capped_file_list_says_it_is_capped(app, client, monkeypatch):
+    """The server summary carries the 10 newest files; the table showed them
+    as though they were the whole folder."""
+    from app.extensions import db
+    from app.models_identity import DeviceIdentity
+    from app.services import backup_server
+    with app.app_context():
+        db.session.add(DeviceIdentity(slug="fwcap", name="fwcap",
+                                      product="fortiweb", names='["fwcap"]'))
+        db.session.commit()
+    files = [{"name": "cfg-%02d.conf" % i, "mtime": "2026-09-%02d 00:00" % (i + 1),
+              "size": 2048} for i in range(10)]
+    monkeypatch.setattr(backup_server, "inventory", lambda: {
+        "configured": True, "reachable": True, "host": "fm.example",
+        "error": "", "firmware": [],
+        "devices": [{"device": "fwcap", "count": 25, "latest": files[0]["mtime"],
+                     "files": files}]})
+    login(client, admin_user_id(app))
+    html = client.get("/adom-assets/").get_data(as_text=True)
+    assert "Showing the 10 newest of 25 files" in html

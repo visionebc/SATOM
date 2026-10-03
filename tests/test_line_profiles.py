@@ -568,3 +568,26 @@ def test_errors_flash_as_danger_not_info(app, client, catalog):
     body = r.get_data(as_text=True)
     assert "No line was given." in body
     assert "fw-alert-danger" in body
+
+
+def test_an_undecided_delete_names_the_line_profiles_using_it(app, catalog):
+    """The refusal counted appliances, baselines and segments — a line used
+    only by a profile read "used by 0 appliance(s), 0 baseline(s) and 0
+    segment(s)"."""
+    _profile(app, line="wholesale", segments=())
+    with app.app_context():
+        rows = [ops.Row(orig="retail", value="retail", action="keep"),
+                ops.Row(orig="wholesale", value="", action="delete",
+                        reassign="", decided=False),
+                ops.Row(orig="lab", value="lab", action="keep")]
+        with pytest.raises(ops.ClassificationError) as exc:
+            ops.apply_rows("lines", rows)
+    assert "1 line profile(s)" in str(exc.value)
+
+
+def test_the_catalog_page_badges_line_profile_usage(app, client, catalog):
+    from conftest import admin_user_id, login
+    _profile(app, line="wholesale", segments=())
+    login(client, admin_user_id(app), product="global")
+    body = client.get("/classification/").get_data(as_text=True)
+    assert 'title="line profiles"' in body

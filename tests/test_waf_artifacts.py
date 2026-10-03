@@ -476,3 +476,30 @@ def test_gate_reports_objects_already_on_the_destination_instead_of_hiding_them(
         _rows(status="exists", resolved=True), dest_name="fwb2", accepted=False)
     assert chk["level"] == "ok" and "already on fwb2" in chk["label"]
     assert sg["artifacts_need_ack"] is False
+
+
+# ── audit 2026-10-03: texts that described removed features ───────────────
+def test_texts_no_longer_promise_removed_features():
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    sa = (root / "app/services/scheduled_actions.py").read_text("utf-8")
+    assert "migration coverage report" not in sa
+    wa = (root / "app/services/waf_artifacts.py").read_text("utf-8")
+    assert "pushed from the store to any destination" not in wa
+    assert "push them back" not in wa
+    fo = (root / "app/templates/fleet_objects/index.html").read_text("utf-8")
+    assert "cached {{ '~60s' }}" not in fo and "local store" in fo
+    sig = (root / "app/templates/web_protection/signature_policy.html").read_text("utf-8")
+    assert "Settings → Signatures" not in sig
+    st = (root / "app/templates/settings/index.html").read_text("utf-8")
+    assert "refreshNaming" not in st
+    for rel in ("app/templates/server_objects/import.html",
+                "app/templates/config_compare/index.html"):
+        body = (root / rel).read_text("utf-8")
+        assert "visionebc" not in body and "fortiweb12" not in body, rel
+
+
+def test_the_legacy_settings_naming_writer_is_gone(app):
+    rules = {r.rule for r in app.url_map.iter_rules()}
+    assert not any(r.endswith("/settings/naming") for r in rules)
+    assert "settings.save_naming" not in app.view_functions

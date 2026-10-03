@@ -278,7 +278,10 @@ echoes <code>peer_authenticated</code>. nftables on 248 opens <code>:8443</code>
 <li>Verified: <code>sslmode=disable</code> → refused (<code>no encryption</code>); SSL-without-client-cert
   → refused. Live: TLS 1.3 / <code>TLS_AES_256_GCM_SHA384</code>.</li>
 <li>Operator tunes the floor from the UI (min TLS protocol + cipher list):
-  <code>app/services/pg_ssl.py</code> → <code>ALTER SYSTEM</code> as <code>postgres</code> + reload. Policy stored
+  <code>app/services/pg_ssl.py</code> validates and queues a <code>pg_ssl</code> request for the root
+  updater (<code>deploy/self_update_runner.py</code>, which re-validates and runs
+  <code>ALTER SYSTEM</code> as <code>postgres</code> + reload; the web process is the unprivileged
+  service account and cannot <code>su</code>). Policy stored
   in <code>app_settings</code> <code>security.pg_ssl</code> (<code>enforced</code>, <code>sslmode</code>, <code>mutual_tls</code>,
   <code>min_protocol</code>, <code>ciphers</code>).</li>
 </ul>

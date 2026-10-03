@@ -144,7 +144,7 @@ licence.</p>
   ##        ##  ##        ##      ####      ##        ##  ##        ##
   ############  ##        ##      ####      ############  ##        ##
 
-  SATOM operator CLI 2.10.1
+  SATOM operator CLI 2.11.0
   System Automation &amp; Task Orchestration Manager
   Made by VisionEBC  ·  https://visionebc.com
   {primary-node} · primary · root
@@ -582,7 +582,7 @@ challenge.</p>
 </tr>
 <tr>
 <td><code>execute admin unlock &lt;user&gt;</code></td>
-<td>Clears a lockout without touching the password</td>
+<td>Clears a lockout; leaves the password and the enabled flag alone</td>
 </tr>
 <tr>
 <td><code>execute scheduler run\|enable\|disable &lt;id&gt;</code></td>
@@ -1266,13 +1266,13 @@ longer matches the console you are running.</p>
 <td><code>satom execute admin reset-password &lt;username&gt;</code></td>
 <td style="text-align: center;">yes</td>
 <td style="text-align: center;">—</td>
-<td>Set a password (asked interactively, never in argv).</td>
+<td>Set a password (asked interactively, never in argv); re-enables the account.</td>
 </tr>
 <tr>
 <td><code>satom execute admin unlock &lt;username&gt;</code></td>
 <td style="text-align: center;">yes</td>
 <td style="text-align: center;">—</td>
-<td>Clear a lockout without touching the password.</td>
+<td>Clear a lockout. Touches neither the password nor the enabled flag.</td>
 </tr>
 <tr>
 <td><code>satom execute scheduler run &lt;action-id&gt;</code></td>

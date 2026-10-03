@@ -211,7 +211,10 @@ render from that cache in milliseconds and show a freshness badge like
 <ul>
 <li>the UI works even when a device is <strong>down, slow, or license-locked</strong>;</li>
 <li>what you see can be <em>behind</em> the box — press the <strong>refresh/live</strong> control
-  (⟳ / "refresh from device") when you need the current truth;</li>
+  (⟳ / "refresh from device") when you need the current truth. A refresh is a
+  full device sync, so it needs <code>config_write</code> on every page that offers it
+  (Server Policy, Server Objects, Web Protection, the configuration sections);
+  read-only users see the cached data and no refresh button;</li>
 <li>after you save a change through the app, the affected page re-reads live, so
   your own edits are never stale.</li>
 </ul>
@@ -225,7 +228,9 @@ screen tracks progress and survives page navigation; the <strong>Jobs</strong> p
 be minimised to one line (<strong>−</strong>) and restored (<strong>□</strong>, or a click on its title);
 the choice lasts for the browser session.</p>
 <p><strong>Notifications.</strong> The bell in the top bar collects job results and system
-notices, scoped to the product you are working in.</p>
+notices, scoped to the product you are working in. The bell's <em>Clear</em> only marks
+them read; <strong>Clear all</strong> on the Notifications page deletes them (after a
+confirmation).</p>
 <h2 id="3-products-adoms">3. Products (ADOMs)</h2>
 <p>The app currently hosts five workspaces, in the style of FortiManager ADOMs.
 <strong>The list is data, not code:</strong> the ADOM registry is a database table, and an
@@ -294,7 +299,9 @@ real and the pages ask for it.</p>
 <p>An appliance in maintenance mode is counted only for operators who may see
 maintenance devices, so this can never hand you a device the picker hides.</p>
 <h2 id="4-registering-and-operating-devices">4. Registering and operating devices</h2>
-<p><strong>Appliances</strong> (Administrator → Appliances, or Global dashboard):</p>
+<p><strong>Appliances</strong> (sidebar → Fleet → Appliances in each ADOM, Global → Appliances in
+the Global ADOM, or the Global dashboard). The entry is shown to anyone holding
+<code>appliances.view</code>; adding or editing a device still needs <code>config_write</code>:</p>
 <ol>
 <li><strong>Add appliance</strong> — name, host/IP, port, kind (fortiweb / fortiadc /
    fortiauthenticator / fortianalyzer), credentials (stored encrypted), TLS
@@ -317,7 +324,8 @@ that will not come online.</p>
    device's full configuration in the local cache (recorded as a harvest with
    trigger <code>rediscovery</code>, so Device health counts it); also records the
    firmware. Hardware is NOT collected here: use <strong>Scan hardware (SSH)</strong> on
-   Device health. Run it after registering and after any large out-of-band
+   Device health (FortiWeb only: the scan is the FortiWeb <code>diagnose hardware</code>
+   battery, so the button is not offered in the other ADOMs). Run it after registering and after any large out-of-band
    change. With <em>Capture full WPP + policy depth</em> on, the deep pass shows which
    server policy or WPP it is walking and how many are left.
 4. <strong>Deep capture</strong> — a deeper sweep that walks each server policy's whole
@@ -330,7 +338,9 @@ that will not come online.</p>
   references.</li>
 <li><strong>SSH Console</strong> — read-only troubleshooting presets (<code>get system status</code>,
   HA status, routing table, sniffer…) plus a command box. Destructive CLI is
-  not offered.</li>
+  not offered. Running a command (even a read-only one) needs <strong>Run appliance
+  actions</strong> (<code>appliances.apply</code>); without it the console link is not shown and
+  the page lists the presets with a read-only notice.</li>
 <li><strong>Backups / Restore / Upgrade / Boot partition</strong> — see §11–§12.</li>
 <li><strong>Sync devices</strong> — the fleet list can be shared/re-imported so a fresh
   install inherits the same inventory.</li>
@@ -397,7 +407,16 @@ preview it" path past a blocker; allowing one is how a blocker becomes advisory.
 names are compared with the appliance's own object list at plan time, not with a
 cached copy — a run that dies after reserving an address is worse than one that
 never started. An <strong>unreachable device is itself a blocker</strong>, not an assumption
-that the box is empty.</p>
+that the box is empty. The same live read confirms that the line's <strong>Web
+Protection Profile exists on the device</strong>; a missing profile blocks the plan
+(deploy the template first) instead of failing at the last step.</p>
+<p><strong>Names follow Administrator → Naming.</strong> Object names are rendered from the
+saved Naming patterns for the device's product, falling back to the defaults
+for any element left empty. When the wizard issues a certificate, the created
+policy serves HTTPS with it (predefined <code>HTTPS</code> service + that certificate).</p>
+<p><strong>Line profiles</strong> are declared on Global ADOM → Administrator → <strong>Line
+Profiles</strong> and are always filed as FortiWeb profiles — the product the wizard
+reads them for.</p>
 <p><strong>It refuses to guess.</strong> A segment the chosen line does not receive is refused
 — the wrong-network failure this feature exists to prevent. When a line offers
 several segments you choose one; the wizard does not pick for you. A blank
@@ -750,7 +769,9 @@ Prevention — plus the profile itself under Policy → Web Protection Profile
   explanation under every Action dropdown.</li>
 <li><strong>Regex Lab:</strong> every regex-capable field has a <code>.*</code> button that opens a
   server-side regex tester with curated examples per section; the tested
-  pattern writes back into the field.</li>
+  pattern writes back into the field. Its rewrite preview numbers captures the
+  way FortiWeb and FortiADC do: <code>$0</code> is the <strong>first</strong> <code>( … )</code> group, <code>$1</code> the
+  second.</li>
 <li>Profile-level editing shows each sub-policy as a dropdown with Edit/＋,
   down to six levels of nesting.</li>
 </ul>
@@ -779,7 +800,14 @@ app enforces:</p>
   and import them as desired-state, bound to the right policy.</li>
 <li><strong>Alignment report</strong> — device → policy → profile → exceptions, with stale
   detection; exportable.</li>
+<li><strong>Analyse before implementing</strong> — SATOM's own deterministic analysis of the
+  draft is available to anyone who can open the page; the assistant's opinion
+  (the draft is sent to the configured AI provider) is added only for users
+  holding <code>advisor.use</code>.</li>
 </ul>
+<p>Authoring, injecting, deploying, deleting and detecting need <code>config_write</code>;
+without it the page is read-only and those buttons are hidden or disabled.
+Deleting always goes through the impact check (the guarded delete).</p>
 <h3 id="91-search-attack-id--from-a-block-page-to-a-reviewed-carve-out">9.1 Search Attack ID — from a block page to a reviewed carve-out</h3>
 <p>When FortiWeb blocks a request it shows the caller a block page carrying an
 <strong>Attack ID</strong> (<code>000000004106</code>). That number is the only thing the person who
@@ -1058,13 +1086,29 @@ This page is the missing third position: name the CA and keep the check on.</p>
     fallback), <strong>REST only</strong>, or <strong>SSH only</strong> (<code>show full-configuration</code>).
     Unlicensed/locked devices are still backed up via SSH.</li>
 <li>Upload <code>.conf</code> files by hand, download or delete rows at will.</li>
-<li><strong>Restore</strong> (appliance detail): pick a vault row and apply (FortiWeb; a
-  pre-restore safety backup is taken first). For FortiADC the vault works
+<li>Permissions: <strong>View backups</strong> (<code>backups.view</code>, held by read-only too)
+    lists the vault — metadata only; creating, uploading and deleting need
+    <strong>Create</strong> or <strong>Restore backups</strong> (<code>backups.create</code> / <code>backups.restore</code>);
+    a <strong>download</strong> needs <code>backups.create</code>, because it is the full device
+    configuration. Buttons you cannot use are not shown.</li>
+<li><strong>Restore</strong> (appliance detail): pick a vault row and apply (FortiWeb). It
+  needs <strong>Manage users</strong> <em>and</em> <strong>Restore backups</strong> (<code>users.manage</code> +
+  <code>backups.restore</code>). Before a live restore a pre-restore safety backup is
+  pulled over the device <strong>REST</strong> API; if it cannot be taken the restore is
+  <strong>aborted</strong>, unless you tick <em>Restore without a pre-restore backup</em> (for a
+  device whose REST backup cannot work, e.g. a backup password is set) — that
+  choice is written to the audit log. For FortiADC the vault works
   (pull/upload/download) but config <em>apply</em> has no REST transport — the page
   says so honestly.</li>
 <li><strong>System Backup &amp; Restore</strong> (Global → Administrator) backs up the <strong>manager
   itself</strong>: a <code>pg_dump</code> of the database plus the reports tree in one bundle,
-  with a verified restore path.</li>
+  with a verified restore path. <strong>Create backup now</strong> also pushes the bundle to
+  the backup server when one is configured (the box is ticked by default).
+  <strong>Code rollback</strong> on the same page is an update to an older commit and obeys
+  the same staged-rollout safeguard as Software Update → Apply: on a primary
+  with a standby, roll the standby back first. On a container install both
+  code rollback and offline update packages are refused with the reason
+  (deploy a new image tag instead).</li>
 <li>Pre-upgrade/downgrade backups land in the same vault automatically.</li>
 </ul>
 <p><strong>Off-box copies — the source of truth and the external server.</strong> The vault above
@@ -1129,9 +1173,14 @@ other parses a config file entirely offline.</p>
    the upgrade fixes and what it inherits.</li>
 <li>Unattended (scheduled) upgrades only ever run inside an <strong>approved Change
    Request window</strong> (§15) — there is no way to schedule a flash without an
-   approval.</li>
-<li><strong>Boot partition</strong> management (view/boot the alternate partition) is a
-   separate, gated page.</li>
+   approval. The scheduled path is <strong>Upgrade Flow</strong>; the Upgrade page itself
+   flashes now and has no "Schedule for later" card any more.</li>
+<li><strong>Boot partition</strong> (flash the alternate partition / roll back) is the
+   <strong>emergency path</strong>: it does not need a change request, so it can roll back
+   a change that went wrong outside any window. A live flash requires ticking
+   <em>"I understand this live flash bypasses change control"</em> and typing the
+   appliance name; the attempt (refused or started) and its outcome are written
+   to the audit log.</li>
 </ol>
 <p><strong>The Firmware library</strong> (Fleet → <strong>Firmware</strong>, admin) is the store the upgrade
 step 1 picks from, and it is worth using rather than re-uploading an image per
@@ -1141,10 +1190,10 @@ device.</p>
   VM / any), size, uploader, notes and a <strong>sha256</strong> recorded at upload. The binary
   lives on disk; the database row keeps the metadata and the hash, so integrity is
   checkable later.</li>
-<li><strong>Uploads are chunked and resumable.</strong> A firmware image is hundreds of
-  megabytes and a single POST across a slow link is a coin flip; the upload goes
-  in parts with a status endpoint, and the file is only assembled and hashed once
-  every part has landed.</li>
+<li><strong>Uploads keep running while you navigate.</strong> A firmware image is hundreds of
+  megabytes; it goes up as one request that the Jobs dock tracks across page
+  changes, and the sha256 is computed by a background job once the file has
+  landed.</li>
 <li><strong>The page is ADOM-scoped at the query, not in the template</strong> — a FortiWeb
   workspace sees FortiWeb images and Global sees everything, and a hidden row was
   never fetched in the first place. Inside a concrete ADOM the product is not
@@ -1351,7 +1400,8 @@ cards are still there if the charts fail to draw.</p>
 <p><strong>Where the totals come from differs by product, and the page will not fake it.</strong>
 FortiWeb and Global read the daily typed snapshots written by the
 <code>inventory_snapshot</code> scheduled action (§15) — which is why that action has to be
-scheduled daily for the trend to exist at all. FortiADC has no snapshot pipeline,
+scheduled daily for the trend to exist at all. New installations seed it daily at
+23:50 (<code>satom execute seed actions</code>); on an older node the same command adds it. FortiADC has no snapshot pipeline,
 so its totals are counted live off the fleet and cached briefly. A product with
 neither reports <strong>no totals rather than borrowing another product's</strong>: an ADOM
 printing FortiWeb's object counts under its own labels is worse than printing
@@ -1662,6 +1712,11 @@ coarser data while looking exactly like one built on time.</p>
   readable; failing the run would leave the action permanently red over an SMTP
   outage.</li>
 <li>A period with no samples reports <strong>unknown</strong>, not a healthy zero.</li>
+<li>Every view (page, text/e-mail, CSV) also carries the <strong>fleet metrics</strong>
+  section from the metrics store: min / avg / max per device and metric, the
+  policies that were down and the collectors that failed. When the store was
+  unreachable it says so instead of printing zeros. In the CSV these are extra
+  rows of kind <code>fleet</code>, <code>fleet_policy_down</code> and <code>fleet_collector_failed</code>.</li>
 </ul>
 <h3 id="1410-thresholds--declare-a-limit-once">14.10 Thresholds — declare a limit once</h3>
 <p>Settings → <strong>Thresholds</strong> (admin). Before this page every limit lived on an
@@ -1746,7 +1801,7 @@ Server Policy for operators):</p>
 </tr>
 <tr>
 <td>Monitoring — all four are the ones §14 asks you to schedule</td>
-<td><code>metrics_scrape</code> (the Collection sweep, §14.7 — <strong>every 3 minutes</strong>), <code>deep_monitor</code> (the deep-monitor probe sweep, §14.3 — <strong>every 5 minutes</strong>), <code>monitor_report</code> (the period summary, §14.9 — <em>after</em> the period closes), <code>inventory_snapshot</code> (daily inventory counts for §14.2)</td>
+<td><code>metrics_scrape</code> (the Collection sweep, §14.7 — <strong>every 3 minutes</strong>), <code>deep_monitor</code> (the deep-monitor probe sweep, §14.3 — <strong>every 3 minutes</strong>, the seed plan's cadence), <code>monitor_report</code> (the period summary, §14.9 — <em>after</em> the period closes), <code>inventory_snapshot</code> (daily inventory counts for §14.2)</td>
 </tr>
 <tr>
 <td>Certificates</td>
@@ -1762,7 +1817,7 @@ Server Policy for operators):</p>
 </tr>
 <tr>
 <td>Firmware</td>
-<td><code>upgrade_prep</code> (backup + health, flashes nothing) and the full <code>upgrade</code> — destructive, fixed date/time, and only inside an approved Change Request window</td>
+<td><code>upgrade_prep</code> (backup + health, flashes nothing) and <code>upgrade</code> — fixed date/time, only inside an approved Change Request window; the scheduled executor does <strong>not</strong> flash yet (it reports each target <em>not executed</em>), so flash live from the Upgrade page (§36.6)</td>
 </tr>
 <tr>
 <td>Escape hatch</td>
@@ -1783,7 +1838,11 @@ Server Policy for operators):</p>
   swap a server-policy certificate.</li>
 <li>Schedules: interval / daily / weekly / monthly / once, with catch-up
   semantics and a run history per action. A dedicated scheduler sidecar fires
-  them; <strong>Run now</strong> is always available.</li>
+  them; <strong>Run now</strong> is always available. Every wall-clock field — including the
+  one-time <strong>Run at</strong> — is in the console timezone (Settings → General), and
+  the list shows <strong>Next run</strong> in that timezone with its zone. A run the
+  scheduler was not up for, on an action without catch-up, shows as
+  <strong>missed</strong>.</li>
 </ul>
 <p><strong>Change Requests</strong> (maintenance windows):</p>
 <ul>
@@ -1812,7 +1871,12 @@ boot.</p>
 <li><strong>ER diagram</strong> — a live, professional database diagram (crow's-foot
   notation, domain-colored, searchable, draggable, exportable SVG).</li>
 <li><strong>Tables browser + SQL console</strong> — read-only introspection with sensitive
-  columns masked.</li>
+  columns masked. A query (console, CSV export or report widget) that names a
+  credential table — <code>users</code>, <code>api_tokens</code>, <code>app_settings</code>,
+  <code>hypervisor_targets</code>, <code>dns_backends</code>, <code>provision_runs</code> — is refused before it
+  runs and the refusal is audited (<code>database.query_refused</code>): column masking
+  keys on the result column's name, which <code>row_to_json(...)</code> or an alias can
+  change.</li>
 </ul>
 <h2 id="17-product-workspaces">17. Product workspaces</h2>
 <p>Beyond the shared pages (appliances, monitoring, backups, jobs, automation),
@@ -1826,11 +1890,22 @@ Network, Shared Resources, User Authentication, System, Log &amp; Report.</p>
 <li>Object pages use the same form engine: identity/mkey handling, child tables
   (e.g. pool members) derived automatically, dry-run previews, audit on
   apply.</li>
-<li><strong>Signatures</strong> — WAF signature category/severity overview with per-severity
-  actions; deep editing through the object detail.</li>
-<li><strong>API console</strong> (bottom nav → API) — the registry-driven explorer: browse
-  the ADC endpoint catalog as the GUI menu, run live GETs and gated writes
-  against a chosen device, with history and syntax-highlighted responses.</li>
+<li>Form writes (field form, child rows, create) are dry-run first. The raw JSON
+  save, raw delete and the list-page Delete apply <strong>immediately</strong> — their
+  confirm dialogs say so.</li>
+<li><strong>Signatures</strong> (Web Application Firewall group, <code>protection.view</code>) — WAF
+  signature category/severity overview with per-severity actions; deep editing
+  through the object detail.</li>
+<li><strong>API console</strong> (sidebar → API → Registry &amp; console, <code>registry.view</code>) — the
+  registry-driven explorer: browse the ADC endpoint catalog as the GUI menu, run
+  live GETs and gated writes against a chosen device, with history and
+  syntax-highlighted responses. Writes are <strong>dry-run by default</strong>: without
+  <strong>Apply</strong> the console returns the request (method, path, body) and sends
+  nothing.</li>
+<li><strong>Naming</strong> patterns for FortiADC are <strong>reference only</strong>: the object editor and
+  the virtual-server wizard do not fill in or check names from them.</li>
+<li><strong>No Firmware page</strong> in this ADOM: the firmware library stores images, and no
+  path flashes a FortiADC with them.</li>
 <li>Device actions at parity where the platform allows: test connection,
   VS inspector, discovery, SSH console with ADC presets, upgrade-prep health
   battery, SSH config backups. (Firmware flash / restore-apply have <strong>no REST
@@ -1855,9 +1930,11 @@ Management</strong> and <strong>Logging</strong>.</p>
   loads its tabs from the registry endpoints bound to that leaf, capped at 500
   rows with the truncation stated rather than silently applied, and it never
   renders a device refusal as an empty table.</li>
-<li><strong>API console</strong> (bottom nav → API) — the registry-driven explorer over the
-  FAC catalogue, with live GETs and gated writes against a chosen device
-  (§30 covers the registry model behind all four consoles).</li>
+<li><strong>API console</strong> (sidebar → API → Registry &amp; console, <code>registry.view</code>) — the
+  registry-driven explorer over the FAC catalogue, with live GETs and gated
+  writes against a chosen device (§30 covers the registry model behind all four
+  consoles). Catalog rows can be disabled and restored on the page; re-pointing
+  a disabled row keeps it disabled.</li>
 <li><strong>Analysis</strong> — entitlement, identity inventory and posture (see §13).</li>
 </ul>
 <p><strong>What does <em>not</em> apply to FortiAuthenticator.</strong> The FAC ADOM's sidebar carries
@@ -1876,11 +1953,11 @@ no Operations group, and that is not an oversight:</p>
 </tr>
 <tr>
 <td><strong>Device Backups (§11)</strong></td>
-<td><strong>Not offered in this workspace.</strong> The vault page is not in the FAC menu; the backup transports are written against the FortiWeb/FortiADC backup APIs.</td>
+<td><strong>No.</strong> The vault pages are closed to this workspace and not in the FAC menu; the backup transports are written against the FortiWeb/FortiADC backup APIs.</td>
 </tr>
 <tr>
 <td><strong>Firmware upgrade (§12)</strong></td>
-<td><strong>No.</strong> Upgrade and Boot Partition are FortiWeb-only even on the appliance detail page, and the SSH console, discovery and upgrade-prep actions there are gated to FortiWeb and FortiADC. The firmware <strong>library</strong> may still open in this workspace — it is governed by the <code>firmware</code> capability on the ADOM row (§26.11), which an admin can tick, and this installation has it on. Storing an image there is harmless; there is simply no upgrade path that consumes it.</td>
+<td><strong>No.</strong> Upgrade and Boot Partition are FortiWeb-only even on the appliance detail page, and the SSH console, discovery and upgrade-prep actions there are gated to FortiWeb and FortiADC. The firmware library is closed to this workspace too: there is no upgrade path that would consume an image stored there.</td>
 </tr>
 <tr>
 <td><strong>Monitoring (§14)</strong></td>
@@ -1913,8 +1990,12 @@ being wrong is a credential in every screenshot of the page.)</p>
   URI is a Registry edit, never a code change.</li>
 <li>Section pages read <strong>one tab per request</strong>, so a heavy log view never blocks
   the rest of the page.</li>
-<li><strong>API console</strong> (bottom nav → API) — same registry-driven explorer, JSON-RPC
-  aware, with audited and permission-gated writes.</li>
+<li><strong>Device Manager</strong> — Authorize / Delete run in the FortiAnalyzer ADOM you
+  type in the dialog (default <code>root</code>); the device list spans every FAZ ADOM.</li>
+<li><strong>API console</strong> (sidebar → API → Registry &amp; console, <code>registry.view</code>) — same
+  registry-driven explorer, JSON-RPC aware, with permission-gated writes that
+  are <strong>dry-run by default</strong> (tick <strong>Apply</strong> to send). The status badge shows the
+  device's JSON-RPC status code, not the transport's HTTP 200.</li>
 <li>Operational endpoints (alerts, incidents, log statistics, storage) are
   deliberately <strong>excluded from the configuration source of truth</strong>: they change
   between two reads of an idle unit and would defeat change detection.</li>
@@ -2207,21 +2288,21 @@ the first-boot dialog described in 21.2.</p>
 <tbody>
 <tr>
 <td><strong>Full</strong></td>
-<td>Address, DNS, machine, boot, walks the first-boot dialog over the serial console, registers the appliance, applies the configuration profile.</td>
+<td>Address, DNS, machine, boot, then waits for the appliance to answer on the reserved address, registers it and applies the configuration profile. The first-boot dialog is not scripted: the appliance must come up on that address by itself.</td>
 <td>No human step at all. Repeatable and auditable end to end — every action lands in the run log.</td>
 <td><strong>Proxmox only.</strong> The most moving parts, so the widest surface for a mid-run failure; this is what rollback exists for.</td>
 </tr>
 <tr>
 <td><strong>Semi</strong></td>
-<td>Builds and boots, then stops. You complete the first-boot dialog on the hypervisor console and resume the run.</td>
+<td>Builds and boots, then stops. You complete the first-boot dialog on the hypervisor console and resume the run; the resume checks the box answers on its address, registers it and finishes the profile.</td>
 <td>Works on <strong>every</strong> backend, including a free-licensed ESXi. The one manual step is the one a human is genuinely required for.</td>
 <td>Not unattended — the run waits until somebody acts on it.</td>
 </tr>
 <tr>
 <td><strong>DHCP</strong></td>
-<td>Builds and boots; the appliance takes a lease, SATOM finds it there and carries on.</td>
+<td>Builds and boots; the appliance takes a lease and SATOM probes the management address entered on the run (it does not discover the lease), then carries on.</td>
 <td>Unattended without needing a serial console.</td>
-<td>Needs DHCP reachable from that network, and the appliance ends up on an address you did not choose. Not every appliance takes a lease on its factory configuration.</td>
+<td>You must know the address the appliance takes (a DHCP reservation) and enter it on the run; without one the run stops at the reachability step. Not every appliance takes a lease on its factory configuration.</td>
 </tr>
 <tr>
 <td><strong>VM only</strong></td>
@@ -2462,9 +2543,10 @@ uploads the file. Details:
 <a href="offline-update-packages.html">offline-update-packages.md §1.1</a>.</p>
 <h2 id="23-studio-custom-views-plugins--lua">23. Studio: custom views, plugins &amp; Lua</h2>
 <p>Three admin-only authoring tools, grouped under <strong>Studio</strong>. In the Global ADOM
-they sit at Administrator → Studio; in the FortiWeb and FortiADC ADOMs the same
-two authoring pages plus the read side (<strong>Custom Views</strong>) appear in their own
-<strong>Plugins</strong> nav group.</p>
+they have their own <strong>Studio</strong> nav group; in the FortiWeb and FortiADC ADOMs the
+same two authoring pages plus the read side (<strong>Custom Views</strong>) appear in their
+own <strong>Plugins</strong> nav group. Every entry is shown only to holders of its own
+<code>studio.*</code> key, so a menu link never answers 403.</p>
 <p>They are gated by <strong>three separate permissions</strong> — <code>studio.python_console</code>,
 <code>studio.plugin_studio</code> and <code>studio.lua_studio</code> — which are <em>not</em> the same thing
 as <code>user_manage</code>. A profile can be given one studio tool without being given the
@@ -2537,7 +2619,9 @@ the ADOM you are in.</p>
 <p><strong>Custom Views is ADOM-scoped; Plugin Studio is not.</strong> The read-side gallery
 ("Custom Views") is only surfaced in the FortiWeb and FortiADC ADOMs, and every
 plugin is stamped with the ADOM it was authored in. The <em>authoring</em> pages are
-reachable from the Global ADOM too, under Administrator → Studio.</p>
+reachable from the Global ADOM too, under Studio. Draft and testing views
+(and the editor's live preview) open for holders of <code>studio.plugin_studio</code>;
+everyone else sees published views only.</p>
 </blockquote>
 <h3 id="232-lua-studio">23.2 Lua Studio</h3>
 <p>Author a device script, lint it, read a static analysis of it, and deploy it —
@@ -2561,7 +2645,9 @@ in that order. Targets are <strong>FortiWeb "Web Scripting"</strong> and <strong
   <em>would</em> be sent (endpoint, method, content field, body) and contacts nothing.
   A real push needs <strong>both</strong> <code>config_write</code> <strong>and</strong> an explicit confirmation, and
   the lint gate runs again first — a script that does not parse is refused before
-  any transport is opened.</li>
+  any transport is opened. A real push also needs a <strong>target appliance</strong> saved
+  on the script; without one it is refused, and the script is never stamped
+  <code>deployed</code>.</li>
 <li>The dry-run plan is marked <strong>not verified</strong>: the scripting wire format has not
   been round-tripped live on this fleet, which is exactly why the default is a
   preview and the real push asks twice.</li>
@@ -2731,7 +2817,11 @@ rendered at all, so the menu never offers a section that is not there.</p>
 </tbody>
 </table>
 <p>The <strong>AI Advisor</strong> panel additionally needs <code>advisor.configure</code>; an admin
-without it does not see the entry.</p>
+without it does not see the entry. <strong>Sentinel</strong> and <strong>Scout</strong> settings are
+admin-only end to end: saving them (including Scout's site-wide on/off switch)
+needs <em>Manage users</em>, the same as seeing the panes. Sentinel's AI reasoning
+ships with an empty model endpoint and stays off until one is set (for example
+<code>http://localhost:11434</code>), even if its switch is on.</p>
 <p><strong>Integrations is a page, not a pane</strong>, and its row carries the leaving arrow
 (↗) for that reason: clicking it replaces the console instead of switching a
 tab. It is where SATOM is wired to systems it does not own — NetBox
@@ -2752,6 +2842,11 @@ force when it was written. Each row names the symbol it is read from, and the
 values are read off the engine when the page renders, so the table cannot drift
 from the code. <em>Architecture</em> renders the ten rungs from the same tuple the
 engine walks.</p>
+<p><strong>A typed Published host follows the free-target rule.</strong> Left blank, Scout
+dials the object's VIP as the device reports it. A host you type is dialled
+only if the appliance publishes it (its own address or one of its VIPs),
+unless you hold <code>monitoring.probe_free</code> or user management — the same rule as
+the certificate inspector and the transaction tracer.</p>
 <p><strong>Three repositories-or-destinations, three separate entries.</strong> Until
 2026-08-29 the System group carried one panel called <em>SoT &amp; Backup</em>, and it
 held a firmware git URL, the SFTP credentials of the backup box and nothing
@@ -2884,10 +2979,23 @@ because the setting is meaningless without it. They are not repeated here:</p>
 <p>The rest follow.</p>
 <h3 id="261-general--identity-logging-and-the-libraries-panel">26.1 General — identity, logging, and the Libraries panel</h3>
 <p>Application name (browser title and top bar), environment (which drives the
-<strong>PROD</strong>/<strong>DEV</strong> badge), default appliance platform, session-lock timeout, status
-poll interval, which log severities are written, display timezone, log format,
-and whether policy detail pages expose their raw JSON. A separate card opts an
-admin in or out of <strong>bug-report notifications</strong> (bell + email).</p>
+<strong>PROD</strong>/<strong>DEV</strong> badge), default appliance platform, display timezone, and:</p>
+<ul>
+<li><strong>Session Lock (minutes)</strong> — an idle timeout (5 to 1440, default 60). A browser
+  session with no activity for that long is signed out on its next request,
+  with the message <em>"Your session was locked after N minutes of inactivity."</em>
+  (script callers get a JSON 401). Page loads, navigation and every form or
+  button that changes something count as activity; background refreshes — the
+  notification bell, job progress, status badges, edit-lock heartbeats and
+  other timed panel reloads — do not, so a tab left open still locks. API
+  tokens are not affected. The lock is audited as <code>session.idle_lock</code>.</li>
+<li><strong>Log Levels</strong> and <strong>Log Format</strong> — which severities are written to the
+  application log file and how (plain, detailed, or JSON lines). Applied at
+  start-up and immediately on save.</li>
+</ul>
+<p>The status-poll interval and raw-JSON toggle that used to sit here were removed:
+nothing ever read them. A separate card opts an admin in or out of
+<strong>bug-report notifications</strong> (bell + email).</p>
 <p>The <strong>System Information</strong> card is read-only inventory — version, node, Python,
 and the library list. Underneath it sits <strong>Libraries</strong>, which is a <strong>second,
 separate updater</strong> and is easy to confuse with §22:</p>
@@ -2978,7 +3086,15 @@ banner: it is a personal appearance preference, saved against your account, on
 your <strong>Profile</strong> page. Each ADOM can carry a different one.</p>
 </blockquote>
 <h3 id="263-users-and-profiles">26.3 Users and Profiles</h3>
-<p><strong>Users</strong> is the account list — create, edit, disable, reset, assign a profile.</p>
+<p><strong>Users</strong> is the account list — create, disable, delete, assign a profile, and
+per row: <strong>Reset password</strong> (local accounts only; 12 to 1024 characters),
+<strong>Clear 2FA</strong> (shown when the account has two-factor enabled) and <strong>Unlock</strong>
+(shown when the account has failed sign-ins or is locked out; it clears the
+counter and the lock and nothing else — a disabled account stays disabled).
+Every action needs <em>Manage users</em> and lands in the audit log. A profile that
+holds only <em>View users</em> sees the same list read-only, with no controls; the
+sidebar shows it a <strong>Users</strong> entry. The <strong>Admins</strong> counter counts the accounts
+that can manage both users and profiles.</p>
 <p><strong>Profiles</strong> is the one that matters for §1: the three named profiles
 (<em>readonly</em>, <em>operator</em>, <em>admin</em>) are <strong>seeded, not hard-coded</strong>. This page
 composes permission sets from the granular catalog — eleven areas
@@ -2987,6 +3103,13 @@ Log, Appliances, Studio, Users, Profiles), each with its own view/edit/apply-
 style actions — and you can create your own profiles freely. The three seeded
 ones exist because they reproduce the legacy role behaviour exactly; they are a
 starting point, not the ceiling.</p>
+<p>A custom profile gets exactly what its keys say. Pages that show device
+content (FortiWeb workspace and protection pages, exceptions, artifacts,
+FortiADC / FortiAnalyzer / FortiAuthenticator pages, the API registry,
+Sentinel, the network tools) need the matching <em>view</em> key, and the Global home
+lists appliances only with <em>View appliances</em>. The sidebar, the top bar and the
+home shortcuts offer a page only when the profile can open it, so a narrow
+profile sees a short menu rather than links that answer <em>access denied</em>.</p>
 <p>An <strong>anti-lockout guard</strong> keeps at least one active account holding both user
 management and profile management, so this page cannot be used to remove the
 last administrator.</p>
@@ -3497,12 +3620,17 @@ Monitoring → SATOM health (§14.1) points here.</p>
 <li><strong>State</strong> shows the current certificate, its subject and expiry, the node
   hostname it was issued for, the renew mode, and the Postgres SSL policy.</li>
 <li><strong>Issue</strong> mints one from the internal CA. <strong>Import</strong> takes a cert + key PEM
-  pair (plus an optional chain) for a certificate issued elsewhere. <strong>Renew</strong>
-  forces the renewal pass now instead of waiting for the timer.</li>
-<li><strong>Renew mode</strong> decides what happens to an <em>imported</em> certificate as it ages:
-  <code>alert</code> (warn only — you renew it wherever it came from) or <code>autopull</code> (fetch
-  and install the new material from a configured SFTP source). <strong>Autopull</strong> also
-  has a one-off <em>test now</em> button that ignores the mode gate.</li>
+  pair (plus an optional chain) for a certificate issued elsewhere. <strong>Renew
+  now</strong> forces the renewal pass for a certificate issued by the internal CA; it
+  is greyed out for an imported one, which it cannot renew.</li>
+<li><strong>Renewal of an imported certificate</strong> (its own card) decides what happens to
+  an <em>imported</em> certificate as it ages: <em>Alert only</em> (you renew it wherever it
+  came from) or <em>Automatic pull</em> (fetch the renewed files over SSH from the
+  source host and paths you enter, check the key matches, install). <strong>Test
+  now</strong> runs one pull immediately, whatever the mode.</li>
+<li>An imported certificate is the one kind that is <strong>shared</strong> between HA nodes:
+  the nightly pass publishes it from the node serving it and installs it on the
+  peer. CA-issued certificates name their own node and stay node-local.</li>
 <li><strong>PostgreSQL SSL policy</strong> — minimum protocol version and cipher list for the
   replication/database channel, applied from this tab.</li>
 </ul>
@@ -3714,8 +3842,10 @@ is complete the moment it reappears instead of starting from empty.</p>
   password first.</li>
 <li><strong>Recovery email</strong> — used by <em>Forgot password</em> on the sign-in page to send a
   reset link. It needs server email (§26.6) configured to be worth anything.</li>
-<li><strong>Security status</strong> and your <strong>active session</strong>, with a clean sign-out.</li>
-<li><strong>Change Password</strong> — current, new, confirm.</li>
+<li>Your <strong>active session</strong>, with a clean sign-out. (The hard-coded "Security
+  status" checklist that sat here was removed: it computed nothing. The live
+  checks are on Monitoring → SATOM health.)</li>
+<li><strong>Change Password</strong> — current, new, confirm; 12 to 1024 characters.</li>
 </ul>
 <p>Directory-backed accounts see an explicit note instead of these controls: they
 manage password and MFA at the directory.</p>
@@ -3821,7 +3951,8 @@ own labelled <code>.txt</code>.</p>
   credentials.</li>
 </ul>
 <h3 id="272-import-backup--parse-a-config-file-with-no-appliance-at-all">27.2 Import Backup — parse a config file with no appliance at all</h3>
-<p>FortiWeb ADOM → Operations → <strong>Import Backup</strong> (<code>config_write</code>).</p>
+<p>FortiWeb ADOM → Operations → <strong>Import Backup</strong> (<code>backups.restore</code>; operator
+and admin hold it).</p>
 <p>Upload a FortiWeb configuration backup — <code>.conf</code>, <code>.txt</code>, <code>.cfg</code>, <code>.zip</code> or
 <code>.gz</code> — and it is parsed <strong>entirely offline</strong>. <strong>No appliance is contacted</strong>, at
 any point. The result is a structured per-device snapshot: detected firmware,
@@ -3846,12 +3977,14 @@ its values as JSON. Rows reorder with the up/down buttons, and the order is the
 order they are pushed in.</p>
 <p>A profile also carries a <strong>scope</strong> — zone, line, department — drawn from the
 Classification vocabulary. That is what later lets a baseline match devices.</p>
-<p><strong>Secrets are entered at apply time and are never persisted.</strong> Elements that
-carry secret material are flagged sensitive, and saving the profile <strong>strips</strong>
-every secret-looking field out of the stored body — recursively — before it is
-written. The RADIUS shared secret, admin passwords and SNMPv3 auth/priv keys are
-supplied again at apply time. A template is a thing that gets versioned, shared,
-exported and reviewed; a template is not a place for a password.</p>
+<p><strong>Secrets are never persisted and are not pushed.</strong> Elements that carry secret
+material are flagged sensitive, and saving the profile <strong>strips</strong> every
+secret-looking field out of the stored body — recursively — before it is
+written. A deployment therefore pushes those elements without their secrets:
+the apply preview names them, and the RADIUS shared secret, admin passwords and
+SNMPv3 auth/priv keys are set on each device afterwards. A template is a thing
+that gets versioned, shared, exported and reviewed; a template is not a place
+for a password.</p>
 <p>Saving stores the profile as a <strong>versioned Template of kind <code>system-profile</code></strong>
 (§29). Editing it creates a <strong>new version</strong> rather than overwriting the old one.</p>
 <h3 id="282-applying-to-one-device-or-to-the-fleet">28.2 Applying to one device or to the fleet</h3>
@@ -3864,7 +3997,9 @@ change.</p>
    Nothing is contacted for real.</li>
 <li><strong>Confirm</strong> — a <strong>canary-gated</strong> live write: the first device goes first and
    the rest only follow if it succeeded. The result reports <code>{canary, rest,
-   aborted}</code>.</li>
+   aborted}</code>. Only an <strong>approved</strong> profile can be deployed live (approval is
+   <code>operations.template_approve</code>, admin-only); a pending or rejected profile
+   keeps its preview, and the refused attempt is audited.</li>
 </ol>
 <p>Choosing <em>Entire fleet</em> is explicit. Selecting "selected devices" and then
 selecting nothing is <strong>refused</strong>, rather than being quietly treated as "all" —
@@ -3900,7 +4035,9 @@ is restored on your next visit.</p>
 where desired state is authored and reviewed, and the <strong>Section Catalog</strong> is the
 approved subset, arranged the way FortiWeb arranges it.</p>
 <h3 id="291-the-template-library">29.1 The Template Library</h3>
-<p>FortiWeb ADOM → Administrator → <strong>Template Library</strong>. A template is a named,
+<p>FortiWeb ADOM → Administrator → <strong>Template Library</strong> (users without
+<code>user_manage</code> who hold <code>operations.view</code> find it under <strong>Operations</strong>). A
+template is a named,
 <strong>versioned</strong> blob of desired state of a given kind (web-protection profile,
 system profile, and the other configuration kinds). Editing never overwrites:
 saving produces a <strong>new version</strong> of the same kind and name, and the previous
@@ -4031,14 +4168,22 @@ an endpoint, choose a method, supply a JSON body, execute.</p>
 <li><strong>POST / PUT / DELETE / PATCH require the <code>registry.execute_write</code> permission</strong>
   and are refused with that message otherwise. Note that this is a <em>separate</em>
   permission from <code>registry.edit</code>: one lets you change the catalog, the other
-  lets you fire writes at a device through it.</li>
+  lets you fire writes at a device through it. The internal pass-through under
+  <code>/api/fw/&lt;id&gt;/proxy/…</code> and <code>/api/adc/&lt;id&gt;/proxy/…</code> applies the same rule.</li>
 <li>Every execution is audited with the method and endpoint.</li>
 <li>The device's own response is shown as it came back — a device error is rendered
   as the device's error, never smoothed into an empty result.</li>
 </ul>
-<p>Unlike the FortiAuthenticator console (§17.2), the FortiWeb explorer's writes are
-<strong>not dry-run by default</strong> — this is the raw request console, and the confirmation
-is the permission.</p>
+<p>Unlike the FortiADC, FortiAuthenticator and FortiAnalyzer consoles (§17), the
+FortiWeb explorer's writes are <strong>not dry-run by default</strong> — this is the raw
+request console, and the confirmation is the permission.</p>
+<p><strong>The FortiADC, FortiAuthenticator and FortiAnalyzer consoles share one write
+policy:</strong> a write without <strong>Apply</strong> returns the request (method, path, body) and
+sends nothing; an applied write is audited whether the device accepted or
+refused it (the refusal is recorded as the error); reads are not audited. Their
+catalog editors go through the same writer as FortiWeb and FortiADC, so the
+name/URI rules and the duplicate check of §30.2 apply to all four (a
+FortiAuthenticator URI must also stay under <code>/api/v1/</code>).</p>
 <p>Since 2.2.0 the explorer also knows <strong>which firmware build</strong> the selected
 appliance runs and what that build serves: see §30.10.</p>
 <p>Endpoint conventions, dialects and per-product quirks:
@@ -4957,9 +5102,10 @@ truth. Full design write-up: <code>docs/ai-advisor.md</code>.</p>
 <p><strong>Settings → AI Advisor</strong> (<code>advisor.configure</code>, admin-only) has three
 switches, all off on a fresh install: <strong>Enable AI Advisor</strong>, <strong>Allow
 read-only tool calls</strong>, and <strong>Allow external providers</strong>. A local Ollama
-provider (<code>ollama-local</code>) is seeded automatically the first time the page is
-opened — enabling the feature and leaving the other two switches off is
-enough to chat entirely within the LAN.</p>
+provider (<code>ollama-local</code>, base URL <code>http://localhost:11434</code>) is seeded
+<strong>disabled</strong> the first time the page is opened: edit it, point it at your
+Ollama host and save it — saving enables it. With the feature enabled and the
+other two switches off, chat stays entirely within the LAN.</p>
 <h3 id="332-providers">33.2 Providers</h3>
 <p>Add a provider under the same tab: <code>ollama</code> (local, no key), <code>openai</code>
 (OpenAI itself or any OpenAI-compatible gateway — the field for a corporate
@@ -5179,7 +5325,10 @@ tracker outage can never break the change request itself.</p>
 is opening a change ticket in your own CRM and handing the reference back.</p>
 <p>Events: <code>change.requested</code>, <code>change.approved</code>, <code>window.opening</code>,
 <code>window.closing</code>, <code>upgrade.finished</code>, <code>upgrade.failed</code> and <code>alert.fired</code>. The
-editor lists the exact payload each one carries.</p>
+editor lists the exact payload each one carries. <code>window.opening</code> and
+<code>window.closing</code> fire when a change starts and finishes, whether or not NetBox
+is configured; <code>window.closing</code> carries the change's status (<code>completed</code>,
+<code>failed</code>) as its <code>outcome</code>.</p>
 <p><code>alert.fired</code> is the health engine's, and it behaves unlike the other six: it
 fires <strong>once per finding</strong> rather than once per change, only for findings fresh
 out of the cooldown window, and <strong>only from the writable primary</strong>. It is off
@@ -5208,7 +5357,10 @@ CRM cannot hang this console.</p>
   out at 03:00 inside a window.</li>
 <li>A hook receives only the secrets it declares, by name, through
   <code>ctx.secret("NAME")</code>. One it did not declare is not in its environment to
-  leak. Never paste a token into the script itself.</li>
+  leak. Never paste a token into the script itself. Once the hook is saved,
+  its <strong>Secret values</strong> card stores each declared value encrypted
+  (Administrators only, audited, write-only: the page shows <em>stored</em> or
+  <em>not set</em>, never the value).</li>
 <li>Captured output is redacted (declared secret values are masked) and then
   truncated before it is stored.</li>
 <li>The result comes back through <code>ctx.result(ok, data)</code>, not from what the script
@@ -5218,8 +5370,11 @@ CRM cannot hang this console.</p>
   the outcome appears in the runs table a moment later. A dry run will queue a
   hook that is switched off — testing before enabling is the point.</li>
 </ul>
-<p>Keys SATOM understands in a <code>change.requested</code> result: <code>crq_ref</code> and <code>crq_url</code>,
-which are written onto the change request so the ticket is one click away.</p>
+<p>Keys SATOM understands in a <code>change.requested</code> result: <code>crq_ref</code> and <code>crq_url</code>.
+When the run succeeds, the runner writes them onto the change request so the
+ticket is one click away (a link that is not <code>http(s)://</code> is dropped, and a
+closed change is left untouched). The run's status notes whether it was
+recorded.</p>
 <blockquote>
 <p><strong>HA:</strong> <code>satom-integrations.path</code> must be enabled on <strong>both</strong> nodes. A standby
 whose watcher is disabled accepts queued work and never runs it — silently.</p>
@@ -5231,7 +5386,11 @@ whose watcher is disabled accepts queued work and never runs it — silently.</p
 <li><strong>External</strong> — an integration must approve it. This is <strong>fail-closed</strong>: the
   change cannot run until your system explicitly approves. Unreachable, slow and
   no answer all count as <em>not approved</em>. Withdrawing an approval makes it
-  un-runnable again.</li>
+  un-runnable again. Your system records the verdict with
+  <code>POST /api/v1/change-requests/&lt;id&gt;/external-approval</code> (an <code>admin</code>-scope
+  token, see the API v1 guide); a board that answers by mail or phone can be
+  recorded by an Administrator on the <strong>External change record</strong> card
+  (<em>Record external approval</em> / <em>Withdraw</em>), attributed and audited.</li>
 </ul>
 <p>Once the window opens and the change starts running, SATOM opens the NetBox
 window, runs the change, closes the window from the outcome, fires the hooks,
@@ -5361,17 +5520,39 @@ exactly why it does not — "before the maintenance window", "not approved",
 "waiting for external approval".</p>
 <p><strong>Dry runs are not gated.</strong> They send nothing to the appliance, so validating an
 image never needs a window.</p>
-<p>When an authorised push starts, its change moves to <em>in progress</em>; when it
-finishes — successfully or not — the change is closed with the real outcome and
-the end-of-window notice goes out. You no longer have to close it by hand.</p>
+<p>When an authorised push starts, its change moves to <em>in progress</em>. Each
+appliance's outcome is recorded on the change's timeline; the change is closed
+— with the real outcome and the end-of-window notice — once <strong>every</strong> appliance
+it names has a result (a one-appliance change closes at once). A failed
+appliance can be flashed again inside the window; its newer result replaces the
+failure. If the window ends with appliances never run, close the change with
+<strong>Mark completed</strong> / <strong>Mark failed</strong>.</p>
+<p><strong>The scheduler does not flash firmware.</strong> A scheduled <code>upgrade</code> change reports
+each target as <em>not executed</em> and closes as failed; the change page marks
+upgrade changes <em>Flashed live, not by the scheduler</em>. Flash from each
+appliance's Upgrade page inside the window.</p>
 <p>The order to work in:</p>
 <ol>
 <li><strong>Upgrade Preparation</strong> → run it → <em>Raise change request</em>.</li>
 <li>Fill in the window (in your timezone) and the rollback plan, save the draft.</li>
 <li>Print the change document, circulate it, collect the approvals.</li>
-<li><strong>Approve</strong>, then <strong>Schedule</strong> — or flash by hand from the Upgrade page
-   inside the window.</li>
+<li><strong>Approve</strong>, then flash each appliance from its Upgrade page inside the
+   window.</li>
 </ol>
+<p>Change-request lifecycle rules worth knowing:</p>
+<ul>
+<li>Only a <strong>draft</strong> can be approved, and a completed or failed change cannot be
+  cancelled — the buttons were hidden before, now the server refuses too.</li>
+<li><strong>Schedule</strong> pressed after the window has already started binds the run to a
+  minute from now (rounds keep their spacing); after the window has closed it
+  is refused.</li>
+<li>A <strong>documentary</strong> change type (one without an executor) is closed with
+  <strong>Mark completed</strong> / <strong>Mark failed</strong> once approved (Administrators only,
+  audited).</li>
+<li><strong>Mark notified</strong> e-mails the maintenance notice to the change's own
+  recipients (falling back to the Settings → Email default) when e-mail is
+  configured; otherwise it only records the notice as sent.</li>
+</ul>
 <h2 id="37-the-tools-menu-certificate-inspector-false-positive-explainer-tracer">37. The Tools menu: certificate inspector, false-positive explainer, tracer</h2>
 <p>The wrench icon in the header opens SATOM's helper tools. Four of them are pure
 calculators (regex tester, regex cheat sheet, pattern library, network
@@ -5382,12 +5563,14 @@ measured and what it only derived.</p>
 <p>Two ways in:</p>
 <ul>
 <li><strong>Paste PEM.</strong> A certificate, a fullchain, or an <code>openssl s_client -showcerts</code>
-  transcript pasted whole. Optionally a hostname to check and the private key.
-  Nothing leaves the process.</li>
+  transcript pasted whole. Optionally a hostname to check, the private key and,
+  for an encrypted key, its passphrase. Nothing leaves the process.</li>
 <li><strong>Probe a host.</strong> SATOM opens a TLS connection and reads what the server
   presents. Appliances from your inventory are one click; any other host:port
   requires the <code>monitoring.probe_free</code> permission and every probe — including
-  every refusal — is written to the audit log.</li>
+  every refusal — is written to the audit log. An optional <strong>SNI / hostname</strong>
+  field sends a different name than the target in the TLS handshake and checks
+  the certificate against it.</li>
 </ul>
 <p>What it reports:</p>
 <table>
@@ -5465,17 +5648,27 @@ entry <em>as the device reported it</em>, never from values a browser sent back 
 page that lets a client supply the evidence lets a client author the exception.
 To save, open the same entry in <strong>Attack Search → the entry → Carve-out</strong>: the
 recommendation is identical and the evidence is device-read.</p>
+<p>Two optional fields: <strong>Web Protection Profile</strong> names that profile in the
+"where on the device" path shown under each carve-out, and <strong>Decode a payload on
+its own</strong> peels the encoding layers off a value you paste without a log entry.</p>
 <h3 id="373-transaction-tracer">37.3 Transaction tracer</h3>
 <p>Three legs, answering <em>is it the WAF or is it the app?</em></p>
 <ul>
-<li><strong>Leg A</strong> — SATOM to the VIP, through the appliance. Measured.</li>
+<li><strong>Leg A</strong> — SATOM to the VIP, through the appliance. Measured. Type the VIP;
+  the inventory picker offers each appliance's <strong>management address on its
+  configured port</strong>, which is the device itself, not a virtual server behind it.</li>
 <li><strong>Leg B</strong> — what the appliance <em>forwards</em>. <strong>Derived from its configuration,
   never measured.</strong> SATOM is not in that path. Every row names the object and
   field it came from, and a field this firmware does not carry is listed under
   <em>settings SATOM did not read</em> rather than shown as "disabled".</li>
 <li><strong>Leg C</strong> — SATOM straight to the backend, bypassing the appliance, carrying
-  <strong>the same <code>Host</code> header as leg A</strong>. That is what makes the two comparable.</li>
+  <strong>the same <code>Host</code> header as leg A</strong>. That is what makes the two comparable.
+  A backend typed without a scheme is HTTPS on port 443 or 8443 and plain HTTP
+  on any other port; write <code>https://</code> to force TLS.</li>
 </ul>
+<p>Leg B reads FortiWeb server policies, so only FortiWeb appliances are offered
+for it. <strong>Correlate attack log</strong> looks for entries in the trace window whose
+source is the address this server traced from.</p>
 <p>The diff gives one sentence:</p>
 <table>
 <thead>
@@ -5530,7 +5723,10 @@ finding. <code>Authorization</code>, <code>Cookie</code> and friends are recorde
 echoed back. Set-Cookie is reduced to its flags: the flags are the finding, the
 value is a session credential.</p>
 <p><strong>Destinations.</strong> Inventory appliances are always available. A free <code>host:port</code>
-requires <code>monitoring.probe_free</code>. Cloud instance-metadata addresses
+— and a backend for leg C is always one — requires <code>monitoring.probe_free</code>; a
+trace with only an inventory leg A needs nothing more. In both tools a holder of
+the Administrator <code>user_manage</code> key passes the free-target check too: it can
+grant itself the granular key anyway. Cloud instance-metadata addresses
 (<code>169.254.169.254</code> and its siblings, including the <code>::ffff:</code> spelling) are
 refused in every mode and that refusal is not configurable. Names are resolved
 once and the <strong>address</strong> is dialled, with the hostname carried separately as
@@ -5699,7 +5895,7 @@ discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
    the console is either <strong>on the map</strong> (109 today) or <strong>excluded with a written
-   reason</strong> (141 today — JSON feeds, downloads, redirects and fragments that
+   reason</strong> (142 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>
 <li><strong>Nothing here is a second source of truth.</strong> Paths are generated from the
@@ -6522,7 +6718,9 @@ answer; the filter holds the question that decides which rows those answers
 describe, so putting it away would hide the premise of every count below it.</p>
 <hr>
 <h2 id="42-process-procedures-the-system-walks-for-you">42. Process: procedures the system walks for you</h2>
-<p><strong>Administrator → Process</strong>, in every ADOM.</p>
+<p><strong>Administrator → Process</strong>, in every ADOM. Users without the user-manage
+permission (read-only, operator) find the same entry under its own
+<strong>Automation</strong> group in the sidebar.</p>
 <p>A recovery plan that lives in a document is a plan nobody has run. Process is
 where you draw one as a diagram and let SATOM walk it: each step asks a
 question of the running system, and the arrows say where to go depending on the

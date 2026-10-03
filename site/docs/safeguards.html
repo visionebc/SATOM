@@ -3389,7 +3389,11 @@ verified live — <code>/api/&lt;entity&gt;/&lt;_method&gt;</code>, a different 
   a fabricated series. CPU and memory keep coming from the read-only CLI.</li>
 <li><code>status_history/vs_status</code> is the analogue of FortiWeb's <code>policystatus</code>: ONE
   call carries the whole vdom, which is why virtual servers are a <em>collector</em>
-  and not a probe-per-service.</li>
+  and not a probe-per-service. Its figures are a vdom aggregate with no
+  <code>policy</code> label, so they are published as <code>satom_adc_*</code> (including
+  <code>satom_adc_client_rtt_ms</code>, <code>satom_adc_server_rtt_ms</code>,
+  <code>satom_adc_app_response_ms</code>); only per-virtual-server rows use the shared
+  <code>satom_policy_*</code> names.</li>
 </ul>
 <p>Where a shape could not be verified against live hardware (FortiAnalyzer: none
 reachable since July 2026), the payload is read <strong>defensively</strong> and an
@@ -16082,8 +16086,8 @@ because no container ever ran Alembic.</p>
   unguarded migrations (<code>ae0c4a5637e6</code>, <code>6a13b09b7e79</code>, <code>ha01clusters1</code>,
   <code>3061f34de667</code>) use it in <code>upgrade()</code>. <code>downgrade()</code> keeps plain <code>op</code>, since
   a downgrade that silently skips a drop is worse than one that fails.
-- <code>install-satom.sh</code> (and the dev <code>deploy/install.sh</code>) run
-  <code>flask db stamp head</code> after <code>create-db</code>, and die if it fails.
+- <code>install-satom.sh</code> runs
+  <code>flask db stamp head</code> after <code>create-db</code>, and dies if it fails.
 - <code>self_update_runner.py</code>: both <code>flask db upgrade</code> calls raise
   <code>MIGRATION_FAILED</code>. The rollback restores code and dependencies, and the
   message says the database is not rolled back and names the restore commands.

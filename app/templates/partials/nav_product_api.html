@@ -1,0 +1,21 @@
+{# ============================================================================
+   API — registry catalog + live console of the CURRENT device ADOM
+   (FortiADC / FortiAnalyzer / FortiAuthenticator). ONE definition for the
+   three sidebars (2026-10-03).
+
+   Gated on ``registry.view``, the permission the console pages themselves
+   require (views/adc_api.py, faz_api.py, fac_api.py). Before, FortiAuthenticator
+   drew its entry for everyone while FortiADC / FortiAnalyzer pinned theirs
+   behind users.manage — three rules for one page shape.
+   ========================================================================= #}
+{% set _api_bp = {'fortiadc': 'adc_api', 'fortianalyzer': 'faz_api',
+                  'fortiauthenticator': 'fac_api'}.get(product.key) %}
+{% if _api_bp and current_user and current_user.can('registry.view') %}
+<div class="fw-nav-group {{ 'open' if request.blueprint == _api_bp }}" data-nav-group="API">
+  <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-braces fw-nav-section-icon" style="color:#0891b2;"></i><span>API</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-group-body">
+    <a class="fw-nav-item {{ 'active' if request.blueprint == _api_bp else '' }}" href="{{ url_for(_api_bp ~ '.index') }}">
+      <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Registry & console') }}</span></a>
+  </div>
+</div>
+{% endif %}

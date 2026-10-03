@@ -1200,7 +1200,8 @@ cards are still there if the charts fail to draw.
 **Where the totals come from differs by product, and the page will not fake it.**
 FortiWeb and Global read the daily typed snapshots written by the
 `inventory_snapshot` scheduled action (§15) — which is why that action has to be
-scheduled daily for the trend to exist at all. FortiADC has no snapshot pipeline,
+scheduled daily for the trend to exist at all. New installations seed it daily at
+23:50 (`satom execute seed actions`); on an older node the same command adds it. FortiADC has no snapshot pipeline,
 so its totals are counted live off the fleet and cached briefly. A product with
 neither reports **no totals rather than borrowing another product's**: an ADOM
 printing FortiWeb's object counts under its own labels is worse than printing
@@ -1435,6 +1436,11 @@ coarser data while looking exactly like one built on time.
   readable; failing the run would leave the action permanently red over an SMTP
   outage.
 - A period with no samples reports **unknown**, not a healthy zero.
+- Every view (page, text/e-mail, CSV) also carries the **fleet metrics**
+  section from the metrics store: min / avg / max per device and metric, the
+  policies that were down and the collectors that failed. When the store was
+  unreachable it says so instead of printing zeros. In the CSV these are extra
+  rows of kind `fleet`, `fleet_policy_down` and `fleet_collector_failed`.
 
 ### 14.10 Thresholds — declare a limit once
 
@@ -1526,7 +1532,7 @@ Server Policy for operators):
   |---|---|
   | Source of truth | `device_sync` (refresh the local cache from a device), `device_inspect` (sync **and** push the SoT off-box), `deep_capture`, `signature_sync` |
   | Backups | `backup` (on-device config backup), `system_backup` (the manager's own `pg_dump` bundle, optionally pushed to the backup server) |
-  | Monitoring — all four are the ones §14 asks you to schedule | `metrics_scrape` (the Collection sweep, §14.7 — **every 3 minutes**), `deep_monitor` (the deep-monitor probe sweep, §14.3 — **every 5 minutes**), `monitor_report` (the period summary, §14.9 — *after* the period closes), `inventory_snapshot` (daily inventory counts for §14.2) |
+  | Monitoring — all four are the ones §14 asks you to schedule | `metrics_scrape` (the Collection sweep, §14.7 — **every 3 minutes**), `deep_monitor` (the deep-monitor probe sweep, §14.3 — **every 3 minutes**), `monitor_report` (the period summary, §14.9 — *after* the period closes), `inventory_snapshot` (daily inventory counts for §14.2) |
   | Certificates | `cert_scan`, the three `cert_manager_*` renewals (server / client+server / client), `cert_lifecycle` (the revoke-and-cleanup sweep) |
   | Health | `health_check`, `ha_check`, `stats` |
   | Catalog | `appid_import` (the nightly AppID feed, §25) |
@@ -2350,6 +2356,12 @@ force when it was written. Each row names the symbol it is read from, and the
 values are read off the engine when the page renders, so the table cannot drift
 from the code. *Architecture* renders the ten rungs from the same tuple the
 engine walks.
+
+**A typed Published host follows the free-target rule.** Left blank, Scout
+dials the object's VIP as the device reports it. A host you type is dialled
+only if the appliance publishes it (its own address or one of its VIPs),
+unless you hold `monitoring.probe_free` or user management — the same rule as
+the certificate inspector and the transaction tracer.
 
 **Three repositories-or-destinations, three separate entries.** Until
 2026-08-29 the System group carried one panel called *SoT & Backup*, and it

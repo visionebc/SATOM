@@ -31,10 +31,10 @@
         <form method="POST" id="dnsForm">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <label class="fw-form-label">{{ _('Hostnames / IPs — one per line') }}
-            <span class="text-muted">(optionally «name TYPE», e.g. <code>app.example.net CNAME</code>)</span></label>
+            <span class="text-muted">(optionally «name TYPE», e.g. <code>app.example.com CNAME</code>)</span></label>
           <textarea name="entries" rows="8" class="form-control fw-form-control font-monospace"
                     style="font-size:12px;"
-                    placeholder="apps.example.net&#10;*.example.net&#10;192.0.2.41">{{ entries_raw }}</textarea>
+                    placeholder="app.example.com&#10;*.example.com&#10;192.0.2.10">{{ entries_raw }}</textarea>
           <hr class="my-3" style="opacity:.15;">
           <label class="fw-form-label">{{ _('Options') }}</label>
           <div class="form-check"><input class="form-check-input" type="checkbox" name="lb" id="optLb" {{ 'checked' if opts.lb }}>
@@ -330,7 +330,7 @@
             <div class="col">
               <label class="fw-form-label">{{ _('Value') }}</label>
               <input type="text" id="dnsRecValue" class="form-control fw-form-control form-control-sm font-monospace"
-                     placeholder="{{ _('e.g. 192.0.2.41 · MX: \'10 mail.host\'') }}">
+                     placeholder="{{ _('e.g. 192.0.2.10 · MX: \'10 mail.host\'') }}">
             </div>
             <div class="col-auto">
               <label class="fw-form-label">TTL</label>

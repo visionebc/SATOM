@@ -14,7 +14,8 @@
    "Administration". A shared partial is the only thing that keeps an entry from
    being added to Global and forgotten in the other three, and
    tests/test_nav_collection.py fails if any Administrator block stops
-   including it.
+   including it. Operators (config_write without user_manage) have no
+   Administrator group; nav_monitoring.html includes this partial for them.
    ========================================================================= #}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics_admin' else '' }}" href="{{ url_for('metrics_admin.index', _adom=product.key) }}">
   <i class="bi bi-cloud-download fw-nav-icon"></i><span>{{ _('Collection') }}</span></a>

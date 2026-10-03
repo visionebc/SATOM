@@ -97,6 +97,7 @@
       <button id="anaReset" class="btn fw-btn-secondary btn-sm">{{ _('Reset') }}</button>
     </div>
   </div>
+  {% if current_user.can('user_manage') %}
   <form method="post" action="{{ url_for('analysis.save_appid_regex') }}" class="ana-regex" style="margin-top:.4rem">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="fld"><label>{{ _('App ID pattern (regex, from Server Policy comment)') }}</label>
@@ -104,6 +105,7 @@
     <button class="btn fw-btn-secondary btn-sm" type="submit">{{ _('Save pattern') }}</button>
     <span style="font-size:.75rem;opacity:.6;align-self:center">default <code>app\d{5}</code> · case-insensitive</span>
   </form>
+  {% endif %}
 </div>
 
 <div id="anaStatus" class="ana-empty">{{ _('Loading…') }}</div>
@@ -233,7 +235,9 @@
     <div id="deepFresh" class="d-flex flex-wrap" style="gap:.2rem"></div>
     <div class="d-flex gap-2">
       <button id="deepReload" class="btn fw-btn-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> {{ _('Reload') }}</button>
+      {% if current_user.can('config_write') %}
       <button id="deepRun" class="btn fw-btn-primary btn-sm"><i class="bi bi-diagram-3"></i> {{ _('Run deep capture') }}</button>
+      {% endif %}
     </div>
   </div>
   <p class="small text-muted mb-0 mt-2">{{ _('The full WPP sub-tree + Server-Policy dependency graph captured into the cache (opt-in deep rediscovery). Every sub-element is queryable here — no live device calls. Click ⤢ on any chart to expand, change type, top-N, and export CSV/PNG.') }}</p>

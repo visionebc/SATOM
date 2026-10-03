@@ -114,9 +114,12 @@ def _flag(key: str) -> bool:
 
 
 def _int(key: str, fallback: int) -> int:
+    # Through float: the Thresholds page stores "hours" fields as "12.0", and a
+    # plain int("12.0") raised, silently replacing the configured value with
+    # the fallback.
     try:
-        return int(str(_get(key)).strip())
-    except (TypeError, ValueError):
+        return int(float(str(_get(key)).strip()))
+    except (TypeError, ValueError, OverflowError):
         return fallback
 
 

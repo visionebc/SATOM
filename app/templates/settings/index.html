@@ -4126,7 +4126,7 @@
         </form>
         {% if a.key not in ('global','fortiweb','fortiadc') %}
         <form method="POST" action="{{ url_for('settings.delete_adom', key=a.key) }}"
-              onsubmit="return confirm('Delete ADOM {{ a.key }}? This cannot be undone.');" class="mt-2">
+              data-fw-confirm-form="Delete ADOM {{ a.key }}? This cannot be undone." class="mt-2">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash me-1"></i>{{ _('Delete') }}</button>
         </form>
@@ -4667,8 +4667,16 @@
         var kids = document.querySelectorAll('#tab-fazmenu .faz-menu-item[data-parent="' + g.value + '"]');
         for (var i = 0; i < kids.length; i++) { kids[i].disabled = !g.checked; }
       }
+      // Turning a group back ON re-ticks its items: a hidden group renders
+      // (and saves) every item as hidden, so without this the group came back
+      // empty. Untick individual items afterwards to hide just those.
+      function recheck(g) {
+        if (!g.checked) return;
+        var kids = document.querySelectorAll('#tab-fazmenu .faz-menu-item[data-parent="' + g.value + '"]');
+        for (var i = 0; i < kids.length; i++) { kids[i].checked = true; }
+      }
       for (var i = 0; i < groups.length; i++) {
-        (function(g) { g.addEventListener('change', function() { sync(g); }); sync(g); })(groups[i]);
+        (function(g) { g.addEventListener('change', function() { recheck(g); sync(g); }); sync(g); })(groups[i]);
       }
     })();
     </script>

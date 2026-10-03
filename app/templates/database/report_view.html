@@ -10,7 +10,15 @@
   <div class="ms-auto d-flex gap-2">
     <a href="{{ url_for('database.index') }}#tab-reports" class="btn btn-outline-light btn-sm"><i class="bi bi-arrow-left me-1"></i>{{ _('Back') }}</a>
     <button id="rpt-refresh" class="btn btn-outline-light btn-sm"><i class="bi bi-arrow-clockwise me-1"></i>{{ _('Refresh') }}</button>
+    {% if report.builtin %}
+    {# Built-in reports are read-only (the save would 403): offer the copy. #}
+    <form method="post" action="{{ url_for('database.report_clone', report_id=report.id) }}" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-sm btn-outline-secondary" title="{{ _('Built-in reports are read-only — clone it to edit') }}"><i class="bi bi-files me-1"></i>{{ _('Clone') }}</button>
+    </form>
+    {% else %}
     <a href="{{ url_for('database.report_edit', report_id=report.id) }}" class="btn btn-outline-light btn-sm"><i class="bi bi-pencil me-1"></i>{{ _('Edit') }}</a>
+    {% endif %}
     <a href="{{ url_for('database.report_pdf', report_id=report.id) }}" class="btn btn-fw-primary btn-sm"><i class="bi bi-file-earmark-pdf me-1"></i>{{ _('Download PDF') }}</a>
   </div>
 </div>

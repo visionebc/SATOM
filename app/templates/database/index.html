@@ -199,6 +199,12 @@
   // ----- SQL console -----
   var input=document.getElementById('sql-input'), errBox=document.getElementById('sql-error'),
       smeta=document.getElementById('sql-meta');
+  // Export CSV posts whatever is in the editor NOW — before this, the hidden
+  // field was only filled by Run, so exporting first downloaded "empty query".
+  document.getElementById('sql-csv-form').addEventListener('submit', function(event){
+    document.getElementById('sql-csv-field').value=input.value;
+    if(!input.value.trim()){ event.preventDefault(); errBox.textContent='Type a query first.'; errBox.classList.remove('d-none'); }
+  });
   document.getElementById('sql-run').addEventListener('click', function(event){
     errBox.classList.add('d-none');
     document.getElementById('sql-csv-field').value=input.value;

@@ -246,13 +246,20 @@ def _ssl_context(verify: bool) -> ssl.SSLContext:
 
 
 def send_email(to, subject: str, body: str, *, html: str | None = None,
-               cfg: dict | None = None) -> dict:
+               cfg: dict | None = None, force: bool = False) -> dict:
     """Send one message. Returns ``{ok: bool, detail: str, recipients: [...]}``.
 
     Never raises — connectivity/auth/TLS errors are caught and reported in
     ``detail`` so callers (the test button, the CR notify step) can surface them
-    without a 500."""
+    without a 500.
+
+    Honours "Enable email sending": when it is off nothing is attempted
+    (alerts, bug reports, Certificate Manager, CR notifications, password
+    reset). Only the Settings "Send test email" button passes ``force``."""
     cfg = cfg or config(reveal_password=True)
+    if not force and not cfg.get("enabled", True):
+        return {"ok": False, "detail": "Email sending is disabled (Settings → Email & Alerts).",
+                "recipients": []}
     recipients = parse_recipients(to) or parse_recipients(cfg.get("default_to"))
     if not recipients:
         return {"ok": False, "detail": "No recipient address.", "recipients": []}
@@ -303,7 +310,7 @@ def send_test(to: str = "") -> dict:
     body = ("This is a test message from SATOM.\n\n"
             "If you received this, your email settings are working.\n")
     return send_email(recipients,
-                      "SATOM — test email", body, cfg=cfg)
+                      "SATOM — test email", body, cfg=cfg, force=True)
 
 
 __all__ = [

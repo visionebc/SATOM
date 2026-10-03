@@ -455,3 +455,32 @@ def test_no_vault_means_auth_store_behaves_exactly_as_before(app, monkeypatch):
         AppSetting.set("auth.radius.secret_enc", encryption.encrypt("local-secret"))
         cfg = auth_store.config(reveal_secrets=True)
         assert cfg["radius"]["secret"] == "local-secret"
+
+
+# ---------------------------------------------------------------------------
+# Documentation Center audit, 2026-10-03 (AD-24, AD-25)
+# ---------------------------------------------------------------------------
+def test_a_new_ldap_bind_password_reaches_the_vault_that_sign_in_reads(app, vault):
+    from app.services import auth_store
+    with app.app_context():
+        configure(sb.MODE_MIRROR)
+        auth_store.save_config({"backend": "ldap", "ldap_host": "dc.example.com",
+                                "ldap_bind_password": "first-pw"})
+        auth_store.save_config({"backend": "ldap", "ldap_host": "dc.example.com",
+                                "ldap_bind_password": "rotated-pw"})
+        assert vault.store["auth/ldap"]["bind_password"] == "rotated-pw"
+        cfg = auth_store.config(reveal_secrets=True)
+        assert cfg["ldap"]["bind_password"] == "rotated-pw"
+
+
+def test_saving_the_form_keeps_tuned_directory_timeouts(app):
+    from app.services import auth_store
+    with app.app_context():
+        auth_store.save_config({"backend": "ldap", "ldap_host": "dc", "ldap_timeout": "30"})
+        auth_store.save_config({"backend": "radius", "radius_host": "r", "radius_timeout": "25"})
+        # The real form carries neither field.
+        auth_store.save_config({"backend": "ldap", "ldap_host": "dc"})
+        auth_store.save_config({"backend": "radius", "radius_host": "r"})
+        cfg = auth_store.config()
+        assert cfg["ldap"]["timeout"] == 30
+        assert cfg["radius"]["timeout"] == 25

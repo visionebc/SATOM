@@ -507,7 +507,8 @@ def create_certificate(appliance, cn: str, cert_class: str, *, extra_sans=None,
         return {"ok": False, "error": f"unknown certificate class {cert_class!r}.", "cert_id": None}
 
     ccfg = store.cert_class_config(cert_class)
-    if not ccfg.get("template"):
+    # The class template is an ADCS concept; an ACME issuer has none to need.
+    if store.cert_manager_protocol() != "acme" and not ccfg.get("template"):
         return {"ok": False,
                 "error": f"class {cert_class!r} has no ADCS template configured "
                          "(Settings → Certificate Manager).", "cert_id": None}

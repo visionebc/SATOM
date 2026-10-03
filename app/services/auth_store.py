@@ -420,7 +420,10 @@ def save_config(form) -> None:
         AppSetting.set(K_L_BINDDN, g("ldap_bind_dn"))
         AppSetting.set(K_L_DOMAIN, g("ldap_ad_domain"))
         AppSetting.set(K_L_FILTER, g("ldap_user_filter"))
-        AppSetting.set(K_L_TIMEOUT, str(max(2, min(60, _to_int(g("ldap_timeout"), 8)))))
+        # The form has no timeout field: only a caller that sends one may
+        # change it, or every save would reset a tuned value to 8 s.
+        if form.get("ldap_timeout") is not None:
+            AppSetting.set(K_L_TIMEOUT, str(max(2, min(60, _to_int(g("ldap_timeout"), 8)))))
         rows = _submitted_groups(form, "ldap")
         if rows is None and form.get("ldap_sync_group_dn") is not None:
             legacy = g("ldap_sync_group_dn")          # older single-field form, clearing included
@@ -430,14 +433,19 @@ def save_config(form) -> None:
             AppSetting.set(K_L_SYNCGROUP, rows[0]["group"] if rows else "")
         new_pw = form.get("ldap_bind_password", "")
         if new_pw:
-            AppSetting.set(K_L_BINDPW, encryption.encrypt(new_pw))
+            # Through the secret backend, like the RADIUS secret: sign-in reads
+            # the vault copy first, so a local-only write was ignored there.
+            _store_secret("auth/ldap", "bind_password", K_L_BINDPW, new_pw,
+                          extra={"host": _get(K_L_HOST), "bind_dn": _get(K_L_BINDDN),
+                                 "protocol": "ldap"})
 
     # RADIUS section.
     if "radius" in chosen:
         AppSetting.set(K_R_HOST, g("radius_host"))
         AppSetting.set(K_R_PORT, str(_to_int(g("radius_port"), 1812)))
         AppSetting.set(K_R_NASID, g("radius_nas_id") or "satom")
-        AppSetting.set(K_R_TIMEOUT, str(max(2, min(60, _to_int(g("radius_timeout"), 8)))))
+        if form.get("radius_timeout") is not None:
+            AppSetting.set(K_R_TIMEOUT, str(max(2, min(60, _to_int(g("radius_timeout"), 8)))))
         AppSetting.set(K_R_SYNC_APPLIANCE, str(_to_int(g("radius_sync_appliance_id"), 0)))
         rows = _submitted_groups(form, "radius")
         if rows is None and form.get("radius_sync_group") is not None:

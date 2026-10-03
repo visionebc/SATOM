@@ -2666,9 +2666,13 @@ def import_theme():
         for e in errors[:8]:
             flash('Import rejected — %s' % e, 'danger')
         return _theme_redirect()
-    name = (str(payload.get('name') or 'Imported theme')).strip()[:128]
-    if UiTheme.query.filter_by(name=name).first():
-        name = '%s (imported)' % name
+    base = (str(payload.get('name') or 'Imported theme')).strip()[:100]
+    name, n = base, 1
+    # Loop until free: a single "(imported)" suffix collided on the third
+    # import of the same file and the unique constraint turned it into a 500.
+    while UiTheme.query.filter_by(name=name).first():
+        name = '%s (imported)' % base if n == 1 else '%s (imported %d)' % (base, n)
+        n += 1
     row = UiTheme(slug=_theme_slug(name), name=name,
                   description=str(payload.get('description') or '')[:300],
                   builtin=False,

@@ -354,6 +354,9 @@ def package_apply():
     except upkg.PackageError as exc:
         flash(str(exc), "danger")
         return redirect(url_for("self_update.index"))
+    except runtime.CapabilityUnavailable as exc:
+        flash(exc.reason, "warning")
+        return redirect(url_for("self_update.index"))
 
     log_action("update_package.apply", target=name,
                extra={"from": pre.get("current_version"),

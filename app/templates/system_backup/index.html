@@ -125,6 +125,12 @@
             <input class="form-check-input" type="checkbox" name="include_reports" id="ir" checked>
             <label class="form-check-label small" for="ir">Include per-device JSON (<code>reports/</code>)</label>
           </div>
+          {% if bk_system.configured %}
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="push_server" id="bkpush" checked>
+            <label class="form-check-label small" for="bkpush">{{ _('Also push the bundle to the backup server (off-box copy)') }}</label>
+          </div>
+          {% endif %}
           <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Create backup now') }}</button>
         </form>
         <hr>

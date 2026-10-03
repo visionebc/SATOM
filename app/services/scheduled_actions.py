@@ -307,7 +307,7 @@ ADMIN_ACTIONS: list[ActionSpec] = [
         summary="Run every enabled deep monitor whose interval has elapsed: "
                 "synthetic HTTPS against each watched server policy, the "
                 "interface IP/link fingerprint, and the proxyd process read "
-                "(services.deep_monitor). Schedule EVERY 5 MINUTES — the page "
+                "(services.deep_monitor). Schedule EVERY 3 MINUTES — the page "
                 "only shows samples this sweep records. Contacts appliances "
                 "read-only (HTTP GET + `diagnose system top`).",
     ),

@@ -328,7 +328,8 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
         except Exception:  # noqa: BLE001
             can_edit = False
         return render_template(spec.template, can_edit=can_edit,
-                               page=spec.as_dict(bp.url_prefix or ''))
+                               page=spec.as_dict(bp.url_prefix or ''),
+                               default_interval=dm.DEFAULT_PROBE_INTERVAL_MIN)
 
     @bp.route('/data')
     @login_required
@@ -550,7 +551,7 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
             if val is not None:
                 setattr(probe, f, max(0.0, val))
         _apply_suppression(probe, form)
-        probe.interval_min = max(1, int(probe.interval_min or 5))
+        probe.interval_min = max(1, int(probe.interval_min or dm.DEFAULT_PROBE_INTERVAL_MIN))
         probe.timeout_s = max(1, int(probe.timeout_s or 10))
         probe.retention = max(10, int(probe.retention or dm.DEFAULT_RETENTION))
 

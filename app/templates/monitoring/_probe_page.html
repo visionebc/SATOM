@@ -298,7 +298,7 @@
           </div>
           <div class="mb-2">
             <label class="form-label small">{{ _('Name') }}</label>
-            <input class="form-control form-control-sm" name="name" id="dpFname" placeholder="{{ _('fw6 · shop-policy') }}">
+            <input class="form-control form-control-sm" name="name" id="dpFname" placeholder="{{ _('fwb1 · shop-policy') }}">
           </div>
           <div class="mb-2">
             <label class="form-label small">{{ _('Device') }}</label>
@@ -311,7 +311,7 @@
           {% if 'https' in page.groups %}
           <div class="mb-2 dp-f-https">
             <label class="form-label small">URL</label>
-            <input class="form-control form-control-sm" name="url" id="dpFurl" placeholder="{{ _('https://192.0.2.80:443/') }}">
+            <input class="form-control form-control-sm" name="url" id="dpFurl" placeholder="{{ _('https://app.example.com/') }}">
           </div>
           <div class="row g-2 dp-f-https">
             <div class="col-4"><label class="form-label small">{{ _('Expect status') }}</label>
@@ -342,7 +342,9 @@
             <div class="col-6"><label class="form-label small">Critical at %</label>
               <input type="number" class="form-control form-control-sm" name="crit_pct" id="dpFcritp" value="95"></div>
             <div class="col-12"><div class="form-text small">Read from
-              <code>get system performance</code> — works on FortiWeb and FortiADC.
+              <code>get system performance</code> on FortiWeb and FortiADC, from the
+              REST <code>systeminfo</code> call on FortiAuthenticator; offered on
+              FortiAnalyzer too, where the CLI reading is unverified.
               0 disables that level.</div></div>
           </div>
           {% endif %}
@@ -396,7 +398,7 @@
           <div class="mb-2 dp-f-api">
             <div class="form-text small">
               {{ _('Every kind here reads the appliance\'s REST monitor API and never opens an SSH session, so they keep reporting on a device whose') }} <em>{{ _('cmdb') }}</em>
-              is licence-locked — verified on fw7, where every config read fails with
+              is licence-locked — verified on a FortiWeb-VM whose every config read fails with
               <code>-20010</code> while <code>policystatus</code> still answers 200.
               Each kind is offered on the products that can actually answer it:
               traffic and session kinds on <b>{{ _('FortiWeb') }}</b>{{ _(', licence headroom and the FortiToken pools on') }} <b>{{ _('FortiAuthenticator') }}</b>{{ _('. 0 disables a threshold level.') }}
@@ -405,7 +407,7 @@
           {% endif %}
           <div class="row g-2 mt-1">
             <div class="col-6"><label class="form-label small">{{ _('Interval (min)') }}</label>
-              <input type="number" class="form-control form-control-sm" name="interval_min" id="dpFint" value="5"></div>
+              <input type="number" class="form-control form-control-sm" name="interval_min" id="dpFint" value="{{ default_interval|default(3) }}"></div>
             <div class="col-6"><label class="form-label small">{{ _('Timeout (s)') }}</label>
               <input type="number" class="form-control form-control-sm" name="timeout_s" id="dpFto" value="10"></div>
           </div>
@@ -483,7 +485,8 @@
                 throughput for every HTTP/HTTPS server policy. Policies come from the LIVE
                 <code>policystatus</code> call, not the harvest cache, so this needs the
                 appliance reachable — and it still works when its cmdb is licence-locked.
-                FortiWeb only.</span></label>
+                FortiWeb (traffic and sessions) and FortiAuthenticator (licence headroom
+                and FortiToken pools).</span></label>
             {% endif %}
           </div>
         </div>
@@ -626,6 +629,10 @@
             '" title="Edit"><i class="bi bi-pencil"></i></button>' +
           '<button class="btn btn-sm btn-link p-0 me-2 dp-act" data-act="run" data-id="' + p.id +
             '" title="Probe now"><i class="bi bi-play-fill"></i></button>' +
+          (p.suppressed
+            ? '<button class="btn btn-sm btn-link p-0 me-2 dp-act" data-act="unmute" data-id="' + p.id +
+              '" title="Unmute (lift the suppression now)"><i class="bi bi-bell"></i></button>'
+            : '') +
           '<button class="btn btn-sm btn-link p-0 me-2 dp-act" data-act="toggle" data-id="' + p.id +
             '" title="' + (p.enabled ? 'Disable' : 'Enable') + '"><i class="bi bi-' +
             (p.enabled ? 'pause' : 'play') + '-circle"></i></button>' +

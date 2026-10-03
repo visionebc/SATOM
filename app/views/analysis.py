@@ -245,11 +245,24 @@ from flask_login import current_user  # noqa: E402
 from ..services import analysis_deep  # noqa: E402
 
 
-def _deep_device_ids(args):
-    """device_id (repeatable) + comma-separated device_ids -> list or None."""
+def _requested_device_ids(args) -> set[int]:
+    """device_id (repeatable) + comma-separated device_ids, as asked."""
     ids = list(args.getlist('device_id', type=int))
     ids += _parse_filters(args)["device_ids"]
-    return sorted(set(ids)) or None
+    return set(ids)
+
+
+def _deep_device_ids(args, query=None):
+    """The devices a deep read covers: what was asked, cut to what this user
+    can see; with nothing asked, everything they can see.
+
+    Never ``None``: the deep services read "no filter" as "every appliance",
+    and that used to include other ADOMs and maintenance devices. An empty
+    visible set is ``[-1]`` (matches no row) for the same reason."""
+    visible = {a.id for a in visible_appliances(query).all()}
+    asked = _requested_device_ids(args)
+    ids = (asked & visible) if asked else visible
+    return sorted(ids) or [-1]
 
 
 @bp.route('/wpp-matrix')
@@ -298,6 +311,7 @@ def freshness():
 @login_required
 @require_permission(Permission.VIEW)
 def wpp_drill(appliance_id, mkey):
+    visible_appliance_or_404(appliance_id)
     return jsonify(analysis_deep.wpp_drilldown(appliance_id, mkey) or {})
 
 
@@ -305,6 +319,7 @@ def wpp_drill(appliance_id, mkey):
 @login_required
 @require_permission(Permission.VIEW)
 def policy_drill(appliance_id, mkey):
+    visible_appliance_or_404(appliance_id)
     return jsonify(analysis_deep.server_policy_drilldown(appliance_id, mkey) or {})
 
 
@@ -316,9 +331,12 @@ def deep_run():
     no device_id given, sweeps every FortiWeb. Returns the job id to poll."""
     from ..models import Appliance
     from ..services import deep_jobs
-    ids = _deep_device_ids(request.form) or _deep_device_ids(request.args)
-    if not ids:
-        ids = [a.id for a in visible_appliances().filter_by(kind='fortiweb').all()]
+    # Asked-for ids are cut to the visible FortiWebs: a posted id must not
+    # start an SSH/REST capture on a device this user cannot see.
+    fortiweb = Appliance.query.filter_by(kind='fortiweb')
+    asked = _requested_device_ids(request.form) | _requested_device_ids(request.args)
+    visible = {a.id for a in visible_appliances(fortiweb).all()}
+    ids = sorted((asked & visible) if asked else visible)
     if not ids:
         return jsonify({"started": False, "reason": "no devices"}), 400
     max_workers = request.form.get('max_workers', type=int) or 8

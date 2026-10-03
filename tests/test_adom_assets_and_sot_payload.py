@@ -812,7 +812,10 @@ def test_deleting_a_backup_needs_the_word(app, client, monkeypatch):
     monkeypatch.setattr(backup_server, "delete_device_file",
                         lambda d, f: called.append((d, f)) or {"ok": True,
                                                                "detail": "x"})
-    login(client, admin_user_id(app))
+    # Global: the console scope that reaches every folder. Inside an ADOM only
+    # that ADOM's devices are deletable (2026-10-03 audit, FW-39), and "fw1"
+    # has no identity row here.
+    login(client, admin_user_id(app), product="global")
     r = client.post("/adom-assets/delete-backup",
                     data={"device": "fw1", "filename": "a.zip"})
     assert r.status_code in (302, 303) and not called, \

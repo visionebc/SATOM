@@ -17,7 +17,7 @@ able to do by accident.
 from __future__ import annotations
 
 from flask import (Blueprint, flash, redirect, render_template, request,
-                   url_for, jsonify)
+                   url_for, jsonify, abort)
 from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
@@ -148,6 +148,17 @@ def delete_backup():
         flash("Not confirmed — type DELETE to remove a backup from the server.",
               "warning")
         return redirect(url_for("adom_assets.index"))
+    # Inside an ADOM only that ADOM's device folders are deletable — the same
+    # set the page lists. Global (the console scope) still reaches every
+    # folder, unclaimed ones included, because that is the only view that
+    # shows them.
+    scope = _scope()
+    if scope:
+        from ..services import device_identity
+        allowed = {m.slug for grp in device_identity.chassis_groups(scope)
+                   for m in grp["rows"]}
+        if device not in allowed:
+            abort(404)
     res = backup_server.delete_device_file(device, filename)
     # Audited on failure too: an attempt to destroy an appliance's artefact is
     # worth a line whether or not it succeeded.

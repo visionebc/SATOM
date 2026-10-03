@@ -231,16 +231,21 @@ def apply(template_id: int):
         flash('Select at least one appliance, or choose "Entire fleet".', 'warning')
         return redirect(url_for('provisioning.index'))
 
-    device_ids = [] if mode == 'fleet' else selected_ids
-
-    if mode == 'fleet' or not device_ids:
+    if mode == 'fleet':
         target_appliances = visible_appliances().order_by(Appliance.name).all()
         target_desc = 'Entire fleet (all appliances)'
     else:
         target_appliances = (visible_appliances()
-                              .filter(Appliance.id.in_(device_ids))
+                              .filter(Appliance.id.in_(selected_ids))
                               .order_by(Appliance.name).all())
         target_desc = ', '.join(a.name for a in target_appliances) or '(none)'
+    # The runner gets exactly the devices this page counted: the visible set.
+    # "Entire fleet" used to travel as an empty list, which the runner read as
+    # every row in the table -- other ADOMs and maintenance devices included.
+    device_ids = [a.id for a in target_appliances]
+    if not device_ids:
+        flash('No visible appliance matches this selection.', 'warning')
+        return redirect(url_for('provisioning.index'))
 
     confirmed = request.form.get('confirm') == '1'
 
@@ -406,7 +411,7 @@ def baselines():
         return True
 
     rows = [b for b in rows if _match(b)]
-    device_counts = {b.id: len(B.matching_devices(b)) for b in rows}
+    device_counts = {b.id: len(B.matching_devices(b, visible_appliances())) for b in rows}
     assigned_counts = {b.id: len(b.items) for b in rows}
     approved = B.approved_templates()
     combo_chips = {t.id: B.combos_for_template(t.id) for t in approved}
@@ -452,7 +457,7 @@ def baseline_detail(baseline_id: int):
     row = B.get_baseline(baseline_id)
     if row is None:
         abort(404)
-    devices = B.matching_devices(row)
+    devices = B.matching_devices(row, visible_appliances())
     assigned = B.assigned_templates(row)
     available = B.available_templates_for_combo(row)
     return render_template('provisioning/baseline_detail.html',
@@ -578,7 +583,7 @@ def baseline_apply(baseline_id: int):
     row = B.get_baseline(baseline_id)
     if row is None:
         abort(404)
-    devices = B.matching_devices(row)
+    devices = B.matching_devices(row, visible_appliances())
     device_ids = [a.id for a in devices]
     items = B.baseline_push_items(row)
     confirm = request.form.get('confirm') == '1'

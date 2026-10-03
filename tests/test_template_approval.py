@@ -132,6 +132,21 @@ def test_admin_can_approve_and_reject(app, client):
         assert row.reject_reason == "rollback risk"
 
 
+def _devices(app, n):
+    """Real appliance rows: apply refuses ids outside visible_appliances()
+    (2026-10-03 audit, FW-19), so the ids have to exist."""
+    from app.models import Appliance, db
+    with app.app_context():
+        rows = [Appliance(name=f"tpl-dev-{i}", kind="fortiweb", host=f"10.0.9.{i}",
+                          port=443, username="admin", verify_ssl=False)
+                for i in range(1, n + 1)]
+        for r in rows:
+            r.password = "x"
+            db.session.add(r)
+        db.session.commit()
+        return [r.id for r in rows]
+
+
 def test_single_device_apply_allowed_on_pending(app, client, monkeypatch):
     from tests.conftest import make_user, profile_id, login
     # avoid touching a real device: stub the runner used by the apply view
@@ -142,9 +157,10 @@ def test_single_device_apply_allowed_on_pending(app, client, monkeypatch):
                    profile_id=profile_id(app, "operator"))
     login(client, op)
     tid = _seed_template(app, status="pending")
+    (d1,) = _devices(app, 1)
     # dry-run preview (no confirm) to ONE device — allowed even while pending
     r = client.post(f"/templates/{tid}/apply",
-                    data={"device_ids": "1", "format": "json"})
+                    data={"device_ids": str(d1), "format": "json"})
     assert r.status_code == 200
     assert r.get_json()["ok"] is True
 
@@ -158,16 +174,17 @@ def test_multi_device_apply_blocked_until_approved(app, client, monkeypatch):
                    profile_id=profile_id(app, "operator"))
     login(client, op)
     tid = _seed_template(app, status="pending")
+    ids = [str(i) for i in _devices(app, 2)]
     # >1 device on a PENDING template -> refused
     r = client.post(f"/templates/{tid}/apply",
-                    data={"device_ids": ["1", "2"], "format": "json"})
+                    data={"device_ids": ids, "format": "json"})
     assert r.status_code == 403
     # after approval, the same multi-device preview is allowed
     from app.services import templates as lib
     with app.app_context():
         lib.approve_template(tid, reviewer="admin")
     r2 = client.post(f"/templates/{tid}/apply",
-                     data={"device_ids": ["1", "2"], "format": "json"})
+                     data={"device_ids": ids, "format": "json"})
     assert r2.status_code == 200
 
 

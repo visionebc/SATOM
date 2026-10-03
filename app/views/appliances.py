@@ -1271,15 +1271,25 @@ def _persist_firmware(appliance, fw):
             pass
 
 
+def _visible_appliance_ids() -> set[int]:
+    return {a.id for a in visible_appliances().all()}
+
+
 @bp.route('/flash-report/<job_id>', methods=['GET'])
 @login_required
 @require_permission('appliances.view')
 def flash_report_view(job_id):
     """Serve the self-contained before/after firmware-flash report for a job.
-    Served from DISK so it survives the ephemeral job record; any signed-in
-    operator may open any firmware report (they are fleet-wide ops artifacts)."""
+    Served from DISK so it survives the ephemeral job record; any operator
+    may open any firmware report of a device they can see."""
     from ..services import flash_report as _fr
     from flask import g
+    # Fleet-wide, but not past the visibility boundary: a report about a
+    # device this user cannot see (maintenance, another ADOM) is a 404 too.
+    meta = _fr.report_meta(job_id)
+    if meta and meta.get("appliance_id") and \
+            meta["appliance_id"] not in _visible_appliance_ids():
+        abort(404)
     page = _fr.read_report(job_id)
     if page is None:
         abort(404)
@@ -1303,8 +1313,10 @@ def flash_reports():
         aid = int(request.args.get('appliance_id') or 0) or None
     except (TypeError, ValueError):
         aid = None
-    reports = _fr.list_reports(appliance_id=aid)
-    focus = Appliance.query.get(aid) if aid else None
+    visible = _visible_appliance_ids()
+    reports = [r for r in _fr.list_reports(appliance_id=aid)
+               if not r.get("appliance_id") or r["appliance_id"] in visible]
+    focus = visible_appliance_or_404(aid) if aid else None
     return render_template('appliances/flash_reports.html',
                            reports=reports, focus=focus)
 

@@ -116,14 +116,56 @@ def dataset_catalog() -> list[dict[str, str]]:
     ]
 
 
+def _viewer_scope():
+    """What the person rendering may see: ``(visible appliance ids, ADOM key or
+    "" for Global, may read the audit log)``. ``None`` outside a request —
+    internal callers, which have no viewer to scope by.
+
+    The queries above are fixed and global; a published view is opened by
+    people with different reach (maintenance devices, other ADOMs, no audit
+    permission), so the rows are cut per viewer AFTER the query, never baked
+    into the SQL a plugin author picked."""
+    from flask import g, has_request_context
+    if not has_request_context():
+        return None
+    from flask_login import current_user
+    from ..models import visible_appliances
+    ids = {a.id for a in visible_appliances().all()}
+    product = (getattr(g, "product", "") or "").strip()
+    product = "" if product in ("", "global") else product
+    can = getattr(current_user, "can", None)
+    return ids, product, bool(can and can("audit.view"))
+
+
+def _scope_rows(key: str, cols: list, rows: list[dict], scope) -> list[dict]:
+    if scope is None:
+        return rows
+    ids, product, can_audit = scope
+    # run_query hands every cell back as text ("" for NULL), so compare text.
+    ids = {str(i) for i in ids}
+    if key == "audit_recent" and not can_audit:
+        return []
+    if key == "fleet_appliances":
+        return [r for r in rows if str(r.get("id")) in ids]
+    if "appliance_id" in cols:
+        # Rows bound to no device (an unattached certificate) stay visible.
+        return [r for r in rows if r.get("appliance_id") in (None, "")
+                or str(r.get("appliance_id")) in ids]
+    if product and "product" in cols:
+        return [r for r in rows if (r.get("product") or "") in ("", product)]
+    return rows
+
+
 def load_datasets(keys: list[str]) -> dict[str, Any]:
     """Run each requested dataset's fixed query; return {key: {columns, rows}}.
 
     A dataset the plugin isn't entitled to (not in DATASETS) is skipped. A query
     that errors (e.g. a table absent on this deployment) yields an empty set with
-    an ``error`` note — it never raises into the caller.
+    an ``error`` note — it never raises into the caller. Inside a request the
+    rows are cut to what the viewer may see (:func:`_viewer_scope`).
     """
     out: dict[str, Any] = {}
+    scope = _viewer_scope()
     for key in keys or []:
         spec = DATASETS.get(key)
         if not spec:
@@ -138,6 +180,7 @@ def load_datasets(keys: list[str]) -> dict[str, Any]:
             if cols and rows:
                 for r in rows:
                     dict_rows.append({c: r[i] for i, c in enumerate(cols)})
+            dict_rows = _scope_rows(key, cols or [], dict_rows, scope)
             out[key] = {"columns": cols or [], "rows": dict_rows}
         except Exception as exc:  # noqa: BLE001 — never fatal to the render
             out[key] = {"columns": [], "rows": [], "error": str(exc)[:200]}

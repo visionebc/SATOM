@@ -128,10 +128,11 @@ def save():
 @login_required
 @require_permission(Permission.REGISTRY_EDIT)
 def toggle(rid):
-    """Soft-delete / restore one endpoint row (the row stays so the YAML boot
-    seeder cannot resurrect a name the operator removed)."""
+    """Soft-delete / restore one endpoint row (the row stays so the baseline
+    seeder cannot resurrect a name the operator removed). FortiWeb rows only,
+    like :func:`save`: the other products' catalogs have their own editors."""
     row = db.session.get(RegistryEndpoint, rid)
-    if row is None:
+    if row is None or row.product != 'fortiweb':
         abort(404)
     row.enabled = not row.enabled
     row.updated_by = current_user.username

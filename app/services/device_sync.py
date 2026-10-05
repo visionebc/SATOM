@@ -460,19 +460,30 @@ def backfill_from_git(*, session=None) -> dict:
 
 
 def deep_snapshot_from_device(appliance, *, timeout: float = 30.0,
-                              progress=None, should_stop=None) -> dict:
+                              progress=None, should_stop=None, workers: int = 1,
+                              keep_alive: bool = False,
+                              stats: dict | None = None) -> dict:
     """Deep, read-only walk of every server policy + WPP -> enriched snapshot
     (by-parent sub-tables + named-rule objects nested under ``_deep``). Serial
-    per box by design (gentle on the appliance); device-level fan-out lives in
-    services.deep_jobs. ``progress`` and ``should_stop`` are handed to
-    :func:`deep_capture.deep_sections` unchanged."""
+    per box by default (gentle on the appliance); device-level fan-out lives in
+    services.deep_jobs. ``progress``, ``should_stop``, ``workers`` and
+    ``stats`` are handed to :func:`deep_capture.deep_sections` unchanged.
+
+    ``workers`` > 1 and ``keep_alive`` (one reused connection pool for the
+    whole walk) are what the rediscovery sweep asks for; every other caller
+    keeps the defaults and the behaviour it had."""
+    import contextlib
+
     from .deep_capture import deep_sections
     from ..clients.fortiweb import FortiWebClient
     from . import clone
 
     client = FortiWebClient(appliance, timeout=timeout)
     reader = clone.ClientReader(client)
-    sections = deep_sections(reader, progress=progress, should_stop=should_stop)
+    with (client.keep_alive() if keep_alive else contextlib.nullcontext()):
+        sections = deep_sections(reader, progress=progress,
+                                 should_stop=should_stop, workers=workers,
+                                 stats=stats)
     total = sum(len(rows) for sec in sections.values() for rows in sec.values())
     return {
         "device": appliance.name, "appliance_id": appliance.id,

@@ -16885,3 +16885,39 @@ Three field reports from one customer evening (SI-0004/5/6).
   cleared on dismiss.
 
 **Mutations: 17/17 bite.**
+
+## §207 — a deep rediscovery that read the same WPP once per policy, one request at a time (`tests/test_rediscovery_speed.py`, 2026-10-05)
+
+Reported as "extremely slow". The captured configuration is unchanged; what
+the tests pin is that the speed did not cost a guarantee.
+
+- **Same graph, fewer reads.** `deep_sections` wraps the reader in
+  `_MemoReader` (keyed by the exact call, thread-safe, a key in flight is
+  waited for rather than re-read, a raising read is not cached) and walks WPPs
+  before the policies that name them. The test compares the output against
+  the per-object walk it replaced and asserts no read is repeated.
+- **Workers keep order and context.** `workers > 1` claims objects under a
+  lock (Stop is asked before every claim; nothing is started after it),
+  assembles results in list order, re-raises a worker's exception, and gives
+  each worker its own app context: without one, `loader.registry_for` falls
+  back to the shipped baseline in silence.
+- **The parallel sweep keeps the serial sweep's promises as far as physics
+  allows.** It opens only after the status read proved the credentials.
+  `_GatedClient` holds every new read while a 401 is unconfirmed, runs one
+  re-check at a time and refuses all reads once one failed, so a mid-sweep
+  lockout costs at most `workers` 401s plus one re-check (pinned with three
+  reads in flight). A read not yet sent when Stop is pressed is not sent.
+  The serial contracts (`test_rediscovery_stop.py`, the lockout test in
+  `test_rediscovery_auth.py`) run with `SATOM_REDISCOVERY_WORKERS=1`.
+- **CLI alongside.** `_run_deep(finish=False)` leaves the sweep open while
+  the capture runs; the state goes `deep-running` → `cli-running` (only if
+  the capture outlives the walk) → `done`, and `cli_running` never survives
+  the join.
+- **One pool, no cookies.** `BaseClient.keep_alive()` is one `httpx.Client`
+  for the block (nested blocks reuse it, it is closed on exit, threads share
+  it), with a cookie jar that accepts nothing.
+- Found while testing: the page guard "`cli-running` is handled everywhere
+  `deep-running` is" had been failing since the deep-pass Stop label
+  (`954075e`); the label now names the CLI capture.
+
+**Mutations: 33/33 bite.**

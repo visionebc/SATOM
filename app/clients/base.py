@@ -1,4 +1,6 @@
+import contextlib
 import html
+import http.cookiejar
 import os
 import re
 import threading
@@ -72,6 +74,37 @@ class BaseClient:
         self._verify = verify_ssl
         self._timeout = httpx.Timeout(timeout, connect=min(_MAX_CONNECT_S, timeout))
         self._sem = _host_semaphore(f"{host}:{port}")
+        self._shared = None
+
+    @contextlib.contextmanager
+    def keep_alive(self):
+        """Reuse ONE connection pool for every request made inside the block.
+
+        Outside it, every request opens its own TCP + TLS session (measured
+        against fac01 on the LAN: 12 ms a request, against 1 ms on a reused
+        connection; behind a customer's NAT the difference is larger). A sweep
+        makes hundreds of reads, so the long jobs that make them (rediscovery)
+        open this block; nothing else changes behaviour.
+
+        The pool takes no cookies: a fresh client per request never sent one
+        back, and a session cookie replayed across reads would be a behaviour
+        change nobody measured. Thread-safe — the sweep's workers share it, and
+        the per-host semaphore still caps how many requests are in flight.
+        Nested blocks reuse the outer pool."""
+        if self._shared is not None:
+            yield self
+            return
+        jar = http.cookiejar.CookieJar(
+            policy=http.cookiejar.DefaultCookiePolicy(allowed_domains=[]))
+        self._shared = httpx.Client(
+            verify=self._verify_target(), timeout=self._timeout, cookies=jar,
+            limits=httpx.Limits(max_connections=_HOST_CONCURRENCY,
+                                max_keepalive_connections=_HOST_CONCURRENCY))
+        try:
+            yield self
+        finally:
+            shared, self._shared = self._shared, None
+            shared.close()
 
     def _verify_target(self):
         """What to hand httpx as ``verify=`` for this appliance.
@@ -99,7 +132,8 @@ class BaseClient:
 
     def _request(self, method: str, path: str, **kwargs):
         url = self.base_url.rstrip('/') + '/' + path.lstrip('/')
-        verify = self._verify_target()
+        shared = self._shared
+        verify = self._verify_target() if shared is None else None
         # Inside a device job (services/device_jobs) every call is one visible
         # step, and the first write call takes the device's queue lock. The
         # hook runs BEFORE the semaphore so a queued job holds no slot.
@@ -109,8 +143,11 @@ class BaseClient:
         started = time.monotonic()
         try:
             with self._sem:
-                with httpx.Client(verify=verify, timeout=self._timeout) as client:
-                    resp = client.request(method, url, **kwargs)
+                if shared is not None:
+                    resp = shared.request(method, url, **kwargs)
+                else:
+                    with httpx.Client(verify=verify, timeout=self._timeout) as client:
+                        resp = client.request(method, url, **kwargs)
         except Exception as exc:
             if sink is not None:
                 sink.after_call(method, path, None, started, error=exc)

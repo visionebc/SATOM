@@ -18,6 +18,7 @@ sub-tables go through ``clone.scoped_rows`` (the leak-proof scoped read).
 """
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 from ..registry.dependencies import (DepNode, SERVER_POLICY,
@@ -68,6 +69,72 @@ def _collection(reader: Any, urn: str, cache: dict) -> list[dict]:
             rows = []
         cache[urn] = [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
     return cache[urn]
+
+
+class _MemoReader:
+    """Read-through memo over a clone Reader, for ONE deep sweep.
+
+    Every object gets its own visited set (see :func:`deep_sections`), so a WPP
+    named by 30 server policies used to be read 31 times: once per policy that
+    names it, once on its own. The tree each walk BUILDS is unchanged; only the
+    device reads behind it are shared. Keyed by the exact call, so a cached
+    answer is the answer the same call would have got, read moments earlier.
+
+    Thread-safe, and a key being read by one worker is waited for by the others
+    instead of read twice. A read that raises is not cached (the next caller
+    retries it), which is what the uncached reader did too.
+    """
+
+    def __init__(self, reader: Any) -> None:
+        self._reader = reader
+        self.client = getattr(reader, "client", None)
+        self._lock = threading.Lock()
+        self._done: dict = {}
+        self._inflight: dict = {}
+        self.reads = 0      # requests that reached the device
+        self.reused = 0     # requests answered from the memo
+        if not callable(getattr(reader, "get_object", None)):
+            # scoped_rows falls back to get_raw for a reader without the
+            # scoped read; the memo must not invent one.
+            self.get_object = None
+
+    @staticmethod
+    def _copy(rows: Any) -> Any:
+        if isinstance(rows, list):
+            return list(rows)
+        if isinstance(rows, dict):
+            return dict(rows)
+        return rows
+
+    def _get(self, key: tuple, fetch) -> Any:
+        while True:
+            with self._lock:
+                if key in self._done:
+                    self.reused += 1
+                    return self._copy(self._done[key])
+                pending = self._inflight.get(key)
+                if pending is None:
+                    pending = self._inflight[key] = threading.Event()
+                    self.reads += 1
+                    break
+            pending.wait()
+        try:
+            rows = fetch()
+            with self._lock:
+                self._done[key] = rows
+            return self._copy(rows)
+        finally:
+            with self._lock:
+                self._inflight.pop(key, None)
+            pending.set()
+
+    def get_raw(self, urn: str, mkey: str = "") -> Any:
+        return self._get(("raw", urn, str(mkey or "")),
+                         lambda: self._reader.get_raw(urn, mkey))
+
+    def get_object(self, logical: str, mkey: str = "") -> Any:
+        return self._get(("obj", logical, str(mkey or "")),
+                         lambda: self._reader.get_object(logical, mkey))
 
 
 def _find(rows: list[dict], mkey: str) -> dict | None:
@@ -205,37 +272,69 @@ class DeepCaptureStopped(Exception):
         super().__init__(f"stopped at {done}/{total} ({phase} {current})".strip())
 
 
-def deep_sections(reader: Any, progress=None, should_stop=None) -> dict:
-    """Walk every server policy + every WPP (inline + offline), returning the
+def _app_for_workers():
+    """The Flask app behind the caller, or None outside one. Worker threads
+    need their OWN app context: the registry a read resolves names through
+    (``loader.registry_for``) consults the evidence tables only inside one, and
+    without it would silently fall back to the shipped baseline."""
+    try:
+        from flask import current_app, has_app_context
+        return current_app._get_current_object() if has_app_context() else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def deep_sections(reader: Any, progress=None, should_stop=None,
+                  workers: int = 1, stats: dict | None = None) -> dict:
+    """Walk every WPP (inline + offline) + every server policy, returning the
     enriched ``{section: {logical_name: [obj-with-_deep, ...]}}`` snapshot shape
     that ``device_store.ingest_sections`` consumes. A single shared collection
     cache keeps the sweep box-gentle (each top-level object type is listed once);
     each object gets its OWN visited set so an object shared by two policies is
     captured in full under each.
 
+    The WPPs are walked FIRST and every device read goes through a per-sweep
+    memo (:class:`_MemoReader`): a server policy that names an already-walked
+    WPP rebuilds its subtree from reads already made instead of asking the box
+    again. The graph returned is the same one; only the reads are shared.
+
+    ``workers`` > 1 walks that many objects at once (the rediscovery sweep
+    passes its configured width; every other caller keeps 1, the serial walk).
+    The result is assembled in list order whatever order the walks finish in.
+
     ``progress`` (optional) is called with a dict before every object and once
     at the end, so a caller can say WHICH policy or WPP is being walked and how
     many are left. The three lists are read up front for that reason: the total
     has to be known before the first object, or the bar can only say "running"
-    (SI-0004). A broken callback never sinks the walk.
+    (SI-0004). A broken callback never sinks the walk. Calls are serialised.
 
     ``should_stop`` (optional) is asked before every object and before the
     certificate stores; True raises :class:`DeepCaptureStopped`. An object
     already being walked is finished first -- one object is a handful of reads,
     and a half-walked object is the one thing worse than a skipped one.
+
+    ``stats`` (optional) is filled with ``reads`` (requests that reached the
+    device), ``reused`` (answered from the memo) and ``workers``.
     """
+    memo = reader if isinstance(reader, _MemoReader) else _MemoReader(reader)
+    workers = max(1, int(workers or 1))
     cache: dict = {}
 
-    pol_names = _list_names(reader, SERVER_POLICY.urn, cache)
-    wpp_names = _list_names(reader, WEB_PROTECTION_PROFILE.urn, cache)
-    off_names = _list_names(reader, _WPP_OFFLINE_URN, cache)
-    work = ([("server policy", SERVER_POLICY, n, i, len(pol_names))
-             for i, n in enumerate(pol_names, 1)]
-            + [("WPP", WEB_PROTECTION_PROFILE, n, i, len(wpp_names))
-               for i, n in enumerate(wpp_names, 1)]
+    pol_names = _list_names(memo, SERVER_POLICY.urn, cache)
+    wpp_names = _list_names(memo, WEB_PROTECTION_PROFILE.urn, cache)
+    off_names = _list_names(memo, _WPP_OFFLINE_URN, cache)
+    work = ([("WPP", WEB_PROTECTION_PROFILE, n, i, len(wpp_names))
+             for i, n in enumerate(wpp_names, 1)]
             + [("offline WPP", _WPP_OFFLINE_NODE, n, i, len(off_names))
-               for i, n in enumerate(off_names, 1)])
+               for i, n in enumerate(off_names, 1)]
+            + [("server policy", SERVER_POLICY, n, i, len(pol_names))
+               for i, n in enumerate(pol_names, 1)])
     total = len(work) + 1   # +1: the certificate / SNI stores at the end
+    lock = threading.Lock()
+
+    def _stats() -> None:
+        if stats is not None:
+            stats.update(reads=memo.reads, reused=memo.reused, workers=workers)
 
     def _tick(done: int, phase: str, index: int, of: int, current: str) -> None:
         if progress is None:
@@ -244,31 +343,87 @@ def deep_sections(reader: Any, progress=None, should_stop=None) -> dict:
             progress({"done": done, "total": total, "phase": phase,
                       "index": index, "of": of, "current": current,
                       "policies": len(pol_names),
-                      "wpps": len(wpp_names) + len(off_names)})
+                      "wpps": len(wpp_names) + len(off_names),
+                      "reads": memo.reads, "reused": memo.reused})
         except Exception:  # noqa: BLE001 — reporting never sinks the walk
             pass
 
-    def _check_stop(done: int, phase: str, current: str) -> None:
-        if should_stop is not None and should_stop():
-            raise DeepCaptureStopped(done, total, phase, current)
+    results: list = [None] * len(work)
+    run = {"next": 0, "done": 0, "stop": None, "error": None}
 
-    policies: list[dict] = []
-    wpps: list[dict] = []
-    for done, (phase, node, nm, idx, of) in enumerate(work):
-        _check_stop(done, phase, nm)
-        _tick(done, phase, idx, of, nm)
-        g = _collect_node(reader, node, nm, set(), cache)
-        if g:
-            (policies if node is SERVER_POLICY else wpps).append(g)
+    def _take() -> int | None:
+        """Claim the next object, or None when there is nothing left to start
+        (all claimed, a Stop, or another worker failed)."""
+        with lock:
+            if run["stop"] is not None or run["error"] is not None:
+                return None
+            i = run["next"]
+            if i >= len(work):
+                return None
+            phase, _node, nm, idx, of = work[i]
+            if should_stop is not None and should_stop():
+                run["stop"] = DeepCaptureStopped(run["done"], total, phase, nm)
+                return None
+            run["next"] = i + 1
+            _tick(run["done"], phase, idx, of, nm)
+            return i
 
-    _check_stop(len(work), "certificates", "")
+    def _worker() -> None:
+        while True:
+            i = _take()
+            if i is None:
+                return
+            _phase, node, nm, _idx, _of = work[i]
+            try:
+                g = _collect_node(memo, node, nm, set(), cache)
+            except BaseException as exc:  # noqa: BLE001 — re-raised below
+                with lock:
+                    run["error"] = run["error"] or exc
+                return
+            with lock:
+                results[i] = g
+                run["done"] += 1
+
+    if workers == 1 or len(work) < 2:
+        _worker()
+    else:
+        app = _app_for_workers()
+
+        def _in_context() -> None:
+            if app is None:
+                _worker()
+            else:
+                with app.app_context():
+                    _worker()
+
+        threads = [threading.Thread(target=_in_context, daemon=True,
+                                    name=f"deep-capture-{n}")
+                   for n in range(min(workers, len(work)))]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    _stats()
+    if run["error"] is not None:
+        raise run["error"]
+    if run["stop"] is not None:
+        raise run["stop"]
+
+    policies = [g for (_p, node, *_r), g in zip(work, results)
+                if g and node is SERVER_POLICY]
+    wpps = [g for (_p, node, *_r), g in zip(work, results)
+            if g and node is not SERVER_POLICY]
+
+    if should_stop is not None and should_stop():
+        raise DeepCaptureStopped(len(work), total, "certificates", "")
     _tick(len(work), "certificates", 1, 1, "")
     sections = {
         "Server Policy": {"server_policy": policies},
         "Web Protection": {"web_protection_profile": wpps},
     }
-    certs = cert_sections(reader, cache)
+    certs = cert_sections(memo, cache)
     if certs:
         sections["Server Objects"] = certs
+    _stats()
     _tick(total, "done", 0, 0, "")
     return sections

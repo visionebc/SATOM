@@ -97,6 +97,7 @@
     } else if (p.deep_phase === 'done') {
       t += ' · saving';
     }
+    if (p.cli_running) t += ' · CLI capture running alongside';
     return t;
   }
 
@@ -133,6 +134,7 @@
       let txt = p.summary || `${p.objects} objects across ${p.section_count} sections`;
       if (p.deep_objects != null) txt += ` · depth: ${p.deep_objects} object(s)`
         + (p.deep_total ? ` from ${p.deep_policies || 0} server policies and ${p.deep_wpps || 0} WPPs` : '');
+      if (p.deep_reads != null) txt += ` (${p.deep_reads} device reads, ${p.deep_reused || 0} reused)`;
       if (p.cache_error) txt += ` · local cache not updated: ${p.cache_error}`;
       if (p.deep_error) txt += ` · depth error: ${p.deep_error}`;
       // Skipped and failed are DIFFERENT outcomes and are never collapsed:
@@ -164,7 +166,8 @@
     if (p.stop_requested && active) {
       line.textContent += ' — stopping after the current '
         + (p.state === 'running' ? 'endpoint'
-           : p.state === 'deep-running' ? 'object' : 'step') + '…';
+           : p.state === 'deep-running' ? 'object'
+           : p.state === 'cli-running' ? 'CLI capture' : 'step') + '…';
     }
     if (p.errors && p.errors.length) {
       const seen = {};

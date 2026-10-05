@@ -6,6 +6,40 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — factory catalog: predefined WPPs are read once per firmware build and API version (2026-10-06)
+
+Every FortiWeb ships the same ~20 predefined Web Protection Profiles, and the
+deep pass read every one of them in full on every appliance, on every sweep:
+up to ~125 device reads each, most of a sweep's work, to read content the
+vendor wrote. SATOM now keeps them in a **factory catalog**, one entry per
+profile per **firmware version, build number and REST API version** (a newer
+build adds fields to the same profile, so each build has its own entries).
+
+- **First deep pass on a build** reads the predefined profiles in full and
+  stores the complete tree, every object it names and every read it made.
+- **Next deep passes** rebuild a predefined profile from the catalog without
+  its sub-table reads, but only when the appliance's own rows (the profile and
+  every object it names, including the sub-table row counters) match the
+  entry. The rebuilt tree is produced by the same code from the same answers,
+  and keeps the appliance's own usage counters. Anything that does not match
+  is read in full, as before.
+- **Re-read in full once a week** (`SATOM_FACTORY_REVERIFY_DAYS`, default 7),
+  or on demand with the new **Re-read predefined WPPs in full** switch on the
+  Rediscovery page. Two appliances that agree on the rows and disagree below
+  them mark the entry **ambiguous**: that profile is then always read in full
+  on that build. A read that failed is never stored.
+- The firmware is read **live from the appliance** at the start of the deep
+  pass, not from the appliance record (which can be empty).
+- **New page: Factory catalog** (`/web/factory-catalog/`, linked from Web
+  Protection and the Template Library, needs *View registry*). It lists the
+  builds, each profile's full tree, **compares the same profile between two
+  builds** field by field, and **saves an entry as a template**: the template
+  is stamped with the entry's firmware and API version, provenance *factory*,
+  and goes through the usual approval.
+- The Rediscovery page reports how many predefined WPPs came from the catalog.
+- `SATOM_FACTORY_CATALOG=0` switches the catalog off (every profile is read in
+  full, nothing is stored).
+
 ### Added — templates record their firmware build and are checked against every target build
 
 Templates now store the firmware build their body was written for, the REST

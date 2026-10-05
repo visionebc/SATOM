@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Factory catalog') }}{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <h4 class="mb-1"><i class="bi bi-box-seam me-2"></i>{{ _('Factory catalog') }}</h4>
+  <p class="text-muted mb-0" style="font-size:13px;">
+    {{ _('The predefined Web Protection Profiles SATOM has read, stored once per firmware build and REST API version. A deep rediscovery rebuilds a predefined profile from here when the appliance\'s own rows match the entry, instead of reading every sub-table again, and reads it in full again when the entry is older than %(d)s day(s).', d=reverify_days) }}
+    <a href="{{ url_for('templates.index') }}">{{ _('Template Library') }}</a>
+  </p>
+  {% if not enabled %}<div class="alert alert-warning mt-2 mb-0 py-2" style="font-size:13px;">{{ _('The catalog is switched off on this node (SATOM_FACTORY_CATALOG=0): every deep pass reads every predefined profile in full and nothing is added here.') }}</div>{% endif %}
+</div>
+
+{% if not surfaces %}
+<div class="fw-card" style="padding:16px;">
+  <p class="mb-0 text-muted">{{ _('Empty. The first deep rediscovery of a FortiWeb fills the catalog for its firmware build: run one from the appliance\'s Rediscovery page with "Capture full WPP + policy depth" on.') }}</p>
+</div>
+{% else %}
+<div class="fw-card mb-3" style="padding:10px 14px;">
+  <div class="d-flex flex-wrap gap-2 align-items-center">
+    <strong style="font-size:13px;">{{ _('Firmware') }}</strong>
+    {% for s in surfaces %}
+      {% set key = s.firmware ~ '|' ~ s.build_no ~ '|' ~ s.api_version %}
+      <a class="btn btn-sm {{ 'fw-btn-primary' if current and s.firmware == current.firmware and s.build_no == current.build_no and s.api_version == current.api_version else 'btn-fw-outline' }}"
+         href="{{ url_for('factory_catalog.index', surface=key) }}">
+        {{ s.firmware }}{% if s.build_no %} build {{ s.build_no }}{% endif %} · API {{ s.api_version or '—' }}
+        <span class="fw-badge fw-badge-secondary ms-1">{{ s.profiles }}</span>
+        {% if s.ambiguous %}<span class="fw-badge fw-badge-warning ms-1" title="{{ _('variants marked ambiguous') }}">{{ s.ambiguous }}</span>{% endif %}
+      </a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="fw-card mb-3">
+  <div style="padding:10px 14px;border-bottom:1px solid var(--fw-border, #e3e8ef);">
+    <strong>{{ current.label }}</strong>
+    <span class="text-muted ms-2" style="font-size:12px;">{{ _('read from') }} {{ current.captured_from|join(', ') or '—' }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle" id="fcEntries">
+      <thead><tr>
+        <th>{{ _('Profile') }}</th><th>{{ _('Type') }}</th><th class="text-end">{{ _('Objects') }}</th>
+        <th>{{ _('Status') }}</th><th>{{ _('Last full read') }}</th><th class="text-end">{{ _('Rebuilt') }}</th>
+        <th>{{ _('Other builds') }}</th>
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr data-entry-id="{{ r.id }}">
+          <td><a href="{{ url_for('factory_catalog.entry', entry_id=r.id) }}">{{ r.name }}</a></td>
+          <td style="font-size:12px;">{{ r.kind_label }}</td>
+          <td class="text-end" style="font-size:12px;">{{ r.node_count }}</td>
+          <td>
+            {% if r.status != 'ok' %}<span class="fw-badge fw-badge-warning" title="{{ r.status_reason }}">{{ _('ambiguous') }}</span>
+            {% elif r.stale %}<span class="fw-badge fw-badge-secondary" title="{{ _('the next deep pass reads it in full') }}">{{ _('due for a full read') }}</span>
+            {% else %}<span class="fw-badge fw-badge-success">{{ _('verified') }}</span>{% endif %}
+          </td>
+          <td class="text-muted" style="font-size:11.5px;">{{ r.last_verified_at.strftime('%Y-%m-%d %H:%M') }} · {{ r.last_verified_from or '—' }}</td>
+          <td class="text-end" style="font-size:12px;">{{ r.reuse_count }}</td>
+          <td style="font-size:12px;">
+            {% for o in r.others %}<a href="{{ url_for('factory_catalog.compare', a=o.id, b=r.id) }}" class="me-2" title="{{ _('compare') }}">{{ o.surface }}</a>{% else %}<span class="text-muted">—</span>{% endfor %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

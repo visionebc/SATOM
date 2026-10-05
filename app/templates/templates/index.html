@@ -28,6 +28,11 @@
       {% endif %}
     </a>
     {% endif %}
+    {% if may_open('factory_catalog.index') %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('factory_catalog.index') }}" title="{{ _('Vendor-predefined Web Protection Profiles per firmware build and API version; save one as a template') }}">
+      <i class="bi bi-box-seam me-1"></i>{{ _('Factory catalog') }}
+    </a>
+    {% endif %}
     <button class="btn btn-fw-primary" data-bs-toggle="modal" data-bs-target="#modalAddTemplate">
       <i class="bi bi-plus-lg me-1"></i>{{ _('New Template') }}
     </button>

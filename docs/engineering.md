@@ -103,6 +103,18 @@ the background-job workers and the scheduler sidecar run them headless.
   The deep pass walks WPPs first through a per-sweep read memo
   (`deep_capture._MemoReader`), and the CLI capture runs alongside it.
   Every other caller of `deep_sections` keeps the serial walk.
+- **Predefined WPPs come from the factory catalog** (`services/factory_catalog.py`,
+  table `factory_catalog`): keyed by firmware version, build number and REST
+  API version, read live from the appliance's status at the start of the deep
+  pass. A predefined profile (`clone_scope.is_factory`) is REPLAYED through
+  `_collect_node` with the appliance's own top-level listings and the scoped
+  reads recorded at capture, and accepted only when the result hashes to the
+  entry (identity = `sot_store.normalise` minus `q_ref`/`q_ref_string`).
+  Re-read in full every `SATOM_FACTORY_REVERIFY_DAYS` (default 7); a walk with
+  a failed read (`deep_capture.FlaggingClient` → `_MemoReader.failed`) is never
+  stored; same top-level rows with a different tree → `ambiguous`, always read.
+  `SATOM_FACTORY_CATALOG=0` switches it off. Every caller of
+  `deep_snapshot_from_device` uses it (`factory_catalog=False` opts out).
 
 ### Two-node HA: where the code comes from
 

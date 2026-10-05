@@ -462,7 +462,9 @@ def backfill_from_git(*, session=None) -> dict:
 def deep_snapshot_from_device(appliance, *, timeout: float = 30.0,
                               progress=None, should_stop=None, workers: int = 1,
                               keep_alive: bool = False,
-                              stats: dict | None = None) -> dict:
+                              stats: dict | None = None,
+                              factory_catalog: bool = True,
+                              force_factory_walk: bool = False) -> dict:
     """Deep, read-only walk of every server policy + WPP -> enriched snapshot
     (by-parent sub-tables + named-rule objects nested under ``_deep``). Serial
     per box by default (gentle on the appliance); device-level fan-out lives in
@@ -471,25 +473,49 @@ def deep_snapshot_from_device(appliance, *, timeout: float = 30.0,
 
     ``workers`` > 1 and ``keep_alive`` (one reused connection pool for the
     whole walk) are what the rediscovery sweep asks for; every other caller
-    keeps the defaults and the behaviour it had."""
+    keeps the defaults and the behaviour it had.
+
+    ``factory_catalog`` (default on, every caller): predefined WPPs the
+    catalog can vouch for on this appliance's firmware + API are replayed from
+    it instead of walked, and the ones walked are recorded
+    (``services.factory_catalog``). The snapshot's ``factory_catalog`` key
+    says which were which. ``force_factory_walk`` reads every predefined
+    profile in full this time. What was learned is stored even when a Stop
+    ends the walk: each recorded profile was read completely."""
     import contextlib
 
-    from .deep_capture import deep_sections
+    from .deep_capture import DeepCaptureStopped, FlaggingClient, deep_sections
     from ..clients.fortiweb import FortiWebClient
     from . import clone
 
+    catalog = None
     client = FortiWebClient(appliance, timeout=timeout)
-    reader = clone.ClientReader(client)
-    with (client.keep_alive() if keep_alive else contextlib.nullcontext()):
-        sections = deep_sections(reader, progress=progress,
-                                 should_stop=should_stop, workers=workers,
-                                 stats=stats)
+    if factory_catalog:
+        from . import factory_catalog as fc
+        if fc.enabled():
+            catalog = fc.open_session(appliance, force_walk=force_factory_walk,
+                                      firmware_raw=fc.live_firmware(client))
+    reader = clone.ClientReader(FlaggingClient(client))
+    try:
+        with (client.keep_alive() if keep_alive else contextlib.nullcontext()):
+            sections = deep_sections(reader, progress=progress,
+                                     should_stop=should_stop, workers=workers,
+                                     stats=stats, catalog=catalog)
+    except DeepCaptureStopped:
+        if catalog is not None:
+            fc.persist(catalog, appliance)
+        raise
     total = sum(len(rows) for sec in sections.values() for rows in sec.values())
-    return {
+    snap = {
         "device": appliance.name, "appliance_id": appliance.id,
         "generated_at": datetime.utcnow().isoformat(), "total_objects": total,
         "section_count": len(sections), "sections": sections, "errors": [],
     }
+    if catalog is not None:
+        snap["factory_catalog"] = fc.persist(catalog, appliance)
+        if stats is not None:
+            stats["catalog"] = snap["factory_catalog"]
+    return snap
 
 
 def persist_deep_snapshot(appliance, snapshot: dict, *, trigger: str = "deep",

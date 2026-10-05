@@ -16374,6 +16374,35 @@ the tests pin is that the speed did not cost a guarantee.</p>
   (<code>954075e</code>); the label now names the CLI capture.</li>
 </ul>
 <p><strong>Mutations: 33/33 bite.</strong></p>
+<h2 id="208--predefined-wpps-read-in-full-on-every-appliance-every-sweep-teststest_factory_catalogpy-2026-10-06">§208 — predefined WPPs read in full on every appliance, every sweep (<code>tests/test_factory_catalog.py</code>, 2026-10-06)</h2>
+<p>The factory catalog replaces the full read of a predefined WPP with a replay
+from what an earlier full read recorded. What the tests pin is that a replay
+can only ever produce what a full read would have, or not happen at all.</p>
+<ul>
+<li><strong>Same code, same answers.</strong> The replay runs <code>deep_capture._collect_node</code>
+  over a reader that serves top-level listings from the appliance being swept
+  and scoped reads from the recording; a read the recording does not hold
+  raises <code>CatalogMiss</code> and the profile is read in full. The output is compared
+  against a plain walk.</li>
+<li><strong>Refused unless it matches.</strong> The replayed tree must hash to the entry
+  (<code>sot_store.normalise</code>, minus the usage counters <code>q_ref</code>/<code>q_ref_string</code>);
+  any changed field, named object, <code>sz_*</code> counter or new firmware field means
+  a full read. Ambiguous entries (same rows, different tree from two
+  appliances) and entries older than the reverify window are never replayed.</li>
+<li><strong>Firmware, build and API are the key</strong>, and the firmware is read live.
+  Four surfaces (two builds of 7.6.8, 8.0.5, another API version) give four
+  sets of entries.</li>
+<li><strong>No incomplete entry.</strong> <code>FlaggingClient</code> marks transport errors, HTTP
+  errors and non-benign error envelopes on the calling thread; the memo keeps
+  the failed keys; a walk that touched one is not stored. A Stop still stores
+  the profiles that were read completely.</li>
+<li><strong>Templates.</strong> A template from an entry is byte-for-byte the body <em>Save as
+  template</em> builds on a live appliance (same planner), stamped with the
+  entry's firmware + API, provenance <code>factory</code>.</li>
+<li>Known limit, documented in the module: a sub-table row edited in place
+  without changing its parent's rows is only seen at the weekly full read.</li>
+</ul>
+<p><strong>Mutations: 31/31 bite.</strong></p>
     </div>
   </div>
 </section>

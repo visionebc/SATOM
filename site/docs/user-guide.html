@@ -331,7 +331,18 @@ that will not come online.</p>
 4. <strong>Deep capture</strong> — a deeper sweep that walks each server policy's whole
    object graph (pools, members, WAF profile sub-policies…). This is what
    powers the DB-first policy detail and the Architecture map. Can run
-   fleet-wide and is normally scheduled nightly.</p>
+   fleet-wide and is normally scheduled nightly.
+5. <strong>Factory catalog</strong> (Web Protection → <em>Factory catalog</em>, or Template
+   Library → <em>Factory catalog</em>; needs <em>View registry</em>) — the FortiWeb
+   predefined Web Protection Profiles, stored once per <strong>firmware version,
+   build number and REST API version</strong>. The first deep pass on a build reads
+   them in full; later deep passes rebuild a predefined profile from the
+   catalog when the appliance's own rows match, and read it in full again once
+   a week. Turn on <em>Re-read predefined WPPs in full</em> on the Rediscovery page to
+   read them now. On the catalog page you can open a profile's full tree,
+   <strong>compare the same profile between two builds</strong> (what the vendor changed in
+   its defaults), and <strong>save an entry as a template</strong>, stamped with that
+   firmware and API version.</p>
 <p>Each appliance's detail page is the hub for device-level actions:</p>
 <ul>
 <li><strong>VS/Policy Inspector</strong> — a tree report of each policy and everything it

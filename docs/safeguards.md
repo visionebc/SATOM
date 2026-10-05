@@ -16921,3 +16921,34 @@ the tests pin is that the speed did not cost a guarantee.
   (`954075e`); the label now names the CLI capture.
 
 **Mutations: 33/33 bite.**
+
+## §208 — predefined WPPs read in full on every appliance, every sweep (`tests/test_factory_catalog.py`, 2026-10-06)
+
+The factory catalog replaces the full read of a predefined WPP with a replay
+from what an earlier full read recorded. What the tests pin is that a replay
+can only ever produce what a full read would have, or not happen at all.
+
+- **Same code, same answers.** The replay runs `deep_capture._collect_node`
+  over a reader that serves top-level listings from the appliance being swept
+  and scoped reads from the recording; a read the recording does not hold
+  raises `CatalogMiss` and the profile is read in full. The output is compared
+  against a plain walk.
+- **Refused unless it matches.** The replayed tree must hash to the entry
+  (`sot_store.normalise`, minus the usage counters `q_ref`/`q_ref_string`);
+  any changed field, named object, `sz_*` counter or new firmware field means
+  a full read. Ambiguous entries (same rows, different tree from two
+  appliances) and entries older than the reverify window are never replayed.
+- **Firmware, build and API are the key**, and the firmware is read live.
+  Four surfaces (two builds of 7.6.8, 8.0.5, another API version) give four
+  sets of entries.
+- **No incomplete entry.** `FlaggingClient` marks transport errors, HTTP
+  errors and non-benign error envelopes on the calling thread; the memo keeps
+  the failed keys; a walk that touched one is not stored. A Stop still stores
+  the profiles that were read completely.
+- **Templates.** A template from an entry is byte-for-byte the body *Save as
+  template* builds on a live appliance (same planner), stamped with the
+  entry's firmware + API, provenance `factory`.
+- Known limit, documented in the module: a sub-table row edited in place
+  without changing its parent's rows is only seen at the weekly full read.
+
+**Mutations: 31/31 bite.**

@@ -1244,6 +1244,7 @@ class Template(db.Model):
     PROV_AUTHORED = "authored"   # typed by hand; firmware chosen by the author
     PROV_ADAPTED = "adapted"     # produced by "Adapt to firmware"
     PROV_LEGACY = "legacy"       # saved before builds were recorded
+    PROV_FACTORY = "factory"     # a vendor-predefined object from the factory catalog
     source_firmware = db.Column(db.String(32), nullable=True, default="")
     api_version = db.Column(db.String(16), nullable=True, default="")
     source_appliance_id = db.Column(db.Integer, nullable=True)

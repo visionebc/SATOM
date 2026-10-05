@@ -159,9 +159,40 @@ def deep_line(state: dict) -> str:
         line += " · certificates and SNI"
     elif phase == "done":
         line += " · saving"
+    if state.get("deep_catalog_reused"):
+        line += (f" · {state['deep_catalog_reused']} predefined WPP(s) "
+                 f"from the factory catalog")
     if state.get("cli_running"):
         line += " · CLI capture running alongside"
     return line
+
+
+def catalog_line(cat: dict) -> str:
+    """What the factory catalog did in one deep pass, for the progress page."""
+    if not cat:
+        return ""
+    surface = cat.get("surface") or {}
+    where = surface.get("firmware") or ""
+    if surface.get("build_no"):
+        where += " build %s" % surface["build_no"]
+    if surface.get("api_version"):
+        where += " · API %s" % surface["api_version"]
+    walked = cat.get("walked_count")
+    if walked is None:
+        walked = cat.get("walked") or 0
+        walked = len(walked) if isinstance(walked, list) else walked
+    parts = ["%d predefined WPP(s) from the factory catalog" % (cat.get("reused") or 0),
+             "%d read in full" % walked]
+    if cat.get("new"):
+        parts.append("%d new in the catalog" % cat["new"])
+    if cat.get("ambiguous"):
+        parts.append("%d marked ambiguous" % cat["ambiguous"])
+    if cat.get("skipped_incomplete"):
+        parts.append("%d not stored (a read failed)" % cat["skipped_incomplete"])
+    if cat.get("error"):
+        parts.append("catalog not updated: %s" % cat["error"][:120])
+    return ("Factory catalog (%s): " % where if where else "Factory catalog: ") \
+        + ", ".join(parts)
 
 
 def _finish_job(appliance_id: int, job_id: str | None) -> None:
@@ -854,12 +885,15 @@ def _client_snapshot(appliance) -> SimpleNamespace:
         port=appliance.port, verify_ssl=appliance.verify_ssl,
         username=appliance.username, password=appliance.password,
         vdom=appliance.vdom, kind=getattr(appliance, "kind", "fortiweb"),
+        # the factory catalog files what it reads under the exact build
+        firmware=getattr(appliance, "firmware", "") or "",
+        fw_version=getattr(appliance, "fw_version", "") or "",
     )
 
 
 def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
          plan: list[dict] | None = None, cli: bool = False,
-         job_id: str | None = None) -> None:
+         job_id: str | None = None, factory_full: bool = False) -> None:
     """Thread entry point: :func:`_sweep` plus the one thing a file-backed
     status owes its readers — a TERMINAL state when the worker dies.
 
@@ -869,7 +903,8 @@ def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
     even that: appliance 4 sat at 71 % from 2026-07-03).
     """
     try:
-        _sweep(appliance_snap, by, deep, plan, cli, job_id=job_id)
+        _sweep(appliance_snap, by, deep, plan, cli, job_id=job_id,
+               factory_full=factory_full)
     except BaseException as exc:  # noqa: BLE001 — record, then let it propagate
         try:
             p = _dev_dir(appliance_snap.id) / "progress.json"
@@ -888,7 +923,7 @@ def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
 
 def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
            plan: list[dict] | None = None, cli: bool = False,
-           job_id: str | None = None) -> None:
+           job_id: str | None = None, factory_full: bool = False) -> None:
     aid = appliance_snap.id
     devdir = _dev_dir(aid)
     progress_path = devdir / "progress.json"
@@ -913,6 +948,9 @@ def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
         # progress files and must never judge a pid that is not its own.
         "pid": os.getpid(), "host": _HOST, "heartbeat": started,
         "job_id": job_id,
+        # read every predefined WPP in full instead of replaying the factory
+        # catalog (carried in the state so _run_deep keeps its signature)
+        "factory_full": bool(factory_full),
     }
     _write_json(progress_path, state)
     if auth_error:
@@ -1304,6 +1342,7 @@ def _run_deep(appliance_snap: SimpleNamespace, progress_path, state: dict,
                      deep_wpps=p.get("wpps", 0),
                      deep_reads=p.get("reads", 0),
                      deep_reused=p.get("reused", 0),
+                     deep_catalog_reused=p.get("catalog_reused", 0),
                      heartbeat=datetime.utcnow().isoformat())
         _write_json(progress_path, state)
 
@@ -1314,6 +1353,9 @@ def _run_deep(appliance_snap: SimpleNamespace, progress_path, state: dict,
             state.update(deep_reads=stats.get("reads", 0),
                          deep_reused=stats.get("reused", 0),
                          deep_workers=stats.get("workers", 1))
+            cat = stats.get("catalog")
+            if cat:
+                state["deep_catalog"] = catalog_line(cat)
 
     try:
         from . import device_sync
@@ -1322,7 +1364,8 @@ def _run_deep(appliance_snap: SimpleNamespace, progress_path, state: dict,
             snap = device_sync.deep_snapshot_from_device(
                 appliance_snap, progress=_progress,
                 should_stop=lambda: _stop_requested(aid),
-                workers=sweep_workers(), keep_alive=True, stats=stats)
+                workers=sweep_workers(), keep_alive=True, stats=stats,
+                force_factory_walk=bool(state.get("factory_full")))
             device_sync.persist_deep_snapshot(appliance_snap, snap)
         _record_stats()
         state.update(section="deep capture complete",
@@ -1557,7 +1600,7 @@ def _join_cli_alongside(run, progress_path, state: dict, stopped: bool) -> None:
 
 
 def start(appliance, by: str = "", deep: bool = False,
-          cli: bool = False) -> dict:
+          cli: bool = False, factory_full: bool = False) -> dict:
     """Kick off a rediscovery sweep in a background thread.
 
     Refuses to start a second concurrent run for the same appliance. Returns the
@@ -1595,7 +1638,8 @@ def start(appliance, by: str = "", deep: bool = False,
     job = jobs.create_job(
         "rediscovery", f"Discovery · {appliance.name}", by=by,
         meta={"appliance_id": appliance.id, "appliance": appliance.name,
-              "deep": bool(deep), "cli": bool(cli)},
+              "deep": bool(deep), "cli": bool(cli),
+              "factory_full": bool(deep and factory_full)},
         cancelable=True)
     jobs.update_job(job["id"], status=jobs.RUNNING, pid=os.getpid())
     _now = datetime.utcnow().isoformat()
@@ -1606,8 +1650,11 @@ def start(appliance, by: str = "", deep: bool = False,
             "pid": os.getpid(), "host": _HOST, "heartbeat": _now,
             "job_id": job["id"]}
     _write_json(_dev_dir(appliance.id) / "progress.json", init)
+    kwargs = {"job_id": job["id"]}
+    if deep and factory_full:
+        kwargs["factory_full"] = True
     threading.Thread(target=_run, args=(snap, by, deep, plan, cli),
-                     kwargs={"job_id": job["id"]}, daemon=True).start()
+                     kwargs=kwargs, daemon=True).start()
     return {"started": True, "progress": init}
 
 

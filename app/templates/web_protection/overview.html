@@ -23,6 +23,9 @@
         </p>
       </div>
       <div class="d-flex align-items-center gap-2">
+        {% if may_open('factory_catalog.index') %}
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('factory_catalog.index') }}" title="{{ _('Predefined profiles per firmware build and API version') }}"><i class="bi bi-box-seam me-1"></i>{{ _('Factory catalog') }}</a>
+        {% endif %}
         <span class="badge bg-dark border" title="{{ _('Served from the local source of truth') }}">
           <i class="bi bi-database me-1"></i>{{ freshness or 'no local data' }}</span>
         {% set _can_write = current_user.can('config_write') %}

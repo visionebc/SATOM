@@ -3513,7 +3513,9 @@ Then it is two-phase, as everywhere else in the product:
    the rest only follow if it succeeded. The result reports `{canary, rest,
    aborted}`. Only an **approved** profile can be deployed live (approval is
    `operations.template_approve`, admin-only); a pending or rejected profile
-   keeps its preview, and the refused attempt is audited.
+   keeps its preview, and the refused attempt is audited. The preview also
+   shows the firmware check for each device, and the live push is refused for a
+   build the profile does not fit or was not validated for (§29.1.1).
 
 Choosing *Entire fleet* is explicit. Selecting "selected devices" and then
 selecting nothing is **refused**, rather than being quietly treated as "all" —
@@ -3590,7 +3592,65 @@ fleet-deployable is a separate, gated decision by someone else.
   approved and never applied. The one deliberate exception: approving a **Web
   Protection Profile** template *does* start a fleet-wide rollout immediately,
   because the team rule is that a template-managed WPP is read-only on the devices
-  — the approved version is what must be on every one of them (§9).
+  — the approved version is what must be on every one of them (§9). That
+  rollout passes the firmware check below first; when the check refuses a
+  device the rollout is **held** and the page says why.
+
+### 29.1.1 Firmware build and API version
+
+Every template records the **firmware build its body was written for** and the
+REST API version it speaks (shown in the library's *Firmware* column and in the
+View dialog). FortiWeb answers a write carrying a field the build does not know
+with **200 and discards the field**, so a body is only meaningful together with
+the build it came from.
+
+- **Captured** templates (*Save as template* on a Web Protection Profile or on a
+  configuration object) take the build the appliance was running.
+- **Hand-written** templates (New Template, section *New template*, System
+  Provisioning) must pick their build from the list of builds SATOM knows (API
+  library, declared firmware, builds running in the fleet). A new version keeps
+  its predecessor's build unless you change it. When SATOM knows no build at all
+  (a fresh install with no appliance and an empty API library) the template is
+  saved without one and says so.
+- Templates saved before this existed show **no firmware**. Their fields are
+  still checked against every target; renames cannot be, because nothing says
+  which build the body came from.
+
+**Checked at save.** The body is compared against its own build through the API
+library. A field that build does not serve is flagged in the library right away
+(*does not fit its build*), not discovered at apply time.
+
+**Checked at apply.** The dry-run preview of every apply path (Template Library,
+section page, System Provisioning, baselines) shows a verdict per device for the
+device's running build:
+
+| Verdict | Meaning | Effect |
+|---|---|---|
+| same / ok | every checked field is served by that build | passes |
+| fields would be discarded | the build has no evidence for some fields | **blocks** |
+| renamed | the build serves the field under a new name | **blocks** — adapt the template |
+| endpoint not served | the build rejects the endpoint itself | **blocks** |
+| no evidence / fields never measured | nobody measured that build or endpoint | warning, never green |
+| device reports no firmware | nothing to compare against | warning |
+
+Sub-table rows and endpoints outside the API sweep are listed as *not checked*
+rather than counted as fine. A blocked apply can be forced by a user holding
+`operations.template_approve` who types an **override reason**; the override,
+the reason and what it overrode are written to the audit log.
+
+**Approval is for builds.** Approving records the builds the template was
+validated for: its own build plus every build its product runs in the visible
+fleet. A **fleet rollout** (several devices, a baseline, a live System
+Provisioning push) to a build outside that set is refused until an approver uses
+**Revalidate for fleet builds** in the View dialog. A new version starts with no
+validations.
+
+**Adapt to firmware.** In the View dialog, pick a target build and *Preview*:
+SATOM lists the mapped renames it would carry to the new field name and the
+fields the build does not serve that it would remove. *Save adapted version*
+writes a **new pending version** stamped with the target build, with every
+change listed in its note; the original version is untouched. A body whose
+object the target does not serve at all cannot be adapted.
 
 ### 29.2 The Section Catalog
 

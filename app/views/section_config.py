@@ -35,6 +35,12 @@ from ..services.templates import KIND_LABELS, list_templates, list_config_templa
 bp = Blueprint('section_config', __name__, url_prefix='/configuration')
 
 
+def _firmware_choices() -> list:
+    """Builds a hand-written section template may be stamped with."""
+    from ..services import template_compat as tc
+    return tc.known_builds(tc.session_product())
+
+
 def _row_view(obj: dict) -> dict:
     """A compact list-row projection (name + a couple of GUI-meaningful fields)."""
     if not isinstance(obj, dict):
@@ -195,6 +201,7 @@ def section(section_key: str):
             kind, selected.collection if selected else None),
         appliances=visible_appliances().order_by(Appliance.name).all(),
         device_id=device_id,
+        firmware_choices=_firmware_choices(),
     )
 
 

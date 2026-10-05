@@ -169,6 +169,12 @@ the background-job workers and the scheduler sidecar run them headless.</p>
   <code>clients/base.py</code> caps concurrent requests per appliance (default 4,
   <code>FORTINET_HOST_CONCURRENCY</code>) so 4×8 gunicorn + sidecar can't flood a
   management plane. Connect timeout is capped at 10s.</li>
+<li><strong>Rediscovery reads in parallel, on one connection pool:</strong> the endpoint
+  sweep and the deep pass keep <code>SATOM_REDISCOVERY_WORKERS</code> reads in flight
+  (default 3, capped by the semaphore above) inside <code>BaseClient.keep_alive()</code>.
+  The deep pass walks WPPs first through a per-sweep read memo
+  (<code>deep_capture._MemoReader</code>), and the CLI capture runs alongside it.
+  Every other caller of <code>deep_sections</code> keeps the serial walk.</li>
 </ul>
 <h3 id="two-node-ha-where-the-code-comes-from">Two-node HA: where the code comes from</h3>
 <p>The pair is <strong>primary + standby</strong>, and the asymmetry is deliberate: the primary

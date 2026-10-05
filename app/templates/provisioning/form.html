@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "partials/_template_compat.html" as tcx with context %}
 
 {% block title %}{{ 'Edit' if template_id else 'New' }} System Profile — SATOM{% endblock %}
 
@@ -98,6 +99,9 @@
           <label class="fw-form-label">{{ _('Name') }} <span class="text-danger">*</span></label>
           <input type="text" class="form-control" name="name" value="{{ profile_name }}"
                  placeholder="{{ _('e.g. fortiweb-baseline') }}" required autocomplete="off">
+        </div>
+        <div class="col-md-6">
+          {{ tcx.firmware_select(firmware_choices, source_firmware, required=not source_firmware) }}
         </div>
       </div>
       <div class="fw-alert fw-alert-info d-flex align-items-center gap-2 mb-3" style="font-size:13px;">

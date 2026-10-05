@@ -1664,6 +1664,19 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('reviewed_by', 'VARCHAR(64)'),
                 ('reviewed_at', 'DATETIME'),
                 ('product', "VARCHAR(32) DEFAULT 'fortiweb'"),
+                # --- firmware / API stamp (services.template_compat) ---
+                # source_firmware DEFAULTS to '' and provenance to 'legacy':
+                # a row saved before the stamp existed was authored against
+                # SOME build, and nobody wrote down which. '' says exactly
+                # that; any version filled in here would be invented.
+                ('source_firmware', "VARCHAR(32) DEFAULT ''"),
+                ('api_version', "VARCHAR(16) DEFAULT ''"),
+                ('source_appliance_id', 'INTEGER'),
+                ('source_appliance', "VARCHAR(128) DEFAULT ''"),
+                ('provenance', "VARCHAR(16) DEFAULT 'legacy'"),
+                ('compat_check', 'TEXT'),
+                ('validated_builds', 'TEXT'),
+                ('adapted_from_id', 'INTEGER'),
             ],
             # Advisor per-message telemetry. NULLABLE with NO default on
             # purpose: every row that predates the feature keeps NULL, which

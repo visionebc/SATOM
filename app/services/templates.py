@@ -149,9 +149,14 @@ def _normalize_exceptions(exceptions: Any) -> str:
     return json.dumps(parsed, separators=(",", ":"), sort_keys=True)
 
 
+#: Columns a stamp may set (``services.template_compat``).
+_STAMP_FIELDS = ("source_firmware", "api_version", "source_appliance_id",
+                 "source_appliance", "provenance", "adapted_from_id")
+
+
 def save_template(kind: str, name: str, body: Any, *, note: str = "",
                   author: str = "", exceptions: Any = None,
-                  new_version: bool = True) -> Template:
+                  new_version: bool = True, stamp: dict | None = None) -> Template:
     """Create a template (or a new version of an existing name).
 
     ``body`` may be a dict or a JSON string; it is validated and stored as
@@ -159,6 +164,12 @@ def save_template(kind: str, name: str, body: Any, *, note: str = "",
     string) persisted alongside the body. Raises ``ValueError`` on an invalid
     kind or malformed body/exceptions. Accepts the built-in kinds as well as the
     per-section ``config:<section>`` kinds (validated via ``is_valid_kind``).
+
+    ``stamp`` records the firmware build the body was written for
+    (``template_compat.stamp_from_appliance`` / ``stamp_authored`` /
+    ``inherit_stamp``). The body is then checked against that build and the
+    verdict stored in ``compat_check``. A save without a stamp is kept (API and
+    legacy callers) and says so: provenance ``authored`` with no firmware.
     """
     if not Template.is_valid_kind(kind):
         raise ValueError(f"Unknown template kind: {kind}")
@@ -178,6 +189,7 @@ def save_template(kind: str, name: str, body: Any, *, note: str = "",
 
     exc_json = _normalize_exceptions(exceptions)
 
+    stamp_data = stamp
     from .product_scope import stamp
     version = _next_version(kind, name) if new_version else 1
     row = Template(
@@ -187,9 +199,22 @@ def save_template(kind: str, name: str, body: Any, *, note: str = "",
         note=(note or "").strip(), author=(author or "").strip(),
         product=stamp() or "fortiweb",
     )
+    _apply_stamp(row, stamp_data)
     db.session.add(row)
     db.session.commit()
     return row
+
+
+def _apply_stamp(row: Template, stamp: dict | None) -> None:
+    """Write the firmware stamp and the body's check against that build."""
+    from . import template_compat as tc
+    stamp = stamp or {}
+    for f in _STAMP_FIELDS:
+        if f in stamp:
+            setattr(row, f, stamp[f])
+    row.source_firmware = row.source_firmware or ""
+    row.provenance = stamp.get("provenance") or Template.PROV_AUTHORED
+    tc.record_self_check(row)
 
 
 def clone_template(template_id: int, new_name: str | None = None) -> Template:
@@ -210,6 +235,11 @@ def clone_template(template_id: int, new_name: str | None = None) -> Template:
         note=src.note or "", author=src.author or "", locked=False,
         product=src.product or "fortiweb",
     )
+    # The copy is the same body, so it was written for the same build. Its
+    # validations are NOT copied: approval belongs to the version approved.
+    _apply_stamp(row, {f: getattr(src, f) for f in _STAMP_FIELDS
+                       if f != "provenance"} | {"provenance": src.provenance
+                                                or Template.PROV_LEGACY})
     db.session.add(row)
     db.session.commit()
     return row

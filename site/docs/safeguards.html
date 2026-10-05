@@ -16340,6 +16340,40 @@ a <code>:hover</code> rule. Both tests now pin the real property.</p>
   cleared on dismiss.</li>
 </ul>
 <p><strong>Mutations: 17/17 bite.</strong></p>
+<h2 id="207--a-deep-rediscovery-that-read-the-same-wpp-once-per-policy-one-request-at-a-time-teststest_rediscovery_speedpy-2026-10-05">§207 — a deep rediscovery that read the same WPP once per policy, one request at a time (<code>tests/test_rediscovery_speed.py</code>, 2026-10-05)</h2>
+<p>Reported as "extremely slow". The captured configuration is unchanged; what
+the tests pin is that the speed did not cost a guarantee.</p>
+<ul>
+<li><strong>Same graph, fewer reads.</strong> <code>deep_sections</code> wraps the reader in
+  <code>_MemoReader</code> (keyed by the exact call, thread-safe, a key in flight is
+  waited for rather than re-read, a raising read is not cached) and walks WPPs
+  before the policies that name them. The test compares the output against
+  the per-object walk it replaced and asserts no read is repeated.</li>
+<li><strong>Workers keep order and context.</strong> <code>workers &gt; 1</code> claims objects under a
+  lock (Stop is asked before every claim; nothing is started after it),
+  assembles results in list order, re-raises a worker's exception, and gives
+  each worker its own app context: without one, <code>loader.registry_for</code> falls
+  back to the shipped baseline in silence.</li>
+<li><strong>The parallel sweep keeps the serial sweep's promises as far as physics
+  allows.</strong> It opens only after the status read proved the credentials.
+  <code>_GatedClient</code> holds every new read while a 401 is unconfirmed, runs one
+  re-check at a time and refuses all reads once one failed, so a mid-sweep
+  lockout costs at most <code>workers</code> 401s plus one re-check (pinned with three
+  reads in flight). A read not yet sent when Stop is pressed is not sent.
+  The serial contracts (<code>test_rediscovery_stop.py</code>, the lockout test in
+  <code>test_rediscovery_auth.py</code>) run with <code>SATOM_REDISCOVERY_WORKERS=1</code>.</li>
+<li><strong>CLI alongside.</strong> <code>_run_deep(finish=False)</code> leaves the sweep open while
+  the capture runs; the state goes <code>deep-running</code> → <code>cli-running</code> (only if
+  the capture outlives the walk) → <code>done</code>, and <code>cli_running</code> never survives
+  the join.</li>
+<li><strong>One pool, no cookies.</strong> <code>BaseClient.keep_alive()</code> is one <code>httpx.Client</code>
+  for the block (nested blocks reuse it, it is closed on exit, threads share
+  it), with a cookie jar that accepts nothing.</li>
+<li>Found while testing: the page guard "<code>cli-running</code> is handled everywhere
+  <code>deep-running</code> is" had been failing since the deep-pass Stop label
+  (<code>954075e</code>); the label now names the CLI capture.</li>
+</ul>
+<p><strong>Mutations: 33/33 bite.</strong></p>
     </div>
   </div>
 </section>

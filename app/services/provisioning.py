@@ -103,7 +103,11 @@ class SystemProfile:
 
     name: str
     items: list[ProvisionItem] = field(default_factory=list)
-    line: str = "8.0"               # firmware line the profile was authored against
+    # Firmware LINE of the build the profile was written for, derived from the
+    # template's ``source_firmware`` stamp. It used to default to a literal
+    # "8.0" that no appliance was ever asked about — a value that read like
+    # compatibility metadata and was not. '' = not recorded.
+    line: str = ""
     scope: dict = field(default_factory=dict)  # {zone, line, department} classification scope
 
     def to_body(self) -> dict[str, Any]:
@@ -125,7 +129,7 @@ class SystemProfile:
         raw_scope = body.get("_scope") or {}
         return cls(
             name=name,
-            line=body.get("line") or "8.0",
+            line=body.get("line") or "",
             scope={
                 "zone": raw_scope.get("zone", ""),
                 "line": raw_scope.get("line", ""),
@@ -351,7 +355,7 @@ def section_for(endpoint: str) -> str:
 #  Persist a profile as a versioned template (secrets stripped)                 #
 # --------------------------------------------------------------------------- #
 def save_profile(profile: SystemProfile, *, note: str = "", author: str = "",
-                 new_version: bool = True) -> Any:
+                 new_version: bool = True, stamp: dict | None = None) -> Any:
     """Persist ``profile`` as a ``Template`` (kind ``system-profile``).
 
     Secret-looking fields are stripped from every sensitive item BEFORE the body
@@ -360,7 +364,10 @@ def save_profile(profile: SystemProfile, *, note: str = "", author: str = "",
     """
     from ..models import Template
     from .templates import save_template
+    from . import firmware_versions as fv
 
+    if stamp and stamp.get("source_firmware"):
+        profile.line = fv.line_of(stamp["source_firmware"])
     items: list[dict[str, Any]] = []
     for it in profile.items:
         d = it.to_dict()
@@ -377,7 +384,8 @@ def save_profile(profile: SystemProfile, *, note: str = "", author: str = "",
         "items": items,
     }
     return save_template(Template.KIND_SYSTEM, profile.name, body,
-                         note=note, author=author, new_version=new_version)
+                         note=note, author=author, new_version=new_version,
+                         stamp=stamp)
 
 
 # --------------------------------------------------------------------------- #

@@ -112,6 +112,69 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--templates-record-their-firmware-build-and-are-checked-against-every-target-build">Added — templates record their firmware build and are checked against every target build</h3>
+<p>Templates now store the firmware build their body was written for, the REST
+API version, where it came from (captured from an appliance, written by hand,
+adapted) and, for captures, the source appliance. FortiWeb answers a write
+carrying a field the build does not know with 200 and discards the field, so a
+template written on one build could be applied to another, report success and
+land incomplete. Nothing recorded which build a template belonged to, so
+nothing could catch it.</p>
+<ul>
+<li><strong>Stamp.</strong> <em>Save as template</em> (Web Protection Profile, configuration
+  objects) records the appliance's running build. New Template, the section
+  <em>New template</em> form and System Provisioning require choosing a build that
+  SATOM knows. System profiles no longer default to a hard-coded <code>"8.0"</code>
+  line that no appliance was ever asked about.</li>
+<li><strong>Check at save.</strong> The body is compared against its own build through the
+  API library, and the library page shows whether it fits.</li>
+<li><strong>Check at apply.</strong> Every apply path (Template Library, section page,
+  System Provisioning, baselines, and the automatic fleet deploy when a Web
+  Protection Profile is approved) shows a verdict per device. Fields the build
+  would discard, renamed fields and endpoints the build does not serve
+  <strong>block</strong> the apply. Missing evidence is a warning, never a pass. An
+  approver can override with a reason, and the override is audited.</li>
+<li><strong>Approval is for builds.</strong> Approving records the builds the template was
+  validated for. A fleet rollout to another build needs <strong>Revalidate</strong>.</li>
+<li><strong>Adapt to firmware.</strong> This saves a new pending version rewritten for a
+  target build: mapped renames are carried over, unserved fields are removed,
+  and every change is listed in the version note.</li>
+</ul>
+<p><strong>Upgrade note.</strong> Templates saved before this release show <em>no firmware</em>.
+Already-approved templates have no validated builds, so their <strong>fleet
+rollouts and baseline applies are refused until an approver clicks Revalidate
+for fleet builds</strong> (View dialog) once per template. Single-device applies are
+only checked field by field.</p>
+<h3 id="changed--a-deep-rediscovery-with-the-cli-capture-is-much-faster-2026-10-05">Changed — a deep rediscovery with the CLI capture is much faster (2026-10-05)</h3>
+<p>Reported as "extremely slow" for a deep rediscovery with WPPs and the CLI
+capture. The captured configuration is the same; four things changed in how
+it is read:</p>
+<ul>
+<li><strong>WPPs are walked first, and each device read happens once per sweep.</strong>
+  Every server policy used to re-read the whole subtree of the WPP it names,
+  so a WPP shared by 30 policies was read 31 times. A per-sweep read memo now
+  answers repeated reads, and the graph built from them is identical. The
+  finished sweep reports how many device reads it made and how many the memo
+  answered (<code>N device reads, M reused</code>).</li>
+<li><strong>The CLI capture runs alongside the deep pass.</strong> One is SSH, the other
+  REST, so they no longer wait for each other: the sweep takes the longer of
+  the two instead of their sum. A Stop during the deep pass lets a capture
+  already running finish, because one SSH session cannot be cut.</li>
+<li><strong>The endpoint sweep and the deep pass keep up to 3 reads in flight per
+  appliance</strong> (<code>SATOM_REDISCOVERY_WORKERS</code>, default 3, never above
+  <code>FORTINET_HOST_CONCURRENCY</code>; <code>1</code> restores the serial sweep). Answers are
+  consumed in plan order, so the snapshot and the progress file are unchanged.
+  The parallel sweep starts only after the status read has proven the
+  credentials. After any 401, no new read leaves until its single re-check
+  answers, so a lockout in mid-sweep costs at most the reads already in flight
+  plus one re-check (serial: two). FortiADC stays serial.</li>
+<li><strong>One reused connection pool per sweep</strong> instead of a new TCP and TLS
+  session for every request (12 ms against 1 ms per request measured on the
+  LAN). The pool accepts no cookies, as the per-request client never did.
+  Only rediscovery uses it.</li>
+</ul>
+<p>The Stop label on the rediscovery page now names the CLI capture when that is
+the step still running.</p>
 <h2 id="2110---2026-10-03">[2.11.0] - 2026-10-03</h2>
 <h3 id="security--gunicorn-answered-plain-http-on-every-interface-after-an-update-2026-10-03">Security — gunicorn answered plain HTTP on every interface after an update (2026-10-03)</h3>
 <p>The shipped <code>satom.service</code> bound gunicorn to <code>0.0.0.0:8000</code> and relied on

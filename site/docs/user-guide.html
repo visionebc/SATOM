@@ -3999,7 +3999,9 @@ change.</p>
    the rest only follow if it succeeded. The result reports <code>{canary, rest,
    aborted}</code>. Only an <strong>approved</strong> profile can be deployed live (approval is
    <code>operations.template_approve</code>, admin-only); a pending or rejected profile
-   keeps its preview, and the refused attempt is audited.</li>
+   keeps its preview, and the refused attempt is audited. The preview also
+   shows the firmware check for each device, and the live push is refused for a
+   build the profile does not fit or was not validated for (§29.1.1).</li>
 </ol>
 <p>Choosing <em>Entire fleet</em> is explicit. Selecting "selected devices" and then
 selecting nothing is <strong>refused</strong>, rather than being quietly treated as "all" —
@@ -4087,8 +4089,92 @@ fleet-deployable is a separate, gated decision by someone else.</p>
   approved and never applied. The one deliberate exception: approving a <strong>Web
   Protection Profile</strong> template <em>does</em> start a fleet-wide rollout immediately,
   because the team rule is that a template-managed WPP is read-only on the devices
-  — the approved version is what must be on every one of them (§9).</li>
+  — the approved version is what must be on every one of them (§9). That
+  rollout passes the firmware check below first; when the check refuses a
+  device the rollout is <strong>held</strong> and the page says why.</li>
 </ul>
+<h3 id="2911-firmware-build-and-api-version">29.1.1 Firmware build and API version</h3>
+<p>Every template records the <strong>firmware build its body was written for</strong> and the
+REST API version it speaks (shown in the library's <em>Firmware</em> column and in the
+View dialog). FortiWeb answers a write carrying a field the build does not know
+with <strong>200 and discards the field</strong>, so a body is only meaningful together with
+the build it came from.</p>
+<ul>
+<li><strong>Captured</strong> templates (<em>Save as template</em> on a Web Protection Profile or on a
+  configuration object) take the build the appliance was running.</li>
+<li><strong>Hand-written</strong> templates (New Template, section <em>New template</em>, System
+  Provisioning) must pick their build from the list of builds SATOM knows (API
+  library, declared firmware, builds running in the fleet). A new version keeps
+  its predecessor's build unless you change it. When SATOM knows no build at all
+  (a fresh install with no appliance and an empty API library) the template is
+  saved without one and says so.</li>
+<li>Templates saved before this existed show <strong>no firmware</strong>. Their fields are
+  still checked against every target; renames cannot be, because nothing says
+  which build the body came from.</li>
+</ul>
+<p><strong>Checked at save.</strong> The body is compared against its own build through the API
+library. A field that build does not serve is flagged in the library right away
+(<em>does not fit its build</em>), not discovered at apply time.</p>
+<p><strong>Checked at apply.</strong> The dry-run preview of every apply path (Template Library,
+section page, System Provisioning, baselines) shows a verdict per device for the
+device's running build:</p>
+<table>
+<thead>
+<tr>
+<th>Verdict</th>
+<th>Meaning</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>same / ok</td>
+<td>every checked field is served by that build</td>
+<td>passes</td>
+</tr>
+<tr>
+<td>fields would be discarded</td>
+<td>the build has no evidence for some fields</td>
+<td><strong>blocks</strong></td>
+</tr>
+<tr>
+<td>renamed</td>
+<td>the build serves the field under a new name</td>
+<td><strong>blocks</strong> — adapt the template</td>
+</tr>
+<tr>
+<td>endpoint not served</td>
+<td>the build rejects the endpoint itself</td>
+<td><strong>blocks</strong></td>
+</tr>
+<tr>
+<td>no evidence / fields never measured</td>
+<td>nobody measured that build or endpoint</td>
+<td>warning, never green</td>
+</tr>
+<tr>
+<td>device reports no firmware</td>
+<td>nothing to compare against</td>
+<td>warning</td>
+</tr>
+</tbody>
+</table>
+<p>Sub-table rows and endpoints outside the API sweep are listed as <em>not checked</em>
+rather than counted as fine. A blocked apply can be forced by a user holding
+<code>operations.template_approve</code> who types an <strong>override reason</strong>; the override,
+the reason and what it overrode are written to the audit log.</p>
+<p><strong>Approval is for builds.</strong> Approving records the builds the template was
+validated for: its own build plus every build its product runs in the visible
+fleet. A <strong>fleet rollout</strong> (several devices, a baseline, a live System
+Provisioning push) to a build outside that set is refused until an approver uses
+<strong>Revalidate for fleet builds</strong> in the View dialog. A new version starts with no
+validations.</p>
+<p><strong>Adapt to firmware.</strong> In the View dialog, pick a target build and <em>Preview</em>:
+SATOM lists the mapped renames it would carry to the new field name and the
+fields the build does not serve that it would remove. <em>Save adapted version</em>
+writes a <strong>new pending version</strong> stamped with the target build, with every
+change listed in its note; the original version is untouched. A body whose
+object the target does not serve at all cannot be adapted.</p>
 <h3 id="292-the-section-catalog">29.2 The Section Catalog</h3>
 <p>FortiWeb ADOM → <strong>Section Catalog</strong> (admin). It lists <strong>only templates whose
 status is <code>approved</code></strong>, grouped by the FortiWeb section each kind belongs to,

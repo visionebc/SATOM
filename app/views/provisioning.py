@@ -29,6 +29,7 @@ from ..services.audit import log_action
 from ..services.templates import delete_template, get_template, list_templates
 from ..services import baselines as B
 from ..services import settings_store
+from ..services import template_compat as tc
 from ..services.bulk import BulkRunner
 
 bp = Blueprint('provisioning', __name__, url_prefix='/provisioning')
@@ -46,7 +47,7 @@ def _system_template_or_404(template_id: int) -> Template:
 
 
 def _render_form(*, profile_name: str = '', rows=None, template_id=None,
-                 scope=None):
+                 scope=None, source_firmware: str = ''):
     """Render the profile builder (shared by /new and /<id>/edit).
 
     Mirrors the desktop: the Element picker offers EVERY config (``cmdb``) object
@@ -75,6 +76,8 @@ def _render_form(*, profile_name: str = '', rows=None, template_id=None,
         zones=cls.get('zones', []),
         lines=cls.get('lines', []),
         departments=cls.get('departments', []),
+        firmware_choices=tc.known_builds(tc.session_product()),
+        source_firmware=source_firmware,
     )
 
 
@@ -136,18 +139,22 @@ def _build_items(rows):
 def _save(*, template_id):
     """Validate + persist the builder form. On error re-renders with input kept."""
     name, scope, rows = _collect_rows()
+    firmware = (request.form.get('source_firmware') or '').strip()
     try:
         if not name:
             raise ValueError("Profile name is required")
         items = _build_items(rows)
         if not items:
             raise ValueError("Add at least one provisioning element")
+        previous = get_template(template_id) if template_id else None
+        stamp = tc.stamp_from_form(firmware, previous)
         profile = prov.SystemProfile(name, items, scope=scope)
-        row = prov.save_profile(profile, author=getattr(current_user, 'username', '') or '')
+        row = prov.save_profile(profile, author=getattr(current_user, 'username', '') or '',
+                                stamp=stamp)
     except ValueError as exc:
         flash(f"Could not save profile: {exc}", 'danger')
         return _render_form(profile_name=name, rows=rows, template_id=template_id,
-                            scope=scope)
+                            scope=scope, source_firmware=firmware)
     log_action('provisioning.save', target=row.name,
                detail=f'v{row.version}, {len(items)} item(s)')
     flash(f'System profile "{row.name}" saved (v{row.version}).', 'success')
@@ -195,7 +202,8 @@ def edit(template_id: int):
         'data': json.dumps(it.data, indent=2, sort_keys=True) if it.data else '{}',
     } for it in profile.items]
     return _render_form(profile_name=profile.name, rows=rows,
-                        template_id=template_id, scope=profile.scope)
+                        template_id=template_id, scope=profile.scope,
+                        source_firmware=template.source_firmware or '')
 
 
 @bp.route('/<int:template_id>/apply', methods=['POST'])
@@ -255,8 +263,10 @@ def apply(template_id: int):
 
     if not confirmed:
         preview = prov.apply(profile, device_ids, dry_run=True)
+        compat = tc.for_appliances(template, target_appliances, require_validated=True)
         log_action('provisioning.preview', target=profile.name,
-                   detail=f'{mode}, {len(target_appliances)} device(s), host={target_hostname}, change={change_id}')
+                   detail=f'{mode}, {len(target_appliances)} device(s), host={target_hostname}, '
+                          f'change={change_id}, compat_blocked={compat["blocked"]}')
         return render_template(
             'provisioning/apply.html',
             phase='preview', prof_name=profile.name, template_id=template_id,
@@ -264,6 +274,8 @@ def apply(template_id: int):
             mode=mode, device_ids=device_ids,
             target_desc=target_desc, target_count=len(target_appliances),
             target_hostname=target_hostname, change_id=change_id,
+            compat_reports=[compat],
+            can_override=current_user.can('operations.template_approve'),
         )
 
     # Confirmed -> real canary-gated write to live devices. Only an APPROVED
@@ -276,6 +288,18 @@ def apply(template_id: int):
         flash(f'"{profile.name}" is {template.status}: only an approved system '
               f'profile can be deployed live. The preview stays available; ask an '
               f'administrator to approve it first.', 'danger')
+        return redirect(url_for('provisioning.index'))
+    allowed, compat = tc.enforce(
+        template, target_appliances, user=current_user,
+        override_reason=request.form.get('override_reason', ''),
+        require_validated=True, action='provisioning.apply')
+    if not allowed:
+        log_action('provisioning.apply', target=profile.name,
+                   detail='refused by the firmware check: '
+                          + ' | '.join(compat['blocks'])[:1500])
+        flash('Refused by the firmware compatibility check: '
+              + '; '.join(compat['blocks'][:4]) + ' — '
+              + compat.get('override_hint', ''), 'danger')
         return redirect(url_for('provisioning.index'))
     flash(f'Deploying [{change_id}] to {target_hostname} — canary device writes first.', 'warning')
     result = prov.apply(profile, device_ids, dry_run=False, canary=1)
@@ -609,20 +633,43 @@ def baseline_apply(baseline_id: int):
         flash(f'Baseline "{row.name}" has no composing templates.', 'warning')
         return redirect(url_for('provisioning.baselines'))
 
+    composing = B.assigned_templates(row)
     if not confirm:
         preview = BulkRunner(items).preview(device_ids)
+        compat = [tc.for_appliances(t, devices, require_validated=True)
+                  for t in composing]
         log_action('baseline.apply.preview', target=row.name,
-                   detail=f'devices={device_ids} items={len(items)}')
+                   detail=f'devices={device_ids} items={len(items)} '
+                          f'compat_blocked={any(c["blocked"] for c in compat)}')
         return render_template('provisioning/baseline_apply.html',
                                phase='preview', baseline=row, devices=devices,
-                               preview=preview, result=None, item_count=len(items))
+                               preview=preview, result=None, item_count=len(items),
+                               compat_reports=compat,
+                               can_override=current_user.can('operations.template_approve'))
+
+    # A baseline is a fleet rollout of approved templates: every composing
+    # template must fit every matching device's build (or be overridden).
+    refused = []
+    for t in composing:
+        allowed, compat = tc.enforce(
+            t, devices, user=current_user,
+            override_reason=request.form.get('override_reason', ''),
+            require_validated=True, action=f'baseline.apply:{row.name}')
+        if not allowed:
+            refused.extend(compat['blocks'])
+    if refused:
+        log_action('baseline.apply.refused', target=row.name,
+                   detail='firmware check: ' + ' | '.join(refused)[:1500])
+        flash('Baseline rollout refused by the firmware compatibility check: '
+              + '; '.join(refused[:4]) + (' (+%d more)' % (len(refused) - 4)
+                                          if len(refused) > 4 else ''), 'danger')
+        return redirect(url_for('provisioning.baselines'))
 
     # Confirmed live apply — background job (same rationale as templates.apply:
     # a fleet rollout must not run inside an HTTP request). Progress + result
     # surface in the job dock; the completion audit row is the job's.
     from flask import current_app
     from ..services.bulk import start_apply_job
-    from flask_login import current_user
     job = start_apply_job(
         current_app._get_current_object(),
         title=f'Apply baseline "{row.name}" to {len(devices)} device(s)',

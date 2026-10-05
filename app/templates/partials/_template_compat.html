@@ -1,0 +1,86 @@
+{# Firmware stamp + compatibility verdict for templates (services.template_compat).
+   Colours come from the .fw-badge-* set, already calibrated against white. #}
+
+{% macro firmware_select(choices, selected='', required=True, name='source_firmware', id='') -%}
+{% set required = required and choices|length > 0 %}
+<label class="fw-form-label"{% if id %} for="{{ id }}"{% endif %}>{{ _('Written for firmware') }}{% if required %} <span class="text-danger">*</span>{% endif %}</label>
+<select class="form-select" name="{{ name }}"{% if id %} id="{{ id }}"{% endif %} {{ 'required' if required else '' }}>
+  <option value="">{{ _('— choose the build this body was written for —') }}</option>
+  {% for b in choices %}
+  <option value="{{ b.version }}" {{ 'selected' if selected == b.version else '' }}>{{ b.version }}{% if b.in_fleet %} · {{ _('in fleet') }}{% endif %}{% if not b.measured %} · {{ _('no API evidence') }}{% elif b.vendor_only %} · {{ _('vendor-documented only') }}{% endif %}</option>
+  {% endfor %}
+</select>
+{% if choices %}
+<div class="form-text">{{ _('Recorded with the template so a later firmware can be compared against it. Only builds SATOM knows are offered; a build with no API evidence cannot be checked.') }}</div>
+{% else %}
+<div class="form-text text-danger">{{ _('SATOM knows no firmware build yet (no appliance reports one and the API library is empty). The template is saved without a build and cannot be checked until one is recorded — add an appliance or run a rediscovery first.') }}</div>
+{% endif %}
+{%- endmacro %}
+
+{% macro stamp_badge(t) -%}
+{% if t.source_firmware %}
+<span class="fw-badge fw-badge-secondary" title="{{ (t.provenance or '')|capitalize }}{% if t.source_appliance %} from {{ t.source_appliance }}{% endif %} · API {{ t.api_version or '—' }}">FW {{ t.source_firmware }}</span>
+{% else %}
+<span class="fw-badge fw-badge-warning" title="{{ _('Saved before firmware builds were recorded. Fields are still checked against each target; renames cannot be.') }}">{{ _('no firmware') }}</span>
+{% endif %}
+{%- endmacro %}
+
+{% macro check_badge(t) -%}
+{% set c = t.compat_check_dict %}
+{% if not c %}
+<span class="text-muted" style="font-size:12px;">—</span>
+{% elif c.blocking %}
+<span class="fw-badge fw-badge-danger" title="{{ c.dropped_total or 0 }} field(s) not served, {{ c.absent_total or 0 }} object(s) absent on {{ c.target_version }}">{{ _('does not fit its build') }}</span>
+{% elif c.state in ('ok', 'same') %}
+<span class="fw-badge fw-badge-success" title="{{ _('Every checked field is served by') }} {{ c.target_version }}">{{ _('fits its build') }}</span>
+{% else %}
+<span class="fw-badge fw-badge-info" title="{{ c.reason or c.state }}">{{ c.state or _('unchecked') }}</span>
+{% endif %}
+{%- endmacro %}
+
+{# compat_panel: one or more ``template_compat.for_appliances`` reports.
+   Rendered INSIDE the confirm form so the override reason travels with it. #}
+{% macro compat_panel(reports, can_override=False) -%}
+{% set blocked = reports|selectattr('blocked')|list %}
+<div class="fw-card mb-3" data-compat-panel>
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-shield-check me-1"></i>{{ _('Firmware compatibility') }}</span>
+    {% if blocked %}<span class="fw-badge fw-badge-danger">{{ _('blocked') }}</span>
+    {% else %}<span class="fw-badge fw-badge-success">{{ _('no blocking finding') }}</span>{% endif %}
+  </div>
+  <div class="fw-card-body" style="font-size:13px;">
+    {% for r in reports %}
+    <div class="mb-2">
+      <strong>{{ r.name }}</strong> v{{ r.version }} ·
+      {% if r.source_firmware %}{{ _('written for') }} {{ r.source_firmware }}{% else %}<span class="fw-badge fw-badge-warning">{{ _('no firmware recorded') }}</span>{% endif %}
+      <table class="fw-table mt-1" style="margin-bottom:0;">
+        <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Build') }}</th><th>{{ _('Verdict') }}</th><th>{{ _('Detail') }}</th></tr></thead>
+        <tbody>
+        {% for d in r.devices %}
+          <tr>
+            <td>{{ d.appliance }}</td>
+            <td>{{ d.build or '—' }}{% if d.validated %} <i class="bi bi-patch-check text-success" title="{{ _('Validated at approval') }}"></i>{% endif %}</td>
+            <td>{% if d.blocking %}<span class="fw-badge fw-badge-danger">{{ _('blocks') }}</span>{% elif d.level == 'ok' %}<span class="fw-badge fw-badge-success">{{ d.state }}</span>{% else %}<span class="fw-badge fw-badge-warning">{{ d.state }}</span>{% endif %}</td>
+            <td style="word-break:break-word;">{{ d.reason }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" class="text-muted">{{ _('No device to check.') }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% for w in r.warnings %}<div class="text-muted mt-1"><i class="bi bi-exclamation-circle me-1"></i>{{ w }}</div>{% endfor %}
+      {% if r.outside %}<div class="text-muted mt-1"><i class="bi bi-eye-slash me-1"></i>{{ _('Not checked (outside the API sweep):') }} {{ r.outside[:8]|join(', ') }}{% if r.outside|length > 8 %} … (+{{ r.outside|length - 8 }}){% endif %}</div>{% endif %}
+    </div>
+    {% endfor %}
+    {% if blocked %}
+      {% if can_override %}
+      <label class="fw-form-label mt-2" for="override_reason">{{ _('Override reason (required to proceed; audited)') }}</label>
+      <textarea class="form-control" id="override_reason" name="override_reason" rows="2"
+                placeholder="{{ _('Why is it safe to write this body to these builds?') }}"></textarea>
+      {% else %}
+      <div class="fw-alert fw-alert-danger mt-2 mb-0">{{ _('Applying is refused. Adapt the template to the target build, or ask an approver (Approve templates permission) to override with a reason.') }}</div>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+{%- endmacro %}

@@ -1233,6 +1233,44 @@ class Template(db.Model):
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
 
+    # --- firmware / API stamp (services.template_compat) -------------------
+    # The build the body was authored against. FortiWeb answers a cmdb write
+    # carrying a field it does not know with 200 and a silent discard, so a
+    # body is only meaningful together with the build it came from: this is
+    # what lets a later build be COMPARED against it instead of trusted.
+    # '' = nobody recorded it (every row that predates the stamp) — never a
+    # guessed default.
+    PROV_CAPTURED = "captured"   # read off an appliance; firmware measured
+    PROV_AUTHORED = "authored"   # typed by hand; firmware chosen by the author
+    PROV_ADAPTED = "adapted"     # produced by "Adapt to firmware"
+    PROV_LEGACY = "legacy"       # saved before builds were recorded
+    source_firmware = db.Column(db.String(32), nullable=True, default="")
+    api_version = db.Column(db.String(16), nullable=True, default="")
+    source_appliance_id = db.Column(db.Integer, nullable=True)
+    source_appliance = db.Column(db.String(128), nullable=True, default="")
+    provenance = db.Column(db.String(16), nullable=True, default="legacy")
+    # JSON: the body checked against its OWN build when it was saved.
+    compat_check = db.Column(db.Text, nullable=True, default="")
+    # JSON {build: verdict}: the builds an approver validated this version for.
+    validated_builds = db.Column(db.Text, nullable=True, default="")
+    adapted_from_id = db.Column(db.Integer, nullable=True)
+
+    @property
+    def compat_check_dict(self) -> dict[str, Any]:
+        try:
+            data = json.loads(self.compat_check or "{}")
+            return data if isinstance(data, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+
+    @property
+    def validated_builds_dict(self) -> dict[str, Any]:
+        try:
+            data = json.loads(self.validated_builds or "{}")
+            return data if isinstance(data, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+
     @property
     def body_dict(self) -> dict[str, Any]:
         try:

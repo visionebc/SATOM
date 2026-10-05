@@ -6,6 +6,38 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — a deep rediscovery with the CLI capture is much faster (2026-10-05)
+
+Reported as "extremely slow" for a deep rediscovery with WPPs and the CLI
+capture. The captured configuration is the same; four things changed in how
+it is read:
+
+- **WPPs are walked first, and each device read happens once per sweep.**
+  Every server policy used to re-read the whole subtree of the WPP it names,
+  so a WPP shared by 30 policies was read 31 times. A per-sweep read memo now
+  answers repeated reads, and the graph built from them is identical. The
+  finished sweep reports how many device reads it made and how many the memo
+  answered (`N device reads, M reused`).
+- **The CLI capture runs alongside the deep pass.** One is SSH, the other
+  REST, so they no longer wait for each other: the sweep takes the longer of
+  the two instead of their sum. A Stop during the deep pass lets a capture
+  already running finish, because one SSH session cannot be cut.
+- **The endpoint sweep and the deep pass keep up to 3 reads in flight per
+  appliance** (`SATOM_REDISCOVERY_WORKERS`, default 3, never above
+  `FORTINET_HOST_CONCURRENCY`; `1` restores the serial sweep). Answers are
+  consumed in plan order, so the snapshot and the progress file are unchanged.
+  The parallel sweep starts only after the status read has proven the
+  credentials. After any 401, no new read leaves until its single re-check
+  answers, so a lockout in mid-sweep costs at most the reads already in flight
+  plus one re-check (serial: two). FortiADC stays serial.
+- **One reused connection pool per sweep** instead of a new TCP and TLS
+  session for every request (12 ms against 1 ms per request measured on the
+  LAN). The pool accepts no cookies, as the per-request client never did.
+  Only rediscovery uses it.
+
+The Stop label on the rediscovery page now names the CLI capture when that is
+the step still running.
+
 ## [2.11.0] - 2026-10-03
 
 ### Security — gunicorn answered plain HTTP on every interface after an update (2026-10-03)

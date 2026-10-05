@@ -18,6 +18,7 @@ contents belong to the Policy Inspector; this sweep is the object-list layer.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -158,6 +159,8 @@ def deep_line(state: dict) -> str:
         line += " · certificates and SNI"
     elif phase == "done":
         line += " · saving"
+    if state.get("cli_running"):
+        line += " · CLI capture running alongside"
     return line
 
 
@@ -738,6 +741,111 @@ def probe_endpoint(appliance, urn: str) -> tuple[list, str, str]:
     return _probe_fortiweb(FortiWebClient(snap, timeout=20.0), {"urn": urn})
 
 
+def sweep_workers() -> int:
+    """How many reads one rediscovery sends to its appliance at once, in the
+    endpoint sweep and in the deep pass alike.
+
+    ``SATOM_REDISCOVERY_WORKERS`` (default 3), never above the per-host cap
+    every client already obeys (``FORTINET_HOST_CONCURRENCY``, default 4) so a
+    sweep cannot take every slot the GUI and the scheduler share. 1 restores
+    the serial sweep."""
+    from ..clients import base
+    try:
+        n = int(os.environ.get("SATOM_REDISCOVERY_WORKERS", "3"))
+    except ValueError:
+        n = 3
+    return max(1, min(n, base._HOST_CONCURRENCY))
+
+
+class _StopSkipped(Exception):
+    """A read a parallel sweep did not send because Stop was pressed first."""
+
+
+class _GatedClient:
+    """The sweep's client as its parallel workers see it.
+
+    Keeps a PARALLEL sweep as close as it can get to the serial sweep's login
+    budget. Serially, a 401 costs at most one more failed login (the status
+    re-check) before the sweep stops. In parallel:
+
+    * the moment any read answers 401, no NEW read is sent until that 401's
+      re-check has answered -- reads already on the wire cannot be recalled,
+      so the worst case is ``workers`` 401s plus one re-check, against 2;
+    * one re-check runs at a time, and once one has failed every later read is
+      refused here, before it reaches the box.
+
+    It also keeps a Stop from sending reads: a read not yet started when Stop
+    was pressed is skipped (reads already on the wire finish; their answers are
+    discarded with the rest of the partial sweep)."""
+
+    def __init__(self, client, stop_requested) -> None:
+        self._client = client
+        self._stop_requested = stop_requested
+        self._recheck = threading.Lock()
+        self._cond = threading.Condition()
+        self._suspect = 0          # 401s whose re-check has not answered yet
+        self.auth_error: DeviceAuthError | None = None
+
+    def __getattr__(self, name):
+        return getattr(self._client, name)
+
+    def get(self, path):
+        with self._cond:
+            while self._suspect and self.auth_error is None:
+                self._cond.wait()
+            if self.auth_error is not None:
+                raise self.auth_error
+        if self._stop_requested():
+            raise _StopSkipped(path)
+        resp = self._client.get(path)
+        if getattr(resp, "status_code", None) == 401:
+            with self._cond:
+                self._suspect += 1
+        return resp
+
+    def status_check(self):
+        with self._recheck:
+            try:
+                with self._cond:
+                    if self.auth_error is not None:
+                        raise self.auth_error
+                try:
+                    return self._client.status_check()
+                except DeviceAuthError as exc:
+                    with self._cond:
+                        self.auth_error = exc
+                    raise
+            finally:
+                with self._cond:
+                    self._suspect = max(0, self._suspect - 1)
+                    self._cond.notify_all()
+
+
+def _ordered_results(stack: contextlib.ExitStack, plan: list[dict], probe,
+                     workers: int):
+    """``fetch(i)`` returns ``probe(plan[i])`` -- in plan order, with up to
+    ``workers`` probes in flight ahead of the one being consumed.
+
+    The sweep loop consumes the answers exactly as it did serially, so the
+    ledger, the sections and the progress file come out in the same order and
+    a Stop still lands between two endpoints. The pool is shut down by
+    ``stack`` (in-flight reads finish, queued ones are cancelled)."""
+    if workers <= 1:
+        return lambda i: probe(plan[i])
+    from concurrent.futures import ThreadPoolExecutor
+    pool = ThreadPoolExecutor(max_workers=workers,
+                              thread_name_prefix="rediscovery-sweep")
+    stack.callback(pool.shutdown, wait=True, cancel_futures=True)
+    futures: dict = {}
+
+    def fetch(i: int):
+        for j in range(i, min(i + workers, len(plan))):
+            if j not in futures:
+                futures[j] = pool.submit(probe, plan[j])
+        return futures.pop(i).result()
+    return fetch
+
+
 def _client_snapshot(appliance) -> SimpleNamespace:
     """A DB-detached copy of just the fields FortiWebClient reads, so the worker
     thread never touches the SQLAlchemy session."""
@@ -811,62 +919,78 @@ def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
         _finish_failed(progress_path, state, _auth_stop_message(auth_error, 0, total))
         return
 
+    # One reused connection pool for the whole sweep, and ``sweep_workers()``
+    # reads in flight. ADC stays serial: its probe logs in to a session of its
+    # own. FortiWeb goes parallel only once the status read above answered
+    # (``firmware``): until the credentials are proven, the first 401 has to
+    # be the only one (see DeviceAuthError).
+    workers = 1
+    keep = contextlib.nullcontext()
     if is_adc:
         from . import adc_ops
 
         _probe = adc_ops.make_probe(appliance_snap)
     else:
         client = FortiWebClient(appliance_snap, timeout=20.0)
+        keep = client.keep_alive()
+        if firmware:
+            workers = sweep_workers()
+        probe_client = (_GatedClient(client, lambda: _stop_requested(aid))
+                        if workers > 1 else client)
 
         def _probe(ep: dict):
-            return _probe_fortiweb(client, ep)
+            return _probe_fortiweb(probe_client, ep)
+    state["workers"] = workers
 
     sections: dict[str, dict[str, list]] = {}
     total_objects = 0
     errors: list[dict] = []
     absent: list[dict] = []
     ledger: dict[str, dict] = {}
-    for i, ep in enumerate(plan, 1):
-        if _stop_requested(aid):
-            # No _config.json: a half sweep written as the LATEST snapshot
-            # would replace the last complete one and drive the inventory,
-            # the API matrix and the library from a partial picture.
-            state.update(done=i - 1, objects=total_objects,
-                         errors=errors[-25:], absent_count=len(absent))
-            _finish_stopped(aid, progress_path, state,
-                            f"Stopped at endpoint {i - 1}/{total}. No snapshot "
-                            f"was written; the previous one is unchanged.")
-            return
-        try:
-            rows, verdict, detail = _probe(ep)
-            rows = [r for r in rows if isinstance(r, dict)]
-        except DeviceAuthError as exc:
-            # The one failure that DOES sink the sweep: see DeviceAuthError.
-            state.update(done=i - 1, objects=total_objects,
-                         errors=errors[-25:], absent_count=len(absent))
-            _finish_failed(progress_path, state,
-                           _auth_stop_message(str(exc), i - 1, total))
-            return
-        except Exception as exc:  # noqa: BLE001 — one endpoint never sinks the sweep
-            rows, verdict = [], VERDICT_ERROR
-            detail = f"{type(exc).__name__}: {exc}"[:160]
-        ledger[ep["name"]] = {"urn": ep["urn"], "section": ep["section"],
-                              "verdict": verdict, "rows": len(rows),
-                              "detail": (detail or "")[:200]}
-        if verdict == VERDICT_ERROR:
-            errors.append({"endpoint": ep["name"], "error": detail or "unknown error"})
-        elif verdict == VERDICT_ABSENT:
-            absent.append({"endpoint": ep["name"], "urn": ep["urn"],
-                           "detail": detail or ""})
-        elif rows:
-            sections.setdefault(ep["section"], {})[ep["name"]] = rows
-            total_objects += len(rows)
-        if i % 5 == 0 or i == total:
-            state.update(done=i, percent=int(i * 100 / total) if total else 100,
-                         objects=total_objects, section=ep["section"],
-                         errors=errors[-25:], absent_count=len(absent),
-                         heartbeat=datetime.utcnow().isoformat())
-            _write_json(progress_path, state)
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(keep)
+        _result = _ordered_results(stack, plan, _probe, workers)
+        for i, ep in enumerate(plan, 1):
+            if _stop_requested(aid):
+                # No _config.json: a half sweep written as the LATEST snapshot
+                # would replace the last complete one and drive the inventory,
+                # the API matrix and the library from a partial picture.
+                state.update(done=i - 1, objects=total_objects,
+                             errors=errors[-25:], absent_count=len(absent))
+                _finish_stopped(aid, progress_path, state,
+                                f"Stopped at endpoint {i - 1}/{total}. No snapshot "
+                                f"was written; the previous one is unchanged.")
+                return
+            try:
+                rows, verdict, detail = _result(i - 1)
+                rows = [r for r in rows if isinstance(r, dict)]
+            except DeviceAuthError as exc:
+                # The one failure that DOES sink the sweep: see DeviceAuthError.
+                state.update(done=i - 1, objects=total_objects,
+                             errors=errors[-25:], absent_count=len(absent))
+                _finish_failed(progress_path, state,
+                               _auth_stop_message(str(exc), i - 1, total))
+                return
+            except Exception as exc:  # noqa: BLE001 — one endpoint never sinks the sweep
+                rows, verdict = [], VERDICT_ERROR
+                detail = f"{type(exc).__name__}: {exc}"[:160]
+            ledger[ep["name"]] = {"urn": ep["urn"], "section": ep["section"],
+                                  "verdict": verdict, "rows": len(rows),
+                                  "detail": (detail or "")[:200]}
+            if verdict == VERDICT_ERROR:
+                errors.append({"endpoint": ep["name"], "error": detail or "unknown error"})
+            elif verdict == VERDICT_ABSENT:
+                absent.append({"endpoint": ep["name"], "urn": ep["urn"],
+                               "detail": detail or ""})
+            elif rows:
+                sections.setdefault(ep["section"], {})[ep["name"]] = rows
+                total_objects += len(rows)
+            if i % 5 == 0 or i == total:
+                state.update(done=i, percent=int(i * 100 / total) if total else 100,
+                             objects=total_objects, section=ep["section"],
+                             errors=errors[-25:], absent_count=len(absent),
+                             heartbeat=datetime.utcnow().isoformat())
+                _write_json(progress_path, state)
 
     if errors and not any(v["verdict"] == VERDICT_OK for v in ledger.values()):
         # Not one endpoint answered. Written as the LATEST snapshot this would
@@ -947,8 +1071,17 @@ def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
     if deep and not is_adc:  # deep capture is the FortiWeb WPP/policy layer
         if _stop_before("deep capture"):
             return
-        if _run_deep(appliance_snap, progress_path, state):
-            return   # stopped mid-walk: the CLI pass is skipped as well
+        # The CLI dump is one SSH session and the deep pass is REST: they share
+        # nothing on the box, so with both asked for they run side by side and
+        # the sweep takes the longer of the two instead of their sum.
+        cli_run = _start_cli_alongside(appliance_snap, state) if cli else None
+        stopped = _run_deep(appliance_snap, progress_path, state,
+                            finish=cli_run is None)
+        if cli_run is not None:
+            _join_cli_alongside(cli_run, progress_path, state, stopped)
+            cli = False   # captured already, alongside the deep pass
+        if stopped:
+            return   # stopped mid-walk: nothing else is started
 
     # LAST, and only when asked. ``cli`` defaults to False so the post-
     # registration sweep (views.appliances) and every other internal caller
@@ -1133,7 +1266,8 @@ def _ingest_library(appliance_snap, snapshot: dict) -> dict:
         return {"error": ("%s: %s" % (type(exc).__name__, exc))[:200]}
 
 
-def _run_deep(appliance_snap: SimpleNamespace, progress_path, state: dict) -> bool:
+def _run_deep(appliance_snap: SimpleNamespace, progress_path, state: dict,
+              finish: bool = True) -> bool:
     """Opt-in deep-capture pass appended after the shallow sweep: walk every
     server policy + WPP (sub-tables + named-rule objects nested) and ingest under
     layer='deep'. Best-effort — a failure is recorded but never breaks the
@@ -1141,7 +1275,14 @@ def _run_deep(appliance_snap: SimpleNamespace, progress_path, state: dict) -> bo
 
     Returns True when a Stop ended it. The stop is honoured between objects;
     what was walked so far is DISCARDED, not persisted: a deep layer missing the
-    objects never reached would read as those objects having been deleted."""
+    objects never reached would read as those objects having been deleted.
+
+    ``finish=False`` leaves the sweep's state open (no ``done``): the CLI
+    capture is still running alongside and the sweep ends when it does.
+
+    The walk uses ``sweep_workers()`` readers on one reused connection pool,
+    and reports how many device reads it made and how many the per-sweep memo
+    answered instead (``deep_reads`` / ``deep_reused``)."""
     from .deep_capture import DeepCaptureStopped
     aid = appliance_snap.id
     state.update(state="deep-running", section="deep capture (WPP + policy graph)",
@@ -1161,8 +1302,18 @@ def _run_deep(appliance_snap: SimpleNamespace, progress_path, state: dict) -> bo
                      deep_current=str(p.get("current") or "")[:120],
                      deep_policies=p.get("policies", 0),
                      deep_wpps=p.get("wpps", 0),
+                     deep_reads=p.get("reads", 0),
+                     deep_reused=p.get("reused", 0),
                      heartbeat=datetime.utcnow().isoformat())
         _write_json(progress_path, state)
+
+    stats: dict = {}
+
+    def _record_stats() -> None:
+        if stats:
+            state.update(deep_reads=stats.get("reads", 0),
+                         deep_reused=stats.get("reused", 0),
+                         deep_workers=stats.get("workers", 1))
 
     try:
         from . import device_sync
@@ -1170,12 +1321,16 @@ def _run_deep(appliance_snap: SimpleNamespace, progress_path, state: dict) -> bo
         with app.app_context():
             snap = device_sync.deep_snapshot_from_device(
                 appliance_snap, progress=_progress,
-                should_stop=lambda: _stop_requested(aid))
+                should_stop=lambda: _stop_requested(aid),
+                workers=sweep_workers(), keep_alive=True, stats=stats)
             device_sync.persist_deep_snapshot(appliance_snap, snap)
-        state.update(state="done", section="deep capture complete",
-                     deep_objects=snap.get("total_objects"),
-                     finished=datetime.utcnow().isoformat())
+        _record_stats()
+        state.update(section="deep capture complete",
+                     deep_objects=snap.get("total_objects"))
+        if finish:
+            state.update(state="done", finished=datetime.utcnow().isoformat())
     except DeepCaptureStopped as stop:
+        _record_stats()
         where = f"{stop.phase} {stop.current}".strip()
         _finish_stopped(aid, progress_path, state,
                         f"Stopped during the deep capture, at object "
@@ -1185,8 +1340,10 @@ def _run_deep(appliance_snap: SimpleNamespace, progress_path, state: dict) -> bo
                           "capture was discarded and the previous one kept.")
         return True
     except Exception as exc:  # noqa: BLE001
-        state.update(state="done", deep_error=f"{type(exc).__name__}: {exc}"[:200],
-                     finished=datetime.utcnow().isoformat())
+        _record_stats()
+        state.update(deep_error=f"{type(exc).__name__}: {exc}"[:200])
+        if finish:
+            state.update(state="done", finished=datetime.utcnow().isoformat())
     _write_json(progress_path, state)
     return False
 
@@ -1312,10 +1469,21 @@ def _run_cli(appliance_snap: SimpleNamespace, progress_path, state: dict) -> Non
     keys, because a capture that was SKIPPED and a capture that FAILED must
     never look alike.
     """
-    aid = appliance_snap.id
     state.update(state="cli-running",
                  section="CLI capture (show full-configuration)", finished=None)
     _write_json(progress_path, state)
+    outcome = _cli_outcome(appliance_snap, state.get("by") or "")
+    state.update(state="done", finished=datetime.utcnow().isoformat(), **outcome)
+    _write_json(progress_path, state)
+
+
+def _cli_outcome(appliance_snap: SimpleNamespace, by: str) -> dict:
+    """The CLI capture itself: decide, capture, audit. Returns the outcome keys
+    (``cli_backup_id``/``cli_kb``/``cli_firmware``, ``cli_skipped`` or
+    ``cli_error``) and never raises -- a sweep that succeeded is never sunk by
+    its second transport. Touches no progress state, so it can run alongside
+    the deep pass."""
+    aid = appliance_snap.id
     outcome: dict = {}
     try:
         from ..extensions import db
@@ -1342,7 +1510,7 @@ def _run_cli(appliance_snap: SimpleNamespace, progress_path, state: dict) -> Non
                     outcome["cli_backup_id"] = decision["existing"].get("backup_id")
             else:
                 rec = backup_svc.fetch_device_backup_auto(
-                    row, created_by=(state.get("by") or "rediscovery")[:64],
+                    row, created_by=(by or "rediscovery")[:64],
                     method="ssh")
                 outcome = {"cli_backup_id": rec.id,
                            "cli_kb": (rec.size_bytes or 0) // 1024,
@@ -1353,7 +1521,38 @@ def _run_cli(appliance_snap: SimpleNamespace, progress_path, state: dict) -> Non
                                   "firmware": rec.firmware or ""})
     except Exception as exc:  # noqa: BLE001 — never sink a sweep that succeeded
         outcome = {"cli_error": f"{type(exc).__name__}: {exc}"[:200]}
-    state.update(state="done", finished=datetime.utcnow().isoformat(), **outcome)
+    return outcome
+
+
+def _start_cli_alongside(appliance_snap: SimpleNamespace, state: dict):
+    """Start the CLI capture in its own thread, next to the deep pass."""
+    box: dict = {}
+
+    def _go() -> None:
+        box.update(_cli_outcome(appliance_snap, state.get("by") or ""))
+
+    thread = threading.Thread(target=_go, daemon=True,
+                              name=f"rediscovery-cli-{appliance_snap.id}")
+    state["cli_running"] = True
+    thread.start()
+    return thread, box
+
+
+def _join_cli_alongside(run, progress_path, state: dict, stopped: bool) -> None:
+    """Wait for the CLI capture started by :func:`_start_cli_alongside` and
+    record its outcome. A session already open cannot be cut, so a Stop during
+    the deep pass waits for it too; the state then stays ``stopped``."""
+    thread, box = run
+    if thread.is_alive() and not stopped:
+        state.update(state="cli-running",
+                     section="CLI capture (show full-configuration)",
+                     finished=None)
+        _write_json(progress_path, state)
+    thread.join()
+    state.pop("cli_running", None)
+    state.update(**box)
+    if not stopped:
+        state.update(state="done", finished=datetime.utcnow().isoformat())
     _write_json(progress_path, state)
 
 

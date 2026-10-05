@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "partials/_template_compat.html" as tcx with context %}
 {% block title %}Apply baseline {{ baseline.name }}{% endblock %}
 {% block content %}
 <div class="fw-page-header">
@@ -25,6 +26,7 @@
         data-fw-confirm-form="Write baseline {{ baseline.name }} to {{ devices|length }} device(s)? Canary first.">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="confirm" value="1">
+    {% if compat_reports %}<div style="max-width:1000px;">{{ tcx.compat_panel(compat_reports, can_override) }}</div>{% endif %}
     <button class="btn btn-warning" type="submit">
       <i class="bi bi-cloud-upload"></i> {{ _('Confirm live apply (canary-gated)') }}</button>
     <a class="btn btn-outline-secondary" href="{{ url_for('provisioning.baselines') }}">{{ _('Cancel') }}</a>

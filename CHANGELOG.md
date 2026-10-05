@@ -6,6 +6,41 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — templates record their firmware build and are checked against every target build
+
+Templates now store the firmware build their body was written for, the REST
+API version, where it came from (captured from an appliance, written by hand,
+adapted) and, for captures, the source appliance. FortiWeb answers a write
+carrying a field the build does not know with 200 and discards the field, so a
+template written on one build could be applied to another, report success and
+land incomplete. Nothing recorded which build a template belonged to, so
+nothing could catch it.
+
+- **Stamp.** *Save as template* (Web Protection Profile, configuration
+  objects) records the appliance's running build. New Template, the section
+  *New template* form and System Provisioning require choosing a build that
+  SATOM knows. System profiles no longer default to a hard-coded `"8.0"`
+  line that no appliance was ever asked about.
+- **Check at save.** The body is compared against its own build through the
+  API library, and the library page shows whether it fits.
+- **Check at apply.** Every apply path (Template Library, section page,
+  System Provisioning, baselines, and the automatic fleet deploy when a Web
+  Protection Profile is approved) shows a verdict per device. Fields the build
+  would discard, renamed fields and endpoints the build does not serve
+  **block** the apply. Missing evidence is a warning, never a pass. An
+  approver can override with a reason, and the override is audited.
+- **Approval is for builds.** Approving records the builds the template was
+  validated for. A fleet rollout to another build needs **Revalidate**.
+- **Adapt to firmware.** This saves a new pending version rewritten for a
+  target build: mapped renames are carried over, unserved fields are removed,
+  and every change is listed in the version note.
+
+**Upgrade note.** Templates saved before this release show *no firmware*.
+Already-approved templates have no validated builds, so their **fleet
+rollouts and baseline applies are refused until an approver clicks Revalidate
+for fleet builds** (View dialog) once per template. Single-device applies are
+only checked field by field.
+
 ### Changed — a deep rediscovery with the CLI capture is much faster (2026-10-05)
 
 Reported as "extremely slow" for a deep rediscovery with WPPs and the CLI

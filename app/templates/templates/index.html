@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "partials/_template_compat.html" as tcx with context %}
 
 {% block title %}Templates — SATOM{% endblock %}
 
@@ -63,6 +64,7 @@
         <th>{{ _('Kind') }}</th>
         <th>{{ _('Name') }}</th>
         <th>{{ _('Version') }}</th>
+        <th>{{ _('Firmware') }}</th>
         <th>{{ _('Status') }}</th>
         <th>{{ _('Note') }}</th>
         <th>{{ _('Author') }}</th>
@@ -77,6 +79,7 @@
           <td><span class="fw-badge fw-badge-primary">{{ kind_labels.get(t.kind, t.kind) }}</span></td>
           <td><strong>{{ t.name }}</strong>{% if t.locked %} <i class="bi bi-lock-fill text-muted" title="{{ _('Locked') }}"></i>{% endif %}</td>
           <td>v{{ t.version }}</td>
+          <td style="white-space:nowrap;">{{ tcx.stamp_badge(t) }} {{ tcx.check_badge(t) }}</td>
           <td>
             {% if t.status == 'approved' %}
               <span class="fw-badge fw-badge-success" title="Approved by {{ t.reviewed_by or '—' }}">{{ _('approved') }}</span>
@@ -142,7 +145,7 @@
         {% endfor %}
       {% else %}
         <tr>
-          <td colspan="8">
+          <td colspan="9">
             <div class="fw-empty-state">
               <div class="fw-empty-state-icon"><i class="bi bi-collection"></i></div>
               <div class="fw-empty-state-title">{{ _('No templates yet') }}</div>
@@ -179,6 +182,9 @@
             <div class="col-md-7">
               <label class="fw-form-label">{{ _('Name') }} <span class="text-danger">*</span></label>
               <input type="text" class="form-control" name="name" placeholder="{{ _('e.g. baseline-wpp') }}" required autocomplete="off">
+            </div>
+            <div class="col-md-12">
+              {{ tcx.firmware_select(firmware_choices, '', required=True) }}
             </div>
           </div>
           <div class="mb-2 mt-3">
@@ -218,6 +224,39 @@
       </div>
       <div class="modal-body">
         <div class="mb-2 text-muted" style="font-size:13px;" id="vt-meta"></div>
+        <div class="fw-card mb-3">
+          <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-cpu me-1"></i>{{ _('Firmware & API compatibility') }}</span></div>
+          <div class="fw-card-body" style="font-size:13px;">
+            <div id="vt-stamp" class="mb-2"></div>
+            <label class="fw-form-label">{{ _('Checked against its own build when saved') }}</label>
+            <div id="vt-selfcheck" class="mb-2"></div>
+            <label class="fw-form-label">{{ _('Validated builds (approval)') }}</label>
+            <div id="vt-validated" class="mb-2"></div>
+            <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+              <button type="button" class="btn btn-sm btn-fw-outline" data-js="vt-check"><i class="bi bi-search me-1"></i>{{ _('Check against fleet builds') }}</button>
+              {% if current_user.can('operations.template_approve') %}
+              <button type="button" class="btn btn-sm btn-outline-success" data-js="vt-validate" id="vt-validate-btn"><i class="bi bi-patch-check me-1"></i>{{ _('Revalidate for fleet builds') }}</button>
+              {% endif %}
+            </div>
+            <div id="vt-check-out" class="mt-2"></div>
+            {% if current_user.can('operations.template_save') %}
+            <div class="row g-2 align-items-end mt-2">
+              <div class="col-md-5">
+                <label class="fw-form-label" for="vt-adapt-build">{{ _('Adapt to firmware') }}</label>
+                <select class="form-select form-select-sm" id="vt-adapt-build">
+                  <option value="">{{ _('— target build —') }}</option>
+                  {% for b in firmware_choices %}<option value="{{ b.version }}">{{ b.version }}{% if b.in_fleet %} · {{ _('in fleet') }}{% endif %}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="col-md-7 d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-fw-outline" data-js="vt-adapt-preview">{{ _('Preview') }}</button>
+                <button type="button" class="btn btn-sm btn-fw-primary" data-js="vt-adapt-save" id="vt-adapt-save" disabled>{{ _('Save adapted version') }}</button>
+              </div>
+            </div>
+            <div id="vt-adapt-out" class="mt-2"></div>
+            {% endif %}
+          </div>
+        </div>
         <label class="fw-form-label">{{ _('Body') }}</label>
         <pre style="background:#0d1626; color:#e2e8f0; padding:12px; border-radius:8px; max-height:340px; overflow:auto; font-size:12.5px;"><code id="vt-body"></code></pre>
         <div id="vt-exc-wrap" style="display:none;">
@@ -251,6 +290,9 @@
             <div class="col-md-7">
               <label class="fw-form-label">{{ _('Name') }} <span class="text-danger">*</span></label>
               <input type="text" class="form-control" name="name" id="et-name" required autocomplete="off">
+            </div>
+            <div class="col-md-12">
+              {{ tcx.firmware_select(firmware_choices, '', required=False, id='et-firmware') }}
             </div>
           </div>
           <div class="mb-2 mt-3">
@@ -313,6 +355,7 @@
             <label class="fw-form-label">{{ _('Dry-run preview') }}</label>
             <div id="ap-preview-box" style="max-height:260px; overflow:auto; border:1px solid var(--fw-border,#dee2e6); border-radius:8px; padding:8px; font-size:12.5px;"></div>
           </div>
+          <div id="ap-compat"></div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
@@ -370,6 +413,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/template_compat.js') }}" nonce="{{ csp_nonce }}"></script>
 <script nonce="{{ csp_nonce }}">
 function toggleNote(a) {
   var td = a.closest('td');
@@ -456,9 +500,73 @@ function viewTemplate(id) {
       var excWrap = document.getElementById('vt-exc-wrap');
       if (t.exceptions) { document.getElementById('vt-exc').textContent = t.exceptions; excWrap.style.display = ''; }
       else { excWrap.style.display = 'none'; }
+      vtRenderCompat(t);
       showModal('modalViewTemplate');
     })
     .catch(function (e) { alert('Could not load template: ' + e.message); });
+}
+
+var VT_ID = null;
+function vtRenderCompat(t) {
+  VT_ID = t.id;
+  document.getElementById('vt-stamp').innerHTML = TplCompat.stamp(t);
+  var sc = t.compat_check || {};
+  var scMap = {};
+  if (sc.state) { scMap[sc.target_version || t.source_firmware || '—'] = sc; }
+  document.getElementById('vt-selfcheck').innerHTML = TplCompat.buildsTable(scMap, 'Not checked.');
+  document.getElementById('vt-validated').innerHTML = TplCompat.buildsTable(t.validated_builds,
+    t.status === 'approved' ? 'No build recorded for this approval — revalidate it.' : 'Validated when approved.');
+  document.getElementById('vt-check-out').innerHTML = '';
+  var vb = document.getElementById('vt-validate-btn');
+  if (vb) vb.style.display = (t.status === 'approved') ? '' : 'none';
+  var ao = document.getElementById('vt-adapt-out'); if (ao) ao.innerHTML = '';
+  var as = document.getElementById('vt-adapt-save'); if (as) as.disabled = true;
+}
+
+function vtCsrf() { return document.querySelector('#applyForm input[name=csrf_token]').value; }
+
+function vtCheck() {
+  var out = document.getElementById('vt-check-out');
+  out.innerHTML = '<span class="text-muted">Checking…</span>';
+  fetch('/templates/' + VT_ID + '/check', {headers: {'Accept': 'application/json'}})
+    .then(function (r) { return r.json(); })
+    .then(function (j) { out.innerHTML = TplCompat.buildsTable(j.reports, 'No appliance of this product reports a firmware.'); })
+    .catch(function (e) { out.innerHTML = '<span class="text-danger">' + vtEsc(e.message) + '</span>'; });
+}
+
+function vtValidate() {
+  var fd = new FormData(); fd.append('csrf_token', vtCsrf());
+  fetch('/templates/' + VT_ID + '/validate', {method: 'POST', body: fd, headers: {'Accept': 'application/json'}})
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (!j.ok) { document.getElementById('vt-check-out').innerHTML = '<span class="text-danger">' + vtEsc(j.error) + '</span>'; return; }
+      document.getElementById('vt-validated').innerHTML = TplCompat.buildsTable(j.verdicts, 'No build to validate.');
+      document.getElementById('vt-check-out').innerHTML = j.not_fitting.length
+        ? '<span class="text-danger">Does not fit: ' + vtEsc(j.not_fitting.join(', ')) + ' — adapt it for those builds.</span>'
+        : '<span class="text-success">Validated.</span>';
+    })
+    .catch(function (e) { alert('Validation failed: ' + e.message); });
+}
+
+function vtAdapt(confirm) {
+  var build = document.getElementById('vt-adapt-build').value;
+  var out = document.getElementById('vt-adapt-out');
+  if (!build) { out.innerHTML = '<span class="text-danger">Choose the target build.</span>'; return; }
+  var fd = new FormData(); fd.append('csrf_token', vtCsrf()); fd.append('build', build);
+  if (confirm) fd.append('confirm', '1');
+  fetch('/templates/' + VT_ID + '/adapt', {method: 'POST', body: fd, headers: {'Accept': 'application/json'}})
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (!j.ok) { out.innerHTML = '<span class="text-danger">' + vtEsc(j.error) + '</span>'; document.getElementById('vt-adapt-save').disabled = true; return; }
+      if (j.mode === 'preview') {
+        out.innerHTML = TplCompat.adaptPlan(j.plan);
+        document.getElementById('vt-adapt-save').disabled = !(j.plan.changes > 0 && !(j.plan.absent_keys || []).length);
+      } else {
+        out.innerHTML = '<span class="text-success">Saved v' + vtEsc(j.version) + ' (pending approval).</span>';
+        setTimeout(function () { location.reload(); }, 1200);
+      }
+    })
+    .catch(function (e) { out.innerHTML = '<span class="text-danger">' + vtEsc(e.message) + '</span>'; });
 }
 
 function editTemplate(id) {
@@ -471,6 +579,13 @@ function editTemplate(id) {
       document.getElementById('et-note').value = t.note || '';
       document.getElementById('et-body').value = t.body;
       document.getElementById('et-exceptions').value = t.exceptions || '';
+      var fw = document.getElementById('et-firmware');
+      if (fw) {
+        fw.value = t.source_firmware || '';
+        // A version with a recorded build keeps it unless changed; one without
+        // (saved before builds were recorded) must name it now.
+        fw.required = !t.source_firmware;
+      }
       showModal('modalEditTemplate');
     })
     .catch(function (e) { alert('Could not load template: ' + e.message); });
@@ -482,6 +597,7 @@ function openApply(id, name, approved) {
   document.getElementById('ap-name').textContent = name;
   document.getElementById('ap-preview').style.display = 'none';
   document.getElementById('ap-preview-box').innerHTML = '';
+  document.getElementById('ap-compat').innerHTML = '';
   document.getElementById('ap-confirm').disabled = true;
   var note = document.getElementById('ap-status-note');
   if (note) {
@@ -519,7 +635,12 @@ function applyPreview() {
     .then(function (res) {
       var box = document.getElementById('ap-preview-box');
       if (!res.ok || !res.j.ok) { box.innerHTML = '<span class="text-danger">' + vtEsc(res.j.error || 'Preview failed') + '</span>'; }
-      else { box.innerHTML = renderPreview(res.j); document.getElementById('ap-confirm').disabled = false; }
+      else {
+        box.innerHTML = renderPreview(res.j);
+        var c = res.j.compat;
+        document.getElementById('ap-compat').innerHTML = TplCompat.applyPanel(c, res.j.can_override);
+        document.getElementById('ap-confirm').disabled = !!(c && c.blocked && !res.j.can_override);
+      }
       document.getElementById('ap-preview').style.display = '';
     })
     .catch(function (e) { alert('Preview failed: ' + e.message); });
@@ -574,6 +695,12 @@ function renderPreview(j) {
 
   var preview = document.querySelector('[data-js="apply-preview"]');
   if (preview) preview.addEventListener('click', function (event) { applyPreview(); });
+
+  var bind = function (sel, fn) { var el = document.querySelector(sel); if (el) el.addEventListener('click', fn); };
+  bind('[data-js="vt-check"]', function () { vtCheck(); });
+  bind('[data-js="vt-validate"]', function () { vtValidate(); });
+  bind('[data-js="vt-adapt-preview"]', function () { vtAdapt(false); });
+  bind('[data-js="vt-adapt-save"]', function () { vtAdapt(true); });
 })();
 </script>
 {% endblock %}

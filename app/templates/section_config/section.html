@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "partials/_template_compat.html" as tcx with context %}
 
 {% block title %}{{ section.label }} — FortiWeb Configuration{% endblock %}
 
@@ -405,6 +406,9 @@
             <input type="text" class="form-control" name="name" placeholder="e.g. baseline-{{ section.key }}" required autocomplete="off">
           </div>
           <div class="mb-2">
+            {{ tcx.firmware_select(firmware_choices, '', required=True) }}
+          </div>
+          <div class="mb-2">
             <label class="fw-form-label">{{ _('Note') }}</label>
             <input type="text" class="form-control" name="note" placeholder="{{ _('Optional description') }}">
           </div>
@@ -488,6 +492,7 @@
             <label class="fw-form-label">{{ _('Dry-run preview') }}</label>
             <div id="ap-preview-box" style="max-height:260px; overflow:auto; border:1px solid var(--fw-border,#dee2e6); border-radius:8px; padding:8px; font-size:12.5px;"></div>
           </div>
+          <div id="ap-compat"></div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
@@ -534,6 +539,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/template_compat.js') }}" nonce="{{ csp_nonce }}"></script>
 <style nonce="{{ csp_nonce }}">
 /* Inline object editor (opens in place under the row instead of a new screen) */
 tr.cfg-edit-row > td { background:#F6F8FB; border-top:0; padding:0 !important; }
@@ -678,6 +684,7 @@ function openApply(id, name) {
   document.getElementById('ap-name').textContent = name;
   document.getElementById('ap-preview').style.display = 'none';
   document.getElementById('ap-preview-box').innerHTML = '';
+  document.getElementById('ap-compat').innerHTML = '';
   document.getElementById('ap-confirm').disabled = true;
   if (window.bootstrap) { new bootstrap.Modal(document.getElementById('modalApplyTemplate')).show(); }
 }
@@ -702,7 +709,12 @@ function applyPreview() {
     .then(function (res) {
       var box = document.getElementById('ap-preview-box');
       if (!res.ok || !res.j.ok) { box.innerHTML = '<span class="text-danger">' + vtEsc(res.j.error || 'Preview failed') + '</span>'; }
-      else { box.innerHTML = renderPreview(res.j); document.getElementById('ap-confirm').disabled = false; }
+      else {
+        box.innerHTML = renderPreview(res.j);
+        var c = res.j.compat;
+        document.getElementById('ap-compat').innerHTML = TplCompat.applyPanel(c, res.j.can_override);
+        document.getElementById('ap-confirm').disabled = !!(c && c.blocked && !res.j.can_override);
+      }
       document.getElementById('ap-preview').style.display = '';
     })
     .catch(function (e) { alert('Preview failed: ' + e.message); });

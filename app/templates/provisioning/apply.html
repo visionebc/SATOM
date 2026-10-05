@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "partials/_template_compat.html" as tcx with context %}
 
 {% block title %}Apply {{ prof_name }} — SATOM{% endblock %}
 
@@ -97,6 +98,7 @@
       <input type="hidden" name="target_hostname" value="{{ target_hostname }}">
       <input type="hidden" name="change_id" value="{{ change_id }}">
       {% for did in device_ids %}<input type="hidden" name="device_ids" value="{{ did }}">{% endfor %}
+      {% if compat_reports %}{{ tcx.compat_panel(compat_reports, can_override) }}{% endif %}
       <button type="submit" class="btn btn-fw-danger"><i class="bi bi-exclamation-octagon me-1"></i>Confirm &amp; apply to live devices</button>
       <a class="btn btn-fw-outline ms-2" href="{{ url_for('provisioning.index') }}">{{ _('Cancel') }}</a>
     </form>

@@ -570,14 +570,18 @@ def save_as_template(id):
                 ok=False,
                 error='Profile "%s" not found on %s' % (source, appliance.name)
             ), 404
+        from ..services import template_compat as tc
         row = tpl.save_template(
             Template.KIND_WEB_PROTECTION, name, body,
             note='Cloned from %s on %s (pending approval)' % (source, appliance.name),
-            author=getattr(current_user, 'username', '') or '')
+            author=getattr(current_user, 'username', '') or '',
+            stamp=tc.stamp_from_appliance(appliance))
         log_action('wpp.save_template', target=source, appliance_id=appliance.id,
                    detail='template=%s v%s status=%s' % (row.name, row.version, row.status))
         return jsonify(ok=True, template_id=row.id, name=row.name,
-                       version=row.version, status=row.status)
+                       version=row.version, status=row.status,
+                       source_firmware=row.source_firmware or '',
+                       compat_check=row.compat_check_dict)
     except ValueError as exc:
         return jsonify(ok=False, error=str(exc)), 400
     except Exception as exc:  # noqa: BLE001

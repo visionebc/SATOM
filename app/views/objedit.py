@@ -892,10 +892,14 @@ def save_template_from_object(appliance_id):
     tbody = build_config_template_body(coll, mkey, obj, subtables, singleton=singleton)
     kind = config_catalog.config_template_kind(section)
     try:
+        from ..services import template_compat as tc
         row = save_template(kind, name, tbody, note=note,
-                            author=getattr(current_user, "username", ""))
+                            author=getattr(current_user, "username", ""),
+                            stamp=tc.stamp_from_appliance(appl))
     except ValueError as exc:
         return jsonify(ok=False, error=str(exc)), 400
     return jsonify(ok=True, id=row.id, name=row.name, version=row.version,
                    kind=row.kind, status=row.status,
-                   item_count=len(tbody["subobjects"]))
+                   item_count=len(tbody["subobjects"]),
+                   source_firmware=row.source_firmware or "",
+                   compat_check=row.compat_check_dict)

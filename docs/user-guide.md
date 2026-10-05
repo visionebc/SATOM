@@ -210,6 +210,17 @@ the Global ADOM, or the Global dashboard). The entry is shown to anyone holding
    object graph (pools, members, WAF profile sub-policies…). This is what
    powers the DB-first policy detail and the Architecture map. Can run
    fleet-wide and is normally scheduled nightly.
+5. **Factory catalog** (Web Protection → *Factory catalog*, or Template
+   Library → *Factory catalog*; needs *View registry*) — the FortiWeb
+   predefined Web Protection Profiles, stored once per **firmware version,
+   build number and REST API version**. The first deep pass on a build reads
+   them in full; later deep passes rebuild a predefined profile from the
+   catalog when the appliance's own rows match, and read it in full again once
+   a week. Turn on *Re-read predefined WPPs in full* on the Rediscovery page to
+   read them now. On the catalog page you can open a profile's full tree,
+   **compare the same profile between two builds** (what the vendor changed in
+   its defaults), and **save an entry as a template**, stamped with that
+   firmware and API version.
 
 Each appliance's detail page is the hub for device-level actions:
 

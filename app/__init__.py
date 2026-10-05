@@ -2066,6 +2066,10 @@ def create_app(config_override: object | None = None) -> Flask:
             from . import models_theme  # noqa: F401
             from . import models_analytics  # noqa: F401
             from . import models_sot  # noqa: F401
+            # Factory catalog (predefined WPPs per firmware + API). Without
+            # this import create_all() never makes ``factory_catalog`` and
+            # the deep pass quietly walks every predefined profile forever.
+            from . import models_factory  # noqa: F401
             # Ledger of corroborated object disappearances. Without this
             # import create_all() never makes ``object_absences`` and the
             # first sweep after an upgrade 500s on a table the model says
@@ -2328,6 +2332,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.apilib_fieldmap", "bp"),
         ("app.views.api_explorer", "bp"),
         ("app.views.templates", "bp"),
+        ("app.views.factory_catalog", "bp"),
         ("app.views.signatures", "bp"),
         ("app.views.fleet_objects", "bp"),
         ("app.views.waf", "bp"),
@@ -2382,6 +2387,7 @@ def _register_blueprints(app: Flask) -> None:
         "app.views.exceptions", "app.views.backups", "app.views.logs",
         "app.views.import_backup", "app.views.section_config",
         "app.views.section_catalog", "app.views.templates",
+        "app.views.factory_catalog",
         "app.views.signatures", "app.views.structure",
         "app.views.classification", "app.views.segments", "app.views.naming",
         "app.views.line_profiles", "app.views.spo_wizard",

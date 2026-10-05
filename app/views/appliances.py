@@ -705,6 +705,10 @@ def rediscover_start(id):
         in ('1', 'true', 'on', 'yes')
     cli = (request.form.get('cli') or request.args.get('cli') or '').lower() \
         in ('1', 'true', 'on', 'yes')
+    # Read every predefined WPP in full (and refresh the factory catalog)
+    # instead of replaying it. Only meaningful with the deep pass.
+    factory_full = deep and (request.form.get('factory_full') or '').lower() \
+        in ('1', 'true', 'on', 'yes')
     # The route gates ONE thing the worker cannot: the CLI dump is written to
     # the configuration vault, and this endpoint only requires
     # ``appliances.apply``. Dropping the flag SILENTLY would let a user create
@@ -714,12 +718,13 @@ def rediscover_start(id):
     if cli and not current_user.can(Permission.BACKUP):
         cli, cli_refused = False, rediscovery.CLI_SKIP_NO_PERMISSION
     res = rediscovery.start(appliance, by=getattr(current_user, 'username', ''),
-                            deep=deep, cli=cli)
+                            deep=deep, cli=cli, factory_full=factory_full)
     if cli_refused:
         res['cli_skipped'] = cli_refused
     if res.get('started'):
         log_action('appliance.rediscover', target=appliance.name,
-                   extra={'deep': bool(deep), 'cli': bool(cli)})
+                   extra={'deep': bool(deep), 'cli': bool(cli),
+                          'factory_full': bool(factory_full)})
     return jsonify(res)
 
 

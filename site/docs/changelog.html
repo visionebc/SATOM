@@ -112,6 +112,39 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--factory-catalog-predefined-wpps-are-read-once-per-firmware-build-and-api-version-2026-10-06">Added — factory catalog: predefined WPPs are read once per firmware build and API version (2026-10-06)</h3>
+<p>Every FortiWeb ships the same ~20 predefined Web Protection Profiles, and the
+deep pass read every one of them in full on every appliance, on every sweep:
+up to ~125 device reads each, most of a sweep's work, to read content the
+vendor wrote. SATOM now keeps them in a <strong>factory catalog</strong>, one entry per
+profile per <strong>firmware version, build number and REST API version</strong> (a newer
+build adds fields to the same profile, so each build has its own entries).</p>
+<ul>
+<li><strong>First deep pass on a build</strong> reads the predefined profiles in full and
+  stores the complete tree, every object it names and every read it made.</li>
+<li><strong>Next deep passes</strong> rebuild a predefined profile from the catalog without
+  its sub-table reads, but only when the appliance's own rows (the profile and
+  every object it names, including the sub-table row counters) match the
+  entry. The rebuilt tree is produced by the same code from the same answers,
+  and keeps the appliance's own usage counters. Anything that does not match
+  is read in full, as before.</li>
+<li><strong>Re-read in full once a week</strong> (<code>SATOM_FACTORY_REVERIFY_DAYS</code>, default 7),
+  or on demand with the new <strong>Re-read predefined WPPs in full</strong> switch on the
+  Rediscovery page. Two appliances that agree on the rows and disagree below
+  them mark the entry <strong>ambiguous</strong>: that profile is then always read in full
+  on that build. A read that failed is never stored.</li>
+<li>The firmware is read <strong>live from the appliance</strong> at the start of the deep
+  pass, not from the appliance record (which can be empty).</li>
+<li><strong>New page: Factory catalog</strong> (<code>/web/factory-catalog/</code>, linked from Web
+  Protection and the Template Library, needs <em>View registry</em>). It lists the
+  builds, each profile's full tree, <strong>compares the same profile between two
+  builds</strong> field by field, and <strong>saves an entry as a template</strong>: the template
+  is stamped with the entry's firmware and API version, provenance <em>factory</em>,
+  and goes through the usual approval.</li>
+<li>The Rediscovery page reports how many predefined WPPs came from the catalog.</li>
+<li><code>SATOM_FACTORY_CATALOG=0</code> switches the catalog off (every profile is read in
+  full, nothing is stored).</li>
+</ul>
 <h3 id="added--templates-record-their-firmware-build-and-are-checked-against-every-target-build">Added — templates record their firmware build and are checked against every target build</h3>
 <p>Templates now store the firmware build their body was written for, the REST
 API version, where it came from (captured from an appliance, written by hand,

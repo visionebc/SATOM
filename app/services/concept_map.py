@@ -374,6 +374,12 @@ PAGES: tuple[dict, ...] = (
     _p("templates.index", "Templates", "automation",
        "template desired state reusable config snippet draft approve",
        "Reusable configuration fragments, drafted and approved."),
+    _p("factory_catalog.index", "Factory Catalog", "automation",
+       "factory predefined default wpp web protection profile vendor catalog "
+       "firmware build api version template deep rediscovery",
+       "The vendor's predefined Web Protection Profiles, stored once per "
+       "firmware build and API version, compared across builds and saved as "
+       "templates."),
     _p("provisioning.index", "Provisioning", "automation",
        "provision system profile rollout apply many devices baseline",
        "System profiles that push a baseline onto devices."),
@@ -555,6 +561,7 @@ PAGES: tuple[dict, ...] = (
 # map's coverage claim true instead of aspirational.
 # --------------------------------------------------------------------------
 EXCLUDED: dict[str, str] = {
+    "factory_catalog.compare": "detail page of factory_catalog.index",
     # The New-process form is reached from the Process page and has no
     # standing of its own on the map; "where does X live" is answered by
     # process.index.

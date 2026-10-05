@@ -41,6 +41,10 @@
         <input class="form-check-input" type="checkbox" id="redisc-deep">
         <label class="form-check-label small" for="redisc-deep">{{ _('Capture full WPP + policy depth') }} <span class="text-muted">{{ _('(slow)') }}</span></label>
       </div>
+      <div class="form-check form-switch mb-0" title="{{ _('Predefined (factory) WPPs are normally rebuilt from the factory catalog for this firmware build and API version when this appliance\'s own rows match it, and read in full once a week. Turn this on to read every predefined WPP in full now and refresh the catalog.') }}">
+        <input class="form-check-input" type="checkbox" id="redisc-factory-full">
+        <label class="form-check-label small" for="redisc-factory-full">{{ _('Re-read predefined WPPs in full') }} <a href="{{ url_for('factory_catalog.index') }}" class="small text-muted ms-1">{{ _('catalog') }}</a></label>
+      </div>
       {% endif %}
       {% if allow_cli %}
       <div class="mb-0" title="{{ _('Opens one read-only SSH session and stores show full-configuration in the configuration vault, so the CLI-coverage report compares the catalog against this box as swept rather than against an older dump.') }}">
@@ -97,6 +101,7 @@
     } else if (p.deep_phase === 'done') {
       t += ' · saving';
     }
+    if (p.deep_catalog_reused) t += ` · ${p.deep_catalog_reused} predefined WPP(s) from the factory catalog`;
     if (p.cli_running) t += ' · CLI capture running alongside';
     return t;
   }
@@ -135,6 +140,7 @@
       if (p.deep_objects != null) txt += ` · depth: ${p.deep_objects} object(s)`
         + (p.deep_total ? ` from ${p.deep_policies || 0} server policies and ${p.deep_wpps || 0} WPPs` : '');
       if (p.deep_reads != null) txt += ` (${p.deep_reads} device reads, ${p.deep_reused || 0} reused)`;
+      if (p.deep_catalog) txt += ` · ${p.deep_catalog}`;
       if (p.cache_error) txt += ` · local cache not updated: ${p.cache_error}`;
       if (p.deep_error) txt += ` · depth error: ${p.deep_error}`;
       // Skipped and failed are DIFFERENT outcomes and are never collapsed:
@@ -191,6 +197,8 @@
     errs.textContent = '';
     const deepEl = document.getElementById('redisc-deep');   // absent on FortiADC
     const deep = deepEl ? deepEl.checked : false;
+    const ffEl = document.getElementById('redisc-factory-full');
+    const factoryFull = deep && ffEl ? ffEl.checked : false;
     const cliEl = document.getElementById('redisc-cli');     // absent on FAZ/FAC
     const cli = (cliEl && !cliEl.disabled) ? cliEl.checked : false;
     const freshToken = document.querySelector('meta[name="csrf-token"]').content;
@@ -199,6 +207,7 @@
         method: 'POST',
         headers: {'X-CSRFToken': freshToken, 'Content-Type': 'application/x-www-form-urlencoded'},
         body: 'deep=' + (deep ? '1' : '0') + '&cli=' + (cli ? '1' : '0')
+          + '&factory_full=' + (factoryFull ? '1' : '0')
       });
       if (!r.ok) {
         errs.textContent = 'Server error ' + r.status + ' — check permissions or try refreshing.';

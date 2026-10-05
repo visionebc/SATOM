@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Compare') }} · {{ _('Factory catalog') }}{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <h4 class="mb-1"><i class="bi bi-arrow-left-right me-2"></i>{{ b.name }}</h4>
+  <p class="text-muted mb-0" style="font-size:13px;">
+    <a href="{{ url_for('factory_catalog.index') }}">{{ _('Factory catalog') }}</a> ·
+    <a href="{{ url_for('factory_catalog.entry', entry_id=a.id) }}">{{ a.surface }}</a>{% if a.name != b.name %} ({{ a.name }}){% endif %}
+    &rarr; <a href="{{ url_for('factory_catalog.entry', entry_id=b.id) }}">{{ b.surface }}</a>
+    · {{ _('internal handles and usage counters are not compared') }}
+  </p>
+</div>
+{% if not total %}
+<div class="fw-card" style="padding:16px;"><span class="fw-badge fw-badge-success">{{ _('identical') }}</span> <span class="text-muted ms-2" style="font-size:13px;">{{ _('The vendor shipped the same profile on both.') }}</span></div>
+{% else %}
+{% if truncated %}<p class="text-muted" style="font-size:12px;">{{ _('Showing the first %(n)s of each kind.', n=limit) }}</p>{% endif %}
+<div class="fw-card">
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle" id="fcDiff" style="font-size:12.5px;">
+      <thead><tr><th style="width:45%">{{ _('Path') }}</th><th>{{ a.firmware }}{% if a.build_no %} b{{ a.build_no }}{% endif %}</th><th>{{ b.firmware }}{% if b.build_no %} b{{ b.build_no }}{% endif %}</th></tr></thead>
+      <tbody>
+      {% for p, v in d.added %}<tr><td><span class="fw-badge fw-badge-success me-1">{{ _('added') }}</span><code>{{ p }}</code></td><td class="text-muted">—</td><td><code>{{ v }}</code></td></tr>{% endfor %}
+      {% for p, v in d.removed %}<tr><td><span class="fw-badge fw-badge-danger me-1">{{ _('removed') }}</span><code>{{ p }}</code></td><td><code>{{ v }}</code></td><td class="text-muted">—</td></tr>{% endfor %}
+      {% for p, o, n in d.changed %}<tr><td><span class="fw-badge fw-badge-warning me-1">{{ _('changed') }}</span><code>{{ p }}</code></td><td><code>{{ o }}</code></td><td><code>{{ n }}</code></td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

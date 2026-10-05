@@ -93,6 +93,9 @@ class _MemoReader:
         self._inflight: dict = {}
         self.reads = 0      # requests that reached the device
         self.reused = 0     # requests answered from the memo
+        #: keys whose read failed (see :class:`FlaggingClient`); cached like
+        #: any answer, and remembered so a catalog recording can refuse them.
+        self.failed: set = set()
         if not callable(getattr(reader, "get_object", None)):
             # scoped_rows falls back to get_raw for a reader without the
             # scoped read; the memo must not invent one.
@@ -119,9 +122,12 @@ class _MemoReader:
                     break
             pending.wait()
         try:
+            _READ_STATE.failed = False
             rows = fetch()
             with self._lock:
                 self._done[key] = rows
+                if _read_failed():
+                    self.failed.add(key)
             return self._copy(rows)
         finally:
             with self._lock:
@@ -135,6 +141,45 @@ class _MemoReader:
     def get_object(self, logical: str, mkey: str = "") -> Any:
         return self._get(("obj", logical, str(mkey or "")),
                          lambda: self._reader.get_object(logical, mkey))
+
+
+#: Per-thread "the read in flight failed" flag, raised by :class:`FlaggingClient`.
+#: ``clone.ClientReader`` turns every failure into ``[]`` -- right for a walk
+#: that must not die on one bad read, and indistinguishable from an empty
+#: sub-table. The factory catalog must tell the two apart: a tree with a
+#: failed read in it may be shown once, never stored and replayed.
+_READ_STATE = threading.local()
+
+
+def _read_failed() -> bool:
+    return bool(getattr(_READ_STATE, "failed", False))
+
+
+class FlaggingClient:
+    """Pass-through over a device client that flags a failed read on the
+    calling thread: an exception, an HTTP error, or an error envelope that is
+    not the benign "absent / not found" (``FortiWebClient._device_error``).
+    Changes nothing about what the reader returns."""
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._client, name)
+
+    def get(self, path: str, *args: Any, **kwargs: Any) -> Any:
+        from ..clients.fortiweb import FortiWebClient
+        try:
+            resp = self._client.get(path, *args, **kwargs)
+        except Exception:
+            _READ_STATE.failed = True
+            raise
+        try:
+            if FortiWebClient._device_error(resp):
+                _READ_STATE.failed = True
+        except Exception:  # noqa: BLE001 — an unreadable answer is a failed one
+            _READ_STATE.failed = True
+        return resp
 
 
 def _find(rows: list[dict], mkey: str) -> dict | None:
@@ -285,7 +330,8 @@ def _app_for_workers():
 
 
 def deep_sections(reader: Any, progress=None, should_stop=None,
-                  workers: int = 1, stats: dict | None = None) -> dict:
+                  workers: int = 1, stats: dict | None = None,
+                  catalog: Any = None) -> dict:
     """Walk every WPP (inline + offline) + every server policy, returning the
     enriched ``{section: {logical_name: [obj-with-_deep, ...]}}`` snapshot shape
     that ``device_store.ingest_sections`` consumes. A single shared collection
@@ -315,6 +361,11 @@ def deep_sections(reader: Any, progress=None, should_stop=None,
 
     ``stats`` (optional) is filled with ``reads`` (requests that reached the
     device), ``reused`` (answered from the memo) and ``workers``.
+
+    ``catalog`` (optional, a ``factory_catalog.CatalogSession``) is handed every
+    WPP: a predefined one it can vouch for is replayed from the catalog instead
+    of walked, every other one is walked as before (and a predefined one is
+    recorded). ``stats["catalog"]`` then carries its counters.
     """
     memo = reader if isinstance(reader, _MemoReader) else _MemoReader(reader)
     workers = max(1, int(workers or 1))
@@ -335,6 +386,8 @@ def deep_sections(reader: Any, progress=None, should_stop=None,
     def _stats() -> None:
         if stats is not None:
             stats.update(reads=memo.reads, reused=memo.reused, workers=workers)
+            if catalog is not None:
+                stats["catalog"] = catalog.counts()
 
     def _tick(done: int, phase: str, index: int, of: int, current: str) -> None:
         if progress is None:
@@ -344,7 +397,9 @@ def deep_sections(reader: Any, progress=None, should_stop=None,
                       "index": index, "of": of, "current": current,
                       "policies": len(pol_names),
                       "wpps": len(wpp_names) + len(off_names),
-                      "reads": memo.reads, "reused": memo.reused})
+                      "reads": memo.reads, "reused": memo.reused,
+                      "catalog_reused": (catalog.counts()["reused"]
+                                         if catalog is not None else 0)})
         except Exception:  # noqa: BLE001 — reporting never sinks the walk
             pass
 
@@ -375,7 +430,12 @@ def deep_sections(reader: Any, progress=None, should_stop=None,
                 return
             _phase, node, nm, _idx, _of = work[i]
             try:
-                g = _collect_node(memo, node, nm, set(), cache)
+                if catalog is not None and node is not SERVER_POLICY:
+                    g = catalog.collect(memo, node, nm, cache,
+                                        "wpp_offline" if node is _WPP_OFFLINE_NODE
+                                        else "wpp_inline")
+                else:
+                    g = _collect_node(memo, node, nm, set(), cache)
             except BaseException as exc:  # noqa: BLE001 — re-raised below
                 with lock:
                     run["error"] = run["error"] or exc

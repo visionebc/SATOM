@@ -12620,7 +12620,7 @@ msgstr "Avviso"
 msgid "We'll email a reset link to your recovery address"
 msgstr "Inviaremo un collegamento di ripristino alla tua indirizzo di recupero tramite email."
 
-#: app/templates/base.html:720 app/templates/web_protection/_menu.html:6
+#: app/templates/base.html:720
 #: app/templates/web_protection/overview.html:9
 #: app/templates/web_protection/section.html:9
 #: app/templates/web_protection/signature_policy.html:9
@@ -12630,7 +12630,6 @@ msgstr "Protezione Web"
 #: app/templates/analysis/index.html:167 app/templates/analysis/index.html:270
 #: app/templates/base.html:716 app/templates/exceptions/list.html:84
 #: app/templates/structure/index.html:30
-#: app/templates/web_protection/_menu.html:12
 #: app/templates/web_protection/overview.html:11
 #: app/templates/web_protection/overview.html:20
 msgid "Web Protection Profile"

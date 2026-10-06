@@ -127,8 +127,6 @@ def overview(id):
         freshness=read_layer.freshness_label(wmeta),
         cached=wmeta.get("cached"),
         error=error,
-        wp_groups=wp_menu.menu(),
-        active_item='__profile__',
     )
 
 
@@ -204,8 +202,6 @@ def menu_page(id, item_key):
         error=error,
         cache_meta=cache_meta,
         freshness=read_layer.freshness_label(cache_meta) if cache_meta else '',
-        wp_groups=wp_menu.menu(),
-        active_item=item.key,
     )
 
 
@@ -327,8 +323,6 @@ def signature_policy(id, name):
         value_labels=vlabels,
         filter_spec=filter_spec,
         class_spec=class_spec,
-        wp_groups=wp_menu.menu(),
-        active_item='signatures',
     )
 
 

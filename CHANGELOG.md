@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.12.0] - 2026-10-06
+
 ### Added — factory catalog: predefined WPPs are read once per firmware build and API version (2026-10-06)
 
 Every FortiWeb ships the same ~20 predefined Web Protection Profiles, and the

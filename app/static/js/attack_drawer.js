@@ -1209,19 +1209,41 @@
     });
   }
 
+  // The firmware verdict for the push (services.exception_compat). Missing
+  // evidence prints as a warning, never as green.
+  function compatHtml(c) {
+    var kind = c.blocking ? 'danger' : (c.level === 'ok' ? 'success' : 'warning');
+    return alertBox(kind,
+      '<i class="bi bi-cpu me-1"></i>Authored on ' +
+      esc(c.source_firmware || 'an unrecorded build') +
+      (c.api_version ? ' (API ' + esc(c.api_version) + ')' : '') +
+      ', this appliance runs ' + esc(c.target_version || 'an unknown build') + ' — ' +
+      (c.blocking ? '<strong>blocks</strong>: ' : '') +
+      esc(c.summary || c.state || '') + (c.overridden ? ' (overridden)' : ''));
+  }
+
   function doInsert(host, out, excId, apply) {
     var target = host.querySelector('.atk-target');
     var mk = host.querySelector('.atk-mkcontainer');
+    var ovr = out.querySelector('.atk-override');
+    var reason = ovr ? ovr.value : '';
     out.innerHTML = spinner(apply ? 'Writing to the appliance…' : 'Planning…');
     post(PAGE.insert_url.replace('__ID__', excId), {
       appliance_id: PAGE.appliance_id,
       target: target ? target.value : '',
       create_container: !!(mk && mk.checked),
-      apply: !!apply
+      apply: !!apply,
+      override_reason: reason
     }).then(function (r) {
       var h = '';
       if (r.scope && r.scope.needs_clone) {
         out.innerHTML = scopeHtml(r.scope);
+        return;
+      }
+      if (r.compat) h += compatHtml(r.compat);
+      if (r.compat && !r.plan && r.error) {
+        // Refused by the firmware gate: nothing was sent.
+        out.innerHTML = h + alertBox('danger', esc(r.error));
         return;
       }
       if (r.plan) {
@@ -1236,6 +1258,12 @@
         }
       }
       if (!apply) {
+        if (r.compat && r.compat.blocking && r.plan && r.plan.status === 'ready') {
+          h += '<label class="form-label mt-1" style="font-size:12.5px;">Override ' +
+            'reason (approvers only — recorded in the audit log)</label>' +
+            '<input type="text" class="form-control form-control-sm atk-override mb-2" ' +
+            'maxlength="300" value="' + esc(reason) + '">';
+        }
         h += (r.plan && r.plan.status === 'ready')
           ? '<button type="button" class="btn btn-sm btn-danger atk-go">' +
             '<i class="bi bi-box-arrow-in-down me-1"></i>Insert it into the ' +

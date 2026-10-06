@@ -679,6 +679,13 @@ def list_exceptions(appliance_id: int, category: str | None = None) -> list[WppE
     return q.order_by(WppException.wpp_mkey, WppException.id).all()
 
 
+def _appliance(appliance_id):
+    if not appliance_id:
+        return None
+    from ..models import Appliance
+    return db.session.get(Appliance, appliance_id)
+
+
 def get(exc_id: int) -> WppException | None:
     return WppException.query.get(exc_id)
 
@@ -706,7 +713,7 @@ def add(appliance_id: int, *, wpp_mkey: str, exc_type: str, payload: dict,
         policies: list[str] | None = None, category: str | None = None,
         library_uid: str | None = None, lineage: str | None = None,
         version_action: str | None = None,
-        version_note: str = "") -> WppException:
+        version_note: str = "", stamp: dict | None = None) -> WppException:
     exc = WppException(
         appliance_id=appliance_id, wpp_mkey=wpp_mkey or "",
         exc_type=exc_type, category=category or category_for(exc_type),
@@ -714,6 +721,11 @@ def add(appliance_id: int, *, wpp_mkey: str, exc_type: str, payload: dict,
         reason=reason or "", author=author or "",
         library_uid=library_uid or None, lineage=lineage or None,
     )
+    # ``stamp`` is passed by a COPY (placement), which keeps the source build
+    # its payload was written against; anything else was authored here.
+    from . import exception_compat as _compat
+    _compat.apply_stamp(exc, stamp if stamp is not None
+                        else _compat.stamp_for(_appliance(appliance_id)))
     _set_policies(exc, policies or [])
     db.session.add(exc)
     # Flush BEFORE versioning so the version row carries a real exception_id.
@@ -743,7 +755,13 @@ def update(exc_id: int, *, wpp_mkey: str | None = None, payload: dict | None = N
             exc.stale = False
             exc.stale_reason = ""
     if payload is not None:
-        exc.payload = json.dumps(payload or {})
+        new_payload = json.dumps(payload or {})
+        if new_payload != exc.payload:
+            # An edited payload was written against this appliance's build
+            # now, whatever build the previous body came from.
+            from . import exception_compat as _compat
+            _compat.apply_stamp(exc, _compat.stamp_for(_appliance(exc.appliance_id)))
+        exc.payload = new_payload
     if name is not None:
         exc.name = name
     if reason is not None:

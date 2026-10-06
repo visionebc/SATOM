@@ -1064,6 +1064,16 @@ def insert_exception(exc_id):
                 'FortiWeb rejects more. Remove one first.'
                 % (target, used, store.SIG_FILTER_MAX))), 409
 
+    # The payload against THIS box's build — same gate as the Exceptions page.
+    from ..services import exception_compat
+    allowed, compat = exception_compat.gate(
+        exc, appliance, apply=apply_now, user=current_user,
+        override_reason=body.get('override_reason') or '')
+    if not allowed:
+        return jsonify(ok=False, compat=compat, scope=scope.to_dict(), error=(
+            'Not inserted: %s — %s.' % (compat.get('summary', ''),
+                                        compat.get('override_hint', '')))), 409
+
     res = exception_inject.apply_injection(
         FortiWebOps(appliance), exc_type=exc.exc_type, payload=exc.payload_dict,
         target=target, dry_run=not apply_now,
@@ -1074,11 +1084,14 @@ def insert_exception(exc_id):
                       'wpp': exc.wpp_mkey, 'server_policy': policy,
                       'device_target': target, 'dry_run': not apply_now,
                       'ok': res['ok'], 'scope_state': scope.state,
+                      'compat': {k: compat.get(k) for k in (
+                          'state', 'source_firmware', 'target_version',
+                          'overridden')},
                       'plan': {k: res['plan'].get(k)
                                for k in ('status', 'method', 'endpoint', 'error')},
                       'steps': res['steps']})
     return jsonify(ok=res['ok'], dry_run=res['dry_run'], steps=res['steps'],
-                   scope=scope.to_dict(),
+                   scope=scope.to_dict(), compat=compat,
                    plan={k: res['plan'].get(k)
                          for k in ('status', 'method', 'endpoint', 'error')},
                    body=res['plan'].get('body'),

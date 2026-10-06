@@ -71,6 +71,11 @@ class LinePlan:
     cert_class: str = ""
     wpp_template_id: int | None = None
     wpp_template_name: str = ""
+    #: The build the template was written for and the builds its approval
+    #: covers (services.template_compat). Shown, never decided on, here: which
+    #: build matters depends on the device a policy is built on.
+    wpp_source_firmware: str = ""
+    wpp_validated_builds: list[str] = field(default_factory=list)
     ipam_pool: str = ""
     problems: list[Problem] = field(default_factory=list)
 
@@ -92,6 +97,8 @@ class LinePlan:
             "cert_class": self.cert_class,
             "wpp_template_id": self.wpp_template_id,
             "wpp_template_name": self.wpp_template_name,
+            "wpp_source_firmware": self.wpp_source_firmware,
+            "wpp_validated_builds": list(self.wpp_validated_builds),
             "ipam_pool": self.ipam_pool, "blocked": self.blocked,
             "problems": [p.as_dict() for p in self.problems],
         }
@@ -183,6 +190,8 @@ def _resolve_wpp(plan: LinePlan, template_id: int | None) -> None:
         return
     plan.wpp_template_id = tpl.id
     plan.wpp_template_name = tpl.name
+    plan.wpp_source_firmware = getattr(tpl, "source_firmware", "") or ""
+    plan.wpp_validated_builds = sorted(getattr(tpl, "validated_builds_dict", {}) or {})
     if (tpl.product or "") != plan.product:
         plan.problems.append(Problem(
             P_WPP_WRONG_PRODUCT,

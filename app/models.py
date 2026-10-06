@@ -1851,6 +1851,11 @@ class WppException(db.Model):
     # NULL = a local carve-out nobody has promoted to the library — which is
     # what every row authored before the library existed truly is.
     library_uid = db.Column(db.String(40), nullable=True, index=True)
+    # The build + REST API the payload was authored against
+    # (services.exception_compat). '' = authored before stamps existed; a
+    # placement copied to another scope keeps the SOURCE build.
+    source_firmware = db.Column(db.String(32), nullable=True, default="")
+    api_version = db.Column(db.String(16), nullable=True, default="")
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

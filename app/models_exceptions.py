@@ -59,7 +59,12 @@ def new_uid() -> str:
 #: Keys excluded from the content hash. ``updated_at`` moves on every save and
 #: hashing it would mint a version for a save that changed nothing — the exact
 #: failure ``sot_store.VOLATILE_KEYS`` exists to prevent, for the same reason.
-VOLATILE_KEYS = ("updated_at", "created_at", "id")
+#: The build stamp is stored in the body (a rollback or restore must bring
+#: back the build the OLD payload was written against) but kept out of the
+#: hash: the same payload restamped is not a new version, and hashing it would
+#: mint one on every lineage the first time it is saved after the upgrade.
+VOLATILE_KEYS = ("updated_at", "created_at", "id", "source_firmware",
+                 "api_version")
 
 
 def body_of(exc) -> dict[str, Any]:
@@ -78,6 +83,8 @@ def body_of(exc) -> dict[str, Any]:
         "enabled": bool(exc.enabled),
         "payload": exc.payload_dict,
         "policies": sorted(exc.policy_names or []),
+        "source_firmware": getattr(exc, "source_firmware", "") or "",
+        "api_version": getattr(exc, "api_version", "") or "",
     }
 
 
@@ -118,6 +125,10 @@ class ExceptionLibraryItem(db.Model):
     #: meaning — a taxonomy invented here would compete with exc_type.
     tags = db.Column(db.String(255), nullable=True, default="")
     author = db.Column(db.String(64), nullable=True, default="")
+    #: The build + REST API the payload was authored against — the stamp of the
+    #: placement it was promoted from (services.exception_compat).
+    source_firmware = db.Column(db.String(32), nullable=True, default="")
+    api_version = db.Column(db.String(16), nullable=True, default="")
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow,
                            onupdate=datetime.utcnow)
@@ -137,6 +148,8 @@ class ExceptionLibraryItem(db.Model):
             "payload": self.payload_dict, "reason": self.reason or "",
             "tags": [t.strip() for t in (self.tags or "").split(",") if t.strip()],
             "author": self.author or "",
+            "source_firmware": self.source_firmware or "",
+            "api_version": self.api_version or "",
             "created_at": self.created_at.isoformat(timespec="seconds")
                           if self.created_at else "",
         }

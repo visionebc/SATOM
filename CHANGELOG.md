@@ -18,6 +18,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   group heads lost the 3px left rail, so their icon and label sat 3px left.
 - Measured in headless Chromium across all five ADOMs: 338 rows, all 37px.
 
+### Removed — dead Web Protection side menu (2026-10-06)
+
+- `web_protection/_menu.html` was never included by any template, yet the
+  three Web Protection views rebuilt its menu (`wp_groups`, `active_item`) on
+  every request. The partial and those two arguments are gone; the real
+  sidebar tree (`wp_menu` via `base.html`) is unchanged.
+
 ## [2.12.0] - 2026-10-06
 
 ### Added — factory catalog: predefined WPPs are read once per firmware build and API version (2026-10-06)

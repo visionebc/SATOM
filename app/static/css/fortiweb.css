@@ -297,6 +297,9 @@ div.fw-nav-section.fw-nav-context-label {
   color: var(--fw-sidebar-text);
   text-decoration: none;
   font-size: 13.5px;
+  /* = the 14px icon's line box, so a row is 37px with or without an icon
+     (the iconless "Select a device" placeholders came out 0.7px short). */
+  line-height: 21px;
   transition: background var(--fw-transition), color var(--fw-transition);
   border-left: 3px solid transparent;
   white-space: nowrap;
@@ -326,6 +329,12 @@ div.fw-nav-section.fw-nav-context-label {
 }
 
 .fw-nav-item.active .fw-nav-icon { opacity: 1; }
+/* Image icons (the ADOM marks) take the same 18px column and 21px line as the
+   14px glyph icons — at 16x16 the row came out 0.7px short and its label sat
+   2px left of every other label. */
+.fw-nav-item img.fw-nav-icon { height: 16px; margin: 2.5px 0; object-fit: contain; }
+/* smaller inline text (the device row's "· change") must not grow the 21px line */
+.fw-nav-item small { line-height: 1; }
 
 /* FortiWeb config sections — indented sub-items under "Configuration" */
 .fw-nav-subitem {
@@ -358,15 +367,18 @@ div.fw-nav-section.fw-nav-context-label {
   gap: 8px;
   cursor: pointer;
   list-style: none;
-  padding: 6px 16px 6px 30px;
-  font-size: 12.5px;
+  padding: 8px 16px 8px 30px;
+  /* the 3px rail every .fw-nav-item carries — without it a group head sat
+     3px left of its flat peers (Cookie Security, Data Loss Prevention) */
+  border-left: 3px solid transparent;
+  font-size: 13.5px;
   font-weight: 500;
   color: var(--fw-sidebar-section);
   user-select: none;
 }
 .fw-so-nav-head::-webkit-details-marker { display: none; }
 .fw-so-nav-head:hover { color: var(--fw-sidebar-text-hover); background: rgba(255,255,255,0.04); }
-.fw-so-nav-gicon { width: 16px; text-align: center; font-size: 12.5px; opacity: 0.8; flex-shrink: 0; }
+.fw-so-nav-gicon { width: 18px; text-align: center; font-size: 14px; opacity: 0.8; flex-shrink: 0; }
 .fw-so-nav-head > span { flex: 1 1 auto; }
 .fw-so-nav-caret {
   font-size: 9px; opacity: .6; flex-shrink: 0;
@@ -375,14 +387,14 @@ div.fw-nav-section.fw-nav-context-label {
 .fw-so-nav-group[open] > .fw-so-nav-head .fw-so-nav-caret { transform: rotate(0deg); }
 .fw-so-nav-group:not([open]) > .fw-so-nav-head .fw-so-nav-caret { transform: rotate(-90deg); }
 /* leaves: indent deeper than group heads so the hierarchy reads clearly */
-.fw-so-nav-item { padding-left: 46px !important; font-size: 12.5px; }
-.fw-so-nav-item .fw-nav-icon { width: 16px; font-size: 12.5px; }
+/* Same 13.5px type and 14px icon as every other sidebar item: depth reads
+   from the indent alone, so a nested row is never a smaller row. */
+.fw-so-nav-item { padding-left: 46px !important; }
 /* Flat top-level WP groups (Cookie Security, Data Loss Prevention): they have
    NO children, so they render as a direct link — but they are TOP-LEVEL menu
    entries (peers of Access / Input Validation / Advanced Protection), so they
    must sit at the GROUP-HEAD indent (30px), not the deep child indent (46px). */
-.fw-so-nav-flat { padding-left: 30px !important; font-size: 12.5px; }
-.fw-so-nav-flat .fw-nav-icon { width: 16px; font-size: 12.5px; }
+.fw-so-nav-flat { padding-left: 30px !important; }
 .fw-so-nav-ro { margin-left: auto; font-size: 11px; opacity: .55; flex-shrink: 0; }
 /* Server Objects PARENT — the whole section collapses as one unit */
 .fw-so-parent { border: 0; }
@@ -1685,6 +1697,9 @@ body.fw-entering-page {
   cursor: pointer;
   font-family: inherit;
   text-align: left;
+  /* border:0 above also dropped .fw-nav-item's 3px left border, so the
+     toggle's icon and label sat 3px left of their sibling links. */
+  border-left: 3px solid transparent;
 }
 .fw-nav-subtoggle > span { flex: 1 1 auto; }
 .fw-nav-subgroup:not(.open) .fw-nav-subtoggle .fw-nav-caret { transform: rotate(-90deg); }

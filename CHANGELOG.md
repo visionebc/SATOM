@@ -6,6 +6,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — every sidebar row is the same size (2026-10-06)
+
+- Nested FortiWeb rows (WAF Artifacts children, the Server Objects / Web
+  Protection / Configuration trees and their "Select a device" placeholders)
+  were 12.5px text on 30.8–34.8px rows; every other row is 13.5px on 37px.
+  They now match — depth reads from the indent only.
+- The Global ADOM links (FortiWeb, FortiADC, …) used 16x16 inline images: the
+  row was 0.7px short and the label sat 2px left of its siblings.
+- Sub-menu toggles (Monitoring, Fleet health, WAF, Troubleshooting) and tree
+  group heads lost the 3px left rail, so their icon and label sat 3px left.
+- Measured in headless Chromium across all five ADOMs: 338 rows, all 37px.
+
 ## [2.12.0] - 2026-10-06
 
 ### Added — factory catalog: predefined WPPs are read once per firmware build and API version (2026-10-06)

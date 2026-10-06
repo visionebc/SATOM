@@ -495,8 +495,12 @@ key), <code>comment</code>. Allows a specific file past file-security/AV scannin
 <td><code>app/registry/data/waf_specs.json</code> (the <code>*_exception*</code>/<code>*_exc_*</code> kinds), registered by <code>app/services/waf_specs.py</code></td>
 </tr>
 <tr>
+<td>Firmware stamp + push gate</td>
+<td><code>app/services/exception_compat.py</code> (<code>stamp_for</code>, <code>check</code>, <code>gate</code>) — <code>source_firmware</code>/<code>api_version</code> on <code>wpp_exceptions</code> and <code>exception_library</code></td>
+</tr>
+<tr>
 <td>Tests</td>
-<td><code>tests/test_wpp_exceptions.py</code>, <code>tests/test_exception_inject.py</code>, <code>tests/test_exception_sync.py</code></td>
+<td><code>tests/test_wpp_exceptions.py</code>, <code>tests/test_exception_inject.py</code>, <code>tests/test_exception_sync.py</code>, <code>tests/test_exception_compat.py</code></td>
 </tr>
 </tbody>
 </table>

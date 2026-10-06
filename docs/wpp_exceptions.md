@@ -167,7 +167,8 @@ key), `comment`. Allows a specific file past file-security/AV scanning.
 | Inject panel (dry-run preview → push) | `app/templates/exceptions/list.html` (`#inject-panel`) → `app/views/exceptions.py` (`inject_targets`, `inject`) |
 | Alignment report | `app/services/wpp_exceptions.py` (`alignment()`); surfaced inline on the page (stale banner + the `state=stale` filter) |
 | The FortiWeb-style forms (specs) | `app/registry/data/waf_specs.json` (the `*_exception*`/`*_exc_*` kinds), registered by `app/services/waf_specs.py` |
-| Tests | `tests/test_wpp_exceptions.py`, `tests/test_exception_inject.py`, `tests/test_exception_sync.py` |
+| Firmware stamp + push gate | `app/services/exception_compat.py` (`stamp_for`, `check`, `gate`) — `source_firmware`/`api_version` on `wpp_exceptions` and `exception_library` |
+| Tests | `tests/test_wpp_exceptions.py`, `tests/test_exception_inject.py`, `tests/test_exception_sync.py`, `tests/test_exception_compat.py` |
 
 ## 6. Inject to the device ("save to policy")
 

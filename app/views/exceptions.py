@@ -550,11 +550,21 @@ def inject(id):
                 'Signature set "%s" already holds %d/%d exception entries — '
                 'FortiWeb rejects more. Remove an entry first.' % (
                     target, used, store.SIG_FILTER_MAX))), 409
+    # The payload against THIS box's build — same rules as a template apply.
+    from ..services import exception_compat
+    allowed, compat = exception_compat.gate(
+        exc, appliance, apply=bool(body.get('apply')), user=current_user,
+        override_reason=body.get('override_reason') or '')
+    if not allowed:
+        return jsonify(ok=False, compat=compat, error=(
+            'Not pushed: %s — %s.' % (compat.get('summary', ''),
+                                      compat.get('override_hint', '')))), 409
     res = exception_inject.apply_injection(
         FortiWebOps(appliance), exc_type=exc.exc_type, payload=exc.payload_dict,
         target=target, dry_run=not bool(body.get('apply')),
         create_container=bool(body.get('create_container')))
     return jsonify(ok=res['ok'], dry_run=res['dry_run'], steps=res['steps'],
+                   compat=compat,
                    plan={k: res['plan'].get(k) for k in ('status', 'method', 'endpoint', 'error')})
 
 

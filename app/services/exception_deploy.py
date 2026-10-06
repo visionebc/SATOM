@@ -28,6 +28,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..models import WppException
+from . import exception_compat as _compat
 from . import exception_versions as versions
 from . import waf_fleet
 from . import wpp_exceptions as store
@@ -119,7 +120,8 @@ def promote_to_library(exc, *, author: str = "") -> str:
         uid=uid, name=exc.name or "", exc_type=store.canonical_type(exc.exc_type),
         category=exc.category or store.category_for(exc.exc_type),
         payload=_json.dumps(exc.payload_dict), reason=exc.reason or "",
-        author=author or exc.author or "")
+        author=author or exc.author or "",
+        **_compat.stamp_of(exc))
     db.session.add(item)
     exc.library_uid = uid
     versions.record(exc, action=versions.ACT_UPDATE, author=author,
@@ -177,7 +179,10 @@ def place(exc, appliance_ids: list[int], *, author: str = "", user=None,
             policies=[], category=exc.category, library_uid=uid,
             version_action=versions.ACT_CLONE,
             version_note="placed from carve-out #%d (%s)"
-                         % (exc.id, versions.scope_label(exc)))
+                         % (exc.id, versions.scope_label(exc)),
+            # The payload was written against the SOURCE build; the push to
+            # this scope is checked against its own build (exception_compat).
+            stamp=_compat.stamp_of(exc))
         placed.append({"appliance_id": t["appliance_id"], "scope": t["scope"],
                        "id": copy.id, "lineage": copy.lineage})
     return {"ok": True, "library_uid": uid, "placed": placed,

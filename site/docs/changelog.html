@@ -112,6 +112,45 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--exceptions-record-their-firmware-build-line-profiles-show-the-templates-2026-10-06">Added — exceptions record their firmware build; line profiles show the template's (2026-10-06)</h3>
+<ul>
+<li>Every WAF/signature carve-out (and its fleet library item) now records the
+  firmware build and REST API version it was authored against. Copies placed
+  on other appliances keep the source build; editing the payload restamps it;
+  rollback and restore bring back the build of the old payload. The stamp is
+  versioned but kept out of the content hash, so no existing history gains a
+  version.</li>
+<li><strong>Inject to device</strong> and the Attack ID insert check the payload against the
+  target's build, with the template rules: discarded, renamed or unserved
+  fields block the push, an approver (<code>operations.template_approve</code>) can
+  override with a reason, audited as <code>exception.compat.override</code>. The API
+  sweep does not measure the exception sub-tables yet, so most pushes show
+  "no evidence" — a warning, never a pass.</li>
+<li>Line Profiles show the build of each line's WPP template and the builds its
+  approval covers. The new-policy wizard warns, without blocking, when that
+  template does not fit or was never validated for the device's build (the
+  wizard binds the profile already on the device and writes no template
+  field).</li>
+</ul>
+<h3 id="fixed--every-sidebar-row-is-the-same-size-2026-10-06">Fixed — every sidebar row is the same size (2026-10-06)</h3>
+<ul>
+<li>Nested FortiWeb rows (WAF Artifacts children, the Server Objects / Web
+  Protection / Configuration trees and their "Select a device" placeholders)
+  were 12.5px text on 30.8–34.8px rows; every other row is 13.5px on 37px.
+  They now match — depth reads from the indent only.</li>
+<li>The Global ADOM links (FortiWeb, FortiADC, …) used 16x16 inline images: the
+  row was 0.7px short and the label sat 2px left of its siblings.</li>
+<li>Sub-menu toggles (Monitoring, Fleet health, WAF, Troubleshooting) and tree
+  group heads lost the 3px left rail, so their icon and label sat 3px left.</li>
+<li>Measured in headless Chromium across all five ADOMs: 338 rows, all 37px.</li>
+</ul>
+<h3 id="removed--dead-web-protection-side-menu-2026-10-06">Removed — dead Web Protection side menu (2026-10-06)</h3>
+<ul>
+<li><code>web_protection/_menu.html</code> was never included by any template, yet the
+  three Web Protection views rebuilt its menu (<code>wp_groups</code>, <code>active_item</code>) on
+  every request. The partial and those two arguments are gone; the real
+  sidebar tree (<code>wp_menu</code> via <code>base.html</code>) is unchanged.</li>
+</ul>
 <h2 id="2120---2026-10-06">[2.12.0] - 2026-10-06</h2>
 <h3 id="added--factory-catalog-predefined-wpps-are-read-once-per-firmware-build-and-api-version-2026-10-06">Added — factory catalog: predefined WPPs are read once per firmware build and API version (2026-10-06)</h3>
 <p>Every FortiWeb ships the same ~20 predefined Web Protection Profiles, and the

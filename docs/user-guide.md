@@ -3663,6 +3663,28 @@ writes a **new pending version** stamped with the target build, with every
 change listed in its note; the original version is untouched. A body whose
 object the target does not serve at all cannot be adapted.
 
+**Line profiles and the new-policy wizard.** The Line Profiles page shows, for
+each line, the build its Web Protection Profile template was written for and
+the builds its approval covers; the template dropdown lists each version's
+build. The *From a line profile* wizard binds the profile that is already on
+the device by name and writes no template field, so it never blocks on
+firmware. It does **warn** when the line's template does not fit the device's
+build, or was never validated for it, because the profile on that device may
+have been pushed incomplete.
+
+**Exceptions carry a build too.** Every carve-out records the firmware build
+and API version of the appliance it was authored on; a carve-out placed onto
+other appliances keeps the build it was written for, and editing its payload
+restamps it with the appliance's current build. A rollback or restore brings
+back the build the old payload was written against (carve-outs saved before
+this show *unrecorded*). **⬆ Inject to device** and the Attack ID insert show
+the verdict for the target's build in the dry-run, with the same rules as the
+table above: fields discarded, renamed or an endpoint not served **block** the
+push, and an approver can override with an audited reason. Today the API sweep
+does not measure the exception sub-tables, so most pushes show *no evidence* —
+a warning, never green; the check starts blocking on its own once a sweep
+records those fields.
+
 ### 29.2 The Section Catalog
 
 FortiWeb ADOM → **Section Catalog** (admin). It lists **only templates whose
@@ -5249,8 +5271,8 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (109 today) or **excluded with a written
-   reason** (142 today — JSON feeds, downloads, redirects and fragments that
+   the console is either **on the map** (110 today) or **excluded with a written
+   reason** (143 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the

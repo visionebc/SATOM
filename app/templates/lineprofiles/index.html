@@ -84,6 +84,15 @@
       {% endfor %}
     </div>
 
+    {% if plan.wpp_template_id %}
+    <div class="mb-3" style="font-size:12.5px;">
+      <span class="text-muted">{{ _('Template firmware') }}:</span>
+      {{ plan.wpp_source_firmware or _('no firmware recorded') }}
+      · <span class="text-muted">{{ _('validated for') }}:</span>
+      {{ plan.wpp_validated_builds | join(', ') if plan.wpp_validated_builds else _('no build yet') }}
+    </div>
+    {% endif %}
+
     <form method="post" action="{{ url_for('line_profiles.save') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="line" value="{{ plan.line }}">
@@ -120,7 +129,7 @@
             <option value="">{{ _('— none —') }}</option>
             {% for t in wpp_templates %}
             <option value="{{ t.id }}" {% if prof and prof.wpp_template_id == t.id %}selected{% endif %}>
-              {{ t.name }} v{{ t.version }} — {{ t.status }}
+              {{ t.name }} v{{ t.version }} — {{ t.status }} · {{ t.source_firmware or _('no firmware recorded') }}
             </option>
             {% endfor %}
           </select>

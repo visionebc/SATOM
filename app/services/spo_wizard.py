@@ -402,6 +402,7 @@ def build_plan(appliance, *, line: str, web_address: str,
     # -- the Web Protection Profile --------------------------------------
     plan.wpp_template_id = lplan.wpp_template_id
     plan.wpp_template_name = lplan.wpp_template_name
+    _wpp_firmware_warning(appliance, plan)
 
     # -- backends ---------------------------------------------------------
     if plan.pool_mode == POOL_NEW:
@@ -427,6 +428,44 @@ def build_plan(appliance, *, line: str, web_address: str,
     # -- name collision, read from the LIVE device ------------------------
     _collision_check(appliance, plan)
     return plan
+
+
+def _wpp_firmware_warning(appliance, plan: SpoPlan) -> None:
+    """Say when the line's template does not fit THIS device's build.
+
+    A WARNING, never a blocker: this wizard writes no template field — it
+    binds the profile already on the device by name, and that profile was
+    pushed by ``templates.apply``, which gates on the same verdict. What the
+    operator needs here is to know that the profile the line names may have
+    landed incomplete on this build (pushed under an override, or before the
+    gate existed), or that nobody validated the template for it.
+    """
+    if not plan.wpp_template_id:
+        return
+    try:
+        from ..models import Template
+        from . import template_compat as tc
+        tpl = lp.db_get(Template, plan.wpp_template_id)
+        if tpl is None:
+            return
+        rep = tc.for_appliances(tpl, [appliance], require_validated=True)
+    except Exception as exc:  # noqa: BLE001 — a probe must not 500 the page
+        plan.warnings.append(
+            "could not check the line's Web Protection Profile template "
+            f"against this device's firmware: {type(exc).__name__}: {exc}")
+        return
+    for d in rep.get("devices") or []:
+        if d.get("blocking"):
+            plan.warnings.append(
+                f"the line's template {plan.wpp_template_name!r} v{tpl.version} "
+                f"(written for {tpl.source_firmware or 'an unrecorded build'}) "
+                f"does not fit {d.get('build') or 'this build'}: {d.get('reason')}. "
+                "The profile on the device may be incomplete — revalidate or "
+                "adapt the template in the Template Library.")
+        elif not d.get("build"):
+            plan.warnings.append(
+                f"{getattr(appliance, 'name', 'the device')} reports no firmware, "
+                "so the line's template could not be checked against it")
 
 
 def _collision_check(appliance, plan: SpoPlan) -> None:

@@ -6,6 +6,26 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — exceptions record their firmware build; line profiles show the template's (2026-10-06)
+
+- Every WAF/signature carve-out (and its fleet library item) now records the
+  firmware build and REST API version it was authored against. Copies placed
+  on other appliances keep the source build; editing the payload restamps it;
+  rollback and restore bring back the build of the old payload. The stamp is
+  versioned but kept out of the content hash, so no existing history gains a
+  version.
+- **Inject to device** and the Attack ID insert check the payload against the
+  target's build, with the template rules: discarded, renamed or unserved
+  fields block the push, an approver (`operations.template_approve`) can
+  override with a reason, audited as `exception.compat.override`. The API
+  sweep does not measure the exception sub-tables yet, so most pushes show
+  "no evidence" — a warning, never a pass.
+- Line Profiles show the build of each line's WPP template and the builds its
+  approval covers. The new-policy wizard warns, without blocking, when that
+  template does not fit or was never validated for the device's build (the
+  wizard binds the profile already on the device and writes no template
+  field).
+
 ### Fixed — every sidebar row is the same size (2026-10-06)
 
 - Nested FortiWeb rows (WAF Artifacts children, the Server Objects / Web

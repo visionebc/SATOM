@@ -366,6 +366,10 @@
         </div>
       </div>
     </div>
+    <div class="mt-3 d-none" id="inject-override-wrap">
+      <label class="form-label small" for="inject-override">{{ _('Override reason (approvers only — recorded in the audit log)') }}</label>
+      <input type="text" id="inject-override" class="form-control form-control-sm" maxlength="300">
+    </div>
     <div class="mt-3">
       <button class="btn btn-sm btn-outline-primary" data-js="inject-dry-run">{{ _('Dry-run preview') }}</button>
       <button class="btn btn-sm btn-fw-primary" data-js="inject-push"><i class="bi bi-upload me-1"></i>{{ _('Push to device') }}</button>
@@ -740,15 +744,29 @@ function injectRun(apply){
   fwPost('/exceptions/'+EXC_AID+'/inject', {
     exc_id: INJECT_EXC.id, target: target, apply: apply,
     create_container: document.getElementById('inject-create').checked,
+    override_reason: document.getElementById('inject-override').value,
   }).then(function(j){
     const out = document.getElementById('inject-out');
     out.classList.remove('d-none');
     const plan = j.plan || {};
-    out.textContent = (j.dry_run ? 'DRY-RUN ' : 'APPLIED ') + (j.ok?'OK':'FAILED') + '\n'
-      + 'plan: ' + (plan.status||'') + ' ' + (plan.method||'') + ' ' + (plan.endpoint||'') + '\n'
-      + (j.steps||[]).map(s=>'  '+s.step+': '+(s.ok?'ok':'FAIL')+(s.error?(' — '+s.error):'')).join('\n');
+    const c = j.compat || null;
+    if (c && c.blocking) document.getElementById('inject-override-wrap').classList.remove('d-none');
+    out.textContent = (j.error ? j.error + '\n' : '')
+      + (c ? compatLine(c) + '\n' : '')
+      + (j.steps ? (j.dry_run ? 'DRY-RUN ' : 'APPLIED ') + (j.ok?'OK':'FAILED') + '\n'
+        + 'plan: ' + (plan.status||'') + ' ' + (plan.method||'') + ' ' + (plan.endpoint||'') + '\n'
+        + j.steps.map(s=>'  '+s.step+': '+(s.ok?'ok':'FAIL')+(s.error?(' — '+s.error):'')).join('\n') : '');
     if (window.FW) FW.toast(j.ok ? (j.dry_run?'Dry-run OK':'Pushed to device') : 'Inject failed', j.ok?'success':'danger');
   });
+}
+// The firmware verdict for the push (services.exception_compat). Never green
+// on missing evidence: "unmeasured"/"blind" print as such.
+function compatLine(c){
+  return 'firmware: authored on ' + (c.source_firmware || 'unknown build')
+    + (c.api_version ? ' (API ' + c.api_version + ')' : '')
+    + ', device runs ' + (c.target_version || 'unknown') + ' — '
+    + (c.blocking ? 'BLOCKS: ' : (c.level === 'ok' ? 'ok: ' : 'warning: '))
+    + (c.summary || c.state || '') + (c.overridden ? ' [overridden]' : '');
 }
 // ── detect on device ──
 function openDetect(){ const p=document.getElementById('detect-panel'); p.classList.remove('d-none'); p.scrollIntoView({behavior:'smooth'}); }

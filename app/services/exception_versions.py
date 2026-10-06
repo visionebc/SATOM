@@ -250,6 +250,11 @@ def rollback(exc, version_id: int, *, author: str = "",
     exc.reason = old.get("reason") or ""
     exc.enabled = bool(old.get("enabled", True))
     exc.payload = _json.dumps(old.get("payload") or {})
+    # The build the OLD payload was written against. A version recorded
+    # before stamps carries none, and '' says that; keeping today's stamp
+    # would claim the old body fits a build nobody checked it against.
+    from . import exception_compat as _compat
+    _compat.apply_stamp(exc, old)
     # exc_type and category are NOT restored: changing the type of a live
     # placement turns it into a different object whose payload no longer
     # validates, and the catalog is the authority on which fields exist.
@@ -295,7 +300,9 @@ def restore(lineage: str, *, appliance_id: int, author: str = "") -> dict[str, A
                     author=author, policies=list(body.get("policies") or []),
                     category=body.get("category") or None,
                     lineage=lineage, version_action=ACT_RESTORE,
-                    version_note="restored from version #%d" % src.id)
+                    version_note="restored from version #%d" % src.id,
+                    stamp={"source_firmware": body.get("source_firmware") or "",
+                           "api_version": body.get("api_version") or ""})
     return {"ok": True, "exc_id": exc.id, "lineage": lineage}
 
 

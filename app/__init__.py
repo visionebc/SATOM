@@ -1767,6 +1767,16 @@ def create_app(config_override: object | None = None) -> Flask:
                 # library item.
                 ('lineage', 'VARCHAR(40)'),
                 ('library_uid', 'VARCHAR(40)'),
+                # --- firmware / API stamp (services.exception_compat) ---
+                # DEFAULT '' and NO BACKFILL: a carve-out authored before the
+                # stamp was written against SOME build and nobody recorded
+                # which; the appliance's build today may not be that one.
+                ('source_firmware', "VARCHAR(32) DEFAULT ''"),
+                ('api_version', "VARCHAR(16) DEFAULT ''"),
+            ],
+            'exception_library': [
+                ('source_firmware', "VARCHAR(32) DEFAULT ''"),
+                ('api_version', "VARCHAR(16) DEFAULT ''"),
             ],
             # --- the chassis a row's artefacts belong to (2026-08-30) ---
             # DEFAULT '' and NOT backfilled here: "" means "not established

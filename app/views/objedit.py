@@ -523,10 +523,24 @@ def save_object(appliance_id):
     refusal, unverified = _ref_guard(appl, fields)
     if refusal:
         return refusal
-    res = FortiWebOps(appl).update(objform.rest_path(coll), mkey, {'data': fields},
-                                   dry_run=not do_apply)
+    # Channel split (services.cli_writer): a field the library classifies
+    # CLI-only/hidden on THIS build goes by the CLI writer, the rest by REST
+    # exactly as before. Fields the build does not know keep their REST path
+    # (unchanged behaviour) and are named in ``channel_warnings``.
+    split = _channel_split(appl, coll, fields)
+    cli_fields = dict((split or {}).get('cli') or {})
+    rest_fields = {k: v for k, v in fields.items() if k not in cli_fields}
+    if rest_fields:
+        res = FortiWebOps(appl).update(objform.rest_path(coll), mkey, {'data': rest_fields},
+                                       dry_run=not do_apply)
+    else:
+        from ..services.fortiweb_ops import OpResult
+        res = OpResult(ok=True, dry_run=not do_apply, request=None, error='')
+    cli = _cli_part(appl, split, mkey, do_apply, res.ok) if cli_fields else None
+    ok = res.ok and (cli is None or bool(cli.get('ok')))
+    error = res.get('error', '') or (_cli_error(cli) if cli and not cli.get('ok') else '')
     diff = None
-    if do_apply and res.ok:
+    if do_apply and ok:
         _writethrough(appliance_id, coll, mkey, fields, 'update')
         # Lifecycle hook (WAF rule 1): swapping a Server Policy's WPP from the
         # generic editor also flags that policy's authored carve-outs stale.
@@ -544,9 +558,59 @@ def save_object(appliance_id):
     else:
         from ..services import write_through as _wt
         diff = _wt.diff_object(appliance_id, coll, mkey, fields)
-    return jsonify(ok=res.ok, dry_run=res.get('dry_run'), request=res.get('request'),
-                   diff=diff, error=res.get('error', ''),
-                   unverified_refs=unverified)
+    return jsonify(ok=ok, dry_run=res.get('dry_run'), request=res.get('request'),
+                   diff=diff, error=error,
+                   unverified_refs=unverified, cli=cli,
+                   channel_warnings=_channel_warnings(split))
+
+
+def _channel_split(appl, coll, fields):
+    """``cli_writer.split_payload`` for this write, or None when the product
+    has no CLI writer or the library cannot answer (the REST path is then
+    exactly what it always was)."""
+    from ..services import cli_writer
+    if (getattr(appl, 'kind', '') or 'fortiweb') not in cli_writer.DIALECTS:
+        return None
+    try:
+        return cli_writer.split_payload(appl, objform.collection_of(coll), fields)
+    except Exception:  # noqa: BLE001 — the library never sinks a REST save
+        return None
+
+
+def _channel_warnings(split) -> list:
+    """Fields the appliance's build does not know (only when the library has
+    measured this endpoint on this build: an unmeasured build says nothing)."""
+    if not split or not split.get('endpoint'):
+        return []
+    return ['%s: %s' % (k, why) for k, why in sorted((split.get('refused') or {}).items())]
+
+
+def _cli_part(appl, split, mkey, do_apply, rest_ok):
+    """Render (dry run) or apply the CLI half; a JSON-ready dict."""
+    from ..services import cli_writer
+    try:
+        plan = cli_writer.plan_for(appl, split, mkey or None)
+        writer = cli_writer.CliWriter(appl)
+        if not do_apply:
+            return writer.render(plan).as_dict()
+        if not rest_ok:
+            return {'ok': False, 'dry_run': False, 'script': writer.render(plan).script,
+                    'error': {'pattern': 'not_sent',
+                              'line': 'the REST part failed, so the CLI part was not sent'}}
+        return writer.apply(plan).as_dict()
+    except cli_writer.CliWriteRefused as exc:
+        return {'ok': False, 'dry_run': not do_apply, 'script': [],
+                'error': {'pattern': 'refused', 'line': str(exc)}}
+
+
+def _cli_error(cli) -> str:
+    err = (cli or {}).get('error') or {}
+    if err:
+        return 'CLI: %s' % (err.get('line') or err.get('pattern') or 'failed')
+    if (cli or {}).get('diff'):
+        return 'CLI: readback differs for %s' % ', '.join(
+            d.get('field', '?') for d in cli['diff'])
+    return 'CLI write failed'
 
 
 @bp.route('/<int:appliance_id>/create-object', methods=['POST'])

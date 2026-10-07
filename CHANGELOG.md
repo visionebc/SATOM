@@ -6,6 +6,45 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — CLI writer for fields only the CLI serves (2026-10-07)
+
+- New `services/cli_writer.py`. `split_payload(appliance, endpoint, fields)`
+  routes each field of a write by the API library's classification on the
+  appliance's EXACT build: `cli_only`/`hidden` go by CLI, `both`/`rest_only`
+  by REST (the existing clients), and a field the build does not have, one no
+  source measured, an unmeasured endpoint or an unknown build is refused with
+  the reason. FortiWeb 7.6.8 and 8.0.6 have no CLI-only field, so on those
+  builds every field still goes by REST.
+- The writer runs one object's change as a CLI transaction (`config`/`edit`/
+  `set`/`unset`/`next`/`end`, sub-table rows in the same transaction, `edit 0`
+  for a new row), quoting and escaping values the FortiOS-family way and
+  refusing what cannot be typed safely (control characters; `?` where the CLI
+  reads it as help). It stops at the first error the box prints (parse error,
+  out of range, invalid value, entry not found, `node_check_object fail`,
+  negative return codes, `Command fail`) and discards the pending change with
+  `abort` (rows and singletons; a sub-table level is left with `end` first),
+  resyncing on the prompt after every line. Every apply is read back in a NEW
+  SSH session with `show full-configuration`: each written field must read back
+  equal, and REST is read back too when the object has a REST path; a mismatch
+  fails the write with the diff. After a failure the readback proves nothing
+  was applied (or says it was). Every apply is audited
+  (`config.cli_write`: object path, field names, outcome — never a value).
+- Runs inside the device-job framework and takes the SAME per-device lock as a
+  REST write. The SSH write session is the existing write-capable console class
+  (its deny-list gate applies to every line); the read-only console gate is
+  unchanged.
+- Object editor: the Save preview shows the CLI script for the fields this
+  build serves only by CLI (the rest is the usual REST request) and, after
+  Apply, the CLI and REST readback. Same `config_write` permission as before;
+  dry run stays the default. Fields the build does not know keep their REST
+  path and are listed as a warning.
+- Fixed: `cli_schema.parse_show_full_values` read a value holding an escaped
+  quote (`set comment "a \"b"`) as an unterminated multi-line value and dropped
+  the lines after it.
+- Verified end to end on a FortiWeb 8.0.6 lab box: objects created, changed,
+  refused mid-transaction (nothing applied), deleted; the box read back
+  identical to its state before the test.
+
 ### Added — the API library reads the CLI channel too (2026-10-07)
 
 - Two new evidence sources, `cli_tree` and `cli_full`. `cli_tree` is the

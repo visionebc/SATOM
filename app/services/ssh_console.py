@@ -13,8 +13,9 @@ now write.
 
 So ``assert_readonly`` is untouched and every existing caller keeps the
 guarantee it was written against. The write path lives HERE, is reachable from
-exactly one blueprint (``app.views.console``) and one future caller (the
-Process engine), and carries its own gate.
+exactly one blueprint (``app.views.console``), the Process engine and the
+field writer :mod:`app.services.cli_writer` (which subclasses the session and
+sends every line through the same gate), and carries its own gate.
 
 THE GATE IS A DENYLIST, AND THAT IS DELIBERATE
 ----------------------------------------------

@@ -246,6 +246,27 @@
                     {% endif %}
                   </div>
                   {% endif %}
+                  {#
+                    Migration pre-check: this box's own configuration (newest
+                    vault dump) against the target build's schema. Same move
+                    as Scout, read off the RUN, never off the select above.
+                  #}
+                  {% set mg = migration.get(d.id) if migration is defined else none %}
+                  {% if mg %}
+                  <div class="mt-1 uf-migration">
+                    {% from 'migration_report/_verdict.html' import verdict_badge with context %}
+                    {% if mg.verdict == 'deferred' %}
+                      <span class="fw-badge fw-badge-secondary" title="{{ mg.reason }}">{{ _('Migration') }}: {{ _('not computed') }}</span>
+                    {% else %}
+                      <span class="text-muted small">{{ _('Migration') }}:</span> {{ verdict_badge(mg.verdict) }}
+                      {% if mg.block or mg.warn %}
+                      <span class="text-muted small ms-1">{{ mg.block or 0 }} {{ _('blocking') }} · {{ mg.warn or 0 }} {{ _('warning(s)') }}</span>
+                      {% endif %}
+                    {% endif %}
+                    <a class="small ms-1" href="{{ url_for('migration_report.report', id=d.id, target=p.target_version) }}"
+                       title="{{ mg.reason }}">{{ _('report') }}</a>
+                  </div>
+                  {% endif %}
                 {% elif p %}
                   {# A run that predates the destination column, or one stored
                      before it was asked for. NOT rendered as a version. #}

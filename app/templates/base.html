@@ -1257,6 +1257,11 @@
           <i class="bi bi-code-slash fw-nav-icon"></i><span>API</span></a>
         {% endif %}
         {% endif %}
+        {# API library: fields per firmware build, both channels (views/build_compat.py). #}
+        {% if may_open('build_compat.index') %}
+        <a class="fw-nav-item {{ 'active' if request.blueprint == 'build_compat' else '' }}" href="{{ url_for('build_compat.index') }}">
+          <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Build compatibility') }}</span></a>
+        {% endif %}
         {% if current_user and current_user.can('users.view') and not current_user.can('user_manage') %}
         {# Read-only user list for users.view holders; managers reach it from the Administrator group / Settings. #}
         {% if may_open('users.index') %}

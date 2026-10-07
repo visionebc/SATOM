@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Build compatibility') }}{% endblock %}
+
+{% macro qs(page=None, only_=None) -%}
+product={{ sel_product|urlencode }}{% for b in builds %}&b={{ b|urlencode }}{% endfor %}&only={{ (only_ or only)|urlencode }}&q={{ q|urlencode }}{% if meta %}&meta=1{% endif %}&page={{ page or (m.page if m else 1) }}
+{%- endmacro %}
+
+{% block content %}
+<div class="fw-page-header">
+  <h4 class="mb-1"><i class="bi bi-diagram-3 me-2"></i>{{ _('Build compatibility') }}</h4>
+  <p class="text-muted mb-0" style="font-size:13px;">
+    {{ _('Which fields exist on which firmware build, and by which channel (REST and CLI). The same API version can carry different fields on different builds: the key is always the exact build. Writes to an appliance are checked against its build with the same evidence.') }}
+    <a href="{{ url_for('registry.api_versions') }}">{{ _('API versions') }}</a> ·
+    <a href="{{ url_for('apilib_fieldmap.index') }}">{{ _('Field renames') }}</a>
+  </p>
+</div>
+
+<div class="fw-card mb-3" style="padding:12px 14px;">
+  <form method="get" action="{{ url_for('build_compat.index') }}" class="row g-2 align-items-end" data-bc-filter>
+    <div class="col-md-2">
+      <label class="fw-fld-label" for="bcProduct">{{ _('Product') }}</label>
+      <select class="form-select form-select-sm" id="bcProduct" name="product">
+        {% for p in products %}<option value="{{ p }}" {{ 'selected' if p == sel_product }}>{{ p }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="fw-fld-label">{{ _('Builds (2 to %(n)s)', n=max_builds) }}</label>
+      <div class="d-flex flex-wrap gap-2" style="font-size:12.5px;">
+        {% for r in known %}
+        <label class="form-check-label"><input class="form-check-input me-1" type="checkbox" name="b" value="{{ r.version }}" {{ 'checked' if r.version in builds }}>{{ r.version }}{% if r.in_fleet %} <span class="fw-badge fw-badge-primary">{{ _('fleet') }}</span>{% endif %}{% if r.cli_measured %} <span class="fw-badge fw-badge-info" title="{{ _('CLI schema (tree) measured') }}">CLI</span>{% endif %}{% if r.measured %} <span class="fw-badge fw-badge-success" title="{{ _('REST measured') }}">REST</span>{% endif %}</label>
+        {% else %}
+        <span class="text-muted">{{ _('The API library knows no build of this product yet.') }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="col-md-2">
+      <label class="fw-fld-label" for="bcOnly">{{ _('Show') }}</label>
+      <select class="form-select form-select-sm" id="bcOnly" name="only">
+        <option value="diff" {{ 'selected' if only == 'diff' }}>{{ _('only differences') }}</option>
+        <option value="cli_only" {{ 'selected' if only == 'cli_only' }}>{{ _('only CLI-only / hidden') }}</option>
+        <option value="all" {{ 'selected' if only == 'all' }}>{{ _('all fields') }}</option>
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="fw-fld-label" for="bcQ">{{ _('Search') }}</label>
+      <input class="form-control form-control-sm" id="bcQ" name="q" value="{{ q }}" placeholder="{{ _('endpoint or field') }}" autocomplete="off">
+    </div>
+    <div class="col-md-1">
+      <div class="form-check mb-1"><input class="form-check-input" type="checkbox" id="bcMeta" name="meta" value="1" {{ 'checked' if meta }}>
+        <label class="form-check-label" for="bcMeta" style="font-size:12.5px;" title="{{ _('REST bookkeeping keys (_id, seq, q_type, *_val ...): not configuration') }}">{{ _('meta') }}</label></div>
+    </div>
+    <div class="col-md-1 text-end">
+      <button class="btn btn-sm btn-fw-outline" type="submit"><i class="bi bi-funnel me-1"></i>{{ _('Show') }}</button>
+    </div>
+  </form>
+</div>
+
+{% if m and builds|length >= 2 %}
+<div class="fw-card mb-3" style="padding:10px 14px;">
+  <form method="get" action="{{ url_for('build_compat.diff') }}" class="d-flex flex-wrap gap-2 align-items-end" data-bc-diff>
+    <input type="hidden" name="product" value="{{ sel_product }}">
+    <div><label class="fw-fld-label" for="bcA">{{ _('Diff from') }}</label>
+      <select class="form-select form-select-sm" id="bcA" name="a">{% for x in builds %}<option {{ 'selected' if x == a }}>{{ x }}</option>{% endfor %}</select></div>
+    <div><label class="fw-fld-label" for="bcB">{{ _('to') }}</label>
+      <select class="form-select form-select-sm" id="bcB" name="b">{% for x in builds %}<option {{ 'selected' if x == b }}>{{ x }}</option>{% endfor %}</select></div>
+    <button class="btn btn-sm btn-fw-outline" type="submit"><i class="bi bi-arrow-left-right me-1"></i>{{ _('Two-build diff') }}</button>
+    <span class="text-muted" style="font-size:12px;">{{ _('Added / removed objects and fields, option, type, range and default changes, rename candidates (same CLI attribute id).') }}</span>
+  </form>
+</div>
+{% endif %}
+
+{% if not builds %}
+<div class="fw-alert fw-alert-warning">{{ _('Pick at least two builds.') }}</div>
+{% elif m %}
+<div class="fw-card mb-3">
+  <div class="d-flex flex-wrap align-items-center gap-2" style="padding:10px 14px;border-bottom:1px solid var(--fw-border, #e3e8ef);">
+    <strong>{{ _('Fields') }}</strong>
+    <span class="fw-badge fw-badge-secondary" title="{{ _('rows after the search and meta filters') }}">{{ m.counts.rows }}</span>
+    <span class="text-muted" style="font-size:12px;">{{ _('differ') }}: {{ m.counts.diff }} · {{ _('CLI only / hidden somewhere') }}: {{ m.counts.cli_only }} · {{ _('showing') }} {{ m.total }}</span>
+    <span class="ms-auto" style="font-size:12px;">
+      {% for k, lbl in cell_label.items() %}<span class="fw-badge {{ cell_badge[k] }} me-1">{{ _(lbl) }}</span>{% endfor %}
+    </span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle fw-table" data-bc-matrix>
+      <thead><tr>
+        <th>{{ _('Endpoint') }}</th><th>{{ _('Field') }}</th>
+        {% for x in builds %}
+        {% set v = m.views[x] %}
+        <th class="text-center">{{ x }}<div class="text-muted" style="font-size:10.5px;font-weight:400;">
+          {% if not v.known %}{{ _('not measured') }}{% else %}{{ 'CLI' if v.tree_measured else _('no CLI') }} · {{ 'REST' if v.rest_measured else _('no REST') }}{% endif %}</div></th>
+        {% endfor %}
+        <th></th>
+      </tr></thead>
+      <tbody>
+      {% for r in m.rows %}
+        <tr>
+          <td style="font-size:12px;word-break:break-all;">{{ r.endpoint }}</td>
+          <td style="font-size:12.5px;"><code>{{ r.field }}</code></td>
+          {% for c in r.cells %}<td class="text-center"><span class="fw-badge {{ cell_badge[c] }}">{{ _(cell_label[c]) }}</span></td>{% endfor %}
+          <td><a href="{{ url_for('build_compat.history', product=sel_product, ep=r.endpoint, field=r.field) }}" title="{{ _('Field history') }}"><i class="bi bi-clock-history"></i></a></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="{{ builds|length + 3 }}" class="text-muted">{{ _('No field matches.') }}{% if only == 'diff' %} {{ _('These builds agree on every field shown (or were not measured).') }}{% endif %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if m.pages > 1 %}
+  <div class="d-flex align-items-center gap-2" style="padding:8px 14px;font-size:12.5px;">
+    {% if m.page > 1 %}<a class="btn btn-sm btn-fw-outline" href="{{ url_for('build_compat.index') }}?{{ qs(m.page - 1) }}">&laquo; {{ _('Previous') }}</a>{% endif %}
+    <span>{{ _('Page %(p)s of %(n)s', p=m.page, n=m.pages) }}</span>
+    {% if m.page < m.pages %}<a class="btn btn-sm btn-fw-outline" href="{{ url_for('build_compat.index') }}?{{ qs(m.page + 1) }}">{{ _('Next') }} &raquo;</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+<p class="text-muted" style="font-size:12px;">
+  {{ _('both = REST and CLI have it · CLI only = the CLI has it, REST does not serve it (written by the CLI writer) · hidden = only show full-configuration prints it · REST only = REST serves it, the build\'s CLI schema does not list it · CLI (REST not measured) = in the CLI schema, REST never revealed that object on this build · meta = REST bookkeeping, not configuration · absent = measured not there · unknown = no evidence: cannot be guaranteed.') }}
+</p>
+{% endif %}
+{% endblock %}

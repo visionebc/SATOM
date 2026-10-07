@@ -2353,6 +2353,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.audit", "bp"),
         ("app.views.registry", "bp"),
         ("app.views.apilib_fieldmap", "bp"),
+        ("app.views.build_compat", "bp"),
         ("app.views.api_explorer", "bp"),
         ("app.views.templates", "bp"),
         ("app.views.factory_catalog", "bp"),
@@ -2419,7 +2420,7 @@ def _register_blueprints(app: Flask) -> None:
         "app.views.provisioning", "app.views.firmware",
         "app.views.release_notes", "app.views.capacity",
         "app.views.registry", "app.views.api_explorer",
-        "app.views.apilib_fieldmap",
+        "app.views.apilib_fieldmap", "app.views.build_compat",
         "app.views.appids",
     }
     for module_path, attr in blueprints:

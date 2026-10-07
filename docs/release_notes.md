@@ -2,11 +2,18 @@
 
 A searchable corpus of **known** and **resolved** issues (plus the prose
 sections) across firmware versions of FortiWeb, FortiADC, FortiAuthenticator,
-FortiAnalyzer and FortiGate, harvested from `docs.fortinet.com` — built to
-**plan upgrades**: diff your current firmware against a target and see what you
+FortiAnalyzer and FortiGate, **imported from signed packs** — built to **plan
+upgrades**: diff your current firmware against a target and see what you
 *gain* (issues fixed) and *inherit* (issues still open).
 
-- **Service:** `app/services/release_notes.py` (pure — no Qt, no DB)
+> **Since SATOM 3.0** the corpus has exactly one source: the `docs` section of a
+> signed pack. SATOM performs no HTTP to any vendor documentation site; the
+> docs.fortinet.com crawler, its HTML parsers and the *Scan from Fortinet* panel
+> left the product and live only in the separate
+> [Knowledge Harvester](knowledge-harvester.md). This document is maintained in
+> this repository.
+
+- **Service:** `app/services/release_notes.py` (pure — no DB, no network)
 - **Store:** the JSON corpus `reports/_release_notes.json` — read with
   `load_db()`, merged with `merge_db()`, written with `save_db()`. There are
   **no** release-notes DB tables. `reports/` is a **symlink into the gitignored
@@ -15,134 +22,65 @@ FortiAnalyzer and FortiGate, harvested from `docs.fortinet.com` — built to
 - **UI:** account menu (top right) → **Release Notes** — a modal
   (`app/templates/partials/release_notes_modal.html`,
   `app/static/js/release_notes.js`) served by `app/views/release_notes.py`
-  (blueprint `release_notes`, url prefix `/release-notes`)
-- **Harvest:** `POST /release-notes/scan` (the modal's 🔎 button) — there is
-  **no** CLI entry point
-- **Offline:** the `docs` section of a signed **API pack**
-  ([api-library.md](api-library.md) §11) carries the same corpus; importing it
-  only adds the `(product, version)` pairs this node has not harvested itself
+  (blueprint `release_notes`, url prefix `/release-notes`), offered in the
+  FortiWeb, FortiADC, FortiAuthenticator, FortiAnalyzer and FortiGate ADOMs
+- **Source:** the `docs` / `release-notes` items of an API pack or a knowledge
+  pack ([api-library.md](api-library.md) §12), written by
+  `services.api_pack` on import; online nodes receive knowledge packs from the
+  knowledge feed (`services.knowledge_fetch`, user guide §22.4), air-gapped
+  nodes by upload
 
 ## 1. Where the data comes from
 
-Fortinet publishes a *Release Notes* document per version at
-`docs.fortinet.com/document/fortiweb/<version>/release-notes/<id>/<slug>`. The
-section ids are **stable** across the recent docsets:
+Fortinet publishes a *Release Notes* document per product and version. The
+knowledge harvester reads them, parses the Bug-ID tables and the prose
+sections, and ships the result as one `release-notes` item per product:
+`{product, generated_at, versions, issues[], sections[]}`. SATOM imports it per
+(product, version):
 
-| Section | id | slug | kind |
-|---|---|---|---|
-| Known issues | `54989` | `known-issues` | Bug-ID table |
-| Resolved issues | `91537` | `resolved-issues` | Bug-ID table |
-| What's new | `639023` | `whats-new` | prose |
-| Upgrade notes & important information | `745354` | `upgrade-notes-and-important-information` | prose |
-| Upgrading from previous releases | `81434` | `upgrading-from-previous-releases` | prose |
-| Repartitioning the hard disk | `159021` | `repartitioning-the-hard-disk` | prose |
-| Upgrading an HA cluster | `903663` | `upgrading-an-ha-cluster` | prose |
-| Downgrading to a previous release | `750287` | `downgrading-to-a-previous-release` | prose |
-| Image checksums | `754338` | `image-checksums` | prose |
-| FortiWeb-VM license validation | `439600` | `fortiweb-vm-license-validation` | prose |
-| Product integration & support | `756870` | `product-integration-and-support` | prose |
+- a version this node does not hold is **added**;
+- a version a pack wrote earlier is **replaced** when an outranking pack (the
+  newer snapshot) carries a different copy — that is how a corrected parse
+  reaches a node (API library §12.5);
+- a version this node scanned **itself** before 3.0 is local data and is never
+  replaced.
 
-The five middle rows were added 2026-09-13. They are **siblings** of *Upgrading
-from previous releases* under the *Upgrade instructions* TOC node (`489959`), not
-children of it — so harvesting the two obvious ones left every blocking
-prerequisite (disk repartition, HA upgrade order, downgrade support, VM licence
-re-validation) outside the corpus. `UPGRADE_SECTIONS` names the subset the
-advisory reads; `PROSE_SECTIONS` is everything searchable in the Notes tab.
+Every row is tagged with its product, and every read is filtered by the ADOM
+the user is in — a FortiADC workspace never shows FortiWeb rows.
 
-The issue sections are two-column `Bug ID` / `Description` tables (a known issue
-often embeds a `Workaround:` — split into its own field). The pages are served
-**server-side** (no JS), so a plain `httpx` GET works headless.
+### Sections
 
-**Where the corpus comes from — two channels, nothing else:**
+| Key | Title | Title elsewhere | Products | Kind |
+|---|---|---|---|---|
+| `known` | Known issues | — | all | Bug-ID table |
+| `resolved` | Resolved issues | — | all | Bug-ID table |
+| `whats_new` | What's new | *New features or enhancements* (FortiGate) | all but FortiAnalyzer | prose |
+| `upgrade_notes` | Upgrade notes & important information | *Special notices* (FAC, FAZ, FortiGate) | all | prose (advisor) |
+| `upgrading_from` | Upgrading from previous releases | *Upgrade instructions* (FAC), *Upgrade information* (FAZ, FortiGate) | all | prose (advisor) |
+| `repartitioning` | Repartitioning the hard disk | — | FortiWeb | prose (advisor) |
+| `ha_upgrade` | Upgrading an HA cluster | — | FortiWeb | prose (advisor) |
+| `downgrading` | Downgrading to a previous release | *Downgrading to previous firmware versions* (FAZ, FortiGate) | FortiWeb, FAZ, FortiGate | prose (advisor) |
+| `image_checksums` | Image checksums | *Firmware image checksums* (FAZ, FortiGate) | all but FortiADC | prose |
+| `vm_license` | FortiWeb-VM license validation | — | FortiWeb | prose (advisor) |
+| `product_integration` | Product integration & support | — | all | prose |
+| `introduction` | Introduction | — | all | prose (stored; not offered in the Notes tab) |
 
-1. **Online** — the scan below, a direct `httpx` GET of `docs.fortinet.com`.
-   This is the only network transport SATOM has; it needs no crawler service
-   and no configuration.
-2. **Offline** — an API pack's `docs/release-notes/<product>.json.gz`. Packs
-   are produced by SATOM's own export and by the separate harvester tool, in
-   the same signed format.
-
-Local measurement always wins: a pack never replaces a version this node
-scanned itself. (A crawler-based fallback transport, with its endpoint/key
-fields in the scan panel, was removed on 2026-10-07. An old page or script that
-still posts those fields is not refused: the fields are logged and ignored.)
-
-### Other products (verified 2026-10-07)
-
-The same scanner reads four more docsets. Each product has its OWN doc ids
-(`SECTIONS_BY_PRODUCT`); FortiGate's docset is named `fortios-release-notes`
-instead of `release-notes` (`RELEASE_DOC_BY_PRODUCT`). Every id below answered
-200 with an article on every version listed, fetched with a plain GET:
-
-| Section key | FortiAuthenticator (6.6.0, 6.6.10, 8.0.3) | FortiAnalyzer (7.6.0, 7.6.7, 8.0.1) | FortiGate (7.6.0, 7.6.4, 8.0.0, 8.0.1) |
-|---|---|---|---|
-| `known` | `713049/known-issues` | `35134/known-issues` | `236526/known-issues` |
-| `resolved` | `279684/resolved-issues` | `291684/resolved-issues` | `289806/resolved-issues` |
-| `whats_new` | `568509/whats-new` | — (separate New Features guide) | `743723/new-features-or-enhancements` |
-| `upgrade_notes` | `564992/special-notices` | `901026/special-notices` | `708555/special-notices` |
-| `upgrading_from` | `859240/upgrade-instructions` | `903960/upgrade-information` | `832438/upgrade-information` |
-| `downgrading` | — | `953575/downgrading-to-previous-firmware-versions` | `687629/downgrading-to-previous-firmware-versions` |
-| `image_checksums` | `840416/image-checksums` | `568416/firmware-image-checksums` | `399393/firmware-image-checksums` |
-| `product_integration` | `869439/product-integration-and-support` | `372145/product-integration-and-support` | `242321/product-integration-and-support` |
-| `introduction` | `355786/introduction` | `723553/introduction` | `760203/introduction-and-supported-models` |
-
-*Special notices* is these products' counterpart of FortiWeb's *Upgrade notes
-and important information*, so it is stored under `upgrade_notes` (the advisor
-reads it) and titled with the vendor's own name (`SECTION_LABEL_BY_PRODUCT`).
-FortiGate's *Special notices* page is an index of child pages; the children are
-not harvested yet.
-
-FortiGate and FortiAnalyzer publish one `Bug ID` table **per category** (plus a
-`Bug ID | CVE references` table); `parse_issue_table()` reads every one of them
-— reading only the first kept 8 of FortiGate 7.6.4's 66 known issues.
-FortiAuthenticator numbers its lines 6.6 then 8.0, so its discovery floor is
-6.6 (`MIN_VERSION_BY_PRODUCT`) instead of the generic 7.0.
-
-The modal is offered in the FortiWeb, FortiADC, FortiAuthenticator and
-FortiAnalyzer ADOMs. FortiGate has no ADOM: its corpus arrives through API
-packs.
+`SECTIONS_BY_PRODUCT` decides which prose sections the Notes tab offers for a
+product, `SECTION_LABEL_BY_PRODUCT` the title each is shown under, and
+`UPGRADE_SECTIONS` (marked *advisor* above) the subset the upgrade advisory
+reads. *Special notices* is the counterpart of FortiWeb's *Upgrade notes and
+important information*, so it is stored under `upgrade_notes`.
 
 > **The key fact for upgrade planning:** the *same* Bug ID flips
-> **Known → Resolved** across versions, so "what does upgrading current → target
-> fix / leave open" is a pure diff over this data.
+> **Known → Resolved** across versions, so "what does upgrading current →
+> target fix / leave open" is a pure diff over this data.
 
-### Three renderers, and the three states a page can be in
+### Freshness
 
-Fortinet changed renderer mid-docset. FortiWeb **up to 8.0.6** (and all of
-FortiADC) is MadCap — the article sits in `id="mc-main-content"`. FortiWeb **from
-8.0.7** is a markdown pipeline: no MadCap container, no HTML tables on some
-pages, and the whole article repeated a second time inside a `mobile-content`
-wrapper. `_main_content()` closes the src-md slice on `mobile-content` /
-`thin-footer`, because a slice that runs to the end of the document harvests
-every row twice.
-
-By **2026-10-07** every docset (all five products, every version) had moved to a
-third, "reader" layout: the article is `<div class="prose src-mc">` (or
-`prose src-md`), followed by the `reader__pager` navigation and the
-`reader__footer`. Neither older container appears on those pages, so until the
-parser learned this marker **every published page read as a chrome-only
-landing** and every scan ended in *"no release notes found"*.
-`has_release_content()` recognises all three containers.
-
-Every page therefore falls into exactly one of three states, and the second one
-is the whole reason this section exists:
-
-| state | how it is recognised | scanner behaviour |
-|---|---|---|
-| **absent** | no `document-content src-XX` / `prose src-XX` wrapper at all — a 200 landing of pure chrome (~442 KB), or on the reader layout a PDF-only `download-view` page | skipped, silently. The only branch allowed to be quiet. |
-| **unreadable** | an article is present but the parser produced nothing | recorded in `ReleaseNotesDB.unreadable`, logged `✗ … UNREADABLE`, surfaced in the scan result and as a **warning** bell |
-| **read** | parsed | stored |
-
-> **Why this matters.** Before 2026-09-13 the scanner collapsed *unreadable* into
-> *absent*: any page it could not parse was `continue`d. When 8.0.7 switched
-> renderer, every scan finished green, the log said *"8.0.7 — no release notes
-> found"*, and the corpus silently stopped two releases short — including the
-> release whose *Supported upgrade paths* announces a mandatory intermediate hop.
-> A scan that could not read a published page now never lights a success bell.
-
-An issues page that is *genuinely* empty says so in prose ("There are no known
-issues in version 8.0.7"); `declares_no_issues()` recognises that statement, so an
-empty table and an unreadable table are no longer the same observation.
+The modal, the Scout advisory and the Migration report name where the
+knowledge came from: **"Knowledge from `<pack>` (`<date>`)"**, with a warning
+when the pack is older than 30 days or no pack has been imported
+(`knowledge_fetch.freshness()`).
 
 ## 2. Topics (curated)
 
@@ -158,14 +96,14 @@ never breaks the UI.
 
 ## 3. The modal (account menu → Release Notes)
 
-Reading needs `VIEW`; the 🔎 scan needs `USER_MANAGE` (admin). Three tabs:
+Reading needs `VIEW`. Three tabs:
 
 - **Issues** — filter by version / status (known·resolved) / topic / keyword;
   double-click a row for the full description + workaround + the source link.
 - **Upgrade advisor** — pick **current → target**. Two answers, stacked, and
   they are different KINDS of answer:
   - **Scout advisory** (top) — the verdicts: what will block or complicate this
-    window, each with the vendor's sentence attached. See §7.
+    window, each with the vendor's sentence attached. See §6.
   - the bug diff (below) — issues *resolved in the range* (gained), issues
     *still known in the target* (inherited), and the upgrade-notes prose
     (`GET /release-notes/advise?current=…&target=…` →
@@ -175,66 +113,43 @@ Reading needs `VIEW`; the 🔎 scan needs `USER_MANAGE` (admin). Three tabs:
 The version pickers of the Issues and Notes tabs also list the builds the
 operator's appliances of this product run, marked *in your fleet — no notes
 here*, when the corpus lacks them. Picking one — or opening the modal on an
-empty corpus — never renders an empty list: online it says the build has not
-been scanned yet; **offline** (docs.fortinet.com unreachable, probed with a
-4-second `HEAD`, cached 2 minutes) it says
-**"No release notes for this build (offline: import a newer API pack)"**.
+empty corpus — never renders an empty list. It says:
 
-### 🔎 Scan from Fortinet
+> **"No release notes for this build in the local corpus — import a newer
+> knowledge pack (Software Update → Knowledge packs)."**
 
-**Discover first, then tick.** Opening the scan panel fetches the version list
-(one page fetch, ~1 s) and renders it as checkboxes grouped by line, with the
-versions missing from the corpus **pre-ticked**. Only the ticked versions are
-scanned, verbatim — discovery is a suggestion, the ticks are the order.
+Two buttons:
 
-This replaced a free-text `major.minor` box sitting next to an "All discovered"
-checkbox, and it fixed two defects at once:
+- **⟳ Reload corpus** (`POST /release-notes/reload`, any signed-in user)
+  re-reads the JSON from disk and reports **where from** (`source`) and **how
+  old** (`generated_at`): the counts on screen go stale while a pack import
+  finishes in another gunicorn worker, or while `satom-ha-datasync` drops a
+  fresher corpus in.
+- **Knowledge packs…** (administrators) opens Software Update → Knowledge packs,
+  where the feed is checked and packs are downloaded and imported.
 
-1. the box could not express a single maintenance release — the filter matched on
-   `major.minor`, so typing `8.0.7` matched nothing and the scan died with *"No
-   versions matched"*;
-2. the checkbox **silently overrode** the box. On 2026-09-13 an operator with
-   `8.0` typed in the box got all 59 versions harvested, and nothing anywhere
-   said which of the two controls had decided.
+**Sharing between nodes is data replication, not git.** The primary imports;
+`satom-ha-datasync` carries `data/` to the standby within 5 minutes.
 
-The endpoint still accepts the legacy `majors` / `all` filter for scripted use,
-but a request that sends a contradiction (`all` **and** `majors`, or `versions`
-**and** either) is now refused with 400 instead of resolving itself.
+### What was removed, and why
 
-**No appliance needed** — it reads the public docs directly with a plain GET.
-A node without internet imports an API pack instead (Software Update → API
-library packs). Admin only (`USER_MANAGE`).
-
-### The two git controls were removed on 2026-09-14
-
-`Publish to git` (a checkbox on the scan panel) and `⤓ Sync from git` (a button
-in the modal header) are **gone**, along with `POST /release-notes/sync`. Three
-separate defects, one removal:
-
-1. **Neither could move the corpus.** `reports/` is a symlink into the
-   gitignored `data/reports/`; git refuses a path under it outright —
-   `fatal: pathspec '…' is beyond a symbolic link`. True since the git
-   source-of-truth was retired on 2026-08-05 on volume grounds (see the
-   metrics-architecture note), so **every scan since then logged**
-   *"(git publish reported an issue — corpus saved locally)"*.
-2. **`/sync` ran `git pull` over the running code tree, for `VIEW`.** The same
-   operation is gated behind `USER_MANAGE` in `settings.git_pull` and is owned
-   by `satom-reconciler`. A read-only user could move the application's code
-   out from under the workers. This is why the endpoint was deleted rather
-   than hidden — a hidden button keeps its URL.
-3. **The success message was false either way.** `_load()` re-reads the JSON on
-   every request, so *"Ingested N issues … from the shared reference"* always
-   described the local file. Nothing was ever ingested from anywhere.
-
-In their place, **⟳ Reload corpus** (`POST /release-notes/reload`, any logged-in
-user) re-reads the JSON from disk and reports **where from** (`source`) and
-**how old** (`generated_at`) — which is what the button was reaching for: the
-counts on screen go stale while another gunicorn worker finishes a scan, or
-while `satom-ha-datasync` drops a fresher corpus in.
-
-**Sharing between nodes is data replication, not git.** The primary harvests;
-`satom-ha-datasync` carries `data/` to the standby within 5 minutes. A separate
-installation harvests its own. Guards: `tests/test_release_notes_nogit.py`.
+- **The scan (3.0).** The *🔎 Scan from Fortinet* panel, version discovery, the
+  HTML parsers and the routes `/release-notes/scan`, `/release-notes/discover`
+  and `/release-notes/scan/status` are gone, together with the scan status file.
+  The harvester carries that work, with its rules intact: a page that is
+  published but cannot be parsed is reported as *unreadable*, never as "no
+  notes"; a page that genuinely says "there are no known issues" is told apart
+  from an empty table. Guard: `tests/test_no_vendor_http.py` — no module under
+  `app/` that imports an HTTP client names a Fortinet web host.
+- **The crawler fallback (2.13).** A crawler-based transport with its endpoint
+  and key fields was removed on 2026-10-07; nothing in SATOM configures a
+  crawler any more.
+- **The git controls (2026-09-14).** *Publish to git* and *⤓ Sync from git*
+  (`POST /release-notes/sync`) were removed: `reports/` is a symlink into the
+  gitignored `data/reports/`, so git refused the path; `/sync` ran `git pull`
+  over the running code tree for a `VIEW` user; and its success message
+  described the local file either way. Guards:
+  `tests/test_release_notes_nogit.py`.
 
 ## 4. Data model
 
@@ -243,9 +158,10 @@ source_url)` and `ReleaseSection(product, version, section, title, content,
 source_url)`, serialised to `reports/_release_notes.json`
 (`{generated_at, versions[], issues[], sections[]}`).
 
-There is **no DB projection** — the JSON corpus *is* the store. A scan merges into
-it (`merge_db`) and rewrites it (`save_db`); each request re-reads and
-product-scopes it (`load_db`, via `_load()` in `app/views/release_notes.py`).
+There is **no DB projection** — the JSON corpus *is* the store. A pack import
+merges into it and rewrites it; each request re-reads and product-scopes it
+(`load_db`, via `_load()` in `app/views/release_notes.py`). Which pack wrote
+each (product, version) is recorded in `data/apipacks/provenance.json`.
 `version_key` zero-pads a version so a plain sort ranks versions, and the filters
 are pure functions over the loaded lists — `filter_issues(issues, version=,
 status=, topic=, query=)` for the Issues tab, `advise(...)` for the advisor.
@@ -254,35 +170,22 @@ The upgrade advisory is a pure function `advise(issues, sections, current, targe
 → `UpgradeAdvisory(resolved, known_in_target, notes, is_upgrade)`, exposed to the
 modal as `GET /release-notes/advise?current=…&target=…`.
 
-## 5. Running a scan (there is no CLI)
-
-The harvest runs **in the app**, as a background thread behind the modal's
-🔎 **Scan from Fortinet** button (`_do_scan` in `app/views/release_notes.py`):
+## 5. Routes (read-only, plus one switch)
 
 ```http
-POST /release-notes/discover      → {versions:[{version,major,in_corpus}], count, new}
-{}
-
-POST /release-notes/scan          → 202 {started:true}
-{"versions": ["8.0.7"]}
-
-GET  /release-notes/scan/status   → {running, lines[], result, error}
-POST /release-notes/reload        → {counts, message, source, generated_at}
-                                    re-reads the corpus from disk; no git
+GET  /release-notes/data         → counts, versions, fleet_missing, topics, sections,
+                                   empty_reason, knowledge (pack + date + stale)
+GET  /release-notes/issues       → rows (+ empty_reason when the build has no notes)
+GET  /release-notes/notes        → prose sections (+ empty_reason)
+GET  /release-notes/advise       ?current=…&target=…   the bug diff
+GET  /release-notes/advisory     ?current=…&target=…   the Scout advisory (§6)
+POST /release-notes/reload       → {counts, message, source, generated_at}
+POST /release-notes/scout-switch   admin (USER_MANAGE): Scout on/off (§6, "Switching it off")
 ```
 
-`result` now carries `unreadable[]` — the `(version, section)` pairs that were
-published and could not be parsed. **A non-empty `unreadable` means the corpus is
-incomplete**, and the UI says so instead of "done".
-
-Legacy selection (still accepted, one filter at a time): `{"majors": "7.6,8.0"}`
-or `{"all": true}`. `majors` defaults to `7.0,7.2,7.4,7.6,8.0`.
-Retired transport fields (`use_direct`, and the crawler endpoint/key fields of
-the removed fallback) are accepted, logged and ignored.
-
-`GET /release-notes/issues` and `/notes` answer `empty_reason` next to an empty
-list when the corpus holds nothing for the requested build; `/data` adds
-`fleet_missing` (fleet builds absent from the corpus) and `offline`.
+There is no CLI entry point for the corpus itself. Packs are imported with
+`satom execute apipack import …` or `satom execute knowledge fetch --import
+--yes` (see [cli.md](cli.md)).
 
 ## 6. Scout Advisory (`services/release_advisor.py`)
 
@@ -313,7 +216,7 @@ Three rules of the house, carried over from Scout's ladder:
 - **Absence is never innocence.** Missing coverage yields `unknown`, never
   `clear`, and the gaps are named. A gap says WHICH kind it is: a version nobody
   harvested, or a version harvested before these sections were collected (which
-  is fixed by scanning it again).
+  is fixed by importing a newer knowledge pack).
 - **The criteria are not editable.** `RULES` is the single author of every
   verdict and `rules_digest()` hashes the rules' own source onto the report, so an
   archived advisory names the rule set that produced it. An editable threshold
@@ -414,14 +317,18 @@ because an absent entry reads as a product that never had the feature.
 
 ## 7. Tests
 
-- `tests/test_release_notes.py` — HTML-fixture parsing, the content guard, the
-  curated topic classifier, `version_key` ordering, the scan (fake fetcher),
-  merge, the advisory diff, and the store projection + range queries.
-- `tests/test_release_notes_docsets.py` — the two renderers, the mobile-duplicate
-  slice, the absent/unreadable/read trichotomy, the whole upgrade branch, and the
-  selection routes (discover, explicit ticks, the refused contradiction).
-- `tests/test_release_advisor.py` — the rules, driven over VERBATIM vendor prose;
-  gating, collapsing, scope, coverage and the seal.
+- `tests/test_release_notes.py` — the pure corpus model (topic classifier,
+  `version_key` ordering, merge, the advisory diff) and the modal's JSON routes
+  against an isolated corpus.
+- `tests/test_release_notes_products.py` — section maps, labels, routes and the
+  pack import, per product.
+- `tests/test_release_notes_pages.py`, `tests/test_release_notes_picker.py` —
+  the published pages and the version pickers.
+- `tests/test_release_notes_nogit.py` — the removed git controls stay removed.
+- `tests/test_no_vendor_http.py` — no vendor HTTP in the product.
+- `tests/test_release_advisor.py`, `tests/test_advisor_admonitions.py` — the
+  rules, driven over VERBATIM vendor prose; gating, collapsing, scope, coverage
+  and the seal.
 - `tests/test_scout_switch.py` — the switch, enforced on the route.
 
 No network in any of them.

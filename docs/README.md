@@ -142,6 +142,7 @@ page.
 | [`provisioning-hypervisors.md`](provisioning-hypervisors.md) | Building the appliance from nothing: the Proxmox and ESXi backends, the live capability probe that decides what each can actually do, and the run state machine that undoes a half-finished build. |
 | [`git-backup-and-outage.md`](git-backup-and-outage.md) | Anti-reset guard, unpushed-commit alert, repository bundles, four-copy recovery. |
 | [`offline-update-packages.md`](offline-update-packages.md) | Updating a node with no route to the git remote: signed packages, the root-owned trust store that decides which signatures count, preflight, and the privileged apply with rollback. |
+| [`upgrading-to-3.0.md`](upgrading-to-3.0.md) | What 3.0 changes underneath the normal update (pack schema /2, one key per use, release notes only from packs, knowledge packs outside the update), what an online and an air-gapped node must do, how to verify and how to roll back. |
 | [`release-pipeline.md`](release-pipeline.md) | How a release is sanitized, secret-scanned, audited and published. |
 | [`release_notes.md`](release_notes.md) | The **vendor's** known/resolved issue corpus behind the upgrade advisor — Fortinet's, not SATOM's. SATOM's own history is [`../CHANGELOG.md`](../CHANGELOG.md), published per version as the site's Release notes. |
 
@@ -164,7 +165,7 @@ page.
 | [`build-compatibility.md`](build-compatibility.md) | Every write checked against each target's exact build: skipped, CLI-only and blocking fields, the flows that apply it, the Build compatibility page and `satom execute apilib compat\|channels`. |
 | [`migration-report.md`](migration-report.md) | One appliance's configuration against a target build: block / translate / warn / info, the verdict, the Upgrade Flow integration and the console command. |
 | [`cli-writer.md`](cli-writer.md) | When SATOM writes by CLI: the per-build gate, the transaction, abort and readback, the error patterns and the verified dialects. |
-| [`knowledge-harvester.md`](knowledge-harvester.md) | The separate tool behind the knowledge packs each release ships, why Firecrawl lives only there, and how an offline node gets the pack. |
+| [`knowledge-harvester.md`](knowledge-harvester.md) | The separate tool behind the API and knowledge packs, why Firecrawl lives only there, and how online and air-gapped nodes get the packs. |
 | [`fortiauthenticator.md`](fortiauthenticator.md) | How the identity product is wired: its Django/Tastypie REST dialect, the per-user API key, the pagination trap and the 18-character product-key ceiling it exposed. |
 
 ### Managed-device reference
@@ -174,6 +175,7 @@ page.
 | [`web_protection_profile.md`](web_protection_profile.md) | The ~40 sub-policy WAF bundle, field by field. |
 | [`wpp_exceptions.md`](wpp_exceptions.md) | Authoring and injecting WAF exceptions and signature carve-outs. |
 | [`fortiadc.md`](fortiadc.md) | REST conventions, object map and current coverage for FortiADC. |
+| [`fortigate.md`](fortigate.md) | The read-only FortiGate workspace: REST API token, the section pages, how FortiOS answers and what is not there yet. |
 
 ---
 

@@ -2,7 +2,7 @@
 
 > **Audience:** operators and network/security engineers who use the web UI to
 > manage FortiWeb, FortiADC, FortiAuthenticator and FortiAnalyzer appliances day
-> to day. No knowledge of the
+> to day, and to read FortiGate configuration. No knowledge of the
 > codebase is assumed. For architecture and internals see the
 > [Engineering Manual](engineering.md); for a non-technical summary see the
 > [Management Overview](management-overview.md).
@@ -13,7 +13,7 @@
 
 1. [Signing in & accounts](#1-signing-in--accounts)
 2. [Core concepts](#2-core-concepts)
-3. [Products (ADOMs): Global, FortiWeb, FortiADC, FortiAuthenticator, FortiAnalyzer](#3-products-adoms)
+3. [Products (ADOMs): Global, FortiWeb, FortiADC, FortiAuthenticator, FortiAnalyzer, FortiGate](#3-products-adoms)
 4. [Registering and operating devices](#4-registering-and-operating-devices)
 5. [Server Policy](#5-server-policy)
 6. [Cloning & migrating policies](#6-cloning--migrating-policies)
@@ -27,7 +27,7 @@
 14. [Monitoring: fleet health, metrics & probes](#14-monitoring-fleet-health-metrics--probes)
 15. [Automation: scheduled actions, change requests, jobs](#15-automation)
 16. [Reports & database tools](#16-reports--database-tools)
-17. [Product workspaces: FortiADC, FortiAuthenticator, FortiAnalyzer](#17-product-workspaces)
+17. [Product workspaces: FortiADC, FortiAuthenticator, FortiAnalyzer, FortiGate](#17-product-workspaces)
 18. [API tokens](#18-api-tokens)
 19. [Appearance: logo, colours & themes](#19-appearance-logo-colours--themes)
 20. [The operator console](#20-the-operator-console)
@@ -55,6 +55,7 @@
 42. [Process: procedures the system walks for you](#42-process-procedures-the-system-walks-for-you)
 43. [Upgrading to 2.0](#43-upgrading-to-20)
 44. [Container operations (Docker nodes)](#44-container-operations-docker-nodes)
+45. [Upgrading to 3.0](#45-upgrading-to-30)
 
 ---
 
@@ -131,7 +132,7 @@ confirmation).
 
 ## 3. Products (ADOMs)
 
-The app currently hosts five workspaces, in the style of FortiManager ADOMs.
+The app currently hosts six workspaces, in the style of FortiManager ADOMs.
 **The list is data, not code:** the ADOM registry is a database table, and an
 admin creates, renames, reorders, deactivates or deletes workspaces at
 `Settings → ADOMs` (§26.11) — including which shared capabilities (banner, API
@@ -147,6 +148,7 @@ current list:
 | **FortiADC** | `/adc/` | Load-balancer management: the FortiADC 8.0 GUI menu (Server LB, Link LB, Global LB, WAF, Network…), signatures, and an ADC API console |
 | **FortiAuthenticator** | `/fac/` | Identity and access: local/LDAP/RADIUS users and groups, FortiTokens, issued certificates, RADIUS and TACACS+ clients, and a FAC API console |
 | **FortiAnalyzer** | `/faz/` | Logging and analytics: Device Manager, FortiView, Log View, Incidents & Events, Reports, and a JSON-RPC API console |
+| **FortiGate** | `/fgt/` | Next-generation firewall, **read-only** (since 3.0): the FortiOS menu — Network, Policy & Objects, Security Profiles, VPN, User & Authentication, System, Log & Report — read live over the REST API |
 
 Each product workspace mirrors its appliance's own GUI menu, so an operator who
 knows the device knows where to look. §17 covers what each one adds beyond the
@@ -183,8 +185,8 @@ the Global ADOM, or the Global dashboard). The entry is shown to anyone holding
 `appliances.view`; adding or editing a device still needs `config_write`:
 
 1. **Add appliance** — name, host/IP, port, kind (fortiweb / fortiadc /
-   fortiauthenticator / fortianalyzer), credentials (stored encrypted), TLS
-   verification mode.
+   fortiauthenticator / fortianalyzer / fortigate), credentials (stored
+   encrypted), TLS verification mode.
 
    > **If a new appliance never syncs, check TLS verification first.** An
    > appliance that presents a self-signed certificate fails
@@ -197,6 +199,9 @@ the Global ADOM, or the Global dashboard). The entry is shown to anyone holding
    FortiAuthenticator authenticates with a **per-user API key**, not the login
    password: issue one by ticking *Web service access* on an Administrator
    account on the unit, and store that key as the appliance password.
+   FortiGate likewise takes a **REST API administrator token** (`execute
+   api-user generate-key <api-user>` on the FortiGate) as the password, never
+   a login password; a read-only admin profile is enough (§17.4).
 2. **Test connection** — validates REST reachability and credentials.
 3. **Discovery / Rediscovery** — sweeps every registry endpoint and stores the
    device's full configuration in the local cache (recorded as a harvest with
@@ -719,10 +724,14 @@ version change — or that reports it **never** downloaded an update, or whose
 version cannot be read (SSH off, wrong credentials), raises a **device alert**
 through the alert engine (§26.6): the same family, toggle, routing and cooldown
 as the other device-health alerts. The limit is the setting
-`alerts.signature_max_days`. Devices in maintenance are skipped.
+`alerts.signature_max_days`. Devices in maintenance are skipped. A node
+updated from 2.x has no `signature_check` row until you create it
+(`sudo satom execute seed actions --yes` on the primary, §22.4).
 
 When a knowledge pack carries **signature metadata** (public FortiGuard
-encyclopedia data: name, severity, category, CVEs, a link), the signature
+encyclopedia data: name, severity, category, CVEs, a link — none does yet:
+FortiGuard's terms do not permit redistributing it, so the section ships
+empty until they do), the signature
 search shows a severity badge and the CVEs next to each id it knows, and the
 signature's details add a **FortiGuard** row. Ids with no metadata show as
 before.
@@ -940,6 +949,31 @@ analysis, and every decision goes to the audit log. Accepting a proposal
 records **both** the payload the model proposed and the one you approved —
 those are different facts and an auditor needs both. Rejecting one is recorded
 too, not erased.
+
+### 9.8 Every carve-out records the build it was written for
+
+A FortiWeb answers a write carrying a field its build does not know with **200
+and discards the field** — so a carve-out authored on one build and pushed to
+another can land without the very field that made it a carve-out, and report
+success. Every carve-out (and its fleet library item) therefore records the
+**firmware build and REST API version** of the appliance it was authored on:
+
+- a copy placed on another appliance keeps the **source** build, because its
+  payload was written against that build;
+- editing the payload restamps it; a rollback or restore brings back the build
+  of the old payload. The stamp is versioned but kept out of the content hash,
+  so no existing history gained a version;
+- **Inject to device** and the Attack ID insert check the payload against the
+  target's running build with the template rules (§29.1.1): a field the build
+  discarded, renamed or does not serve **blocks** the push. A user with
+  **Approve templates** (`operations.template_approve`) can override with a
+  reason, audited as `exception.compat.override`.
+
+The API sweep does not measure the carve-out sub-tables yet, so most pushes
+show *no evidence* for their fields: that is a **warning, never a pass**, and
+the gate starts to bite on its own once a sweep or a knowledge pack records
+those fields. Line Profiles show the build of each line's WPP template and the
+builds its approval covers.
 
 ## 10. Certificate Manager
 
@@ -1572,9 +1606,10 @@ individual probe, so tuning a fleet meant editing each monitor by hand; in
 practice nobody did, and all 42 production probes sat on the same factory
 number regardless of what they were watching.
 
-**Six scopes**, picked from the selector at the top: the four product ADOMs
-(FortiWeb, FortiADC, FortiAnalyzer, FortiAuthenticator), **SATOM** the
-application, and the **SATOM machine**. Each scope carries three blocks.
+**Six scopes**, picked from the selector at the top: four product ADOMs
+(FortiWeb, FortiADC, FortiAnalyzer, FortiAuthenticator — the read-only
+FortiGate ADOM has no threshold scope yet), **SATOM** the application, and the
+**SATOM machine**. Each scope carries three blocks.
 
 **Measurement limits** — CPU, memory, sessions, throughput, transactions,
 licence and token headroom, interface staleness, TLS expiry, response time.
@@ -1822,6 +1857,33 @@ The `/faz/` ADOM mirrors the FortiAnalyzer menu: **Device Manager**,
 - Operational endpoints (alerts, incidents, log statistics, storage) are
   deliberately **excluded from the configuration source of truth**: they change
   between two reads of an idle unit and would defeat change detection.
+
+### 17.4 FortiGate
+
+The `/fgt/` ADOM (since 3.0) is the **base** of the FortiGate workspace: it
+reads a FortiGate live over the FortiOS REST API and **writes nothing**.
+
+- **Dashboard** — the FortiGate device picker (*Select*) and the live **Unit
+  status** of the selected unit: hostname, firmware, build, serial, model, log
+  disk.
+- **30 section pages in 7 areas** that follow the FortiOS 8.0 menu — Network,
+  Policy & Objects, Security Profiles, VPN, User & Authentication, System, Log &
+  Report — over 43 cmdb tables, one tab per table, at `/fgt/m/<item_key>`. A
+  table shows at most 500 rows and says when it truncated.
+- **A refusal is never an empty table.** A `401` (wrong token, or an unlicensed
+  FortiGate-VM, which answers 401 to everything), `403` (the token's admin
+  profile does not grant the table) or `404` (no such table on this firmware) is
+  shown as an error; a real empty table says *"The device answered successfully
+  with zero objects — this is not an error."*
+- **Secrets are never shown**: password, key and secret fields, and every value
+  FortiOS returns as `ENC …`, are dropped before the page renders.
+- The shared Fleet and Administration pages, the Release Notes modal (§31.1),
+  **Build compatibility** (§30.11) and **Schema builds** (§30.12) are reachable
+  from its sidebar.
+
+Not there yet: writes, an API console and registry binding, backups, firmware,
+templates, HA status and the Migration report. Registration and the details:
+[docs/fortigate.md](fortigate.md).
 
 ## 18. API tokens
 
@@ -2200,31 +2262,41 @@ It never carries a configuration value or a device name.
 1. **Pick a pack.** The release you run carries its own (*this release*); you
    can also upload one downloaded from the release page.
 2. **Read the table.** Every item says what importing it would do: `new` (will
-   be imported), `present` (already on this node) or `local` (this node
-   measured it itself — local evidence always wins). Filter by product and by
-   section; only `new` items can be ticked.
+   be imported), `update` (replaces a copy an older pack wrote), `present`
+   (already on this node), `local` (this node measured it itself — local data
+   always wins), `rejected` (a malformed item, with the reason) or `unknown` (a
+   section this SATOM does not import, shown as a warning). Each row also shows
+   the pack's **lane** and where the current copy came from (`local`,
+   `pack:api_pack:<pack>` or `pack:knowledge:<pack>`). Filter by product and by
+   section; only `new` and `update` items can be ticked.
 3. **Import selected.** It runs as a background job with per-item progress.
-   Importing only adds; nothing this node holds is replaced.
+   Nothing this node measured or wrote itself is ever replaced; a copy an
+   earlier pack wrote is replaced only by a pack built from a newer snapshot.
 
-Packs are checked against the same trust store as update packages, so a pack
-signed by an untrusted key is refused with the command that fixes it. On a
+**Which key checks a pack (3.0).** A 3.0 pack (`satom.api-pack/2`) is verified
+only with the keys of its **lane** — `api_pack` for the pack pinned to a
+release, `knowledge` for the rolling knowledge packs. Both public keys ship
+with the release, so nothing has to be installed first; `satom show trust`
+lists them. A 2.x pack (`/1`) is still verified with the update trust store. A
+pack signed by a key the node does not trust for its lane is refused with the
+`satom execute trust add-key --purpose <lane>` command that fixes it. On a
 pair, import on the **primary**: the standby receives the library by
 replication and the files by the data sync, and its card is read-only. The
-console equivalent is `sudo satom execute apipack import shipped --yes`.
-From 2.7.0 an update imports the newest shipped pack on the primary by itself,
-and the page shows a notice while the newest pack has never been imported.
-Details: [api-library.md §11](api-library.md).
+console equivalent is `sudo satom execute apipack import shipped --yes`. An
+update imports the release's own pack on the primary by itself, and the page
+shows a notice while a shipped pack is pending. Details:
+[api-library.md §12](api-library.md).
 
-**Knowledge packs** (`satom-apipack-kb-YYYYMMDD`) are packs written by the SATOM
+**Knowledge packs** (`satom-apipack-kb-YYYYMMDD[.N]`) are written by the SATOM
 team's separate harvester tool rather than by a node: the CLI schema, hidden
-fields and REST fields of every firmware build measured in the team's lab, plus
-the vendor release notes of FortiWeb, FortiADC, FortiAuthenticator, FortiAnalyzer
-and FortiGate. They are listed and imported exactly like a release pack, follow
-the same rules (signed, no configuration, no device names, local measurement
-wins) and are what lets the Build compatibility page (§30.11) and the Migration
-Report (§40.3) answer for a build none of your appliances runs yet. A release
-carries the current one in `api-packs/`; an offline node that skipped a release
-uploads it here. You do not need the harvester tool itself. Details:
+fields and REST fields of every firmware build measured in the team's lab, the
+vendor release notes of FortiWeb, FortiADC, FortiAuthenticator, FortiAnalyzer
+and FortiGate, field catalogs, the predefined protection profiles per build,
+rename candidates and baselines. They are what lets the Build compatibility
+page (§30.11) and the Migration Report (§40.3) answer for a build none of your
+appliances runs yet. **From 3.0 they no longer ride inside the update:** they
+come from the knowledge feed or by upload (§22.4). You do not need the
+harvester tool itself. Details:
 [knowledge-harvester.md](knowledge-harvester.md).
 
 **Download the update package from the node itself.** In *Offline update
@@ -2276,6 +2348,13 @@ replicated: change them on the **primary**. On a standby the action and the
 buttons do nothing and say why — its database is read-only and the knowledge
 arrives by replication. The last result (status, message, time, pack) is shown
 under the table.
+
+**The scheduled action has to exist.** Scheduled actions are data, not code,
+so an update does not create `knowledge_fetch` (nor `signature_check`, §8.1).
+Run `sudo satom execute seed actions --yes` once on the primary after updating
+to 3.0 — it creates only the missing rows and never touches the ones you
+edited — or create them on the Scheduled Actions page. The buttons on this card
+work without it.
 
 **Air-gapped network.** On a machine with Internet access, download the pack
 named by the feed and its `.sha256` file from the release page (the card links
@@ -3381,7 +3460,7 @@ enabled and can open in a new tab; the list is shared by all ADOMs.
 
 ### 26.11 ADOMs — the product list is data, not code
 
-Create, edit, deactivate and delete ADOMs. This is why §3's five workspaces are a
+Create, edit, deactivate and delete ADOMs. This is why §3's six workspaces are a
 *current* list rather than a fixed one.
 
 Each row carries a key (lowercase, the URL-scoping identifier), a display name,
@@ -4646,7 +4725,7 @@ Now such a pair is:
 
 ### 31.1 Vendor release notes (the topbar modal)
 
-In the FortiWeb, FortiADC, FortiAuthenticator and FortiAnalyzer ADOMs the top
+In the FortiWeb, FortiADC, FortiAuthenticator, FortiAnalyzer and FortiGate ADOMs the top
 banner opens a **Release Notes** modal. It reads a corpus of harvested vendor
 notes — Known and Resolved issue tables plus the prose sections — and it is the
 corpus §12 step 3 diffs against when it advises you on an upgrade.
@@ -5509,8 +5588,8 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (110 today) or **excluded with a written
-   reason** (142 today — JSON feeds, downloads, redirects and fragments that
+   the console is either **on the map** (114 today) or **excluded with a written
+   reason** (144 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the
@@ -6757,3 +6836,26 @@ update late, on a stack that may since have been fixed by hand.
 
 Nothing is ever queued behind a silent agent, so nothing fires later by
 surprise when it comes back.
+
+## 45. Upgrading to 3.0
+
+3.0 is applied like any update (§22). What changes underneath is **where vendor
+knowledge comes from and which key may sign it**:
+
+| Change | What you notice |
+|---|---|
+| Packs use schema `satom.api-pack/2` | 3.0 imports them and still imports 2.x packs; a 2.13 node refuses 3.0 packs (`unsupported pack schema`) |
+| One key, one use | update packages: the update trust store, unchanged; packs: the key of their lane (`api_pack`, `knowledge`), shipped with the release (§22.3) |
+| No vendor crawler | release notes, Scout and upgrade paths come only from imported packs (§31.1); the *Scan from Fortinet* panel is gone |
+| Knowledge packs outside the update | the release carries its API pack; the rolling knowledge pack comes from the feed or by upload (§22.4) |
+| New: FortiGate workspace | read-only (§17.4) |
+| New: signature database freshness | daily `signature_check` and a device alert (§8.1) |
+
+**What to do.** Online: update, then run `sudo satom execute seed actions
+--yes` once on the primary so `knowledge_fetch` and `signature_check` exist.
+Air-gapped: the same, then download the knowledge pack elsewhere and upload it
+under **API library packs** (§22.4). **Verify** with `satom show trust` (three
+purposes: `update`, `api_pack`, `knowledge`) and `satom show knowledge`.
+**Rollback** is a normal downgrade plus, for a clean state, the database backup
+the update took. The full procedure, the key fingerprints and the rollback
+caveats: [Upgrading to 3.0](upgrading-to-3.0.md).

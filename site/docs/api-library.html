@@ -1051,14 +1051,15 @@ registry itself.</p>
 </ul>
 <hr>
 <h2 id="11-api-packs--the-library-for-nodes-that-cannot-measure-it">11. API packs — the library for nodes that cannot measure it</h2>
-<p>An installation learns what a build serves by sweeping a box that runs it,
-from vendor collections downloaded from Galaxy, and from docs.fortinet.com
-(a direct download — SATOM has no other documentation transport). An offline
-node has none of those, and a node with no FortiADC will never measure
-FortiADC. An <strong>API pack</strong> carries what one SATOM knows to another as one signed
-tarball (<code>app/services/api_pack.py</code>). Packs are written by SATOM's own export
-and by the separate <a href="knowledge-harvester.html">Knowledge Harvester</a> in the same
-format (knowledge packs, <code>kb-*</code>, §14.12); the release notes in a
+<p>An installation learns what a build serves by sweeping a box that runs it and
+from vendor collections downloaded from Galaxy. Since 3.0 it does not download
+vendor documentation at all: release notes and the knowledge of builds it does
+not run arrive in packs. An offline node has no collections either, and a node
+with no FortiADC will never measure FortiADC. An <strong>API pack</strong> carries that
+knowledge to a node as one signed tarball (<code>app/services/api_pack.py</code>). Since
+3.0 every published pack is built by the separate
+<a href="knowledge-harvester.html">Knowledge Harvester</a> in two lanes (§12); SATOM's own
+export (§12.6) remains for hand-over between nodes. The release notes in a
 pack may cover any product with a release-notes map (FortiWeb, FortiADC,
 FortiAuthenticator, FortiAnalyzer, FortiGate — see
 <a href="release-notes.html">release_notes.md</a>), and each item imports only its own
@@ -1286,6 +1287,12 @@ after it. While a shipped pack is pending on a node, Software Update says so
 above the pack list, with a link that opens each one.</p>
 <p><code>api-packs/</code> keeps <strong>every</strong> release's pack (about 400 KB each), so a node can
 import an older pack too.</p>
+<blockquote>
+<p><strong>3.0:</strong> the paragraphs and the table below describe 2.13. From 3.0.0 the
+release no longer carries a knowledge pack in <code>api-packs/</code>: its own pack is a
+harvester snapshot pinned to the release (lane <code>api_pack</code>), and knowledge
+packs come from the knowledge feed or by upload (§12, user guide §22.4).</p>
+</blockquote>
 <p><strong>Knowledge packs (2026-10-07).</strong> Next to the release packs, <code>api-packs/</code> may
 carry ONE knowledge pack, <code>satom-apipack-kb-YYYYMMDD[.N].tar.gz</code>, built by the
 separate tool <strong>satom-harvester</strong> (lab <code>tree</code> / <code>show full-configuration</code>
@@ -1339,6 +1346,17 @@ standby page shows the card read-only and the import route refuses there. A
 pack signed by a key the node does not trust is refused with the
 <code>satom execute trust add-key</code> command that fixes it.</p>
 <h3 id="116-built-by-the-release-pipeline">11.6 Built by the release pipeline</h3>
+<blockquote>
+<p><strong>3.0:</strong> the release's pack is no longer exported from a node's live library.
+The pipeline takes the newest <strong>approved</strong> harvester snapshot, checks parity
+against the previous published API pack (every product, build and source it
+carried must still be there, or the release stops and prints what is
+missing), writes the <code>/2</code> manifest with <code>lane = api_pack</code> and <code>pinned_to =</code>
+the release, and signs it with the <code>api_pack</code> key — never the release key.
+The gate below (checksum, signature against the shipped key, version, the
+mirror's redaction rules over every file) still runs, against the lane key.
+The text below is the 2.x pipeline.</p>
+</blockquote>
 <p>The pipeline step <code>api_pack</code> (after <code>docs_gate</code>, before the push and the tag)
 checks that <code>api-packs/</code> in the release commit holds exactly this release's
 pack and its <code>.sha256</code>, that the checksum matches, that the signature verifies
@@ -1619,7 +1637,11 @@ Each payload is validated before anything is written; a malformed item is
   this node's own, and are <strong>never the active baseline</strong>: a pack cannot change
   what the endpoint registry serves.</li>
 <li><strong>Signature metadata</strong> explains the signature ids an appliance reports.
-  Signatures themselves never travel in a pack.</li>
+  Signatures themselves never travel in a pack. <strong>The section ships empty
+  today:</strong> FortiGuard's terms do not permit collecting and redistributing that
+  data, so the harvester's FortiGuard enrichment is disabled and no pack
+  carries <code>signature-meta</code> items until it is permitted. Signature ids are shown
+  without the extra metadata until then.</li>
 </ul>
 <p>A section or kind this SATOM does not know is <strong>skipped with a visible
 warning</strong> in the inspect and import results (a newer publisher may ship a kind
@@ -1812,7 +1834,39 @@ pack-lane key. Releases no longer use it.</p>
 </tr>
 <tr>
 <td><code>pack import</code>: <code>no key in the trust store signed this package</code></td>
-<td>The signing key is not trusted here: <code>satom execute trust add-key &lt;key&gt;.pub</code> (same store as update packages)</td>
+<td>A 2.x (<code>/1</code>) pack whose key is not trusted here: <code>satom execute trust add-key &lt;key&gt;.pub</code> (the update trust store)</td>
+</tr>
+<tr>
+<td><code>this knowledge pack is not signed by a trusted knowledge key …</code> (or <code>api_pack</code>)</td>
+<td>A <code>/2</code> pack signed with another lane's key or with the release key, or with a lane key this node does not have. Compare the fingerprint (§12.3); a key you publish yourself: <code>satom execute trust add-key --purpose &lt;lane&gt; &lt;key&gt;.pub</code></td>
+</tr>
+<tr>
+<td><code>no knowledge key is trusted on this node (…)</code></td>
+<td>The shipped <code>deploy/pack-keys/&lt;lane&gt;/</code> is missing from the tree and no operator key was added. Restore the tree from the release, or add the key with <code>--purpose</code></td>
+</tr>
+<tr>
+<td><code>pack key directory is not safe to use: …</code></td>
+<td><code>/etc/satom/pack-keys/&lt;lane&gt;/</code> is writable by an account other than root. Fix its ownership and mode like the update trust store's</td>
+</tr>
+<tr>
+<td><code>pack … needs SATOM X or newer; this node runs Y</code></td>
+<td>The pack's <code>min_satom</code> is newer than this node. Update SATOM first, then import the pack again. Nothing was imported</td>
+</tr>
+<tr>
+<td><code>unsupported pack schema 'satom.api-pack/2'</code></td>
+<td>A SATOM 2.13 or older was given a 3.0 pack. Update the node to 3.0 (<a href="upgrading-to-3-0.html">Upgrading to 3.0</a>)</td>
+</tr>
+<tr>
+<td><code>this is a harvester TRANSPORT pack (lane 'harvester') …</code></td>
+<td>The harvester's own transport file. Import the <code>api_pack</code> or <code>knowledge</code> pack published from it</td>
+</tr>
+<tr>
+<td>An item reads <code>rejected</code></td>
+<td>Its payload failed the validation of its kind (§12.4); the reason is in the warning. The rest of the pack imports</td>
+</tr>
+<tr>
+<td>An item reads <code>unknown</code></td>
+<td>A section or kind this SATOM does not import yet (a newer publisher). Skipped with a warning; update SATOM to import it</td>
 </tr>
 <tr>
 <td><code>pack export</code>: <code>identifying data survived the scrub</code></td>
@@ -2352,23 +2406,26 @@ scheduled action <code>schema_watch</code>.</p>
 </ul>
 <h3 id="1412-knowledge-packs">14.12 Knowledge packs</h3>
 <p>A node that has never run a build can still know it: the separate
-<a href="knowledge-harvester.html">Knowledge Harvester</a> measures lab devices and the vendor
-documentation and writes a <strong>knowledge pack</strong> (<code>satom-apipack-kb-YYYYMMDD</code>) in
-the same signed format <code>satom.api-pack/1</code>, with <code>library</code> evidence of the
-sources <code>cli_tree</code>, <code>cli_full</code>, <code>sweep</code>, <code>schema</code> and <code>vendor_doc</code>, and the
-vendor release notes in <code>docs</code>.</p>
+<a href="knowledge-harvester.html">Knowledge Harvester</a> measures lab devices, reads the
+vendor documentation and public collections, and publishes the result as
+signed packs in two lanes with the same sections (§12): the <strong>API pack</strong>
+pinned to each SATOM release and the rolling <strong>knowledge pack</strong>
+(<code>satom-apipack-kb-YYYYMMDD[.N]</code>). The <code>library</code> section carries evidence of the
+sources <code>cli_tree</code>, <code>cli_full</code>, <code>sweep</code>, <code>schema</code> and <code>vendor_doc</code>; <code>docs</code>
+carries the vendor release notes and field schemas.</p>
 <ul>
-<li>It is <strong>imported like any API pack</strong> (§11.3–§11.5): verified against the
-  node's trust store, imported only where it adds, every item tagged
-  <code>apipack:&lt;version&gt;:&lt;source&gt;</code>. Knowledge packs sort after SATOM's numbered
-  release packs.</li>
+<li>It is <strong>imported like any API pack</strong>: verified with the keys of its lane
+  (§12.3), every item tagged with its provenance <code>pack:&lt;lane&gt;:&lt;pack&gt;</code> (evidence:
+  <code>apipack:&lt;lane&gt;:&lt;pack&gt;:&lt;source&gt;</code>).</li>
 <li><strong>Local measurement wins.</strong> An item this node measured itself for the same
-  source and build is <code>local</code> and never replaced.</li>
+  source and build is <code>local</code> and never replaced. Between packs the newer
+  snapshot wins (§12.5).</li>
 <li>A <code>cli_full</code> item carries names only; the one exception is lab evidence
   (<code>summary.lab = true</code>), whose fresh-row values are recorded as <code>default</code> with
   <code>attrs.lab_default</code>.</li>
-<li>Each release ships the current knowledge pack in <code>api-packs/</code>; an offline node
-  that skipped a release imports it by hand like any other pack.</li>
+<li>From 3.0 the update carries only the release's API pack. Knowledge packs come
+  from the knowledge feed (<code>knowledge_fetch</code>, user guide §22.4) or, on an
+  air-gapped node, by upload.</li>
 </ul>
     </div>
   </div>

@@ -241,6 +241,15 @@ trusting it. Installing a key is the moment the trust decision is made; every
 check afterwards only enforces it.</p>
 <p>Operators and forks can add their own keys and sign their own packages. Nothing
 in the product contains a secret, so nothing about this depends on the vendor.</p>
+<p><strong>One key, one use (3.0).</strong> This trust store verifies <strong>update packages only</strong>
+(and the legacy 2.x API packs). The 3.0 API and knowledge packs are verified
+with the keys of their own lane — shipped in <code>deploy/pack-keys/&lt;lane&gt;/</code>, plus
+any you add under <code>/etc/satom/pack-keys/&lt;lane&gt;/</code> with
+<code>satom execute trust add-key --purpose api_pack|knowledge &lt;file.pub&gt;</code>. The update
+verifier never reads a pack key, so a pack key can never sign an update, and
+<code>add-key</code> refuses a key already trusted for another purpose.
+<code>satom show trust</code> lists all three purposes. Details:
+<a href="api-library.html">api-library.md §12.3</a>, <a href="upgrading-to-3-0.html">Upgrading to 3.0</a>.</p>
 <h3 id="41-upgrading-a-node-installed-before-250">4.1 Upgrading a node installed before 2.5.0</h3>
 <p>Packages published from 2.5.0 on are signed with <code>satom-release-2026.pub</code>. An
 installer before 2.5.0 did not ship that key, so an older node refuses the

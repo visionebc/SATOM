@@ -108,6 +108,42 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - `flask apilib pack export` (schema `/1`) is kept for local and offline use and
   marked legacy; releases no longer use it. docs/api-library.md §12.
 
+### Added — FortiGate ADOM, read-only base (3.0.0)
+
+- New workspace `/fgt/` (sixth ADOM): appliance kind `fortigate`, registered
+  with a **REST API administrator token** as its password (FortiOS 8.0 refuses
+  password logins on the REST API). A dashboard with the device picker and the
+  live unit status, and 30 read-only section pages in 7 areas following the
+  FortiOS 8.0 menu, over 43 cmdb tables measured on FortiOS 8.0.1 build0245.
+- Reads only: the client sends `GET` and nothing else. A device refusal is shown
+  as an error, never as an empty table (`401` names the unlicensed-VM case);
+  secret fields and every `ENC …` value are dropped before a row is rendered;
+  tables are capped at 500 rows with the truncation stated.
+- The shared Fleet and Administration pages, the Release Notes modal, Build
+  compatibility and Schema builds are reachable from its sidebar. Fix: Schema
+  builds and Build compatibility, drawn in the FortiADC, FortiAnalyzer and
+  FortiAuthenticator sidebars since 2.13.0, were refused by those ADOMs' gates.
+- Not yet: writes, an API console, registry binding, backups, firmware. See
+  docs/fortigate.md.
+
+### Docs — 3.0.0
+
+- New: docs/upgrading-to-3.0.md (breaking changes, what online and air-gapped
+  nodes do — including `satom execute seed actions --yes` for the two new
+  scheduled actions —, verification with `satom show trust` / `satom show
+  knowledge`, rollback) and docs/fortigate.md; both published.
+- Rewritten for 3.0: docs/knowledge-harvester.md (two lanes, the content gate,
+  sources, signature metadata shipping empty while FortiGuard's terms forbid
+  redistribution), docs/release_notes.md (corpus only from packs; the scan
+  sections replaced by what was removed and why; no longer described as synced
+  from the desktop repository), api-packs/README.md.
+- Corrected: user guide §3/§4/§17.4 (six workspaces, FortiGate), §9.8 (carve-outs
+  record their build), §22.3 (lane keys instead of "the same trust store", item
+  states, knowledge packs outside the update), §22.4 (seeding the actions), §31.1,
+  new §45; api-library.md §11 (2.x-only paragraphs marked), §13 (3.0 errors),
+  §14.12; release-pipeline.md; offline-update-packages.md §4 (one key, one use);
+  README and overview product lists.
+
 ## [2.13.0] - 2026-10-07
 
 ### Fixed — a page that renders its own `products` list no longer breaks the Global sidebar (2026-10-07)

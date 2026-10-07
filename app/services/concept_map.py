@@ -131,6 +131,10 @@ PAGES: tuple[dict, ...] = (
     _p("fac.index", "FortiAuthenticator Dashboard", "fleet",
        "fortiauthenticator fac identity radius dashboard adom",
        "FortiAuthenticator devices."),
+    _p("fgt.index", "FortiGate Dashboard", "fleet",
+       "fortigate fgt fortios firewall ngfw dashboard adom read-only",
+       "The read-only FortiGate ADOM: device picker, unit status and its "
+       "section pages."),
     _p("product.select", "ADOM Selector", "fleet",
        "adom product switch change context fortiweb fortiadc scope",
        "Choose which product scope this session works in."),
@@ -352,6 +356,16 @@ PAGES: tuple[dict, ...] = (
        "added library version compat",
        "Tell the API library that a field was renamed between two builds, "
        "so a rename is not reported as a field lost plus one added."),
+    _p("build_compat.index", "Build Compatibility", "config",
+       "build compatibility firmware build field matrix exists missing cli only "
+       "channel compare builds skipped field api library",
+       "Which fields each firmware build serves, by REST and by CLI, and what "
+       "a write would skip on each target build."),
+    _p("schema_builds.index", "Schema Builds", "config",
+       "schema builds new build harvest cli tree schema not harvested adapter "
+       "api library firmware",
+       "Builds the fleet runs whose schema nobody harvested yet, with a "
+       "Harvest button, and the per-product schema adapters."),
     _p("adc_api.reconcile", "Registry Reconcile (FortiADC)", "adc",
        "reconcile registry drift sweep dead endpoint retire confirm apply "
        "fortiadc missing stale",
@@ -425,6 +439,11 @@ PAGES: tuple[dict, ...] = (
     _p("upgrade_flow.index", "Upgrade Flow", "automation",
        "upgrade flow staged rollout firmware plan sequence maintenance",
        "The staged plan for moving a fleet between versions."),
+    _p("migration_report.index", "Migration Report", "resilience",
+       "migration report upgrade target build will configuration survive "
+       "firmware block translate warn verdict",
+       "One appliance's configuration against a target build: what blocks, "
+       "what is translated, what to check."),
 
     # ---- Backup, Firmware & Recovery --------------------------------------
     _p("backups.index", "Device Backups", "resilience",
@@ -611,6 +630,8 @@ EXCLUDED: dict[str, str] = {
         "a page a person navigates to and must not be offered as one: the URL "
         "is a credential. Sentinel.blocklist is the page that shows it.",
     "search.results": "sub-view of search.index",
+    "build_compat.diff": "sub-view of build_compat.index",
+    "build_compat.history": "sub-view of build_compat.index",
     # The picker feed behind the Scout name field: the same two adapters rung 1
     # reads, scoped by visible_appliances, so the picker can never offer a name
     # the ladder would then fail to look for. Its page is scout.index.

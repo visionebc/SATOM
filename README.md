@@ -1,13 +1,15 @@
 # SATOM — Web Edition
 
 A multi-user **Flask web platform for managing fleets of Fortinet appliances**
-— **FortiWeb** (WAF), **FortiADC** (ADC/load balancer), and **FortiAnalyzer**
-(logs & analytics), with **FortiAuthenticator** planned — over their REST/JSON-RPC
-APIs and SSH/CLI, with a local, queryable copy of every device's configuration so
+— **FortiWeb** (WAF), **FortiADC** (ADC/load balancer), **FortiAnalyzer**
+(logs & analytics), **FortiAuthenticator** (identity) and, read-only,
+**FortiGate** — over their REST/JSON-RPC APIs and SSH/CLI, with a local, queryable copy of every device's configuration so
 the UI stays fast even when the appliances are slow, unreachable, or license-locked.
 
-> **Not a firewall manager.** SATOM manages application-delivery and
-> analytics appliances. It is **not** a FortiManager or FortiGate/NGFW tool.
+> **Not a firewall manager.** SATOM manages application-delivery, identity and
+> analytics appliances. Its FortiGate workspace (3.0) **reads** a FortiGate's
+> configuration and changes nothing: it is **not** a FortiManager or a
+> FortiGate/NGFW policy tool. See [docs/fortigate.md](docs/fortigate.md).
 
 - **Version:** see [`VERSION`](VERSION) · **Status:** production · **License:** [Elastic License 2.0](LICENSE) · [Security policy](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Release pipeline](docs/release-pipeline.md)
 - **~60 Flask blueprints · ~80 service modules · 700+ unit/integration tests · 500 tracked files**
@@ -228,7 +230,10 @@ Reference documents (deep dives):
 - [docs/wpp_exceptions.md](docs/wpp_exceptions.md) — WAF exceptions workflow & data model
 - [docs/source-of-truth-spec.md](docs/source-of-truth-spec.md) — device cache / source-of-truth spec
 - [docs/fortiadc.md](docs/fortiadc.md) — FortiADC REST conventions
-- [docs/release_notes.md](docs/release_notes.md) — release-notes harvester & upgrade planning
+- [docs/fortigate.md](docs/fortigate.md) — the read-only FortiGate workspace
+- [docs/release_notes.md](docs/release_notes.md) — vendor release-notes corpus (from signed packs) & upgrade planning
+- [docs/knowledge-harvester.md](docs/knowledge-harvester.md) — where the API and knowledge packs come from
+- [docs/upgrading-to-3.0.md](docs/upgrading-to-3.0.md) — what 3.0 changes and what to do when you update
 - [docs/INSTALL.md](docs/INSTALL.md) — install & migrate
 
 ## Tech stack

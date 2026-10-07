@@ -129,6 +129,11 @@ PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
      "Update a node with no route to the git remote: signed packages, the trust "
      "store that decides which signatures count, preflight, and the privileged "
      "apply with automatic rollback."),
+    ("upgrading-to-3.0.md", "upgrading-to-3-0", "Upgrading to 3.0", "\U0001f6a9",
+     "What 3.0 changes underneath the normal update: pack schema /2, one key "
+     "per use, release notes only from signed packs, knowledge packs outside "
+     "the update; what an online and an air-gapped node must do, how to "
+     "verify it and how to roll back."),
     ("provisioning-hypervisors.md", "provisioning-hypervisors",
      "Hypervisor provisioning", "\U0001f5a5️",
      "Building an appliance from nothing: the Proxmox and ESXi backends, what "
@@ -195,6 +200,11 @@ PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
      "How the identity product is wired: its Tastypie REST dialect, the "
      "per-user API key, the pagination trap and the 18-character ADOM ceiling "
      "it exposed."),
+    ("fortigate.md", "fortigate",
+     "FortiGate — the read-only workspace", "\U0001f525",
+     "The FortiGate ADOM base: registering a FortiGate with a REST API token, "
+     "the 30 read-only section pages over 43 cmdb tables, how FortiOS answers "
+     "and what is not there yet."),
     ("engineering.md", "engineering", "Engineering manual", "\U0001f3d7️",
      "Internal architecture for developers: layers, the endpoint registry, device clients, jobs and testing."),
     ("source-of-truth-spec.md", "source-of-truth", "Source-of-truth specification", "\U0001f5c2️",
@@ -221,7 +231,7 @@ GROUPS: list[tuple[str, str, list[str]]] = [
      ["install", "docker", "docker-compose", "sizing", "cli", "privilege-model", "safeguards",
       "metrics-architecture",
       "alerting", "provisioning-hypervisors", "git-backup",
-      "offline-update-packages"]),
+      "offline-update-packages", "upgrading-to-3-0"]),
     ("Security", "Certificates, transport encryption, trust between nodes, and "
      "what the fleet is being attacked with.",
      ["encryption", "acme", "sentinel", "ai-advisor"]),
@@ -233,7 +243,8 @@ GROUPS: list[tuple[str, str, list[str]]] = [
     ("What changed", "Release history for the platform itself.",
      ["changelog"]),
     ("Device reference", "Field-level reference for the managed appliances.",
-     ["server-policy", "web-protection-profile", "wpp-exceptions", "fortiadc"]),
+     ["server-policy", "web-protection-profile", "wpp-exceptions", "fortiadc",
+      "fortigate"]),
 ]
 
 # ---------------------------------------------------------------------------

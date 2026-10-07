@@ -781,14 +781,15 @@ registry itself.
 
 ## 11. API packs — the library for nodes that cannot measure it
 
-An installation learns what a build serves by sweeping a box that runs it,
-from vendor collections downloaded from Galaxy, and from docs.fortinet.com
-(a direct download — SATOM has no other documentation transport). An offline
-node has none of those, and a node with no FortiADC will never measure
-FortiADC. An **API pack** carries what one SATOM knows to another as one signed
-tarball (`app/services/api_pack.py`). Packs are written by SATOM's own export
-and by the separate [Knowledge Harvester](knowledge-harvester.md) in the same
-format (knowledge packs, `kb-*`, §14.12); the release notes in a
+An installation learns what a build serves by sweeping a box that runs it and
+from vendor collections downloaded from Galaxy. Since 3.0 it does not download
+vendor documentation at all: release notes and the knowledge of builds it does
+not run arrive in packs. An offline node has no collections either, and a node
+with no FortiADC will never measure FortiADC. An **API pack** carries that
+knowledge to a node as one signed tarball (`app/services/api_pack.py`). Since
+3.0 every published pack is built by the separate
+[Knowledge Harvester](knowledge-harvester.md) in two lanes (§12); SATOM's own
+export (§12.6) remains for hand-over between nodes. The release notes in a
 pack may cover any product with a release-notes map (FortiWeb, FortiADC,
 FortiAuthenticator, FortiAnalyzer, FortiGate — see
 [release_notes.md](release_notes.md)), and each item imports only its own
@@ -949,6 +950,11 @@ above the pack list, with a link that opens each one.
 `api-packs/` keeps **every** release's pack (about 400 KB each), so a node can
 import an older pack too.
 
+> **3.0:** the paragraphs and the table below describe 2.13. From 3.0.0 the
+> release no longer carries a knowledge pack in `api-packs/`: its own pack is a
+> harvester snapshot pinned to the release (lane `api_pack`), and knowledge
+> packs come from the knowledge feed or by upload (§12, user guide §22.4).
+
 **Knowledge packs (2026-10-07).** Next to the release packs, `api-packs/` may
 carry ONE knowledge pack, `satom-apipack-kb-YYYYMMDD[.N].tar.gz`, built by the
 separate tool **satom-harvester** (lab `tree` / `show full-configuration`
@@ -985,6 +991,16 @@ pack signed by a key the node does not trust is refused with the
 `satom execute trust add-key` command that fixes it.
 
 ### 11.6 Built by the release pipeline
+
+> **3.0:** the release's pack is no longer exported from a node's live library.
+> The pipeline takes the newest **approved** harvester snapshot, checks parity
+> against the previous published API pack (every product, build and source it
+> carried must still be there, or the release stops and prints what is
+> missing), writes the `/2` manifest with `lane = api_pack` and `pinned_to =`
+> the release, and signs it with the `api_pack` key — never the release key.
+> The gate below (checksum, signature against the shipped key, version, the
+> mirror's redaction rules over every file) still runs, against the lane key.
+> The text below is the 2.x pipeline.
 
 The pipeline step `api_pack` (after `docs_gate`, before the push and the tag)
 checks that `api-packs/` in the release commit holds exactly this release's
@@ -1141,7 +1157,11 @@ What each target guarantees:
   this node's own, and are **never the active baseline**: a pack cannot change
   what the endpoint registry serves.
 - **Signature metadata** explains the signature ids an appliance reports.
-  Signatures themselves never travel in a pack.
+  Signatures themselves never travel in a pack. **The section ships empty
+  today:** FortiGuard's terms do not permit collecting and redistributing that
+  data, so the harvester's FortiGuard enrichment is disabled and no pack
+  carries `signature-meta` items until it is permitted. Signature ids are shown
+  without the extra metadata until then.
 
 A section or kind this SATOM does not know is **skipped with a visible
 warning** in the inspect and import results (a newer publisher may ship a kind
@@ -1230,7 +1250,15 @@ pack-lane key. Releases no longer use it.
 | An endpoint an operator fixed went back after an upgrade | It did not, unless the row still carries `seed` or `baseline:…` in `updated_by`: then it was the baseline's row, not the operator's. Edit it from the Registry page; the edit makes it an operator row |
 | `baseline check` exits 1 | Read the report: `wrong_urn` / `missing` / `stale_enabled` are registry rows out of step with the baseline (`flask apilib baseline apply` fixes them); `urn_mismatch` on a fleet build means the vendor moved a resource: promote that build |
 | `pack import`: `manifest.sig is missing — the package is unsigned` | Sign it (§11.4) or get the signed pack from the release. Unsigned packs are never imported |
-| `pack import`: `no key in the trust store signed this package` | The signing key is not trusted here: `satom execute trust add-key <key>.pub` (same store as update packages) |
+| `pack import`: `no key in the trust store signed this package` | A 2.x (`/1`) pack whose key is not trusted here: `satom execute trust add-key <key>.pub` (the update trust store) |
+| `this knowledge pack is not signed by a trusted knowledge key …` (or `api_pack`) | A `/2` pack signed with another lane's key or with the release key, or with a lane key this node does not have. Compare the fingerprint (§12.3); a key you publish yourself: `satom execute trust add-key --purpose <lane> <key>.pub` |
+| `no knowledge key is trusted on this node (…)` | The shipped `deploy/pack-keys/<lane>/` is missing from the tree and no operator key was added. Restore the tree from the release, or add the key with `--purpose` |
+| `pack key directory is not safe to use: …` | `/etc/satom/pack-keys/<lane>/` is writable by an account other than root. Fix its ownership and mode like the update trust store's |
+| `pack … needs SATOM X or newer; this node runs Y` | The pack's `min_satom` is newer than this node. Update SATOM first, then import the pack again. Nothing was imported |
+| `unsupported pack schema 'satom.api-pack/2'` | A SATOM 2.13 or older was given a 3.0 pack. Update the node to 3.0 ([Upgrading to 3.0](upgrading-to-3.0.md)) |
+| `this is a harvester TRANSPORT pack (lane 'harvester') …` | The harvester's own transport file. Import the `api_pack` or `knowledge` pack published from it |
+| An item reads `rejected` | Its payload failed the validation of its kind (§12.4); the reason is in the warning. The rest of the pack imports |
+| An item reads `unknown` | A section or kind this SATOM does not import yet (a newer publisher). Skipped with a warning; update SATOM to import it |
 | `pack export`: `identifying data survived the scrub` | The message names the file and the value. A device name used as an API key or field name is the usual cause; nothing was written |
 | A pack item stays `local` and is never imported | Expected: this node measured that build itself (§11.3) |
 | Bell: *New build X on Y: schema not harvested* | An appliance runs a build with no CLI schema in the library. Open **Schema builds** and press **Harvest**, or import a knowledge pack that covers the build (§14.11) |
@@ -1575,20 +1603,23 @@ scheduled action `schema_watch`.
 ### 14.12 Knowledge packs
 
 A node that has never run a build can still know it: the separate
-[Knowledge Harvester](knowledge-harvester.md) measures lab devices and the vendor
-documentation and writes a **knowledge pack** (`satom-apipack-kb-YYYYMMDD`) in
-the same signed format `satom.api-pack/1`, with `library` evidence of the
-sources `cli_tree`, `cli_full`, `sweep`, `schema` and `vendor_doc`, and the
-vendor release notes in `docs`.
+[Knowledge Harvester](knowledge-harvester.md) measures lab devices, reads the
+vendor documentation and public collections, and publishes the result as
+signed packs in two lanes with the same sections (§12): the **API pack**
+pinned to each SATOM release and the rolling **knowledge pack**
+(`satom-apipack-kb-YYYYMMDD[.N]`). The `library` section carries evidence of the
+sources `cli_tree`, `cli_full`, `sweep`, `schema` and `vendor_doc`; `docs`
+carries the vendor release notes and field schemas.
 
-- It is **imported like any API pack** (§11.3–§11.5): verified against the
-  node's trust store, imported only where it adds, every item tagged
-  `apipack:<version>:<source>`. Knowledge packs sort after SATOM's numbered
-  release packs.
+- It is **imported like any API pack**: verified with the keys of its lane
+  (§12.3), every item tagged with its provenance `pack:<lane>:<pack>` (evidence:
+  `apipack:<lane>:<pack>:<source>`).
 - **Local measurement wins.** An item this node measured itself for the same
-  source and build is `local` and never replaced.
+  source and build is `local` and never replaced. Between packs the newer
+  snapshot wins (§12.5).
 - A `cli_full` item carries names only; the one exception is lab evidence
   (`summary.lab = true`), whose fresh-row values are recorded as `default` with
   `attrs.lab_default`.
-- Each release ships the current knowledge pack in `api-packs/`; an offline node
-  that skipped a release imports it by hand like any other pack.
+- From 3.0 the update carries only the release's API pack. Knowledge packs come
+  from the knowledge feed (`knowledge_fetch`, user guide §22.4) or, on an
+  air-gapped node, by upload.

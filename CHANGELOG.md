@@ -109,6 +109,39 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - Verified end to end on a FortiWeb 8.0.6 lab box: objects created, changed,
   refused mid-transaction (nothing applied), deleted; the box read back
   identical to its state before the test.
+### Added — schema adapters per product and the new-build watch (2026-10-07)
+
+- `services.schema_adapters`: one adapter per product, all feeding the same
+  per-build, per-channel model. Each declares its capabilities (`tree`,
+  `show_full`, `rest_schema`, `rest_probe`) and whether it was verified, on
+  which device and build. **FortiWeb** (verified, fortiweb17 7.6.8 and
+  fortiweb18 8.0.6) and **FortiADC** (unverified: no FortiADC in the lab) wrap
+  the existing schema harvest. **FortiAuthenticator** (verified on fac01,
+  8.0.3 build0099): FAC has no `tree`; its CLI is a bootstrap CLI of five
+  objects (`router static`, `system dns|global|ha|interface`, 29 fields) whose
+  schema is the `set ?` help, read by a walk that can only send `?`,
+  `config <object>` and `edit <a row the box listed>` and drops the session
+  without `end`; plus `show full-configuration` and the Tastypie schema.
+  **FortiGate**: `?action=schema` parser (nested tables folded into fields, as
+  the `tree` is) — unverified, the lab VM is unlicensed and answers 401.
+  **FortiAnalyzer**: CLI ↔ JSON-RPC `/cli/global/...` path mapping and the
+  `get` + `option: syntax` schema read — unverified, no FortiAnalyzer in the
+  lab. `flask apilib adapter-harvest` and `flask apilib schema-import`
+  (FortiGate tree/schema files, FortiAnalyzer syntax answers).
+- The FortiAuthenticator REST evidence records that its directory is complete
+  (`summary.directory_complete`); `channels_at` then reads a CLI object the
+  directory does not list as `cli_only` instead of `unknown`. Measured on
+  fac01: 29 `cli_only`, 316 `rest_only`, 0 `unknown`, 0 `both`.
+- New-build watch (`services.schema_watch`): when an appliance runs a build
+  with no harvested schema, ONE bell notification per product and build goes
+  to the administrators ("New build X on Y: schema not harvested"), from the
+  firmware probe and from the new `schema_watch` scheduled action. The new
+  **Schema builds** page (`/schema-builds/`, sidebar) lists the adapters with
+  their verification, the pending builds with a one-click harvest, and after
+  a harvest the comparison with the closest harvested build: every new or
+  changed item with its channel on the new build, "to verify" while its REST
+  side is unmeasured there. The `schema_harvest` scheduled action also runs
+  FortiAuthenticator and FortiAnalyzer through their adapters.
 
 ### Added — the API library reads the CLI channel too (2026-10-07)
 

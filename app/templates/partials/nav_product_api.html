@@ -16,6 +16,10 @@
   <div class="fw-nav-group-body">
     <a class="fw-nav-item {{ 'active' if request.blueprint == _api_bp else '' }}" href="{{ url_for(_api_bp ~ '.index') }}">
       <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Registry & console') }}</span></a>
+    {% if may_open('schema_builds.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'schema_builds' else '' }}" href="{{ url_for('schema_builds.index') }}">
+      <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Schema builds') }}</span></a>
+    {% endif %}
   </div>
 </div>
 {% endif %}

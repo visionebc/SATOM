@@ -1256,6 +1256,10 @@
         <a class="fw-nav-item {{ 'active' if _g_api }}" href="{{ url_for('registry.index') }}">
           <i class="bi bi-code-slash fw-nav-icon"></i><span>API</span></a>
         {% endif %}
+        {% if may_open('schema_builds.index') %}
+        <a class="fw-nav-item {{ 'active' if request.blueprint == 'schema_builds' }}" href="{{ url_for('schema_builds.index') }}">
+          <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Schema builds') }}</span></a>
+        {% endif %}
         {% endif %}
         {# API library: fields per firmware build, both channels (views/build_compat.py). #}
         {% if may_open('build_compat.index') %}

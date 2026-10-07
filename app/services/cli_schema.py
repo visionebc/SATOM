@@ -59,7 +59,10 @@ FORMAT_FORTIOS = "fortios"       # [t] <s> --*mkey (lo,hi)
 #: How far each product's CLI -> REST rule has been checked against a box.
 PATH_RULE_STATUS = {
     "fortiweb": "verified",          # fortiweb17 7.6.8: 287/287 swept paths in the tree
-    "fortigate": "verified",         # matches every vendor_doc URN of fortinet.fortios
+    # matches every vendor_doc URN of fortinet.fortios, and fgt02 8.0.1's own
+    # ?action=schema: 609/618 REST tables join a tree object under the same key
+    # (the other 9 are absent from the tree, not mis-keyed)
+    "fortigate": "verified",
     "fortiadc": "unverified",        # documented convention only; no FortiADC in the lab
     # FortiAuthenticator's CLI objects have NO REST counterpart (its REST is the
     # Tastypie directory, /api/v1/<resource>/): the FortiOS rule only names them.
@@ -123,11 +126,30 @@ def _clean_lines(text: str) -> list:
             continue
         m = _PROMPT_HEAD.match(raw)
         if m and _CONN.search(raw[m.end():]):
-            # A prompt glued to the first line of output: blank it out, keep
-            # the columns (siblings are found by column).
-            raw = " " * m.end() + raw[m.end():]
+            # A prompt glued to the first line of output (the newline after the
+            # echoed command was lost): CUT it. The device drew every column
+            # from 0 without the prompt; blanking it out shifted the first line
+            # right and re-parented the lines below it (measured: fgt02 8.0.1
+            # lost ``system datasource type``; fortiweb17 7.6.8 grew 9 objects).
+            raw = raw[m.end():]
         out.append(raw)
     return out
+
+
+#: FortiOS prints a few field names with a space (``default value`` of the
+#: ``parameters`` tables, fgt02 8.0.1; REST serves the same name). What follows
+#: the first word up to the ``(size)`` / ``(lo,hi)`` annotation is part of the
+#: name when it is plain lower-case words.
+_NAME_TAIL = re.compile(r"^(?P<tail>[a-z][a-z0-9_-]*(?: [a-z][a-z0-9_-]*)*)\s*(?P<rest>\(.*)?$")
+
+
+def _fortios_name_tail(node) -> None:
+    if node.token[:1] in "[<{" or not node.annot:
+        return
+    m = _NAME_TAIL.match(node.annot)
+    if m:
+        node.name = "%s %s" % (node.name, m.group("tail"))
+        node.annot = (m.group("rest") or "").strip()
 
 
 def _raw_tree(text: str) -> _Node:
@@ -183,6 +205,8 @@ def _classify(node: _Node, parent_kind: str, fmt: str) -> None:
         node.kind = "value"                        # an enum option
     elif parent_kind in (KIND_TABLE, KIND_SINGLETON) or node.star:
         node.kind = "field"                        # FortiOS: plain field names
+        if fmt == FORMAT_FORTIOS:
+            _fortios_name_tail(node)
     elif node.children:
         node.kind = KIND_NAMESPACE
     else:

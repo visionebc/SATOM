@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Version 2.9.1 — SATOM</title>
-<meta name="description" content="Released on 2026-10-02 — Fixed — Discovery with refused credentials locked the admin account and left an empty snapshot (2026-10-02) · 4 entries.">
+<title>Version 2.13.0 — SATOM</title>
+<meta name="description" content="Released on 2026-10-07 — Fixed — a page that renders its own products list no longer breaks the Global sidebar (2026-10-07) · 56 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 2.9.1 <span class="rel-badge">superseded</span></h1>
-  <p class="sub">Released on 2026-10-02 — Fixed — Discovery with refused credentials locked the admin account and left an empty snapshot (2026-10-02) · 4 entries.</p>
+  <h1>Version 2.13.0 <span class="rel-badge rel-now">current release</span></h1>
+  <p class="sub">Released on 2026-10-07 — Fixed — a page that renders its own products list no longer breaks the Global sidebar (2026-10-07) · 56 entries.</p>
 </header>
 
 <section class="wrap">
@@ -62,7 +62,7 @@
         <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
         <ul class="rel-leads"></ul>
       </a>
-      <a class="rel-nav-item" href="v2.13.0.html" data-rel-version="2.13.0">
+      <a class="rel-nav-item is-active" href="v2.13.0.html" data-rel-version="2.13.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.13.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
         <span class="rel-nav-meta">2026-10-07 · Fixed — a page that renders its own products list no longer breaks the Global sidebar (2026-10-07) · 56 entries</span>
         <ul class="rel-leads"><li>Build compatibility</li><li>Inject to device</li><li class="rel-more">… and 54 more</li></ul>
@@ -87,7 +87,7 @@
         <span class="rel-nav-meta">2026-10-03 · Added — job toasts can be minimised (2026-10-03) · 2 entries</span>
         <ul class="rel-leads"><li>The sweep never fed the local cache</li><li>A fresh install schedules no harvest and no probe sweep</li></ul>
       </a>
-      <a class="rel-nav-item is-active" href="v2.9.1.html" data-rel-version="2.9.1">
+      <a class="rel-nav-item" href="v2.9.1.html" data-rel-version="2.9.1">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.9.1</span></span>
         <span class="rel-nav-meta">2026-10-02 · Fixed — Discovery with refused credentials locked the admin account and left an empty snapshot (2026-10-02) · 4 entries</span>
         <ul class="rel-leads"><li>A 401 stops discovery</li><li>A sweep in which no endpoint answered writes no snapshot</li><li>The error says what to check:</li><li class="rel-more">… and 1 more</li></ul>
@@ -355,31 +355,354 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="fixed--discovery-with-refused-credentials-locked-the-admin-account-and-left-an-empty-snapshot-2026-10-02">Fixed — Discovery with refused credentials locked the admin account and left an empty snapshot (2026-10-02)</h3>
-<p>Reported from the field: a rediscovery returned <code>HTTP 401</code> on all 295
-endpoints, and afterwards the appliance showed no configuration at all, not
-even NTP. The sweep sent one request per endpoint even after the first 401.
-On FortiWeb each of those requests is a failed admin login, and
-<code>admin-lockout-threshold</code> (3 by default) locks the account. A locked account
-returns 401 to everything, including the correct password, so the sweep kept
-the admin locked out for SATOM and for anyone using the GUI. It then saved the
-empty result as the latest snapshot, replacing the last good one.</p>
+<h3 id="fixed--a-page-that-renders-its-own-products-list-no-longer-breaks-the-global-sidebar-2026-10-07">Fixed — a page that renders its own <code>products</code> list no longer breaks the Global sidebar (2026-10-07)</h3>
 <ul>
-<li><strong>A 401 stops discovery.</strong> If the first status read returns 401, the sweep
-  stops after that single failed login. If an endpoint returns 401 mid-sweep,
-  SATOM reads status once to check. If that read also returns 401, the sweep
-  stops. If it succeeds, the 401 was specific to that endpoint and the sweep
-  continues. The CLI-coverage discovery run stops the same way.</li>
-<li><strong>A sweep in which no endpoint answered writes no snapshot.</strong> It ends as
-  <em>Failed</em>, and the previous snapshot is kept.</li>
-<li><strong>The error says what to check:</strong> the credentials, the ADOM/vdom field, the
-  lockout, and the account's trusted hosts. <em>Test connection</em> now shows the
-  same message instead of a JSON parse error. Error details are taken from an
-  HTML page's <code>&lt;title&gt;</code> and the <code>WWW-Authenticate</code> header. Previously they
-  were the first 120 bytes of the page, which were only its doctype.</li>
-<li>Guard: <code>tests/test_rediscovery_auth.py</code>.</li>
+<li><code>base.html</code> read the ADOM registry under the context name <code>products</code>; a view
+  passing its own <code>products=[...]</code> shadowed it and the page answered 500 in the
+  Global ADOM (Build compatibility, as Naming did in 2.11). The sidebar now
+  reads <code>adom_registry</code>, which no view sets; a guard keeps the shared chrome off
+  the shadowable name.</li>
 </ul>
-<p class="rel-prevnext"><a href="v2.10.0.html">← Version 2.10.0</a> · <a href="v2.9.0.html">Version 2.9.0 →</a></p>
+<h3 id="fixed--documentation-silence-is-never-a-rest-no-lab-rows-of-a-knowledge-pack-are-imported-2026-10-07">Fixed — documentation silence is never a REST "no"; lab rows of a knowledge pack are imported (2026-10-07)</h3>
+<ul>
+<li>The channel view treated the vendor documentation as a REST measurement: on a
+  node whose own sweep saw a table EMPTY, a documented subset of its fields made
+  every other <code>tree</code> field read "CLI only" (242 false ones on FortiWeb 7.6.8 in
+  production). Only a measurement (sweep, schema) can turn silence — or a span
+  that stops before the build — into "no"; documentation leaves it <code>unknown</code>.</li>
+<li>Rule 3 of API packs (local measurement wins) skipped a knowledge pack's LAB
+  evidence (<code>summary.lab</code>, fresh rows a lab box created to reveal tables a
+  production box has empty) whenever the node had measured the build itself, so
+  those tables stayed unknown. Lab evidence is now imported next to the node's
+  own; it can only add, never replace.</li>
+</ul>
+<h3 id="fixed--fortigate-schema-verified-against-a-live-801-2026-10-07">Fixed — FortiGate schema verified against a live 8.0.1 (2026-10-07)</h3>
+<ul>
+<li>The FortiGate <code>?action=schema</code> adapter was written from the documented format;
+  it is now checked against 618 real per-table answers of a FortiOS 8.0.1
+  build0245 lab box and marked verified. What the real answer changed:
+  <code>info-read-only</code> children (print helpers such as <code>application name status</code>)
+  are no longer counted as REST fields (19 false "REST only" names); one that
+  carries a value (<code>ips rule status</code>) is a read-only field. <code>datasource</code> keeps
+  its target list, <code>required</code>/<code>readonly</code>/<code>max_num_values</code> and the object's
+  scope are kept. A per-table 404 is a measured absence, not an error.</li>
+<li>The global <code>?action=schema</code> index answers 403 to a read-only token: the
+  adapter now reads table by table, enumerated from the CLI tree plus a
+  catalogue. The tree alone is not the whole schema on FortiOS: 9 REST tables
+  (<code>llm/*</code>, <code>waf/signature</code>, <code>system/vdom</code> ...) are absent from it and show as
+  <code>rest_only</code> in the channel view.</li>
+<li><code>tree</code> parsing: a prompt glued to the first line is cut, not blanked (fgt02
+  lost <code>system datasource type</code>; a glued FortiWeb dump grew 9 phantom objects),
+  and a FortiOS field name with a space (<code>default value</code>) is read whole.</li>
+<li>The channel view compares the members of nested objects REST and the CLI
+  both describe (<code>members</code>: 39 FortiGate 8.0.1 nested objects have CLI-only
+  members). <code>flask apilib schema-import --schema</code> accepts a directory of
+  per-table answers.</li>
+</ul>
+<h3 id="added--knowledge-packs-from-satom-harvester-ship-with-the-release-2026-10-07">Added — knowledge packs from satom-harvester ship with the release (2026-10-07)</h3>
+<ul>
+<li><code>api-packs/</code> carries, next to the release packs, ONE knowledge pack
+  <code>satom-apipack-kb-YYYYMMDD[.N].tar.gz</code> built by the separate tool
+  satom-harvester and re-signed with the release key by the release pipeline.
+  It is its own file because a release pack never re-exports what the release
+  host imported from a pack.</li>
+<li><code>satom execute apipack import shipped</code> (and therefore the installer and the
+  update runner) imports <strong>every pending shipped pack</strong>: the newest release
+  pack, then the newest knowledge pack, each only if this node has not fully
+  imported it yet. Both series are cumulative, so older packs of a series are
+  superseded and not imported. A run with a failed item, or a ticked subset,
+  leaves the pack pending so the next update retries it (the import log now
+  records <code>partial</code>).</li>
+<li>Software Update lists knowledge packs with the label <em>knowledge pack
+  (satom-harvester)</em>, marks superseded packs, and the pending notice names
+  every pending pack; <code>satom show apipack</code> shows the same.</li>
+<li>Fixed: the console sorted pack versions as mixed int/str lists, which raised
+  <code>TypeError</code> as soon as a <code>kb-*</code> pack sat next to <code>2.x.y</code> packs.</li>
+</ul>
+<h3 id="added--documentation-for-builds-channels-and-migrations-2026-10-07">Added — documentation for builds, channels and migrations (2026-10-07)</h3>
+<ul>
+<li>New manual pages: <a href="../docs/build-compatibility.html">Build compatibility</a>,
+  <a href="../docs/migration-report.html">Migration report</a>, <a href="../docs/cli-writer.html">CLI writer</a>
+  and <a href="../docs/knowledge-harvester.html">Knowledge Harvester</a>, published on the site.
+  <a href="../docs/api-library.html">API library</a> §13 now runs end to end (sources, channels,
+  completeness, the FortiWeb parent-fallback trap, renames by CLI id,
+  conditional printing, REST ignoring gated fields, per-product adapters, the
+  new-build watch, knowledge packs); the user guide gained §7.3, §30.11,
+  §30.12 and §40.3; safeguards §209–§213.</li>
+</ul>
+<h3 id="added--build-compatibility-across-firmware-builds-2026-10-07">Added — build compatibility across firmware builds (2026-10-07)</h3>
+<ul>
+<li>Writes are checked against each target's EXACT build through both channels
+  (<code>services/build_compat.py</code>): fields the build does not have are stripped
+  per device and listed ("Applies, but on 8.0.6 <code>token-secret</code> does not exist:
+  it will be skipped on 3 appliances", with the rename hint when a CLI id or a
+  field-rename map points at the new name), CLI-only fields are flagged (the
+  REST write cannot set them), option and range violations and objects the
+  build lacks block, and an unmeasured build says "not measured — cannot be
+  guaranteed", never ok. Wired through <code>version_compat</code> into template apply
+  and approval auto-deploy, baseline and system-profile apply (per-device
+  skips in the bulk runner), the carve-out push gate and the object editor
+  (dry run shows it; a real write with an invalid value is refused).</li>
+<li><strong>Build compatibility</strong> page (API library, <code>registry_edit</code>): field x build
+  matrix by channel (both / CLI only / hidden / REST only / CLI with REST
+  unmeasured / meta / absent / unknown) with server-side filters and
+  pagination, a two-build diff (objects and fields added and removed,
+  options, types, ranges, defaults, rename candidates, moves) and per-field
+  history.</li>
+<li><code>satom execute apilib compat &lt;product&gt; &lt;A&gt; &lt;B&gt;</code> and
+  <code>satom execute apilib channels &lt;product&gt; &lt;build&gt;</code> (<code>flask apilib compat</code>,
+  <code>flask apilib channels</code>).</li>
+</ul>
+<h3 id="fixed--channel-classification-of-rest-bookkeeping-2026-10-07">Fixed — channel classification of REST bookkeeping (2026-10-07)</h3>
+<ul>
+<li><code>channels_at</code> no longer calls REST bookkeeping <code>rest_only</code>: <code>id</code> / <code>_id</code> /
+  <code>seq</code> / <code>&lt;NO.&gt;</code> and the FortiWeb wire keys are channel <code>meta</code>, outside
+  completeness, unless the build's CLI lists the name for that object.
+  Vendor-documented names a measured <code>tree</code> contradicts are <code>unknown</code> with
+  <code>doc_conflict</code>. On the lab pack FortiWeb 7.6.8 went from 276 <code>rest_only</code>
+  to 0 (2,351 meta, 70 doc conflicts).</li>
+<li>Object CLI ids are read from the evidence summary when the facts have none:
+  7.6.8 -&gt; 8.0.6 now reports the object rename <code>allow-source-ip</code> -&gt;
+  <code>source-ip-list</code> (was 0) and the field moves into <code>page-list</code>.</li>
+</ul>
+<h3 id="added--migration-report-will-this-appliances-configuration-survive-build-x-2026-10-07">Added — Migration report: will this appliance's configuration survive build X? (2026-10-07)</h3>
+<ul>
+<li>New service <code>services/migration_report.py</code>. Input: an appliance (its
+  newest <code>show full-configuration</code> dump in the backup vault, or a chosen
+  backup) and a target build. Every configured object and field is checked
+  against the API library — the target's CLI schema (fields, enum options,
+  types, ranges), the CLI half of <code>compare()</code>, <code>channels_at()</code> and the
+  operator's field maps — and classified: <strong>block</strong> (object or field removed
+  while the device uses it — any value when the default is unknown —, enum
+  value no longer accepted, value out of range, type change the value does
+  not satisfy), <strong>translate</strong> (rename covered by a field map), <strong>warn</strong>
+  (rename candidate by equal CLI id, default changed under a field left at
+  the default, no evidence on the target, target build not completely
+  measured — with its percentage), <strong>info</strong> (new objects and fields with
+  their default when known). Verdict: ready / ready with warnings / blocked /
+  cannot assess; same build = nothing to do; a downgrade runs the same checks.
+  Configuration values stay in memory: rows and exports carry names, counts
+  and library facts only.</li>
+<li>Page <strong>Migration Report</strong> (Automation, beside Upgrade Flow; also from the
+  appliance page): pick a target build, read the verdict, per-object counts
+  and every finding; export as JSON or CSV. Guarded by the Upgrade Flow's
+  permission (backup).</li>
+<li>Upgrade Flow stage 1 shows the migration verdict for the move each
+  appliance's newest pre-upgrade recorded, with a link to the full report
+  (library comparison computed once per move; at most 20 appliances per page
+  render, the rest link to the report).</li>
+<li>CLI: <code>satom execute migration report &lt;appliance&gt; --target &lt;build&gt;
+  [--backup &lt;id&gt;]</code> (<code>--json</code> for the full report), backed by
+  <code>flask apilib migration-report</code>.</li>
+<li><code>cli_schema.parse_show_full_values(text, rows=True)</code> returns every row of
+  every object (<code>unset</code> = empty) for in-memory checks.</li>
+</ul>
+<h3 id="added--cli-writer-for-fields-only-the-cli-serves-2026-10-07">Added — CLI writer for fields only the CLI serves (2026-10-07)</h3>
+<ul>
+<li>New <code>services/cli_writer.py</code>. <code>split_payload(appliance, endpoint, fields)</code>
+  routes each field of a write by the API library's classification on the
+  appliance's EXACT build: <code>cli_only</code>/<code>hidden</code> go by CLI, <code>both</code>/<code>rest_only</code>
+  by REST (the existing clients), and a field the build does not have, one no
+  source measured, an unmeasured endpoint or an unknown build is refused with
+  the reason. FortiWeb 7.6.8 and 8.0.6 have no CLI-only field, so on those
+  builds every field still goes by REST.</li>
+<li>The writer runs one object's change as a CLI transaction (<code>config</code>/<code>edit</code>/
+  <code>set</code>/<code>unset</code>/<code>next</code>/<code>end</code>, sub-table rows in the same transaction, <code>edit 0</code>
+  for a new row), quoting and escaping values the FortiOS-family way and
+  refusing what cannot be typed safely (control characters; <code>?</code> where the CLI
+  reads it as help). It stops at the first error the box prints (parse error,
+  out of range, invalid value, entry not found, <code>node_check_object fail</code>,
+  negative return codes, <code>Command fail</code>) and discards the pending change with
+  <code>abort</code> (rows and singletons; a sub-table level is left with <code>end</code> first),
+  resyncing on the prompt after every line. Every apply is read back in a NEW
+  SSH session with <code>show full-configuration</code>: each written field must read back
+  equal, and REST is read back too when the object has a REST path; a mismatch
+  fails the write with the diff. After a failure the readback proves nothing
+  was applied (or says it was). Every apply is audited
+  (<code>config.cli_write</code>: object path, field names, outcome — never a value).</li>
+<li>Runs inside the device-job framework and takes the SAME per-device lock as a
+  REST write. The SSH write session is the existing write-capable console class
+  (its deny-list gate applies to every line); the read-only console gate is
+  unchanged.</li>
+<li>Object editor: the Save preview shows the CLI script for the fields this
+  build serves only by CLI (the rest is the usual REST request) and, after
+  Apply, the CLI and REST readback. Same <code>config_write</code> permission as before;
+  dry run stays the default. Fields the build does not know keep their REST
+  path and are listed as a warning.</li>
+<li>Fixed: <code>cli_schema.parse_show_full_values</code> read a value holding an escaped
+  quote (<code>set comment "a \"b"</code>) as an unterminated multi-line value and dropped
+  the lines after it.</li>
+<li>Verified end to end on a FortiWeb 8.0.6 lab box: objects created, changed,
+  refused mid-transaction (nothing applied), deleted; the box read back
+  identical to its state before the test.</li>
+</ul>
+<h3 id="added--schema-adapters-per-product-and-the-new-build-watch-2026-10-07">Added — schema adapters per product and the new-build watch (2026-10-07)</h3>
+<ul>
+<li><code>services.schema_adapters</code>: one adapter per product, all feeding the same
+  per-build, per-channel model. Each declares its capabilities (<code>tree</code>,
+  <code>show_full</code>, <code>rest_schema</code>, <code>rest_probe</code>) and whether it was verified, on
+  which device and build. <strong>FortiWeb</strong> (verified, {device} 7.6.8 and
+  {device} 8.0.6) and <strong>FortiADC</strong> (unverified: no FortiADC in the lab) wrap
+  the existing schema harvest. <strong>FortiAuthenticator</strong> (verified on {device},
+  8.0.3 build0099): FAC has no <code>tree</code>; its CLI is a bootstrap CLI of five
+  objects (<code>router static</code>, <code>system dns|global|ha|interface</code>, 29 fields) whose
+  schema is the <code>set ?</code> help, read by a walk that can only send <code>?</code>,
+  <code>config &lt;object&gt;</code> and <code>edit &lt;a row the box listed&gt;</code> and drops the session
+  without <code>end</code>; plus <code>show full-configuration</code> and the Tastypie schema.
+  <strong>FortiGate</strong>: <code>?action=schema</code> parser (nested tables folded into fields, as
+  the <code>tree</code> is) — verified against a live 8.0.1 build0245 (see <em>Fixed — FortiGate
+  schema verified</em> above).
+  <strong>FortiAnalyzer</strong>: CLI ↔ JSON-RPC <code>/cli/global/...</code> path mapping and the
+  <code>get</code> + <code>option: syntax</code> schema read — unverified, no FortiAnalyzer in the
+  lab. <code>flask apilib adapter-harvest</code> and <code>flask apilib schema-import</code>
+  (FortiGate tree/schema files, FortiAnalyzer syntax answers).</li>
+<li>The FortiAuthenticator REST evidence records that its directory is complete
+  (<code>summary.directory_complete</code>); <code>channels_at</code> then reads a CLI object the
+  directory does not list as <code>cli_only</code> instead of <code>unknown</code>. Measured on
+  {device}: 29 <code>cli_only</code>, 316 <code>rest_only</code>, 0 <code>unknown</code>, 0 <code>both</code>.</li>
+<li>New-build watch (<code>services.schema_watch</code>): when an appliance runs a build
+  with no harvested schema, ONE bell notification per product and build goes
+  to the administrators ("New build X on Y: schema not harvested"), from the
+  firmware probe and from the new <code>schema_watch</code> scheduled action. The new
+  <strong>Schema builds</strong> page (<code>/schema-builds/</code>, sidebar) lists the adapters with
+  their verification, the pending builds with a one-click harvest, and after
+  a harvest the comparison with the closest harvested build: every new or
+  changed item with its channel on the new build, "to verify" while its REST
+  side is unmeasured there. The <code>schema_harvest</code> scheduled action also runs
+  FortiAuthenticator and FortiAnalyzer through their adapters.</li>
+</ul>
+<h3 id="added--the-api-library-reads-the-cli-channel-too-2026-10-07">Added — the API library reads the CLI channel too (2026-10-07)</h3>
+<ul>
+<li>Two new evidence sources, <code>cli_tree</code> and <code>cli_full</code>. <code>cli_tree</code> is the
+  schema the appliance's own CLI <code>tree</code> command prints: every object, field,
+  type, enum option, key field and CLI attribute id of the running build.
+  <code>cli_full</code> is the field names <code>show full-configuration</code> reveals per object,
+  hidden fields included — names only, never a value (a default is recorded
+  only on lab evidence). Both are keyed by the REST path (<code>system/ntp/ntpserver</code>),
+  joined to sweeps by <code>api_library.urn_key</code>. Facts gain an <code>attrs</code> column
+  (CLI id, hidden, range, raw CLI type, datasource; migration
+  <code>apilib05_cli_channel</code>). The REST readers (versions page, preflights,
+  baselines, the matrix export) do not read the CLI sources.</li>
+<li><code>api_library.channels_at(product, build)</code> says, per field, whether a build
+  serves it over REST and CLI (<code>both</code>), the CLI only (<code>cli_only</code>), only in
+  <code>show full-configuration</code> (<code>hidden</code>), REST only (<code>rest_only</code>) or <code>unknown</code>,
+  with the evidence behind each answer and a completeness summary that allows
+  only named exceptions (<code>licence</code>, <code>status-object</code>).</li>
+<li><code>compare(product, base, target)</code> adds the CLI channel: fields that changed
+  channel, enum options added and removed, type, range and lab-default
+  changes, and rename candidates found by an equal CLI id (reported, never
+  applied: the field-rename map stays the authority).</li>
+<li>New parser <code>services/cli_schema.py</code> for the FortiWeb and FortiOS <code>tree</code>
+  formats and <code>show full-configuration</code>, with the CLI-to-REST path rules of
+  FortiWeb (verified on 7.6.8 and 8.0.6), FortiGate (<code>config a b c</code> -&gt;
+  <code>a.b/c</code>) and FortiADC (documented convention, marked unverified).</li>
+<li>Schema harvest (<code>services/schema_harvest.py</code>): one appliance's build through
+  both channels — SSH <code>tree</code>, <code>show full-configuration</code> (a fresh vault dump of
+  the same build is reused) and one REST read per tree object the library does
+  not cover. Read-only against the box. From the API Explorer (<strong>Harvest CLI
+  schema</strong>, permission <code>appliances.apply</code>, runs as a device job), the
+  scheduled action <code>schema_harvest</code>, <code>flask apilib schema-harvest</code> and
+  <code>satom execute apilib harvest &lt;appliance&gt;</code>.</li>
+<li>SSH: <code>tree</code> is allowed as a whole-command match behind its own gate
+  (<code>ssh_ops.assert_schema_command</code>); the read-verb allowlist is unchanged.</li>
+<li>API packs export and import the new sources and their <code>attrs</code>; a <code>cli_full</code>
+  row that carries a value is refused at export as well as at ingest.</li>
+</ul>
+<h3 id="fixed--a-fortiweb-nested-path-that-is-not-served-is-no-longer-served-2026-10-07">Fixed — a FortiWeb nested path that is not served is no longer "served" (2026-10-07)</h3>
+<ul>
+<li>FortiWeb answers a nested REST path it does not serve with HTTP 200 and the
+  PARENT's rows (<code>system/interface/&lt;anything&gt;</code> returns the interfaces), or the
+  parent's dict with <code>?mkey=</code>. The rediscovery probe called every 200 <code>ok</code>, so
+  the sweep, the CLI-coverage probe and the discovery run could "find" and
+  register a URN that only ever returns its parent. The probe now classifies
+  by the shape of the answer (<code>rediscovery.fortiweb_shape_verdict</code>): the
+  parent's answer, rows that carry the child as their own key, or rows whose
+  keys the object does not have, are <code>absent</code>; a real empty table stays <code>ok</code>.</li>
+<li>The CLI-coverage "CLI only" badge said more than it knew: most of those
+  blocks are served by REST and are only missing from the catalog. A block
+  whose REST path the library measured served on the dump's build is now a
+  <strong>catalog gap</strong>; the rest read <strong>Not in catalog</strong>, with a REST column that
+  says <em>CLI only</em> only when REST was measured absent.</li>
+</ul>
+<h3 id="removed--firecrawl-transport-docs-now-come-from-direct-download-or-api-packs-2026-10-07">Removed — Firecrawl transport: docs now come from direct download or API packs (2026-10-07)</h3>
+<ul>
+<li>The release-notes scan no longer offers a Firecrawl fallback: the endpoint and
+  key fields and the "Direct (httpx)" switch are gone from the scan panel, and
+  <code>make_fetcher()</code> only builds the direct <code>httpx</code> GET of docs.fortinet.com. A
+  node without Internet gets the same corpus from the <code>docs</code> section of an API
+  pack. A request that still sends the old transport fields (a stale browser
+  tab, a script) is not refused: the fields are logged and ignored.</li>
+<li>The unused documentation-enrichment stub in <code>scripts/build_field_catalog.py</code>
+  (<code>FIRECRAWL_URL</code> / <code>FIRECRAWL_ENRICH</code>, which always returned nothing) is gone.</li>
+<li>The five strings of the removed controls are marked obsolete in the de/es/fr/it
+  catalogues.</li>
+</ul>
+<h3 id="added--release-notes-for-fortiauthenticator-fortianalyzer-and-fortigate-2026-10-07">Added — release notes for FortiAuthenticator, FortiAnalyzer and FortiGate (2026-10-07)</h3>
+<ul>
+<li>The release-notes scanner reads three more docsets: FortiAuthenticator (6.6
+  and 8.0 lines), FortiAnalyzer and FortiGate (FortiOS, whose docset is
+  <code>fortios-release-notes</code>). Section ids were read from each TOC and fetched
+  live with a plain GET on FAC 6.6.0/6.6.10/8.0.3, FAZ 7.6.0/7.6.7/8.0.1 and
+  FGT 7.6.0/7.6.4/8.0.0/8.0.1. Their <em>Special notices</em> feed the upgrade notes
+  the advisor reads.</li>
+<li>The modal is offered in the FortiAuthenticator and FortiAnalyzer ADOMs too.
+  FortiGate has no ADOM; its notes travel in API packs, whose import now takes
+  each item's rows for that item's product only.</li>
+<li>A build your appliances run that has no notes on this node is listed in the
+  version pickers; picking it (or opening an empty corpus) while
+  docs.fortinet.com is unreachable shows "No release notes for this build
+  (offline: import a newer API pack)" instead of an empty list.</li>
+</ul>
+<h3 id="fixed--release-notes-scans-found-nothing-on-docsfortinetcoms-new-layout-2026-10-07">Fixed — release-notes scans found nothing on docs.fortinet.com's new layout (2026-10-07)</h3>
+<ul>
+<li>By 2026-10-07 every docset had moved to a "reader" layout (<code>&lt;div class="prose
+  src-mc"&gt;</code>). The parser knew neither that container nor the generic wrapper
+  it looked for, so every published page read as a missing one and a scan of
+  any product ended in "no release notes found". It now reads the new layout.</li>
+<li>FortiGate and FortiAnalyzer split their issue lists into one table per
+  category; only the first table was read (8 of FortiGate 7.6.4's 66 known
+  issues). Every <code>Bug ID</code> table on the page is read now.</li>
+</ul>
+<h3 id="added--exceptions-record-their-firmware-build-line-profiles-show-the-templates-2026-10-06">Added — exceptions record their firmware build; line profiles show the template's (2026-10-06)</h3>
+<ul>
+<li>Every WAF/signature carve-out (and its fleet library item) now records the
+  firmware build and REST API version it was authored against. Copies placed
+  on other appliances keep the source build; editing the payload restamps it;
+  rollback and restore bring back the build of the old payload. The stamp is
+  versioned but kept out of the content hash, so no existing history gains a
+  version.</li>
+<li><strong>Inject to device</strong> and the Attack ID insert check the payload against the
+  target's build, with the template rules: discarded, renamed or unserved
+  fields block the push, an approver (<code>operations.template_approve</code>) can
+  override with a reason, audited as <code>exception.compat.override</code>. The API
+  sweep does not measure the exception sub-tables yet, so most pushes show
+  "no evidence" — a warning, never a pass.</li>
+<li>Line Profiles show the build of each line's WPP template and the builds its
+  approval covers. The new-policy wizard warns, without blocking, when that
+  template does not fit or was never validated for the device's build (the
+  wizard binds the profile already on the device and writes no template
+  field).</li>
+</ul>
+<h3 id="fixed--every-sidebar-row-is-the-same-size-2026-10-06">Fixed — every sidebar row is the same size (2026-10-06)</h3>
+<ul>
+<li>Nested FortiWeb rows (WAF Artifacts children, the Server Objects / Web
+  Protection / Configuration trees and their "Select a device" placeholders)
+  were 12.5px text on 30.8–34.8px rows; every other row is 13.5px on 37px.
+  They now match — depth reads from the indent only.</li>
+<li>The Global ADOM links (FortiWeb, FortiADC, …) used 16x16 inline images: the
+  row was 0.7px short and the label sat 2px left of its siblings.</li>
+<li>Sub-menu toggles (Monitoring, Fleet health, WAF, Troubleshooting) and tree
+  group heads lost the 3px left rail, so their icon and label sat 3px left.</li>
+<li>Measured in headless Chromium across all five ADOMs: 338 rows, all 37px.</li>
+</ul>
+<h3 id="removed--dead-web-protection-side-menu-2026-10-06">Removed — dead Web Protection side menu (2026-10-06)</h3>
+<ul>
+<li><code>web_protection/_menu.html</code> was never included by any template, yet the
+  three Web Protection views rebuilt its menu (<code>wp_groups</code>, <code>active_item</code>) on
+  every request. The partial and those two arguments are gone; the real
+  sidebar tree (<code>wp_menu</code> via <code>base.html</code>) is unchanged.</li>
+</ul>
+<p class="rel-prevnext"><a href="unreleased.html">← Unreleased — the next release</a> · <a href="v2.12.0.html">Version 2.12.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

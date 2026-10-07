@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-08
+
 ### Added — knowledge feed (3.0.0)
 
 - **Software Update → Knowledge packs**: the pack installed per lane (API pack

@@ -148,8 +148,10 @@ def _build_reasons(target: str, build: dict) -> list:
         out.append("on %s %s = %r is out of range %s" % (target, f["field"], f.get("value"),
                                                         f.get("range")))
     if by.get("missing"):
-        out.append("applies, but on %s %s do not exist: they will be skipped"
-                   % (target, ", ".join(f["field"] for f in by["missing"])))
+        one = len(by["missing"]) == 1
+        out.append("applies, but on %s %s %s not exist: %s will be skipped"
+                   % (target, ", ".join(f["field"] for f in by["missing"]),
+                      "does" if one else "do", "it" if one else "they"))
     if by.get("cli_only"):
         out.append("on %s %s exist only in the CLI: the REST push will not set them"
                    % (target, ", ".join(f["field"] for f in by["cli_only"])))

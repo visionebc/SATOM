@@ -1149,16 +1149,20 @@ an older node lacks).
 
 ### 12.5 Import semantics
 
-**Precedence.** Local data > `api_pack` > `knowledge`. Inside a lane, the newer
-pack wins.
+**Precedence.** Local data > packs. Both lanes are full snapshots of the same
+knowledge source, so between packs the **newer snapshot** (manifest
+`snapshot.built_at`) wins whatever its lane: a knowledge pack corrects a copy an
+API pack wrote without waiting for the next release. When the snapshot time is
+unknown (a 2.x pack wrote the copy) or equal, `api_pack` > `knowledge` and,
+inside a lane, the newer pack.
 
 - Data this node measured or wrote itself is never replaced by any pack.
 - A copy a pack wrote is **replaced** when the incoming item differs and the
-  incoming pack outranks the one that wrote it (higher lane, or same lane and
-  newer). That is how corrections arrive: per (product, version) for release
+  incoming pack outranks the one that wrote it (newer snapshot; otherwise
+  higher lane, or same lane and newer pack). That is how corrections arrive: per (product, version) for release
   notes, per object for field schemas, per row for the database kinds.
-- An older pack, or a knowledge pack over a copy an API pack wrote, leaves the
-  copy as it is and says why (`kept: written by …`).
+- An older snapshot leaves the copy as it is and says why
+  (`kept: written by the newer snapshot …`).
 
 **Provenance.** Every imported row says where it came from: `local`,
 `pack:api_pack:<pack>` or `pack:knowledge:<pack>`. Evidence carries it in its

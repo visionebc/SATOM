@@ -1625,16 +1625,20 @@ Each payload is validated before anything is written; a malformed item is
 warning</strong> in the inspect and import results (a newer publisher may ship a kind
 an older node lacks).</p>
 <h3 id="125-import-semantics">12.5 Import semantics</h3>
-<p><strong>Precedence.</strong> Local data &gt; <code>api_pack</code> &gt; <code>knowledge</code>. Inside a lane, the newer
-pack wins.</p>
+<p><strong>Precedence.</strong> Local data &gt; packs. Both lanes are full snapshots of the same
+knowledge source, so between packs the <strong>newer snapshot</strong> (manifest
+<code>snapshot.built_at</code>) wins whatever its lane: a knowledge pack corrects a copy an
+API pack wrote without waiting for the next release. When the snapshot time is
+unknown (a 2.x pack wrote the copy) or equal, <code>api_pack</code> &gt; <code>knowledge</code> and,
+inside a lane, the newer pack.</p>
 <ul>
 <li>Data this node measured or wrote itself is never replaced by any pack.</li>
 <li>A copy a pack wrote is <strong>replaced</strong> when the incoming item differs and the
-  incoming pack outranks the one that wrote it (higher lane, or same lane and
-  newer). That is how corrections arrive: per (product, version) for release
+  incoming pack outranks the one that wrote it (newer snapshot; otherwise
+  higher lane, or same lane and newer pack). That is how corrections arrive: per (product, version) for release
   notes, per object for field schemas, per row for the database kinds.</li>
-<li>An older pack, or a knowledge pack over a copy an API pack wrote, leaves the
-  copy as it is and says why (<code>kept: written by …</code>).</li>
+<li>An older snapshot leaves the copy as it is and says why
+  (<code>kept: written by the newer snapshot …</code>).</li>
 </ul>
 <p><strong>Provenance.</strong> Every imported row says where it came from: <code>local</code>,
 <code>pack:api_pack:&lt;pack&gt;</code> or <code>pack:knowledge:&lt;pack&gt;</code>. Evidence carries it in its

@@ -205,8 +205,9 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   and the API pack section of Software Update.</li>
 <li>Corrections arrive: a copy a pack wrote (release notes per version, field
   schemas per object, database rows) is replaced when an outranking pack
-  carries a different one — local data &gt; api_pack &gt; knowledge, newer pack inside
-  a lane. Local data is never replaced; copies a 2.x node imported are
+  carries a different one — local data &gt; packs; between packs the newer
+  snapshot wins whatever its lane (api_pack &gt; knowledge only when the snapshot
+  time is unknown or equal). Local data is never replaced; copies a 2.x node imported are
   recognised from its import log.</li>
 <li>The 3.0 API pack supersedes the 2.x release packs; a shipped pack whose
   snapshot an imported pack already carries is no longer reported as pending.</li>

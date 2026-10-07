@@ -2283,9 +2283,9 @@ def _field_moves(ta, tb, ep_added, ep_removed, ep_renames, removed_ids, added_id
     renamed_eps = {(r["from"], r["to"]) for r in ep_renames}
     moves = []
     for cid in sorted(set(gone) & set(new)):
+        # Never the same object: a same-object pair is a rename candidate and
+        # was kept out of removed_ids / added_ids by the caller.
         (fk, ff), (tk, tf) = gone[cid], new[cid]
-        if fk == tk:
-            continue                          # same object: a field rename candidate
         moves.append({"from_endpoint": fk, "from_field": ff, "to_endpoint": tk,
                       "to_field": tf, "cli_id": cid,
                       "with_object": (fk, tk) in renamed_eps,

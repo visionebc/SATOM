@@ -357,13 +357,15 @@ def compare_object(product: str, target_version: str, key: str, fields,
     }
 
     if source_version and target_version and source_version == target_version:
-        return {**out, "state": STATE_SAME, "level": LEVEL_FOR[STATE_SAME],
+        same = {**out, "state": STATE_SAME, "level": LEVEL_FOR[STATE_SAME],
                 "target": None,
                 "reason": "source and destination both run %s — the payload was "
                           "authored against the API it is being written to"
                           % target_version,
                 "new_fields_state": "same",
                 "new_fields_reason": "same build: an upgrade adds nothing"}
+        # Same API, but a value can still be outside the build's options.
+        return _with_build(same, ev, product, target_version, key, authored, values)
 
     tgt = ev.fields(key, target_version) if target_version else {
         "status": "unmeasured", "fields": {}, "provenance": []}
@@ -434,10 +436,7 @@ def compare_object(product: str, target_version: str, key: str, fields,
         # Only the appliance saying "I do not serve this URN" blocks. A vendor
         # table saying so is a claim about the appliance, graded like one.
         out["level"] = "warn"
-    if ev.kind == "library" and target_version:
-        out["build"] = build_report(product, target_version, key, authored, values)
-        if out["build"].get("blocking"):
-            out["level"] = "block"
+    _with_build(out, ev, product, target_version, key, authored, values)
 
     # --- what the target gained -------------------------------------------
     for r in out["renamed"]:
@@ -482,6 +481,16 @@ def compare_object(product: str, target_version: str, key: str, fields,
     out["new_fields_reason"] = (
         "%d field(s) exist on %s and not on %s"
         % (len(gained), target_version, source_version))
+    return out
+
+
+def _with_build(out: dict, ev, product, target_version, key, authored, values) -> dict:
+    """Attach both channels of the target build (library evidence only); an
+    invalid value or an object the build lacks raises ``level`` to block."""
+    if ev.kind == "library" and target_version:
+        out["build"] = build_report(product, target_version, key, authored, values)
+        if out["build"].get("blocking"):
+            out["level"] = "block"
     return out
 
 

@@ -1,9 +1,17 @@
 # API library packs
 
-This folder holds the signed **API library pack of every release**:
-`satom-apipack-<version>.tar.gz` and its `.sha256`, one pair per version. Any
-SATOM from 2.6.0 on can import any of them; the newest is the one the
-installer and the update runner import (`shipped` means "newest by version").
+This folder holds two series of signed packs, each file with its `.sha256`:
+
+| Series | File | Built by | Kept |
+|--------|------|----------|------|
+| release   | `satom-apipack-<x.y.z>.tar.gz` | the release host's own library (its own measurements, never what it imported) | every release |
+| knowledge | `satom-apipack-kb-YYYYMMDD[.N].tar.gz` | the separate tool **satom-harvester** (lab `tree` / `show full-configuration` dumps, release notes), re-signed with the release key by the release pipeline | only the newest |
+
+Both series are cumulative: a pack carries everything the older packs of its
+series did. `shipped` therefore means "the newest release pack, then the
+newest knowledge pack — each one only if this node has not imported it yet".
+A release pack never carries what the release host imported from a knowledge
+pack (rule 3), which is why the knowledge pack ships as its own file.
 
 A pack carries what SATOM has learned about vendor APIs, so that a node with
 no appliance of a given firmware build, no internet access and no documentation
@@ -24,9 +32,10 @@ The design and the safety rules are in `docs/api-library.md` §11.
   healthy. `SATOM_API_PACK=none` skips it; `SATOM_API_PACK_PRODUCTS=fortiweb,fortiadc`
   limits it to some products.
 - **Update (2.7.0 on):** after a successful update on the primary, the runner
-  imports the newest pack itself (non-fatal; `SATOM_API_PACK_AUTO=0` in the
-  runner's environment turns it off). Software Update shows a notice while the
-  newest pack has never been imported on the node.
+  imports the pending packs itself (non-fatal; `SATOM_API_PACK_AUTO=0` in the
+  runner's environment turns it off). Software Update shows a notice while a
+  shipped pack has not been fully imported on the node (a run where an item
+  failed, or where only ticked items were taken, leaves it pending).
 - **Software Update page:** *API library packs* lists these packs and any pack you
   upload, shows per item whether it is new, already present or measured by the
   node itself, and imports the items you tick.
@@ -49,5 +58,6 @@ Importing only ever **adds**: what the node measured itself always wins, and
 nothing it already holds is overwritten.
 
 This folder is maintained by the release pipeline: each release ADDS its pack
-and never removes an older one (about 400 KB per release). Do not edit it by
-hand.
+and never removes an older release pack (about 400 KB per release); it
+REPLACES the knowledge pack with the newest one satom-harvester built. Do not
+edit it by hand.

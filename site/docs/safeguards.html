@@ -16403,6 +16403,108 @@ can only ever produce what a full read would have, or not happen at all.</p>
   without changing its parent's rows is only seen at the weekly full read.</li>
 </ul>
 <p><strong>Mutations: 31/31 bite.</strong></p>
+<h2 id="209--a-nested-fortiweb-path-that-only-ever-returned-its-parent-teststest_fortiweb_shape_probepy-teststest_schema_harvestpy-2026-10-07">§209 — a nested FortiWeb path that only ever returned its parent (<code>tests/test_fortiweb_shape_probe.py</code>, <code>tests/test_schema_harvest.py</code>, 2026-10-07)</h2>
+<p>FortiWeb answers a nested REST path it does not serve with <strong>HTTP 200 and the
+parent's rows</strong> (or the parent's dict with <code>?mkey=</code>); only an unknown top-level
+path answers <code>-20001</code>. The rediscovery probe called every 200 <code>ok</code>, so a sweep,
+the CLI-coverage probe or a discovery run could register a URN that never
+returned its own object.</p>
+<ul>
+<li><strong>The verdict comes from the shape, never the status.</strong>
+  <code>rediscovery.fortiweb_shape_verdict</code> calls a nested answer <code>absent</code> when it
+  equals the parent's, when its rows carry the child as their own key
+  (<code>&lt;child&gt;</code> / <code>sz_&lt;child&gt;</code>), or when its row keys share nothing with the
+  object's fields. A real empty table (<code>[]</code>) stays <code>ok</code>.</li>
+<li><code>_probe_fortiweb</code> reads the parent once for a nested path that returned rows,
+  so the sweep, <code>probe_endpoint</code>, the CLI-coverage probe and the discovery run
+  share one verdict.</li>
+<li>Negative controls on both lab builds (a fake child under a table, a fake child
+  under a singleton, a fake top-level module) come back parent-fallback,
+  parent-fallback and absent.</li>
+<li>A partial schema-harvest probe never counts as the build's sweep (<code>needs_harvest</code>,
+  pack "local wins").</li>
+</ul>
+<h2 id="210--the-cli-channel-enters-the-library-as-names-never-values-teststest_api_library_channelspy-teststest_cli_schemapy-teststest_api_packpy-2026-10-07">§210 — the CLI channel enters the library as names, never values (<code>tests/test_api_library_channels.py</code>, <code>tests/test_cli_schema.py</code>, <code>tests/test_api_pack.py</code>, 2026-10-07)</h2>
+<p><code>show full-configuration</code> is the configuration. Recording it as evidence would
+put customer values into the database and into every exported pack.</p>
+<ul>
+<li><strong>Ingest refuses</strong> a <code>cli_full</code> field that carries anything but <code>attrs</code>; a
+  <code>default</code> is accepted only on lab evidence (<code>summary.lab = true</code>, a fresh lab
+  row whose values are the defaults) and identity/secret fields never become
+  defaults.</li>
+<li><strong>Pack export refuses</strong> such a row again, and pack import accepts the CLI
+  sources only under the same rule.</li>
+<li><code>tree</code> runs behind its own whole-command gate (<code>ssh_ops.assert_schema_command</code>);
+  the read-verb allowlist (<code>assert_readonly</code>) did not widen.</li>
+<li>REST bookkeeping (<code>id</code>, <code>_id</code>, <code>seq</code>, <code>&lt;NO.&gt;</code>, <code>q_*</code>, <code>sz_*</code>, <code>can_*</code>, <code>*_val</code>)
+  is channel <code>meta</code>, never <code>rest_only</code>, unless the build's CLI lists the name for
+  that object; a vendor-documented name a measured <code>tree</code> contradicts is
+  <code>unknown</code> with <code>doc_conflict</code>, never "served".</li>
+<li>The REST readers (versions page, preflights, baselines, the matrix export)
+  never read a CLI source: a build measured only by CLI stays <code>unmeasured</code> for
+  REST.</li>
+</ul>
+<h2 id="211--a-write-that-a-build-accepts-with-200-and-drops-teststest_build_compatpy-teststest_build_compat_pagepy-2026-10-07">§211 — a write that a build accepts with 200 and drops (<code>tests/test_build_compat.py</code>, <code>tests/test_build_compat_page.py</code>, 2026-10-07)</h2>
+<p>A FortiWeb cmdb write carrying a field the build does not have answers 200 and
+drops it. Every write path now checks the payload against each target's exact
+build first (<code>services/build_compat.py</code>).</p>
+<ul>
+<li><strong>Skip, per device, and say so.</strong> A field the build lacks is stripped from
+  that appliance's payload only (<code>bulk.strip_skipped</code>), listed in the preview and
+  again in the device's job result.</li>
+<li><strong>Block what cannot be right.</strong> An enum value outside the build's options, a
+  value outside its range, or an object its measured CLI schema does not have
+  refuses the template apply, approval auto-deploy, system-profile and baseline
+  apply, carve-out push and object-editor apply. The existing override (a reason
+  from a holder of <code>operations.template_approve</code>) is the only way past, and it is
+  audited.</li>
+<li><strong>Unknown is never ok.</strong> A build with no evidence reads "not measured — cannot
+  be guaranteed", a warning, on every surface.</li>
+<li>Rename hints (operator field maps, equal CLI attribute ids) are shown, never
+  applied to the payload.</li>
+<li>The per-build view is cached and invalidated by any new evidence or rename map
+  of the product.</li>
+</ul>
+<h2 id="212--a-cli-write-that-could-half-apply-or-claim-success-it-never-read-teststest_cli_writerpy-teststest_cli_writer_gatepy-2026-10-07">§212 — a CLI write that could half-apply, or claim success it never read (<code>tests/test_cli_writer.py</code>, <code>tests/test_cli_writer_gate.py</code>, 2026-10-07)</h2>
+<p>The CLI writer types configuration into an appliance's shell. It is fenced on
+every side:</p>
+<ul>
+<li><strong>Gate.</strong> A field goes by CLI only when the library classifies it <code>cli_only</code> or
+  <code>hidden</code> on the appliance's exact build; an unknown build, an unmeasured
+  endpoint or an unknown channel refuses it with the reason. REST-served fields
+  never go by CLI.</li>
+<li><strong>No half-applied object.</strong> The writer stops at the first error pattern the
+  box prints and discards the pending change with <code>abort</code> (leaving a sub-table
+  with <code>end</code> first), resyncing on the prompt after every line. Values that cannot
+  be typed safely (control characters; <code>?</code> where the dialect reads help) are
+  refused before anything is sent.</li>
+<li><strong>Readback is mandatory</strong>, in a new SSH session (a same-session <code>show</code> was
+  seen printing an empty block), plus REST where REST serves the object. A
+  mismatch fails the write with the diff; after a failure the readback proves
+  nothing was applied, or says it was.</li>
+<li><strong>Same lock as REST</strong> (the per-device job lock); the REST half runs first and
+  the CLI half is not sent when it failed.</li>
+<li><strong>Audit without values</strong>: <code>config.cli_write</code> records the path, the field names
+  and the outcome; an error is recorded by pattern id, never by the line (which
+  can echo a secret).</li>
+<li>The read-only console gate is unchanged; the write session is the existing
+  write-capable SSH class, whose deny-list checks every line.</li>
+</ul>
+<h2 id="213--reports-and-harvests-that-cannot-leak-or-write-teststest_migration_reportpy-teststest_migration_report_pagepy-teststest_schema_adapters_facpy-teststest_schema_watchpy-2026-10-07">§213 — reports and harvests that cannot leak or write (<code>tests/test_migration_report.py</code>, <code>tests/test_migration_report_page.py</code>, <code>tests/test_schema_adapters_fac.py</code>, <code>tests/test_schema_watch.py</code>, 2026-10-07)</h2>
+<ul>
+<li><strong>Migration report: no value leaves memory.</strong> The dump is parsed in memory;
+  rows, JSON and CSV carry names, counts and library facts only. The test runs a
+  sanitised dump whose every value is a marker and asserts none reaches an
+  export. Appliances are loaded through <code>visible_appliance_or_404</code> (another ADOM
+  is a 404).</li>
+<li><strong>FortiAuthenticator help walk is read-only by construction</strong>
+  (<code>assert_help_step</code>): only <code>?</code> questions, <code>config &lt;object&gt;</code> and <code>edit &lt;a row
+  the box listed&gt;</code>; never <code>set &lt;value&gt;</code>, <code>next</code>, <code>end</code> or <code>abort</code>; the session is
+  dropped so a pending buffer cannot be committed. The CLI password given for a
+  harvest is used once and never stored.</li>
+<li><strong>New-build watch never raises</strong> into the firmware probe or the scheduler, and
+  notifies once per product and build.</li>
+</ul>
     </div>
   </div>
 </section>

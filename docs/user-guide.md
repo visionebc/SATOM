@@ -637,6 +637,47 @@ the message names where to look. If you are certain the appliance's count is
 wrong, the delete endpoint accepts `force: true`; forced deletes are recorded
 in the audit log as `ref_check=forced`.
 
+### 7.3 Fields the build does not have, and fields only the CLI serves
+
+Every Save is also checked against the appliance's **exact firmware build**
+(see [Build compatibility](build-compatibility.md)). The preview shows the
+result above the request, in a yellow box (red when it blocks):
+
+- *Applies, but on 8.0.6 `token-secret` does not exist in …: it will be
+  skipped* — the field is **removed** from the write instead of being sent and
+  silently dropped by the appliance (FortiWeb answers 200 for a field it does not
+  have). When SATOM knows the new name it says so in brackets. If every field
+  you changed is missing on that build, the save is refused.
+- *… = '…' is not valid in … (allowed: …): blocked* or *… is out of range …:
+  blocked* — a value the build does not accept. The **Apply** is refused
+  (`Refused by the build compatibility check: …`); the dry run still shows it.
+- *not measured on X — cannot be guaranteed* — SATOM has no evidence for that
+  build. The write goes ahead; harvest the build (§30.12) to know.
+
+On some builds some settings exist **only in the CLI**. For those fields the
+editor uses the **CLI writer** ([CLI writer](cli-writer.md)):
+
+1. **Preview.** Below the REST request a card *CLI script — fields this build
+   serves only by CLI* shows exactly what will be typed (`config` / `edit` /
+   `set` / `next` / `end`; secrets masked). A dialect not yet verified on a lab
+   box is labelled *dialect not lab-verified*.
+2. **Apply.** REST is sent first; the CLI script runs only if REST succeeded.
+   If the appliance rejects a line, the change is discarded with `abort` —
+   nothing half-applied — and the card says *CLI refused: …* and whether the
+   readback confirms nothing was applied.
+3. **Readback.** After the CLI script, SATOM reads the object back in a new
+   session (and over REST when REST serves it) and shows **Readback (CLI)** and
+   **Readback (REST)**, field by field. The editor does not reload, so the
+   readback stays on screen. A field that reads back different fails the save
+   and is named.
+
+Today this rarely shows: FortiWeb 7.6.8 and 8.0.6 have **no** CLI-only field, so
+every FortiWeb field still goes by REST. Fields SATOM cannot classify on the
+build are listed as *Not known on this build (sent by REST as before)*. The
+permission is unchanged (the editor's write permission); every CLI write is in
+the audit log as `config.cli_write`, with field names and the outcome, never a
+value.
+
 ## 8. Web Protection (WAF)
 
 FortiWeb ADOM → **Web Protection** reproduces the FortiWeb 7.6 Web Protection
@@ -2147,6 +2188,18 @@ console equivalent is `sudo satom execute apipack import shipped --yes`.
 From 2.7.0 an update imports the newest shipped pack on the primary by itself,
 and the page shows a notice while the newest pack has never been imported.
 Details: [api-library.md §11](api-library.md).
+
+**Knowledge packs** (`satom-apipack-kb-YYYYMMDD`) are packs written by the SATOM
+team's separate harvester tool rather than by a node: the CLI schema, hidden
+fields and REST fields of every firmware build measured in the team's lab, plus
+the vendor release notes of FortiWeb, FortiADC, FortiAuthenticator, FortiAnalyzer
+and FortiGate. They are listed and imported exactly like a release pack, follow
+the same rules (signed, no configuration, no device names, local measurement
+wins) and are what lets the Build compatibility page (§30.11) and the Migration
+Report (§40.3) answer for a build none of your appliances runs yet. A release
+carries the current one in `api-packs/`; an offline node that skipped a release
+uploads it here. You do not need the harvester tool itself. Details:
+[knowledge-harvester.md](knowledge-harvester.md).
 
 **Download the update package from the node itself.** In *Offline update
 package*, **Check for a newer package online** reads the release feed
@@ -4355,6 +4408,101 @@ installation. SATOM also queues a harvest by itself when it sees an appliance
 change firmware build; the `apilib_harvest` scheduled action (not scheduled by
 default) sweeps up any build still missing.
 
+**Harvest CLI schema.** A second button reads the appliance's CLI side: the
+`tree` command (the whole CLI schema of the build: every object, field, type,
+option and range) and `show full-configuration` (field names only, never
+values), plus one REST read per object the library has not measured. It is
+read-only on the box, runs as a device job and needs `appliances.apply`. It is
+what fills the CLI columns of the Build compatibility page (§30.11).
+
+### 30.11 Build compatibility: which fields exist on which build
+
+The same REST API version carries different fields on different firmware
+builds. **Build compatibility** (bottom of the sidebar, beside API;
+`/web/registry/build-compat/`; needs the registry edit permission) shows, per product, every object and field
+against the builds you pick, by channel. The full reference is
+[Build compatibility](build-compatibility.md).
+
+1. **Product and builds.** Pick a product and up to eight builds; by default the
+   builds your fleet runs plus every build the library knows.
+2. **The matrix.** One row per field, one column per build:
+
+   | Cell | Means |
+   |---|---|
+   | **both** | REST and the CLI serve it |
+   | **CLI only** | only the CLI serves it on that build |
+   | **hidden** | only `show full-configuration` prints it |
+   | **REST only** | REST serves it, the build's CLI schema does not list it |
+   | **CLI (REST not measured)** | in the CLI schema; REST was never measured for that object on that build |
+   | **meta** | REST bookkeeping (`_id`, `seq`, `q_type`, `*_val` …), not configuration |
+   | **absent** | measured, not there |
+   | **unknown** | nothing measured it |
+
+3. **Filters.** *only differences* (default), *only CLI-only / hidden*, *all
+   fields*, a search box and the meta switch. Results are paginated, 100 rows a
+   page.
+4. **Two-build diff.** *Diff from* … *to* …: objects and fields added and
+   removed, option, type, range and default changes, **rename candidates**
+   (a field that disappeared and a new one with the same CLI attribute id) and
+   **moves** (a field that went to another object). Candidates are suggestions:
+   record a real rename on **API field renames** (§30.9) and it shows as
+   *mapped*.
+5. **Field history.** Click a field to see every build it was seen on, by which
+   channel and source.
+
+**The same check runs on every write.** Template apply, approving a template
+with auto-deploy, system profile and baseline apply, the WAF carve-out push and
+the object editor (§7.3) all check the payload against each target's build
+before writing:
+
+- a field a target's build **does not have** is **skipped on that target
+  only**, and the preview and the job result both say so (*Applies, but on 8.0.6
+  `lb-algo` does not exist in …: it will be skipped on 3 appliances*);
+- a field that exists **only in the CLI** is flagged: the REST write cannot set
+  it;
+- a value the build **does not accept**, or an object the build **does not
+  have**, **blocks** — the apply is refused, naming every blocking line, unless
+  someone with **Approve templates** gives an override reason (audited);
+- a build nobody measured says *not measured — cannot be guaranteed*; it never
+  reads as compatible.
+
+From the console: `sudo satom execute apilib compat fortiweb 7.6.8 8.0.6` and
+`sudo satom execute apilib channels fortiweb 8.0.6`.
+
+### 30.12 Schema builds — a build nobody harvested
+
+When an appliance starts running a firmware build whose schema SATOM has never
+harvested, every administrator gets **one** bell notification for that product
+and build: *New build 8.0.7 on fweb-01: schema not harvested*. It links to
+**Schema builds** (bottom of the sidebar in the FortiWeb ADOM, for
+administrators; `/web/schema-builds/`; reading needs `registry.view`).
+
+The page has three parts:
+
+- **Adapters** — one per product (FortiWeb, FortiADC, FortiAuthenticator,
+  FortiGate, FortiAnalyzer), with what it can read (CLI schema, hidden fields,
+  REST schema, REST probe) and whether it was **verified** on a real device, on
+  which build. FortiADC and FortiAnalyzer are marked **unverified adapter**: no
+  lab device has been available, so their results are a documented convention,
+  not a measurement.
+- **Builds without a harvested schema** — each appliance on such a build, with a
+  **Harvest** button (needs `appliances.apply`; audited). For a
+  FortiAuthenticator, give the **CLI password (optional)**: SATOM stores the REST
+  API key, which cannot log into the CLI; the password is used for that harvest
+  only and never stored. A product SATOM cannot read live (FortiGate) points to
+  importing a harvester pack instead.
+- **After a harvest** — the new build compared with the **closest** harvested
+  build of the same product: every new or changed object and field, with its
+  channel on the new build. An item whose REST side was not measured there reads
+  *unknown — to verify*.
+
+The `schema_watch` scheduled action repeats the check for the whole fleet; the
+`schema_harvest` scheduled action harvests what is pending. Neither is scheduled
+by default.
+
+Instead of harvesting, you can import a **knowledge pack** (§22.3): each release
+ships one with the builds the SATOM team measured in its lab.
+
 ## 31. Release notes & the SATOM changelog
 
 **Two different things share the name "release notes", and confusing them wastes
@@ -4460,6 +4608,16 @@ Two operational details worth knowing:
 The corpus holds every product in one shared file, tagged per row, and every
 read is filtered by the ADOM you are in — a FortiADC workspace never shows
 FortiWeb rows.
+
+**No crawler to configure any more.** Until 2.12 the scan panel offered a
+*Firecrawl fallback* with an endpoint and a key. It is gone: a scan is a plain
+direct download of docs.fortinet.com, and a node without Internet gets the same
+notes from an API pack (§22.3). If you ran a Firecrawl service only for SATOM,
+you can retire it. A browser tab or script that still sends the old fields is
+not refused; the fields are ignored. Crawling the vendor documentation at scale
+is now the job of the SATOM team's separate harvester tool, whose output reaches
+you as the knowledge pack each release ships
+([knowledge-harvester.md](knowledge-harvester.md)).
 
 ### 31.2 SATOM's own changelog — what changed in *your* version
 
@@ -5633,6 +5791,58 @@ nineteen devices enter a maintenance window with no baseline; a wave that
 silently disappeared takes its appliances out of every window without anybody
 being told. If you are over a limit, split the window — the tool will not do it
 behind your back.
+
+### 40.3 Migration Report: will the configuration survive the target build?
+
+The pre-flight says whether the **box** can upgrade. The **Migration Report**
+says whether its **configuration** survives the target build: every object and
+field the appliance holds today (from its newest `show full-configuration`
+backup), checked against what SATOM knows about the target build. Full
+reference: [Migration report](migration-report.md).
+
+**Where:** **Automation → Migration Report** (beside Upgrade Flow), the
+**Migration Report** button on a FortiWeb, FortiADC or FortiGate appliance
+page, and stage 1 of this flow. Same permission as the Upgrade Flow.
+
+1. Pick the appliance and a **Target build**. The list offers the builds of that
+   product whose CLI schema SATOM has (harvested here or imported from a pack).
+2. Read the **verdict**:
+
+   | Verdict | Means |
+   |---|---|
+   | **ready** | nothing blocks, nothing to warn about |
+   | **ready with warnings** | something cannot be guaranteed — read the warnings |
+   | **blocked** | the target would reject or lose configuration this box uses |
+   | **cannot assess** | no usable configuration backup, unknown source build, or the target was never harvested — the reason is shown |
+
+3. Read the findings, per object and one per row:
+
+   | Class | Examples |
+   |---|---|
+   | **block** | an object or field the box uses is gone in the target; a value the target no longer accepts (an enum option removed, out of range, a type the value does not fit) |
+   | **translate** | a renamed field covered by a rename you recorded (§30.9) |
+   | **warn** | a probable rename (same CLI attribute id, not yet recorded); a default that changed under a field you never set; no evidence for that object on the target; a target build that is not completely measured (with the percentage) |
+   | **info** | new objects and fields in the target, with their default when known; removed fields the box does not use |
+
+4. **Export** the report as JSON or CSV for the change record.
+
+The report **never contains a configuration value** — only object and field
+names, counts of affected rows and facts about the build (allowed options,
+ranges, defaults). Nothing is stored; it is computed when you open it.
+
+**In stage 1** each appliance shows the migration verdict for the move its
+newest pre-upgrade recorded, with a link to the full report. The comparison of
+the two builds is computed once per move; at most 20 appliances are assessed per
+page render, the others link to their report.
+
+A typical first run (FortiWeb 7.6.8 → 8.0.6): **blocked**, with
+`mobile-app-identification` set to a value 8.0.6 no longer accepts, and
+`file-exception-policy` gone; warnings for three probable renames
+(`token-header` → `jwt-token-name` among them). Record the renames you confirm on
+**API field renames** and they become **translate** on the next run.
+
+From the console: `sudo satom execute migration report fweb-01 --target 8.0.6`
+(add `--backup <id>` to check a specific backup, `--json` for the full report).
 
 ## 41. Stored Assets: what each ADOM actually holds
 

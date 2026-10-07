@@ -1,0 +1,18 @@
+{#
+  "Knowledge from <pack> (<date>)" — where the vendor knowledge on this page
+  comes from (a signed API / knowledge pack), with a warning badge when it is
+  older than 30 days (contract C7). Data: services.knowledge_fetch.freshness().
+#}
+{% set _kn = knowledge_freshness() %}
+<div class="small text-muted mb-2 kn-freshness" data-stale="{{ 'true' if _kn.stale else 'false' }}">
+  <i class="bi bi-book me-1"></i>
+  {% if _kn.pack %}
+    {{ _('Knowledge from') }} <code>{{ _kn.pack }}</code> ({{ _kn.date or '?' }}){% if _kn.age_days is not none %} · {{ _kn.age_days }} {{ _('day(s) old') }}{% endif %}
+    {% if _kn.stale %}<span class="fw-badge fw-badge-warning ms-1" title="{{ _('Older than this many days:') }} {{ _kn.stale_days }}">{{ _('stale — import a newer knowledge pack') }}</span>{% endif %}
+  {% else %}
+    <span class="fw-badge fw-badge-warning">{{ _('no knowledge pack imported') }}</span>
+  {% endif %}
+  {% if may_open('self_update.index') %}
+    · <a href="{{ url_for('self_update.index', _anchor='knowledge-packs') }}">{{ _('Knowledge packs') }}</a>
+  {% endif %}
+</div>

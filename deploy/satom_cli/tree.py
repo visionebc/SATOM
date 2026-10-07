@@ -18,6 +18,7 @@ from . import cmd_diagnose as d
 from . import cmd_docs as b
 from . import cmd_execute as e
 from . import cmd_fix as f
+from . import cmd_knowledge as kn
 from . import cmd_migration as mg
 from . import cmd_get as g
 from . import cmd_ops as o
@@ -138,6 +139,8 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
            run=u.show_package, usage="show package <file.tar.gz>"),
         _n("apipack", "API library packs on this node and what was imported from them.",
            run=ap.show_apipacks),
+        _n("knowledge", "Knowledge packs per lane (age), the feed, the mode and the last fetch.",
+           run=kn.show_knowledge),
         _n("config", "The .env, with secrets redacted.", run=s.config),
         _n("units", "Alias -> systemd unit map, with install state.", run=s.units),
         _n("services", "What each unit is FOR, and which ones are off limits.",
@@ -266,6 +269,11 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
         _group("apipack", "API library packs: vendor API knowledge for offline nodes.",
             _n("import", "Import a SIGNED API pack. Dry run unless --yes; never replaces local data.",
                run=ap.import_apipack, needs_root=True, usage=ap.USAGE),
+        ),
+        _group("knowledge", "Knowledge packs from the online feed (release notes, Scout, signatures).",
+            _n("fetch", "Check the knowledge feed. --yes downloads the pack, --import --yes "
+                        "also imports it (signature verified). Primary only.",
+               run=kn.fetch_knowledge, needs_root=True, usage=kn.FETCH_USAGE),
         ),
         _group("apilib", "API library: harvest an appliance, compare builds by channel.",
             _n("harvest", "Read one appliance's CLI schema (tree + hidden fields) and probe "

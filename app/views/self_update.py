@@ -72,7 +72,20 @@ def index():
         uploads=upkg.list_uploads(),
         trust=upkg.trust_state(),
         api_packs=_api_pack_state(),
+        knowledge=_knowledge_state(),
     )
+
+
+def _knowledge_state() -> dict:
+    """The Knowledge packs block. Network-free; never raises."""
+    from ..services import knowledge_fetch as kf
+    try:
+        return dict(kf.state(), error="")
+    except Exception as exc:  # noqa: BLE001 — shown in the card, not a 500
+        return {"error": "%s: %s" % (type(exc).__name__, exc), "installed": {},
+                "modes": [], "mode": "", "feed_url": "", "last": {},
+                "lane_labels": {}, "stale_days": 30, "role": "", "refusal": "",
+                "default_feed_url": ""}
 
 
 def _api_pack_state() -> dict:
@@ -529,3 +542,94 @@ def apipack_import():
     log_action("apipack.import", target=name, extra={"source": source, "items": len(ids),
                                                      "job": job["id"]})
     return jsonify({"job_id": job["id"]}), 202
+
+
+# ---------------------------------------------------------------------------
+# Knowledge packs from the online feed (services/knowledge_fetch.py)
+# ---------------------------------------------------------------------------
+@bp.route("/knowledge/check", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def knowledge_check():
+    """What the knowledge feed offers against what this node imported. Asked
+    by the page AFTER it renders, so an offline node never waits on it."""
+    from ..services import knowledge_fetch as kf
+    res = kf.check()
+    res["refusal"] = kf.standby_reason()
+    return jsonify(res)
+
+
+def _knowledge_worker(do_import: bool, actor: str):
+    def work(app, jid):
+        from ..services import jobs as jobsvc
+        from ..services import knowledge_fetch as kf
+
+        def progress(done, total, *_):
+            jobsvc.set_progress(jid, int(done * 100 / total) if total else 100,
+                                "%d of %d" % (done, total))
+
+        with app.app_context():
+            res = kf.run(do_download=True, do_import=do_import, actor=actor,
+                         trigger="console", progress=progress)
+        jobsvc.update_job(jid, result=res)
+        if res["status"] in (kf.ST_ERROR, kf.ST_FAILED, kf.ST_STANDBY):
+            raise RuntimeError(res["message"])
+        jobsvc.finish_success(jid, result=res, message=res["message"])
+        return res
+    return work
+
+
+def _knowledge_job(do_import: bool):
+    from ..services import jobs as jobsvc
+    from ..services import knowledge_fetch as kf
+    refusal = kf.standby_reason()
+    if refusal:
+        return jsonify({"error": refusal}), 409
+    actor = getattr(current_user, "username", "") or ""
+    verb = "Importing" if do_import else "Downloading"
+    job = jobsvc.create_job("knowledge_fetch", "%s the knowledge pack" % verb,
+                            by=actor, cancelable=False, meta={"import": do_import})
+    jobsvc.run_async(current_app._get_current_object(), job["id"],
+                     _knowledge_worker(do_import, actor))
+    log_action("knowledge.import" if do_import else "knowledge.download",
+               target="feed", extra={"feed": kf.feed_url(), "job": job["id"]})
+    return jsonify({"job_id": job["id"]}), 202
+
+
+@bp.route("/knowledge/download", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def knowledge_download():
+    """Download the feed's pack into the API-pack upload area (sha256-checked)."""
+    return _knowledge_job(do_import=False)
+
+
+@bp.route("/knowledge/import", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def knowledge_import():
+    """Download (if needed) and import the feed's pack; signature verified by
+    the import. Primary only."""
+    return _knowledge_job(do_import=True)
+
+
+@bp.route("/knowledge/settings", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def knowledge_settings():
+    """Mode + feed URL. Replicated settings: written on the PRIMARY only."""
+    from ..services import knowledge_fetch as kf
+    if su.node_role() == "standby":
+        flash("Knowledge settings are replicated — change them on the PRIMARY "
+              "node (this node's database is read-only).", "warning")
+        return redirect(url_for("self_update.index", _anchor="knowledge-packs"))
+    mode = (request.form.get("mode") or "").strip()
+    feed = (request.form.get("feed_url") or "").strip()
+    try:
+        kf.save_settings(mode, feed)
+    except ValueError as exc:
+        flash("Knowledge settings not saved: %s" % exc, "danger")
+        return redirect(url_for("self_update.index", _anchor="knowledge-packs"))
+    log_action("knowledge.settings", target=mode, extra={"feed_url": kf.feed_url()})
+    flash("Knowledge fetch mode set to %s." % mode, "success")
+    return redirect(url_for("self_update.index", _anchor="knowledge-packs"))

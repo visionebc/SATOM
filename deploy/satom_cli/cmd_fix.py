@@ -81,6 +81,17 @@ SEED_PLAN = [
     # who turns the switch on would get silence instead of a mirror.
     ("sentinel_vuln_sync", "Sentinel — refresh the local CVE mirror", "daily",
      {"time": "03:30"}, {}, "global"),
+    # Knowledge packs (release notes, Scout, upgrade paths, signature metadata)
+    # no longer come from a vendor crawler: without this row a node keeps the
+    # knowledge it was installed with for ever. Its mode (off | notify |
+    # download | download_import) is a setting, so seeding it never forces a
+    # download on a node whose operator said no.
+    ("knowledge_fetch", "Knowledge packs — check the feed, download, import", "daily",
+     {"time": "04:20"}, {}, "global"),
+    # One CLI read per FortiWeb; the alert engine turns a signature DB older
+    # than 7 days (or unreadable) into a device finding.
+    ("signature_check", "Signature DB freshness — read each FortiWeb's version", "daily",
+     {"time": "06:15"}, {}, "fortiweb"),
 ]
 
 

@@ -111,14 +111,22 @@ def parse_feed(raw: bytes) -> dict:
     return doc
 
 
+def fetch_small(url: str, timeout: float = 10, max_bytes: int = MAX_FEED_BYTES) -> bytes:
+    """GET a small document (a feed) over HTTPS with this module's rules:
+    https only, redirects included, at most ``max_bytes``. Shared by the
+    knowledge-pack feed (``app/services/knowledge_fetch.py``) so both feeds go
+    through the same client, proxy environment and TLS verification."""
+    with _open(url, timeout) as resp:
+        raw = resp.read(max_bytes + 1)
+    if len(raw) > max_bytes:
+        raise FeedError("the feed at %s is larger than %d KB" % (url, max_bytes // 1024))
+    return raw
+
+
 def fetch_feed(url: str = "", timeout: float = 10) -> dict:
     """Download and validate the feed document."""
     url = url or feed_url()
-    with _open(url, timeout) as resp:
-        raw = resp.read(MAX_FEED_BYTES + 1)
-    if len(raw) > MAX_FEED_BYTES:
-        raise FeedError("the feed at %s is larger than %d KB" % (url, MAX_FEED_BYTES // 1024))
-    doc = parse_feed(raw)
+    doc = parse_feed(fetch_small(url, timeout))
     doc["_feed_url"] = url
     return doc
 
@@ -131,7 +139,23 @@ def download_package(feed: dict, dest_dir, progress=None, timeout: float = 60) -
     total)`` is called every few MB. Returns the final path.
     """
     pkg = feed["package"]
-    name, url, want_sha, size = pkg["name"], pkg["url"], pkg["sha256"], pkg["size"]
+    return download_file(pkg["url"], pkg["name"], pkg["sha256"], pkg["size"], dest_dir,
+                         progress=progress, timeout=timeout)
+
+
+def download_file(url: str, name: str, want_sha: str, size: int, dest_dir,
+                  progress=None, timeout: float = 60) -> Path:
+    """Download ``url`` to ``dest_dir/name``, atomically and verified.
+
+    The file only appears under ``name`` once exactly ``size`` bytes arrived
+    and their sha256 is ``want_sha``; more bytes than declared stop the
+    download at once. Used for update packages and knowledge packs alike."""
+    if not _SHA_RE.match(want_sha or ""):
+        raise FeedError("no valid sha256 for %s" % name)
+    if not isinstance(size, int) or not 0 < size <= MAX_PACKAGE_BYTES:
+        raise FeedError("implausible size for %s: %r" % (name, size))
+    if not name or "/" in name or name.startswith("."):
+        raise FeedError("%r is not a file name" % name)
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     final = dest_dir / name
@@ -173,4 +197,4 @@ def download_package(feed: dict, dest_dir, progress=None, timeout: float = 60) -
 
 
 __all__ = ["FEED_SCHEMA", "DEFAULT_FEED_URL", "FeedError", "feed_url", "parse_feed",
-           "fetch_feed", "download_package", "PKG_RE"]
+           "fetch_feed", "fetch_small", "download_package", "download_file", "PKG_RE"]

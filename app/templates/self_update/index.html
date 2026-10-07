@@ -445,6 +445,110 @@
     </div>
   </div>
 </div>
+<div class="row g-3" id="knowledge-packs">
+  <!-- ==================== Knowledge packs (online feed) ==================== -->
+  <div class="col-12">
+    <div class="fw-card mb-3">
+      <div class="fw-card-header d-flex justify-content-between align-items-center">
+        <span class="fw-card-title"><i class="bi bi-book me-2 text-accent"></i>{{ _('Knowledge packs') }}</span>
+        <span class="text-muted small">{{ _('release notes, upgrade advice and signature metadata — from signed packs') }}</span>
+      </div>
+      <div class="fw-card-body">
+        <p class="text-muted small">
+          {{ _('SATOM no longer reads vendor web sites. Release notes, the Scout advisory, upgrade paths and signature metadata come from signed packs in two lanes: the API pack that ships with each release, and the rolling knowledge pack published whenever the knowledge changes. Every pack is signature-checked on import, and what this node measured itself always wins.') }}
+        </p>
+        {% if knowledge.error %}
+          <div class="alert alert-danger py-2 small"><i class="bi bi-exclamation-octagon me-1"></i>{{ knowledge.error }}</div>
+        {% endif %}
+        {% if knowledge.refusal %}
+          <div class="alert alert-warning py-2 small" id="kn-standby"><i class="bi bi-hdd-network me-1"></i>{{ knowledge.refusal }}</div>
+        {% endif %}
+        <div class="row g-3">
+          <div class="col-lg-6">
+            <div class="text-muted small mb-1">{{ _('Installed') }}</div>
+            <table class="fw-table small mb-2" id="kn-installed">
+              <thead><tr><th>{{ _('Lane') }}</th><th>{{ _('Pack') }}</th><th>{{ _('Date') }}</th><th>{{ _('Age') }}</th></tr></thead>
+              <tbody>
+              {% for lane in ('api_pack', 'knowledge') %}
+                {% set row = (knowledge.installed or {}).get(lane) %}
+                <tr>
+                  <td>{{ (knowledge.lane_labels or {}).get(lane, lane) }}</td>
+                  {% if row %}
+                  <td class="font-monospace">{{ row.pack }}</td>
+                  <td class="text-nowrap">{{ row.date or '—' }}</td>
+                  <td class="text-nowrap">
+                    {% if row.age_days is not none %}{{ row.age_days }} {{ _('day(s)') }}{% endif %}
+                    {% if row.stale %}<span class="fw-badge fw-badge-warning ms-1" title="{{ _('Older than this many days:') }} {{ knowledge.stale_days }}">{{ _('stale') }}</span>
+                    {% else %}<span class="fw-badge fw-badge-success ms-1">{{ _('current') }}</span>{% endif %}
+                  </td>
+                  {% else %}
+                  <td colspan="3" class="text-muted">{{ _('nothing imported yet') }}</td>
+                  {% endif %}
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+            {% set last = knowledge.last or {} %}
+            <div class="small text-muted" id="kn-last">
+              {{ _('Last check:') }}
+              {% if last.status %}
+                <span class="fw-badge {{ 'fw-badge-success' if last.status in ('imported', 'current', 'downloaded') else ('fw-badge-info' if last.status == 'available' else 'fw-badge-danger') }}">{{ last.status }}</span>
+                {{ last.message }} <span class="text-nowrap">({{ (last.checked_at or '')[:16]|replace('T', ' ') }})</span>
+              {% else %}{{ _('never') }}{% endif %}
+            </div>
+          </div>
+          <div class="col-lg-6">
+            <div class="text-muted small mb-1">{{ _('Available from the feed') }}</div>
+            <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="kn-check-btn">
+                <i class="bi bi-cloud-check me-1"></i>{{ _('Check now') }}</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="kn-dl-btn"
+                      {{ 'disabled' if knowledge.refusal else '' }}>
+                <i class="bi bi-cloud-download me-1"></i>{{ _('Download') }}</button>
+              <button type="button" class="btn btn-fw-primary btn-sm d-none" id="kn-import-btn"
+                      {{ 'disabled' if knowledge.refusal else '' }}>
+                <i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Import') }}</button>
+            </div>
+            <div class="small" id="kn-msg" role="status" aria-live="polite"></div>
+            <div id="kn-progress" class="d-none mt-2">
+              <div class="progress mb-1" style="height:6px;"><div class="progress-bar" id="kn-bar" style="width:0%"></div></div>
+              <div class="small" id="kn-progress-msg"></div>
+            </div>
+            <div class="small text-muted mt-2">
+              <i class="bi bi-wifi-off me-1"></i>{{ _('Air-gapped network? Download the pack and its .sha256 on a machine with internet') }}
+              (<a href="{{ knowledge.feed_url }}" rel="noopener noreferrer" target="_blank" id="kn-manual-link">{{ _('feed') }}</a><span id="kn-manual-pack"></span>),
+              {{ _('then upload it under') }} <a href="#api-packs">{{ _('API library packs') }}</a>
+              (<code>{{ url_for('self_update.apipack_upload') }}</code>) {{ _('or run') }}
+              <code>sudo satom execute apipack import &lt;file&gt; --yes</code>.
+            </div>
+          </div>
+        </div>
+        <hr class="my-3">
+        <form method="post" action="{{ url_for('self_update.knowledge_settings') }}" class="row g-2 align-items-end" id="kn-settings">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="col-md-4">
+            <label class="fw-form-label mb-1" for="kn-mode">{{ _('Scheduled fetch (daily)') }}</label>
+            <select class="form-select form-select-sm" id="kn-mode" name="mode">
+              {% for m, label in knowledge.modes %}
+              <option value="{{ m }}" {{ 'selected' if m == knowledge.mode else '' }}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="fw-form-label mb-1" for="kn-feed">{{ _('Feed URL') }}</label>
+            <input type="url" class="form-control form-control-sm font-monospace" id="kn-feed" name="feed_url"
+                   value="{{ knowledge.feed_url }}" placeholder="{{ knowledge.default_feed_url }}" pattern="https://.*">
+          </div>
+          <div class="col-md-2">
+            <button class="btn btn-fw-primary btn-sm w-100" type="submit" {{ 'disabled' if knowledge.refusal else '' }}>
+              <i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
+          </div>
+          <div class="col-12 form-text">{{ _('The feed is fetched over HTTPS with the same proxy and TLS settings as the system-upgrade feed. Empty = the default feed. The buttons above work in every mode; the mode only decides what the daily scheduled action does.') }}</div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -915,6 +1019,73 @@
     }).catch(function (e) { msg.textContent = 'Download request failed: ' + e;
       feedDl.removeAttribute('disabled'); });
   });
+
+  // --- knowledge packs: check the feed, download, import ---
+  var KN_CHECK_URL = '{{ url_for("self_update.knowledge_check") }}';
+  var KN_DL_URL = '{{ url_for("self_update.knowledge_download") }}';
+  var KN_IMPORT_URL = '{{ url_for("self_update.knowledge_import") }}';
+  var knCheck = document.getElementById('kn-check-btn');
+  var knDl = document.getElementById('kn-dl-btn');
+  var knImp = document.getElementById('kn-import-btn');
+  function knSay(html) { document.getElementById('kn-msg').innerHTML = html; }
+  if (knCheck) knCheck.addEventListener('click', function () {
+    knCheck.setAttribute('disabled', 'disabled');
+    knDl.classList.add('d-none'); knImp.classList.add('d-none');
+    knSay('<span class="spinner-border spinner-border-sm me-1"></span>Checking…');
+    jpost(KN_CHECK_URL).then(function (r) { return r.json(); }).then(function (d) {
+      knCheck.removeAttribute('disabled');
+      if (!d.reachable) { knSay('<span class="text-danger">' + escapeHtml(d.error) + '</span>'); return; }
+      var f = d.feed || {};
+      var mb = ((f.size || 0) / 1048576).toFixed(1);
+      var link = document.getElementById('kn-manual-pack');
+      if (link && f.url) { link.innerHTML = ', <a href="' + escapeHtml(f.url) + '" rel="noopener noreferrer">' + escapeHtml(f.file) + '</a>'; }
+      if (!d.newer) {
+        knSay('<span class="text-success">Up to date</span> — the newest knowledge pack is <code>' +
+              escapeHtml(f.version) + '</code>.');
+        return;
+      }
+      knSay('<strong>' + escapeHtml(f.version) + '</strong> is available: <code>' + escapeHtml(f.file) +
+            '</code>, ' + mb + ' MB' + (f.approved_at ? ', approved ' + escapeHtml(f.approved_at) : '') +
+            (f.diff_summary ? '<div class="text-muted">' + escapeHtml(typeof f.diff_summary === 'string' ? f.diff_summary : JSON.stringify(f.diff_summary)) + '</div>' : '') +
+            (d.staged ? ' — <em>already downloaded</em>' : ''));
+      if (!d.staged) knDl.classList.remove('d-none');
+      knImp.classList.remove('d-none');
+    }).catch(function (e) { knCheck.removeAttribute('disabled');
+      knSay('<span class="text-danger">Check failed: ' + escapeHtml(e) + '</span>'); });
+  });
+  function knJob(url, btn) {
+    btn.setAttribute('disabled', 'disabled');
+    var wrap = document.getElementById('kn-progress');
+    var bar = document.getElementById('kn-bar');
+    var msg = document.getElementById('kn-progress-msg');
+    wrap.classList.remove('d-none'); bar.classList.remove('bg-danger');
+    msg.textContent = 'Starting…';
+    jpost(url).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.job_id) { msg.textContent = d.error || 'Not started.'; btn.removeAttribute('disabled'); return; }
+      (function poll() {
+        fetch('/jobs/' + encodeURIComponent(d.job_id), {credentials: 'same-origin',
+              headers: {'X-Requested-With': 'XMLHttpRequest'}})
+          .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+          .then(function (j) {
+            bar.style.width = (j.percent || 0) + '%';
+            msg.textContent = j.message || j.status;
+            if (j.status === 'success') {
+              bar.style.width = '100%';
+              setTimeout(function () { window.location = '{{ url_for("self_update.index", _anchor="knowledge-packs") }}'; }, 1500);
+              return;
+            }
+            if (j.status === 'error' || j.status === 'cancelled') {
+              bar.classList.add('bg-danger'); msg.textContent = j.error || j.status;
+              btn.removeAttribute('disabled'); return;
+            }
+            setTimeout(poll, 1000);
+          })
+          .catch(function () { setTimeout(poll, 3000); });
+      })();
+    }).catch(function (e) { msg.textContent = 'Request failed: ' + e; btn.removeAttribute('disabled'); });
+  }
+  if (knDl) knDl.addEventListener('click', function () { knJob(KN_DL_URL, knDl); });
+  if (knImp) knImp.addEventListener('click', function () { knJob(KN_IMPORT_URL, knImp); });
 
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {

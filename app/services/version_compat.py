@@ -319,7 +319,7 @@ def _reader(product: str, matrix):
 
 def compare_object(product: str, target_version: str, key: str, fields,
                    *, source_version: str = "", matrix: dict | None = None,
-                   reader=None) -> dict:
+                   reader=None, values: dict | None = None) -> dict:
     """Would a payload of ``fields`` for ``key`` survive a write to ``target_version``?
 
     ``source_version`` is optional and buys two things: ``new_fields``, the
@@ -333,6 +333,13 @@ def compare_object(product: str, target_version: str, key: str, fields,
     carry the value: a payload that still says ``from`` is discarded by a
     build that only knows ``to``. Each surface grades that itself — an upgrade
     converts the configuration, a clone does not.
+
+    ``build`` (library evidence only) is the same payload read through BOTH
+    channels of the target build (:mod:`services.build_compat`): fields that
+    exist only by CLI, fields the build's CLI schema does not list, values
+    (``values={field: value}``) outside the build's options or range, and
+    rename hints. Invalid values and an object the build's measured CLI schema
+    does not have raise ``level`` to ``block``; everything else only informs.
     """
     ev = reader if reader is not None else _reader(product, matrix)
     target_version = fv.normalize(target_version) or (target_version or "")
@@ -427,6 +434,10 @@ def compare_object(product: str, target_version: str, key: str, fields,
         # Only the appliance saying "I do not serve this URN" blocks. A vendor
         # table saying so is a claim about the appliance, graded like one.
         out["level"] = "warn"
+    if ev.kind == "library" and target_version:
+        out["build"] = build_report(product, target_version, key, authored, values)
+        if out["build"].get("blocking"):
+            out["level"] = "block"
 
     # --- what the target gained -------------------------------------------
     for r in out["renamed"]:
@@ -502,13 +513,20 @@ def compare_many(product: str, target_version: str, objects,
     """
     ev = _reader(product, matrix)
     merged: dict[str, set] = {}
+    vals: dict[str, dict] = {}
     for key, fields in objects or []:
         if not key:
             continue
         merged.setdefault(str(key), set()).update(str(f) for f in (fields or []))
+        if isinstance(fields, dict):
+            # ``{field: value}`` rows: the values ride along for the option /
+            # range check of the target build (first row's value wins).
+            for f, v in fields.items():
+                vals.setdefault(str(key), {}).setdefault(str(f), v)
 
     rows = [compare_object(product, target_version, k, sorted(v),
-                           source_version=source_version, reader=ev)
+                           source_version=source_version, reader=ev,
+                           values=vals.get(k))
             for k, v in sorted(merged.items())]
     counts: dict[str, int] = {}
     claims: dict[str, int] = {}
@@ -548,6 +566,50 @@ def compare_many(product: str, target_version: str, objects,
         "new_unmeasured": sum(1 for r in rows
                               if r["new_fields_state"] not in ("measured", "same")),
     }
+
+
+# ---------------------------------------------------------------------------
+# both channels of the exact build (services.build_compat)
+# ---------------------------------------------------------------------------
+
+def _guarded(fn, fallback):
+    try:
+        return fn()
+    except Exception as exc:  # noqa: BLE001 — a library that cannot be read warns
+        try:
+            from ..extensions import db
+            db.session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return fallback("%s: %s" % (type(exc).__name__, exc))
+
+
+def build_report(product: str, version: str, key: str, fields, values=None) -> dict:
+    """:func:`build_compat.check_object` for one object on one build. Never raises:
+    an unreadable library is a ``warn`` that says so, never a pass."""
+    from . import build_compat as bc
+    payload = ({f: (values or {}).get(f) for f in fields} if values else list(fields))
+    return _guarded(lambda: bc.check_object(product, version, key, payload),
+                    lambda err: {"version": version, "key": key, "known": False,
+                                 "findings": [], "skip": [], "level": "warn",
+                                 "blocking": False, "error": err})
+
+
+def build_check(product: str, targets, objects) -> dict:
+    """:func:`build_compat.check` — every write path's per-appliance warnings.
+
+    ``targets``: appliances and/or build strings; ``objects``: ``[(endpoint,
+    fields)]`` with fields as names or ``{name: value}``. Never raises.
+    """
+    from . import build_compat as bc
+    return _guarded(lambda: bc.check(product, targets, objects),
+                    lambda err: {"product": product, "builds": {}, "devices": [],
+                                 "messages": [{"level": "warn", "build": "",
+                                               "text": "the build compatibility check "
+                                                       "could not run (%s) — cannot be "
+                                                       "guaranteed" % err}],
+                                 "blocks": [], "level": "warn", "blocking": False,
+                                 "skips": {}, "error": err})
 
 
 def cached_config_fields(appliance_id: int, *, session=None) -> tuple[list, int]:
@@ -876,5 +938,5 @@ __all__ = [
     "split_fields", "payload_fields", "compare_object",
     "compare_many", "worst", "for_clone", "for_upgrade",
     "cached_config_fields", "offer", "validate_new_values", "validate_for_clone",
-    "merge_new_values",
+    "merge_new_values", "build_report", "build_check",
 ]

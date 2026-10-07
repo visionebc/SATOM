@@ -124,6 +124,20 @@ def logical_of(endpoint: str, reg: dict, idx: dict) -> str:
     return idx.get(collection_of(ep), "") if "/" in ep else ""
 
 
+def build_objects(body) -> list:
+    """``[(endpoint, {field: value})]`` of every node a push would write, sub-rows
+    included: the CLI schema knows sub-tables the REST sweep never reached, so
+    the build check reads them too (by REST path or registry name)."""
+    out = []
+    for node in iter_nodes(body):
+        if (node.get("action") or "create") == "delete":
+            continue
+        data = payload_of(node)
+        if node.get("endpoint") and data:
+            out.append((str(node["endpoint"]), dict(data)))
+    return out
+
+
 def template_targets(body, product: str = "fortiweb",
                      version: str = "") -> tuple[list, list]:
     """``([(logical, fields)], outside)`` for a template body.
@@ -410,6 +424,26 @@ def for_appliances(template, appliances, *, require_validated: bool = False) -> 
                         "reason": "; ".join(reasons) or vc.STATE_LABEL.get(
                             rep["state"], rep["state"])})
     outside = sorted({o for r in by_build.values() for o in r.get("outside") or []})
+    # Both channels of each target's exact build (services.build_compat via
+    # version_compat.build_check): per-appliance field warnings, the fields to
+    # strip per device, and blocks for invalid values / objects the build lacks.
+    product = getattr(template, "product", "") or next(
+        (vc._product_of(a) for a in appliances or [] if vc._product_of(a)), "fortiweb")
+    build = vc.build_check(product, list(appliances or []), build_objects(template.body_dict))
+    by_dev = {d.get("appliance_id"): d for d in build.get("devices") or []}
+    block_texts = {(m["build"], m["text"]) for m in build.get("messages") or []
+                   if m["level"] == "block"}
+    for d in devices:
+        bd = by_dev.get(d["appliance_id"]) or {}
+        d["build_level"] = bd.get("level", "ok")
+        d["skips"] = bd.get("skips") or {}
+        d["build_findings"] = (bd.get("findings") or [])[:50]
+        if bd.get("blocking"):
+            d["blocking"] = True
+            own = [t for b, t in sorted(block_texts) if b == d["build"]]
+            blocks.extend("%s: %s" % (d["appliance"], t) for t in own)
+            d["reason"] = "; ".join(x for x in [d.get("reason") or ""] + own if x)
+    warnings.extend(m["text"] for m in build.get("messages") or [] if m["level"] != "block")
     if not (getattr(template, "source_firmware", "") or ""):
         warnings.append("no firmware is recorded for this template (it predates "
                         "build stamps) — fields are checked against each "
@@ -421,7 +455,20 @@ def for_appliances(template, appliances, *, require_validated: bool = False) -> 
             "devices": devices,
             "builds": {b: summarize(r) for b, r in by_build.items()},
             "blocked": any(d["blocking"] for d in devices),
-            "blocks": blocks, "warnings": warnings, "outside": outside}
+            "blocks": blocks, "warnings": warnings, "outside": outside,
+            "build_messages": build.get("messages") or [],
+            "skips": build.get("skips") or {}}
+
+
+def merge_skips(reports) -> dict:
+    """Union of several ``{appliance_id: {endpoint: [field]}}`` skip maps."""
+    out: dict = {}
+    for rep in reports or []:
+        for aid, eps in (rep or {}).items():
+            for ep, fields in (eps or {}).items():
+                cur = out.setdefault(aid, {}).setdefault(ep, [])
+                cur.extend(f for f in fields if f not in cur)
+    return out
 
 
 def enforce(template, appliances, *, user=None, override_reason: str = "",

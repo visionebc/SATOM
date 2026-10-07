@@ -486,6 +486,34 @@ def _ref_guard(appl, fields, kind=''):
     return None, unverified
 
 
+def _compat_gate(appl, coll, fields, do_apply):
+    """The build check of one write (``services.build_compat`` via
+    ``version_compat.build_check``) for THIS appliance's exact build.
+
+    ``(refusal, fields, report)``: an invalid option/range value or an object
+    the build does not have refuses the real write (409, the findings named);
+    fields the build lacks are stripped and listed (``skipped``) instead of
+    being dropped by a 200; an unmeasured build says it cannot be guaranteed.
+    The dry run always passes and carries the report so the preview shows it.
+    """
+    from ..services import version_compat as vc
+    rep = vc.build_check(vc._product_of(appl) or 'fortiweb', [appl],
+                         [(objform.rest_path(coll), dict(fields))])
+    skips = next(iter((rep.get('skips') or {}).values()), {})
+    skip = sorted({f for fs in skips.values() for f in fs})
+    report = {'level': rep.get('level', 'warn'), 'blocking': bool(rep.get('blocking')),
+              'messages': [m.get('text', '') for m in rep.get('messages') or []],
+              'skipped': skip}
+    if do_apply and report['blocking']:
+        return (jsonify(ok=False, error='Refused by the build compatibility check: '
+                        + '; '.join(m.get('text', '') for m in rep.get('messages') or []
+                                    if m.get('level') == 'block'),
+                        build_compat=report), 409), fields, report
+    if skip:
+        fields = {k: v for k, v in fields.items() if k not in skip}
+    return None, fields, report
+
+
 def _writethrough(appliance_id, coll, mkey, fields, op):
     """Phase 5: after an APPROVED apply, keep the local source of truth
     consistent (no full re-sweep) and release the edit lease. Best-effort."""
@@ -523,6 +551,12 @@ def save_object(appliance_id):
     refusal, unverified = _ref_guard(appl, fields)
     if refusal:
         return refusal
+    refusal, fields, compat = _compat_gate(appl, coll, fields, do_apply)
+    if refusal:
+        return refusal
+    if not fields:
+        return jsonify(ok=False, error='every changed field is missing on this build: '
+                       + '; '.join(compat['messages']), build_compat=compat), 409
     res = FortiWebOps(appl).update(objform.rest_path(coll), mkey, {'data': fields},
                                    dry_run=not do_apply)
     diff = None
@@ -546,7 +580,7 @@ def save_object(appliance_id):
         diff = _wt.diff_object(appliance_id, coll, mkey, fields)
     return jsonify(ok=res.ok, dry_run=res.get('dry_run'), request=res.get('request'),
                    diff=diff, error=res.get('error', ''),
-                   unverified_refs=unverified)
+                   unverified_refs=unverified, build_compat=compat)
 
 
 @bp.route('/<int:appliance_id>/create-object', methods=['POST'])
@@ -596,10 +630,14 @@ def create_object(appliance_id):
     refusal, unverified = _ref_guard(appl, data)
     if refusal:
         return refusal
+    refusal, data, compat = _compat_gate(appl, coll, data, do_apply)
+    if refusal:
+        return refusal
     res = FortiWebOps(appl).create(objform.rest_path(coll), {'data': data},
                                    dry_run=not do_apply)
     return jsonify(ok=res.ok, dry_run=res.get('dry_run'), request=res.get('request'),
-                   error=res.get('error', ''), unverified_refs=unverified)
+                   error=res.get('error', ''), unverified_refs=unverified,
+                   build_compat=compat)
 
 
 @bp.route('/<int:appliance_id>/save-row', methods=['POST'])
@@ -657,6 +695,12 @@ def save_row(appliance_id):
 
     if not parent:
         return jsonify(ok=False, error='parent object required'), 400
+    refusal, fields, compat = _compat_gate(appl, coll, fields, do_apply)
+    if refusal:
+        return refusal
+    if not fields:
+        return jsonify(ok=False, error='every changed field is missing on this build: '
+                       + '; '.join(compat['messages']), build_compat=compat), 409
     if sub_id in (None, ''):
         path = objform.scoped_path(coll, parent)
         res = ops.create(path, {'data': fields}, dry_run=not do_apply)
@@ -664,7 +708,7 @@ def save_row(appliance_id):
         path = objform.scoped_path(coll, parent, sub_id)
         res = ops.update(path, '', {'data': fields}, dry_run=not do_apply)
     return jsonify(ok=res.ok, dry_run=res.get('dry_run'), request=res.get('request'),
-                   error=res.get('error', ''))
+                   error=res.get('error', ''), build_compat=compat)
 
 
 @bp.route('/<int:appliance_id>/delete-row', methods=['POST'])

@@ -51,13 +51,23 @@ def iter_push_items(body) -> list[dict]:
     return items
 
 
-def _run_one(appliance, items, dry_run, *, job_id=None) -> dict:
+def _run_one(appliance, items, dry_run, *, job_id=None, skips=None) -> dict:
     """Apply ``items`` to one device serially. When ``job_id`` is given (a real
     background apply), a pending Stop is checked *before each item* — the current
     in-flight write completes, then the device stops and reports what it had
-    already committed (``committed``), so the mid-change is never silent."""
+    already committed (``committed``), so the mid-change is never silent.
+
+    ``skips`` = ``{endpoint: [field]}`` for THIS device: fields its exact build
+    does not have (``services.build_compat``). They are stripped from the
+    payload and reported in ``skipped`` — the operator was told at preview, and
+    the device result says it again rather than letting a 200 drop them."""
     from . import jobs as jobsvc  # local import — jobs must not import bulk
 
+    skipped: list = []
+    if skips:
+        from .build_compat import strip_skipped
+        items, skipped = strip_skipped(items, skips,
+                                       getattr(appliance, "kind", "") or "fortiweb")
     ops = FortiWebOps(appliance)
     results = []
     committed: list[dict] = []
@@ -90,6 +100,7 @@ def _run_one(appliance, items, dry_run, *, job_id=None) -> dict:
         "cancelled": cancelled,
         "committed": committed,
         "results": results,
+        "skipped": skipped,
     }
 
 
@@ -103,7 +114,7 @@ def _res_ok(r) -> bool:
 def start_apply_job(flask_app, *, title: str, items: list[dict],
                     device_ids, by: str, meta: dict | None = None,
                     canary: int = 1, audit_action: str = "bulk.apply",
-                    audit_target: str = "") -> dict:
+                    audit_target: str = "", skips: dict | None = None) -> dict:
     """Launch a canary-gated fleet apply as a background job (services.jobs).
 
     Fleet writes must not run inside an HTTP request: with a large fleet the
@@ -123,7 +134,7 @@ def start_apply_job(flask_app, *, title: str, items: list[dict],
                 pct = int(done * 100 / max(1, total))
                 jobs.set_progress(job_id, pct, f"{name} — {done}/{total} device(s)")
 
-            result = BulkRunner(items).apply(device_ids, canary=canary,
+            result = BulkRunner(items, skips=skips).apply(device_ids, canary=canary,
                                              progress_cb=_cb, job_id=job_id)
             runs = (result.get("canary") or []) + (result.get("rest") or [])
             ok_count = sum(1 for r in runs if r.get("ok"))
@@ -181,8 +192,15 @@ def start_apply_job(flask_app, *, title: str, items: list[dict],
 
 
 class BulkRunner:
-    def __init__(self, items: list[dict]):
+    def __init__(self, items: list[dict], skips: dict | None = None):
+        """``skips`` = ``{appliance_id: {endpoint: [field]}}`` — per-device fields
+        the build check said that device's build does not have."""
         self.items = items
+        self.skips = {int(k): v for k, v in (skips or {}).items()
+                      if str(k).lstrip("-").isdigit()}
+
+    def _skips_for(self, d):
+        return self.skips.get(getattr(d, "id", None)) or None
 
     def _appliances(self, device_ids):
         # Explicit ids only. An empty list used to mean "every appliance in
@@ -204,7 +222,8 @@ class BulkRunner:
 
     def preview(self, device_ids) -> list[dict]:
         """Dry-run across all targets — pure, no device contact."""
-        return [_run_one(d, self.items, dry_run=True) for d in self._appliances(device_ids)]
+        return [_run_one(d, self.items, dry_run=True, skips=self._skips_for(d))
+                for d in self._appliances(device_ids)]
 
     def apply(self, device_ids, canary: int = 1, progress_cb=None,
               job_id=None) -> dict:
@@ -243,7 +262,8 @@ class BulkRunner:
                     pass
 
         def _run_and_tick(d):
-            r = _run_one(d, self.items, dry_run=False, job_id=job_id)
+            r = _run_one(d, self.items, dry_run=False, job_id=job_id,
+                         skips=self._skips_for(d))
             _tick(r.get("appliance") or "")
             return r
 

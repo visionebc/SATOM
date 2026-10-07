@@ -286,8 +286,10 @@ def apply(template_id: int):
         # Dry-run preview only — pure, never contacts a device for real. The
         # firmware check rides along so the operator sees a refusal BEFORE
         # pressing confirm, not after.
-        preview = BulkRunner(items).preview(device_ids)
         compat = tc.for_appliances(row, targets, require_validated=fleet)
+        # Fields a target's build does not have are stripped per device and
+        # shown in the preview (services.build_compat), never dropped silently.
+        preview = BulkRunner(items, skips=compat.get('skips')).preview(device_ids)
         log_action('template.apply.preview', target=f'{row.kind}/{row.name}',
                    detail=f'devices={device_ids} items={len(items)} '
                           f'compat_blocked={compat["blocked"]}')
@@ -333,7 +335,8 @@ def apply(template_id: int):
         meta={'template_id': row.id, 'kind': row.kind, 'name': row.name,
               'compat_overridden': compat['overridden']},
         audit_action='template.apply',
-        audit_target=f'{row.kind}/{row.name}')
+        audit_target=f'{row.kind}/{row.name}',
+        skips=compat.get('skips'))
     log_action('template.apply.start', target=f'{row.kind}/{row.name}',
                detail=f'devices={device_ids} items={len(items)} job={job["id"]}')
     if wants_json:
@@ -427,7 +430,8 @@ def approve(template_id: int):
                 meta={'template_id': row.id, 'kind': row.kind, 'name': row.name,
                       'trigger': 'approve'},
                 audit_action='template.apply',
-                audit_target=f'{row.kind}/{row.name}')
+                audit_target=f'{row.kind}/{row.name}',
+                skips=compat.get('skips'))
             log_action('template.approve.autodeploy',
                        target=f'{row.kind}/{row.name}',
                        detail=f'devices={device_ids} items={len(items)} '

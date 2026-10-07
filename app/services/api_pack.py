@@ -3,9 +3,11 @@
 Design contract: ``docs/api-library.md`` §11. Why this exists: an installation
 with no internet and no appliance of a given build has no way to learn what
 that build serves. Sweeps need the box, the vendor collections need Galaxy,
-and the release notes and field catalog need docs.fortinet.com and our LAN
-Firecrawl. A pack carries all three kinds of knowledge as one signed tarball,
-so an offline node imports it the same way it applies an update package.
+and the release notes and field catalog need docs.fortinet.com. A pack carries
+all three kinds of knowledge as one signed tarball, so an offline node imports
+it the same way it applies an update package. Packs are written by SATOM's own
+export below and by the separate harvester tool, in the same schema; this
+module imports both unchanged.
 
 Layout (a gzip tarball with exactly one top-level directory)::
 
@@ -790,15 +792,30 @@ def _selected(it: dict, products, sections, ids) -> bool:
 
 
 def _import_release_notes(pkg: Path, it: dict, new_versions) -> dict:
+    """Add the item's ``new_versions`` of ONE product to the local corpus.
+
+    Rows are taken only if they belong to the item's product: FortiWeb,
+    FortiAnalyzer and FortiGate all ship 7.6.x / 8.0.x, so a version match alone
+    would let a row of one product land as "new" for another (``new_versions``
+    was computed for ``it["product"]`` only). A row that names no product is
+    the item's own."""
     from . import release_notes as rn
     data = _read_gz_json(pkg / it["file"])
     want = set(new_versions)
+    product = it.get("product") or data.get("product") or ""
     root = _release_root()
     corpus = rn.load_db(root=root) or rn.ReleaseNotesDB(generated_at=data.get("generated_at") or "")
-    issues = [rn.ReleaseIssue(**{k: v for k, v in d.items() if k in rn.ReleaseIssue.__annotations__})
-              for d in data.get("issues") or [] if d.get("version") in want]
-    sects = [rn.ReleaseSection(**{k: v for k, v in d.items() if k in rn.ReleaseSection.__annotations__})
-             for d in data.get("sections") or [] if d.get("version") in want]
+
+    def mine(d) -> bool:
+        return (isinstance(d, dict) and d.get("version") in want
+                and (d.get("product") or product) == product)
+
+    def row(cls, d):
+        return cls(**dict({k: v for k, v in d.items() if k in cls.__annotations__},
+                          product=product))
+
+    issues = [row(rn.ReleaseIssue, d) for d in data.get("issues") or [] if mine(d)]
+    sects = [row(rn.ReleaseSection, d) for d in data.get("sections") or [] if mine(d)]
     corpus.issues += issues
     corpus.sections += sects
     corpus.versions = sorted(set(corpus.versions) | want, key=rn.version_key)

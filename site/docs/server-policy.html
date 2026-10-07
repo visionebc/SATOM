@@ -76,10 +76,10 @@
 its entire dependency graph. Source of truth: the team's <code>fortiweb_api</code> SDK
 (<code>cmdb/</code> marshmallow schemas, FortiWeb OS 7.6 / API <code>v2.0</code>) cross-checked against
 the in-repo registry (<code>app/registry/baselines/fortiweb.json</code>) and dependency tree
-(<code>app/registry/dependencies.py</code>). Built because firecrawl/docs.fortinet.com is a
-JS-rendered SPA that the built-in fetchers can't read — the SDK is more complete
-and exact than the public docs anyway, and it is the same SDK the registry was
-derived from.</p>
+(<code>app/registry/dependencies.py</code>). Built from the SDK because, at the time,
+docs.fortinet.com rendered as a JS SPA that a plain GET could not read — the SDK
+is more complete and exact than the public docs anyway, and it is the same SDK
+the registry was derived from.</p>
 <p>Keep this current when the registry or <code>dependencies.py</code> change.</p>
 </blockquote>
 <p>REST convention: a field's wire name is the SDK attribute with <code>_</code> → <code>-</code>
@@ -574,8 +574,8 @@ and the before/after</em> — never appliance secrets (those live in the OS keyr
 <hr>
 <h2 id="8-coverage--cross-validation-official-docs-2026-06-20">8. Coverage &amp; cross-validation (official docs, 2026-06-20)</h2>
 <p>The SDK-derived tree was cross-validated against the <strong>official FortiWeb 7.6
-admin guide</strong> (docs.fortinet.com — JS SPA, scraped via the internal Firecrawl,
-[[internal-firecrawl-lan]]; 559 pages, 163 relevant) and <strong>probed live on {device}
+admin guide</strong> (docs.fortinet.com — then a JS SPA, harvested with a crawler
+outside SATOM; 559 pages, 163 relevant) and <strong>probed live on {device}
 (7.6.8)</strong>. The core graph (§3) is sound. The sweep closed these gaps:</p>
 <p><strong>Added to the registry + tree (confirmed live on {device}, absent from the SDK):</strong>
 - <code>ztna-profile</code> (policy <code>ztna-profile</code>), <code>traffic-mirror</code> (policy

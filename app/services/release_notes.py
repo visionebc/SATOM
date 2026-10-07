@@ -1,4 +1,7 @@
-"""FortiWeb (and FortiADC) release-notes harvester → searchable upgrade-planning data.
+"""Fortinet release-notes harvester → searchable upgrade-planning data.
+
+Products: FortiWeb, FortiADC, FortiAuthenticator, FortiAnalyzer and FortiGate
+(FortiOS) — see :data:`SECTIONS_BY_PRODUCT`.
 
 Fortinet publishes, per firmware version, a *Release Notes* document at
 ``docs.fortinet.com`` whose sections are the raw material for an upgrade plan:
@@ -15,9 +18,9 @@ across versions**, so "what do I gain / what do I inherit by upgrading current �
 target" is a pure diff over this data (:func:`advise`).
 
 This module is PURE (no Qt, no DB): it builds URLs from the *stable* section ids,
-fetches HTML (a duck-typed ``fetch(url)->str`` — :func:`make_fetcher` chains a
-direct ``httpx`` GET with an optional Firecrawl scrape, self-hosted LAN or cloud),
-parses the tables/prose with the stdlib ``html.parser``, tags each issue with a
+fetches HTML (a duck-typed ``fetch(url)->str`` — :func:`make_fetcher` returns a
+direct ``httpx`` GET against docs.fortinet.com), parses the tables/prose with
+the stdlib ``html.parser``, tags each issue with a
 **curated topic**, and serialises to ``reports/_release_notes.json``
 (same ethos as ``services.signature_catalog``). That path is a symlink into
 ``data/reports/``: the corpus is NOT in git (the git SoT was retired
@@ -25,9 +28,20 @@ parses the tables/prose with the stdlib ``html.parser``, tags each issue with a
 it from ``satom-ha-datasync``. The DB projection + the GUI live
 elsewhere (``db.store`` / ``ui.pages.release_notes_page``).
 
-Verified live (2026-06): ``docs.fortinet.com`` serves the issue tables server-side
-(no JS) so the direct httpx fetch works headless; the section ids below are stable
-across FortiWeb 7.x/8.x.
+Where the corpus comes from — two channels, nothing else:
+
+  1. **Online**: this module, a plain ``httpx`` GET of docs.fortinet.com.
+  2. **Offline**: the ``docs`` section of a signed API pack
+     (``services.api_pack._import_release_notes``). The packs are built by a
+     separate tool; SATOM itself ships no crawler and needs no crawler service.
+
+Local measurement always wins: a pack only ADDS versions this node has not
+harvested itself, it never replaces them.
+
+Verified live (2026-06, re-verified 2026-10-07 for all five products):
+``docs.fortinet.com`` serves the issue tables server-side (no JS) so the direct
+httpx fetch works headless; the section ids below are stable within a product's
+docset.
 """
 from __future__ import annotations
 
@@ -48,12 +62,12 @@ DB_NAME = "_release_notes.json"          # local corpus (under reports/ -> data/
 _DOC_HOST = "https://docs.fortinet.com"
 _UA = "Mozilla/5.0 (satom release-notes harvester)"
 
-# Optional self-hosted Firecrawl, used as a fallback transport for pages a
-# plain GET cannot retrieve. Empty by default and surfaced as a blank field in
-# the UI: this endpoint is unauthenticated, so a shipped default would make
-# the app POST fetch requests at whatever answers that address on the
-# operator's network.
-FIRECRAWL_LAN_DEFAULT = ""
+#: The document name in the URL. Every product calls its docset
+#: ``release-notes`` except FortiGate, whose release notes are published as
+#: ``fortios-release-notes`` (``/document/fortigate/<v>/release-notes`` is a 404,
+#: verified 2026-10-07).
+RELEASE_DOC_BY_PRODUCT: dict[str, str] = {"fortigate": "fortios-release-notes"}
+_RELEASE_DOC_DEFAULT = "release-notes"
 
 # section key -> (numeric doc id, url slug), PER PRODUCT. The ids are stable
 # WITHIN a product's docset (across its 7.x/8.x lines) but DIFFER across products:
@@ -61,6 +75,15 @@ FIRECRAWL_LAN_DEFAULT = ""
 # section, so they MUST be keyed by product — pointing FortiWeb's ids at a FortiADC
 # URL 302-redirects to the wrong page. A version that lacks a section 404s and is
 # skipped. (FortiADC ids/slugs verified live from the 8.0.3 RN TOC, 2026-07-12.)
+#
+# FortiAuthenticator / FortiAnalyzer / FortiGate: ids read from each docset's TOC
+# and fetched with a plain httpx GET on 2026-10-07 — FAC 6.6.0, 6.6.10, 8.0.3;
+# FAZ 7.6.0, 7.6.7, 8.0.1; FGT 7.6.0, 7.6.4, 8.0.0, 8.0.1: every section below
+# answered 200 with an article on every one of those versions. Their *Special
+# notices* page is the counterpart of FortiWeb's "Upgrade notes and important
+# information" (the caveats to read before upgrading) and is stored under
+# ``upgrade_notes`` so the upgrade advisor reads it; its label says what the
+# vendor calls it (:data:`SECTION_LABEL_BY_PRODUCT`).
 SECTIONS_BY_PRODUCT: dict[str, dict[str, tuple[str, str]]] = {
     "fortiweb": {
         "known":               ("54989",  "known-issues"),
@@ -91,21 +114,69 @@ SECTIONS_BY_PRODUCT: dict[str, dict[str, tuple[str, str]]] = {
         "product_integration": ("583910", "hardware-vm-cloud-platform-and-browser-support"),
         "introduction":        ("391727", "introduction"),
     },
+    "fortiauthenticator": {
+        "known":               ("713049", "known-issues"),
+        "resolved":            ("279684", "resolved-issues"),
+        "whats_new":           ("568509", "whats-new"),
+        "upgrade_notes":       ("564992", "special-notices"),
+        "upgrading_from":      ("859240", "upgrade-instructions"),
+        "image_checksums":     ("840416", "image-checksums"),
+        "product_integration": ("869439", "product-integration-and-support"),
+        "introduction":        ("355786", "introduction"),
+    },
+    "fortianalyzer": {
+        # No "What's new" here: FortiAnalyzer publishes it as a separate
+        # New Features guide, not as a release-notes page.
+        "known":               ("35134",  "known-issues"),
+        "resolved":            ("291684", "resolved-issues"),
+        "upgrade_notes":       ("901026", "special-notices"),
+        "upgrading_from":      ("903960", "upgrade-information"),
+        "downgrading":         ("953575", "downgrading-to-previous-firmware-versions"),
+        "image_checksums":     ("568416", "firmware-image-checksums"),
+        "product_integration": ("372145", "product-integration-and-support"),
+        "introduction":        ("723553", "introduction"),
+    },
+    "fortigate": {
+        "known":               ("236526", "known-issues"),
+        "resolved":            ("289806", "resolved-issues"),
+        "whats_new":           ("743723", "new-features-or-enhancements"),
+        "upgrade_notes":       ("708555", "special-notices"),
+        "upgrading_from":      ("832438", "upgrade-information"),
+        "downgrading":         ("687629", "downgrading-to-previous-firmware-versions"),
+        "image_checksums":     ("399393", "firmware-image-checksums"),
+        "product_integration": ("242321", "product-integration-and-support"),
+        "introduction":        ("760203", "introduction-and-supported-models"),
+    },
 }
 # Back-compat alias: bare ``SECTIONS`` is the FortiWeb map (the historical default).
 SECTIONS: dict[str, tuple[str, str]] = SECTIONS_BY_PRODUCT["fortiweb"]
+
+#: Every product with a release-notes map.
+RELEASE_NOTES_PRODUCTS: tuple[str, ...] = tuple(SECTIONS_BY_PRODUCT)
 
 # Latest GA release-notes version per product, used only to SEED version discovery
 # (that page's version-history dropdown enumerates the rest). Maintained by hand —
 # bump when a newer GA ships. A stale seed keeps working until the version is
 # retired from docs.fortinet.com, then discovery falls back to the introduction
 # page and finally returns [].
-SEED_VERSION_BY_PRODUCT: dict[str, str] = {"fortiweb": "8.0.4", "fortiadc": "8.0.3"}
+SEED_VERSION_BY_PRODUCT: dict[str, str] = {
+    "fortiweb": "8.0.4", "fortiadc": "8.0.3", "fortiauthenticator": "8.0.3",
+    "fortianalyzer": "8.0.1", "fortigate": "8.0.1"}
+
+#: Per-product discovery floor (``MIN_SUPPORTED_VERSION`` otherwise).
+#: FortiAuthenticator numbers its lines 6.6 then 8.0 — there is no 7.x — so the
+#: generic 7.0 floor would discard its whole 6.6 line.
+MIN_VERSION_BY_PRODUCT: dict[str, tuple[int, int]] = {"fortiauthenticator": (6, 6)}
 
 
 def sections_for(product: str) -> dict[str, tuple[str, str]]:
     """The section map for ``product`` (FortiWeb map as the safe default)."""
     return SECTIONS_BY_PRODUCT.get(product, SECTIONS)
+
+
+def release_doc(product: str) -> str:
+    """The docset name in ``/document/<product>/<version>/<doc>/…``."""
+    return RELEASE_DOC_BY_PRODUCT.get(product, _RELEASE_DOC_DEFAULT)
 ISSUE_SECTIONS: tuple[str, ...] = ("known", "resolved")           # Bug ID tables
 
 #: How many article-less sections in a row mean "this version publishes nothing".
@@ -143,6 +214,27 @@ SECTION_LABEL: dict[str, str] = {
     "product_integration": "Product integration & support",
     "introduction": "Introduction",
 }
+
+#: Where a product's own page title differs from the generic label above.
+SECTION_LABEL_BY_PRODUCT: dict[str, dict[str, str]] = {
+    "fortiauthenticator": {"upgrade_notes": "Special notices",
+                           "upgrading_from": "Upgrade instructions"},
+    "fortianalyzer": {"upgrade_notes": "Special notices",
+                      "upgrading_from": "Upgrade information",
+                      "downgrading": "Downgrading to previous firmware versions",
+                      "image_checksums": "Firmware image checksums"},
+    "fortigate": {"upgrade_notes": "Special notices",
+                  "upgrading_from": "Upgrade information",
+                  "whats_new": "New features or enhancements",
+                  "downgrading": "Downgrading to previous firmware versions",
+                  "image_checksums": "Firmware image checksums"},
+}
+
+
+def section_label(section: str, product: str = PRODUCT_DEFAULT) -> str:
+    """The title a section is stored and shown under, for ``product``."""
+    return (SECTION_LABEL_BY_PRODUCT.get(product, {}).get(section)
+            or SECTION_LABEL.get(section, section))
 
 
 # --------------------------------------------------------------------------- #
@@ -231,7 +323,7 @@ def _now() -> str:
 # --------------------------------------------------------------------------- #
 def section_url(version: str, section: str, product: str = PRODUCT_DEFAULT) -> str:
     sid, slug = sections_for(product)[section]
-    return f"{_DOC_HOST}/document/{product}/{version}/release-notes/{sid}/{slug}"
+    return f"{_DOC_HOST}/document/{product}/{version}/{release_doc(product)}/{sid}/{slug}"
 
 
 # --------------------------------------------------------------------------- #
@@ -280,9 +372,22 @@ class _TableExtractor(HTMLParser):
 
 
 def parse_issue_table(html: str) -> list[tuple[str, str]]:
-    """Return ``[(bug_id, description), …]`` from the page's Bug ID / Description table."""
+    """Return ``[(bug_id, description), …]`` from the page's Bug ID tables.
+
+    EVERY ``Bug ID`` table on the page counts, in page order. FortiWeb and
+    FortiAuthenticator publish one table per page, but FortiGate and
+    FortiAnalyzer publish one table PER CATEGORY ("Firewall", "HA", "Reports",
+    plus a ``Bug ID | CVE references`` table) — reading only the first one kept
+    8 of FortiGate 7.6.4's 66 known issues (measured 2026-10-07). An exact
+    duplicate row (same id, same text, under two categories) is kept once.
+
+    The numeric-first-column fallback still applies only when no table has a
+    ``Bug ID`` header, and still takes only the first such table."""
     ex = _TableExtractor()
     ex.feed(html)
+    rows: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    fallback: list[tuple[str, str]] = []
     for tbl in ex.tables:
         if not tbl:
             continue
@@ -290,22 +395,23 @@ def parse_issue_table(html: str) -> list[tuple[str, str]]:
         is_bug = bool(head) and (head[0].startswith("bug id")
                                  or ("bug id" in head and "description" in head))
         if not is_bug:
+            if fallback:
+                continue
             # fallback: a 2-col table whose first column is mostly numeric ids
             body = [r for r in tbl if len(r) >= 2]
             digits = sum(1 for r in body if re.fullmatch(r"\d{5,}", r[0] or ""))
             if not (len(body) >= 2 and digits >= max(1, len(body) // 2)):
                 continue
-            rows = [(r[0].strip(), r[1].strip()) for r in body
-                    if re.fullmatch(r"\d{4,}", r[0] or "")]
-            if rows:
-                return rows
+            fallback = [(r[0].strip(), r[1].strip()) for r in body
+                        if re.fullmatch(r"\d{4,}", r[0] or "")]
             continue
-        rows = []
         for r in tbl[1:]:
             if len(r) >= 2 and r[0].strip():
-                rows.append((r[0].strip(), r[1].strip()))
-        return rows
-    return []
+                row = (r[0].strip(), r[1].strip())
+                if row not in seen:
+                    seen.add(row)
+                    rows.append(row)
+    return rows or fallback
 
 
 # Require the colon ("Workaround: …", the standard release-notes form) so a
@@ -328,27 +434,38 @@ _MD_MARKER = "document-content src-md"     # markdown-rendered (src-md) containe
 # ``mobile-content`` wrapper, so this slice must close on the first of these or
 # every row and paragraph would be harvested twice.
 _MD_FOOTER_MARKERS = ('class="mobile-content"', 'id="thin-footer"', "</body>")
+# The "reader" layout docs.fortinet.com moved EVERY docset to by 2026-10 (seen
+# on all five products on 2026-10-07): the article is ``<div class="prose
+# src-mc">`` (MadCap source) or ``prose src-md`` (markdown source), followed by
+# the prev/next pager and the reader footer. Neither older container appears on
+# these pages any more, so without this marker every published page read as a
+# chrome-only landing and every scan reported "no release notes found".
+_READER_MARKER = 'class="prose src-'
+_READER_FOOTER_MARKERS = ('class="reader__pager"', 'class="reader__footer"',
+                          "</article>", "</body>")
 
-# A page that publishes ANY article — in either renderer — carries a
-# ``document-content src-XX`` wrapper. A version that was never published resolves
-# to a 200 *landing* with NO such wrapper at all (verified live 2026-09-13: the
-# 7.0.x / 7.2.x / 7.4.x landings are ~442 KB of pure chrome and contain the string
-# zero times). This is the only reliable way to tell "not published" from
-# "published but this parser could not read it" — and NOT telling them apart is
-# exactly how 8.0.7 went unharvested while every scan finished green.
-_ARTICLE_RE = re.compile(r"document-content\s+src-\w+")
-
-
+# A page that publishes ANY article — in any renderer — carries a
+# ``document-content src-XX`` (older layouts) or ``prose src-XX`` (reader
+# layout) wrapper. A version that was never published resolves to a 200
+# *landing* with NO such wrapper at all (verified live 2026-09-13: the 7.0.x /
+# 7.2.x / 7.4.x landings are ~442 KB of pure chrome and contain the string zero
+# times; re-verified 2026-10-07 on the reader layout, where such a landing is a
+# PDF ``download-view`` page). This is the only reliable way to tell "not
+# published" from "published but this parser could not read it" — and NOT
+# telling them apart is exactly how 8.0.7 went unharvested while every scan
+# finished green.
+_ARTICLE_RE = re.compile(r"(?:document-content|\bprose)\s+src-\w+")
 
 
 def has_release_content(html: str) -> bool:
     """True iff the page carries an article this parser knows how to slice.
 
-    Two containers are recognised because Fortinet changed renderers mid-docset:
-    MadCap ``mc-main-content`` (FortiWeb up to 8.0.6, and FortiADC) and the
-    markdown-rendered ``document-content src-md`` (FortiWeb from 8.0.7)."""
+    Three containers are recognised because Fortinet changed renderers twice:
+    MadCap ``mc-main-content`` (FortiWeb up to 8.0.6, and FortiADC), the
+    markdown-rendered ``document-content src-md`` (FortiWeb from 8.0.7), and the
+    reader layout's ``prose src-XX`` (every docset from 2026-10)."""
     h = html or ""
-    return _CONTENT_MARKER in h or _MD_MARKER in h
+    return _CONTENT_MARKER in h or _MD_MARKER in h or _READER_MARKER in h
 
 
 def has_article(html: str) -> bool:
@@ -380,9 +497,13 @@ def _main_content(html: str) -> str:
         markers = _FOOTER_MARKERS
     else:
         i = html.find(_MD_MARKER)
-        if i < 0:
-            return ""
-        markers = _MD_FOOTER_MARKERS
+        if i >= 0:
+            markers = _MD_FOOTER_MARKERS
+        else:
+            i = html.find(_READER_MARKER)
+            if i < 0:
+                return ""
+            markers = _READER_FOOTER_MARKERS
     start = html.rfind("<", 0, i)
     if start < 0:
         start = i
@@ -509,69 +630,52 @@ def httpx_fetch(url: str, *, timeout: float = 30.0) -> str:
     return r.text
 
 
-def firecrawl_fetch(url: str, *, endpoint: str, api_key: str = "",
-                    timeout: float = 90.0) -> str:
-    """Scrape ``url`` via a Firecrawl service (self-hosted LAN or cloud), returning
-    the raw HTML so the SAME parsers apply."""
-    import httpx
+def make_fetcher(*, timeout: float = 30.0) -> Callable[[str], str]:
+    """Build the ``fetch(url)->html`` the scan uses: a direct ``httpx`` GET.
 
-    headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    try:
-        r = httpx.post(f"{endpoint.rstrip('/')}/v1/scrape",
-                       json={"url": url, "formats": ["rawHtml"],
-                             "onlyMainContent": False},
-                       headers=headers, timeout=timeout)
-    except Exception as exc:  # noqa: BLE001
-        raise FetchError(f"firecrawl: {exc}") from exc
-    if r.status_code >= 400:
-        raise FetchError(f"firecrawl HTTP {r.status_code} for {url}")
-    data = r.json().get("data") or {}
-    html = data.get("rawHtml") or data.get("html") or ""
-    if not html:
-        raise FetchError(f"firecrawl: empty body for {url}")
-    return html
-
-
-def make_fetcher(
-    *,
-    use_direct: bool = True,
-    firecrawl_endpoint: str = "",
-    firecrawl_key: str = "",
-    prefer_firecrawl: bool = False,
-    timeout: float = 30.0,
-) -> Callable[[str], str]:
-    """Build a ``fetch(url)->html`` that chains the configured transports.
-
-    By default tries a direct ``httpx`` GET (fast, proven for docs.fortinet.com)
-    then falls back to Firecrawl if an endpoint is configured. ``prefer_firecrawl``
-    reverses the order. A 404 from any transport is a real absence (``NotFound``)
-    and short-circuits — the chain only falls through on transport FAILURES."""
-    transports: list[Callable[[str], str]] = []
-    direct = (lambda u: httpx_fetch(u, timeout=timeout)) if use_direct else None
-    crawl = (lambda u: firecrawl_fetch(u, endpoint=firecrawl_endpoint,
-                                       api_key=firecrawl_key)) if firecrawl_endpoint else None
-    if prefer_firecrawl:
-        transports = [t for t in (crawl, direct) if t]
-    else:
-        transports = [t for t in (direct, crawl) if t]
-    if not transports:
-        transports = [lambda u: httpx_fetch(u, timeout=timeout)]
-
+    The only network transport. docs.fortinet.com serves the release notes
+    server-side (no JS), so nothing else is needed online — and a node that
+    cannot reach it gets its corpus from an API pack instead (see the module
+    docstring). A 404 raises :class:`NotFound` (a real absence); any other
+    failure raises :class:`FetchError`."""
     def fetch(url: str) -> str:
-        last: Exception | None = None
-        for t in transports:
-            try:
-                return t(url)
-            except NotFound:
-                raise
-            except Exception as exc:  # noqa: BLE001
-                last = exc
-                continue
-        raise FetchError(str(last) if last else f"all transports failed for {url}")
+        return httpx_fetch(url, timeout=timeout)
 
     return fetch
+
+
+#: Message shown when a build has no release notes in the local corpus and
+#: docs.fortinet.com cannot be reached — the one case where an empty list
+#: would be read as "this build has no issues".
+OFFLINE_NO_NOTES = "No release notes for this build (offline: import a newer API pack)"
+#: The same situation while online: the notes exist upstream, just not here yet.
+ONLINE_NO_NOTES = ("No release notes for this build in the local corpus yet — "
+                   "an admin can scan it from docs.fortinet.com.")
+
+_ONLINE_TTL = 120.0
+_online_cache: dict[str, Any] = {"at": 0.0, "ok": None}
+
+
+def docs_online(*, timeout: float = 4.0, ttl: float = _ONLINE_TTL) -> bool:
+    """Can this node reach docs.fortinet.com right now? Cached ``ttl`` seconds.
+
+    Any HTTP answer counts as reachable (the question is the network path, not
+    the page); a transport error or timeout counts as offline."""
+    import time
+
+    now = time.monotonic()
+    if _online_cache["ok"] is not None and now - _online_cache["at"] < ttl:
+        return bool(_online_cache["ok"])
+    import httpx
+
+    try:
+        httpx.head(_DOC_HOST + "/", timeout=timeout, follow_redirects=False,
+                   headers={"User-Agent": _UA})
+        ok = True
+    except Exception:  # noqa: BLE001 — every transport failure means "offline"
+        ok = False
+    _online_cache.update(at=now, ok=ok)
+    return ok
 
 
 # --------------------------------------------------------------------------- #
@@ -579,14 +683,18 @@ def make_fetcher(
 # --------------------------------------------------------------------------- #
 def discover_versions(fetch: Callable[[str], str], *, product: str = PRODUCT_DEFAULT,
                       seed_version: str | None = None,
-                      min_version: tuple[int, int] = MIN_SUPPORTED_VERSION) -> list[str]:
+                      min_version: tuple[int, int] | None = None) -> list[str]:
     """``x.y.z`` versions referenced by a seed release-notes page (its version
     history), sorted oldest→newest, **floored at ``min_version``** so pre-modern
     lines (5.x/6.x) — which appear in the dropdown but publish no resolved/known
     issues pages — are never scanned. ``[]`` on failure. ``seed_version`` defaults
-    to the product's latest GA (:data:`SEED_VERSION_BY_PRODUCT`)."""
+    to the product's latest GA (:data:`SEED_VERSION_BY_PRODUCT`); ``min_version``
+    to the product's floor (:data:`MIN_VERSION_BY_PRODUCT`, else
+    :data:`MIN_SUPPORTED_VERSION`)."""
     if not seed_version:
         seed_version = SEED_VERSION_BY_PRODUCT.get(product, "8.0.4")
+    if min_version is None:
+        min_version = MIN_VERSION_BY_PRODUCT.get(product, MIN_SUPPORTED_VERSION)
     try:
         html = fetch(section_url(seed_version, "resolved", product))
     except Exception:  # noqa: BLE001
@@ -726,7 +834,7 @@ def scan_release_notes(
                     continue
                 sects.append(ReleaseSection(
                     product=product, version=v, section=sec,
-                    title=SECTION_LABEL.get(sec, sec), content=text,
+                    title=section_label(sec, product), content=text,
                     source_url=url))
                 got = True
         if got:
@@ -888,8 +996,11 @@ def load_db(*, root: Path | None = None) -> ReleaseNotesDB | None:
 
 
 __all__ = [
-    "PRODUCT_DEFAULT", "MIN_SUPPORTED_VERSION", "DB_NAME", "FIRECRAWL_LAN_DEFAULT",
+    "PRODUCT_DEFAULT", "MIN_SUPPORTED_VERSION", "MIN_VERSION_BY_PRODUCT", "DB_NAME",
     "SECTIONS", "SECTIONS_BY_PRODUCT", "SEED_VERSION_BY_PRODUCT", "sections_for",
+    "RELEASE_DOC_BY_PRODUCT", "RELEASE_NOTES_PRODUCTS", "release_doc",
+    "SECTION_LABEL_BY_PRODUCT", "section_label",
+    "OFFLINE_NO_NOTES", "ONLINE_NO_NOTES", "docs_online",
     "ISSUE_SECTIONS", "PROSE_SECTIONS", "DEFAULT_SECTIONS", "UPGRADE_SECTIONS",
     "PROBES_BEFORE_GIVING_UP",
     "SECTION_LABEL", "ALL_TOPICS", "TOPIC_RULES",
@@ -898,7 +1009,7 @@ __all__ = [
     "version_tuple", "version_key", "major_of", "section_url",
     "parse_issue_table", "split_workaround", "parse_section_text", "html_to_text",
     "has_release_content", "has_article", "declares_no_issues", "classify_topic",
-    "NotFound", "FetchError", "httpx_fetch", "firecrawl_fetch", "make_fetcher",
+    "NotFound", "FetchError", "httpx_fetch", "make_fetcher",
     "discover_versions", "select_versions", "scan_release_notes", "merge_db",
     "filter_issues", "advise",
     "reports_root", "db_path", "save_db", "load_db",

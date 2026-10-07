@@ -4027,10 +4027,6 @@ msgstr "Geräte (FortiWeb)"
 msgid "Devices (ctrl=multi)"
 msgstr "Geräte (Strg=mehrfach)"
 
-#: app/templates/partials/release_notes_modal.html:86
-msgid "Direct (httpx)"
-msgstr "Direkt (httpx)"
-
 #: app/templates/appliances/flash_reports.html:96
 #: app/templates/database/report_edit.html:118
 #: app/templates/high_availability/index.html:96
@@ -4972,18 +4968,6 @@ msgstr "Feststellungen"
 #: app/templates/scheduled_actions/history.html:33
 msgid "Finished"
 msgstr "Abgeschlossen"
-
-#: app/templates/partials/release_notes_modal.html:94
-msgid "Firecrawl endpoint"
-msgstr "Endpunkt-Scannen"
-
-#: app/templates/partials/release_notes_modal.html:90
-msgid "Firecrawl fallback"
-msgstr "Fallerückfall für Firecrawl"
-
-#: app/templates/partials/release_notes_modal.html:99
-msgid "Firecrawl key (optional)"
-msgstr "Schlüsselfechtung für Firecrawl (optional)"
 
 #: app/templates/appliances/detail.html:25
 #: app/templates/appliances/detail.html:111
@@ -13777,10 +13761,6 @@ msgstr "http-01 — Web-Authentifizierung"
 msgid "http://ollama.example:11434 or https://api.openai.com/v1"
 msgstr "http://ollama.example:11434 oder https://api.openai.com/v1"
 
-#: app/templates/partials/release_notes_modal.html:96
-msgid "http://firecrawl.example:3002"
-msgstr "http://firecrawl.example:3002"
-
 #: app/templates/monitoring/_probe_page.html:314
 msgid "https://192.0.2.80:443/"
 msgstr "https://192.0.2.80:443/"
@@ -15702,6 +15682,18 @@ msgstr "Jede Welle trägt den Titel oben, ergänzt um “… — Welle k/N”."
 #~ msgid "Captured by upgrade preparation"
 #~ msgstr ""
 
+#~ msgid "Direct (httpx)"
+#~ msgstr "Direkt (httpx)"
+
+#~ msgid "Firecrawl endpoint"
+#~ msgstr "Endpunkt-Scannen"
+
+#~ msgid "Firecrawl fallback"
+#~ msgstr "Fallerückfall für Firecrawl"
+
+#~ msgid "Firecrawl key (optional)"
+#~ msgstr "Schlüsselfechtung für Firecrawl (optional)"
+
 #~ msgid "FortiWeb (Hardware / VM)"
 #~ msgstr "FortiWeb (Hardware/VM)"
 
@@ -15719,6 +15711,9 @@ msgstr "Jede Welle trägt den Titel oben, ergänzt um “… — Welle k/N”."
 
 #~ msgid "bound pre-upgrade runs."
 #~ msgstr ""
+
+#~ msgid "http://firecrawl.example:3002"
+#~ msgstr "http://firecrawl.example:3002"
 
 #~ msgid "v1.0"
 #~ msgstr "v1.0"

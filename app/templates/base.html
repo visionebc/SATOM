@@ -179,7 +179,7 @@
             <i class="bi bi-bug me-2"></i>{{ _('Report a problem') }}
           </a>
         </li>
-        {% if product.key in ('fortiweb', 'fortiadc') %}
+        {% if product.key in ('fortiweb', 'fortiadc', 'fortiauthenticator', 'fortianalyzer') %}
         <li>
           <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#releaseNotesModal">
             <i class="bi bi-journal-richtext me-2"></i>{{ _('Release Notes') }}
@@ -1656,7 +1656,7 @@
 {% endif %}
 
 {% if current_user and current_user.is_authenticated and product and product.key in ('fortiweb', 'fortiadc', 'fortianalyzer', 'fortiauthenticator') %}
-{% if product.key in ('fortiweb', 'fortiadc') %}{% include 'partials/release_notes_modal.html' %}{% endif %}
+{% if product.key in ('fortiweb', 'fortiadc', 'fortiauthenticator', 'fortianalyzer') %}{% include 'partials/release_notes_modal.html' %}{% endif %}
 <div class="modal fade" id="deviceSwitchModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content" style="background:#0b1322;color:#eaf0fb;border:1px solid rgba(148,163,184,.16);border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.55);">

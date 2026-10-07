@@ -2,8 +2,8 @@
 
 > How the manager authors WAF **exceptions** for a Server Policy's Web Protection
 > Profile, the **FortiWeb 7.6.4 field reference** for each exception dialog (GUI
-> labels/sections/enums scraped from the admin guide via the internal Firecrawl
-> [[internal-firecrawl-lan]]; wire names from the team SDK), and the DB model that
+> labels/sections/enums harvested from the admin guide on docs.fortinet.com with
+> a crawler outside SATOM; wire names from the team SDK), and the DB model that
 > records the per-policy alignment FortiWeb itself cannot.
 >
 > Companion of [`web_protection_profile.md`](web_protection_profile.md). Keep current
@@ -69,7 +69,7 @@ the operator can add, each mapped to a curated spec key:
 
 ## 4. Field reference (FortiWeb 7.6.4)
 
-GUI labels/order/enums from the 7.6.4 admin guide (Firecrawl); wire names from the
+GUI labels/order/enums from the 7.6.4 admin guide (docs.fortinet.com); wire names from the
 SDK. Combos are editable — an unexpected device token always survives.
 
 ### HTTP Protocol Constraints exception (`http_constraint_exception_item`)

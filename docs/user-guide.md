@@ -2127,7 +2127,7 @@ The same page carries a third card, **API library packs**. A pack holds what
 SATOM has learned about vendor APIs — which endpoints and fields each firmware
 build serves (from real sweeps, anonymised), the vendor release notes and field
 catalog, and the CLI-only blocks per firmware line — for a node that has no
-appliance of a build, no Internet and no documentation crawler to learn them.
+appliance of a build and no access to docs.fortinet.com to learn them.
 It never carries a configuration value or a device name.
 
 1. **Pick a pack.** The release you run carries its own (*this release*); you
@@ -4414,10 +4414,18 @@ Now such a pair is:
 
 ### 31.1 Vendor release notes (the topbar modal)
 
-In the FortiWeb and FortiADC ADOMs the top banner opens a **Release Notes**
-modal. It reads a corpus of harvested vendor notes — Known and Resolved issue
-tables plus the prose sections — and it is the corpus §12 step 3 diffs against
-when it advises you on an upgrade.
+In the FortiWeb, FortiADC, FortiAuthenticator and FortiAnalyzer ADOMs the top
+banner opens a **Release Notes** modal. It reads a corpus of harvested vendor
+notes — Known and Resolved issue tables plus the prose sections — and it is the
+corpus §12 step 3 diffs against when it advises you on an upgrade.
+
+The corpus has two sources: a **scan** that downloads the notes directly from
+docs.fortinet.com, and, on a node with no Internet, the release notes carried by
+an **API pack** (§22.3). FortiGate release notes travel the same way; FortiGate
+has no ADOM, so they arrive through packs. When a build your appliances run has
+no notes on this node and docs.fortinet.com cannot be reached, the modal says
+**"No release notes for this build (offline: import a newer API pack)"** instead
+of showing an empty list.
 
 Three tabs:
 
@@ -4427,19 +4435,17 @@ Three tabs:
 | **Upgrade advisor** | Pick a current and a target version: what the move **resolves**, what is still **known** in the target, and the relevant notes |
 | **Notes** | The prose sections of a release, by version and section |
 
-Reading any of it needs only the view permission. Two buttons change the corpus:
+Reading any of it needs only the view permission. Two buttons:
 
-- **⤓ Sync from git** — `git pull`, then reload the corpus from disk. **Any
-  signed-in user** may do this; it is how a second node or a colleague picks up a
-  scan somebody else ran. With nothing in git yet it says so and tells you to run
-  a scan.
-- **🔎 Scan from Fortinet** — **admin only**. It auto-discovers every published
-  version for that product on the vendor documentation site and harvests the
-  issue tables and prose into the corpus. You choose which majors (or all), and
-  the transport (direct fetch, an optional crawler fallback, at least one
-  required). If **publish** is left on, the corpus is committed and pushed so the
-  whole team shares one harvest rather than each node scraping the vendor
-  separately.
+- **⟳ Reload corpus** — re-reads the corpus from disk and says where it came
+  from and how old it is. **Any signed-in user** may do this; it picks up a scan
+  another worker just finished, or a corpus the standby received by data
+  replication.
+- **🔎 Scan from Fortinet** — **admin only**. It lists every published version
+  for that product on docs.fortinet.com, pre-ticks the ones the corpus is
+  missing, and harvests the ticked versions' issue tables and prose with a
+  direct download. There is nothing to configure: no crawler service and no
+  endpoint.
 
 Two operational details worth knowing:
 
@@ -4451,9 +4457,9 @@ Two operational details worth knowing:
   half an hour is treated as dead, so a crashed thread cannot trap you behind a
   permanent conflict.
 
-The corpus holds both products in one shared file, tagged per row, and every read
-is filtered by the ADOM you are in — a FortiADC workspace never shows FortiWeb
-rows.
+The corpus holds every product in one shared file, tagged per row, and every
+read is filtered by the ADOM you are in — a FortiADC workspace never shows
+FortiWeb rows.
 
 ### 31.2 SATOM's own changelog — what changed in *your* version
 

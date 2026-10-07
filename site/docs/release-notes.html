@@ -70,8 +70,9 @@
     </aside>
     <div class="doc-body mdx">
 <h1 id="release-notes--upgrade-planning">Release Notes &amp; Upgrade Planning</h1>
-<p>A searchable corpus of FortiWeb <strong>known</strong> and <strong>resolved</strong> issues (plus the prose
-sections) across firmware versions, harvested from <code>docs.fortinet.com</code> — built to
+<p>A searchable corpus of <strong>known</strong> and <strong>resolved</strong> issues (plus the prose
+sections) across firmware versions of FortiWeb, FortiADC, FortiAuthenticator,
+FortiAnalyzer and FortiGate, harvested from <code>docs.fortinet.com</code> — built to
 <strong>plan upgrades</strong>: diff your current firmware against a target and see what you
 <em>gain</em> (issues fixed) and <em>inherit</em> (issues still open).</p>
 <ul>
@@ -87,6 +88,9 @@ sections) across firmware versions, harvested from <code>docs.fortinet.com</code
   (blueprint <code>release_notes</code>, url prefix <code>/release-notes</code>)</li>
 <li><strong>Harvest:</strong> <code>POST /release-notes/scan</code> (the modal's 🔎 button) — there is
   <strong>no</strong> CLI entry point</li>
+<li><strong>Offline:</strong> the <code>docs</code> section of a signed <strong>API pack</strong>
+  (<a href="api-library.html">api-library.md</a> §11) carries the same corpus; importing it
+  only adds the <code>(product, version)</code> pairs this node has not harvested itself</li>
 </ul>
 <h2 id="1-where-the-data-comes-from">1. Where the data comes from</h2>
 <p>Fortinet publishes a <em>Release Notes</em> document per version at
@@ -178,21 +182,124 @@ re-validation) outside the corpus. <code>UPGRADE_SECTIONS</code> names the subse
 advisory reads; <code>PROSE_SECTIONS</code> is everything searchable in the Notes tab.</p>
 <p>The issue sections are two-column <code>Bug ID</code> / <code>Description</code> tables (a known issue
 often embeds a <code>Workaround:</code> — split into its own field). The pages are served
-<strong>server-side</strong> (no JS), so a plain <code>httpx</code> GET works headless; a <strong>Firecrawl</strong>
-transport (self-hosted LAN or cloud) is available as a fallback.</p>
+<strong>server-side</strong> (no JS), so a plain <code>httpx</code> GET works headless.</p>
+<p><strong>Where the corpus comes from — two channels, nothing else:</strong></p>
+<ol>
+<li><strong>Online</strong> — the scan below, a direct <code>httpx</code> GET of <code>docs.fortinet.com</code>.
+   This is the only network transport SATOM has; it needs no crawler service
+   and no configuration.</li>
+<li><strong>Offline</strong> — an API pack's <code>docs/release-notes/&lt;product&gt;.json.gz</code>. Packs
+   are produced by SATOM's own export and by the separate harvester tool, in
+   the same signed format.</li>
+</ol>
+<p>Local measurement always wins: a pack never replaces a version this node
+scanned itself. (A crawler-based fallback transport, with its endpoint/key
+fields in the scan panel, was removed on 2026-10-07. An old page or script that
+still posts those fields is not refused: the fields are logged and ignored.)</p>
+<h3 id="other-products-verified-2026-10-07">Other products (verified 2026-10-07)</h3>
+<p>The same scanner reads four more docsets. Each product has its OWN doc ids
+(<code>SECTIONS_BY_PRODUCT</code>); FortiGate's docset is named <code>fortios-release-notes</code>
+instead of <code>release-notes</code> (<code>RELEASE_DOC_BY_PRODUCT</code>). Every id below answered
+200 with an article on every version listed, fetched with a plain GET:</p>
+<table>
+<thead>
+<tr>
+<th>Section key</th>
+<th>FortiAuthenticator (6.6.0, 6.6.10, 8.0.3)</th>
+<th>FortiAnalyzer (7.6.0, 7.6.7, 8.0.1)</th>
+<th>FortiGate (7.6.0, 7.6.4, 8.0.0, 8.0.1)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>known</code></td>
+<td><code>713049/known-issues</code></td>
+<td><code>35134/known-issues</code></td>
+<td><code>236526/known-issues</code></td>
+</tr>
+<tr>
+<td><code>resolved</code></td>
+<td><code>279684/resolved-issues</code></td>
+<td><code>291684/resolved-issues</code></td>
+<td><code>289806/resolved-issues</code></td>
+</tr>
+<tr>
+<td><code>whats_new</code></td>
+<td><code>568509/whats-new</code></td>
+<td>— (separate New Features guide)</td>
+<td><code>743723/new-features-or-enhancements</code></td>
+</tr>
+<tr>
+<td><code>upgrade_notes</code></td>
+<td><code>564992/special-notices</code></td>
+<td><code>901026/special-notices</code></td>
+<td><code>708555/special-notices</code></td>
+</tr>
+<tr>
+<td><code>upgrading_from</code></td>
+<td><code>859240/upgrade-instructions</code></td>
+<td><code>903960/upgrade-information</code></td>
+<td><code>832438/upgrade-information</code></td>
+</tr>
+<tr>
+<td><code>downgrading</code></td>
+<td>—</td>
+<td><code>953575/downgrading-to-previous-firmware-versions</code></td>
+<td><code>687629/downgrading-to-previous-firmware-versions</code></td>
+</tr>
+<tr>
+<td><code>image_checksums</code></td>
+<td><code>840416/image-checksums</code></td>
+<td><code>568416/firmware-image-checksums</code></td>
+<td><code>399393/firmware-image-checksums</code></td>
+</tr>
+<tr>
+<td><code>product_integration</code></td>
+<td><code>869439/product-integration-and-support</code></td>
+<td><code>372145/product-integration-and-support</code></td>
+<td><code>242321/product-integration-and-support</code></td>
+</tr>
+<tr>
+<td><code>introduction</code></td>
+<td><code>355786/introduction</code></td>
+<td><code>723553/introduction</code></td>
+<td><code>760203/introduction-and-supported-models</code></td>
+</tr>
+</tbody>
+</table>
+<p><em>Special notices</em> is these products' counterpart of FortiWeb's <em>Upgrade notes
+and important information</em>, so it is stored under <code>upgrade_notes</code> (the advisor
+reads it) and titled with the vendor's own name (<code>SECTION_LABEL_BY_PRODUCT</code>).
+FortiGate's <em>Special notices</em> page is an index of child pages; the children are
+not harvested yet.</p>
+<p>FortiGate and FortiAnalyzer publish one <code>Bug ID</code> table <strong>per category</strong> (plus a
+<code>Bug ID | CVE references</code> table); <code>parse_issue_table()</code> reads every one of them
+— reading only the first kept 8 of FortiGate 7.6.4's 66 known issues.
+FortiAuthenticator numbers its lines 6.6 then 8.0, so its discovery floor is
+6.6 (<code>MIN_VERSION_BY_PRODUCT</code>) instead of the generic 7.0.</p>
+<p>The modal is offered in the FortiWeb, FortiADC, FortiAuthenticator and
+FortiAnalyzer ADOMs. FortiGate has no ADOM: its corpus arrives through API
+packs.</p>
 <blockquote>
 <p><strong>The key fact for upgrade planning:</strong> the <em>same</em> Bug ID flips
 <strong>Known → Resolved</strong> across versions, so "what does upgrading current → target
 fix / leave open" is a pure diff over this data.</p>
 </blockquote>
-<h3 id="two-renderers-and-the-three-states-a-page-can-be-in">Two renderers, and the three states a page can be in</h3>
+<h3 id="three-renderers-and-the-three-states-a-page-can-be-in">Three renderers, and the three states a page can be in</h3>
 <p>Fortinet changed renderer mid-docset. FortiWeb <strong>up to 8.0.6</strong> (and all of
 FortiADC) is MadCap — the article sits in <code>id="mc-main-content"</code>. FortiWeb <strong>from
 8.0.7</strong> is a markdown pipeline: no MadCap container, no HTML tables on some
 pages, and the whole article repeated a second time inside a <code>mobile-content</code>
-wrapper. <code>has_release_content()</code> recognises both containers; <code>_main_content()</code>
-closes the src-md slice on <code>mobile-content</code> / <code>thin-footer</code>, because a slice that
-runs to the end of the document harvests every row twice.</p>
+wrapper. <code>_main_content()</code> closes the src-md slice on <code>mobile-content</code> /
+<code>thin-footer</code>, because a slice that runs to the end of the document harvests
+every row twice.</p>
+<p>By <strong>2026-10-07</strong> every docset (all five products, every version) had moved to a
+third, "reader" layout: the article is <code>&lt;div class="prose src-mc"&gt;</code> (or
+<code>prose src-md</code>), followed by the <code>reader__pager</code> navigation and the
+<code>reader__footer</code>. Neither older container appears on those pages, so until the
+parser learned this marker <strong>every published page read as a chrome-only
+landing</strong> and every scan ended in <em>"no release notes found"</em>.
+<code>has_release_content()</code> recognises all three containers.</p>
 <p>Every page therefore falls into exactly one of three states, and the second one
 is the whole reason this section exists:</p>
 <table>
@@ -206,7 +313,7 @@ is the whole reason this section exists:</p>
 <tbody>
 <tr>
 <td><strong>absent</strong></td>
-<td>no <code>document-content src-XX</code> wrapper at all — a 200 landing of pure chrome (~442 KB)</td>
+<td>no <code>document-content src-XX</code> / <code>prose src-XX</code> wrapper at all — a 200 landing of pure chrome (~442 KB), or on the reader layout a PDF-only <code>download-view</code> page</td>
 <td>skipped, silently. The only branch allowed to be quiet.</td>
 </tr>
 <tr>
@@ -257,6 +364,13 @@ never breaks the UI.</p>
     <code>services.release_notes.advise</code>).</li>
 <li><strong>Notes</strong> — full-text search the prose sections (What's new / Upgrade notes / …).</li>
 </ul>
+<p>The version pickers of the Issues and Notes tabs also list the builds the
+operator's appliances of this product run, marked <em>in your fleet — no notes
+here</em>, when the corpus lacks them. Picking one — or opening the modal on an
+empty corpus — never renders an empty list: online it says the build has not
+been scanned yet; <strong>offline</strong> (docs.fortinet.com unreachable, probed with a
+4-second <code>HEAD</code>, cached 2 minutes) it says
+<strong>"No release notes for this build (offline: import a newer API pack)"</strong>.</p>
 <h3 id="-scan-from-fortinet">🔎 Scan from Fortinet</h3>
 <p><strong>Discover first, then tick.</strong> Opening the scan panel fetches the version list
 (one page fetch, ~1 s) and renders it as checkboxes grouped by line, with the
@@ -275,8 +389,9 @@ checkbox, and it fixed two defects at once:</p>
 <p>The endpoint still accepts the legacy <code>majors</code> / <code>all</code> filter for scripted use,
 but a request that sends a contradiction (<code>all</code> <strong>and</strong> <code>majors</code>, or <code>versions</code>
 <strong>and</strong> either) is now refused with 400 instead of resolving itself.</p>
-<p><strong>No appliance needed</strong> — it reads the public docs directly with a Firecrawl
-fallback (both transports on by default). Admin only (<code>USER_MANAGE</code>).</p>
+<p><strong>No appliance needed</strong> — it reads the public docs directly with a plain GET.
+A node without internet imports an API pack instead (Software Update → API
+library packs). Admin only (<code>USER_MANAGE</code>).</p>
 <h3 id="the-two-git-controls-were-removed-on-2026-09-14">The two git controls were removed on 2026-09-14</h3>
 <p><code>Publish to git</code> (a checkbox on the scan panel) and <code>⤓ Sync from git</code> (a button
 in the modal header) are <strong>gone</strong>, along with <code>POST /release-notes/sync</code>. Three
@@ -323,10 +438,10 @@ modal as <code>GET /release-notes/advise?current=…&amp;target=…</code>.</p>
 <p>The harvest runs <strong>in the app</strong>, as a background thread behind the modal's
 🔎 <strong>Scan from Fortinet</strong> button (<code>_do_scan</code> in <code>app/views/release_notes.py</code>):</p>
 <pre><code class="language-http">POST /release-notes/discover      → {versions:[{version,major,in_corpus}], count, new}
-{&quot;use_direct&quot;: true, &quot;use_firecrawl&quot;: true}
+{}
 
 POST /release-notes/scan          → 202 {started:true}
-{&quot;versions&quot;: [&quot;8.0.7&quot;], &quot;use_direct&quot;: true}
+{&quot;versions&quot;: [&quot;8.0.7&quot;]}
 
 GET  /release-notes/scan/status   → {running, lines[], result, error}
 POST /release-notes/reload        → {counts, message, source, generated_at}
@@ -336,7 +451,12 @@ POST /release-notes/reload        → {counts, message, source, generated_at}
 published and could not be parsed. <strong>A non-empty <code>unreadable</code> means the corpus is
 incomplete</strong>, and the UI says so instead of "done".</p>
 <p>Legacy selection (still accepted, one filter at a time): <code>{"majors": "7.6,8.0"}</code>
-or <code>{"all": true}</code>. <code>majors</code> defaults to <code>7.0,7.2,7.4,7.6,8.0</code>.</p>
+or <code>{"all": true}</code>. <code>majors</code> defaults to <code>7.0,7.2,7.4,7.6,8.0</code>.
+Retired transport fields (<code>use_direct</code>, and the crawler endpoint/key fields of
+the removed fallback) are accepted, logged and ignored.</p>
+<p><code>GET /release-notes/issues</code> and <code>/notes</code> answer <code>empty_reason</code> next to an empty
+list when the corpus holds nothing for the requested build; <code>/data</code> adds
+<code>fleet_missing</code> (fleet builds absent from the corpus) and <code>offline</code>.</p>
 <h2 id="6-scout-advisory-servicesrelease_advisorpy">6. Scout Advisory (<code>services/release_advisor.py</code>)</h2>
 <p><code>GET /release-notes/advisory?current=…&amp;target=…</code> → an <code>Advisory</code>:</p>
 <pre><code>verdict        blocker | caution | clear | unknown

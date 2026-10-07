@@ -1,7 +1,7 @@
 """FortiAnalyzer sidebar menu — the REAL FAZ 7.6.7 GUI panes, verbatim.
 
 Source of truth: the FortiAnalyzer 7.6.7 Administration Guide "GUI overview"
-(doc 537284) crawled through the fleet Firecrawl on 2026-07-12 — the left
+(doc 537284) harvested from docs.fortinet.com on 2026-07-12 — the left
 navigation of the real unit is Device Manager / FortiView / Log View /
 Fabric View / Incidents & Events / FortiAI / Reports / System Settings, and
 each group's items below mirror that pane's tree menu (the guide's chapter

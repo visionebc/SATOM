@@ -111,9 +111,10 @@
       <div class="modal-body">
         <p class="text-muted small">
           Search {{ product.name }} known &amp; resolved issues across versions and plan upgrades.
-          Data is harvested from docs.fortinet.com into this node's local corpus (the standby
-          receives it by data replication, not by git); use the Upgrade advisor to diff your
-          current firmware against a target.
+          Data is harvested from docs.fortinet.com into this node's local corpus, or imported
+          from an API pack on a node with no internet (the standby receives it by data
+          replication, not by git); use the Upgrade advisor to diff your current firmware
+          against a target.
         </p>
         <div id="rnStatus" class="small mb-3 text-muted">{{ _('Loading…') }}</div>
 
@@ -147,25 +148,10 @@
                 <span class="ms-2 text-muted"><i class="bi bi-check-circle-fill text-success"></i> {{ _('= already in the corpus') }}</span>
               </div>
             </div>
-            <div class="col-md-5">
-              <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" id="rnDirect" checked>
-                <label class="form-check-label small" for="rnDirect">{{ _('Direct (httpx)') }}</label>
-              </div>
-              <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" id="rnFc" checked>
-                <label class="form-check-label small" for="rnFc">{{ _('Firecrawl fallback') }}</label>
-              </div>
-            </div>
-            <div class="col-md-6">
-              <label class="form-label small mb-1">{{ _('Firecrawl endpoint') }}</label>
-              <input type="text" class="form-control form-control-sm" id="rnFcEndpoint"
-                     placeholder="{{ _('http://firecrawl.example:3002') }}">
-            </div>
-            <div class="col-md-6">
-              <label class="form-label small mb-1">{{ _('Firecrawl key (optional)') }}</label>
-              <input type="password" class="form-control form-control-sm" id="rnFcKey"
-                     autocomplete="off">
+            {# One transport: a direct GET of docs.fortinet.com. A node that
+               cannot reach it gets the same corpus from an API pack. #}
+            <div class="col-12 small text-muted" id="rnTransportNote">
+              <i class="bi bi-info-circle me-1"></i>{{ _('Fetched directly from docs.fortinet.com. No internet on this node? Import an API pack under Software Update → API library packs: it carries the release notes too.') }}
             </div>
             <div class="col-12">
               <button type="button" class="btn btn-sm btn-primary" id="rnScanStart">

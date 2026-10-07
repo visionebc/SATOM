@@ -2524,7 +2524,7 @@ fails, the update rolls back and the status log says which backup to restore.</p
 SATOM has learned about vendor APIs — which endpoints and fields each firmware
 build serves (from real sweeps, anonymised), the vendor release notes and field
 catalog, and the CLI-only blocks per firmware line — for a node that has no
-appliance of a build, no Internet and no documentation crawler to learn them.
+appliance of a build and no access to docs.fortinet.com to learn them.
 It never carries a configuration value or a device name.</p>
 <ol>
 <li><strong>Pick a pack.</strong> The release you run carries its own (<em>this release</em>); you
@@ -4948,10 +4948,17 @@ decided rows went to zero visible rows, in silence.</p>
   make.</li>
 </ul>
 <h3 id="311-vendor-release-notes-the-topbar-modal">31.1 Vendor release notes (the topbar modal)</h3>
-<p>In the FortiWeb and FortiADC ADOMs the top banner opens a <strong>Release Notes</strong>
-modal. It reads a corpus of harvested vendor notes — Known and Resolved issue
-tables plus the prose sections — and it is the corpus §12 step 3 diffs against
-when it advises you on an upgrade.</p>
+<p>In the FortiWeb, FortiADC, FortiAuthenticator and FortiAnalyzer ADOMs the top
+banner opens a <strong>Release Notes</strong> modal. It reads a corpus of harvested vendor
+notes — Known and Resolved issue tables plus the prose sections — and it is the
+corpus §12 step 3 diffs against when it advises you on an upgrade.</p>
+<p>The corpus has two sources: a <strong>scan</strong> that downloads the notes directly from
+docs.fortinet.com, and, on a node with no Internet, the release notes carried by
+an <strong>API pack</strong> (§22.3). FortiGate release notes travel the same way; FortiGate
+has no ADOM, so they arrive through packs. When a build your appliances run has
+no notes on this node and docs.fortinet.com cannot be reached, the modal says
+<strong>"No release notes for this build (offline: import a newer API pack)"</strong> instead
+of showing an empty list.</p>
 <p>Three tabs:</p>
 <table>
 <thead>
@@ -4975,19 +4982,17 @@ when it advises you on an upgrade.</p>
 </tr>
 </tbody>
 </table>
-<p>Reading any of it needs only the view permission. Two buttons change the corpus:</p>
+<p>Reading any of it needs only the view permission. Two buttons:</p>
 <ul>
-<li><strong>⤓ Sync from git</strong> — <code>git pull</code>, then reload the corpus from disk. <strong>Any
-  signed-in user</strong> may do this; it is how a second node or a colleague picks up a
-  scan somebody else ran. With nothing in git yet it says so and tells you to run
-  a scan.</li>
-<li><strong>🔎 Scan from Fortinet</strong> — <strong>admin only</strong>. It auto-discovers every published
-  version for that product on the vendor documentation site and harvests the
-  issue tables and prose into the corpus. You choose which majors (or all), and
-  the transport (direct fetch, an optional crawler fallback, at least one
-  required). If <strong>publish</strong> is left on, the corpus is committed and pushed so the
-  whole team shares one harvest rather than each node scraping the vendor
-  separately.</li>
+<li><strong>⟳ Reload corpus</strong> — re-reads the corpus from disk and says where it came
+  from and how old it is. <strong>Any signed-in user</strong> may do this; it picks up a scan
+  another worker just finished, or a corpus the standby received by data
+  replication.</li>
+<li><strong>🔎 Scan from Fortinet</strong> — <strong>admin only</strong>. It lists every published version
+  for that product on docs.fortinet.com, pre-ticks the ones the corpus is
+  missing, and harvests the ticked versions' issue tables and prose with a
+  direct download. There is nothing to configure: no crawler service and no
+  endpoint.</li>
 </ul>
 <p>Two operational details worth knowing:</p>
 <ul>
@@ -4999,9 +5004,9 @@ when it advises you on an upgrade.</p>
   half an hour is treated as dead, so a crashed thread cannot trap you behind a
   permanent conflict.</li>
 </ul>
-<p>The corpus holds both products in one shared file, tagged per row, and every read
-is filtered by the ADOM you are in — a FortiADC workspace never shows FortiWeb
-rows.</p>
+<p>The corpus holds every product in one shared file, tagged per row, and every
+read is filtered by the ADOM you are in — a FortiADC workspace never shows
+FortiWeb rows.</p>
 <h3 id="312-satoms-own-changelog--what-changed-in-your-version">31.2 SATOM's own changelog — what changed in <em>your</em> version</h3>
 <p>The manager's own history lives in <strong><code>CHANGELOG.md</code></strong> at the repository root. It
 is a normal Keep-a-Changelog file, one section per released version, and it is

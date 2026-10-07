@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Field history') }} {{ h.endpoint }}.{{ h.field }}{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <h4 class="mb-1"><i class="bi bi-clock-history me-2"></i><code>{{ h.endpoint }}</code> · <code>{{ h.field }}</code></h4>
+  <p class="text-muted mb-0" style="font-size:13px;">
+    {{ sel_product }} ·
+    {% if h.known %}{{ _('seen from') }} <strong>{{ h.first_build or '?' }}</strong> {{ _('to') }} <strong>{{ h.last_build or '?' }}</strong>
+    · {% for c in h.channels %}<span class="fw-badge fw-badge-info me-1">{{ c }}</span>{% endfor %}
+    {% else %}<span class="fw-badge fw-badge-secondary">{{ _('no evidence') }}</span>{% endif %}
+    · <a href="{{ url_for('build_compat.index', product=sel_product, q=h.field, only='all') }}">{{ _('Back to the matrix') }}</a>
+  </p>
+</div>
+<div class="fw-card mb-3">
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle fw-table" data-bc-history>
+      <thead><tr><th>{{ _('Build') }}</th><th>{{ _('Source') }}</th><th>{{ _('Channel') }}</th><th>{{ _('Type') }}</th><th>{{ _('CLI id') }}</th><th>{{ _('Range') }}</th><th>{{ _('Hidden') }}</th><th>{{ _('Last seen') }}</th></tr></thead>
+      <tbody>
+      {% for b in h.builds %}
+        <tr style="font-size:12.5px;">
+          <td>{{ b.version }}</td>
+          <td><span class="fw-badge {{ 'fw-badge-warning' if b.source == 'vendor_doc' else 'fw-badge-secondary' }}">{{ b.source }}</span></td>
+          <td>{{ b.channel }}</td>
+          <td>{{ b.attrs.cli_type or b.type or '—' }}</td>
+          <td>{{ b.attrs.cli_id if b.attrs.cli_id is not none else '—' }}</td>
+          <td>{{ b.attrs.range|join('-') if b.attrs.range else '—' }}</td>
+          <td>{{ _('yes') if b.attrs.hidden else '' }}</td>
+          <td class="text-muted">{{ b.last_seen[:10] }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8" class="text-muted">{{ _('No measured build. Vendor ranges, if any, are below.') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% if h.vendor_spans %}
+<div class="fw-card mb-3" style="padding:10px 14px;font-size:12.5px;">
+  <strong>{{ _('Vendor documentation ranges') }}</strong>
+  {% for s in h.vendor_spans %}<div>{{ s.from }} – {{ s.to_capped or _('open') }} <span class="text-muted">{{ s.origin_ref }}</span></div>{% endfor %}
+</div>
+{% endif %}
+{% endblock %}

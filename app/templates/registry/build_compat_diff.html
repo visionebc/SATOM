@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Build diff') }} {{ d.a }} → {{ d.b }}{% endblock %}
+
+{% macro names(xs, cls) -%}
+{% for x in xs %}<code class="me-1 {{ cls }}">{{ x }}</code>{% endfor %}
+{%- endmacro %}
+
+{% block content %}
+<div class="fw-page-header">
+  <h4 class="mb-1"><i class="bi bi-arrow-left-right me-2"></i>{{ sel_product }} {{ d.a }} → {{ d.b }}</h4>
+  <p class="text-muted mb-0" style="font-size:13px;">
+    {{ _('What changes moving from one build to the other, read from the CLI schema (tree) of both builds and from REST evidence. Rename candidates share a CLI attribute id: they are reported, never applied — an operator rename map is the only authority.') }}
+    <a href="{{ url_for('build_compat.index', product=sel_product, b=[d.a, d.b]) }}">{{ _('Back to the matrix') }}</a>
+  </p>
+</div>
+
+{% if not d.tree %}
+<div class="fw-alert fw-alert-warning mb-3">{{ _('No CLI schema comparison:') }} {{ d.tree_reason }}</div>
+{% else %}
+<div class="fw-card mb-3" style="padding:12px 14px;" data-bc-totals>
+  <div class="d-flex flex-wrap gap-3" style="font-size:13px;">
+    <span>{{ _('Objects') }}: <strong class="text-success">+{{ d.endpoints_added|length }}</strong> / <strong class="text-danger">−{{ d.endpoints_removed|length }}</strong></span>
+    <span>{{ _('Fields') }}: <strong class="text-success">+{{ d.totals.fields_added }}</strong> / <strong class="text-danger">−{{ d.totals.fields_removed }}</strong></span>
+    <span>{{ _('Option changes') }}: <strong>{{ d.totals.options_changed }}</strong></span>
+    <span>{{ _('Type changes') }}: <strong>{{ d.totals.retyped }}</strong></span>
+    <span>{{ _('Range changes') }}: <strong>{{ d.totals.ranges_changed }}</strong></span>
+    <span>{{ _('Default changes') }}: <strong>{{ d.totals.defaults_changed }}</strong></span>
+    <span>{{ _('Field rename candidates') }}: <strong>{{ d.totals.rename_candidates }}</strong></span>
+    <span>{{ _('Object rename candidates') }}: <strong>{{ d.endpoint_renames|length }}</strong></span>
+    <span>{{ _('Moves') }}: <strong>{{ d.field_moves|length }}</strong></span>
+    <span>{{ _('Channel moves') }}: <strong>{{ d.channel_moves }}</strong></span>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-6"><div class="fw-card h-100" style="padding:10px 14px;font-size:12.5px;">
+    <strong>{{ _('Objects added') }}</strong><div class="mt-1">{{ names(d.endpoints_added, 'text-success') or '—' }}</div>
+    <strong class="d-block mt-2">{{ _('Objects removed') }}</strong><div class="mt-1">{{ names(d.endpoints_removed, 'text-danger') or '—' }}</div>
+  </div></div>
+  <div class="col-md-6"><div class="fw-card h-100" style="padding:10px 14px;font-size:12.5px;">
+    <strong>{{ _('Object rename candidates') }}</strong>
+    {% for r in d.endpoint_renames %}<div><code>{{ r.from }}</code> → <code>{{ r.to }}</code> <span class="text-muted">(id {{ r.cli_id }})</span></div>{% else %}<div class="text-muted">—</div>{% endfor %}
+    <strong class="d-block mt-2">{{ _('Moves (same CLI id, another object)') }}</strong>
+    {% for mv in d.field_moves %}<div><code>{{ mv.from_endpoint }}.{{ mv.from_field }}</code> → <code>{{ mv.to_endpoint }}{% if mv.to_field %}.{{ mv.to_field }}{% endif %}</code>
+      {% if mv.with_object %}<span class="fw-badge fw-badge-secondary">{{ _('with the object') }}</span>{% elif mv.becomes == 'object' %}<span class="fw-badge fw-badge-info">{{ _('became an object') }}</span>{% endif %}</div>
+    {% else %}<div class="text-muted">—</div>{% endfor %}
+  </div></div>
+</div>
+
+<div class="fw-card mb-3">
+  <div class="d-flex flex-wrap align-items-center gap-2" style="padding:10px 14px;border-bottom:1px solid var(--fw-border, #e3e8ef);">
+    <strong>{{ _('Changed objects') }}</strong> <span class="fw-badge fw-badge-secondary">{{ d.total }}</span>
+    <form method="get" class="ms-auto d-flex gap-2">
+      <input type="hidden" name="product" value="{{ sel_product }}"><input type="hidden" name="a" value="{{ d.a }}"><input type="hidden" name="b" value="{{ d.b }}">
+      <input class="form-control form-control-sm" name="q" value="{{ q }}" placeholder="{{ _('search') }}" style="width:220px;">
+      <button class="btn btn-sm btn-fw-outline" type="submit"><i class="bi bi-search"></i></button>
+    </form>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-top fw-table" data-bc-diff-table>
+      <thead><tr><th>{{ _('Object') }}</th><th>{{ _('Added') }}</th><th>{{ _('Removed') }}</th><th>{{ _('Options / type / range / default') }}</th><th>{{ _('Rename candidates') }}</th></tr></thead>
+      <tbody>
+      {% for key, e in d.endpoints %}
+        <tr style="font-size:12px;">
+          <td style="word-break:break-all;min-width:240px;">{{ key }}</td>
+          <td>{% for f in e.added %}<a href="{{ url_for('build_compat.history', product=sel_product, ep=key, field=f) }}"><code class="text-success">{{ f }}</code></a> {% endfor %}</td>
+          <td>{% for f in e.removed %}<a href="{{ url_for('build_compat.history', product=sel_product, ep=key, field=f) }}"><code class="text-danger">{{ f }}</code></a> {% endfor %}</td>
+          <td>
+            {% for o in e.options %}<div><code>{{ o.field }}</code>{% if o.added %} <span class="text-success">+{{ o.added|join(', ') }}</span>{% endif %}{% if o.removed %} <span class="text-danger">−{{ o.removed|join(', ') }}</span>{% endif %}</div>{% endfor %}
+            {% for t in e.retyped %}<div><code>{{ t.field }}</code> {{ t.from }} → {{ t.to }}</div>{% endfor %}
+            {% for r in e.ranges %}<div><code>{{ r.field }}</code> {{ r.from }} → {{ r.to }}</div>{% endfor %}
+            {% for x in e.defaults %}<div><code>{{ x.field }}</code> {{ _('default') }} {{ x.from }} → {{ x.to }}</div>{% endfor %}
+          </td>
+          <td>{% for c in e.rename_candidates %}<div><code>{{ c.from }}</code> → <code>{{ c.to }}</code> <span class="text-muted">(id {{ c.cli_id }})</span>{% if c.mapped %} <span class="fw-badge fw-badge-success">{{ _('mapped') }}</span>{% endif %}</div>{% endfor %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="text-muted">{{ _('No changed object.') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if d.pages > 1 %}
+  <div class="d-flex align-items-center gap-2" style="padding:8px 14px;font-size:12.5px;">
+    {% if d.page > 1 %}<a class="btn btn-sm btn-fw-outline" href="{{ url_for('build_compat.diff', product=sel_product, a=d.a, b=d.b, q=q, page=d.page - 1) }}">&laquo; {{ _('Previous') }}</a>{% endif %}
+    <span>{{ _('Page %(p)s of %(n)s', p=d.page, n=d.pages) }}</span>
+    {% if d.page < d.pages %}<a class="btn btn-sm btn-fw-outline" href="{{ url_for('build_compat.diff', product=sel_product, a=d.a, b=d.b, q=q, page=d.page + 1) }}">{{ _('Next') }} &raquo;</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="fw-card mb-3" style="padding:10px 14px;font-size:12.5px;">
+  <strong>{{ _('REST evidence') }}</strong>
+  <span class="text-muted">— {{ _('objects') }} +{{ d.rest_added|length }} / −{{ d.rest_removed|length }},
+  {{ _('fields') }} +{{ d.rest_totals.fields_added or 0 }} / −{{ d.rest_totals.fields_removed or 0 }},
+  {{ _('renamed') }} {{ d.rest_totals.fields_renamed or 0 }}, {{ _('not comparable') }} {{ d.rest_totals.fields_unknown or 0 }}</span>
+</div>
+{% endblock %}

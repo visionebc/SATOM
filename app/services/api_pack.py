@@ -1843,7 +1843,10 @@ def import_history(limit: int = 10) -> list:
                     "schema": rec.get("schema") or SCHEMA_V1,
                     "provenance": rec.get("provenance")
                     or "%s%s:satom-apipack-%s" % (PROV_PREFIX, lane, ver),
-                    "warnings": len(rec.get("warnings") or [])})
+                    "warnings": len(rec.get("warnings") or []),
+                    "partial": bool(rec.get("partial")),
+                    "content_fingerprint": str(rec.get("content_fingerprint") or ""),
+                    "snapshot": _snapshot_of(rec)})
     return out
 
 

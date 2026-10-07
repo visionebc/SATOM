@@ -98,6 +98,7 @@ def validate_factory(run, item) -> dict:
     if not _SHA_RE.match(sha):
         raise ItemInvalid("content_sha is not a sha256")
     try:
+        # base64 of the EXACT bytes the catalog stores (gzip JSON); stored as is
         raw = base64.b64decode(_str(data, "payload_b64gz", limit=1 << 30), validate=True)
         with gzip.GzipFile(fileobj=io.BytesIO(raw)) as gz:
             blob = gz.read(MAX_FACTORY_PAYLOAD + 1)
@@ -119,11 +120,26 @@ def validate_factory(run, item) -> dict:
         raise ItemInvalid("payload tree cannot be hashed (%s)" % exc)
     if got != sha:
         raise ItemInvalid("content_sha does not match the payload tree (%s...)" % got[:12])
+    top_sha = fc.sha(body["top"])
+    if data.get("top_sha") not in (None, "", top_sha):
+        raise ItemInvalid("top_sha does not match the payload top rows")
+    captured = None
+    if data.get("captured_at"):
+        try:
+            captured = datetime.fromisoformat(str(data["captured_at"]).replace("Z", "")[:19])
+        except ValueError:
+            raise ItemInvalid("captured_at %r is not an ISO timestamp" % data["captured_at"])
+    for k in ("node_count", "read_count"):
+        if data.get(k) is not None and (isinstance(data[k], bool) or not isinstance(data[k], int)
+                                        or data[k] < 0):
+            raise ItemInvalid("%s must be a non-negative integer" % k)
     return {"product": product, "firmware": firmware, "build_no": _build_no(data.get("build")),
             "api_version": _str(data, "api_version", required=False, limit=16),
-            "kind": kind, "name": name[:255], "content_sha": sha,
-            "top_sha": fc.sha(body["top"]), "urn": _str(data, "urn", required=False),
-            "body": body}
+            "kind": kind, "name": name[:255], "content_sha": sha, "top_sha": top_sha,
+            "urn": _str(data, "urn", required=False), "body": body, "blob": raw,
+            "node_count": data.get("node_count"), "read_count": data.get("read_count"),
+            "captured_at": captured,
+            "witness": _str(data, "witness", required=False, limit=128)}
 
 
 def _factory_rows(p: dict) -> list:
@@ -162,15 +178,20 @@ def import_factory(run, item, p: dict, st: dict) -> dict:
                 replaced += 1
         db.session.flush()
     body = p["body"]
-    # Verified "as of" the snapshot: fresh -> replayed within the reverify
-    # window; older -> the next sweep reads it in full once and confirms it.
+    # Verified "as of" the capture on the lab box (else the snapshot): fresh ->
+    # replayed within the reverify window; older -> the next sweep reads it
+    # in full once and confirms it.
+    when = p["captured_at"] or run.built_at
     row = FO(product=p["product"], firmware=p["firmware"], build_no=p["build_no"],
              api_version=p["api_version"], kind=p["kind"], name=p["name"], urn=p["urn"],
-             content_sha=p["content_sha"], top_sha=p["top_sha"], payload=fc.pack(body),
-             node_count=fc.count_nodes(body["tree"]), read_count=len(body["reads"]),
+             content_sha=p["content_sha"], top_sha=p["top_sha"], payload=p["blob"],
+             node_count=p["node_count"] if p["node_count"] is not None
+             else fc.count_nodes(body["tree"]),
+             read_count=p["read_count"] if p["read_count"] is not None else len(body["reads"]),
              captured_from_id=None, captured_from=run.provenance[:128],
-             captured_at=run.built_at, last_verified_at=run.built_at,
-             last_verified_from=run.provenance[:128], verify_count=1, status=FO.STATUS_OK)
+             captured_at=when, last_verified_at=when,
+             last_verified_from=(p["witness"] or run.provenance)[:128], verify_count=1,
+             status=FO.STATUS_OK)
     db.session.add(row)
     db.session.commit()
     return {"factory_id": row.id, "replaced": replaced}
@@ -290,19 +311,46 @@ def import_field_map(run, item, p: dict, st: dict) -> dict:
 # baseline -> api_lib_baseline (method "pack", never active)
 # ---------------------------------------------------------------------------
 
-def _baseline_entries(data: dict, version: str) -> tuple:
+def _names_by_urn(product: str) -> dict:
+    """``{urn: [registry name...]}`` from this node's registry and the shipped
+    baseline artifact, keyed by the URN and by its canonical path too."""
     from . import api_baseline as ab
+    from . import api_library as lib
+    from ..models import RegistryEndpoint
+    pairs = set(ab.artifact_map(product).items())
+    pairs |= {(r.name, r.urn) for r in RegistryEndpoint.query.filter_by(product=product).all()}
+    out: dict = {}
+    for name, urn in pairs:
+        for k in {urn, lib.urn_key(urn)}:
+            if k:
+                out.setdefault(k, set()).add(name)
+    return out
+
+
+def _baseline_entries(data: dict, version: str, product: str) -> tuple:
+    from . import api_baseline as ab
+    from . import api_library as lib
     raw, bad = [], 0
     if isinstance(data.get("entries"), list):
         raw = data["entries"]
     elif isinstance(data.get("endpoints"), dict):
-        # C3 spelling: {path-or-name: {urn?, name?, method, fields}}. A key
-        # with "/" is a path; it needs an explicit registry ``name``.
+        # Harvester spelling: {rest_path: {method, urn, fields}}. A REST path
+        # is not a registry name: each one is mapped to the registry name(s)
+        # serving the same URN; a path no name serves is skipped and counted.
+        names = _names_by_urn(product)
         for k, v in data["endpoints"].items():
             v = v if isinstance(v, dict) else {}
-            name = v.get("name") or (k if "/" not in str(k) else "")
             urn = v.get("urn") or (k if str(k).startswith("/") else "")
-            raw.append({"name": name, "urn": urn})
+            if not isinstance(urn, str) or not urn:
+                bad += 1
+                continue
+            if v.get("name"):
+                raw.append({"name": v["name"], "urn": urn})
+                continue
+            hits = names.get(urn) or names.get(lib.urn_key(urn)) or set()
+            if not hits:
+                bad += 1
+            raw += [{"name": n, "urn": urn} for n in sorted(hits)]
     else:
         raise ItemInvalid("baseline needs 'entries' (list) or 'endpoints' (object)")
     out, seen = [], set()
@@ -330,7 +378,7 @@ def validate_baseline(run, item) -> dict:
     if product not in ab.products():
         raise ItemInvalid("%s has no endpoint registry, so no baseline" % product)
     version = _version(data, "build")
-    entries, bad = _baseline_entries(data, version)
+    entries, bad = _baseline_entries(data, version, product)
     if not entries:
         raise ItemInvalid("no valid baseline entry ({name, urn}; name without '/', "
                           "urn starting with '/')")
@@ -351,7 +399,8 @@ def state_baseline(run, item, p: dict) -> dict:
     rows = _baseline_rows(p)
     out = {"build": p["version"], "entries": len(p["entries"])}
     if p["bad"]:
-        out["warning"] = "%d malformed baseline entr(ies) skipped" % p["bad"]
+        out["warning"] = ("%d baseline entr(ies) skipped (malformed, or a REST path no "
+                          "registry name serves)" % p["bad"])
     if any(r.method != ab.METHOD_PACK for r in rows):
         return dict(out, state=ST_LOCAL, current="local",
                     note="this node has its own baseline for %s" % p["version"])

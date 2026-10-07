@@ -1543,7 +1543,7 @@ Each payload is validated before anything is written; a malformed item is
 <tr>
 <td><code>library</code></td>
 <td><code>evidence</code></td>
-<td>an evidence document (sources <code>sweep</code>, <code>schema</code>, <code>vendor_doc</code>, <code>cli_tree</code>, <code>cli_full</code>, <code>legacy_matrix</code>)</td>
+<td>an evidence document (sources <code>sweep</code>, <code>schema</code>, <code>vendor_doc</code>, <code>cli_tree</code>, <code>cli_full</code>, <code>legacy_matrix</code>); a top-level <code>attrs</code> (e.g. <code>origin</code>) is kept and stays out of the content hash</td>
 <td>the API library</td>
 <td>known source; the library's own document checks (names-only rule for <code>cli_full</code>)</td>
 </tr>
@@ -1571,16 +1571,16 @@ Each payload is validated before anything is written; a malformed item is
 <tr>
 <td><code>cli-coverage</code></td>
 <td><code>cli-coverage</code></td>
-<td>the CLI-coverage digest of one (product, version)</td>
+<td>the CLI-coverage digest of one (product, version); extra buckets (<code>rest_served</code>) are kept</td>
 <td>the CLI-coverage digests</td>
 <td>a valid <code>version</code>; the three buckets are lists of objects</td>
 </tr>
 <tr>
 <td><code>factory</code></td>
 <td><code>factory-wpp</code></td>
-<td><code>{product, firmware, build, api_version, kind, name, content_sha, payload_b64gz}</code>; the payload is base64(gzip(JSON <code>{tree, top, reads}</code>)) exactly as the factory catalog stores it</td>
+<td><code>{product, firmware, build, api_version, kind, name, urn, content_sha, top_sha, node_count, read_count, captured_at, witness, payload_b64gz}</code>; <code>payload_b64gz</code> is base64 of the exact bytes the factory catalog stores (gzip JSON <code>{tree, top, reads}</code>), kept byte for byte; <code>captured_at</code> becomes the entry's last verification</td>
 <td>the factory catalog (predefined protection profiles per build)</td>
-<td><code>kind</code> is <code>wpp_inline</code> or <code>wpp_offline</code>; <code>firmware</code> is a build, not a line; <code>content_sha</code> must equal the catalog hash of <code>tree</code>; <code>reads</code> rows are <code>[kind, urn, key, answer]</code></td>
+<td><code>kind</code> is <code>wpp_inline</code> or <code>wpp_offline</code>; <code>firmware</code> is a build, not a line; <code>content_sha</code> must equal the catalog hash of <code>tree</code> and <code>top_sha</code> that of <code>top</code>; <code>reads</code> rows are <code>[kind, urn, key, answer]</code>; counts are non-negative integers</td>
 </tr>
 <tr>
 <td><code>field-map</code></td>
@@ -1592,9 +1592,9 @@ Each payload is validated before anything is written; a malformed item is
 <tr>
 <td><code>baselines</code></td>
 <td><code>baseline</code></td>
-<td><code>{product, build, api_version?, entries:[{name, urn, provenance?, measured_on?}]}</code> (the shape <code>flask apilib baseline promote</code> stores); <code>{endpoints: {key: {name?, urn?, …}}}</code> is also read</td>
+<td><code>{product, build, api_version, sha256, endpoints:{&lt;REST path&gt;: {method, urn, fields}}}</code>; each REST path is mapped to the registry name(s) serving the same URN (this node's registry and the shipped baseline). <code>{entries:[{name, urn, provenance?, measured_on?}]}</code> (the shape <code>flask apilib baseline promote</code> stores) is also read</td>
 <td>endpoint baselines, as reference</td>
-<td>product has an endpoint registry; <code>name</code> without <code>/</code>, <code>urn</code> starting with <code>/</code>; duplicates skipped</td>
+<td>product has an endpoint registry; <code>name</code> without <code>/</code>, <code>urn</code> starting with <code>/</code>; a path no registry name serves, and duplicates, are skipped and counted</td>
 </tr>
 <tr>
 <td><code>signature-meta</code></td>

@@ -64,6 +64,11 @@ PROVENANCES = (PROV_MEASURED, PROV_CARRIED, PROV_LEGACY, PROV_CONTRADICTED)
 
 METHOD_PROMOTED = "promoted"
 METHOD_ADOPTED = "adopted"
+#: Imported from a signed pack (``baselines`` section, docs/api-library.md
+#: §12) for a build this node has no baseline of its own. Kept for reference
+#: and comparison; NEVER the active baseline, so a pack cannot change what the
+#: registry serves.
+METHOD_PACK = "pack"
 
 #: ``updated_by`` of a registry row the baseline owns. Anything else is an
 #: operator's row and is never touched.
@@ -259,8 +264,10 @@ def export(product: str, directory: str | None = None) -> str:
 # ---------------------------------------------------------------------------
 
 def active(product: str) -> ApiLibBaseline | None:
-    """The baseline promoted last for ``product`` (``None`` before the first)."""
+    """The baseline promoted last for ``product`` (``None`` before the first).
+    A baseline imported from a pack is never the active one."""
     return (ApiLibBaseline.query.filter_by(product=product)
+            .filter(ApiLibBaseline.method != METHOD_PACK)
             .order_by(ApiLibBaseline.promoted_at.desc(), ApiLibBaseline.id.desc())
             .first())
 

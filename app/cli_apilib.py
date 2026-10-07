@@ -516,7 +516,9 @@ def pack_export_cmd(version, out_dir, products, sections, notes, sign_key, passp
 
 def _trust_opt(f):
     return click.option("--trust-dir", default=None, type=click.Path(file_okay=False),
-                        help="Trust store (default: the update-package trust store).")(f)
+                        help="Trust store for LEGACY /1 packs (default: the update-package "
+                             "trust store). A /2 pack is verified with its lane's keys "
+                             "only: deploy/pack-keys/<lane>/ + /etc/satom/pack-keys/<lane>/.")(f)
 
 
 @pack_cli.command("inspect")
@@ -531,17 +533,23 @@ def pack_inspect_cmd(path, trust_dir):
         raise click.ClickException(str(exc))
     click.echo("pack %s  built %s  signed by %s" % (
         res["version"], res["built_at"], res["signed_by"]["fingerprint"]))
+    click.echo("schema %s  lane %s  provenance %s%s" % (
+        res["schema"], res["lane"], res["provenance"],
+        ("  pinned to %s" % res["pinned_to"]) if res.get("pinned_to") else ""))
     for it in res["items"]:
         extra = it.get("new_versions") or it.get("new_objects") or ""
         click.echo("  %-8s %-62s %s" % (it["state"], it["id"],
                                         ("+" + ",".join(extra)) if extra else ""))
+    for w in res.get("warnings") or []:
+        click.echo("WARNING %s" % w)
 
 
 @pack_cli.command("import")
 @click.argument("path", type=click.Path(exists=True, dir_okay=False))
 @click.option("--product", "products", multiple=True)
 @click.option("--section", "sections", multiple=True,
-              type=click.Choice(["library", "docs", "cli-coverage"]))
+              type=click.Choice(["library", "docs", "cli-coverage", "factory", "field-map",
+                                 "baselines", "signature-meta"]))
 @click.option("--item", "ids", multiple=True, help="One item id from `inspect` (repeatable).")
 @click.option("--dry-run", is_flag=True)
 @_trust_opt

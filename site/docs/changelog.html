@@ -163,6 +163,56 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   severity, CVEs, link) from <code>knowledge_signature_meta</code> when a knowledge pack
   carried it.</li>
 </ul>
+<h3 id="changed--breaking-api-packs-use-schema-satomapi-pack2-300">Changed — BREAKING: API packs use schema <code>satom.api-pack/2</code> (3.0.0)</h3>
+<ul>
+<li>Packs published from 3.0.0 on are <code>satom.api-pack/2</code>: the manifest names its
+  <code>lane</code> (<code>api_pack</code> | <code>knowledge</code>), <code>min_satom</code>, <code>publisher</code>,
+  <code>content_fingerprint</code>, the harvester <code>snapshot</code> and <code>pinned_to</code>, and every
+  item names its <code>kind</code>. SATOM 2.13 and older refuse them (<code>unsupported pack
+  schema</code>); 3.0 still imports the 2.x <code>/1</code> packs. A pack whose <code>min_satom</code> is
+  newer than the running SATOM is refused whole, with the version it needs.</li>
+</ul>
+<h3 id="security--split-pack-trust-300">Security — split pack trust (3.0.0)</h3>
+<ul>
+<li>One key, one use. Update packages are verified only with the update trust
+  store; a <code>/2</code> pack only with the keys of its manifest lane —
+  <code>deploy/pack-keys/&lt;lane&gt;/</code> shipped in the release-signed tree plus
+  <code>/etc/satom/pack-keys/&lt;lane&gt;/</code> added by the operator (root-owned or refused).
+  A knowledge-signed pack that claims lane <code>api_pack</code>, a release-signed <code>/2</code>
+  pack and a <code>/1</code> pack signed with a pack key are all refused; the transport
+  lane <code>harvester</code> is never imported. The update verifier never reads a pack
+  key.</li>
+<li>Ships the public keys <code>satom-apipack-2026</code> (<code>SHA256:tHXWO5UWTnvgoTloIzBpsN7J9Vj/NVbcTZFsdgww0ks</code>)
+  and <code>satom-knowledge-2026</code> (<code>SHA256:hVYALGlEVZISwsSFRvr6ymysCuYUo1NxecpUhLJXDjE</code>).
+  Because they come with the code, the shipped pack imports on a fresh install
+  and on the first update from 2.x without installing a key first.</li>
+<li><code>satom execute trust add-key --purpose update|api_pack|knowledge</code> (default
+  <code>update</code>) refuses a key already trusted for another purpose; <code>satom show
+  trust</code> lists the keys per purpose with fingerprints.</li>
+</ul>
+<h3 id="added--knowledge-pack-sections-300">Added — knowledge pack sections (3.0.0)</h3>
+<ul>
+<li>New item kinds, each validated (a malformed item is rejected with its reason;
+  the rest of the pack still imports): <code>factory-wpp</code> (predefined protection
+  profiles into the factory catalog; never over a row captured locally),
+  <code>field-map</code> (rename candidates: shown with a badge, never applied, never over
+  an operator's mapping), <code>baseline</code> (stored for a build with no local baseline,
+  never the active one), <code>signature-meta</code> (public FortiGuard metadata into the
+  new table <code>knowledge_signature_meta</code>, migration <code>apipack06_knowledge_lanes</code>).
+  A section or kind a node does not know is skipped with a visible warning.</li>
+<li>Provenance on every imported row (<code>local</code> | <code>pack:api_pack:&lt;pack&gt;</code> |
+  <code>pack:knowledge:&lt;pack&gt;</code>), shown by inspect, the pack list, the import history
+  and the API pack section of Software Update.</li>
+<li>Corrections arrive: a copy a pack wrote (release notes per version, field
+  schemas per object, database rows) is replaced when an outranking pack
+  carries a different one — local data &gt; api_pack &gt; knowledge, newer pack inside
+  a lane. Local data is never replaced; copies a 2.x node imported are
+  recognised from its import log.</li>
+<li>The 3.0 API pack supersedes the 2.x release packs; a shipped pack whose
+  snapshot an imported pack already carries is no longer reported as pending.</li>
+<li><code>flask apilib pack export</code> (schema <code>/1</code>) is kept for local and offline use and
+  marked legacy; releases no longer use it. docs/api-library.md §12.</li>
+</ul>
 <h2 id="2130---2026-10-07">[2.13.0] - 2026-10-07</h2>
 <h3 id="fixed--a-page-that-renders-its-own-products-list-no-longer-breaks-the-global-sidebar-2026-10-07">Fixed — a page that renders its own <code>products</code> list no longer breaks the Global sidebar (2026-10-07)</h3>
 <ul>

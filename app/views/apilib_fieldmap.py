@@ -60,7 +60,9 @@ def _row(m: ApiLibFieldMap, with_history: bool) -> dict:
            'to_version': m.to_version or '', 'to_field': m.to_field,
            'note': m.note or '', 'created_by': m.created_by or '',
            'created_at': m.created_at, 'retired_at': m.retired_at,
-           'retired_by': m.retired_by or ''}
+           'retired_by': m.retired_by or '',
+           'status': m.status or ApiLibFieldMap.STATUS_ACTIVE,
+           'origin': m.origin or 'local'}
     if with_history:
         out['from_seen'] = _history(m.product, m.endpoint, m.from_field)
         out['to_seen'] = _history(m.product, m.endpoint, m.to_field)
@@ -134,7 +136,7 @@ def add():
         product=row['product'], endpoint=row['endpoint'],
         from_field=row['from_field'], to_field=row['to_field'],
         from_version=row['from_version'], to_version=row['to_version'],
-        retired_at=None).first()
+        retired_at=None, status=ApiLibFieldMap.STATUS_ACTIVE).first()
     if dup is not None:
         flash(_('That mapping is already in force (#%(id)s).', id=dup.id), 'warning')
         return redirect(back)

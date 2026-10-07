@@ -2,9 +2,10 @@
 
 Software Update is the normal path; this is the same import for a node with no
 browser, and the one the installer calls on a fresh node. The import itself is
-the application's (``flask apilib pack import``): the signature is checked
-against the update trust store, and items this node measured or already holds
-are never touched. This module only finds the pack, stages it where the service
+the application's (``flask apilib pack import``): a schema /2 pack is checked
+against the keys of its lane (``deploy/pack-keys/<lane>/`` + ``/etc/satom/
+pack-keys/<lane>/``), a legacy /1 pack against the update trust store, and
+items this node measured itself are never touched. This module only finds the pack, stages it where the service
 account can read it, and runs the import AS that account — run as root, the
 release notes and field schemas it writes would be files the web worker can no
 longer update (the same root-owned-file trap ``execute repair permissions``
@@ -14,13 +15,15 @@ import json
 import os
 import re
 import shutil
+import tarfile
 from pathlib import Path
 
 from .context import run
 from .render import Result
 
 PACK_RE = re.compile(r"^satom-apipack-[A-Za-z0-9._-]{1,64}\.tar\.gz$")
-SECTIONS = ("library", "docs", "cli-coverage")
+SECTIONS = ("library", "docs", "cli-coverage", "factory", "field-map", "baselines",
+            "signature-meta")
 USAGE = ("execute apipack import <file.tar.gz|shipped> [--yes] "
          "[--product <p>[,<p>...]] [--section <s>[,<s>...]]")
 HARVEST_USAGE = "execute apilib harvest <appliance-id|name> [--no-probe]"
@@ -32,14 +35,49 @@ _BUILD_RE = re.compile(r"^[0-9][0-9A-Za-z._-]{0,31}$")
 
 
 #: Same series rule as app/services/api_pack.py (this CLI does not import the
-#: app): ``satom-apipack-kb-*`` is a knowledge pack built by satom-harvester,
-#: anything else a release pack. Both series are cumulative, so per series only
-#: the newest pack is imported; release packs first, then the knowledge pack.
-SERIES = ("release", "knowledge")
+#: app): a schema /2 pack's series is its ``lane`` (api_pack | knowledge); a
+#: legacy /1 ``satom-apipack-kb-*`` is a knowledge pack built by
+#: satom-harvester, any other /1 pack a release pack. Release packs and /2
+#: api_packs are ONE lineage (3.0.0 supersedes 2.13.0). Every pack is
+#: cumulative, so per lineage only the newest is imported: api_pack first,
+#: then knowledge. The ``harvester`` lane is transport-only, never imported.
+SERIES = ("release", "api_pack", "knowledge", "harvester")
+LINEAGES = ("api_pack", "knowledge")
+_LINEAGE = {"release": "api_pack", "api_pack": "api_pack", "knowledge": "knowledge"}
 KB_LABEL = "knowledge pack (satom-harvester)"
+LABELS = {"api_pack": "API pack (pinned to a SATOM release)", "knowledge": KB_LABEL,
+          "harvester": "harvester transport pack (not importable)"}
+_PEEK = {}
 
 
-def _series(name):
+def _manifest(path):
+    """The pack's manifest.json, UNVERIFIED (labels and ordering only: the
+    import verifies the signature). ``{}`` when unreadable."""
+    try:
+        st = path.stat()
+    except OSError:
+        return {}
+    key = (str(path), st.st_size, st.st_mtime)
+    if key not in _PEEK:
+        out = {}
+        try:
+            with tarfile.open(path, "r:gz") as tf:
+                for m in tf:
+                    parts = Path(m.name).parts
+                    if len(parts) == 2 and parts[1] == "manifest.json" and m.isfile():
+                        data = json.loads(tf.extractfile(m).read().decode("utf-8"))
+                        out = data if isinstance(data, dict) else {}
+                        break
+        except (OSError, ValueError, tarfile.TarError, EOFError):
+            out = {}
+        _PEEK[key] = out
+    return _PEEK[key]
+
+
+def _series(name, path=None):
+    m = _manifest(path) if path is not None else {}
+    if m.get("schema") == "satom.api-pack/2" and isinstance(m.get("lane"), str) and m["lane"]:
+        return m["lane"] if m["lane"] in SERIES else "harvester"
     return "knowledge" if name[len("satom-apipack-"):].startswith("kb-") else "release"
 
 
@@ -49,6 +87,13 @@ def _version_key(name):
     ver = name[len("satom-apipack-"):-len(".tar.gz")]
     return tuple((0, int(x), "") if x.isdigit() else (1, 0, x)
                  for x in re.split(r"[.-]", ver))
+
+
+def _snapshot(manifest):
+    snap = manifest.get("snapshot") if isinstance(manifest.get("snapshot"), dict) else {}
+    run_id = snap.get("run_id")
+    return (str(manifest.get("content_fingerprint") or ""),
+            run_id if isinstance(run_id, int) and not isinstance(run_id, bool) else None)
 
 
 def _shipped_dir(ctx):
@@ -68,34 +113,57 @@ def _packs(d):
 
 
 def shipped_packs(ctx):
-    """The newest shipped pack of each series, in import order (release, then
-    knowledge). Older packs of a series are superseded: the newest carries
-    everything they did."""
+    """The newest shipped pack of each lineage, in import order (api_pack,
+    then knowledge). Older packs of a lineage are superseded: the newest
+    carries everything they did."""
     newest = {}
     for p in _packs(_shipped_dir(ctx)):
-        newest[_series(p.name)] = p          # _packs() is ascending by version
-    return [newest[s] for s in SERIES if s in newest]
+        lin = _LINEAGE.get(_series(p.name, p))
+        if lin:
+            newest[lin] = p          # _packs() is ascending by version
+    return [newest[s] for s in LINEAGES if s in newest]
 
 
-def _imported_names(ctx):
-    """Packs the import log records as fully imported (a full pass, no failed
-    item) — the same rule as api_pack.pending_shipped()."""
-    done = set()
+def _full_imports(ctx):
+    """Import-log records of full passes with no failed item — the same rule
+    as api_pack.pending_shipped()."""
+    out = []
     log = ctx.app_dir / "data" / "apipacks" / "imports"
     for f in log.glob("*.json") if log.is_dir() else []:
         try:
             rec = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if not rec.get("errors") and not rec.get("partial") and rec.get("pack"):
-            done.add(rec["pack"])
-    return done
+        if isinstance(rec, dict) and not rec.get("errors") and not rec.get("partial") \
+                and rec.get("pack"):
+            out.append(rec)
+    return out
+
+
+def _imported_names(ctx):
+    return {rec["pack"] for rec in _full_imports(ctx)}
+
+
+def covered_by(path, imported):
+    """An imported pack whose snapshot already carries ``path``'s (same
+    content fingerprint, or a newer harvester run of either lane), or "".
+    Importing a covered pack would only bring older content back."""
+    fp, run_id = _snapshot(_manifest(path))
+    for rec in imported:
+        ofp, orun = _snapshot(rec)
+        if fp and ofp == fp:
+            return rec["pack"]
+        if run_id is not None and orun is not None and orun >= run_id:
+            return rec["pack"]
+    return ""
 
 
 def pending_packs(ctx):
-    """Shipped packs this node has not imported yet, in import order."""
-    done = _imported_names(ctx)
-    return [p for p in shipped_packs(ctx) if p.name not in done]
+    """Shipped packs this node has not imported yet and that no imported pack
+    already covers, in import order."""
+    full = _full_imports(ctx)
+    done = {rec["pack"] for rec in full}
+    return [p for p in shipped_packs(ctx) if p.name not in done and not covered_by(p, full)]
 
 
 def _chown_app(ctx, path):
@@ -160,17 +228,22 @@ def show_apipacks(ctx, args):
     r = Result("ok", "API library packs")
     current = {p.name for p in shipped_packs(ctx)}
     pending = {p.name for p in pending_packs(ctx)}
+    full = _full_imports(ctx)
+    done = {rec["pack"] for rec in full}
 
-    def what(name):
+    def what(p):
         out = "shipped with this release (api-packs/)"
-        if _series(name) == "knowledge":
-            out += ", " + KB_LABEL
-        if name not in current:
+        series = _series(p.name, p)
+        if series in LABELS:
+            out += ", " + LABELS[series]
+        if p.name not in current:
             out += ", superseded"
-        elif name in pending:
+        elif p.name in pending:
             out += ", NOT IMPORTED YET"
+        elif p.name not in done and covered_by(p, full):
+            out += ", covered by %s" % covered_by(p, full)
         return out
-    rows = [(p.name, what(p.name)) for p in _packs(_shipped_dir(ctx))]
+    rows = [(p.name, what(p)) for p in _packs(_shipped_dir(ctx))]
     rows += [(p.name, "uploaded (data/apipack-uploads/)") for p in _packs(_upload_dir(ctx))]
     if rows:
         r.rows("available", rows)
@@ -184,9 +257,12 @@ def show_apipacks(ctx, args):
             rec = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        hist.append((f.name.split("-", 1)[0], "%s: %s imported, %s failed (%s)" % (
+        prov = rec.get("provenance") or "pack:%s:satom-apipack-%s" % (
+            "knowledge" if str(rec.get("version") or "").startswith("kb-") else "api_pack",
+            rec.get("version"))
+        hist.append((f.name.split("-", 1)[0], "%s: %s imported, %s failed (%s) [%s]" % (
             rec.get("version"), rec.get("imported", 0), rec.get("errors", 0),
-            rec.get("actor") or "?")))
+            rec.get("actor") or "?", prov)))
     if hist:
         r.rows("recent imports", hist)
     r.note("Import: satom execute apipack import shipped        (dry run)")
@@ -217,10 +293,12 @@ def import_apipack(ctx, args):
         return Result("info", "apipack import").lines("", [
             "usage: satom " + USAGE, "",
             "'shipped' imports every pack the installed release carries in api-packs/",
-            "that this node has not imported yet: the newest release pack, then the",
-            "newest knowledge pack (satom-harvester).",
-            "The pack must be signed by a key in this node's trust store",
-            "(satom show trust). Items this node measured itself are never replaced."])
+            "that this node has not imported yet: the newest API pack, then the",
+            "newest knowledge pack (satom-harvester). A pack whose snapshot an",
+            "imported pack already carries is skipped.",
+            "A pack is verified with the keys of its lane (api_pack | knowledge);",
+            "a legacy 2.x pack with the update trust store (satom show trust).",
+            "Items this node measured itself are never replaced."])
 
     if ctx.role == "standby":
         return Result("bad", "apipack import").lines("", [
@@ -234,9 +312,12 @@ def import_apipack(ctx, args):
                 "this release carries no pack in %s" % _shipped_dir(ctx)])
         srcs = pending_packs(ctx)
         if not srcs:
+            full = _full_imports(ctx)
             return Result("ok", "apipack import").lines("", [
                 "every shipped pack is already imported on this node:",
-                *("  " + p.name for p in shipped_packs(ctx)),
+                *("  " + p.name + ("  (covered by %s)" % covered_by(p, full)
+                                   if p.name not in _imported_names(ctx) else "")
+                  for p in shipped_packs(ctx)),
                 "To import one again: satom execute apipack import %s/<pack> --yes"
                 % _shipped_dir(ctx)])
     else:
@@ -317,21 +398,32 @@ def _import_file(ctx, src, products, sections, dry):
         by_state[it.get("state")] = by_state.get(it.get("state"), 0) + 1
     title = "apipack import%s" % (" (dry run)" if dry else "")
     r = Result("bad" if res.get("errors") else ("warn" if dry else "ok"), title)
+    series = _series(path.name, path)
     r.rows("pack", [("file", path.name),
                     ("version", str(res.get("version"))),
                     ("signed by", str(res.get("signed_by")))]
-           + ([("kind", KB_LABEL)] if _series(path.name) == "knowledge" else []))
+           + ([("schema", str(res["schema"]))] if res.get("schema") else [])
+           + ([("provenance", str(res["provenance"]))] if res.get("provenance") else [])
+           + ([("kind", LABELS[series])] if series in LABELS else []))
     r.rows("items", [("selected", str(len(items))),
                      ("new", str(by_state.get("new", 0))),
+                     ("replaces an older pack copy", str(by_state.get("update", 0))),
                      ("already present", str(by_state.get("present", 0))),
                      ("measured locally", str(by_state.get("local", 0))),
+                     ("rejected (malformed)", str(by_state.get("rejected", 0))),
+                     ("unknown kind (skipped)", str(by_state.get("unknown", 0))),
                      ("imported", str(res.get("imported", 0))),
                      ("failed", str(res.get("errors", 0)))])
     failed = ["%s: %s" % (it.get("id"), it.get("error")) for it in items if it.get("error")]
     if failed:
         r.lines("failures", failed[:20])
+    warnings = res.get("warnings") or []
+    if warnings:
+        r.worst("warn")
+        r.lines("warnings", warnings[:20])
     if dry:
-        r.note("Re-run with --yes to import the %d new item(s)." % by_state.get("new", 0))
+        r.note("Re-run with --yes to import the %d new and %d replacing item(s)."
+               % (by_state.get("new", 0), by_state.get("update", 0)))
     r.set(result=res, pack=path.name)
     return r
 

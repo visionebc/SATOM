@@ -405,7 +405,7 @@ Configuration, reference material and the console's own map. Also unprivileged: 
 
 | Command | Root | ! | What it does |
 |---|:--:|:--:|---|
-| `satom show trust` | — | — | Public keys this node accepts update packages from. |
+| `satom show trust` | — | — | Public keys this node accepts, per purpose (update, api_pack, knowledge), with fingerprints. |
 | `satom show package <file.tar.gz>` | — | — | Inspect an update package without applying it. |
 | `satom show apipack` | — | — | API library packs on this node and what was imported from them. |
 | `satom show knowledge` | — | — | Knowledge packs per lane (age), the feed, the mode and the last fetch. |
@@ -482,8 +482,8 @@ Everything that changes state. **Root required.** Without it each command refuse
 | `satom execute apilib compat <product> <buildA> <buildB> [--json]` | yes | — | Compare two builds of a product through both channels (REST + CLI schema): added/removed, options, renames. |
 | `satom execute apilib channels <product> <build> [--json]` | yes | — | One build: fields per channel (both / CLI only / hidden / REST only / meta / unknown). |
 | `satom execute migration report <appliance-id\|name> --target <build> [--backup <id>]` | yes | — | Check one appliance's configuration (newest vault dump) against a target build: blocking, translated, warned and new items + verdict. Read-only. |
-| `satom execute trust add-key <file.pub> [--name <slug>]` | yes | — | Install a signing public key into the trust store. |
-| `satom execute trust remove-key <name\|fingerprint> --yes` | yes | ! | Stop accepting packages signed by a key. Needs --yes. |
+| `satom execute trust add-key <file.pub> [--purpose update\|api_pack\|knowledge] [--name <slug>]` | yes | — | Install a signing public key for one purpose (default: update). |
+| `satom execute trust remove-key <name\|fingerprint> [--purpose update\|api_pack\|knowledge] --yes` | yes | ! | Stop accepting packages signed by a key. Needs --yes. |
 | `satom execute repair permissions` | yes | — | Give root-owned files in the app tree back to the service account. |
 | `satom execute repair jobs [--older-than N] [--yes]` | yes | ! | Sweep ghost jobs and prune the terminated ledger. |
 | `satom execute repair tmp [--older-than N] [--yes]` | yes | ! | Delete aged scratch under data/tmp. Nothing else prunes it. |

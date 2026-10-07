@@ -2,7 +2,7 @@
 
 > **Audience:** operators who apply templates, profiles, baselines and
 > carve-outs to a mixed fleet, and engineers who wire a new write path into the
-> check. The model behind it is the [API library](api-library.md) §13; the
+> check. The model behind it is the [API library](api-library.md) §14; the
 > operator walkthrough is in the [User guide](user-guide.md) §30.11.
 >
 > **Since:** SATOM 2.13.0 (unreleased).
@@ -176,4 +176,4 @@ the service account; the global `--json` flag prints the full document. See the
 - **A rename is not discovered, it is proposed.** CLI-id candidates held on one
   pair of FortiWeb builds; the field map stays the only authority.
 - **FortiADC and FortiAnalyzer** adapters are unverified (no lab device); their
-  answers are labelled with the adapter's verification status (API library §13.10).
+  answers are labelled with the adapter's verification status (API library §14.10).

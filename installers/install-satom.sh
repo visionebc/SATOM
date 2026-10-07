@@ -2049,7 +2049,9 @@ if [ "$HEALTH" = ok ]; then
         fi
     fi
     # [SATOM-APIPACK] The release carries a signed API library pack in
-    # api-packs/ (online: the clone; offline: the bundle's app.tar.gz). Without
+    # api-packs/ (online: the clone; offline: the bundle's app.tar.gz). A 3.0
+    # pack (schema /2) is verified with the lane keys shipped in the same tree
+    # (deploy/pack-keys/<lane>/), so nothing has to be installed first. Without
     # it a node with no appliance of a given build, no internet and no crawler
     # starts with an empty API library, release notes and field catalog -- and
     # has no way to fill them. Imported only where the database is writable;

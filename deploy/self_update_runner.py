@@ -274,10 +274,12 @@ def import_shipped_api_pack(st):
     not a reason to roll a healthy node back. ``SATOM_API_PACK_AUTO=0`` turns
     it off. Runs through the operator CLI, which imports as the service
     account every shipped pack this node has not imported yet: the newest
-    release pack, then the newest knowledge pack (``satom-apipack-kb-*``, built
-    by satom-harvester). A release pack exported from the release host never
-    carries what that host imported from a knowledge pack (rule 3), so the
-    knowledge pack is its own file and its own import.
+    API pack (schema /2 lane ``api_pack``, or a 2.x release pack), then the
+    newest knowledge pack (``satom-apipack-kb-*``, built by satom-harvester).
+    A /2 pack is verified with the lane keys the NEW code tree ships
+    (``deploy/pack-keys/<lane>/``), so this step needs no key installed
+    beforehand and has no ordering dependency on the trust store; a 2.x pack
+    still verifies with the update trust store.
     """
     if os.environ.get("SATOM_API_PACK_AUTO", "1").strip() == "0":
         st.step("import shipped API pack", True, "skipped (SATOM_API_PACK_AUTO=0)")

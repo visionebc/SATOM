@@ -160,7 +160,11 @@ page.
 | [`source-of-truth-spec.md`](source-of-truth-spec.md) | The authoritative behavioural specification. |
 | [`api_v1.md`](api_v1.md) | Token authentication and the public API surface. |
 | [`device-api.md`](device-api.md) | The device API consoles, the endpoint registry behind them, reconciling that registry against the fleet, and the firmware-line field matrix. |
-| [`api-library.md`](api-library.md) | The versioned API library: what each firmware build of each product serves, field by field, where that evidence comes from (sweeps, live schemas, vendor data), and how it is refreshed. |
+| [`api-library.md`](api-library.md) | The versioned API library: what each firmware build of each product serves, field by field and by channel (REST and CLI), where that evidence comes from (sweeps, live schemas, the CLI `tree`, vendor data), and how it is refreshed. |
+| [`build-compatibility.md`](build-compatibility.md) | Every write checked against each target's exact build: skipped, CLI-only and blocking fields, the flows that apply it, the Build compatibility page and `satom execute apilib compat\|channels`. |
+| [`migration-report.md`](migration-report.md) | One appliance's configuration against a target build: block / translate / warn / info, the verdict, the Upgrade Flow integration and the console command. |
+| [`cli-writer.md`](cli-writer.md) | When SATOM writes by CLI: the per-build gate, the transaction, abort and readback, the error patterns and the verified dialects. |
+| [`knowledge-harvester.md`](knowledge-harvester.md) | The separate tool behind the knowledge packs each release ships, why Firecrawl lives only there, and how an offline node gets the pack. |
 | [`fortiauthenticator.md`](fortiauthenticator.md) | How the identity product is wired: its Django/Tastypie REST dialect, the per-user API key, the pagination trap and the 18-character product-key ceiling it exposed. |
 
 ### Managed-device reference

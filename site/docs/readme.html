@@ -349,7 +349,23 @@ page.</p>
 </tr>
 <tr>
 <td><a href="api-library.html"><code>api-library.md</code></a></td>
-<td>The versioned API library: what each firmware build of each product serves, field by field, where that evidence comes from (sweeps, live schemas, vendor data), and how it is refreshed.</td>
+<td>The versioned API library: what each firmware build of each product serves, field by field and by channel (REST and CLI), where that evidence comes from (sweeps, live schemas, the CLI <code>tree</code>, vendor data), and how it is refreshed.</td>
+</tr>
+<tr>
+<td><a href="build-compatibility.html"><code>build-compatibility.md</code></a></td>
+<td>Every write checked against each target's exact build: skipped, CLI-only and blocking fields, the flows that apply it, the Build compatibility page and <code>satom execute apilib compat\|channels</code>.</td>
+</tr>
+<tr>
+<td><a href="migration-report.html"><code>migration-report.md</code></a></td>
+<td>One appliance's configuration against a target build: block / translate / warn / info, the verdict, the Upgrade Flow integration and the console command.</td>
+</tr>
+<tr>
+<td><a href="cli-writer.html"><code>cli-writer.md</code></a></td>
+<td>When SATOM writes by CLI: the per-build gate, the transaction, abort and readback, the error patterns and the verified dialects.</td>
+</tr>
+<tr>
+<td><a href="knowledge-harvester.html"><code>knowledge-harvester.md</code></a></td>
+<td>The separate tool behind the knowledge packs each release ships, why Firecrawl lives only there, and how an offline node gets the pack.</td>
 </tr>
 <tr>
 <td><a href="fortiauthenticator.html"><code>fortiauthenticator.md</code></a></td>

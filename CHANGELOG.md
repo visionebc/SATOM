@@ -6,6 +6,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — documentation for builds, channels and migrations (2026-10-07)
+
+- New manual pages: [Build compatibility](docs/build-compatibility.md),
+  [Migration report](docs/migration-report.md), [CLI writer](docs/cli-writer.md)
+  and [Knowledge Harvester](docs/knowledge-harvester.md), published on the site.
+  [API library](docs/api-library.md) §13 now runs end to end (sources, channels,
+  completeness, the FortiWeb parent-fallback trap, renames by CLI id,
+  conditional printing, REST ignoring gated fields, per-product adapters, the
+  new-build watch, knowledge packs); the user guide gained §7.3, §30.11,
+  §30.12 and §40.3; safeguards §209–§213.
+
 ### Added — build compatibility across firmware builds (2026-10-07)
 
 - Writes are checked against each target's EXACT build through both channels
@@ -40,6 +51,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - Object CLI ids are read from the evidence summary when the facts have none:
   7.6.8 -> 8.0.6 now reports the object rename `allow-source-ip` ->
   `source-ip-list` (was 0) and the field moves into `page-list`.
+
 ### Added — Migration report: will this appliance's configuration survive build X? (2026-10-07)
 
 - New service `services/migration_report.py`. Input: an appliance (its
@@ -71,6 +83,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `flask apilib migration-report`.
 - `cli_schema.parse_show_full_values(text, rows=True)` returns every row of
   every object (`unset` = empty) for in-memory checks.
+
 ### Added — CLI writer for fields only the CLI serves (2026-10-07)
 
 - New `services/cli_writer.py`. `split_payload(appliance, endpoint, fields)`
@@ -109,6 +122,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - Verified end to end on a FortiWeb 8.0.6 lab box: objects created, changed,
   refused mid-transaction (nothing applied), deleted; the box read back
   identical to its state before the test.
+
 ### Added — schema adapters per product and the new-build watch (2026-10-07)
 
 - `services.schema_adapters`: one adapter per product, all feeding the same

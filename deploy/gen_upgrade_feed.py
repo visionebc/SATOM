@@ -3,6 +3,7 @@
 
     gen_upgrade_feed.py <version> <sha256> <size> [--released YYYY-MM-DD]
                         [--repo visionebc/SATOM] [--dir satom-system-upgrades]
+                        [--api-pack-sha256 SHA] [--knowledge-feed URL]
 
 Writes ``satom-update-<version>.json`` (that release's entry), rewrites
 ``latest.json`` from the highest version present, and regenerates the version
@@ -41,7 +42,8 @@ def _vkey(v: str):
     return tuple(int(x) if x.isdigit() else -1 for x in re.split(r"[.-]", v))
 
 
-def entry(version, sha256, size, released, repo, api_pack=True) -> dict:
+def entry(version, sha256, size, released, repo, api_pack=True, api_pack_sha256=None,
+          knowledge_feed=None) -> dict:
     base = "https://github.com/%s/releases/download/v%s/" % (repo, version)
     name = "satom-update-%s.tar.gz" % version
     doc = {
@@ -57,6 +59,13 @@ def entry(version, sha256, size, released, repo, api_pack=True) -> dict:
     if api_pack:
         doc["api_pack"] = {"name": "satom-apipack-%s.tar.gz" % version,
                            "url": base + "satom-apipack-%s.tar.gz" % version}
+        # 3.0.0: the api_pack lane's sha256, so a node can check the asset it
+        # downloads before the signature (same rule as the update package).
+        if api_pack_sha256:
+            doc["api_pack"]["sha256"] = api_pack_sha256.lower()
+    # 3.0.0: where the rolling knowledge lane is published (its own latest.json).
+    if knowledge_feed:
+        doc["knowledge_feed"] = knowledge_feed
     # The reader's own validation, so the pipeline can never publish a feed
     # the nodes would refuse.
     upgrade_feed.parse_feed(json.dumps(doc).encode())
@@ -112,12 +121,17 @@ def main(argv=None) -> int:
     ap.add_argument("--repo", default="visionebc/SATOM")
     ap.add_argument("--no-api-pack", action="store_true",
                     help="the release has no API pack asset (2.5.0 and older)")
+    ap.add_argument("--api-pack-sha256", default=None,
+                    help="sha256 of the release's api_pack asset (3.0.0+)")
+    ap.add_argument("--knowledge-feed", default=None,
+                    help="https URL of the knowledge lane's latest.json (3.0.0+)")
     ap.add_argument("--dir", default=str(Path(__file__).resolve().parents[1]
                                          / "satom-system-upgrades"))
     a = ap.parse_args(argv)
     try:
         doc = entry(a.version, a.sha256.lower(), a.size, a.released, a.repo,
-                    api_pack=not a.no_api_pack)
+                    api_pack=not a.no_api_pack, api_pack_sha256=a.api_pack_sha256,
+                    knowledge_feed=a.knowledge_feed)
     except upgrade_feed.FeedError as exc:
         print("gen_upgrade_feed: refusing: %s" % exc, file=sys.stderr)
         return 2

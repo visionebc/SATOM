@@ -262,8 +262,8 @@ def apply(template_id: int):
                     if prov._item_is_sensitive(it)]
 
     if not confirmed:
-        preview = prov.apply(profile, device_ids, dry_run=True)
         compat = tc.for_appliances(template, target_appliances, require_validated=True)
+        preview = prov.apply(profile, device_ids, dry_run=True, skips=compat.get('skips'))
         log_action('provisioning.preview', target=profile.name,
                    detail=f'{mode}, {len(target_appliances)} device(s), host={target_hostname}, '
                           f'change={change_id}, compat_blocked={compat["blocked"]}')
@@ -302,7 +302,8 @@ def apply(template_id: int):
               + compat.get('override_hint', ''), 'danger')
         return redirect(url_for('provisioning.index'))
     flash(f'Deploying [{change_id}] to {target_hostname} — canary device writes first.', 'warning')
-    result = prov.apply(profile, device_ids, dry_run=False, canary=1)
+    result = prov.apply(profile, device_ids, dry_run=False, canary=1,
+                        skips=compat.get('skips'))
     log_action('provisioning.apply', target=profile.name,
                detail=f'{mode}, host={target_hostname}, change={change_id}, aborted={result.get("aborted")}')
     return render_template(
@@ -635,9 +636,10 @@ def baseline_apply(baseline_id: int):
 
     composing = B.assigned_templates(row)
     if not confirm:
-        preview = BulkRunner(items).preview(device_ids)
         compat = [tc.for_appliances(t, devices, require_validated=True)
                   for t in composing]
+        preview = BulkRunner(items, skips=tc.merge_skips(c.get('skips') for c in compat)
+                             ).preview(device_ids)
         log_action('baseline.apply.preview', target=row.name,
                    detail=f'devices={device_ids} items={len(items)} '
                           f'compat_blocked={any(c["blocked"] for c in compat)}')
@@ -650,11 +652,13 @@ def baseline_apply(baseline_id: int):
     # A baseline is a fleet rollout of approved templates: every composing
     # template must fit every matching device's build (or be overridden).
     refused = []
+    skips = []
     for t in composing:
         allowed, compat = tc.enforce(
             t, devices, user=current_user,
             override_reason=request.form.get('override_reason', ''),
             require_validated=True, action=f'baseline.apply:{row.name}')
+        skips.append(compat.get('skips'))
         if not allowed:
             refused.extend(compat['blocks'])
     if refused:
@@ -676,7 +680,8 @@ def baseline_apply(baseline_id: int):
         items=items, device_ids=device_ids,
         by=getattr(current_user, 'username', '') or '',
         meta={'baseline_id': row.id, 'name': row.name},
-        audit_action='baseline.apply', audit_target=row.name)
+        audit_action='baseline.apply', audit_target=row.name,
+        skips=tc.merge_skips(skips))
     log_action('baseline.apply.start', target=row.name,
                detail=f'devices={device_ids} items={len(items)} job={job["id"]}')
     flash(f'Baseline rollout "{row.name}" started for {len(devices)} device(s) '

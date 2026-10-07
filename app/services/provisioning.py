@@ -444,7 +444,7 @@ def push_items(profile: SystemProfile) -> list[dict]:
 
 
 def apply(profile: SystemProfile, device_ids, *, dry_run: bool = True,
-          canary: int = 1):
+          canary: int = 1, skips: dict | None = None):
     """Apply ``profile`` to ``device_ids`` via the shared fleet machinery.
 
     Builds push nodes from the profile's items, flattens them with
@@ -464,7 +464,8 @@ def apply(profile: SystemProfile, device_ids, *, dry_run: bool = True,
     """
     from .bulk import BulkRunner
 
-    runner = BulkRunner(push_items(profile))
+    # ``skips``: per-device fields the target build lacks (build_compat).
+    runner = BulkRunner(push_items(profile), skips=skips)
     if dry_run:
         return runner.preview(device_ids)
     return runner.apply(device_ids, canary=max(1, canary))

@@ -181,6 +181,15 @@ function fwPost(url, payload){
   return fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify(payload)}).then(function(r){ return r.json(); });
 }
+// Build compatibility of this write (services.build_compat): what the device's
+// exact build lacks (skipped), only has by CLI, or refuses. Text is escaped.
+function fwCompatHtml(c){
+  if (!c || !c.messages || !c.messages.length) return '';
+  const esc = function(t){ const d = document.createElement('div'); d.textContent = String(t); return d.innerHTML; };
+  const cls = c.blocking ? 'danger' : 'warning';
+  return '<div class="fw-alert fw-alert-'+cls+' mb-2 small" data-build-compat><i class="bi bi-cpu me-1"></i>'
+    + c.messages.map(esc).join('<br>') + '</div>';
+}
 function fwShow(el, j, applyFn){
   if (!j.ok){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">'+(j.error||'failed')+'</div>'; return; }
   if (j.dry_run){
@@ -199,6 +208,7 @@ function fwShow(el, j, applyFn){
         + rows + '</tbody></table>';
     }
     el.innerHTML = '<div class="alert alert-info mt-2 mb-0">'
+      + fwCompatHtml(j.build_compat)
       + diffHtml
       + '<div class="small text-muted mb-1">'+req.method+' '+req.path+'</div>'
       + '<pre class="mb-2 small" style="max-height:200px;overflow:auto">'+JSON.stringify(req.body, null, 2)+'</pre>'
@@ -236,6 +246,7 @@ function createObject(btn){
     if (!j.ok){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">'+(j.error||'failed')+'</div>'; return; }
     const req = j.request || {};
     el.innerHTML = '<div class="alert alert-info mt-2 mb-0">'
+      + fwCompatHtml(j.build_compat)
       + '<div class="small text-muted mb-1">'+req.method+' '+req.path+'</div>'
       + '<pre class="mb-2 small" style="max-height:200px;overflow:auto">'+JSON.stringify(req.body, null, 2)+'</pre>'
       + '<button type="button" class="btn btn-sm btn-fw-danger fw-apply">Create on device</button></div>';

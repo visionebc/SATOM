@@ -87,7 +87,10 @@ def check(exc, appliance) -> dict:
             sorted((exc.payload_dict or {}).keys()),
             # A stamp equal to the target answers "same API" without looking,
             # which is right: the payload was authored against that very build.
-            source_version=stamped)
+            source_version=stamped,
+            # Values ride along: both channels of the target build check them
+            # against its options / ranges (services.build_compat).
+            values=dict(exc.payload_dict or {}))
     except Exception as exc_:  # noqa: BLE001
         try:
             from ..extensions import db
@@ -101,8 +104,13 @@ def check(exc, appliance) -> dict:
                dropped=list(rep.get("dropped") or []),
                renamed=list(rep.get("renamed") or []),
                reason=rep.get("reason") or "")
+    build = rep.get("build") or {}
+    out["build"] = {k: build.get(k) for k in ("version", "known", "present", "level",
+                                              "blocking", "skip", "findings")}
     out["blocking"] = (out["state"] in BLOCKING_STATES or bool(out["dropped"])
-                       or bool(out["renamed"]))
+                       or bool(out["renamed"]) or bool(build.get("blocking")))
+    if build.get("blocking"):
+        out["level"] = "block"
     reasons = []
     if out["state"] == vc.STATE_ABSENT:
         reasons.append("%s does not serve %s" % (target, out["key"]))
@@ -111,12 +119,43 @@ def check(exc, appliance) -> dict:
     for x in out["renamed"]:
         reasons.append("%s renamed %s → %s (edit the carve-out for this build)"
                        % (target, x.get("from"), x.get("to")))
+    reasons.extend(_build_reasons(target, build))
     if not stamped:
         reasons.append("no firmware is recorded for this carve-out (it predates "
                        "build stamps) — renames cannot be checked")
     elif stamped != target and not out["blocking"]:
         reasons.append("authored on %s, pushed to %s" % (stamped, target))
     out["summary"] = "; ".join(reasons) or vc.STATE_LABEL.get(out["state"], out["state"])
+    return out
+
+
+def _build_reasons(target: str, build: dict) -> list:
+    """Operator sentences for the both-channel findings of one push."""
+    out = []
+    if not build:
+        return out
+    if not build.get("known"):
+        return ["not measured on %s — cannot be guaranteed" % target]
+    by = {}
+    for f in build.get("findings") or []:
+        by.setdefault(f["kind"], []).append(f)
+    for f in by.get("endpoint_absent", []):
+        out.append("%s does not exist on %s" % (build.get("key") or "the object", target))
+    for f in by.get("enum_invalid", []):
+        out.append("on %s %s = %r is not valid (allowed: %s)"
+                   % (target, f["field"], f.get("value"), ", ".join(f.get("allowed") or [])[:160]))
+    for f in by.get("range_invalid", []):
+        out.append("on %s %s = %r is out of range %s" % (target, f["field"], f.get("value"),
+                                                        f.get("range")))
+    if by.get("missing"):
+        out.append("applies, but on %s %s do not exist: they will be skipped"
+                   % (target, ", ".join(f["field"] for f in by["missing"])))
+    if by.get("cli_only"):
+        out.append("on %s %s exist only in the CLI: the REST push will not set them"
+                   % (target, ", ".join(f["field"] for f in by["cli_only"])))
+    if by.get("unknown"):
+        out.append("on %s %s were never measured — cannot be guaranteed"
+                   % (target, ", ".join(f["field"] for f in by["unknown"])))
     return out
 
 

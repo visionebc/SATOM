@@ -643,7 +643,7 @@ check. <code>tests/test_docs_publication.py</code> fails the suite when this blo
 longer matches the console you are running.</p>
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-<p><em>107 commands in 39 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
+<p><em>110 commands in 40 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
 <h3 id="get"><code>get</code></h3>
 <p>Read state. Every command below works as <strong>any user</strong> — this is the half of the console that has to keep working when everything else does not.</p>
 <table>
@@ -1197,6 +1197,24 @@ longer matches the console you are running.</p>
 <td>Import a SIGNED API pack. Dry run unless --yes; never replaces local data.</td>
 </tr>
 <tr>
+<td><code>satom execute apilib harvest &lt;appliance-id\|name&gt; [--no-probe]</code></td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: center;">—</td>
+<td>Read one appliance's CLI schema (tree + hidden fields) and probe the REST paths the library lacks. Read-only on the box.</td>
+</tr>
+<tr>
+<td><code>satom execute apilib compat &lt;product&gt; &lt;buildA&gt; &lt;buildB&gt; [--json]</code></td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: center;">—</td>
+<td>Compare two builds of a product through both channels (REST + CLI schema): added/removed, options, renames.</td>
+</tr>
+<tr>
+<td><code>satom execute apilib channels &lt;product&gt; &lt;build&gt; [--json]</code></td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: center;">—</td>
+<td>One build: fields per channel (both / CLI only / hidden / REST only / meta / unknown).</td>
+</tr>
+<tr>
 <td><code>satom execute trust add-key &lt;file.pub&gt; [--name &lt;slug&gt;]</code></td>
 <td style="text-align: center;">yes</td>
 <td style="text-align: center;">—</td>
@@ -1618,6 +1636,14 @@ sudo -u satom env FLASK_APP=wsgi:app venv/bin/flask apilib --help
 <tr>
 <td><code>flask apilib harvest-fac [--appliance NAME]</code></td>
 <td>Read the live API schema of every FortiAuthenticator, or the named one (GET requests only), and ingest it. One unreachable box does not stop the others</td>
+</tr>
+<tr>
+<td><code>flask apilib compat PRODUCT BASE TARGET</code></td>
+<td>Two builds through both channels as JSON: REST field totals, CLI schema objects and fields added / removed, option, type, range and default changes, field and object rename candidates (same CLI attribute id) and moves. Read-only; <code>satom execute apilib compat</code> renders it</td>
+</tr>
+<tr>
+<td><code>flask apilib channels PRODUCT BUILD</code></td>
+<td>One build per channel as JSON: counts of both / CLI only / hidden / REST only / unknown / meta and vendor-doc conflicts, plus the CLI-only, hidden and REST-only field lists. Read-only; <code>satom execute apilib channels</code> renders it</td>
 </tr>
 <tr>
 <td><code>flask apilib baseline status</code></td>

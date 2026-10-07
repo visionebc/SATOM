@@ -131,6 +131,80 @@ def schema_harvest_cmd(appliance, lab, no_probe):
         raise SystemExit(1)
 
 
+def compat_doc(product: str, base: str, target: str, limit: int = 200) -> dict:
+    """What changes from ``base`` to ``target``, both channels, as one JSON doc
+    (``satom execute apilib compat``). Lists are capped at ``limit``."""
+    from .services import api_library
+
+    cmp_ = api_library.compare(product, base, target)
+    ch = cmp_.get("channels") or {}
+    tree = ch.get("tree") or {}
+    eps = tree.get("endpoints") or {}
+    renames = [{"endpoint": k, **c} for k, e in sorted(eps.items())
+               for c in e.get("rename_candidates") or []]
+    options = [{"endpoint": k, **o} for k, e in sorted(eps.items())
+               for o in e.get("options") or []]
+    return {
+        "product": product, "base": cmp_["base"], "target": cmp_["target"],
+        "base_measured": cmp_["base_measured"], "target_measured": cmp_["target_measured"],
+        "rest": {"totals": cmp_["totals"],
+                 "endpoints_added": [e["endpoint"] for e in cmp_["endpoints_added"]][:limit],
+                 "endpoints_removed": [e["endpoint"] for e in cmp_["endpoints_removed"]][:limit]},
+        "tree": ({"totals": tree.get("totals") or {},
+                  "endpoints_added": (tree.get("endpoints_added") or [])[:limit],
+                  "endpoints_removed": (tree.get("endpoints_removed") or [])[:limit],
+                  "endpoint_rename_candidates": tree.get("endpoint_rename_candidates") or [],
+                  "field_moves": (tree.get("field_moves") or [])[:limit],
+                  "rename_candidates": renames[:limit],
+                  "options_changed": options[:limit]}
+                 if tree else None),
+        "tree_reason": ch.get("tree_reason") or "",
+        "channel_moves": len(ch.get("channel_moves") or []),
+    }
+
+
+def channels_doc(product: str, version: str, limit: int = 200) -> dict:
+    """``channels_at`` of one build: the summary plus the fields worth reading
+    (CLI only, hidden, REST only, vendor-doc conflicts), capped at ``limit``."""
+    from .services import api_library
+
+    ch = api_library.channels_at(product, version)
+    picks = {"cli_only": [], "hidden": [], "rest_only": [], "doc_conflict": []}
+    for key, ep in sorted(ch["endpoints"].items()):
+        for f, x in sorted(ep["fields"].items()):
+            if x["channel"] in ("cli_only", "hidden", "rest_only"):
+                picks[x["channel"]].append("%s.%s" % (key, f))
+            if x.get("doc_conflict"):
+                picks["doc_conflict"].append("%s.%s" % (key, f))
+    return {"product": product, "version": ch["version"], "build": ch["build"],
+            "summary": ch["summary"], "endpoints": len(ch["endpoints"]),
+            **{k: v[:limit] for k, v in picks.items()},
+            "truncated": {k: len(v) > limit for k, v in picks.items()}}
+
+
+@apilib_cli.command("compat")
+@click.argument("product")
+@click.argument("base")
+@click.argument("target")
+def compat_cmd(product, base, target):
+    """Compare two builds of PRODUCT through both channels (JSON)."""
+    from .services import api_library
+    if product not in api_library.PRODUCTS:
+        raise click.ClickException("unknown product %r" % product)
+    _print(compat_doc(product, base, target))
+
+
+@apilib_cli.command("channels")
+@click.argument("product")
+@click.argument("version")
+def channels_cmd(product, version):
+    """Per-field channel classification of one build of PRODUCT (JSON)."""
+    from .services import api_library
+    if product not in api_library.PRODUCTS:
+        raise click.ClickException("unknown product %r" % product)
+    _print(channels_doc(product, version))
+
+
 @apilib_cli.command("status")
 def status_cmd():
     """Counts per product, per source and per build."""

@@ -25,6 +25,10 @@ USAGE = ("execute apipack import <file.tar.gz|shipped> [--yes] "
          "[--product <p>[,<p>...]] [--section <s>[,<s>...]]")
 HARVEST_USAGE = "execute apilib harvest <appliance-id|name> [--no-probe]"
 _APPLIANCE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,127}$")
+COMPAT_USAGE = "execute apilib compat <product> <buildA> <buildB> [--json]"
+CHANNELS_USAGE = "execute apilib channels <product> <build> [--json]"
+PRODUCTS = ("fortiweb", "fortiadc", "fortiauthenticator", "fortianalyzer", "fortigate")
+_BUILD_RE = re.compile(r"^[0-9][0-9A-Za-z._-]{0,31}$")
 
 
 def _version_key(name):
@@ -294,5 +298,96 @@ def harvest_schema(ctx, args):
                             ("both", "cli_only", "hidden", "rest_only", "unknown")]
                + [("complete", str(ch.get("complete")))])
     r.note(res.get("msg") or "")
+    r.set(result=res)
+    return r
+
+
+# ---------------------------------------------------------------------------
+# execute apilib compat / channels — read the library, change nothing
+# ---------------------------------------------------------------------------
+def _args_ok(title, plain, n, usage):
+    if len(plain) < n:
+        return Result("info", title).lines("", ["usage: satom " + usage])
+    if plain[0] not in PRODUCTS:
+        return Result("bad", title).lines("", ["%r is not a product (%s)"
+                                               % (plain[0][:40], ", ".join(PRODUCTS))])
+    bad = [b for b in plain[1:n] if not _BUILD_RE.match(b)]
+    if bad:
+        return Result("bad", title).lines("", ["%r is not a firmware build" % bad[0][:40]])
+    return None
+
+
+def apilib_compat(ctx, args):
+    """Two builds of one product through both channels: objects and fields
+    added / removed, option / type / range changes, rename candidates."""
+    plain = [a for a in args if not a.startswith("--")]
+    early = _args_ok("apilib compat", plain, 3, COMPAT_USAGE)
+    if early:
+        return early
+    rc, out, err = _flask_apilib(ctx, ["compat"] + plain[:3], timeout=600)
+    res = _json_tail(out)
+    if res is None:
+        r = Result("bad", "apilib compat")
+        r.lines("", ((err or out) or "no output").splitlines()[-25:])
+        return r
+    r = Result("ok", "apilib compat %s %s -> %s" % (res["product"], res["base"], res["target"]))
+    rest = (res.get("rest") or {}).get("totals") or {}
+    r.rows("REST evidence", [
+        ("measured", "%s: %s, %s: %s" % (res["base"], res["base_measured"],
+                                         res["target"], res["target_measured"])),
+        ("fields", "+%s / -%s, renamed %s, not comparable %s" % (
+            rest.get("fields_added", 0), rest.get("fields_removed", 0),
+            rest.get("fields_renamed", 0), rest.get("fields_unknown", 0)))])
+    tree = res.get("tree")
+    if tree is None:
+        r.status = "warn"
+        r.note("no CLI schema comparison: %s" % res.get("tree_reason"))
+    else:
+        t = tree.get("totals") or {}
+        r.rows("CLI schema (tree)", [
+            ("objects", "+%d / -%d" % (len(tree["endpoints_added"]),
+                                       len(tree["endpoints_removed"]))),
+            ("fields", "+%s / -%s" % (t.get("fields_added", 0), t.get("fields_removed", 0))),
+            ("options changed", str(t.get("options_changed", 0))),
+            ("retyped", str(t.get("retyped", 0))),
+            ("ranges changed", str(t.get("ranges_changed", 0))),
+            ("defaults changed", str(t.get("defaults_changed", 0))),
+            ("field rename candidates", str(t.get("rename_candidates", 0))),
+            ("object rename candidates", str(t.get("endpoint_rename_candidates", 0))),
+            ("moves", str(t.get("field_moves", 0)))])
+        if tree.get("endpoint_rename_candidates") or tree.get("rename_candidates"):
+            r.lines("rename candidates (same CLI id; never applied)",
+                    ["%s -> %s (id %s)" % (x["from"], x["to"], x["cli_id"])
+                     for x in tree.get("endpoint_rename_candidates") or []]
+                    + ["%s: %s -> %s (id %s)" % (x["endpoint"], x["from"], x["to"], x["cli_id"])
+                       for x in tree.get("rename_candidates") or []][:40])
+    r.set(result=res)
+    return r
+
+
+def apilib_channels(ctx, args):
+    """One build: how many fields each channel serves, and which are CLI only."""
+    plain = [a for a in args if not a.startswith("--")]
+    early = _args_ok("apilib channels", plain, 2, CHANNELS_USAGE)
+    if early:
+        return early
+    rc, out, err = _flask_apilib(ctx, ["channels"] + plain[:2], timeout=600)
+    res = _json_tail(out)
+    if res is None:
+        r = Result("bad", "apilib channels")
+        r.lines("", ((err or out) or "no output").splitlines()[-25:])
+        return r
+    s = res.get("summary") or {}
+    r = Result("ok" if s.get("complete") else "warn",
+               "apilib channels %s %s" % (res["product"], res["version"]))
+    r.rows("fields", [(k, str(s.get(k, 0))) for k in
+                      ("both", "cli_only", "hidden", "rest_only", "unknown", "meta",
+                       "doc_conflicts")]
+           + [("tree measured", str(s.get("tree_measured"))),
+              ("REST measured", str(s.get("rest_measured"))),
+              ("complete", str(s.get("complete")))])
+    for k in ("cli_only", "hidden", "rest_only"):
+        if res.get(k):
+            r.lines(k.replace("_", " "), res[k][:40])
     r.set(result=res)
     return r

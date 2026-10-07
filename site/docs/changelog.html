@@ -112,6 +112,94 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--build-compatibility-across-firmware-builds-2026-10-07">Added — build compatibility across firmware builds (2026-10-07)</h3>
+<ul>
+<li>Writes are checked against each target's EXACT build through both channels
+  (<code>services/build_compat.py</code>): fields the build does not have are stripped
+  per device and listed ("Applies, but on 8.0.6 <code>token-secret</code> does not exist:
+  it will be skipped on 3 appliances", with the rename hint when a CLI id or a
+  field-rename map points at the new name), CLI-only fields are flagged (the
+  REST write cannot set them), option and range violations and objects the
+  build lacks block, and an unmeasured build says "not measured — cannot be
+  guaranteed", never ok. Wired through <code>version_compat</code> into template apply
+  and approval auto-deploy, baseline and system-profile apply (per-device
+  skips in the bulk runner), the carve-out push gate and the object editor
+  (dry run shows it; a real write with an invalid value is refused).</li>
+<li><strong>Build compatibility</strong> page (API library, <code>registry_edit</code>): field x build
+  matrix by channel (both / CLI only / hidden / REST only / CLI with REST
+  unmeasured / meta / absent / unknown) with server-side filters and
+  pagination, a two-build diff (objects and fields added and removed,
+  options, types, ranges, defaults, rename candidates, moves) and per-field
+  history.</li>
+<li><code>satom execute apilib compat &lt;product&gt; &lt;A&gt; &lt;B&gt;</code> and
+  <code>satom execute apilib channels &lt;product&gt; &lt;build&gt;</code> (<code>flask apilib compat</code>,
+  <code>flask apilib channels</code>).</li>
+</ul>
+<h3 id="fixed--channel-classification-of-rest-bookkeeping-2026-10-07">Fixed — channel classification of REST bookkeeping (2026-10-07)</h3>
+<ul>
+<li><code>channels_at</code> no longer calls REST bookkeeping <code>rest_only</code>: <code>id</code> / <code>_id</code> /
+  <code>seq</code> / <code>&lt;NO.&gt;</code> and the FortiWeb wire keys are channel <code>meta</code>, outside
+  completeness, unless the build's CLI lists the name for that object.
+  Vendor-documented names a measured <code>tree</code> contradicts are <code>unknown</code> with
+  <code>doc_conflict</code>. On the lab pack FortiWeb 7.6.8 went from 276 <code>rest_only</code>
+  to 0 (2,351 meta, 70 doc conflicts).</li>
+<li>Object CLI ids are read from the evidence summary when the facts have none:
+  7.6.8 -&gt; 8.0.6 now reports the object rename <code>allow-source-ip</code> -&gt;
+  <code>source-ip-list</code> (was 0) and the field moves into <code>page-list</code>.</li>
+</ul>
+<h3 id="added--the-api-library-reads-the-cli-channel-too-2026-10-07">Added — the API library reads the CLI channel too (2026-10-07)</h3>
+<ul>
+<li>Two new evidence sources, <code>cli_tree</code> and <code>cli_full</code>. <code>cli_tree</code> is the
+  schema the appliance's own CLI <code>tree</code> command prints: every object, field,
+  type, enum option, key field and CLI attribute id of the running build.
+  <code>cli_full</code> is the field names <code>show full-configuration</code> reveals per object,
+  hidden fields included — names only, never a value (a default is recorded
+  only on lab evidence). Both are keyed by the REST path (<code>system/ntp/ntpserver</code>),
+  joined to sweeps by <code>api_library.urn_key</code>. Facts gain an <code>attrs</code> column
+  (CLI id, hidden, range, raw CLI type, datasource; migration
+  <code>apilib05_cli_channel</code>). The REST readers (versions page, preflights,
+  baselines, the matrix export) do not read the CLI sources.</li>
+<li><code>api_library.channels_at(product, build)</code> says, per field, whether a build
+  serves it over REST and CLI (<code>both</code>), the CLI only (<code>cli_only</code>), only in
+  <code>show full-configuration</code> (<code>hidden</code>), REST only (<code>rest_only</code>) or <code>unknown</code>,
+  with the evidence behind each answer and a completeness summary that allows
+  only named exceptions (<code>licence</code>, <code>status-object</code>).</li>
+<li><code>compare(product, base, target)</code> adds the CLI channel: fields that changed
+  channel, enum options added and removed, type, range and lab-default
+  changes, and rename candidates found by an equal CLI id (reported, never
+  applied: the field-rename map stays the authority).</li>
+<li>New parser <code>services/cli_schema.py</code> for the FortiWeb and FortiOS <code>tree</code>
+  formats and <code>show full-configuration</code>, with the CLI-to-REST path rules of
+  FortiWeb (verified on 7.6.8 and 8.0.6), FortiGate (<code>config a b c</code> -&gt;
+  <code>a.b/c</code>) and FortiADC (documented convention, marked unverified).</li>
+<li>Schema harvest (<code>services/schema_harvest.py</code>): one appliance's build through
+  both channels — SSH <code>tree</code>, <code>show full-configuration</code> (a fresh vault dump of
+  the same build is reused) and one REST read per tree object the library does
+  not cover. Read-only against the box. From the API Explorer (<strong>Harvest CLI
+  schema</strong>, permission <code>appliances.apply</code>, runs as a device job), the
+  scheduled action <code>schema_harvest</code>, <code>flask apilib schema-harvest</code> and
+  <code>satom execute apilib harvest &lt;appliance&gt;</code>.</li>
+<li>SSH: <code>tree</code> is allowed as a whole-command match behind its own gate
+  (<code>ssh_ops.assert_schema_command</code>); the read-verb allowlist is unchanged.</li>
+<li>API packs export and import the new sources and their <code>attrs</code>; a <code>cli_full</code>
+  row that carries a value is refused at export as well as at ingest.</li>
+</ul>
+<h3 id="fixed--a-fortiweb-nested-path-that-is-not-served-is-no-longer-served-2026-10-07">Fixed — a FortiWeb nested path that is not served is no longer "served" (2026-10-07)</h3>
+<ul>
+<li>FortiWeb answers a nested REST path it does not serve with HTTP 200 and the
+  PARENT's rows (<code>system/interface/&lt;anything&gt;</code> returns the interfaces), or the
+  parent's dict with <code>?mkey=</code>. The rediscovery probe called every 200 <code>ok</code>, so
+  the sweep, the CLI-coverage probe and the discovery run could "find" and
+  register a URN that only ever returns its parent. The probe now classifies
+  by the shape of the answer (<code>rediscovery.fortiweb_shape_verdict</code>): the
+  parent's answer, rows that carry the child as their own key, or rows whose
+  keys the object does not have, are <code>absent</code>; a real empty table stays <code>ok</code>.</li>
+<li>The CLI-coverage "CLI only" badge said more than it knew: most of those
+  blocks are served by REST and are only missing from the catalog. A block
+  whose REST path the library measured served on the dump's build is now a
+  <strong>catalog gap</strong>; the rest read <strong>Not in catalog</strong>, with a REST column that
+  says <em>CLI only</em> only when REST was measured absent.</li>
+</ul>
 <h3 id="removed--firecrawl-transport-docs-now-come-from-direct-download-or-api-packs-2026-10-07">Removed — Firecrawl transport: docs now come from direct download or API packs (2026-10-07)</h3>
 <ul>
 <li>The release-notes scan no longer offers a Firecrawl fallback: the endpoint and

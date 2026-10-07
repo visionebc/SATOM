@@ -6,6 +6,41 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — build compatibility across firmware builds (2026-10-07)
+
+- Writes are checked against each target's EXACT build through both channels
+  (`services/build_compat.py`): fields the build does not have are stripped
+  per device and listed ("Applies, but on 8.0.6 `token-secret` does not exist:
+  it will be skipped on 3 appliances", with the rename hint when a CLI id or a
+  field-rename map points at the new name), CLI-only fields are flagged (the
+  REST write cannot set them), option and range violations and objects the
+  build lacks block, and an unmeasured build says "not measured — cannot be
+  guaranteed", never ok. Wired through `version_compat` into template apply
+  and approval auto-deploy, baseline and system-profile apply (per-device
+  skips in the bulk runner), the carve-out push gate and the object editor
+  (dry run shows it; a real write with an invalid value is refused).
+- **Build compatibility** page (API library, `registry_edit`): field x build
+  matrix by channel (both / CLI only / hidden / REST only / CLI with REST
+  unmeasured / meta / absent / unknown) with server-side filters and
+  pagination, a two-build diff (objects and fields added and removed,
+  options, types, ranges, defaults, rename candidates, moves) and per-field
+  history.
+- `satom execute apilib compat <product> <A> <B>` and
+  `satom execute apilib channels <product> <build>` (`flask apilib compat`,
+  `flask apilib channels`).
+
+### Fixed — channel classification of REST bookkeeping (2026-10-07)
+
+- `channels_at` no longer calls REST bookkeeping `rest_only`: `id` / `_id` /
+  `seq` / `<NO.>` and the FortiWeb wire keys are channel `meta`, outside
+  completeness, unless the build's CLI lists the name for that object.
+  Vendor-documented names a measured `tree` contradicts are `unknown` with
+  `doc_conflict`. On the lab pack FortiWeb 7.6.8 went from 276 `rest_only`
+  to 0 (2,351 meta, 70 doc conflicts).
+- Object CLI ids are read from the evidence summary when the facts have none:
+  7.6.8 -> 8.0.6 now reports the object rename `allow-source-ip` ->
+  `source-ip-list` (was 0) and the field moves into `page-list`.
+
 ### Added — the API library reads the CLI channel too (2026-10-07)
 
 - Two new evidence sources, `cli_tree` and `cli_full`. `cli_tree` is the

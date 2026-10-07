@@ -971,10 +971,47 @@ def _check_catalog() -> list[dict]:
     return findings
 
 
+def _check_signatures() -> list[dict]:
+    """Signature databases that stopped updating (contract C8).
+
+    Reads what the ``signature_check`` scheduled action stored — this engine
+    never contacts a device for it. A FortiWeb whose signature DB is older than
+    ``alerts.signature_max_days`` (default 7), that reports it never updated,
+    or whose version could not be read, is a WARNING in the ``device`` family:
+    a WAF on stale signatures is a box protecting against last month."""
+    from . import signature_freshness as sf
+    findings: list[dict] = []
+    for row in sf.rows(now=_now()):
+        if row["status"] == "ok":
+            continue
+        name = row.get("name") or ("appliance %s" % row.get("appliance_id"))
+        if row["status"] == "unreadable":
+            findings.append({
+                "key": "device.signature_unreadable", "severity": SEV_WARNING,
+                "product": row.get("product") or "fortiweb",
+                "title": f"Signature DB version unreadable on {name}",
+                "detail": (f"{name}: {row.get('reason')}. The last known version "
+                           f"is {row.get('version') or 'none'}. Check SSH access "
+                           f"(the read is `{sf.VERSION_CMD}`).")})
+        else:
+            findings.append({
+                "key": "device.signature_stale", "severity": SEV_WARNING,
+                "product": row.get("product") or "fortiweb",
+                "title": f"Signature DB on {name} is stale",
+                "detail": (f"{name}: {row.get('reason')}. Check the device's "
+                           f"FortiGuard connectivity and licence (System → "
+                           f"FortiGuard).")})
+    return findings
+
+
 _CHECKS = [
     (K_CHK_CERT, _check_cert),
     (K_CHK_GIT, _check_git),
     (K_CHK_DEVICE, _check_devices),
+    # Same toggle and family as device health: a stale signature DB is the
+    # device's health, and a new toggle would default to OFF on every saved
+    # settings form that predates it.
+    (K_CHK_DEVICE, _check_signatures),
     (K_CHK_BACKUP, _check_backup),
     (K_CHK_DRIFT, _check_drift),
     (K_CHK_ACTIONS, _check_actions),

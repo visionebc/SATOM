@@ -213,6 +213,7 @@
                 <tr><td class="text-muted">{{ _('Class') }}</td><td id="sd-d-class"></td></tr>
                 <tr><td class="text-muted">{{ _('Sub Class') }}</td><td id="sd-d-sub"></td></tr>
                 <tr><td class="text-muted">{{ _('Description') }}</td><td id="sd-d-desc" style="font-size:12.5px;"></td></tr>
+                <tr id="sd-d-meta-row" class="d-none"><td class="text-muted">{{ _('FortiGuard') }}</td><td id="sd-d-meta" style="font-size:12.5px;"></td></tr>
                 <tr><td class="text-muted">{{ _('Status in this policy') }}</td><td id="sd-d-status"></td></tr>
               </tbody>
             </table>
@@ -336,7 +337,7 @@
       var exc = s.exceptions ? '<span class="fw-badge fw-badge-primary">' + s.exceptions + '</span>' : '<span class="text-muted">—</span>';
       return '<tr>' +
         '<td class="mono">' + esc(s.id) + '</td>' +
-        '<td style="font-size:12.5px;">' + esc(s.desc || '—') + '</td>' +
+        '<td style="font-size:12.5px;">' + esc(s.desc || '—') + metaBadge(s.meta) + '</td>' +
         '<td class="text-muted" style="font-size:12px;">' + esc(s.sub) + '</td>' +
         '<td>' + status + '</td><td>' + exc + '</td>' +
         '<td>' +
@@ -374,6 +375,19 @@
     }
   }
 
+  // Public FortiGuard metadata from an imported knowledge pack (C8 enrichment).
+  function sevClass(sev) {
+    var s = String(sev || '').toLowerCase();
+    return s === 'critical' || s === 'high' ? 'danger' : (s === 'medium' ? 'warning' : 'secondary');
+  }
+  function metaBadge(m) {
+    if (!m) return '';
+    var t = [m.name, (m.cve || []).join(', ')].filter(Boolean).join(' — ');
+    return ' <span class="fw-badge fw-badge-' + sevClass(m.severity) + ' ms-1" title="' + esc(t) + '">' +
+      esc(m.severity || 'FortiGuard') + '</span>' +
+      ((m.cve && m.cve.length) ? ' <span class="text-muted small">' + esc(m.cve.slice(0, 2).join(', ')) + '</span>' : '');
+  }
+
   // ── Per-signature modal (Details | Exception) ─────────────────────────────
   function openSig(s, showExc) {
     CUR = s;
@@ -382,6 +396,20 @@
     document.getElementById('sd-d-class').textContent = s.main;
     document.getElementById('sd-d-sub').textContent = s.sub;
     document.getElementById('sd-d-desc').textContent = s.desc || '—';
+    var mrow = document.getElementById('sd-d-meta-row');
+    if (s.meta) {
+      var m = s.meta, parts = [];
+      if (m.name) parts.push('<strong>' + esc(m.name) + '</strong>');
+      if (m.severity) parts.push('<span class="fw-badge fw-badge-' + sevClass(m.severity) + '">' + esc(m.severity) + '</span>');
+      if (m.category) parts.push(esc(m.category));
+      if (m.cve && m.cve.length) parts.push(m.cve.map(esc).join(', '));
+      if (m.url && /^https:\/\//.test(m.url)) parts.push('<a href="' + esc(m.url) + '" target="_blank" rel="noopener noreferrer">' + '{{ _('Encyclopedia') }}' + ' <i class="bi bi-box-arrow-up-right"></i></a>');
+      if (m.summary) parts.push('<div class="text-muted mt-1">' + esc(m.summary) + '</div>');
+      document.getElementById('sd-d-meta').innerHTML = parts.join(' · ');
+      mrow.classList.remove('d-none');
+    } else {
+      mrow.classList.add('d-none');
+    }
     document.getElementById('sd-d-status').innerHTML =
       s.disabled ? 'Disabled' : (s.alert_only ? 'Alert Only' : 'Enabled');
     document.getElementById('exc-form').style.display = 'none';

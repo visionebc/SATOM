@@ -37,7 +37,10 @@ The rules, each one a way a pack could do harm:
 3. **Local measurement wins.** A pack sweep or schema for a build this node
    has measured itself is skipped, release notes for a (product, version) the
    node already holds are skipped, and a field schema file that exists locally
-   is never overwritten. Import only ever adds.
+   is never overwritten. Import only ever adds. One exception: LAB evidence
+   of a knowledge pack (``summary.lab`` — fresh rows a lab box created to
+   reveal tables a production box has empty) is imported next to the
+   node's own: it can only fill what the node could not measure.
 4. **Signed or refused.** Same verifier and same root-owned trust store as
    update packages (``deploy/update_package.py``); an unsigned pack and a
    badly signed one are the same refusal.
@@ -712,7 +715,12 @@ def _library_state(doc: dict) -> str:
     # Vendor claims are the same document everywhere (no witness), so the hash
     # above already answers for them. Anything a device produced is skipped
     # when this node holds its OWN evidence of the same kind for that build.
-    if doc["source"] != lib.SOURCE_VENDOR:
+    # A LAB measurement (a knowledge pack's fresh rows, ``summary.lab``) is
+    # imported even next to this node's own evidence of the build: it only adds
+    # what a production box cannot show (fields of tables it has empty), the
+    # build's schema is the same on every box, and facts only ever accumulate.
+    lab = bool((doc.get("summary") or {}).get("lab"))
+    if doc["source"] != lib.SOURCE_VENDOR and not lab:
         b = _local_build(doc["product"], doc.get("scope") or {})
         if b is not None:
             from .schema_harvest import ORIGIN_PREFIX as _PARTIAL

@@ -491,7 +491,7 @@
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-grid-1x2 fw-nav-section-icon" style="color:#10b981;"></i><span>{{ _('ADOMs') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           {# ADOM list is DB-driven (branding registry) — every active non-global ADOM shows here automatically. #}
-          {% for _k, _p in products.items() if _k != 'global' %}
+          {% for _k, _p in adom_registry.items() if _k != 'global' %}
           {# every ADOM home needs a view key; a profile without one has nowhere to land #}
           {% if may_open('product.enter') and current_user.can('view') %}
           <a class="fw-nav-item" href="{{ url_for('product.enter', key=_k) }}">

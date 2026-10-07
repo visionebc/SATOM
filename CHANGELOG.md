@@ -6,6 +6,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — a page that renders its own `products` list no longer breaks the Global sidebar (2026-10-07)
+
+- `base.html` read the ADOM registry under the context name `products`; a view
+  passing its own `products=[...]` shadowed it and the page answered 500 in the
+  Global ADOM (Build compatibility, as Naming did in 2.11). The sidebar now
+  reads `adom_registry`, which no view sets; a guard keeps the shared chrome off
+  the shadowable name.
+
 ### Fixed — documentation silence is never a REST "no"; lab rows of a knowledge pack are imported (2026-10-07)
 
 - The channel view treated the vendor documentation as a REST measurement: on a

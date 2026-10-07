@@ -317,7 +317,7 @@
       <div class="card-body">
         <p class="text-muted small">
           {{ _('A pack carries what SATOM has learned about vendor APIs: the endpoints and fields each firmware build serves (from sweeps, anonymised), the vendor documentation (release notes, field catalog) and the CLI blocks the catalog does not name, per firmware build. It never carries a configuration or the name of a device.') }}
-          <strong>{{ _('Import only adds:') }}</strong> {{ _('what this node measured itself always wins, and nothing it already holds is overwritten. Packs are signed and checked against the same trust store as update packages.') }}
+          <strong>{{ _('Local data always wins:') }}</strong> {{ _('what this node measured or wrote itself is never replaced. A copy a pack wrote is replaced only by a pack that outranks it: an API pack over a knowledge pack, a newer pack over an older one of the same lane. Every imported row records which pack it came from. A pack is verified only with the keys of its lane (satom show trust); a 2.x pack with the update trust store.') }}
         </p>
         {% if api_packs.error %}
           <div class="alert alert-danger py-2 small"><i class="bi bi-exclamation-octagon me-1"></i>{{ api_packs.error }}</div>
@@ -348,7 +348,9 @@
                   <span class="font-monospace">{{ p.name }}</span></button>
                 <span>
                 {% if p.series == 'knowledge' %}
-                <span class="fw-badge fw-badge-info apk-kb" title="{{ _('Built by the separate satom-harvester tool from lab schema dumps and release notes, re-signed with the release key. Each knowledge pack carries everything the older ones did.') }}">{{ _('knowledge pack (satom-harvester)') }}</span>
+                <span class="fw-badge fw-badge-info apk-kb" title="{{ _('Rolling snapshot built by satom-harvester from lab schema dumps and vendor documentation, signed with the knowledge key. Each knowledge pack carries everything the older ones did.') }} {{ p.provenance }}">{{ _('knowledge pack (satom-harvester)') }}</span>
+                {% elif p.series == 'api_pack' %}
+                <span class="fw-badge fw-badge-success apk-lane" title="{{ _('satom-harvester snapshot pinned to this SATOM release, signed with the API pack key.') }} {{ p.provenance }}">{{ _('API pack') }}{% if p.pinned_to %} · {{ p.pinned_to }}{% endif %}</span>
                 {% endif %}
                 {% if p.superseded %}
                 <span class="fw-badge fw-badge-secondary" title="{{ _('A newer pack of the same series carries everything this one does; it is not imported automatically.') }}">{{ _('superseded') }}</span>
@@ -398,7 +400,7 @@
                 {% for h in api_packs.history %}
                   <tr>
                     <td class="text-nowrap">{{ h.at[:16]|replace('T', ' ') }}</td>
-                    <td class="font-monospace">{{ h.version }}</td>
+                    <td class="font-monospace">{{ h.version }}{% if h.lane %} <span class="fw-badge fw-badge-secondary apk-prov" title="{{ h.provenance }}">{{ h.lane }}</span>{% endif %}</td>
                     <td>{{ h.imported }} {{ _('imported') }}{% if h.errors %} · <span class="text-danger">{{ h.errors }} {{ _('failed') }}</span>{% endif %}</td>
                     <td class="text-muted">{{ h.actor }}</td>
                   </tr>
@@ -655,7 +657,10 @@
   var APK_STATE = {
     'new': ['fw-badge fw-badge-info', 'will be imported'],
     'present': ['fw-badge fw-badge-secondary', 'already on this node'],
-    'local': ['fw-badge fw-badge-success', 'measured by this node — local evidence wins']
+    'local': ['fw-badge fw-badge-success', 'measured by this node — local evidence wins'],
+    'update': ['fw-badge fw-badge-warning', 'replaces a copy an older or lower-ranked pack wrote'],
+    'rejected': ['fw-badge fw-badge-danger', 'malformed item: skipped'],
+    'unknown': ['fw-badge fw-badge-secondary', 'a kind this SATOM does not import: skipped']
   };
   var apk = {source: '', name: '', items: [], off: {}};
   function apkWhat(it) {
@@ -676,6 +681,11 @@
              ' object(s)' + (no.length ? ' · ' + no.length + ' new' : '');
     }
     if (it.kind === 'field-overlay') return 'Field help overlay (admin guide)';
+    if (it.kind === 'factory-wpp') return 'Factory catalog · predefined protection profile';
+    if (it.kind === 'field-map') return 'Rename candidates · ' + (it.endpoint || '') + ' · ' +
+                                        (it.from_build || '') + ' → ' + (it.to_build || '');
+    if (it.kind === 'baseline') return 'Endpoint baseline · ' + (it.build || '') + ' (reference, never active)';
+    if (it.kind === 'signature-meta') return 'Signature metadata · ' + (it.signatures || 0) + ' id(s)';
     if (it.section === 'cli-coverage') {
       return 'CLI coverage · ' + (it.version || '') + ' · ' + (it.cli_only || 0) +
              ' not in catalog, ' + (it.catalog_gap || 0) + ' catalog gap, ' +
@@ -696,13 +706,15 @@
   function apkRenderItems() {
     var rows = apk.items.filter(apkVisible).map(function (it) {
       var st = APK_STATE[it.state] || ['fw-badge fw-badge-secondary', it.state];
-      var can = it.state === 'new';
+      var can = it.state === 'new' || it.state === 'update';
       return '<tr><td><input class="form-check-input" type="checkbox" data-id="' +
              escapeHtml(it.id) + '"' + (can ? ' checked' : ' disabled') + '></td>' +
              '<td class="text-nowrap">' + escapeHtml(it.product || '') + '</td>' +
              '<td>' + escapeHtml(apkWhat(it)) + '</td>' +
              '<td class="text-nowrap"><span class="' + st[0] + '" title="' +
-             escapeHtml(st[1]) + '">' + escapeHtml(it.state) + '</span></td></tr>';
+             escapeHtml(it.warning || it.note || st[1]) + '">' + escapeHtml(it.state) + '</span>' +
+             (it.current ? ' <span class="fw-badge fw-badge-secondary apk-prov" title="current copy from">' +
+                           escapeHtml(it.current) + '</span>' : '') + '</td></tr>';
     }).join('');
     document.getElementById('apk-items').innerHTML = rows ||
       '<tr><td colspan="4" class="text-muted">Nothing matches the filters.</td></tr>';
@@ -739,16 +751,18 @@
       .then(function (d) {
         if (d.error) {
           box.innerHTML = '<div class="alert alert-danger py-2 mb-0"><i class="bi bi-shield-exclamation me-1"></i>' +
-            escapeHtml(d.error) + '<div class="mt-1">Packs are verified with the update trust store: ' +
-            '<code>satom execute trust add-key satom-release-2026.pub</code> installs the release key.</div></div>';
+            escapeHtml(d.error) + '<div class="mt-1">A pack is verified with the keys of its lane ' +
+            '(<code>satom show trust</code>); a 2.x pack with the update trust store.</div></div>';
           return;
         }
         apk.items = d.items || [];
         var counts = {'new': 0, present: 0, local: 0};
         apk.items.forEach(function (it) { counts[it.state] = (counts[it.state] || 0) + 1; });
         box.innerHTML = '<div><span class="font-monospace">' + escapeHtml(d.version) + '</span> ' +
+          '<span class="fw-badge fw-badge-secondary apk-prov">' + escapeHtml(d.provenance || '') + '</span> ' +
           '<span class="text-muted">built ' + escapeHtml(d.built_at || '') + ' · signed by ' +
           escapeHtml((d.signed_by || {}).fingerprint || '') + '</span></div>' +
+          ((d.warnings || []).length ? '<div class="text-warning">' + (d.warnings || []).map(escapeHtml).join('<br>') + '</div>' : '') +
           '<div class="text-muted">' + apk.items.length + ' item(s): ' + counts['new'] + ' new, ' +
           counts.present + ' already present, ' + counts.local + ' measured locally</div>' +
           (d.refusal ? '<div class="text-warning mt-1">' + escapeHtml(d.refusal) + '</div>' : '');

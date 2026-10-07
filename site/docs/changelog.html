@@ -112,6 +112,49 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="fixed--fortigate-schema-verified-against-a-live-801-2026-10-07">Fixed — FortiGate schema verified against a live 8.0.1 (2026-10-07)</h3>
+<ul>
+<li>The FortiGate <code>?action=schema</code> adapter was written from the documented format;
+  it is now checked against 618 real per-table answers of a FortiOS 8.0.1
+  build0245 lab box and marked verified. What the real answer changed:
+  <code>info-read-only</code> children (print helpers such as <code>application name status</code>)
+  are no longer counted as REST fields (19 false "REST only" names); one that
+  carries a value (<code>ips rule status</code>) is a read-only field. <code>datasource</code> keeps
+  its target list, <code>required</code>/<code>readonly</code>/<code>max_num_values</code> and the object's
+  scope are kept. A per-table 404 is a measured absence, not an error.</li>
+<li>The global <code>?action=schema</code> index answers 403 to a read-only token: the
+  adapter now reads table by table, enumerated from the CLI tree plus a
+  catalogue. The tree alone is not the whole schema on FortiOS: 9 REST tables
+  (<code>llm/*</code>, <code>waf/signature</code>, <code>system/vdom</code> ...) are absent from it and show as
+  <code>rest_only</code> in the channel view.</li>
+<li><code>tree</code> parsing: a prompt glued to the first line is cut, not blanked (fgt02
+  lost <code>system datasource type</code>; a glued FortiWeb dump grew 9 phantom objects),
+  and a FortiOS field name with a space (<code>default value</code>) is read whole.</li>
+<li>The channel view compares the members of nested objects REST and the CLI
+  both describe (<code>members</code>: 39 FortiGate 8.0.1 nested objects have CLI-only
+  members). <code>flask apilib schema-import --schema</code> accepts a directory of
+  per-table answers.</li>
+</ul>
+<h3 id="added--knowledge-packs-from-satom-harvester-ship-with-the-release-2026-10-07">Added — knowledge packs from satom-harvester ship with the release (2026-10-07)</h3>
+<ul>
+<li><code>api-packs/</code> carries, next to the release packs, ONE knowledge pack
+  <code>satom-apipack-kb-YYYYMMDD[.N].tar.gz</code> built by the separate tool
+  satom-harvester and re-signed with the release key by the release pipeline.
+  It is its own file because a release pack never re-exports what the release
+  host imported from a pack.</li>
+<li><code>satom execute apipack import shipped</code> (and therefore the installer and the
+  update runner) imports <strong>every pending shipped pack</strong>: the newest release
+  pack, then the newest knowledge pack, each only if this node has not fully
+  imported it yet. Both series are cumulative, so older packs of a series are
+  superseded and not imported. A run with a failed item, or a ticked subset,
+  leaves the pack pending so the next update retries it (the import log now
+  records <code>partial</code>).</li>
+<li>Software Update lists knowledge packs with the label <em>knowledge pack
+  (satom-harvester)</em>, marks superseded packs, and the pending notice names
+  every pending pack; <code>satom show apipack</code> shows the same.</li>
+<li>Fixed: the console sorted pack versions as mixed int/str lists, which raised
+  <code>TypeError</code> as soon as a <code>kb-*</code> pack sat next to <code>2.x.y</code> packs.</li>
+</ul>
 <h3 id="added--documentation-for-builds-channels-and-migrations-2026-10-07">Added — documentation for builds, channels and migrations (2026-10-07)</h3>
 <ul>
 <li>New manual pages: <a href="build-compatibility.html">Build compatibility</a>,
@@ -243,7 +286,8 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   <code>config &lt;object&gt;</code> and <code>edit &lt;a row the box listed&gt;</code> and drops the session
   without <code>end</code>; plus <code>show full-configuration</code> and the Tastypie schema.
   <strong>FortiGate</strong>: <code>?action=schema</code> parser (nested tables folded into fields, as
-  the <code>tree</code> is) — unverified, the lab VM is unlicensed and answers 401.
+  the <code>tree</code> is) — verified against a live 8.0.1 build0245 (see <em>Fixed — FortiGate
+  schema verified</em> above).
   <strong>FortiAnalyzer</strong>: CLI ↔ JSON-RPC <code>/cli/global/...</code> path mapping and the
   <code>get</code> + <code>option: syntax</code> schema read — unverified, no FortiAnalyzer in the
   lab. <code>flask apilib adapter-harvest</code> and <code>flask apilib schema-import</code>

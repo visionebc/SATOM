@@ -91,6 +91,13 @@ when operating it.</p>
   <strong>Scheduled Actions</strong>.</li>
 <li><strong>Registry</strong>: a versioned catalog of REST endpoints (Postgres-backed) that
   decouples the app from firmware-specific URLs.</li>
+<li><strong>Other product workspaces</strong> beside FortiWeb: <a href="fortiadc.html">FortiADC</a>,
+  <a href="fortiauthenticator.html">FortiAuthenticator</a>, FortiAnalyzer, and since 3.0 a
+  read-only <a href="fortigate.html">FortiGate</a> workspace (user guide §17).</li>
+<li><strong>Vendor knowledge from signed packs</strong> (3.0): release notes, upgrade paths and
+  the API knowledge of builds no local appliance runs arrive as signed API and
+  knowledge packs (<a href="api-library.html">API library</a> §12,
+  <a href="upgrading-to-3-0.html">Upgrading to 3.0</a>); SATOM never crawls vendor sites.</li>
 </ul>
 <p>It is <strong>DB-first</strong>: pages read a local cache of each device's configuration
 (populated by rediscovery / deep capture) so the UI stays fast and usable even

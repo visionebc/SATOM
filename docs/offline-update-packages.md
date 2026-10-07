@@ -169,6 +169,16 @@ check afterwards only enforces it.
 Operators and forks can add their own keys and sign their own packages. Nothing
 in the product contains a secret, so nothing about this depends on the vendor.
 
+**One key, one use (3.0).** This trust store verifies **update packages only**
+(and the legacy 2.x API packs). The 3.0 API and knowledge packs are verified
+with the keys of their own lane — shipped in `deploy/pack-keys/<lane>/`, plus
+any you add under `/etc/satom/pack-keys/<lane>/` with
+`satom execute trust add-key --purpose api_pack|knowledge <file.pub>`. The update
+verifier never reads a pack key, so a pack key can never sign an update, and
+`add-key` refuses a key already trusted for another purpose.
+`satom show trust` lists all three purposes. Details:
+[api-library.md §12.3](api-library.md), [Upgrading to 3.0](upgrading-to-3.0.md).
+
 ### 4.1 Upgrading a node installed before 2.5.0
 
 Packages published from 2.5.0 on are signed with `satom-release-2026.pub`. An

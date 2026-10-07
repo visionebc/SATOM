@@ -214,6 +214,42 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <li><code>flask apilib pack export</code> (schema <code>/1</code>) is kept for local and offline use and
   marked legacy; releases no longer use it. docs/api-library.md §12.</li>
 </ul>
+<h3 id="added--fortigate-adom-read-only-base-300">Added — FortiGate ADOM, read-only base (3.0.0)</h3>
+<ul>
+<li>New workspace <code>/fgt/</code> (sixth ADOM): appliance kind <code>fortigate</code>, registered
+  with a <strong>REST API administrator token</strong> as its password (FortiOS 8.0 refuses
+  password logins on the REST API). A dashboard with the device picker and the
+  live unit status, and 30 read-only section pages in 7 areas following the
+  FortiOS 8.0 menu, over 43 cmdb tables measured on FortiOS 8.0.1 build0245.</li>
+<li>Reads only: the client sends <code>GET</code> and nothing else. A device refusal is shown
+  as an error, never as an empty table (<code>401</code> names the unlicensed-VM case);
+  secret fields and every <code>ENC …</code> value are dropped before a row is rendered;
+  tables are capped at 500 rows with the truncation stated.</li>
+<li>The shared Fleet and Administration pages, the Release Notes modal, Build
+  compatibility and Schema builds are reachable from its sidebar. Fix: Schema
+  builds and Build compatibility, drawn in the FortiADC, FortiAnalyzer and
+  FortiAuthenticator sidebars since 2.13.0, were refused by those ADOMs' gates.</li>
+<li>Not yet: writes, an API console, registry binding, backups, firmware. See
+  docs/fortigate.md.</li>
+</ul>
+<h3 id="docs--300">Docs — 3.0.0</h3>
+<ul>
+<li>New: docs/upgrading-to-3.0.md (breaking changes, what online and air-gapped
+  nodes do — including <code>satom execute seed actions --yes</code> for the two new
+  scheduled actions —, verification with <code>satom show trust</code> / <code>satom show
+  knowledge</code>, rollback) and docs/fortigate.md; both published.</li>
+<li>Rewritten for 3.0: docs/knowledge-harvester.md (two lanes, the content gate,
+  sources, signature metadata shipping empty while FortiGuard's terms forbid
+  redistribution), docs/release_notes.md (corpus only from packs; the scan
+  sections replaced by what was removed and why; no longer described as synced
+  from the desktop repository), api-packs/README.md.</li>
+<li>Corrected: user guide §3/§4/§17.4 (six workspaces, FortiGate), §9.8 (carve-outs
+  record their build), §22.3 (lane keys instead of "the same trust store", item
+  states, knowledge packs outside the update), §22.4 (seeding the actions), §31.1,
+  new §45; api-library.md §11 (2.x-only paragraphs marked), §13 (3.0 errors),
+  §14.12; release-pipeline.md; offline-update-packages.md §4 (one key, one use);
+  README and overview product lists.</li>
+</ul>
 <h2 id="2130---2026-10-07">[2.13.0] - 2026-10-07</h2>
 <h3 id="fixed--a-page-that-renders-its-own-products-list-no-longer-breaks-the-global-sidebar-2026-10-07">Fixed — a page that renders its own <code>products</code> list no longer breaks the Global sidebar (2026-10-07)</h3>
 <ul>

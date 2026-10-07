@@ -195,11 +195,19 @@ without any builder knowing about it. The `api_pack` gate checks the release
 commit holds exactly this release's pack, that it verifies against the
 product's public key and names this version, and reads every file inside it
 with the mirror's own redaction and secret rules — the mirror itself cannot,
-because the pack is a gzip of gzips. When the pack is missing or stale the
-repair builds it on the primary from the live API library, signs it here with
-the release key, and commits exactly `api-packs/`; a mirror-rule hit is never
-repaired. The publish step attaches the pack from the tag to the release.
-See [api-library.md §11.6](api-library.md).
+because the pack is a gzip of gzips. **From 3.0** the pack is no longer exported
+from a node's live library: the step takes the newest **approved** snapshot of
+the Knowledge Harvester, refuses the release when any (product, build, source)
+the previous API pack carried is missing (the parity gate prints exactly what),
+writes the `satom.api-pack/2` manifest with lane `api_pack` pinned to the
+release, signs it with the `api_pack` key — never the release key — and commits
+exactly `api-packs/`; a mirror-rule hit is never repaired. The publish step
+attaches the pack, with its `sha256`, from the tag to the release, and the
+system-upgrade feed names it with its `sha256` and points at the knowledge feed.
+The rolling knowledge packs are published separately, signed with the
+`knowledge` key, and never ride inside the update.
+See [api-library.md §11.6 and §12](api-library.md) and
+[knowledge-harvester.md](knowledge-harvester.md).
 
 The builders (one per bundle family, plus the Docker builder) are build-only
 machines that do not start at boot. Verification and publication start them

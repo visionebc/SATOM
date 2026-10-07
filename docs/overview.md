@@ -22,6 +22,13 @@ A Flask application that administers a fleet of FortiWeb appliances:
   **Scheduled Actions**.
 - **Registry**: a versioned catalog of REST endpoints (Postgres-backed) that
   decouples the app from firmware-specific URLs.
+- **Other product workspaces** beside FortiWeb: [FortiADC](fortiadc.md),
+  [FortiAuthenticator](fortiauthenticator.md), FortiAnalyzer, and since 3.0 a
+  read-only [FortiGate](fortigate.md) workspace (user guide §17).
+- **Vendor knowledge from signed packs** (3.0): release notes, upgrade paths and
+  the API knowledge of builds no local appliance runs arrive as signed API and
+  knowledge packs ([API library](api-library.md) §12,
+  [Upgrading to 3.0](upgrading-to-3.0.md)); SATOM never crawls vendor sites.
 
 It is **DB-first**: pages read a local cache of each device's configuration
 (populated by rediscovery / deep capture) so the UI stays fast and usable even

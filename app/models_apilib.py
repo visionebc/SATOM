@@ -232,6 +232,15 @@ class ApiLibFieldMap(db.Model):
     #: NULL = in force. Set once, never cleared: re-adding the mapping is a new row.
     retired_at = db.Column(db.DateTime, nullable=True)
     retired_by = db.Column(db.String(64), nullable=False, default="")
+    #: ``active`` — an operator's map, applied by every reader; ``candidate`` —
+    #: proposed by a pack (``field-map`` section), shown, never applied.
+    status = db.Column(db.String(16), nullable=False, default="active")
+    #: who wrote the row: ``local`` or ``pack:<lane>:<pack>``. A pack never
+    #: overrides a ``local`` row.
+    origin = db.Column(db.String(128), nullable=False, default="local")
+
+    STATUS_ACTIVE = "active"
+    STATUS_CANDIDATE = "candidate"
 
 
 class ApiLibBaseline(db.Model):

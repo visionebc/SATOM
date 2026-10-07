@@ -149,6 +149,14 @@ chmod 0644 "${DROPIN_DIR}/10-root-copy.conf"
 mkdir -p "$TRUST_DIR"
 chown root:root /etc/satom "$TRUST_DIR"
 chmod 0755 /etc/satom "$TRUST_DIR"
+# API-pack keys an operator adds (satom execute trust add-key --purpose
+# api_pack|knowledge). The keys a release ships live in the code tree
+# (deploy/pack-keys/<lane>/) and need nothing here, so a /2 pack imports
+# whether or not this directory exists yet. Created root-owned so the first
+# add-key does not have to.
+mkdir -p /etc/satom/pack-keys
+chown root:root /etc/satom/pack-keys
+chmod 0755 /etc/satom/pack-keys
 
 # ---- root-owned copies of the /usr/local/sbin helpers --------------------
 # [SATOM-SBIN-ROOT-COPY] root:root 0755 for the same reason as ${LIB_DIR}: a

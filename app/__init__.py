@@ -1709,6 +1709,12 @@ def create_app(config_override: object | None = None) -> Flask:
             'api_lib_field_fact': [
                 ('attrs', 'JSON'),
             ],
+            # --- API packs 3.0: who wrote a rename (apipack06_knowledge_lanes) ---
+            # Every row that exists before the column is an operator's map.
+            'api_lib_field_map': [
+                ('status', "VARCHAR(16) DEFAULT 'active' NOT NULL"),
+                ('origin', "VARCHAR(128) DEFAULT 'local' NOT NULL"),
+            ],
             # --- SoT: which ADOM, and whether the payload is still here ---
             # product DEFAULTS to '' rather than a family: a version recorded
             # before the column existed was not filed under FortiWeb, it was
@@ -2212,6 +2218,10 @@ def create_app(config_override: object | None = None) -> Flask:
             # Without this import create_all() never makes the api_lib_*
             # tables and the first backfill 500s.
             from . import models_apilib  # noqa: F401
+            # Knowledge from signed packs (signature metadata). Without this
+            # import create_all() never makes knowledge_signature_meta and the
+            # first signature-meta import fails on a missing table.
+            from . import models_knowledge  # noqa: F401
             # Sentinel's two collectors (http_status, infra) join the
             # fleet collection registry here so the scheduler sidecar — which
             # never imports a view — provisions and runs them like any other.

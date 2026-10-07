@@ -19,7 +19,19 @@ from .context import run
 from .render import Result
 
 TRUST_DIR = Path(os.environ.get("SATOM_TRUST_DIR", "/etc/satom/update-keys"))
+#: Operator-managed API-pack keys, one sub-directory per lane (SATOM 3.0).
+PACK_KEY_DIR = Path(os.environ.get("SATOM_PACK_KEY_DIR", "/etc/satom/pack-keys"))
 RUNNER_LIB = Path("/usr/local/lib/satom-runner")
+#: One key, one use: ``update`` verifies update packages (and legacy 2.x API
+#: packs); each pack lane verifies only the /2 packs of that lane.
+PURPOSES = ("update", "api_pack", "knowledge")
+PURPOSE_HELP = {
+    "update": "update packages (and legacy 2.x API packs)",
+    "api_pack": "API packs of the api_pack lane (pinned to a SATOM release)",
+    "knowledge": "API packs of the knowledge lane (rolling satom-harvester snapshots)",
+}
+ADD_USAGE = ("execute trust add-key <file.pub> [--purpose update|api_pack|knowledge] "
+             "[--name <slug>]")
 
 
 def _up(ctx):
@@ -44,34 +56,84 @@ def _up(ctx):
 # ---------------------------------------------------------------------------
 # show
 # ---------------------------------------------------------------------------
+def _purpose_dirs(ctx, purpose):
+    """``[(dir, managed)]`` holding the keys of ``purpose``. ``managed`` is
+    False for the keys shipped in the code tree (deploy/pack-keys): they come
+    with the release and are replaced by the next one, not by this command."""
+    if purpose == "update":
+        return [(TRUST_DIR, True)]
+    return [(ctx.app_dir / "deploy" / "pack-keys" / purpose, False),
+            (PACK_KEY_DIR / purpose, True)]
+
+
+def _keys_of(up, ctx, purpose):
+    """Every usable key of ``purpose``, de-duplicated by fingerprint."""
+    out, seen = [], set()
+    for d, managed in _purpose_dirs(ctx, purpose):
+        for k in up.load_trust_store(str(d)):
+            if k["fingerprint"] in seen:
+                continue
+            seen.add(k["fingerprint"])
+            out.append(dict(k, dir=str(d), managed=managed))
+    return out
+
+
+def _purpose_arg(args):
+    """``(purpose, error)`` from ``--purpose X`` / ``--purpose=X`` (default update)."""
+    val = "update"
+    for i, a in enumerate(args):
+        if a == "--purpose":
+            val = args[i + 1] if i + 1 < len(args) else ""
+        elif a.startswith("--purpose="):
+            val = a.split("=", 1)[1]
+    if val not in PURPOSES:
+        return None, "unknown purpose %r (one of: %s)" % (val, ", ".join(PURPOSES))
+    return val, ""
+
+
 def show_trust(ctx, args):
-    """Which keys this node will accept an update package from."""
+    """Which keys this node accepts, per purpose: update packages, api_pack
+    packs, knowledge packs. One key, one use."""
     up = _up(ctx)
-    r = Result("ok", "update trust store")
+    r = Result("ok", "trust stores")
     if up is None:
-        return Result("bad", "update trust store").lines(
+        return Result("bad", "trust stores").lines(
             "", ["update_package.py not found — this build has no package support"])
 
-    problem = up.trust_store_problem(str(TRUST_DIR))
-    keys = up.load_trust_store(str(TRUST_DIR))
-    r.rows("store", [("path", str(TRUST_DIR)),
-                     ("keys", str(len(keys))),
-                     ("usable", "no — %s" % problem if problem else "yes")])
-    if problem:
-        r.status = "bad"
+    data = {}
+    for purpose in PURPOSES:
+        keys = _keys_of(up, ctx, purpose)
+        problems = []
+        for d, managed in _purpose_dirs(ctx, purpose):
+            if managed and (purpose == "update" or d.exists()):
+                problem = up.trust_store_problem(str(d))
+                if problem:
+                    problems.append(problem)
+        rows = [("verifies", PURPOSE_HELP[purpose]),
+                ("key dirs", " + ".join(str(d) for d, _m in _purpose_dirs(ctx, purpose))),
+                ("keys", str(len(keys))),
+                ("usable", "no — %s" % "; ".join(problems) if problems else "yes")]
+        rows += [(k["fingerprint"], "%s  (%s%s)" % (k["comment"] or "-", k["name"],
+                                                    "" if k["managed"] else ", shipped"))
+                 for k in keys]
+        r.rows(purpose, rows, keys="plain")
+        if problems:
+            r.status = "bad"
+        elif not keys:
+            r.worst("warn")
+        data[purpose] = {"problem": "; ".join(problems) or None,
+                         "keys": [{"name": k["name"], "fingerprint": k["fingerprint"],
+                                   "comment": k["comment"], "dir": k["dir"],
+                                   "shipped": not k["managed"]} for k in keys]}
+    if data["update"]["problem"]:
         r.note("A trust store that is not root-owned is not a trust store: "
                "whoever can add a key can mint packages this node accepts.")
-    if keys:
-        r.rows("trusted keys",
-               [(k["fingerprint"], "%s  (%s)" % (k["comment"] or "-", k["name"]))
-                for k in keys], keys="plain")
-    else:
-        r.worst("warn")
-        r.note("No key installed, so every package is refused. Install one with: "
-               "satom execute trust add-key <file.pub>")
-    r.set(path=str(TRUST_DIR), problem=problem,
-          keys=[{"name": k["name"], "fingerprint": k["fingerprint"],
-                 "comment": k["comment"]} for k in keys])
+    if not data["update"]["keys"]:
+        r.note("No update key installed, so every update package is refused. Install "
+               "one with: satom execute trust add-key <file.pub>")
+    # back-compat keys for scripts that read `show trust --json`
+    r.set(path=str(TRUST_DIR), problem=data["update"]["problem"],
+          keys=data["update"]["keys"], purposes=data)
     return r
 
 
@@ -122,30 +184,58 @@ def show_package(ctx, args):
 # execute
 # ---------------------------------------------------------------------------
 def trust_add_key(ctx, args):
-    """Install a public key into the trust store.
+    """Install a public key into the trust store of one purpose.
 
     Deliberately root-only and deliberately a COPY: the key file the operator
-    points at may live anywhere, but what the runner reads must be root-owned
-    inside the store.
+    points at may live anywhere, but what is read must be root-owned inside
+    the store. One key, one use: a key already trusted for another purpose is
+    refused, so the release key can never start signing API packs (or a pack
+    key update packages) by accident.
     """
-    if not args:
+    plain = []
+    skip = False
+    for a in args:
+        if skip:
+            skip = False
+            continue
+        if a in ("--name", "--purpose"):
+            skip = True
+            continue
+        if not a.startswith("--"):
+            plain.append(a)
+    if not plain:
         return Result("info", "trust add-key").lines("", [
-            "usage: satom execute trust add-key <file.pub> [--name <slug>]",
+            "usage: satom " + ADD_USAGE,
+            "",
+            "--purpose update     (default) " + PURPOSE_HELP["update"],
+            "--purpose api_pack   " + PURPOSE_HELP["api_pack"],
+            "--purpose knowledge  " + PURPOSE_HELP["knowledge"],
             "",
             "The .pub ships with the release, or comes from your own",
             "'sign_update_package.py genkey'. It can only VERIFY — publishing",
             "it is safe; it is the private half that must never reach a node."])
+    purpose, err = _purpose_arg(args)
+    if err:
+        return Result("bad", "trust add-key").lines("", [err, "usage: satom " + ADD_USAGE])
     up = _up(ctx)
     if up is None:
         return Result("bad", "trust add-key").lines("", ["no package support in this build"])
 
-    src = Path(args[0]).expanduser()
+    src = Path(plain[0]).expanduser()
     if not src.is_file():
         return Result("bad", "trust add-key").lines("", ["%s is not a file" % src])
     try:
         raw, comment = up.parse_public_key(src.read_text())
     except Exception as exc:  # noqa: BLE001
         return Result("bad", "trust add-key").lines("", [str(exc)])
+    fp = up.key_fingerprint(raw)
+    for other in PURPOSES:
+        if other != purpose and fp in {k["fingerprint"] for k in _keys_of(up, ctx, other)}:
+            return Result("bad", "trust add-key").lines("", [
+                "%s is already trusted for '%s'. One key, one use: a key that signs %s"
+                % (fp, other, PURPOSE_HELP[other]),
+                "must not also be accepted for %s. Use the key published for that purpose."
+                % PURPOSE_HELP[purpose]])
 
     name = ""
     if "--name" in args:
@@ -155,69 +245,96 @@ def trust_add_key(ctx, args):
     slug = "".join(c for c in (name or src.stem) if c.isalnum() or c in "._-")
     if not slug:
         slug = "key"
-    dest = TRUST_DIR / (slug + ".pub")
+    store = _purpose_dirs(ctx, purpose)[-1][0]
+    dest = store / (slug + ".pub")
 
-    TRUST_DIR.mkdir(parents=True, exist_ok=True)
-    os.chown(TRUST_DIR, 0, 0)
-    os.chmod(TRUST_DIR, 0o755)
-    parent = TRUST_DIR.parent
+    store.mkdir(parents=True, exist_ok=True)
+    chain = [store] if purpose == "update" else [store, PACK_KEY_DIR]
+    for d in chain:
+        os.chown(d, 0, 0)
+        os.chmod(d, 0o755)
+    parent = chain[-1].parent
     try:
         os.chown(parent, 0, 0)
         os.chmod(parent, 0o755)
     except OSError:
         pass
 
-    existing = {k["fingerprint"] for k in up.load_trust_store(str(TRUST_DIR))}
-    fp = up.key_fingerprint(raw)
+    existing = {k["fingerprint"] for k in _keys_of(up, ctx, purpose)}
     dest.write_text(up.format_public_key(raw, comment or name))
     os.chown(dest, 0, 0)
     os.chmod(dest, 0o644)
 
     r = Result("ok", "trust add-key")
-    r.rows("installed", [("file", str(dest)), ("fingerprint", fp),
+    r.rows("installed", [("purpose", purpose), ("file", str(dest)), ("fingerprint", fp),
                          ("comment", comment or "-"),
                          ("already trusted", "yes" if fp in existing else "no")])
-    problem = up.trust_store_problem(str(TRUST_DIR))
+    problem = up.trust_store_problem(str(store))
     if problem:
         r.status = "bad"
         r.note(problem)
     else:
         r.note("Compare the fingerprint against the one published with the "
-               "release before trusting it. This node now accepts any package "
-               "signed by the matching private key.")
+               "release before trusting it. This node now accepts %s signed by the "
+               "matching private key." % PURPOSE_HELP[purpose])
     return r
 
 
 def trust_remove_key(ctx, args):
-    """Remove a key from the trust store."""
-    plain = [a for a in args if not a.startswith("--")]
+    """Remove a key from an operator-managed trust store (any purpose, or the
+    one named with --purpose). Keys shipped in the code tree are not removable
+    here: they come and go with the release."""
+    plain = []
+    skip = False
+    for a in args:
+        if skip:
+            skip = False
+            continue
+        if a == "--purpose":
+            skip = True
+            continue
+        if not a.startswith("--"):
+            plain.append(a)
     if not plain:
         return Result("info", "trust remove-key").lines("", [
-            "usage: satom execute trust remove-key <file-name|fingerprint> --yes"])
+            "usage: satom execute trust remove-key <file-name|fingerprint> "
+            "[--purpose update|api_pack|knowledge] --yes"])
     up = _up(ctx)
     if up is None:
         return Result("bad", "trust remove-key").lines("", ["no package support"])
     want = plain[0]
-    keys = up.load_trust_store(str(TRUST_DIR))
-    hit = [k for k in keys if k["name"] == want or k["fingerprint"] == want
-           or k["name"] == want + ".pub"]
+    only = None
+    if any(a == "--purpose" or a.startswith("--purpose=") for a in args):
+        only, err = _purpose_arg(args)
+        if err:
+            return Result("bad", "trust remove-key").lines("", [err])
+    hit, shipped = [], []
+    for purpose in PURPOSES:
+        if only and purpose != only:
+            continue
+        for k in _keys_of(up, ctx, purpose):
+            if k["name"] == want or k["fingerprint"] == want or k["name"] == want + ".pub":
+                (hit if k["managed"] else shipped).append(dict(k, purpose=purpose))
     if not hit:
-        return Result("bad", "trust remove-key").lines(
-            "", ["no trusted key matches %r" % want])
+        lines = ["no removable trusted key matches %r" % want]
+        if shipped:
+            lines.append("%s is shipped in the code tree (%s); it is replaced by the "
+                         "release, not removed here" % (want, shipped[0]["dir"]))
+        return Result("bad", "trust remove-key").lines("", lines)
     if "--yes" not in args:
         r = Result("warn", "trust remove-key")
-        r.rows("would remove", [(k["fingerprint"], k["name"]) for k in hit],
-               keys="plain")
-        r.note("Packages signed by this key stop being accepted. Re-run with "
-               "--yes to apply.")
+        r.rows("would remove", [(k["fingerprint"], "%s (%s)" % (k["name"], k["purpose"]))
+                                for k in hit], keys="plain")
+        r.note("What this key signed stops being accepted. Re-run with --yes to apply.")
         return r
     for k in hit:
-        (TRUST_DIR / k["name"]).unlink(missing_ok=True)
+        (Path(k["dir"]) / k["name"]).unlink(missing_ok=True)
     r = Result("ok", "trust remove-key")
-    r.rows("removed", [(k["fingerprint"], k["name"]) for k in hit], keys="plain")
-    if not up.load_trust_store(str(TRUST_DIR)):
+    r.rows("removed", [(k["fingerprint"], "%s (%s)" % (k["name"], k["purpose"]))
+                       for k in hit], keys="plain")
+    if any(k["purpose"] == "update" for k in hit) and not up.load_trust_store(str(TRUST_DIR)):
         r.worst("warn")
-        r.note("The trust store is now empty: this node accepts no update "
+        r.note("The update trust store is now empty: this node accepts no update "
                "package at all.")
     return r
 

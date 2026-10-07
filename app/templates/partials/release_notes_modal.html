@@ -93,15 +93,18 @@
         </h5>
         <div class="d-flex align-items-center gap-2 ms-auto me-2">
           {% if current_user.can('user_manage') %}
-          <button type="button" class="btn btn-sm btn-primary" id="rnScanToggle">
-            <i class="bi bi-search"></i> {{ _('Scan from Fortinet…') }}
-          </button>
+          {# The docs.fortinet.com scan left SATOM in 3.0: the corpus comes from
+             signed knowledge packs, managed on Software Update. #}
+          <a class="btn btn-sm btn-outline-primary" id="rnKnowledgeLink"
+             href="{{ url_for('self_update.index', _anchor='knowledge-packs') }}">
+            <i class="bi bi-book"></i> {{ _('Knowledge packs…') }}
+          </a>
           {% endif %}
           {# Was 'Sync from git'. It could not move the corpus (reports/ is a
              symlink into the gitignored data/reports/), and what it DID do was
              run `git pull` over the running code tree for any VIEW user. #}
           <button type="button" class="btn btn-sm btn-outline-secondary" id="rnReloadBtn"
-                  title="{{ _('Re-read the corpus from disk — useful while another worker is scanning.') }}">
+                  title="{{ _('Re-read the corpus from disk — useful right after a pack import.') }}">
             <i class="bi bi-arrow-clockwise"></i> {{ _('Reload corpus') }}
           </button>
         </div>
@@ -111,64 +114,12 @@
       <div class="modal-body">
         <p class="text-muted small">
           Search {{ product.name }} known &amp; resolved issues across versions and plan upgrades.
-          Data is harvested from docs.fortinet.com into this node's local corpus, or imported
-          from an API pack on a node with no internet (the standby receives it by data
-          replication, not by git); use the Upgrade advisor to diff your current firmware
-          against a target.
+          The data comes from signed knowledge packs imported on this node (the standby
+          receives it by data replication, not by git); use the Upgrade advisor to diff
+          your current firmware against a target.
         </p>
-        <div id="rnStatus" class="small mb-3 text-muted">{{ _('Loading…') }}</div>
-
-        {% if current_user.can('user_manage') %}
-        {# ---- Scan panel (collapsible, admin only) ---- #}
-        <div id="rnScanPanel" class="border rounded p-3 mb-3 d-none bg-body-tertiary">
-          <div class="row g-2 align-items-end">
-            {# Version picker. The old control was a free-text 'major.minor' box
-               next to an 'All discovered' checkbox: the box could not express a
-               single maintenance release (the filter matched on major.minor, so
-               '8.0.7' matched nothing), and the checkbox silently overrode
-               whatever was typed. Both problems disappear when the operator ticks
-               a list that was actually read from docs.fortinet.com. #}
-            <div class="col-12">
-              <div class="d-flex align-items-center gap-2 flex-wrap">
-                <button type="button" class="btn btn-sm btn-outline-primary" id="rnDiscover">
-                  <i class="bi bi-list-check"></i> {{ _('Discover versions') }}
-                </button>
-                <span class="small text-muted" id="rnDiscoverHint">
-                  {{ _('One page fetch — lists what docs.fortinet.com publishes and pre-ticks what the corpus is missing.') }}
-                </span>
-              </div>
-              <div id="rnVersionPick" class="mt-2 d-none"></div>
-              <div class="small mt-1 d-none" id="rnVersionBar">
-                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" id="rnPickNew">{{ _('only the new ones') }}</button>
-                <span class="text-muted mx-1">·</span>
-                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" id="rnPickAll">{{ _('all') }}</button>
-                <span class="text-muted mx-1">·</span>
-                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" id="rnPickNone">{{ _('none') }}</button>
-                <span class="ms-2 text-muted" id="rnPickCount"></span>
-                <span class="ms-2 text-muted"><i class="bi bi-check-circle-fill text-success"></i> {{ _('= already in the corpus') }}</span>
-              </div>
-            </div>
-            {# One transport: a direct GET of docs.fortinet.com. A node that
-               cannot reach it gets the same corpus from an API pack. #}
-            <div class="col-12 small text-muted" id="rnTransportNote">
-              <i class="bi bi-info-circle me-1"></i>{{ _('Fetched directly from docs.fortinet.com. No internet on this node? Import an API pack under Software Update → API library packs: it carries the release notes too.') }}
-            </div>
-            <div class="col-12">
-              <button type="button" class="btn btn-sm btn-primary" id="rnScanStart">
-                <i class="bi bi-search"></i> {{ _('Start scan') }}
-              </button>
-              <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="rnScanBg">
-                <i class="bi bi-window-stack"></i> {{ _('Run in background') }}
-              </button>
-              <span class="text-muted small ms-2">
-                {{ _('Reads docs.fortinet.com — no appliance needed. New versions merge in.') }}
-              </span>
-            </div>
-          </div>
-          <pre id="rnScanOut" class="mt-3 mb-0 p-2 small bg-dark text-light rounded d-none"
-               style="max-height:200px;overflow:auto;white-space:pre-wrap;"></pre>
-        </div>
-        {% endif %}
+        <div id="rnStatus" class="small mb-1 text-muted">{{ _('Loading…') }}</div>
+        <div id="rnKnowledge" class="small mb-3"></div>
 
         {# ---- Tabs ---- #}
         <ul class="nav nav-tabs" id="rnTabs" role="tablist">

@@ -1,7 +1,8 @@
 /* ============================================================
    SATOM — release_notes.js
    Top-banner Release Notes modal. Same logic as the desktop page:
-   Scan from Fortinet / Reload corpus + Issues / Upgrade advisor / Notes.
+   Reload corpus + Issues / Upgrade advisor / Notes, over the corpus that
+   signed knowledge packs bring (no vendor-site scan since SATOM 3.0).
    Backend: app/views/release_notes.py
    ============================================================ */
 'use strict';
@@ -17,7 +18,6 @@
     fortiauthenticator: 'FortiAuthenticator', fortianalyzer: 'FortiAnalyzer',
   }[PRODUCT] || 'Fortinet';
   let loaded = false;
-  let scanPoll = null;
   // Rendered by the server into the modal element; the Scout panel needs it
   // BEFORE /data comes back, because the 503 path renders first.
   const IS_ADMIN = modalEl.dataset.rnAdmin === 'true';
@@ -53,7 +53,21 @@
   const STATUS_LABEL = { known: 'Known', resolved: 'Resolved' };
   const STATUS_BADGE = { known: 'text-warning', resolved: 'text-success' };
 
-  // ---- data load (first paint + after scan/reload) ----
+  // "Knowledge from <pack> (<date>)" + a warning when older than 30 days.
+  function knowledgeHtml(k) {
+    if (!k || !k.pack) {
+      return '<span class="fw-badge fw-badge-warning">no knowledge pack</span> '
+        + '<span class="text-muted">imported on this node yet.</span>';
+    }
+    const age = (k.age_days == null) ? '' : ` · ${k.age_days} day(s) old`;
+    const badge = k.stale
+      ? ` <span class="fw-badge fw-badge-warning" title="Older than ${esc(k.stale_days)} days — import a newer knowledge pack">stale</span>`
+      : '';
+    return `<i class="bi bi-book text-muted me-1"></i>Knowledge from <code>${esc(k.pack)}</code> `
+      + `(${esc(k.date || '?')})${age}${badge}`;
+  }
+
+  // ---- data load (first paint + after reload) ----
   async function loadData() {
     let d;
     try { d = await get(`${BASE}/data`); }
@@ -63,21 +77,20 @@
     if (sw) sw.checked = !!d.scout_enabled;
     const c = d.counts;
     if (c.issues) {
-      const gen = c.generated_at ? ` · last scan ${esc(c.generated_at)}` : '';
+      const gen = c.generated_at ? ` · corpus written ${esc(c.generated_at)}` : '';
       $('rnStatus').innerHTML =
         `<i class="bi bi-check-circle text-success"></i> ${c.issues} issues ` +
         `(${c.known} known / ${c.resolved} resolved) · ${c.sections} sections · ` +
         `${c.versions} versions${gen}.`;
-    } else if (d.offline) {
-      // Offline AND nothing harvested: an empty list here would read as
-      // "no issues". Say what is missing and where it comes from instead.
-      $('rnStatus').innerHTML =
-        `<i class="bi bi-cloud-slash text-warning"></i> ${esc(d.empty_reason)}`;
     } else {
-      $('rnStatus').innerHTML = d.is_admin
-        ? 'No release-notes data yet — click <b>Scan from Fortinet</b> to harvest it.'
-        : 'No release-notes data yet — ask an admin to run a scan on this node.';
+      // Nothing imported: an empty list here would read as "no issues". Say
+      // what is missing and where it comes from instead.
+      $('rnStatus').innerHTML =
+        `<i class="bi bi-cloud-slash text-warning"></i> ${esc(d.empty_reason)}`
+        + (d.is_admin ? '' : ' Ask an administrator.');
     }
+    const kn = $('rnKnowledge');
+    if (kn) kn.innerHTML = knowledgeHtml(d.knowledge);
 
     // The builds the fleet runs but the corpus lacks are offered too, marked:
     // picking one shows WHY it is empty instead of an empty table.
@@ -94,9 +107,6 @@
       $('rnAdvTarget').selectedIndex = 0;          // newest
       $('rnAdvCurrent').selectedIndex = 1;         // one older
     }
-
-    // a scan may be running (started by another admin / worker)
-    if (d.scan_running && !scanPoll) startScanPolling();
 
     await searchIssues();
   }
@@ -221,6 +231,7 @@
       + `<div class="d-flex align-items-center gap-2 mb-2">`
       + `<i class="bi bi-binoculars"></i><b>Scout advisory</b>`
       + `<span class="fw-badge ${cls}">${esc(label)}</span></div>`;
+    if (a.knowledge) h += `<div class="small mb-2">${knowledgeHtml(a.knowledge)}</div>`;
     if (a.path && a.path.length) {
       const hops = a.path.length - 1;
       h += `<p class="mb-2"><b>Required route:</b> `
@@ -236,7 +247,7 @@
         + `<span class="fw-badge fw-badge-info">coverage</span> `
         + `<b>${a.gaps.length} section(s) were not read</b> for ${esc(vs.join(', '))}. `
         + `<span class="small text-muted">This advisory cannot be called clean — `
-        + `scan those versions and ask again.</span></div>`;
+        + `import a newer knowledge pack and ask again.</span></div>`;
     }
     if (rest.length) {
       h += `<details${blockers.length ? '' : ' open'}><summary class="small text-muted mb-2">`
@@ -307,7 +318,7 @@
       `<b>${d.notes.length}</b> upgrade note(s).</p>`;
     if (!d.is_upgrade) html += `<p class="text-warning">⚠ This is a downgrade — Fortinet generally does not support downgrades; review carefully.</p>`;
     html += `<h6 class="text-success">✔ Resolved by upgrading (${d.resolved.length})</h6>`;
-    html += issueListHtml(d.resolved, 'No resolved issues recorded in this range (have you scanned these versions?).');
+    html += issueListHtml(d.resolved, 'No resolved issues recorded in this range (is a knowledge pack for these versions imported?).');
     html += `<h6 class="text-warning">⚠ Known issues you'd inherit in ${esc(d.target)} (${d.known_in_target.length})</h6>`;
     html += issueListHtml(d.known_in_target, 'No known issues recorded for the target.');
     html += '<h6>📋 Upgrade notes</h6>';
@@ -363,188 +374,6 @@
     }
   }
 
-  // ---- Scan from Fortinet ----
-  function startScanPolling() {
-    if (scanPoll) return;
-    const out = $('rnScanOut');
-    if (out) out.classList.remove('d-none');
-    const startBtn = $('rnScanStart');
-    if (startBtn) startBtn.disabled = true;
-    const bgBtn = $('rnScanBg');
-    if (bgBtn) bgBtn.classList.remove('d-none');
-    scanPoll = setInterval(async () => {
-      let st;
-      try { st = await get(`${BASE}/scan/status`); } catch (e) { return; }
-      if (!st || typeof st !== 'object') {
-        clearInterval(scanPoll); scanPoll = null;
-        if (startBtn) startBtn.disabled = false;
-        if (bgBtn) bgBtn.classList.add('d-none');
-        const m = 'Lost the scan status (session or ADOM permission changed?). '
-          + 'Reload the page and try again.';
-        if (out) out.textContent = m;
-        window.FW?.toast?.(m, 'danger');
-        return;
-      }
-      if (out) { out.textContent = (st.lines || []).join('\n'); out.scrollTop = out.scrollHeight; }
-      if (!st.running) {
-        clearInterval(scanPoll); scanPoll = null;
-        if (startBtn) startBtn.disabled = false;
-        if (bgBtn) bgBtn.classList.add('d-none');
-        window.FW?.refreshBell?.();
-        if (st.error) window.FW?.toast?.('Scan failed: ' + st.error, 'danger');
-        else if (st.result && (st.result.unreadable || []).length) {
-          // Harvested something AND failed to read a published section: the corpus
-          // is incomplete for those versions. Calling that 'done' is how the 8.0.7
-          // docset went missing for two releases.
-          const u = st.result.unreadable;
-          const vs = [...new Set(u.map((x) => x.version))].join(', ');
-          window.FW?.toast?.(
-            `Scan INCOMPLETE — ${st.result.scanned} version(s) harvested, but `
-            + `${u.length} published section(s) could not be read (${vs}). See the log.`,
-            'warning');
-        } else if (st.result) window.FW?.toast?.(
-          `Scan done — ${st.result.scanned} version(s), ${st.result.new_issues} issue(s).`, 'success');
-        await loadData();
-      }
-    }, 1500);
-  }
-
-  // ---- version discovery (the scan's input, not a guess) ----
-  let discovered = [];          // [{version, major, in_corpus, checked}]
-  let discovering = false;
-
-  function pickedVersions() {
-    return discovered.filter((r) => r.checked).map((r) => r.version);
-  }
-
-  function updatePickCount() {
-    const n = pickedVersions().length;
-    const el = $('rnPickCount');
-    if (el) el.textContent = n ? `${n} version(s) selected` : 'nothing selected';
-    const btn = $('rnScanStart');
-    if (btn) btn.disabled = !n;
-  }
-
-  function syncMajorBoxes() {
-    document.querySelectorAll('#rnVersionPick .rn-vmaj').forEach((box) => {
-      const rows = discovered.filter((r) => r.major === box.dataset.major);
-      const on = rows.filter((r) => r.checked).length;
-      box.checked = on === rows.length && rows.length > 0;
-      // A half-taken line must not read as an untaken one.
-      box.indeterminate = on > 0 && on < rows.length;
-      const cnt = document.querySelector(
-        `#rnVersionPick .rn-vcol-count[data-major="${box.dataset.major}"]`);
-      if (cnt) {
-        cnt.textContent = `${on}/${cnt.dataset.total}`;
-        cnt.title = `${on} of ${cnt.dataset.total} selected in the ${box.dataset.major} line`;
-      }
-    });
-  }
-
-  function renderVersions() {
-    const box = $('rnVersionPick'); const bar = $('rnVersionBar');
-    if (!box || !bar) return;
-    if (!discovered.length) { box.classList.add('d-none'); bar.classList.add('d-none'); return; }
-    // One column per release line. The old render wrapped each line inline, so
-    // variable-width entries never aligned and a wrapped row continued under
-    // the numbers of the line above it.
-    const byMajor = new Map();
-    discovered.forEach((r) => {
-      if (!byMajor.has(r.major)) byMajor.set(r.major, []);
-      byMajor.get(r.major).push(r);
-    });
-    const parts = [];
-    byMajor.forEach((rows, maj) => {
-      const body = rows.map((r) => (
-        `<label class="rn-vrow">`
-        + `<input class="form-check-input rn-ver m-0" type="checkbox" value="${esc(r.version)}"`
-        + `${r.checked ? ' checked' : ''}>`
-        + `<span class="rn-vnum small">${esc(r.version)}</span>`
-        + (r.in_corpus
-          ? `<i class="bi bi-check-circle-fill rn-vhas" title="Already in the corpus — re-scanning it merges, it does not duplicate."></i>`
-          : '')
-        + `</label>`)).join('');
-      parts.push(
-        `<div class="rn-vcol">`
-        + `<div class="rn-vcol-head">`
-        + `<input class="form-check-input rn-vmaj m-0" type="checkbox" data-major="${esc(maj)}"`
-        + ` title="Take or drop the whole ${esc(maj)} line">`
-        + `<span class="rn-vmaj-label small">${esc(maj)}</span>`
-        + `<span class="rn-vcol-count" data-major="${esc(maj)}" data-total="${rows.length}"></span>`
-        + `</div><div class="rn-vcol-body">${body}</div></div>`);
-    });
-    box.innerHTML = parts.join('');
-    box.classList.remove('d-none'); bar.classList.remove('d-none');
-    box.querySelectorAll('.rn-ver').forEach((cb) => cb.addEventListener('change', () => {
-      const row = discovered.find((r) => r.version === cb.value);
-      if (row) row.checked = cb.checked;
-      syncMajorBoxes();
-      updatePickCount();
-    }));
-    box.querySelectorAll('.rn-vmaj').forEach((cb) => cb.addEventListener('change', () => {
-      const maj = cb.dataset.major;
-      discovered.forEach((r) => { if (r.major === maj) r.checked = cb.checked; });
-      box.querySelectorAll('.rn-ver').forEach((c) => {
-        const row = discovered.find((r) => r.version === c.value);
-        if (row && row.major === maj) c.checked = cb.checked;
-      });
-      syncMajorBoxes();
-      updatePickCount();
-    }));
-    syncMajorBoxes();
-    updatePickCount();
-  }
-
-  async function discoverVersions() {
-    if (discovering) return;
-    discovering = true;
-    const hint = $('rnDiscoverHint'); const btn = $('rnDiscover');
-    if (btn) btn.disabled = true;
-    if (hint) hint.textContent = 'Reading docs.fortinet.com…';
-    try {
-      const d = await post(`${BASE}/discover`, {});
-      // Pre-tick exactly what the corpus is MISSING. Re-scanning what we already
-      // hold is the slow, pointless default the old form had; leaving everything
-      // unticked would be a dead end.
-      discovered = (d.versions || []).map((r) => ({ ...r, checked: !r.in_corpus }));
-      renderVersions();
-      if (hint) {
-        hint.textContent = `${d.count} version(s) published · ${d.new} not in the corpus`
-          + (d.new ? ' (pre-ticked)' : ' — the corpus is up to date');
-      }
-    } catch (e) {
-      let msg = e.message; try { msg = JSON.parse(e.message).error || msg; } catch (_) {}
-      if (hint) hint.innerHTML = `<span class="text-danger">${esc(msg)}</span>`;
-      window.FW?.toast?.('Discover: ' + msg, 'warning');
-    } finally {
-      discovering = false;
-      if (btn) btn.disabled = false;
-    }
-  }
-
-  async function startScan() {
-    const picked = pickedVersions();
-    if (!picked.length) {
-      window.FW?.toast?.('Tick at least one version (use Discover versions).', 'warning');
-      return;
-    }
-    const body = { versions: picked };
-    const out = $('rnScanOut');
-    if (out) { out.classList.remove('d-none'); out.textContent = 'Starting…'; }
-    try {
-      const r = await post(`${BASE}/scan`, body);
-      if (!r || typeof r !== 'object' || !r.started) {
-        throw new Error('Could not start the scan — your session or ADOM '
-          + 'permission may have changed. Reload the page and try again.');
-      }
-      startScanPolling();
-    } catch (e) {
-      let msg = e.message; try { msg = JSON.parse(e.message).error || msg; } catch (_) {}
-      window.FW?.toast?.('Scan: ' + msg, 'warning');
-      if (out) out.textContent = msg;
-    }
-  }
-
   // ---- wire-up ----
   modalEl.addEventListener('shown.bs.modal', () => {
     if (!loaded) { loaded = true; loadData(); }
@@ -560,31 +389,4 @@
   $('rnNoteSection').addEventListener('change', searchNotes);
   $('rnNoteQuery').addEventListener('input', debounce(searchNotes, 300));
   $('rnReloadBtn').addEventListener('click', reloadCorpus);
-
-  const scanToggle = $('rnScanToggle');
-  if (scanToggle) scanToggle.addEventListener('click', () => {
-    const panel = $('rnScanPanel');
-    panel.classList.toggle('d-none');
-    // Opening the panel with an empty list would make Start scan permanently
-    // disabled with no explanation, so the first open discovers.
-    if (!panel.classList.contains('d-none') && !discovered.length) discoverVersions();
-  });
-  const discoverBtn = $('rnDiscover');
-  if (discoverBtn) discoverBtn.addEventListener('click', discoverVersions);
-  const setAll = (fn) => () => {
-    discovered.forEach((r) => { r.checked = fn(r); });
-    renderVersions();
-  };
-  $('rnPickNew')?.addEventListener('click', setAll((r) => !r.in_corpus));
-  $('rnPickAll')?.addEventListener('click', setAll(() => true));
-  $('rnPickNone')?.addEventListener('click', setAll(() => false));
-  const scanStart = $('rnScanStart');
-  if (scanStart) scanStart.addEventListener('click', startScan);
-  const scanBg = $('rnScanBg');
-  if (scanBg) scanBg.addEventListener('click', () => {
-    const inst = (window.bootstrap && bootstrap.Modal.getInstance(modalEl))
-      || (window.bootstrap && bootstrap.Modal.getOrCreateInstance(modalEl));
-    if (inst) inst.hide();
-    window.FW?.toast?.('Scan running in background — a bell notification will appear when it finishes.', 'info');
-  });
 })();

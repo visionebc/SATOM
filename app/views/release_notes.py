@@ -5,33 +5,28 @@ harvester to the web. The whole UI lives in a Bootstrap modal opened from the
 top banner (``partials/release_notes_modal.html`` + ``static/js/release_notes.js``);
 this blueprint is the JSON backend it talks to.
 
-Two buttons + three tabs, exactly like the standalone:
+One button + three tabs:
 
-* **🔎 Scan from Fortinet** — auto-discover every version of the ADOM's product
-  from docs.fortinet.com and harvest the Known/Resolved issue tables + the prose
-  sections into ``reports/_release_notes.json`` (a direct httpx GET — the only
-  network transport; an offline node gets its corpus from an API pack instead).
-  Admin-only (``USER_MANAGE``). Runs in a background thread; progress
-  is written to a small status file so any of the 4 gunicorn workers can serve
-  the poll.
 * **⟳ Reload corpus** — re-read the JSON from disk and report its age (any
   logged-in user). This blueprint does NOT touch git: see :func:`reload_corpus`.
 * **Issues / Upgrade advisor / Notes** — read-only queries over the corpus via
   the pure ``release_notes`` functions (``filter_issues`` / ``advise``); no SQL
   projection is needed on the web (the JSON IS the source of truth here).
+
+The corpus comes ONLY from signed packs (SATOM 3.0): the API pack that ships
+with each release and the rolling knowledge pack (Software Update → Knowledge
+packs, ``services.knowledge_fetch``). The docs.fortinet.com scan that used to
+live here — its Scan / Discover buttons, routes and status file — was removed;
+the crawler lives only in the knowledge harvester. Every answer carries
+``knowledge`` (which pack the data came from and how old it is) so the modal
+can say so and warn when it is older than 30 days.
 """
 from __future__ import annotations
 
-import json
-import os
-import threading
 from dataclasses import asdict
-from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import (
-    Blueprint, current_app, g, jsonify, render_template, request, session,
-)
+from flask import Blueprint, g, jsonify, request, session
 from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
@@ -40,25 +35,17 @@ from ..services import release_advisor as ra
 from ..services import release_notes as rn
 from ..services import release_corpus
 from ..services import scout_config
-from ..services import notifications as notify
 from ..services.audit import log_action
 
 bp = Blueprint("release_notes", __name__, url_prefix="/release-notes")
 
 #: The ADOMs that offer the modal. FortiGate has release notes too
-#: (``rn.SECTIONS_BY_PRODUCT``) but no ADOM, so its corpus only travels in API
-#: packs.
+#: (``rn.SECTIONS_BY_PRODUCT``); its corpus is read by the other pages that
+#: use it (Scout, the migration report).
 _SUPPORTED_PRODUCTS = ("fortiweb", "fortiadc", "fortiauthenticator", "fortianalyzer")
 _PRODUCT_LABEL = {"fortiweb": "FortiWeb", "fortiadc": "FortiADC",
                   "fortiauthenticator": "FortiAuthenticator",
                   "fortianalyzer": "FortiAnalyzer", "fortigate": "FortiGate"}
-
-#: Request keys an older page (or a script) may still send from when the scan
-#: had a second, crawler-based transport. Read and ignored — never an error —
-#: so a stale browser tab or an old config keeps working.
-_LEGACY_TRANSPORT_KEYS = ("use_direct", "use_firecrawl", "firecrawl_endpoint",
-                          "firecrawl_key")
-_SCAN_FILE = "_release_notes_scan.json"   # progress/status (under data/, worker-shared)
 
 
 def _product() -> str:
@@ -110,15 +97,10 @@ def _topics(db: rn.ReleaseNotesDB) -> list[str]:
     return sorted({i.topic for i in db.issues if i.topic})
 
 
-def _docs_online() -> bool:
-    """Can this node reach docs.fortinet.com? (``RELEASE_NOTES_ONLINE`` in the
-    app config pins the answer — the test suite never probes the network.)"""
-    forced = current_app.config.get("RELEASE_NOTES_ONLINE")
-    if forced is not None:
-        return bool(forced)
-    if current_app.config.get("TESTING"):
-        return True
-    return rn.docs_online()
+def _knowledge() -> dict:
+    """Which pack the corpus came from and how old it is (C7 freshness)."""
+    from ..services import knowledge_fetch
+    return knowledge_fetch.freshness()
 
 
 def _fleet_builds(product: str) -> list[str]:
@@ -142,91 +124,14 @@ def _missing_reason(db: rn.ReleaseNotesDB, version: str | None) -> str:
     """Why a query over ``db`` has nothing to show for ``version`` — or ``''``.
 
     Non-empty only when the corpus holds NOTHING for the build asked about (or
-    nothing at all when no build is named). Offline, that is the moment to
-    point at the API pack; online, at the scan."""
+    nothing at all when no build is named): the moment to point at the
+    knowledge packs."""
     if version:
         if version in db.versions:
             return ""
     elif db.versions:
         return ""
-    return rn.ONLINE_NO_NOTES if _docs_online() else rn.OFFLINE_NO_NOTES
-
-
-def _note_legacy_transport(body: dict) -> None:
-    """Log and drop the transport fields an older page may still post.
-
-    The scan once offered a second, crawler-based transport; its settings now
-    mean nothing. A stale tab sending them must keep working, and the operator
-    who reads the log learns why the endpoint they typed was not used."""
-    stale = sorted(k for k in _LEGACY_TRANSPORT_KEYS
-                   if k != "use_direct" and body.get(k))
-    if stale or body.get("use_direct") is False:
-        current_app.logger.info(
-            "release-notes: ignoring legacy transport field(s) %s — the scan "
-            "always fetches docs.fortinet.com directly; offline nodes import "
-            "an API pack", ", ".join(stale or ["use_direct"]))
-
-
-# --------------------------------------------------------------------------- #
-#  Scan status file (shared across the 4 gunicorn workers)                       #
-# --------------------------------------------------------------------------- #
-_SCAN_STALE_AFTER = 1800.0   # a "running" scan older than this (s) is treated as
-#  dead — the worker/thread crashed without clearing the flag — so a stuck lock can
-#  never permanently trap the user at HTTP 409. The longest real scan is well under.
-
-
-def _scan_path() -> str:
-    # Isolate the worker-shared progress file the same way the corpus is isolated
-    # (see _corpus_root) so the test suite never reads/writes the production data/
-    # file — and a stale production lock can never fail an unrelated test.
-    if current_app.config.get("RELEASE_NOTES_DIR") or current_app.config.get("TESTING"):
-        d = str(_corpus_root())
-    else:
-        d = os.path.join(os.path.dirname(current_app.root_path), "data")
-    os.makedirs(d, exist_ok=True)
-    return os.path.join(d, _SCAN_FILE)
-
-
-def _scan_is_stale(st: dict) -> bool:
-    """A scan flagged ``running`` but whose ``started_at`` is older than
-    ``_SCAN_STALE_AFTER`` is presumed dead (thread crashed mid-scan)."""
-    if not st.get("running"):
-        return True
-    started = st.get("started_at")
-    if not started:
-        return False
-    try:
-        t0 = datetime.fromisoformat(started)
-    except (TypeError, ValueError):
-        return False
-    if t0.tzinfo is None:
-        t0 = t0.replace(tzinfo=timezone.utc)
-    return (datetime.now(timezone.utc) - t0).total_seconds() > _SCAN_STALE_AFTER
-
-
-def _scan_read(path: str) -> dict:
-    try:
-        with open(path, encoding="utf-8") as fh:
-            return json.load(fh)
-    except (OSError, ValueError):
-        return {"running": False, "lines": [], "result": None, "error": None}
-
-
-def _scan_write(path: str, state: dict) -> None:
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(state, fh, ensure_ascii=False)
-    os.replace(tmp, path)
-
-
-def _scan_append(path: str, line: str) -> None:
-    st = _scan_read(path)
-    st.setdefault("lines", []).append(line)
-    _scan_write(path, st)
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return rn.NO_NOTES
 
 
 # --------------------------------------------------------------------------- #
@@ -239,7 +144,6 @@ def data():
     """Summary + filter options for the modal's first paint."""
     product = _product()
     db = _load(product)
-    scan = _scan_read(_scan_path())
     have = set(db.versions)
     secmap = rn.sections_for(product)
     empty = _missing_reason(db, None)
@@ -255,10 +159,9 @@ def data():
         "sections": [{"key": k, "label": rn.section_label(k, product)}
                      for k in rn.PROSE_SECTIONS if k in secmap],
         "is_admin": bool(current_user.can(Permission.USER_MANAGE)),
-        "scan_running": bool(scan.get("running")),
         "scout_enabled": scout_config.enabled(),
         "empty_reason": empty,
-        "offline": empty == rn.OFFLINE_NO_NOTES,
+        "knowledge": _knowledge(),
     })
 
 
@@ -343,7 +246,7 @@ def advisory():
         return jsonify({"error": "Pick two different versions."}), 400
     product = _product()
     adv = ra.analyse(_load(product).sections, current, target, product=product)
-    return jsonify(asdict(adv))
+    return jsonify(dict(asdict(adv), knowledge=_knowledge()))
 
 
 @bp.route("/scout-switch", methods=["POST"])
@@ -391,7 +294,7 @@ def reload_corpus():
        the counts it printed were always the local file's.
 
     What the operator actually reached for is real: the counts on screen go
-    stale while another gunicorn worker finishes a scan, or while
+    stale while a pack import finishes in another worker, or while
     ``satom-ha-datasync`` drops a fresher corpus in. So this re-reads, and
     names where from and how old — the two facts a "sync" button owes you."""
     db = _load()
@@ -405,224 +308,10 @@ def reload_corpus():
     if counts["issues"]:
         msg = (f"Reloaded {counts['issues']} issues and {counts['sections']} "
                f"sections from disk")
-        msg += (f" (harvested {counts['generated_at']})."
+        msg += (f" (corpus written {counts['generated_at']})."
                 if counts["generated_at"] else ".")
     else:
-        msg = ("No corpus on this node yet — an admin has to run a scan here. "
-               "It is not fetched from git: each node harvests its own.")
-    return jsonify({"counts": counts, "message": msg,
+        msg = ("No corpus on this node yet — import a knowledge pack (Software "
+               "Update → Knowledge packs). It is not fetched from git.")
+    return jsonify({"counts": counts, "message": msg, "knowledge": _knowledge(),
                     "source": str(src), "generated_at": counts["generated_at"]})
-
-
-# --------------------------------------------------------------------------- #
-#  🔎 Scan from Fortinet (background thread + worker-shared progress file)       #
-# --------------------------------------------------------------------------- #
-def _notify_scan_done(user_id, product, *, ok, result=None, error=None, lines=None):
-    """Raise a bell notification for the admin who launched the scan, so a scan
-    that finishes after they closed the modal ('Run in background') still surfaces.
-    Product-scoped so it lights the bell only in the matching ADOM. Best-effort."""
-    plabel = _PRODUCT_LABEL.get(product, "Fortinet")
-    tail = "\n".join((lines or [])[-8:]) or None
-    if ok:
-        r = result or {}
-        unread = r.get("unreadable") or []
-        if unread:
-            # A scan that harvested something AND failed to read a published
-            # section is not a success: the corpus is now silently incomplete
-            # for those versions, which is the exact failure mode that let the
-            # 8.0.7 docset go unnoticed. Warn, and name the versions.
-            vs = sorted({u.get("version", "?") for u in unread}, key=rn.version_key)
-            notify.push(user_id,
-                        (f"{plabel} release-notes scan INCOMPLETE — "
-                         f"{len(unread)} published section(s) unreadable "
-                         f"({', '.join(vs)})"),
-                        kind="warning", body=tail, product=product)
-            return
-        title = (f"{plabel} release-notes scan done — "
-                 f"{r.get('scanned', 0)} version(s), {r.get('new_issues', 0)} new issue(s)")
-        notify.push(user_id, title, kind="success", body=tail, product=product)
-    else:
-        notify.push(user_id, f"{plabel} release-notes scan failed",
-                    kind="error", body=(error or tail), product=product)
-
-
-#: How many firmware lines the default (unfiltered) scan keeps, newest first.
-#: A number rather than a list of lines, so it cannot name a firmware and
-#: therefore cannot be wrong about which firmwares exist.
-DEFAULT_RECENT_MAJORS = 5
-
-
-def _do_scan(app, *, product, majors, username, user_id, versions=None,
-             recent_majors=0):
-    with app.app_context():
-        path = _scan_path()
-        root = _corpus_root()
-
-        def emit(msg: str) -> None:
-            _scan_append(path, msg)
-
-        try:
-            fetch = rn.make_fetcher()
-            if versions:
-                # The operator ticked an explicit list (the Discover flow). Do NOT
-                # re-derive it: discovery is a suggestion, the ticks are the order.
-                picked = list(versions)
-                emit(f"Harvesting {len(picked)} selected version(s): "
-                     f"{', '.join(picked)}")
-            else:
-                emit(f"Discovering {product} versions…")
-                all_versions = rn.discover_versions(fetch, product=product)
-                emit(f"Discovered {len(all_versions)} versions.")
-                if recent_majors and not majors:
-                    # Derived from what the vendor site listed just now, never
-                    # from a list in this file. Announced, because a cap the
-                    # operator cannot see is a scan that reads as complete.
-                    majors = rn.recent_majors(all_versions, recent_majors)
-                    emit("No filter given — defaulting to the %d newest "
-                         "firmware line(s) discovered: %s. Tick 'All "
-                         "discovered' to scan every line."
-                         % (len(majors), ", ".join(majors)))
-                picked = rn.select_versions(all_versions, majors)
-                if not picked:
-                    raise RuntimeError("No versions matched. Check the majors or tick 'All'.")
-                emit(f"Harvesting {len(picked)} version(s)…")
-            new = rn.scan_release_notes(fetch, picked, product=product, on_progress=emit)
-            merged = rn.merge_db(rn.load_db(root=root), new)
-            stored = rn.save_db(merged, root=root)
-            # No git leg. The corpus is not version-controlled (reports/ is a
-            # symlink into the gitignored data/reports/), so the publish this
-            # used to attempt could only ever log a failure — which is exactly
-            # what it did, on every scan, since 2026-08-05. The standby gets
-            # this file from satom-ha-datasync within 5 minutes.
-            emit(f"Corpus written to {stored}.")
-            counts = _counts(merged)
-            unreadable = [asdict(u) for u in new.unreadable]
-            if unreadable:
-                emit(f"✗ {len(unreadable)} PUBLISHED section(s) could not be read — "
-                     "the corpus is INCOMPLETE for those versions. "
-                     "This usually means docs.fortinet.com changed renderer again.")
-            result = {
-                "scanned": len(new.versions), "new_issues": len(new.issues),
-                "total_issues": counts["issues"], "total_sections": counts["sections"],
-                "total_versions": counts["versions"],
-                "unreadable": unreadable,
-            }
-            emit(f"✓ Scanned {len(new.versions)} version(s); {len(new.issues)} issue(s) parsed. "
-                 f"Corpus now: {counts['issues']} issues, {counts['sections']} sections, "
-                 f"{counts['versions']} versions.")
-            st = _scan_read(path)
-            st.update(running=False, result=result, error=None, finished_at=_now())
-            _scan_write(path, st)
-            _notify_scan_done(user_id, product, ok=True, result=result,
-                              lines=st.get("lines"))
-            try:
-                log_action("release_notes.scan", target=username,
-                           extra={"scanned": result["scanned"],
-                                  "new_issues": result["new_issues"]})
-            except Exception:  # noqa: BLE001
-                pass
-        except Exception as exc:  # noqa: BLE001
-            st = _scan_read(path)
-            st.update(running=False, error=f"{type(exc).__name__}: {exc}",
-                      finished_at=_now())
-            _scan_write(path, st)
-            _notify_scan_done(user_id, product, ok=False,
-                              error=f"{type(exc).__name__}: {exc}",
-                              lines=st.get("lines"))
-
-
-@bp.route("/discover", methods=["POST"])
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def discover():
-    """The versions docs.fortinet.com actually publishes, each marked against the
-    corpus we already hold.
-
-    ONE fetch (~1 s) — the version history lives in the seed page. This exists so
-    the operator ticks a real list instead of typing ``major.minor`` blind: the
-    old free-text field could not express 'just 8.0.7' at all (the filter matched
-    on major.minor, so a full version matched nothing and the scan died), and it
-    sat next to an 'All discovered' checkbox that silently overrode it."""
-    product = _product()
-    _note_legacy_transport(request.get_json(silent=True) or {})
-    fetch = rn.make_fetcher()
-    try:
-        found = rn.discover_versions(fetch, product=product)
-    except Exception as exc:  # noqa: BLE001 — network is the expected failure
-        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 502
-    if not found:
-        return jsonify({"error": "Discovery returned nothing — docs.fortinet.com "
-                                 "unreachable (offline nodes import an API pack "
-                                 "instead), or the seed version was retired."}), 502
-    have = set(_load(product).versions)
-    rows = [{"version": v, "major": rn.major_of(v), "in_corpus": v in have}
-            for v in sorted(found, key=rn.version_key, reverse=True)]
-    return jsonify({"product": product, "versions": rows, "count": len(rows),
-                    "new": sum(1 for r in rows if not r["in_corpus"])})
-
-
-@bp.route("/scan", methods=["POST"])
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def scan():
-    path = _scan_path()
-    if not _scan_is_stale(_scan_read(path)):
-        return jsonify({"error": "A scan is already running."}), 409
-
-    body = request.get_json(silent=True) or {}
-    scan_all = bool(body.get("all"))
-    majors_raw = (body.get("majors") or "").strip()
-    raw_versions = body.get("versions")
-    versions = None
-    if isinstance(raw_versions, list):
-        versions = [str(v).strip() for v in raw_versions if str(v).strip()]
-        if not versions:
-            return jsonify({"error": "Pick at least one version to scan."}), 400
-    # Two controls that disagree must not resolve silently. Before this, ticking
-    # 'All discovered' while 8.0 sat typed in the box scanned all 59 versions and
-    # said nothing — the operator had every reason to believe they had asked for
-    # one line. Make the contradiction impossible to submit instead.
-    if versions is not None and (scan_all or majors_raw):
-        return jsonify({"error": "Pick EITHER an explicit version list OR the "
-                                 "majors/All filter — not both."}), 400
-    if versions is None and scan_all and majors_raw:
-        return jsonify({"error": "'All discovered' and a majors filter contradict "
-                                 "each other. Untick All, or clear the box."}), 400
-    majors = None if scan_all else [m.strip() for m in majors_raw.split(",") if m.strip()]
-    # The default used to be the literal list ["7.0","7.2","7.4","7.6","8.0"].
-    # A hard-wired set of firmware lines is a filter that goes WRONG rather
-    # than stale: the discovery step finds every version the vendor publishes,
-    # and the filter then silently dropped any line nobody had thought to add
-    # -- so the release notes of a brand new line (8.1, 8.2, anything after
-    # this list was typed) would never be harvested, and the scan would report
-    # success. The default is now derived from what discovery actually found:
-    # the newest lines, so a line that ships tomorrow is in it on the day.
-    recent = 0 if (versions is not None or scan_all or majors) else DEFAULT_RECENT_MAJORS
-    # NB: a legacy client may still post "publish": true. It is ignored on
-    # purpose rather than rejected — the corpus cannot be published (see
-    # reload_corpus), and failing an otherwise valid scan over a dead flag
-    # would turn a cosmetic staleness into an outage. The retired transport
-    # fields get the same treatment, for the same reason.
-    _note_legacy_transport(body)
-
-    product = _product()
-    _scan_write(path, {"running": True, "lines": [f"Starting {product} scan…"],
-                       "result": None, "error": None, "started_at": _now(),
-                       "started_by": current_user.username, "product": product})
-
-    app = current_app._get_current_object()
-    t = threading.Thread(
-        target=_do_scan, args=(app,),
-        kwargs=dict(product=product, majors=majors, versions=versions,
-                    recent_majors=recent,
-                    username=current_user.username, user_id=current_user.id),
-        daemon=True)
-    t.start()
-    return jsonify({"started": True}), 202
-
-
-@bp.route("/scan/status")
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def scan_status():
-    return jsonify(_scan_read(_scan_path()))

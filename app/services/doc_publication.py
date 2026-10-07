@@ -186,7 +186,8 @@ PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
      "patterns, and which dialects are lab-verified."),
     ("knowledge-harvester.md", "knowledge-harvester",
      "Knowledge Harvester — the API knowledge each release ships", "\U0001f33e",
-     "The separate tool that measures lab devices and the vendor documentation "
+     "The separate tool that measures lab devices, crawls the vendor documentation "
+     "(SATOM itself no longer fetches it) "
      "and ships a signed knowledge pack; why Firecrawl lives only there and how "
      "the pack reaches online and offline nodes."),
     ("fortiauthenticator.md", "fortiauthenticator",

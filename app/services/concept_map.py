@@ -645,7 +645,6 @@ EXCLUDED: dict[str, str] = {
     "logs.status": "json feed", "regex_lab.examples": "json feed",
     "release_notes.advise": "json feed", "release_notes.data": "json feed",
     "release_notes.issues": "json feed", "release_notes.notes": "json feed",
-    "release_notes.scan_status": "json feed",
     "release_notes.advisory":
         "json feed — Scout's verdicts for ONE move, fetched by the Advisor tab "
         "of the release-notes modal (behind #rnAdvShow). It is meaningless "

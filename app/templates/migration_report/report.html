@@ -1,0 +1,142 @@
+{% extends 'base.html' %}
+{% from 'migration_report/_verdict.html' import verdict_badge, severity_badge with context %}
+{% block title %}{{ _('Migration report') }} — {{ appliance.name }}{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <h4><i class="bi bi-signpost-split me-2"></i>{{ _('Migration report') }} — {{ appliance.name }}</h4>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">
+      <i class="bi bi-hdd-network me-1"></i>{{ _('Appliance') }}</a>
+    {% if may_open('upgrade_flow.index') %}
+    <a href="{{ url_for('upgrade_flow.index', device=appliance.id) }}" class="btn fw-btn-secondary btn-sm">
+      <i class="bi bi-arrow-up-circle me-1"></i>{{ _('Upgrade Flow') }}</a>
+    {% endif %}
+    {% if rep %}
+    <a href="{{ url_for('migration_report.report_json', id=appliance.id, target=target, backup=request.args.get('backup')) }}" class="btn fw-btn-secondary btn-sm">
+      <i class="bi bi-filetype-json me-1"></i>JSON</a>
+    <a href="{{ url_for('migration_report.report_csv', id=appliance.id, target=target, backup=request.args.get('backup')) }}" class="btn fw-btn-secondary btn-sm">
+      <i class="bi bi-filetype-csv me-1"></i>CSV</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="fw-card mb-3">
+  <div class="fw-card-body">
+    <form method="get" action="{{ url_for('migration_report.report', id=appliance.id) }}" class="d-flex gap-2 align-items-center flex-wrap">
+      <label class="text-muted small" for="mr-target">{{ _('Target build') }}</label>
+      {% if targets %}
+      <select id="mr-target" name="target" class="form-select form-select-sm" style="max-width:12rem;">
+        {% for v in targets %}<option value="{{ v }}"{% if v == target %} selected{% endif %}>{{ v }}</option>{% endfor %}
+        {% if target and target not in targets %}<option value="{{ target }}" selected>{{ target }}</option>{% endif %}
+      </select>
+      {% else %}
+      <input id="mr-target" name="target" class="form-control form-control-sm" style="max-width:12rem;" value="{{ target }}" placeholder="8.0.6">
+      {% endif %}
+      {% set usable = dumps | selectattr('usable') | list %}
+      {% if usable|length > 1 %}
+      <label class="text-muted small" for="mr-backup">{{ _('Configuration dump') }}</label>
+      <select id="mr-backup" name="backup" class="form-select form-select-sm" style="max-width:20rem;">
+        {% for d in usable %}<option value="{{ d.backup_id }}"{% if (request.args.get('backup') or '') == d.backup_id|string %} selected{% endif %}>#{{ d.backup_id }} · {{ d.created_at }} · {{ d.version or '?' }}</option>{% endfor %}
+      </select>
+      {% endif %}
+      <button type="submit" class="btn fw-btn-primary btn-sm">{{ _('Check') }}</button>
+    </form>
+    {% if not targets %}
+    <p class="text-muted small mt-2 mb-0">{{ _('No build of this product has a CLI schema in the API library yet: import an API pack or harvest a box on the target build.') }}</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if rep %}
+<div class="fw-card mb-3" id="mr-summary">
+  <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span>
+      <span class="is-mono">{{ rep.source or '?' }}</span>
+      <i class="bi bi-arrow-right mx-1 text-muted"></i>
+      <span class="is-mono"><strong>{{ rep.target or '?' }}</strong></span>
+      <span class="fw-badge fw-badge-secondary ms-2">{{ rep.direction }}</span>
+    </span>
+    {{ verdict_badge(rep.verdict) }}
+  </div>
+  <div class="fw-card-body">
+    <p class="mb-2">{{ rep.verdict_reason }}</p>
+    <div class="d-flex gap-3 flex-wrap mb-2">
+      {% for s in severities %}
+      <span>{{ severity_badge(s) }} <strong>{{ rep.summary.get(s, 0) }}</strong></span>
+      {% endfor %}
+      {% if rep.summary.objects is defined %}
+      <span class="text-muted small">{{ _('%(o)s configured object(s), %(f)s field name(s) checked', o=rep.summary.objects, f=rep.summary.fields) }}</span>
+      {% endif %}
+    </div>
+    {% if rep.dump %}
+    <div class="text-muted small">
+      {{ _('Configuration dump') }} #{{ rep.dump.backup_id }} · {{ rep.dump.created_at }} UTC · {{ rep.dump.firmware or rep.dump.version or '?' }}
+    </div>
+    {% endif %}
+    {% if rep.library %}
+    <div class="text-muted small">
+      {{ _('Target build measured') }}: {{ rep.library.target_completeness.pct }}%
+      ({{ _('CLI schema') }}: {{ _('yes') if rep.library.target_tree else _('no') }},
+       {{ _('REST') }}: {{ _('yes') if rep.library.target_completeness.rest_measured else _('no') }})
+      · {{ _('source build CLI schema') }}: {{ _('yes') if rep.library.source_tree else _('no') }}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if rep.objects %}
+<div class="fw-card mb-3">
+  <div class="fw-card-header">{{ _('Per object') }}</div>
+  <div class="fw-card-body p-0">
+    <div class="table-responsive">
+      <table class="table fw-table align-middle mb-0">
+        <thead><tr><th>{{ _('Object') }}</th><th>{{ _('CLI path') }}</th><th class="text-end">{{ _('Rows') }}</th>
+          {% for s in severities %}<th class="text-end">{{ s }}</th>{% endfor %}</tr></thead>
+        <tbody>
+        {% for o in rep.objects %}
+          <tr>
+            <td class="is-mono small">{{ o.object or '—' }}</td>
+            <td class="is-mono small">{{ o.cli_path or '—' }}</td>
+            <td class="text-end">{{ o.rows }}</td>
+            {% for s in severities %}<td class="text-end">{{ o[s] or '' }}</td>{% endfor %}
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% for sev in severities %}
+{% set group = rep.rows | selectattr('severity', 'equalto', sev) | list %}
+{% if group %}
+<div class="fw-card mb-3" id="mr-{{ sev }}">
+  <div class="fw-card-header">{{ severity_badge(sev) }} <span class="ms-1">{{ group|length }}</span></div>
+  <div class="fw-card-body p-0">
+    <div class="table-responsive">
+      <table class="table fw-table align-middle mb-0">
+        <thead><tr><th>{{ _('Code') }}</th><th>{{ _('Object') }}</th><th>{{ _('Field') }}</th><th class="text-end">{{ _('Rows') }}</th><th>{{ _('Finding') }}</th></tr></thead>
+        <tbody>
+        {% for r in group %}
+          <tr>
+            <td class="is-mono small">{{ r.code }}</td>
+            <td class="is-mono small">{{ r.object or r.cli_path or '—' }}</td>
+            <td class="is-mono small">{{ r.field or '—' }}</td>
+            <td class="text-end">{{ r.rows or '' }}</td>
+            <td class="small">{{ r.message }}
+              {% if r.detail.removed_options %}<div class="text-muted">{{ _('No longer accepted') }}: <span class="is-mono">{{ r.detail.removed_options|join(', ') }}</span></div>{% endif %}
+              {% if r.detail.target_options %}<div class="text-muted">{{ _('Target accepts') }}: <span class="is-mono">{{ r.detail.target_options|join(', ') }}</span></div>{% endif %}
+              {% if r.detail.source_default is defined %}<div class="text-muted">{{ _('Default') }}: <span class="is-mono">{{ r.detail.source_default }}</span> → <span class="is-mono">{{ r.detail.target_default }}</span></div>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endblock %}

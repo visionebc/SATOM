@@ -1632,6 +1632,15 @@ def create_app(config_override: object | None = None) -> Flask:
             'waf_artifact_ref': [
                 ('wpp_mkey', 'VARCHAR(255)'),
             ],
+            # --- API library: CLI channel metadata (apilib05_cli_channel) ---
+            # NULLABLE, no backfill: a fact folded before the column existed
+            # came from a REST source, which carries no channel metadata.
+            'api_lib_endpoint_fact': [
+                ('attrs', 'JSON'),
+            ],
+            'api_lib_field_fact': [
+                ('attrs', 'JSON'),
+            ],
             # --- SoT: which ADOM, and whether the payload is still here ---
             # product DEFAULTS to '' rather than a family: a version recorded
             # before the column existed was not filed under FortiWeb, it was

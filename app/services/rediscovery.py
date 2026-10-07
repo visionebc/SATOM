@@ -22,6 +22,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import socket
 import threading
 import time
@@ -720,6 +721,132 @@ def _device_firmware(appliance_snap, is_adc: bool) -> str:
         return ""
 
 
+# --------------------------------------------------------------------------- #
+# FortiWeb answers a NESTED path it does not serve with the PARENT's answer.   #
+# --------------------------------------------------------------------------- #
+# Measured on fortiweb17 (7.6.8), 2026-10-07: ``system/interface/nonexistent-xyz``
+# answers 200 with the 3 interface rows of ``system/interface``;
+# ``waf/web-protection-profile.inline-protection/nonexistent-xyz`` answers 200
+# with all 210 web protection profiles; with ``?mkey=`` (or under a singleton)
+# it answers the parent's dict. Only an unknown TOP-LEVEL path gets errcode
+# -20001, and a real empty sub-table answers ``[]``. So "200 without errcode"
+# proves nothing for a nested path: the verdict is read from the SHAPE of the
+# answer — whether it IS the parent's answer, or rows that carry the child as
+# one of their own keys, or rows none of whose keys the object has.
+_FWB_ABSENT_CODES = frozenset({"-20001", "-3"})
+_FWB_NOISE = re.compile(r"^(?:q_|sz_|can_)|_val$")
+
+
+def _fwb_results(payload):
+    if isinstance(payload, dict):
+        return payload.get("results", payload.get("data"))
+    return payload
+
+
+def _fwb_errcode(payload):
+    body = payload if isinstance(payload, dict) else {}
+    res = body.get("results")
+    if isinstance(res, dict) and res.get("errcode") not in (None, 0, "0"):
+        body = res
+    code = body.get("errcode")
+    return None if code in (None, 0, "0") else code
+
+
+def _fwb_nested(urn: str) -> bool:
+    """``module/object/child`` (or deeper): a path that can fall back to its parent."""
+    from .api_library import urn_key
+    return urn_key(urn).count("/") >= 2
+
+
+def _fwb_parent_urn(urn: str) -> str:
+    path, sep, query = str(urn or "").partition("?")
+    parent = path.rstrip("/").rsplit("/", 1)[0]
+    return parent + (sep + query if sep else "")
+
+
+def _fwb_canon(obj) -> str:
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def fortiweb_shape_verdict(urn: str, payload, expected_fields=None, *,
+                           parent_payload=None) -> dict:
+    """Classify one FortiWeb GET answer by its SHAPE, never by HTTP status.
+
+    Returns ``{"verdict": ok|absent|error, "shape", "rows", "detail"}``:
+
+    * errcode -20001 / -3                      -> ``absent`` (shape ``errcode``);
+    * any other errcode                        -> ``error``;
+    * ``[]``                                   -> ``ok`` (a real empty table);
+    * a NESTED path whose answer is the parent's answer (``parent_payload``
+      equal), whose rows carry the child itself as a key (``<child>`` or
+      ``sz_<child>``: those are the parent's rows), or whose row keys share
+      nothing with ``expected_fields`` (the object's fields from ``tree``)
+                                               -> ``absent`` (shape
+      ``parent_fallback``);
+    * anything else                            -> ``ok``.
+    """
+    from .api_library import urn_key
+    code = _fwb_errcode(payload)
+    if code is not None:
+        if str(code) in _FWB_ABSENT_CODES:
+            return {"verdict": VERDICT_ABSENT, "shape": "errcode", "rows": [],
+                    "detail": "errcode %s" % code}
+        return {"verdict": VERDICT_ERROR, "shape": "errcode", "rows": [],
+                "detail": "errcode %s" % code}
+    results = _fwb_results(payload)
+    if isinstance(results, list):
+        rows = results
+    elif isinstance(results, dict):
+        rows = [results]
+    else:
+        return {"verdict": VERDICT_ERROR, "shape": "unreadable", "rows": [],
+                "detail": "the answer carries no results"}
+    if not rows:
+        return {"verdict": VERDICT_OK, "shape": "empty", "rows": [], "detail": ""}
+    if not _fwb_nested(urn):
+        return {"verdict": VERDICT_OK, "shape": "dict" if isinstance(results, dict) else "rows",
+                "rows": rows, "detail": ""}
+    fallback = {"verdict": VERDICT_ABSENT, "shape": "parent_fallback", "rows": []}
+    if parent_payload is not None and _fwb_errcode(parent_payload) is None:
+        pres = _fwb_results(parent_payload)
+        if pres is not None and _fwb_canon(pres) == _fwb_canon(results):
+            return dict(fallback, detail="200 with the parent's answer: the path is not served")
+    leaf = urn_key(urn).rsplit("/", 1)[-1]
+    keys = set()
+    for r in rows:
+        if isinstance(r, dict):
+            keys.update(str(k) for k in r)
+    if leaf in keys or ("sz_" + leaf) in keys:
+        return dict(fallback, detail="200 with rows that hold %r as a field of theirs: "
+                                     "the parent's rows" % leaf)
+    if expected_fields:
+        own = {k for k in keys if not _FWB_NOISE.search(k)}
+        if own and not (own & {str(f) for f in expected_fields}):
+            return dict(fallback, detail="200 with rows none of whose %d keys is a field "
+                                         "of the object" % len(own))
+    return {"verdict": VERDICT_OK, "shape": "dict" if isinstance(results, dict) else "rows",
+            "rows": rows, "detail": ""}
+
+
+def _fwb_parent_payload(client, urn: str):
+    """The parent's answer, for the comparison; None when it cannot be read.
+
+    A 401 here goes through ``status_check`` exactly like the main read: the
+    gated client counts it as a suspect and waits for that re-check."""
+    try:
+        resp = client.get(_fwb_parent_urn(urn))
+        if resp.status_code == 401:
+            client.status_check()       # raises DeviceAuthError -> _sweep stops
+            return None
+        if resp.status_code >= 400:
+            return None
+        return resp.json()
+    except DeviceAuthError:
+        raise
+    except Exception:  # noqa: BLE001 — no comparison, the other rules still apply
+        return None
+
+
 def _probe_fortiweb(client, ep: dict) -> tuple[list, str, str]:
     """GET one FortiWeb endpoint and classify the answer three ways.
 
@@ -737,6 +864,11 @@ def _probe_fortiweb(client, ep: dict) -> tuple[list, str, str]:
     collapsing ``error`` into ``absent`` lets one sick appliance propose
     deleting the whole catalog. The codes are the same ones
     ``FortiWebClient.cmdb_names_checked`` already trusts.
+
+    A 200 is classified by SHAPE (:func:`fortiweb_shape_verdict`): a nested
+    path FortiWeb does not serve answers with its PARENT's rows. For a nested
+    path that returned rows, the parent is read once to compare.
+    ``ep["expected_fields"]`` (the object's fields from ``tree``) sharpens it.
     """
     resp = client.get(ep["urn"])
     if resp.status_code == 401:
@@ -751,7 +883,15 @@ def _probe_fortiweb(client, ep: dict) -> tuple[list, str, str]:
         return [], VERDICT_ERROR, f"errcode {code}: {_resp_message(resp)}"[:200]
     if resp.status_code >= 400:
         return [], VERDICT_ERROR, f"HTTP {resp.status_code}: {_resp_message(resp)}"[:200]
-    return client._results_list(resp.json()), VERDICT_OK, ""
+    payload = resp.json()
+    parent = None
+    if _fwb_nested(ep["urn"]) and client._results_list(payload):
+        parent = _fwb_parent_payload(client, ep["urn"])
+    shape = fortiweb_shape_verdict(ep["urn"], payload, ep.get("expected_fields"),
+                                   parent_payload=parent)
+    if shape["verdict"] != VERDICT_OK:
+        return [], shape["verdict"], shape["detail"][:200]
+    return client._results_list(payload), VERDICT_OK, ""
 
 
 def probe_endpoint(appliance, urn: str) -> tuple[list, str, str]:
@@ -1746,6 +1886,7 @@ __all__ = ["sweep_plan", "sweep_plan_adc", "plan_for", "status",
            "migrate_version_archive",
            "latest_snapshot_meta", "start", "apply_inventory",
            "maybe_apply_inventory", "_run_deep", "_run_cli", "_probe_fortiweb",
+           "fortiweb_shape_verdict",
            "cli_capture_decision", "CLI_CAPTURE_MAX_AGE_H",
            "CLI_SKIP_NOT_REQUESTED", "CLI_SKIP_NO_PERMISSION",
            "CLI_SKIP_MAINTENANCE",

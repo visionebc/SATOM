@@ -107,6 +107,30 @@ def harvest_fac_cmd(name):
     _print(results)
 
 
+@apilib_cli.command("schema-harvest")
+@click.argument("appliance")
+@click.option("--lab", is_flag=True, default=False,
+              help="LAB box only: record first-row values as defaults (summary.lab).")
+@click.option("--no-probe", is_flag=True, default=False,
+              help="Skip the REST shape probe of the tree objects the library lacks.")
+def schema_harvest_cmd(appliance, lab, no_probe):
+    """Harvest one appliance's CLI schema (tree + show full-configuration) and
+    probe the REST paths the library lacks. APPLIANCE is an id or a name."""
+    from .models import Appliance
+    from .services import schema_harvest
+    ap = None
+    if str(appliance).isdigit():
+        ap = Appliance.query.get(int(appliance))
+    if ap is None:
+        ap = Appliance.query.filter_by(name=appliance).first()
+    if ap is None:
+        raise click.ClickException("no appliance %r" % appliance)
+    res = schema_harvest.harvest(ap, lab=lab, probe=not no_probe)
+    _print(res)
+    if not res.get("ok"):
+        raise SystemExit(1)
+
+
 @apilib_cli.command("status")
 def status_cmd():
     """Counts per product, per source and per build."""

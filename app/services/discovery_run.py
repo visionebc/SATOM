@@ -183,9 +183,11 @@ def plan(product: str, diff: dict, *, configured_only: bool = False,
          limit: int | None = None) -> list[Finding]:
     """The rows a run WOULD probe, with zero device contact.
 
-    Built from the ``cli_only`` bucket of a diff the page already computed — so
-    the run and the coverage table underneath it can never disagree about which
-    blocks are missing.
+    Built from the blocks the catalog does not name (``cli_only`` and
+    ``catalog_gap``, :func:`cli_coverage.not_in_catalog`) of a diff the page
+    already computed — so the run and the coverage table underneath it can
+    never disagree about which blocks are missing. A ``catalog_gap`` is the
+    best candidate there is: the library already measured its path served.
 
     ``configured_only`` keeps only blocks that hold configuration on this box.
     It defaults to **False**: an empty table is still a catalog gap, and
@@ -197,7 +199,7 @@ def plan(product: str, diff: dict, *, configured_only: bool = False,
         by_name = by_name if by_name is not None else idx_name
         by_urn = by_urn if by_urn is not None else idx_urn
 
-    rows = list(diff.get(cli_coverage.BUCKET_CLI_ONLY) or [])
+    rows = cli_coverage.not_in_catalog(diff)
     if configured_only:
         rows = [r for r in rows if r.get("configured")]
     # Configured blocks first: a table carrying 69 rows is a bigger gap than one

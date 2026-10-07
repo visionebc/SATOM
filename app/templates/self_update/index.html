@@ -316,7 +316,7 @@
       </div>
       <div class="card-body">
         <p class="text-muted small">
-          {{ _('A pack carries what SATOM has learned about vendor APIs: the endpoints and fields each firmware build serves (from sweeps, anonymised), the vendor documentation (release notes, field catalog) and the CLI-only blocks per firmware line. It never carries a configuration or the name of a device.') }}
+          {{ _('A pack carries what SATOM has learned about vendor APIs: the endpoints and fields each firmware build serves (from sweeps, anonymised), the vendor documentation (release notes, field catalog) and the CLI blocks the catalog does not name, per firmware build. It never carries a configuration or the name of a device.') }}
           <strong>{{ _('Import only adds:') }}</strong> {{ _('what this node measured itself always wins, and nothing it already holds is overwritten. Packs are signed and checked against the same trust store as update packages.') }}
         </p>
         {% if api_packs.error %}
@@ -665,8 +665,9 @@
     }
     if (it.kind === 'field-overlay') return 'Field help overlay (admin guide)';
     if (it.section === 'cli-coverage') {
-      return 'CLI-only blocks · ' + (it.version || '') + ' · ' + (it.cli_only || 0) +
-             ' CLI-only, ' + (it.near_match || 0) + ' near match';
+      return 'CLI coverage · ' + (it.version || '') + ' · ' + (it.cli_only || 0) +
+             ' not in catalog, ' + (it.catalog_gap || 0) + ' catalog gap, ' +
+             (it.near_match || 0) + ' near match';
     }
     return it.id;
   }

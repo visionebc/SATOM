@@ -167,6 +167,7 @@ _BUCKET_SRC = {
     "both": SRC_PRESENT,
     "near_match": SRC_PRESENT,
     "cli_only": SRC_PRESENT,
+    "catalog_gap": SRC_PRESENT,
     "no_block": SRC_ABSENT,
     "monitor_only": SRC_INAPPLICABLE,
     "unknown": SRC_SILENT,

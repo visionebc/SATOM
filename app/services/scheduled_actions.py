@@ -360,6 +360,21 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "plenty.",
     ),
     ActionSpec(
+        "schema_harvest",
+        "API library — harvest the CLI schema of a target (tree + hidden fields)",
+        "admin", needs_targets=True, products=("fortiweb", "fortiadc"),
+        summary="For each target, read its build through BOTH channels into the "
+                "API library (services.schema_harvest): SSH `tree` (the whole "
+                "CLI schema: objects, fields, types, options, CLI ids) as "
+                "cli_tree evidence; `show full-configuration` (a fresh vault "
+                "dump of the same build when there is one) as cli_full evidence, "
+                "field NAMES only, hidden fields marked; and one REST GET per "
+                "tree object the library's REST evidence does not cover, "
+                "classified by response shape. Read-only against the box. "
+                "FortiADC: tree and path rule unverified, no REST probe. "
+                "Weekly, or after an upgrade, is plenty.",
+    ),
+    ActionSpec(
         "metrics_scrape", "Fleet metrics — scrape to the local store", "admin",
         needs_targets=False,
         summary="Run every due scrape target (Monitoring → Collection): one "
@@ -710,6 +725,28 @@ def _do_metrics_scrape(params: dict, dry_run: bool = False) -> dict:
             "log": ""}
 
 
+def _do_schema_harvest(appliance, params: dict, dry_run: bool = False) -> dict:
+    """One target through both channels into the API library.
+
+    ``ok`` = a healthy ``cli_tree`` row was stored for the target's build (the
+    same contract as the harvest job: green only for healthy evidence).
+    """
+    if appliance is None:
+        return {"ok": False, "summary": "schema_harvest needs a target device.", "log": ""}
+    from . import schema_harvest as sh
+    if dry_run:
+        return {"ok": True,
+                "summary": "[dry-run] would read `tree` and `show full-configuration` "
+                           "of %s (%s %s) and probe the REST paths the library lacks"
+                           % (appliance.name, appliance.kind, appliance.fw_version or "?"),
+                "log": ""}
+    res = sh.harvest(appliance, probe=bool(params.get("probe", True)))
+    import json as _json
+    return {"ok": bool(res.get("ok")), "summary": res.get("msg") or "",
+            "log": _json.dumps({k: res.get(k) for k in ("tree", "full", "probe", "channels")},
+                               indent=1, default=str)[:_LOG_MAX]}
+
+
 def _do_apilib_harvest(params: dict, dry_run: bool = False) -> dict:
     """Harvest every appliance whose running build the API library has not
     measured from its live source.
@@ -1002,6 +1039,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_metrics_scrape(params, dry_run)
         if key == "apilib_harvest":
             return _do_apilib_harvest(params, dry_run)
+        if key == "schema_harvest":
+            return _do_schema_harvest(appliance, params, dry_run)
         if key == "artifact_refs":
             return _do_artifact_refs(params, dry_run)
         if key == "netbox_reconcile":

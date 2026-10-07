@@ -6,6 +6,59 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — the API library reads the CLI channel too (2026-10-07)
+
+- Two new evidence sources, `cli_tree` and `cli_full`. `cli_tree` is the
+  schema the appliance's own CLI `tree` command prints: every object, field,
+  type, enum option, key field and CLI attribute id of the running build.
+  `cli_full` is the field names `show full-configuration` reveals per object,
+  hidden fields included — names only, never a value (a default is recorded
+  only on lab evidence). Both are keyed by the REST path (`system/ntp/ntpserver`),
+  joined to sweeps by `api_library.urn_key`. Facts gain an `attrs` column
+  (CLI id, hidden, range, raw CLI type, datasource; migration
+  `apilib05_cli_channel`). The REST readers (versions page, preflights,
+  baselines, the matrix export) do not read the CLI sources.
+- `api_library.channels_at(product, build)` says, per field, whether a build
+  serves it over REST and CLI (`both`), the CLI only (`cli_only`), only in
+  `show full-configuration` (`hidden`), REST only (`rest_only`) or `unknown`,
+  with the evidence behind each answer and a completeness summary that allows
+  only named exceptions (`licence`, `status-object`).
+- `compare(product, base, target)` adds the CLI channel: fields that changed
+  channel, enum options added and removed, type, range and lab-default
+  changes, and rename candidates found by an equal CLI id (reported, never
+  applied: the field-rename map stays the authority).
+- New parser `services/cli_schema.py` for the FortiWeb and FortiOS `tree`
+  formats and `show full-configuration`, with the CLI-to-REST path rules of
+  FortiWeb (verified on 7.6.8 and 8.0.6), FortiGate (`config a b c` ->
+  `a.b/c`) and FortiADC (documented convention, marked unverified).
+- Schema harvest (`services/schema_harvest.py`): one appliance's build through
+  both channels — SSH `tree`, `show full-configuration` (a fresh vault dump of
+  the same build is reused) and one REST read per tree object the library does
+  not cover. Read-only against the box. From the API Explorer (**Harvest CLI
+  schema**, permission `appliances.apply`, runs as a device job), the
+  scheduled action `schema_harvest`, `flask apilib schema-harvest` and
+  `satom execute apilib harvest <appliance>`.
+- SSH: `tree` is allowed as a whole-command match behind its own gate
+  (`ssh_ops.assert_schema_command`); the read-verb allowlist is unchanged.
+- API packs export and import the new sources and their `attrs`; a `cli_full`
+  row that carries a value is refused at export as well as at ingest.
+
+### Fixed — a FortiWeb nested path that is not served is no longer "served" (2026-10-07)
+
+- FortiWeb answers a nested REST path it does not serve with HTTP 200 and the
+  PARENT's rows (`system/interface/<anything>` returns the interfaces), or the
+  parent's dict with `?mkey=`. The rediscovery probe called every 200 `ok`, so
+  the sweep, the CLI-coverage probe and the discovery run could "find" and
+  register a URN that only ever returns its parent. The probe now classifies
+  by the shape of the answer (`rediscovery.fortiweb_shape_verdict`): the
+  parent's answer, rows that carry the child as their own key, or rows whose
+  keys the object does not have, are `absent`; a real empty table stays `ok`.
+- The CLI-coverage "CLI only" badge said more than it knew: most of those
+  blocks are served by REST and are only missing from the catalog. A block
+  whose REST path the library measured served on the dump's build is now a
+  **catalog gap**; the rest read **Not in catalog**, with a REST column that
+  says *CLI only* only when REST was measured absent.
+
 ### Added — exceptions record their firmware build; line profiles show the template's (2026-10-06)
 
 - Every WAF/signature carve-out (and its fleet library item) now records the

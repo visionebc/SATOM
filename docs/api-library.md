@@ -106,7 +106,9 @@ answer; it is never read as "not served".
 ### 2.4 Source priority
 
 When two sources describe the same thing, the order is
-`sweep` > `schema` > `manual` > `legacy_matrix` > `vendor_doc`.
+`sweep` > `schema` > `cli_tree` > `cli_full` > `manual` > `legacy_matrix` >
+`vendor_doc`. The two CLI sources describe the CLI channel and are never read
+by a REST answer (§13).
 **Fields are compared only within one kind of evidence.** A sweep carries
 wire-only companions (`_val` twins, `sz_`/`q_` internals) that a schema
 strips, and subtracting one from the other invents removals. A field set known
@@ -126,7 +128,8 @@ on one side only, or by different kinds on the two sides, is reported as
 | `fortigate` | `vendor_doc` | the vendor's Ansible collection `fortinet.fortios` (its `v_range` data). Catalog-only |
 
 Source vocabulary (closed set): `sweep`, `schema`, `vendor_doc`, `manual`,
-`legacy_matrix`. Anything else is refused at ingest.
+`legacy_matrix`, and the CLI channel `cli_tree` and `cli_full` (§13).
+Anything else is refused at ingest.
 
 **What the library held when 2.2.0 was cut** (measured):
 
@@ -242,14 +245,17 @@ Models: `app/models_apilib.py`, migration `apilib01`. All tables are portable
 - `api_lib_endpoint` — `product, name, first_seen, last_seen`.
   Unique (product, name).
 - `api_lib_endpoint_fact` — `endpoint_id, build_id, source, urn, section,
-  verdict, fields_known, witnesses (JSON list of device names),
+  verdict, fields_known, witnesses (JSON list of device names), attrs (JSON,
+  CLI channel metadata, migration `apilib05_cli_channel`),
   first_evidence_id, last_evidence_id, first_seen, last_seen`.
   Unique (endpoint_id, build_id, source).
 - `api_lib_field` — `endpoint_id, name, first_seen, last_seen`.
   Unique (endpoint_id, name).
 - `api_lib_field_fact` — `field_id, build_id, source, type, options (JSON),
   default (JSON), required, children (JSON), platforms (JSON list of hw_type
-  or model), first_evidence_id, last_evidence_id, first_seen, last_seen`.
+  or model), attrs (JSON: `cli_id`, `hidden`, `range`, `help`, `cli_type`,
+  `datasource`, `lab_default`), first_evidence_id, last_evidence_id,
+  first_seen, last_seen`.
   Unique (field_id, build_id, source).
 - `api_lib_span` — `endpoint_id, field_id (nullable: NULL = endpoint span),
   evidence_id, source, from_key, to_key (nullable = open), from_version,
@@ -304,6 +310,13 @@ Query:
   None), status (§2.2).
 - `matrix_doc(product, versions=None) -> dict` — the document shape
   `api_matrix.build()` has always returned, so its consumers did not change.
+  Each version also carries `cli` (CLI-channel object counts per source).
+- `urn_key(urn) -> str` — the REST path without prefix or query; the join
+  between the channels (§13).
+- `channels_at(product, version, endpoint=None, exceptions=None) -> dict` —
+  per field: `both | cli_only | hidden | rest_only | unknown`, with evidence
+  ids and a completeness summary (§13.3). `compare()` carries the CLI half
+  under `channels`.
 
 Adapters that talk to nothing: `apilib_vendor.evidence_from_ansible_collection(path)`
 (reads the collection with `ast`; vendor code is **never imported or
@@ -952,7 +965,10 @@ the digests, because they act on a stored dump.
 | The endpoint count dropped after a collection upgrade | Read `skipped_by_reason` in the new evidence's summary: monitor, fact, generic and non-configuration modules are skipped by name |
 | A field shows as **removed** plus a new one **added** after an upgrade | Probably a rename. Record it at `/web/registry/field-map` |
 | A retired appliance still appears as a witness | Expected: evidence outlives the appliance and is marked `retired` |
-| `ingest-file`: `unknown evidence source` | The document's `source` is not one of `sweep`, `schema`, `vendor_doc`, `manual`, `legacy_matrix` |
+| `ingest-file`: `unknown evidence source` | The document's `source` is not one of `sweep`, `schema`, `vendor_doc`, `manual`, `legacy_matrix`, `cli_tree`, `cli_full` |
+| `cli_full field … carries default: cli_full holds names, never values` | A `cli_full` document carried a value. Only lab evidence (`summary.lab`) may carry a `default` (§13.2) |
+| Schema harvest: `stored as unhealthy: the tree output was cut short` | The SSH read ended before the prompt came back. Harvest again; a box under load can take longer than the 180 s budget |
+| A CLI-coverage row reads **Not in catalog** with REST *not measured* | No REST evidence for that path on the dump's build. Run a schema harvest of a box on that build (§13.4); the row then becomes a catalog gap or *CLI only* |
 | `baseline promote`: `… has no measured evidence` | Nobody swept or harvested an appliance on that build. Promote a build that `flask apilib status` lists with a measured source, or sweep a box on the build first |
 | `endpoint baseline of … not applied` in the log, and the registry is empty | The shipped artifact was refused. The message names the file and the reason (`seal mismatch` means it was edited by hand: restore it from the release) |
 | An endpoint an operator fixed went back after an upgrade | It did not, unless the row still carries `seed` or `baseline:…` in `updated_by`: then it was the baseline's row, not the operator's. Edit it from the Registry page; the edit makes it an operator row |
@@ -961,3 +977,143 @@ the digests, because they act on a stored dump.
 | `pack import`: `no key in the trust store signed this package` | The signing key is not trusted here: `satom execute trust add-key <key>.pub` (same store as update packages) |
 | `pack export`: `identifying data survived the scrub` | The message names the file and the value. A device name used as an API key or field name is the usual cause; nothing was written |
 | A pack item stays `local` and is never imported | Expected: this node measured that build itself (§11.3) |
+
+---
+
+## 13. CLI channel and hidden fields
+
+> **Since:** SATOM 2.13.0 (unreleased).
+
+The same firmware build can serve an object over REST and over the CLI, over
+one only, or with fields that only `show full-configuration` prints. The
+library records the CLI channel beside the REST one, per exact build, so a
+page can say "you can do this, but on build X this field does not exist", or
+"this field exists only on the CLI".
+
+### 13.1 The two CLI sources
+
+| Source | Read with | What it holds |
+|---|---|---|
+| `cli_tree` | `tree` at the root of the CLI (SSH, no `config`) | the whole schema: every object (table `[name(id)]`, singleton `{name(id)}`), every field with its CLI id, `<type>` or enum options; the first field of a table is its key |
+| `cli_full` | `show full-configuration` | the field NAMES each existing object prints, defaults included; a name the build's `tree` does not list is marked `attrs.hidden` |
+
+Both are build-scoped (one box, one build) and keyed by the **REST path
+without prefix** (`system/ntp/ntpserver`), which is exactly what
+`api_library.urn_key(urn)` makes of the URN a sweep carries. That is the only
+join between the channels; no registry name is involved. Per object,
+`summary.objects[<path>]` = `{cli_path, kind, mkey, parent, cli_id}` and the
+same goes into the endpoint fact's `attrs`. Field metadata goes into the field
+fact's `attrs`: `cli_id`, `hidden`, `range` `[lo, hi]`, `help`, `cli_type`
+(the raw `<type>`), `datasource`, `lab_default`.
+
+FortiOS (FortiGate) prints `[table]`, `<singleton>`, `--*key` and annotations
+`(lo,hi)` / `(size)` but no types and no options; its command trees
+(`diagnose__tree__`, `execute__tree__`) are skipped.
+
+**CLI path to REST path** (`cli_schema.rest_path`):
+
+| Product | Rule | Status |
+|---|---|---|
+| FortiWeb | `module/` + namespaces and object joined with `.`; an object nested in a table or singleton goes with `/` (`waf/web-protection-profile.inline-protection`, `system/ntp/ntpserver`) | verified (7.6.8, 8.0.6) |
+| FortiGate | `config a b c` -> `a.b/c`; a nested table is a field of its top-level object (`children`) | matches every vendor URN |
+| FortiADC | `config a-b c-d` -> `a_b_c_d`; a table in a table -> `<parent>_child_<table>` | **unverified** (no FortiADC in the lab) |
+
+### 13.2 What never enters the library
+
+- **No values.** `cli_full` holds names. Ingest refuses a `cli_full` field
+  that carries anything but `attrs`, and the API-pack export refuses such a row
+  again. The one exception is lab evidence (`summary.lab = true`): on a freshly
+  created lab row every value IS the default, so `default` is recorded with
+  `attrs.lab_default`. Identity and secret fields (hostname, keys, passwords,
+  certificates, `ENC` values) are never recorded as defaults.
+- **No dump.** The configuration dump stays in the device vault; the library
+  row stores the names-only document. The `tree` text is kept with its
+  `cli_tree` row (it is a schema), and a pack exports the document, never that
+  text.
+- **No REST claim.** The REST readers (`endpoints_at`, `fields_at`, the REST
+  half of `compare`, `matrix_doc`, `builds().measured`, `resolve_appliance`,
+  baselines) read only the REST sources. A build measured only through the CLI
+  is still `unmeasured` for REST, with `cli_measured: true`.
+
+### 13.3 Channels of a build
+
+`api_library.channels_at(product, version, endpoint=None, exceptions=None)`
+answers, for every field of every path the build is known to have:
+
+| channel | means |
+|---|---|
+| `both` | REST revealed it and the CLI has it |
+| `cli_only` | the CLI `tree` has it; REST revealed the object's fields (or measured the object absent) and it is not there |
+| `hidden` | like `cli_only`, but only `show full-configuration` prints it |
+| `rest_only` | REST revealed it; the build's `tree` does not list it |
+| `unknown` | one channel never answered for it on this build (no `tree`, a blind or unasked REST endpoint). Never a "no" |
+
+REST wire noise (`q_*`, `sz_*`, `can_*`, `*_val`) is not counted. Each field
+carries `rest` / `cli` (`yes|no|unknown`) and the evidence ids. The summary is
+**complete** when both channels were measured and nothing is `unknown`
+outside a named exception — `licence` or `status-object`, from the evidence
+(`summary.exceptions`) or the caller. Any other reason is listed as rejected.
+
+`compare(product, base, target)` adds `channels`: `channel_moves` (a field
+whose channel changed, e.g. `absent -> cli_only`), and the like-for-like `tree`
+diff — objects and fields added or removed, enum options added and removed,
+type, range and (lab) default changes, and **rename candidates**: a field (or
+object) gone from one build and a new one with the same CLI id. Candidates are
+reported, never applied; `api_lib_field_map` stays the only authority, and a
+candidate it already maps says `mapped: true`. `field_history` reads both
+channels and labels each row `rest` or `cli`.
+
+### 13.4 Harvesting the CLI channel
+
+`services/schema_harvest.harvest(appliance)` reads one appliance's build:
+
+1. SSH `tree` -> `cli_tree`. `tree` is allowed by its own whole-command gate
+   (`ssh_ops.assert_schema_command`); the read-verb allowlist is unchanged. The
+   read waits for the prompt (a 1-2 MB answer), paging off as for every
+   console session. A dump that is cut short, holds fewer than 50 objects or
+   no `system` object is stored unhealthy.
+2. `show full-configuration` -> `cli_full`: the newest usable vault dump of
+   the same box on the same build when it is younger than 24 h, otherwise a
+   fresh SSH capture (not stored in the vault).
+3. FortiWeb only: one REST GET per `tree` object the library's REST evidence
+   does not cover (never asked, errored, blind), classified by shape (§13.5),
+   ingested as sweep evidence keyed by the REST path with `origin_ref`
+   `schema_harvest:…`. A nested object under a table is asked with the first
+   row's key (`?mkey=`), which is never recorded; one with an empty parent, or
+   two tables deep, is skipped and counted. This partial evidence does not
+   count as the build's sweep (`apilib_harvest.needs_harvest`, pack "local
+   wins"), and a baseline promotion ignores path-named entries.
+
+Entry points: **API Explorer -> Harvest CLI schema** (permission
+`appliances.apply`, a device job), the scheduled action `schema_harvest`
+(admin, per target), `flask apilib schema-harvest <id|name> [--lab]
+[--no-probe]`, and `sudo satom execute apilib harvest <id|name> [--no-probe]`.
+`--lab` is for lab boxes only.
+
+### 13.5 FortiWeb answers an unserved nested path with its parent
+
+Measured on 7.6.8: `system/interface/<anything>` answers 200 with the
+interfaces; `waf/web-protection-profile.inline-protection/<anything>` with all
+profiles; with `?mkey=` or under a singleton, with the parent's dict. Only an
+unknown top-level path answers `-20001`, and a real empty table answers `[]`.
+`rediscovery.fortiweb_shape_verdict(urn, payload, expected_fields=None,
+parent_payload=None)` reads the shape: a nested path whose answer equals the
+parent's, whose rows hold the child as their own key (`<child>` /
+`sz_<child>`), or whose row keys share nothing with the object's fields is
+`absent`. `_probe_fortiweb` reads the parent once for a nested path that
+returned rows, so the sweep, `probe_endpoint`, the CLI-coverage probe and the
+discovery run share the verdict.
+
+### 13.6 CLI coverage: catalog gap or CLI only
+
+The coverage diff used to call every block the catalog does not name "CLI
+only". Measured on 7.6.8, all 50 of those blocks were served by REST. Now:
+
+| Bucket | Label | Means |
+|---|---|---|
+| `catalog_gap` | Catalog gap · REST serves it | the library measured the block's REST path served on the dump's build |
+| `cli_only` | Not in catalog | not shown to be served; the row's REST column says *CLI only* when REST measured it absent, *not measured* otherwise |
+
+Discovery runs and the Structure page read both buckets
+(`cli_coverage.not_in_catalog`).
+

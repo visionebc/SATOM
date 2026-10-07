@@ -40,7 +40,9 @@
      'monitor_only': ('info',      'API only',                 'no block — runtime readout'),
      'no_block':     ('secondary', 'API · no CLI block here',
                                                                'no block in this dump'),
-     'cli_only':     ('danger',    'CLI only',                 'in the dump'),
+     'cli_only':     ('danger',    'Not in catalog',           'in the dump'),
+     'catalog_gap':  ('warning',   'Catalog gap · REST serves it',
+                                                               'in the dump · REST serves it'),
    } %}
 
 {% macro prov_badge(rec, show_path=False, nested=False) -%}
@@ -84,7 +86,8 @@
   {% if not compact %}
   <div class="d-flex flex-wrap gap-2 align-items-center">
     {{ prov_badge({'bucket': 'both', 'why': ''}) }}<span class="text-muted">served by both transports</span>
-    {{ prov_badge({'bucket': 'cli_only', 'why': ''}) }}<span class="text-muted">the dump has it, the catalog does not</span>
+    {{ prov_badge({'bucket': 'cli_only', 'why': ''}) }}<span class="text-muted">the dump has it, the catalog does not, REST not shown to serve it</span>
+    {{ prov_badge({'bucket': 'catalog_gap', 'why': ''}) }}<span class="text-muted">the dump has it, REST serves it on this build, the catalog lacks it</span>
     {{ prov_badge({'bucket': 'monitor_only', 'why': ''}) }}<span class="text-muted">runtime readout — cannot have a CLI block</span>
     {{ prov_badge({'bucket': 'no_block', 'why': ''}) }}<span class="text-muted">in the catalog; this dump printed no block (an empty table prints none)</span>
   </div>

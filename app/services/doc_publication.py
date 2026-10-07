@@ -169,6 +169,26 @@ PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
      "serves, per product: where the evidence comes from, how vendor data is "
      "kept apart from measurements, the flask apilib commands, refreshing "
      "vendor collections, harvesting, and troubleshooting."),
+    ("build-compatibility.md", "build-compatibility",
+     "Build compatibility — will a write fit each build?", "\U0001f9e9",
+     "Every write checked against each target's exact firmware build through "
+     "both channels: fields a build lacks are skipped per device, CLI-only "
+     "fields flagged, invalid values and absent objects block; the field x "
+     "build matrix page and the console commands."),
+    ("migration-report.md", "migration-report",
+     "Migration report — will this configuration survive build X?", "\U0001f6a6",
+     "One appliance's configuration against a target build: block, translate, "
+     "warn and info findings, the verdict, the Upgrade Flow integration and "
+     "the console command; reports never carry a configuration value."),
+    ("cli-writer.md", "cli-writer", "CLI writer — fields only the CLI serves", "\u2328\ufe0f",
+     "When SATOM writes by CLI instead of REST, the per-build gate, the "
+     "transaction with abort on error and the mandatory readback, the error "
+     "patterns, and which dialects are lab-verified."),
+    ("knowledge-harvester.md", "knowledge-harvester",
+     "Knowledge Harvester — the API knowledge each release ships", "\U0001f33e",
+     "The separate tool that measures lab devices and the vendor documentation "
+     "and ships a signed knowledge pack; why Firecrawl lives only there and how "
+     "the pack reaches online and offline nodes."),
     ("fortiauthenticator.md", "fortiauthenticator",
      "FortiAuthenticator — product integration", "\U0001f194",
      "How the identity product is wired: its Tastypie REST dialect, the "
@@ -205,7 +225,8 @@ GROUPS: list[tuple[str, str, list[str]]] = [
      "what the fleet is being attacked with.",
      ["encryption", "acme", "sentinel", "ai-advisor"]),
     ("Build & integrate", "For developers extending the platform or driving it from outside.",
-     ["api", "device-api", "api-library", "fortiauthenticator", "engineering",
+     ["api", "device-api", "api-library", "build-compatibility", "migration-report",
+      "cli-writer", "knowledge-harvester", "fortiauthenticator", "engineering",
       "source-of-truth", "release-pipeline",
       "release-notes"]),
     ("What changed", "Release history for the platform itself.",

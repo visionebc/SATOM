@@ -80,16 +80,24 @@
 <p><strong>Audience:</strong> operators who keep the library fed and read its pages, and
 engineers who write an adapter or a reader. Operator walkthroughs of the
 pages built on it are in the <a href="user-guide.html">User guide</a> §30.5,
-§30.8–§30.10 and §41.8–§41.9; the guards are catalogued in
+§30.8–§30.12, §40.3 and §41.8–§41.9; the guards are catalogued in
 <a href="safeguards.html">Safeguards</a> §192–§193, §196 (endpoint baselines, §9
-below) and §197 (per-build resolution, §9.8).</p>
-<p><strong>Since:</strong> SATOM 2.2.0.</p>
+below), §197 (per-build resolution, §9.8) and §209–§213 (the CLI channel,
+§13). The features built on the CLI channel have their own pages:
+<a href="build-compatibility.html">Build compatibility</a>,
+<a href="migration-report.html">Migration report</a>, <a href="cli-writer.html">CLI writer</a> and
+<a href="knowledge-harvester.html">Knowledge Harvester</a>.</p>
+<p><strong>Since:</strong> SATOM 2.2.0. CLI channel: 2.13.0 (unreleased).</p>
 </blockquote>
 <p>The API library is SATOM's record of <strong>which API each firmware build serves</strong>:
 endpoints, fields, field types and options, per product and per exact build,
-with every claim traceable to the evidence it came from. It lives in the
-application database (the <code>api_lib_*</code> tables), it only ever grows, and every
-page that answers a firmware question reads it.</p>
+<strong>by both channels</strong> — REST and the CLI — with every claim traceable to the
+evidence it came from. It lives in the application database (the <code>api_lib_*</code>
+tables), it only ever grows, and every page that answers a firmware question
+reads it.</p>
+<p><strong>The key is always the exact build, never the API version.</strong> Two builds that
+speak the same REST API version still differ in fields (FortiWeb 7.6.8 and
+8.0.6 both answer <code>/api/v2.0/</code>; 8.0.6 has 135 more fields and 25 fewer).</p>
 <hr>
 <h2 id="1-what-it-is-for">1. What it is for</h2>
 <p>The library answers four questions. The file-based matrix it replaces could
@@ -104,6 +112,12 @@ answer none of them at scale.</p>
    all.</li>
 <li><strong>Incremental knowledge.</strong> Every harvest adds evidence. Nothing is lost when
    an appliance is retired, deleted or upgraded.</li>
+<li><strong>By which channel?</strong> Does this build serve the field over REST and the CLI,
+   the CLI only, only in <code>show full-configuration</code>, or REST only (§13.3) — and
+   therefore: will a write on this build keep it
+   (<a href="build-compatibility.html">Build compatibility</a>), will this box's
+   configuration survive the move (<a href="migration-report.html">Migration report</a>),
+   and does it have to be written by CLI (<a href="cli-writer.html">CLI writer</a>)?</li>
 </ol>
 <p><strong>Why it replaced the files.</strong> The previous store (<code>data/api_matrix/*.json</code>,
 <code>data/rediscovery/*/by-version</code>, <code>data/field_schemas</code>) was derived and
@@ -209,31 +223,33 @@ on one side only, or by different kinds on the two sides, is reported as
 <tbody>
 <tr>
 <td><code>fortiweb</code></td>
-<td><code>sweep</code>, <code>schema</code></td>
-<td>rediscovery sweeps of live appliances; field schemas harvested per firmware line</td>
+<td><code>sweep</code>, <code>schema</code>, <code>cli_tree</code>, <code>cli_full</code></td>
+<td>rediscovery sweeps of live appliances; field schemas harvested per firmware line; the CLI <code>tree</code> and <code>show full-configuration</code> of each build (§13), plus a shape-checked REST probe of every <code>tree</code> object</td>
 </tr>
 <tr>
 <td><code>fortiadc</code></td>
-<td><code>sweep</code>, <code>legacy_matrix</code></td>
-<td>sweeps, and the frozen line-only matrix file from before the build axis. No FortiADC is left in the lab fleet, so no new FortiADC evidence arrives until one is registered</td>
+<td><code>sweep</code>, <code>legacy_matrix</code>, <code>cli_tree</code>, <code>cli_full</code></td>
+<td>sweeps, and the frozen line-only matrix file from before the build axis; the CLI adapter is <strong>unverified</strong>. No FortiADC is left in the lab fleet, so no new FortiADC evidence arrives until one is registered or a pack brings it</td>
 </tr>
 <tr>
 <td><code>fortiauthenticator</code></td>
-<td><code>schema</code> (and <code>sweep</code>)</td>
-<td>a live, <strong>read-only</strong> harvest of the device's own Tastypie schema (<code>GET /api/v1/</code> and <code>GET /api/v1/&lt;resource&gt;/schema/</code>)</td>
+<td><code>schema</code> (and <code>sweep</code>), <code>cli_tree</code>, <code>cli_full</code></td>
+<td>a live, <strong>read-only</strong> harvest of the device's own Tastypie schema (<code>GET /api/v1/</code> and <code>GET /api/v1/&lt;resource&gt;/schema/</code>); its small setup CLI read by a <code>set ?</code> help walk</td>
 </tr>
 <tr>
 <td><code>fortianalyzer</code></td>
-<td><code>vendor_doc</code></td>
-<td>the vendor's Ansible collection <code>fortinet.fortianalyzer</code> (its <code>v_range</code> data)</td>
+<td><code>vendor_doc</code>, <code>schema</code></td>
+<td>the vendor's Ansible collection <code>fortinet.fortianalyzer</code> (its <code>v_range</code> data); the JSON-RPC syntax read (<strong>unverified</strong> adapter)</td>
 </tr>
 <tr>
 <td><code>fortigate</code></td>
-<td><code>vendor_doc</code></td>
-<td>the vendor's Ansible collection <code>fortinet.fortios</code> (its <code>v_range</code> data). Catalog-only</td>
+<td><code>vendor_doc</code>, <code>schema</code>, <code>cli_tree</code></td>
+<td>the vendor's Ansible collection <code>fortinet.fortios</code> (its <code>v_range</code> data); <code>?action=schema</code> and the CLI <code>tree</code> from a lab box, by pack or file import. Catalog-only</td>
 </tr>
 </tbody>
 </table>
+<p>Which adapter reads which channel of which product, and on which device and
+build it was verified, is §13.10.</p>
 <p>Source vocabulary (closed set): <code>sweep</code>, <code>schema</code>, <code>vendor_doc</code>, <code>manual</code>,
 <code>legacy_matrix</code>, and the CLI channel <code>cli_tree</code> and <code>cli_full</code> (§13).
 Anything else is refused at ingest.</p>
@@ -462,7 +478,23 @@ adapter that reaches a device is <code>apilib_fac.harvest(appliance)</code>, GET
 </tr>
 <tr>
 <td><code>firmware_probe</code></td>
-<td>queues a harvest when an appliance changes build (§8.4)</td>
+<td>queues a harvest when an appliance changes build (§8.4), and tells the new-build watch (§13.11)</td>
+</tr>
+<tr>
+<td><code>build_compat</code> (every write path)</td>
+<td><code>channels_at()</code>, the <code>tree</code> options and ranges, field maps and CLI ids of each target's build (<a href="build-compatibility.html">Build compatibility</a>)</td>
+</tr>
+<tr>
+<td><code>migration_report</code> (Migration Report page, Upgrade Flow stage 1)</td>
+<td>the CLI half of <code>compare()</code> and <code>channels_at()</code> of the source and target builds (<a href="migration-report.html">Migration report</a>)</td>
+</tr>
+<tr>
+<td><code>cli_writer</code> (object editor)</td>
+<td><code>channels_at()</code> of the appliance's build, to route each field to REST or CLI (<a href="cli-writer.html">CLI writer</a>)</td>
+</tr>
+<tr>
+<td>Build compatibility, Schema builds pages</td>
+<td><code>channels_at()</code>, <code>compare()</code>, <code>field_history()</code> (§13)</td>
 </tr>
 </tbody>
 </table>
@@ -500,6 +532,30 @@ sudo -u satom env FLASK_APP=wsgi:app venv/bin/flask apilib &lt;command&gt;
 <tr>
 <td><code>flask apilib harvest-fac [--appliance NAME]</code></td>
 <td>reads the live schema of every FortiAuthenticator, or one, and ingests it</td>
+</tr>
+<tr>
+<td><code>flask apilib schema-harvest &lt;id\|name&gt; [--lab] [--no-probe]</code></td>
+<td>one appliance's CLI channel (<code>tree</code> + <code>show full-configuration</code>) and a REST probe of the paths the library lacks (§13.4)</td>
+</tr>
+<tr>
+<td><code>flask apilib adapter-harvest &lt;id\|name&gt; [--ssh-secret-env VAR]</code></td>
+<td>one appliance through its product's schema adapter (§13.10); for FortiAuthenticator, <code>VAR</code> names an environment variable holding the CLI password</td>
+</tr>
+<tr>
+<td><code>flask apilib schema-import --product fortigate\|fortianalyzer --version X [--build B] [--tree FILE] [--schema FILE]</code></td>
+<td>ingests saved schema captures of a product SATOM does not read live</td>
+</tr>
+<tr>
+<td><code>flask apilib compat PRODUCT BASE TARGET</code> / <code>flask apilib channels PRODUCT BUILD</code></td>
+<td>two builds through both channels / one build per channel, as JSON (<a href="build-compatibility.html">Build compatibility</a> §5)</td>
+</tr>
+<tr>
+<td><code>flask apilib migration-report APPLIANCE --target BUILD [--backup ID]</code></td>
+<td>the <a href="migration-report.html">Migration report</a> as JSON</td>
+</tr>
+<tr>
+<td><code>flask apilib pack export\|inspect\|import</code></td>
+<td>API packs (§11.4)</td>
 </tr>
 <tr>
 <td><code>flask apilib baseline status\|promote\|adopt\|export\|apply\|check\|resolve</code></td>
@@ -590,8 +646,12 @@ determined) and, per product, how many documents were stored unhealthy.</p>
 </table>
 <p>What a harvest does per product: FortiWeb and FortiADC run a rediscovery
 sweep; FortiAuthenticator reads its Tastypie schema (GET only) and ingests it.
-FortiAnalyzer and FortiGate have no live harvester and every entry point says
-so by name (<code>no live harvester for fortianalyzer</code>).</p>
+FortiAnalyzer and FortiGate have no live <strong>REST</strong> harvester and every entry
+point says so by name (<code>no live harvester for fortianalyzer</code>).</p>
+<p>The <strong>CLI channel</strong> has its own harvest — the schema harvest (§13.4), the
+scheduled action <code>schema_harvest</code> and the per-product adapters (§13.10) — and
+its own watch: an appliance on a build with no harvested schema raises one
+notification and is listed on the <strong>Schema builds</strong> page (§13.11).</p>
 <p>A build "needs a harvest" when the exact build has no healthy build-scoped
 evidence from the product's <strong>live</strong> source (<code>sweep</code> for FortiWeb and
 FortiADC, <code>schema</code> for FortiAuthenticator). Vendor or legacy data for a build
@@ -962,9 +1022,15 @@ registry itself.</p>
 <hr>
 <h2 id="10-limits-that-do-not-go-away">10. Limits that do not go away</h2>
 <ul>
-<li><strong>FortiWeb has no schema endpoint.</strong> An empty collection reveals no fields.
-  Such endpoints are <code>blind</code>, never "no fields". Configure one row on a box
-  running that build and sweep it again.</li>
+<li><strong>FortiWeb has no REST schema endpoint.</strong> An empty collection reveals no
+  fields over REST. Such endpoints are <code>blind</code>, never "no fields". The CLI
+  <code>tree</code> gives the build's schema anyway (§13.1), so a field of an empty table
+  reads <code>unknown</code> on the REST side, not absent. Configure one row on a box
+  running that build and sweep it again to measure REST.</li>
+<li><strong>A configuration dump is not a schema.</strong> <code>show full-configuration</code> prints
+  only the fields that apply under each row's current settings (§13.8).</li>
+<li><strong>REST hides what it drops.</strong> A gated field sent alone answers 200 and is
+  not applied (§13.9); only a readback proves a write.</li>
 <li><strong>Vendor data is a claim by the vendor's tooling</strong>, not a measurement. It is
   labelled <code>vendor_doc</code> everywhere, never outranks a sweep of a real box, and
   its absence of an endpoint warns instead of blocking.</li>
@@ -975,8 +1041,12 @@ registry itself.</p>
   carry no version data. A build no appliance has run stays <code>unmeasured</code>.</li>
 <li><strong>FortiADC has no live evidence source today</strong>: no FortiADC is left in the
   lab fleet. Its historical builds (including 8.0.3) stay in the library.</li>
-<li><strong>The field map is authored, not discovered.</strong> The library cannot tell a
-  rename from a removal plus an addition until an operator says so.</li>
+<li><strong>The field map is authored, not discovered.</strong> The library proposes rename
+  candidates by CLI attribute id (§13.7) but does not apply them: a rename is a
+  removal plus an addition until an operator records it.</li>
+<li><strong>FortiADC and FortiAnalyzer adapters are unverified</strong> (no lab device). A harvest
+  through them names the gap (<code>unverified</code>), and so does the Schema builds page
+  that lists the adapters.</li>
 </ul>
 <hr>
 <h2 id="11-api-packs--the-library-for-nodes-that-cannot-measure-it">11. API packs — the library for nodes that cannot measure it</h2>
@@ -986,7 +1056,8 @@ from vendor collections downloaded from Galaxy, and from docs.fortinet.com
 node has none of those, and a node with no FortiADC will never measure
 FortiADC. An <strong>API pack</strong> carries what one SATOM knows to another as one signed
 tarball (<code>app/services/api_pack.py</code>). Packs are written by SATOM's own export
-and by the separate harvester tool in the same format; the release notes in a
+and by the separate <a href="knowledge-harvester.html">Knowledge Harvester</a> in the same
+format (knowledge packs, <code>kb-*</code>, §13.12); the release notes in a
 pack may cover any product with a release-notes map (FortiWeb, FortiADC,
 FortiAuthenticator, FortiAnalyzer, FortiGate — see
 <a href="release-notes.html">release_notes.md</a>), and each item imports only its own
@@ -1003,7 +1074,7 @@ product's rows.</p>
 <tbody>
 <tr>
 <td><code>library</code></td>
-<td>One evidence document per healthy evidence row: sweeps, schemas, <code>legacy_matrix</code>, <code>vendor_doc</code></td>
+<td>One evidence document per healthy evidence row: sweeps, schemas, <code>legacy_matrix</code>, <code>vendor_doc</code>, and the CLI channel <code>cli_tree</code> / <code>cli_full</code> with their <code>attrs</code></td>
 <td><code>api_lib_evidence</code></td>
 </tr>
 <tr>
@@ -1370,6 +1441,30 @@ the digests, because they act on a stored dump.</p>
 <td>A pack item stays <code>local</code> and is never imported</td>
 <td>Expected: this node measured that build itself (§11.3)</td>
 </tr>
+<tr>
+<td>Bell: <em>New build X on Y: schema not harvested</em></td>
+<td>An appliance runs a build with no CLI schema in the library. Open <strong>Schema builds</strong> and press <strong>Harvest</strong>, or import a knowledge pack that covers the build (§13.11)</td>
+</tr>
+<tr>
+<td>A build reads <code>unknown</code> for hundreds of fields after a harvest</td>
+<td>Those fields sit in empty tables, or under a parent table with no row: REST had nothing to read. Expected; it is not "absent". A knowledge pack with lab rows narrows it</td>
+</tr>
+<tr>
+<td><code>rest_only</code> counts that look like bookkeeping (<code>id</code>, <code>_id</code>, <code>seq</code>)</td>
+<td>They are channel <code>meta</code> since 2.13 (§13.3). On an older pack, re-import; on this node, harvest the CLI schema so the build has a <code>tree</code></td>
+</tr>
+<tr>
+<td>Schema builds: <em>unverified adapter</em></td>
+<td>The product's adapter was never checked against a device (FortiADC, FortiAnalyzer). Its evidence is labelled; treat it as a documented convention (§13.10)</td>
+</tr>
+<tr>
+<td>FortiAuthenticator harvest reads REST but no CLI</td>
+<td>SATOM stores the REST API key, not a CLI login. Give the CLI password in the Schema builds harvest form (used once, never stored), or <code>flask apilib adapter-harvest --ssh-secret-env VAR</code></td>
+</tr>
+<tr>
+<td>Migration report: <em>cannot assess</em></td>
+<td>No usable <code>show full-configuration</code> dump in the vault, an unknown source build, or a target with no CLI schema. The reason is on the report (<a href="migration-report.html">Migration report</a> §2.1)</td>
+</tr>
 </tbody>
 </table>
 <hr>
@@ -1382,6 +1477,49 @@ one only, or with fields that only <code>show full-configuration</code> prints. 
 library records the CLI channel beside the REST one, per exact build, so a
 page can say "you can do this, but on build X this field does not exist", or
 "this field exists only on the CLI".</p>
+<p>What one build knows is a set of <strong>sources</strong>, each with its own evidence row:</p>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Channel</th>
+<th>What it says about a build</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sweep</code></td>
+<td>REST</td>
+<td>which paths answered and which field names and JSON types their rows carry</td>
+</tr>
+<tr>
+<td><code>schema</code></td>
+<td>REST</td>
+<td>the schema the device serves (FortiAuthenticator Tastypie, FortiGate <code>?action=schema</code>, FortiAnalyzer syntax)</td>
+</tr>
+<tr>
+<td><code>vendor_doc</code></td>
+<td>REST (claim)</td>
+<td>the vendor's Ansible collection or CLI reference — a claim, never a measurement</td>
+</tr>
+<tr>
+<td><code>cli_tree</code></td>
+<td>CLI</td>
+<td>the whole CLI schema: objects, fields, types, options, ranges, CLI attribute ids</td>
+</tr>
+<tr>
+<td><code>cli_full</code></td>
+<td>CLI</td>
+<td>the field names <code>show full-configuration</code> prints (hidden fields included); never values</td>
+</tr>
+</tbody>
+</table>
+<p>The rest of this section is the model end to end: the two CLI sources (§13.1)
+and what they never carry (§13.2), how a field's channel and a build's
+completeness are derived (§13.3), how a write is checked against a build
+(§13.3.1), how the channel is harvested (§13.4–§13.6), the three lab findings
+every reader must respect (§13.7–§13.9), the per-product adapters (§13.10), the
+new-build watch (§13.11) and knowledge packs (§13.12).</p>
 <h3 id="131-the-two-cli-sources">13.1 The two CLI sources</h3>
 <table>
 <thead>
@@ -1414,7 +1552,10 @@ fact's <code>attrs</code>: <code>cli_id</code>, <code>hidden</code>, <code>range
 (the raw <code>&lt;type&gt;</code>), <code>datasource</code>, <code>lab_default</code>.</p>
 <p>FortiOS (FortiGate) prints <code>[table]</code>, <code>&lt;singleton&gt;</code>, <code>--*key</code> and annotations
 <code>(lo,hi)</code> / <code>(size)</code> but no types and no options; its command trees
-(<code>diagnose__tree__</code>, <code>execute__tree__</code>) are skipped.</p>
+(<code>diagnose__tree__</code>, <code>execute__tree__</code>) are skipped. FortiAuthenticator has no
+<code>tree</code> (<code>No such command.</code>); its <code>cli_tree</code> evidence is the <code>set ?</code> help of
+each setup-CLI object (<code>summary.format = "fac_help"</code>). FortiAnalyzer's CLI
+schema is its JSON-RPC syntax answer, stored as <code>schema</code>.</p>
 <p><strong>CLI path to REST path</strong> (<code>cli_schema.rest_path</code>):</p>
 <table>
 <thead>
@@ -1433,7 +1574,17 @@ fact's <code>attrs</code>: <code>cli_id</code>, <code>hidden</code>, <code>range
 <tr>
 <td>FortiGate</td>
 <td><code>config a b c</code> -&gt; <code>a.b/c</code>; a nested table is a field of its top-level object (<code>children</code>)</td>
-<td>matches every vendor URN</td>
+<td>matches every vendor URN; <code>tree</code> verified on 8.0.1</td>
+</tr>
+<tr>
+<td>FortiAuthenticator</td>
+<td>no <code>tree</code>; the five setup-CLI objects (<code>router static</code>, <code>system dns\|global\|ha\|interface</code>) are none of the 58 Tastypie resources, so they never join a REST path</td>
+<td>verified (8.0.3)</td>
+</tr>
+<tr>
+<td>FortiAnalyzer</td>
+<td>the JSON-RPC <code>/cli/global/...</code> URL is the CLI path</td>
+<td><strong>unverified</strong> (no FortiAnalyzer in the lab)</td>
 </tr>
 <tr>
 <td>FortiADC</td>
@@ -1467,35 +1618,93 @@ answers, for every field of every path the build is known to have:</p>
 <tr>
 <th>channel</th>
 <th>means</th>
+<th>UI label</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>both</code></td>
 <td>REST revealed it and the CLI has it</td>
+<td>both</td>
 </tr>
 <tr>
 <td><code>cli_only</code></td>
 <td>the CLI <code>tree</code> has it; REST revealed the object's fields (or measured the object absent) and it is not there</td>
+<td>CLI only</td>
 </tr>
 <tr>
 <td><code>hidden</code></td>
 <td>like <code>cli_only</code>, but only <code>show full-configuration</code> prints it</td>
+<td>hidden</td>
 </tr>
 <tr>
 <td><code>rest_only</code></td>
 <td>REST revealed it; the build's <code>tree</code> does not list it</td>
+<td>REST only</td>
 </tr>
 <tr>
 <td><code>unknown</code></td>
 <td>one channel never answered for it on this build (no <code>tree</code>, a blind or unasked REST endpoint). Never a "no". A name only the vendor documentation gives REST, absent from a measured <code>tree</code>, is <code>unknown</code> with <code>doc_conflict: true</code></td>
+<td>unknown, or <em>CLI (REST not measured)</em> when the <code>tree</code> has it</td>
 </tr>
 <tr>
 <td><code>meta</code></td>
 <td>REST bookkeeping (<code>api_library.REST_META</code>), reported and never counted toward completeness</td>
+<td>meta</td>
 </tr>
 </tbody>
 </table>
+<p>What the lab measured with it (CLI <code>tree</code>, REST probe of every object, a lab
+row created in every empty table and read back by both channels):</p>
+<table>
+<thead>
+<tr>
+<th>Build</th>
+<th>both</th>
+<th>CLI only</th>
+<th>hidden</th>
+<th>REST only</th>
+<th>unknown</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FortiWeb 7.6.8</td>
+<td>3,451</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>653 (was 1,744 before the lab rows)</td>
+</tr>
+<tr>
+<td>FortiWeb 8.0.6</td>
+<td>3,372</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>885 (was 2,545)</td>
+</tr>
+<tr>
+<td>FortiAuthenticator 8.0.3</td>
+<td>0</td>
+<td>29</td>
+<td>0</td>
+<td>316</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<p>On FortiWeb every field the <code>tree</code> lists is served by REST on every object REST
+serves, and <code>show full-configuration</code> names nothing the <code>tree</code> does not: the
+real differences between the channels are conditional printing (§13.8) and
+REST ignoring gated fields (§13.9), not field sets. The FortiWeb <code>unknown</code> rows
+are fields of tables that could not be given a lab row (parent row not
+creatable, licence, certificate import, HSM, a feature the box's mode hides).
+On FortiAuthenticator the channels are two different worlds: the CLI is a small
+setup CLI, REST holds the product's configuration. On FortiGate 8.0.1 the CLI
+<code>tree</code> does not print 9 tables REST serves (the <code>llm/*</code> tables,
+<code>waf/signature</code>, <code>waf/main-class</code>, <code>waf/sub-class</code>, <code>firewall/access-proxy</code>,
+<code>firewall/access-proxy6</code> and <code>system/vdom</code>).</p>
 <p>REST bookkeeping is <code>meta</code>, not <code>rest_only</code>. FortiWeb (measured on 7.6.8,
 where it had read as 276 <code>rest_only</code>): <code>id</code> on tables whose tree has no <code>id</code>,
 <code>_id</code>, <code>seq</code>, <code>&lt;NO.&gt;</code>/<code>&lt;No.&gt;</code>, <code>sub_table_id</code>, <code>sub_table_action</code>, <code>q_*</code>,
@@ -1519,21 +1728,37 @@ object rename candidates (<code>endpoint_rename_candidates</code>) and <code>fie
 id that left one object and reappears in another: an object renamed with its
 fields, or a field that became a subtable) work on harvester packs too.
 <code>field_history</code> reads both channels and labels each row <code>rest</code> or <code>cli</code>.</p>
-<h3 id="1331-build-compatibility-of-a-write">13.3.1 Build compatibility of a write</h3>
-<p><code>services/build_compat.py</code> checks a payload (object + fields, optionally values)
-against each target's exact build through both channels: <code>missing</code> (stripped
-per device and reported), <code>cli_only</code> (the REST write cannot set it),
-<code>enum_invalid</code> / <code>range_invalid</code> and an object the build lacks (block),
-<code>unknown</code> for an unmeasured build ("cannot be guaranteed", never ok), plus
-rename hints from <code>api_lib_field_map</code> and equal CLI ids. One view per
-(product, build), cached until the product's evidence or rename maps change.
-<code>version_compat.build_check</code> / <code>compare_object(..., values=)</code> carry it into
-template apply and approval deploy, baseline and system-profile apply, the
-carve-out push and the object editor. The <strong>Build compatibility</strong> page
-(<code>/web/registry/build-compat/</code>, <code>registry_edit</code>) shows the field x build matrix
-by channel, a two-build diff and per-field history; <code>satom execute apilib
-compat &lt;product&gt; &lt;A&gt; &lt;B&gt;</code> and <code>satom execute apilib channels &lt;product&gt; &lt;build&gt;</code>
-print the same from the console.</p>
+<h3 id="1331-what-reads-the-channels">13.3.1 What reads the channels</h3>
+<p>Three features are built on <code>channels_at</code> and the CLI half of <code>compare()</code>; each
+has its own page:</p>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Question</th>
+<th>Page</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>services/build_compat.py</code></td>
+<td>will this <strong>payload</strong> fit each target's exact build? Missing fields are skipped per device, CLI-only fields flagged, invalid values and absent objects block, an unmeasured build "cannot be guaranteed". Wired into template apply and approval deploy, baseline and system-profile apply, the carve-out push and the object editor; the <strong>Build compatibility</strong> page shows the field x build matrix</td>
+<td><a href="build-compatibility.html">Build compatibility</a></td>
+</tr>
+<tr>
+<td><code>services/migration_report.py</code></td>
+<td>will this <strong>appliance's configuration</strong> survive a move to build X? block / translate / warn / info and a verdict, from its newest <code>show full-configuration</code> dump; never a value in the report</td>
+<td><a href="migration-report.html">Migration report</a></td>
+</tr>
+<tr>
+<td><code>services/cli_writer.py</code></td>
+<td>which fields of a write must go <strong>by CLI</strong> on this build, and did they land? A gated CLI transaction with <code>abort</code> on error and a fresh-session readback</td>
+<td><a href="cli-writer.html">CLI writer</a></td>
+</tr>
+</tbody>
+</table>
+<p><code>satom execute apilib compat &lt;product&gt; &lt;A&gt; &lt;B&gt;</code> and <code>satom execute apilib
+channels &lt;product&gt; &lt;build&gt;</code> print the library's own answers from the console.</p>
 <h3 id="134-harvesting-the-cli-channel">13.4 Harvesting the CLI channel</h3>
 <p><code>services/schema_harvest.harvest(appliance)</code> reads one appliance's build:</p>
 <ol>
@@ -1571,6 +1796,15 @@ parent's, whose rows hold the child as their own key (<code>&lt;child&gt;</code>
 <code>absent</code>. <code>_probe_fortiweb</code> reads the parent once for a nested path that
 returned rows, so the sweep, <code>probe_endpoint</code>, the CLI-coverage probe and the
 discovery run share the verdict.</p>
+<p><strong>The trap, in one line: never read a FortiWeb verdict from the HTTP status.</strong>
+Before 2.13 the probe called every 200 <code>ok</code>, so a sweep could register a URN
+that only ever returned its parent. Measured on 7.6.8 and 8.0.6, every real
+<code>tree</code> object that answered with data carried its own keys — the shape probe
+changed no real verdict there — while synthetic controls
+(<code>router/static/&lt;fake&gt;?mkey=…</code>, <code>fds/update-flag/&lt;fake&gt;</code>) come back
+parent-fallback and a fake top-level module <code>absent</code>, on both builds. The same
+rule holds for writes: a POST/PUT with an unknown field also answers 200
+(§13.9).</p>
 <h3 id="136-cli-coverage-catalog-gap-or-cli-only">13.6 CLI coverage: catalog gap or CLI only</h3>
 <p>The coverage diff used to call every block the catalog does not name "CLI
 only". Measured on 7.6.8, all 50 of those blocks were served by REST. Now:</p>
@@ -1597,6 +1831,164 @@ only". Measured on 7.6.8, all 50 of those blocks were served by REST. Now:</p>
 </table>
 <p>Discovery runs and the Structure page read both buckets
 (<code>cli_coverage.not_in_catalog</code>).</p>
+<h3 id="137-renames-cli-attribute-ids-propose-field-maps-decide">13.7 Renames: CLI attribute ids propose, field maps decide</h3>
+<p>Every object and field in a FortiWeb <code>tree</code> carries a CLI attribute id
+(<code>name(4246)</code>), recorded as <code>attrs.cli_id</code>. Measured on FortiWeb 7.6.8 → 8.0.6:</p>
+<ul>
+<li>same name → same id for <strong>4,121 of 4,121</strong> fields, and 534 of 534 objects;</li>
+<li>same id → another name in the same object: <strong>18</strong>, every one a real rename
+  (<code>token-secret</code> → <code>jwt-token-secret</code>, <code>token-header</code> → <code>jwt-token-name</code>,
+  <code>appsec-cloud-connection-url</code> → <code>threat-analytics-authurl</code>,
+  <code>max-setting-initial-window-size*</code> → <code>h2-setting-initial-window-size*</code>, …);</li>
+<li>same id in another object: 2 structural moves (<code>waf bot-detection-policy
+  allow-source-ip</code> → <code>source-ip-list</code>, an object rename that kept its table id;
+  <code>url-type</code>/<code>url-pattern</code> → the new subtable <code>page-list</code>);</li>
+<li>new attributes get fresh ids; no id was reused for an unrelated attribute; a
+  box running 7.6.8 before its upgrade printed a <code>tree</code> byte-identical to another
+  7.6.8 box — the ids belong to the build, not to the device.</li>
+</ul>
+<p>So <code>compare()</code> reports <strong>rename candidates</strong> (fields and objects) and
+<strong>moves</strong> by equal CLI id, and <a href="build-compatibility.html">Build compatibility</a>
+and the <a href="migration-report.html">Migration report</a> show them as hints and
+warnings. They are never applied. <code>api_lib_field_map</code>, authored by an operator
+at <code>/web/registry/field-map</code>, stays the only authority: a mapped candidate says
+<code>mapped: true</code>, and the migration report turns it from <code>warn</code> into <code>translate</code>.
+The rule held on one pair of builds; re-check it on every new pair before
+relying on it blindly. Lookalike pairs matched by type alone are noise.</p>
+<h3 id="138-show-full-configuration-prints-conditionally">13.8 <code>show full-configuration</code> prints conditionally</h3>
+<p><code>show full-configuration</code> prints only the fields that <strong>apply under the row's
+current settings</strong>; REST returns them all. Measured on lab rows: 204 fields in
+56 objects (7.6.8) and 349 fields in 78 objects (8.0.6) were missing from the
+dump while REST and the <code>tree</code> had them. A related answer: <code>set &lt;field&gt; ?</code>
+answers <em>Parsing error</em> for a field gated under the current values (50 of 222
+rows on 7.6.8, 72 of 280 on 8.0.6).</p>
+<p>Consequences:</p>
+<ul>
+<li><strong>A field missing from a dump is not missing on the build.</strong> <code>cli_full</code> only
+  ever adds names (and <code>hidden</code> when the <code>tree</code> lacks them); it never removes
+  one. The schema is the <code>tree</code>.</li>
+<li>A <a href="migration-report.html">Migration report</a> reads the dump for what the device
+  <strong>uses</strong>, and the <code>tree</code> for what the target <strong>has</strong>.</li>
+<li>FortiWeb 7.6.8 and 8.0.6 have <strong>0 hidden fields</strong>: <code>show full-configuration</code>
+  names nothing the <code>tree</code> does not.</li>
+</ul>
+<h3 id="139-rest-silently-ignores-gated-fields">13.9 REST silently ignores gated fields</h3>
+<p>A FortiWeb cmdb POST/PUT carrying an unknown field, or a field gated behind a
+toggle that is off, answers <strong>HTTP 200 and drops it</strong>. Confirmed in 17 of 17
+lab cases: the dependent field sent alone while its toggle is off is not
+applied; the toggle and the dependent field sent in <strong>one</strong> request are.
+Examples: <code>server-balance</code> → <code>lb-algo</code> / <code>health</code> in a server pool; <code>http-reuse</code>
+→ <code>reuse-conn-*</code>; syslog <code>proto tls</code> → <code>enc-algorithm</code> / <code>local-cert</code>; WAF
+<code>action block-period</code> → <code>block-period</code>; recurring scan schedules → <code>time</code> /
+<code>wday</code>; 8.0.6 cookie security <code>samesite</code> → <code>samesite-value</code>.</p>
+<p>Rules every write path follows:</p>
+<ul>
+<li><strong>Send dependent fields together</strong>, with the toggle that exposes them, in one
+  request.</li>
+<li><strong>Only a readback proves a write.</strong> The <a href="cli-writer.html">CLI writer</a> reads every
+  field back; a REST write that matters reads the object back.</li>
+<li>The knowledge pack's lab evidence names the fields a toggle exposes
+  (<code>attrs.depends_on</code>: 12 on 7.6.8, 15 on 8.0.6).</li>
+<li><a href="build-compatibility.html">Build compatibility</a> strips the fields a build does
+  not have <em>before</em> the write, so the 200-and-drop never hides a missing field.</li>
+</ul>
+<h3 id="1310-per-product-adapters">13.10 Per-product adapters</h3>
+<p>Every product describes its schema its own way; <code>services/schema_adapters/</code>
+holds one adapter per product, all ending in the same evidence (<code>cli_tree</code>,
+<code>cli_full</code>, <code>schema</code>, <code>sweep</code>) keyed by the REST path. Each adapter declares its
+capabilities and where it was verified; the <strong>Schema builds</strong> page shows both.</p>
+<table>
+<thead>
+<tr>
+<th>Product</th>
+<th>CLI schema</th>
+<th>REST schema</th>
+<th>Verified</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FortiWeb</td>
+<td><code>tree</code> (types, options, ranges, ids)</td>
+<td>shape probe of every <code>tree</code> object (no REST schema endpoint)</td>
+<td><strong>yes</strong> — lab VMs on 7.6.8 and 8.0.6</td>
+</tr>
+<tr>
+<td>FortiAuthenticator</td>
+<td>no <code>tree</code>: <code>config &lt;object&gt;</code> + <code>set ?</code> help walk of the setup CLI (5 objects, 29 fields); <code>show full-configuration</code></td>
+<td>Tastypie <code>/api/v1/&lt;res&gt;/schema/</code> (58 resources, 316 fields), directory complete</td>
+<td><strong>yes</strong> — 8.0.3 build0099</td>
+</tr>
+<tr>
+<td>FortiGate</td>
+<td><code>tree</code> (FortiOS format; nested tables folded into fields)</td>
+<td><code>GET /api/v2/cmdb/&lt;path&gt;?action=schema</code></td>
+<td><strong>yes</strong> — 8.0.1 build0245 (catalog-only: evidence arrives by pack or <code>flask apilib schema-import</code>)</td>
+</tr>
+<tr>
+<td>FortiADC</td>
+<td><code>tree</code> (FortiOS-family format assumed)</td>
+<td>none implemented</td>
+<td><strong>no</strong> — no FortiADC in the lab</td>
+</tr>
+<tr>
+<td>FortiAnalyzer</td>
+<td>JSON-RPC <code>get</code> with <code>option: syntax</code></td>
+<td>the same answer (the <code>/cli/global/...</code> URL is the CLI path)</td>
+<td><strong>no</strong> — no FortiAnalyzer in the lab</td>
+</tr>
+</tbody>
+</table>
+<p>Read-only by construction: the FortiWeb, FortiADC and FortiGate harvests send
+<code>tree</code> (behind its own whole-command gate) and <code>show</code>; the FortiAuthenticator
+walk can send only <code>?</code> questions, <code>config &lt;object&gt;</code> and <code>edit &lt;a row the box
+listed&gt;</code>, never <code>set &lt;value&gt;</code>, <code>next</code>, <code>end</code> or <code>abort</code>, and drops the session;
+the FortiAnalyzer session sends only login, <code>get</code> and logout.</p>
+<p>FortiAuthenticator's credential is the REST API key, which does not log into the
+CLI. Its CLI half runs only when the operator gives the CLI password for that one
+harvest (Schema builds form, or <code>flask apilib adapter-harvest --ssh-secret-env</code>);
+it is never stored. Without it the CLI half is reported skipped, by name.</p>
+<h3 id="1311-new-builds-detection-notification-one-click-harvest">13.11 New builds: detection, notification, one-click harvest</h3>
+<p><code>services/schema_watch.py</code> compares the build every appliance runs with the
+builds that have harvested schema evidence (<code>cli_tree</code>; <code>schema</code> for
+FortiAnalyzer). It runs after every firmware read (<code>firmware_probe</code>) and from the
+scheduled action <code>schema_watch</code>.</p>
+<ul>
+<li><strong>One bell notification per product and build</strong> to the administrators: <em>New
+  build 8.0.7 on fweb-01: schema not harvested</em>, linking to Schema builds. It is
+  not repeated for the next appliance on the same build.</li>
+<li><strong>Schema builds</strong> (<code>/web/schema-builds/</code>, sidebar in the FortiWeb ADOM;
+  reading needs <code>registry.view</code>) lists the adapters with their capabilities and
+  verification, the harvested builds per product, and every appliance on a build
+  without a harvested schema with a <strong>Harvest</strong> button (<code>appliances.apply</code>,
+  audited as <code>schema_builds.harvest</code>).</li>
+<li>After a harvest the page compares the new build with the <strong>closest</strong> harvested
+  build of the same product: every new or changed object and field, with its
+  channel on the new build. An item whose REST side nobody measured on that build
+  reads <em>unknown — to verify</em> until a sweep or probe measures it.</li>
+<li>The scheduled action <code>schema_harvest</code> also runs FortiAuthenticator and
+  FortiAnalyzer through their adapters.</li>
+</ul>
+<h3 id="1312-knowledge-packs">13.12 Knowledge packs</h3>
+<p>A node that has never run a build can still know it: the separate
+<a href="knowledge-harvester.html">Knowledge Harvester</a> measures lab devices and the vendor
+documentation and writes a <strong>knowledge pack</strong> (<code>satom-apipack-kb-YYYYMMDD</code>) in
+the same signed format <code>satom.api-pack/1</code>, with <code>library</code> evidence of the
+sources <code>cli_tree</code>, <code>cli_full</code>, <code>sweep</code>, <code>schema</code> and <code>vendor_doc</code>, and the
+vendor release notes in <code>docs</code>.</p>
+<ul>
+<li>It is <strong>imported like any API pack</strong> (§11.3–§11.5): verified against the
+  node's trust store, imported only where it adds, every item tagged
+  <code>apipack:&lt;version&gt;:&lt;source&gt;</code>. Knowledge packs sort after SATOM's numbered
+  release packs.</li>
+<li><strong>Local measurement wins.</strong> An item this node measured itself for the same
+  source and build is <code>local</code> and never replaced.</li>
+<li>A <code>cli_full</code> item carries names only; the one exception is lab evidence
+  (<code>summary.lab = true</code>), whose fresh-row values are recorded as <code>default</code> with
+  <code>attrs.lab_default</code>.</li>
+<li>Each release ships the current knowledge pack in <code>api-packs/</code>; an offline node
+  that skipped a release imports it by hand like any other pack.</li>
+</ul>
     </div>
   </div>
 </section>

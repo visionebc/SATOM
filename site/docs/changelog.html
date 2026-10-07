@@ -112,6 +112,17 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--documentation-for-builds-channels-and-migrations-2026-10-07">Added — documentation for builds, channels and migrations (2026-10-07)</h3>
+<ul>
+<li>New manual pages: <a href="build-compatibility.html">Build compatibility</a>,
+  <a href="migration-report.html">Migration report</a>, <a href="cli-writer.html">CLI writer</a>
+  and <a href="knowledge-harvester.html">Knowledge Harvester</a>, published on the site.
+  <a href="api-library.html">API library</a> §13 now runs end to end (sources, channels,
+  completeness, the FortiWeb parent-fallback trap, renames by CLI id,
+  conditional printing, REST ignoring gated fields, per-product adapters, the
+  new-build watch, knowledge packs); the user guide gained §7.3, §30.11,
+  §30.12 and §40.3; safeguards §209–§213.</li>
+</ul>
 <h3 id="added--build-compatibility-across-firmware-builds-2026-10-07">Added — build compatibility across firmware builds (2026-10-07)</h3>
 <ul>
 <li>Writes are checked against each target's EXACT build through both channels
@@ -146,6 +157,111 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <li>Object CLI ids are read from the evidence summary when the facts have none:
   7.6.8 -&gt; 8.0.6 now reports the object rename <code>allow-source-ip</code> -&gt;
   <code>source-ip-list</code> (was 0) and the field moves into <code>page-list</code>.</li>
+</ul>
+<h3 id="added--migration-report-will-this-appliances-configuration-survive-build-x-2026-10-07">Added — Migration report: will this appliance's configuration survive build X? (2026-10-07)</h3>
+<ul>
+<li>New service <code>services/migration_report.py</code>. Input: an appliance (its
+  newest <code>show full-configuration</code> dump in the backup vault, or a chosen
+  backup) and a target build. Every configured object and field is checked
+  against the API library — the target's CLI schema (fields, enum options,
+  types, ranges), the CLI half of <code>compare()</code>, <code>channels_at()</code> and the
+  operator's field maps — and classified: <strong>block</strong> (object or field removed
+  while the device uses it — any value when the default is unknown —, enum
+  value no longer accepted, value out of range, type change the value does
+  not satisfy), <strong>translate</strong> (rename covered by a field map), <strong>warn</strong>
+  (rename candidate by equal CLI id, default changed under a field left at
+  the default, no evidence on the target, target build not completely
+  measured — with its percentage), <strong>info</strong> (new objects and fields with
+  their default when known). Verdict: ready / ready with warnings / blocked /
+  cannot assess; same build = nothing to do; a downgrade runs the same checks.
+  Configuration values stay in memory: rows and exports carry names, counts
+  and library facts only.</li>
+<li>Page <strong>Migration Report</strong> (Automation, beside Upgrade Flow; also from the
+  appliance page): pick a target build, read the verdict, per-object counts
+  and every finding; export as JSON or CSV. Guarded by the Upgrade Flow's
+  permission (backup).</li>
+<li>Upgrade Flow stage 1 shows the migration verdict for the move each
+  appliance's newest pre-upgrade recorded, with a link to the full report
+  (library comparison computed once per move; at most 20 appliances per page
+  render, the rest link to the report).</li>
+<li>CLI: <code>satom execute migration report &lt;appliance&gt; --target &lt;build&gt;
+  [--backup &lt;id&gt;]</code> (<code>--json</code> for the full report), backed by
+  <code>flask apilib migration-report</code>.</li>
+<li><code>cli_schema.parse_show_full_values(text, rows=True)</code> returns every row of
+  every object (<code>unset</code> = empty) for in-memory checks.</li>
+</ul>
+<h3 id="added--cli-writer-for-fields-only-the-cli-serves-2026-10-07">Added — CLI writer for fields only the CLI serves (2026-10-07)</h3>
+<ul>
+<li>New <code>services/cli_writer.py</code>. <code>split_payload(appliance, endpoint, fields)</code>
+  routes each field of a write by the API library's classification on the
+  appliance's EXACT build: <code>cli_only</code>/<code>hidden</code> go by CLI, <code>both</code>/<code>rest_only</code>
+  by REST (the existing clients), and a field the build does not have, one no
+  source measured, an unmeasured endpoint or an unknown build is refused with
+  the reason. FortiWeb 7.6.8 and 8.0.6 have no CLI-only field, so on those
+  builds every field still goes by REST.</li>
+<li>The writer runs one object's change as a CLI transaction (<code>config</code>/<code>edit</code>/
+  <code>set</code>/<code>unset</code>/<code>next</code>/<code>end</code>, sub-table rows in the same transaction, <code>edit 0</code>
+  for a new row), quoting and escaping values the FortiOS-family way and
+  refusing what cannot be typed safely (control characters; <code>?</code> where the CLI
+  reads it as help). It stops at the first error the box prints (parse error,
+  out of range, invalid value, entry not found, <code>node_check_object fail</code>,
+  negative return codes, <code>Command fail</code>) and discards the pending change with
+  <code>abort</code> (rows and singletons; a sub-table level is left with <code>end</code> first),
+  resyncing on the prompt after every line. Every apply is read back in a NEW
+  SSH session with <code>show full-configuration</code>: each written field must read back
+  equal, and REST is read back too when the object has a REST path; a mismatch
+  fails the write with the diff. After a failure the readback proves nothing
+  was applied (or says it was). Every apply is audited
+  (<code>config.cli_write</code>: object path, field names, outcome — never a value).</li>
+<li>Runs inside the device-job framework and takes the SAME per-device lock as a
+  REST write. The SSH write session is the existing write-capable console class
+  (its deny-list gate applies to every line); the read-only console gate is
+  unchanged.</li>
+<li>Object editor: the Save preview shows the CLI script for the fields this
+  build serves only by CLI (the rest is the usual REST request) and, after
+  Apply, the CLI and REST readback. Same <code>config_write</code> permission as before;
+  dry run stays the default. Fields the build does not know keep their REST
+  path and are listed as a warning.</li>
+<li>Fixed: <code>cli_schema.parse_show_full_values</code> read a value holding an escaped
+  quote (<code>set comment "a \"b"</code>) as an unterminated multi-line value and dropped
+  the lines after it.</li>
+<li>Verified end to end on a FortiWeb 8.0.6 lab box: objects created, changed,
+  refused mid-transaction (nothing applied), deleted; the box read back
+  identical to its state before the test.</li>
+</ul>
+<h3 id="added--schema-adapters-per-product-and-the-new-build-watch-2026-10-07">Added — schema adapters per product and the new-build watch (2026-10-07)</h3>
+<ul>
+<li><code>services.schema_adapters</code>: one adapter per product, all feeding the same
+  per-build, per-channel model. Each declares its capabilities (<code>tree</code>,
+  <code>show_full</code>, <code>rest_schema</code>, <code>rest_probe</code>) and whether it was verified, on
+  which device and build. <strong>FortiWeb</strong> (verified, {device} 7.6.8 and
+  {device} 8.0.6) and <strong>FortiADC</strong> (unverified: no FortiADC in the lab) wrap
+  the existing schema harvest. <strong>FortiAuthenticator</strong> (verified on {device},
+  8.0.3 build0099): FAC has no <code>tree</code>; its CLI is a bootstrap CLI of five
+  objects (<code>router static</code>, <code>system dns|global|ha|interface</code>, 29 fields) whose
+  schema is the <code>set ?</code> help, read by a walk that can only send <code>?</code>,
+  <code>config &lt;object&gt;</code> and <code>edit &lt;a row the box listed&gt;</code> and drops the session
+  without <code>end</code>; plus <code>show full-configuration</code> and the Tastypie schema.
+  <strong>FortiGate</strong>: <code>?action=schema</code> parser (nested tables folded into fields, as
+  the <code>tree</code> is) — unverified, the lab VM is unlicensed and answers 401.
+  <strong>FortiAnalyzer</strong>: CLI ↔ JSON-RPC <code>/cli/global/...</code> path mapping and the
+  <code>get</code> + <code>option: syntax</code> schema read — unverified, no FortiAnalyzer in the
+  lab. <code>flask apilib adapter-harvest</code> and <code>flask apilib schema-import</code>
+  (FortiGate tree/schema files, FortiAnalyzer syntax answers).</li>
+<li>The FortiAuthenticator REST evidence records that its directory is complete
+  (<code>summary.directory_complete</code>); <code>channels_at</code> then reads a CLI object the
+  directory does not list as <code>cli_only</code> instead of <code>unknown</code>. Measured on
+  {device}: 29 <code>cli_only</code>, 316 <code>rest_only</code>, 0 <code>unknown</code>, 0 <code>both</code>.</li>
+<li>New-build watch (<code>services.schema_watch</code>): when an appliance runs a build
+  with no harvested schema, ONE bell notification per product and build goes
+  to the administrators ("New build X on Y: schema not harvested"), from the
+  firmware probe and from the new <code>schema_watch</code> scheduled action. The new
+  <strong>Schema builds</strong> page (<code>/schema-builds/</code>, sidebar) lists the adapters with
+  their verification, the pending builds with a one-click harvest, and after
+  a harvest the comparison with the closest harvested build: every new or
+  changed item with its channel on the new build, "to verify" while its REST
+  side is unmeasured there. The <code>schema_harvest</code> scheduled action also runs
+  FortiAuthenticator and FortiAnalyzer through their adapters.</li>
 </ul>
 <h3 id="added--the-api-library-reads-the-cli-channel-too-2026-10-07">Added — the API library reads the CLI channel too (2026-10-07)</h3>
 <ul>

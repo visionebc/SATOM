@@ -72,6 +72,7 @@
       <a href="#10-limits-that-do-not-go-away">10. Limits that do not go away</a>
       <a href="#11-api-packs--the-library-for-nodes-that-cannot-measure-it">11. API packs — the library for nodes that cannot measure it</a>
       <a href="#12-troubleshooting">12. Troubleshooting</a>
+      <a href="#13-cli-channel-and-hidden-fields">13. CLI channel and hidden fields</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="api-library--versioned-append-only-in-the-database">API library — versioned, append-only, in the database</h1>
@@ -187,7 +188,9 @@ build) is shown as <strong>patch unknown</strong>. It is not <code>8.0.0</code>.
 answer; it is never read as "not served".</p>
 <h3 id="24-source-priority">2.4 Source priority</h3>
 <p>When two sources describe the same thing, the order is
-<code>sweep</code> &gt; <code>schema</code> &gt; <code>manual</code> &gt; <code>legacy_matrix</code> &gt; <code>vendor_doc</code>.
+<code>sweep</code> &gt; <code>schema</code> &gt; <code>cli_tree</code> &gt; <code>cli_full</code> &gt; <code>manual</code> &gt; <code>legacy_matrix</code> &gt;
+<code>vendor_doc</code>. The two CLI sources describe the CLI channel and are never read
+by a REST answer (§13).
 <strong>Fields are compared only within one kind of evidence.</strong> A sweep carries
 wire-only companions (<code>_val</code> twins, <code>sz_</code>/<code>q_</code> internals) that a schema
 strips, and subtracting one from the other invents removals. A field set known
@@ -232,7 +235,8 @@ on one side only, or by different kinds on the two sides, is reported as
 </tbody>
 </table>
 <p>Source vocabulary (closed set): <code>sweep</code>, <code>schema</code>, <code>vendor_doc</code>, <code>manual</code>,
-<code>legacy_matrix</code>. Anything else is refused at ingest.</p>
+<code>legacy_matrix</code>, and the CLI channel <code>cli_tree</code> and <code>cli_full</code> (§13).
+Anything else is refused at ingest.</p>
 <p><strong>What the library held when 2.2.0 was cut</strong> (measured):</p>
 <table>
 <thead>
@@ -353,14 +357,16 @@ cover a build, the one that knows the newer firmware wins.</p>
 <li><code>api_lib_endpoint</code> — <code>product, name, first_seen, last_seen</code>.
   Unique (product, name).</li>
 <li><code>api_lib_endpoint_fact</code> — <code>endpoint_id, build_id, source, urn, section,
-  verdict, fields_known, witnesses (JSON list of device names),
+  verdict, fields_known, witnesses (JSON list of device names), attrs (JSON,
+  CLI channel metadata, migration</code>apilib05_cli_channel<code>),
   first_evidence_id, last_evidence_id, first_seen, last_seen</code>.
   Unique (endpoint_id, build_id, source).</li>
 <li><code>api_lib_field</code> — <code>endpoint_id, name, first_seen, last_seen</code>.
   Unique (endpoint_id, name).</li>
 <li><code>api_lib_field_fact</code> — <code>field_id, build_id, source, type, options (JSON),
   default (JSON), required, children (JSON), platforms (JSON list of hw_type
-  or model), first_evidence_id, last_evidence_id, first_seen, last_seen</code>.
+  or model), attrs (JSON:</code>cli_id<code>,</code>hidden<code>,</code>range<code>,</code>help<code>,</code>cli_type<code>,</code>datasource<code>,</code>lab_default<code>), first_evidence_id, last_evidence_id,
+  first_seen, last_seen</code>.
   Unique (field_id, build_id, source).</li>
 <li><code>api_lib_span</code> — <code>endpoint_id, field_id (nullable: NULL = endpoint span),
   evidence_id, source, from_key, to_key (nullable = open), from_version,
@@ -411,7 +417,14 @@ after a collection upgrade can be explained instead of guessed at.</p>
 <li><code>resolve_appliance(appliance) -&gt; dict</code> — product, version, build row (or
   None), status (§2.2).</li>
 <li><code>matrix_doc(product, versions=None) -&gt; dict</code> — the document shape
-  <code>api_matrix.build()</code> has always returned, so its consumers did not change.</li>
+  <code>api_matrix.build()</code> has always returned, so its consumers did not change.
+  Each version also carries <code>cli</code> (CLI-channel object counts per source).</li>
+<li><code>urn_key(urn) -&gt; str</code> — the REST path without prefix or query; the join
+  between the channels (§13).</li>
+<li><code>channels_at(product, version, endpoint=None, exceptions=None) -&gt; dict</code> —
+  per field: <code>both | cli_only | hidden | rest_only | unknown</code>, with evidence
+  ids and a completeness summary (§13.3). <code>compare()</code> carries the CLI half
+  under <code>channels</code>.</li>
 </ul>
 <p>Adapters that talk to nothing: <code>apilib_vendor.evidence_from_ansible_collection(path)</code>
 (reads the collection with <code>ast</code>; vendor code is <strong>never imported or
@@ -1311,7 +1324,19 @@ the digests, because they act on a stored dump.</p>
 </tr>
 <tr>
 <td><code>ingest-file</code>: <code>unknown evidence source</code></td>
-<td>The document's <code>source</code> is not one of <code>sweep</code>, <code>schema</code>, <code>vendor_doc</code>, <code>manual</code>, <code>legacy_matrix</code></td>
+<td>The document's <code>source</code> is not one of <code>sweep</code>, <code>schema</code>, <code>vendor_doc</code>, <code>manual</code>, <code>legacy_matrix</code>, <code>cli_tree</code>, <code>cli_full</code></td>
+</tr>
+<tr>
+<td><code>cli_full field … carries default: cli_full holds names, never values</code></td>
+<td>A <code>cli_full</code> document carried a value. Only lab evidence (<code>summary.lab</code>) may carry a <code>default</code> (§13.2)</td>
+</tr>
+<tr>
+<td>Schema harvest: <code>stored as unhealthy: the tree output was cut short</code></td>
+<td>The SSH read ended before the prompt came back. Harvest again; a box under load can take longer than the 180 s budget</td>
+</tr>
+<tr>
+<td>A CLI-coverage row reads <strong>Not in catalog</strong> with REST <em>not measured</em></td>
+<td>No REST evidence for that path on the dump's build. Run a schema harvest of a box on that build (§13.4); the row then becomes a catalog gap or <em>CLI only</em></td>
 </tr>
 <tr>
 <td><code>baseline promote</code>: <code>… has no measured evidence</code></td>
@@ -1347,6 +1372,231 @@ the digests, because they act on a stored dump.</p>
 </tr>
 </tbody>
 </table>
+<hr>
+<h2 id="13-cli-channel-and-hidden-fields">13. CLI channel and hidden fields</h2>
+<blockquote>
+<p><strong>Since:</strong> SATOM 2.13.0 (unreleased).</p>
+</blockquote>
+<p>The same firmware build can serve an object over REST and over the CLI, over
+one only, or with fields that only <code>show full-configuration</code> prints. The
+library records the CLI channel beside the REST one, per exact build, so a
+page can say "you can do this, but on build X this field does not exist", or
+"this field exists only on the CLI".</p>
+<h3 id="131-the-two-cli-sources">13.1 The two CLI sources</h3>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Read with</th>
+<th>What it holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cli_tree</code></td>
+<td><code>tree</code> at the root of the CLI (SSH, no <code>config</code>)</td>
+<td>the whole schema: every object (table <code>[name(id)]</code>, singleton <code>{name(id)}</code>), every field with its CLI id, <code>&lt;type&gt;</code> or enum options; the first field of a table is its key</td>
+</tr>
+<tr>
+<td><code>cli_full</code></td>
+<td><code>show full-configuration</code></td>
+<td>the field NAMES each existing object prints, defaults included; a name the build's <code>tree</code> does not list is marked <code>attrs.hidden</code></td>
+</tr>
+</tbody>
+</table>
+<p>Both are build-scoped (one box, one build) and keyed by the <strong>REST path
+without prefix</strong> (<code>system/ntp/ntpserver</code>), which is exactly what
+<code>api_library.urn_key(urn)</code> makes of the URN a sweep carries. That is the only
+join between the channels; no registry name is involved. Per object,
+<code>summary.objects[&lt;path&gt;]</code> = <code>{cli_path, kind, mkey, parent, cli_id}</code> and the
+same goes into the endpoint fact's <code>attrs</code>. Field metadata goes into the field
+fact's <code>attrs</code>: <code>cli_id</code>, <code>hidden</code>, <code>range</code> <code>[lo, hi]</code>, <code>help</code>, <code>cli_type</code>
+(the raw <code>&lt;type&gt;</code>), <code>datasource</code>, <code>lab_default</code>.</p>
+<p>FortiOS (FortiGate) prints <code>[table]</code>, <code>&lt;singleton&gt;</code>, <code>--*key</code> and annotations
+<code>(lo,hi)</code> / <code>(size)</code> but no types and no options; its command trees
+(<code>diagnose__tree__</code>, <code>execute__tree__</code>) are skipped.</p>
+<p><strong>CLI path to REST path</strong> (<code>cli_schema.rest_path</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Product</th>
+<th>Rule</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FortiWeb</td>
+<td><code>module/</code> + namespaces and object joined with <code>.</code>; an object nested in a table or singleton goes with <code>/</code> (<code>waf/web-protection-profile.inline-protection</code>, <code>system/ntp/ntpserver</code>)</td>
+<td>verified (7.6.8, 8.0.6)</td>
+</tr>
+<tr>
+<td>FortiGate</td>
+<td><code>config a b c</code> -&gt; <code>a.b/c</code>; a nested table is a field of its top-level object (<code>children</code>)</td>
+<td>matches every vendor URN</td>
+</tr>
+<tr>
+<td>FortiADC</td>
+<td><code>config a-b c-d</code> -&gt; <code>a_b_c_d</code>; a table in a table -&gt; <code>&lt;parent&gt;_child_&lt;table&gt;</code></td>
+<td><strong>unverified</strong> (no FortiADC in the lab)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="132-what-never-enters-the-library">13.2 What never enters the library</h3>
+<ul>
+<li><strong>No values.</strong> <code>cli_full</code> holds names. Ingest refuses a <code>cli_full</code> field
+  that carries anything but <code>attrs</code>, and the API-pack export refuses such a row
+  again. The one exception is lab evidence (<code>summary.lab = true</code>): on a freshly
+  created lab row every value IS the default, so <code>default</code> is recorded with
+  <code>attrs.lab_default</code>. Identity and secret fields (hostname, keys, passwords,
+  certificates, <code>ENC</code> values) are never recorded as defaults.</li>
+<li><strong>No dump.</strong> The configuration dump stays in the device vault; the library
+  row stores the names-only document. The <code>tree</code> text is kept with its
+  <code>cli_tree</code> row (it is a schema), and a pack exports the document, never that
+  text.</li>
+<li><strong>No REST claim.</strong> The REST readers (<code>endpoints_at</code>, <code>fields_at</code>, the REST
+  half of <code>compare</code>, <code>matrix_doc</code>, <code>builds().measured</code>, <code>resolve_appliance</code>,
+  baselines) read only the REST sources. A build measured only through the CLI
+  is still <code>unmeasured</code> for REST, with <code>cli_measured: true</code>.</li>
+</ul>
+<h3 id="133-channels-of-a-build">13.3 Channels of a build</h3>
+<p><code>api_library.channels_at(product, version, endpoint=None, exceptions=None)</code>
+answers, for every field of every path the build is known to have:</p>
+<table>
+<thead>
+<tr>
+<th>channel</th>
+<th>means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>both</code></td>
+<td>REST revealed it and the CLI has it</td>
+</tr>
+<tr>
+<td><code>cli_only</code></td>
+<td>the CLI <code>tree</code> has it; REST revealed the object's fields (or measured the object absent) and it is not there</td>
+</tr>
+<tr>
+<td><code>hidden</code></td>
+<td>like <code>cli_only</code>, but only <code>show full-configuration</code> prints it</td>
+</tr>
+<tr>
+<td><code>rest_only</code></td>
+<td>REST revealed it; the build's <code>tree</code> does not list it</td>
+</tr>
+<tr>
+<td><code>unknown</code></td>
+<td>one channel never answered for it on this build (no <code>tree</code>, a blind or unasked REST endpoint). Never a "no". A name only the vendor documentation gives REST, absent from a measured <code>tree</code>, is <code>unknown</code> with <code>doc_conflict: true</code></td>
+</tr>
+<tr>
+<td><code>meta</code></td>
+<td>REST bookkeeping (<code>api_library.REST_META</code>), reported and never counted toward completeness</td>
+</tr>
+</tbody>
+</table>
+<p>REST bookkeeping is <code>meta</code>, not <code>rest_only</code>. FortiWeb (measured on 7.6.8,
+where it had read as 276 <code>rest_only</code>): <code>id</code> on tables whose tree has no <code>id</code>,
+<code>_id</code>, <code>seq</code>, <code>&lt;NO.&gt;</code>/<code>&lt;No.&gt;</code>, <code>sub_table_id</code>, <code>sub_table_action</code>, <code>q_*</code>,
+<code>sz_*</code>, <code>can_*</code>, <code>*_val</code>. A name the build's CLI lists for the object is a real
+field (tables whose key is <code>id</code>, <code>&lt;No.&gt;</code> sequence tables included); without a
+measured <code>tree</code>, <code>id</code> is not called meta at all. Other products have no rule
+until a REST row is measured next to a tree. Each field
+carries <code>rest</code> / <code>cli</code> (<code>yes|no|unknown</code>) and the evidence ids. The summary is
+<strong>complete</strong> when both channels were measured and nothing is <code>unknown</code>
+outside a named exception — <code>licence</code> or <code>status-object</code>, from the evidence
+(<code>summary.exceptions</code>) or the caller. Any other reason is listed as rejected.</p>
+<p><code>compare(product, base, target)</code> adds <code>channels</code>: <code>channel_moves</code> (a field
+whose channel changed, e.g. <code>absent -&gt; cli_only</code>), and the like-for-like <code>tree</code>
+diff — objects and fields added or removed, enum options added and removed,
+type, range and (lab) default changes, and <strong>rename candidates</strong>: a field (or
+object) gone from one build and a new one with the same CLI id. Candidates are
+reported, never applied; <code>api_lib_field_map</code> stays the only authority, and a
+candidate it already maps says <code>mapped: true</code>. Object metadata (CLI id, key,
+kind) is read from the evidence <code>summary.objects</code> when the facts carry none, so
+object rename candidates (<code>endpoint_rename_candidates</code>) and <code>field_moves</code> (a CLI
+id that left one object and reappears in another: an object renamed with its
+fields, or a field that became a subtable) work on harvester packs too.
+<code>field_history</code> reads both channels and labels each row <code>rest</code> or <code>cli</code>.</p>
+<h3 id="1331-build-compatibility-of-a-write">13.3.1 Build compatibility of a write</h3>
+<p><code>services/build_compat.py</code> checks a payload (object + fields, optionally values)
+against each target's exact build through both channels: <code>missing</code> (stripped
+per device and reported), <code>cli_only</code> (the REST write cannot set it),
+<code>enum_invalid</code> / <code>range_invalid</code> and an object the build lacks (block),
+<code>unknown</code> for an unmeasured build ("cannot be guaranteed", never ok), plus
+rename hints from <code>api_lib_field_map</code> and equal CLI ids. One view per
+(product, build), cached until the product's evidence or rename maps change.
+<code>version_compat.build_check</code> / <code>compare_object(..., values=)</code> carry it into
+template apply and approval deploy, baseline and system-profile apply, the
+carve-out push and the object editor. The <strong>Build compatibility</strong> page
+(<code>/web/registry/build-compat/</code>, <code>registry_edit</code>) shows the field x build matrix
+by channel, a two-build diff and per-field history; <code>satom execute apilib
+compat &lt;product&gt; &lt;A&gt; &lt;B&gt;</code> and <code>satom execute apilib channels &lt;product&gt; &lt;build&gt;</code>
+print the same from the console.</p>
+<h3 id="134-harvesting-the-cli-channel">13.4 Harvesting the CLI channel</h3>
+<p><code>services/schema_harvest.harvest(appliance)</code> reads one appliance's build:</p>
+<ol>
+<li>SSH <code>tree</code> -&gt; <code>cli_tree</code>. <code>tree</code> is allowed by its own whole-command gate
+   (<code>ssh_ops.assert_schema_command</code>); the read-verb allowlist is unchanged. The
+   read waits for the prompt (a 1-2 MB answer), paging off as for every
+   console session. A dump that is cut short, holds fewer than 50 objects or
+   no <code>system</code> object is stored unhealthy.</li>
+<li><code>show full-configuration</code> -&gt; <code>cli_full</code>: the newest usable vault dump of
+   the same box on the same build when it is younger than 24 h, otherwise a
+   fresh SSH capture (not stored in the vault).</li>
+<li>FortiWeb only: one REST GET per <code>tree</code> object the library's REST evidence
+   does not cover (never asked, errored, blind), classified by shape (§13.5),
+   ingested as sweep evidence keyed by the REST path with <code>origin_ref</code>
+   <code>schema_harvest:…</code>. A nested object under a table is asked with the first
+   row's key (<code>?mkey=</code>), which is never recorded; one with an empty parent, or
+   two tables deep, is skipped and counted. This partial evidence does not
+   count as the build's sweep (<code>apilib_harvest.needs_harvest</code>, pack "local
+   wins"), and a baseline promotion ignores path-named entries.</li>
+</ol>
+<p>Entry points: <strong>API Explorer -&gt; Harvest CLI schema</strong> (permission
+<code>appliances.apply</code>, a device job), the scheduled action <code>schema_harvest</code>
+(admin, per target), <code>flask apilib schema-harvest &lt;id|name&gt; [--lab]
+[--no-probe]</code>, and <code>sudo satom execute apilib harvest &lt;id|name&gt; [--no-probe]</code>.
+<code>--lab</code> is for lab boxes only.</p>
+<h3 id="135-fortiweb-answers-an-unserved-nested-path-with-its-parent">13.5 FortiWeb answers an unserved nested path with its parent</h3>
+<p>Measured on 7.6.8: <code>system/interface/&lt;anything&gt;</code> answers 200 with the
+interfaces; <code>waf/web-protection-profile.inline-protection/&lt;anything&gt;</code> with all
+profiles; with <code>?mkey=</code> or under a singleton, with the parent's dict. Only an
+unknown top-level path answers <code>-20001</code>, and a real empty table answers <code>[]</code>.
+<code>rediscovery.fortiweb_shape_verdict(urn, payload, expected_fields=None,
+parent_payload=None)</code> reads the shape: a nested path whose answer equals the
+parent's, whose rows hold the child as their own key (<code>&lt;child&gt;</code> /
+<code>sz_&lt;child&gt;</code>), or whose row keys share nothing with the object's fields is
+<code>absent</code>. <code>_probe_fortiweb</code> reads the parent once for a nested path that
+returned rows, so the sweep, <code>probe_endpoint</code>, the CLI-coverage probe and the
+discovery run share the verdict.</p>
+<h3 id="136-cli-coverage-catalog-gap-or-cli-only">13.6 CLI coverage: catalog gap or CLI only</h3>
+<p>The coverage diff used to call every block the catalog does not name "CLI
+only". Measured on 7.6.8, all 50 of those blocks were served by REST. Now:</p>
+<table>
+<thead>
+<tr>
+<th>Bucket</th>
+<th>Label</th>
+<th>Means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>catalog_gap</code></td>
+<td>Catalog gap · REST serves it</td>
+<td>the library measured the block's REST path served on the dump's build</td>
+</tr>
+<tr>
+<td><code>cli_only</code></td>
+<td>Not in catalog</td>
+<td>not shown to be served; the row's REST column says <em>CLI only</em> when REST measured it absent, <em>not measured</em> otherwise</td>
+</tr>
+</tbody>
+</table>
+<p>Discovery runs and the Structure page read both buckets
+(<code>cli_coverage.not_in_catalog</code>).</p>
     </div>
   </div>
 </section>

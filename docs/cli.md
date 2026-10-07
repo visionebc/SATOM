@@ -364,7 +364,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*107 commands in 39 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*110 commands in 40 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -476,6 +476,9 @@ Everything that changes state. **Root required.** Without it each command refuse
 | `satom execute reinstall runner` | yes | — | Refresh the root-owned copy of the privileged update runner. |
 | `satom execute reinstall metrics-store` | yes | — | Install or re-assert the node-local metrics store (VictoriaMetrics). |
 | `satom execute apipack import <file.tar.gz\|shipped> [--yes] [--product <p>[,<p>...]] [--section <s>[,<s>...]]` | yes | — | Import a SIGNED API pack. Dry run unless --yes; never replaces local data. |
+| `satom execute apilib harvest <appliance-id\|name> [--no-probe]` | yes | — | Read one appliance's CLI schema (tree + hidden fields) and probe the REST paths the library lacks. Read-only on the box. |
+| `satom execute apilib compat <product> <buildA> <buildB> [--json]` | yes | — | Compare two builds of a product through both channels (REST + CLI schema): added/removed, options, renames. |
+| `satom execute apilib channels <product> <build> [--json]` | yes | — | One build: fields per channel (both / CLI only / hidden / REST only / meta / unknown). |
 | `satom execute trust add-key <file.pub> [--name <slug>]` | yes | — | Install a signing public key into the trust store. |
 | `satom execute trust remove-key <name\|fingerprint> --yes` | yes | ! | Stop accepting packages signed by a key. Needs --yes. |
 | `satom execute repair permissions` | yes | — | Give root-owned files in the app tree back to the service account. |
@@ -709,6 +712,8 @@ sudo -u satom env FLASK_APP=wsgi:app venv/bin/flask apilib --help
 | `flask apilib import-vendor PATH` | Import an **extracted** vendor Ansible collection — `fortinet.fortios` (FortiGate) or `fortinet.fortianalyzer` (FortiAnalyzer). `PATH` is the directory holding `MANIFEST.json` |
 | `flask apilib ingest-file PATH` | Ingest one evidence document — plain or gzipped JSON, or a JSON list of documents |
 | `flask apilib harvest-fac [--appliance NAME]` | Read the live API schema of every FortiAuthenticator, or the named one (GET requests only), and ingest it. One unreachable box does not stop the others |
+| `flask apilib compat PRODUCT BASE TARGET` | Two builds through both channels as JSON: REST field totals, CLI schema objects and fields added / removed, option, type, range and default changes, field and object rename candidates (same CLI attribute id) and moves. Read-only; `satom execute apilib compat` renders it |
+| `flask apilib channels PRODUCT BUILD` | One build per channel as JSON: counts of both / CLI only / hidden / REST only / unknown / meta and vendor-doc conflicts, plus the CLI-only, hidden and REST-only field lists. Read-only; `satom execute apilib channels` renders it |
 | `flask apilib baseline status` | The endpoint baseline each registry product is seeded from: pinned build, protocol, entries per provenance, applied or not |
 | `flask apilib baseline promote --product P --build X [--apply] [--export]` | Show what promoting the library's measurements of build X would change in the registry; `--apply` does it, `--export` rewrites the shipped artifact. Refuses a build nobody measured |
 | `flask apilib baseline check [--product P]` | Drift between the registry, the baseline and the evidence of every build the fleet runs. Exit status 1 on drift |

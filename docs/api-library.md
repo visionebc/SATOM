@@ -1052,9 +1052,16 @@ answers, for every field of every path the build is known to have:
 | `cli_only` | the CLI `tree` has it; REST revealed the object's fields (or measured the object absent) and it is not there |
 | `hidden` | like `cli_only`, but only `show full-configuration` prints it |
 | `rest_only` | REST revealed it; the build's `tree` does not list it |
-| `unknown` | one channel never answered for it on this build (no `tree`, a blind or unasked REST endpoint). Never a "no" |
+| `unknown` | one channel never answered for it on this build (no `tree`, a blind or unasked REST endpoint). Never a "no". A name only the vendor documentation gives REST, absent from a measured `tree`, is `unknown` with `doc_conflict: true` |
+| `meta` | REST bookkeeping (`api_library.REST_META`), reported and never counted toward completeness |
 
-REST wire noise (`q_*`, `sz_*`, `can_*`, `*_val`) is not counted. Each field
+REST bookkeeping is `meta`, not `rest_only`. FortiWeb (measured on 7.6.8,
+where it had read as 276 `rest_only`): `id` on tables whose tree has no `id`,
+`_id`, `seq`, `<NO.>`/`<No.>`, `sub_table_id`, `sub_table_action`, `q_*`,
+`sz_*`, `can_*`, `*_val`. A name the build's CLI lists for the object is a real
+field (tables whose key is `id`, `<No.>` sequence tables included); without a
+measured `tree`, `id` is not called meta at all. Other products have no rule
+until a REST row is measured next to a tree. Each field
 carries `rest` / `cli` (`yes|no|unknown`) and the evidence ids. The summary is
 **complete** when both channels were measured and nothing is `unknown`
 outside a named exception — `licence` or `status-object`, from the evidence
@@ -1066,8 +1073,29 @@ diff — objects and fields added or removed, enum options added and removed,
 type, range and (lab) default changes, and **rename candidates**: a field (or
 object) gone from one build and a new one with the same CLI id. Candidates are
 reported, never applied; `api_lib_field_map` stays the only authority, and a
-candidate it already maps says `mapped: true`. `field_history` reads both
-channels and labels each row `rest` or `cli`.
+candidate it already maps says `mapped: true`. Object metadata (CLI id, key,
+kind) is read from the evidence `summary.objects` when the facts carry none, so
+object rename candidates (`endpoint_rename_candidates`) and `field_moves` (a CLI
+id that left one object and reappears in another: an object renamed with its
+fields, or a field that became a subtable) work on harvester packs too.
+`field_history` reads both channels and labels each row `rest` or `cli`.
+
+### 13.3.1 Build compatibility of a write
+
+`services/build_compat.py` checks a payload (object + fields, optionally values)
+against each target's exact build through both channels: `missing` (stripped
+per device and reported), `cli_only` (the REST write cannot set it),
+`enum_invalid` / `range_invalid` and an object the build lacks (block),
+`unknown` for an unmeasured build ("cannot be guaranteed", never ok), plus
+rename hints from `api_lib_field_map` and equal CLI ids. One view per
+(product, build), cached until the product's evidence or rename maps change.
+`version_compat.build_check` / `compare_object(..., values=)` carry it into
+template apply and approval deploy, baseline and system-profile apply, the
+carve-out push and the object editor. The **Build compatibility** page
+(`/web/registry/build-compat/`, `registry_edit`) shows the field x build matrix
+by channel, a two-build diff and per-field history; `satom execute apilib
+compat <product> <A> <B>` and `satom execute apilib channels <product> <build>`
+print the same from the console.
 
 ### 13.4 Harvesting the CLI channel
 

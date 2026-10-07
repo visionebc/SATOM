@@ -266,10 +266,16 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
             _n("import", "Import a SIGNED API pack. Dry run unless --yes; never replaces local data.",
                run=ap.import_apipack, needs_root=True, usage=ap.USAGE),
         ),
-        _group("apilib", "API library: evidence harvested from an appliance.",
+        _group("apilib", "API library: harvest an appliance, compare builds by channel.",
             _n("harvest", "Read one appliance's CLI schema (tree + hidden fields) and probe "
                           "the REST paths the library lacks. Read-only on the box.",
                run=ap.harvest_schema, needs_root=True, usage=ap.HARVEST_USAGE),
+            _n("compat", "Compare two builds of a product through both channels "
+                         "(REST + CLI schema): added/removed, options, renames.",
+               run=ap.apilib_compat, needs_root=True, usage=ap.COMPAT_USAGE),
+            _n("channels", "One build: fields per channel (both / CLI only / hidden / "
+                           "REST only / meta / unknown).",
+               run=ap.apilib_channels, needs_root=True, usage=ap.CHANNELS_USAGE),
         ),
         _group("trust", "Public keys this node accepts update packages from.",
             _n("add-key", "Install a signing public key into the trust store.",

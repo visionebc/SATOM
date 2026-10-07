@@ -123,6 +123,10 @@ class ApiLibEndpointFact(db.Model):
     #: False = blind: the endpoint answered, its fields are unknown.
     fields_known = db.Column(db.Boolean, nullable=False, default=False)
     witnesses = db.Column(db.JSON, nullable=True)
+    #: Channel metadata (CLI evidence): ``cli_path``, ``kind`` (table|singleton),
+    #: ``mkey``, ``parent``, ``cli_id``. NULL for REST sources. Migration
+    #: ``apilib05_cli_channel``.
+    attrs = db.Column(db.JSON, nullable=True)
     first_evidence_id = db.Column(db.Integer, nullable=True)
     last_evidence_id = db.Column(db.Integer, nullable=True)
     first_seen = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
@@ -163,6 +167,11 @@ class ApiLibFieldFact(db.Model):
     required = db.Column(db.Boolean, nullable=True)
     children = db.Column(db.JSON, nullable=True)
     platforms = db.Column(db.JSON, nullable=True)
+    #: Extra field metadata, mostly from the CLI channel: ``cli_id``,
+    #: ``hidden``, ``range`` [lo, hi], ``help``, ``cli_type`` (raw ``<type>``),
+    #: ``datasource`` (bool), ``lab_default`` (bool). Migration
+    #: ``apilib05_cli_channel``.
+    attrs = db.Column(db.JSON, nullable=True)
     first_evidence_id = db.Column(db.Integer, nullable=True)
     last_evidence_id = db.Column(db.Integer, nullable=True)
     first_seen = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)

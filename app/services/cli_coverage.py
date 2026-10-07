@@ -111,7 +111,16 @@ _TOKEN_SPLIT = re.compile(r"[-_./]+")
 _ADC_DROP_TOKENS = frozenset({"child"})
 
 BUCKET_BOTH = "both"
+#: A block the catalog has no endpoint for, whose REST path was NOT shown to be
+#: served on the dump's build (measured absent: ``channel == "cli_only"``; or
+#: never asked: ``channel == "unknown"``). Labelled "Not in catalog": the key
+#: kept its historical name because packs and pages carry it.
 BUCKET_CLI_ONLY = "cli_only"
+#: A block the catalog has no endpoint for, whose REST path the API library
+#: measured SERVED on the dump's build: the gap is the catalog's, not the API's.
+BUCKET_CATALOG_GAP = "catalog_gap"
+#: Both buckets of blocks the catalog does not name (what discovery promotes).
+NOT_IN_CATALOG = ("cli_only", "catalog_gap")
 BUCKET_NEAR = "near_match"
 BUCKET_NO_BLOCK = "no_block"
 BUCKET_MONITOR = "monitor_only"
@@ -133,6 +142,10 @@ class CliBlock:
     end_line: int = 0      # 1-indexed line of its `end`
     instances: int = 0     # `edit` rows seen directly inside it
     sets: set = _dc_field(default_factory=set)   # `set`/`unset` field names
+    #: Words per ``config`` line below the scope container: each line opens ONE
+    #: object, so the last word of every segment is an object and the others
+    #: are namespaces (``cli_schema`` derives the REST path from it).
+    segments: tuple = ()
 
 
 def parse_config_dump(text: str) -> dict:
@@ -225,8 +238,10 @@ def _register(blocks: dict, stack: list, line: int) -> CliBlock | None:
     existing = blocks.get(tokens)
     if existing is not None:
         return existing
+    segs = stack[1:] if scoped is not raw_words else stack
     blk = CliBlock(tokens=tokens, path=" ".join(scoped),
-                   raw_path=" ".join(raw_words), depth=len(stack), line=line)
+                   raw_path=" ".join(raw_words), depth=len(stack), line=line,
+                   segments=tuple(len(seg) for seg in segs))
     blocks[tokens] = blk
     return blk
 
@@ -438,18 +453,63 @@ def _catalog_tokens(product: str, urn: str) -> tuple | None:
 # the comparison
 # ---------------------------------------------------------------------------
 
-def compare(product: str, text: str, *, line: str = "") -> dict:
+def not_in_catalog(diff: dict) -> list:
+    """Every block of a diff the catalog has no endpoint for (both buckets)."""
+    out: list = []
+    for bucket in NOT_IN_CATALOG:
+        out.extend((diff or {}).get(bucket) or [])
+    return out
+
+
+def _rest_verdicts(product: str, version: str) -> dict:
+    """``{rest path: verdict}`` the API library holds for ``version`` (REST
+    channel only: sweeps, schemas, schema-harvest probes). ``{}`` when there is
+    no build, no library, or no application context: then every block's REST
+    side is ``unknown`` and it stays in ``cli_only`` — never a guess."""
+    if not version:
+        return {}
+    try:
+        from . import api_library
+        out: dict = {}
+        for _name, e in api_library.endpoints_at(product, version).items():
+            key = api_library.urn_key(e.get("urn") or "")
+            if key:
+                out[key] = api_library._best_verdict([out.get(key), e.get("verdict")])
+        return out
+    except Exception:  # noqa: BLE001 — a diff must render without the library
+        try:
+            from ..extensions import db
+            db.session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return {}
+
+
+def _block_rest_path(product: str, blk) -> str:
+    """The REST path a block would have under the product's rule, or ''."""
+    from . import cli_schema
+    chain: list = []
+    for n in blk.segments or (len(blk.path.split()),):
+        chain += [cli_schema.KIND_NAMESPACE] * (n - 1) + [cli_schema.KIND_OBJECT]
+    return cli_schema.rest_path(product, blk.path, chain) or ""
+
+
+def compare(product: str, text: str, *, line: str = "", version: str = "") -> dict:
     """Diff one CLI dump against the product catalog.
 
     ``line`` is the firmware line (``"7.6"``) the dump was captured on; it is
     only used to ask ``api_matrix`` about fields, and an empty value makes that
-    answer ``unmeasured`` rather than wrong.
+    answer ``unmeasured`` rather than wrong. ``version`` is the exact build:
+    a block the catalog does not name is a ``catalog_gap`` when the API
+    library measured its REST path served on THAT build, and stays in
+    ``cli_only`` ("Not in catalog") otherwise, with its ``channel`` saying why
+    (``cli_only``: REST measured it absent; ``unknown``: never asked).
     """
     if product not in SUPPORTED_PRODUCTS:
         return {"product": product, "supported": False,
                 "reason": UNSUPPORTED_REASON.get(
                     product, "no CLI evidence path exists for this product"),
-                "counts": {}, BUCKET_CLI_ONLY: [], BUCKET_NEAR: [],
+                "counts": {}, BUCKET_CLI_ONLY: [], BUCKET_CATALOG_GAP: [], BUCKET_NEAR: [],
                 BUCKET_BOTH: [], BUCKET_NO_BLOCK: [], BUCKET_MONITOR: [],
                 "aliases": [], "health": {}}
 
@@ -489,7 +549,18 @@ def compare(product: str, text: str, *, line: str = "") -> dict:
             rec["urn"] = cand["urn"]
             near.append(rec)
         else:
+            rec["rest_path"] = _block_rest_path(product, blk)
             cli_only.append(rec)
+
+    # Channels: a block whose REST path serves on this build is a catalog gap,
+    # not "CLI only". Only a REST answer of THIS build decides.
+    verdicts = _rest_verdicts(product, version) if cli_only else {}
+    for rec in cli_only:
+        v = verdicts.get(rec.get("rest_path") or "")
+        rec["channel"] = ("rest_served" if v == "ok" else
+                          "cli_only" if v == "absent" else "unknown")
+    gap = [r for r in cli_only if r["channel"] == "rest_served"]
+    cli_only = [r for r in cli_only if r["channel"] != "rest_served"]
 
     seen = set(blocks)
     no_block = [
@@ -502,17 +573,22 @@ def compare(product: str, text: str, *, line: str = "") -> dict:
 
     both.sort(key=lambda r: r["path"])
     cli_only.sort(key=lambda r: r["path"])
+    gap.sort(key=lambda r: r["path"])
     near.sort(key=lambda r: r["path"])
 
     return {
         "product": product, "supported": True, "reason": "", "line": line,
-        "health": health,
+        "version": version, "health": health,
         "counts": {
             "cli_blocks": len(blocks),
             "catalog_config": len(keyed),
             "catalog_monitor": len(monitor),
             BUCKET_BOTH: len(both),
             BUCKET_CLI_ONLY: len(cli_only),
+            BUCKET_CATALOG_GAP: len(gap),
+            # Of the "Not in catalog" blocks, those whose REST path the
+            # library measured ABSENT on this build: the CLI-only channel.
+            "cli_only_verified": sum(1 for r in cli_only if r["channel"] == "cli_only"),
             BUCKET_NEAR: len(near),
             BUCKET_NO_BLOCK: len(no_block),
             # Of the CLI-only findings, the ones that actually hold
@@ -522,6 +598,7 @@ def compare(product: str, text: str, *, line: str = "") -> dict:
         },
         BUCKET_BOTH: both,
         BUCKET_CLI_ONLY: cli_only,
+        BUCKET_CATALOG_GAP: gap,
         BUCKET_NEAR: near,
         BUCKET_NO_BLOCK: no_block,
         BUCKET_MONITOR: monitor,
@@ -766,6 +843,7 @@ def report(product: str, backup_id: int | None = None, *,
               if allow_pack and product in SUPPORTED_PRODUCTS else None)
         if pk is not None:
             diff[BUCKET_CLI_ONLY] = pk.get(BUCKET_CLI_ONLY) or []
+            diff[BUCKET_CATALOG_GAP] = pk.get(BUCKET_CATALOG_GAP) or []
             diff[BUCKET_NEAR] = pk.get(BUCKET_NEAR) or []
             # The digest carries no catalog-side list: "no block in this dump"
             # would be a claim about a dump this node never saw.
@@ -787,7 +865,8 @@ def report(product: str, backup_id: int | None = None, *,
                 "diff": diff, "orphans": orphan_dumps()}
 
     text, rec = read_dump(chosen["backup_id"])
-    diff = compare(product, text, line=chosen.get("line", ""))
+    diff = compare(product, text, line=chosen.get("line", ""),
+                   version=chosen.get("version", ""))
     diff["no_evidence"] = not text
     diff["evidence_line"] = version or line
     return {"product": product, "evidence": evidence, "chosen": rec or chosen,
@@ -871,8 +950,8 @@ PROV_UNKNOWN = "unknown"
 
 #: Every value :meth:`Provenance.for_name` / :meth:`Provenance.for_urn` can
 #: return. Finding-first, so a page that groups by bucket leads with the gap.
-PROV_ORDER = (BUCKET_CLI_ONLY, BUCKET_NEAR, BUCKET_BOTH, BUCKET_NO_BLOCK,
-              BUCKET_MONITOR, PROV_UNKNOWN)
+PROV_ORDER = (BUCKET_CLI_ONLY, BUCKET_CATALOG_GAP, BUCKET_NEAR, BUCKET_BOTH,
+              BUCKET_NO_BLOCK, BUCKET_MONITOR, PROV_UNKNOWN)
 
 #: ``bucket -> (label, css class, why)``. The vocabulary lives here rather than
 #: in three templates so the three pages cannot disagree about what a word
@@ -916,10 +995,18 @@ PROV_LABEL = {
                       "it — an EMPTY table prints no block, so this is not "
                       "evidence that the CLI lacks it",
                       "no block in this dump"),
-    BUCKET_CLI_ONLY: ("CLI only", "fw-badge-danger",
-                      "the dump has a configuration block for it and the "
-                      "catalog has no endpoint that matches",
+    BUCKET_CLI_ONLY: ("Not in catalog", "fw-badge-danger",
+                      "the dump has a configuration block for it, the catalog "
+                      "has no endpoint that matches, and REST was not shown to "
+                      "serve its path on this build (measured absent, or never "
+                      "asked: see the row's REST column)",
                       "in the dump"),
+    BUCKET_CATALOG_GAP: ("Catalog gap · REST serves it", "fw-badge-warning",
+                         "the dump has a configuration block for it, the "
+                         "catalog has no endpoint, and the API library measured "
+                         "its REST path served on this build: the catalog lacks "
+                         "an entry, the API does not",
+                         "in the dump · REST serves it"),
     PROV_UNKNOWN: ("—", "", "no CLI evidence has been measured for this", "—"),
 }
 
@@ -1060,14 +1147,17 @@ def provenance_from(diff: dict, evidence: dict | None) -> Provenance:
                        "settings": r.get("settings") or [],
                        "configured": bool(r.get("instances") or r.get("settings"))}
                 _put(rec, [r.get("catalog")] + list(r.get("aliases") or []))
-        for r in diff.get(BUCKET_CLI_ONLY) or []:
-            rec = {"bucket": BUCKET_CLI_ONLY, "why": PROV_LABEL[BUCKET_CLI_ONLY][2],
-                   "path": r.get("path", ""), "catalog": "", "urn": "",
-                   "tokens": r.get("tokens") or [],
-                   "instances": r.get("instances", 0),
-                   "settings": r.get("settings") or [],
-                   "configured": bool(r.get("configured"))}
-            _put(rec, [])
+        for bucket in NOT_IN_CATALOG:
+            for r in diff.get(bucket) or []:
+                rec = {"bucket": bucket, "why": PROV_LABEL[bucket][2],
+                       "path": r.get("path", ""), "catalog": "", "urn": "",
+                       "tokens": r.get("tokens") or [],
+                       "instances": r.get("instances", 0),
+                       "settings": r.get("settings") or [],
+                       "channel": r.get("channel") or "unknown",
+                       "rest_path": r.get("rest_path") or "",
+                       "configured": bool(r.get("configured"))}
+                _put(rec, [])
         for r in diff.get(BUCKET_NO_BLOCK) or []:
             rec = {"bucket": BUCKET_NO_BLOCK, "why": PROV_LABEL[BUCKET_NO_BLOCK][2],
                    "path": "", "catalog": r.get("catalog", ""),
@@ -1099,7 +1189,7 @@ def provenance_from(diff: dict, evidence: dict | None) -> Provenance:
     return Provenance(
         product, supported=supported, reason=reason, evidence=evidence,
         counts=diff.get("counts") or {}, by_name=by_name, by_tokens=by_tokens,
-        cli_only=list(diff.get(BUCKET_CLI_ONLY) or []) if evidence is not None else [],
+        cli_only=not_in_catalog(diff) if evidence is not None else [],
     )
 
 
@@ -1118,8 +1208,8 @@ def provenance(product: str, backup_id: int | None = None, *,
 __all__ = [
     "SUPPORTED_PRODUCTS", "UNSUPPORTED_REASON", "REDACTED", "MAX_CANDIDATES",
     "catalog_name_for", "candidate_urns",
-    "BUCKET_BOTH", "BUCKET_CLI_ONLY", "BUCKET_NEAR", "BUCKET_NO_BLOCK",
-    "BUCKET_MONITOR",
+    "BUCKET_BOTH", "BUCKET_CLI_ONLY", "BUCKET_CATALOG_GAP", "NOT_IN_CATALOG",
+    "BUCKET_NEAR", "BUCKET_NO_BLOCK", "BUCKET_MONITOR", "not_in_catalog",
     "CliBlock", "parse_config_dump", "parse_report", "scrub_block",
     "extract_block", "compare", "field_gap", "product_of_firmware",
     "evidence_index", "read_dump", "orphan_dumps", "report",

@@ -180,7 +180,8 @@
   {% if P and P.measured %}
     <span class="fw-badge fw-badge-success">{{ P.counts.cli_blocks }} blocks</span>
     <span class="text-muted">{{ P.device }} · {{ P.captured_at }}</span>
-    {% if P.counts.cli_only %}<br><span class="fw-badge fw-badge-danger">{{ P.counts.cli_only }} CLI-only</span>{% endif %}
+    {% if P.counts.cli_only %}<br><span class="fw-badge fw-badge-danger">{{ P.counts.cli_only }} not in catalog</span>{% endif %}
+    {% if P.counts.catalog_gap %}<br><span class="fw-badge fw-badge-warning">{{ P.counts.catalog_gap }} catalog gap</span>{% endif %}
   {% else %}
     {# The row IS a build, and the cell says so. The reason travels in the
        title, because "no dump" and "a dump taken on another build" are

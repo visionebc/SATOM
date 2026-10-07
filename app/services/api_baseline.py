@@ -324,8 +324,12 @@ def _store(product: str, version: str, api_version: str, entries: list, *,
 def _measured_at(product: str, version: str) -> dict:
     """``{name: summary}`` from MEASURED sources only (vendor claims excluded)."""
     from . import api_library
+    # A name holding "/" is a REST PATH (a schema harvest probes tree objects
+    # under their path), not a registry name. Registering a path is
+    # discovery_run's job, with the operator's confirmation, never a side
+    # effect of promoting a baseline.
     return {n: e for n, e in api_library.endpoints_at(product, version).items()
-            if not e.get("vendor_only")}
+            if not e.get("vendor_only") and "/" not in n}
 
 
 def _measured_builds(product: str) -> list:

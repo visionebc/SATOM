@@ -23,6 +23,8 @@ PACK_RE = re.compile(r"^satom-apipack-[A-Za-z0-9._-]{1,64}\.tar\.gz$")
 SECTIONS = ("library", "docs", "cli-coverage")
 USAGE = ("execute apipack import <file.tar.gz|shipped> [--yes] "
          "[--product <p>[,<p>...]] [--section <s>[,<s>...]]")
+HARVEST_USAGE = "execute apilib harvest <appliance-id|name> [--no-probe]"
+_APPLIANCE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,127}$")
 
 
 def _version_key(name):
@@ -74,6 +76,11 @@ def _opt_list(args, flag):
 
 def _flask_pack(ctx, extra, timeout=1800):
     """``flask apilib pack <extra>`` as the service account. (rc, out, err)."""
+    return _flask_apilib(ctx, ["pack"] + list(extra), timeout=timeout)
+
+
+def _flask_apilib(ctx, extra, timeout=1800):
+    """``flask apilib <extra>`` as the service account. (rc, out, err)."""
     flask = ctx.app_dir / "venv" / "bin" / "flask"
     if not flask.exists():
         return 127, "", "venv/bin/flask missing — run 'execute reinstall venv'"
@@ -82,7 +89,7 @@ def _flask_pack(ctx, extra, timeout=1800):
         env.setdefault(k, v)
     env["FLASK_APP"] = "wsgi.py"
     env["HOME"] = str(ctx.app_dir)
-    cmd = [str(flask), "apilib", "pack"] + list(extra)
+    cmd = [str(flask), "apilib"] + list(extra)
     if os.geteuid() == 0 and ctx.app_user and ctx.app_user != "root":
         # -m keeps the environment built above (.env, FLASK_APP, HOME); without
         # it runuser resets HOME to /root, which the service account cannot read.
@@ -230,5 +237,62 @@ def import_apipack(ctx, args):
         r.lines("failures", failed[:20])
     if dry:
         r.note("Re-run with --yes to import the %d new item(s)." % by_state.get("new", 0))
+    r.set(result=res)
+    return r
+
+
+# ---------------------------------------------------------------------------
+# execute apilib harvest
+# ---------------------------------------------------------------------------
+def harvest_schema(ctx, args):
+    """Read one appliance's build through both channels into the API library:
+    SSH ``tree`` + ``show full-configuration`` + a REST shape probe of what the
+    library lacks. Read-only against the box; runs as the service account."""
+    plain = [a for a in args if not a.startswith("--")]
+    if not plain:
+        return Result("info", "apilib harvest").lines("", [
+            "usage: satom " + HARVEST_USAGE, "",
+            "Reads the appliance's CLI schema (tree), its show full-configuration",
+            "field names (hidden fields included) and probes the REST paths the",
+            "library does not cover. Nothing is changed on the appliance."])
+    target = plain[0]
+    if not _APPLIANCE_RE.match(target):
+        return Result("bad", "apilib harvest").lines("", ["%r is not an appliance id or name"
+                                                          % target[:80]])
+    if ctx.role == "standby":
+        return Result("bad", "apilib harvest").lines("", [
+            "this node is the STANDBY: its database is read-only. Harvest on the primary."])
+    extra = ["schema-harvest", target]
+    if "--no-probe" in args:
+        extra.append("--no-probe")
+    rc, out, err = _flask_apilib(ctx, extra, timeout=900)
+    res = _json_tail(out)
+    if res is None:
+        r = Result("bad", "apilib harvest")
+        r.lines("", ((err or out) or "no output").splitlines()[-25:])
+        return r
+    r = Result("ok" if res.get("ok") else "bad", "apilib harvest")
+    r.rows("appliance", [("name", str(res.get("appliance"))),
+                         ("product", str(res.get("product"))),
+                         ("build", str(res.get("version")))])
+    tree = res.get("tree") or {}
+    full = res.get("full") or {}
+    probe = res.get("probe") or {}
+    ch = res.get("channels") or {}
+    r.rows("evidence", [
+        ("cli_tree", "#%s %s" % (tree.get("evidence_id"),
+                                  "healthy" if tree.get("healthy") else
+                                  "UNHEALTHY: %s" % tree.get("skip_reason"))),
+        ("cli_full", "#%s %s (%s)" % (full.get("evidence_id"),
+                                       "healthy" if full.get("healthy") else
+                                       "UNHEALTHY: %s" % full.get("skip_reason"),
+                                       full.get("source") or "-")),
+        ("REST probe", "%s probed, %s GETs" % (probe.get("probed", 0), probe.get("spent", 0))
+         if probe.get("probed") is not None else str(probe.get("skipped_reason") or "-"))])
+    if ch:
+        r.rows("channels", [(k, str(ch.get(k, 0))) for k in
+                            ("both", "cli_only", "hidden", "rest_only", "unknown")]
+               + [("complete", str(ch.get("complete")))])
+    r.note(res.get("msg") or "")
     r.set(result=res)
     return r

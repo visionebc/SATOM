@@ -585,7 +585,8 @@ def cli_only_nodes(diff: dict[str, Any], *,
     in the same column as the measured URNs above it. The CLI path travels in
     ``section``, which is where the tree already carries "where does this live".
     """
-    rows = list((diff or {}).get("cli_only") or [])
+    from .cli_coverage import not_in_catalog
+    rows = not_in_catalog(diff)
     if configured_only:
         rows = [r for r in rows if r.get("configured")]
     if not rows:
@@ -663,8 +664,8 @@ def clone_gap(diff: dict[str, Any]) -> list[dict[str, Any]]:
     gap but not a clone gap: there is nothing on the source to carry.
     """
     out: list[dict[str, Any]] = []
-    for rec in sorted((diff or {}).get("cli_only") or [],
-                      key=lambda r: r.get("path") or ""):
+    from .cli_coverage import not_in_catalog
+    for rec in sorted(not_in_catalog(diff), key=lambda r: r.get("path") or ""):
         if not rec.get("configured"):
             continue
         out.append({

@@ -387,6 +387,10 @@ def rebuild_document(ev: ApiLibEvidence):
     candidates = []
     if "endpoints" in raw and "source" in raw:
         candidates = [raw]
+    elif ev.source in lib.CLI_SOURCES and isinstance(raw.get("doc"), dict):
+        # schema_harvest stores ``{"doc", "tree_text"}``: the document is
+        # exported, the raw ``tree`` text (it carries the device prompt) never.
+        candidates = [raw["doc"]]
     elif ev.source == lib.SOURCE_SWEEP:
         candidates = [lib.evidence_from_sweep(ev.product, raw, _device_of(ev), ev.origin_ref)]
     elif ev.source == lib.SOURCE_LEGACY:
@@ -439,6 +443,14 @@ def _export_library(stage: Path, ident: _Identity, version: str, products) -> tu
             skipped.append({"evidence_id": ev.id, "reason": "imported from a pack; not ours to re-publish"})
             continue
         doc, why = rebuild_document(ev)
+        if doc is not None and doc.get("source") in lib.CLI_SOURCES:
+            # Rule 1 again, at the door: a cli_full row holds names only (a
+            # default only on lab evidence). A row written around ingest's
+            # check is refused here rather than shipped.
+            try:
+                lib._validate_cli(doc)
+            except ValueError as exc:
+                doc, why = None, "CLI evidence breaks the names-only rule (%s)" % exc
         if doc is None:
             skipped.append({"evidence_id": ev.id, "product": ev.product,
                             "source": ev.source, "reason": why})
@@ -539,8 +551,9 @@ def _export_cli(stage: Path, ident: _Identity, products) -> tuple:
                 skipped.append({"product": product, "version": version,
                                 "reason": (rec2 or {}).get("reason") or "unreadable dump"})
                 continue
-            diff = cc.compare(product, text, line=rec.get("line", ""))
-            keep = ("path", "tokens", "settings", "configured", "catalog", "urn")
+            diff = cc.compare(product, text, line=rec.get("line", ""), version=version)
+            keep = ("path", "tokens", "settings", "configured", "catalog", "urn",
+                    "channel", "rest_path")
             payload = {
                 "product": product, "version": version, "line": rec.get("line", ""),
                 "captured_at": (rec.get("created_iso") or "")[:10],
@@ -548,6 +561,8 @@ def _export_cli(stage: Path, ident: _Identity, products) -> tuple:
                 "counts": diff.get("counts") or {},
                 cc.BUCKET_CLI_ONLY: [{k: r[k] for k in keep if k in r}
                                      for r in diff.get(cc.BUCKET_CLI_ONLY) or []],
+                cc.BUCKET_CATALOG_GAP: [{k: r[k] for k in keep if k in r}
+                                        for r in diff.get(cc.BUCKET_CATALOG_GAP) or []],
                 cc.BUCKET_NEAR: [{k: r[k] for k in keep if k in r}
                                  for r in diff.get(cc.BUCKET_NEAR) or []],
             }
@@ -557,6 +572,7 @@ def _export_cli(stage: Path, ident: _Identity, products) -> tuple:
             items.append({"id": rel[:-len(".json.gz")], "section": SECTION_CLI, "file": rel,
                           "product": product, "version": version,
                           "cli_only": len(payload[cc.BUCKET_CLI_ONLY]),
+                          "catalog_gap": len(payload[cc.BUCKET_CATALOG_GAP]),
                           "near_match": len(payload[cc.BUCKET_NEAR])})
     return items, skipped
 
@@ -697,10 +713,14 @@ def _library_state(doc: dict) -> str:
     if doc["source"] != lib.SOURCE_VENDOR:
         b = _local_build(doc["product"], doc.get("scope") or {})
         if b is not None:
+            from .schema_harvest import ORIGIN_PREFIX as _PARTIAL
             own = (ApiLibEvidence.query
                    .filter_by(product=doc["product"], source=doc["source"],
                               build_id=b.id, healthy=True)
                    .filter(~ApiLibEvidence.origin_ref.startswith(ORIGIN_PREFIX))
+                   # A schema harvest's REST probe is partial: it does not
+                   # make this node's own measurement of the build complete.
+                   .filter(~ApiLibEvidence.origin_ref.startswith(_PARTIAL))
                    .first())
             if own is not None:
                 return ST_LOCAL

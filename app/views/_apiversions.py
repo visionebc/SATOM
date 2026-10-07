@@ -175,7 +175,7 @@ def _scopes(matrix: dict) -> list:
 # not an empty one: a config table with nothing in it prints no block at all,
 # so counting it as zero would fabricate "the CLI lost every field here".
 _CLI_HAS_BLOCK = (cli_coverage.BUCKET_BOTH, cli_coverage.BUCKET_NEAR,
-                  cli_coverage.BUCKET_CLI_ONLY)
+                  cli_coverage.BUCKET_CLI_ONLY, cli_coverage.BUCKET_CATALOG_GAP)
 
 
 def _cli_pair_note(base, base_prov, target, target_prov):

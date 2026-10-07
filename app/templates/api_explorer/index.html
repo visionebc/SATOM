@@ -93,7 +93,8 @@
      data-build-url="{{ url_for('api_explorer.build_info') }}"
      data-fields-url="{{ url_for('api_explorer.endpoint_fields') }}"
      data-execute-url="{{ url_for('api_explorer.execute') }}"
-     data-harvest-url="{{ url_for('api_explorer.harvest', appliance_id=0) }}">
+     data-harvest-url="{{ url_for('api_explorer.harvest', appliance_id=0) }}"
+     data-schema-harvest-url="{{ url_for('api_explorer.schema_harvest', appliance_id=0) }}">
   <div class="fw-card-body d-flex flex-wrap align-items-start gap-3" style="font-size:13px;">
     <div>
       <i class="bi bi-cpu text-accent me-1"></i><strong>{{ _('Build') }}</strong>
@@ -111,6 +112,14 @@
       </button>
       <div class="text-muted mt-1" style="font-size:11px; max-width:260px;">
         {{ _('No real box has been measured on this build. A harvest records what it serves.') }}
+      </div>
+    </div>
+    <div id="build-schema-wrap" class="d-none">
+      <button type="button" class="btn btn-sm btn-fw-outline" id="btn-schema-harvest">
+        <i class="bi bi-diagram-3 me-1"></i>{{ _('Harvest CLI schema') }}
+      </button>
+      <div class="text-muted mt-1" style="font-size:11px; max-width:260px;">
+        {{ _('Reads tree and show full-configuration over SSH and probes the REST paths the library lacks. Read-only on the box.') }}
       </div>
     </div>
   </div>
@@ -710,6 +719,9 @@ function paintBanner(d) {
     ul.appendChild(li);
   }
   document.getElementById('build-harvest-wrap').classList.toggle('d-none', !(d && d.harvestable));
+  const product = d && d.build ? d.build.product : '';
+  document.getElementById('build-schema-wrap').classList.toggle(
+    'd-none', !(d && d.build && d.build.version && (product === 'fortiweb' || product === 'fortiadc')));
 }
 
 async function loadBuild() {
@@ -830,6 +842,24 @@ async function harvestNow() {
   }
 }
 
+async function schemaHarvestNow() {
+  const appId = document.getElementById('sel-appliance').value;
+  if (!appId) return;
+  const btn = document.getElementById('btn-schema-harvest');
+  btn.disabled = true;
+  try {
+    const url = explorerUrl('schemaHarvestUrl').replace(/\/0$/, '/' + encodeURIComponent(appId));
+    const r = await fetch(url, { method: 'POST', headers: { 'X-CSRF-Token': csrfToken() } });
+    const d = await r.json().catch(function () { return { ok: false, msg: 'HTTP ' + r.status }; });
+    window.FW.toast(d.msg || (d.ok ? 'Schema harvested' : 'Schema harvest failed'), d.ok ? 'success' : 'danger');
+    if (d.ok) loadBuild();
+  } catch (err) {
+    window.FW.toast('Schema harvest failed: ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // Copy a leaf's URN to the clipboard ("Copy URN" affordance).
 function copyUrn(urn) {
   navigator.clipboard.writeText(urn)
@@ -882,6 +912,7 @@ document.addEventListener('keydown', function (e) {
   });
   document.getElementById('sel-appliance').addEventListener('change', loadBuild);
   document.getElementById('btn-harvest').addEventListener('click', harvestNow);
+  document.getElementById('btn-schema-harvest').addEventListener('click', schemaHarvestNow);
   loadBuild();
   document.querySelectorAll('#apiTree .api-tree-copy[data-urn]').forEach(function (btn) {
     btn.addEventListener('click', function (event) { copyUrn(this.dataset.urn); });

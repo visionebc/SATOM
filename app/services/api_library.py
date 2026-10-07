@@ -57,10 +57,46 @@ SOURCE_SCHEMA = "schema"
 SOURCE_VENDOR = "vendor_doc"
 SOURCE_MANUAL = "manual"
 SOURCE_LEGACY = "legacy_matrix"
-SOURCES = (SOURCE_SWEEP, SOURCE_SCHEMA, SOURCE_VENDOR, SOURCE_MANUAL, SOURCE_LEGACY)
+#: The CLI channel. ``cli_tree`` is the schema the appliance's ``tree`` command
+#: prints (objects, fields, types, options, CLI ids); ``cli_full`` is the field
+#: NAMES ``show full-configuration`` reveals per object, hidden fields included.
+#: Keyed by the canonical REST path without prefix (:func:`urn_key`), never by
+#: a registry name. Never values (pack rule 1), except ``default`` on lab
+#: evidence (``summary.lab``).
+SOURCE_CLI_TREE = "cli_tree"
+SOURCE_CLI_FULL = "cli_full"
+CLI_SOURCES = (SOURCE_CLI_TREE, SOURCE_CLI_FULL)
+SOURCES = (SOURCE_SWEEP, SOURCE_SCHEMA, SOURCE_VENDOR, SOURCE_MANUAL, SOURCE_LEGACY,
+           SOURCE_CLI_TREE, SOURCE_CLI_FULL)
+#: The REST channel: everything a REST answer (or a claim about one) produced.
+#: Every REST reader below (``endpoints_at``, ``fields_at``, the REST half of
+#: ``compare``, ``matrix_doc``, ``builds().measured``) reads ONLY these. A CLI
+#: object is not a REST endpoint: folding ``cli_tree`` into those answers
+#: would let a baseline promotion register every CLI path as a served URN.
+REST_SOURCES = tuple(s for s in SOURCES if s not in CLI_SOURCES)
 #: Which source speaks first when two describe the same thing. A sweep of a
-#: real box outranks everything; vendor data is last by rule 4.
-SOURCE_PRIORITY = (SOURCE_SWEEP, SOURCE_SCHEMA, SOURCE_MANUAL, SOURCE_LEGACY, SOURCE_VENDOR)
+#: real box outranks everything; vendor data is last by rule 4. The CLI sources
+#: are measurements of a real box too, so they come right after sweep/schema.
+SOURCE_PRIORITY = (SOURCE_SWEEP, SOURCE_SCHEMA, SOURCE_CLI_TREE, SOURCE_CLI_FULL,
+                   SOURCE_MANUAL, SOURCE_LEGACY, SOURCE_VENDOR)
+
+#: Keys a field's ``attrs`` may carry (contract §3 of the 2.13 brief).
+FIELD_ATTR_KEYS = ("cli_id", "hidden", "range", "help", "cli_type", "datasource",
+                   "lab_default")
+
+#: Channel classification of one field on one build (:func:`channels_at`).
+CH_BOTH = "both"
+CH_CLI_ONLY = "cli_only"
+CH_HIDDEN = "hidden"
+CH_REST_ONLY = "rest_only"
+CH_UNKNOWN = "unknown"
+CHANNELS = (CH_BOTH, CH_CLI_ONLY, CH_HIDDEN, CH_REST_ONLY, CH_UNKNOWN)
+#: The only reasons an endpoint may be left out of "complete". Named, so an
+#: exception is a statement somebody made, not a hole nobody looked at.
+EXCEPTION_REASONS = {
+    "licence": "the object cannot be read or filled without a licence the lab box lacks",
+    "status-object": "a runtime status object: it has no configuration rows to reveal fields",
+}
 
 VERDICT_OK = "ok"
 VERDICT_ABSENT = "absent"
@@ -97,6 +133,28 @@ def version_key(version) -> str:
     if not v:
         return ""
     return ".".join("%05d" % int(p) for p in v.split("."))
+
+
+_URN_VERSION_RE = re.compile(r"^v\d+(?:\.\d+)?/")
+
+
+def urn_key(urn) -> str:
+    """The canonical REST path of a URN, without prefix, query or slashes.
+
+    ``/api/v2.0/cmdb/system/ntp/ntpserver?mkey=x`` -> ``system/ntp/ntpserver``;
+    ``/api/v2/cmdb/firewall/policy`` -> ``firewall/policy``;
+    ``/api/load_balance_virtual_server`` -> ``load_balance_virtual_server``.
+    An already-normalised key is returned unchanged. This is the ONE join
+    between the REST channel (sweep evidence keyed by registry names, carrying
+    a URN) and the CLI channel (keyed by this path).
+    """
+    u = str(urn or "").strip().split("#", 1)[0].split("?", 1)[0].strip("/")
+    if u.startswith("api/"):
+        u = u[4:]
+        u = _URN_VERSION_RE.sub("", u, count=1)
+        if u.startswith("cmdb/"):
+            u = u[5:]
+    return u.strip("/")
 
 
 def _now() -> datetime:
@@ -236,6 +294,75 @@ def _validate(doc: dict) -> None:
         raise ValueError("unknown scope kind %r" % scope.get("kind"))
     if not isinstance(doc.get("endpoints") or {}, dict):
         raise ValueError("endpoints must be a dict")
+    if doc.get("source") in CLI_SOURCES:
+        _validate_cli(doc)
+
+
+#: What a ``cli_full`` field spec may hold. Names (the key) and channel
+#: metadata — never a value read off a configuration.
+_CLI_FULL_SPEC_KEYS = frozenset({"attrs", "type"})
+
+
+def _validate_cli(doc: dict) -> None:
+    """Contract rules of the CLI sources, enforced at the only writer.
+
+    * one box, one build: a CLI dump is never line- or range-scoped;
+    * the endpoint key IS the canonical REST path (``urn_key``), so the join to
+      the REST channel needs no registry and cannot drift;
+    * ``cli_full`` carries field NAMES only. A ``default`` is accepted only on
+      lab evidence (``summary.lab``: a fresh lab row's value is the default);
+      anything else that looks like a value is refused, because a value from a
+      production box is configuration and pack rule 1 forbids shipping it.
+    """
+    source = doc["source"]
+    scope = doc.get("scope") or {}
+    if scope.get("kind", "build") != "build":
+        raise ValueError("%s evidence must be build-scoped (one box, one build)" % source)
+    lab = bool((doc.get("summary") or {}).get("lab"))
+    for key, info in (doc.get("endpoints") or {}).items():
+        k = str(key or "")
+        if not k or k != urn_key(k):
+            raise ValueError("%s endpoint key %r is not a canonical REST path" % (source, key))
+        info = info if isinstance(info, dict) else {}
+        if info.get("urn") and urn_key(info["urn"]) != k:
+            raise ValueError("%s endpoint %r carries urn %r of another path"
+                             % (source, key, info["urn"]))
+        if source != SOURCE_CLI_FULL:
+            continue
+        for fname, spec in (info.get("fields") or {}).items():
+            spec = spec if isinstance(spec, dict) else {}
+            extra = set(spec) - _CLI_FULL_SPEC_KEYS - ({"default"} if lab else set())
+            if extra:
+                raise ValueError("cli_full field %s.%s carries %s: cli_full holds names, "
+                                 "never values" % (k, fname, ", ".join(sorted(extra))))
+            attrs = spec.get("attrs") or {}
+            if not isinstance(attrs, dict) or (attrs.get("lab_default") and not lab):
+                raise ValueError("cli_full field %s.%s: lab_default needs summary.lab"
+                                 % (k, fname))
+
+
+def _clean_attrs(attrs) -> dict | None:
+    """A JSON-safe copy of an ``attrs`` dict, or None when there is nothing."""
+    if not isinstance(attrs, dict) or not attrs:
+        return None
+    out = {}
+    for k, v in attrs.items():
+        if v is None:
+            continue
+        if isinstance(v, tuple):
+            v = list(v)
+        out[str(k)] = v
+    return out or None
+
+
+def _merge_attrs(old, new) -> dict | None:
+    """Newest non-empty description wins per key, like the other fact columns."""
+    new = _clean_attrs(new)
+    if not new:
+        return old
+    merged = dict(old or {})
+    merged.update(new)
+    return merged
 
 
 def ingest(doc: dict, raw=None) -> dict:
@@ -513,6 +640,7 @@ def _fold_point(product, source, build, ev, device, endpoints, seen) -> dict:
         verdict = info.get("verdict") or VERDICT_ERROR
         known = info.get("fields") is not None and verdict == VERDICT_OK
         wits = sorted({w for w in ([device_name] + list(info.get("witnesses") or [])) if w})
+        ep_attrs = _clean_attrs(info.get("attrs"))
         f = existing.get(eid)
         if f is None:
             new_rows.append({
@@ -520,6 +648,7 @@ def _fold_point(product, source, build, ev, device, endpoints, seen) -> dict:
                 "urn": str(info.get("urn") or "")[:255],
                 "section": str(info.get("section") or "")[:128],
                 "verdict": verdict, "fields_known": known, "witnesses": wits,
+                "attrs": ep_attrs,
                 "first_evidence_id": ev.id, "last_evidence_id": ev.id,
                 "first_seen": seen, "last_seen": seen})
             continue
@@ -532,6 +661,8 @@ def _fold_point(product, source, build, ev, device, endpoints, seen) -> dict:
             f.urn = str(info["urn"])[:255]
         if not f.section and info.get("section"):
             f.section = str(info["section"])[:128]
+        if ep_attrs:
+            f.attrs = _merge_attrs(f.attrs, ep_attrs)
         f.last_evidence_id = ev.id
         f.first_seen = min(f.first_seen or seen, seen)
         f.last_seen = max(f.last_seen or seen, seen)
@@ -565,10 +696,13 @@ def _fold_point(product, source, build, ev, device, endpoints, seen) -> dict:
         attrs = {k: spec.get(k) for k in ("type", "options", "default", "required", "children")}
         if attrs["type"] is not None:
             attrs["type"] = str(attrs["type"])[:32]
+        # Channel metadata (cli_id, hidden, range, ...) rides in its own column.
+        extra = _clean_attrs(spec.get("attrs"))
         ff = fexisting.get(fid)
         if ff is None:
             fnew.append({"field_id": fid, "build_id": build.id, "source": source,
-                         **attrs, "platforms": [platform] if platform else [],
+                         **attrs, "attrs": extra,
+                         "platforms": [platform] if platform else [],
                          "first_evidence_id": ev.id, "last_evidence_id": ev.id,
                          "first_seen": seen, "last_seen": seen})
             continue
@@ -576,6 +710,8 @@ def _fold_point(product, source, build, ev, device, endpoints, seen) -> dict:
         for k, v in attrs.items():
             if v is not None:
                 setattr(ff, k, v)
+        if extra:
+            ff.attrs = _merge_attrs(ff.attrs, extra)
         if platform and platform not in (ff.platforms or []):
             ff.platforms = sorted(set(ff.platforms or []) | {platform})
         ff.last_evidence_id = ev.id
@@ -1081,16 +1217,23 @@ def _vendor_candidates(product: str, key: str, vendor=None) -> list:
     return [eid for eid, s in cands if s["max_key"] == top]
 
 
-def _point_state(build_ids, endpoint=None, with_fields=True) -> dict:
-    """``{build_id: {endpoint: {source: rec}}}`` from folded facts."""
+def _point_state(build_ids, endpoint=None, with_fields=True, sources=None) -> dict:
+    """``{build_id: {endpoint: {source: rec}}}`` from folded facts.
+
+    ``sources`` defaults to the REST channel (:data:`REST_SOURCES`): every
+    pre-existing reader answers a REST question, and a CLI object is not a REST
+    endpoint. :func:`channels_at` asks for both channels explicitly.
+    """
     out: dict = {}
     build_ids = list(build_ids)
     if not build_ids:
         return out
+    sources = tuple(REST_SOURCES if sources is None else sources)
     for chunk in _chunks(build_ids):
         q = (select(ApiLibEndpointFact, ApiLibEndpoint.name)
              .join(ApiLibEndpoint, ApiLibEndpoint.id == ApiLibEndpointFact.endpoint_id)
-             .where(ApiLibEndpointFact.build_id.in_(chunk)))
+             .where(ApiLibEndpointFact.build_id.in_(chunk),
+                    ApiLibEndpointFact.source.in_(sources)))
         if endpoint is not None:
             q = q.where(ApiLibEndpoint.name == endpoint)
         for f, name in db.session.execute(q):
@@ -1099,6 +1242,7 @@ def _point_state(build_ids, endpoint=None, with_fields=True) -> dict:
                 "fields_known": bool(f.fields_known), "witnesses": list(f.witnesses or []),
                 "first_seen": f.first_seen, "last_seen": f.last_seen,
                 "evidence_ids": sorted({f.first_evidence_id, f.last_evidence_id} - {None}),
+                "attrs": dict(f.attrs or {}),
                 "fields": {} if f.fields_known else None,
             }
     if not with_fields:
@@ -1107,18 +1251,25 @@ def _point_state(build_ids, endpoint=None, with_fields=True) -> dict:
         q = (select(ApiLibFieldFact, ApiLibField.name, ApiLibEndpoint.name)
              .join(ApiLibField, ApiLibField.id == ApiLibFieldFact.field_id)
              .join(ApiLibEndpoint, ApiLibEndpoint.id == ApiLibField.endpoint_id)
-             .where(ApiLibFieldFact.build_id.in_(chunk)))
+             .where(ApiLibFieldFact.build_id.in_(chunk),
+                    ApiLibFieldFact.source.in_(sources)))
         if endpoint is not None:
             q = q.where(ApiLibEndpoint.name == endpoint)
         for ff, fname, ename in db.session.execute(q):
             rec = out.get(ff.build_id, {}).get(ename, {}).get(ff.source)
             if rec is None or rec["fields"] is None:
                 continue
-            rec["fields"][fname] = {
+            spec = {
                 "type": ff.type, "options": ff.options, "default": ff.default,
                 "required": ff.required, "children": ff.children,
                 "platforms": list(ff.platforms or []),
             }
+            if ff.attrs:
+                spec["attrs"] = dict(ff.attrs)
+            if ff.source in CLI_SOURCES:
+                spec["evidence_ids"] = sorted({ff.first_evidence_id, ff.last_evidence_id}
+                                              - {None})
+            rec["fields"][fname] = spec
     return out
 
 
@@ -1248,9 +1399,13 @@ def builds(product: str) -> list:
             .group_by(ApiLibEvidence.build_id, ApiLibEvidence.source)):
         ev_count[bid] = ev_count.get(bid, 0) + n
         ev_sources.setdefault(bid, set()).add(source)
-    point_measured = {bid for (bid,) in db.session.execute(
-        select(ApiLibEndpointFact.build_id).distinct()
-        .where(ApiLibEndpointFact.build_id.in_(list(by_id) or [-1])))}
+    point_measured, cli_measured = set(), set()
+    for bid, source in db.session.execute(
+            select(ApiLibEndpointFact.build_id, ApiLibEndpointFact.source).distinct()
+            .where(ApiLibEndpointFact.build_id.in_(list(by_id) or [-1]))):
+        # "measured" stays a REST statement: a build known only from its CLI
+        # schema has not been asked what its REST API serves.
+        (cli_measured if source in CLI_SOURCES else point_measured).add(bid)
     vendor = _vendor_evidence(product)
 
     try:
@@ -1281,6 +1436,7 @@ def builds(product: str) -> list:
             "evidence": ev_count.get(b.id, 0) if b else 0,
             "measured": point or vendor_cov,
             "vendor_only": vendor_cov and not point,
+            "cli_measured": b is not None and b.id in cli_measured,
             "in_fleet": v in fleet_versions,
             "first_seen": _iso(b.first_seen) if b else "",
             "last_seen": _iso(b.last_seen) if b else "",
@@ -1462,35 +1618,83 @@ def compare(product: str, base, target, endpoint=None) -> dict:
         "base_measured": bool(sa_), "target_measured": bool(sb_),
         "endpoints_added": added, "endpoints_removed": removed,
         "endpoints_unknown": unknown, "endpoints": per_ep, "totals": totals,
+        # The CLI channel, reported beside the REST answer above and never
+        # mixed into it (fields compare only within one kind of evidence).
+        "channels": _cli_compare(product, base, target, endpoint, rows=(bb, tb)),
     }
 
 
+def _channel_twins(product: str, ep) -> list:
+    """Endpoint rows that describe the SAME REST path as ``ep`` on the other
+    channel: a registry name (REST) and its ``urn_key`` (CLI) are two rows."""
+    keys = {urn_key(u) for (u,) in db.session.execute(
+        select(ApiLibEndpointFact.urn).distinct().where(
+            ApiLibEndpointFact.endpoint_id == ep.id)) if u}
+    if "/" in ep.name or ep.name == urn_key(ep.name):
+        keys.add(urn_key(ep.name))
+    keys.discard("")
+    if not keys:
+        return []
+    twins = {e.id: e for e in ApiLibEndpoint.query.filter(
+        ApiLibEndpoint.product == product, ApiLibEndpoint.name.in_(sorted(keys))).all()}
+    # REST rows named by the registry whose URN maps onto one of the keys.
+    for eid, urn in db.session.execute(
+            select(ApiLibEndpointFact.endpoint_id, ApiLibEndpointFact.urn).distinct()
+            .join(ApiLibEndpoint, ApiLibEndpoint.id == ApiLibEndpointFact.endpoint_id)
+            .where(ApiLibEndpoint.product == product, ApiLibEndpointFact.urn != "")):
+        if eid not in twins and urn_key(urn) in keys:
+            twins[eid] = db.session.get(ApiLibEndpoint, eid)
+    twins.pop(ep.id, None)
+    return [t for t in twins.values() if t is not None]
+
+
 def field_history(product: str, endpoint: str, field: str) -> dict:
-    """Where ``endpoint.field`` was seen: builds, first/last, sources."""
+    """Where ``endpoint.field`` was seen: builds, first/last, sources.
+
+    Both channels: ``endpoint`` may be a registry name or a REST path, and the
+    facts of its twin on the other channel (same :func:`urn_key`) are read too.
+    Each build row says which channel saw it (``rest`` / ``cli``) and carries
+    the fact's ``attrs`` (CLI id, hidden, range ...).
+    """
     out = {"product": product, "endpoint": endpoint, "field": field, "known": False,
            "builds": [], "vendor_spans": [], "first_build": "", "last_build": "",
-           "sources": []}
+           "sources": [], "channels": []}
     ep = ApiLibEndpoint.query.filter_by(product=product, name=endpoint).first()
-    f = ApiLibField.query.filter_by(endpoint_id=ep.id, name=field).first() if ep else None
+    eps = ([ep] + _channel_twins(product, ep)) if ep is not None else []
+    if ep is None and endpoint:
+        # A REST path whose CLI row is named by it, or whose REST row is not.
+        ep = ApiLibEndpoint.query.filter_by(product=product, name=urn_key(endpoint)).first()
+        eps = ([ep] + _channel_twins(product, ep)) if ep is not None else []
+    fids = []
+    for e in eps:
+        fr = ApiLibField.query.filter_by(endpoint_id=e.id, name=field).first()
+        if fr is not None:
+            fids.append(fr)
+    f = next((x for x in fids if ep is not None and x.endpoint_id == ep.id), None) \
+        or (fids[0] if fids else None)
     if f is None:
         return out
     out["known"] = True
     seen: dict = {}
     sources = set()
+    channels = set()
     for ff, version, key in db.session.execute(
             select(ApiLibFieldFact, ApiLibBuild.version, ApiLibBuild.sort_key)
             .join(ApiLibBuild, ApiLibBuild.id == ApiLibFieldFact.build_id)
-            .where(ApiLibFieldFact.field_id == f.id)):
+            .where(ApiLibFieldFact.field_id.in_([x.id for x in fids]))):
+        channel = "cli" if ff.source in CLI_SOURCES else "rest"
         out["builds"].append({"version": version, "source": ff.source, "type": ff.type,
+                              "channel": channel, "attrs": dict(ff.attrs or {}),
                               "first_seen": _iso(ff.first_seen),
                               "last_seen": _iso(ff.last_seen)})
         seen[key] = version
         sources.add(ff.source)
+        channels.add(channel)
     spans = db.session.execute(
         select(ApiLibSpan.from_version, ApiLibSpan.to_version, ApiLibSpan.from_key,
                ApiLibSpan.to_key, ApiLibEvidence.summary, ApiLibEvidence.origin_ref)
         .join(ApiLibEvidence, ApiLibEvidence.id == ApiLibSpan.evidence_id)
-        .where(ApiLibSpan.field_id == f.id)).all()
+        .where(ApiLibSpan.field_id.in_([x.id for x in fids]))).all()
     if spans:
         sources.add(SOURCE_VENDOR)
         vbuilds = db.session.execute(
@@ -1510,6 +1714,430 @@ def field_history(product: str, endpoint: str, field: str) -> dict:
         keys = sorted(seen)
         out["first_build"], out["last_build"] = seen[keys[0]], seen[keys[-1]]
     out["sources"] = _ordered_sources(sources)
+    out["channels"] = sorted(channels | ({"rest"} if spans else set()))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# channels — the same build seen through REST and through the CLI
+# ---------------------------------------------------------------------------
+
+#: REST wire noise per product: companions a REST row carries that are not
+#: fields of the object (FortiWeb ``q_ref``, ``sz_<child>``, ``can_delete``,
+#: ``<field>_val``). The CLI never has them, so counting them would report
+#: hundreds of "REST only" fields that are only an encoding.
+_WIRE_NOISE = {"fortiweb": re.compile(r"^(?:q_|sz_|can_)|_val$")}
+
+_YES, _NO, _UNK = "yes", "no", "unknown"
+
+
+def _cli_evidence(build_id) -> dict:
+    """``{source: [summary, ...]}`` of HEALTHY CLI and sweep evidence on a build.
+
+    A ``cli_tree`` row on the build is what lets the CLI side say "no": the
+    tree prints the whole schema, so a field it does not print is not there.
+    Summaries also carry named completeness exceptions (``summary.exceptions``).
+    """
+    out: dict = {}
+    if build_id is None:
+        return out
+    for source, summ in db.session.execute(
+            select(ApiLibEvidence.source, ApiLibEvidence.summary).where(
+                ApiLibEvidence.build_id == build_id,
+                ApiLibEvidence.healthy.is_(True),
+                ApiLibEvidence.scope_kind == "build")):
+        out.setdefault(source, []).append(summ or {})
+    return out
+
+
+def _resolve_key(endpoint, rest_names: dict) -> str:
+    """An endpoint argument (registry name or REST path) -> channel key."""
+    if not endpoint:
+        return ""
+    for key, names in rest_names.items():
+        if endpoint in names:
+            return key
+    return urn_key(endpoint)
+
+
+def _channel_view(product: str, version) -> dict:
+    """Both channels of one build, joined on :func:`urn_key`.
+
+    ``{"build", "keys": {key: {"rest": {...}, "tree": rec|None, "full": rec|None,
+    "rest_names": [...]}}, "tree_measured", "evidence", "unjoined"}``.
+    """
+    v = fv.normalize(version)
+    b = _build_row(product, v) if v else None
+    point = _point_state([b.id], with_fields=True, sources=SOURCES).get(b.id, {}) if b else {}
+    vendor = _vendor_state(product, version_key(v), None, True) if v else {}
+    evidence = _cli_evidence(b.id if b else None)
+    noise = _WIRE_NOISE.get(product)
+
+    cli_keys = {name for name, by_src in point.items()
+                if any(s in CLI_SOURCES for s in by_src)}
+    keys: dict = {}
+    unjoined = []
+
+    def _slot(key):
+        return keys.setdefault(key, {"rest": None, "tree": None, "full": None,
+                                     "rest_names": []})
+
+    rest_names = set(point) | set(vendor)
+    for name in sorted(rest_names):
+        by_src = {s: r for s, r in (point.get(name) or {}).items() if s in REST_SOURCES}
+        by_src.update(vendor.get(name) or {})
+        if not by_src:
+            continue
+        pool = _pool(by_src)
+        urn = next((by_src[s]["urn"] for s in _ordered_sources(by_src) if by_src[s]["urn"]), "")
+        key = urn_key(urn) if urn else (name if name in cli_keys else "")
+        if not key:
+            unjoined.append(name)
+            continue
+        verdict = _best_verdict(r["verdict"] for r in pool.values())
+        knowing = [s for s in _ordered_sources(pool)
+                   if pool[s]["verdict"] == VERDICT_OK and pool[s]["fields_known"]]
+        fields = None
+        if knowing:
+            fields = {}
+            for s in knowing:
+                for fname in pool[s]["fields"] or {}:
+                    if noise is not None and noise.search(fname):
+                        continue
+                    fields.setdefault(fname, set()).add(s)
+        ev_ids = sorted({i for r in pool.values() for i in r["evidence_ids"]})
+        slot = _slot(key)
+        slot["rest_names"].append(name)
+        cur = slot["rest"]
+        if cur is None:
+            slot["rest"] = {"verdict": verdict, "fields": fields, "urn": urn,
+                            "sources": _ordered_sources(pool), "evidence_ids": ev_ids}
+        else:
+            # Two registry names for one path (aliases): read together.
+            cur["verdict"] = _best_verdict([cur["verdict"], verdict])
+            if fields is not None:
+                merged = dict(cur["fields"] or {})
+                for f, srcs in fields.items():
+                    merged.setdefault(f, set()).update(srcs)
+                cur["fields"] = merged
+            cur["sources"] = _ordered_sources(set(cur["sources"]) | set(pool))
+            cur["evidence_ids"] = sorted(set(cur["evidence_ids"]) | set(ev_ids))
+    for name in sorted(cli_keys):
+        by_src = point.get(name) or {}
+        slot = _slot(name)
+        slot["tree"] = by_src.get(SOURCE_CLI_TREE)
+        slot["full"] = by_src.get(SOURCE_CLI_FULL)
+    return {"build": b, "version": v, "keys": keys, "evidence": evidence,
+            "tree_measured": bool(evidence.get(SOURCE_CLI_TREE)),
+            "rest_measured": any(s in evidence for s in (SOURCE_SWEEP, SOURCE_SCHEMA,
+                                                         SOURCE_MANUAL, SOURCE_LEGACY)),
+            "unjoined": unjoined}
+
+
+def _rest_status(rest, fname) -> str:
+    if rest is None:
+        return _UNK
+    if rest["verdict"] == VERDICT_ABSENT:
+        return _NO
+    if rest["verdict"] != VERDICT_OK or rest["fields"] is None:
+        return _UNK            # blind or only errors: the build was not shown
+    return _YES if fname in rest["fields"] else _NO
+
+
+def _classify(rest_st: str, cli_st: str, hidden: bool) -> str:
+    if rest_st == _YES and cli_st == _YES:
+        return CH_BOTH
+    if cli_st == _YES and rest_st == _NO:
+        return CH_HIDDEN if hidden else CH_CLI_ONLY
+    if rest_st == _YES and cli_st == _NO:
+        return CH_REST_ONLY
+    return CH_UNKNOWN
+
+
+def _exceptions_of(view: dict, extra) -> tuple[dict, list]:
+    """``({key: reason}, rejected)`` — named exceptions from the evidence
+    summaries of the build plus the caller's. Only :data:`EXCEPTION_REASONS`."""
+    wanted: dict = {}
+    for summaries in view["evidence"].values():
+        for summ in summaries:
+            for k, why in (summ.get("exceptions") or {}).items():
+                wanted.setdefault(urn_key(k), why)
+    for k, why in (extra or {}).items():
+        wanted[urn_key(k)] = why
+    ok, rejected = {}, []
+    for k, why in wanted.items():
+        if why in EXCEPTION_REASONS:
+            ok[k] = why
+        else:
+            rejected.append({"endpoint": k, "reason": why})
+    return ok, rejected
+
+
+def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
+    """Per field of one build: is it served by REST, by the CLI, by both?
+
+    Derived on every call, never stored. Each field gets a ``channel``:
+
+    * ``both``       — REST revealed it and the CLI has it;
+    * ``cli_only``   — the CLI has it (``tree``) and REST, which revealed the
+      endpoint's fields or measured it absent, does not;
+    * ``hidden``     — like ``cli_only``, but only ``show full-configuration``
+      prints it: the build's ``tree`` does not list it;
+    * ``rest_only``  — REST revealed it and the build's ``tree`` does not list it;
+    * ``unknown``    — one of the two channels never answered for it on THIS
+      build (no tree, a blind endpoint, an unmeasured build). Never a "no".
+
+    Every field carries ``rest`` / ``cli`` (``yes|no|unknown``) and the evidence
+    ids behind it. ``summary.complete`` is True when nothing is ``unknown``
+    outside the named exceptions (:data:`EXCEPTION_REASONS`): from evidence
+    summaries (``summary.exceptions``) or ``exceptions={key: reason}``.
+
+    ``endpoint`` filters to one REST path or one registry name.
+    """
+    view = _channel_view(product, version)
+    excepted, rejected = _exceptions_of(view, exceptions)
+    rest_names = {k: s["rest_names"] for k, s in view["keys"].items()}
+    only = _resolve_key(endpoint, rest_names) if endpoint else ""
+    tree_measured = view["tree_measured"]
+
+    out_eps: dict = {}
+    counts = {c: 0 for c in CHANNELS}
+    excepted_unknown = 0
+    exc_report: dict = {}
+    for key in sorted(view["keys"]):
+        if only and key != only:
+            continue
+        slot = view["keys"][key]
+        rest, tree, full = slot["rest"], slot["tree"], slot["full"]
+        tree_fields = (tree or {}).get("fields") or {}
+        full_fields = (full or {}).get("fields") or {}
+        rest_fields = (rest or {}).get("fields") or {}
+        names = set(rest_fields) | set(tree_fields) | set(full_fields)
+        fields = {}
+        for fname in sorted(names):
+            in_tree, in_full = fname in tree_fields, fname in full_fields
+            r_st = _rest_status(rest, fname)
+            if in_tree or in_full:
+                c_st = _YES
+            elif tree_measured:
+                c_st = _NO
+            else:
+                c_st = _UNK
+            attrs = dict((tree_fields.get(fname) or {}).get("attrs") or {})
+            attrs.update((full_fields.get(fname) or {}).get("attrs") or {})
+            hidden = bool(in_full and ((tree_measured and not in_tree) or attrs.get("hidden")))
+            if hidden:
+                attrs["hidden"] = True
+            ch = _classify(r_st, c_st, hidden)
+            ev = set()
+            if r_st != _UNK and rest is not None:
+                ev.update(rest["evidence_ids"])
+            for spec in (tree_fields.get(fname), full_fields.get(fname)):
+                ev.update((spec or {}).get("evidence_ids") or [])
+            fields[fname] = {"channel": ch, "rest": r_st, "cli": c_st, "hidden": hidden,
+                             "in_tree": in_tree, "in_full": in_full,
+                             "rest_sources": sorted(rest_fields.get(fname) or ()),
+                             "attrs": attrs, "evidence_ids": sorted(ev)}
+            if key in excepted and ch == CH_UNKNOWN:
+                excepted_unknown += 1
+                exc_report.setdefault(key, 0)
+                exc_report[key] += 1
+            else:
+                counts[ch] += 1
+        r_verdict = rest["verdict"] if rest else None
+        cli_has = tree is not None or full is not None
+        if r_verdict == VERDICT_OK and cli_has:
+            ep_ch = CH_BOTH
+        elif r_verdict == VERDICT_ABSENT and cli_has:
+            ep_ch = CH_CLI_ONLY
+        elif r_verdict == VERDICT_OK and tree_measured and not cli_has:
+            ep_ch = CH_REST_ONLY
+        else:
+            ep_ch = CH_UNKNOWN
+        ep_attrs = dict((tree or {}).get("attrs") or {})
+        ep_attrs.update((full or {}).get("attrs") or {})
+        out_eps[key] = {
+            "endpoint": key, "channel": ep_ch,
+            "urn": (rest or {}).get("urn") or "", "rest_names": sorted(slot["rest_names"]),
+            "rest_verdict": r_verdict, "rest_fields_known": bool(rest and rest["fields"] is not None),
+            "rest_sources": (rest or {}).get("sources") or [],
+            "cli_tree": tree is not None, "cli_full": full is not None,
+            "attrs": ep_attrs, "exception": excepted.get(key, ""),
+            "fields": fields,
+        }
+    total = sum(counts.values())
+    summary = dict(counts)
+    summary.update({
+        "fields": total, "endpoints": len(out_eps),
+        "excepted_unknown": excepted_unknown,
+        "exceptions": [{"endpoint": k, "reason": excepted[k],
+                        "why": EXCEPTION_REASONS[excepted[k]], "unknown": n}
+                       for k, n in sorted(exc_report.items())],
+        "rejected_exceptions": rejected,
+        "tree_measured": tree_measured, "rest_measured": view["rest_measured"],
+        "unjoined_rest": len(view["unjoined"]),
+        # Complete = both channels measured and nothing left unknown outside
+        # a named exception. An empty build is not complete: nothing was asked.
+        "complete": bool(total and counts[CH_UNKNOWN] == 0
+                         and tree_measured and view["rest_measured"]),
+    })
+    return {"product": product, "version": view["version"],
+            "build": _build_dict(view["build"]), "endpoints": out_eps,
+            "summary": summary}
+
+
+def _tree_specs(product: str, version, only: str = "") -> tuple[bool, dict]:
+    """``(measured, {key: {"attrs", "fields": {name: spec}}})`` from cli_tree,
+    with lab defaults (cli_full on lab evidence) folded in as ``default``."""
+    v = fv.normalize(version)
+    b = _build_row(product, v) if v else None
+    if b is None:
+        return False, {}
+    st = _point_state([b.id], only or None, True,
+                      sources=(SOURCE_CLI_TREE, SOURCE_CLI_FULL)).get(b.id, {})
+    measured = bool(_cli_evidence(b.id).get(SOURCE_CLI_TREE))
+    out: dict = {}
+    for key, by_src in st.items():
+        tree = by_src.get(SOURCE_CLI_TREE)
+        if tree is None:
+            continue
+        fields = {k: dict(s) for k, s in (tree.get("fields") or {}).items()}
+        full = by_src.get(SOURCE_CLI_FULL) or {}
+        for fname, spec in (full.get("fields") or {}).items():
+            if fname in fields and (spec.get("attrs") or {}).get("lab_default") \
+                    and spec.get("default") is not None:
+                fields[fname]["default"] = spec["default"]
+        out[key] = {"attrs": tree.get("attrs") or {}, "fields": fields}
+    return measured, out
+
+
+def _has_cli(b) -> bool:
+    """Any healthy CLI evidence on build row ``b`` (None: no row, no evidence)."""
+    if b is None:
+        return False
+    return db.session.execute(select(ApiLibEvidence.id).where(
+        ApiLibEvidence.build_id == b.id, ApiLibEvidence.source.in_(CLI_SOURCES),
+        ApiLibEvidence.healthy.is_(True)).limit(1)).first() is not None
+
+
+def _cli_compare(product: str, base, target, endpoint=None, rows=None) -> dict:
+    """The CLI half of :func:`compare`: channel moves + like-for-like ``tree``.
+
+    Rename CANDIDATES (same CLI attribute id, different name) are reported and
+    never applied: ``api_lib_field_map`` stays the only authority for a rename.
+    """
+    rb, rt = rows if rows is not None else (_build_row(product, base),
+                                             _build_row(product, target))
+    if not (_has_cli(rb) or _has_cli(rt)):
+        # No CLI evidence on either build: every channel would read unknown.
+        return {"base_tree": False, "target_tree": False, "channel_moves": [],
+                "channel_unknown": 0, "tree": None,
+                "tree_reason": "no CLI evidence on %s or %s"
+                               % (fv.normalize(base), fv.normalize(target))}
+    ca = channels_at(product, base, endpoint)
+    cb = channels_at(product, target, endpoint)
+    moves = []
+    unknown = 0
+
+    def _side(view, ep, f):
+        """The channel label of ``f`` on one side, ``absent`` when BOTH channels
+        of that side measured it missing, ``unknown`` when either did not ask."""
+        if ep is not None and f in ep["fields"]:
+            return ep["fields"][f]["channel"]
+        if ep is None:
+            r_st = _UNK          # REST never asked this build about the path
+        elif ep["rest_verdict"] == VERDICT_ABSENT:
+            r_st = _NO
+        elif ep["rest_verdict"] == VERDICT_OK and ep["rest_fields_known"]:
+            r_st = _NO
+        else:
+            r_st = _UNK
+        c_st = _NO if view["summary"]["tree_measured"] else _UNK
+        return "absent" if (r_st, c_st) == (_NO, _NO) else _classify(r_st, c_st, False)
+
+    for key in sorted(set(ca["endpoints"]) | set(cb["endpoints"])):
+        ea, eb = ca["endpoints"].get(key), cb["endpoints"].get(key)
+        names = set((ea or {}).get("fields") or {}) | set((eb or {}).get("fields") or {})
+        for f in sorted(names):
+            a, b = _side(ca, ea, f), _side(cb, eb, f)
+            if a == b:
+                continue
+            if CH_UNKNOWN in (a, b):
+                unknown += 1
+                continue
+            moves.append({"endpoint": key, "field": f, "base": a, "target": b})
+
+    ma, ta = _tree_specs(product, base)
+    mb, tb = _tree_specs(product, target)
+    only = _resolve_key(endpoint, {k: e["rest_names"] for k, e in
+                                   list(ca["endpoints"].items()) + list(cb["endpoints"].items())}
+                        ) if endpoint else ""
+    if only:
+        ta = {k: v for k, v in ta.items() if k == only}
+        tb = {k: v for k, v in tb.items() if k == only}
+    out = {"base_tree": ma, "target_tree": mb, "channel_moves": moves,
+           "channel_unknown": unknown, "tree": None}
+    if not (ma and mb):
+        out["tree_reason"] = ("no cli_tree evidence on %s" % " and ".join(
+            x for x, m in ((fv.normalize(base), ma), (fv.normalize(target), mb)) if not m))
+    else:
+        renames = _renames(product, sorted(set(ta) & set(tb)), str(base), str(target))
+        ep_added = sorted(set(tb) - set(ta))
+        ep_removed = sorted(set(ta) - set(tb))
+        ep_renames = []
+        ids_b = {tb[k]["attrs"].get("cli_id"): k for k in ep_added
+                 if tb[k]["attrs"].get("cli_id") is not None}
+        for k in ep_removed:
+            cid = ta[k]["attrs"].get("cli_id")
+            if cid is not None and cid in ids_b:
+                ep_renames.append({"from": k, "to": ids_b[cid], "cli_id": cid})
+        per: dict = {}
+        totals = {"fields_added": 0, "fields_removed": 0, "options_changed": 0,
+                  "retyped": 0, "ranges_changed": 0, "defaults_changed": 0,
+                  "rename_candidates": 0}
+        for key in sorted(set(ta) & set(tb)):
+            fa, fb = ta[key]["fields"], tb[key]["fields"]
+            added, removed = sorted(set(fb) - set(fa)), sorted(set(fa) - set(fb))
+            options, retyped, ranges, defaults = [], [], [], []
+            for f in sorted(set(fa) & set(fb)):
+                sa, sb = fa[f], fb[f]
+                oa, ob = set(sa.get("options") or []), set(sb.get("options") or [])
+                if oa != ob and (oa or ob):
+                    options.append({"field": f, "added": sorted(ob - oa),
+                                    "removed": sorted(oa - ob)})
+                ty_a = (sa.get("attrs") or {}).get("cli_type") or sa.get("type")
+                ty_b = (sb.get("attrs") or {}).get("cli_type") or sb.get("type")
+                if ty_a and ty_b and ty_a != ty_b:
+                    retyped.append({"field": f, "from": ty_a, "to": ty_b})
+                ra, rb = (sa.get("attrs") or {}).get("range"), (sb.get("attrs") or {}).get("range")
+                if ra is not None and rb is not None and list(ra) != list(rb):
+                    ranges.append({"field": f, "from": list(ra), "to": list(rb)})
+                da, db_ = sa.get("default"), sb.get("default")
+                if da is not None and db_ is not None and da != db_:
+                    defaults.append({"field": f, "from": da, "to": db_})
+            mapped = {(o, n) for o, n, _note in renames.get(key, [])}
+            cands = []
+            ids_added = {(fb[f].get("attrs") or {}).get("cli_id"): f for f in added
+                         if (fb[f].get("attrs") or {}).get("cli_id") is not None}
+            for f in removed:
+                cid = (fa[f].get("attrs") or {}).get("cli_id")
+                if cid is not None and cid in ids_added:
+                    cands.append({"from": f, "to": ids_added[cid], "cli_id": cid,
+                                  "mapped": (f, ids_added[cid]) in mapped})
+            if added or removed or options or retyped or ranges or defaults or cands:
+                per[key] = {"added": added, "removed": removed, "options": options,
+                            "retyped": retyped, "ranges": ranges, "defaults": defaults,
+                            "rename_candidates": cands}
+                totals["fields_added"] += len(added)
+                totals["fields_removed"] += len(removed)
+                totals["options_changed"] += len(options)
+                totals["retyped"] += len(retyped)
+                totals["ranges_changed"] += len(ranges)
+                totals["defaults_changed"] += len(defaults)
+                totals["rename_candidates"] += len(cands)
+        out["tree"] = {"endpoints_added": ep_added, "endpoints_removed": ep_removed,
+                       "endpoint_rename_candidates": ep_renames,
+                       "endpoints": per, "totals": totals}
     return out
 
 
@@ -1527,7 +2155,8 @@ def resolve_appliance(appliance) -> dict:
     point = False
     if b is not None:
         point = db.session.execute(select(ApiLibEndpointFact.id).where(
-            ApiLibEndpointFact.build_id == b.id).limit(1)).first() is not None
+            ApiLibEndpointFact.build_id == b.id,
+            ApiLibEndpointFact.source.in_(REST_SOURCES)).limit(1)).first() is not None
     vendor = bool(_vendor_candidates(product, version_key(v)))
     status = "measured" if point else "vendor_only" if vendor else "unmeasured"
     return {**out, "build": _build_dict(b), "status": status}
@@ -1538,7 +2167,8 @@ def resolve_appliance(appliance) -> dict:
 # ---------------------------------------------------------------------------
 
 _MATRIX_ORIGIN = {SOURCE_SWEEP: "sweep", SOURCE_SCHEMA: "schema", SOURCE_MANUAL: "manual",
-                  SOURCE_LEGACY: "legacy_matrix", SOURCE_VENDOR: "vendor_doc"}
+                  SOURCE_LEGACY: "legacy_matrix", SOURCE_VENDOR: "vendor_doc",
+                  SOURCE_CLI_TREE: "cli_tree", SOURCE_CLI_FULL: "cli_full"}
 
 
 def _matrix_ep(name: str, by_src: dict) -> dict:
@@ -1695,6 +2325,16 @@ def matrix_doc(product: str, versions=None) -> dict:
             objs[o["object"]] = o
         return objs
 
+    # CLI-channel object counts per build. Reported beside the REST answer,
+    # never merged into ``endpoints``: a CLI object is not a served URN.
+    cli_counts: dict = {}
+    for bid, source, n in db.session.execute(
+            select(ApiLibEndpointFact.build_id, ApiLibEndpointFact.source, func.count())
+            .where(ApiLibEndpointFact.build_id.in_(list(all_builds) or [-1]),
+                   ApiLibEndpointFact.source.in_(CLI_SOURCES))
+            .group_by(ApiLibEndpointFact.build_id, ApiLibEndpointFact.source)):
+        cli_counts.setdefault(bid, {})[source] = n
+
     # --- the atomic axis ---------------------------------------------------
     out_versions: dict = {}
     for b in sorted(all_builds.values(), key=lambda x: x.sort_key):
@@ -1723,6 +2363,7 @@ def matrix_doc(product: str, versions=None) -> dict:
             "measured": bool(eps),
             "devices": sorted({d for r in eps.values() for d in r["devices"]}),
             "endpoints": eps, "objects": objects, "counts": _counts(eps, objects),
+            "cli": dict(cli_counts.get(b.id) or {}),
         }
 
     # --- the rollup --------------------------------------------------------
@@ -1820,6 +2461,8 @@ def matrix_doc(product: str, versions=None) -> dict:
 
 __all__ = [
     "PRODUCTS", "CATALOG_ONLY_PRODUCTS", "SOURCES", "MAX_ERROR_RATIO",
+    "CLI_SOURCES", "REST_SOURCES", "SOURCE_CLI_TREE", "SOURCE_CLI_FULL",
+    "CHANNELS", "EXCEPTION_REASONS", "FIELD_ATTR_KEYS", "urn_key", "channels_at",
     "version_key", "content_hash", "ingest",
     "evidence_from_sweep", "evidence_from_schema_dir", "evidence_from_legacy_matrix",
     "backfill", "products", "builds", "endpoints_at", "fields_at", "compare",

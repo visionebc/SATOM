@@ -65,9 +65,24 @@ _PROBE_COMMAND_RE = re.compile(
 #
 # So a probe is read until it TERMINATES: a statistics line, a resolution
 # failure, a refusal, or the prompt coming back.
+#: A pattern that never matches: :meth:`FortiWebReadonlySSH._read_until` then
+#: stops only on the returning prompt or the wall clock.
+_NEVER = re.compile(r"(?!x)x")
+
 _PROBE_DONE_RE = re.compile(
     r"packet loss|unknown host|cannot resolve|Name or service not known|"
     r"Parsing error|Command fail|Unknown action", re.I)
+
+
+# ── The ONE schema command, and why it is not a verb either ─────────────────
+#
+# ``tree`` at the root of the CLI prints the whole configuration schema of the
+# running build (every object, field, CLI id, type and option) — the API
+# library's ``cli_tree`` evidence. It reads nothing but the schema and changes
+# nothing. It is NOT added to ``_READ_VERBS``: a verb allowlist grows by
+# accident ("tree" today, "tree <anything>" tomorrow). This gate matches the
+# WHOLE command, so nothing can be appended to it.
+_SCHEMA_COMMANDS = frozenset({"tree"})
 
 
 class FortiSSHError(Exception):
@@ -163,6 +178,20 @@ def assert_probe_command(command: str) -> str:
         raise ReadOnlyViolation(
             "only 'execute ping <host>' may be sent as a reachability probe; "
             "refused %r" % ((command or "")[:80],))
+    return cmd
+
+
+def assert_schema_command(command: str) -> str:
+    """Return ``command`` if it is EXACTLY a permitted schema dump (``tree``).
+
+    A separate gate, like :func:`assert_probe_command`: whole-command match,
+    no arguments, no second line, no chaining.
+    """
+    cmd = (command or "").strip()
+    if "\n" in cmd or "\r" in cmd or cmd not in _SCHEMA_COMMANDS:
+        raise ReadOnlyViolation(
+            "only %s may be sent as a schema dump; refused %r"
+            % (", ".join("'%s'" % c for c in sorted(_SCHEMA_COMMANDS)), (command or "")[:80]))
     return cmd
 
 
@@ -361,6 +390,37 @@ class FortiWebReadonlySSH:
         self._shell.send(command + "\n")
         return clean_output(self._read_until(_PROBE_DONE_RE, maxt), command)
 
+    def run_schema(self, command: str = "tree", *, maxt: float = 180.0) -> tuple[str, bool]:
+        """Send the schema dump (``tree``); return ``(output, complete)``.
+
+        Validated by :func:`assert_schema_command`. Read until the PROMPT comes
+        back (a 1-2 MB dump has pauses a quiet-based read would mistake for
+        the end), bounded by ``maxt``. ``complete`` is False when the prompt
+        never came back: the caller stores that as a truncated dump, never as
+        a schema. Paging was turned off by :meth:`connect` (the same session
+        setup ``show full-configuration`` uses); nothing else is changed.
+        """
+        command = assert_schema_command(command)
+        if not self._shell:
+            raise FortiSSHError("SSH session is not connected")
+        from . import job_progress
+        sink = job_progress.current()
+        if sink is not None:
+            sink.before_call(f"ssh://{self.appliance.host}:{int(self.appliance.ssh_port or 22)}")
+        started = time.monotonic()
+        try:
+            self._shell.send(command + "\n")
+            raw = self._read_until(_NEVER, maxt)
+        except Exception as exc:
+            if sink is not None:
+                sink.after_call("SSH", command, None, started, error=exc)
+            raise
+        if sink is not None:
+            sink.after_call("SSH", command, "ok", started)
+        tail = _ANSI.sub("", raw).replace("\r", "").rstrip("\n").split("\n")[-1]
+        complete = bool(_PROMPT_LINE.match(tail.strip()))
+        return clean_output(raw, command), complete
+
     def run_battery(self, commands: list[str]) -> dict[str, str]:
         """Run a list of read commands → {command: output} (each validated)."""
         return {c: self.run_readonly(c) for c in commands}
@@ -374,6 +434,13 @@ def run_command(appliance, command: str, *, timeout: float = 15.0) -> str:
     command = assert_readonly(command)  # fail fast before any connect
     with FortiWebReadonlySSH(appliance, timeout=timeout) as ssh:
         return ssh.run_readonly(command)
+
+
+def run_tree(appliance, *, timeout: float = 20.0, maxt: float = 180.0) -> tuple[str, bool]:
+    """Open a session, run ``tree``, close. Returns ``(output, complete)``."""
+    assert_schema_command("tree")
+    with FortiWebReadonlySSH(appliance, timeout=timeout) as ssh:
+        return ssh.run_schema("tree", maxt=maxt)
 
 
 def capture_health(appliance, *, timeout: float = 25.0) -> dict[str, str]:
@@ -391,6 +458,7 @@ def health_text(appliance) -> str:
 
 __all__ = [
     "FortiWebReadonlySSH", "FortiSSHError", "ReadOnlyViolation",
-    "clean_output", "assert_readonly", "TROUBLESHOOT", "flash_battery",
-    "run_command", "capture_health", "health_text",
+    "clean_output", "assert_readonly", "assert_probe_command", "assert_schema_command",
+    "TROUBLESHOOT", "flash_battery",
+    "run_command", "run_tree", "capture_health", "health_text",
 ]

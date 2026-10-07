@@ -257,11 +257,11 @@
 {% endif %}
 
 
-<!-- CLI-only elements: what the dependency tree cannot contain -->
+<!-- CLI elements not in the catalog: what the dependency tree cannot contain -->
 <div class="fw-card mt-3" id="cliOnlyCard">
   <div class="fw-card-header">
     <span class="fw-card-title">
-      <i class="bi bi-terminal me-2"></i>{{ _('CLI-only elements (not in the dependency tree)') }}
+      <i class="bi bi-terminal me-2"></i>{{ _('CLI elements not in the catalog (not in the dependency tree)') }}
     </span>
     <span>
       {% if cli_rows %}<span class="fw-badge fw-badge-warning">{{ cli_rows|selectattr('cli_path')|list|length }}</span>{% endif %}

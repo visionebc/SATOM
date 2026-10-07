@@ -23,8 +23,11 @@
     <div class="d-flex align-items-center gap-2">
       {% if D and D.supported and not D.no_evidence %}
         <span class="fw-badge {{ 'fw-badge-warning' if D.counts.cli_only else 'fw-badge-success' }}">
-          {{ D.counts.cli_only }} {{ _('CLI-only') }}
+          {{ D.counts.cli_only }} {{ _('not in catalog') }}
         </span>
+        {% if D.counts.catalog_gap %}
+        <span class="fw-badge fw-badge-warning">{{ D.counts.catalog_gap }} {{ _('catalog gap') }}</span>
+        {% endif %}
       {% endif %}
       <button class="btn btn-sm btn-fw-outline" type="button" data-bs-toggle="collapse"
               data-bs-target="#cliCoverageBody" aria-expanded="true" aria-controls="cliCoverageBody">
@@ -140,10 +143,12 @@
           <div><span class="fw-badge fw-badge-success">{{ D.counts.both }}</span>
             {{ _('also in the catalog') }}</div>
           <div><span class="fw-badge fw-badge-warning">{{ D.counts.cli_only }}</span>
-            {{ _('CLI only — not in the catalog') }}
+            {{ _('not in the catalog, REST not shown to serve them') }}
             {% if D.counts.cli_only %}
-              <span class="text-muted">({{ D.counts.cli_only_configured }} {{ _('hold configuration on this box') }})</span>
+              <span class="text-muted">({{ D.counts.cli_only_configured }} {{ _('hold configuration on this box') }}{% if D.counts.cli_only_verified %}; {{ D.counts.cli_only_verified }} {{ _('measured absent on REST: CLI only') }}{% endif %})</span>
             {% endif %}</div>
+          <div><span class="fw-badge fw-badge-warning">{{ D.counts.catalog_gap or 0 }}</span>
+            {{ _('catalog gap — REST serves them on this build') }}</div>
           <div><span class="fw-badge fw-badge-info">{{ D.counts.near_match }}</span>
             {{ _('name differs — verify') }}</div>
           <div><span class="fw-badge fw-badge-secondary">{{ D.counts.no_block }}</span>
@@ -170,8 +175,8 @@
         {# ── THE ANSWER: config the CLI serves and the catalog does not ─── #}
         <h6 class="mt-3 mb-2" style="font-size:13px; font-weight:600;">
           <i class="bi bi-exclamation-triangle me-1 text-warning"></i>
-          {{ _('CLI only — the catalog has no endpoint for these') }}
-          <span class="fw-badge fw-badge-warning">{{ D.counts.cli_only }}</span>
+          {{ _('Not in the catalog — the catalog has no endpoint for these') }}
+          <span class="fw-badge fw-badge-warning">{{ (D.counts.cli_only or 0) + (D.counts.catalog_gap or 0) }}</span>
         </h6>
         <div class="mb-2">{{ filter_box('ccCliOnlyTable', _('Filter CLI blocks…')) }}</div>
         <div class="table-responsive" style="max-height:420px; overflow-y:auto;">
@@ -181,10 +186,12 @@
               <th class="text-end">{{ _('rows') }}</th>
               <th class="text-end">{{ _('settings') }}</th>
               <th>{{ _('state') }}</th>
+              <th>{{ _('REST') }}</th>
               <th class="text-end">{{ _('read it') }}</th>
             </tr></thead>
             <tbody>
-            {% for r in D.cli_only[:cc_row_cap] %}
+            {% set cc_not_in_catalog = (D.catalog_gap or []) + (D.cli_only or []) %}
+            {% for r in cc_not_in_catalog[:cc_row_cap] %}
               <tr>
                 <td><code>{{ r.path }}</code></td>
                 <td class="text-end">{{ r.instances or '—' }}</td>
@@ -194,6 +201,15 @@
                     <span class="fw-badge fw-badge-warning">{{ _('configured') }}</span>
                   {% else %}
                     <span class="fw-badge fw-badge-secondary">{{ _('empty here') }}</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if r.channel == 'rest_served' %}
+                    <span class="fw-badge fw-badge-warning" title="{{ _('The API library measured this REST path served on this build: the catalog lacks an entry.') }}">{{ _('catalog gap · REST serves it') }}</span>
+                  {% elif r.channel == 'cli_only' %}
+                    <span class="fw-badge fw-badge-danger" title="{{ _('The API library measured this REST path absent on this build.') }}">{{ _('CLI only') }}</span>
+                  {% else %}
+                    <span class="text-muted" title="{{ _('No REST evidence for this path on this build. Run a schema harvest to probe it.') }}">{{ _('not measured') }}</span>
                   {% endif %}
                 </td>
                 <td class="text-end">
@@ -228,16 +244,17 @@
                 </td>
               </tr>
             {% else %}
-              <tr><td colspan="5" class="text-muted">
+              <tr><td colspan="6" class="text-muted">
                 {{ _('Every config table in this dump has a catalog endpoint. That is the good outcome — for this device, on this firmware, on this date.') }}
               </td></tr>
             {% endfor %}
             </tbody>
           </table>
         </div>
-        {% if D.cli_only|length > cc_row_cap %}
+        {% set cc_not_in_catalog = (D.catalog_gap or []) + (D.cli_only or []) %}
+        {% if cc_not_in_catalog|length > cc_row_cap %}
           <p class="text-muted mb-0 mt-1" style="font-size:11.5px;">
-            {{ _('Showing the first') }} {{ cc_row_cap }} {{ _('of') }} {{ D.cli_only|length }}.
+            {{ _('Showing the first') }} {{ cc_row_cap }} {{ _('of') }} {{ cc_not_in_catalog|length }}.
           </p>
         {% endif %}
 

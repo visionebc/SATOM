@@ -407,6 +407,28 @@ def harvest(appliance_id):
     return jsonify({'ok': queued, 'msg': msg, 'result': result})
 
 
+@bp.route('/schema-harvest/<int:appliance_id>', methods=['POST'])
+@login_required
+@require_permission('appliances.apply')
+def schema_harvest(appliance_id):
+    """Read the selected appliance's build through both channels.
+
+    SSH ``tree`` + ``show full-configuration`` + a REST shape probe of what
+    the library lacks (``services.schema_harvest``). Same gate as the library
+    harvest above. ``api_explorer`` is a device blueprint, so this POST runs as
+    a device job (``services.device_jobs``): the SSH reads and GETs show as
+    steps and a slow box never freezes the page.
+    """
+    appliance = visible_appliance_or_404(appliance_id)
+    from ..services import schema_harvest as sh
+    res = sh.harvest(appliance)
+    log_action('api_explorer.schema_harvest', target=appliance.name,
+               extra={'appliance_id': appliance.id, 'ok': bool(res.get('ok')),
+                      'version': res.get('version') or ''})
+    return jsonify({'ok': bool(res.get('ok')), 'msg': res.get('msg') or '',
+                    'result': json.loads(json.dumps(res, default=str))})
+
+
 def _truthy(value) -> bool:
     return str(value or '').strip().lower() in ('1', 'true', 'yes', 'on')
 

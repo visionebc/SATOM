@@ -108,13 +108,17 @@ def needs_harvest(appliance) -> bool:
     build = ApiLibBuild.query.filter_by(product=product, version=version).first()
     if build is None:
         return True
+    from .schema_harvest import ORIGIN_PREFIX as _PARTIAL
     hit = db.session.execute(
         select(ApiLibEvidence.id).where(
             ApiLibEvidence.product == product,
             ApiLibEvidence.source == source,
             ApiLibEvidence.build_id == build.id,
             ApiLibEvidence.scope_kind == "build",
-            ApiLibEvidence.healthy.is_(True)).limit(1)).first()
+            ApiLibEvidence.healthy.is_(True),
+            # A schema harvest's REST probe is sweep-shaped but PARTIAL: it
+            # asked only what the tree had and the sweep did not cover.
+            ~ApiLibEvidence.origin_ref.startswith(_PARTIAL)).limit(1)).first()
     return hit is None
 
 

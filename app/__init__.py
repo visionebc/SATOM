@@ -421,7 +421,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        # ADC ADOM top-banner modal (2026-07-12).
                        'release_notes',
                        'templates', 'naming', 'capacity', 'api_tokens', 'api_v1',
-                       'change_requests', 'upgrade_flow'}
+                       'change_requests', 'upgrade_flow', 'migration_report'}
             adc_eps = {'product.fortiadc_home'}
             if bp_name not in adc_bps and ep not in adc_eps:
                 return redirect(url_for('adc.index'))
@@ -2373,6 +2373,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.cert_manager", "bp"),
         ("app.views.change_requests", "bp"),
         ("app.views.upgrade_flow", "bp"),
+        ("app.views.migration_report", "bp"),
         ("app.views.provisioning", "bp"),
         ("app.views.device_provision", "bp"),
         ("app.views.section_config", "bp"),
@@ -2417,6 +2418,7 @@ def _register_blueprints(app: Flask) -> None:
         "app.views.line_profiles", "app.views.spo_wizard",
         "app.views.scheduled_actions", "app.views.change_requests",
         "app.views.upgrade_flow",
+        "app.views.migration_report",
         "app.views.provisioning", "app.views.firmware",
         "app.views.release_notes", "app.views.capacity",
         "app.views.registry", "app.views.api_explorer",

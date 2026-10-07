@@ -18,6 +18,7 @@ from . import cmd_diagnose as d
 from . import cmd_docs as b
 from . import cmd_execute as e
 from . import cmd_fix as f
+from . import cmd_migration as mg
 from . import cmd_get as g
 from . import cmd_ops as o
 from . import cmd_show as s
@@ -276,6 +277,12 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
             _n("channels", "One build: fields per channel (both / CLI only / hidden / "
                            "REST only / meta / unknown).",
                run=ap.apilib_channels, needs_root=True, usage=ap.CHANNELS_USAGE),
+        ),
+        _group("migration", "Firmware migration checks against the API library.",
+            _n("report", "Check one appliance's configuration (newest vault dump) against a "
+                         "target build: blocking, translated, warned and new items + verdict. "
+                         "Read-only.",
+               run=mg.report, needs_root=True, usage=mg.USAGE),
         ),
         _group("trust", "Public keys this node accepts update packages from.",
             _n("add-key", "Install a signing public key into the trust store.",

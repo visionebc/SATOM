@@ -371,14 +371,90 @@ _LAB_DEFAULT_SKIP = re.compile(
 _SET_LINE = re.compile(r'^\s*set\s+(?P<name>\S+)(?:\s+(?P<value>.*))?$')
 
 
-def parse_show_full_values(text: str) -> dict:
-    """LAB ONLY: ``{cli_path: {field: value}}`` of the FIRST row of each object.
+_UNSET_LINE = re.compile(r'^\s*unset\s+(?P<name>\S+)\s*$')
+
+
+def _scoped_path(stack: list) -> str:
+    words = [w for seg in stack for w in seg]
+    if stack and len(stack[0]) == 1 and stack[0][0] in ("global", "vdom"):
+        words = [w for seg in stack[1:] for w in seg]
+    return " ".join(words)
+
+
+def _show_full_rows(text: str) -> dict:
+    """``{cli_path: [row, ...]}``: every ``edit`` row (a singleton = one row),
+    ``row = {field: value}``; ``unset`` -> ``""``; a multi-line quoted value
+    -> ``None``. An ``edit`` with no ``set`` is still a row."""
+    out: dict = {}
+    stack: list = []          # [[words, current_row | None], ...]
+    in_quote = False
+    for raw in (text or "").splitlines():
+        if in_quote:
+            if raw.count('"') % 2:
+                in_quote = False
+            continue
+        line = raw.strip()
+        if line.startswith("config "):
+            stack.append([line[7:].split(), None])
+            continue
+        if line == "end":
+            if stack:
+                stack.pop()
+            continue
+        if line == "next":
+            if stack:
+                stack[-1][1] = None
+            continue
+        if line.startswith("edit "):
+            if line.count('"') % 2:
+                in_quote = True
+            path = _scoped_path([s[0] for s in stack])
+            if stack and path:
+                row: dict = {}
+                out.setdefault(path, []).append(row)
+                stack[-1][1] = row
+            continue
+        m = _SET_LINE.match(raw)
+        u = None if m else _UNSET_LINE.match(raw)
+        if not (m or u) or not stack:
+            continue
+        path = _scoped_path([s[0] for s in stack])
+        if not path:
+            continue
+        row = stack[-1][1]
+        if row is None:            # a singleton: its one row opens on first use
+            row = {}
+            out.setdefault(path, []).append(row)
+            stack[-1][1] = row
+        if u is not None:
+            row.setdefault(u.group("name"), "")
+            continue
+        value = m.group("value") or ""
+        if value.count('"') % 2:
+            in_quote = True
+            row.setdefault(m.group("name"), None)
+            continue
+        v = value.strip()
+        if len(v) >= 2 and v[0] == '"' and v[-1] == '"' and v.count('"') == 2:
+            v = v[1:-1]
+        row.setdefault(m.group("name"), v)
+    return out
+
+
+def parse_show_full_values(text: str, *, rows: bool = False) -> dict:
+    """``{cli_path: {field: value}}`` of the FIRST row of each object.
 
     On a freshly created lab row every value is the default, which is the one
-    case the library may record a value (``summary.lab``). Never call this on
-    a production dump: values are configuration. Multi-line quoted values are
-    skipped (returned as ``None``).
+    case the library may record a value (``summary.lab``). Values are
+    configuration: they are never stored in the library from a production
+    dump, never exported. Multi-line quoted values are skipped (``None``).
+
+    ``rows=True`` returns ``{cli_path: [row, ...]}`` with EVERY row (``unset``
+    -> ``""``), for in-memory checks only (the migration report): the caller
+    must not persist or export the values.
     """
+    if rows:
+        return _show_full_rows(text)
     out: dict = {}
     stack: list = []
     first_row: list = []

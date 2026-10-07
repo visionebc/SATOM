@@ -205,6 +205,27 @@ def channels_cmd(product, version):
     _print(channels_doc(product, version))
 
 
+@apilib_cli.command("migration-report")
+@click.argument("appliance")
+@click.option("--target", required=True, help="Target firmware build, e.g. 8.0.6.")
+@click.option("--backup", "backup_id", type=int, default=None,
+              help="Vault backup id to read (default: the newest usable dump).")
+def migration_report_cmd(appliance, target, backup_id):
+    """Check APPLIANCE's newest configuration dump against a target build.
+    APPLIANCE is an id or a name. Read-only; prints the report as JSON."""
+    from .models import Appliance
+    from .services import migration_report
+    ap = None
+    if str(appliance).isdigit():
+        ap = Appliance.query.get(int(appliance))
+    if ap is None:
+        ap = Appliance.query.filter_by(name=appliance).first()
+    if ap is None:
+        raise click.ClickException("no appliance %r" % appliance)
+    click.echo(migration_report.to_json(
+        migration_report.for_appliance(ap, target, backup_id=backup_id)))
+
+
 @apilib_cli.command("status")
 def status_cmd():
     """Counts per product, per source and per build."""

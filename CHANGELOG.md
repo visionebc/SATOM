@@ -40,6 +40,37 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - Object CLI ids are read from the evidence summary when the facts have none:
   7.6.8 -> 8.0.6 now reports the object rename `allow-source-ip` ->
   `source-ip-list` (was 0) and the field moves into `page-list`.
+### Added — Migration report: will this appliance's configuration survive build X? (2026-10-07)
+
+- New service `services/migration_report.py`. Input: an appliance (its
+  newest `show full-configuration` dump in the backup vault, or a chosen
+  backup) and a target build. Every configured object and field is checked
+  against the API library — the target's CLI schema (fields, enum options,
+  types, ranges), the CLI half of `compare()`, `channels_at()` and the
+  operator's field maps — and classified: **block** (object or field removed
+  while the device uses it — any value when the default is unknown —, enum
+  value no longer accepted, value out of range, type change the value does
+  not satisfy), **translate** (rename covered by a field map), **warn**
+  (rename candidate by equal CLI id, default changed under a field left at
+  the default, no evidence on the target, target build not completely
+  measured — with its percentage), **info** (new objects and fields with
+  their default when known). Verdict: ready / ready with warnings / blocked /
+  cannot assess; same build = nothing to do; a downgrade runs the same checks.
+  Configuration values stay in memory: rows and exports carry names, counts
+  and library facts only.
+- Page **Migration Report** (Automation, beside Upgrade Flow; also from the
+  appliance page): pick a target build, read the verdict, per-object counts
+  and every finding; export as JSON or CSV. Guarded by the Upgrade Flow's
+  permission (backup).
+- Upgrade Flow stage 1 shows the migration verdict for the move each
+  appliance's newest pre-upgrade recorded, with a link to the full report
+  (library comparison computed once per move; at most 20 appliances per page
+  render, the rest link to the report).
+- CLI: `satom execute migration report <appliance> --target <build>
+  [--backup <id>]` (`--json` for the full report), backed by
+  `flask apilib migration-report`.
+- `cli_schema.parse_show_full_values(text, rows=True)` returns every row of
+  every object (`unset` = empty) for in-memory checks.
 
 ### Added — the API library reads the CLI channel too (2026-10-07)
 

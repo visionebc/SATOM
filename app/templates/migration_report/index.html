@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block title %}{{ _('Migration report') }}{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <h4><i class="bi bi-signpost-split me-2"></i>{{ _('Migration report') }}</h4>
+  {% if may_open('upgrade_flow.index') %}
+  <a href="{{ url_for('upgrade_flow.index') }}" class="btn fw-btn-secondary btn-sm">
+    <i class="bi bi-arrow-up-circle me-1"></i>{{ _('Upgrade Flow') }}</a>
+  {% endif %}
+</div>
+<div class="fw-card mb-3">
+  <div class="fw-card-body">
+    <p class="text-muted small mb-3">
+      {{ _('Checks every object and field of an appliance\'s newest show full-configuration dump (backup vault) against what the API library knows about a target build: removed objects and fields, enum values no longer accepted, ranges, type changes, renames and changed defaults. Configuration values are read in memory only; the report and its exports carry names, counts and library facts.') }}
+    </p>
+    {% if not devices %}
+      <p class="text-muted mb-0">{{ _('No appliance of a supported product is visible here.') }}</p>
+    {% else %}
+    <table class="table fw-table align-middle mb-0">
+      <thead><tr><th>{{ _('Appliance') }}</th><th>{{ _('Product') }}</th><th>{{ _('Firmware') }}</th><th>{{ _('Target build') }}</th><th></th></tr></thead>
+      <tbody>
+      {% for d in devices %}
+        <tr>
+          <td>{{ d.name }}</td>
+          <td><span class="fw-badge fw-badge-secondary">{{ d.kind }}</span></td>
+          <td class="is-mono">{{ d.fw_version or d.firmware or '?' }}</td>
+          <td colspan="2">
+            {% set opts = targets.get(d.kind) or [] %}
+            {% if opts %}
+            <form method="get" action="{{ url_for('migration_report.report', id=d.id) }}" class="d-flex gap-2">
+              <select name="target" class="form-select form-select-sm" style="max-width:12rem;" aria-label="{{ _('Target build for') }} {{ d.name }}">
+                {% for v in opts %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+              </select>
+              <button type="submit" class="btn fw-btn-primary btn-sm">{{ _('Check') }}</button>
+            </form>
+            {% else %}
+              <span class="text-muted small">{{ _('no build of this product has a CLI schema in the API library') }}</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

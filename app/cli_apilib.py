@@ -261,8 +261,10 @@ def adapter_harvest_cmd(appliance, ssh_secret_env):
 @click.option("--tree", "tree_path", default=None, type=click.Path(exists=True, dir_okay=False),
               help="FortiGate: saved `tree` output (cli_tree evidence).")
 @click.option("--schema", "schema_path", default=None,
-              type=click.Path(exists=True, dir_okay=False),
-              help="FortiGate: ?action=schema JSON; FortiAnalyzer: {url: syntax response}.")
+              type=click.Path(exists=True),
+              help="FortiGate: ?action=schema JSON, or a directory of per-table answers "
+                   "(<path>__<name>.json [+ fetch_summary.json]); "
+                   "FortiAnalyzer: {url: syntax response}.")
 def schema_import_cmd(product, version, build, label, tree_path, schema_path):
     """Import saved schema captures of a product SATOM does not read live."""
     import json
@@ -282,10 +284,17 @@ def schema_import_cmd(product, version, build, label, tree_path, schema_path):
         out.append({"tree": api_library.ingest(doc, raw={"doc": doc, "tree_text": text}),
                     "healthy": doc["healthy"], "skip_reason": doc["skip_reason"]})
     if schema_path:
-        body = json.load(open(schema_path, encoding="utf-8"))
+        errors = {}
+        if os.path.isdir(schema_path):
+            if product != "fortigate":
+                raise click.ClickException("a capture directory is FortiGate only")
+            body, errors = fortigate.load_capture_dir(schema_path)
+        else:
+            body = json.load(open(schema_path, encoding="utf-8"))
         if product == "fortigate":
             doc = fortigate.evidence_from_schema(body, version, build, device,
-                                                 "import:%s:schema" % label, captured_at=now)
+                                                 "import:%s:schema" % label, captured_at=now,
+                                                 errors=errors)
         else:
             doc = fortianalyzer.evidence_from_syntax(body, version, build, device,
                                                      "import:%s:schema" % label, captured_at=now)

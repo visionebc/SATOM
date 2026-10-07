@@ -6,6 +6,29 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — FortiGate schema verified against a live 8.0.1 (2026-10-07)
+
+- The FortiGate `?action=schema` adapter was written from the documented format;
+  it is now checked against 618 real per-table answers of a FortiOS 8.0.1
+  build0245 lab box and marked verified. What the real answer changed:
+  `info-read-only` children (print helpers such as `application name status`)
+  are no longer counted as REST fields (19 false "REST only" names); one that
+  carries a value (`ips rule status`) is a read-only field. `datasource` keeps
+  its target list, `required`/`readonly`/`max_num_values` and the object's
+  scope are kept. A per-table 404 is a measured absence, not an error.
+- The global `?action=schema` index answers 403 to a read-only token: the
+  adapter now reads table by table, enumerated from the CLI tree plus a
+  catalogue. The tree alone is not the whole schema on FortiOS: 9 REST tables
+  (`llm/*`, `waf/signature`, `system/vdom` ...) are absent from it and show as
+  `rest_only` in the channel view.
+- `tree` parsing: a prompt glued to the first line is cut, not blanked (fgt02
+  lost `system datasource type`; a glued FortiWeb dump grew 9 phantom objects),
+  and a FortiOS field name with a space (`default value`) is read whole.
+- The channel view compares the members of nested objects REST and the CLI
+  both describe (`members`: 39 FortiGate 8.0.1 nested objects have CLI-only
+  members). `flask apilib schema-import --schema` accepts a directory of
+  per-table answers.
+
 ### Added — build compatibility across firmware builds (2026-10-07)
 
 - Writes are checked against each target's EXACT build through both channels

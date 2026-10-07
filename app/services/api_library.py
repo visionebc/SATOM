@@ -1746,8 +1746,10 @@ def field_history(product: str, endpoint: str, field: str) -> dict:
 #: some objects, so without a measured tree they are not called meta at all.
 #:
 #: FortiGate / FortiADC / FortiAuthenticator / FortiAnalyzer: no REST row was
-#: measured next to a tree yet (fgt02 cmdb answers 401 without a licence), so
-#: no rule — a guess here would hide real fields.
+#: measured next to a tree yet, so no rule — a guess here would hide real
+#: fields. (FortiGate's REST channel is its ``?action=schema``, measured on
+#: fgt02 8.0.1: a schema lists configuration only, its ``info-read-only``
+#: print helpers are dropped by the adapter; row bookkeeping never appears.)
 REST_META = {
     "fortiweb": {
         "exact": frozenset({"id", "_id", "seq", "<no.>", "sub_table_id",
@@ -1872,18 +1874,22 @@ def _channel_view(product: str, version) -> dict:
         knowing = [s for s in _ordered_sources(pool)
                    if pool[s]["verdict"] == VERDICT_OK and pool[s]["fields_known"]]
         fields = None
+        kids: dict = {}
         if knowing:
             fields = {}
             for s in knowing:
-                for fname in pool[s]["fields"] or {}:
+                for fname, fspec in (pool[s]["fields"] or {}).items():
                     fields.setdefault(fname, set()).add(s)
+                    if isinstance(fspec, dict) and isinstance(fspec.get("children"), list):
+                        kids.setdefault(fname, set()).update(fspec["children"])
         ev_ids = sorted({i for r in pool.values() for i in r["evidence_ids"]})
         slot = _slot(key)
         slot["rest_names"].append(name)
         cur = slot["rest"]
         if cur is None:
             slot["rest"] = {"verdict": verdict, "fields": fields, "urn": urn,
-                            "sources": _ordered_sources(pool), "evidence_ids": ev_ids}
+                            "sources": _ordered_sources(pool), "evidence_ids": ev_ids,
+                            "children": kids}
         else:
             # Two registry names for one path (aliases): read together.
             cur["verdict"] = _best_verdict([cur["verdict"], verdict])
@@ -1892,6 +1898,8 @@ def _channel_view(product: str, version) -> dict:
                 for f, srcs in fields.items():
                     merged.setdefault(f, set()).update(srcs)
                 cur["fields"] = merged
+            for f, k in kids.items():
+                cur.setdefault("children", {}).setdefault(f, set()).update(k)
             cur["sources"] = _ordered_sources(set(cur["sources"]) | set(pool))
             cur["evidence_ids"] = sorted(set(cur["evidence_ids"]) | set(ev_ids))
     for name in sorted(cli_keys):
@@ -1909,6 +1917,19 @@ def _channel_view(product: str, version) -> dict:
             "rest_measured": any(s in evidence for s in (SOURCE_SWEEP, SOURCE_SCHEMA,
                                                          SOURCE_MANUAL, SOURCE_LEGACY)),
             "unjoined": unjoined}
+
+
+def _member_channels(tree_spec, rest_kids):
+    """A nested object (FortiOS folds it into a field with ``children``) seen
+    by BOTH channels: its member names by channel, or None. FortiGate 8.0.1
+    measured 39 nested objects whose members differ (``firewall address list``
+    has ``net-id``/``obj-id`` only in the CLI)."""
+    kids = (tree_spec or {}).get("children")
+    if not isinstance(kids, list) or not kids or not rest_kids:
+        return None
+    cli, rest = set(kids), set(rest_kids)
+    return {"both": len(cli & rest), "cli_only": sorted(cli - rest),
+            "rest_only": sorted(rest - cli)}
 
 
 def _rest_status(rest, fname, rest_complete: bool = False) -> str:
@@ -2037,6 +2058,10 @@ def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
                              "in_tree": in_tree, "in_full": in_full,
                              "rest_sources": r_srcs, "doc_conflict": conflict,
                              "attrs": attrs, "evidence_ids": sorted(ev)}
+            members = _member_channels(tree_fields.get(fname),
+                                       ((rest or {}).get("children") or {}).get(fname))
+            if members is not None:
+                fields[fname]["members"] = members
             if key in excepted and ch == CH_UNKNOWN:
                 excepted_unknown += 1
                 exc_report.setdefault(key, 0)

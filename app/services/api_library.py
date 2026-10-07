@@ -90,7 +90,10 @@ CH_CLI_ONLY = "cli_only"
 CH_HIDDEN = "hidden"
 CH_REST_ONLY = "rest_only"
 CH_UNKNOWN = "unknown"
-CHANNELS = (CH_BOTH, CH_CLI_ONLY, CH_HIDDEN, CH_REST_ONLY, CH_UNKNOWN)
+#: REST bookkeeping a row carries that is not configuration (:data:`REST_META`).
+#: Reported so nothing is hidden, never counted toward completeness.
+CH_META = "meta"
+CHANNELS = (CH_BOTH, CH_CLI_ONLY, CH_HIDDEN, CH_REST_ONLY, CH_UNKNOWN, CH_META)
 #: The only reasons an endpoint may be left out of "complete". Named, so an
 #: exception is a statement somebody made, not a hole nobody looked at.
 EXCEPTION_REASONS = {
@@ -1722,11 +1725,56 @@ def field_history(product: str, endpoint: str, field: str) -> dict:
 # channels — the same build seen through REST and through the CLI
 # ---------------------------------------------------------------------------
 
-#: REST wire noise per product: companions a REST row carries that are not
-#: fields of the object (FortiWeb ``q_ref``, ``sz_<child>``, ``can_delete``,
-#: ``<field>_val``). The CLI never has them, so counting them would report
-#: hundreds of "REST only" fields that are only an encoding.
-_WIRE_NOISE = {"fortiweb": re.compile(r"^(?:q_|sz_|can_)|_val$")}
+#: REST bookkeeping per product: keys a REST row carries that are not fields of
+#: the object. :func:`channels_at` reports them as ``meta`` (never ``rest_only``,
+#: never counted toward completeness).
+#:
+#: FortiWeb, measured 2026-10-07 (harvester pack kb-20261007: sweep of
+#: fortiweb17 7.6.8 build1128 against the ``tree`` of the same build). Before
+#: this rule ``channels_at`` reported 276 ``rest_only`` on 7.6.8: 107 ``id`` on
+#: tables whose tree has no ``id``, 45 ``_id`` + 45 ``seq`` on subtables, 9
+#: ``<NO.>``/``<No.>`` on sequence subtables (the tree types their real mkey
+#: ``id`` as ``<NO.>``), and 70 vendor-doc names (see ``doc_conflict``). The
+#: same rows carry ``q_type``/``q_ref``/``q_ref_string``, ``can_view``/
+#: ``can_clone``, ``sz_<child>`` counters, ``<field>_val`` select companions and
+#: ``sub_table_id``/``sub_table_action``; the lab found every OTHER REST key of
+#: a served object in that build's tree (rest_only = 0 on 7.6.8 and 8.0.6).
+#:
+#: ``exact`` names compare case-insensitively. A name the build's CLI lists for
+#: that object is a REAL field and never meta: 199 tables of 7.6.8 have the mkey
+#: ``id`` (``<No.>`` sequence tables included). ``ambiguous`` names are real on
+#: some objects, so without a measured tree they are not called meta at all.
+#:
+#: FortiGate / FortiADC / FortiAuthenticator / FortiAnalyzer: no REST row was
+#: measured next to a tree yet (fgt02 cmdb answers 401 without a licence), so
+#: no rule — a guess here would hide real fields.
+REST_META = {
+    "fortiweb": {
+        "exact": frozenset({"id", "_id", "seq", "<no.>", "sub_table_id",
+                            "sub_table_action"}),
+        "pattern": re.compile(r"^(?:q_|sz_|can_)|_val$"),
+        "ambiguous": frozenset({"id"}),
+    },
+}
+
+
+def is_rest_meta(product: str, name: str, *, cli_lists: bool = False,
+                 tree_measured: bool = True) -> bool:
+    """Is ``name`` REST bookkeeping on ``product`` (see :data:`REST_META`)?
+
+    ``cli_lists``: the build's CLI lists ``name`` for this object — then it is a
+    real field whatever it looks like. ``tree_measured``: the build's ``tree``
+    was read; without it an ``ambiguous`` name (``id``) cannot be told apart.
+    """
+    rule = REST_META.get(product)
+    if rule is None or cli_lists:
+        return False
+    n = str(name or "")
+    hit = n.lower() in rule["exact"] or bool(rule["pattern"].search(n))
+    if hit and not tree_measured and n.lower() in rule["ambiguous"]:
+        return False
+    return hit
+
 
 _YES, _NO, _UNK = "yes", "no", "unknown"
 
@@ -1750,6 +1798,32 @@ def _cli_evidence(build_id) -> dict:
     return out
 
 
+def _cli_objects(evidence: dict) -> dict:
+    """``{key: {cli_path, kind, mkey, parent, cli_id}}`` from the build's CLI
+    evidence summaries (contract: ``summary.objects``), ``cli_tree`` first.
+
+    A pack may carry the object metadata ONLY there (the harvester's endpoints
+    have no ``attrs``): reading it is what gives an object its ``cli_id`` and
+    its mkey, which the rename candidates and the meta rule need.
+    """
+    out: dict = {}
+    for source in (SOURCE_CLI_FULL, SOURCE_CLI_TREE):     # tree last = tree wins
+        for summ in evidence.get(source) or []:
+            for key, meta in ((summ or {}).get("objects") or {}).items():
+                if isinstance(meta, dict):
+                    out.setdefault(key, {}).update(
+                        {k: v for k, v in meta.items() if v is not None})
+    return out
+
+
+def _with_object_meta(rec, meta):
+    """``rec`` (a point-state record) whose ``attrs`` are completed from the
+    evidence summary's object metadata; the fact's own attrs win per key."""
+    if rec is None or not meta:
+        return rec
+    return {**rec, "attrs": {**meta, **(rec.get("attrs") or {})}}
+
+
 def _resolve_key(endpoint, rest_names: dict) -> str:
     """An endpoint argument (registry name or REST path) -> channel key."""
     if not endpoint:
@@ -1771,7 +1845,7 @@ def _channel_view(product: str, version) -> dict:
     point = _point_state([b.id], with_fields=True, sources=SOURCES).get(b.id, {}) if b else {}
     vendor = _vendor_state(product, version_key(v), None, True) if v else {}
     evidence = _cli_evidence(b.id if b else None)
-    noise = _WIRE_NOISE.get(product)
+    objects = _cli_objects(evidence)
 
     cli_keys = {name for name, by_src in point.items()
                 if any(s in CLI_SOURCES for s in by_src)}
@@ -1802,8 +1876,6 @@ def _channel_view(product: str, version) -> dict:
             fields = {}
             for s in knowing:
                 for fname in pool[s]["fields"] or {}:
-                    if noise is not None and noise.search(fname):
-                        continue
                     fields.setdefault(fname, set()).add(s)
         ev_ids = sorted({i for r in pool.values() for i in r["evidence_ids"]})
         slot = _slot(key)
@@ -1825,8 +1897,8 @@ def _channel_view(product: str, version) -> dict:
     for name in sorted(cli_keys):
         by_src = point.get(name) or {}
         slot = _slot(name)
-        slot["tree"] = by_src.get(SOURCE_CLI_TREE)
-        slot["full"] = by_src.get(SOURCE_CLI_FULL)
+        slot["tree"] = _with_object_meta(by_src.get(SOURCE_CLI_TREE), objects.get(name))
+        slot["full"] = _with_object_meta(by_src.get(SOURCE_CLI_FULL), objects.get(name))
     return {"build": b, "version": v, "keys": keys, "evidence": evidence,
             "tree_measured": bool(evidence.get(SOURCE_CLI_TREE)),
             "rest_measured": any(s in evidence for s in (SOURCE_SWEEP, SOURCE_SCHEMA,
@@ -1886,6 +1958,14 @@ def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
     * ``rest_only``  — REST revealed it and the build's ``tree`` does not list it;
     * ``unknown``    — one of the two channels never answered for it on THIS
       build (no tree, a blind endpoint, an unmeasured build). Never a "no".
+      A name only the vendor documentation gives REST, on a build whose
+      measured ``tree`` does not list it, is ``unknown`` with
+      ``doc_conflict: True``: documentation is not a REST measurement, and a
+      measured "no" from the CLI beats it (local measurement wins);
+    * ``meta``       — REST bookkeeping (:data:`REST_META`: ``_id``, ``seq``,
+      ``q_type`` ...), reported and never counted toward completeness. A name
+      the build's CLI lists for the object (a table whose mkey is ``id``) is a
+      real field, never meta.
 
     Every field carries ``rest`` / ``cli`` (``yes|no|unknown``) and the evidence
     ids behind it. ``summary.complete`` is True when nothing is ``unknown``
@@ -1902,7 +1982,7 @@ def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
 
     out_eps: dict = {}
     counts = {c: 0 for c in CHANNELS}
-    excepted_unknown = 0
+    excepted_unknown = doc_conflicts = 0
     exc_report: dict = {}
     for key in sorted(view["keys"]):
         if only and key != only:
@@ -1914,9 +1994,12 @@ def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
         rest_fields = (rest or {}).get("fields") or {}
         names = set(rest_fields) | set(tree_fields) | set(full_fields)
         fields = {}
+        mkey = ((tree or {}).get("attrs") or {}).get("mkey") or ""
+        doc_only = rest is not None and set(rest.get("sources") or []) <= {SOURCE_VENDOR}
         for fname in sorted(names):
             in_tree, in_full = fname in tree_fields, fname in full_fields
             r_st = _rest_status(rest, fname)
+            r_srcs = sorted(rest_fields.get(fname) or ())
             if in_tree or in_full:
                 c_st = _YES
             elif tree_measured:
@@ -1929,6 +2012,16 @@ def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
             if hidden:
                 attrs["hidden"] = True
             ch = _classify(r_st, c_st, hidden)
+            conflict = False
+            if r_st == _YES and is_rest_meta(product, fname,
+                                             cli_lists=in_tree or in_full or fname == mkey,
+                                             tree_measured=tree_measured):
+                ch = CH_META
+            elif r_st == _YES and c_st == _NO and set(r_srcs) <= {SOURCE_VENDOR}:
+                # Documented for REST, never measured there, absent from a
+                # measured tree: not "REST only", an open contradiction.
+                r_st, ch, conflict = _UNK, CH_UNKNOWN, True
+                doc_conflicts += 1
             ev = set()
             if r_st != _UNK and rest is not None:
                 ev.update(rest["evidence_ids"])
@@ -1936,7 +2029,7 @@ def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
                 ev.update((spec or {}).get("evidence_ids") or [])
             fields[fname] = {"channel": ch, "rest": r_st, "cli": c_st, "hidden": hidden,
                              "in_tree": in_tree, "in_full": in_full,
-                             "rest_sources": sorted(rest_fields.get(fname) or ()),
+                             "rest_sources": r_srcs, "doc_conflict": conflict,
                              "attrs": attrs, "evidence_ids": sorted(ev)}
             if key in excepted and ch == CH_UNKNOWN:
                 excepted_unknown += 1
@@ -1950,10 +2043,12 @@ def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
             ep_ch = CH_BOTH
         elif r_verdict == VERDICT_ABSENT and cli_has:
             ep_ch = CH_CLI_ONLY
-        elif r_verdict == VERDICT_OK and tree_measured and not cli_has:
+        elif r_verdict == VERDICT_OK and tree_measured and not cli_has and not doc_only:
             ep_ch = CH_REST_ONLY
         else:
             ep_ch = CH_UNKNOWN
+        ep_conflict = bool(r_verdict == VERDICT_OK and tree_measured and not cli_has
+                           and doc_only)
         ep_attrs = dict((tree or {}).get("attrs") or {})
         ep_attrs.update((full or {}).get("attrs") or {})
         out_eps[key] = {
@@ -1963,13 +2058,14 @@ def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
             "rest_sources": (rest or {}).get("sources") or [],
             "cli_tree": tree is not None, "cli_full": full is not None,
             "attrs": ep_attrs, "exception": excepted.get(key, ""),
+            "doc_conflict": ep_conflict,
             "fields": fields,
         }
-    total = sum(counts.values())
+    total = sum(n for c, n in counts.items() if c != CH_META)
     summary = dict(counts)
     summary.update({
         "fields": total, "endpoints": len(out_eps),
-        "excepted_unknown": excepted_unknown,
+        "excepted_unknown": excepted_unknown, "doc_conflicts": doc_conflicts,
         "exceptions": [{"endpoint": k, "reason": excepted[k],
                         "why": EXCEPTION_REASONS[excepted[k]], "unknown": n}
                        for k, n in sorted(exc_report.items())],
@@ -1995,10 +2091,12 @@ def _tree_specs(product: str, version, only: str = "") -> tuple[bool, dict]:
         return False, {}
     st = _point_state([b.id], only or None, True,
                       sources=(SOURCE_CLI_TREE, SOURCE_CLI_FULL)).get(b.id, {})
-    measured = bool(_cli_evidence(b.id).get(SOURCE_CLI_TREE))
+    evidence = _cli_evidence(b.id)
+    measured = bool(evidence.get(SOURCE_CLI_TREE))
+    objects = _cli_objects(evidence)
     out: dict = {}
     for key, by_src in st.items():
-        tree = by_src.get(SOURCE_CLI_TREE)
+        tree = _with_object_meta(by_src.get(SOURCE_CLI_TREE), objects.get(key))
         if tree is None:
             continue
         fields = {k: dict(s) for k, s in (tree.get("fields") or {}).items()}
@@ -2095,6 +2193,8 @@ def _cli_compare(product: str, base, target, endpoint=None, rows=None) -> dict:
         totals = {"fields_added": 0, "fields_removed": 0, "options_changed": 0,
                   "retyped": 0, "ranges_changed": 0, "defaults_changed": 0,
                   "rename_candidates": 0}
+        removed_ids: dict = {}     # cli_id -> (key, field) gone from its object
+        added_ids: dict = {}       # cli_id -> (key, field) new in its object
         for key in sorted(set(ta) & set(tb)):
             fa, fb = ta[key]["fields"], tb[key]["fields"]
             added, removed = sorted(set(fb) - set(fa)), sorted(set(fa) - set(fb))
@@ -2124,6 +2224,15 @@ def _cli_compare(product: str, base, target, endpoint=None, rows=None) -> dict:
                 if cid is not None and cid in ids_added:
                     cands.append({"from": f, "to": ids_added[cid], "cli_id": cid,
                                   "mapped": (f, ids_added[cid]) in mapped})
+            for f in removed:
+                cid = (fa[f].get("attrs") or {}).get("cli_id")
+                if cid is not None and cid not in ids_added:
+                    removed_ids.setdefault(cid, (key, f))
+            taken = {c["to"] for c in cands}
+            for f in added:
+                cid = (fb[f].get("attrs") or {}).get("cli_id")
+                if cid is not None and f not in taken:
+                    added_ids.setdefault(cid, (key, f))
             if added or removed or options or retyped or ranges or defaults or cands:
                 per[key] = {"added": added, "removed": removed, "options": options,
                             "retyped": retyped, "ranges": ranges, "defaults": defaults,
@@ -2135,10 +2244,53 @@ def _cli_compare(product: str, base, target, endpoint=None, rows=None) -> dict:
                 totals["ranges_changed"] += len(ranges)
                 totals["defaults_changed"] += len(defaults)
                 totals["rename_candidates"] += len(cands)
+        moves = _field_moves(ta, tb, ep_added, ep_removed, ep_renames,
+                             removed_ids, added_ids)
+        totals["endpoint_rename_candidates"] = len(ep_renames)
+        totals["field_moves"] = len(moves)
         out["tree"] = {"endpoints_added": ep_added, "endpoints_removed": ep_removed,
                        "endpoint_rename_candidates": ep_renames,
+                       "field_moves": moves,
                        "endpoints": per, "totals": totals}
     return out
+
+
+def _field_moves(ta, tb, ep_added, ep_removed, ep_renames, removed_ids, added_ids) -> list:
+    """Attributes whose CLI id left one object and reappears in ANOTHER.
+
+    Two shapes, both measured on 7.6.8 -> 8.0.6 (lab compare_7.6.8_8.0.6.md):
+    a renamed object takes its fields along (``allow-source-ip`` ->
+    ``source-ip-list``, 9785/9786), and a field becomes an object or a field of
+    a new subtable (``client-side-protection-policy url-type`` 6991 -> the
+    table ``page-list``; ``url-pattern`` 6992 -> ``page-list.id``). Candidates,
+    never applied: the CLI id is evidence, not an operator's rename.
+    """
+    gone = dict(removed_ids)
+    for k in ep_removed:                      # fields of objects that went away
+        for f, spec in ta[k]["fields"].items():
+            cid = (spec.get("attrs") or {}).get("cli_id")
+            if cid is not None:
+                gone.setdefault(cid, (k, f))
+    new = dict(added_ids)
+    for k in ep_added:                        # fields and ids of new objects
+        cid = tb[k]["attrs"].get("cli_id")
+        if cid is not None:
+            new.setdefault(cid, (k, None))
+        for f, spec in tb[k]["fields"].items():
+            fid = (spec.get("attrs") or {}).get("cli_id")
+            if fid is not None:
+                new.setdefault(fid, (k, f))
+    renamed_eps = {(r["from"], r["to"]) for r in ep_renames}
+    moves = []
+    for cid in sorted(set(gone) & set(new)):
+        (fk, ff), (tk, tf) = gone[cid], new[cid]
+        if fk == tk:
+            continue                          # same object: a field rename candidate
+        moves.append({"from_endpoint": fk, "from_field": ff, "to_endpoint": tk,
+                      "to_field": tf, "cli_id": cid,
+                      "with_object": (fk, tk) in renamed_eps,
+                      "becomes": "object" if tf is None else "field"})
+    return moves
 
 
 def resolve_appliance(appliance) -> dict:

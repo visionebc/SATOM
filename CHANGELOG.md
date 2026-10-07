@@ -6,6 +6,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — documentation silence is never a REST "no"; lab rows of a knowledge pack are imported (2026-10-07)
+
+- The channel view treated the vendor documentation as a REST measurement: on a
+  node whose own sweep saw a table EMPTY, a documented subset of its fields made
+  every other `tree` field read "CLI only" (242 false ones on FortiWeb 7.6.8 in
+  production). Only a measurement (sweep, schema) can turn silence — or a span
+  that stops before the build — into "no"; documentation leaves it `unknown`.
+- Rule 3 of API packs (local measurement wins) skipped a knowledge pack's LAB
+  evidence (`summary.lab`, fresh rows a lab box created to reveal tables a
+  production box has empty) whenever the node had measured the build itself, so
+  those tables stayed unknown. Lab evidence is now imported next to the node's
+  own; it can only add, never replace.
+
 ### Fixed — FortiGate schema verified against a live 8.0.1 (2026-10-07)
 
 - The FortiGate `?action=schema` adapter was written from the documented format;

@@ -1883,13 +1883,18 @@ def _channel_view(product: str, version) -> dict:
                     if isinstance(fspec, dict) and isinstance(fspec.get("children"), list):
                         kids.setdefault(fname, set()).update(fspec["children"])
         ev_ids = sorted({i for r in pool.values() for i in r["evidence_ids"]})
+        # Which of these are MEASUREMENTS (not the vendor's documentation):
+        # only they may turn silence into "no" (see _rest_status).
+        fields_measured = any(s != SOURCE_VENDOR for s in knowing)
+        measured = any(s != SOURCE_VENDOR for s in pool)
         slot = _slot(key)
         slot["rest_names"].append(name)
         cur = slot["rest"]
         if cur is None:
             slot["rest"] = {"verdict": verdict, "fields": fields, "urn": urn,
                             "sources": _ordered_sources(pool), "evidence_ids": ev_ids,
-                            "children": kids}
+                            "children": kids, "fields_measured": fields_measured,
+                            "measured": measured}
         else:
             # Two registry names for one path (aliases): read together.
             cur["verdict"] = _best_verdict([cur["verdict"], verdict])
@@ -1900,6 +1905,8 @@ def _channel_view(product: str, version) -> dict:
                 cur["fields"] = merged
             for f, k in kids.items():
                 cur.setdefault("children", {}).setdefault(f, set()).update(k)
+            cur["fields_measured"] = cur.get("fields_measured", False) or fields_measured
+            cur["measured"] = cur.get("measured", False) or measured
             cur["sources"] = _ordered_sources(set(cur["sources"]) | set(pool))
             cur["evidence_ids"] = sorted(set(cur["evidence_ids"]) | set(ev_ids))
     for name in sorted(cli_keys):
@@ -1935,11 +1942,18 @@ def _member_channels(tree_spec, rest_kids):
 def _rest_status(rest, fname, rest_complete: bool = False) -> str:
     if rest is None:
         return _NO if rest_complete else _UNK
+    measured = rest.get("measured", True)
     if rest["verdict"] == VERDICT_ABSENT:
-        return _NO
+        return _NO if measured else _UNK
     if rest["verdict"] != VERDICT_OK or rest["fields"] is None:
         return _UNK            # blind or only errors: the build was not shown
-    return _YES if fname in rest["fields"] else _NO
+    if fname in rest["fields"]:
+        return _YES
+    # Silence is only a "no" when a MEASUREMENT revealed the field set. The
+    # vendor documentation not naming a field says nothing about the box: on a
+    # node whose own sweep saw the table empty (blind), a doc-only field list
+    # turned 242 FortiWeb 7.6.8 CLI fields into false "CLI only" (a1, 2026-10-07).
+    return _NO if rest.get("fields_measured", True) else _UNK
 
 
 def _classify(rest_st: str, cli_st: str, hidden: bool) -> str:

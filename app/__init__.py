@@ -318,6 +318,9 @@ def create_app(config_override: object | None = None) -> Flask:
         if bp_name in ('fac', 'fac_api'):
             # Same for FortiAuthenticator.
             eff = 'fortiauthenticator'
+        if bp_name == 'fgt':
+            # And for FortiGate.
+            eff = 'fortigate'
         g.product = eff
         always = {
             'static', 'index', 'fortiweb_home', 'service_worker',
@@ -421,6 +424,12 @@ def create_app(config_override: object | None = None) -> Flask:
                        # ADC ADOM top-banner modal (2026-07-12).
                        'release_notes',
                        'templates', 'naming', 'capacity', 'api_tokens', 'api_v1',
+                       # API library pages (2.13): Build compatibility is
+                       # drawn at the foot of EVERY sidebar and Schema builds
+                       # in each device ADOM's API group, but 2.13.0 shipped
+                       # them in no allowlist — the click bounced to the ADOM
+                       # home (tests/test_adom_menu_reachability.py).
+                       'schema_builds', 'build_compat',
                        'change_requests', 'upgrade_flow', 'migration_report'}
             adc_eps = {'product.fortiadc_home'}
             if bp_name not in adc_bps and ep not in adc_eps:
@@ -464,6 +473,12 @@ def create_app(config_override: object | None = None) -> Flask:
                        'metrics_admin',
                        'release_notes', 'templates', 'naming', 'capacity',
                        'api_tokens', 'api_explorer', 'api_v1',
+                       # API library pages (2.13): Build compatibility is
+                       # drawn at the foot of EVERY sidebar and Schema builds
+                       # in each device ADOM's API group, but 2.13.0 shipped
+                       # them in no allowlist — the click bounced to the ADOM
+                       # home (tests/test_adom_menu_reachability.py).
+                       'schema_builds', 'build_compat',
                        'change_requests',
                        'plugins', 'lua_studio'}
             if bp_name not in faz_bps:
@@ -518,10 +533,44 @@ def create_app(config_override: object | None = None) -> Flask:
                        # none) and LuaScript.TARGETS therefore cannot list it.
                        # Letting the ADOM reach the studio only produced an
                        # editor with zero valid targets.
+                       # API library pages (2.13): Build compatibility is
+                       # drawn at the foot of EVERY sidebar and Schema builds
+                       # in each device ADOM's API group, but 2.13.0 shipped
+                       # them in no allowlist — the click bounced to the ADOM
+                       # home (tests/test_adom_menu_reachability.py).
+                       'schema_builds', 'build_compat',
                        'change_requests',
                        'plugins'}
             if bp_name not in fac_bps:
                 return redirect(url_for('fac.index'))
+        elif eff == 'fortigate':
+            # BASE ADOM (2026-10-07): the read-only fgt area + the shared,
+            # product-scoped Fleet/Administration pages its sidebar draws.
+            # NOT firmware / backups / templates / lua_studio: no transport
+            # exists for a FortiGate in any of them, and a page the sidebar
+            # does not offer is a gate widened for nobody (see adc_bps).
+            fgt_bps = {'concept_map', 'fgt', 'appliances', 'settings', 'audit',
+                       'jobs', 'notifications', 'profiles', 'users',
+                       'advisor', 'adom_assets', 'console',   # see the adc_bps note
+                       'database', 'locks', 'segments', 'device_provision',
+                       'cr_types', 'process', 'scheduled_actions',
+                       'architecture', 'metrics', 'search', 'analysis',
+                       'fleet_objects', 'dns_tool',
+                       'monitoring', 'deep_monitor', 'service_monitor',
+                       'monitor_analytics', 'monitor_reports',
+                       'metrics_admin',
+                       'api_tokens', 'api_v1',
+                       # FortiGate release notes are harvested since 2.13.
+                       'release_notes',
+                       # API library pages (2.13): Build compatibility is
+                       # drawn at the foot of EVERY sidebar and Schema builds
+                       # in each device ADOM's API group, but 2.13.0 shipped
+                       # them in no allowlist — the click bounced to the ADOM
+                       # home (tests/test_adom_menu_reachability.py).
+                       'schema_builds', 'build_compat',
+                       'change_requests'}
+            if bp_name not in fgt_bps:
+                return redirect(url_for('fgt.index'))
         return None
 
     # -- access control gate (IP whitelist + allowed users) --------------
@@ -866,6 +915,15 @@ def create_app(config_override: object | None = None) -> Flask:
                 _fac_nav = ()
         except Exception:
             _fac_nav = ()
+        # FortiGate sidebar menu (base ADOM; static, see services.fgt_menu).
+        try:
+            if prod.get("key") == "fortigate":
+                from .services import fgt_menu as _fgtm
+                _fgt_nav = _fgtm.visible_menu()
+            else:
+                _fgt_nav = ()
+        except Exception:
+            _fgt_nav = ()
         try:
             _env_mode = _store.env_mode()
         except Exception:
@@ -892,6 +950,7 @@ def create_app(config_override: object | None = None) -> Flask:
             'adc_nav': _adc_nav,
             'faz_nav': _faz_nav,
             'fac_nav': _fac_nav,
+            'fgt_nav': _fgt_nav,
             'current_appliance': _cur_appl,
             'banner_bg': _bg,
             'now': datetime.utcnow(),
@@ -2314,6 +2373,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.faz_api", "bp"),
         ("app.views.fac", "bp"),
         ("app.views.fac_api", "bp"),
+        ("app.views.fgt", "bp"),
         ("app.views.appliances", "bp"),
         ("app.views.firmware", "bp"),
         ("app.views.jobs", "bp"),

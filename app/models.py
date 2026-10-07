@@ -414,6 +414,7 @@ class Appliance(db.Model):
         from .clients.fortiadc import FortiADCClient
         from .clients.fortianalyzer import FortiAnalyzerClient
         from .clients.fortiauthenticator import FortiAuthenticatorClient
+        from .clients.fortigate import FortiGateClient
         if self.kind == "fortiadc":
             return FortiADCClient(self, timeout=timeout)
         if self.kind == "fortianalyzer":
@@ -425,6 +426,8 @@ class Appliance(db.Model):
         # the ones that did not just got a wrong answer, quietly.
         if self.kind == "fortiauthenticator":
             return FortiAuthenticatorClient(self, timeout=timeout)
+        if self.kind == "fortigate":
+            return FortiGateClient(self, timeout=timeout)
         return FortiWebClient(self, timeout=timeout)
 
     def build_client(self, timeout: float = 30.0):

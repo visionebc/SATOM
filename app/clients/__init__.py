@@ -17,6 +17,9 @@ def client_for(appliance):
     if kind == "fortiauthenticator":
         from .fortiauthenticator import FortiAuthenticatorClient
         return FortiAuthenticatorClient(appliance)
+    if kind == "fortigate":
+        from .fortigate import FortiGateClient
+        return FortiGateClient(appliance)
     # NOTE: an unrecognised kind falls through to FortiWeb rather than raising.
     # That default is load-bearing history, but it is also how a newly added
     # product silently gets the WRONG client: the Appliances "Test" button then

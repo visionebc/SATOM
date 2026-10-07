@@ -31,9 +31,24 @@ PRODUCTS = ("fortiweb", "fortiadc", "fortiauthenticator", "fortianalyzer", "fort
 _BUILD_RE = re.compile(r"^[0-9][0-9A-Za-z._-]{0,31}$")
 
 
+#: Same series rule as app/services/api_pack.py (this CLI does not import the
+#: app): ``satom-apipack-kb-*`` is a knowledge pack built by satom-harvester,
+#: anything else a release pack. Both series are cumulative, so per series only
+#: the newest pack is imported; release packs first, then the knowledge pack.
+SERIES = ("release", "knowledge")
+KB_LABEL = "knowledge pack (satom-harvester)"
+
+
+def _series(name):
+    return "knowledge" if name[len("satom-apipack-"):].startswith("kb-") else "release"
+
+
 def _version_key(name):
+    """Tagged parts, so ``kb-20261007.3`` and ``2.12.0`` never compare a word
+    with a number (a plain list did: TypeError the day a kb pack shipped)."""
     ver = name[len("satom-apipack-"):-len(".tar.gz")]
-    return [int(x) if x.isdigit() else x for x in re.split(r"[.-]", ver)]
+    return tuple((0, int(x), "") if x.isdigit() else (1, 0, x)
+                 for x in re.split(r"[.-]", ver))
 
 
 def _shipped_dir(ctx):
@@ -52,10 +67,35 @@ def _packs(d):
                   key=lambda p: _version_key(p.name))
 
 
-def shipped_pack(ctx):
-    """The newest pack the release carries in api-packs/, or None."""
-    packs = _packs(_shipped_dir(ctx))
-    return packs[-1] if packs else None
+def shipped_packs(ctx):
+    """The newest shipped pack of each series, in import order (release, then
+    knowledge). Older packs of a series are superseded: the newest carries
+    everything they did."""
+    newest = {}
+    for p in _packs(_shipped_dir(ctx)):
+        newest[_series(p.name)] = p          # _packs() is ascending by version
+    return [newest[s] for s in SERIES if s in newest]
+
+
+def _imported_names(ctx):
+    """Packs the import log records as fully imported (a full pass, no failed
+    item) — the same rule as api_pack.pending_shipped()."""
+    done = set()
+    log = ctx.app_dir / "data" / "apipacks" / "imports"
+    for f in log.glob("*.json") if log.is_dir() else []:
+        try:
+            rec = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not rec.get("errors") and not rec.get("partial") and rec.get("pack"):
+            done.add(rec["pack"])
+    return done
+
+
+def pending_packs(ctx):
+    """Shipped packs this node has not imported yet, in import order."""
+    done = _imported_names(ctx)
+    return [p for p in shipped_packs(ctx) if p.name not in done]
 
 
 def _chown_app(ctx, path):
@@ -118,8 +158,19 @@ def _json_tail(out):
 def show_apipacks(ctx, args):
     """Packs on this node and what was imported from them. Reads files only."""
     r = Result("ok", "API library packs")
-    rows = [(p.name, "shipped with this release (api-packs/)")
-            for p in _packs(_shipped_dir(ctx))]
+    current = {p.name for p in shipped_packs(ctx)}
+    pending = {p.name for p in pending_packs(ctx)}
+
+    def what(name):
+        out = "shipped with this release (api-packs/)"
+        if _series(name) == "knowledge":
+            out += ", " + KB_LABEL
+        if name not in current:
+            out += ", superseded"
+        elif name in pending:
+            out += ", NOT IMPORTED YET"
+        return out
+    rows = [(p.name, what(p.name)) for p in _packs(_shipped_dir(ctx))]
     rows += [(p.name, "uploaded (data/apipack-uploads/)") for p in _packs(_upload_dir(ctx))]
     if rows:
         r.rows("available", rows)
@@ -147,7 +198,10 @@ def show_apipacks(ctx, args):
 # execute
 # ---------------------------------------------------------------------------
 def import_apipack(ctx, args):
-    """Import a signed API pack. Without --yes it only reports what would happen."""
+    """Import a signed API pack. Without --yes it only reports what would happen.
+
+    ``shipped`` imports every shipped pack this node has not imported yet: the
+    newest release pack, then the newest knowledge pack (satom-harvester)."""
     plain = []
     skip = False
     for a in args:
@@ -162,7 +216,9 @@ def import_apipack(ctx, args):
     if not plain:
         return Result("info", "apipack import").lines("", [
             "usage: satom " + USAGE, "",
-            "'shipped' is the pack the installed release carries in api-packs/.",
+            "'shipped' imports every pack the installed release carries in api-packs/",
+            "that this node has not imported yet: the newest release pack, then the",
+            "newest knowledge pack (satom-harvester).",
             "The pack must be signed by a key in this node's trust store",
             "(satom show trust). Items this node measured itself are never replaced."])
 
@@ -173,10 +229,16 @@ def import_apipack(ctx, args):
             "copies the release notes and field schemas."])
 
     if plain[0] == "shipped":
-        src = shipped_pack(ctx)
-        if src is None:
+        if not shipped_packs(ctx):
             return Result("bad", "apipack import").lines("", [
                 "this release carries no pack in %s" % _shipped_dir(ctx)])
+        srcs = pending_packs(ctx)
+        if not srcs:
+            return Result("ok", "apipack import").lines("", [
+                "every shipped pack is already imported on this node:",
+                *("  " + p.name for p in shipped_packs(ctx)),
+                "To import one again: satom execute apipack import %s/<pack> --yes"
+                % _shipped_dir(ctx)])
     else:
         src = Path(plain[0]).expanduser()
         if not src.is_file():
@@ -184,6 +246,7 @@ def import_apipack(ctx, args):
         if not PACK_RE.match(src.name):
             return Result("bad", "apipack import").lines("", [
                 "%r is not an API pack name (satom-apipack-<version>.tar.gz)" % src.name])
+        srcs = [src]
 
     products = _opt_list(args, "--product")
     sections = _opt_list(args, "--section")
@@ -191,7 +254,33 @@ def import_apipack(ctx, args):
     if bad:
         return Result("bad", "apipack import").lines("", [
             "unknown section(s): %s (valid: %s)" % (", ".join(bad), ", ".join(SECTIONS))])
+    dry = "--yes" not in args
+    results = [_import_file(ctx, src, products, sections, dry) for src in srcs]
+    if len(results) == 1:
+        return results[0]
+    # Several packs: one report, the worst status wins, every pack's rows kept.
+    rank = {"ok": 0, "info": 0, "warn": 1, "bad": 2}
+    worst = max(results, key=lambda r: rank.get(r.status, 2))
+    r = Result(worst.status, "apipack import%s: %d packs" % (" (dry run)" if dry else "",
+                                                             len(results)))
+    for one in results:
+        res = one.data.get("result") or {}
+        r.rows(one.data.get("pack", "?"), [
+            ("version", str(res.get("version"))), ("signed by", str(res.get("signed_by"))),
+            ("status", one.status),
+            ("imported", str(res.get("imported", 0))), ("failed", str(res.get("errors", 0)))])
+        for heading, (kind, body) in one.sections:
+            if kind == "lines" and heading in ("failures", ""):
+                r.lines("%s: %s" % (one.data.get("pack", "?"), heading or "error"),
+                        list(body)[:20])
+    if dry:
+        r.note("Re-run with --yes to import them.")
+    r.set(results=[one.data for one in results])
+    return r
 
+
+def _import_file(ctx, src, products, sections, dry):
+    """``flask apilib pack import`` of ONE pack file, as a Result."""
     # The service account has to read the file. A pack in an operator's home
     # (0700) is copied to the staging area the web console also uses.
     path = src
@@ -212,7 +301,6 @@ def import_apipack(ctx, args):
         extra += ["--product", p]
     for s in sections:
         extra += ["--section", s]
-    dry = "--yes" not in args
     if dry:
         extra.append("--dry-run")
     rc, out, err = _flask_pack(ctx, extra)
@@ -220,6 +308,7 @@ def import_apipack(ctx, args):
     if res is None:
         r = Result("bad", "apipack import")
         r.lines("", ((err or out) or "no output").splitlines()[-25:])
+        r.set(pack=path.name)
         return r
 
     items = res.get("items") or []
@@ -228,8 +317,10 @@ def import_apipack(ctx, args):
         by_state[it.get("state")] = by_state.get(it.get("state"), 0) + 1
     title = "apipack import%s" % (" (dry run)" if dry else "")
     r = Result("bad" if res.get("errors") else ("warn" if dry else "ok"), title)
-    r.rows("pack", [("file", path.name), ("version", str(res.get("version"))),
-                    ("signed by", str(res.get("signed_by")))])
+    r.rows("pack", [("file", path.name),
+                    ("version", str(res.get("version"))),
+                    ("signed by", str(res.get("signed_by")))]
+           + ([("kind", KB_LABEL)] if _series(path.name) == "knowledge" else []))
     r.rows("items", [("selected", str(len(items))),
                      ("new", str(by_state.get("new", 0))),
                      ("already present", str(by_state.get("present", 0))),
@@ -241,7 +332,7 @@ def import_apipack(ctx, args):
         r.lines("failures", failed[:20])
     if dry:
         r.note("Re-run with --yes to import the %d new item(s)." % by_state.get("new", 0))
-    r.set(result=res)
+    r.set(result=res, pack=path.name)
     return r
 
 

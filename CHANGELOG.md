@@ -6,6 +6,26 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — knowledge packs from satom-harvester ship with the release (2026-10-07)
+
+- `api-packs/` carries, next to the release packs, ONE knowledge pack
+  `satom-apipack-kb-YYYYMMDD[.N].tar.gz` built by the separate tool
+  satom-harvester and re-signed with the release key by the release pipeline.
+  It is its own file because a release pack never re-exports what the release
+  host imported from a pack.
+- `satom execute apipack import shipped` (and therefore the installer and the
+  update runner) imports **every pending shipped pack**: the newest release
+  pack, then the newest knowledge pack, each only if this node has not fully
+  imported it yet. Both series are cumulative, so older packs of a series are
+  superseded and not imported. A run with a failed item, or a ticked subset,
+  leaves the pack pending so the next update retries it (the import log now
+  records `partial`).
+- Software Update lists knowledge packs with the label *knowledge pack
+  (satom-harvester)*, marks superseded packs, and the pending notice names
+  every pending pack; `satom show apipack` shows the same.
+- Fixed: the console sorted pack versions as mixed int/str lists, which raised
+  `TypeError` as soon as a `kb-*` pack sat next to `2.x.y` packs.
+
 ### Added — build compatibility across firmware builds (2026-10-07)
 
 - Writes are checked against each target's EXACT build through both channels

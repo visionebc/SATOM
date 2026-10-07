@@ -913,7 +913,8 @@ def import_pack(path, *, trust_dir=None, products=None, sections=None, ids=None,
             log.mkdir(parents=True, exist_ok=True)
             stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
             (log / ("%s-%s.json" % (stamp, _slug(manifest.get("version"))))).write_text(
-                json.dumps(dict(out, actor=actor, pack=Path(path).name), indent=1),
+                json.dumps(dict(out, actor=actor, pack=Path(path).name, partial=bool(ids)),
+                           indent=1),
                 encoding="utf-8")
         return out
     finally:
@@ -939,18 +940,56 @@ def _source_dir(source: str) -> Path:
     raise PackError("unknown pack source %r" % source)
 
 
+#: Two independent, CUMULATIVE series share ``api-packs/``:
+#:   release   ``satom-apipack-<x.y.z>``          exported from the release host's
+#:             library (its own measurements; never what it imported, rule 3);
+#:   knowledge ``satom-apipack-kb-YYYYMMDD[.N]``  built by the separate tool
+#:             satom-harvester (lab schema dumps, release notes) and re-signed
+#:             with the release key by the release pipeline.
+#: Each pack of a series carries everything the older ones did, so per series
+#: only the NEWEST pack is ever imported, and api-packs/ keeps only the newest
+#: knowledge pack (release packs are all kept: a node may pin an older one).
+SERIES_RELEASE = "release"
+SERIES_KNOWLEDGE = "knowledge"
+SERIES_ORDER = (SERIES_RELEASE, SERIES_KNOWLEDGE)
+KNOWLEDGE_PREFIX = "kb-"
+SERIES_LABELS = {SERIES_RELEASE: "release pack",
+                 SERIES_KNOWLEDGE: "knowledge pack (satom-harvester)"}
+
+
+def _pack_version(name: str) -> str:
+    return name[len("satom-apipack-"):-len(".tar.gz")]
+
+
+def pack_series(name: str) -> str:
+    """``knowledge`` for a satom-harvester pack (``kb-...``), else ``release``."""
+    return (SERIES_KNOWLEDGE if _pack_version(name).startswith(KNOWLEDGE_PREFIX)
+            else SERIES_RELEASE)
+
+
 def _pack_version_key(name: str):
-    ver = name[len("satom-apipack-"):-len(".tar.gz")]
+    """Version order inside ONE series. ``kb-20261007`` < ``kb-20261007.1`` <
+    ``kb-20261007.10`` < ``kb-20261008``; ``2.9.1`` < ``2.10.0``. Every part is
+    a tagged tuple, so comparing a number with a word never raises."""
     return tuple((0, int(x), "") if x.isdigit() else (1, 0, x)
-                 for x in re.split(r"[.-]", ver))
+                 for x in re.split(r"[.-]", _pack_version(name)))
+
+
+def _shipped_order(name: str):
+    """Import order of shipped packs: every release pack before every
+    knowledge pack, each series by version. The release pack is the publisher's
+    own measurement of real appliances; the knowledge pack fills what it lacks
+    (the import never overwrites, so the order only decides who arrives first)."""
+    return (SERIES_ORDER.index(pack_series(name)), _pack_version_key(name))
 
 
 def list_packs() -> list:
     """Every pack this node can import from, newest first within each source.
 
     ``api-packs/`` keeps every release's pack, and a checkout gives them all
-    the same mtime, so shipped packs are ordered by VERSION; uploads by when
-    they arrived."""
+    the same mtime, so shipped packs are ordered by VERSION (release packs
+    first, then knowledge packs); uploads by when they arrived. A shipped pack
+    that a newer one of its series replaces is flagged ``superseded``."""
     out = []
     for source in PACK_SOURCES:
         d = _source_dir(source)
@@ -958,13 +997,21 @@ def list_packs() -> list:
             continue
         found = [p for p in d.glob("satom-apipack-*.tar.gz")
                  if p.is_file() and PACK_NAME_RE.match(p.name)]
-        order = ((lambda p: _pack_version_key(p.name)) if source == SOURCE_SHIPPED
-                 else (lambda p: p.stat().st_mtime))
-        for p in sorted(found, key=order, reverse=True):
+        if source == SOURCE_SHIPPED:
+            ranked = sorted(found, key=lambda p: _pack_version_key(p.name), reverse=True)
+            ranked.sort(key=lambda p: SERIES_ORDER.index(pack_series(p.name)))
+        else:
+            ranked = sorted(found, key=lambda p: p.stat().st_mtime, reverse=True)
+        seen = set()
+        for p in ranked:
             st = p.stat()
+            series = pack_series(p.name)
             out.append({"source": source, "name": p.name, "size": st.st_size,
-                        "version": p.name[len("satom-apipack-"):-len(".tar.gz")],
+                        "version": _pack_version(p.name), "series": series,
+                        "label": SERIES_LABELS[series],
+                        "superseded": source == SOURCE_SHIPPED and series in seen,
                         "mtime": datetime.utcfromtimestamp(int(st.st_mtime)).isoformat() + "Z"})
+            seen.add(series)
     return out
 
 
@@ -1038,29 +1085,45 @@ def import_history(limit: int = 10) -> list:
     return out
 
 
-def pending_shipped(packs: list | None = None) -> dict | None:
-    """The newest shipped pack if this node has never imported it, else None.
-
-    An update brings a new pack into ``api-packs/`` and the runner imports it
-    on the primary; this is what the page uses to say so when that did not
-    happen (a standby promoted later, an update applied by an older runner, an
-    import that failed)."""
-    shipped = [p for p in (packs if packs is not None else list_packs())
-               if p["source"] == SOURCE_SHIPPED]
-    if not shipped:
-        return None
-    newest = shipped[0]
+def _imported_names() -> set:
+    """Packs this node has fully imported: a logged full pass with no failed
+    item. A run that only took ticked items, or where an item failed, leaves
+    the pack pending so the next update (or ``import shipped``) retries it."""
+    done = set()
     d = pack_dir() / "imports"
     if d.is_dir():
         for f in d.glob("*.json"):
             try:
-                if json.loads(f.read_text(encoding="utf-8")).get("pack") == newest["name"]:
-                    return None
+                rec = json.loads(f.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 continue
-    return newest
+            if rec.get("errors") or rec.get("partial"):
+                continue
+            if rec.get("pack"):
+                done.add(rec["pack"])
+    return done
+
+
+def pending_shipped(packs: list | None = None) -> list:
+    """Shipped packs this node has not imported yet, in import order.
+
+    Per series only the newest shipped pack counts (each one is cumulative):
+    the release pack of the running release and the newest knowledge pack.
+    Release packs come first, then the knowledge pack (``_shipped_order``).
+    An update brings them into ``api-packs/`` and the runner imports them on
+    the primary; the page uses this to say so when that did not happen (a
+    standby promoted later, an update applied by an older runner, an import
+    that failed). ``[]`` when there is nothing to do."""
+    shipped = [p for p in (packs if packs is not None else list_packs())
+               if p["source"] == SOURCE_SHIPPED and not p.get("superseded")]
+    if not shipped:
+        return []
+    done = _imported_names()
+    return sorted((p for p in shipped if p["name"] not in done),
+                  key=lambda p: _shipped_order(p["name"]))
 
 
 __all__ = ["SCHEMA", "SECTIONS", "ORIGIN_PREFIX", "PackError", "rebuild_document",
            "export_pack", "inspect_pack", "import_pack", "list_packs", "resolve_pack",
-           "save_upload", "delete_upload", "import_history", "pending_shipped"]
+           "save_upload", "delete_upload", "import_history", "pending_shipped",
+           "pack_series", "SERIES_LABELS"]

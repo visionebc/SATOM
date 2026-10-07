@@ -845,8 +845,8 @@ service account's environment by hand:
 
 ```bash
 satom show apipack                                   # packs on this node + import log
-sudo satom execute apipack import shipped            # dry run of the release's own pack
-sudo satom execute apipack import shipped --yes      # import it
+sudo satom execute apipack import shipped            # dry run of every pending shipped pack
+sudo satom execute apipack import shipped --yes      # import them (release pack, then knowledge pack)
 sudo satom execute apipack import ./satom-apipack-2.6.0.tar.gz --yes \
      [--product fortiweb,fortiadc] [--section docs]
 ```
@@ -886,18 +886,42 @@ answer file written for an earlier release by one line:
 | `SATOM_API_PACK_PRODUCTS` | comma list, e.g. `fortiweb,fortiadc` | every product |
 
 **Update.** From 2.7.0, after an update has passed its health check on a
-primary or standalone node, the runner imports the newest shipped pack itself
+primary or standalone node, the runner imports the pending shipped packs itself
 (`satom execute apipack import shipped --yes`, step *import shipped API pack*
 in the update log). Like the installer's step it never fails the update: a
 pack that does not import is a red step with the command to retry, and the
 node stays on the new code. A standby is skipped. `SATOM_API_PACK_AUTO=0` in
 the runner's environment turns it off. The first update INTO 2.7.0 is applied
 by the previous runner, which does not have this step: import once by hand
-after it. While the newest shipped pack has never been imported on a node,
-Software Update says so above the pack list, with a link that opens it.
+after it. While a shipped pack is pending on a node, Software Update says so
+above the pack list, with a link that opens each one.
 
 `api-packs/` keeps **every** release's pack (about 400 KB each), so a node can
-import an older pack too; *shipped* means the newest by version.
+import an older pack too.
+
+**Knowledge packs (2026-10-07).** Next to the release packs, `api-packs/` may
+carry ONE knowledge pack, `satom-apipack-kb-YYYYMMDD[.N].tar.gz`, built by the
+separate tool **satom-harvester** (lab `tree` / `show full-configuration`
+dumps, sweeps, vendor release notes) and re-signed with the release key by the
+release pipeline (step `kb_pack`). It has to be its own file: a release pack is
+exported from the release host's library and never carries what that host
+imported from a pack (§11.3 rule 3). The two series are independent and both
+cumulative, so:
+
+| | release pack | knowledge pack |
+|---|---|---|
+| name | `satom-apipack-<x.y.z>` | `satom-apipack-kb-YYYYMMDD[.N]` (`.10` sorts after `.2`) |
+| kept in `api-packs/` | every release | only the newest |
+| imported by *shipped* | the newest, first | the newest, second |
+
+*shipped* imports the newest pack of each series **that this node has not
+fully imported yet** (a logged full pass with no failed item), release pack
+first. A run where an item failed, or where only ticked items were taken,
+leaves the pack pending, so the next update retries it. Software Update lists
+knowledge packs with the label *knowledge pack (satom-harvester)*, marks older
+packs of a series *superseded*, and its notice names every pending pack. The
+import rules are the same for both series: signature against the trust store,
+and what the node measured itself always wins.
 
 **Software Update.** The *API library packs* card lists the release's packs
 (*this release*) and any uploaded pack (the newest five are kept). Selecting

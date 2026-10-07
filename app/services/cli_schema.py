@@ -371,13 +371,33 @@ _LAB_DEFAULT_SKIP = re.compile(
 _SET_LINE = re.compile(r'^\s*set\s+(?P<name>\S+)(?:\s+(?P<value>.*))?$')
 
 
+def _odd_quotes(s: str) -> bool:
+    """True when ``s`` holds an odd number of UNESCAPED double quotes.
+
+    The CLI prints a quote inside a value as ``\\"`` (measured on FortiWeb
+    8.0.6: ``set comment "x \\"q\\" y"``). Counting every ``"`` read a value
+    with one escaped quote as an unterminated multi-line value and swallowed
+    the lines after it."""
+    n, esc = 0, False
+    for ch in s or "":
+        if esc:
+            esc = False
+        elif ch == "\\":
+            esc = True
+        elif ch == '"':
+            n += 1
+    return n % 2 == 1
+
+
 def parse_show_full_values(text: str) -> dict:
     """LAB ONLY: ``{cli_path: {field: value}}`` of the FIRST row of each object.
 
     On a freshly created lab row every value is the default, which is the one
     case the library may record a value (``summary.lab``). Never call this on
-    a production dump: values are configuration. Multi-line quoted values are
-    skipped (returned as ``None``).
+    a production dump to STORE anything: values are configuration. The one
+    other caller is :mod:`app.services.cli_writer`, which compares the row it
+    just wrote in memory (never stored) to prove the write landed. Multi-line
+    quoted values are skipped (returned as ``None``).
     """
     out: dict = {}
     stack: list = []
@@ -385,7 +405,7 @@ def parse_show_full_values(text: str) -> dict:
     in_quote = False
     for raw in (text or "").splitlines():
         if in_quote:
-            if raw.count('"') % 2:
+            if _odd_quotes(raw):
                 in_quote = False
             continue
         line = raw.strip()
@@ -403,13 +423,13 @@ def parse_show_full_values(text: str) -> dict:
                 first_row[-1] = False
             continue
         if line.startswith("edit "):
-            if line.count('"') % 2:
+            if _odd_quotes(line):
                 in_quote = True
             continue
         m = _SET_LINE.match(raw)
         if m and stack:
             value = m.group("value") or ""
-            if value.count('"') % 2:
+            if _odd_quotes(value):
                 in_quote = True
                 value = None
             if not first_row[-1]:

@@ -1191,8 +1191,8 @@ flask apilib pack import satom-apipack-2.6.0.tar.gz [--product fortiadc] \
 <p>The operator console wraps the import for root, so nobody has to assemble the
 service account's environment by hand:</p>
 <pre><code class="language-bash">satom show apipack                                   # packs on this node + import log
-sudo satom execute apipack import shipped            # dry run of the release's own pack
-sudo satom execute apipack import shipped --yes      # import it
+sudo satom execute apipack import shipped            # dry run of every pending shipped pack
+sudo satom execute apipack import shipped --yes      # import them (release pack, then knowledge pack)
 sudo satom execute apipack import ./satom-apipack-2.6.0.tar.gz --yes \
      [--product fortiweb,fortiadc] [--section docs]
 </code></pre>
@@ -1267,17 +1267,59 @@ answer file written for an earlier release by one line:</p>
 </tbody>
 </table>
 <p><strong>Update.</strong> From 2.7.0, after an update has passed its health check on a
-primary or standalone node, the runner imports the newest shipped pack itself
+primary or standalone node, the runner imports the pending shipped packs itself
 (<code>satom execute apipack import shipped --yes</code>, step <em>import shipped API pack</em>
 in the update log). Like the installer's step it never fails the update: a
 pack that does not import is a red step with the command to retry, and the
 node stays on the new code. A standby is skipped. <code>SATOM_API_PACK_AUTO=0</code> in
 the runner's environment turns it off. The first update INTO 2.7.0 is applied
 by the previous runner, which does not have this step: import once by hand
-after it. While the newest shipped pack has never been imported on a node,
-Software Update says so above the pack list, with a link that opens it.</p>
+after it. While a shipped pack is pending on a node, Software Update says so
+above the pack list, with a link that opens each one.</p>
 <p><code>api-packs/</code> keeps <strong>every</strong> release's pack (about 400 KB each), so a node can
-import an older pack too; <em>shipped</em> means the newest by version.</p>
+import an older pack too.</p>
+<p><strong>Knowledge packs (2026-10-07).</strong> Next to the release packs, <code>api-packs/</code> may
+carry ONE knowledge pack, <code>satom-apipack-kb-YYYYMMDD[.N].tar.gz</code>, built by the
+separate tool <strong>satom-harvester</strong> (lab <code>tree</code> / <code>show full-configuration</code>
+dumps, sweeps, vendor release notes) and re-signed with the release key by the
+release pipeline (step <code>kb_pack</code>). It has to be its own file: a release pack is
+exported from the release host's library and never carries what that host
+imported from a pack (§11.3 rule 3). The two series are independent and both
+cumulative, so:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>release pack</th>
+<th>knowledge pack</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>name</td>
+<td><code>satom-apipack-&lt;x.y.z&gt;</code></td>
+<td><code>satom-apipack-kb-YYYYMMDD[.N]</code> (<code>.10</code> sorts after <code>.2</code>)</td>
+</tr>
+<tr>
+<td>kept in <code>api-packs/</code></td>
+<td>every release</td>
+<td>only the newest</td>
+</tr>
+<tr>
+<td>imported by <em>shipped</em></td>
+<td>the newest, first</td>
+<td>the newest, second</td>
+</tr>
+</tbody>
+</table>
+<p><em>shipped</em> imports the newest pack of each series <strong>that this node has not
+fully imported yet</strong> (a logged full pass with no failed item), release pack
+first. A run where an item failed, or where only ticked items were taken,
+leaves the pack pending, so the next update retries it. Software Update lists
+knowledge packs with the label <em>knowledge pack (satom-harvester)</em>, marks older
+packs of a series <em>superseded</em>, and its notice names every pending pack. The
+import rules are the same for both series: signature against the trust store,
+and what the node measured itself always wins.</p>
 <p><strong>Software Update.</strong> The <em>API library packs</em> card lists the release's packs
 (<em>this release</em>) and any uploaded pack (the newest five are kept). Selecting
 one verifies it and shows every item with its state — <code>new</code>, <code>present</code>, or

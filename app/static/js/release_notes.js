@@ -12,7 +12,10 @@
 
   const BASE = '/release-notes';
   const PRODUCT = (document.querySelector('meta[name="current-product"]') || {}).content || 'fortiweb';
-  const PLABEL = { fortiweb: 'FortiWeb', fortiadc: 'FortiADC' }[PRODUCT] || 'Fortinet';
+  const PLABEL = {
+    fortiweb: 'FortiWeb', fortiadc: 'FortiADC',
+    fortiauthenticator: 'FortiAuthenticator', fortianalyzer: 'FortiAnalyzer',
+  }[PRODUCT] || 'Fortinet';
   let loaded = false;
   let scanPoll = null;
   // Rendered by the server into the modal element; the Scout panel needs it
@@ -65,14 +68,23 @@
         `<i class="bi bi-check-circle text-success"></i> ${c.issues} issues ` +
         `(${c.known} known / ${c.resolved} resolved) · ${c.sections} sections · ` +
         `${c.versions} versions${gen}.`;
+    } else if (d.offline) {
+      // Offline AND nothing harvested: an empty list here would read as
+      // "no issues". Say what is missing and where it comes from instead.
+      $('rnStatus').innerHTML =
+        `<i class="bi bi-cloud-slash text-warning"></i> ${esc(d.empty_reason)}`;
     } else {
       $('rnStatus').innerHTML = d.is_admin
         ? 'No release-notes data yet — click <b>Scan from Fortinet</b> to harvest it.'
         : 'No release-notes data yet — ask an admin to run a scan on this node.';
     }
 
-    fillSelect($('rnIssueVersion'), d.versions, { firstLabel: '(all versions)' });
-    fillSelect($('rnNoteVersion'), d.versions, { firstLabel: '(all versions)' });
+    // The builds the fleet runs but the corpus lacks are offered too, marked:
+    // picking one shows WHY it is empty instead of an empty table.
+    const picks = d.versions.concat((d.fleet_missing || []).map(
+      (v) => ({ value: v, label: `${v} (in your fleet — no notes here)` })));
+    fillSelect($('rnIssueVersion'), picks, { firstLabel: '(all versions)' });
+    fillSelect($('rnNoteVersion'), picks, { firstLabel: '(all versions)' });
     fillSelect($('rnIssueTopic'), d.topics, { firstLabel: '(all topics)' });
     fillSelect($('rnNoteSection'), d.sections, { firstLabel: '(all sections)' });
     // advisor: newest-first, no "(all)" entry
@@ -82,10 +94,6 @@
       $('rnAdvTarget').selectedIndex = 0;          // newest
       $('rnAdvCurrent').selectedIndex = 1;         // one older
     }
-
-    // default firecrawl endpoint
-    const fcEp = $('rnFcEndpoint');
-    if (fcEp && !fcEp.value) fcEp.value = d.firecrawl_default || '';
 
     // a scan may be running (started by another admin / worker)
     if (d.scan_running && !scanPoll) startScanPolling();
@@ -105,6 +113,15 @@
     try { d = await get(`${BASE}/issues?${p}`); } catch (e) { return; }
     const tb = $('rnIssueRows');
     tb.innerHTML = '';
+    if (!d.issues.length && d.empty_reason) {
+      // Nothing harvested for this build: say so (and, offline, where the
+      // notes come from) rather than leave an empty table that reads as
+      // "this build has no issues".
+      tb.innerHTML = `<tr><td colspan="5" class="text-muted fst-italic">`
+        + `<i class="bi bi-cloud-slash me-1"></i>${esc(d.empty_reason)}</td></tr>`;
+      $('rnIssueCount').textContent = '';
+      return;
+    }
     d.issues.forEach((r) => {
       const tr = document.createElement('tr');
       tr.style.cursor = 'pointer';
@@ -316,7 +333,12 @@
     let d;
     try { d = await get(`${BASE}/notes?${p}`); } catch (e) { return; }
     const view = $('rnNoteView');
-    if (!d.sections.length) { view.innerHTML = '<span class="text-muted">No matching sections.</span>'; return; }
+    if (!d.sections.length) {
+      view.innerHTML = d.empty_reason
+        ? `<span class="text-muted fst-italic"><i class="bi bi-cloud-slash me-1"></i>${esc(d.empty_reason)}</span>`
+        : '<span class="text-muted">No matching sections.</span>';
+      return;
+    }
     view.innerHTML = d.sections.map((s) => {
       const link = s.source_url ? ` <a href="${esc(s.source_url)}" target="_blank" rel="noopener">↗</a>` : '';
       return `<h6>${esc(s.version)} — ${esc(s.title)}${link}</h6>` +
@@ -390,15 +412,6 @@
   // ---- version discovery (the scan's input, not a guess) ----
   let discovered = [];          // [{version, major, in_corpus, checked}]
   let discovering = false;
-
-  function transports() {
-    return {
-      use_direct: $('rnDirect').checked,
-      use_firecrawl: $('rnFc').checked,
-      firecrawl_endpoint: $('rnFcEndpoint').value,
-      firecrawl_key: $('rnFcKey').value,
-    };
-  }
 
   function pickedVersions() {
     return discovered.filter((r) => r.checked).map((r) => r.version);
@@ -489,7 +502,7 @@
     if (btn) btn.disabled = true;
     if (hint) hint.textContent = 'Reading docs.fortinet.com…';
     try {
-      const d = await post(`${BASE}/discover`, transports());
+      const d = await post(`${BASE}/discover`, {});
       // Pre-tick exactly what the corpus is MISSING. Re-scanning what we already
       // hold is the slow, pointless default the old form had; leaving everything
       // unticked would be a dead end.
@@ -515,10 +528,7 @@
       window.FW?.toast?.('Tick at least one version (use Discover versions).', 'warning');
       return;
     }
-    const body = {
-      versions: picked,
-      ...transports(),
-    };
+    const body = { versions: picked };
     const out = $('rnScanOut');
     if (out) { out.classList.remove('d-none'); out.textContent = 'Starting…'; }
     try {

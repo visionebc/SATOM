@@ -2851,9 +2851,6 @@ msgstr ""
 msgid "Devices (ctrl=multi)"
 msgstr ""
 
-msgid "Direct (httpx)"
-msgstr ""
-
 msgid "Direction"
 msgstr ""
 
@@ -3498,15 +3495,6 @@ msgid "Findings"
 msgstr ""
 
 msgid "Finished"
-msgstr ""
-
-msgid "Firecrawl endpoint"
-msgstr ""
-
-msgid "Firecrawl fallback"
-msgstr ""
-
-msgid "Firecrawl key (optional)"
 msgstr ""
 
 msgid "Firmware"
@@ -9709,9 +9697,6 @@ msgstr ""
 msgid "http://ollama.example:11434 or https://api.openai.com/v1"
 msgstr ""
 
-msgid "http://firecrawl.example:3002"
-msgstr ""
-
 msgid "https://192.0.2.80:443/"
 msgstr ""
 
@@ -11130,4 +11115,3 @@ msgid ""
 "🔒 Template-managed profile — templates stay clean. On save you'll be "
 "offered a per-policy clone (named from the"
 msgstr ""
-

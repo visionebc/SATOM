@@ -1,5 +1,5 @@
 {
- "generated_from": "FortiWeb 7.6.4 admin guide (docs.fortinet.com, Firecrawl harvest 2026-07-03)",
+ "generated_from": "FortiWeb 7.6.4 admin guide (docs.fortinet.com, harvested 2026-07-03)",
  "actions": {
   "Alert": "Accept the request and generate an alert email and/or log message; traffic passes to the server unchanged.",
   "alert": "Accept the request and generate an alert email and/or log message; traffic passes to the server unchanged.",

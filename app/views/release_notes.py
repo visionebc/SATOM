@@ -7,10 +7,11 @@ this blueprint is the JSON backend it talks to.
 
 Two buttons + three tabs, exactly like the standalone:
 
-* **🔎 Scan from Fortinet** — auto-discover every FortiWeb version from
-  docs.fortinet.com and harvest the Known/Resolved issue tables + the prose
-  sections into ``reports/_release_notes.json`` (httpx direct with a Firecrawl
-  fallback). Admin-only (``USER_MANAGE``). Runs in a background thread; progress
+* **🔎 Scan from Fortinet** — auto-discover every version of the ADOM's product
+  from docs.fortinet.com and harvest the Known/Resolved issue tables + the prose
+  sections into ``reports/_release_notes.json`` (a direct httpx GET — the only
+  network transport; an offline node gets its corpus from an API pack instead).
+  Admin-only (``USER_MANAGE``). Runs in a background thread; progress
   is written to a small status file so any of the 4 gunicorn workers can serve
   the poll.
 * **⟳ Reload corpus** — re-read the JSON from disk and report its age (any
@@ -44,16 +45,29 @@ from ..services.audit import log_action
 
 bp = Blueprint("release_notes", __name__, url_prefix="/release-notes")
 
-_SUPPORTED_PRODUCTS = ("fortiweb", "fortiadc")
+#: The ADOMs that offer the modal. FortiGate has release notes too
+#: (``rn.SECTIONS_BY_PRODUCT``) but no ADOM, so its corpus only travels in API
+#: packs.
+_SUPPORTED_PRODUCTS = ("fortiweb", "fortiadc", "fortiauthenticator", "fortianalyzer")
+_PRODUCT_LABEL = {"fortiweb": "FortiWeb", "fortiadc": "FortiADC",
+                  "fortiauthenticator": "FortiAuthenticator",
+                  "fortianalyzer": "FortiAnalyzer", "fortigate": "FortiGate"}
+
+#: Request keys an older page (or a script) may still send from when the scan
+#: had a second, crawler-based transport. Read and ignored — never an error —
+#: so a stale browser tab or an old config keeps working.
+_LEGACY_TRANSPORT_KEYS = ("use_direct", "use_firecrawl", "firecrawl_endpoint",
+                          "firecrawl_key")
 _SCAN_FILE = "_release_notes_scan.json"   # progress/status (under data/, worker-shared)
 
 
 def _product() -> str:
     """The ADOM/product this request is scoped to. The Release-Notes modal is only
-    surfaced in the FortiWeb and FortiADC ADOMs (see base.html), so anything else
-    (the Global ADOM, or an unset session) safely defaults to FortiWeb. Every
-    corpus read/scan is filtered by this so the two products never cross-contaminate
-    (the shared ``reports/_release_notes.json`` holds both, tagged per row)."""
+    surfaced in the product ADOMs listed in ``_SUPPORTED_PRODUCTS`` (see
+    base.html), so anything else (the Global ADOM, or an unset session) safely
+    defaults to FortiWeb. Every
+    corpus read/scan is filtered by this so products never cross-contaminate
+    (the shared ``reports/_release_notes.json`` holds all of them, tagged per row)."""
     p = getattr(g, "product", None) or session.get("product")
     return p if p in _SUPPORTED_PRODUCTS else "fortiweb"
 
@@ -94,6 +108,63 @@ def _versions_desc(db: rn.ReleaseNotesDB) -> list[str]:
 
 def _topics(db: rn.ReleaseNotesDB) -> list[str]:
     return sorted({i.topic for i in db.issues if i.topic})
+
+
+def _docs_online() -> bool:
+    """Can this node reach docs.fortinet.com? (``RELEASE_NOTES_ONLINE`` in the
+    app config pins the answer — the test suite never probes the network.)"""
+    forced = current_app.config.get("RELEASE_NOTES_ONLINE")
+    if forced is not None:
+        return bool(forced)
+    if current_app.config.get("TESTING"):
+        return True
+    return rn.docs_online()
+
+
+def _fleet_builds(product: str) -> list[str]:
+    """The firmware versions this user's appliances of ``product`` run.
+
+    Offered in the version pickers next to the corpus versions, because "the
+    build I run" is the question an operator opens this modal with — and a
+    build with no harvested notes must SAY so instead of rendering an empty
+    list that reads like a build with no issues."""
+    from ..models import visible_appliances
+    from ..services.upgrade_scout import normalise
+    try:
+        rows = visible_appliances().filter_by(kind=product).all()
+    except Exception:  # noqa: BLE001 — the picker must not fail on the fleet
+        return []
+    return sorted({v for v in (normalise(getattr(a, "firmware", "")) for a in rows)
+                   if v}, key=rn.version_key, reverse=True)
+
+
+def _missing_reason(db: rn.ReleaseNotesDB, version: str | None) -> str:
+    """Why a query over ``db`` has nothing to show for ``version`` — or ``''``.
+
+    Non-empty only when the corpus holds NOTHING for the build asked about (or
+    nothing at all when no build is named). Offline, that is the moment to
+    point at the API pack; online, at the scan."""
+    if version:
+        if version in db.versions:
+            return ""
+    elif db.versions:
+        return ""
+    return rn.ONLINE_NO_NOTES if _docs_online() else rn.OFFLINE_NO_NOTES
+
+
+def _note_legacy_transport(body: dict) -> None:
+    """Log and drop the transport fields an older page may still post.
+
+    The scan once offered a second, crawler-based transport; its settings now
+    mean nothing. A stale tab sending them must keep working, and the operator
+    who reads the log learns why the endpoint they typed was not used."""
+    stale = sorted(k for k in _LEGACY_TRANSPORT_KEYS
+                   if k != "use_direct" and body.get(k))
+    if stale or body.get("use_direct") is False:
+        current_app.logger.info(
+            "release-notes: ignoring legacy transport field(s) %s — the scan "
+            "always fetches docs.fortinet.com directly; offline nodes import "
+            "an API pack", ", ".join(stale or ["use_direct"]))
 
 
 # --------------------------------------------------------------------------- #
@@ -166,18 +237,28 @@ def _now() -> str:
 @require_permission(Permission.VIEW)
 def data():
     """Summary + filter options for the modal's first paint."""
-    db = _load()
+    product = _product()
+    db = _load(product)
     scan = _scan_read(_scan_path())
+    have = set(db.versions)
+    secmap = rn.sections_for(product)
+    empty = _missing_reason(db, None)
     return jsonify({
+        "product": product,
+        "product_label": _PRODUCT_LABEL.get(product, "Fortinet"),
         "counts": _counts(db),
         "versions": _versions_desc(db),
+        # Builds the fleet runs that the corpus does not hold: listed in the
+        # pickers so choosing one explains itself (see _missing_reason).
+        "fleet_missing": [v for v in _fleet_builds(product) if v not in have],
         "topics": _topics(db),
-        "sections": [{"key": k, "label": rn.SECTION_LABEL.get(k, k)}
-                     for k in rn.PROSE_SECTIONS],
+        "sections": [{"key": k, "label": rn.section_label(k, product)}
+                     for k in rn.PROSE_SECTIONS if k in secmap],
         "is_admin": bool(current_user.can(Permission.USER_MANAGE)),
         "scan_running": bool(scan.get("running")),
         "scout_enabled": scout_config.enabled(),
-        "firecrawl_default": rn.FIRECRAWL_LAN_DEFAULT,
+        "empty_reason": empty,
+        "offline": empty == rn.OFFLINE_NO_NOTES,
     })
 
 
@@ -186,15 +267,17 @@ def data():
 @require_permission(Permission.VIEW)
 def issues():
     db = _load()
+    version = request.args.get("version") or None
     rows = rn.filter_issues(
         db.issues,
-        version=request.args.get("version") or None,
+        version=version,
         status=request.args.get("status") or None,
         topic=request.args.get("topic") or None,
         query=request.args.get("q") or None,
     )
     rows.sort(key=lambda i: (rn.version_key(i.version), i.status, i.bug_id))
-    return jsonify({"issues": [asdict(i) for i in rows], "count": len(rows)})
+    return jsonify({"issues": [asdict(i) for i in rows], "count": len(rows),
+                    "empty_reason": "" if rows else _missing_reason(db, version)})
 
 
 @bp.route("/notes")
@@ -215,7 +298,8 @@ def notes():
             continue
         out.append(s)
     out.sort(key=lambda s: (rn.version_key(s.version), s.section))
-    return jsonify({"sections": [asdict(s) for s in out[:60]], "count": len(out)})
+    return jsonify({"sections": [asdict(s) for s in out[:60]], "count": len(out),
+                    "empty_reason": "" if out else _missing_reason(db, version)})
 
 
 @bp.route("/advise")
@@ -337,7 +421,7 @@ def _notify_scan_done(user_id, product, *, ok, result=None, error=None, lines=No
     """Raise a bell notification for the admin who launched the scan, so a scan
     that finishes after they closed the modal ('Run in background') still surfaces.
     Product-scoped so it lights the bell only in the matching ADOM. Best-effort."""
-    plabel = {"fortiweb": "FortiWeb", "fortiadc": "FortiADC"}.get(product, "Fortinet")
+    plabel = _PRODUCT_LABEL.get(product, "Fortinet")
     tail = "\n".join((lines or [])[-8:]) or None
     if ok:
         r = result or {}
@@ -368,8 +452,8 @@ def _notify_scan_done(user_id, product, *, ok, result=None, error=None, lines=No
 DEFAULT_RECENT_MAJORS = 5
 
 
-def _do_scan(app, *, product, majors, use_direct, fc_endpoint, fc_key,
-             username, user_id, versions=None, recent_majors=0):
+def _do_scan(app, *, product, majors, username, user_id, versions=None,
+             recent_majors=0):
     with app.app_context():
         path = _scan_path()
         root = _corpus_root()
@@ -378,8 +462,7 @@ def _do_scan(app, *, product, majors, use_direct, fc_endpoint, fc_key,
             _scan_append(path, msg)
 
         try:
-            fetch = rn.make_fetcher(use_direct=use_direct,
-                                    firecrawl_endpoint=fc_endpoint, firecrawl_key=fc_key)
+            fetch = rn.make_fetcher()
             if versions:
                 # The operator ticked an explicit list (the Discover flow). Do NOT
                 # re-derive it: discovery is a suggestion, the ticks are the order.
@@ -461,22 +544,16 @@ def discover():
     on major.minor, so a full version matched nothing and the scan died), and it
     sat next to an 'All discovered' checkbox that silently overrode it."""
     product = _product()
-    body = request.get_json(silent=True) or {}
-    use_direct = bool(body.get("use_direct", True))
-    use_fc = bool(body.get("use_firecrawl", True))
-    fc_endpoint = (body.get("firecrawl_endpoint") or "").strip() if use_fc else ""
-    fc_key = (body.get("firecrawl_key") or "").strip()
-    if not (use_direct or fc_endpoint):
-        return jsonify({"error": "Enable at least one transport (direct or Firecrawl)."}), 400
-    fetch = rn.make_fetcher(use_direct=use_direct, firecrawl_endpoint=fc_endpoint,
-                            firecrawl_key=fc_key)
+    _note_legacy_transport(request.get_json(silent=True) or {})
+    fetch = rn.make_fetcher()
     try:
         found = rn.discover_versions(fetch, product=product)
     except Exception as exc:  # noqa: BLE001 — network is the expected failure
         return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 502
     if not found:
         return jsonify({"error": "Discovery returned nothing — docs.fortinet.com "
-                                 "unreachable, or the seed version was retired."}), 502
+                                 "unreachable (offline nodes import an API pack "
+                                 "instead), or the seed version was retired."}), 502
     have = set(_load(product).versions)
     rows = [{"version": v, "major": rn.major_of(v), "in_corpus": v in have}
             for v in sorted(found, key=rn.version_key, reverse=True)]
@@ -521,16 +598,12 @@ def scan():
     # success. The default is now derived from what discovery actually found:
     # the newest lines, so a line that ships tomorrow is in it on the day.
     recent = 0 if (versions is not None or scan_all or majors) else DEFAULT_RECENT_MAJORS
-    use_direct = bool(body.get("use_direct", True))
-    use_fc = bool(body.get("use_firecrawl", True))
-    fc_endpoint = (body.get("firecrawl_endpoint") or "").strip() if use_fc else ""
-    fc_key = (body.get("firecrawl_key") or "").strip()
     # NB: a legacy client may still post "publish": true. It is ignored on
     # purpose rather than rejected — the corpus cannot be published (see
     # reload_corpus), and failing an otherwise valid scan over a dead flag
-    # would turn a cosmetic staleness into an outage.
-    if not (use_direct or fc_endpoint):
-        return jsonify({"error": "Enable at least one transport (direct or Firecrawl)."}), 400
+    # would turn a cosmetic staleness into an outage. The retired transport
+    # fields get the same treatment, for the same reason.
+    _note_legacy_transport(body)
 
     product = _product()
     _scan_write(path, {"running": True, "lines": [f"Starting {product} scan…"],
@@ -542,8 +615,6 @@ def scan():
         target=_do_scan, args=(app,),
         kwargs=dict(product=product, majors=majors, versions=versions,
                     recent_majors=recent,
-                    use_direct=use_direct,
-                    fc_endpoint=fc_endpoint, fc_key=fc_key,
                     username=current_user.username, user_id=current_user.id),
         daemon=True)
     t.start()

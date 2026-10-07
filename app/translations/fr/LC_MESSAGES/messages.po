@@ -4029,10 +4029,6 @@ msgstr "Dispositifs (FortiWeb)"
 msgid "Devices (ctrl=multi)"
 msgstr "Dispositifs (ctrl=multidifférent)"
 
-#: app/templates/partials/release_notes_modal.html:86
-msgid "Direct (httpx)"
-msgstr "Direct (httpx)"
-
 #: app/templates/appliances/flash_reports.html:96
 #: app/templates/database/report_edit.html:118
 #: app/templates/high_availability/index.html:96
@@ -4974,18 +4970,6 @@ msgstr "Résultats"
 #: app/templates/scheduled_actions/history.html:33
 msgid "Finished"
 msgstr "Terminé"
-
-#: app/templates/partials/release_notes_modal.html:94
-msgid "Firecrawl endpoint"
-msgstr "Point final de Firecrawl"
-
-#: app/templates/partials/release_notes_modal.html:90
-msgid "Firecrawl fallback"
-msgstr "Retour en cas d'échec de Firecrawl"
-
-#: app/templates/partials/release_notes_modal.html:99
-msgid "Firecrawl key (optional)"
-msgstr "Clé Firecrawl (facultatif)"
 
 #: app/templates/appliances/detail.html:25
 #: app/templates/appliances/detail.html:111
@@ -13779,10 +13763,6 @@ msgstr "http-01 — authentification web"
 msgid "http://ollama.example:11434 or https://api.openai.com/v1"
 msgstr "http://ollama.example:11434 ou https://api.openai.com/v1"
 
-#: app/templates/partials/release_notes_modal.html:96
-msgid "http://firecrawl.example:3002"
-msgstr "http://firecrawl.example:3002"
-
 #: app/templates/monitoring/_probe_page.html:314
 msgid "https://192.0.2.80:443/"
 msgstr "https://192.0.2.80:443/"
@@ -15704,6 +15684,18 @@ msgstr "Chaque vague prend le titre ci-dessus, suffixé par “… — vague k/N
 #~ msgid "Captured by upgrade preparation"
 #~ msgstr ""
 
+#~ msgid "Direct (httpx)"
+#~ msgstr "Direct (httpx)"
+
+#~ msgid "Firecrawl endpoint"
+#~ msgstr "Point final de Firecrawl"
+
+#~ msgid "Firecrawl fallback"
+#~ msgstr "Retour en cas d'échec de Firecrawl"
+
+#~ msgid "Firecrawl key (optional)"
+#~ msgstr "Clé Firecrawl (facultatif)"
+
 #~ msgid "FortiWeb (Hardware / VM)"
 #~ msgstr "FortiWeb (Matériel / Machine virtuelle)"
 
@@ -15721,6 +15713,9 @@ msgstr "Chaque vague prend le titre ci-dessus, suffixé par “… — vague k/N
 
 #~ msgid "bound pre-upgrade runs."
 #~ msgstr ""
+
+#~ msgid "http://firecrawl.example:3002"
+#~ msgstr "http://firecrawl.example:3002"
 
 #~ msgid "v1.0"
 #~ msgstr "(v1.0)"

@@ -727,9 +727,15 @@ registry itself.
 
 An installation learns what a build serves by sweeping a box that runs it,
 from vendor collections downloaded from Galaxy, and from docs.fortinet.com
-through Firecrawl. An offline node has none of those, and a node with no
-FortiADC will never measure FortiADC. An **API pack** carries what one SATOM
-knows to another as one signed tarball (`app/services/api_pack.py`).
+(a direct download — SATOM has no other documentation transport). An offline
+node has none of those, and a node with no FortiADC will never measure
+FortiADC. An **API pack** carries what one SATOM knows to another as one signed
+tarball (`app/services/api_pack.py`). Packs are written by SATOM's own export
+and by the separate harvester tool in the same format; the release notes in a
+pack may cover any product with a release-notes map (FortiWeb, FortiADC,
+FortiAuthenticator, FortiAnalyzer, FortiGate — see
+[release_notes.md](release_notes.md)), and each item imports only its own
+product's rows.
 
 ### 11.1 What a pack carries
 

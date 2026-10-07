@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Version 0.9 — SATOM</title>
-<meta name="description" content="Released on 2026-07-13 — Added · 1 entry.">
+<title>Version 3.0.0 — SATOM</title>
+<meta name="description" content="Released on 2026-10-08 — Added — knowledge feed (3.0.0) · 25 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 0.9 <span class="rel-badge">superseded</span></h1>
-  <p class="sub">Released on 2026-07-13 — Added · 1 entry.</p>
+  <h1>Version 3.0.0 <span class="rel-badge rel-now">current release</span></h1>
+  <p class="sub">Released on 2026-10-08 — Added — knowledge feed (3.0.0) · 25 entries.</p>
 </header>
 
 <section class="wrap">
@@ -62,7 +62,7 @@
         <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
         <ul class="rel-leads"></ul>
       </a>
-      <a class="rel-nav-item" href="v3.0.0.html" data-rel-version="3.0.0">
+      <a class="rel-nav-item is-active" href="v3.0.0.html" data-rel-version="3.0.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.0.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
         <span class="rel-nav-meta">2026-10-08 · Added — knowledge feed (3.0.0) · 25 entries</span>
         <ul class="rel-leads"><li>Software Update → Knowledge packs</li><li class="rel-more">… and 24 more</li></ul>
@@ -347,7 +347,7 @@
         <span class="rel-nav-meta">2026-07-14 · Added · Fixed · 9 entries</span>
         <ul class="rel-leads"><li>DNS Records management (IPAM/DDI)</li><li>Alerts engine</li><li>Certificate auto-renewal</li><li class="rel-more">… and 6 more</li></ul>
       </a>
-      <a class="rel-nav-item is-active" href="v0.9.html" data-rel-version="0.9">
+      <a class="rel-nav-item" href="v0.9.html" data-rel-version="0.9">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 0.9</span></span>
         <span class="rel-nav-meta">2026-07-13 · Added · 1 entry</span>
         <ul class="rel-leads"><li>Node TLS + node-to-node encryption</li></ul>
@@ -360,13 +360,145 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="added">Added</h3>
+<h3 id="added--knowledge-feed-300">Added — knowledge feed (3.0.0)</h3>
 <ul>
-<li><strong>Node TLS + node-to-node encryption</strong>: internal CA, per-node leaf certs,
-  mutually-authenticated Postgres replication, HTTPS peer probes, and
-  "encryption in transit" monitoring cards (every badge backed by a live probe).</li>
+<li><strong>Software Update → Knowledge packs</strong>: the pack installed per lane (API pack
+  pinned to the release; rolling knowledge pack) with its date and age, a
+  <em>stale</em> badge after 30 days, and what the knowledge feed offers. <strong>Check
+  now</strong>, <strong>Download</strong> (size and sha256 must match the feed; nothing is kept
+  otherwise) and <strong>Import</strong> (a background job; the signature is verified by the
+  import, primary only). A manual-download link and the air-gapped path
+  (upload under API library packs) are on the card.</li>
+<li>Scheduled action <strong><code>knowledge_fetch</code></strong> (daily, seeded by <code>satom execute seed
+  actions</code>) with the mode setting <code>knowledge.fetch_mode</code> = <code>off | notify |
+  download | download_import</code> (default <code>download_import</code>) and the feed URL
+  <code>knowledge.feed_url</code> (default: the public <code>knowledge</code> release's
+  <code>latest.json</code>; any https mirror). Same HTTPS client, proxy environment and
+  TLS verification as the system-upgrade feed. A standby does nothing and says
+  why. The last result (status, message, time, pack) is kept in
+  <code>knowledge.fetch_last</code>.</li>
+<li>CLI: <code>satom execute knowledge fetch [--feed URL] [--import] [--yes]</code> (a check
+  until <code>--yes</code>; <code>--import --yes</code> downloads and imports) and <code>satom show
+  knowledge</code>.</li>
+<li>Freshness line on the Release Notes modal, the Scout advisory and the
+  Migration Report: "Knowledge from <code>&lt;pack&gt;</code> (<code>&lt;date&gt;</code>)", with a warning when
+  it is older than 30 days or no pack was imported.</li>
 </ul>
-<p class="rel-prevnext"><a href="v1.0.html">← Version 1.0</a> · <a href="v0.8.html">Version 0.8 →</a></p>
+<h3 id="removed--docsfortinetcom-crawler-300">Removed — docs.fortinet.com crawler (3.0.0)</h3>
+<ul>
+<li>SATOM no longer fetches anything from docs.fortinet.com. Removed: the
+  release-notes HTTP transport (<code>httpx_fetch</code>, <code>make_fetcher</code>,
+  <code>docs_online</code>), version discovery and the scan orchestration, the HTML
+  parsers, the <strong>Scan from Fortinet</strong> panel and its <code>/release-notes/scan</code>,
+  <code>/release-notes/discover</code> and <code>/release-notes/scan/status</code> routes, and the
+  scan status file. Release notes, the Scout advisory and upgrade paths read
+  the corpus imported from signed packs; the crawler lives only in the
+  separate knowledge harvester.</li>
+<li>Guard <code>tests/test_no_vendor_http.py</code>: no module under <code>app/</code> that imports an
+  HTTP client names a Fortinet web host.</li>
+</ul>
+<h3 id="added--signature-db-freshness-300">Added — signature DB freshness (3.0.0)</h3>
+<ul>
+<li>Scheduled action <strong><code>signature_check</code></strong> (daily): reads only each FortiWeb's
+  signature database version (<code>diagnose system update info</code>), stores it with
+  the time it last changed, and re-reads the cached signature catalog only when
+  a version changed.</li>
+<li>The alert engine raises a <strong>device</strong> finding when a FortiWeb's signature DB
+  is older than <code>alerts.signature_max_days</code> (default 7), reports it never
+  updated, or cannot be read. Administrator → Signatures lists the state per
+  device.</li>
+<li>Signature search and details show public FortiGuard metadata (name,
+  severity, CVEs, link) from <code>knowledge_signature_meta</code> when a knowledge pack
+  carried it.</li>
+</ul>
+<h3 id="changed--breaking-api-packs-use-schema-satomapi-pack2-300">Changed — BREAKING: API packs use schema <code>satom.api-pack/2</code> (3.0.0)</h3>
+<ul>
+<li>Packs published from 3.0.0 on are <code>satom.api-pack/2</code>: the manifest names its
+  <code>lane</code> (<code>api_pack</code> | <code>knowledge</code>), <code>min_satom</code>, <code>publisher</code>,
+  <code>content_fingerprint</code>, the harvester <code>snapshot</code> and <code>pinned_to</code>, and every
+  item names its <code>kind</code>. SATOM 2.13 and older refuse them (<code>unsupported pack
+  schema</code>); 3.0 still imports the 2.x <code>/1</code> packs. A pack whose <code>min_satom</code> is
+  newer than the running SATOM is refused whole, with the version it needs.</li>
+</ul>
+<h3 id="security--split-pack-trust-300">Security — split pack trust (3.0.0)</h3>
+<ul>
+<li>One key, one use. Update packages are verified only with the update trust
+  store; a <code>/2</code> pack only with the keys of its manifest lane —
+  <code>deploy/pack-keys/&lt;lane&gt;/</code> shipped in the release-signed tree plus
+  <code>/etc/satom/pack-keys/&lt;lane&gt;/</code> added by the operator (root-owned or refused).
+  A knowledge-signed pack that claims lane <code>api_pack</code>, a release-signed <code>/2</code>
+  pack and a <code>/1</code> pack signed with a pack key are all refused; the transport
+  lane <code>harvester</code> is never imported. The update verifier never reads a pack
+  key.</li>
+<li>Ships the public keys <code>satom-apipack-2026</code> (<code>SHA256:tHXWO5UWTnvgoTloIzBpsN7J9Vj/NVbcTZFsdgww0ks</code>)
+  and <code>satom-knowledge-2026</code> (<code>SHA256:hVYALGlEVZISwsSFRvr6ymysCuYUo1NxecpUhLJXDjE</code>).
+  Because they come with the code, the shipped pack imports on a fresh install
+  and on the first update from 2.x without installing a key first.</li>
+<li><code>satom execute trust add-key --purpose update|api_pack|knowledge</code> (default
+  <code>update</code>) refuses a key already trusted for another purpose; <code>satom show
+  trust</code> lists the keys per purpose with fingerprints.</li>
+</ul>
+<h3 id="added--knowledge-pack-sections-300">Added — knowledge pack sections (3.0.0)</h3>
+<ul>
+<li>New item kinds, each validated (a malformed item is rejected with its reason;
+  the rest of the pack still imports): <code>factory-wpp</code> (predefined protection
+  profiles into the factory catalog; never over a row captured locally),
+  <code>field-map</code> (rename candidates: shown with a badge, never applied, never over
+  an operator's mapping), <code>baseline</code> (stored for a build with no local baseline,
+  never the active one), <code>signature-meta</code> (public FortiGuard metadata into the
+  new table <code>knowledge_signature_meta</code>, migration <code>apipack06_knowledge_lanes</code>).
+  A section or kind a node does not know is skipped with a visible warning.</li>
+<li>Provenance on every imported row (<code>local</code> | <code>pack:api_pack:&lt;pack&gt;</code> |
+  <code>pack:knowledge:&lt;pack&gt;</code>), shown by inspect, the pack list, the import history
+  and the API pack section of Software Update.</li>
+<li>Corrections arrive: a copy a pack wrote (release notes per version, field
+  schemas per object, database rows) is replaced when an outranking pack
+  carries a different one — local data &gt; packs; between packs the newer
+  snapshot wins whatever its lane (api_pack &gt; knowledge only when the snapshot
+  time is unknown or equal). Local data is never replaced; copies a 2.x node imported are
+  recognised from its import log.</li>
+<li>The 3.0 API pack supersedes the 2.x release packs; a shipped pack whose
+  snapshot an imported pack already carries is no longer reported as pending.</li>
+<li><code>flask apilib pack export</code> (schema <code>/1</code>) is kept for local and offline use and
+  marked legacy; releases no longer use it. docs/api-library.md §12.</li>
+</ul>
+<h3 id="added--fortigate-adom-read-only-base-300">Added — FortiGate ADOM, read-only base (3.0.0)</h3>
+<ul>
+<li>New workspace <code>/fgt/</code> (sixth ADOM): appliance kind <code>fortigate</code>, registered
+  with a <strong>REST API administrator token</strong> as its password (FortiOS 8.0 refuses
+  password logins on the REST API). A dashboard with the device picker and the
+  live unit status, and 30 read-only section pages in 7 areas following the
+  FortiOS 8.0 menu, over 43 cmdb tables measured on FortiOS 8.0.1 build0245.</li>
+<li>Reads only: the client sends <code>GET</code> and nothing else. A device refusal is shown
+  as an error, never as an empty table (<code>401</code> names the unlicensed-VM case);
+  secret fields and every <code>ENC …</code> value are dropped before a row is rendered;
+  tables are capped at 500 rows with the truncation stated.</li>
+<li>The shared Fleet and Administration pages, the Release Notes modal, Build
+  compatibility and Schema builds are reachable from its sidebar. Fix: Schema
+  builds and Build compatibility, drawn in the FortiADC, FortiAnalyzer and
+  FortiAuthenticator sidebars since 2.13.0, were refused by those ADOMs' gates.</li>
+<li>Not yet: writes, an API console, registry binding, backups, firmware. See
+  docs/fortigate.md.</li>
+</ul>
+<h3 id="docs--300">Docs — 3.0.0</h3>
+<ul>
+<li>New: docs/upgrading-to-3.0.md (breaking changes, what online and air-gapped
+  nodes do — including <code>satom execute seed actions --yes</code> for the two new
+  scheduled actions —, verification with <code>satom show trust</code> / <code>satom show
+  knowledge</code>, rollback) and docs/fortigate.md; both published.</li>
+<li>Rewritten for 3.0: docs/knowledge-harvester.md (two lanes, the content gate,
+  sources, signature metadata shipping empty while FortiGuard's terms forbid
+  redistribution), docs/release_notes.md (corpus only from packs; the scan
+  sections replaced by what was removed and why; no longer described as synced
+  from the desktop repository), api-packs/README.md.</li>
+<li>Corrected: user guide §3/§4/§17.4 (six workspaces, FortiGate), §9.8 (carve-outs
+  record their build), §22.3 (lane keys instead of "the same trust store", item
+  states, knowledge packs outside the update), §22.4 (seeding the actions), §31.1,
+  new §45; api-library.md §11 (2.x-only paragraphs marked), §13 (3.0 errors),
+  §14.12; release-pipeline.md; offline-update-packages.md §4 (one key, one use);
+  README and overview product lists.</li>
+</ul>
+<p class="rel-prevnext"><a href="unreleased.html">← Unreleased — the next release</a> · <a href="v2.13.0.html">Version 2.13.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

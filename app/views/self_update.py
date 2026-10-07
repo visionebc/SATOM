@@ -85,7 +85,7 @@ def _api_pack_state() -> dict:
                 "pending": api_pack.pending_shipped(packs),
                 "role": su.node_role(), "error": ""}
     except Exception as exc:  # noqa: BLE001 — shown in the card, not a 500
-        return {"packs": [], "history": [], "pending": None, "role": su.node_role(),
+        return {"packs": [], "history": [], "pending": [], "role": su.node_role(),
                 "error": "%s: %s" % (type(exc).__name__, exc)}
 
 

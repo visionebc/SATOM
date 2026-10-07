@@ -327,9 +327,12 @@
             {{ _('This node is the standby: its database is read-only, so packs are imported on the primary. The library replicates here, and the data sync copies the release notes and field schemas.') }}</div>
         {% elif api_packs.pending %}
           <div class="alert alert-info py-2 small" id="apk-pending"><i class="bi bi-info-circle me-1"></i>
-            {{ _('This release ships') }} <code>{{ api_packs.pending.name }}</code>{{ _(', which has not been imported on this node yet.') }}
-            <a href="{{ url_for('self_update.index', apipack='shipped:' + api_packs.pending.name, _anchor='api-packs') }}">{{ _('Review and import it') }}</a>
-            {{ _('— or from the console:') }} <code>sudo satom execute apipack import shipped --yes</code></div>
+            {{ _('This release ships packs that have not been imported on this node yet:') }}
+            {% for p in api_packs.pending %}
+              <code>{{ p.name }}</code>{% if p.series == 'knowledge' %} ({{ _('knowledge pack (satom-harvester)') }}){% endif %}
+              — <a href="{{ url_for('self_update.index', apipack='shipped:' + p.name, _anchor='api-packs') }}">{{ _('Review and import it') }}</a>{% if not loop.last %};{% endif %}
+            {% endfor %}
+            {{ _('— or all of them from the console:') }} <code>sudo satom execute apipack import shipped --yes</code></div>
         {% endif %}
 
         <div class="row g-3">
@@ -343,7 +346,16 @@
                 <button type="button" class="btn btn-link btn-sm p-0 text-start"
                         data-js="apk-select" data-source="shipped" data-name="{{ p.name }}">
                   <span class="font-monospace">{{ p.name }}</span></button>
+                <span>
+                {% if p.series == 'knowledge' %}
+                <span class="fw-badge fw-badge-info apk-kb" title="{{ _('Built by the separate satom-harvester tool from lab schema dumps and release notes, re-signed with the release key. Each knowledge pack carries everything the older ones did.') }}">{{ _('knowledge pack (satom-harvester)') }}</span>
+                {% endif %}
+                {% if p.superseded %}
+                <span class="fw-badge fw-badge-secondary" title="{{ _('A newer pack of the same series carries everything this one does; it is not imported automatically.') }}">{{ _('superseded') }}</span>
+                {% else %}
                 <span class="fw-badge fw-badge-secondary" title="{{ _('In the code tree (api-packs/): it came with this release') }}">{{ _('this release') }}</span>
+                {% endif %}
+                </span>
               </li>
               {% endfor %}
               {% for p in uploaded %}

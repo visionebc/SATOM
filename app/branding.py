@@ -8,7 +8,9 @@ identity and scope:
 * ``fortiadc``  — Application Delivery Controller (under ``/adc``).
 * ``fortianalyzer`` — FortiAnalyzer, live over its JSON-RPC API (under ``/faz``).
 * ``fortiauthenticator`` — FortiAuthenticator, live over its REST API (under
-  ``/fac``). Both are real ADOMs (``placeholder`` False); the placeholder
+  ``/fac``).
+* ``fortigate`` — FortiGate, read live over the FortiOS REST API (under
+  ``/fgt``). All are real ADOMs (``placeholder`` False); the placeholder
   scaffold dashboard remains only for a future ADOM added in Settings → ADOMs.
 
 **As of 2026-07-12 the registry lives in the ``adoms`` table** (model
@@ -103,6 +105,21 @@ _FALLBACK: list[dict] = [
         "cap_banner": True, "cap_tokens": True, "cap_firmware": True,
         "cap_naming": False, "cap_regex": False,
     },
+    {
+        "key": "fortigate", "name": "FortiGate", "title": "SATOM",
+        "tagline": "Next-Generation Firewall",
+        "mark": "img/fortigate-mark.svg",
+        "description": "Interfaces, routing, firewall policies and objects, "
+                       "security profiles, VPN, users and system settings, "
+                       "read live over the FortiOS REST API.",
+        # Added 2026-10-07 as a BASE ADOM: REST client (API token), sidebar
+        # mirroring the FortiOS GUI and read-only section pages. No writes,
+        # no firmware vault (nothing flashes a FortiGate), and naming/regex
+        # are FortiWeb-shaped tools — same seed reasoning as FAC above.
+        "active": True, "placeholder": False, "banner_default": "teal",
+        "cap_banner": True, "cap_tokens": True, "cap_firmware": False,
+        "cap_naming": False, "cap_regex": False,
+    },
 ]
 
 _CAPS = ("banner", "tokens", "firmware", "naming", "regex")
@@ -114,7 +131,7 @@ _cache_all: "list[dict] | None" = None           # every row (admin console)
 _cache_ts: float = 0.0
 #: True while the caches above hold :data:`_FALLBACK` instead of the ``adoms``
 #: table. Nothing raises when the registry cannot be read — the fallback is a
-#: COMPLETE-LOOKING five-ADOM answer, so no caller can tell it apart from a
+#: COMPLETE-LOOKING six-ADOM answer, so no caller can tell it apart from a
 #: successful read by inspecting the rows. Anything that fails OPEN on an
 #: unrecognised key (``services.product_scope``) has to be able to ask.
 _cache_degraded: bool = True

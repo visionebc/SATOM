@@ -37,6 +37,7 @@ FORTIWEB = "fortiweb"
 FORTIADC = "fortiadc"
 FORTIANALYZER = "fortianalyzer"
 FORTIAUTHENTICATOR = "fortiauthenticator"
+FORTIGATE = "fortigate"
 GLOBAL = "global"
 
 # The one product that also owns the unscoped rows (see module docstring).
@@ -62,7 +63,8 @@ class ProductScopeUnresolved(RuntimeError):
 # Offline fallback only — used when the ADOM registry cannot be read (CLI
 # import outside an app context, pre-migration boot). Never the primary source.
 _FALLBACK_KEYS = frozenset(
-    {GLOBAL, FORTIWEB, FORTIADC, FORTIANALYZER, FORTIAUTHENTICATOR})
+    {GLOBAL, FORTIWEB, FORTIADC, FORTIANALYZER, FORTIAUTHENTICATOR,
+     FORTIGATE})
 
 
 def product_keys() -> frozenset[str]:
@@ -94,7 +96,7 @@ def registry_degraded() -> bool:
     """True when the ADOM key set is the OFFLINE FALLBACK, not the registry.
 
     :func:`app.branding.all_adoms` never raises: when the table cannot be read
-    it returns a hardcoded five-ADOM list. So the ``except`` in
+    it returns a hardcoded six-ADOM list. So the ``except`` in
     :func:`product_keys` is NOT the path a degraded registry takes — the
     fallback arrives looking like a successful answer, and a sixth ADOM an
     operator declared is simply missing from it. A session holding that key

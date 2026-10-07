@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}FortiGate — Dashboard{% endblock %}
+
+{% block content %}
+<div class="fw-page-header d-flex align-items-center gap-3 mb-4">
+  <img src="{{ url_for('static', filename='img/fortigate-mark.svg') }}"
+       alt="{{ _('FortiGate') }}" style="width:42px;height:42px;">
+  <div>
+    <h1 class="h4 mb-0">{{ _('SATOM') }}</h1>
+    <div class="text-muted" style="font-size:13px;">{{ _('Next-Generation Firewall') }}
+      · {{ n_items }} sections, {{ n_paths }} live tables across {{ groups|length }} areas · read-only</div>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <a href="{{ url_for('product.switch') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left-right me-1"></i>{{ _('Switch product') }}</a>
+  </div>
+</div>
+
+{# ---- Device picker ---------------------------------------------------- #}
+<div class="fw-card mb-4" style="padding:18px 20px;">
+  <h2 class="h6 mb-3"><i class="bi bi-bricks me-2 text-accent"></i>{{ _('FortiGate devices') }}</h2>
+  {% if fleet %}
+  <div class="row g-3">
+    {% for a in fleet %}
+    <div class="col-md-4 col-lg-3">
+      <div class="fw-card h-100 {{ 'border-primary' if current and current.id == a.id }}"
+           style="padding:14px;">
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <i class="bi bi-bricks text-accent"></i>
+          <strong>{{ a.name }}</strong>
+          {% if current and current.id == a.id %}
+          <span class="fw-badge fw-badge-success ms-auto">{{ _('selected') }}</span>
+          {% endif %}
+        </div>
+        <div class="text-muted mb-2" style="font-size:12px;">{{ a.host }}:{{ a.port }}</div>
+        <a class="btn btn-sm {{ 'btn-outline-secondary' if current and current.id == a.id else 'btn-fw-primary' }}"
+           href="{{ url_for('fgt.use_device', id=a.id) }}">
+          <i class="bi bi-check2-circle me-1"></i>{{ _('Selected') if current and current.id == a.id else _('Select') }}</a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="fw-empty-state py-4">
+    <i class="bi bi-bricks"></i>
+    <p class="mb-1">{{ _('No FortiGate appliance is registered yet.') }}</p>
+    <p class="text-muted mb-0" style="font-size:12px;">
+      Add one under Administrator → Appliances with kind
+      <code>fortigate</code>. Its password field must hold a
+      <strong>{{ _('REST API administrator token') }}</strong>
+      (<code>execute api-user generate-key</code>), not the login password —
+      FortiOS 8.0 refuses password logins on the REST API. A FortiGate-VM
+      also needs a valid licence: without one every call answers 401.</p>
+  </div>
+  {% endif %}
+</div>
+
+{# ---- Live unit status -------------------------------------------------- #}
+{% if header_dev %}
+<div class="fw-card mb-4" style="padding:18px 20px;">
+  <h2 class="h6 mb-3"><i class="bi bi-speedometer2 me-2 text-accent"></i>{{ _('Unit status') }}
+    <span class="text-muted fw-normal" style="font-size:12px;">— {{ header_dev.name }}</span></h2>
+  {% if status_err %}
+  <div class="alert alert-danger mb-0" style="font-size:13px;">
+    <strong>{{ _('The device refused the status read.') }}</strong>
+    <div class="mt-1"><code>{{ status_err }}</code></div>
+  </div>
+  {% elif status %}
+  <div class="row g-3">
+    {% for label, key in [('Hostname','hostname'), ('Firmware','version'), ('Build','build'),
+                          ('Serial','serial'), ('Model','model_number'), ('Log disk','log_disk_status')] %}
+      {% if status.get(key) not in (None, '') %}
+      <div class="col-6 col-md-4 col-lg-2">
+        <div class="text-muted" style="font-size:11px;text-transform:uppercase;
+             letter-spacing:.04em;">{{ label }}</div>
+        <div style="font-family:var(--fw-font-mono,monospace);font-size:13px;">{{ status[key] }}</div>
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-muted" style="font-size:13px;">{{ _('No status returned.') }}</div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ---- Menu map ---------------------------------------------------------- #}
+{% for g in groups %}
+<div class="fw-card mb-3" style="padding:18px 20px;">
+  <h2 class="h6 mb-3"><i class="bi {{ g.icon }} me-2 text-accent"></i>{{ g.label }}</h2>
+  <div class="row g-3">
+    {% for it in g.items %}
+    <div class="col-md-6 col-lg-4">
+      <a class="fw-card d-block h-100 text-decoration-none" style="padding:14px;"
+         href="{{ url_for('fgt.menu_page', item_key=it.key) }}">
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <i class="bi {{ it.icon }} text-accent"></i>
+          <strong>{{ it.label }}</strong>
+          <span class="fw-badge fw-badge-info ms-auto">{{ it.tabs|length }} tab{{ '' if it.tabs|length == 1 else 's' }}</span>
+        </div>
+        <div class="text-muted" style="font-size:12px;">{{ it.desc }}</div>
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

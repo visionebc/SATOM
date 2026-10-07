@@ -87,7 +87,7 @@
   </a>
 
   {# Active ADOM indicator — always visible so an ADOM jump is never silent #}
-  {% set _adom_c = {'global': '#3b82f6', 'fortiweb': '#ef4444', 'fortiadc': '#10b981', 'fortiauthenticator': '#7c3aed', 'fortianalyzer': '#d97706'}.get(product.key, '#3b82f6') %}
+  {% set _adom_c = {'global': '#3b82f6', 'fortiweb': '#ef4444', 'fortiadc': '#10b981', 'fortiauthenticator': '#7c3aed', 'fortianalyzer': '#d97706', 'fortigate': '#0d9488'}.get(product.key, '#3b82f6') %}
   <span class="fw-adom-badge" title="{{ _('Active administrative domain') }}"
         style="display:inline-flex;align-items:center;gap:5px;margin-left:8px;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap;color:#eaf0fb;background:{{ _adom_c }}26;border:1px solid {{ _adom_c }}99;">
     <i class="bi {{ 'bi-globe2' if product.key == 'global' else 'bi-hdd-rack' }}" style="color:{{ _adom_c }};"></i>
@@ -118,7 +118,7 @@
 
   <div class="fw-topbar-spacer"></div>
 
-  {% if product.key in ('fortiweb', 'fortiadc', 'fortianalyzer', 'fortiauthenticator') %}
+  {% if product.key in ('fortiweb', 'fortiadc', 'fortianalyzer', 'fortiauthenticator', 'fortigate') %}
   <!-- Device context (zone/line/dept/host) — centered in the header -->
   <button class="fw-topbar-btn fw-device-switch fw-device-center" type="button"
           title="{% if current_appliance %}{{ current_appliance.host }} — {% endif %}Architecture / switch device"
@@ -179,7 +179,7 @@
             <i class="bi bi-bug me-2"></i>{{ _('Report a problem') }}
           </a>
         </li>
-        {% if product.key in ('fortiweb', 'fortiadc', 'fortiauthenticator', 'fortianalyzer') %}
+        {% if product.key in ('fortiweb', 'fortiadc', 'fortiauthenticator', 'fortianalyzer', 'fortigate') %}
         <li>
           <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#releaseNotesModal">
             <i class="bi bi-journal-richtext me-2"></i>{{ _('Release Notes') }}
@@ -199,7 +199,7 @@
       </ul>
     </div>
 
-    {% if product.key in ('fortiweb', 'fortiadc', 'fortiauthenticator', 'global') and may_open('search.index') %}
+    {% if product.key in ('fortiweb', 'fortiadc', 'fortiauthenticator', 'fortigate', 'global') and may_open('search.index') %}
     <!-- Global search shortcut (sits just left of the bell) -->
     <a href="{{ url_for('search.index') }}" id="fwTopbarSearch"
        class="fw-topbar-btn" title="{{ _('Search (/)') }}">
@@ -751,8 +751,84 @@
       {% endif %}
 
 
+      {% elif product.key == 'fortigate' %}
+      <!-- ===== FortiGate — the FGT ADOM left menu (base, static fgt_menu) ===== -->
+      {% set _fgt_item = (request.view_args.get('item_key') if (request.endpoint == 'fgt.menu_page' and request.view_args) else '') %}
+
+      {# ADOM back-link — ALWAYS first (same format as the other ADOMs) #}
+      <div class="fw-nav-context" data-nav-context="ADOM">
+        <div class="fw-nav-group-body">
+          {% if may_open('product.enter') %}
+          <a class="fw-nav-item" href="{{ url_for('product.enter', key='global') }}" title="{{ _('Back to the Global ADOM') }}">
+            <i class="bi bi-globe2 fw-nav-icon" style="color:#3b82f6;"></i><span>&lsaquo; Global</span></a>
+          {% endif %}
+        </div>
+      </div>
+
+      {% include 'partials/nav_device_context.html' %}
+
+      <!-- FLEET — Architecture / Appliances / Monitoring (shared, product-scoped) -->
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['architecture','analysis','metrics','monitoring','deep_monitor','service_monitor','search','dns_tool','fleet_objects','jobs'] }}" data-nav-group="Fleet">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Fleet') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          {% if may_open('fgt.index') %}
+          <a class="fw-nav-item {{ 'active' if request.endpoint == 'fgt.index' else '' }}" href="{{ url_for('fgt.index') }}">
+            <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Dashboard') }}</span></a>
+          {% endif %}
+          {% if may_open('architecture.index') %}
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
+            <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Architecture') }}</span></a>
+          {% endif %}
+          {% include 'partials/nav_appliances.html' %}
+          {% include 'partials/nav_advisor.html' %}
+          {% include 'partials/nav_monitoring.html' %}
+        </div>
+      </div>
+
+      {# Network / Policy & Objects / Security Profiles / VPN / User / System /
+         Log — FortiOS GUI top-level groups, read-only (services.fgt_menu). #}
+      {% set _fgt_palette = ['#0d9488','#2563eb','#ef4444','#7c3aed','#059669','#64748b','#d97706'] %}
+      {% for g in fgt_nav %}
+      {% set _g_active = g.items|selectattr('key', 'equalto', _fgt_item)|list %}
+      <div class="fw-nav-group {{ 'open' if _g_active }}" data-nav-group="{{ g.label }}">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi {{ g.icon }} fw-nav-section-icon" style="color:{{ _fgt_palette[loop.index0 % _fgt_palette|length] }};"></i><span>{{ g.label }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          {% for item in g.items %}
+          {% if may_open('fgt.menu_page') %}
+          <a class="fw-nav-item {{ 'active' if _fgt_item == item.key else '' }}"
+             href="{{ url_for('fgt.menu_page', item_key=item.key) }}">
+            <i class="bi {{ item.icon }} fw-nav-icon"></i><span>{{ item.label }}</span></a>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+
+      {% include 'partials/nav_automation.html' %}
+
+      {% if current_user and current_user.can('user_manage') %}
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['audit','segments'] }}" data-nav-group="Administrator">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('Administrator') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          {% include "partials/nav_audit.html" %}
+          {% include "partials/nav_collection.html" %}
+          {% include "partials/nav_cr_types.html" %}
+          {% include "partials/nav_adom_assets.html" %}
+          {% include "partials/nav_console.html" %}
+          {% include "partials/nav_process.html" %}
+          {% include "partials/nav_api_tokens.html" %}
+          {% if may_open('segments.index') %}
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'segments' else '' }}" href="{{ url_for('segments.index') }}">
+            <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Network Segments') }}</span></a>
+          {% endif %}
+        </div>
+      </div>
+      {% else %}{% include "partials/nav_process_group.html" %}
+      {% endif %}
+
+
       {% elif product.placeholder %}
-      <!-- ===== Placeholder ADOM (a future ADOM added in Settings → ADOMs; FortiAnalyzer and FortiAuthenticator have their own menus above) ===== -->
+      <!-- ===== Placeholder ADOM (a future ADOM added in Settings → ADOMs; FortiAnalyzer, FortiAuthenticator and FortiGate have their own menus above) ===== -->
       <div class="fw-nav-context" data-nav-context="ADOM">
         <div class="fw-nav-group-body">
           {% if may_open('product.enter') %}
@@ -1664,8 +1740,8 @@
 </script>
 {% endif %}
 
-{% if current_user and current_user.is_authenticated and product and product.key in ('fortiweb', 'fortiadc', 'fortianalyzer', 'fortiauthenticator') %}
-{% if product.key in ('fortiweb', 'fortiadc', 'fortiauthenticator', 'fortianalyzer') %}{% include 'partials/release_notes_modal.html' %}{% endif %}
+{% if current_user and current_user.is_authenticated and product and product.key in ('fortiweb', 'fortiadc', 'fortianalyzer', 'fortiauthenticator', 'fortigate') %}
+{% if product.key in ('fortiweb', 'fortiadc', 'fortiauthenticator', 'fortianalyzer', 'fortigate') %}{% include 'partials/release_notes_modal.html' %}{% endif %}
 <div class="modal fade" id="deviceSwitchModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content" style="background:#0b1322;color:#eaf0fb;border:1px solid rgba(148,163,184,.16);border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.55);">

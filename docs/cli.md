@@ -364,7 +364,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*111 commands in 41 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*113 commands in 42 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -408,6 +408,7 @@ Configuration, reference material and the console's own map. Also unprivileged: 
 | `satom show trust` | — | — | Public keys this node accepts update packages from. |
 | `satom show package <file.tar.gz>` | — | — | Inspect an update package without applying it. |
 | `satom show apipack` | — | — | API library packs on this node and what was imported from them. |
+| `satom show knowledge` | — | — | Knowledge packs per lane (age), the feed, the mode and the last fetch. |
 | `satom show config` | — | — | The .env, with secrets redacted. |
 | `satom show units` | — | — | Alias -> systemd unit map, with install state. |
 | `satom show services` | — | — | What each unit is FOR, and which ones are off limits. |
@@ -476,6 +477,7 @@ Everything that changes state. **Root required.** Without it each command refuse
 | `satom execute reinstall runner` | yes | — | Refresh the root-owned copy of the privileged update runner. |
 | `satom execute reinstall metrics-store` | yes | — | Install or re-assert the node-local metrics store (VictoriaMetrics). |
 | `satom execute apipack import <file.tar.gz\|shipped> [--yes] [--product <p>[,<p>...]] [--section <s>[,<s>...]]` | yes | — | Import a SIGNED API pack. Dry run unless --yes; never replaces local data. |
+| `satom execute knowledge fetch [--feed <https-url>] [--import] [--yes]` | yes | — | Check the knowledge feed. --yes downloads the pack, --import --yes also imports it (signature verified). Primary only. |
 | `satom execute apilib harvest <appliance-id\|name> [--no-probe]` | yes | — | Read one appliance's CLI schema (tree + hidden fields) and probe the REST paths the library lacks. Read-only on the box. |
 | `satom execute apilib compat <product> <buildA> <buildB> [--json]` | yes | — | Compare two builds of a product through both channels (REST + CLI schema): added/removed, options, renames. |
 | `satom execute apilib channels <product> <build> [--json]` | yes | — | One build: fields per channel (both / CLI only / hidden / REST only / meta / unknown). |

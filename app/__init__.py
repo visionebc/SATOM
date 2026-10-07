@@ -1077,6 +1077,14 @@ def create_app(config_override: object | None = None) -> Flask:
         return {"app_version": app_version()}
 
     @app.context_processor
+    def _inject_knowledge_freshness():
+        """``knowledge_freshness()`` for the pages that read pack knowledge
+        (release notes, Scout, migration report). A callable, so a page that
+        never shows the line never reads the import log."""
+        from app.services.knowledge_fetch import freshness
+        return {"knowledge_freshness": freshness}
+
+    @app.context_processor
     def _inject_docs_url():
         """The manual is published, not served. One address, one definition."""
         from app.services.doc_publication import site_url
@@ -1614,6 +1622,9 @@ def create_app(config_override: object | None = None) -> Flask:
     # ``flask apilib ...`` — the API library's operator commands.
     from .cli_apilib import apilib_cli
     app.cli.add_command(apilib_cli)
+    # ``flask knowledge ...`` — knowledge packs from the feed (satom CLI backend).
+    from .cli_knowledge import knowledge_cli
+    app.cli.add_command(knowledge_cli)
 
     @app.cli.command('create-db')
     def create_db_cmd():
@@ -2212,6 +2223,10 @@ def create_app(config_override: object | None = None) -> Flask:
             # Without this import create_all() never makes the api_lib_*
             # tables and the first backfill 500s.
             from . import models_apilib  # noqa: F401
+            # Knowledge from signed packs (signature metadata). Without this
+            # import create_all() never makes knowledge_signature_meta and the
+            # first signature-meta import fails on a missing table.
+            from . import models_knowledge  # noqa: F401
             # Sentinel's two collectors (http_status, infra) join the
             # fleet collection registry here so the scheduler sidecar — which
             # never imports a view — provisions and runs them like any other.

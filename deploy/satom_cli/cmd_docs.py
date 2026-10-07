@@ -57,6 +57,8 @@ SCHEDULE = [
     ("action: deep_monitor", "every 3 min", "probe sweep"),
     ("action: metrics_scrape", "every 3 min", "fleet metrics into the local store"),
     ("action: monitor_report", "02:00 / Mon / 1st", "period summaries (+ off-box)"),
+    ("action: knowledge_fetch", "04:20", "knowledge packs from the feed (PRIMARY only)"),
+    ("action: signature_check", "06:15", "signature DB version per FortiWeb"),
 ]
 
 

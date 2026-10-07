@@ -51,6 +51,8 @@ MIN_ACTIONS = {
     "sentinel_sweep": "Sentinel correlation sweep (hot path)",
     "sentinel_baseline": "Sentinel median/MAD baselines (nightly)",
     "sentinel_vuln_sync": "Sentinel CVE mirror refresh (daily, gated)",
+    "knowledge_fetch": "knowledge packs from the feed (daily; mode is a setting)",
+    "signature_check": "signature DB freshness per FortiWeb (daily)",
 }
 
 

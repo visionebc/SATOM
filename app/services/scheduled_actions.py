@@ -285,6 +285,30 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "cache it as the shared reference DB (services.signature_catalog).",
     ),
     ActionSpec(
+        "signature_check", "Signature DB freshness — read each FortiWeb's version",
+        "admin", needs_targets=False,
+        summary="Read ONLY the signature database version of every FortiWeb "
+                "(`diagnose system update info`, one CLI read per box) and record "
+                "when it last changed (services.signature_freshness). The cached "
+                "signature catalog is re-read only when a version changed. The "
+                "alert engine raises a device finding when a box's signature DB "
+                "is older than alerts.signature_max_days (default 7) or cannot "
+                "be read. Read-only; devices in maintenance are skipped. Daily.",
+    ),
+    ActionSpec(
+        "knowledge_fetch", "Knowledge packs — check the feed, download, import",
+        "admin", needs_targets=False,
+        products=("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator"),
+        summary="Read the knowledge feed (latest.json, setting knowledge.feed_url), "
+                "compare it with the newest imported knowledge pack and, by "
+                "knowledge.fetch_mode (off | notify | download | download_import, "
+                "default download_import), tell the administrators, download the "
+                "pack (size and sha256 checked) or import it — the signature is "
+                "verified by the import (services.knowledge_fetch). Primary only: "
+                "a standby skips with the reason. The only outbound connection is "
+                "to the feed and the pack it names. No device call. Daily.",
+    ),
+    ActionSpec(
         "system_backup", "System backup (Postgres + JSON)", "admin",
         needs_targets=False,
         summary="Back up the whole instance: a Postgres pg_dump + the per-device "
@@ -1061,6 +1085,14 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_deep_capture(appliance, dry_run)
         if key == "signature_sync":
             return _do_signature_sync(appliance, dry_run)
+        if key == "signature_check":
+            from . import signature_freshness
+            return signature_freshness.run_check(
+                dry_run=dry_run,
+                refresh_catalog=str(params.get("refresh_catalog", "1")) not in ("0", "false"))
+        if key == "knowledge_fetch":
+            from . import knowledge_fetch
+            return knowledge_fetch.scheduled(dry_run=dry_run)
         if key == "system_backup":
             return _do_system_backup(params, dry_run)
         if key == "git_bundle":

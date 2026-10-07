@@ -22,6 +22,7 @@
 
 <div class="fw-card mb-3">
   <div class="fw-card-body">
+    {% include 'partials/_knowledge_freshness.html' %}
     <form method="get" action="{{ url_for('migration_report.report', id=appliance.id) }}" class="d-flex gap-2 align-items-center flex-wrap">
       <label class="text-muted small" for="mr-target">{{ _('Target build') }}</label>
       {% if targets %}

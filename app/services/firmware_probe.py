@@ -264,6 +264,13 @@ def refresh(appliance) -> dict:
     harvest = _maybe_enqueue_harvest(appliance, previous, res["firmware"])
     if harvest is not None:
         res["apilib_harvest"] = harvest
+    # A build with no harvested schema: one bell per product@version, with the
+    # one-click harvest (services.schema_watch). Never raises.
+    from . import schema_watch
+    pending = schema_watch.observe(appliance)
+    if pending is not None:
+        res["schema_watch"] = {k: pending.get(k) for k in ("version", "closest", "notified",
+                                                           "already", "live")}
     return res
 
 

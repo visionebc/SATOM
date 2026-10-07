@@ -133,7 +133,8 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
     ),
 
     _group("show", "Configuration and reference. Any user, no probing.",
-        _n("trust", "Public keys this node accepts update packages from.",
+        _n("trust", "Public keys this node accepts, per purpose (update, api_pack, "
+                    "knowledge), with fingerprints.",
            run=u.show_trust),
         _n("package", "Inspect an update package without applying it.",
            run=u.show_package, usage="show package <file.tar.gz>"),
@@ -292,13 +293,14 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
                          "Read-only.",
                run=mg.report, needs_root=True, usage=mg.USAGE),
         ),
-        _group("trust", "Public keys this node accepts update packages from.",
-            _n("add-key", "Install a signing public key into the trust store.",
-               run=u.trust_add_key, needs_root=True,
-               usage="execute trust add-key <file.pub> [--name <slug>]"),
+        _group("trust", "Public keys this node accepts: update packages, api_pack and "
+                        "knowledge packs (one key, one use).",
+            _n("add-key", "Install a signing public key for one purpose (default: update).",
+               run=u.trust_add_key, needs_root=True, usage=u.ADD_USAGE),
             _n("remove-key", "Stop accepting packages signed by a key. Needs --yes.",
                run=u.trust_remove_key, needs_root=True, danger=True,
-               usage="execute trust remove-key <name|fingerprint> --yes"),
+               usage="execute trust remove-key <name|fingerprint> "
+                     "[--purpose update|api_pack|knowledge] --yes"),
         ),
         _group("repair", "Fix state that drifted.",
             _n("permissions", "Give root-owned files in the app tree back to the service account.",

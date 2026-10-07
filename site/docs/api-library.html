@@ -71,8 +71,9 @@
       <a href="#9-endpoint-baselines--the-registrys-seed">9. Endpoint baselines — the registry&#x27;s seed</a>
       <a href="#10-limits-that-do-not-go-away">10. Limits that do not go away</a>
       <a href="#11-api-packs--the-library-for-nodes-that-cannot-measure-it">11. API packs — the library for nodes that cannot measure it</a>
-      <a href="#12-troubleshooting">12. Troubleshooting</a>
-      <a href="#13-cli-channel-and-hidden-fields">13. CLI channel and hidden fields</a>
+      <a href="#12-knowledge-lanes-and-pack-trust-30">12. Knowledge lanes and pack trust (3.0)</a>
+      <a href="#13-troubleshooting">13. Troubleshooting</a>
+      <a href="#14-cli-channel-and-hidden-fields">14. CLI channel and hidden fields</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="api-library--versioned-append-only-in-the-database">API library — versioned, append-only, in the database</h1>
@@ -83,7 +84,7 @@ pages built on it are in the <a href="user-guide.html">User guide</a> §30.5,
 §30.8–§30.12, §40.3 and §41.8–§41.9; the guards are catalogued in
 <a href="safeguards.html">Safeguards</a> §192–§193, §196 (endpoint baselines, §9
 below), §197 (per-build resolution, §9.8) and §209–§213 (the CLI channel,
-§13). The features built on the CLI channel have their own pages:
+§14). The features built on the CLI channel have their own pages:
 <a href="build-compatibility.html">Build compatibility</a>,
 <a href="migration-report.html">Migration report</a>, <a href="cli-writer.html">CLI writer</a> and
 <a href="knowledge-harvester.html">Knowledge Harvester</a>.</p>
@@ -113,7 +114,7 @@ answer none of them at scale.</p>
 <li><strong>Incremental knowledge.</strong> Every harvest adds evidence. Nothing is lost when
    an appliance is retired, deleted or upgraded.</li>
 <li><strong>By which channel?</strong> Does this build serve the field over REST and the CLI,
-   the CLI only, only in <code>show full-configuration</code>, or REST only (§13.3) — and
+   the CLI only, only in <code>show full-configuration</code>, or REST only (§14.3) — and
    therefore: will a write on this build keep it
    (<a href="build-compatibility.html">Build compatibility</a>), will this box's
    configuration survive the move (<a href="migration-report.html">Migration report</a>),
@@ -204,7 +205,7 @@ answer; it is never read as "not served".</p>
 <p>When two sources describe the same thing, the order is
 <code>sweep</code> &gt; <code>schema</code> &gt; <code>cli_tree</code> &gt; <code>cli_full</code> &gt; <code>manual</code> &gt; <code>legacy_matrix</code> &gt;
 <code>vendor_doc</code>. The two CLI sources describe the CLI channel and are never read
-by a REST answer (§13).
+by a REST answer (§14).
 <strong>Fields are compared only within one kind of evidence.</strong> A sweep carries
 wire-only companions (<code>_val</code> twins, <code>sz_</code>/<code>q_</code> internals) that a schema
 strips, and subtracting one from the other invents removals. A field set known
@@ -224,7 +225,7 @@ on one side only, or by different kinds on the two sides, is reported as
 <tr>
 <td><code>fortiweb</code></td>
 <td><code>sweep</code>, <code>schema</code>, <code>cli_tree</code>, <code>cli_full</code></td>
-<td>rediscovery sweeps of live appliances; field schemas harvested per firmware line; the CLI <code>tree</code> and <code>show full-configuration</code> of each build (§13), plus a shape-checked REST probe of every <code>tree</code> object</td>
+<td>rediscovery sweeps of live appliances; field schemas harvested per firmware line; the CLI <code>tree</code> and <code>show full-configuration</code> of each build (§14), plus a shape-checked REST probe of every <code>tree</code> object</td>
 </tr>
 <tr>
 <td><code>fortiadc</code></td>
@@ -249,9 +250,9 @@ on one side only, or by different kinds on the two sides, is reported as
 </tbody>
 </table>
 <p>Which adapter reads which channel of which product, and on which device and
-build it was verified, is §13.10.</p>
+build it was verified, is §14.10.</p>
 <p>Source vocabulary (closed set): <code>sweep</code>, <code>schema</code>, <code>vendor_doc</code>, <code>manual</code>,
-<code>legacy_matrix</code>, and the CLI channel <code>cli_tree</code> and <code>cli_full</code> (§13).
+<code>legacy_matrix</code>, and the CLI channel <code>cli_tree</code> and <code>cli_full</code> (§14).
 Anything else is refused at ingest.</p>
 <p><strong>What the library held when 2.2.0 was cut</strong> (measured):</p>
 <table>
@@ -436,10 +437,10 @@ after a collection upgrade can be explained instead of guessed at.</p>
   <code>api_matrix.build()</code> has always returned, so its consumers did not change.
   Each version also carries <code>cli</code> (CLI-channel object counts per source).</li>
 <li><code>urn_key(urn) -&gt; str</code> — the REST path without prefix or query; the join
-  between the channels (§13).</li>
+  between the channels (§14).</li>
 <li><code>channels_at(product, version, endpoint=None, exceptions=None) -&gt; dict</code> —
   per field: <code>both | cli_only | hidden | rest_only | unknown</code>, with evidence
-  ids and a completeness summary (§13.3). <code>compare()</code> carries the CLI half
+  ids and a completeness summary (§14.3). <code>compare()</code> carries the CLI half
   under <code>channels</code>.</li>
 </ul>
 <p>Adapters that talk to nothing: <code>apilib_vendor.evidence_from_ansible_collection(path)</code>
@@ -478,7 +479,7 @@ adapter that reaches a device is <code>apilib_fac.harvest(appliance)</code>, GET
 </tr>
 <tr>
 <td><code>firmware_probe</code></td>
-<td>queues a harvest when an appliance changes build (§8.4), and tells the new-build watch (§13.11)</td>
+<td>queues a harvest when an appliance changes build (§8.4), and tells the new-build watch (§14.11)</td>
 </tr>
 <tr>
 <td><code>build_compat</code> (every write path)</td>
@@ -494,7 +495,7 @@ adapter that reaches a device is <code>apilib_fac.harvest(appliance)</code>, GET
 </tr>
 <tr>
 <td>Build compatibility, Schema builds pages</td>
-<td><code>channels_at()</code>, <code>compare()</code>, <code>field_history()</code> (§13)</td>
+<td><code>channels_at()</code>, <code>compare()</code>, <code>field_history()</code> (§14)</td>
 </tr>
 </tbody>
 </table>
@@ -535,11 +536,11 @@ sudo -u satom env FLASK_APP=wsgi:app venv/bin/flask apilib &lt;command&gt;
 </tr>
 <tr>
 <td><code>flask apilib schema-harvest &lt;id\|name&gt; [--lab] [--no-probe]</code></td>
-<td>one appliance's CLI channel (<code>tree</code> + <code>show full-configuration</code>) and a REST probe of the paths the library lacks (§13.4)</td>
+<td>one appliance's CLI channel (<code>tree</code> + <code>show full-configuration</code>) and a REST probe of the paths the library lacks (§14.4)</td>
 </tr>
 <tr>
 <td><code>flask apilib adapter-harvest &lt;id\|name&gt; [--ssh-secret-env VAR]</code></td>
-<td>one appliance through its product's schema adapter (§13.10); for FortiAuthenticator, <code>VAR</code> names an environment variable holding the CLI password</td>
+<td>one appliance through its product's schema adapter (§14.10); for FortiAuthenticator, <code>VAR</code> names an environment variable holding the CLI password</td>
 </tr>
 <tr>
 <td><code>flask apilib schema-import --product fortigate\|fortianalyzer --version X [--build B] [--tree FILE] [--schema FILE]</code></td>
@@ -648,10 +649,10 @@ determined) and, per product, how many documents were stored unhealthy.</p>
 sweep; FortiAuthenticator reads its Tastypie schema (GET only) and ingests it.
 FortiAnalyzer and FortiGate have no live <strong>REST</strong> harvester and every entry
 point says so by name (<code>no live harvester for fortianalyzer</code>).</p>
-<p>The <strong>CLI channel</strong> has its own harvest — the schema harvest (§13.4), the
-scheduled action <code>schema_harvest</code> and the per-product adapters (§13.10) — and
+<p>The <strong>CLI channel</strong> has its own harvest — the schema harvest (§14.4), the
+scheduled action <code>schema_harvest</code> and the per-product adapters (§14.10) — and
 its own watch: an appliance on a build with no harvested schema raises one
-notification and is listed on the <strong>Schema builds</strong> page (§13.11).</p>
+notification and is listed on the <strong>Schema builds</strong> page (§14.11).</p>
 <p>A build "needs a harvest" when the exact build has no healthy build-scoped
 evidence from the product's <strong>live</strong> source (<code>sweep</code> for FortiWeb and
 FortiADC, <code>schema</code> for FortiAuthenticator). Vendor or legacy data for a build
@@ -1024,13 +1025,13 @@ registry itself.</p>
 <ul>
 <li><strong>FortiWeb has no REST schema endpoint.</strong> An empty collection reveals no
   fields over REST. Such endpoints are <code>blind</code>, never "no fields". The CLI
-  <code>tree</code> gives the build's schema anyway (§13.1), so a field of an empty table
+  <code>tree</code> gives the build's schema anyway (§14.1), so a field of an empty table
   reads <code>unknown</code> on the REST side, not absent. Configure one row on a box
   running that build and sweep it again to measure REST.</li>
 <li><strong>A configuration dump is not a schema.</strong> <code>show full-configuration</code> prints
-  only the fields that apply under each row's current settings (§13.8).</li>
+  only the fields that apply under each row's current settings (§14.8).</li>
 <li><strong>REST hides what it drops.</strong> A gated field sent alone answers 200 and is
-  not applied (§13.9); only a readback proves a write.</li>
+  not applied (§14.9); only a readback proves a write.</li>
 <li><strong>Vendor data is a claim by the vendor's tooling</strong>, not a measurement. It is
   labelled <code>vendor_doc</code> everywhere, never outranks a sweep of a real box, and
   its absence of an endpoint warns instead of blocking.</li>
@@ -1042,7 +1043,7 @@ registry itself.</p>
 <li><strong>FortiADC has no live evidence source today</strong>: no FortiADC is left in the
   lab fleet. Its historical builds (including 8.0.3) stay in the library.</li>
 <li><strong>The field map is authored, not discovered.</strong> The library proposes rename
-  candidates by CLI attribute id (§13.7) but does not apply them: a rename is a
+  candidates by CLI attribute id (§14.7) but does not apply them: a rename is a
   removal plus an addition until an operator records it.</li>
 <li><strong>FortiADC and FortiAnalyzer adapters are unverified</strong> (no lab device). A harvest
   through them names the gap (<code>unverified</code>), and so does the Schema builds page
@@ -1057,7 +1058,7 @@ node has none of those, and a node with no FortiADC will never measure
 FortiADC. An <strong>API pack</strong> carries what one SATOM knows to another as one signed
 tarball (<code>app/services/api_pack.py</code>). Packs are written by SATOM's own export
 and by the separate <a href="knowledge-harvester.html">Knowledge Harvester</a> in the same
-format (knowledge packs, <code>kb-*</code>, §13.12); the release notes in a
+format (knowledge packs, <code>kb-*</code>, §14.12); the release notes in a
 pack may cover any product with a release-notes map (FortiWeb, FortiADC,
 FortiAuthenticator, FortiAnalyzer, FortiGate — see
 <a href="release-notes.html">release_notes.md</a>), and each item imports only its own
@@ -1123,6 +1124,12 @@ product's rows.</p>
 <li>Evidence that came from a pack is never re-exported.</li>
 </ul>
 <h3 id="113-import-rules">11.3 Import rules</h3>
+<blockquote>
+<p><strong>3.0:</strong> packs of schema <code>satom.api-pack/2</code> follow §12 — lane keys instead of
+the update trust store, more item kinds, provenance on every row, and pack
+copies corrected by an outranking pack. The table below is the 2.x behaviour
+that still applies to local data (never replaced) and to /1 packs.</p>
+</blockquote>
 <p>Importing only ever <strong>adds</strong>:</p>
 <table>
 <thead>
@@ -1160,15 +1167,16 @@ product's rows.</p>
 </tr>
 </tbody>
 </table>
-<p>Imported evidence carries <code>origin_ref = apipack:&lt;version&gt;:&lt;source&gt;</code> and
+<p>Imported evidence carries <code>origin_ref = apipack:&lt;lane&gt;:&lt;pack&gt;:&lt;source&gt;</code>
+(<code>apipack:&lt;version&gt;:&lt;source&gt;</code> when a 2.x node imported it) and
 pseudonymous witnesses, so it is distinguishable everywhere a witness is
 listed. <strong>Known limit:</strong> a pack sweep imported <em>before</em> the node sweeps the
 same build itself is merged with the later local sweep under the library's
 normal rule (an <code>ok</code> from any healthy witness wins on that build).</p>
-<p>A pack is verified with the update-package verifier
+<p>A /1 pack is verified with the update-package verifier
 (<code>deploy/update_package.py</code>) against the same root-owned trust store
 (<code>/etc/satom/update-keys</code>): signature first, then every file's hash, then
-schema (<code>satom.api-pack/1</code>). An unsigned pack, a pack signed by an untrusted
+schema (<code>satom.api-pack/1</code>); a /2 pack with the keys of its lane only (§12.3). An unsigned pack, a pack signed by an untrusted
 key, and an altered pack are all refused before anything is read. Each import
 that changed something is logged in <code>data/apipacks/imports/</code>.</p>
 <h3 id="114-commands">11.4 Commands</h3>
@@ -1366,7 +1374,334 @@ the digests, because they act on a stored dump.</p>
   <code>full</code> release.</li>
 </ul>
 <hr>
-<h2 id="12-troubleshooting">12. Troubleshooting</h2>
+<h2 id="12-knowledge-lanes-and-pack-trust-30">12. Knowledge lanes and pack trust (3.0)</h2>
+<blockquote>
+<p><strong>Since:</strong> SATOM 3.0.0. This section supersedes the trust and import rules of
+§11.3 for packs of schema <code>satom.api-pack/2</code>; §11 still describes the legacy
+<code>satom.api-pack/1</code> packs that 2.x releases shipped, which keep importing.</p>
+</blockquote>
+<h3 id="121-two-lanes-one-format">12.1 Two lanes, one format</h3>
+<p>Every pack is a <strong>full snapshot</strong> of what the SATOM Knowledge Harvester knows
+(never a delta), with the same sections in both lanes:</p>
+<table>
+<thead>
+<tr>
+<th>Lane</th>
+<th>Name</th>
+<th>Published</th>
+<th>Pinned to</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>api_pack</code></td>
+<td><code>satom-apipack-&lt;SATOM version&gt;</code></td>
+<td>at every SATOM release, inside the release (<code>api-packs/</code>)</td>
+<td>the SATOM release (<code>pinned_to</code>)</td>
+</tr>
+<tr>
+<td><code>knowledge</code></td>
+<td><code>satom-apipack-kb-YYYYMMDD[.N]</code></td>
+<td>whenever the knowledge changes</td>
+<td>nothing (<code>pinned_to</code> is <code>""</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>A third lane, <code>harvester</code>, exists only between the harvester and the
+publisher. SATOM never imports it and refuses it with a message that says so.</p>
+<h3 id="122-the-manifest-schema-satomapi-pack2">12.2 The manifest (schema <code>satom.api-pack/2</code>)</h3>
+<p>Same tarball layout as /1 (<code>satom-apipack-&lt;version&gt;/manifest.json</code>,
+<code>manifest.sig</code>, the files). Every key below is <strong>required</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lane</code></td>
+<td><code>api_pack</code> or <code>knowledge</code> (§12.1)</td>
+</tr>
+<tr>
+<td><code>min_satom</code></td>
+<td>the oldest SATOM that may import the pack. A node older than that refuses the <strong>whole</strong> pack: <em>"pack … needs SATOM X or newer; this node runs Y. Update SATOM first, then import the pack again."</em> Nothing is imported.</td>
+</tr>
+<tr>
+<td><code>publisher</code></td>
+<td>who built it</td>
+</tr>
+<tr>
+<td><code>content_fingerprint</code></td>
+<td>a date-free hash of the content: identical content, identical value</td>
+</tr>
+<tr>
+<td><code>snapshot</code></td>
+<td><code>{harvester_version, harvester_commit, run_id, built_at}</code> of the harvester run</td>
+</tr>
+<tr>
+<td><code>pinned_to</code></td>
+<td>the SATOM version for <code>api_pack</code>, <code>""</code> for <code>knowledge</code></td>
+</tr>
+<tr>
+<td><code>sections</code></td>
+<td>the sections present; every item also names its <code>kind</code></td>
+</tr>
+</tbody>
+</table>
+<p>A SATOM 2.13 or older refuses a /2 pack with <code>unsupported pack schema</code>: that is
+the intended back-compatibility refusal.</p>
+<h3 id="123-trust-one-key-one-use">12.3 Trust: one key, one use</h3>
+<table>
+<thead>
+<tr>
+<th>Purpose</th>
+<th>Verifies</th>
+<th>Keys</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>update</code></td>
+<td>update packages, and legacy /1 API packs</td>
+<td><code>/etc/satom/update-keys/*.pub</code></td>
+</tr>
+<tr>
+<td><code>api_pack</code></td>
+<td>/2 packs of lane <code>api_pack</code> only</td>
+<td><code>deploy/pack-keys/api_pack/*.pub</code> (shipped) + <code>/etc/satom/pack-keys/api_pack/*.pub</code></td>
+</tr>
+<tr>
+<td><code>knowledge</code></td>
+<td>/2 packs of lane <code>knowledge</code> only</td>
+<td><code>deploy/pack-keys/knowledge/*.pub</code> (shipped) + <code>/etc/satom/pack-keys/knowledge/*.pub</code></td>
+</tr>
+</tbody>
+</table>
+<p>Shipped public keys (compare before you trust a copy obtained elsewhere):</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Fingerprint</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>satom-apipack-2026</code> (<code>api_pack</code>)</td>
+<td><code>SHA256:tHXWO5UWTnvgoTloIzBpsN7J9Vj/NVbcTZFsdgww0ks</code></td>
+</tr>
+<tr>
+<td><code>satom-knowledge-2026</code> (<code>knowledge</code>)</td>
+<td><code>SHA256:hVYALGlEVZISwsSFRvr6ymysCuYUo1NxecpUhLJXDjE</code></td>
+</tr>
+</tbody>
+</table>
+<p>The rules:</p>
+<ul>
+<li>A /2 pack is verified <strong>only</strong> with the keys of the lane its manifest names.
+  The lane is inside the signed manifest, so changing it breaks the signature.
+  A pack signed with the knowledge key that claims lane <code>api_pack</code> is refused;
+  a /2 pack signed with the release (update) key is refused.</li>
+<li>A /1 pack (no lane) is verified <strong>only</strong> with the update trust store, exactly
+  as in 2.x. A /1 pack signed with a pack key is refused.</li>
+<li>The update verifier never reads a pack key: a pack key can never sign an
+  update package.</li>
+<li>The lane keys a release ships live in the code tree (<code>deploy/pack-keys/</code>),
+  which itself arrives release-signed. A fresh installation and the first
+  update from 2.x therefore import the shipped /2 pack without any key having
+  been installed first — there is no ordering dependency.</li>
+<li><code>/etc/satom/pack-keys/&lt;lane&gt;/</code> is for keys you add (rotation, your own
+  publisher). It must be root-owned like the update trust store; a directory
+  another account can write is refused (<em>"pack key directory is not safe to
+  use"</em>). Absent is fine: it is simply empty.</li>
+</ul>
+<p>Commands:</p>
+<pre><code>satom show trust                                             # keys per purpose, with fingerprints
+sudo satom execute trust add-key &lt;file.pub&gt; --purpose knowledge   # update (default) | api_pack | knowledge
+sudo satom execute trust remove-key &lt;name|fingerprint&gt; [--purpose …] --yes
+</code></pre>
+<p><code>add-key</code> refuses a key that is already trusted for another purpose (one key,
+one use). Keys shipped in <code>deploy/pack-keys/</code> are not removable with
+<code>remove-key</code>; they change with the release.</p>
+<h3 id="124-sections-and-item-kinds">12.4 Sections and item kinds</h3>
+<p>Every item is <code>{id, section, kind, file, product, …}</code>; <code>file</code> is gzip JSON.
+Each payload is validated before anything is written; a malformed item is
+<strong>rejected</strong> with its reason and the rest of the pack still imports.</p>
+<table>
+<thead>
+<tr>
+<th>Section</th>
+<th>Kind</th>
+<th>Payload</th>
+<th>Imported into</th>
+<th>Validation (an item failing it is rejected)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>library</code></td>
+<td><code>evidence</code></td>
+<td>an evidence document (sources <code>sweep</code>, <code>schema</code>, <code>vendor_doc</code>, <code>cli_tree</code>, <code>cli_full</code>, <code>legacy_matrix</code>); a top-level <code>attrs</code> (e.g. <code>origin</code>) is kept and stays out of the content hash</td>
+<td>the API library</td>
+<td>known source; the library's own document checks (names-only rule for <code>cli_full</code>)</td>
+</tr>
+<tr>
+<td><code>docs</code></td>
+<td><code>release-notes</code></td>
+<td><code>{product, generated_at, versions, issues[], sections[]}</code></td>
+<td>the release-notes corpus, per (product, version)</td>
+<td>every row has a <code>version</code>; rows of another product are ignored; rows must carry the corpus fields</td>
+</tr>
+<tr>
+<td><code>docs</code></td>
+<td><code>field-schemas</code></td>
+<td><code>{object: schema}</code> for the item's <code>product</code> and <code>line</code></td>
+<td>the field catalog, per object file</td>
+<td><code>line</code> and object names are single safe path components; each schema is an object or a list</td>
+</tr>
+<tr>
+<td><code>docs</code></td>
+<td><code>field-overlay</code></td>
+<td>the FortiWeb field help overlay</td>
+<td>the overlay file</td>
+<td>an object</td>
+</tr>
+<tr>
+<td><code>cli-coverage</code></td>
+<td><code>cli-coverage</code></td>
+<td>the CLI-coverage digest of one (product, version); extra buckets (<code>rest_served</code>) are kept</td>
+<td>the CLI-coverage digests</td>
+<td>a valid <code>version</code>; the three buckets are lists of objects</td>
+</tr>
+<tr>
+<td><code>factory</code></td>
+<td><code>factory-wpp</code></td>
+<td><code>{product, firmware, build, api_version, kind, name, urn, content_sha, top_sha, node_count, read_count, captured_at, witness, payload_b64gz}</code>; <code>payload_b64gz</code> is base64 of the exact bytes the factory catalog stores (gzip JSON <code>{tree, top, reads}</code>), kept byte for byte; <code>captured_at</code> becomes the entry's last verification</td>
+<td>the factory catalog (predefined protection profiles per build)</td>
+<td><code>kind</code> is <code>wpp_inline</code> or <code>wpp_offline</code>; <code>firmware</code> is a build, not a line; <code>content_sha</code> must equal the catalog hash of <code>tree</code> and <code>top_sha</code> that of <code>top</code>; <code>reads</code> rows are <code>[kind, urn, key, answer]</code>; counts are non-negative integers</td>
+</tr>
+<tr>
+<td><code>field-map</code></td>
+<td><code>field-map</code></td>
+<td><code>{product, from_build, to_build, endpoint, renames:[{old, new, cli_id, confidence}]}</code></td>
+<td>rename <strong>candidates</strong></td>
+<td>names are field names, <code>old != new</code>, <code>confidence</code> 0..1, <code>cli_id</code> an integer; malformed renames are skipped and counted</td>
+</tr>
+<tr>
+<td><code>baselines</code></td>
+<td><code>baseline</code></td>
+<td><code>{product, build, api_version, sha256, endpoints:{&lt;REST path&gt;: {method, urn, fields}}}</code>; each REST path is mapped to the registry name(s) serving the same URN (this node's registry and the shipped baseline). <code>{entries:[{name, urn, provenance?, measured_on?}]}</code> (the shape <code>flask apilib baseline promote</code> stores) is also read</td>
+<td>endpoint baselines, as reference</td>
+<td>product has an endpoint registry; <code>name</code> without <code>/</code>, <code>urn</code> starting with <code>/</code>; a path no registry name serves, and duplicates, are skipped and counted</td>
+</tr>
+<tr>
+<td><code>signature-meta</code></td>
+<td><code>signature-meta</code></td>
+<td><code>{product, db_version?, generated_at, signatures:{&lt;id&gt;: {name, severity, category, cve[], references[], url, summary}}}</code> — public FortiGuard encyclopedia data only</td>
+<td>the signature metadata table</td>
+<td>id is <code>[A-Za-z0-9_.:-]{1,64}</code>; strings are strings, lists are lists of strings, <code>url</code> is http(s); malformed entries are skipped and counted</td>
+</tr>
+</tbody>
+</table>
+<p>What each target guarantees:</p>
+<ul>
+<li><strong>Factory catalog.</strong> A row this node captured from its own appliance is
+  never replaced; a pack row is replayed only when the appliance's own
+  top-level rows match it, and is re-read in full once its snapshot is older
+  than the reverify window, like any catalog entry.</li>
+<li><strong>Rename candidates</strong> are shown on the field-map page with a <code>candidate</code>
+  badge and are <strong>never applied</strong> by the library, the compatibility view or
+  the migration report. An operator's own mapping for the same field is never
+  overridden; to adopt a candidate, add it as your own mapping.</li>
+<li><strong>Baselines</strong> from a pack are stored only for a build that has no baseline of
+  this node's own, and are <strong>never the active baseline</strong>: a pack cannot change
+  what the endpoint registry serves.</li>
+<li><strong>Signature metadata</strong> explains the signature ids an appliance reports.
+  Signatures themselves never travel in a pack.</li>
+</ul>
+<p>A section or kind this SATOM does not know is <strong>skipped with a visible
+warning</strong> in the inspect and import results (a newer publisher may ship a kind
+an older node lacks).</p>
+<h3 id="125-import-semantics">12.5 Import semantics</h3>
+<p><strong>Precedence.</strong> Local data &gt; <code>api_pack</code> &gt; <code>knowledge</code>. Inside a lane, the newer
+pack wins.</p>
+<ul>
+<li>Data this node measured or wrote itself is never replaced by any pack.</li>
+<li>A copy a pack wrote is <strong>replaced</strong> when the incoming item differs and the
+  incoming pack outranks the one that wrote it (higher lane, or same lane and
+  newer). That is how corrections arrive: per (product, version) for release
+  notes, per object for field schemas, per row for the database kinds.</li>
+<li>An older pack, or a knowledge pack over a copy an API pack wrote, leaves the
+  copy as it is and says why (<code>kept: written by …</code>).</li>
+</ul>
+<p><strong>Provenance.</strong> Every imported row says where it came from: <code>local</code>,
+<code>pack:api_pack:&lt;pack&gt;</code> or <code>pack:knowledge:&lt;pack&gt;</code>. Evidence carries it in its
+origin reference, factory entries in "captured from", rename candidates and
+signature metadata in an <code>origin</code> column, baselines in "promoted by", and the
+file-backed copies (release notes, field schemas, the overlay, CLI digests) in
+<code>data/apipacks/provenance.json</code>. Copies a 2.x node imported are recognised
+from its import log as pack copies, not as local data. Inspect, the pack list
+and the import history show the provenance; so does the API pack section of
+Software Update (lane badge, each item's current copy, the lane of each
+import).</p>
+<p><strong>Item states.</strong></p>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Meaning</th>
+<th>Imported?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>new</code></td>
+<td>not on this node</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>update</code></td>
+<td>replaces a copy an older or lower-ranked pack wrote</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>present</code></td>
+<td>already here (or kept: an outranking pack wrote it)</td>
+<td>no</td>
+</tr>
+<tr>
+<td><code>local</code></td>
+<td>this node's own data</td>
+<td>no</td>
+</tr>
+<tr>
+<td><code>rejected</code></td>
+<td>malformed payload; the reason is in the warning</td>
+<td>no</td>
+</tr>
+<tr>
+<td><code>unknown</code></td>
+<td>a section or kind this SATOM does not import</td>
+<td>no</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Series and pending packs.</strong> A /2 pack's series is its lane; a legacy /1
+<code>kb-*</code> pack is a knowledge pack, any other /1 pack a release pack. Release
+packs and API packs are one lineage, so the 3.0 API pack supersedes the 2.x
+release packs in <code>api-packs/</code>. A shipped pack is reported as pending (Software
+Update notice, <code>satom show apipack</code>, the update runner) unless an imported pack
+already carries its snapshot — the same <code>content_fingerprint</code>, or a newer
+harvester run of either lane. An API pack older than the knowledge pack the
+node already imported is therefore neither pending nor a regression to repair.</p>
+<h3 id="126-the-legacy-export">12.6 The legacy export</h3>
+<p><code>flask apilib pack export</code> still writes a /1 pack from this node's own
+measurements, for local and offline hand-over between nodes. It is signed with
+a key the receiving node trusts for <strong>updates</strong> (your own key), never with a
+pack-lane key. Releases no longer use it.</p>
+<h2 id="13-troubleshooting">13. Troubleshooting</h2>
 <table>
 <thead>
 <tr>
@@ -1441,7 +1776,7 @@ the digests, because they act on a stored dump.</p>
 </tr>
 <tr>
 <td><code>cli_full field … carries default: cli_full holds names, never values</code></td>
-<td>A <code>cli_full</code> document carried a value. Only lab evidence (<code>summary.lab</code>) may carry a <code>default</code> (§13.2)</td>
+<td>A <code>cli_full</code> document carried a value. Only lab evidence (<code>summary.lab</code>) may carry a <code>default</code> (§14.2)</td>
 </tr>
 <tr>
 <td>Schema harvest: <code>stored as unhealthy: the tree output was cut short</code></td>
@@ -1449,7 +1784,7 @@ the digests, because they act on a stored dump.</p>
 </tr>
 <tr>
 <td>A CLI-coverage row reads <strong>Not in catalog</strong> with REST <em>not measured</em></td>
-<td>No REST evidence for that path on the dump's build. Run a schema harvest of a box on that build (§13.4); the row then becomes a catalog gap or <em>CLI only</em></td>
+<td>No REST evidence for that path on the dump's build. Run a schema harvest of a box on that build (§14.4); the row then becomes a catalog gap or <em>CLI only</em></td>
 </tr>
 <tr>
 <td><code>baseline promote</code>: <code>… has no measured evidence</code></td>
@@ -1485,7 +1820,7 @@ the digests, because they act on a stored dump.</p>
 </tr>
 <tr>
 <td>Bell: <em>New build X on Y: schema not harvested</em></td>
-<td>An appliance runs a build with no CLI schema in the library. Open <strong>Schema builds</strong> and press <strong>Harvest</strong>, or import a knowledge pack that covers the build (§13.11)</td>
+<td>An appliance runs a build with no CLI schema in the library. Open <strong>Schema builds</strong> and press <strong>Harvest</strong>, or import a knowledge pack that covers the build (§14.11)</td>
 </tr>
 <tr>
 <td>A build reads <code>unknown</code> for hundreds of fields after a harvest</td>
@@ -1493,11 +1828,11 @@ the digests, because they act on a stored dump.</p>
 </tr>
 <tr>
 <td><code>rest_only</code> counts that look like bookkeeping (<code>id</code>, <code>_id</code>, <code>seq</code>)</td>
-<td>They are channel <code>meta</code> since 2.13 (§13.3). On an older pack, re-import; on this node, harvest the CLI schema so the build has a <code>tree</code></td>
+<td>They are channel <code>meta</code> since 2.13 (§14.3). On an older pack, re-import; on this node, harvest the CLI schema so the build has a <code>tree</code></td>
 </tr>
 <tr>
 <td>Schema builds: <em>unverified adapter</em></td>
-<td>The product's adapter was never checked against a device (FortiADC, FortiAnalyzer). Its evidence is labelled; treat it as a documented convention (§13.10)</td>
+<td>The product's adapter was never checked against a device (FortiADC, FortiAnalyzer). Its evidence is labelled; treat it as a documented convention (§14.10)</td>
 </tr>
 <tr>
 <td>FortiAuthenticator harvest reads REST but no CLI</td>
@@ -1510,7 +1845,7 @@ the digests, because they act on a stored dump.</p>
 </tbody>
 </table>
 <hr>
-<h2 id="13-cli-channel-and-hidden-fields">13. CLI channel and hidden fields</h2>
+<h2 id="14-cli-channel-and-hidden-fields">14. CLI channel and hidden fields</h2>
 <blockquote>
 <p><strong>Since:</strong> SATOM 2.13.0 (unreleased).</p>
 </blockquote>
@@ -1556,13 +1891,13 @@ page can say "you can do this, but on build X this field does not exist", or
 </tr>
 </tbody>
 </table>
-<p>The rest of this section is the model end to end: the two CLI sources (§13.1)
-and what they never carry (§13.2), how a field's channel and a build's
-completeness are derived (§13.3), how a write is checked against a build
-(§13.3.1), how the channel is harvested (§13.4–§13.6), the three lab findings
-every reader must respect (§13.7–§13.9), the per-product adapters (§13.10), the
-new-build watch (§13.11) and knowledge packs (§13.12).</p>
-<h3 id="131-the-two-cli-sources">13.1 The two CLI sources</h3>
+<p>The rest of this section is the model end to end: the two CLI sources (§14.1)
+and what they never carry (§14.2), how a field's channel and a build's
+completeness are derived (§14.3), how a write is checked against a build
+(§14.3.1), how the channel is harvested (§14.4–§14.6), the three lab findings
+every reader must respect (§14.7–§14.9), the per-product adapters (§14.10), the
+new-build watch (§14.11) and knowledge packs (§14.12).</p>
+<h3 id="141-the-two-cli-sources">14.1 The two CLI sources</h3>
 <table>
 <thead>
 <tr>
@@ -1635,7 +1970,7 @@ schema is its JSON-RPC syntax answer, stored as <code>schema</code>.</p>
 </tr>
 </tbody>
 </table>
-<h3 id="132-what-never-enters-the-library">13.2 What never enters the library</h3>
+<h3 id="142-what-never-enters-the-library">14.2 What never enters the library</h3>
 <ul>
 <li><strong>No values.</strong> <code>cli_full</code> holds names. Ingest refuses a <code>cli_full</code> field
   that carries anything but <code>attrs</code>, and the API-pack export refuses such a row
@@ -1652,7 +1987,7 @@ schema is its JSON-RPC syntax answer, stored as <code>schema</code>.</p>
   baselines) read only the REST sources. A build measured only through the CLI
   is still <code>unmeasured</code> for REST, with <code>cli_measured: true</code>.</li>
 </ul>
-<h3 id="133-channels-of-a-build">13.3 Channels of a build</h3>
+<h3 id="143-channels-of-a-build">14.3 Channels of a build</h3>
 <p><code>api_library.channels_at(product, version, endpoint=None, exceptions=None)</code>
 answers, for every field of every path the build is known to have:</p>
 <table>
@@ -1738,8 +2073,8 @@ row created in every empty table and read back by both channels):</p>
 </table>
 <p>On FortiWeb every field the <code>tree</code> lists is served by REST on every object REST
 serves, and <code>show full-configuration</code> names nothing the <code>tree</code> does not: the
-real differences between the channels are conditional printing (§13.8) and
-REST ignoring gated fields (§13.9), not field sets. The FortiWeb <code>unknown</code> rows
+real differences between the channels are conditional printing (§14.8) and
+REST ignoring gated fields (§14.9), not field sets. The FortiWeb <code>unknown</code> rows
 are fields of tables that could not be given a lab row (parent row not
 creatable, licence, certificate import, HSM, a feature the box's mode hides).
 On FortiAuthenticator the channels are two different worlds: the CLI is a small
@@ -1770,7 +2105,7 @@ object rename candidates (<code>endpoint_rename_candidates</code>) and <code>fie
 id that left one object and reappears in another: an object renamed with its
 fields, or a field that became a subtable) work on harvester packs too.
 <code>field_history</code> reads both channels and labels each row <code>rest</code> or <code>cli</code>.</p>
-<h3 id="1331-what-reads-the-channels">13.3.1 What reads the channels</h3>
+<h3 id="1431-what-reads-the-channels">14.3.1 What reads the channels</h3>
 <p>Three features are built on <code>channels_at</code> and the CLI half of <code>compare()</code>; each
 has its own page:</p>
 <table>
@@ -1801,7 +2136,7 @@ has its own page:</p>
 </table>
 <p><code>satom execute apilib compat &lt;product&gt; &lt;A&gt; &lt;B&gt;</code> and <code>satom execute apilib
 channels &lt;product&gt; &lt;build&gt;</code> print the library's own answers from the console.</p>
-<h3 id="134-harvesting-the-cli-channel">13.4 Harvesting the CLI channel</h3>
+<h3 id="144-harvesting-the-cli-channel">14.4 Harvesting the CLI channel</h3>
 <p><code>services/schema_harvest.harvest(appliance)</code> reads one appliance's build:</p>
 <ol>
 <li>SSH <code>tree</code> -&gt; <code>cli_tree</code>. <code>tree</code> is allowed by its own whole-command gate
@@ -1813,7 +2148,7 @@ channels &lt;product&gt; &lt;build&gt;</code> print the library's own answers fr
    the same box on the same build when it is younger than 24 h, otherwise a
    fresh SSH capture (not stored in the vault).</li>
 <li>FortiWeb only: one REST GET per <code>tree</code> object the library's REST evidence
-   does not cover (never asked, errored, blind), classified by shape (§13.5),
+   does not cover (never asked, errored, blind), classified by shape (§14.5),
    ingested as sweep evidence keyed by the REST path with <code>origin_ref</code>
    <code>schema_harvest:…</code>. A nested object under a table is asked with the first
    row's key (<code>?mkey=</code>), which is never recorded; one with an empty parent, or
@@ -1826,7 +2161,7 @@ channels &lt;product&gt; &lt;build&gt;</code> print the library's own answers fr
 (admin, per target), <code>flask apilib schema-harvest &lt;id|name&gt; [--lab]
 [--no-probe]</code>, and <code>sudo satom execute apilib harvest &lt;id|name&gt; [--no-probe]</code>.
 <code>--lab</code> is for lab boxes only.</p>
-<h3 id="135-fortiweb-answers-an-unserved-nested-path-with-its-parent">13.5 FortiWeb answers an unserved nested path with its parent</h3>
+<h3 id="145-fortiweb-answers-an-unserved-nested-path-with-its-parent">14.5 FortiWeb answers an unserved nested path with its parent</h3>
 <p>Measured on 7.6.8: <code>system/interface/&lt;anything&gt;</code> answers 200 with the
 interfaces; <code>waf/web-protection-profile.inline-protection/&lt;anything&gt;</code> with all
 profiles; with <code>?mkey=</code> or under a singleton, with the parent's dict. Only an
@@ -1846,8 +2181,8 @@ changed no real verdict there — while synthetic controls
 (<code>router/static/&lt;fake&gt;?mkey=…</code>, <code>fds/update-flag/&lt;fake&gt;</code>) come back
 parent-fallback and a fake top-level module <code>absent</code>, on both builds. The same
 rule holds for writes: a POST/PUT with an unknown field also answers 200
-(§13.9).</p>
-<h3 id="136-cli-coverage-catalog-gap-or-cli-only">13.6 CLI coverage: catalog gap or CLI only</h3>
+(§14.9).</p>
+<h3 id="146-cli-coverage-catalog-gap-or-cli-only">14.6 CLI coverage: catalog gap or CLI only</h3>
 <p>The coverage diff used to call every block the catalog does not name "CLI
 only". Measured on 7.6.8, all 50 of those blocks were served by REST. Now:</p>
 <table>
@@ -1873,7 +2208,7 @@ only". Measured on 7.6.8, all 50 of those blocks were served by REST. Now:</p>
 </table>
 <p>Discovery runs and the Structure page read both buckets
 (<code>cli_coverage.not_in_catalog</code>).</p>
-<h3 id="137-renames-cli-attribute-ids-propose-field-maps-decide">13.7 Renames: CLI attribute ids propose, field maps decide</h3>
+<h3 id="147-renames-cli-attribute-ids-propose-field-maps-decide">14.7 Renames: CLI attribute ids propose, field maps decide</h3>
 <p>Every object and field in a FortiWeb <code>tree</code> carries a CLI attribute id
 (<code>name(4246)</code>), recorded as <code>attrs.cli_id</code>. Measured on FortiWeb 7.6.8 → 8.0.6:</p>
 <ul>
@@ -1897,7 +2232,7 @@ at <code>/web/registry/field-map</code>, stays the only authority: a mapped cand
 <code>mapped: true</code>, and the migration report turns it from <code>warn</code> into <code>translate</code>.
 The rule held on one pair of builds; re-check it on every new pair before
 relying on it blindly. Lookalike pairs matched by type alone are noise.</p>
-<h3 id="138-show-full-configuration-prints-conditionally">13.8 <code>show full-configuration</code> prints conditionally</h3>
+<h3 id="148-show-full-configuration-prints-conditionally">14.8 <code>show full-configuration</code> prints conditionally</h3>
 <p><code>show full-configuration</code> prints only the fields that <strong>apply under the row's
 current settings</strong>; REST returns them all. Measured on lab rows: 204 fields in
 56 objects (7.6.8) and 349 fields in 78 objects (8.0.6) were missing from the
@@ -1914,7 +2249,7 @@ rows on 7.6.8, 72 of 280 on 8.0.6).</p>
 <li>FortiWeb 7.6.8 and 8.0.6 have <strong>0 hidden fields</strong>: <code>show full-configuration</code>
   names nothing the <code>tree</code> does not.</li>
 </ul>
-<h3 id="139-rest-silently-ignores-gated-fields">13.9 REST silently ignores gated fields</h3>
+<h3 id="149-rest-silently-ignores-gated-fields">14.9 REST silently ignores gated fields</h3>
 <p>A FortiWeb cmdb POST/PUT carrying an unknown field, or a field gated behind a
 toggle that is off, answers <strong>HTTP 200 and drops it</strong>. Confirmed in 17 of 17
 lab cases: the dependent field sent alone while its toggle is off is not
@@ -1934,7 +2269,7 @@ Examples: <code>server-balance</code> → <code>lb-algo</code> / <code>health</c
 <li><a href="build-compatibility.html">Build compatibility</a> strips the fields a build does
   not have <em>before</em> the write, so the 200-and-drop never hides a missing field.</li>
 </ul>
-<h3 id="1310-per-product-adapters">13.10 Per-product adapters</h3>
+<h3 id="1410-per-product-adapters">14.10 Per-product adapters</h3>
 <p>Every product describes its schema its own way; <code>services/schema_adapters/</code>
 holds one adapter per product, all ending in the same evidence (<code>cli_tree</code>,
 <code>cli_full</code>, <code>schema</code>, <code>sweep</code>) keyed by the REST path. Each adapter declares its
@@ -1990,7 +2325,7 @@ the FortiAnalyzer session sends only login, <code>get</code> and logout.</p>
 CLI. Its CLI half runs only when the operator gives the CLI password for that one
 harvest (Schema builds form, or <code>flask apilib adapter-harvest --ssh-secret-env</code>);
 it is never stored. Without it the CLI half is reported skipped, by name.</p>
-<h3 id="1311-new-builds-detection-notification-one-click-harvest">13.11 New builds: detection, notification, one-click harvest</h3>
+<h3 id="1411-new-builds-detection-notification-one-click-harvest">14.11 New builds: detection, notification, one-click harvest</h3>
 <p><code>services/schema_watch.py</code> compares the build every appliance runs with the
 builds that have harvested schema evidence (<code>cli_tree</code>; <code>schema</code> for
 FortiAnalyzer). It runs after every firmware read (<code>firmware_probe</code>) and from the
@@ -2011,7 +2346,7 @@ scheduled action <code>schema_watch</code>.</p>
 <li>The scheduled action <code>schema_harvest</code> also runs FortiAuthenticator and
   FortiAnalyzer through their adapters.</li>
 </ul>
-<h3 id="1312-knowledge-packs">13.12 Knowledge packs</h3>
+<h3 id="1412-knowledge-packs">14.12 Knowledge packs</h3>
 <p>A node that has never run a build can still know it: the separate
 <a href="knowledge-harvester.html">Knowledge Harvester</a> measures lab devices and the vendor
 documentation and writes a <strong>knowledge pack</strong> (<code>satom-apipack-kb-YYYYMMDD</code>) in

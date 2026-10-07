@@ -41,9 +41,28 @@ The rules, each one a way a pack could do harm:
    of a knowledge pack (``summary.lab`` — fresh rows a lab box created to
    reveal tables a production box has empty) is imported next to the
    node's own: it can only fill what the node could not measure.
-4. **Signed or refused.** Same verifier and same root-owned trust store as
-   update packages (``deploy/update_package.py``); an unsigned pack and a
-   badly signed one are the same refusal.
+4. **Signed or refused, by the right key.** An unsigned pack and a badly
+   signed one are the same refusal. Which keys count depends on the schema
+   (docs/api-library.md §12, SATOM 3.0):
+
+   * ``satom.api-pack/2`` carries a ``lane`` (``api_pack`` | ``knowledge``)
+     and is verified ONLY with that lane's keys: ``deploy/pack-keys/<lane>/``
+     (shipped in the release-signed code tree) plus
+     ``/etc/satom/pack-keys/<lane>/`` (operator-added, root-owned). The
+     release key never signs a /2 pack, a knowledge key never signs an
+     api_pack, and the ``harvester`` transport lane is never imported.
+   * ``satom.api-pack/1`` (2.13 and older, no lane) is verified ONLY with the
+     update trust store, as before, so the packs already in ``api-packs/``
+     still import.
+
+   The update verifier never reads a pack key (``update_package.verify_signature``).
+
+3.0 adds item kinds beyond the three sections above (factory catalog, rename
+candidates, baselines, signature metadata), a provenance on every imported row
+(``local`` | ``pack:api_pack:<pack>`` | ``pack:knowledge:<pack>``) and REPLACE
+semantics for pack-owned copies: local data > api_pack > knowledge, and inside
+a lane the newer pack wins. Kind payloads are validated; a malformed item is
+rejected with a message and never stops the rest of the import.
 """
 from __future__ import annotations
 
@@ -68,13 +87,63 @@ from . import api_library as lib
 from . import firmware_versions as fv
 from .update_package_service import TRUST_DIR, up
 
-SCHEMA = "satom.api-pack/1"
+SCHEMA_V1 = "satom.api-pack/1"
+SCHEMA_V2 = "satom.api-pack/2"
+#: What :func:`export_pack` writes. Legacy: the release pipeline builds /2
+#: packs from satom-harvester snapshots and no longer calls the export.
+SCHEMA = SCHEMA_V1
+SCHEMAS = (SCHEMA_V1, SCHEMA_V2)
 PRODUCT = "satom"
+
+LANE_API_PACK = "api_pack"
+LANE_KNOWLEDGE = "knowledge"
+LANES = (LANE_API_PACK, LANE_KNOWLEDGE)
+#: harvester -> publisher transport; signed with a key no node trusts.
+LANE_TRANSPORT = "harvester"
+#: C6 precedence between pack lanes (local data outranks both).
+LANE_RANK = {LANE_KNOWLEDGE: 1, LANE_API_PACK: 2}
+#: Manifest keys every /2 pack must carry.
+V2_REQUIRED = ("lane", "min_satom", "publisher", "content_fingerprint", "snapshot",
+               "pinned_to", "sections")
+
+PROV_LOCAL = "local"
+PROV_PREFIX = "pack:"
 
 SECTION_LIBRARY = "library"
 SECTION_DOCS = "docs"
 SECTION_CLI = "cli-coverage"
+SECTION_FACTORY = "factory"
+SECTION_FIELD_MAP = "field-map"
+SECTION_BASELINES = "baselines"
+SECTION_SIGMETA = "signature-meta"
+#: Sections :func:`export_pack` can write (legacy /1).
 SECTIONS = (SECTION_LIBRARY, SECTION_DOCS, SECTION_CLI)
+#: Sections an import understands.
+IMPORT_SECTIONS = SECTIONS + (SECTION_FACTORY, SECTION_FIELD_MAP, SECTION_BASELINES,
+                              SECTION_SIGMETA)
+
+KIND_EVIDENCE = "evidence"
+KIND_RELEASE_NOTES = "release-notes"
+KIND_FIELD_SCHEMAS = "field-schemas"
+KIND_FIELD_OVERLAY = "field-overlay"
+KIND_CLI = "cli-coverage"
+KIND_FACTORY = "factory-wpp"
+KIND_FIELD_MAP = "field-map"
+KIND_BASELINE = "baseline"
+KIND_SIGMETA = "signature-meta"
+#: (section, kind) pairs this node imports. Anything else is skipped with a
+#: visible warning: a newer publisher may ship a kind an older node lacks.
+KINDS = {
+    SECTION_LIBRARY: (KIND_EVIDENCE,),
+    SECTION_DOCS: (KIND_RELEASE_NOTES, KIND_FIELD_SCHEMAS, KIND_FIELD_OVERLAY),
+    SECTION_CLI: (KIND_CLI,),
+    SECTION_FACTORY: (KIND_FACTORY,),
+    SECTION_FIELD_MAP: (KIND_FIELD_MAP,),
+    SECTION_BASELINES: (KIND_BASELINE,),
+    SECTION_SIGMETA: (KIND_SIGMETA,),
+}
+#: The kind of an item that names none (every /1 library and CLI item).
+_IMPLICIT_KIND = {SECTION_LIBRARY: KIND_EVIDENCE, SECTION_CLI: KIND_CLI}
 
 #: ``origin_ref`` of every evidence row a pack created. How the node tells its
 #: own measurements from imported ones (rule 3) and why export skips them.
@@ -93,6 +162,10 @@ _SOURCE_WITNESS = re.compile(r"^(?P<pre>[A-Za-z_]+:|default<-)(?P<name>[^@:<]+)(
 ST_NEW = "new"
 ST_PRESENT = "present"
 ST_LOCAL = "local"      # the node measured it itself; the pack copy is skipped
+ST_UPDATE = "update"    # a copy an older/lower-ranked pack wrote; this one replaces it
+ST_REJECTED = "rejected"  # malformed payload: skipped, with the reason
+ST_UNKNOWN = "unknown"  # a section/kind this node does not know: skipped, with a warning
+IMPORTABLE = (ST_NEW, ST_UPDATE)
 
 
 class PackError(Exception):
@@ -608,6 +681,13 @@ def export_pack(out_dir, version: str, *, products=None, sections=SECTIONS,
                 notes: str = "", sign_key=None, passphrase_file=None) -> dict:
     """Build ``satom-apipack-<version>.tar.gz`` in ``out_dir``.
 
+    LEGACY (schema ``satom.api-pack/1``). Kept for local and offline use: one
+    node handing its own measurements to another. Since 3.0 the release
+    pipeline publishes /2 packs built by satom-harvester and does not call
+    this. A /1 pack is verified with the UPDATE trust store, so sign it with a
+    key the importing node trusts for updates (an operator's own key), never
+    with a pack-lane key.
+
     Nothing is written to ``out_dir`` unless the leak scan is clean. Unsigned
     unless ``sign_key`` is given; sign later with
     ``deploy/sign_update_package.py sign`` (the same tool as update packages).
@@ -671,35 +751,389 @@ def export_pack(out_dir, version: str, *, products=None, sections=SECTIONS,
 
 
 # ---------------------------------------------------------------------------
+# trust: which keys may sign which pack (C2)
+# ---------------------------------------------------------------------------
+
+def tree_key_dir() -> Path:
+    """``deploy/pack-keys`` in the code tree: the lane keys the release ships.
+
+    Found beside this module, not through a setting an attacker could move.
+    The tree arrives release-signed (update package) or from the release
+    clone, so these keys are trusted transitively — and because they come
+    WITH the code, a /2 pack in ``api-packs/`` imports on a fresh install and
+    on the first update without any key having been installed first."""
+    return Path(current_app.config.get("API_PACK_TREE_KEY_DIR")
+                or (Path(__file__).resolve().parents[2] / "deploy" / "pack-keys"))
+
+
+def operator_key_dir() -> Path:
+    """``/etc/satom/pack-keys``: lane keys an operator added (rotation, a fork's
+    own publisher). Root-owned like the update trust store."""
+    return Path(current_app.config.get("API_PACK_KEY_DIR")
+                or os.environ.get("SATOM_PACK_KEY_DIR") or up.PACK_KEY_DIR)
+
+
+def lane_key_dirs(lane: str) -> list:
+    if lane not in LANES:
+        raise PackError("no key set for lane %r" % lane)
+    return [tree_key_dir() / lane, operator_key_dir() / lane]
+
+
+def lane_keys(lane: str) -> list:
+    """Every key trusted for ``lane``. An operator directory that exists but
+    is not root-owned is refused (anyone who can write it can mint packs); a
+    missing one is simply empty."""
+    tree, oper = lane_key_dirs(lane)
+    if oper.exists():
+        problem = up.trust_store_problem(str(oper))
+        if problem:
+            raise PackError("pack key directory is not safe to use: %s" % problem)
+    return up.load_key_dirs([tree, oper])
+
+
+def trust_summary() -> dict:
+    """``{purpose: [key...]}`` for the page and ``show apipack``."""
+    out = {"update": [dict(k, dir=str(TRUST_DIR)) for k in up.load_trust_store(TRUST_DIR)]}
+    for lane in LANES:
+        try:
+            out[lane] = lane_keys(lane)
+        except PackError:
+            out[lane] = []
+    return {p: [{"fingerprint": k["fingerprint"], "comment": k.get("comment", ""),
+                 "name": k["name"], "dir": k.get("dir", "")} for k in ks]
+            for p, ks in out.items()}
+
+
+# ---------------------------------------------------------------------------
 # verify + inspect
 # ---------------------------------------------------------------------------
 
+def _satom_version() -> str:
+    from ..version import app_version
+    return app_version()
+
+
+def _legacy_lane(version: str) -> str:
+    """The lane a /1 pack's content belongs to: ``kb-*`` was the knowledge
+    series, every other /1 pack was the release's own (the api_pack lineage)."""
+    return LANE_KNOWLEDGE if str(version or "").startswith(KNOWLEDGE_PREFIX) else LANE_API_PACK
+
+
+def _manifest_meta(manifest: dict) -> dict:
+    """What the manifest says about the pack as a whole, validated.
+
+    ``lane`` is the PROVENANCE lane (a /1 pack maps onto one, see
+    :func:`_legacy_lane`); ``series`` follows :func:`pack_series`."""
+    version = manifest.get("version")
+    if not isinstance(version, str) or not _VERSION_RE.match(version):
+        raise PackError("pack manifest has no valid version (%r)" % (version,))
+    schema = manifest.get("schema")
+    meta = {"schema": schema, "version": version, "name": "satom-apipack-%s" % version,
+            "min_satom": "", "publisher": "", "content_fingerprint": "", "snapshot": {},
+            "pinned_to": ""}
+    if schema == SCHEMA_V2:
+        missing = [k for k in V2_REQUIRED if k not in manifest]
+        if missing:
+            raise PackError("pack manifest (%s) lacks required key(s): %s"
+                            % (SCHEMA_V2, ", ".join(missing)))
+        for k in ("min_satom", "publisher", "content_fingerprint", "pinned_to"):
+            if not isinstance(manifest.get(k), str):
+                raise PackError("pack manifest key %r must be a string" % k)
+        if not up.VERSION_RE.match(manifest["min_satom"]):
+            raise PackError("pack manifest min_satom %r is not a version" % manifest["min_satom"])
+        snap = manifest.get("snapshot")
+        if not isinstance(snap, dict):
+            raise PackError("pack manifest key 'snapshot' must be an object")
+        if not isinstance(manifest.get("sections"), list):
+            raise PackError("pack manifest key 'sections' must be a list")
+        meta.update({k: manifest[k] for k in ("min_satom", "publisher", "content_fingerprint",
+                                              "pinned_to")})
+        meta["snapshot"] = snap
+        meta["lane"] = manifest["lane"]
+        meta["series"] = manifest["lane"]
+    else:
+        meta["lane"] = _legacy_lane(version)
+        meta["series"] = SERIES_KNOWLEDGE if version.startswith(KNOWLEDGE_PREFIX) else SERIES_RELEASE
+    meta["provenance"] = "%s%s:%s" % (PROV_PREFIX, meta["lane"], meta["name"])
+    return meta
+
+
+def _verify(pkg: Path, manifest: dict, trust_dir) -> dict:
+    """The key that signed ``pkg``, checked against the ONE key set its schema
+    and lane allow. ``manifest`` is read before it is trusted, but only to pick
+    the key set: the lane is inside the signed bytes, so changing it breaks the
+    signature for every key set but the one an attacker would need anyway."""
+    schema = manifest.get("schema")
+    if schema == SCHEMA_V2:
+        lane = manifest.get("lane")
+        if lane == LANE_TRANSPORT:
+            raise PackError("this is a harvester TRANSPORT pack (lane 'harvester'): it only "
+                            "travels from satom-harvester to the publisher and is never "
+                            "imported. Import the api_pack or knowledge pack published from it.")
+        if lane not in LANES:
+            raise PackError("pack lane %r is not importable: SATOM imports only %s packs"
+                            % (lane, " and ".join(LANES)))
+        keys = lane_keys(lane)
+        if not keys:
+            raise PackError("no %s key is trusted on this node (%s); install one with "
+                            "'satom execute trust add-key --purpose %s <file.pub>'"
+                            % (lane, " + ".join(str(d) for d in lane_key_dirs(lane)), lane))
+        try:
+            return up.verify_signature_keys(pkg, keys, "%s pack keys" % lane)
+        except up.PackageError as exc:
+            if "no key in the trust store" not in str(exc):
+                raise
+            raise PackError("this %s pack is not signed by a trusted %s key (%d key(s) "
+                            "tried). A pack signed with another lane's key or with the "
+                            "release key is refused." % (lane, lane, len(keys)))
+    if schema == SCHEMA_V1:
+        problem = up.trust_store_problem(trust_dir)
+        if problem:
+            raise PackError("trust store is not safe to use: %s" % problem)
+        return up.verify_signature(pkg, trust_dir)
+    raise PackError("unsupported pack schema %r (this node speaks %s)"
+                    % (schema, ", ".join(SCHEMAS)))
+
+
 def _open(path, tmp: Path, trust_dir) -> tuple:
+    """``(pkg_dir, manifest, key, meta)`` of a verified pack, or PackError."""
     path = Path(path)
     if not PACK_NAME_RE.match(path.name):
         raise PackError("%r is not an API pack name (satom-apipack-<version>.tar.gz)" % path.name)
     try:
         pkg = up.extract_package(path, tmp)
-        problem = up.trust_store_problem(trust_dir)
-        if problem:
-            raise PackError("trust store is not safe to use: %s" % problem)
-        key = up.verify_signature(pkg, trust_dir)
         manifest = up.read_manifest(pkg)
+        key = _verify(pkg, manifest, trust_dir)
     except up.PackageError as exc:
         raise PackError(str(exc))
-    if manifest.get("schema") != SCHEMA:
-        raise PackError("unsupported pack schema %r (this node speaks %s)"
-                        % (manifest.get("schema"), SCHEMA))
     if manifest.get("product") != PRODUCT:
         raise PackError("pack is for product %r, not %s" % (manifest.get("product"), PRODUCT))
+    meta = _manifest_meta(manifest)
+    mine = _satom_version()
+    if meta["min_satom"] and up.compare_versions(meta["min_satom"], mine) > 0:
+        raise PackError("pack %s needs SATOM %s or newer; this node runs %s. Update SATOM "
+                        "first, then import the pack again. Nothing was imported."
+                        % (meta["name"], meta["min_satom"], mine))
     problems = up.verify_contents(pkg, manifest)
     if problems:
         raise PackError("pack contents do not match the signed manifest: %s"
                         % "; ".join(problems[:5]))
-    for it in manifest.get("items") or []:
+    items = manifest.get("items")
+    if not isinstance(items, list):
+        raise PackError("pack manifest lists no items")
+    for it in items:
+        if not isinstance(it, dict) or not all(isinstance(it.get(k), str) and it.get(k)
+                                               for k in ("id", "section", "file")):
+            raise PackError("pack manifest holds an item without id/section/file: %r"
+                            % (str(it)[:120],))
         if it.get("file") not in (manifest.get("files") or {}):
             raise PackError("item %s names a file the manifest does not sign" % it.get("id"))
-    return pkg, manifest, key
+    return pkg, manifest, key, meta
+
+
+class ItemInvalid(ValueError):
+    """A malformed item payload. The item is rejected; the import goes on."""
+
+
+_PRODUCT_RE = re.compile(r"^[a-z][a-z0-9_-]{1,31}$")
+_PATH_TOKEN_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$")
+
+
+def _token(value, what: str, rx=_PATH_TOKEN_RE) -> str:
+    """A string safe to use as ONE path component, or ItemInvalid."""
+    if not isinstance(value, str) or not rx.match(value) or ".." in value:
+        raise ItemInvalid("%s %r is not a valid name" % (what, value if isinstance(value, str)
+                                                         else type(value).__name__))
+    return value
+
+
+def _product_of(it: dict, data=None) -> str:
+    p = it.get("product")
+    if not p and isinstance(data, dict):
+        p = data.get("product")
+    p = _token(p, "product", _PRODUCT_RE)
+    if isinstance(data, dict) and data.get("product") not in (None, "", p):
+        raise ItemInvalid("payload product %r does not match the item's %r"
+                          % (data.get("product"), p))
+    return p
+
+
+def _canon_sha(obj) -> str:
+    return hashlib.sha256(json.dumps(obj, sort_keys=True, ensure_ascii=False, default=str,
+                                     separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def provenance_parts(prov: str) -> tuple:
+    """``(lane, pack name)`` of ``pack:<lane>:<name>``; ``("local", "")``."""
+    if not prov or not str(prov).startswith(PROV_PREFIX):
+        return PROV_LOCAL, ""
+    rest = str(prov)[len(PROV_PREFIX):]
+    lane, _, name = rest.partition(":")
+    return lane, name
+
+
+def _version_key_of(name: str):
+    return _pack_version_key("%s.tar.gz" % name) if name.startswith("satom-apipack-") \
+        else ((1, 0, name),)
+
+
+def outranks(meta: dict, current: str) -> tuple:
+    """``(may_replace, why_not)``: may the pack ``meta`` replace a copy whose
+    provenance is ``current``? Local data is never replaced; between packs the
+    higher lane wins (api_pack > knowledge) and inside a lane the newer pack."""
+    lane, name = provenance_parts(current)
+    if lane == PROV_LOCAL:
+        return False, "this node's own copy; a pack never replaces it"
+    mine, theirs = LANE_RANK.get(meta["lane"], 0), LANE_RANK.get(lane, 0)
+    if mine != theirs:
+        return (mine > theirs,
+                "" if mine > theirs else "kept: written by %s (%s outranks %s)"
+                % (current, lane, meta["lane"]))
+    if _version_key_of(meta["name"]) >= _version_key_of(name):
+        return True, ""
+    return False, "kept: written by the newer pack %s" % name
+
+
+def evidence_provenance(origin_ref: str) -> str:
+    """Provenance of an evidence row from its ``origin_ref``."""
+    o = origin_ref or ""
+    if not o.startswith(ORIGIN_PREFIX):
+        return PROV_LOCAL
+    parts = o[len(ORIGIN_PREFIX):].split(":")
+    if len(parts) >= 3 and parts[0] in LANES:
+        return "%s%s:%s" % (PROV_PREFIX, parts[0], parts[1])
+    ver = parts[0]
+    return "%s%s:satom-apipack-%s" % (PROV_PREFIX, _legacy_lane(ver), ver)
+
+
+class _Ledger:
+    """Who wrote each file-backed copy (release notes per version, field
+    schema per object, the overlay, CLI digests): ``apipacks/provenance.json``.
+
+    A copy with no entry is LOCAL — unless the import log of a 2.x import says
+    a pack wrote it (those imports predate the ledger)."""
+
+    NAME = "provenance.json"
+
+    def __init__(self):
+        self.path = pack_dir() / self.NAME
+        try:
+            self.data = json.loads(self.path.read_text(encoding="utf-8"))
+            if not isinstance(self.data, dict):
+                self.data = {}
+        except (OSError, ValueError):
+            self.data = {}
+        self._legacy = None
+        self.dirty = False
+
+    def provenance(self, key: str, unowned: str = PROV_LOCAL) -> str:
+        rec = self.data.get(key)
+        if isinstance(rec, dict) and rec.get("provenance"):
+            return rec["provenance"]
+        return self.legacy().get(key) or unowned
+
+    def set(self, key: str, provenance: str) -> None:
+        self.data[key] = {"provenance": provenance,
+                          "at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z"}
+        self.dirty = True
+
+    def save(self) -> None:
+        if not self.dirty:
+            return
+        tmp = self.path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(self.data, indent=1, sort_keys=True), encoding="utf-8")
+        os.replace(tmp, self.path)
+        self.dirty = False
+
+    def legacy(self) -> dict:
+        if self._legacy is None:
+            self._legacy = _legacy_owners()
+        return self._legacy
+
+
+def _legacy_owners() -> dict:
+    """``{ledger key: provenance}`` reconstructed from the import logs a 2.x
+    node wrote: what each logged import added. Oldest first, first writer wins
+    (a 2.x import only ever added)."""
+    out: dict = {}
+    d = pack_dir() / "imports"
+    for f in sorted(d.glob("*.json")) if d.is_dir() else []:
+        try:
+            rec = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(rec, dict) or rec.get("lane"):
+            continue        # 3.0 logs: the ledger itself is authoritative
+        ver = str(rec.get("version") or "")
+        prov = "%s%s:satom-apipack-%s" % (PROV_PREFIX, _legacy_lane(ver), ver)
+        for it in rec.get("items") or []:
+            res = it.get("result") if isinstance(it, dict) else None
+            if not isinstance(res, dict) or not it.get("imported"):
+                continue
+            iid, product = str(it.get("id") or ""), str(it.get("product") or "")
+            if iid.startswith("docs/release-notes/"):
+                for v in res.get("versions") or []:
+                    out.setdefault("release-notes/%s/%s" % (product, v), prov)
+            elif iid.startswith("docs/field-schemas/"):
+                line = iid.rsplit("/", 1)[-1]
+                for o in res.get("objects") or []:
+                    out.setdefault("field-schemas/%s/%s/%s" % (product, line, o), prov)
+            elif iid == "docs/fortiweb-field-overlay":
+                out.setdefault("field-overlay/fortiweb", prov)
+    return out
+
+
+class _Run:
+    """One inspect or import of one pack: what it is and whose copies it meets."""
+
+    def __init__(self, pkg: Path, meta: dict):
+        self.pkg = pkg
+        self.meta = meta
+        self.provenance = meta["provenance"]
+        self.ledger = _Ledger()
+        self.cache: dict = {}
+        built = (meta.get("snapshot") or {}).get("built_at") or ""
+        try:
+            self.built_at = datetime.fromisoformat(str(built).replace("Z", "")[:19])
+        except ValueError:
+            self.built_at = datetime.utcnow().replace(microsecond=0)
+
+    def read(self, it: dict):
+        try:
+            return _read_gz_json(self.pkg / it["file"])
+        except (OSError, ValueError, EOFError) as exc:
+            raise ItemInvalid("payload is not gzip JSON (%s)" % exc)
+
+    def claim(self, key: str, current_sha, new_sha: str, *, unowned: str = PROV_LOCAL) -> dict:
+        """State of one replaceable copy (C6). ``current_sha`` None = absent."""
+        if current_sha is None:
+            return {"state": ST_NEW}
+        prov = self.ledger.provenance(key, unowned)
+        if current_sha == new_sha:
+            return {"state": ST_PRESENT, "current": prov}
+        if prov == PROV_LOCAL:
+            return {"state": ST_LOCAL, "current": prov,
+                    "note": "this node's own copy; a pack never replaces it"}
+        ok, why = outranks(self.meta, prov)
+        if ok:
+            return {"state": ST_UPDATE, "current": prov}
+        return {"state": ST_PRESENT, "current": prov, "note": why}
+
+
+def _rollup(states: dict, extra: dict | None = None) -> dict:
+    """Item state from per-unit states (versions, objects, rows)."""
+    out = dict(extra or {})
+    for k in (ST_NEW, ST_UPDATE, ST_LOCAL, ST_PRESENT):
+        out["%s_units" % k] = sorted(u for u, s in states.items() if s == k)
+    if out["new_units"]:
+        out["state"] = ST_NEW
+    elif out["update_units"]:
+        out["state"] = ST_UPDATE
+    elif out["local_units"] and not out["present_units"]:
+        out["state"] = ST_LOCAL
+    else:
+        out["state"] = ST_PRESENT
+    return out
 
 
 def _local_build(product: str, scope: dict) -> ApiLibBuild | None:
@@ -737,50 +1171,274 @@ def _library_state(doc: dict) -> str:
     return ST_NEW
 
 
-def _release_pairs() -> set:
+# -- per kind: validate the payload, say what importing it would do ----------
+
+def _v_library(run: _Run, it: dict):
+    doc = run.read(it)
+    if not isinstance(doc, dict):
+        raise ItemInvalid("evidence document is not an object")
+    if doc.get("product") != it.get("product") and it.get("product"):
+        raise ItemInvalid("evidence product %r does not match the item's %r"
+                          % (doc.get("product"), it.get("product")))
+    if doc.get("source") not in lib.SOURCES:
+        raise ItemInvalid("unknown evidence source %r" % (doc.get("source"),))
+    try:
+        lib._validate(doc)
+        if doc.get("source") in lib.CLI_SOURCES:
+            lib._validate_cli(doc)
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise ItemInvalid("evidence document refused: %s" % exc)
+    return doc
+
+
+def _s_library(run: _Run, it: dict, doc) -> dict:
+    st = _library_state(doc)
+    out = {"state": st}
+    if st == ST_PRESENT:
+        ev = ApiLibEvidence.query.filter_by(product=doc["product"], source=doc["source"],
+                                            sha256=lib.content_hash(doc)).first()
+        out["current"] = evidence_provenance(ev.origin_ref if ev else "")
+    elif st == ST_LOCAL:
+        out["current"] = PROV_LOCAL
+    return out
+
+
+def _rn_row(cls, d: dict, product: str) -> dict:
+    return dict({k: d.get(k) for k in cls.__annotations__ if k in d}, product=product)
+
+
+def _v_release_notes(run: _Run, it: dict):
     from . import release_notes as rn
-    corpus = rn.load_db(root=_release_root())
-    if corpus is None:
-        return set()
-    return ({(i.product, i.version) for i in corpus.issues}
-            | {(s.product, s.version) for s in corpus.sections})
+    data = run.read(it)
+    if not isinstance(data, dict):
+        raise ItemInvalid("release notes payload is not an object")
+    product = _product_of(it, data)
+    by_v: dict = {}
+    for key, cls in (("issues", rn.ReleaseIssue), ("sections", rn.ReleaseSection)):
+        rows = data.get(key) or []
+        if not isinstance(rows, list):
+            raise ItemInvalid("release notes %r is not a list" % key)
+        for d in rows:
+            if not isinstance(d, dict) or not isinstance(d.get("version"), str) \
+                    or not d["version"]:
+                raise ItemInvalid("a release-notes row has no version")
+            if (d.get("product") or product) != product:
+                continue        # rows of another product never land under this one
+            try:
+                row = cls(**_rn_row(cls, d, product)).__dict__
+            except TypeError as exc:
+                raise ItemInvalid("a release-notes %s row is incomplete (%s)" % (key[:-1], exc))
+            by_v.setdefault(d["version"], {"issues": [], "sections": []})[key].append(row)
+    if not by_v:
+        raise ItemInvalid("release notes item carries no row for %s" % product)
+    return {"product": product, "versions": by_v,
+            "generated_at": str(data.get("generated_at") or "")}
 
 
-def _item_state(pkg: Path, it: dict, cache: dict) -> dict:
-    f = pkg / it["file"]
-    sec, kind = it["section"], it.get("kind")
-    if sec == SECTION_LIBRARY:
-        return {"state": _library_state(_read_gz_json(f))}
-    if sec == SECTION_DOCS and kind == "release-notes":
-        if "pairs" not in cache:
-            cache["pairs"] = _release_pairs()
-        new = [v for v in it.get("versions") or [] if (it["product"], v) not in cache["pairs"]]
-        return {"state": ST_NEW if new else ST_PRESENT, "new_versions": new}
-    if sec == SECTION_DOCS and kind == "field-schemas":
-        d = _schema_root() / it["product"] / it["line"]
-        new = [o for o in it.get("objects") or [] if not (d / ("%s.json" % o)).exists()]
-        return {"state": ST_NEW if new else ST_PRESENT, "new_objects": new}
-    if sec == SECTION_DOCS and kind == "field-overlay":
-        return {"state": ST_PRESENT if _overlay_path().exists() else ST_NEW}
-    if sec == SECTION_CLI:
-        dest = pack_dir() / "cli-coverage" / it["product"] / ("%s.json" % _slug(it["version"]))
-        if dest.exists() and json.loads(dest.read_text()) == _read_gz_json(f):
-            return {"state": ST_PRESENT}
-        return {"state": ST_NEW}
-    return {"state": ST_PRESENT, "note": "unknown item kind; ignored"}
+def _rn_sha(rows: dict) -> str:
+    return _canon_sha({k: sorted(json.dumps(r, sort_keys=True, default=str) for r in rows[k])
+                       for k in ("issues", "sections")})
+
+
+def _rn_current(run: _Run) -> dict:
+    """``{(product, version): sha}`` of the local corpus (cached per run)."""
+    if "rn" not in run.cache:
+        from . import release_notes as rn
+        corpus = rn.load_db(root=_release_root())
+        cur: dict = {}
+        if corpus is not None:
+            for key, rows, cls in (("issues", corpus.issues, rn.ReleaseIssue),
+                                   ("sections", corpus.sections, rn.ReleaseSection)):
+                for r in rows:
+                    d = r.__dict__
+                    cur.setdefault((d.get("product"), d.get("version")),
+                                   {"issues": [], "sections": []})[key].append(
+                        _rn_row(cls, d, d.get("product")))
+        run.cache["rn"] = {k: _rn_sha(v) for k, v in cur.items()}
+    return run.cache["rn"]
+
+
+def _s_release_notes(run: _Run, it: dict, p: dict) -> dict:
+    from . import release_notes as rn
+    cur = _rn_current(run)
+    states, notes = {}, {}
+    for v, rows in p["versions"].items():
+        c = run.claim("release-notes/%s/%s" % (p["product"], v), cur.get((p["product"], v)),
+                      _rn_sha(rows))
+        states[v] = c["state"]
+        if c.get("note"):
+            notes[v] = c["note"]
+    out = _rollup(states, {"versions": sorted(p["versions"], key=rn.version_key)})
+    out["new_versions"] = out["new_units"]
+    out["update_versions"] = out["update_units"]
+    if notes:
+        out["notes"] = notes
+        out["note"] = "; ".join(sorted(set(notes.values())))[:300]
+    return out
+
+
+def _schema_line_dir(product: str, line: str) -> Path:
+    return _schema_root() / product / line
+
+
+def _v_field_schemas(run: _Run, it: dict):
+    data = run.read(it)
+    if not isinstance(data, dict) or not data:
+        raise ItemInvalid("field-schemas payload is not a non-empty object")
+    product = _product_of(it)
+    line = _token(it.get("line"), "line")
+    objs, bad = {}, []
+    for o, body in data.items():
+        if isinstance(o, str) and _PATH_TOKEN_RE.match(o) and ".." not in o \
+                and isinstance(body, (dict, list)):
+            objs[o] = body
+        else:
+            bad.append(str(o)[:60])
+    if not objs:
+        raise ItemInvalid("no valid object in the field-schemas payload")
+    return {"product": product, "line": line, "objects": objs, "bad": bad}
+
+
+def _file_sha(path: Path):
+    if not path.is_file():
+        return None
+    try:
+        return _canon_sha(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return "unreadable"
+
+
+def _s_field_schemas(run: _Run, it: dict, p: dict) -> dict:
+    d = _schema_line_dir(p["product"], p["line"])
+    states, notes = {}, {}
+    for o, body in p["objects"].items():
+        c = run.claim("field-schemas/%s/%s/%s" % (p["product"], p["line"], o),
+                      _file_sha(d / ("%s.json" % o)), _canon_sha(body))
+        states[o] = c["state"]
+        if c.get("note"):
+            notes[o] = c["note"]
+    out = _rollup(states, {"objects": sorted(p["objects"]), "line": p["line"]})
+    out["new_objects"] = out["new_units"]
+    out["update_objects"] = out["update_units"]
+    if p["bad"]:
+        out["warning"] = "skipped invalid object name(s): %s" % ", ".join(p["bad"][:10])
+    if notes:
+        out["notes"] = notes
+        out["note"] = "; ".join(sorted(set(notes.values())))[:300]
+    return out
+
+
+def _v_overlay(run: _Run, it: dict):
+    data = run.read(it)
+    if not isinstance(data, dict):
+        raise ItemInvalid("field overlay payload is not an object")
+    return data
+
+
+def _s_overlay(run: _Run, it: dict, data) -> dict:
+    return run.claim("field-overlay/fortiweb", _file_sha(_overlay_path()), _canon_sha(data))
+
+
+def _cli_dest(product: str, version: str) -> Path:
+    return pack_dir() / "cli-coverage" / product / ("%s.json" % _slug(version))
+
+
+def _v_cli(run: _Run, it: dict):
+    data = run.read(it)
+    if not isinstance(data, dict):
+        raise ItemInvalid("cli-coverage payload is not an object")
+    product = _product_of(it, data)
+    version = it.get("version") or data.get("version")
+    if not isinstance(version, str) or not _VERSION_RE.match(version):
+        raise ItemInvalid("cli-coverage item has no valid version (%r)" % (version,))
+    from . import cli_coverage as cc
+    for b in (cc.BUCKET_CLI_ONLY, cc.BUCKET_CATALOG_GAP, cc.BUCKET_NEAR):
+        rows = data.get(b, [])
+        if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+            raise ItemInvalid("cli-coverage %r is not a list of objects" % b)
+    if not isinstance(data.get("counts", {}), dict):
+        raise ItemInvalid("cli-coverage 'counts' is not an object")
+    return {"product": product, "version": version, "data": data}
+
+
+def _s_cli(run: _Run, it: dict, p: dict) -> dict:
+    # A digest only ever comes from a pack, so one without a ledger entry was
+    # written by a 2.x import: any pack may refresh it.
+    return run.claim("cli-coverage/%s/%s" % (p["product"], _slug(p["version"])),
+                     _file_sha(_cli_dest(p["product"], p["version"])), _canon_sha(p["data"]),
+                     unowned="%slegacy:" % PROV_PREFIX)
+
+
+def _handlers() -> dict:
+    from . import api_pack_kinds as k
+    return {
+        KIND_EVIDENCE: (_v_library, _s_library, _i_library),
+        KIND_RELEASE_NOTES: (_v_release_notes, _s_release_notes, _i_release_notes),
+        KIND_FIELD_SCHEMAS: (_v_field_schemas, _s_field_schemas, _i_field_schemas),
+        KIND_FIELD_OVERLAY: (_v_overlay, _s_overlay, _i_overlay),
+        KIND_CLI: (_v_cli, _s_cli, _i_cli),
+        KIND_FACTORY: (k.validate_factory, k.state_factory, k.import_factory),
+        KIND_FIELD_MAP: (k.validate_field_map, k.state_field_map, k.import_field_map),
+        KIND_BASELINE: (k.validate_baseline, k.state_baseline, k.import_baseline),
+        KIND_SIGMETA: (k.validate_sigmeta, k.state_sigmeta, k.import_sigmeta),
+    }
+
+
+def item_kind(it: dict) -> str:
+    return it.get("kind") or _IMPLICIT_KIND.get(it.get("section"), "")
+
+
+def _item_state(run: _Run, it: dict) -> tuple:
+    """``(state dict, payload)``. Never raises for a bad item: an unknown
+    section/kind or a malformed payload becomes a visible warning."""
+    sec, kind = it["section"], item_kind(it)
+    if kind not in KINDS.get(sec, ()):
+        return ({"state": ST_UNKNOWN,
+                 "warning": "unknown %s %r in section %r: skipped (this SATOM does not "
+                            "import it; a newer one may)"
+                            % ("kind" if sec in KINDS else "section", kind or None, sec)},
+                None)
+    validate, state, _imp = _handlers()[kind]
+    try:
+        payload = validate(run, it)
+        st = state(run, it, payload)
+    except ItemInvalid as exc:
+        return {"state": ST_REJECTED, "warning": "malformed %s item: %s" % (kind, exc)}, None
+    return st, payload
+
+
+def _public(st: dict) -> dict:
+    """State fields worth showing (inspect, results): drop the bulky unit lists."""
+    return {k: v for k, v in st.items() if not k.endswith("_units") or k == "update_units"}
+
+
+def _pack_info(meta: dict, key: dict) -> dict:
+    return {"schema": meta["schema"], "lane": meta["lane"], "series": meta["series"],
+            "provenance": meta["provenance"], "min_satom": meta["min_satom"],
+            "pinned_to": meta["pinned_to"], "publisher": meta["publisher"],
+            "content_fingerprint": meta["content_fingerprint"],
+            "snapshot": meta["snapshot"],
+            "signed_by": {"fingerprint": key.get("fingerprint"),
+                          "comment": key.get("comment", "")}}
+
+
+def _warnings(items: list) -> list:
+    return ["%s: %s" % (it["id"], it["warning"]) for it in items if it.get("warning")]
 
 
 def inspect_pack(path, trust_dir=None) -> dict:
     """Verify a pack and say, per item, what importing it would do."""
     tmp = Path(tempfile.mkdtemp(prefix="satom-apipack-"))
     try:
-        pkg, manifest, key = _open(path, tmp, trust_dir or TRUST_DIR)
-        cache: dict = {}
-        items = [dict(it, **_item_state(pkg, it, cache)) for it in manifest.get("items") or []]
-        return {"version": manifest.get("version"), "built_at": manifest.get("built_at"),
-                "signed_by": {"fingerprint": key.get("fingerprint"),
-                              "comment": key.get("comment", "")},
-                "notes": manifest.get("notes", ""), "items": items}
+        pkg, manifest, key, meta = _open(path, tmp, trust_dir or TRUST_DIR)
+        run = _Run(pkg, meta)
+        items = []
+        for it in manifest["items"]:
+            st, _payload = _item_state(run, it)
+            items.append(dict(it, kind=item_kind(it) or it.get("kind"), **_public(st)))
+        return dict(_pack_info(meta, key), version=manifest.get("version"),
+                    built_at=manifest.get("built_at"), notes=manifest.get("notes", ""),
+                    items=items, warnings=_warnings(items))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -799,120 +1457,131 @@ def _selected(it: dict, products, sections, ids) -> bool:
     return True
 
 
-def _import_release_notes(pkg: Path, it: dict, new_versions) -> dict:
-    """Add the item's ``new_versions`` of ONE product to the local corpus.
+def _i_library(run: _Run, it: dict, doc, st: dict) -> dict:
+    doc = dict(doc, origin_ref="%s%s:%s:%s" % (ORIGIN_PREFIX, run.meta["lane"],
+                                                run.meta["name"], doc.get("source")))
+    res = lib.ingest(doc)
+    return {"evidence_id": res["evidence_id"], "created": res["created"]}
 
-    Rows are taken only if they belong to the item's product: FortiWeb,
-    FortiAnalyzer and FortiGate all ship 7.6.x / 8.0.x, so a version match alone
-    would let a row of one product land as "new" for another (``new_versions``
-    was computed for ``it["product"]`` only). A row that names no product is
-    the item's own."""
+
+def _i_release_notes(run: _Run, it: dict, p: dict, st: dict) -> dict:
+    """Add the item's new versions of ONE product to the local corpus and
+    replace the pack-owned versions it corrects. Rows are taken only if they
+    belong to the item's product: FortiWeb, FortiAnalyzer and FortiGate all
+    ship 7.6.x / 8.0.x, so a version match alone would let a row of one
+    product land as another's."""
     from . import release_notes as rn
-    data = _read_gz_json(pkg / it["file"])
-    want = set(new_versions)
-    product = it.get("product") or data.get("product") or ""
+    new, upd = list(st.get("new_units") or []), list(st.get("update_units") or [])
+    want = set(new) | set(upd)
+    product = p["product"]
     root = _release_root()
-    corpus = rn.load_db(root=root) or rn.ReleaseNotesDB(generated_at=data.get("generated_at") or "")
-
-    def mine(d) -> bool:
-        return (isinstance(d, dict) and d.get("version") in want
-                and (d.get("product") or product) == product)
-
-    def row(cls, d):
-        return cls(**dict({k: v for k, v in d.items() if k in cls.__annotations__},
-                          product=product))
-
-    issues = [row(rn.ReleaseIssue, d) for d in data.get("issues") or [] if mine(d)]
-    sects = [row(rn.ReleaseSection, d) for d in data.get("sections") or [] if mine(d)]
+    corpus = rn.load_db(root=root) or rn.ReleaseNotesDB(generated_at=p["generated_at"])
+    if upd:
+        drop = {(product, v) for v in upd}
+        corpus.issues = [i for i in corpus.issues if (i.product, i.version) not in drop]
+        corpus.sections = [s for s in corpus.sections if (s.product, s.version) not in drop]
+    issues = [rn.ReleaseIssue(**d) for v in sorted(want) for d in p["versions"][v]["issues"]]
+    sects = [rn.ReleaseSection(**d) for v in sorted(want) for d in p["versions"][v]["sections"]]
     corpus.issues += issues
     corpus.sections += sects
     corpus.versions = sorted(set(corpus.versions) | want, key=rn.version_key)
     rn.save_db(corpus, root=root)
-    return {"versions": sorted(want, key=rn.version_key), "issues": len(issues),
-            "sections": len(sects)}
+    for v in want:
+        run.ledger.set("release-notes/%s/%s" % (product, v), run.provenance)
+    run.cache.pop("rn", None)
+    return {"versions": sorted(want, key=rn.version_key),
+            "replaced": sorted(upd, key=rn.version_key),
+            "issues": len(issues), "sections": len(sects)}
 
 
-def _import_field_schemas(pkg: Path, it: dict, new_objects) -> dict:
-    objs = _read_gz_json(pkg / it["file"])
-    d = _schema_root() / it["product"] / it["line"]
-    d.mkdir(parents=True, exist_ok=True)
-    written = []
-    for o in new_objects:
-        p = d / ("%s.json" % _slug(o))
-        if p.exists() or o not in objs:
-            continue
-        p.write_text(json.dumps(objs[o], indent=2, ensure_ascii=False), encoding="utf-8")
-        written.append(o)
-    return {"objects": written}
+def _write_json(path: Path, obj) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(".%s.tmp" % path.name)
+    tmp.write_text(json.dumps(obj, indent=2, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, path)
 
 
-def _import_one(pkg: Path, it: dict, st: dict) -> dict:
-    sec, kind = it["section"], it.get("kind")
-    if sec == SECTION_LIBRARY:
-        res = lib.ingest(_read_gz_json(pkg / it["file"]))
-        return {"evidence_id": res["evidence_id"], "created": res["created"]}
-    if kind == "release-notes":
-        return _import_release_notes(pkg, it, st.get("new_versions") or [])
-    if kind == "field-schemas":
-        return _import_field_schemas(pkg, it, st.get("new_objects") or [])
-    if kind == "field-overlay":
-        p = _overlay_path()
-        if not p.exists():
-            p.write_text(json.dumps(_read_gz_json(pkg / it["file"]), indent=2,
-                                    ensure_ascii=False), encoding="utf-8")
-            from . import fortiweb_field_schema
-            fortiweb_field_schema._overlay.cache_clear()
-        return {"written": str(p.name)}
-    if sec == SECTION_CLI:
-        dest = pack_dir() / "cli-coverage" / it["product"] / ("%s.json" % _slug(it["version"]))
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(json.dumps(_read_gz_json(pkg / it["file"]), indent=1,
-                                   ensure_ascii=False), encoding="utf-8")
-        return {"written": str(dest.relative_to(pack_dir()))}
-    return {"ignored": True}
+def _i_field_schemas(run: _Run, it: dict, p: dict, st: dict) -> dict:
+    d = _schema_line_dir(p["product"], p["line"])
+    written, replaced = [], []
+    for o in list(st.get("new_units") or []) + list(st.get("update_units") or []):
+        _write_json(d / ("%s.json" % o), p["objects"][o])
+        run.ledger.set("field-schemas/%s/%s/%s" % (p["product"], p["line"], o), run.provenance)
+        (replaced if o in (st.get("update_units") or []) else written).append(o)
+    return {"objects": written, "replaced": replaced}
+
+
+def _i_overlay(run: _Run, it: dict, data, st: dict) -> dict:
+    p = _overlay_path()
+    _write_json(p, data)
+    run.ledger.set("field-overlay/fortiweb", run.provenance)
+    from . import fortiweb_field_schema
+    fortiweb_field_schema._overlay.cache_clear()
+    return {"written": str(p.name), "replaced": st["state"] == ST_UPDATE}
+
+
+def _i_cli(run: _Run, it: dict, p: dict, st: dict) -> dict:
+    dest = _cli_dest(p["product"], p["version"])
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps(p["data"], indent=1, ensure_ascii=False), encoding="utf-8")
+    run.ledger.set("cli-coverage/%s/%s" % (p["product"], _slug(p["version"])), run.provenance)
+    return {"written": str(dest.relative_to(pack_dir()))}
+
+
+def _import_one(run: _Run, it: dict, st: dict, payload) -> dict:
+    return _handlers()[item_kind(it)][2](run, it, payload, st)
 
 
 def import_pack(path, *, trust_dir=None, products=None, sections=None, ids=None,
                 dry_run: bool = False, actor: str = "", progress=None) -> dict:
-    """Verify, then import the selected items that are ``new``.
+    """Verify, then import the selected items that are ``new`` or ``update``.
 
-    ``present`` and ``local`` items are reported and never touched (rule 3).
-    Every run that imports something is logged under ``apipacks/imports/``.
+    ``present`` and ``local`` items are reported and never touched (rule 3);
+    ``rejected`` (malformed) and ``unknown`` (a kind this node does not know)
+    items are skipped with a warning and do not fail the import. Every run that
+    imports something is logged under ``apipacks/imports/``.
     ``progress(done, total, item_id)`` is called before each selected item, and
     once more with ``item_id=None`` when the last one is finished.
     """
     products, sections, ids = set(products or ()), set(sections or ()), set(ids or ())
     tmp = Path(tempfile.mkdtemp(prefix="satom-apipack-"))
     try:
-        pkg, manifest, key = _open(path, tmp, trust_dir or TRUST_DIR)
-        known = {it["id"] for it in manifest.get("items") or []}
+        pkg, manifest, key, meta = _open(path, tmp, trust_dir or TRUST_DIR)
+        known = {it["id"] for it in manifest["items"]}
         if ids - known:
             raise PackError("not in this pack: %s" % ", ".join(sorted(ids - known)))
-        cache: dict = {}
+        run = _Run(pkg, meta)
         results = []
-        chosen = [it for it in manifest.get("items") or []
-                  if _selected(it, products, sections, ids)]
+        chosen = [it for it in manifest["items"] if _selected(it, products, sections, ids)]
         for n, it in enumerate(chosen):
             if progress:
                 progress(n, len(chosen), it["id"])
-            st = _item_state(pkg, it, cache)
-            rec = {"id": it["id"], "section": it["section"], "product": it.get("product"),
-                   "state": st["state"]}
-            if st["state"] == ST_NEW and not dry_run:
+            st, payload = _item_state(run, it)
+            rec = {"id": it["id"], "section": it["section"], "kind": item_kind(it),
+                   "product": it.get("product"), "state": st["state"]}
+            for k in ("warning", "current", "note"):
+                if st.get(k):
+                    rec[k] = st[k]
+            if st["state"] in IMPORTABLE and not dry_run:
                 try:
-                    rec["result"] = _import_one(pkg, it, st)
+                    rec["result"] = _import_one(run, it, st, payload)
                     rec["imported"] = True
-                    cache.pop("pairs", None)
+                    rec["provenance"] = run.provenance
                 except Exception as exc:  # noqa: BLE001 — one item must not stop the rest
                     db.session.rollback()
                     rec["error"] = "%s: %s" % (type(exc).__name__, exc)
             results.append(rec)
+        if not dry_run:
+            run.ledger.save()
         if progress:
             progress(len(chosen), len(chosen), None)
-        out = {"version": manifest.get("version"), "signed_by": key.get("fingerprint"),
-               "dry_run": dry_run, "items": results,
-               "imported": sum(1 for r in results if r.get("imported")),
-               "errors": sum(1 for r in results if r.get("error"))}
+        out = dict(_pack_info(meta, key), version=manifest.get("version"),
+                   signed_by=key.get("fingerprint"), dry_run=dry_run, items=results,
+                   imported=sum(1 for r in results if r.get("imported")),
+                   errors=sum(1 for r in results if r.get("error")),
+                   rejected=sum(1 for r in results if r["state"] == ST_REJECTED),
+                   unknown=sum(1 for r in results if r["state"] == ST_UNKNOWN),
+                   warnings=_warnings(results))
         # A full pass (no ticked subset: the CLI, the installer, the runner)
         # is recorded even when everything was already here, so "this pack was
         # imported" stays answerable (pending_shipped).
@@ -922,7 +1591,7 @@ def import_pack(path, *, trust_dir=None, products=None, sections=None, ids=None,
             stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
             (log / ("%s-%s.json" % (stamp, _slug(manifest.get("version"))))).write_text(
                 json.dumps(dict(out, actor=actor, pack=Path(path).name, partial=bool(ids)),
-                           indent=1),
+                           indent=1, default=str),
                 encoding="utf-8")
         return out
     finally:
@@ -948,29 +1617,74 @@ def _source_dir(source: str) -> Path:
     raise PackError("unknown pack source %r" % source)
 
 
-#: Two independent, CUMULATIVE series share ``api-packs/``:
-#:   release   ``satom-apipack-<x.y.z>``          exported from the release host's
-#:             library (its own measurements; never what it imported, rule 3);
-#:   knowledge ``satom-apipack-kb-YYYYMMDD[.N]``  built by the separate tool
-#:             satom-harvester (lab schema dumps, release notes) and re-signed
-#:             with the release key by the release pipeline.
-#: Each pack of a series carries everything the older ones did, so per series
-#: only the NEWEST pack is ever imported, and api-packs/ keeps only the newest
-#: knowledge pack (release packs are all kept: a node may pin an older one).
+#: Pack SERIES share ``api-packs/``. Each is CUMULATIVE (a full snapshot), so
+#: per lineage only the NEWEST pack is ever imported:
+#:   release   ``satom-apipack-<x.y.z>`` schema /1 (2.13 and older): exported
+#:             from the release host's library;
+#:   api_pack  schema /2, lane ``api_pack``: a satom-harvester snapshot pinned
+#:             to a SATOM release (3.0+). Same lineage as ``release``: the
+#:             3.0 pack supersedes the 2.x ones;
+#:   knowledge ``satom-apipack-kb-YYYYMMDD[.N]``: /1 kb packs and /2 packs of
+#:             lane ``knowledge`` — the rolling satom-harvester snapshot.
 SERIES_RELEASE = "release"
-SERIES_KNOWLEDGE = "knowledge"
-SERIES_ORDER = (SERIES_RELEASE, SERIES_KNOWLEDGE)
+SERIES_API_PACK = LANE_API_PACK
+SERIES_KNOWLEDGE = LANE_KNOWLEDGE
+SERIES_TRANSPORT = LANE_TRANSPORT
+SERIES_ORDER = (SERIES_RELEASE, SERIES_API_PACK, SERIES_KNOWLEDGE, SERIES_TRANSPORT)
+#: Supersession and import order run per LINEAGE.
+_LINEAGE = {SERIES_RELEASE: SERIES_API_PACK, SERIES_API_PACK: SERIES_API_PACK,
+            SERIES_KNOWLEDGE: SERIES_KNOWLEDGE, SERIES_TRANSPORT: SERIES_TRANSPORT}
+_LINEAGE_ORDER = (SERIES_API_PACK, SERIES_KNOWLEDGE, SERIES_TRANSPORT)
 KNOWLEDGE_PREFIX = "kb-"
 SERIES_LABELS = {SERIES_RELEASE: "release pack",
-                 SERIES_KNOWLEDGE: "knowledge pack (satom-harvester)"}
+                 SERIES_API_PACK: "API pack (pinned to a SATOM release)",
+                 SERIES_KNOWLEDGE: "knowledge pack (satom-harvester)",
+                 SERIES_TRANSPORT: "harvester transport pack (not importable)"}
 
 
 def _pack_version(name: str) -> str:
     return name[len("satom-apipack-"):-len(".tar.gz")]
 
 
-def pack_series(name: str) -> str:
-    """``knowledge`` for a satom-harvester pack (``kb-...``), else ``release``."""
+_PEEK: dict = {}
+
+
+def peek_manifest(path) -> dict:
+    """The manifest of a pack file, NOT verified — for labelling and ordering
+    only (lane, snapshot). Every decision to import verifies it again. ``{}``
+    when the file cannot be read. Cached by (path, size, mtime)."""
+    p = Path(path)
+    try:
+        st = p.stat()
+    except OSError:
+        return {}
+    ck = (str(p), st.st_size, st.st_mtime)
+    if ck in _PEEK:
+        return _PEEK[ck]
+    out: dict = {}
+    try:
+        with tarfile.open(p, "r:gz") as tf:
+            for m in tf:
+                parts = Path(m.name).parts
+                if len(parts) == 2 and parts[1] == "manifest.json" and m.isfile() \
+                        and m.size < 64 * 1024 * 1024:
+                    data = json.loads(tf.extractfile(m).read().decode("utf-8"))
+                    out = data if isinstance(data, dict) else {}
+                    break
+    except (OSError, ValueError, tarfile.TarError, EOFError):
+        out = {}
+    if len(_PEEK) > 256:
+        _PEEK.clear()
+    _PEEK[ck] = out
+    return out
+
+
+def pack_series(name: str, manifest: dict | None = None) -> str:
+    """Series of a pack: its ``lane`` for schema /2; a legacy /1 pack is
+    ``knowledge`` when it is a satom-harvester ``kb-...`` pack, else ``release``."""
+    m = manifest or {}
+    if m.get("schema") == SCHEMA_V2 and isinstance(m.get("lane"), str) and m.get("lane"):
+        return m["lane"] if m["lane"] in SERIES_ORDER else SERIES_TRANSPORT
     return (SERIES_KNOWLEDGE if _pack_version(name).startswith(KNOWLEDGE_PREFIX)
             else SERIES_RELEASE)
 
@@ -983,43 +1697,68 @@ def _pack_version_key(name: str):
                  for x in re.split(r"[.-]", _pack_version(name)))
 
 
-def _shipped_order(name: str):
-    """Import order of shipped packs: every release pack before every
-    knowledge pack, each series by version. The release pack is the publisher's
-    own measurement of real appliances; the knowledge pack fills what it lacks
-    (the import never overwrites, so the order only decides who arrives first)."""
-    return (SERIES_ORDER.index(pack_series(name)), _pack_version_key(name))
+def _lineage(series: str) -> str:
+    return _LINEAGE.get(series, SERIES_TRANSPORT)
+
+
+def _shipped_order(name: str, series: str | None = None):
+    """Import order of shipped packs: the api_pack lineage (release packs and
+    /2 api_packs) before the knowledge lineage, each by version. The import
+    replaces only what a lower lane or an older pack of the same lane wrote,
+    so the order decides who arrives first, not who wins."""
+    series = series or pack_series(name)
+    return (_LINEAGE_ORDER.index(_lineage(series)), _pack_version_key(name))
+
+
+def _snapshot_of(manifest: dict) -> dict:
+    snap = manifest.get("snapshot") if isinstance(manifest.get("snapshot"), dict) else {}
+    return {"run_id": snap.get("run_id") if isinstance(snap.get("run_id"), int) else None,
+            "built_at": str(snap.get("built_at") or ""),
+            "content_fingerprint": str(manifest.get("content_fingerprint") or "")}
 
 
 def list_packs() -> list:
     """Every pack this node can import from, newest first within each source.
 
     ``api-packs/`` keeps every release's pack, and a checkout gives them all
-    the same mtime, so shipped packs are ordered by VERSION (release packs
-    first, then knowledge packs); uploads by when they arrived. A shipped pack
-    that a newer one of its series replaces is flagged ``superseded``."""
+    the same mtime, so shipped packs are ordered by lineage then VERSION;
+    uploads by when they arrived. A shipped pack that a newer one of its
+    lineage replaces is flagged ``superseded``. Lane, schema and snapshot come
+    from the (unverified) manifest and are labels only."""
     out = []
+    done = _imported_names()
     for source in PACK_SOURCES:
         d = _source_dir(source)
         if not d.is_dir():
             continue
         found = [p for p in d.glob("satom-apipack-*.tar.gz")
                  if p.is_file() and PACK_NAME_RE.match(p.name)]
+        man = {p.name: peek_manifest(p) for p in found}
+        series_of = {p.name: pack_series(p.name, man[p.name]) for p in found}
         if source == SOURCE_SHIPPED:
             ranked = sorted(found, key=lambda p: _pack_version_key(p.name), reverse=True)
-            ranked.sort(key=lambda p: SERIES_ORDER.index(pack_series(p.name)))
+            ranked.sort(key=lambda p: _LINEAGE_ORDER.index(_lineage(series_of[p.name])))
         else:
             ranked = sorted(found, key=lambda p: p.stat().st_mtime, reverse=True)
         seen = set()
         for p in ranked:
             st = p.stat()
-            series = pack_series(p.name)
+            m = man[p.name]
+            series = series_of[p.name]
+            lane = series if series in LANES or series == SERIES_TRANSPORT \
+                else _legacy_lane(_pack_version(p.name))
             out.append({"source": source, "name": p.name, "size": st.st_size,
                         "version": _pack_version(p.name), "series": series,
-                        "label": SERIES_LABELS[series],
-                        "superseded": source == SOURCE_SHIPPED and series in seen,
+                        "label": SERIES_LABELS.get(series, series),
+                        "schema": m.get("schema") or "", "lane": lane,
+                        "provenance": "%s%s:%s" % (PROV_PREFIX, lane, p.name[:-len(".tar.gz")]),
+                        "pinned_to": str(m.get("pinned_to") or ""),
+                        "min_satom": str(m.get("min_satom") or ""),
+                        "snapshot": _snapshot_of(m),
+                        "imported": p.name in done,
+                        "superseded": source == SOURCE_SHIPPED and _lineage(series) in seen,
                         "mtime": datetime.utcfromtimestamp(int(st.st_mtime)).isoformat() + "Z"})
-            seen.add(series)
+            seen.add(_lineage(series))
     return out
 
 
@@ -1071,67 +1810,101 @@ def delete_upload(name: str) -> None:
     resolve_pack(SOURCE_UPLOADED, name).unlink()
 
 
-def import_history(limit: int = 10) -> list:
-    """The import log, newest first: what was imported, from which pack, by whom."""
+def _import_logs():
     d = pack_dir() / "imports"
     if not d.is_dir():
-        return []
-    out = []
-    for f in sorted(d.glob("*.json"), reverse=True)[:limit]:
+        return
+    for f in sorted(d.glob("*.json"), reverse=True):
         try:
             rec = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
+        if isinstance(rec, dict):
+            yield f, rec
+
+
+def import_history(limit: int = 10) -> list:
+    """The import log, newest first: what was imported, from which pack (lane
+    and provenance), by whom."""
+    out = []
+    for f, rec in _import_logs():
+        if len(out) >= limit:
+            break
         stamp = f.name.split("-", 1)[0]
         try:
             at = datetime.strptime(stamp, "%Y%m%dT%H%M%SZ").isoformat() + "Z"
         except ValueError:
             at = stamp
+        ver = str(rec.get("version") or "")
+        lane = rec.get("lane") or _legacy_lane(ver)
         out.append({"at": at, "version": rec.get("version"), "pack": rec.get("pack"),
                     "actor": rec.get("actor") or "", "imported": rec.get("imported", 0),
-                    "errors": rec.get("errors", 0)})
+                    "errors": rec.get("errors", 0), "lane": lane,
+                    "schema": rec.get("schema") or SCHEMA_V1,
+                    "provenance": rec.get("provenance")
+                    or "%s%s:satom-apipack-%s" % (PROV_PREFIX, lane, ver),
+                    "warnings": len(rec.get("warnings") or []),
+                    "partial": bool(rec.get("partial")),
+                    "content_fingerprint": str(rec.get("content_fingerprint") or ""),
+                    "snapshot": _snapshot_of(rec)})
     return out
+
+
+def _full_imports() -> list:
+    """Logged full passes with no failed item (newest first)."""
+    return [rec for _f, rec in _import_logs()
+            if not rec.get("errors") and not rec.get("partial") and rec.get("pack")]
 
 
 def _imported_names() -> set:
     """Packs this node has fully imported: a logged full pass with no failed
     item. A run that only took ticked items, or where an item failed, leaves
     the pack pending so the next update (or ``import shipped``) retries it."""
-    done = set()
-    d = pack_dir() / "imports"
-    if d.is_dir():
-        for f in d.glob("*.json"):
-            try:
-                rec = json.loads(f.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
-            if rec.get("errors") or rec.get("partial"):
-                continue
-            if rec.get("pack"):
-                done.add(rec["pack"])
-    return done
+    return {rec["pack"] for rec in _full_imports()}
+
+
+def _covered_by(pack: dict, imported: list) -> str:
+    """The name of an imported pack whose snapshot already holds ``pack``'s
+    content — the same content fingerprint, or a NEWER harvester run of any
+    lane (both lanes are full snapshots of the same harvester) — else ``""``.
+    Importing a covered pack would only bring older content back."""
+    snap = pack.get("snapshot") or {}
+    fp, run = snap.get("content_fingerprint"), snap.get("run_id")
+    for rec in imported:
+        other = _snapshot_of(rec)
+        if fp and other["content_fingerprint"] == fp:
+            return rec["pack"]
+        if isinstance(run, int) and isinstance(other["run_id"], int) and other["run_id"] >= run:
+            return rec["pack"]
+    return ""
 
 
 def pending_shipped(packs: list | None = None) -> list:
     """Shipped packs this node has not imported yet, in import order.
 
-    Per series only the newest shipped pack counts (each one is cumulative):
-    the release pack of the running release and the newest knowledge pack.
-    Release packs come first, then the knowledge pack (``_shipped_order``).
-    An update brings them into ``api-packs/`` and the runner imports them on
-    the primary; the page uses this to say so when that did not happen (a
-    standby promoted later, an update applied by an older runner, an import
-    that failed). ``[]`` when there is nothing to do."""
+    Per lineage only the newest shipped pack counts (each one is cumulative):
+    the api_pack of the running release (or the release pack of a 2.x tree)
+    and the newest knowledge pack. A pack is NOT pending when an imported pack
+    of either lane already carries its snapshot (same content fingerprint or a
+    newer harvester run): an api_pack older than the knowledge pack the node
+    fetched is not a regression to repair. The harvester transport lane is
+    never pending. An update brings packs into ``api-packs/`` and the runner
+    imports them on the primary; the page uses this to say so when that did
+    not happen. ``[]`` when there is nothing to do."""
     shipped = [p for p in (packs if packs is not None else list_packs())
-               if p["source"] == SOURCE_SHIPPED and not p.get("superseded")]
+               if p["source"] == SOURCE_SHIPPED and not p.get("superseded")
+               and p.get("series") != SERIES_TRANSPORT]
     if not shipped:
         return []
-    done = _imported_names()
-    return sorted((p for p in shipped if p["name"] not in done),
-                  key=lambda p: _shipped_order(p["name"]))
+    full = _full_imports()
+    done = {rec["pack"] for rec in full}
+    out = [p for p in shipped if p["name"] not in done and not _covered_by(p, full)]
+    return sorted(out, key=lambda p: _shipped_order(p["name"], p.get("series")))
 
 
-__all__ = ["SCHEMA", "SECTIONS", "ORIGIN_PREFIX", "PackError", "rebuild_document",
-           "export_pack", "inspect_pack", "import_pack", "list_packs", "resolve_pack",
-           "save_upload", "delete_upload", "import_history", "pending_shipped",
-           "pack_series", "SERIES_LABELS"]
+__all__ = ["SCHEMA", "SCHEMA_V1", "SCHEMA_V2", "SECTIONS", "IMPORT_SECTIONS", "LANES",
+           "ORIGIN_PREFIX", "PackError", "ItemInvalid", "rebuild_document", "export_pack",
+           "inspect_pack", "import_pack", "list_packs", "resolve_pack", "save_upload",
+           "delete_upload", "import_history", "pending_shipped", "pack_series",
+           "peek_manifest", "SERIES_LABELS", "lane_keys", "trust_summary", "outranks",
+           "evidence_provenance"]

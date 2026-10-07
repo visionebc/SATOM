@@ -69,7 +69,7 @@
           <td><code>{{ r.to_field }}</code><div>{{ seen(r.to_seen) }}</div></td>
           <td style="font-size:12px;">{{ r.from_version or _('any') }} &rarr; {{ r.to_version or _('any') }}</td>
           <td style="font-size:12px;">{{ r.note }}</td>
-          <td class="text-muted" style="font-size:11.5px;">{{ r.created_by or '—' }}<br>{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '' }}</td>
+          <td class="text-muted" style="font-size:11.5px;">{% if r.status == 'candidate' %}<span class="fw-badge fw-badge-info" title="{{ _('Proposed by a signed pack. Shown here, never applied: add it as your own mapping to make it a rename.') }}">{{ _('candidate') }}</span> {% endif %}{% if r.origin and r.origin != 'local' %}<span class="fw-badge fw-badge-secondary font-monospace">{{ r.origin }}</span><br>{% endif %}{{ r.created_by or '—' }}<br>{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '' }}</td>
           <td class="text-end">
             <button type="button" class="btn btn-sm btn-outline-secondary fm-retire"
                     data-url="{{ url_for('apilib_fieldmap.retire', map_id=r.id) }}"

@@ -418,7 +418,40 @@ def verify_signature(pkg_dir, trust_dir=DEFAULT_TRUST_DIR) -> dict:
 
     Returns the trusted key that matched. Raises ``PackageError`` otherwise —
     an unsigned package and a badly-signed one are the same refusal.
+
+    This is the UPDATE verifier: it reads ``trust_dir`` and nothing else. The
+    API-pack keys (:data:`PACK_KEY_DIR`) are a separate trust domain and never
+    reach this function; a pack key cannot sign an update.
     """
+    return verify_signature_keys(pkg_dir, load_trust_store(trust_dir), str(trust_dir))
+
+
+#: Trust domains (one key, one use). ``update`` is the store above; the pack
+#: lanes are verified only with their own keys (``app/services/api_pack.py``).
+PACK_LANES = ("api_pack", "knowledge")
+TRUST_PURPOSES = ("update",) + PACK_LANES
+#: Operator-managed pack keys, one sub-directory per lane. The keys shipped
+#: with the code live in ``deploy/pack-keys/<lane>/`` and are trusted because
+#: the code tree itself arrived release-signed.
+PACK_KEY_DIR = "/etc/satom/pack-keys"
+
+
+def load_key_dirs(dirs) -> list:
+    """Every usable key of several key directories, de-duplicated by
+    fingerprint (first directory wins). Each entry also names its ``dir``."""
+    out, seen = [], set()
+    for d in dirs:
+        for k in load_trust_store(d):
+            if k["fingerprint"] in seen:
+                continue
+            seen.add(k["fingerprint"])
+            out.append(dict(k, dir=str(d)))
+    return out
+
+
+def verify_signature_keys(pkg_dir, keys, store_label: str) -> dict:
+    """``manifest.sig`` checked against an explicit key list (see
+    :func:`verify_signature`). ``store_label`` names the key set in errors."""
     pkg_dir = Path(pkg_dir)
     mpath = pkg_dir / "manifest.json"
     spath = pkg_dir / "manifest.sig"
@@ -431,10 +464,9 @@ def verify_signature(pkg_dir, trust_dir=DEFAULT_TRUST_DIR) -> dict:
     except Exception:
         raise PackageError("manifest.sig is not valid base64")
     msg = mpath.read_bytes()
-    keys = load_trust_store(trust_dir)
     if not keys:
         raise PackageError("the trust store %s holds no usable public key"
-                           % trust_dir)
+                           % store_label)
     for k in keys:
         if ed25519_verify(k["key"], msg, sig):
             return k

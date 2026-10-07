@@ -6,6 +6,57 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — knowledge feed (3.0.0)
+
+- **Software Update → Knowledge packs**: the pack installed per lane (API pack
+  pinned to the release; rolling knowledge pack) with its date and age, a
+  *stale* badge after 30 days, and what the knowledge feed offers. **Check
+  now**, **Download** (size and sha256 must match the feed; nothing is kept
+  otherwise) and **Import** (a background job; the signature is verified by the
+  import, primary only). A manual-download link and the air-gapped path
+  (upload under API library packs) are on the card.
+- Scheduled action **`knowledge_fetch`** (daily, seeded by `satom execute seed
+  actions`) with the mode setting `knowledge.fetch_mode` = `off | notify |
+  download | download_import` (default `download_import`) and the feed URL
+  `knowledge.feed_url` (default: the public `knowledge` release's
+  `latest.json`; any https mirror). Same HTTPS client, proxy environment and
+  TLS verification as the system-upgrade feed. A standby does nothing and says
+  why. The last result (status, message, time, pack) is kept in
+  `knowledge.fetch_last`.
+- CLI: `satom execute knowledge fetch [--feed URL] [--import] [--yes]` (a check
+  until `--yes`; `--import --yes` downloads and imports) and `satom show
+  knowledge`.
+- Freshness line on the Release Notes modal, the Scout advisory and the
+  Migration Report: "Knowledge from `<pack>` (`<date>`)", with a warning when
+  it is older than 30 days or no pack was imported.
+
+### Removed — docs.fortinet.com crawler (3.0.0)
+
+- SATOM no longer fetches anything from docs.fortinet.com. Removed: the
+  release-notes HTTP transport (`httpx_fetch`, `make_fetcher`,
+  `docs_online`), version discovery and the scan orchestration, the HTML
+  parsers, the **Scan from Fortinet** panel and its `/release-notes/scan`,
+  `/release-notes/discover` and `/release-notes/scan/status` routes, and the
+  scan status file. Release notes, the Scout advisory and upgrade paths read
+  the corpus imported from signed packs; the crawler lives only in the
+  separate knowledge harvester.
+- Guard `tests/test_no_vendor_http.py`: no module under `app/` that imports an
+  HTTP client names a Fortinet web host.
+
+### Added — signature DB freshness (3.0.0)
+
+- Scheduled action **`signature_check`** (daily): reads only each FortiWeb's
+  signature database version (`diagnose system update info`), stores it with
+  the time it last changed, and re-reads the cached signature catalog only when
+  a version changed.
+- The alert engine raises a **device** finding when a FortiWeb's signature DB
+  is older than `alerts.signature_max_days` (default 7), reports it never
+  updated, or cannot be read. Administrator → Signatures lists the state per
+  device.
+- Signature search and details show public FortiGuard metadata (name,
+  severity, CVEs, link) from `knowledge_signature_meta` when a knowledge pack
+  carried it.
+
 ## [2.13.0] - 2026-10-07
 
 ### Fixed — a page that renders its own `products` list no longer breaks the Global sidebar (2026-10-07)

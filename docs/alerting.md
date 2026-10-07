@@ -44,6 +44,12 @@ existed, and the map is explicit rather than clever:
 | `host.` | `host` | Host resources |
 | `catalog.` | `catalog` | API catalog integrity |
 
+The `device` family also carries `device.signature_stale` and
+`device.signature_unreadable` (3.0): a FortiWeb whose signature database is
+older than `alerts.signature_max_days` (default 7), reports it never updated,
+or whose version the daily `signature_check` action could not read. They ride
+the *Device health* toggle.
+
 Two families are **unfilterable** and no sink configuration can drop them:
 
 - `engine` — the alert engine itself failed. A channel silenced by a crashed

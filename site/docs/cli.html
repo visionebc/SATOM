@@ -830,7 +830,7 @@ longer matches the console you are running.</p>
 <td><code>satom show trust</code></td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
-<td>Public keys this node accepts update packages from.</td>
+<td>Public keys this node accepts, per purpose (update, api_pack, knowledge), with fingerprints.</td>
 </tr>
 <tr>
 <td><code>satom show package &lt;file.tar.gz&gt;</code></td>
@@ -1221,13 +1221,13 @@ longer matches the console you are running.</p>
 <td>Check one appliance's configuration (newest vault dump) against a target build: blocking, translated, warned and new items + verdict. Read-only.</td>
 </tr>
 <tr>
-<td><code>satom execute trust add-key &lt;file.pub&gt; [--name &lt;slug&gt;]</code></td>
+<td><code>satom execute trust add-key &lt;file.pub&gt; [--purpose update\|api_pack\|knowledge] [--name &lt;slug&gt;]</code></td>
 <td style="text-align: center;">yes</td>
 <td style="text-align: center;">—</td>
-<td>Install a signing public key into the trust store.</td>
+<td>Install a signing public key for one purpose (default: update).</td>
 </tr>
 <tr>
-<td><code>satom execute trust remove-key &lt;name\|fingerprint&gt; --yes</code></td>
+<td><code>satom execute trust remove-key &lt;name\|fingerprint&gt; [--purpose update\|api_pack\|knowledge] --yes</code></td>
 <td style="text-align: center;">yes</td>
 <td style="text-align: center;">!</td>
 <td>Stop accepting packages signed by a key. Needs --yes.</td>

@@ -6,6 +6,56 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — BREAKING: API packs use schema `satom.api-pack/2` (3.0.0)
+
+- Packs published from 3.0.0 on are `satom.api-pack/2`: the manifest names its
+  `lane` (`api_pack` | `knowledge`), `min_satom`, `publisher`,
+  `content_fingerprint`, the harvester `snapshot` and `pinned_to`, and every
+  item names its `kind`. SATOM 2.13 and older refuse them (`unsupported pack
+  schema`); 3.0 still imports the 2.x `/1` packs. A pack whose `min_satom` is
+  newer than the running SATOM is refused whole, with the version it needs.
+
+### Security — split pack trust (3.0.0)
+
+- One key, one use. Update packages are verified only with the update trust
+  store; a `/2` pack only with the keys of its manifest lane —
+  `deploy/pack-keys/<lane>/` shipped in the release-signed tree plus
+  `/etc/satom/pack-keys/<lane>/` added by the operator (root-owned or refused).
+  A knowledge-signed pack that claims lane `api_pack`, a release-signed `/2`
+  pack and a `/1` pack signed with a pack key are all refused; the transport
+  lane `harvester` is never imported. The update verifier never reads a pack
+  key.
+- Ships the public keys `satom-apipack-2026` (`SHA256:tHXWO5UWTnvgoTloIzBpsN7J9Vj/NVbcTZFsdgww0ks`)
+  and `satom-knowledge-2026` (`SHA256:hVYALGlEVZISwsSFRvr6ymysCuYUo1NxecpUhLJXDjE`).
+  Because they come with the code, the shipped pack imports on a fresh install
+  and on the first update from 2.x without installing a key first.
+- `satom execute trust add-key --purpose update|api_pack|knowledge` (default
+  `update`) refuses a key already trusted for another purpose; `satom show
+  trust` lists the keys per purpose with fingerprints.
+
+### Added — knowledge pack sections (3.0.0)
+
+- New item kinds, each validated (a malformed item is rejected with its reason;
+  the rest of the pack still imports): `factory-wpp` (predefined protection
+  profiles into the factory catalog; never over a row captured locally),
+  `field-map` (rename candidates: shown with a badge, never applied, never over
+  an operator's mapping), `baseline` (stored for a build with no local baseline,
+  never the active one), `signature-meta` (public FortiGuard metadata into the
+  new table `knowledge_signature_meta`, migration `apipack06_knowledge_lanes`).
+  A section or kind a node does not know is skipped with a visible warning.
+- Provenance on every imported row (`local` | `pack:api_pack:<pack>` |
+  `pack:knowledge:<pack>`), shown by inspect, the pack list, the import history
+  and the API pack section of Software Update.
+- Corrections arrive: a copy a pack wrote (release notes per version, field
+  schemas per object, database rows) is replaced when an outranking pack
+  carries a different one — local data > api_pack > knowledge, newer pack inside
+  a lane. Local data is never replaced; copies a 2.x node imported are
+  recognised from its import log.
+- The 3.0 API pack supersedes the 2.x release packs; a shipped pack whose
+  snapshot an imported pack already carries is no longer reported as pending.
+- `flask apilib pack export` (schema `/1`) is kept for local and offline use and
+  marked legacy; releases no longer use it. docs/api-library.md §12.
+
 ## [2.13.0] - 2026-10-07
 
 ### Fixed — a page that renders its own `products` list no longer breaks the Global sidebar (2026-10-07)

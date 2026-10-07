@@ -2,7 +2,7 @@
 
 > **Audience:** operators planning a firmware upgrade (or a downgrade, or a move
 > to another box) and change approvers who read the verdict. The data comes from
-> the [API library](api-library.md) §13; the operator walkthrough is in the
+> the [API library](api-library.md) §14; the operator walkthrough is in the
 > [User guide](user-guide.md) §40.3.
 >
 > **Since:** SATOM 2.13.0 (unreleased).
@@ -151,7 +151,7 @@ Recording the field map `token-header` → `jwt-token-name` turns that row into
   settings. The report reads the dump for what the device *uses* and the
   library's `tree` for what the build *has*.
 - **The target must be harvested.** A build with no `cli_tree` evidence cannot be
-  assessed. Harvest a box on it, or import a knowledge pack (API library §13.12).
+  assessed. Harvest a box on it, or import a knowledge pack (API library §14.12).
 - **Products.** FortiWeb (verified schema and path rule), FortiGate (CLI schema
   verified) and FortiADC (path rule unverified: no lab device). FortiAuthenticator
   and FortiAnalyzer have no migration report.

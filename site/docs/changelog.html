@@ -112,6 +112,57 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--knowledge-feed-300">Added — knowledge feed (3.0.0)</h3>
+<ul>
+<li><strong>Software Update → Knowledge packs</strong>: the pack installed per lane (API pack
+  pinned to the release; rolling knowledge pack) with its date and age, a
+  <em>stale</em> badge after 30 days, and what the knowledge feed offers. <strong>Check
+  now</strong>, <strong>Download</strong> (size and sha256 must match the feed; nothing is kept
+  otherwise) and <strong>Import</strong> (a background job; the signature is verified by the
+  import, primary only). A manual-download link and the air-gapped path
+  (upload under API library packs) are on the card.</li>
+<li>Scheduled action <strong><code>knowledge_fetch</code></strong> (daily, seeded by <code>satom execute seed
+  actions</code>) with the mode setting <code>knowledge.fetch_mode</code> = <code>off | notify |
+  download | download_import</code> (default <code>download_import</code>) and the feed URL
+  <code>knowledge.feed_url</code> (default: the public <code>knowledge</code> release's
+  <code>latest.json</code>; any https mirror). Same HTTPS client, proxy environment and
+  TLS verification as the system-upgrade feed. A standby does nothing and says
+  why. The last result (status, message, time, pack) is kept in
+  <code>knowledge.fetch_last</code>.</li>
+<li>CLI: <code>satom execute knowledge fetch [--feed URL] [--import] [--yes]</code> (a check
+  until <code>--yes</code>; <code>--import --yes</code> downloads and imports) and <code>satom show
+  knowledge</code>.</li>
+<li>Freshness line on the Release Notes modal, the Scout advisory and the
+  Migration Report: "Knowledge from <code>&lt;pack&gt;</code> (<code>&lt;date&gt;</code>)", with a warning when
+  it is older than 30 days or no pack was imported.</li>
+</ul>
+<h3 id="removed--docsfortinetcom-crawler-300">Removed — docs.fortinet.com crawler (3.0.0)</h3>
+<ul>
+<li>SATOM no longer fetches anything from docs.fortinet.com. Removed: the
+  release-notes HTTP transport (<code>httpx_fetch</code>, <code>make_fetcher</code>,
+  <code>docs_online</code>), version discovery and the scan orchestration, the HTML
+  parsers, the <strong>Scan from Fortinet</strong> panel and its <code>/release-notes/scan</code>,
+  <code>/release-notes/discover</code> and <code>/release-notes/scan/status</code> routes, and the
+  scan status file. Release notes, the Scout advisory and upgrade paths read
+  the corpus imported from signed packs; the crawler lives only in the
+  separate knowledge harvester.</li>
+<li>Guard <code>tests/test_no_vendor_http.py</code>: no module under <code>app/</code> that imports an
+  HTTP client names a Fortinet web host.</li>
+</ul>
+<h3 id="added--signature-db-freshness-300">Added — signature DB freshness (3.0.0)</h3>
+<ul>
+<li>Scheduled action <strong><code>signature_check</code></strong> (daily): reads only each FortiWeb's
+  signature database version (<code>diagnose system update info</code>), stores it with
+  the time it last changed, and re-reads the cached signature catalog only when
+  a version changed.</li>
+<li>The alert engine raises a <strong>device</strong> finding when a FortiWeb's signature DB
+  is older than <code>alerts.signature_max_days</code> (default 7), reports it never
+  updated, or cannot be read. Administrator → Signatures lists the state per
+  device.</li>
+<li>Signature search and details show public FortiGuard metadata (name,
+  severity, CVEs, link) from <code>knowledge_signature_meta</code> when a knowledge pack
+  carried it.</li>
+</ul>
 <h2 id="2130---2026-10-07">[2.13.0] - 2026-10-07</h2>
 <h3 id="fixed--a-page-that-renders-its-own-products-list-no-longer-breaks-the-global-sidebar-2026-10-07">Fixed — a page that renders its own <code>products</code> list no longer breaks the Global sidebar (2026-10-07)</h3>
 <ul>

@@ -702,6 +702,31 @@ Prevention — plus the profile itself under Policy → Web Protection Profile
 - Profile-level editing shows each sub-policy as a dropdown with Edit/＋,
   down to six levels of nesting.
 
+### 8.1 Signature database freshness and FortiGuard metadata
+
+Every FortiWeb downloads its own signature database from FortiGuard; SATOM
+never carries signatures. What it does is notice when a box stops updating:
+the daily scheduled action **`signature_check`** reads, per FortiWeb, only the
+signature database **version** (`diagnose system update info`, one read-only
+CLI command over SSH) and records when it last changed. The full signature
+catalog (Administrator → Signatures) is re-read only when a version changed.
+
+**Administrator → Signatures** lists every device with its version, last update,
+the time of the check and a status: *current*, *stale* or *unreadable*. A
+device whose signature database is **older than 7 days** — measured from the
+device's own "last update" time, or, when it gives none, from when SATOM saw the
+version change — or that reports it **never** downloaded an update, or whose
+version cannot be read (SSH off, wrong credentials), raises a **device alert**
+through the alert engine (§26.6): the same family, toggle, routing and cooldown
+as the other device-health alerts. The limit is the setting
+`alerts.signature_max_days`. Devices in maintenance are skipped.
+
+When a knowledge pack carries **signature metadata** (public FortiGuard
+encyclopedia data: name, severity, category, CVEs, a link), the signature
+search shows a severity badge and the CVEs next to each id it knows, and the
+signature's details add a **FortiGuard** row. Ids with no metadata show as
+before.
+
 ## 9. Exceptions & signature carve-outs
 
 FortiWeb ADOM → **Exceptions** is the single place for every policy-bound
@@ -1633,7 +1658,7 @@ Server Policy for operators):
   | Monitoring — all four are the ones §14 asks you to schedule | `metrics_scrape` (the Collection sweep, §14.7 — **every 3 minutes**), `deep_monitor` (the deep-monitor probe sweep, §14.3 — **every 3 minutes**, the seed plan's cadence), `monitor_report` (the period summary, §14.9 — *after* the period closes), `inventory_snapshot` (daily inventory counts for §14.2) |
   | Certificates | `cert_scan`, the three `cert_manager_*` renewals (server / client+server / client), `cert_lifecycle` (the revoke-and-cleanup sweep) |
   | Health | `health_check`, `ha_check`, `stats` |
-  | Catalog | `appid_import` (the nightly AppID feed, §25) |
+  | Catalog | `appid_import` (the nightly AppID feed, §25), `knowledge_fetch` (knowledge packs from the feed, daily, by mode — §22.4), `signature_check` (signature database version per FortiWeb, daily — §8.1) |
   | Firmware | `upgrade_prep` (backup + health, flashes nothing) and `upgrade` — fixed date/time, only inside an approved Change Request window; the scheduled executor does **not** flash yet (it reports each target *not executed*), so flash live from the Upgrade page (§36.6) |
   | Escape hatch | `custom_rest` — any FortiWeb REST request you define; GET is a live read, writes go through the snapshot + audit + dry-run path |
 
@@ -2168,7 +2193,8 @@ The same page carries a third card, **API library packs**. A pack holds what
 SATOM has learned about vendor APIs — which endpoints and fields each firmware
 build serves (from real sweeps, anonymised), the vendor release notes and field
 catalog, and the CLI-only blocks per firmware line — for a node that has no
-appliance of a build and no access to docs.fortinet.com to learn them.
+appliance of a build to learn them from. Since 3.0 they are also the only
+source of the vendor release notes (§22.4).
 It never carries a configuration value or a device name.
 
 1. **Pick a pack.** The release you run carries its own (*this release*); you
@@ -2209,6 +2235,64 @@ applied until you press **Apply**. From a shell:
 `sudo satom execute update fetch --yes`. A node with no internet still
 uploads the file. Details:
 [offline-update-packages.md §1.1](offline-update-packages.md).
+
+### 22.4 Knowledge packs — online fetch and air-gapped upload
+
+Release notes, the Scout advisory, upgrade paths and the public FortiGuard
+metadata shown next to signature ids all come from **signed packs**, in two
+lanes with the same content sections:
+
+| Lane | What it is | How it arrives |
+|---|---|---|
+| **API pack** | Pinned to a SATOM release (`satom-apipack-<version>`) | Inside the update; imported by the update on the primary |
+| **Knowledge pack** | Rolling (`satom-apipack-kb-YYYYMMDD[.N]`), published whenever the knowledge changes | The knowledge feed, or an upload |
+
+The **Knowledge packs** card on Software Update shows, per lane, the pack
+installed on this node, its date and its age (a **stale** badge after 30 days),
+and what the feed offers:
+
+- **Check now** reads the feed (`latest.json`) and compares it with the newest
+  imported knowledge pack. Nothing is downloaded.
+- **Download** fetches the pack into the upload area; its size and sha256 must
+  match the feed or nothing is kept.
+- **Import** downloads it if needed and imports it as a background job. The
+  signature is verified against the knowledge lane's keys; a pack the keys did
+  not sign is refused and nothing is imported.
+
+The feed is read over HTTPS with the same proxy and TLS settings as the
+system-upgrade feed. **Scheduled fetch (daily)** chooses what the daily
+scheduled action `knowledge_fetch` does:
+
+| Mode | Daily action |
+|---|---|
+| `off` | nothing |
+| `notify` | checks and tells the administrators (bell) once per new pack |
+| `download` | also downloads and stages the pack |
+| `download_import` (default) | also imports it |
+
+The **Feed URL** is the public knowledge feed by default; point it at an
+internal mirror if your nodes reach one and not the Internet. Both settings are
+replicated: change them on the **primary**. On a standby the action and the
+buttons do nothing and say why — its database is read-only and the knowledge
+arrives by replication. The last result (status, message, time, pack) is shown
+under the table.
+
+**Air-gapped network.** On a machine with Internet access, download the pack
+named by the feed and its `.sha256` file from the release page (the card links
+both after **Check now**), verify the checksum, carry the file over and upload
+it under **API library packs** (`/self-update/apipack/upload`), then import it
+there — or run `sudo satom execute apipack import <file> --yes`. The signature
+check is the same.
+
+From the console:
+
+```
+satom show knowledge                                  # installed per lane, age, mode, last result
+sudo satom execute knowledge fetch                    # check only (dry run)
+sudo satom execute knowledge fetch --yes              # download and stage
+sudo satom execute knowledge fetch --import --yes     # download and import
+sudo satom execute knowledge fetch --feed https://mirror.example/latest.json --import --yes
+```
 
 ## 23. Studio: custom views, plugins & Lua
 
@@ -4567,13 +4651,18 @@ banner opens a **Release Notes** modal. It reads a corpus of harvested vendor
 notes — Known and Resolved issue tables plus the prose sections — and it is the
 corpus §12 step 3 diffs against when it advises you on an upgrade.
 
-The corpus has two sources: a **scan** that downloads the notes directly from
-docs.fortinet.com, and, on a node with no Internet, the release notes carried by
-an **API pack** (§22.3). FortiGate release notes travel the same way; FortiGate
-has no ADOM, so they arrive through packs. When a build your appliances run has
-no notes on this node and docs.fortinet.com cannot be reached, the modal says
-**"No release notes for this build (offline: import a newer API pack)"** instead
-of showing an empty list.
+The corpus comes from **signed packs only** (SATOM 3.0): the API pack that
+ships with each release and the rolling **knowledge pack** fetched from the
+knowledge feed or uploaded by hand (§22.4). SATOM itself no longer contacts
+docs.fortinet.com. FortiGate release notes travel the same way. When a build
+your appliances run has no notes on this node, the modal says **"No release
+notes for this build in the local corpus — import a newer knowledge pack"**
+instead of showing an empty list.
+
+Above the tabs the modal names where its knowledge comes from: **"Knowledge
+from `<pack>` (`<date>`)"**, with a **stale** badge when that pack is older
+than 30 days or when no pack has been imported. The Scout advisory (§12, §40)
+and the Migration Report (§40.3) show the same line.
 
 Three tabs:
 
@@ -4586,37 +4675,22 @@ Three tabs:
 Reading any of it needs only the view permission. Two buttons:
 
 - **⟳ Reload corpus** — re-reads the corpus from disk and says where it came
-  from and how old it is. **Any signed-in user** may do this; it picks up a scan
-  another worker just finished, or a corpus the standby received by data
+  from and how old it is. **Any signed-in user** may do this; it picks up a pack
+  import another worker just finished, or a corpus the standby received by data
   replication.
-- **🔎 Scan from Fortinet** — **admin only**. It lists every published version
-  for that product on docs.fortinet.com, pre-ticks the ones the corpus is
-  missing, and harvests the ticked versions' issue tables and prose with a
-  direct download. There is nothing to configure: no crawler service and no
-  endpoint.
-
-Two operational details worth knowing:
-
-- **A scan runs in a background thread and writes its progress to a status file**,
-  so the poll is answered correctly no matter which worker handles it — and you
-  can close the modal. When it finishes, the result arrives as a **bell
-  notification** in that ADOM, success or failure.
-- A second scan is refused while one is running, but a "running" flag older than
-  half an hour is treated as dead, so a crashed thread cannot trap you behind a
-  permanent conflict.
+- **Knowledge packs…** — **admin only**: opens Software Update → Knowledge
+  packs, where the feed is checked and packs are imported.
 
 The corpus holds every product in one shared file, tagged per row, and every
 read is filtered by the ADOM you are in — a FortiADC workspace never shows
 FortiWeb rows.
 
-**No crawler to configure any more.** Until 2.12 the scan panel offered a
-*Firecrawl fallback* with an endpoint and a key. It is gone: a scan is a plain
-direct download of docs.fortinet.com, and a node without Internet gets the same
+**No scan and no crawler any more.** Until 2.12 the scan panel offered a
+*Firecrawl fallback* with an endpoint and a key; until 3.0 it offered a direct
+scan of docs.fortinet.com. Both are gone: SATOM reads the release
 notes from an API pack (§22.3). If you ran a Firecrawl service only for SATOM,
-you can retire it. A browser tab or script that still sends the old fields is
-not refused; the fields are ignored. Crawling the vendor documentation at scale
-is now the job of the SATOM team's separate harvester tool, whose output reaches
-you as the knowledge pack each release ships
+you can retire it. Crawling the vendor documentation is the job of the SATOM
+team's separate harvester tool, whose output reaches you as the knowledge packs
 ([knowledge-harvester.md](knowledge-harvester.md)).
 
 ### 31.2 SATOM's own changelog — what changed in *your* version
@@ -5436,7 +5510,7 @@ discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
    the console is either **on the map** (110 today) or **excluded with a written
-   reason** (143 today — JSON feeds, downloads, redirects and fragments that
+   reason** (142 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the

@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-10-07
+
 ### Fixed — a page that renders its own `products` list no longer breaks the Global sidebar (2026-10-07)
 
 - `base.html` read the ADOM registry under the context name `products`; a view

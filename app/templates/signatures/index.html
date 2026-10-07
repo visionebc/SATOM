@@ -51,6 +51,42 @@
   </div>
 </div>
 
+<!-- Signature DB freshness per device (scheduled action signature_check) -->
+<div class="fw-card mb-3" id="sig-freshness">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Signature DB freshness per device') }}</span>
+  </div>
+  <div class="fw-card-body">
+    <p class="text-muted" style="font-size:13px;">
+      {{ _('The daily scheduled action') }} <code>signature_check</code> {{ _('reads only the signature database version of every FortiWeb and records when it last changed. A device older than') }}
+      <strong>{{ max_days }}</strong> {{ _('day(s), or whose version cannot be read, raises a device alert.') }}
+      {% if meta_count %}<span class="fw-badge fw-badge-info ms-1">{{ meta_count }} {{ _('signatures with FortiGuard metadata from knowledge packs') }}</span>{% endif %}
+    </p>
+    {% if freshness %}
+    <table class="fw-table small mb-0">
+      <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Version') }}</th><th>{{ _('Last update') }}</th><th>{{ _('Checked') }}</th><th>{{ _('Status') }}</th></tr></thead>
+      <tbody>
+      {% for r in freshness %}
+        <tr>
+          <td>{{ r.name }}</td>
+          <td class="mono">{{ r.version or '—' }}</td>
+          <td class="text-nowrap">{{ (r.since or '')[:10] or '—' }}{% if r.age_days is not none %} ({{ r.age_days }} {{ _('d') }}){% endif %}</td>
+          <td class="text-nowrap">{{ (r.checked_at or '')[:16]|replace('T', ' ') }}</td>
+          <td>
+            {% if r.status == 'ok' %}<span class="fw-badge fw-badge-success">{{ _('current') }}</span>
+            {% elif r.status == 'stale' %}<span class="fw-badge fw-badge-warning" title="{{ r.reason }}">{{ _('stale') }}</span>
+            {% else %}<span class="fw-badge fw-badge-danger" title="{{ r.reason }}">{{ _('unreadable') }}</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="text-muted small">{{ _('No reading yet — the scheduled action signature_check has not run (seed it with') }} <code>satom execute seed actions --yes</code>).</div>
+    {% endif %}
+  </div>
+</div>
+
 <!-- Sync from a base device -->
 <div class="fw-card">
   <div class="fw-card-header">

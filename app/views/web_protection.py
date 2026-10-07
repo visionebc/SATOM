@@ -390,6 +390,13 @@ def sig_search(id, name):
         'alert_row': alert.get(s.id, ''),
         'exceptions': exc_count.get(s.id, 0),
     } for s in hits[start:start + per_page]]
+    # Public FortiGuard metadata (name / severity / CVE / link) from the
+    # signature-meta section of an imported knowledge pack, when there is any.
+    from ..services import signature_freshness
+    meta = signature_freshness.meta_for(appliance.kind or 'fortiweb',
+                                        [r['id'] for r in rows])
+    for r in rows:
+        r['meta'] = meta.get(r['id'])
     return jsonify(ok=True, total=total, page=page, per_page=per_page,
                    source=src, rows=rows)
 

@@ -143,7 +143,10 @@ def index():
     Renders even with NO devices and no cached catalog file (db is None)."""
     appliances = visible_appliances().filter_by(kind='fortiweb').order_by(Appliance.name).all()
     db = sigcat.load_signature_db(_data_path())
-    return render_template('signatures/index.html', appliances=appliances, db=db)
+    from ..services import signature_freshness as sf
+    return render_template('signatures/index.html', appliances=appliances, db=db,
+                           freshness=sf.rows(), max_days=sf.max_days(),
+                           meta_count=sf.meta_count('fortiweb'))
 
 
 @bp.route('/sync', methods=['POST'])

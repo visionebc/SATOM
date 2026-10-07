@@ -3,7 +3,7 @@ who know FortiADC navigate this app the same way (the ADC counterpart of
 :mod:`app.services.wp_menu` / ``config_sections``).
 
 Tree harvested from the FortiADC 8.0.3 administration guide + CLI reference
-(docs.fortinet.com, Firecrawl scrape 2026-07-07), endpoint paths cross-checked
+(docs.fortinet.com, harvested 2026-07-07), endpoint paths cross-checked
 against the official terraform-provider-fortiadc SDK. Groups follow the GUI:
 
     Server Load Balance   Virtual Server · Real Server Pool · SSL Management ·

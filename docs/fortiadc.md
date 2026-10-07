@@ -1,8 +1,8 @@
 # FortiADC — API conventions & area status
 
 > Ground truth for the FortiADC side of the manager. Built 2026-07-07 from the
-> FortiADC **8.0.3** admin guide + CLI reference (docs.fortinet.com, Firecrawl
-> harvest) cross-checked against the official `terraform-provider-fortiadc`
+> FortiADC **8.0.3** admin guide + CLI reference (docs.fortinet.com, harvested
+> with a crawler outside SATOM) cross-checked against the official `terraform-provider-fortiadc`
 > SDK and the `fortinet-ansible-dev` httpapi plugin. **No lab device existed
 > when this was built — nothing here is live-verified yet.** When the VM
 > lands: probe the registry, verify a write round-trip, then update this file.

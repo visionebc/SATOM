@@ -23,9 +23,13 @@ from flask import current_app
 
 from . import release_notes as rn
 
-#: The products whose release notes are harvested. A kind outside this set has
-#: no corpus, which is NOT the same as a corpus that says nothing — callers must
-#: say so rather than render an empty, reassuring panel.
+#: The products Scout reviews upgrades for. A kind outside this set gets no
+#: advisory, which is NOT the same as an advisory that says nothing — callers
+#: must say so rather than render an empty, reassuring panel. The corpus itself
+#: may hold more products (``rn.RELEASE_NOTES_PRODUCTS``: FortiAuthenticator,
+#: FortiAnalyzer and FortiGate notes are harvested and shipped in API packs);
+#: Scout's rules were written against FortiWeb/FortiADC prose and are not
+#: switched on for the others.
 SUPPORTED_PRODUCTS: tuple[str, ...] = ("fortiweb", "fortiadc")
 
 

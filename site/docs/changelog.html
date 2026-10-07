@@ -112,6 +112,45 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="removed--firecrawl-transport-docs-now-come-from-direct-download-or-api-packs-2026-10-07">Removed — Firecrawl transport: docs now come from direct download or API packs (2026-10-07)</h3>
+<ul>
+<li>The release-notes scan no longer offers a Firecrawl fallback: the endpoint and
+  key fields and the "Direct (httpx)" switch are gone from the scan panel, and
+  <code>make_fetcher()</code> only builds the direct <code>httpx</code> GET of docs.fortinet.com. A
+  node without Internet gets the same corpus from the <code>docs</code> section of an API
+  pack. A request that still sends the old transport fields (a stale browser
+  tab, a script) is not refused: the fields are logged and ignored.</li>
+<li>The unused documentation-enrichment stub in <code>scripts/build_field_catalog.py</code>
+  (<code>FIRECRAWL_URL</code> / <code>FIRECRAWL_ENRICH</code>, which always returned nothing) is gone.</li>
+<li>The five strings of the removed controls are marked obsolete in the de/es/fr/it
+  catalogues.</li>
+</ul>
+<h3 id="added--release-notes-for-fortiauthenticator-fortianalyzer-and-fortigate-2026-10-07">Added — release notes for FortiAuthenticator, FortiAnalyzer and FortiGate (2026-10-07)</h3>
+<ul>
+<li>The release-notes scanner reads three more docsets: FortiAuthenticator (6.6
+  and 8.0 lines), FortiAnalyzer and FortiGate (FortiOS, whose docset is
+  <code>fortios-release-notes</code>). Section ids were read from each TOC and fetched
+  live with a plain GET on FAC 6.6.0/6.6.10/8.0.3, FAZ 7.6.0/7.6.7/8.0.1 and
+  FGT 7.6.0/7.6.4/8.0.0/8.0.1. Their <em>Special notices</em> feed the upgrade notes
+  the advisor reads.</li>
+<li>The modal is offered in the FortiAuthenticator and FortiAnalyzer ADOMs too.
+  FortiGate has no ADOM; its notes travel in API packs, whose import now takes
+  each item's rows for that item's product only.</li>
+<li>A build your appliances run that has no notes on this node is listed in the
+  version pickers; picking it (or opening an empty corpus) while
+  docs.fortinet.com is unreachable shows "No release notes for this build
+  (offline: import a newer API pack)" instead of an empty list.</li>
+</ul>
+<h3 id="fixed--release-notes-scans-found-nothing-on-docsfortinetcoms-new-layout-2026-10-07">Fixed — release-notes scans found nothing on docs.fortinet.com's new layout (2026-10-07)</h3>
+<ul>
+<li>By 2026-10-07 every docset had moved to a "reader" layout (<code>&lt;div class="prose
+  src-mc"&gt;</code>). The parser knew neither that container nor the generic wrapper
+  it looked for, so every published page read as a missing one and a scan of
+  any product ended in "no release notes found". It now reads the new layout.</li>
+<li>FortiGate and FortiAnalyzer split their issue lists into one table per
+  category; only the first table was read (8 of FortiGate 7.6.4's 66 known
+  issues). Every <code>Bug ID</code> table on the page is read now.</li>
+</ul>
 <h3 id="added--exceptions-record-their-firmware-build-line-profiles-show-the-templates-2026-10-06">Added — exceptions record their firmware build; line profiles show the template's (2026-10-06)</h3>
 <ul>
 <li>Every WAF/signature carve-out (and its fleet library item) now records the

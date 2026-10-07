@@ -4,10 +4,10 @@
 > its entire dependency graph. Source of truth: the team's `fortiweb_api` SDK
 > (`cmdb/` marshmallow schemas, FortiWeb OS 7.6 / API `v2.0`) cross-checked against
 > the in-repo registry (`app/registry/baselines/fortiweb.json`) and dependency tree
-> (`app/registry/dependencies.py`). Built because firecrawl/docs.fortinet.com is a
-> JS-rendered SPA that the built-in fetchers can't read — the SDK is more complete
-> and exact than the public docs anyway, and it is the same SDK the registry was
-> derived from.
+> (`app/registry/dependencies.py`). Built from the SDK because, at the time,
+> docs.fortinet.com rendered as a JS SPA that a plain GET could not read — the SDK
+> is more complete and exact than the public docs anyway, and it is the same SDK
+> the registry was derived from.
 >
 > Keep this current when the registry or `dependencies.py` change.
 
@@ -256,8 +256,8 @@ Vendor SDK (offline ground truth, not committed):
 ## 8. Coverage & cross-validation (official docs, 2026-06-20)
 
 The SDK-derived tree was cross-validated against the **official FortiWeb 7.6
-admin guide** (docs.fortinet.com — JS SPA, scraped via the internal Firecrawl,
-[[internal-firecrawl-lan]]; 559 pages, 163 relevant) and **probed live on fw1
+admin guide** (docs.fortinet.com — then a JS SPA, harvested with a crawler
+outside SATOM; 559 pages, 163 relevant) and **probed live on fw1
 (7.6.8)**. The core graph (§3) is sound. The sweep closed these gaps:
 
 **Added to the registry + tree (confirmed live on fw1, absent from the SDK):**

@@ -12,8 +12,9 @@ away. This module only *enriches* those keys with:
 
 Two layers, merged (overlay wins):
   1. SEED — a small curated map below.
-  2. OVERLAY — an optional ``data/fortiweb_field_schema.json`` produced by the
-     Firecrawl scrape of the FortiWeb 8.0.5 admin guide; lets us extend
+  2. OVERLAY — an optional ``data/fortiweb_field_schema.json``, originally
+     harvested from the FortiWeb 8.0.5 admin guide (docs.fortinet.com) and
+     delivered to a node by the ``docs`` section of an API pack; lets us extend
      labels/options/widgets with no code change.
 
 Widget decision order for any key (``descriptor``):
@@ -236,7 +237,7 @@ SUBTABLE_FIELD_SEED: dict[str, dict] = {
     },
 }
 
-# ── curated enum seed (overlay from Firecrawl extends this) ───────────────────
+# ── curated enum seed (the vendor-doc overlay extends this) ───────────────────
 ENUM_SEED: dict[str, list[str]] = {
     "deployment-mode": ["single-server", "server-pool", "http-content-routing",
                         "offline-protection", "transparent-servers",
@@ -324,7 +325,7 @@ def _group_rank(g: str):
     return (1, g.lower())
 
 
-# ── overlay (Firecrawl-produced JSON) ─────────────────────────────────────────
+# ── overlay (vendor-doc JSON, shipped in API packs) ───────────────────────────
 @lru_cache(maxsize=1)
 def _overlay() -> dict:
     path = os.path.join(os.path.dirname(os.path.dirname(__file__)),

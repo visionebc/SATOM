@@ -7,8 +7,8 @@
 > (`app/registry/baselines/fortiweb.json`, **191 `cmdb/waf/*` endpoints**), the
 > dependency tree (`app/registry/dependencies.py`, `WEB_PROTECTION_PROFILE`,
 > **136 nodes, depth 7**), and the **official FortiWeb 7.6.4 admin guide**
-> (docs.fortinet.com — a JS SPA, scraped via the internal Firecrawl,
-> [[internal-firecrawl-lan]]) for GUI labels / menu sections / enum choices.
+> (docs.fortinet.com — then a JS SPA, harvested with a crawler outside SATOM)
+> for GUI labels / menu sections / enum choices.
 >
 > The companion of [`server_policy.md`](server_policy.md). Keep this current when the
 > registry, `dependencies.py`, or the WAF specs (`app/registry/data/waf_specs.json`,
@@ -249,7 +249,7 @@ Vendor SDK (offline ground truth, not committed):
   `dlp-policy`, `graphql-validation-policy`, `subresource-integrity`,
   `threat-score-profile`, `waiting-room-policy`, `web-cache-policy`) — added from
   live probes / docs; they auto-render whatever the device returns.
-- **Admin guide (7.6.4, Firecrawl):** GUI labels, menu sections and the enum
+- **Admin guide (7.6.4, harvested from docs.fortinet.com):** GUI labels, menu sections and the enum
   choices in §4 were cross-checked against docs.fortinet.com. Notes worth heeding:
   *Threat Score* has **no dedicated config dialog** (it is a per-module "Threat
   Weight" field — modelled as such); *X-Forwarded-For* has no standalone page (its

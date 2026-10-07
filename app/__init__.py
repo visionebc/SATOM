@@ -509,6 +509,10 @@ def create_app(config_override: object | None = None) -> Flask:
                        'metrics_admin',
                        'templates', 'capacity',
                        'api_tokens', 'api_v1',
+                       # Release Notes: product-scoped (corpus filtered by
+                       # g.product); FortiAuthenticator release notes are
+                       # harvested since 2026-10-07.
+                       'release_notes',
                        # NOT lua_studio: FortiAuthenticator has no scripting
                        # object (its endpoint baseline declares
                        # none) and LuaScript.TARGETS therefore cannot list it.

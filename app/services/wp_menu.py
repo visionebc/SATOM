@@ -1,7 +1,7 @@
 """FortiWeb 7.6 GUI **Web Protection** menu — an exact mirror of the appliance's
 own left menu, so operators who know FortiWeb navigate the web app the same way.
 
-Tree harvested from the FortiWeb 7.6.4 administration guide (Firecrawl scrape of
+Tree harvested from the FortiWeb 7.6.4 administration guide (docs.fortinet.com,
 the whole Web Protection chapter, every ``Go to Web Protection > …`` GUI path)
 on 2026-07-04, re-validated 2026-07-06 against the guide AND live fw6 (7.6.8):
 

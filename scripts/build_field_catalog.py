@@ -1,9 +1,10 @@
 """Offline harvester: build per-(product,line) field schemas for guided provisioning.
 
 Authoritative source = a LIVE GET from a reference appliance of that line
-(exact field names + value-inferred types). Enrichment = Firecrawl of the
-FortiWeb CLI-reference docs (labels / help / enum options) — wired as the
-extension hook, gated by ``FIRECRAWL_ENRICH=1`` and never fatal. Writes
+(exact field names + value-inferred types). Labels / help / enum options from
+the vendor documentation are not fetched here: they reach a node in the
+``docs`` section of an API pack (field schemas + the FortiWeb field overlay),
+and :func:`merge_doc` is the hook that overlays such metadata. Writes
 ``data/field_schemas/<product>/<line>/<object>.json`` plus a ``_default``
 fallback. Idempotent and non-destructive: existing files are preserved (so
 hand-curated seeds survive); pass ``--force`` to overwrite. NOT run at request
@@ -25,9 +26,9 @@ from app.services import field_catalog as fc
 from app.services import provisioning as prov
 
 # (line, appliance-name) reference sources, read from the environment because a
-# reference appliance is an estate fact, not a property of the tool. Same rule as
-# FIRECRAWL below: no default, so a checkout carries no one's device roster and a
-# run against the wrong box is impossible rather than merely unlikely.
+# reference appliance is an estate fact, not a property of the tool. No default,
+# so a checkout carries no one's device roster and a run against the wrong box is
+# impossible rather than merely unlikely.
 #   SATOM_FIELD_CATALOG_SOURCES="fortiweb=8.0:<appliance>,7.6:<appliance>"
 def _sources_from_env() -> dict[str, list[tuple[str, str]]]:
     raw = os.environ.get("SATOM_FIELD_CATALOG_SOURCES", "").strip()
@@ -45,10 +46,6 @@ def _sources_from_env() -> dict[str, list[tuple[str, str]]]:
 
 
 SOURCES = _sources_from_env()
-
-# Firecrawl (optional, no auth). Enrichment is opt-in (gated) to keep the
-# harvest fast, and the endpoint has no default: set FIRECRAWL_URL to use it.
-FIRECRAWL = os.environ.get("FIRECRAWL_URL", "")
 
 # Fields known to be mandatory that a bare GET can't tell us are required.
 REQUIRED_HINTS = {"dns": {"primary"}, "ntp": {"mode"}}
@@ -97,28 +94,6 @@ def merge_doc(fields: list, doc: dict) -> list:
             if f["type"] in ("text", "number"):
                 f["type"] = "select"
     return fields
-
-
-def firecrawl_doc(obj_key: str) -> dict:
-    """Best-effort field metadata from FortiWeb docs. Returns {} on any failure.
-
-    Gated by FIRECRAWL_ENRICH (off by default). The markdown->{field:{label,
-    help,options}} parser is the documented extension point; today it returns {}
-    so the live GET stays authoritative."""
-    if not os.environ.get("FIRECRAWL_ENRICH"):
-        return {}
-    try:
-        import httpx
-        url = "https://docs.fortinet.com/document/fortiweb/8.0.0/cli-reference"
-        r = httpx.post(f"{FIRECRAWL}/v1/scrape",
-                       json={"url": url, "formats": ["markdown"]}, timeout=40)
-        if r.status_code != 200:
-            return {}
-        # TODO: parse the object's field table out of the markdown. Live GET
-        # already yields correct names+types, so {} still gives a usable schema.
-        return {}
-    except Exception:
-        return {}
 
 
 def _live_object(appliance, endpoint_urn: str) -> dict:
@@ -349,7 +324,7 @@ def build(product: str = "fortiweb", force: bool = False,
                 coverage[spec.key] = _no_evidence(product, line, spec.key, status, detail)
                 print(f"  - {spec.key}@{line}: {coverage[spec.key]['status']} — {detail}; skip")
                 continue
-            fields = merge_doc(fields_from_live_object(live), firecrawl_doc(spec.key))
+            fields = fields_from_live_object(live)
             req = REQUIRED_HINTS.get(spec.key, set())
             for f in fields:
                 f["required"] = f["name"] in req

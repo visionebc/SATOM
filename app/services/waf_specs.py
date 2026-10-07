@@ -5,7 +5,7 @@ validated).
 The catalog itself is DATA (``app/registry/data/waf_specs.json``, generated from
 the desktop repo — regenerate there, never hand-edit) plus an optional help
 overlay (``app/registry/data/waf_help.json``, distilled from the FortiWeb 7.6.4
-admin guide via Firecrawl: per-section "what is this / how does the backend
+admin guide on docs.fortinet.com: per-section "what is this / how does the backend
 react", the action semantics, and regex examples).
 
 At import :func:`register` merges everything into the existing engine:

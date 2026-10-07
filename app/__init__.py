@@ -2353,6 +2353,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.audit", "bp"),
         ("app.views.registry", "bp"),
         ("app.views.apilib_fieldmap", "bp"),
+        ("app.views.schema_builds", "bp"),
         ("app.views.api_explorer", "bp"),
         ("app.views.templates", "bp"),
         ("app.views.factory_catalog", "bp"),

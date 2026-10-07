@@ -359,6 +359,12 @@ def evidence_from_capture(capture: dict, device: dict) -> dict:
                            "registered": True}
 
     doc["endpoints"] = endpoints
+    # Tastypie publishes EVERY registered resource in ``/api/v1/``: a measured
+    # directory is the complete REST surface of the build. ``channels_at``
+    # reads a CLI object the directory does not list as REST "no" (cli_only)
+    # instead of "unknown" -- the CLI bootstrap objects (system dns, ...)
+    # have no REST resource at all.
+    doc["summary"] = {"directory_complete": True, "resources": len(directory)}
     errored = sum(1 for e in endpoints.values() if e["verdict"] == "error")
     if doc["healthy"] and errored / len(endpoints) > ERROR_RATIO_LIMIT:
         doc["healthy"] = False

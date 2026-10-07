@@ -479,6 +479,7 @@ Everything that changes state. **Root required.** Without it each command refuse
 | `satom execute apilib harvest <appliance-id\|name> [--no-probe]` | yes | — | Read one appliance's CLI schema (tree + hidden fields) and probe the REST paths the library lacks. Read-only on the box. |
 | `satom execute apilib compat <product> <buildA> <buildB> [--json]` | yes | — | Compare two builds of a product through both channels (REST + CLI schema): added/removed, options, renames. |
 | `satom execute apilib channels <product> <build> [--json]` | yes | — | One build: fields per channel (both / CLI only / hidden / REST only / meta / unknown). |
+| `satom execute migration report <appliance-id\|name> --target <build> [--backup <id>]` | yes | — | Check one appliance's configuration (newest vault dump) against a target build: blocking, translated, warned and new items + verdict. Read-only. |
 | `satom execute trust add-key <file.pub> [--name <slug>]` | yes | — | Install a signing public key into the trust store. |
 | `satom execute trust remove-key <name\|fingerprint> --yes` | yes | ! | Stop accepting packages signed by a key. Needs --yes. |
 | `satom execute repair permissions` | yes | — | Give root-owned files in the app tree back to the service account. |
@@ -714,6 +715,7 @@ sudo -u satom env FLASK_APP=wsgi:app venv/bin/flask apilib --help
 | `flask apilib harvest-fac [--appliance NAME]` | Read the live API schema of every FortiAuthenticator, or the named one (GET requests only), and ingest it. One unreachable box does not stop the others |
 | `flask apilib compat PRODUCT BASE TARGET` | Two builds through both channels as JSON: REST field totals, CLI schema objects and fields added / removed, option, type, range and default changes, field and object rename candidates (same CLI attribute id) and moves. Read-only; `satom execute apilib compat` renders it |
 | `flask apilib channels PRODUCT BUILD` | One build per channel as JSON: counts of both / CLI only / hidden / REST only / unknown / meta and vendor-doc conflicts, plus the CLI-only, hidden and REST-only field lists. Read-only; `satom execute apilib channels` renders it |
+| `flask apilib migration-report APPLIANCE --target BUILD [--backup ID]` | Check the appliance's newest `show full-configuration` dump (backup vault) against the target build and print the migration report as JSON: block / translate / warn / info rows and a verdict. Read-only; the report carries no configuration value |
 | `flask apilib baseline status` | The endpoint baseline each registry product is seeded from: pinned build, protocol, entries per provenance, applied or not |
 | `flask apilib baseline promote --product P --build X [--apply] [--export]` | Show what promoting the library's measurements of build X would change in the registry; `--apply` does it, `--export` rewrites the shipped artifact. Refuses a build nobody measured |
 | `flask apilib baseline check [--product P]` | Drift between the registry, the baseline and the evidence of every build the fleet runs. Exit status 1 on drift |

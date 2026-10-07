@@ -191,6 +191,9 @@
       {% if current_user.can('appliances.apply') %}
       <a href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm"><i class="bi bi-clipboard-check me-1"></i>{{ _('Upgrade Prep') }}</a>
       {% endif %}
+      {% if appliance.kind in ('fortiweb', 'fortiadc', 'fortigate') and may_open('migration_report.report') %}
+      <a href="{{ url_for('migration_report.report', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm" title="{{ _('Check this appliance\'s configuration against a target firmware build') }}"><i class="bi bi-signpost-split me-1"></i>{{ _('Migration Report') }}</a>
+      {% endif %}
       {% if appliance.kind == 'fortiweb' %}
       {% if current_user.can('appliances.apply') %}
       <a href="{{ url_for('appliances.upgrade', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm text-warning"><i class="bi bi-cloud-arrow-up me-1"></i>{{ _('Upgrade') }}</a>

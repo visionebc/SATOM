@@ -27,7 +27,7 @@
    does not have. A missing menu entry is a nuisance; that one is an outage.
    ========================================================================= #}
 {% if current_user and current_user.can('config_write') %}
-{% set _auto_bps = ['upgrade_flow','automations','scheduled_actions','device_provision','provisioning','change_requests'] %}
+{% set _auto_bps = ['upgrade_flow','migration_report','automations','scheduled_actions','device_provision','provisioning','change_requests'] %}
 <div class="fw-nav-group {{ 'open' if request.blueprint in _auto_bps }}" data-nav-group="Automation">
   <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-gear-wide-connected fw-nav-section-icon" style="color:#8b5cf6;"></i><span>{{ _('Automation') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-group-body">
@@ -43,6 +43,12 @@
     {% if may_open('upgrade_flow.index') %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'upgrade_flow' else '' }}" href="{{ url_for('upgrade_flow.index', _adom=product.key) }}">
       <i class="bi bi-arrow-up-circle fw-nav-icon"></i><span>{{ _('Upgrade Flow') }}</span></a>
+    {% endif %}
+    {# Migration report: the upgrade flow's pre-check, readable on its own.
+       Same gate as the flow (BACKUP), same reason. #}
+    {% if may_open('migration_report.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'migration_report' else '' }}" href="{{ url_for('migration_report.index', _adom=product.key) }}">
+      <i class="bi bi-signpost-split fw-nav-icon"></i><span>{{ _('Migration Report') }}</span></a>
     {% endif %}
     {% endif %}
     {# TWO ENTRIES, NOT ONE RENAMED. 'Automations' is fleet work an operator

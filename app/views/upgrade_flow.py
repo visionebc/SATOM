@@ -458,6 +458,53 @@ def scout_reviews(devices, preps) -> dict:
     return out
 
 
+#: How many appliances get a migration pre-check computed while the page
+#: renders. Each one parses its vault dump (~0.1 s for a 1.5 MB FortiWeb dump);
+#: rows past the cap show a link to the report instead of a verdict, and say so.
+MAX_MIGRATION_PRECHECKS = 20
+
+
+def migration_reviews(devices, preps) -> dict:
+    """``{appliance_id: summary}`` — the migration report's verdict for the
+    move each appliance's newest run DECLARED (same rule as Scout: no
+    destination recorded, no entry).
+
+    The library half is memoised per ``(product, source, target)``; only the
+    dump parse is per appliance. Past :data:`MAX_MIGRATION_PRECHECKS` an entry
+    says ``deferred`` and the row links to the full report. A failure never
+    breaks the page: the entry says ``cannot_assess`` with the reason.
+    """
+    from ..services import cli_coverage
+    from ..services import migration_report as mr
+    out: dict = {}
+    views: dict = {}
+    index = None
+    done = 0
+    for dev in devices or []:
+        prep = (preps or {}).get(getattr(dev, 'id', None))
+        target = ((getattr(prep, 'target_version', '') or '').strip()
+                  if prep is not None else '')
+        if not target:
+            continue
+        if done >= MAX_MIGRATION_PRECHECKS:
+            out[dev.id] = {'verdict': 'deferred', 'target': target, 'reason': (
+                'not computed on this page (more than %d appliances): open the report'
+                % MAX_MIGRATION_PRECHECKS)}
+            continue
+        done += 1
+        try:
+            if index is None:
+                index = cli_coverage.evidence_index()
+            out[dev.id] = mr.summary(mr.for_appliance(dev, target, views=views,
+                                                      index=index))
+        except Exception as exc:  # noqa: BLE001 - a pre-check must not 500 the flow
+            from ..models import db as _db
+            _db.session.rollback()
+            out[dev.id] = {'verdict': 'cannot_assess', 'target': target,
+                           'reason': 'the migration report failed: %s' % type(exc).__name__}
+    return out
+
+
 def _eligible():
     """Appliances stage 1 may pre-flight: visible, of a product the action
     runs against, and the row that OWNS the device-wide verbs. The other ADOM
@@ -954,6 +1001,8 @@ def page_context(posted=None) -> dict:
             [d for d in devices if d.id in ticked_ids], runs, chosen),
         # Scout's verdict per appliance, for the move its newest run declared.
         scout=scout_reviews(devices, latest),
+        # The migration report's verdict for the same recorded move.
+        migration=migration_reviews(devices, latest),
         max_waves=MAX_WAVES, crdoc=crdoc,
         cr_action=CR_ACTION,
         # Stage 2's change-type select is fixed to this flow's one action and

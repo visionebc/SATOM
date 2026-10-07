@@ -255,7 +255,10 @@ def _mapped_renames(product: str, key: str, names: list, view: dict) -> dict:
         return out
     for m in ApiLibFieldMap.query.filter(ApiLibFieldMap.product == product,
                                          ApiLibFieldMap.endpoint.in_(eps),
-                                         ApiLibFieldMap.retired_at.is_(None)).all():
+                                         ApiLibFieldMap.retired_at.is_(None),
+                                         # a pack's proposal is shown, never applied
+                                         ApiLibFieldMap.status
+                                         != ApiLibFieldMap.STATUS_CANDIDATE).all():
         if m.from_field in names and m.to_field in here:
             out.setdefault(m.from_field, []).append(
                 {"source": "field_map", "to": m.to_field, "note": m.note or "",

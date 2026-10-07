@@ -226,6 +226,76 @@ def migration_report_cmd(appliance, target, backup_id):
         migration_report.for_appliance(ap, target, backup_id=backup_id)))
 
 
+@apilib_cli.command("adapter-harvest")
+@click.argument("appliance")
+@click.option("--ssh-secret-env", default="",
+              help="FortiAuthenticator: name of an environment variable holding the "
+                   "CLI password (SATOM stores the REST API key, not a CLI login).")
+def adapter_harvest_cmd(appliance, ssh_secret_env):
+    """Harvest one appliance through its product's schema adapter
+    (services.schema_adapters). APPLIANCE is an id or a name."""
+    import os
+
+    from .models import Appliance
+    from .services import schema_adapters as sa
+    ap = Appliance.query.get(int(appliance)) if str(appliance).isdigit() else None
+    ap = ap or Appliance.query.filter_by(name=appliance).first()
+    if ap is None:
+        raise click.ClickException("no appliance %r" % appliance)
+    kw = {}
+    if ssh_secret_env:
+        if not os.environ.get(ssh_secret_env):
+            raise click.ClickException("environment variable %s is empty" % ssh_secret_env)
+        kw["ssh_secret"] = os.environ[ssh_secret_env]
+    res = sa.harvest(ap, **kw)
+    _print(res)
+    if not res.get("ok"):
+        raise SystemExit(1)
+
+
+@apilib_cli.command("schema-import")
+@click.option("--product", required=True, type=click.Choice(["fortigate", "fortianalyzer"]))
+@click.option("--version", "version", required=True, help="Exact build, e.g. 8.0.1.")
+@click.option("--build", "build", default="", help="Build token, e.g. build0245.")
+@click.option("--label", default="import", help="Witness name recorded with the evidence.")
+@click.option("--tree", "tree_path", default=None, type=click.Path(exists=True, dir_okay=False),
+              help="FortiGate: saved `tree` output (cli_tree evidence).")
+@click.option("--schema", "schema_path", default=None,
+              type=click.Path(exists=True, dir_okay=False),
+              help="FortiGate: ?action=schema JSON; FortiAnalyzer: {url: syntax response}.")
+def schema_import_cmd(product, version, build, label, tree_path, schema_path):
+    """Import saved schema captures of a product SATOM does not read live."""
+    import json
+    from datetime import datetime
+
+    from .services import api_library, cli_schema
+    from .services.schema_adapters import fortianalyzer, fortigate
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    device = {"name": label}
+    out = []
+    if tree_path:
+        if product != "fortigate":
+            raise click.ClickException("--tree is FortiGate only (FortiAnalyzer has no tree)")
+        text = open(tree_path, encoding="utf-8", errors="replace").read()
+        doc = cli_schema.evidence_from_cli_tree(product, version, build, text, device,
+                                                "import:%s:tree" % label, captured_at=now)
+        out.append({"tree": api_library.ingest(doc, raw={"doc": doc, "tree_text": text}),
+                    "healthy": doc["healthy"], "skip_reason": doc["skip_reason"]})
+    if schema_path:
+        body = json.load(open(schema_path, encoding="utf-8"))
+        if product == "fortigate":
+            doc = fortigate.evidence_from_schema(body, version, build, device,
+                                                 "import:%s:schema" % label, captured_at=now)
+        else:
+            doc = fortianalyzer.evidence_from_syntax(body, version, build, device,
+                                                     "import:%s:schema" % label, captured_at=now)
+        out.append({"schema": api_library.ingest(doc), "healthy": doc["healthy"],
+                    "skip_reason": doc["skip_reason"]})
+    if not out:
+        raise click.ClickException("nothing to import: give --tree and/or --schema")
+    _print(out)
+
+
 @apilib_cli.command("status")
 def status_cmd():
     """Counts per product, per source and per build."""

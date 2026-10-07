@@ -61,6 +61,9 @@ PATH_RULE_STATUS = {
     "fortiweb": "verified",          # fortiweb17 7.6.8: 287/287 swept paths in the tree
     "fortigate": "verified",         # matches every vendor_doc URN of fortinet.fortios
     "fortiadc": "unverified",        # documented convention only; no FortiADC in the lab
+    # FortiAuthenticator's CLI objects have NO REST counterpart (its REST is the
+    # Tastypie directory, /api/v1/<resource>/): the FortiOS rule only names them.
+    "fortiauthenticator": "cli-only",
 }
 #: The FortiADC rule has never been checked against a live FortiADC.
 FORTIADC_RULE_UNVERIFIED = True
@@ -556,7 +559,7 @@ def rest_path(product: str, cli_path: str, kind_chain) -> str | None:
             return words[0] + "/" + ".".join(words[1:])
         head = rest_path(product, " ".join(words[:anc + 1]), chain[:anc + 1])
         return None if head is None else head + "/" + ".".join(words[anc + 1:])
-    if product == "fortigate":
+    if product in ("fortigate", "fortiauthenticator"):
         if _last_object(chain, len(words) - 1) >= 0 or len(words) < 2:
             return None
         return ".".join(words[:-1]) + "/" + words[-1]
@@ -629,7 +632,7 @@ def _fold_nested(ep: dict, rel_words: list, fields: dict, cli_id,
 def evidence_from_cli_tree(product: str, version: str, build: str, tree_text: str,
                            device: dict | None, origin_ref: str, *,
                            captured_at: str = "", truncated: bool = False,
-                           parsed: dict | None = None) -> dict:
+                           parsed: dict | None = None, min_objects: int | None = None) -> dict:
     """``tree`` output -> a ``cli_tree`` evidence document.
 
     One endpoint per CLI object that has a REST path on this product, keyed by
@@ -681,9 +684,10 @@ def evidence_from_cli_tree(product: str, version: str, build: str, tree_text: st
     reason = ""
     if truncated:
         reason = "the tree output was cut short (no prompt came back)"
-    elif len(objects) < MIN_TREE_OBJECTS:
+    elif len(objects) < (MIN_TREE_OBJECTS if min_objects is None else min_objects):
         reason = ("the tree output holds %d objects (fewer than %d): a fragment, "
-                  "not a schema" % (len(objects), MIN_TREE_OBJECTS))
+                  "not a schema" % (len(objects), MIN_TREE_OBJECTS if min_objects is None
+                                    else min_objects))
     elif not any(p.split()[0] == "system" for p in objects):
         reason = "the tree output has no 'system' object: not a schema dump"
     elif not endpoints:
@@ -696,7 +700,7 @@ def evidence_from_cli_tree(product: str, version: str, build: str, tree_text: st
 def evidence_from_cli_full(product: str, version: str, build: str, full_text: str,
                            device: dict | None, origin_ref: str, *,
                            captured_at: str = "", tree: dict | None = None,
-                           lab: bool = False) -> dict:
+                           lab: bool = False, min_objects: int | None = None) -> dict:
     """``show full-configuration`` -> a ``cli_full`` evidence document.
 
     Field NAMES per object, never values. With ``tree`` (the build's
@@ -777,9 +781,9 @@ def evidence_from_cli_full(product: str, version: str, build: str, full_text: st
     elif not (health["balanced"] and health["ends_with_end"]):
         reason = "the configuration dump is truncated or unbalanced (%d unclosed)" \
                  % health["unclosed"]
-    elif len(blocks) < MIN_FULL_OBJECTS:
+    elif len(blocks) < (MIN_FULL_OBJECTS if min_objects is None else min_objects):
         reason = ("the configuration dump holds %d blocks (fewer than %d)"
-                  % (len(blocks), MIN_FULL_OBJECTS))
+                  % (len(blocks), MIN_FULL_OBJECTS if min_objects is None else min_objects))
     elif not any(p.split()[0] == "system" for p in blocks):
         reason = "the configuration dump has no 'config system' block"
     elif not endpoints:

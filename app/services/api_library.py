@@ -1901,14 +1901,19 @@ def _channel_view(product: str, version) -> dict:
         slot["full"] = _with_object_meta(by_src.get(SOURCE_CLI_FULL), objects.get(name))
     return {"build": b, "version": v, "keys": keys, "evidence": evidence,
             "tree_measured": bool(evidence.get(SOURCE_CLI_TREE)),
+            # A REST source that measured the WHOLE REST surface of the build
+            # (FortiAuthenticator's Tastypie directory): a path it does not
+            # list is not served by REST, so "no", not "unknown".
+            "rest_complete": any((summ or {}).get("directory_complete")
+                                 for s in REST_SOURCES for summ in evidence.get(s) or []),
             "rest_measured": any(s in evidence for s in (SOURCE_SWEEP, SOURCE_SCHEMA,
                                                          SOURCE_MANUAL, SOURCE_LEGACY)),
             "unjoined": unjoined}
 
 
-def _rest_status(rest, fname) -> str:
+def _rest_status(rest, fname, rest_complete: bool = False) -> str:
     if rest is None:
-        return _UNK
+        return _NO if rest_complete else _UNK
     if rest["verdict"] == VERDICT_ABSENT:
         return _NO
     if rest["verdict"] != VERDICT_OK or rest["fields"] is None:
@@ -1979,6 +1984,7 @@ def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
     rest_names = {k: s["rest_names"] for k, s in view["keys"].items()}
     only = _resolve_key(endpoint, rest_names) if endpoint else ""
     tree_measured = view["tree_measured"]
+    rest_complete = view["rest_complete"]
 
     out_eps: dict = {}
     counts = {c: 0 for c in CHANNELS}
@@ -1998,7 +2004,7 @@ def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
         doc_only = rest is not None and set(rest.get("sources") or []) <= {SOURCE_VENDOR}
         for fname in sorted(names):
             in_tree, in_full = fname in tree_fields, fname in full_fields
-            r_st = _rest_status(rest, fname)
+            r_st = _rest_status(rest, fname, rest_complete)
             r_srcs = sorted(rest_fields.get(fname) or ())
             if in_tree or in_full:
                 c_st = _YES
@@ -2041,7 +2047,8 @@ def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
         cli_has = tree is not None or full is not None
         if r_verdict == VERDICT_OK and cli_has:
             ep_ch = CH_BOTH
-        elif r_verdict == VERDICT_ABSENT and cli_has:
+        elif cli_has and (r_verdict == VERDICT_ABSENT
+                          or (r_verdict is None and rest_complete)):
             ep_ch = CH_CLI_ONLY
         elif r_verdict == VERDICT_OK and tree_measured and not cli_has and not doc_only:
             ep_ch = CH_REST_ONLY
@@ -2071,6 +2078,7 @@ def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
                        for k, n in sorted(exc_report.items())],
         "rejected_exceptions": rejected,
         "tree_measured": tree_measured, "rest_measured": view["rest_measured"],
+        "rest_complete": rest_complete,
         "unjoined_rest": len(view["unjoined"]),
         # Complete = both channels measured and nothing left unknown outside
         # a named exception. An empty build is not complete: nothing was asked.

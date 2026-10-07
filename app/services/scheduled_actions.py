@@ -362,7 +362,8 @@ ADMIN_ACTIONS: list[ActionSpec] = [
     ActionSpec(
         "schema_harvest",
         "API library — harvest the CLI schema of a target (tree + hidden fields)",
-        "admin", needs_targets=True, products=("fortiweb", "fortiadc"),
+        "admin", needs_targets=True,
+        products=("fortiweb", "fortiadc", "fortiauthenticator", "fortianalyzer"),
         summary="For each target, read its build through BOTH channels into the "
                 "API library (services.schema_harvest): SSH `tree` (the whole "
                 "CLI schema: objects, fields, types, options, CLI ids) as "
@@ -372,7 +373,24 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "tree object the library's REST evidence does not cover, "
                 "classified by response shape. Read-only against the box. "
                 "FortiADC: tree and path rule unverified, no REST probe. "
+                "FortiAuthenticator: Tastypie schema (the CLI help walk needs a "
+                "CLI password, run it from the Schema builds page); "
+                "FortiAnalyzer: JSON-RPC syntax read, unverified adapter. "
                 "Weekly, or after an upgrade, is plenty.",
+    ),
+    ActionSpec(
+        "schema_watch",
+        "API library — watch for builds whose schema is not harvested", "admin",
+        needs_targets=False,
+        products=("fortiweb", "fortiadc", "fortiauthenticator", "fortianalyzer"),
+        summary="Find every appliance whose running build has no harvested "
+                "schema in the API library (cli_tree evidence; the JSON-RPC "
+                "syntax for FortiAnalyzer) and raise ONE bell notification per "
+                "product and build to the administrators, linking to the "
+                "Schema builds page where the harvest is one click "
+                "(services.schema_watch). Reads the library only; contacts no "
+                "device. The firmware probe does the same the moment it sees a "
+                "build; this is the safety net. Daily is plenty.",
     ),
     ActionSpec(
         "metrics_scrape", "Fleet metrics — scrape to the local store", "admin",
@@ -740,11 +758,31 @@ def _do_schema_harvest(appliance, params: dict, dry_run: bool = False) -> dict:
                            "of %s (%s %s) and probe the REST paths the library lacks"
                            % (appliance.name, appliance.kind, appliance.fw_version or "?"),
                 "log": ""}
-    res = sh.harvest(appliance, probe=bool(params.get("probe", True)))
+    if appliance.kind in sh.SUPPORTED:
+        res = sh.harvest(appliance, probe=bool(params.get("probe", True)))
+    else:
+        # FortiAuthenticator (REST schema; its CLI walk needs a secret SATOM
+        # does not store) and FortiAnalyzer (unverified syntax read) go
+        # through their schema adapters.
+        from . import schema_adapters
+        res = schema_adapters.harvest(appliance)
     import json as _json
     return {"ok": bool(res.get("ok")), "summary": res.get("msg") or "",
             "log": _json.dumps({k: res.get(k) for k in ("tree", "full", "probe", "channels")},
                                indent=1, default=str)[:_LOG_MAX]}
+
+
+def _do_schema_watch(dry_run: bool = False) -> dict:
+    """Builds with no harvested schema: notify once each (``ok`` = the round ran)."""
+    from . import schema_watch
+    pending = schema_watch.scan(notify=not dry_run)
+    lines = ["%s (%s %s)%s" % (p["appliance"], p["product"], p["version"],
+                               "" if p["live"] else " - pack import only") for p in pending]
+    fresh = sum(1 for p in pending if p.get("notified"))
+    return {"ok": True,
+            "summary": ("%s%d build(s) without a harvested schema, %d newly notified"
+                        % ("[dry-run] " if dry_run else "", len(pending), fresh)),
+            "log": "\n".join(lines)[:_LOG_MAX]}
 
 
 def _do_apilib_harvest(params: dict, dry_run: bool = False) -> dict:
@@ -1041,6 +1079,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_apilib_harvest(params, dry_run)
         if key == "schema_harvest":
             return _do_schema_harvest(appliance, params, dry_run)
+        if key == "schema_watch":
+            return _do_schema_watch(dry_run)
         if key == "artifact_refs":
             return _do_artifact_refs(params, dry_run)
         if key == "netbox_reconcile":

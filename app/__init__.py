@@ -880,6 +880,11 @@ def create_app(config_override: object | None = None) -> Flask:
         return {
             'product': prod,
             'products': PRODUCTS,
+            # base.html reads the ADOM registry under its OWN name: a view that
+            # passes `products=` (a list of its own) used to shadow it and the
+            # Global ADOM sidebar raised UndefinedError (Naming 2.11, Build
+            # compatibility 2.13). tests/test_adom_registry_name.py.
+            'adom_registry': PRODUCTS,
             'env_mode': _env_mode,
             'ha_mode': _ha_mode,
             'node_role': _node_role,

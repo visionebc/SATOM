@@ -190,8 +190,55 @@ function fwCompatHtml(c){
   return '<div class="fw-alert fw-alert-'+cls+' mb-2 small" data-build-compat><i class="bi bi-cpu me-1"></i>'
     + c.messages.map(esc).join('<br>') + '</div>';
 }
+function fwEsc(s){
+  return String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; });
+}
+// CLI half of a save (services.cli_writer): the script that will run for the
+// fields only the CLI serves on this build, and — after apply — the readback.
+function fwCliHtml(j){
+  const c = j.cli; let h = '';
+  if (j.channel_warnings && j.channel_warnings.length){
+    h += '<div class="small text-warning mb-1">Not known on this build (sent by REST as before): '
+      + j.channel_warnings.map(fwEsc).join('; ') + '</div>';
+  }
+  if (!c) return h;
+  h += '<div class="fw-card p-2 mb-2" data-cli-write>'
+    + '<div class="small fw-bold mb-1">CLI script — fields this build serves only by CLI'
+    + (c.dialect_verified ? '' : ' <span class="fw-badge-warning">dialect not lab-verified</span>') + '</div>'
+    + '<pre class="mb-1 small" style="max-height:200px;overflow:auto">' + fwEsc((c.script || []).join('\n')) + '</pre>';
+  if (!c.dry_run){
+    const err = c.error || {};
+    if (err.pattern){
+      h += '<div class="small text-danger">CLI refused: ' + fwEsc(err.line || err.pattern)
+        + (err.command ? ' (at <code>' + fwEsc(err.command) + '</code>)' : '')
+        + (c.aborted ? ' — the pending change was discarded with abort' : '')
+        + (c.nothing_applied === true ? '; readback confirms nothing was applied' :
+           c.nothing_applied === false ? '; <b>readback shows the object changed</b>' : '') + '</div>';
+    }
+    const rb = c.readback || {};
+    ['cli', 'rest'].forEach(function(ch){
+      const r = rb[ch]; if (!r) return;
+      let rows = '';
+      Object.keys(r.fields || {}).forEach(function(f){
+        const v = r.fields[f]; const good = /^ok|^deleted|present \(secret/.test(v);
+        rows += '<tr><td class="small">' + fwEsc(f) + '</td><td class="small"><span class="fw-badge-'
+          + (good ? 'success' : 'warning') + '">' + fwEsc(v) + '</span></td></tr>';
+      });
+      h += '<div class="small fw-bold mt-1">Readback (' + ch.toUpperCase() + ')'
+        + (r.skipped ? ': ' + fwEsc(r.skipped) : '') + '</div>'
+        + (rows ? '<table class="table table-sm mb-1"><tbody>' + rows + '</tbody></table>' : '');
+    });
+    (c.diff || []).forEach(function(d){
+      h += '<div class="small text-danger">' + fwEsc(d.channel) + ' ' + fwEsc(d.field)
+        + ': expected ' + fwEsc(JSON.stringify(d.expected)) + ', read ' + fwEsc(JSON.stringify(d.got)) + '</div>';
+    });
+  }
+  return h + '</div>';
+}
 function fwShow(el, j, applyFn){
-  if (!j.ok){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">'+(j.error||'failed')+'</div>'; return; }
+  if (!j.ok){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">'+(j.error||'failed')
+    + (j.cli ? fwCliHtml(j) : '') + '</div>'; return; }
   if (j.dry_run){
     const req = j.request || {};
     let diffHtml = '';
@@ -210,10 +257,15 @@ function fwShow(el, j, applyFn){
     el.innerHTML = '<div class="alert alert-info mt-2 mb-0">'
       + fwCompatHtml(j.build_compat)
       + diffHtml
-      + '<div class="small text-muted mb-1">'+req.method+' '+req.path+'</div>'
-      + '<pre class="mb-2 small" style="max-height:200px;overflow:auto">'+JSON.stringify(req.body, null, 2)+'</pre>'
+      + (j.request ? '<div class="small text-muted mb-1">'+req.method+' '+req.path+'</div>'
+         + '<pre class="mb-2 small" style="max-height:200px;overflow:auto">'+JSON.stringify(req.body, null, 2)+'</pre>' : '')
+      + fwCliHtml(j)
       + '<button type="button" class="btn btn-sm btn-fw-danger fw-apply">Apply to device</button></div>';
     el.querySelector('.fw-apply').onclick = applyFn;
+  } else if (j.cli){
+    // Keep the CLI readback on screen: no automatic reload.
+    el.innerHTML = '<div class="alert alert-success mt-2 mb-0">Applied to device.' + fwCliHtml(j) + '</div>';
+    if (window.FW) FW.toast('Saved to device (CLI readback verified)', 'success');
   } else {
     el.innerHTML = '<div class="alert alert-success mt-2 mb-0">Applied to device.</div>';
     if (window.FW) FW.toast('Saved to device', 'success');

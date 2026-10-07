@@ -980,10 +980,22 @@ def _version_key_of(name: str):
 def outranks(meta: dict, current: str) -> tuple:
     """``(may_replace, why_not)``: may the pack ``meta`` replace a copy whose
     provenance is ``current``? Local data is never replaced; between packs the
-    higher lane wins (api_pack > knowledge) and inside a lane the newer pack."""
+    newer snapshot wins whatever its lane; when a snapshot time is unknown
+    (legacy 2.x writer) the higher lane wins (api_pack > knowledge) and inside
+    a lane the newer pack."""
     lane, name = provenance_parts(current)
     if lane == PROV_LOCAL:
         return False, "this node's own copy; a pack never replaces it"
+    # Both lanes are full snapshots of the SAME harvester: between /2 packs the
+    # newer snapshot wins whatever its lane, so a knowledge correction lands
+    # without waiting for the next release. The lane rank only decides when a
+    # snapshot time is unknown (a 2.x pack wrote the copy) or equal.
+    mine_at = str((meta.get("snapshot") or {}).get("built_at") or "")
+    theirs_at = _snapshot_built_at(current)
+    if mine_at and theirs_at and mine_at != theirs_at:
+        if mine_at > theirs_at:
+            return True, ""
+        return False, "kept: written by the newer snapshot %s (%s)" % (name, theirs_at)
     mine, theirs = LANE_RANK.get(meta["lane"], 0), LANE_RANK.get(lane, 0)
     if mine != theirs:
         return (mine > theirs,
@@ -992,6 +1004,17 @@ def outranks(meta: dict, current: str) -> tuple:
     if _version_key_of(meta["name"]) >= _version_key_of(name):
         return True, ""
     return False, "kept: written by the newer pack %s" % name
+
+
+def _snapshot_built_at(provenance: str) -> str:
+    """Snapshot ``built_at`` of the pack that wrote ``provenance`` (from the
+    import log), ``""`` when unknown (legacy 2.x packs carry no snapshot)."""
+    for _f, rec in _import_logs():
+        prov = rec.get("provenance") or ""
+        if prov == provenance:
+            return str(((rec.get("snapshot") or {}) if isinstance(rec.get("snapshot"), dict)
+                        else {}).get("built_at") or "")
+    return ""
 
 
 def evidence_provenance(origin_ref: str) -> str:

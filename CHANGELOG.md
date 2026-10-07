@@ -28,6 +28,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   both describe (`members`: 39 FortiGate 8.0.1 nested objects have CLI-only
   members). `flask apilib schema-import --schema` accepts a directory of
   per-table answers.
+
 ### Added — knowledge packs from satom-harvester ship with the release (2026-10-07)
 
 - `api-packs/` carries, next to the release packs, ONE knowledge pack
@@ -47,6 +48,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   every pending pack; `satom show apipack` shows the same.
 - Fixed: the console sorted pack versions as mixed int/str lists, which raised
   `TypeError` as soon as a `kb-*` pack sat next to `2.x.y` packs.
+
+### Added — documentation for builds, channels and migrations (2026-10-07)
+
+- New manual pages: [Build compatibility](docs/build-compatibility.md),
+  [Migration report](docs/migration-report.md), [CLI writer](docs/cli-writer.md)
+  and [Knowledge Harvester](docs/knowledge-harvester.md), published on the site.
+  [API library](docs/api-library.md) §13 now runs end to end (sources, channels,
+  completeness, the FortiWeb parent-fallback trap, renames by CLI id,
+  conditional printing, REST ignoring gated fields, per-product adapters, the
+  new-build watch, knowledge packs); the user guide gained §7.3, §30.11,
+  §30.12 and §40.3; safeguards §209–§213.
 
 ### Added — build compatibility across firmware builds (2026-10-07)
 
@@ -82,6 +94,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - Object CLI ids are read from the evidence summary when the facts have none:
   7.6.8 -> 8.0.6 now reports the object rename `allow-source-ip` ->
   `source-ip-list` (was 0) and the field moves into `page-list`.
+
 ### Added — Migration report: will this appliance's configuration survive build X? (2026-10-07)
 
 - New service `services/migration_report.py`. Input: an appliance (its
@@ -113,6 +126,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `flask apilib migration-report`.
 - `cli_schema.parse_show_full_values(text, rows=True)` returns every row of
   every object (`unset` = empty) for in-memory checks.
+
 ### Added — CLI writer for fields only the CLI serves (2026-10-07)
 
 - New `services/cli_writer.py`. `split_payload(appliance, endpoint, fields)`
@@ -151,6 +165,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - Verified end to end on a FortiWeb 8.0.6 lab box: objects created, changed,
   refused mid-transaction (nothing applied), deleted; the box read back
   identical to its state before the test.
+
 ### Added — schema adapters per product and the new-build watch (2026-10-07)
 
 - `services.schema_adapters`: one adapter per product, all feeding the same
@@ -165,7 +180,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `config <object>` and `edit <a row the box listed>` and drops the session
   without `end`; plus `show full-configuration` and the Tastypie schema.
   **FortiGate**: `?action=schema` parser (nested tables folded into fields, as
-  the `tree` is) — unverified, the lab VM is unlicensed and answers 401.
+  the `tree` is) — verified against a live 8.0.1 build0245 (see *Fixed — FortiGate
+  schema verified* above).
   **FortiAnalyzer**: CLI ↔ JSON-RPC `/cli/global/...` path mapping and the
   `get` + `option: syntax` schema read — unverified, no FortiAnalyzer in the
   lab. `flask apilib adapter-harvest` and `flask apilib schema-import`
@@ -11039,6 +11055,7 @@ rebuilt so that the shipped tree matches the documentation set.
   server (appliance-side push config points at it), and `FM_*` env var names.
 
 ## [1.0] - 2026-07-14
+
 ### Added
 - **DNS Records management (IPAM/DDI)**: "+DNS Records" CRUD in the DNS & LB
   lookup tool, backed by pluggable providers (EfficientIP SOLIDserver,
@@ -11055,17 +11072,20 @@ rebuilt so that the shipped tree matches the documentation set.
 - **Production release line**: Linux installer (Debian + RHEL offline
   bundles), generic package-manager support, public site (GitHub Pages),
   package registry artifacts.
+
 ### Fixed
 - Upgrade-event timestamps now render in local time (`| localtime`) instead
   of raw UTC.
 
 ## [0.9] - 2026-07-13
+
 ### Added
 - **Node TLS + node-to-node encryption**: internal CA, per-node leaf certs,
   mutually-authenticated Postgres replication, HTTPS peer probes, and
   "encryption in transit" monitoring cards (every badge backed by a live probe).
 
 ## [0.8] - 2026-07-12
+
 ### Added
 - **FortiAnalyzer** integration (JSON-RPC, dual dialect) as a full ADOM, with
   its endpoints in the DB registry and a git source-of-truth harvest.

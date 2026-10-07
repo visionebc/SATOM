@@ -643,7 +643,7 @@ check. <code>tests/test_docs_publication.py</code> fails the suite when this blo
 longer matches the console you are running.</p>
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-<p><em>110 commands in 40 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
+<p><em>111 commands in 41 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
 <h3 id="get"><code>get</code></h3>
 <p>Read state. Every command below works as <strong>any user</strong> — this is the half of the console that has to keep working when everything else does not.</p>
 <table>
@@ -1215,6 +1215,12 @@ longer matches the console you are running.</p>
 <td>One build: fields per channel (both / CLI only / hidden / REST only / meta / unknown).</td>
 </tr>
 <tr>
+<td><code>satom execute migration report &lt;appliance-id\|name&gt; --target &lt;build&gt; [--backup &lt;id&gt;]</code></td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: center;">—</td>
+<td>Check one appliance's configuration (newest vault dump) against a target build: blocking, translated, warned and new items + verdict. Read-only.</td>
+</tr>
+<tr>
 <td><code>satom execute trust add-key &lt;file.pub&gt; [--name &lt;slug&gt;]</code></td>
 <td style="text-align: center;">yes</td>
 <td style="text-align: center;">—</td>
@@ -1644,6 +1650,10 @@ sudo -u satom env FLASK_APP=wsgi:app venv/bin/flask apilib --help
 <tr>
 <td><code>flask apilib channels PRODUCT BUILD</code></td>
 <td>One build per channel as JSON: counts of both / CLI only / hidden / REST only / unknown / meta and vendor-doc conflicts, plus the CLI-only, hidden and REST-only field lists. Read-only; <code>satom execute apilib channels</code> renders it</td>
+</tr>
+<tr>
+<td><code>flask apilib migration-report APPLIANCE --target BUILD [--backup ID]</code></td>
+<td>Check the appliance's newest <code>show full-configuration</code> dump (backup vault) against the target build and print the migration report as JSON: block / translate / warn / info rows and a verdict. Read-only; the report carries no configuration value</td>
 </tr>
 <tr>
 <td><code>flask apilib baseline status</code></td>

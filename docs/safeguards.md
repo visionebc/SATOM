@@ -16952,3 +16952,109 @@ can only ever produce what a full read would have, or not happen at all.
   without changing its parent's rows is only seen at the weekly full read.
 
 **Mutations: 31/31 bite.**
+
+## §209 — a nested FortiWeb path that only ever returned its parent (`tests/test_fortiweb_shape_probe.py`, `tests/test_schema_harvest.py`, 2026-10-07)
+
+FortiWeb answers a nested REST path it does not serve with **HTTP 200 and the
+parent's rows** (or the parent's dict with `?mkey=`); only an unknown top-level
+path answers `-20001`. The rediscovery probe called every 200 `ok`, so a sweep,
+the CLI-coverage probe or a discovery run could register a URN that never
+returned its own object.
+
+- **The verdict comes from the shape, never the status.**
+  `rediscovery.fortiweb_shape_verdict` calls a nested answer `absent` when it
+  equals the parent's, when its rows carry the child as their own key
+  (`<child>` / `sz_<child>`), or when its row keys share nothing with the
+  object's fields. A real empty table (`[]`) stays `ok`.
+- `_probe_fortiweb` reads the parent once for a nested path that returned rows,
+  so the sweep, `probe_endpoint`, the CLI-coverage probe and the discovery run
+  share one verdict.
+- Negative controls on both lab builds (a fake child under a table, a fake child
+  under a singleton, a fake top-level module) come back parent-fallback,
+  parent-fallback and absent.
+- A partial schema-harvest probe never counts as the build's sweep (`needs_harvest`,
+  pack "local wins").
+
+## §210 — the CLI channel enters the library as names, never values (`tests/test_api_library_channels.py`, `tests/test_cli_schema.py`, `tests/test_api_pack.py`, 2026-10-07)
+
+`show full-configuration` is the configuration. Recording it as evidence would
+put customer values into the database and into every exported pack.
+
+- **Ingest refuses** a `cli_full` field that carries anything but `attrs`; a
+  `default` is accepted only on lab evidence (`summary.lab = true`, a fresh lab
+  row whose values are the defaults) and identity/secret fields never become
+  defaults.
+- **Pack export refuses** such a row again, and pack import accepts the CLI
+  sources only under the same rule.
+- `tree` runs behind its own whole-command gate (`ssh_ops.assert_schema_command`);
+  the read-verb allowlist (`assert_readonly`) did not widen.
+- REST bookkeeping (`id`, `_id`, `seq`, `<NO.>`, `q_*`, `sz_*`, `can_*`, `*_val`)
+  is channel `meta`, never `rest_only`, unless the build's CLI lists the name for
+  that object; a vendor-documented name a measured `tree` contradicts is
+  `unknown` with `doc_conflict`, never "served".
+- The REST readers (versions page, preflights, baselines, the matrix export)
+  never read a CLI source: a build measured only by CLI stays `unmeasured` for
+  REST.
+
+## §211 — a write that a build accepts with 200 and drops (`tests/test_build_compat.py`, `tests/test_build_compat_page.py`, 2026-10-07)
+
+A FortiWeb cmdb write carrying a field the build does not have answers 200 and
+drops it. Every write path now checks the payload against each target's exact
+build first (`services/build_compat.py`).
+
+- **Skip, per device, and say so.** A field the build lacks is stripped from
+  that appliance's payload only (`bulk.strip_skipped`), listed in the preview and
+  again in the device's job result.
+- **Block what cannot be right.** An enum value outside the build's options, a
+  value outside its range, or an object its measured CLI schema does not have
+  refuses the template apply, approval auto-deploy, system-profile and baseline
+  apply, carve-out push and object-editor apply. The existing override (a reason
+  from a holder of `operations.template_approve`) is the only way past, and it is
+  audited.
+- **Unknown is never ok.** A build with no evidence reads "not measured — cannot
+  be guaranteed", a warning, on every surface.
+- Rename hints (operator field maps, equal CLI attribute ids) are shown, never
+  applied to the payload.
+- The per-build view is cached and invalidated by any new evidence or rename map
+  of the product.
+
+## §212 — a CLI write that could half-apply, or claim success it never read (`tests/test_cli_writer.py`, `tests/test_cli_writer_gate.py`, 2026-10-07)
+
+The CLI writer types configuration into an appliance's shell. It is fenced on
+every side:
+
+- **Gate.** A field goes by CLI only when the library classifies it `cli_only` or
+  `hidden` on the appliance's exact build; an unknown build, an unmeasured
+  endpoint or an unknown channel refuses it with the reason. REST-served fields
+  never go by CLI.
+- **No half-applied object.** The writer stops at the first error pattern the
+  box prints and discards the pending change with `abort` (leaving a sub-table
+  with `end` first), resyncing on the prompt after every line. Values that cannot
+  be typed safely (control characters; `?` where the dialect reads help) are
+  refused before anything is sent.
+- **Readback is mandatory**, in a new SSH session (a same-session `show` was
+  seen printing an empty block), plus REST where REST serves the object. A
+  mismatch fails the write with the diff; after a failure the readback proves
+  nothing was applied, or says it was.
+- **Same lock as REST** (the per-device job lock); the REST half runs first and
+  the CLI half is not sent when it failed.
+- **Audit without values**: `config.cli_write` records the path, the field names
+  and the outcome; an error is recorded by pattern id, never by the line (which
+  can echo a secret).
+- The read-only console gate is unchanged; the write session is the existing
+  write-capable SSH class, whose deny-list checks every line.
+
+## §213 — reports and harvests that cannot leak or write (`tests/test_migration_report.py`, `tests/test_migration_report_page.py`, `tests/test_schema_adapters_fac.py`, `tests/test_schema_watch.py`, 2026-10-07)
+
+- **Migration report: no value leaves memory.** The dump is parsed in memory;
+  rows, JSON and CSV carry names, counts and library facts only. The test runs a
+  sanitised dump whose every value is a marker and asserts none reaches an
+  export. Appliances are loaded through `visible_appliance_or_404` (another ADOM
+  is a 404).
+- **FortiAuthenticator help walk is read-only by construction**
+  (`assert_help_step`): only `?` questions, `config <object>` and `edit <a row
+  the box listed>`; never `set <value>`, `next`, `end` or `abort`; the session is
+  dropped so a pending buffer cannot be committed. The CLI password given for a
+  harvest is used once and never stored.
+- **New-build watch never raises** into the firmware probe or the scheduler, and
+  notifies once per product and build.

@@ -3,17 +3,26 @@
 > **Audience:** operators who keep the library fed and read its pages, and
 > engineers who write an adapter or a reader. Operator walkthroughs of the
 > pages built on it are in the [User guide](user-guide.md) §30.5,
-> §30.8–§30.10 and §41.8–§41.9; the guards are catalogued in
+> §30.8–§30.12, §40.3 and §41.8–§41.9; the guards are catalogued in
 > [Safeguards](safeguards.md) §192–§193, §196 (endpoint baselines, §9
-> below) and §197 (per-build resolution, §9.8).
+> below), §197 (per-build resolution, §9.8) and §209–§213 (the CLI channel,
+> §13). The features built on the CLI channel have their own pages:
+> [Build compatibility](build-compatibility.md),
+> [Migration report](migration-report.md), [CLI writer](cli-writer.md) and
+> [Knowledge Harvester](knowledge-harvester.md).
 >
-> **Since:** SATOM 2.2.0.
+> **Since:** SATOM 2.2.0. CLI channel: 2.13.0 (unreleased).
 
 The API library is SATOM's record of **which API each firmware build serves**:
 endpoints, fields, field types and options, per product and per exact build,
-with every claim traceable to the evidence it came from. It lives in the
-application database (the `api_lib_*` tables), it only ever grows, and every
-page that answers a firmware question reads it.
+**by both channels** — REST and the CLI — with every claim traceable to the
+evidence it came from. It lives in the application database (the `api_lib_*`
+tables), it only ever grows, and every page that answers a firmware question
+reads it.
+
+**The key is always the exact build, never the API version.** Two builds that
+speak the same REST API version still differ in fields (FortiWeb 7.6.8 and
+8.0.6 both answer `/api/v2.0/`; 8.0.6 has 135 more fields and 25 fewer).
 
 ---
 
@@ -31,6 +40,12 @@ answer none of them at scale.
    all.
 4. **Incremental knowledge.** Every harvest adds evidence. Nothing is lost when
    an appliance is retired, deleted or upgraded.
+5. **By which channel?** Does this build serve the field over REST and the CLI,
+   the CLI only, only in `show full-configuration`, or REST only (§13.3) — and
+   therefore: will a write on this build keep it
+   ([Build compatibility](build-compatibility.md)), will this box's
+   configuration survive the move ([Migration report](migration-report.md)),
+   and does it have to be written by CLI ([CLI writer](cli-writer.md))?
 
 **Why it replaced the files.** The previous store (`data/api_matrix/*.json`,
 `data/rediscovery/*/by-version`, `data/field_schemas`) was derived and
@@ -121,11 +136,14 @@ on one side only, or by different kinds on the two sides, is reported as
 
 | Product key | Evidence sources | Where the evidence comes from |
 |---|---|---|
-| `fortiweb` | `sweep`, `schema` | rediscovery sweeps of live appliances; field schemas harvested per firmware line |
-| `fortiadc` | `sweep`, `legacy_matrix` | sweeps, and the frozen line-only matrix file from before the build axis. No FortiADC is left in the lab fleet, so no new FortiADC evidence arrives until one is registered |
-| `fortiauthenticator` | `schema` (and `sweep`) | a live, **read-only** harvest of the device's own Tastypie schema (`GET /api/v1/` and `GET /api/v1/<resource>/schema/`) |
-| `fortianalyzer` | `vendor_doc` | the vendor's Ansible collection `fortinet.fortianalyzer` (its `v_range` data) |
-| `fortigate` | `vendor_doc` | the vendor's Ansible collection `fortinet.fortios` (its `v_range` data). Catalog-only |
+| `fortiweb` | `sweep`, `schema`, `cli_tree`, `cli_full` | rediscovery sweeps of live appliances; field schemas harvested per firmware line; the CLI `tree` and `show full-configuration` of each build (§13), plus a shape-checked REST probe of every `tree` object |
+| `fortiadc` | `sweep`, `legacy_matrix`, `cli_tree`, `cli_full` | sweeps, and the frozen line-only matrix file from before the build axis; the CLI adapter is **unverified**. No FortiADC is left in the lab fleet, so no new FortiADC evidence arrives until one is registered or a pack brings it |
+| `fortiauthenticator` | `schema` (and `sweep`), `cli_tree`, `cli_full` | a live, **read-only** harvest of the device's own Tastypie schema (`GET /api/v1/` and `GET /api/v1/<resource>/schema/`); its small setup CLI read by a `set ?` help walk |
+| `fortianalyzer` | `vendor_doc`, `schema` | the vendor's Ansible collection `fortinet.fortianalyzer` (its `v_range` data); the JSON-RPC syntax read (**unverified** adapter) |
+| `fortigate` | `vendor_doc`, `schema`, `cli_tree` | the vendor's Ansible collection `fortinet.fortios` (its `v_range` data); `?action=schema` and the CLI `tree` from a lab box, by pack or file import. Catalog-only |
+
+Which adapter reads which channel of which product, and on which device and
+build it was verified, is §13.10.
 
 Source vocabulary (closed set): `sweep`, `schema`, `vendor_doc`, `manual`,
 `legacy_matrix`, and the CLI channel `cli_tree` and `cli_full` (§13).
@@ -334,7 +352,11 @@ adapter that reaches a device is `apilib_fac.harvest(appliance)`, GET only.
 | API field renames (`/web/registry/field-map`) | writes `api_lib_field_map` |
 | `version_compat` (clone/migrate pre-flight, upgrade pre-flight) | `fields_at()` and `compare()` at the exact builds from `resolve_appliance()`. Every answer carries its provenance, so a page says "vendor claims" rather than "measured". A vendor-only absence **warns**; only a measured absence blocks. The clone pre-flight also offers the destination's new fields (opt-in, validated server-side) |
 | API Explorer | resolves the selected appliance to a build, marks endpoints served / absent / unknown, refuses an unserved endpoint server-side unless confirmed, and can queue a harvest |
-| `firmware_probe` | queues a harvest when an appliance changes build (§8.4) |
+| `firmware_probe` | queues a harvest when an appliance changes build (§8.4), and tells the new-build watch (§13.11) |
+| `build_compat` (every write path) | `channels_at()`, the `tree` options and ranges, field maps and CLI ids of each target's build ([Build compatibility](build-compatibility.md)) |
+| `migration_report` (Migration Report page, Upgrade Flow stage 1) | the CLI half of `compare()` and `channels_at()` of the source and target builds ([Migration report](migration-report.md)) |
+| `cli_writer` (object editor) | `channels_at()` of the appliance's build, to route each field to REST or CLI ([CLI writer](cli-writer.md)) |
+| Build compatibility, Schema builds pages | `channels_at()`, `compare()`, `field_history()` (§13) |
 
 ---
 
@@ -356,6 +378,12 @@ sudo -u satom env FLASK_APP=wsgi:app venv/bin/flask apilib <command>
 | `flask apilib import-vendor PATH` | imports an extracted vendor Ansible collection (§8.2) |
 | `flask apilib ingest-file PATH` | ingests one evidence document (plain or gzipped JSON), or a JSON list of them |
 | `flask apilib harvest-fac [--appliance NAME]` | reads the live schema of every FortiAuthenticator, or one, and ingests it |
+| `flask apilib schema-harvest <id\|name> [--lab] [--no-probe]` | one appliance's CLI channel (`tree` + `show full-configuration`) and a REST probe of the paths the library lacks (§13.4) |
+| `flask apilib adapter-harvest <id\|name> [--ssh-secret-env VAR]` | one appliance through its product's schema adapter (§13.10); for FortiAuthenticator, `VAR` names an environment variable holding the CLI password |
+| `flask apilib schema-import --product fortigate\|fortianalyzer --version X [--build B] [--tree FILE] [--schema FILE]` | ingests saved schema captures of a product SATOM does not read live |
+| `flask apilib compat PRODUCT BASE TARGET` / `flask apilib channels PRODUCT BUILD` | two builds through both channels / one build per channel, as JSON ([Build compatibility](build-compatibility.md) §5) |
+| `flask apilib migration-report APPLIANCE --target BUILD [--backup ID]` | the [Migration report](migration-report.md) as JSON |
+| `flask apilib pack export\|inspect\|import` | API packs (§11.4) |
 | `flask apilib baseline status\|promote\|adopt\|export\|apply\|check\|resolve` | the endpoint baselines that seed the registry (§9) |
 
 Every command writes through `ingest`, so every command is safe to re-run:
@@ -434,8 +462,13 @@ determined) and, per product, how many documents were stored unhealthy.
 
 What a harvest does per product: FortiWeb and FortiADC run a rediscovery
 sweep; FortiAuthenticator reads its Tastypie schema (GET only) and ingests it.
-FortiAnalyzer and FortiGate have no live harvester and every entry point says
-so by name (`no live harvester for fortianalyzer`).
+FortiAnalyzer and FortiGate have no live **REST** harvester and every entry
+point says so by name (`no live harvester for fortianalyzer`).
+
+The **CLI channel** has its own harvest — the schema harvest (§13.4), the
+scheduled action `schema_harvest` and the per-product adapters (§13.10) — and
+its own watch: an appliance on a build with no harvested schema raises one
+notification and is listed on the **Schema builds** page (§13.11).
 
 A build "needs a harvest" when the exact build has no healthy build-scoped
 evidence from the product's **live** source (`sweep` for FortiWeb and
@@ -718,9 +751,15 @@ registry itself.
 
 ## 10. Limits that do not go away
 
-- **FortiWeb has no schema endpoint.** An empty collection reveals no fields.
-  Such endpoints are `blind`, never "no fields". Configure one row on a box
-  running that build and sweep it again.
+- **FortiWeb has no REST schema endpoint.** An empty collection reveals no
+  fields over REST. Such endpoints are `blind`, never "no fields". The CLI
+  `tree` gives the build's schema anyway (§13.1), so a field of an empty table
+  reads `unknown` on the REST side, not absent. Configure one row on a box
+  running that build and sweep it again to measure REST.
+- **A configuration dump is not a schema.** `show full-configuration` prints
+  only the fields that apply under each row's current settings (§13.8).
+- **REST hides what it drops.** A gated field sent alone answers 200 and is
+  not applied (§13.9); only a readback proves a write.
 - **Vendor data is a claim by the vendor's tooling**, not a measurement. It is
   labelled `vendor_doc` everywhere, never outranks a sweep of a real box, and
   its absence of an endpoint warns instead of blocking.
@@ -731,8 +770,12 @@ registry itself.
   carry no version data. A build no appliance has run stays `unmeasured`.
 - **FortiADC has no live evidence source today**: no FortiADC is left in the
   lab fleet. Its historical builds (including 8.0.3) stay in the library.
-- **The field map is authored, not discovered.** The library cannot tell a
-  rename from a removal plus an addition until an operator says so.
+- **The field map is authored, not discovered.** The library proposes rename
+  candidates by CLI attribute id (§13.7) but does not apply them: a rename is a
+  removal plus an addition until an operator records it.
+- **FortiADC and FortiAnalyzer adapters are unverified** (no lab device). A harvest
+  through them names the gap (`unverified`), and so does the Schema builds page
+  that lists the adapters.
 
 ---
 
@@ -744,7 +787,8 @@ from vendor collections downloaded from Galaxy, and from docs.fortinet.com
 node has none of those, and a node with no FortiADC will never measure
 FortiADC. An **API pack** carries what one SATOM knows to another as one signed
 tarball (`app/services/api_pack.py`). Packs are written by SATOM's own export
-and by the separate harvester tool in the same format; the release notes in a
+and by the separate [Knowledge Harvester](knowledge-harvester.md) in the same
+format (knowledge packs, `kb-*`, §13.12); the release notes in a
 pack may cover any product with a release-notes map (FortiWeb, FortiADC,
 FortiAuthenticator, FortiAnalyzer, FortiGate — see
 [release_notes.md](release_notes.md)), and each item imports only its own
@@ -754,7 +798,7 @@ product's rows.
 
 | Section | Content | Source on the exporting node |
 |---|---|---|
-| `library` | One evidence document per healthy evidence row: sweeps, schemas, `legacy_matrix`, `vendor_doc` | `api_lib_evidence` |
+| `library` | One evidence document per healthy evidence row: sweeps, schemas, `legacy_matrix`, `vendor_doc`, and the CLI channel `cli_tree` / `cli_full` with their `attrs` | `api_lib_evidence` |
 | `docs` | Release notes **with the full vendor text** (issues, workarounds, prose sections); harvested field schemas per line; the FortiWeb field overlay | `reports/_release_notes.json`, `data/field_schemas/`, `data/fortiweb_field_schema.json` |
 | `cli-coverage` | Per product and firmware version: the CLI-only blocks and near matches, with their `set` names and counts | the newest usable CLI dump per version in the device vault (`cli_coverage`) |
 
@@ -1007,6 +1051,12 @@ the digests, because they act on a stored dump.
 | `pack import`: `no key in the trust store signed this package` | The signing key is not trusted here: `satom execute trust add-key <key>.pub` (same store as update packages) |
 | `pack export`: `identifying data survived the scrub` | The message names the file and the value. A device name used as an API key or field name is the usual cause; nothing was written |
 | A pack item stays `local` and is never imported | Expected: this node measured that build itself (§11.3) |
+| Bell: *New build X on Y: schema not harvested* | An appliance runs a build with no CLI schema in the library. Open **Schema builds** and press **Harvest**, or import a knowledge pack that covers the build (§13.11) |
+| A build reads `unknown` for hundreds of fields after a harvest | Those fields sit in empty tables, or under a parent table with no row: REST had nothing to read. Expected; it is not "absent". A knowledge pack with lab rows narrows it |
+| `rest_only` counts that look like bookkeeping (`id`, `_id`, `seq`) | They are channel `meta` since 2.13 (§13.3). On an older pack, re-import; on this node, harvest the CLI schema so the build has a `tree` |
+| Schema builds: *unverified adapter* | The product's adapter was never checked against a device (FortiADC, FortiAnalyzer). Its evidence is labelled; treat it as a documented convention (§13.10) |
+| FortiAuthenticator harvest reads REST but no CLI | SATOM stores the REST API key, not a CLI login. Give the CLI password in the Schema builds harvest form (used once, never stored), or `flask apilib adapter-harvest --ssh-secret-env VAR` |
+| Migration report: *cannot assess* | No usable `show full-configuration` dump in the vault, an unknown source build, or a target with no CLI schema. The reason is on the report ([Migration report](migration-report.md) §2.1) |
 
 ---
 
@@ -1019,6 +1069,23 @@ one only, or with fields that only `show full-configuration` prints. The
 library records the CLI channel beside the REST one, per exact build, so a
 page can say "you can do this, but on build X this field does not exist", or
 "this field exists only on the CLI".
+
+What one build knows is a set of **sources**, each with its own evidence row:
+
+| Source | Channel | What it says about a build |
+|---|---|---|
+| `sweep` | REST | which paths answered and which field names and JSON types their rows carry |
+| `schema` | REST | the schema the device serves (FortiAuthenticator Tastypie, FortiGate `?action=schema`, FortiAnalyzer syntax) |
+| `vendor_doc` | REST (claim) | the vendor's Ansible collection or CLI reference — a claim, never a measurement |
+| `cli_tree` | CLI | the whole CLI schema: objects, fields, types, options, ranges, CLI attribute ids |
+| `cli_full` | CLI | the field names `show full-configuration` prints (hidden fields included); never values |
+
+The rest of this section is the model end to end: the two CLI sources (§13.1)
+and what they never carry (§13.2), how a field's channel and a build's
+completeness are derived (§13.3), how a write is checked against a build
+(§13.3.1), how the channel is harvested (§13.4–§13.6), the three lab findings
+every reader must respect (§13.7–§13.9), the per-product adapters (§13.10), the
+new-build watch (§13.11) and knowledge packs (§13.12).
 
 ### 13.1 The two CLI sources
 
@@ -1038,14 +1105,19 @@ fact's `attrs`: `cli_id`, `hidden`, `range` `[lo, hi]`, `help`, `cli_type`
 
 FortiOS (FortiGate) prints `[table]`, `<singleton>`, `--*key` and annotations
 `(lo,hi)` / `(size)` but no types and no options; its command trees
-(`diagnose__tree__`, `execute__tree__`) are skipped.
+(`diagnose__tree__`, `execute__tree__`) are skipped. FortiAuthenticator has no
+`tree` (`No such command.`); its `cli_tree` evidence is the `set ?` help of
+each setup-CLI object (`summary.format = "fac_help"`). FortiAnalyzer's CLI
+schema is its JSON-RPC syntax answer, stored as `schema`.
 
 **CLI path to REST path** (`cli_schema.rest_path`):
 
 | Product | Rule | Status |
 |---|---|---|
 | FortiWeb | `module/` + namespaces and object joined with `.`; an object nested in a table or singleton goes with `/` (`waf/web-protection-profile.inline-protection`, `system/ntp/ntpserver`) | verified (7.6.8, 8.0.6) |
-| FortiGate | `config a b c` -> `a.b/c`; a nested table is a field of its top-level object (`children`) | matches every vendor URN |
+| FortiGate | `config a b c` -> `a.b/c`; a nested table is a field of its top-level object (`children`) | matches every vendor URN; `tree` verified on 8.0.1 |
+| FortiAuthenticator | no `tree`; the five setup-CLI objects (`router static`, `system dns\|global\|ha\|interface`) are none of the 58 Tastypie resources, so they never join a REST path | verified (8.0.3) |
+| FortiAnalyzer | the JSON-RPC `/cli/global/...` URL is the CLI path | **unverified** (no FortiAnalyzer in the lab) |
 | FortiADC | `config a-b c-d` -> `a_b_c_d`; a table in a table -> `<parent>_child_<table>` | **unverified** (no FortiADC in the lab) |
 
 ### 13.2 What never enters the library
@@ -1070,14 +1142,35 @@ FortiOS (FortiGate) prints `[table]`, `<singleton>`, `--*key` and annotations
 `api_library.channels_at(product, version, endpoint=None, exceptions=None)`
 answers, for every field of every path the build is known to have:
 
-| channel | means |
-|---|---|
-| `both` | REST revealed it and the CLI has it |
-| `cli_only` | the CLI `tree` has it; REST revealed the object's fields (or measured the object absent) and it is not there |
-| `hidden` | like `cli_only`, but only `show full-configuration` prints it |
-| `rest_only` | REST revealed it; the build's `tree` does not list it |
-| `unknown` | one channel never answered for it on this build (no `tree`, a blind or unasked REST endpoint). Never a "no". A name only the vendor documentation gives REST, absent from a measured `tree`, is `unknown` with `doc_conflict: true` |
-| `meta` | REST bookkeeping (`api_library.REST_META`), reported and never counted toward completeness |
+| channel | means | UI label |
+|---|---|---|
+| `both` | REST revealed it and the CLI has it | both |
+| `cli_only` | the CLI `tree` has it; REST revealed the object's fields (or measured the object absent) and it is not there | CLI only |
+| `hidden` | like `cli_only`, but only `show full-configuration` prints it | hidden |
+| `rest_only` | REST revealed it; the build's `tree` does not list it | REST only |
+| `unknown` | one channel never answered for it on this build (no `tree`, a blind or unasked REST endpoint). Never a "no". A name only the vendor documentation gives REST, absent from a measured `tree`, is `unknown` with `doc_conflict: true` | unknown, or *CLI (REST not measured)* when the `tree` has it |
+| `meta` | REST bookkeeping (`api_library.REST_META`), reported and never counted toward completeness | meta |
+
+What the lab measured with it (CLI `tree`, REST probe of every object, a lab
+row created in every empty table and read back by both channels):
+
+| Build | both | CLI only | hidden | REST only | unknown |
+|---|---|---|---|---|---|
+| FortiWeb 7.6.8 | 3,451 | 0 | 0 | 0 | 653 (was 1,744 before the lab rows) |
+| FortiWeb 8.0.6 | 3,372 | 0 | 0 | 0 | 885 (was 2,545) |
+| FortiAuthenticator 8.0.3 | 0 | 29 | 0 | 316 | 0 |
+
+On FortiWeb every field the `tree` lists is served by REST on every object REST
+serves, and `show full-configuration` names nothing the `tree` does not: the
+real differences between the channels are conditional printing (§13.8) and
+REST ignoring gated fields (§13.9), not field sets. The FortiWeb `unknown` rows
+are fields of tables that could not be given a lab row (parent row not
+creatable, licence, certificate import, HSM, a feature the box's mode hides).
+On FortiAuthenticator the channels are two different worlds: the CLI is a small
+setup CLI, REST holds the product's configuration. On FortiGate 8.0.1 the CLI
+`tree` does not print 9 tables REST serves (the `llm/*` tables,
+`waf/signature`, `waf/main-class`, `waf/sub-class`, `firewall/access-proxy`,
+`firewall/access-proxy6` and `system/vdom`).
 
 REST bookkeeping is `meta`, not `rest_only`. FortiWeb (measured on 7.6.8,
 where it had read as 276 `rest_only`): `id` on tables whose tree has no `id`,
@@ -1104,22 +1197,19 @@ id that left one object and reappears in another: an object renamed with its
 fields, or a field that became a subtable) work on harvester packs too.
 `field_history` reads both channels and labels each row `rest` or `cli`.
 
-### 13.3.1 Build compatibility of a write
+### 13.3.1 What reads the channels
 
-`services/build_compat.py` checks a payload (object + fields, optionally values)
-against each target's exact build through both channels: `missing` (stripped
-per device and reported), `cli_only` (the REST write cannot set it),
-`enum_invalid` / `range_invalid` and an object the build lacks (block),
-`unknown` for an unmeasured build ("cannot be guaranteed", never ok), plus
-rename hints from `api_lib_field_map` and equal CLI ids. One view per
-(product, build), cached until the product's evidence or rename maps change.
-`version_compat.build_check` / `compare_object(..., values=)` carry it into
-template apply and approval deploy, baseline and system-profile apply, the
-carve-out push and the object editor. The **Build compatibility** page
-(`/web/registry/build-compat/`, `registry_edit`) shows the field x build matrix
-by channel, a two-build diff and per-field history; `satom execute apilib
-compat <product> <A> <B>` and `satom execute apilib channels <product> <build>`
-print the same from the console.
+Three features are built on `channels_at` and the CLI half of `compare()`; each
+has its own page:
+
+| Feature | Question | Page |
+|---|---|---|
+| `services/build_compat.py` | will this **payload** fit each target's exact build? Missing fields are skipped per device, CLI-only fields flagged, invalid values and absent objects block, an unmeasured build "cannot be guaranteed". Wired into template apply and approval deploy, baseline and system-profile apply, the carve-out push and the object editor; the **Build compatibility** page shows the field x build matrix | [Build compatibility](build-compatibility.md) |
+| `services/migration_report.py` | will this **appliance's configuration** survive a move to build X? block / translate / warn / info and a verdict, from its newest `show full-configuration` dump; never a value in the report | [Migration report](migration-report.md) |
+| `services/cli_writer.py` | which fields of a write must go **by CLI** on this build, and did they land? A gated CLI transaction with `abort` on error and a fresh-session readback | [CLI writer](cli-writer.md) |
+
+`satom execute apilib compat <product> <A> <B>` and `satom execute apilib
+channels <product> <build>` print the library's own answers from the console.
 
 ### 13.4 Harvesting the CLI channel
 
@@ -1162,6 +1252,16 @@ parent's, whose rows hold the child as their own key (`<child>` /
 returned rows, so the sweep, `probe_endpoint`, the CLI-coverage probe and the
 discovery run share the verdict.
 
+**The trap, in one line: never read a FortiWeb verdict from the HTTP status.**
+Before 2.13 the probe called every 200 `ok`, so a sweep could register a URN
+that only ever returned its parent. Measured on 7.6.8 and 8.0.6, every real
+`tree` object that answered with data carried its own keys — the shape probe
+changed no real verdict there — while synthetic controls
+(`router/static/<fake>?mkey=…`, `fds/update-flag/<fake>`) come back
+parent-fallback and a fake top-level module `absent`, on both builds. The same
+rule holds for writes: a POST/PUT with an unknown field also answers 200
+(§13.9).
+
 ### 13.6 CLI coverage: catalog gap or CLI only
 
 The coverage diff used to call every block the catalog does not name "CLI
@@ -1175,3 +1275,138 @@ only". Measured on 7.6.8, all 50 of those blocks were served by REST. Now:
 Discovery runs and the Structure page read both buckets
 (`cli_coverage.not_in_catalog`).
 
+### 13.7 Renames: CLI attribute ids propose, field maps decide
+
+Every object and field in a FortiWeb `tree` carries a CLI attribute id
+(`name(4246)`), recorded as `attrs.cli_id`. Measured on FortiWeb 7.6.8 → 8.0.6:
+
+- same name → same id for **4,121 of 4,121** fields, and 534 of 534 objects;
+- same id → another name in the same object: **18**, every one a real rename
+  (`token-secret` → `jwt-token-secret`, `token-header` → `jwt-token-name`,
+  `appsec-cloud-connection-url` → `threat-analytics-authurl`,
+  `max-setting-initial-window-size*` → `h2-setting-initial-window-size*`, …);
+- same id in another object: 2 structural moves (`waf bot-detection-policy
+  allow-source-ip` → `source-ip-list`, an object rename that kept its table id;
+  `url-type`/`url-pattern` → the new subtable `page-list`);
+- new attributes get fresh ids; no id was reused for an unrelated attribute; a
+  box running 7.6.8 before its upgrade printed a `tree` byte-identical to another
+  7.6.8 box — the ids belong to the build, not to the device.
+
+So `compare()` reports **rename candidates** (fields and objects) and
+**moves** by equal CLI id, and [Build compatibility](build-compatibility.md)
+and the [Migration report](migration-report.md) show them as hints and
+warnings. They are never applied. `api_lib_field_map`, authored by an operator
+at `/web/registry/field-map`, stays the only authority: a mapped candidate says
+`mapped: true`, and the migration report turns it from `warn` into `translate`.
+The rule held on one pair of builds; re-check it on every new pair before
+relying on it blindly. Lookalike pairs matched by type alone are noise.
+
+### 13.8 `show full-configuration` prints conditionally
+
+`show full-configuration` prints only the fields that **apply under the row's
+current settings**; REST returns them all. Measured on lab rows: 204 fields in
+56 objects (7.6.8) and 349 fields in 78 objects (8.0.6) were missing from the
+dump while REST and the `tree` had them. A related answer: `set <field> ?`
+answers *Parsing error* for a field gated under the current values (50 of 222
+rows on 7.6.8, 72 of 280 on 8.0.6).
+
+Consequences:
+
+- **A field missing from a dump is not missing on the build.** `cli_full` only
+  ever adds names (and `hidden` when the `tree` lacks them); it never removes
+  one. The schema is the `tree`.
+- A [Migration report](migration-report.md) reads the dump for what the device
+  **uses**, and the `tree` for what the target **has**.
+- FortiWeb 7.6.8 and 8.0.6 have **0 hidden fields**: `show full-configuration`
+  names nothing the `tree` does not.
+
+### 13.9 REST silently ignores gated fields
+
+A FortiWeb cmdb POST/PUT carrying an unknown field, or a field gated behind a
+toggle that is off, answers **HTTP 200 and drops it**. Confirmed in 17 of 17
+lab cases: the dependent field sent alone while its toggle is off is not
+applied; the toggle and the dependent field sent in **one** request are.
+Examples: `server-balance` → `lb-algo` / `health` in a server pool; `http-reuse`
+→ `reuse-conn-*`; syslog `proto tls` → `enc-algorithm` / `local-cert`; WAF
+`action block-period` → `block-period`; recurring scan schedules → `time` /
+`wday`; 8.0.6 cookie security `samesite` → `samesite-value`.
+
+Rules every write path follows:
+
+- **Send dependent fields together**, with the toggle that exposes them, in one
+  request.
+- **Only a readback proves a write.** The [CLI writer](cli-writer.md) reads every
+  field back; a REST write that matters reads the object back.
+- The knowledge pack's lab evidence names the fields a toggle exposes
+  (`attrs.depends_on`: 12 on 7.6.8, 15 on 8.0.6).
+- [Build compatibility](build-compatibility.md) strips the fields a build does
+  not have *before* the write, so the 200-and-drop never hides a missing field.
+
+### 13.10 Per-product adapters
+
+Every product describes its schema its own way; `services/schema_adapters/`
+holds one adapter per product, all ending in the same evidence (`cli_tree`,
+`cli_full`, `schema`, `sweep`) keyed by the REST path. Each adapter declares its
+capabilities and where it was verified; the **Schema builds** page shows both.
+
+| Product | CLI schema | REST schema | Verified |
+|---|---|---|---|
+| FortiWeb | `tree` (types, options, ranges, ids) | shape probe of every `tree` object (no REST schema endpoint) | **yes** — lab VMs on 7.6.8 and 8.0.6 |
+| FortiAuthenticator | no `tree`: `config <object>` + `set ?` help walk of the setup CLI (5 objects, 29 fields); `show full-configuration` | Tastypie `/api/v1/<res>/schema/` (58 resources, 316 fields), directory complete | **yes** — 8.0.3 build0099 |
+| FortiGate | `tree` (FortiOS format; nested tables folded into fields) | `GET /api/v2/cmdb/<path>?action=schema` | **yes** — 8.0.1 build0245 (catalog-only: evidence arrives by pack or `flask apilib schema-import`) |
+| FortiADC | `tree` (FortiOS-family format assumed) | none implemented | **no** — no FortiADC in the lab |
+| FortiAnalyzer | JSON-RPC `get` with `option: syntax` | the same answer (the `/cli/global/...` URL is the CLI path) | **no** — no FortiAnalyzer in the lab |
+
+Read-only by construction: the FortiWeb, FortiADC and FortiGate harvests send
+`tree` (behind its own whole-command gate) and `show`; the FortiAuthenticator
+walk can send only `?` questions, `config <object>` and `edit <a row the box
+listed>`, never `set <value>`, `next`, `end` or `abort`, and drops the session;
+the FortiAnalyzer session sends only login, `get` and logout.
+
+FortiAuthenticator's credential is the REST API key, which does not log into the
+CLI. Its CLI half runs only when the operator gives the CLI password for that one
+harvest (Schema builds form, or `flask apilib adapter-harvest --ssh-secret-env`);
+it is never stored. Without it the CLI half is reported skipped, by name.
+
+### 13.11 New builds: detection, notification, one-click harvest
+
+`services/schema_watch.py` compares the build every appliance runs with the
+builds that have harvested schema evidence (`cli_tree`; `schema` for
+FortiAnalyzer). It runs after every firmware read (`firmware_probe`) and from the
+scheduled action `schema_watch`.
+
+- **One bell notification per product and build** to the administrators: *New
+  build 8.0.7 on fweb-01: schema not harvested*, linking to Schema builds. It is
+  not repeated for the next appliance on the same build.
+- **Schema builds** (`/web/schema-builds/`, sidebar in the FortiWeb ADOM;
+  reading needs `registry.view`) lists the adapters with their capabilities and
+  verification, the harvested builds per product, and every appliance on a build
+  without a harvested schema with a **Harvest** button (`appliances.apply`,
+  audited as `schema_builds.harvest`).
+- After a harvest the page compares the new build with the **closest** harvested
+  build of the same product: every new or changed object and field, with its
+  channel on the new build. An item whose REST side nobody measured on that build
+  reads *unknown — to verify* until a sweep or probe measures it.
+- The scheduled action `schema_harvest` also runs FortiAuthenticator and
+  FortiAnalyzer through their adapters.
+
+### 13.12 Knowledge packs
+
+A node that has never run a build can still know it: the separate
+[Knowledge Harvester](knowledge-harvester.md) measures lab devices and the vendor
+documentation and writes a **knowledge pack** (`satom-apipack-kb-YYYYMMDD`) in
+the same signed format `satom.api-pack/1`, with `library` evidence of the
+sources `cli_tree`, `cli_full`, `sweep`, `schema` and `vendor_doc`, and the
+vendor release notes in `docs`.
+
+- It is **imported like any API pack** (§11.3–§11.5): verified against the
+  node's trust store, imported only where it adds, every item tagged
+  `apipack:<version>:<source>`. Knowledge packs sort after SATOM's numbered
+  release packs.
+- **Local measurement wins.** An item this node measured itself for the same
+  source and build is `local` and never replaced.
+- A `cli_full` item carries names only; the one exception is lab evidence
+  (`summary.lab = true`), whose fresh-row values are recorded as `default` with
+  `attrs.lab_default`.
+- Each release ships the current knowledge pack in `api-packs/`; an offline node
+  that skipped a release imports it by hand like any other pack.

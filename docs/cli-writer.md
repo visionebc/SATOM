@@ -2,7 +2,7 @@
 
 > **Audience:** operators who edit objects from SATOM, and engineers who add a
 > write path. The classification it relies on is the [API library](api-library.md)
-> §13.3; the object-editor walkthrough is in the [User guide](user-guide.md) §7.3.
+> §14.3; the object-editor walkthrough is in the [User guide](user-guide.md) §7.3.
 >
 > **Since:** SATOM 2.13.0 (unreleased).
 
@@ -189,7 +189,7 @@ editor; verify it on a lab box before relying on it.
 | Message | Cause / fix |
 |---|---|
 | `the running build of this appliance is unknown; run a firmware check first` | SATOM cannot name the build, so it cannot classify a field. Run a firmware check |
-| `… is not known on <product> <build> (no evidence for this endpoint on this build)` | The library never measured that object on that build. Harvest the box's schema (API library §13.4) |
+| `… is not known on <product> <build> (no evidence for this endpoint on this build)` | The library never measured that object on that build. Harvest the box's schema (API library §14.4) |
 | `no source measured this field on … (channel unknown)` | One channel never answered for the field on that build. Harvest, or import a knowledge pack |
 | `the library does not name the CLI path of …` | The endpoint has no CLI-tree evidence. Harvest the CLI schema |
 | `… is nested in the table …: name its row` | A nested object needs its parent row's key |

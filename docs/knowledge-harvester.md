@@ -4,7 +4,7 @@
 > release contains and how an offline node gets it, and maintainers who run the
 > harvester. Customers do **not** need the tool. The pack format and import
 > rules are in the [API library](api-library.md) §11; the CLI channel it feeds is
-> §13.
+> §14.
 >
 > **Since:** SATOM 2.13.0 (unreleased).
 

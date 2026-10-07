@@ -6,7 +6,7 @@
 > §30.8–§30.12, §40.3 and §41.8–§41.9; the guards are catalogued in
 > [Safeguards](safeguards.md) §192–§193, §196 (endpoint baselines, §9
 > below), §197 (per-build resolution, §9.8) and §209–§213 (the CLI channel,
-> §13). The features built on the CLI channel have their own pages:
+> §14). The features built on the CLI channel have their own pages:
 > [Build compatibility](build-compatibility.md),
 > [Migration report](migration-report.md), [CLI writer](cli-writer.md) and
 > [Knowledge Harvester](knowledge-harvester.md).
@@ -41,7 +41,7 @@ answer none of them at scale.
 4. **Incremental knowledge.** Every harvest adds evidence. Nothing is lost when
    an appliance is retired, deleted or upgraded.
 5. **By which channel?** Does this build serve the field over REST and the CLI,
-   the CLI only, only in `show full-configuration`, or REST only (§13.3) — and
+   the CLI only, only in `show full-configuration`, or REST only (§14.3) — and
    therefore: will a write on this build keep it
    ([Build compatibility](build-compatibility.md)), will this box's
    configuration survive the move ([Migration report](migration-report.md)),
@@ -123,7 +123,7 @@ answer; it is never read as "not served".
 When two sources describe the same thing, the order is
 `sweep` > `schema` > `cli_tree` > `cli_full` > `manual` > `legacy_matrix` >
 `vendor_doc`. The two CLI sources describe the CLI channel and are never read
-by a REST answer (§13).
+by a REST answer (§14).
 **Fields are compared only within one kind of evidence.** A sweep carries
 wire-only companions (`_val` twins, `sz_`/`q_` internals) that a schema
 strips, and subtracting one from the other invents removals. A field set known
@@ -136,17 +136,17 @@ on one side only, or by different kinds on the two sides, is reported as
 
 | Product key | Evidence sources | Where the evidence comes from |
 |---|---|---|
-| `fortiweb` | `sweep`, `schema`, `cli_tree`, `cli_full` | rediscovery sweeps of live appliances; field schemas harvested per firmware line; the CLI `tree` and `show full-configuration` of each build (§13), plus a shape-checked REST probe of every `tree` object |
+| `fortiweb` | `sweep`, `schema`, `cli_tree`, `cli_full` | rediscovery sweeps of live appliances; field schemas harvested per firmware line; the CLI `tree` and `show full-configuration` of each build (§14), plus a shape-checked REST probe of every `tree` object |
 | `fortiadc` | `sweep`, `legacy_matrix`, `cli_tree`, `cli_full` | sweeps, and the frozen line-only matrix file from before the build axis; the CLI adapter is **unverified**. No FortiADC is left in the lab fleet, so no new FortiADC evidence arrives until one is registered or a pack brings it |
 | `fortiauthenticator` | `schema` (and `sweep`), `cli_tree`, `cli_full` | a live, **read-only** harvest of the device's own Tastypie schema (`GET /api/v1/` and `GET /api/v1/<resource>/schema/`); its small setup CLI read by a `set ?` help walk |
 | `fortianalyzer` | `vendor_doc`, `schema` | the vendor's Ansible collection `fortinet.fortianalyzer` (its `v_range` data); the JSON-RPC syntax read (**unverified** adapter) |
 | `fortigate` | `vendor_doc`, `schema`, `cli_tree` | the vendor's Ansible collection `fortinet.fortios` (its `v_range` data); `?action=schema` and the CLI `tree` from a lab box, by pack or file import. Catalog-only |
 
 Which adapter reads which channel of which product, and on which device and
-build it was verified, is §13.10.
+build it was verified, is §14.10.
 
 Source vocabulary (closed set): `sweep`, `schema`, `vendor_doc`, `manual`,
-`legacy_matrix`, and the CLI channel `cli_tree` and `cli_full` (§13).
+`legacy_matrix`, and the CLI channel `cli_tree` and `cli_full` (§14).
 Anything else is refused at ingest.
 
 **What the library held when 2.2.0 was cut** (measured):
@@ -330,10 +330,10 @@ Query:
   `api_matrix.build()` has always returned, so its consumers did not change.
   Each version also carries `cli` (CLI-channel object counts per source).
 - `urn_key(urn) -> str` — the REST path without prefix or query; the join
-  between the channels (§13).
+  between the channels (§14).
 - `channels_at(product, version, endpoint=None, exceptions=None) -> dict` —
   per field: `both | cli_only | hidden | rest_only | unknown`, with evidence
-  ids and a completeness summary (§13.3). `compare()` carries the CLI half
+  ids and a completeness summary (§14.3). `compare()` carries the CLI half
   under `channels`.
 
 Adapters that talk to nothing: `apilib_vendor.evidence_from_ansible_collection(path)`
@@ -352,11 +352,11 @@ adapter that reaches a device is `apilib_fac.harvest(appliance)`, GET only.
 | API field renames (`/web/registry/field-map`) | writes `api_lib_field_map` |
 | `version_compat` (clone/migrate pre-flight, upgrade pre-flight) | `fields_at()` and `compare()` at the exact builds from `resolve_appliance()`. Every answer carries its provenance, so a page says "vendor claims" rather than "measured". A vendor-only absence **warns**; only a measured absence blocks. The clone pre-flight also offers the destination's new fields (opt-in, validated server-side) |
 | API Explorer | resolves the selected appliance to a build, marks endpoints served / absent / unknown, refuses an unserved endpoint server-side unless confirmed, and can queue a harvest |
-| `firmware_probe` | queues a harvest when an appliance changes build (§8.4), and tells the new-build watch (§13.11) |
+| `firmware_probe` | queues a harvest when an appliance changes build (§8.4), and tells the new-build watch (§14.11) |
 | `build_compat` (every write path) | `channels_at()`, the `tree` options and ranges, field maps and CLI ids of each target's build ([Build compatibility](build-compatibility.md)) |
 | `migration_report` (Migration Report page, Upgrade Flow stage 1) | the CLI half of `compare()` and `channels_at()` of the source and target builds ([Migration report](migration-report.md)) |
 | `cli_writer` (object editor) | `channels_at()` of the appliance's build, to route each field to REST or CLI ([CLI writer](cli-writer.md)) |
-| Build compatibility, Schema builds pages | `channels_at()`, `compare()`, `field_history()` (§13) |
+| Build compatibility, Schema builds pages | `channels_at()`, `compare()`, `field_history()` (§14) |
 
 ---
 
@@ -378,8 +378,8 @@ sudo -u satom env FLASK_APP=wsgi:app venv/bin/flask apilib <command>
 | `flask apilib import-vendor PATH` | imports an extracted vendor Ansible collection (§8.2) |
 | `flask apilib ingest-file PATH` | ingests one evidence document (plain or gzipped JSON), or a JSON list of them |
 | `flask apilib harvest-fac [--appliance NAME]` | reads the live schema of every FortiAuthenticator, or one, and ingests it |
-| `flask apilib schema-harvest <id\|name> [--lab] [--no-probe]` | one appliance's CLI channel (`tree` + `show full-configuration`) and a REST probe of the paths the library lacks (§13.4) |
-| `flask apilib adapter-harvest <id\|name> [--ssh-secret-env VAR]` | one appliance through its product's schema adapter (§13.10); for FortiAuthenticator, `VAR` names an environment variable holding the CLI password |
+| `flask apilib schema-harvest <id\|name> [--lab] [--no-probe]` | one appliance's CLI channel (`tree` + `show full-configuration`) and a REST probe of the paths the library lacks (§14.4) |
+| `flask apilib adapter-harvest <id\|name> [--ssh-secret-env VAR]` | one appliance through its product's schema adapter (§14.10); for FortiAuthenticator, `VAR` names an environment variable holding the CLI password |
 | `flask apilib schema-import --product fortigate\|fortianalyzer --version X [--build B] [--tree FILE] [--schema FILE]` | ingests saved schema captures of a product SATOM does not read live |
 | `flask apilib compat PRODUCT BASE TARGET` / `flask apilib channels PRODUCT BUILD` | two builds through both channels / one build per channel, as JSON ([Build compatibility](build-compatibility.md) §5) |
 | `flask apilib migration-report APPLIANCE --target BUILD [--backup ID]` | the [Migration report](migration-report.md) as JSON |
@@ -465,10 +465,10 @@ sweep; FortiAuthenticator reads its Tastypie schema (GET only) and ingests it.
 FortiAnalyzer and FortiGate have no live **REST** harvester and every entry
 point says so by name (`no live harvester for fortianalyzer`).
 
-The **CLI channel** has its own harvest — the schema harvest (§13.4), the
-scheduled action `schema_harvest` and the per-product adapters (§13.10) — and
+The **CLI channel** has its own harvest — the schema harvest (§14.4), the
+scheduled action `schema_harvest` and the per-product adapters (§14.10) — and
 its own watch: an appliance on a build with no harvested schema raises one
-notification and is listed on the **Schema builds** page (§13.11).
+notification and is listed on the **Schema builds** page (§14.11).
 
 A build "needs a harvest" when the exact build has no healthy build-scoped
 evidence from the product's **live** source (`sweep` for FortiWeb and
@@ -753,13 +753,13 @@ registry itself.
 
 - **FortiWeb has no REST schema endpoint.** An empty collection reveals no
   fields over REST. Such endpoints are `blind`, never "no fields". The CLI
-  `tree` gives the build's schema anyway (§13.1), so a field of an empty table
+  `tree` gives the build's schema anyway (§14.1), so a field of an empty table
   reads `unknown` on the REST side, not absent. Configure one row on a box
   running that build and sweep it again to measure REST.
 - **A configuration dump is not a schema.** `show full-configuration` prints
-  only the fields that apply under each row's current settings (§13.8).
+  only the fields that apply under each row's current settings (§14.8).
 - **REST hides what it drops.** A gated field sent alone answers 200 and is
-  not applied (§13.9); only a readback proves a write.
+  not applied (§14.9); only a readback proves a write.
 - **Vendor data is a claim by the vendor's tooling**, not a measurement. It is
   labelled `vendor_doc` everywhere, never outranks a sweep of a real box, and
   its absence of an endpoint warns instead of blocking.
@@ -771,7 +771,7 @@ registry itself.
 - **FortiADC has no live evidence source today**: no FortiADC is left in the
   lab fleet. Its historical builds (including 8.0.3) stay in the library.
 - **The field map is authored, not discovered.** The library proposes rename
-  candidates by CLI attribute id (§13.7) but does not apply them: a rename is a
+  candidates by CLI attribute id (§14.7) but does not apply them: a rename is a
   removal plus an addition until an operator records it.
 - **FortiADC and FortiAnalyzer adapters are unverified** (no lab device). A harvest
   through them names the gap (`unverified`), and so does the Schema builds page
@@ -788,7 +788,7 @@ node has none of those, and a node with no FortiADC will never measure
 FortiADC. An **API pack** carries what one SATOM knows to another as one signed
 tarball (`app/services/api_pack.py`). Packs are written by SATOM's own export
 and by the separate [Knowledge Harvester](knowledge-harvester.md) in the same
-format (knowledge packs, `kb-*`, §13.12); the release notes in a
+format (knowledge packs, `kb-*`, §14.12); the release notes in a
 pack may cover any product with a release-notes map (FortiWeb, FortiADC,
 FortiAuthenticator, FortiAnalyzer, FortiGate — see
 [release_notes.md](release_notes.md)), and each item imports only its own
@@ -840,6 +840,11 @@ satom-apipack-<version>/
 
 ### 11.3 Import rules
 
+> **3.0:** packs of schema `satom.api-pack/2` follow §12 — lane keys instead of
+> the update trust store, more item kinds, provenance on every row, and pack
+> copies corrected by an outranking pack. The table below is the 2.x behaviour
+> that still applies to local data (never replaced) and to /1 packs.
+
 Importing only ever **adds**:
 
 | Item | Imported when | Skipped as |
@@ -850,16 +855,17 @@ Importing only ever **adds**:
 | Field overlay | when the node has none | `present` |
 | CLI digest | always (pack-owned, `data/apipacks/cli-coverage/`) | `present` when byte-identical |
 
-Imported evidence carries `origin_ref = apipack:<version>:<source>` and
+Imported evidence carries `origin_ref = apipack:<lane>:<pack>:<source>`
+(`apipack:<version>:<source>` when a 2.x node imported it) and
 pseudonymous witnesses, so it is distinguishable everywhere a witness is
 listed. **Known limit:** a pack sweep imported *before* the node sweeps the
 same build itself is merged with the later local sweep under the library's
 normal rule (an `ok` from any healthy witness wins on that build).
 
-A pack is verified with the update-package verifier
+A /1 pack is verified with the update-package verifier
 (`deploy/update_package.py`) against the same root-owned trust store
 (`/etc/satom/update-keys`): signature first, then every file's hash, then
-schema (`satom.api-pack/1`). An unsigned pack, a pack signed by an untrusted
+schema (`satom.api-pack/1`); a /2 pack with the keys of its lane only (§12.3). An unsigned pack, a pack signed by an untrusted
 key, and an altered pack are all refused before anything is read. Each import
 that changed something is logged in `data/apipacks/imports/`.
 
@@ -1020,7 +1026,179 @@ the digests, because they act on a stored dump.
 
 ---
 
-## 12. Troubleshooting
+## 12. Knowledge lanes and pack trust (3.0)
+
+> **Since:** SATOM 3.0.0. This section supersedes the trust and import rules of
+> §11.3 for packs of schema `satom.api-pack/2`; §11 still describes the legacy
+> `satom.api-pack/1` packs that 2.x releases shipped, which keep importing.
+
+### 12.1 Two lanes, one format
+
+Every pack is a **full snapshot** of what the SATOM Knowledge Harvester knows
+(never a delta), with the same sections in both lanes:
+
+| Lane | Name | Published | Pinned to |
+|---|---|---|---|
+| `api_pack` | `satom-apipack-<SATOM version>` | at every SATOM release, inside the release (`api-packs/`) | the SATOM release (`pinned_to`) |
+| `knowledge` | `satom-apipack-kb-YYYYMMDD[.N]` | whenever the knowledge changes | nothing (`pinned_to` is `""`) |
+
+A third lane, `harvester`, exists only between the harvester and the
+publisher. SATOM never imports it and refuses it with a message that says so.
+
+### 12.2 The manifest (schema `satom.api-pack/2`)
+
+Same tarball layout as /1 (`satom-apipack-<version>/manifest.json`,
+`manifest.sig`, the files). Every key below is **required**:
+
+| Key | Meaning |
+|---|---|
+| `lane` | `api_pack` or `knowledge` (§12.1) |
+| `min_satom` | the oldest SATOM that may import the pack. A node older than that refuses the **whole** pack: *"pack … needs SATOM X or newer; this node runs Y. Update SATOM first, then import the pack again."* Nothing is imported. |
+| `publisher` | who built it |
+| `content_fingerprint` | a date-free hash of the content: identical content, identical value |
+| `snapshot` | `{harvester_version, harvester_commit, run_id, built_at}` of the harvester run |
+| `pinned_to` | the SATOM version for `api_pack`, `""` for `knowledge` |
+| `sections` | the sections present; every item also names its `kind` |
+
+A SATOM 2.13 or older refuses a /2 pack with `unsupported pack schema`: that is
+the intended back-compatibility refusal.
+
+### 12.3 Trust: one key, one use
+
+| Purpose | Verifies | Keys |
+|---|---|---|
+| `update` | update packages, and legacy /1 API packs | `/etc/satom/update-keys/*.pub` |
+| `api_pack` | /2 packs of lane `api_pack` only | `deploy/pack-keys/api_pack/*.pub` (shipped) + `/etc/satom/pack-keys/api_pack/*.pub` |
+| `knowledge` | /2 packs of lane `knowledge` only | `deploy/pack-keys/knowledge/*.pub` (shipped) + `/etc/satom/pack-keys/knowledge/*.pub` |
+
+Shipped public keys (compare before you trust a copy obtained elsewhere):
+
+| Key | Fingerprint |
+|---|---|
+| `satom-apipack-2026` (`api_pack`) | `SHA256:tHXWO5UWTnvgoTloIzBpsN7J9Vj/NVbcTZFsdgww0ks` |
+| `satom-knowledge-2026` (`knowledge`) | `SHA256:hVYALGlEVZISwsSFRvr6ymysCuYUo1NxecpUhLJXDjE` |
+
+The rules:
+
+- A /2 pack is verified **only** with the keys of the lane its manifest names.
+  The lane is inside the signed manifest, so changing it breaks the signature.
+  A pack signed with the knowledge key that claims lane `api_pack` is refused;
+  a /2 pack signed with the release (update) key is refused.
+- A /1 pack (no lane) is verified **only** with the update trust store, exactly
+  as in 2.x. A /1 pack signed with a pack key is refused.
+- The update verifier never reads a pack key: a pack key can never sign an
+  update package.
+- The lane keys a release ships live in the code tree (`deploy/pack-keys/`),
+  which itself arrives release-signed. A fresh installation and the first
+  update from 2.x therefore import the shipped /2 pack without any key having
+  been installed first — there is no ordering dependency.
+- `/etc/satom/pack-keys/<lane>/` is for keys you add (rotation, your own
+  publisher). It must be root-owned like the update trust store; a directory
+  another account can write is refused (*"pack key directory is not safe to
+  use"*). Absent is fine: it is simply empty.
+
+Commands:
+
+```
+satom show trust                                             # keys per purpose, with fingerprints
+sudo satom execute trust add-key <file.pub> --purpose knowledge   # update (default) | api_pack | knowledge
+sudo satom execute trust remove-key <name|fingerprint> [--purpose …] --yes
+```
+
+`add-key` refuses a key that is already trusted for another purpose (one key,
+one use). Keys shipped in `deploy/pack-keys/` are not removable with
+`remove-key`; they change with the release.
+
+### 12.4 Sections and item kinds
+
+Every item is `{id, section, kind, file, product, …}`; `file` is gzip JSON.
+Each payload is validated before anything is written; a malformed item is
+**rejected** with its reason and the rest of the pack still imports.
+
+| Section | Kind | Payload | Imported into | Validation (an item failing it is rejected) |
+|---|---|---|---|---|
+| `library` | `evidence` | an evidence document (sources `sweep`, `schema`, `vendor_doc`, `cli_tree`, `cli_full`, `legacy_matrix`) | the API library | known source; the library's own document checks (names-only rule for `cli_full`) |
+| `docs` | `release-notes` | `{product, generated_at, versions, issues[], sections[]}` | the release-notes corpus, per (product, version) | every row has a `version`; rows of another product are ignored; rows must carry the corpus fields |
+| `docs` | `field-schemas` | `{object: schema}` for the item's `product` and `line` | the field catalog, per object file | `line` and object names are single safe path components; each schema is an object or a list |
+| `docs` | `field-overlay` | the FortiWeb field help overlay | the overlay file | an object |
+| `cli-coverage` | `cli-coverage` | the CLI-coverage digest of one (product, version) | the CLI-coverage digests | a valid `version`; the three buckets are lists of objects |
+| `factory` | `factory-wpp` | `{product, firmware, build, api_version, kind, name, content_sha, payload_b64gz}`; the payload is base64(gzip(JSON `{tree, top, reads}`)) exactly as the factory catalog stores it | the factory catalog (predefined protection profiles per build) | `kind` is `wpp_inline` or `wpp_offline`; `firmware` is a build, not a line; `content_sha` must equal the catalog hash of `tree`; `reads` rows are `[kind, urn, key, answer]` |
+| `field-map` | `field-map` | `{product, from_build, to_build, endpoint, renames:[{old, new, cli_id, confidence}]}` | rename **candidates** | names are field names, `old != new`, `confidence` 0..1, `cli_id` an integer; malformed renames are skipped and counted |
+| `baselines` | `baseline` | `{product, build, api_version?, entries:[{name, urn, provenance?, measured_on?}]}` (the shape `flask apilib baseline promote` stores); `{endpoints: {key: {name?, urn?, …}}}` is also read | endpoint baselines, as reference | product has an endpoint registry; `name` without `/`, `urn` starting with `/`; duplicates skipped |
+| `signature-meta` | `signature-meta` | `{product, db_version?, generated_at, signatures:{<id>: {name, severity, category, cve[], references[], url, summary}}}` — public FortiGuard encyclopedia data only | the signature metadata table | id is `[A-Za-z0-9_.:-]{1,64}`; strings are strings, lists are lists of strings, `url` is http(s); malformed entries are skipped and counted |
+
+What each target guarantees:
+
+- **Factory catalog.** A row this node captured from its own appliance is
+  never replaced; a pack row is replayed only when the appliance's own
+  top-level rows match it, and is re-read in full once its snapshot is older
+  than the reverify window, like any catalog entry.
+- **Rename candidates** are shown on the field-map page with a `candidate`
+  badge and are **never applied** by the library, the compatibility view or
+  the migration report. An operator's own mapping for the same field is never
+  overridden; to adopt a candidate, add it as your own mapping.
+- **Baselines** from a pack are stored only for a build that has no baseline of
+  this node's own, and are **never the active baseline**: a pack cannot change
+  what the endpoint registry serves.
+- **Signature metadata** explains the signature ids an appliance reports.
+  Signatures themselves never travel in a pack.
+
+A section or kind this SATOM does not know is **skipped with a visible
+warning** in the inspect and import results (a newer publisher may ship a kind
+an older node lacks).
+
+### 12.5 Import semantics
+
+**Precedence.** Local data > `api_pack` > `knowledge`. Inside a lane, the newer
+pack wins.
+
+- Data this node measured or wrote itself is never replaced by any pack.
+- A copy a pack wrote is **replaced** when the incoming item differs and the
+  incoming pack outranks the one that wrote it (higher lane, or same lane and
+  newer). That is how corrections arrive: per (product, version) for release
+  notes, per object for field schemas, per row for the database kinds.
+- An older pack, or a knowledge pack over a copy an API pack wrote, leaves the
+  copy as it is and says why (`kept: written by …`).
+
+**Provenance.** Every imported row says where it came from: `local`,
+`pack:api_pack:<pack>` or `pack:knowledge:<pack>`. Evidence carries it in its
+origin reference, factory entries in "captured from", rename candidates and
+signature metadata in an `origin` column, baselines in "promoted by", and the
+file-backed copies (release notes, field schemas, the overlay, CLI digests) in
+`data/apipacks/provenance.json`. Copies a 2.x node imported are recognised
+from its import log as pack copies, not as local data. Inspect, the pack list
+and the import history show the provenance; so does the API pack section of
+Software Update (lane badge, each item's current copy, the lane of each
+import).
+
+**Item states.**
+
+| State | Meaning | Imported? |
+|---|---|---|
+| `new` | not on this node | yes |
+| `update` | replaces a copy an older or lower-ranked pack wrote | yes |
+| `present` | already here (or kept: an outranking pack wrote it) | no |
+| `local` | this node's own data | no |
+| `rejected` | malformed payload; the reason is in the warning | no |
+| `unknown` | a section or kind this SATOM does not import | no |
+
+**Series and pending packs.** A /2 pack's series is its lane; a legacy /1
+`kb-*` pack is a knowledge pack, any other /1 pack a release pack. Release
+packs and API packs are one lineage, so the 3.0 API pack supersedes the 2.x
+release packs in `api-packs/`. A shipped pack is reported as pending (Software
+Update notice, `satom show apipack`, the update runner) unless an imported pack
+already carries its snapshot — the same `content_fingerprint`, or a newer
+harvester run of either lane. An API pack older than the knowledge pack the
+node already imported is therefore neither pending nor a regression to repair.
+
+### 12.6 The legacy export
+
+`flask apilib pack export` still writes a /1 pack from this node's own
+measurements, for local and offline hand-over between nodes. It is signed with
+a key the receiving node trusts for **updates** (your own key), never with a
+pack-lane key. Releases no longer use it.
+
+## 13. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
@@ -1040,9 +1218,9 @@ the digests, because they act on a stored dump.
 | A field shows as **removed** plus a new one **added** after an upgrade | Probably a rename. Record it at `/web/registry/field-map` |
 | A retired appliance still appears as a witness | Expected: evidence outlives the appliance and is marked `retired` |
 | `ingest-file`: `unknown evidence source` | The document's `source` is not one of `sweep`, `schema`, `vendor_doc`, `manual`, `legacy_matrix`, `cli_tree`, `cli_full` |
-| `cli_full field … carries default: cli_full holds names, never values` | A `cli_full` document carried a value. Only lab evidence (`summary.lab`) may carry a `default` (§13.2) |
+| `cli_full field … carries default: cli_full holds names, never values` | A `cli_full` document carried a value. Only lab evidence (`summary.lab`) may carry a `default` (§14.2) |
 | Schema harvest: `stored as unhealthy: the tree output was cut short` | The SSH read ended before the prompt came back. Harvest again; a box under load can take longer than the 180 s budget |
-| A CLI-coverage row reads **Not in catalog** with REST *not measured* | No REST evidence for that path on the dump's build. Run a schema harvest of a box on that build (§13.4); the row then becomes a catalog gap or *CLI only* |
+| A CLI-coverage row reads **Not in catalog** with REST *not measured* | No REST evidence for that path on the dump's build. Run a schema harvest of a box on that build (§14.4); the row then becomes a catalog gap or *CLI only* |
 | `baseline promote`: `… has no measured evidence` | Nobody swept or harvested an appliance on that build. Promote a build that `flask apilib status` lists with a measured source, or sweep a box on the build first |
 | `endpoint baseline of … not applied` in the log, and the registry is empty | The shipped artifact was refused. The message names the file and the reason (`seal mismatch` means it was edited by hand: restore it from the release) |
 | An endpoint an operator fixed went back after an upgrade | It did not, unless the row still carries `seed` or `baseline:…` in `updated_by`: then it was the baseline's row, not the operator's. Edit it from the Registry page; the edit makes it an operator row |
@@ -1051,16 +1229,16 @@ the digests, because they act on a stored dump.
 | `pack import`: `no key in the trust store signed this package` | The signing key is not trusted here: `satom execute trust add-key <key>.pub` (same store as update packages) |
 | `pack export`: `identifying data survived the scrub` | The message names the file and the value. A device name used as an API key or field name is the usual cause; nothing was written |
 | A pack item stays `local` and is never imported | Expected: this node measured that build itself (§11.3) |
-| Bell: *New build X on Y: schema not harvested* | An appliance runs a build with no CLI schema in the library. Open **Schema builds** and press **Harvest**, or import a knowledge pack that covers the build (§13.11) |
+| Bell: *New build X on Y: schema not harvested* | An appliance runs a build with no CLI schema in the library. Open **Schema builds** and press **Harvest**, or import a knowledge pack that covers the build (§14.11) |
 | A build reads `unknown` for hundreds of fields after a harvest | Those fields sit in empty tables, or under a parent table with no row: REST had nothing to read. Expected; it is not "absent". A knowledge pack with lab rows narrows it |
-| `rest_only` counts that look like bookkeeping (`id`, `_id`, `seq`) | They are channel `meta` since 2.13 (§13.3). On an older pack, re-import; on this node, harvest the CLI schema so the build has a `tree` |
-| Schema builds: *unverified adapter* | The product's adapter was never checked against a device (FortiADC, FortiAnalyzer). Its evidence is labelled; treat it as a documented convention (§13.10) |
+| `rest_only` counts that look like bookkeeping (`id`, `_id`, `seq`) | They are channel `meta` since 2.13 (§14.3). On an older pack, re-import; on this node, harvest the CLI schema so the build has a `tree` |
+| Schema builds: *unverified adapter* | The product's adapter was never checked against a device (FortiADC, FortiAnalyzer). Its evidence is labelled; treat it as a documented convention (§14.10) |
 | FortiAuthenticator harvest reads REST but no CLI | SATOM stores the REST API key, not a CLI login. Give the CLI password in the Schema builds harvest form (used once, never stored), or `flask apilib adapter-harvest --ssh-secret-env VAR` |
 | Migration report: *cannot assess* | No usable `show full-configuration` dump in the vault, an unknown source build, or a target with no CLI schema. The reason is on the report ([Migration report](migration-report.md) §2.1) |
 
 ---
 
-## 13. CLI channel and hidden fields
+## 14. CLI channel and hidden fields
 
 > **Since:** SATOM 2.13.0 (unreleased).
 
@@ -1080,14 +1258,14 @@ What one build knows is a set of **sources**, each with its own evidence row:
 | `cli_tree` | CLI | the whole CLI schema: objects, fields, types, options, ranges, CLI attribute ids |
 | `cli_full` | CLI | the field names `show full-configuration` prints (hidden fields included); never values |
 
-The rest of this section is the model end to end: the two CLI sources (§13.1)
-and what they never carry (§13.2), how a field's channel and a build's
-completeness are derived (§13.3), how a write is checked against a build
-(§13.3.1), how the channel is harvested (§13.4–§13.6), the three lab findings
-every reader must respect (§13.7–§13.9), the per-product adapters (§13.10), the
-new-build watch (§13.11) and knowledge packs (§13.12).
+The rest of this section is the model end to end: the two CLI sources (§14.1)
+and what they never carry (§14.2), how a field's channel and a build's
+completeness are derived (§14.3), how a write is checked against a build
+(§14.3.1), how the channel is harvested (§14.4–§14.6), the three lab findings
+every reader must respect (§14.7–§14.9), the per-product adapters (§14.10), the
+new-build watch (§14.11) and knowledge packs (§14.12).
 
-### 13.1 The two CLI sources
+### 14.1 The two CLI sources
 
 | Source | Read with | What it holds |
 |---|---|---|
@@ -1120,7 +1298,7 @@ schema is its JSON-RPC syntax answer, stored as `schema`.
 | FortiAnalyzer | the JSON-RPC `/cli/global/...` URL is the CLI path | **unverified** (no FortiAnalyzer in the lab) |
 | FortiADC | `config a-b c-d` -> `a_b_c_d`; a table in a table -> `<parent>_child_<table>` | **unverified** (no FortiADC in the lab) |
 
-### 13.2 What never enters the library
+### 14.2 What never enters the library
 
 - **No values.** `cli_full` holds names. Ingest refuses a `cli_full` field
   that carries anything but `attrs`, and the API-pack export refuses such a row
@@ -1137,7 +1315,7 @@ schema is its JSON-RPC syntax answer, stored as `schema`.
   baselines) read only the REST sources. A build measured only through the CLI
   is still `unmeasured` for REST, with `cli_measured: true`.
 
-### 13.3 Channels of a build
+### 14.3 Channels of a build
 
 `api_library.channels_at(product, version, endpoint=None, exceptions=None)`
 answers, for every field of every path the build is known to have:
@@ -1162,8 +1340,8 @@ row created in every empty table and read back by both channels):
 
 On FortiWeb every field the `tree` lists is served by REST on every object REST
 serves, and `show full-configuration` names nothing the `tree` does not: the
-real differences between the channels are conditional printing (§13.8) and
-REST ignoring gated fields (§13.9), not field sets. The FortiWeb `unknown` rows
+real differences between the channels are conditional printing (§14.8) and
+REST ignoring gated fields (§14.9), not field sets. The FortiWeb `unknown` rows
 are fields of tables that could not be given a lab row (parent row not
 creatable, licence, certificate import, HSM, a feature the box's mode hides).
 On FortiAuthenticator the channels are two different worlds: the CLI is a small
@@ -1197,7 +1375,7 @@ id that left one object and reappears in another: an object renamed with its
 fields, or a field that became a subtable) work on harvester packs too.
 `field_history` reads both channels and labels each row `rest` or `cli`.
 
-### 13.3.1 What reads the channels
+### 14.3.1 What reads the channels
 
 Three features are built on `channels_at` and the CLI half of `compare()`; each
 has its own page:
@@ -1211,7 +1389,7 @@ has its own page:
 `satom execute apilib compat <product> <A> <B>` and `satom execute apilib
 channels <product> <build>` print the library's own answers from the console.
 
-### 13.4 Harvesting the CLI channel
+### 14.4 Harvesting the CLI channel
 
 `services/schema_harvest.harvest(appliance)` reads one appliance's build:
 
@@ -1224,7 +1402,7 @@ channels <product> <build>` print the library's own answers from the console.
    the same box on the same build when it is younger than 24 h, otherwise a
    fresh SSH capture (not stored in the vault).
 3. FortiWeb only: one REST GET per `tree` object the library's REST evidence
-   does not cover (never asked, errored, blind), classified by shape (§13.5),
+   does not cover (never asked, errored, blind), classified by shape (§14.5),
    ingested as sweep evidence keyed by the REST path with `origin_ref`
    `schema_harvest:…`. A nested object under a table is asked with the first
    row's key (`?mkey=`), which is never recorded; one with an empty parent, or
@@ -1238,7 +1416,7 @@ Entry points: **API Explorer -> Harvest CLI schema** (permission
 [--no-probe]`, and `sudo satom execute apilib harvest <id|name> [--no-probe]`.
 `--lab` is for lab boxes only.
 
-### 13.5 FortiWeb answers an unserved nested path with its parent
+### 14.5 FortiWeb answers an unserved nested path with its parent
 
 Measured on 7.6.8: `system/interface/<anything>` answers 200 with the
 interfaces; `waf/web-protection-profile.inline-protection/<anything>` with all
@@ -1260,9 +1438,9 @@ changed no real verdict there — while synthetic controls
 (`router/static/<fake>?mkey=…`, `fds/update-flag/<fake>`) come back
 parent-fallback and a fake top-level module `absent`, on both builds. The same
 rule holds for writes: a POST/PUT with an unknown field also answers 200
-(§13.9).
+(§14.9).
 
-### 13.6 CLI coverage: catalog gap or CLI only
+### 14.6 CLI coverage: catalog gap or CLI only
 
 The coverage diff used to call every block the catalog does not name "CLI
 only". Measured on 7.6.8, all 50 of those blocks were served by REST. Now:
@@ -1275,7 +1453,7 @@ only". Measured on 7.6.8, all 50 of those blocks were served by REST. Now:
 Discovery runs and the Structure page read both buckets
 (`cli_coverage.not_in_catalog`).
 
-### 13.7 Renames: CLI attribute ids propose, field maps decide
+### 14.7 Renames: CLI attribute ids propose, field maps decide
 
 Every object and field in a FortiWeb `tree` carries a CLI attribute id
 (`name(4246)`), recorded as `attrs.cli_id`. Measured on FortiWeb 7.6.8 → 8.0.6:
@@ -1301,7 +1479,7 @@ at `/web/registry/field-map`, stays the only authority: a mapped candidate says
 The rule held on one pair of builds; re-check it on every new pair before
 relying on it blindly. Lookalike pairs matched by type alone are noise.
 
-### 13.8 `show full-configuration` prints conditionally
+### 14.8 `show full-configuration` prints conditionally
 
 `show full-configuration` prints only the fields that **apply under the row's
 current settings**; REST returns them all. Measured on lab rows: 204 fields in
@@ -1320,7 +1498,7 @@ Consequences:
 - FortiWeb 7.6.8 and 8.0.6 have **0 hidden fields**: `show full-configuration`
   names nothing the `tree` does not.
 
-### 13.9 REST silently ignores gated fields
+### 14.9 REST silently ignores gated fields
 
 A FortiWeb cmdb POST/PUT carrying an unknown field, or a field gated behind a
 toggle that is off, answers **HTTP 200 and drops it**. Confirmed in 17 of 17
@@ -1342,7 +1520,7 @@ Rules every write path follows:
 - [Build compatibility](build-compatibility.md) strips the fields a build does
   not have *before* the write, so the 200-and-drop never hides a missing field.
 
-### 13.10 Per-product adapters
+### 14.10 Per-product adapters
 
 Every product describes its schema its own way; `services/schema_adapters/`
 holds one adapter per product, all ending in the same evidence (`cli_tree`,
@@ -1368,7 +1546,7 @@ CLI. Its CLI half runs only when the operator gives the CLI password for that on
 harvest (Schema builds form, or `flask apilib adapter-harvest --ssh-secret-env`);
 it is never stored. Without it the CLI half is reported skipped, by name.
 
-### 13.11 New builds: detection, notification, one-click harvest
+### 14.11 New builds: detection, notification, one-click harvest
 
 `services/schema_watch.py` compares the build every appliance runs with the
 builds that have harvested schema evidence (`cli_tree`; `schema` for
@@ -1390,7 +1568,7 @@ scheduled action `schema_watch`.
 - The scheduled action `schema_harvest` also runs FortiAuthenticator and
   FortiAnalyzer through their adapters.
 
-### 13.12 Knowledge packs
+### 14.12 Knowledge packs
 
 A node that has never run a build can still know it: the separate
 [Knowledge Harvester](knowledge-harvester.md) measures lab devices and the vendor

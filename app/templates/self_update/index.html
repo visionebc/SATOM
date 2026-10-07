@@ -317,7 +317,7 @@
       <div class="card-body">
         <p class="text-muted small">
           {{ _('A pack carries what SATOM has learned about vendor APIs: the endpoints and fields each firmware build serves (from sweeps, anonymised), the vendor documentation (release notes, field catalog) and the CLI blocks the catalog does not name, per firmware build. It never carries a configuration or the name of a device.') }}
-          <strong>{{ _('Local data always wins:') }}</strong> {{ _('what this node measured or wrote itself is never replaced. A copy a pack wrote is replaced only by a pack that outranks it: an API pack over a knowledge pack, a newer pack over an older one of the same lane. Every imported row records which pack it came from. A pack is verified only with the keys of its lane (satom show trust); a 2.x pack with the update trust store.') }}
+          <strong>{{ _('Local data always wins:') }}</strong> {{ _('what this node measured or wrote itself is never replaced. A copy a pack wrote is replaced only by a pack built from a newer knowledge snapshot, whatever its lane (an API pack over a knowledge pack only when both are equally recent). Every imported row records which pack it came from. A pack is verified only with the keys of its lane (satom show trust); a 2.x pack with the update trust store.') }}
         </p>
         {% if api_packs.error %}
           <div class="alert alert-danger py-2 small"><i class="bi bi-exclamation-octagon me-1"></i>{{ api_packs.error }}</div>

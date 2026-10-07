@@ -108,6 +108,16 @@ def parse_feed(raw: bytes) -> dict:
     ver = str(doc.get("version") or "")
     if name != "satom-update-%s.tar.gz" % ver:
         raise FeedError("the feed version %r does not match its package %s" % (ver, name))
+    # Optional (3.0.0+): the api_pack's sha256 and the knowledge lane's feed.
+    apk = doc.get("api_pack")
+    if apk is not None:
+        if not isinstance(apk, dict):
+            raise FeedError("the feed's api_pack entry is not an object")
+        if "sha256" in apk and not _SHA_RE.match(str(apk.get("sha256") or "")):
+            raise FeedError("the feed carries an invalid api_pack sha256")
+    kf = doc.get("knowledge_feed")
+    if kf is not None and not str(kf).lower().startswith("https://"):
+        raise FeedError("the knowledge_feed URL must be https:// (got %r)" % kf)
     return doc
 
 

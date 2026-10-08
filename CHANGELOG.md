@@ -29,6 +29,9 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   counts Public IP rows (`sz_public-ip-list`) in a capture taken before this
   change shows the table as *not in the SATOM cache*, never as empty, and
   offers no *Create New* until the next deep capture reads them.
+- After the first row is written into a sub-table the capture saw empty, the
+  re-read now lands in the SATOM cache too (it was dropped for lack of a sibling
+  row to copy the cache identity from, so the page kept showing an empty table).
 
 ### Added — every CLI-only element is editable where it lives, on every product
 

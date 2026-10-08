@@ -37,6 +37,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -316,6 +317,31 @@ def record(product: str, sigdb, *, db_version: str, engine_version: str = "",
 # ---------------------------------------------------------------------------
 # collect from the source + tell the administrators
 # ---------------------------------------------------------------------------
+_VER_RE = re.compile(r"(\d+\.\d+\.\d+)")
+
+
+def _firmware(appliance, client) -> str:
+    """The firmware the catalog was read under: the appliance's last-known
+    version, else a best-effort ``system status`` read (a device registered
+    minutes ago has not been probed yet). Informational — never raises."""
+    try:
+        known = appliance.fw_version or ""
+    except Exception:  # noqa: BLE001
+        known = ""
+    if known:
+        return known
+    try:
+        status = client.status_check()
+    except Exception:  # noqa: BLE001
+        return ""
+    res = status.get("results", status) if isinstance(status, dict) else {}
+    if isinstance(res, list):
+        res = res[0] if res else {}
+    raw = res.get("firmwareVersion") if isinstance(res, dict) else ""
+    m = _VER_RE.search(str(raw or ""))
+    return m.group(1) if m else ""
+
+
 def collect(appliance, *, taken_by: str = "scheduled", progress=None) -> dict:
     """Read the version and the whole catalog off ``appliance`` (READ-ONLY)
     and :func:`record` it. Raises on a dead box / no signature set / an
@@ -333,10 +359,7 @@ def collect(appliance, *, taken_by: str = "scheduled", progress=None) -> dict:
     if not sset:
         raise RuntimeError("no signature set on %s to read the catalog with"
                            % appliance.name)
-    try:
-        firmware = appliance.fw_version or ""
-    except Exception:  # noqa: BLE001 — informational
-        firmware = ""
+    firmware = _firmware(appliance, client)
     sigdb = sigcat.sync_signature_database(client, sset, firmware=firmware,
                                            progress=progress)
     product = appliance.kind or "fortiweb"

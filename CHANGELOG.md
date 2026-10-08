@@ -6,6 +6,30 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — a separate SSH password per appliance
+
+- FortiAuthenticator's REST authenticates with an API key that its SSH refuses,
+  so on that product every CLI read and write failed with `SSH auth failed`.
+  An appliance can now carry an SSH password separate from its API credential
+  (*Edit appliance → SSH password, if different from the API credential*;
+  blank keeps it, a checkbox removes it). Every SSH session uses it when set
+  and the API credential otherwise, so rows without one behave exactly as
+  before. In vault mode it is stored in the appliance's vault record (field
+  `ssh_password`) and the column keeps only the vault marker; rotating the API
+  credential keeps it, and the vault migration and local-copy scrub cover it.
+  New nullable column `appliances.ssh_password_enc` (migration `sshpw01`).
+
+### Added — One-click GSLB Public IP rows are read and written
+
+- The FortiWeb registry now lists `server-policy/policy/public-ip-list`
+  (`server_policy_public_ip_item`; the REST serves it on 7.6.8 build1128 and
+  8.0.6 build116) and the deep capture walks it, so the Server Policy layout
+  view draws its rows, opens them in FortiWeb's Public IP dialog, and saves and
+  creates them through the same row save as HTTP Content Routing. A policy that
+  counts Public IP rows (`sz_public-ip-list`) in a capture taken before this
+  change shows the table as *not in the SATOM cache*, never as empty, and
+  offers no *Create New* until the next deep capture reads them.
+
 ### Added — every CLI-only element is editable where it lives, on every product
 
 - The user's rule: every element only the CLI has must be editable in SATOM, in
@@ -33,8 +57,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   editor's row save: reference check, build gate, REST / CLI split inside the
   parent policy), and the sub-table's *Create New* opens a new row with
   FortiWeb's own defaults. After an applied write the sub-table is re-read from
-  the device into the SATOM cache. Public IP rows stay read-only: SATOM's
-  registry has no Public IP sub-table, so it neither reads nor writes it.
+  the device into the SATOM cache. One-click GSLB Public IP rows do the same
+  (see below).
 - *Create New* of a Server Policy is no longer a preview: it shows the POST
   first, creates the policy, caches it as the device returns it and opens its
   page.

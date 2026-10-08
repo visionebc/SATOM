@@ -834,11 +834,20 @@ def _gui_device(appl):
                                        firmware=appl.firmware, model=appl.model)
 
 
-def _gui_subtables(appl, name, tpl, key):
+def _int_or_zero(v) -> int:
+    try:
+        return int(v or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _gui_subtables(appl, name, tpl, key, policy=None):
     """Rows of the dialog's inline sub-tables from the deep cache, and the
     objects their columns join against. A sub-table the deep capture does not
     walk (not in the dependency registry), or a policy without a deep capture,
-    is None -- unknown, never drawn as empty."""
+    is None -- unknown, never drawn as empty. So is one the policy itself
+    counts rows for (``sz_<subtable>``) while the cache holds none: a capture
+    taken before the walk covered that sub-table, not an empty list."""
     from ..registry import dependencies
     from ..services import gui_template, read_layer
     got = read_layer.policy_subrows(appl.id, name) if name else None
@@ -849,7 +858,10 @@ def _gui_subtables(appl, name, tpl, key):
             if f.get('kind') != 'table' or not st:
                 continue
             walked = dependencies.dep_node_for_urn('cmdb/' + (f.get('endpoint') or '')) is not None
-            subrows[st] = (got or {}).get(st, []) if (got is not None and walked) else None
+            rows = (got or {}).get(st, []) if (got is not None and walked) else None
+            if rows == [] and _int_or_zero((policy or {}).get('sz_' + st)) > 0:
+                rows = None
+            subrows[st] = rows
     refs = {}
     for lg in gui_template.needed_refs(tpl, key):
         try:
@@ -947,7 +959,7 @@ def gui_policy(appliance_id, name):
     if key in row_dialogs:
         # a sub-table row (?sub=<id>) in the dialog that row opens in FortiWeb,
         # or a new row (?new=1) filled with the GUI's own defaults
-        subrows, _refs = _gui_subtables(appl, name, tpl, main)
+        subrows, _refs = _gui_subtables(appl, name, tpl, main, row)
         st = row_dialogs[key]
         coll = _gui_subtable_endpoint(tpl, main, st)
         if request.args.get('new'):
@@ -968,7 +980,7 @@ def gui_policy(appliance_id, name):
                    'sub_id': '' if is_new_row else str(row.get('id', '')), 'new': is_new_row}
     # otherwise only the row's own dialog and the sub-dialogs it links to
     elif key == main or key.startswith((main or '') + '-'):
-        subrows, refs = _gui_subtables(appl, name, tpl, key)
+        subrows, refs = _gui_subtables(appl, name, tpl, key, row)
         view = gui_template.dialog_view(tpl, key, row, dev, subrows=subrows, refs=refs,
                                         live=writer)
     else:

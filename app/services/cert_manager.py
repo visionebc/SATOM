@@ -586,7 +586,7 @@ def create_certificate(appliance, cn: str, cert_class: str, *, extra_sans=None,
                         else cert_ssh)
             out = deployer.deploy_certificate(
                 appliance, name, cert_pem, row.private_key,
-                secret=appliance.password)
+                secret=appliance.ssh_secret)
             _event(row, "deploy", True, f"uploaded to {appliance.name}", by=actor)
             row.status = "pending"
             db.session.commit()
@@ -923,7 +923,7 @@ def remove_device_certificate(appliance, store_label, cert_name, *,
 
     try:
         if store_label == "Local":
-            cert_ssh.remove_certificate(appliance, cert_name, secret=appliance.password)
+            cert_ssh.remove_certificate(appliance, cert_name, secret=appliance.ssh_secret)
         else:
             ep = _store_ep(store_label)
             if not ep:

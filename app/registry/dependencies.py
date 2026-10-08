@@ -1105,6 +1105,12 @@ SERVER_POLICY: DepNode = _n(
                                       note="by-parent backend rows")]),
                   ]),
            ]),
+        # One-click GSLB public addresses: a by-parent sub-table of the policy
+        # (rows id / ip / ip6, deleted with it). Shown by the GUI only with
+        # one-click-gslb enabled; the REST serves it on every policy (empty
+        # list), measured on 7.6.8 build1128 and 8.0.6 build116.
+        _n("Public IP (One-click GSLB)", "cmdb/server-policy/policy/public-ip-list",
+           "one-click-gslb = enable", "Server Policy"),
         _n("ZTNA Profile", "cmdb/server-policy/ztna-profile", "ztna-profile",
            "Application Delivery · ZTNA"),
         _n("Traffic Mirror Profile", "cmdb/server-policy/traffic-mirror", "traffic-mirror-profile",

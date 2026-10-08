@@ -250,6 +250,10 @@ class Appliance(db.Model):
     zone = db.Column(db.String(128), nullable=True)
     line = db.Column(db.String(128), nullable=True)
     ssh_port = db.Column(db.Integer, nullable=True, default=22)
+    # The CLI login, when it is NOT the API credential. FortiAuthenticator's
+    # REST takes an API key that its SSH refuses (fac01, 2026-10-09), so one
+    # secret per row cannot serve both. NULL = SSH uses ``password``.
+    ssh_password_enc = db.Column(db.Text, nullable=True)  # Fernet-encrypted
     # --- Maintenance mode (visibility gate) -----------------------------
     # True => the appliance is HIDDEN from anyone lacking the
     # 'appliances.view_maintenance' permission (operators / read-only).
@@ -407,6 +411,53 @@ class Appliance(db.Model):
 
     def set_password(self, plaintext: str) -> None:
         self.password = plaintext
+
+    @property
+    def has_ssh_password(self) -> bool:
+        """A separate CLI login is configured (vault or local column)."""
+        return bool(self.ssh_password_enc)
+
+    @property
+    def ssh_secret(self) -> str:
+        """The secret an SSH session sends: the separate CLI login when one is
+        set, otherwise the API credential (FortiWeb/FortiADC/FortiGate admins
+        log in to both with the same password)."""
+        if not self.ssh_password_enc:
+            return self.password
+        from .services import secret_backend
+        vaulted = secret_backend.get_appliance_ssh_password(self.name)
+        if vaulted is not None:
+            return vaulted
+        local = _fernet().decrypt(self.ssh_password_enc.encode()).decode()
+        if local == secret_backend.VAULT_SENTINEL:
+            # Same reason as ``password``: never send the marker as a password.
+            raise RuntimeError(
+                "the vault owns the SSH password for %r and this process could "
+                "not read it (vault mode is not active here)" % (self.name or "?"))
+        return local
+
+    def set_ssh_password(self, plaintext: str | None) -> None:
+        """Set the separate CLI login; empty/None removes it (SSH then uses
+        ``password`` again). Vault semantics mirror the ``password`` setter."""
+        from .services import secret_backend
+        if not plaintext:
+            if self.ssh_password_enc:
+                secret_backend.put_appliance_ssh_password(self, "")
+            self.ssh_password_enc = None
+            return
+        stored = False
+        try:
+            stored = secret_backend.put_appliance_ssh_password(self, plaintext)
+        except Exception:
+            if secret_backend.authoritative():
+                raise
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "vault: could not mirror the SSH password for %r, keeping the "
+                "local copy", self.name, exc_info=True)
+        value = (secret_backend.VAULT_SENTINEL
+                 if stored and secret_backend.authoritative() else plaintext)
+        self.ssh_password_enc = _fernet().encrypt(value.encode()).decode()
 
     def _own_client(self, timeout: float = 30.0):
         """The vendor client for THIS row's own host/creds (no HA resolution)."""

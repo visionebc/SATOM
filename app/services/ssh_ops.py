@@ -232,7 +232,7 @@ class FortiWebReadonlySSH:
 
     def __init__(self, appliance, secret: str | None = None, *, timeout: float = 15.0):
         self.appliance = appliance
-        self._secret = secret if secret is not None else appliance.password
+        self._secret = secret if secret is not None else appliance.ssh_secret
         self._timeout = timeout
         self._client: Any = None
         self._shell: Any = None

@@ -6,6 +6,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — "Not in GUI, but in CLI" is on every object page, also when empty
+
+- The section was only rendered when it had fields, so on every FortiWeb object
+  whose GUI layout is not measured yet (everything except Server Policy) it
+  simply did not appear. It is now always rendered, collapsed, with its count
+  and the reason when it is empty: every field is in the Fortinet GUI, no
+  CLI-only field on this build, or the API library has no evidence for the
+  endpoint. Same for the read-only FortiGate / FortiAuthenticator / FortiADC /
+  FortiAnalyzer tabs.
+- The main Server Policy page (Policy → Server Policy → a policy) now carries
+  the section for the policy and for its server pool; before, only the object
+  editor and the "FortiWeb layout" view had it.
+- That page's Save splits fields by channel like the object editor: a field
+  CLI-only on the device's build goes through the CLI writer, the rest by REST.
+
 ### Added — GUI layouts per exact build, through the knowledge feed
 
 - **Templates per EXACT build** (`satom.gui-template/2`): the knowledge pack

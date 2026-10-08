@@ -11,6 +11,7 @@
 {% endblock %}
 
 {% from "workspace/_fields.html" import fld, savebar, switch %}
+{% from "_not_in_gui.html" import nig_editable %}
 
 {% block content %}
 {% if not current_user.can('config_write') %}
@@ -180,6 +181,9 @@
         </div>
       </section>
     {% endfor %}
+    {{ nig_editable(policy_nig, false, '', 'server-policy/policy') }}
+    <a class="small" href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='server-policy/policy', mkey=policy_name) }}" data-nig-link>
+      <i class="bi bi-terminal me-1"></i>{{ _('Open in the object editor (reads and writes CLI-only fields)') }} →</a>
   </div>
 </div>
 
@@ -246,6 +250,7 @@
             <div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f) }}{% endfor %}</div>
           </details>
         {% endfor %}
+        {{ nig_editable(pool_nig, false, '', 'server-policy/server-pool') }}
         {{ savebar('Save pool') }}
       </div>
 

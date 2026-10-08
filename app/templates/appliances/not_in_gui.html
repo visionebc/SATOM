@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_not_in_gui.html" import channel_badge %}
+{% from "_not_in_gui.html" import channel_badge, nig_cli with context %}
 {% block title %}{{ _('Not in GUI, but in CLI') }} — {{ appliance.name }}{% endblock %}
 {% block content %}
 <div class="fw-page-header d-flex align-items-center gap-3 mb-3">
@@ -13,7 +13,7 @@
   </div>
 </div>
 
-<p class="text-muted small fw-nig-intro">{{ _('Every field this device has on its exact build is shown in SATOM. The fields the Fortinet GUI does not show are listed here with the channel SATOM writes them by: REST (a normal save) or CLI (the CLI writer, over SSH). The object editors show the same fields in their own "Not in GUI, but in CLI" section.') }}</p>
+<p class="text-muted small fw-nig-intro">{{ _('Every field this device has on its exact build is shown in SATOM. The fields the Fortinet GUI does not show are listed here with the channel SATOM writes them by: REST (a normal save) or CLI (the CLI writer, over SSH). The object editors show the same fields in their own "Not in GUI, but in CLI" section; here every CLI field is editable too.') }}</p>
 
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 {% if inv %}
@@ -31,30 +31,24 @@
   <div class="fw-card mb-3 p-3">
     <h2 class="h6">{{ _('Objects only the CLI serves') }} <span class="text-muted">({{ inv.objects|length }})</span></h2>
     {% if inv.objects %}
-    <table class="table table-sm fw-table mb-0">
-      <thead><tr><th>{{ _('Object') }}</th><th>{{ _('CLI path') }}</th><th>{{ _('Fields') }}</th></tr></thead>
-      <tbody>
       {% for o in inv.objects %}
-        <tr data-nig-object="{{ o.endpoint }}"><td><code>{{ o.endpoint }}</code></td><td><code>config {{ o.cli_path }}</code></td>
-          <td class="small">{% for f in o.fields %}<code class="me-1" data-nig-key="{{ f.key }}">{{ f.key }}</code>{% endfor %}</td></tr>
+      <div class="mb-2" data-nig-object="{{ o.endpoint }}">
+        <div class="small mb-1"><code>{{ o.endpoint }}</code>{% if not o.fields %} <span class="text-muted">— {{ _('status object: no field to set') }}</span>{% endif %}</div>
+        {% if o.fields %}{{ nig_cli(o.section, appliance) }}{% endif %}
+      </div>
       {% endfor %}
-      </tbody>
-    </table>
     {% else %}<p class="text-muted small mb-0">{{ _('None on this build.') }}</p>{% endif %}
   </div>
 
   <div class="fw-card mb-3 p-3">
     <h2 class="h6">{{ _('CLI-only fields of objects the REST API serves') }} <span class="text-muted">({{ inv.fields|length }})</span></h2>
     {% if inv.fields %}
-    <table class="table table-sm fw-table mb-0">
-      <thead><tr><th>{{ _('Object') }}</th><th>{{ _('Field') }}</th><th>{{ _('Channel') }}</th><th>{{ _('Type') }}</th></tr></thead>
-      <tbody>
-      {% for o in inv.fields %}{% for f in o.fields %}
-        <tr data-nig-object="{{ o.endpoint }}"><td><code>{{ o.endpoint }}</code></td><td><code data-nig-key="{{ f.key }}">{{ f.key }}</code>{% if f.lib_channel == 'hidden' %} <span class="small text-muted">({{ _('hidden from the CLI tree') }})</span>{% endif %}</td>
-          <td>{{ channel_badge('CLI') }}</td><td class="small text-muted">{{ f.cli_type }}{% if f.cli_options %} ({{ f.cli_options|join(', ') }}){% endif %}</td></tr>
-      {% endfor %}{% endfor %}
-      </tbody>
-    </table>
+      {% for o in inv.fields %}
+      <div class="mb-2" data-nig-object="{{ o.endpoint }}">
+        <div class="small mb-1"><code>{{ o.endpoint }}</code></div>
+        {{ nig_cli(o.section, appliance) }}
+      </div>
+      {% endfor %}
     {% else %}<p class="text-muted small mb-0">{{ _('None on this build.') }}</p>{% endif %}
   </div>
 {% endif %}

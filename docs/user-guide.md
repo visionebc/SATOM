@@ -683,6 +683,13 @@ permission is unchanged (the editor's write permission); every CLI write is in
 the audit log as `config.cli_write`, with field names and the outcome, never a
 value.
 
+On FortiGate, FortiAuthenticator, FortiADC and FortiAnalyzer the "Not in GUI,
+but in CLI" section of each tab is itself the editor of those fields (*Read
+values over CLI*, *Preview CLI change*, *Apply*), and objects only the CLI
+serves are edited the same way on the device's *Everything this device has
+outside the GUI* page and, on FortiAuthenticator, in *System → Network* and
+*System → Administration*.
+
 ## 8. Web Protection (WAF)
 
 FortiWeb ADOM → **Web Protection** reproduces the FortiWeb 7.6 Web Protection

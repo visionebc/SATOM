@@ -261,23 +261,137 @@ def apply_to_groups(appliance, endpoint: str, obj: dict, groups: list, *, descri
     return kept, section
 
 
-def for_view(appliance, endpoint: str, data, *, noise=None) -> dict | None:
-    """The section for a READ-ONLY product view (FortiGate, FortiAuthenticator,
-    FortiADC, FortiAnalyzer): *data* is what REST returned for the endpoint (a
-    list of rows or one settings object). Returns the section, or None when it
-    cannot be built (the view renders as before)."""
-    if isinstance(data, dict):
-        keys = list(data)
+def _editor_info(sec: dict, rows) -> None:
+    """Add what the section's CLI editor needs: the CLI object (path, kind,
+    row-key field, parent), the row keys a table view returned, and whether
+    SATOM has a CLI writer for the product at all."""
+    from . import cli_writer
+    ep = _channels(sec.get("product") or "", sec.get("version") or "",
+                   sec.get("endpoint") or "") if sec.get("version") else {}
+    attrs = ep.get("attrs") or {}
+    obj = {"cli_path": attrs.get("cli_path") or "", "kind": attrs.get("kind") or "",
+           "mkey": attrs.get("mkey") or "", "parent": attrs.get("parent") or ""}
+    sec["object"] = obj
+    keys: list = []
+    if obj["kind"] != "singleton" and obj["mkey"]:
+        for r in rows or []:
+            if isinstance(r, dict) and r.get(obj["mkey"]) not in (None, ""):
+                keys.append(str(r[obj["mkey"]]))
+    sec["row_keys"] = sorted(set(keys))[:500]
+    product = sec.get("product") or ""
+    dialect = cli_writer.DIALECTS.get(product)
+    sec["writable"] = bool(dialect) and bool(obj["cli_path"])
+    sec["dialect_verified"] = (dialect or {}).get("verified") or ""
+    if not dialect:
+        sec["write_note"] = "SATOM has no CLI writer for %s." % (product or "this product")
+    elif not obj["cli_path"]:
+        sec["write_note"] = ("The API library does not name the CLI path of this object on "
+                             "this build, so SATOM cannot write it by CLI.")
     else:
-        keys = sorted({k for r in (data or []) if isinstance(r, dict) for k in r})
+        sec["write_note"] = ""
+
+
+def for_view(appliance, endpoint: str, data, *, noise=None) -> dict | None:
+    """The section for a product view without its own editor (FortiGate,
+    FortiAuthenticator, FortiADC, FortiAnalyzer tabs, the per-device page):
+    *data* is what REST returned for the endpoint (a list of rows or one
+    settings object; ``[]`` for an object only the CLI serves). Returns the
+    section — with what its CLI editor needs, see :func:`_editor_info` — or
+    None when it cannot be built (the view renders as before)."""
+    if isinstance(data, dict):
+        keys, rows = list(data), [data]
+    else:
+        rows = [r for r in (data or []) if isinstance(r, dict)]
+        keys = sorted({k for r in rows for k in r})
     try:
         _, sec = apply_to_groups(appliance, endpoint, {k: None for k in keys}, [],
                                  describe=lambda k, v: {"key": k, "label": k, "value": ""},
                                  noise=noise)
+        _editor_info(sec, rows)
     except Exception:  # noqa: BLE001 — never sinks a view
         log.exception("not_in_gui: section for %s", endpoint)
         return None
     return sec
+
+
+def save(appliance, endpoint: str, mkey: str | None, fields: dict, *, parent_mkeys=(),
+         apply: bool = False, writer=None) -> dict:
+    """Write the CLI-only fields of ONE object from the section's editor.
+
+    Only fields the library classifies ``cli_only``/``hidden`` on the
+    appliance's exact build are accepted (``cli_writer.split_payload``, the
+    same gate every editor uses). A REST field is refused with "edit it in the
+    object's own form", a field no source measured is refused with the reason
+    — and a write with ANY refused field sends nothing, so a half-applied
+    change can never happen. ``apply=False`` returns the rendered script.
+
+    ``{"ok", "dry_run", "cli": CliWriteResult dict | None, "refused", "error"}``."""
+    from . import cli_writer
+    fields = {str(k): ("" if v is None else v) for k, v in (fields or {}).items() if k}
+    out = {"ok": False, "dry_run": not apply, "cli": None, "refused": {}, "error": ""}
+    if not fields:
+        out["error"] = "no changes to save"
+        return out
+    split = cli_writer.split_payload(appliance, endpoint, fields)
+    refused = dict(split.get("refused") or {})
+    for k in split.get("rest") or {}:
+        refused[k] = ("served by the REST API on this build: edit it in the object's own "
+                      "form, not by CLI")
+    out["refused"] = refused
+    if refused:
+        out["error"] = "nothing was sent: " + "; ".join(
+            "%s — %s" % (k, why) for k, why in sorted(refused.items()))
+        return out
+    try:
+        plan = cli_writer.plan_for(appliance, split, mkey or None, parent_mkeys=parent_mkeys)
+        w = writer or cli_writer.CliWriter(appliance)
+        res = (w.apply(plan) if apply else w.render(plan)).as_dict()
+    except cli_writer.CliWriteRefused as exc:
+        out["error"] = str(exc)
+        return out
+    out["cli"] = res
+    out["ok"] = bool(res.get("ok"))
+    if not out["ok"]:
+        err = res.get("error") or {}
+        if err:
+            out["error"] = "CLI: %s" % (err.get("line") or err.get("pattern") or "failed")
+        elif res.get("diff"):
+            out["error"] = "CLI: readback differs for %s" % ", ".join(
+                str(d.get("field", "?")) for d in res["diff"])
+        else:
+            out["error"] = "CLI write failed"
+    return out
+
+
+def _cli_section(appliance, endpoint: str) -> dict | None:
+    """The editable section of ONE object for the per-device page and for a
+    menu page that hosts an object only the CLI serves: its CLI-only fields
+    (no REST read behind it, so REST fields are not listed here)."""
+    sec = for_view(appliance, endpoint, [])
+    if sec is not None:
+        sec["fields"] = [f for f in sec["fields"] if f["channel"] == CH_CLI]
+        sec["has_cli"] = bool(sec["fields"])
+    return sec
+
+
+def cli_objects_for(appliance, endpoints) -> list:
+    """Sections for the objects only the CLI serves that a menu page hosts
+    (FortiAuthenticator Network: ``system/dns``, ``system/interface``…). An
+    endpoint this build does not have as a CLI-only object is skipped."""
+    from . import api_library as lib
+    product, version = _build_of(appliance)
+    if not version or not endpoints:
+        return []
+    eps = (lib.channels_at(product, version).get("endpoints") or {})
+    out = []
+    for key in endpoints:
+        ep = eps.get(key) or {}
+        if ep.get("channel") != "cli_only":
+            continue
+        sec = _cli_section(appliance, key)
+        if sec is not None:
+            out.append(sec)
+    return out
 
 
 def device_inventory(appliance) -> dict:
@@ -311,10 +425,11 @@ def device_inventory(appliance) -> dict:
                if f.get("channel") in _LIB_CLI]
         if ep.get("channel") == "cli_only":
             out["objects"].append({"endpoint": key, "cli_path": attrs.get("cli_path") or "",
-                                   "kind": attrs.get("kind") or "", "fields": cli})
+                                   "kind": attrs.get("kind") or "", "fields": cli,
+                                   "section": _cli_section(appliance, key)})
         elif cli:
             out["fields"].append({"endpoint": key, "cli_path": attrs.get("cli_path") or "",
-                                  "fields": cli})
+                                  "fields": cli, "section": _cli_section(appliance, key)})
     for (prod, ep_key), page in sorted(LAYOUT_PAGES.items()):
         if prod != product:
             continue
@@ -374,4 +489,5 @@ def cli_values(appliance, endpoint: str, mkey: str | None, names, *,
 
 
 __all__ = ["SECTION_TITLE", "CH_REST", "CH_CLI", "CH_UNVERIFIED", "LAYOUT_PAGES",
-           "classify", "apply_to_groups", "for_view", "device_inventory", "layout_keys", "cli_values", "endpoint_key"]
+           "classify", "apply_to_groups", "for_view", "device_inventory", "layout_keys",
+           "cli_values", "endpoint_key", "save", "cli_objects_for"]

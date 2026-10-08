@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% set _t = view.title.get('new' if is_new else 'edit') or '' %}
+{% set _t = view.title.get('new' if (is_new or (row_ctx and row_ctx.new)) else 'edit') or view.title.get('edit') or '' %}
 {% block title %}{{ _t }}{% if name %} — {{ name }}{% endif %}{% endblock %}
 {# FortiWeb draws a dialog in the content pane: title bar, sections, footer bar. #}
 {% block breadcrumb %}{% endblock %}
@@ -77,6 +77,8 @@
         {% set a = it.action or '' %}
         {% if a == 'search' %}
         <label class="fwg-search mb-0"><input type="search" placeholder="{{ it.label }}" aria-label="{{ it.label }}" data-fwg-search><span aria-hidden="true"><i class="bi bi-search"></i></span></label>
+        {% elif a.startswith('add') and t.row_dialog and name and t.rows is not none and t.subtable in (writable_subtables or ()) %}
+        <a class="fwg-tb-btn" href="{{ url_for('workspace.gui_policy', appliance_id=appliance.id, name=name, dialog=t.row_dialog, new=1) }}" data-fwg-add><i class="bi bi-plus-lg"></i>{{ it.label }}</a>
         {% elif a.startswith('edit') and t.row_dialog and name and t.rows %}
         <a class="fwg-tb-btn" href="#" aria-disabled="true" data-fwg-edit><i class="bi bi-pencil-fill"></i>{{ it.label }}</a>
         {% else %}
@@ -116,14 +118,17 @@
   {% endif %}
   {% if f.suffix %}<span class="fwg-suffix">{{ f.suffix }}</span>{% endif %}
 {% endmacro %}
+{% macro live_attrs(f) -%}
+  {%- if f.cond is defined %} data-fwg-cond="{{ f.cond|tojson|forceescape }}"{% if f.hidden %} hidden{% endif %}{% endif -%}
+{%- endmacro %}
 {% macro fields(b) %}
   <div class="fwg-fields">
   {% for f in b.fields %}
-    <div class="fwg-label {{ 'fwg-unknown' if f.unknown }}">{% if f.kind != 'link' %}{{ f.label }}{% endif %}
+    <div class="fwg-label {{ 'fwg-unknown' if f.unknown }}"{{ live_attrs(f) }}>{% if f.kind != 'link' %}{{ f.label }}{% endif %}
       {%- if f.help %}<i class="bi bi-info-circle-fill" title="{{ f.help|striptags }}"></i>{% endif %}
       {%- if f.unknown %}<span class="fwg-unknown-tag" title="{{ _('Depends on: %(w)s', w=f.unknown_why|join(', ')) }}">{{ _('conditional') }}</span>{% endif %}
     </div>
-    <div class="fwg-value">{{ value(f) }}</div>
+    <div class="fwg-value"{{ live_attrs(f) }}>{{ value(f) }}</div>
   {% endfor %}
   </div>
 {% endmacro %}
@@ -134,7 +139,9 @@
   <div class="fwg-titlebar">
     <span>{{ _t or view.key }}</span>
     <span class="fwg-sub">
-      {% if is_new %}{{ _('Preview of the Create New form with FortiWeb\'s own defaults. Nothing is submitted from this page.') }}
+      {% if is_new and can_edit %}{{ _('Create New with FortiWeb\'s own defaults. Save shows the request first, then creates the policy on %(dev)s.', dev=appliance.name) }}
+      {% elif is_new %}{{ _('Preview of the Create New form with FortiWeb\'s own defaults. Nothing is submitted from this page.') }}
+      {% elif row_ctx and row_ctx.new and can_edit %}{{ _('New row with FortiWeb\'s own defaults. Save shows the request first, then creates the row on %(dev)s.', dev=appliance.name) }}
       {% elif can_edit %}{{ _('Values from the SATOM cache of %(dev)s. Save shows the change first, then writes it to the device.', dev=appliance.name) }}
       {% else %}{{ _('View mode: values from the SATOM cache of %(dev)s; nothing is sent to it.', dev=appliance.name) }}{% endif %}
       {% if view.hidden %}· {{ _('%(n)s fields hidden by FortiWeb for these settings.', n=view.hidden) }}{% endif %}
@@ -143,6 +150,7 @@
   {% include 'workspace/_gui_banner.html' %}
   <div class="fwg-body">
   {% for b in view.blocks %}
+    <div class="fwg-block"{% if b.cond is defined %} data-fwg-bcond="{{ b.cond|tojson|forceescape }}"{% if b.hidden %} hidden{% endif %}{% endif %}>
     {% if b.title and b.fold %}
       <details class="fwg-fold" {{ 'open' if b.open }}>
         <summary class="fwg-sec-title {{ 'fwg-unknown' if b.unknown }}"><i class="bi bi-plus-square-fill"></i><i class="bi bi-dash-square-fill"></i>{{ b.title }}</summary>
@@ -152,6 +160,7 @@
       {% if b.title %}<div class="fwg-sec-title {{ 'fwg-unknown' if b.unknown }}">{{ b.title }}</div>{% endif %}
       {{ fields(b) }}
     {% endif %}
+    </div>
   {% endfor %}
   {% if not is_new and view.key == main %}
     {% if nig_edit %}
@@ -161,7 +170,7 @@
     {% endif %}
   {% endif %}
   </div>
-  {% if can_edit and not is_new %}
+  {% if can_edit %}
   <div class="fwg-review" data-fwg-review hidden>
     <div class="fwg-sec-title">{{ _('Review the change') }}</div>
     <div data-fwg-review-body></div>
@@ -172,7 +181,7 @@
   </div>
   {% endif %}
   <div class="fwg-footer">
-    {% if can_edit and not is_new %}
+    {% if can_edit %}
     <button type="button" class="fwg-btn is-primary" data-fwg-save>{{ _('Save') }}</button>
     <span class="small text-muted" data-fwg-status></span>
     {% else %}
@@ -210,22 +219,42 @@
     });
   });
 })();
-{% if can_edit and not is_new %}
+{% if view.live %}
 (function () {
-  // Save: collect the controls whose value changed (layout fields + the
-  // "Not in GUI, but in CLI" section), preview the exact request (dry run),
-  // then apply through workspace.save -- the same route the SATOM Server
-  // Policy page uses, which splits REST / CLI by the build's channels.
-  var SAVE = {{ url_for('workspace.save', appliance_id=appliance.id)|tojson }};
-  var OPTS = {{ url_for('workspace.cmdb_options', appliance_id=appliance.id)|tojson }};
-  var BASE = {endpoint: {{ save_ep|tojson }}, mkey: {{ name|tojson }}};
-  var status = document.querySelector('[data-fwg-status]');
-  var review = document.querySelector('[data-fwg-review]');
-  var reviewBody = document.querySelector('[data-fwg-review-body]');
-  var pending = null;
-  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
-    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
-  function current(el) {
+  // Live show / hide, as FortiWeb's GUI does while you edit: every field and
+  // section carries its condition (device facts already bound server-side,
+  // gui_template.bind_device); this evaluator mirrors gui_template.evaluate
+  // (tri-state: null = cannot tell = shown) over the starting row plus the
+  // current value of every control, derived and aliased keys recomputed.
+  var LIVE = {{ view.live|tojson }};
+  function truthy(v) { return !!v && v !== '' && v !== 0 && v !== '0'; }
+  function ev(a, row) {
+    if (a === null || a === undefined) return true;
+    if ('raw' in a) return null;
+    if ('lit' in a) return a.lit === undefined ? null : a.lit;
+    if ('field' in a) { var v = row[a.field]; return (v === undefined || v === null) ? '' : v; }
+    if ('ref_set' in a) return !!row[a.ref_set];
+    if ('ctx' in a) return null;
+    var args = a.args || [], i, x, y;
+    if (a.op === 'not') { x = ev(args[0], row); return x === null ? null : !truthy(x); }
+    if (a.op === 'eq' || a.op === 'ne') {
+      x = ev(args[0], row); y = ev(args[1], row);
+      if (x === null || y === null) return null;
+      var same = (typeof x !== 'boolean' && typeof y !== 'boolean') ? String(x) === String(y) : x === y;
+      return a.op === 'eq' ? same : !same;
+    }
+    var vals = args.map(function (n) { return ev(n, row); });
+    if (a.op === 'and') {
+      for (i = 0; i < vals.length; i++) if (vals[i] !== null && !truthy(vals[i])) return false;
+      return vals.indexOf(null) >= 0 ? null : true;
+    }
+    if (a.op === 'or') {
+      for (i = 0; i < vals.length; i++) if (vals[i] !== null && truthy(vals[i])) return true;
+      return vals.indexOf(null) >= 0 ? null : false;
+    }
+    return null;
+  }
+  window.fwgCurrent = function (el) {
     if (el.dataset.kind === 'radio') {
       var r = el.querySelector('input[type=radio]:checked');
       return r ? r.value : el.dataset.orig;
@@ -236,24 +265,89 @@
     }
     if (el.type === 'checkbox') return el.checked ? el.dataset.on : el.dataset.off;
     return el.value;
+  };
+  function row() {
+    var r = Object.assign({}, LIVE.row);
+    document.querySelectorAll('.fwg-in[data-gkey]').forEach(function (el) { r[el.dataset.gkey] = window.fwgCurrent(el); });
+    Object.keys(LIVE.aliases || {}).forEach(function (g) { r[g] = r[LIVE.aliases[g]]; });
+    Object.keys(LIVE.derived || {}).forEach(function (k) {
+      delete r[k];
+      (LIVE.derived[k] || []).some(function (rule) {
+        if (r[rule.field] === rule.eq) { r[k] = rule.value; return true; }
+        return false;
+      });
+    });
+    return r;
   }
+  function refresh() {
+    var r = row();
+    document.querySelectorAll('[data-fwg-bcond],[data-fwg-cond]').forEach(function (el) {
+      var c = JSON.parse(el.dataset.fwgBcond || el.dataset.fwgCond || 'null');
+      var v = ev(c, r);
+      el.hidden = v !== null && !truthy(v);
+    });
+  }
+  window.fwgRefreshLive = refresh;
+  document.addEventListener('change', refresh);
+  document.addEventListener('input', refresh);
+})();
+{% endif %}
+{% if can_edit %}
+(function () {
+  // Save: collect the controls whose value changed (layout fields + the
+  // "Not in GUI, but in CLI" section) -- or, on a Create New form, every
+  // shown control with a value -- preview the exact request (dry run), then
+  // apply. Policy fields go through workspace.save (REST / CLI split by the
+  // build's channels), a sub-table row through gui_save_row (the object
+  // editor's row save), a new policy through workspace.create_policy.
+  var MODE = {{ ('new-policy' if is_new else ('row' if row_ctx else 'policy'))|tojson }};
+  var ROW = {{ (row_ctx or {})|tojson }};
+  var SAVE = MODE === 'new-policy' ? {{ url_for('workspace.create_policy', appliance_id=appliance.id)|tojson }}
+           : MODE === 'row' ? {{ (url_for('workspace.gui_save_row', appliance_id=appliance.id, name=name) if row_ctx else '')|tojson }}
+           : {{ url_for('workspace.save', appliance_id=appliance.id)|tojson }};
+  var DONE = {{ (url_for('workspace.gui_policy', appliance_id=appliance.id, name=name) if name else url_for('workspace.gui_list', appliance_id=appliance.id))|tojson }};
+  var GUI_POLICY = {{ url_for('workspace.gui_policy', appliance_id=appliance.id, name='__N__')|tojson }};
+  var OPTS = {{ url_for('workspace.cmdb_options', appliance_id=appliance.id)|tojson }};
+  var status = document.querySelector('[data-fwg-status]');
+  var review = document.querySelector('[data-fwg-review]');
+  var reviewBody = document.querySelector('[data-fwg-review-body]');
+  var pending = null;
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
+  function current(el) {
+    if (window.fwgCurrent) return window.fwgCurrent(el);
+    if (el.type === 'checkbox') return el.checked ? el.dataset.on : el.dataset.off;
+    return el.value;
+  }
+  function shown(el) { return !el.closest('[hidden]'); }
   function changes() {
     var out = [];
     document.querySelectorAll('.fwg-in[data-gkey]').forEach(function (el) {
+      if (!shown(el)) return;
       var v = current(el);
-      if (v !== (el.dataset.orig || '')) out.push({key: el.dataset.gkey, was: el.dataset.orig || '', now: v});
+      if (MODE === 'new-policy' || (ROW.new && MODE === 'row')) {
+        if (v !== '' && v !== undefined) out.push({key: el.dataset.gkey, was: '', now: v});
+      } else if (v !== (el.dataset.orig || '')) {
+        out.push({key: el.dataset.gkey, was: el.dataset.orig || '', now: v});
+      }
     });
     document.querySelectorAll('[data-nig] .fw-input[data-key]').forEach(function (el) {
       if (el.value !== (el.dataset.orig || '')) out.push({key: el.dataset.key, was: el.dataset.orig || '', now: el.value, nig: true});
     });
     return out;
   }
+  function body(fields, apply) {
+    if (MODE === 'new-policy') return {policy: fields, apply: !!apply};
+    if (MODE === 'row') return {subtable: ROW.subtable, sub_id: ROW.sub_id, fields: fields, apply: !!apply};
+    return {endpoint: {{ save_ep|tojson }}, mkey: {{ name|tojson }}, fields: fields, apply: !!apply};
+  }
   function say(msg, bad) { if (status) { status.textContent = msg; status.classList.toggle('text-danger', !!bad); } }
-  function post(body) {
+  function post(b) {
     return fetch(SAVE, {method: 'POST', headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify(body)}).then(function (r) { return r.json(); });
+                        body: JSON.stringify(b)}).then(function (r) { return r.json(); });
   }
   document.addEventListener('change', function () {
+    if (MODE === 'new-policy') return;
     var n = changes().length;
     say(n ? n + (n > 1 ? ' unsaved changes' : ' unsaved change') : '');
   });
@@ -274,8 +368,9 @@
     if (!ch.length) { say('No changes to save.'); return; }
     var fields = {};
     ch.forEach(function (c) { fields[c.key] = c.now; });
+    if (MODE === 'new-policy' && !fields.name) { say('Not saved: the policy needs a Name.', true); return; }
     say('Checking the change…');
-    post(Object.assign({}, BASE, {fields: fields})).then(function (dry) {
+    post(body(fields)).then(function (dry) {
       if (!dry.ok) { say('Not saved: ' + (dry.error || 'the device refused the change'), true); return; }
       var cli = dry.cli_fields || [];
       var h = '<table class="fwg-table"><thead><tr><th>Field</th><th>Was</th><th>New</th><th>Channel</th></tr></thead><tbody>';
@@ -283,8 +378,9 @@
         h += '<tr><td><code>' + esc(c.key) + '</code></td><td class="text-muted">' + esc(c.was) +
              '</td><td>' + esc(c.now) + '</td><td>' + (cli.indexOf(c.key) >= 0 ? 'CLI' : 'REST') + '</td></tr>';
       });
+      var raw = dry.request || dry.steps || null;
       h += '</tbody></table><details class="mt-2"><summary class="small text-muted">Raw request</summary><pre class="small">' +
-           esc(JSON.stringify(dry.request, null, 2)) + '</pre></details>';
+           esc(JSON.stringify(raw, null, 2)) + '</pre></details>';
       reviewBody.innerHTML = h;
       pending = fields;
       review.hidden = false;
@@ -299,14 +395,19 @@
     if (!pending) return;
     var btn = this; btn.disabled = true;
     say('Writing to the device…');
-    post(Object.assign({}, BASE, {fields: pending, apply: true})).then(function (res) {
+    post(body(pending, true)).then(function (res) {
       btn.disabled = false;
       if (!res.ok) { say('Not saved: ' + (res.error || 'the device refused the change'), true); return; }
-      review.hidden = true; pending = null;
-      // the cache was re-read from the device: reload to draw its values (and
-      // the fields FortiWeb shows or hides for them)
-      say(res.cache_refreshed ? 'Saved. Reloading…' : 'Saved on the device; the SATOM copy refreshes on the next sync.');
-      if (res.cache_refreshed) window.location.reload();
+      review.hidden = true;
+      var name = pending.name;
+      pending = null;
+      // the cache was re-read from the device: draw its values (and the
+      // fields FortiWeb shows or hides for them)
+      if (!res.cache_refreshed) { say('Saved on the device; the SATOM copy refreshes on the next sync.'); return; }
+      say('Saved. Reloading…');
+      if (MODE === 'new-policy') window.location.href = GUI_POLICY.replace('__N__', encodeURIComponent(name));
+      else if (MODE === 'row') window.location.href = DONE;
+      else window.location.reload();
     }).catch(function () { btn.disabled = false; say('No answer from SATOM: check the device before retrying.', true); });
   });
 })();

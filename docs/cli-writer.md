@@ -177,10 +177,21 @@ with `end` first.
 | FortiGate | documented | refused | **no** |
 | FortiAuthenticator | documented | refused | **no** |
 | FortiADC | documented | refused | **no** |
+| FortiAnalyzer | documented | refused | **no** |
 
-A product not listed (FortiAnalyzer) has no CLI writer. An unverified dialect is
-written to the FortiOS-family documentation and shown as unverified in the
-editor; verify it on a lab box before relying on it.
+An unverified dialect is written to the FortiOS-family documentation and shown
+as unverified in the editor; verify it on a lab box before relying on it.
+
+## 5b. Where the CLI-only fields are edited
+
+Every object view carries a "Not in GUI, but in CLI" section. On FortiWeb it is
+part of the object editor (the editor's Save splits REST / CLI). On FortiGate,
+FortiAuthenticator, FortiADC and FortiAnalyzer — and for objects only the CLI
+serves, on the per-device page and in their own GUI pane (FortiAuthenticator
+*System → Network* and *System → Administration*) — the section is its own
+editor: *Read values over CLI*, *Preview CLI change* (the script), *Apply*
+(`POST /appliances/<id>/not-in-gui/save`). It writes only fields the build
+serves by CLI alone; a write naming any other field is refused whole.
 
 ---
 

@@ -2566,3 +2566,10 @@ button.fwg-btn{cursor:pointer;}
 .fwg-subtable .fwg-toolbar{padding:4px;}
 .fwg-subtable .fwg-table td{height:28px;}
 .fwg-noresults{text-align:center;color:var(--fw-text-muted);}
+
+/* "Not in GUI, but in CLI" CLI editor (nig_cli): the previewed script */
+.fw-nig-script { background: var(--fw-content-bg, #F4F5F7); border: 1px solid #E1E4E8; border-radius: 4px; padding: 6px 8px; white-space: pre-wrap; }
+/* FortiWeb-layout view: a section wrapper that leaves the grid untouched, and
+   live show / hide (author display rules must not override [hidden]) */
+.fwg-block { display: contents; }
+.fwg-pane [hidden] { display: none !important; }

@@ -75,6 +75,9 @@ DIALECTS: dict[str, dict] = {
     "fortigate": {"abort": True, "question_mark": False, "verified": ""},
     "fortiauthenticator": {"abort": True, "question_mark": False, "verified": ""},
     "fortiadc": {"abort": True, "question_mark": False, "verified": ""},
+    # FortiAnalyzer's CLI is the same config/edit/set/next/end shell with an
+    # ``abort`` command; NOT verified on a box (no lab FortiAnalyzer).
+    "fortianalyzer": {"abort": True, "question_mark": False, "verified": ""},
 }
 
 #: Channels a field may be written by CLI on.

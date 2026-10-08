@@ -218,7 +218,8 @@ def _display(field: dict, row: dict, dev: dict):
     kind = field.get("kind")
     key = field.get("key")
     if kind == "toggle_rows":
-        return [{"label": r["label"], "value": row.get(r["key"], "")} for r in field["rows"]]
+        return [{"label": r["label"], "key": r["key"], "value": row.get(r["key"], "")}
+                for r in field["rows"]]
     if key is None:
         return None
     v = row.get(key)
@@ -302,6 +303,37 @@ def _table_view(f: dict, rows, refs: dict) -> dict:
             [{"id": r.get("id"), "cells": [_cell(c, r, refs) for c in cols]} for r in rows]}
 
 
+# Controls the layout view can write back. Sub-tables, links, view switches and
+# display-only fields are not values of the policy object; a derived key
+# (cert-type) is computed by the GUI from other fields and has no REST twin.
+_EDIT_KINDS = {"toggle", "radio", "select", "text", "number", "textarea", "ref",
+               "multiselect", "checks", "toggle_rows"}
+
+
+def _edit_spec(f: dict, d: dict, data: dict, dev: dict) -> dict:
+    """How the field is written: the REST key (aliases resolved), the raw value
+    the input starts from, and the choices a select / radio / checks offers."""
+    from .fortiweb_field_schema import REF_ENDPOINTS
+    kind = f.get("kind")
+    key = f.get("key")
+    wkey = (d.get("aliases") or {}).get(key, key)
+    editable = (kind in _EDIT_KINDS and not f.get("from_ref")
+                and (key is not None or kind == "toggle_rows")
+                and key not in (d.get("derived") or {}) and key != "name")
+    raw = data.get(wkey)
+    return {
+        "editable": editable,
+        "wkey": wkey,
+        "raw": "" if raw is None else str(raw),
+        "off": f.get("off", "disable"),
+        "opts": [{"value": str(o.get("value")), "label": o.get("label")}
+                 for o in _options(f, dev)] if kind in ("select", "radio", "checks") else [],
+        "ref": REF_ENDPOINTS.get(wkey or "", "") if kind == "ref" else "",
+        "min": f.get("min"),
+        "max": f.get("max"),
+    }
+
+
 def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict, *,
                 subrows: dict | None = None, refs: dict | None = None) -> dict:
     """Blocks -> fields with ``state`` shown / unknown (hidden ones are dropped
@@ -351,6 +383,7 @@ def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict, *,
                 "unknown": unknown,
                 "unknown_why": (unknowns(b.get("cond"), data, defs, dev)
                                 + unknowns(f.get("cond"), data, defs, dev)) if unknown else [],
+                **_edit_spec(f, d, data, dev),
             })
         if fields:
             # A fold is FortiWeb's +/- section title. Its initial state when the

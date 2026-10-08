@@ -106,6 +106,32 @@ def local_update(appliance_id, coll, mkey, fields, *, session=None):
     return True
 
 
+def local_refresh(appliance_id, logical, mkey, payload, *, session=None) -> int:
+    """Merge a fresh device read of one top-level object into EVERY cached
+    layer that holds it (config, deep…): the readers pick one layer, so
+    updating only the first row found can leave the page on the old value.
+    Keys the read did not return are kept. Returns the rows updated."""
+    from ..extensions import db
+    from ..models_cache import DeviceObject
+    session = session or db.session
+    if not isinstance(payload, dict) or not payload:
+        return 0
+    rows = (session.query(DeviceObject)
+            .filter_by(appliance_id=appliance_id, logical_name=logical,
+                       mkey=str(mkey), depth=0).all())
+    for obj in rows:
+        merged = {**(obj.payload or {}), **payload}   # new dict: the JSON column sees it
+        obj.payload = merged
+        try:
+            obj.content_hash = device_store.content_hash(merged)
+        except Exception:  # noqa: BLE001
+            pass
+        _refresh_projection(session, obj)
+    if rows:
+        session.commit()
+    return len(rows)
+
+
 def local_delete(appliance_id, coll, mkey, *, session=None):
     """Delete the cached object and all its descendants (by-parent rows)."""
     from ..extensions import db

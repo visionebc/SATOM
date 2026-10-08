@@ -38,6 +38,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - A failed catalog read from the source makes the `signature_check` round red;
   a node with no FortiWeb says so instead of reporting "0 current".
 
+### Fixed — a rediscovery with deep or CLI capture no longer looks finished halfway
+
+- The REST sweep wrote `done` the moment its own pass ended, even when the deep
+  capture (WPP + policy graph) or the CLI capture was still to run. `done` is
+  terminal for the Rediscover page and the Capture card, so both stopped
+  polling at 100 % and never showed the later phases or their end, and Start
+  came back while the deep pass was still reading the box. The sweep now keeps
+  the run live (`snapshot saved — starting the deep capture`) and only the last
+  phase writes `done`.
+- A sweep that returns with its state still live is closed as `failed` with a
+  sentence saying so, instead of leaving the page polling and blocking new runs
+  for 15 minutes.
+- The Rediscover page says **Finished at HH:MM:SS UTC** in words when the run
+  ends.
+
 ## [3.0.0] - 2026-10-08
 
 ### Added — knowledge feed (3.0.0)

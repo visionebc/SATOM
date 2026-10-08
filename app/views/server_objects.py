@@ -217,7 +217,7 @@ def import_object(id):
             summary['blocks'] = len(leaves)
             cert_ssh.import_into(appliance, selected.collection, form['name'],
                                  form['cert_pem'], form['key_pem'], passphrase,
-                                 secret=appliance.password)
+                                 secret=appliance.ssh_secret)
             # The destination has to LIST IT BACK. A CLI block with an empty
             # value does not raise — it creates an entry with no material and
             # reports success, which is the failure this re-read exists to catch.

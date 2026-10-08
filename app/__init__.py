@@ -1830,6 +1830,10 @@ def create_app(config_override: object | None = None) -> Flask:
                 # facts under one value, indistinguishable afterwards.
                 ('device_hostname', 'VARCHAR(255)'),
                 ('device_hostname_at', 'TIMESTAMP'),
+                # --- separate CLI login (2026-10-09) ---
+                # NULL = SSH uses the API credential, which is what every row
+                # predating the column did.
+                ('ssh_password_enc', 'TEXT'),
             ],
             # Interface PURPOSE (2026-08-17). Additive with a default of
             # 'unspecified' so every port documented before the field reads as

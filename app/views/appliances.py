@@ -387,6 +387,11 @@ def edit_save(id):
     password = request.form.get('password', '')
     if password:
         appliance.set_password(password)
+    ssh_password = request.form.get('ssh_password', '')
+    if ssh_password:
+        appliance.set_ssh_password(ssh_password)
+    elif request.form.get('ssh_password_clear') == 'on':
+        appliance.set_ssh_password(None)
 
     # -- datasheet PDF: remove, replace, or keep --------------------------
     if request.form.get('datasheet_remove') == 'on':

@@ -443,7 +443,7 @@ def put_appliance_password(appliance, plaintext: str) -> bool:
     if not (appliance.name or "").strip():
         log.warning("vault: refusing to store a password for an unnamed appliance")
         return False
-    write(appliance_path(appliance.name), {
+    record = {
         "username": appliance.username or "",
         "password": plaintext,
         "host": appliance.host or "",
@@ -451,7 +451,53 @@ def put_appliance_password(appliance, plaintext: str) -> bool:
         "kind": appliance.kind or "",
         "vdom": appliance.vdom or "",
         "satom_appliance_id": appliance.id or "",
-    })
+    }
+    # A KV v2 write REPLACES the record: rotating the API credential must not
+    # silently drop the separate SSH login stored beside it. A failed read
+    # raises rather than writing a record that would lose it.
+    if getattr(appliance, "ssh_password_enc", None):
+        kept = (read(appliance_path(appliance.name)) or {}).get("ssh_password")
+        if kept:
+            record["ssh_password"] = kept
+    write(appliance_path(appliance.name), record)
+    return True
+
+
+def get_appliance_ssh_password(name: str) -> str | None:
+    """The separate SSH login for *name*, or ``None`` = "use the local copy".
+    Same failure contract as :func:`get_appliance_password`."""
+    if not active():
+        return None
+    try:
+        data = read(appliance_path(name))
+    except VaultError as exc:
+        if authoritative():
+            raise
+        log.warning("vault: read failed for %s, falling back to local copy: %s", name, exc)
+        return None
+    if data and data.get("ssh_password"):
+        return data["ssh_password"]
+    if authoritative():
+        raise VaultError(
+            "appliance %r has no SSH password in the vault, and the vault is "
+            "the only configured store" % name)
+    return None
+
+
+def put_appliance_ssh_password(appliance, plaintext: str) -> bool:
+    """Store (or, with ``""``, remove) the SSH login beside the API credential.
+    Read-modify-write so the API ``password`` in the same record survives."""
+    if not active():
+        return False
+    if not (appliance.name or "").strip():
+        log.warning("vault: refusing to store an SSH password for an unnamed appliance")
+        return False
+    data = read(appliance_path(appliance.name)) or {}
+    if plaintext:
+        data["ssh_password"] = plaintext
+    else:
+        data.pop("ssh_password", None)
+    write(appliance_path(appliance.name), data)
     return True
 
 
@@ -538,15 +584,30 @@ def migrate_local_to_vault(dry_run: bool = True) -> dict:
         if dry_run:
             note("appliance", app.name, "copied", "would copy")
             continue
+        ssh_local = ""
+        if getattr(app, "ssh_password_enc", None):
+            try:
+                ssh_local = encryption.decrypt(app.ssh_password_enc)
+            except Exception as exc:  # noqa: BLE001
+                note("appliance", app.name, "failed",
+                     "local SSH copy undecryptable: %s" % exc)
+                continue
+            if ssh_local == VAULT_SENTINEL:
+                ssh_local = ""
         try:
-            write(appliance_path(app.name), {
+            record = {
                 "username": app.username or "", "password": local,
                 "host": app.host or "", "port": app.port or "",
                 "kind": app.kind or "", "vdom": app.vdom or "",
                 "satom_appliance_id": app.id or "",
-            })
+            }
+            if ssh_local:
+                record["ssh_password"] = ssh_local
+            write(appliance_path(app.name), record)
             back = read(appliance_path(app.name)) or {}
-            if back.get("password") != local:
+            if ssh_local and back.get("ssh_password") != ssh_local:
+                note("appliance", app.name, "failed", "SSH read-back did not match")
+            elif back.get("password") != local:
                 note("appliance", app.name, "failed", "read-back did not match")
             else:
                 note("appliance", app.name, "copied", "verified")
@@ -668,6 +729,36 @@ def scrub_local_copies(dry_run: bool = True) -> dict:
         db.session.add(row)
         db.session.commit()
         note("appliance", name, "scrubbed", "local copy replaced by the sentinel")
+
+    # The separate SSH login: same rule, read back before destroying.
+    for row in Appliance.query.order_by(Appliance.name).all():
+        name = (row.name or "").strip()
+        if not name or not getattr(row, "ssh_password_enc", None):
+            continue
+        try:
+            local = encryption.decrypt(row.ssh_password_enc)
+        except Exception as exc:  # noqa: BLE001
+            note("appliance-ssh", name, "failed", "local copy undecryptable: %s" % exc)
+            continue
+        if local == VAULT_SENTINEL:
+            note("appliance-ssh", name, "skipped", "already vault-owned")
+            continue
+        try:
+            remote = (read(appliance_path(name)) or {}).get("ssh_password") or ""
+        except VaultError as exc:
+            note("appliance-ssh", name, "failed", "vault unreadable: %s" % exc)
+            continue
+        if remote != local:
+            note("appliance-ssh", name, "failed",
+                 "the vault copy is missing or differs - the local one is the last one")
+            continue
+        if dry_run:
+            note("appliance-ssh", name, "scrubbed", "would remove the local copy")
+            continue
+        row.ssh_password_enc = encryption.encrypt(VAULT_SENTINEL)
+        db.session.add(row)
+        db.session.commit()
+        note("appliance-ssh", name, "scrubbed", "local copy replaced by the sentinel")
 
     for label, key, path, field in (
         ("FortiAuthenticator shared secret", "auth.radius.secret_enc",

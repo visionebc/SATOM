@@ -84,7 +84,7 @@ _SUBTABLE_LABEL: dict[str, str] = {
     "host-list": "Protected Hostnames", "allow-list-items": "Allow List Items",
     "content-routing-match-list": "Match Conditions", "san-list": "SAN List",
     "list": "Entries", "filter-list": "Signature Exceptions",
-    "ntpserver": "NTP Servers",
+    "ntpserver": "NTP Servers", "public-ip-list": "Public IP",
 }
 
 

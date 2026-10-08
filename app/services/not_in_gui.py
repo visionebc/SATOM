@@ -109,14 +109,26 @@ def _template_keys(tpl: dict, endpoint: str) -> set:
     another endpoint."""
     own = endpoint_key(str(tpl.get("endpoint") or ""))
     keys: set = set()
-    for d in (tpl.get("dialogs") or {}).values():
-        dep = endpoint_key(str(d.get("endpoint") or "")) or (own if "contexts" in d else "")
+    if own == endpoint:
+        # a list column (Status, Protocol) is shown and set from the GUI list
+        keys.update(c["id"] for c in ((tpl.get("list") or {}).get("columns") or [])
+                    if isinstance(c, dict) and c.get("id"))
+    sub = set(tpl.get("subtable_dialogs") or ())
+    for name, d in (tpl.get("dialogs") or {}).items():
+        if "subtable_dialogs" in tpl:
+            dep = endpoint_key(str(d.get("endpoint") or "")) or ("" if name in sub else own)
+        else:
+            dep = endpoint_key(str(d.get("endpoint") or "")) or (own if "contexts" in d else "")
         if dep != endpoint:
             continue
         for b in d.get("blocks") or []:
             for f in b.get("fields") or []:
                 if f.get("key"):
                     keys.add(f["key"])
+                # a toggle group (Supported SSL Protocols) sets one key per row
+                for r in f.get("rows") or []:
+                    if isinstance(r, dict) and r.get("key"):
+                        keys.add(r["key"])
         for rules in (d.get("derived") or {}).values():
             for r in rules or []:
                 if isinstance(r, dict) and r.get("field"):

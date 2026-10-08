@@ -509,6 +509,23 @@ def datasheet(id):
     )
 
 
+@bp.route('/<int:id>/not-in-gui')
+@login_required
+@require_permission('appliances.view')
+def not_in_gui(id):
+    """"Not in GUI, but in CLI" for one device: every object and field its
+    exact build has outside the Fortinet GUI (permanent rule, every product)."""
+    appliance = visible_appliance_or_404(id)
+    from ..services import not_in_gui as nig
+    try:
+        inv = nig.device_inventory(appliance)
+        error = None
+    except Exception as exc:  # noqa: BLE001 — the page explains, never 500s
+        inv, error = None, str(exc)
+    return render_template('appliances/not_in_gui.html', appliance=appliance, inv=inv,
+                           error=error)
+
+
 @bp.route('/<int:id>/test', methods=['POST'])
 @login_required
 @require_permission('appliances.view')

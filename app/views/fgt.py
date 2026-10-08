@@ -120,6 +120,14 @@ def _columns_for(rows: list) -> list:
     return cols[:8]
 
 
+def _not_in_gui(appliance, path, results):
+    """"Not in GUI, but in CLI" for this table on the device's build (the
+    fields FortiOS serves only by CLI). Secrets never reach the section."""
+    from ..services import not_in_gui
+    return not_in_gui.for_view(appliance, path, results,
+                               noise=lambda k: k.startswith('q_') or _is_secret(k, None))
+
+
 def _load_tab(appliance, path: str, label: str) -> dict:
     tab = {'path': path, 'label': label, 'url': cmdb_url(path),
            'rows': [], 'kv': None, 'columns': [], 'error': None,
@@ -128,6 +136,7 @@ def _load_tab(appliance, path: str, label: str) -> dict:
     if err:
         tab['error'] = err
         return tab
+    tab['not_in_gui'] = _not_in_gui(appliance, path, results)
     if isinstance(results, dict):            # single-instance setting
         tab['kv'] = scrub(results)
         return tab

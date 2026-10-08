@@ -129,6 +129,7 @@
 
   {% endif %}
 </div>
+{% with nig_sec = tab.not_in_gui if tab else None %}{% include "_not_in_gui_tab.html" %}{% endwith %}
 
 <p class="text-muted mt-3 mb-0" style="font-size:12px;">
   {{ _('Read-only view. Secret fields (passwords, pre-shared keys, private keys) are never shown.') }}

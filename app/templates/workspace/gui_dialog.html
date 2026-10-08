@@ -108,6 +108,9 @@
       {{ fields(b) }}
     {% endif %}
   {% endfor %}
+  {% if not is_new and view.key == main %}
+    {% with nig_sec = not_in_gui, nig_values = nig_row %}{% include "_not_in_gui_tab.html" %}{% endwith %}
+  {% endif %}
   </div>
   <div class="fwg-footer">
     <span class="fwg-btn is-primary" aria-disabled="true" title="{{ _('Read-only: nothing is sent to the device.') }}">{{ _('OK') }}</span>

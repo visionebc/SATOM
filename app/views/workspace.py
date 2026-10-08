@@ -920,8 +920,15 @@ def gui_policy(appliance_id, name):
         view = gui_template.dialog_view(tpl, key, row, dev, subrows=subrows, refs=refs)
     else:
         abort(404)
+    # Permanent rule: the fields this policy has that the FortiWeb GUI does not
+    # show are listed under the main dialog, with their write channel.
+    nig = None
+    if key == main:
+        from ..services import not_in_gui
+        nig = not_in_gui.for_view(appl, 'server-policy/policy', row)
     return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
-                           dev=dev, view=view, name=name, main=main, is_new=False)
+                           dev=dev, view=view, name=name, main=main, is_new=False,
+                           not_in_gui=nig, nig_row=row)
 
 
 @bp.route('/<int:appliance_id>/gui/new/<dialog>')

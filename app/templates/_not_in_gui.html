@@ -1,0 +1,68 @@
+{# "Not in GUI, but in CLI" — the section every object view renders (permanent
+   rule, user 2026-10-08; built by services/not_in_gui.py). Two macros:
+
+   nig_editable(sec, create)  — inside an editor scope: the fields are the
+       editor's own .fw-input widgets, so the scope's Save sends them and the
+       save route splits REST / CLI by the build's channels.
+   nig_readonly(sec, values)  — read-only product views (FortiGate,
+       FortiAuthenticator, FortiADC, FortiAnalyzer): a table of field, channel
+       and the value the device returned (or "not readable over REST").
+
+   The section is ALWAYS rendered when it has fields, collapsed, and never
+   merged into another group. #}
+{% from "workspace/_fields.html" import fld %}
+
+{% macro channel_badge(ch) -%}
+{%- if ch == 'CLI' -%}<span class="fw-badge fw-badge-warning" title="{{ _('Written by SATOM over SSH (CLI writer): this build does not serve the field over REST') }}">CLI</span>
+{%- elif ch == 'REST' -%}<span class="fw-badge fw-badge-info" title="{{ _('Served by the REST API: a normal save writes it') }}">REST</span>
+{%- else -%}<span class="fw-badge fw-badge-secondary" title="{{ _('No source measured this field on this build') }}">{{ _('unverified on this build') }}</span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro nig_editable(sec, create=false, mkey='', collection='', parent='') %}
+{% if sec and sec.fields %}
+<details class="fw-group fw-nig" data-nig data-collection="{{ collection }}" data-mkey="{{ mkey }}"{% if parent %} data-parent="{{ parent }}"{% endif %}>
+  <summary class="fw-group-head">{{ sec.title }} <span class="text-muted">({{ sec.fields|length }})</span></summary>
+  <p class="fw-nig-note small text-muted mb-2">{{ sec.note }}</p>
+  {% if sec.has_cli and mkey and not create %}
+    <button type="button" class="btn btn-sm btn-outline-secondary mb-2" data-js="nig-read-cli">
+      <i class="bi bi-terminal me-1"></i>{{ _('Read values over CLI') }}</button>
+    <span class="fw-nig-read small text-muted"></span>
+  {% endif %}
+  <div class="fw-fld-grid">
+    {% for f in sec.fields %}
+      <div class="fw-nig-fld" data-nig-key="{{ f.key }}" data-channel="{{ f.channel }}">
+        <div class="fw-nig-ch">{{ channel_badge(f.channel) }}{% if f.unread %} <span class="small text-muted">{{ _('value not read') }}</span>{% endif %}</div>
+        {% if create and f.channel == 'CLI' %}
+          <div class="small text-muted"><code>{{ f.key }}</code> — {{ _('CLI-only on this build: set it once the object exists.') }}</div>
+        {% else %}
+          {{ fld(f, false) }}
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+</details>
+{% endif %}
+{% endmacro %}
+
+{% macro nig_readonly(sec, values=None) %}
+{% if sec and sec.fields %}
+<details class="fw-group fw-nig" data-nig>
+  <summary class="fw-group-head">{{ sec.title }} <span class="text-muted">({{ sec.fields|length }})</span></summary>
+  <p class="fw-nig-note small text-muted mb-2">{{ sec.note }}</p>
+  <table class="table table-sm fw-nig-table mb-0">
+    <thead><tr><th>{{ _('Field') }}</th><th>{{ _('Channel') }}</th><th>{{ _('Type') }}</th><th>{{ _('Value') }}</th></tr></thead>
+    <tbody>
+    {% for f in sec.fields %}
+      <tr data-nig-key="{{ f.key }}" data-channel="{{ f.channel }}">
+        <td><code>{{ f.key }}</code></td>
+        <td>{{ channel_badge(f.channel) }}</td>
+        <td class="small text-muted">{{ f.cli_type or '' }}{% if f.cli_options %} <span title="{{ f.cli_options|join(', ') }}">({{ f.cli_options|length }} {{ _('options') }})</span>{% endif %}</td>
+        <td class="small">{% if values is not none and f.key in values %}{{ values[f.key] }}{% elif f.channel == 'CLI' %}<span class="text-muted">{{ _('not readable over REST') }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endif %}
+{% endmacro %}

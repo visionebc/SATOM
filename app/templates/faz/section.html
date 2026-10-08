@@ -232,6 +232,7 @@
   </div>
 </div>
 {% endif %}
+{% with nig_sec = tab.not_in_gui if tab else None %}{% include "_not_in_gui_tab.html" %}{% endwith %}
 
 {% if editable %}
 {# ---- edit/create modal — dry-run preview then explicit Apply ------------- #}

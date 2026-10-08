@@ -1,0 +1,14 @@
+{# Per-tab "Not in GUI, but in CLI" for the read-only product views. Expects
+   ``nig_sec`` (services.not_in_gui.for_view, may be None) and ``appliance``. #}
+{% from "_not_in_gui.html" import nig_readonly %}
+{% if appliance %}
+<div class="fw-card mt-3 p-3 fw-nig-tab">
+  {% if nig_sec and nig_sec.fields %}
+    {{ nig_readonly(nig_sec, nig_values if nig_values is defined else None) }}
+  {% else %}
+    <p class="small text-muted mb-1">{{ _('Not in GUI, but in CLI') }}: {{ (nig_sec.note if nig_sec else _('the API library could not be read for this object.')) }}</p>
+  {% endif %}
+  <a class="small" href="{{ url_for('appliances.not_in_gui', id=appliance.id) }}" data-nig-link>
+    <i class="bi bi-terminal me-1"></i>{{ _('Everything this device has outside the GUI') }} →</a>
+</div>
+{% endif %}

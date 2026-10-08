@@ -265,6 +265,21 @@ def _enrich_cr_entries(appliance_id: int, cr_entries, *, session=None):
     return cr_entries
 
 
+def policy_subrows(appliance_id: int, name: str, *, session=None):
+    """The child lists of a cached server policy (``http-content-routing-list``,
+    ``public-ip-list``...) as ``{subtable: [payload, ...]}``, from the deep
+    layer. None when the policy has no deep capture (the lists are unknown,
+    not empty)."""
+    root = object_by_mkey(appliance_id, "server_policy", name, layer="deep",
+                          session=session)
+    if root is None:
+        return None
+    out = {}
+    for k in _children(root, session=session):
+        out.setdefault(k.subtable or "", []).append(dict(k.payload or {}))
+    return out
+
+
 def policy_full_cached(appliance_id: int, name: str, *, session=None):
     """Reassemble ``FortiWebClient.policy_full``'s shape from the cache.
 

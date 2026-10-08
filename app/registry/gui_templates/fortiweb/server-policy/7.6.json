@@ -450,7 +450,96 @@
         ]
        },
        "kind": "table",
-       "source": "httpContentRoutingSource"
+       "source": "httpContentRoutingSource",
+       "endpoint": "server-policy/policy/http-content-routing-list",
+       "subtable": "http-content-routing-list",
+       "columns": [
+        {
+         "id": "id",
+         "label_key": "#",
+         "label": "#"
+        },
+        {
+         "id": "content-routing-policy-name",
+         "label_key": "server_policy.hcr_policy",
+         "label": "HTTP Content Routing Policy"
+        },
+        {
+         "id": "server-pool",
+         "label_key": "server_policy.server_pool",
+         "label": "Server Pool",
+         "join": {
+          "key": "content-routing-policy-name",
+          "field": "server-pool",
+          "from": "server-policy/http-content-routing-policy"
+         }
+        },
+        {
+         "id": "is-default",
+         "label_key": "server_policy.member_default",
+         "label": "Default",
+         "labels": {
+          "yes": "Yes",
+          "no": "No",
+          "enable": "Enable",
+          "disable": "Disable"
+         }
+        },
+        {
+         "id": "profile-inherit",
+         "label_key": "server_policy.profile_inherit",
+         "label": "Inherit Web Protection Profile",
+         "labels": {
+          "enable": "Yes",
+          "disable": "No"
+         }
+        },
+        {
+         "id": "web-protection-profile",
+         "label_key": "server_policy.waf_profile",
+         "label": "Web Protection Profile",
+         "blank_when": {
+          "field": "profile-inherit",
+          "eq": "enable"
+         }
+        },
+        {
+         "id": "status",
+         "label_key": "Status",
+         "label": "Status",
+         "labels": {
+          "enable": "Enabled",
+          "disable": "Disabled"
+         }
+        }
+       ],
+       "toolbar": [
+        {
+         "label": "Create New",
+         "action": "addHttpContentRouting"
+        },
+        {
+         "label": "Edit",
+         "action": "editHttpContentRouting",
+         "needs": "one"
+        },
+        {
+         "label": "Delete",
+         "action": "removeHttpContentRouting",
+         "needs": "some"
+        },
+        {
+         "label": "Move",
+         "action": "move",
+         "needs": "one"
+        },
+        {
+         "label": "Search",
+         "action": "search"
+        }
+       ],
+       "selection": "httpContentSelectedEntries",
+       "row_dialog": "http-content-routing"
       },
       {
        "label": "Match Once",
@@ -2105,7 +2194,48 @@
         ]
        },
        "kind": "table",
-       "source": "publicIPSource"
+       "source": "publicIPSource",
+       "endpoint": "server-policy/policy/public-ip-list",
+       "subtable": "public-ip-list",
+       "columns": [
+        {
+         "id": "id",
+         "label_key": "#",
+         "label": "#"
+        },
+        {
+         "id": "ip",
+         "label_key": "common.ipv4",
+         "label": "IPv4 Address"
+        },
+        {
+         "id": "ip6",
+         "label_key": "common.ipv6",
+         "label": "IPv6 Address"
+        }
+       ],
+       "toolbar": [
+        {
+         "label": "Create New",
+         "action": "addPublicIP"
+        },
+        {
+         "label": "Edit",
+         "action": "editPublicIP",
+         "needs": "one"
+        },
+        {
+         "label": "Delete",
+         "action": "removePublicIP",
+         "needs": "some"
+        },
+        {
+         "label": "Search",
+         "action": "search"
+        }
+       ],
+       "selection": "publicIPSelectedEntries",
+       "row_dialog": "public-ip"
       }
      ],
      "title_key": "server_policy.gslb_server"
@@ -2172,20 +2302,20 @@
      "device_config": "CONFIG_SYSTEM_MODEL",
      "equals": "FWB_CMINTF"
     },
+    "modeShowZtna": {
+     "ztna_ems": true
+    },
+    "HAVE_VIRT_DOCKER": {
+     "device_config": "HAVE_VIRT_DOCKER"
+    },
+    "enableWebCache": {
+     "visibility": "web-cache"
+    },
     "enableAcceleration": {
      "visibility": "acceleration-policy"
     },
     "modeShowScript": {
      "opmode_is": "reverse-proxy"
-    },
-    "modeShowZtna": {
-     "ztna_ems": true
-    },
-    "enableWebCache": {
-     "visibility": "web-cache"
-    },
-    "HAVE_VIRT_DOCKER": {
-     "device_config": "HAVE_VIRT_DOCKER"
     },
     "showTrafficLogConfig": {
      "traffic_log_global": true
@@ -2556,7 +2686,48 @@
         ]
        },
        "kind": "table",
-       "source": "publicIPSource"
+       "source": "publicIPSource",
+       "endpoint": "server-policy/policy/public-ip-list",
+       "subtable": "public-ip-list",
+       "columns": [
+        {
+         "id": "id",
+         "label_key": "#",
+         "label": "#"
+        },
+        {
+         "id": "ip",
+         "label_key": "common.ipv4",
+         "label": "IPv4 Address"
+        },
+        {
+         "id": "ip6",
+         "label_key": "common.ipv6",
+         "label": "IPv6 Address"
+        }
+       ],
+       "toolbar": [
+        {
+         "label": "Create New",
+         "action": "addPublicIP"
+        },
+        {
+         "label": "Edit",
+         "action": "editPublicIP",
+         "needs": "one"
+        },
+        {
+         "label": "Delete",
+         "action": "removePublicIP",
+         "needs": "some"
+        },
+        {
+         "label": "Search",
+         "action": "search"
+        }
+       ],
+       "selection": "publicIPSelectedEntries",
+       "row_dialog": "public-ip"
       }
      ],
      "title_key": "server_policy.gslb_server"
@@ -3150,7 +3321,48 @@
         ]
        },
        "kind": "table",
-       "source": "publicIPSource"
+       "source": "publicIPSource",
+       "endpoint": "server-policy/policy/public-ip-list",
+       "subtable": "public-ip-list",
+       "columns": [
+        {
+         "id": "id",
+         "label_key": "#",
+         "label": "#"
+        },
+        {
+         "id": "ip",
+         "label_key": "common.ipv4",
+         "label": "IPv4 Address"
+        },
+        {
+         "id": "ip6",
+         "label_key": "common.ipv6",
+         "label": "IPv6 Address"
+        }
+       ],
+       "toolbar": [
+        {
+         "label": "Create New",
+         "action": "addPublicIP"
+        },
+        {
+         "label": "Edit",
+         "action": "editPublicIP",
+         "needs": "one"
+        },
+        {
+         "label": "Delete",
+         "action": "removePublicIP",
+         "needs": "some"
+        },
+        {
+         "label": "Search",
+         "action": "search"
+        }
+       ],
+       "selection": "publicIPSelectedEntries",
+       "row_dialog": "public-ip"
       }
      ],
      "title_key": "server_policy.gslb_server"
@@ -3289,7 +3501,83 @@
         ]
        },
        "kind": "table",
-       "source": "httpContentRoutingSource"
+       "source": "httpContentRoutingSource",
+       "endpoint": "server-policy/policy/http-content-routing-list",
+       "subtable": "http-content-routing-list",
+       "columns": [
+        {
+         "id": "id",
+         "label_key": "#",
+         "label": "#"
+        },
+        {
+         "id": "content-routing-policy-name",
+         "label_key": "server_policy.hcr_policy",
+         "label": "HTTP Content Routing Policy"
+        },
+        {
+         "id": "server-pool",
+         "label_key": "server_policy.server_pool",
+         "label": "Server Pool",
+         "join": {
+          "key": "content-routing-policy-name",
+          "field": "server-pool",
+          "from": "server-policy/http-content-routing-policy"
+         }
+        },
+        {
+         "id": "is-default",
+         "label_key": "server_policy.member_default",
+         "label": "Default",
+         "labels": {
+          "yes": "Yes",
+          "no": "No",
+          "enable": "Enable",
+          "disable": "Disable"
+         }
+        },
+        {
+         "id": "profile-inherit",
+         "label_key": "server_policy.profile_inherit",
+         "label": "Inherit Web Protection Profile",
+         "labels": {
+          "enable": "Yes",
+          "disable": "No"
+         }
+        },
+        {
+         "id": "web-protection-profile",
+         "label_key": "server_policy.waf_profile",
+         "label": "Web Protection Profile"
+        }
+       ],
+       "toolbar": [
+        {
+         "label": "Add",
+         "action": "addHttpContentRouting"
+        },
+        {
+         "label": "Edit",
+         "action": "editHttpContentRouting",
+         "needs": "one"
+        },
+        {
+         "label": "Delete",
+         "action": "removeHttpContentRouting",
+         "needs": "one"
+        },
+        {
+         "label": "Move",
+         "action": "move",
+         "needs": "one"
+        },
+        {
+         "label": "Search",
+         "action": "search"
+        }
+       ],
+       "selection": "httpContentSelectedEntries",
+       "row_dialog": "http-content-routing"
       },
       {
        "label": "Match Once",
@@ -3825,22 +4113,63 @@
         ]
        },
        "kind": "table",
-       "source": "publicIPSource"
+       "source": "publicIPSource",
+       "endpoint": "server-policy/policy/public-ip-list",
+       "subtable": "public-ip-list",
+       "columns": [
+        {
+         "id": "id",
+         "label_key": "#",
+         "label": "#"
+        },
+        {
+         "id": "ip",
+         "label_key": "common.ipv4",
+         "label": "IPv4 Address"
+        },
+        {
+         "id": "ip6",
+         "label_key": "common.ipv6",
+         "label": "IPv6 Address"
+        }
+       ],
+       "toolbar": [
+        {
+         "label": "Create New",
+         "action": "addPublicIP"
+        },
+        {
+         "label": "Edit",
+         "action": "editPublicIP",
+         "needs": "one"
+        },
+        {
+         "label": "Delete",
+         "action": "removePublicIP",
+         "needs": "some"
+        },
+        {
+         "label": "Search",
+         "action": "search"
+        }
+       ],
+       "selection": "publicIPSelectedEntries",
+       "row_dialog": "public-ip"
       }
      ],
      "title_key": "server_policy.gslb_server"
     }
    ],
    "contexts": {
+    "HAVE_VIRT_DOCKER": {
+     "device_config": "HAVE_VIRT_DOCKER"
+    },
     "enableTrafficMirror": {
      "visibility": "traffic-mirror"
     },
     "CONFIG_SYSTEM_FWB_CMINTF": {
      "device_config": "CONFIG_SYSTEM_MODEL",
      "equals": "FWB_CMINTF"
-    },
-    "HAVE_VIRT_DOCKER": {
-     "device_config": "HAVE_VIRT_DOCKER"
     }
    },
    "new_defaults": {
@@ -5493,7 +5822,10 @@
    "component": "fwb-server-policy-adfs-advanced-ssl-dialog"
   },
   "http-content-routing": {
-   "title": {},
+   "title": {
+    "new": "New HTTP Content Routing Policy",
+    "edit": "Edit HTTP Content Routing Policy"
+   },
    "blocks": [
     {
      "title": null,
@@ -5520,8 +5852,12 @@
        "key": "status",
        "options": [
         {
-         "value": "{{ ::opt.value }}",
-         "label": "{{ ::opt.label | lang }}"
+         "value": "enable",
+         "label": "Enable"
+        },
+        {
+         "value": "disable",
+         "label": "Disable"
         }
        ]
       },
@@ -5530,7 +5866,11 @@
        "label_key": "server_policy.server_pool",
        "kind": "display",
        "key": null,
-       "gui_state": "displayedServerPool"
+       "gui_state": "displayedServerPool",
+       "from_ref": {
+        "key": "content-routing-policy-name",
+        "field": "server-pool"
+       }
       },
       {
        "label": "Inherit Web Protection Profile",
@@ -5565,7 +5905,18 @@
        "label_key": "server_policy.member_default",
        "kind": "select",
        "key": "is-default",
-       "options_by": {}
+       "options_by": {
+        "defaultOptions": [
+         {
+          "value": "yes",
+          "label": "Yes"
+         },
+         {
+          "value": "no",
+          "label": "No"
+         }
+        ]
+       }
       }
      ]
     }
@@ -5578,7 +5929,10 @@
    "component": "fwb-server-policy-http-content-routing-dialog"
   },
   "public-ip": {
-   "title": {},
+   "title": {
+    "new": "Create Public IP",
+    "edit": "Edit Public IP"
+   },
    "blocks": [
     {
      "title": null,
@@ -5607,13 +5961,7 @@
    "component": "fwb-server-policy-public-ip-dialog"
   }
  },
- "unresolved": [
-  {
-   "where": "http-content-routing/server_policy.server_pool",
-   "what": "display",
-   "raw": "$ctrl.displayedServerPool"
-  }
- ],
+ "unresolved": [],
  "rest_check": {
   "endpoint": "cmdb/server-policy/policy",
   "witness_rows": 50,
@@ -5627,7 +5975,7 @@
  },
  "extractor": {
   "name": "satom-harvester gui_extract",
-  "version": "0.1.0"
+  "version": "0.2.0"
  },
  "sources": {
   "app.min.js": "cb870d4225732226b236a1558a431521be264ce75ecf47b73523da138c66bf11",
@@ -5651,6 +5999,7 @@
   "ng/fwb-server-policy-http-content-routing-dialog.js": "fbd10950a596cafe07f74f1ae263bc57be3b42b016e9a2482e0f647d8fda9eca",
   "ng/fwb-server-policy-http-content-routing-dialog.html": "ea3400646a445ac57b74ef8385fe4461908aa656f3805955d30f7fb5c0197205",
   "ng/fwb-server-policy-public-ip-dialog.js": "176556cb0ebe84404748301ad8632a7009a8155231db6bc29ddccaea94bc8abf",
-  "ng/fwb-server-policy-public-ip-dialog.html": "bc2fe62c2b1a0dd3a84041b5d98d568449284635dc821e01f2014a5fdde9334c"
+  "ng/fwb-server-policy-public-ip-dialog.html": "bc2fe62c2b1a0dd3a84041b5d98d568449284635dc821e01f2014a5fdde9334c",
+  "ng/partials/fwb-menu-item-move.html": "13e4bb0213aac080c3555d1fb4b18de5838b9479f204168ea0fbe5bc8fc303aa"
  }
 }

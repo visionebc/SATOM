@@ -804,6 +804,33 @@ def _gui_device(appl):
                                        firmware=appl.firmware, model=appl.model)
 
 
+def _gui_subtables(appl, name, tpl, key):
+    """Rows of the dialog's inline sub-tables from the deep cache, and the
+    objects their columns join against. A sub-table the deep capture does not
+    walk (not in the dependency registry), or a policy without a deep capture,
+    is None -- unknown, never drawn as empty."""
+    from ..registry import dependencies
+    from ..services import gui_template, read_layer
+    got = read_layer.policy_subrows(appl.id, name) if name else None
+    subrows = {}
+    for b in tpl['dialogs'][key]['blocks']:
+        for f in b['fields']:
+            st = f.get('subtable')
+            if f.get('kind') != 'table' or not st:
+                continue
+            walked = dependencies.dep_node_for_urn('cmdb/' + (f.get('endpoint') or '')) is not None
+            subrows[st] = (got or {}).get(st, []) if (got is not None and walked) else None
+    refs = {}
+    for lg in gui_template.needed_refs(tpl, key):
+        try:
+            objs, _ = read_layer.read_objects(appl.id, lg)
+        except Exception as exc:  # noqa: BLE001 — a cold cache leaves the join empty
+            log_exception(exc, context='workspace.gui.refs')
+            objs = []
+        refs[lg] = {o.get('name'): o for o in objs or [] if isinstance(o, dict)}
+    return subrows, refs
+
+
 def _gui_template_or_404(appl):
     from flask import abort
     from ..services import gui_template
@@ -874,10 +901,25 @@ def gui_policy(appliance_id, name):
         abort(404)
     main = tpl['list']['edit_dialog_by_protocol'].get(row.get('protocol') or 'HTTP')
     key = request.args.get('dialog') or main
-    # only the row's own dialog and the sub-dialogs it links to
-    if key not in tpl['dialogs'] or not (key == main or key.startswith((main or '') + '-')):
+    if key not in tpl['dialogs']:
         abort(404)
-    view = gui_template.dialog_view(tpl, key, row, dev)
+    row_dialogs = gui_template.row_dialogs(tpl, main)
+    if key in row_dialogs:
+        # a sub-table row (?sub=<id>) in the dialog that row opens in FortiWeb
+        subrows, _refs = _gui_subtables(appl, name, tpl, main)
+        sub = request.args.get('sub')
+        row = next((r for r in subrows.get(row_dialogs[key]) or []
+                    if sub is not None and str(r.get('id')) == sub), None)
+        if row is None:
+            abort(404)
+        _subrows, refs = _gui_subtables(appl, name, tpl, key)
+        view = gui_template.dialog_view(tpl, key, row, dev, refs=refs)
+    # otherwise only the row's own dialog and the sub-dialogs it links to
+    elif key == main or key.startswith((main or '') + '-'):
+        subrows, refs = _gui_subtables(appl, name, tpl, key)
+        view = gui_template.dialog_view(tpl, key, row, dev, subrows=subrows, refs=refs)
+    else:
+        abort(404)
     return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
                            dev=dev, view=view, name=name, main=main, is_new=False)
 
@@ -896,7 +938,9 @@ def gui_new(appliance_id, dialog):
         abort(404)
     dev = _gui_device(appl)
     row = dict(tpl['dialogs'][dialog].get('new_defaults') or {})
-    view = gui_template.dialog_view(tpl, dialog, row, dev)
+    # a new policy's sub-tables start empty in FortiWeb too
+    subrows = {st: [] for st in gui_template.row_dialogs(tpl, dialog).values() if st}
+    view = gui_template.dialog_view(tpl, dialog, row, dev, subrows=subrows)
     return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
                            dev=dev, view=view, name=None, main=dialog, is_new=True)
 

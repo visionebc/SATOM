@@ -27,6 +27,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   train (8.0.x) gets the 7.6 layout with a warning that newer firmware adds or
   renames fields; a field whose condition depends on something SATOM cannot
   read about the device is shown and marked "conditional", never hidden.
+- **Inline sub-tables** in the policy dialog — HTTP Content Routing and One
+  Click GSLB Public IP — with FortiWeb's toolbar (Create New / Edit / Delete /
+  Move / Search), its default columns and cell formatting (the Server Pool
+  read through the chosen routing policy, an inherited Web Protection Profile
+  left blank). Edit / double-click opens the row in its own dialog
+  (`?dialog=http-content-routing&sub=<id>`). A sub-table SATOM does not
+  capture yet (Public IP) says so instead of showing an empty grid.
+- **Sidebar**: Loadbalancer now shows **Policy → Server Policy**, as in
+  FortiWeb's menu; the leaf opens the FortiWeb layout of the device in
+  context (the device picker when none is selected). The SATOM view stays
+  one click away from the layout page.
 
 ### Added — signature source and local signature index
 

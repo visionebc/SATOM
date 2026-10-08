@@ -916,9 +916,22 @@
       <div class="fw-nav-group {{ 'open' if _g_lb }}" data-nav-group="Loadbalancer">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-shield-check fw-nav-section-icon" style="color:#10b981;"></i><span>{{ _('Loadbalancer') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
+          {# Policy -> Server Policy, as FortiWeb's own menu has it. With a FortiWeb
+             selected the leaf opens its GUI layout (workspace.gui_*); otherwise
+             the device picker. #}
           {% if may_open('workspace.index') %}
-          <a class="fw-nav-item" href="{{ url_for('workspace.index') }}">
-            <i class="bi bi-shield-check fw-nav-icon"></i><span>{{ _('Server Policy') }}</span></a>
+          {% set _sp_gui = request.endpoint in ['workspace.gui_list', 'workspace.gui_policy', 'workspace.gui_new'] %}
+          <details class="fw-so-parent" {{ 'open' if _sp_gui }}>
+            <summary class="fw-nav-item fw-so-parent-head">
+              <i class="bi bi-shield-check fw-nav-icon"></i><span>{{ _('Policy') }}</span>
+              <i class="bi bi-chevron-down fw-so-nav-caret"></i>
+            </summary>
+            <div class="fw-so-parent-body"><div class="fw-so-nav">
+              <a class="fw-nav-item fw-so-nav-flat {{ 'active' if _sp_gui else '' }}"
+                 href="{{ url_for('workspace.gui_list', appliance_id=current_appliance.id) if current_appliance and current_appliance.kind == 'fortiweb' else url_for('workspace.index') }}">
+                <i class="bi bi-list-ul fw-nav-icon"></i><span>{{ _('Server Policy') }}</span></a>
+            </div></div>
+          </details>
           {% endif %}
           {# Server Objects — collapses as a unit (native <details>, no JS / CSP-safe).
              Open ONLY when its own section is active (like Web Protection / the WAF areas). An

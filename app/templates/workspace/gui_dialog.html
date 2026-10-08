@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% set _t = view.title.get('new' if is_new else 'edit') or '' %}
+{% block title %}{{ _t }}{% if name %} — {{ name }}{% endif %}{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <a href="{{ url_for('workspace.gui_list', appliance_id=appliance.id) }}">{{ tpl.menu_path|join(' / ') }}</a><span class="separator">/</span>
+  <span>{{ appliance.name }}</span>{% if name %}<span class="separator">/</span>
+  {% if view.key != main %}<a href="{{ url_for('workspace.gui_policy', appliance_id=appliance.id, name=name) }}">{{ name }}</a><span class="separator">/</span><span>{{ _t or view.key }}</span>
+  {% else %}<span>{{ name }}</span>{% endif %}{% endif %}
+</div>
+{% endblock %}
+{% macro value(f) %}
+  {% if f.kind == 'toggle' %}
+    <span class="fwg-switch {{ 'is-on' if f.value == f.on }}" role="img" aria-label="{{ f.value or 'disable' }}"></span>
+  {% elif f.kind in ('radio', 'select') %}
+    <span class="fwg-input {{ 'is-empty' if not f.value }}">{{ f.value or _('(not set)') }}</span>
+  {% elif f.kind in ('checks', 'multiselect') %}
+    {% for v in f.value or [] %}<span class="fwg-chip">{{ v }}</span>{% else %}<span class="fwg-input is-empty">{{ _('(none)') }}</span>{% endfor %}
+  {% elif f.kind == 'toggle_rows' %}
+    <table class="fwg-table fwg-rows"><tbody>
+    {% for r in f.value or [] %}<tr><td>{{ r.label }}</td><td><span class="fwg-switch {{ 'is-on' if r.value == 'enable' }}"></span></td></tr>{% endfor %}
+    </tbody></table>
+  {% elif f.kind == 'table' %}
+    <span class="text-muted">{{ _('Sub-table — shown in the SATOM view of this policy.') }}</span>
+  {% elif f.kind == 'view_switch' %}
+    <span class="fwg-radio">{% for o in f.options %}<span class="{{ 'is-on' if loop.first }}">{{ o.label }}</span>{% endfor %}</span>
+    <div class="text-muted small">{{ _('Machine-learning models are managed from their own pages.') }}</div>
+  {% elif f.kind == 'link' %}
+    {% if f.dialog and name %}<a href="{{ url_for('workspace.gui_policy', appliance_id=appliance.id, name=name, dialog=f.dialog) }}">{{ f.label }}</a>
+    {% else %}<span class="text-muted">{{ f.label }}</span>{% endif %}
+  {% elif f.kind == 'static' %}
+  {% else %}
+    <span class="fwg-input {{ 'is-empty' if f.value in (None, '') }}">{{ f.value if f.value not in (None, '') else _('(empty)') }}</span>
+  {% endif %}
+  {% if f.suffix %}<span class="fwg-suffix">{{ f.suffix }}</span>{% endif %}
+{% endmacro %}
+{% block content %}
+<div class="fw-page-header d-flex align-items-center justify-content-between">
+  <h1 class="fw-h1"><i class="bi bi-shield-check me-2 text-accent"></i>{{ _t or view.key }}{% if name %} <span class="mono text-muted">{{ name }}</span>{% endif %}</h1>
+  <a class="btn btn-sm btn-fw-outline" href="{{ url_for('workspace.gui_list', appliance_id=appliance.id) }}">{{ _('Back to list') }}</a>
+</div>
+{% include 'workspace/_gui_banner.html' %}
+<div class="fw-alert fw-alert-info mb-2"><i class="bi bi-eye me-1"></i>
+  {% if is_new %}{{ _('Preview of the Create New form with FortiWeb\'s own defaults. Nothing is submitted from this page.') }}
+  {% else %}{{ _('View mode. Values come from the SATOM cache of this device; nothing is sent to it.') }}{% endif %}
+  {% if view.hidden %}{{ _('%(n)s fields are hidden by FortiWeb for these settings.', n=view.hidden) }}{% endif %}
+</div>
+<div class="fw-card fwg-dialog"><div class="fw-card-body">
+{% for b in view.blocks %}
+  {% if b.title %}<div class="fwg-section-title {{ 'fwg-unknown' if b.unknown }}">{{ b.title }}</div>{% endif %}
+  {% for f in b.fields %}
+  <div class="fwg-field {{ 'fwg-unknown' if f.unknown }}">
+    <div class="fwg-label">{% if f.kind != 'link' %}{{ f.label }}{% if f.required %}<span class="fwg-req">*</span>{% endif %}{% endif %}
+      {% if f.help %}<i class="bi bi-question-circle" title="{{ f.help|striptags }}"></i>{% endif %}
+      {% if f.unknown %}<span class="fwg-unknown-tag" title="{{ _('Depends on: %(w)s', w=f.unknown_why|join(', ')) }}">{{ _('conditional') }}</span>{% endif %}
+    </div>
+    <div class="fwg-value">{{ value(f) }}</div>
+  </div>
+  {% endfor %}
+{% endfor %}
+</div></div>
+{% endblock %}

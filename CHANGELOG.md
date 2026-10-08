@@ -6,6 +6,28 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Server Policy in the FortiWeb GUI layout (read-only)
+
+- **Server Policy → FortiWeb layout**: the policy list, the Create New menu and
+  every dialog (HTTP, FTP, ADFS, TCP proxy, Advanced SSL settings, HTTP Content
+  Routing rule, Public IP) drawn the way FortiWeb's own GUI lays them out —
+  same section titles, field order, labels, control types and options, the
+  same default columns per operation mode, and the same fields shown or
+  hidden by the policy's settings, the operation mode and
+  `system feature-visibility`. Drawn with SATOM's theme; read-only, served from
+  the local cache (no device calls). Routes `/workspace/<id>/gui`,
+  `/workspace/<id>/gui/policy/<name>[?dialog=…]` and
+  `/workspace/<id>/gui/new/<dialog>` (the Create New form with FortiWeb's own
+  defaults, as a preview).
+- **Layout templates per firmware train** (`app/registry/gui_templates/`,
+  schema `satom.gui-template/1`), extracted from the GUI a FortiWeb serves by
+  `satom-harvester gui fetch|extract`, never written by hand. The first one is
+  **FortiWeb 7.6.x**, built from 7.6.8 build1128: 9 dialogs, 186 fields, every
+  field cross-checked against the REST keys of that build. A device on a newer
+  train (8.0.x) gets the 7.6 layout with a warning that newer firmware adds or
+  renames fields; a field whose condition depends on something SATOM cannot
+  read about the device is shown and marked "conditional", never hidden.
+
 ### Added — signature source and local signature index
 
 - **Administrator → Signatures → Signature source**: choose the FortiWeb SATOM

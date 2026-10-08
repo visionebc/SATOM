@@ -1,0 +1,5625 @@
+{
+ "schema": "satom.gui-template/1",
+ "product": "fortiweb",
+ "page": "server-policy",
+ "menu_path": [
+  "Policy",
+  "Server Policy"
+ ],
+ "gui_state": "root.policy.server_policy",
+ "endpoint": "cmdb/server-policy/policy",
+ "based_on": {
+  "version": "7.6.8",
+  "build": 1128,
+  "train": "7.6",
+  "firmware": "FortiWeb-KVM 7.6.8,build1128(GA.M),260602",
+  "gui_no": "15964",
+  "witness": "lab",
+  "fetched_at": "2026-10-08T18:16:55Z"
+ },
+ "applies_to": "7.6",
+ "opmodes": {
+  "INLINE": "reverse-proxy",
+  "OFFLINE": "offline-protection",
+  "TTP": "transparent",
+  "TI": "transparent-inspection",
+  "WCCP": "wccp"
+ },
+ "list": {
+  "columns": [
+   {
+    "id": "id",
+    "label_key": "#",
+    "label": "#"
+   },
+   {
+    "id": "name",
+    "label_key": "Policy Name",
+    "label": "Policy Name"
+   },
+   {
+    "id": "vserver",
+    "label_key": "server_policy.vserver",
+    "label": "Virtual Server"
+   },
+   {
+    "id": "vip",
+    "label_key": "server_policy.vip",
+    "label": "VIP"
+   },
+   {
+    "id": "port",
+    "label_key": "common.port",
+    "label": "Port"
+   },
+   {
+    "id": "protocol",
+    "label_key": "common.protocol",
+    "label": "Protocol"
+   },
+   {
+    "id": "deployment-mode",
+    "label_key": "server_policy.deploy_mode",
+    "label": "Deployment Mode"
+   },
+   {
+    "id": "web-protection-profile",
+    "label_key": "server_policy.waf_profile",
+    "label": "Web Protection Profile"
+   },
+   {
+    "id": "monitor-mode",
+    "label_key": "server_policy.monitor_mode",
+    "label": "Monitor Mode"
+   },
+   {
+    "id": "tags",
+    "label_key": "server_policy.tags",
+    "label": "Tags"
+   },
+   {
+    "id": "status",
+    "label_key": "Status",
+    "label": "Status"
+   },
+   {
+    "id": "http2",
+    "label_key": "server_policy.http2",
+    "label": "HTTP/2"
+   },
+   {
+    "id": "allow-hosts",
+    "label_key": "server_policy.allow_hosts",
+    "label": "Protected Hostnames"
+   },
+   {
+    "id": "case-sensitive",
+    "label_key": "server_policy.case_sensitive",
+    "label": "URL Case Sensitivity"
+   },
+   {
+    "id": "server-pool",
+    "label_key": "server_policy.server_pool",
+    "label": "Server Pool"
+   },
+   {
+    "id": "data-capture-port",
+    "label_key": "server_policy.port_data",
+    "label": "Data Capture Port"
+   },
+   {
+    "id": "block-port",
+    "label_key": "server_policy.blockport",
+    "label": "Blocking Port"
+   },
+   {
+    "id": "v-zone",
+    "label_key": "server_policy.vzone",
+    "label": "V-Zone"
+   }
+  ],
+  "columns_by_opmode": {
+   "reverse-proxy": {
+    "default": [
+     "id",
+     "name",
+     "vserver",
+     "vip",
+     "port",
+     "protocol",
+     "deployment-mode",
+     "web-protection-profile",
+     "monitor-mode",
+     "status"
+    ],
+    "available": [
+     "http2",
+     "allow-hosts",
+     "case-sensitive",
+     "tags"
+    ]
+   },
+   "offline-protection": {
+    "default": [
+     "id",
+     "name",
+     "server-pool",
+     "data-capture-port",
+     "deployment-mode",
+     "web-protection-profile",
+     "monitor-mode",
+     "status"
+    ],
+    "available": [
+     "allow-hosts",
+     "block-port",
+     "case-sensitive",
+     "tags"
+    ]
+   },
+   "transparent": {
+    "default": [
+     "id",
+     "name",
+     "server-pool",
+     "v-zone",
+     "deployment-mode",
+     "web-protection-profile",
+     "monitor-mode",
+     "status"
+    ],
+    "available": [
+     "allow-hosts",
+     "case-sensitive",
+     "tags"
+    ]
+   },
+   "transparent-inspection": {
+    "default": [
+     "id",
+     "name",
+     "server-pool",
+     "v-zone",
+     "deployment-mode",
+     "web-protection-profile",
+     "monitor-mode",
+     "status"
+    ],
+    "available": [
+     "allow-hosts",
+     "case-sensitive",
+     "tags"
+    ]
+   },
+   "wccp": {
+    "default": [
+     "id",
+     "name",
+     "server-pool",
+     "deployment-mode",
+     "web-protection-profile",
+     "monitor-mode",
+     "status"
+    ],
+    "available": [
+     "allow-hosts",
+     "case-sensitive",
+     "tags"
+    ]
+   }
+  },
+  "value_labels": {
+   "deployment-mode": {
+    "server-pool": "Single Server/Server Balance",
+    "http-content-routing": "HTTP Content Routing",
+    "offline-protection": "Offline Protection",
+    "transparent-servers": "Transparent Servers",
+    "wccp-servers": "WCCP Servers"
+   },
+   "monitor-mode": {
+    "enable": "Enable",
+    "disable": "Disable"
+   },
+   "http2": {
+    "enable": "Enable",
+    "disable": "Disable"
+   },
+   "case-sensitive": {
+    "enable": "Enable",
+    "disable": "Disable"
+   },
+   "status": {
+    "enable": "Running",
+    "disable": "Idling"
+   }
+  },
+  "create_menu": [
+   {
+    "dialog": "http",
+    "label": "Create HTTP Policy"
+   },
+   {
+    "dialog": "ftp",
+    "label": "Create FTP Policy",
+    "cond": {
+     "ctx": "enableFtp"
+    }
+   },
+   {
+    "dialog": "adfs",
+    "label": "Create ADFS Policy",
+    "cond": {
+     "ctx": "enableAdfs"
+    }
+   },
+   {
+    "dialog": "tcp",
+    "label": "Create TCPPROXY Policy",
+    "cond": {
+     "ctx": "enableTcp"
+    }
+   }
+  ],
+  "edit_dialog_by_protocol": {
+   "HTTP": "http",
+   "FTP": "ftp",
+   "ADFSPIP": "adfs",
+   "TCPPROXY": "tcp"
+  },
+  "contexts": {
+   "enableAdfs": {
+    "opmode_is": "reverse-proxy",
+    "visibility": "adfs-policy"
+   },
+   "enableFtp": {
+    "opmode_is": "reverse-proxy",
+    "visibility": "ftp-security"
+   },
+   "enableTcp": {
+    "opmode_is": "reverse-proxy",
+    "device_config": "HAVE_CLOUD_WAF"
+   }
+  }
+ },
+ "dialogs": {
+  "http": {
+   "title": {
+    "new": "New Policy",
+    "edit": "Edit Policy"
+   },
+   "blocks": [
+    {
+     "title": null,
+     "fields": [
+      {
+       "label": "Name",
+       "label_key": "Name",
+       "kind": "text",
+       "key": "name",
+       "required": true
+      }
+     ]
+    },
+    {
+     "title": "Network Configuration",
+     "fields": [
+      {
+       "label": "Deployment Mode",
+       "label_key": "server_policy.deploy_mode",
+       "kind": "select",
+       "key": "deployment-mode",
+       "options_by": {
+        "deploymentModeOptions_inline": [
+         {
+          "value": "server-pool",
+          "label": "Single Server/Server Balance"
+         },
+         {
+          "value": "http-content-routing",
+          "label": "HTTP Content Routing"
+         }
+        ],
+        "deploymentModeOptions_offline": [
+         {
+          "value": "offline-protection",
+          "label": "Offline Protection"
+         }
+        ],
+        "deploymentModeOptions_tp": [
+         {
+          "value": "transparent-servers",
+          "label": "Transparent Servers"
+         }
+        ],
+        "deploymentModeOptions_wccp": [
+         {
+          "value": "wccp-servers",
+          "label": "WCCP Servers"
+         }
+        ],
+        "deploymentModeOptions_default": [
+         {
+          "value": "server-pool",
+          "label": "Single Server/Server Balance"
+         },
+         {
+          "value": "http-content-routing",
+          "label": "HTTP Content Routing"
+         },
+         {
+          "value": "offline-protection",
+          "label": "Offline Protection"
+         },
+         {
+          "value": "transparent-servers",
+          "label": "Transparent Servers"
+         }
+        ]
+       }
+      },
+      {
+       "label": "V-Zone",
+       "label_key": "server_policy.vzone",
+       "cond": {
+        "op": "or",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "transparent"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "transparent-inspection"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "v-zone",
+       "source": "system.vzone",
+       "required": true
+      },
+      {
+       "label": "Virtual Server",
+       "label_key": "server_policy.vserver",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "ctx": "opmode"
+         },
+         {
+          "lit": "reverse-proxy"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "vserver",
+       "source": "server.vserver",
+       "required": true
+      },
+      {
+       "label": "Server Pool",
+       "label_key": "server_policy.server_pool",
+       "cond": {
+        "op": "ne",
+        "args": [
+         {
+          "field": "deployment-mode"
+         },
+         {
+          "lit": "http-content-routing"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "server-pool",
+       "source": "server.server-pool",
+       "required": true
+      },
+      {
+       "label": "HTTP Content Routing",
+       "label_key": "server_policy.http_content_routing",
+       "help_key": "server_policy.http_content_routing_help",
+       "help": "Each content routing policy can either have its own web protection profile or inherit the web protection profile from this server policy.",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "deployment-mode"
+         },
+         {
+          "lit": "http-content-routing"
+         }
+        ]
+       },
+       "kind": "table",
+       "source": "httpContentRoutingSource"
+      },
+      {
+       "label": "Match Once",
+       "label_key": "server_policy.prefer_cur_session",
+       "help_key": "server_policy.match_tip",
+       "help": "Evaluate the set of headers in the first request only. Following requests within the same single TCP connection will be forwarded to the same server pool.",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "deployment-mode"
+         },
+         {
+          "lit": "http-content-routing"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "prefer-current-session",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Protected Hostnames",
+       "label_key": "server_policy.allow_hosts",
+       "help_key": "server_policy.allow_hosts_help",
+       "help": "A list of hostnames that FortiWeb should allow/block <br /> in the HTTP \"Host\" header. <br /> No Protected Hostnames Policy will Allow All.",
+       "kind": "ref",
+       "key": "allow-hosts",
+       "source": "server.allow-hosts"
+      },
+      {
+       "label": "Client Real IP",
+       "label_key": "server_policy.client_real_ip",
+       "help_key": "server_policy.client_real_ip_help",
+       "help": "Enable to use the client source IP and port when connecting to the backend server. Configure FortiWeb as the default gateway on the backend server to ensure the reply goes through FortiWeb.",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "not",
+            "args": [
+             {
+              "ctx": "HAVE_VIRT_DOCKER"
+             }
+            ]
+           },
+           {
+            "ctx": "CONFIG_SYSTEM_FWB_CMINTF"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "client-real-ip",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "IP/IP Range",
+       "label_key": "server_policy.ip_range",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "not",
+            "args": [
+             {
+              "ctx": "HAVE_VIRT_DOCKER"
+             }
+            ]
+           },
+           {
+            "ctx": "CONFIG_SYSTEM_FWB_CMINTF"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "client-real-ip"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "text",
+       "key": "real-ip-addr",
+       "suffix": "(e.g. \"1.2.3.4, 2001::1, 1.2.3.4-1.2.3.40, 2001::1-2001::100\") "
+      },
+      {
+       "label": "HTTP Service",
+       "label_key": "server_policy.service",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "ctx": "opmode"
+         },
+         {
+          "lit": "reverse-proxy"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "service",
+       "source": [
+        "server.predefined-service",
+        "server.custom-service"
+       ]
+      },
+      {
+       "label": "HTTPS Service",
+       "label_key": "server_policy.https_service",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "ctx": "opmode"
+         },
+         {
+          "lit": "reverse-proxy"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "https-service",
+       "source": [
+        "server.predefined-service",
+        "server.custom-service"
+       ],
+       "required_when": {
+        "ctx": "requiredServiceByZtna",
+        "undefined": true
+       }
+      },
+      {
+       "label": "HTTP/3 Service",
+       "label_key": "server_policy.http3_service",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "ctx": "opmode"
+         },
+         {
+          "lit": "reverse-proxy"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "http3-service",
+       "source": [
+        "server.predefined-service-http3",
+        "server.custom-service-http3"
+       ]
+      },
+      {
+       "label": "HTTP/2",
+       "label_key": "server_policy.http2",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         },
+         {
+          "ref_set": "https-service"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "http2",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Certificate Type",
+       "label_key": "inline_sni.cert_type",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         },
+         {
+          "op": "or",
+          "args": [
+           {
+            "ref_set": "https-service"
+           },
+           {
+            "ref_set": "http3-service"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "radio",
+       "key": "cert-type",
+       "options_by": {
+        "certTypeOptions": [
+         {
+          "value": "local",
+          "label": "Local"
+         },
+         {
+          "value": "multi",
+          "label": "Multi Certificate"
+         },
+         {
+          "value": "lets",
+          "label": "Let's Encrypt"
+         }
+        ]
+       }
+      },
+      {
+       "label": "Multi-certificate",
+       "label_key": "server_policy.multi_lcert",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         },
+         {
+          "op": "or",
+          "args": [
+           {
+            "ref_set": "https-service"
+           },
+           {
+            "ref_set": "http3-service"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "cert-type"
+           },
+           {
+            "lit": "multi"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "certificate-group",
+       "source": "system.certificate.multi-local",
+       "required": true
+      },
+      {
+       "label": "Let's Encrypt",
+       "label_key": "cert.toggle_letsencrypt_select",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         },
+         {
+          "op": "or",
+          "args": [
+           {
+            "ref_set": "https-service"
+           },
+           {
+            "ref_set": "http3-service"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "cert-type"
+           },
+           {
+            "lit": "lets"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "lets-certificate",
+       "source": "system.certificate.letsencrypt",
+       "required": true
+      },
+      {
+       "label": "Certificate",
+       "label_key": "server_policy.certificate",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         },
+         {
+          "op": "or",
+          "args": [
+           {
+            "ref_set": "https-service"
+           },
+           {
+            "ref_set": "http3-service"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "cert-type"
+           },
+           {
+            "lit": "local"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "certificate",
+       "source": "system.certificate.local"
+      },
+      {
+       "label": "Certificate Intermediate Group",
+       "label_key": "server_policy.cert_intergrp",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         },
+         {
+          "op": "or",
+          "args": [
+           {
+            "ref_set": "https-service"
+           },
+           {
+            "ref_set": "http3-service"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "intermediate-certificate-group",
+       "source": "system.certificate.intermediate-certificate-group"
+      },
+      {
+       "label": "Advanced SSL settings",
+       "label_key": "server_pool.advanced_ssl",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         },
+         {
+          "op": "or",
+          "args": [
+           {
+            "ref_set": "https-service"
+           },
+           {
+            "ref_set": "http3-service"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "link",
+       "handler": "advancedSsl",
+       "dialog": "http-advanced-ssl"
+      },
+      {
+       "label": "Blocking Port",
+       "label_key": "server_policy.blockport",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "ctx": "opmode"
+         },
+         {
+          "lit": "offline-protection"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "block-port",
+       "source": "system.interface"
+      },
+      {
+       "label": "Data Capture Port",
+       "label_key": "server_policy.port_data",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "ctx": "opmode"
+         },
+         {
+          "lit": "offline-protection"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "data-capture-port",
+       "source": "system.interface"
+      },
+      {
+       "label": "Redirect HTTP to HTTPS",
+       "label_key": "server_policy.http_to_https",
+       "help_key": "server_policy.http_to_https_help",
+       "help": "Redirect all HTTP requests to HTTPS. <br /> Requests will not be blocked on HTTP-based requests, <br /> but will be subjected to blocking once the redirected, <br /> HTTPS request is received.",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         },
+         {
+          "ref_set": "https-service"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "http-to-https",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Redirect Naked Domain",
+       "label_key": "server_policy.redirect_naked_domain",
+       "help_key": "server_policy.redirect_naked_domain_tip",
+       "help": "Redirect naked domain requests to \"www\" domain requests.",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "ctx": "opmode"
+         },
+         {
+          "lit": "reverse-proxy"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "redirect-naked-domain",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Traffic Mirror",
+       "label_key": "server_policy.traffic_mirror",
+       "help_key": "server_policy.traffic_mirror_help",
+       "help": "Enable to mirror all traffic to third party devices per the Traffic Mirror policy.",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "reverse-proxy"
+             }
+            ]
+           },
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "transparent"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "ctx": "enableTrafficMirror"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "traffic-mirror",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Traffic Mirror Policy",
+       "label_key": "server_policy.traffic_mirror_profile",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "reverse-proxy"
+             }
+            ]
+           },
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "transparent"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "ctx": "enableTrafficMirror"
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "traffic-mirror"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "traffic-mirror-profile",
+       "source": "server.traffic-mirror",
+       "required": true
+      },
+      {
+       "label": "Traffic Mirror Type",
+       "label_key": "server_policy.traffic_mirror_type",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "reverse-proxy"
+             }
+            ]
+           },
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "transparent"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "ctx": "enableTrafficMirror"
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "traffic-mirror"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "radio",
+       "key": "traffic-mirror-type",
+       "options_by": {
+        "trafficMirrorTypes": [
+         {
+          "value": "client-side",
+          "label": "Client Side"
+         },
+         {
+          "value": "server-side",
+          "label": "Server Side"
+         },
+         {
+          "value": "both-side",
+          "label": "Client and Server"
+         }
+        ]
+       }
+      }
+     ],
+     "title_key": "server_policy.net_conf"
+    },
+    {
+     "title": "Application Delivery",
+     "fields": [
+      {
+       "label": "Proxy Protocol",
+       "label_key": "server_policy.proxy_protocol",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "offline-protection"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "transparent-inspection"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "proxy-protocol",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Retry On",
+       "label_key": "server_policy.retry_on",
+       "help_key": "server_policy.retry_on_help",
+       "help": "Configure whether to retry a failed connection or HTTP request",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "ctx": "opmode"
+         },
+         {
+          "lit": "reverse-proxy"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "retry-on",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Retry On Cache Size",
+       "label_key": "server_policy.retry_on_cache_size",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "retry-on"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "number",
+       "key": "retry-on-cache-size",
+       "min": 32,
+       "max": 2048,
+       "suffix": "KB (32 - 2048)"
+      },
+      {
+       "label": "Retry On Connection Failure",
+       "label_key": "server_policy.retry_on_conn_fail",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "retry-on"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "retry-on-connect-failure",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Retry Times On Connection Failure",
+       "label_key": "server_policy.retry_times_conn",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "retry-on"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "retry-on-connect-failure"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "number",
+       "key": "retry-times-on-connect-failure",
+       "min": 1,
+       "max": 5
+      },
+      {
+       "label": "Retry On Http Failure",
+       "label_key": "server_policy.retry_on_http_fail",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "retry-on"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "retry-on-http-layer",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Retry Times On Http Failure",
+       "label_key": "server_policy.retry_times_http",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "retry-on"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "retry-on-http-layer"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "number",
+       "key": "retry-times-on-http-layer",
+       "min": 1,
+       "max": 5
+      },
+      {
+       "label": "Retry On Http Return Code",
+       "label_key": "server_policy.retry_on_http_response_code",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "retry-on"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "retry-on-http-layer"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "checks",
+       "options": [
+        {
+         "value": "404",
+         "label": "404"
+        },
+        {
+         "value": "408",
+         "label": "408"
+        },
+        {
+         "value": "500",
+         "label": "500"
+        },
+        {
+         "value": "501",
+         "label": "501"
+        },
+        {
+         "value": "502",
+         "label": "502"
+        },
+        {
+         "value": "503",
+         "label": "503"
+        },
+        {
+         "value": "504",
+         "label": "504"
+        }
+       ],
+       "key": "retry-on-http-response-codes"
+      },
+      {
+       "label": "Web Cache",
+       "label_key": "server_policy.web_cache_policy",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "not",
+            "args": [
+             {
+              "ctx": "HAVE_VIRT_DOCKER"
+             }
+            ]
+           },
+           {
+            "ctx": "CONFIG_SYSTEM_FWB_CMINTF"
+           }
+          ]
+         },
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "reverse-proxy"
+             }
+            ]
+           },
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "transparent"
+             }
+            ]
+           },
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "wccp"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "ctx": "enableWebCache"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "web-cache",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Acceleration",
+       "label_key": "server_policy.acceleration",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "not",
+            "args": [
+             {
+              "ctx": "HAVE_VIRT_DOCKER"
+             }
+            ]
+           },
+           {
+            "ctx": "CONFIG_SYSTEM_FWB_CMINTF"
+           }
+          ]
+         },
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "reverse-proxy"
+             }
+            ]
+           },
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "transparent"
+             }
+            ]
+           },
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "wccp"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "ctx": "enableAcceleration"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "acceleration-policy",
+       "source": "app_delivery.acceleration-policy"
+      }
+     ],
+     "title_key": "server_policy.application_delivery",
+     "cond": {
+      "op": "or",
+      "args": [
+       {
+        "op": "eq",
+        "args": [
+         {
+          "ctx": "opmode"
+         },
+         {
+          "lit": "reverse-proxy"
+         }
+        ]
+       },
+       {
+        "op": "eq",
+        "args": [
+         {
+          "ctx": "opmode"
+         },
+         {
+          "lit": "transparent"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "title": "Scripting",
+     "fields": [
+      {
+       "label": "Scripting",
+       "label_key": "policy.scripting",
+       "kind": "toggle",
+       "key": "scripting",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Scripting List",
+       "label_key": "policy_scripting.scripting_list",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "scripting"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "scripting-list",
+       "required": true
+      }
+     ],
+     "title_key": "policy.scripting",
+     "cond": {
+      "ctx": "modeShowScript"
+     }
+    },
+    {
+     "title": "Security Configuration",
+     "fields": [
+      {
+       "label": "Monitor Mode",
+       "label_key": "server_policy.monitor_mode",
+       "help_key": "server_policy.monitor_mode_help",
+       "help": "Requests which would normally be blocked <br /> will be treated as \"Alert Only\". <br />Recommended for new deployments and testing.",
+       "kind": "toggle",
+       "key": "monitor-mode",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Syn Cookie",
+       "label_key": "server_policy.syncookie",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "not",
+            "args": [
+             {
+              "ctx": "HAVE_VIRT_DOCKER"
+             }
+            ]
+           },
+           {
+            "ctx": "CONFIG_SYSTEM_FWB_CMINTF"
+           }
+          ]
+         },
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "reverse-proxy"
+             }
+            ]
+           },
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "transparent"
+             }
+            ]
+           },
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "wccp"
+             }
+            ]
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "syncookie",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Half Open Threshold",
+       "label_key": "server_policy.halfopen_thresh",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "not",
+            "args": [
+             {
+              "ctx": "HAVE_VIRT_DOCKER"
+             }
+            ]
+           },
+           {
+            "ctx": "CONFIG_SYSTEM_FWB_CMINTF"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "syncookie"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         },
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "reverse-proxy"
+             }
+            ]
+           },
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "transparent"
+             }
+            ]
+           },
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "wccp"
+             }
+            ]
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "number",
+       "key": "half-open-threshold",
+       "min": 10,
+       "max": 10000
+      },
+      {
+       "label": "ZTNA Profile",
+       "label_key": "server_policy.ztna_profile",
+       "help_key": "server_policy.ztna_profile_help",
+       "help": "When ZTNA Profile is selected, HTTP Service, Redirect HTTP to HTTPS will be disabled, and Certificate Verification for HTTPS must be configured.",
+       "cond": {
+        "ctx": "modeShowZtna"
+       },
+       "kind": "ref",
+       "key": "ztna-profile",
+       "source": "policy.ztna-profile"
+      },
+      {
+       "label": "Web Protection Profile",
+       "label_key": "server_policy.waf_profile",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "offline-protection"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "transparent-inspection"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "web-protection-profile",
+       "source": "policy.inline-profile"
+      },
+      {
+       "label": "Web Protection Profile",
+       "label_key": "server_policy.waf_profile",
+       "cond": {
+        "op": "or",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "offline-protection"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "transparent-inspection"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "web-protection-profile-offline",
+       "source": "policy.offline-profile"
+      },
+      {
+       "label": "Allow List",
+       "label_key": "menu.allow_list",
+       "help_key": "allow_list.tip",
+       "help": "Select to use Policy Based Allow list instead of Global Allow List",
+       "kind": "ref",
+       "key": "allow-list",
+       "source": "server.allow-list"
+      },
+      {
+       "label": "Replacement Message",
+       "label_key": "server_policy.replace_msg",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "offline-protection"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "transparent-inspection"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "replacemsg",
+       "source": "system.replacemsg",
+       "required": true
+      },
+      {
+       "label": "URL Case Sensitivity",
+       "label_key": "server_policy.case_sensitive",
+       "kind": "toggle",
+       "key": "case-sensitive",
+       "on": "enable",
+       "off": "disable"
+      }
+     ],
+     "title_key": "server_policy.security_conf"
+    },
+    {
+     "title": "Log Config",
+     "fields": [
+      {
+       "label": "Enable Traffic Log",
+       "label_key": "server_policy.tlog",
+       "kind": "toggle",
+       "key": "tlog",
+       "on": "enable",
+       "off": "disable"
+      }
+     ],
+     "title_key": "server_policy.logconfig",
+     "cond": {
+      "ctx": "showTrafficLogConfig"
+     }
+    },
+    {
+     "title": "One Click GSLB Server",
+     "fields": [
+      {
+       "label": "One Click GSLB Server",
+       "label_key": "server_policy.gslb_server",
+       "help_key": "server_policy.gslb_server_enable_notification",
+       "help": "FortiGSLB Cloud needs about 1-3 minutes to process the GSLB configuration from Fortiweb, please confirm the configuration in FortiGSLB Cloud after about 3 minutes.",
+       "kind": "toggle",
+       "key": "one-click-gslb",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Host Name",
+       "label_key": "common.host_name",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "one-click-gslb"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "text",
+       "key": "hostname",
+       "required": true
+      },
+      {
+       "label": "Domain Name",
+       "label_key": "server_policy.gslb_server_domain_name",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "one-click-gslb"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "text",
+       "key": "domainname",
+       "required": true,
+       "suffix": "Ends with '.'"
+      },
+      {
+       "label": "Public IP",
+       "label_key": "server_policy.gslb_server_public_ip",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "one-click-gslb"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "table",
+       "source": "publicIPSource"
+      }
+     ],
+     "title_key": "server_policy.gslb_server"
+    },
+    {
+     "title": "Machine Learning",
+     "fields": [
+      {
+       "label": "",
+       "kind": "view_switch",
+       "options_by": {}
+      }
+     ],
+     "title_key": "server_policy.machine_learning",
+     "cond": {
+      "op": "or",
+      "args": [
+       {
+        "op": "not",
+        "args": [
+         {
+          "ctx": "HAVE_VIRT_DOCKER"
+         }
+        ]
+       },
+       {
+        "ctx": "CONFIG_SYSTEM_FWB_CMINTF"
+       }
+      ]
+     }
+    },
+    {
+     "title": null,
+     "fields": [
+      {
+       "label": "",
+       "kind": "spacer"
+      },
+      {
+       "label": "Tags",
+       "label_key": "policy_tags.tags_list",
+       "kind": "ref",
+       "key": "tags"
+      },
+      {
+       "label": "Comments",
+       "label_key": "Comments",
+       "kind": "textarea",
+       "key": "comment"
+      }
+     ]
+    }
+   ],
+   "contexts": {
+    "enableAcceleration": {
+     "visibility": "acceleration-policy"
+    },
+    "showTrafficLogConfig": {
+     "traffic_log_global": true
+    },
+    "HAVE_VIRT_DOCKER": {
+     "device_config": "HAVE_VIRT_DOCKER"
+    },
+    "enableTrafficMirror": {
+     "visibility": "traffic-mirror"
+    },
+    "enableWebCache": {
+     "visibility": "web-cache"
+    },
+    "modeShowZtna": {
+     "ztna_ems": true
+    },
+    "modeShowScript": {
+     "opmode_is": "reverse-proxy"
+    },
+    "CONFIG_SYSTEM_FWB_CMINTF": {
+     "device_config": "CONFIG_SYSTEM_MODEL",
+     "equals": "FWB_CMINTF"
+    }
+   },
+   "derived": {
+    "cert-type": [
+     {
+      "field": "certificate-type",
+      "eq": "enable",
+      "value": "lets"
+     },
+     {
+      "field": "multi-certificate",
+      "eq": "disable",
+      "value": "local"
+     },
+     {
+      "field": "multi-certificate",
+      "eq": "enable",
+      "value": "multi"
+     }
+    ]
+   },
+   "aliases": {
+    "web-protection-profile-offline": "web-protection-profile"
+   },
+   "new_defaults": {
+    "protocol": "HTTP",
+    "ssl": "enable",
+    "client-real-ip": "disable",
+    "http2": "disable",
+    "multi-certificate": "disable",
+    "certificate-type": "disable",
+    "cert-type": "local",
+    "http-to-https": "disable",
+    "redirect-naked-domain": "disable",
+    "traffic-mirror": "disable",
+    "traffic-mirror-type": "client-side",
+    "monitor-mode": "disable",
+    "case-sensitive": "disable",
+    "syncookie": "disable",
+    "half-open-threshold": 8192,
+    "proxy-protocol": "disable",
+    "retry-on": "disable",
+    "retry-on-cache-size": 512,
+    "retry-on-connect-failure": "disable",
+    "retry-times-on-connect-failure": 3,
+    "retry-on-http-layer": "disable",
+    "retry-times-on-http-layer": 3,
+    "retry-on-http-response-codes": "404 408 500 501 502 503 504",
+    "web-cache": "disable",
+    "replacemsg": "Predefined",
+    "tls-v12": "enable",
+    "tls-v13": "disable",
+    "ssl-noreg": "enable",
+    "sni": "disable",
+    "sni-strict": "disable",
+    "urlcert": "disable",
+    "urlcert-hlen": 32,
+    "client-certificate-forwarding": "disable",
+    "client-certificate-forwarding-sub-header": "X-Client-DN",
+    "client-certificate-forwarding-cert-header": "X-Client-Cert",
+    "hsts-header": "disable",
+    "hsts-include-subdomains": "disable",
+    "hsts-preload": "disable",
+    "prefer-current-session": "disable",
+    "tlog": "disable",
+    "use-ciphers-group": "disable"
+   },
+   "component": "fwb-server-policy-dialog"
+  },
+  "ftp": {
+   "title": {
+    "new": "New Policy",
+    "edit": "Edit Policy"
+   },
+   "blocks": [
+    {
+     "title": null,
+     "fields": [
+      {
+       "label": "Name",
+       "label_key": "Name",
+       "kind": "text",
+       "key": "name",
+       "required": true
+      }
+     ]
+    },
+    {
+     "title": "Network Configuration",
+     "fields": [
+      {
+       "label": "Deployment Mode",
+       "label_key": "server_policy.deploy_mode",
+       "kind": "select",
+       "key": "deployment-mode",
+       "options_by": {
+        "deploymentModeOptions": [
+         {
+          "value": "server-pool",
+          "label": "Single Server/Server Balance"
+         }
+        ]
+       }
+      },
+      {
+       "label": "Virtual Server",
+       "label_key": "server_policy.vserver",
+       "kind": "ref",
+       "key": "vserver",
+       "source": "server.vserver",
+       "required": true
+      },
+      {
+       "label": "Server Pool",
+       "label_key": "server_policy.server_pool",
+       "kind": "ref",
+       "key": "server-pool",
+       "source": "server.server-pool-ftp",
+       "required": true
+      },
+      {
+       "label": "Service",
+       "label_key": "server_policy.ftp_service",
+       "kind": "ref",
+       "key": "service",
+       "source": [
+        "server.predefined-service",
+        "server.custom-service"
+       ],
+       "required": true
+      },
+      {
+       "label": "SSL",
+       "label_key": "server_policy.ssl",
+       "kind": "toggle",
+       "key": "ssl",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Implicit SSL",
+       "label_key": "server_policy.implicit_ssl",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "ssl"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "implicit_ssl",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Certificate",
+       "label_key": "server_policy.certificate",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "ssl"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "certificate",
+       "source": "system.certificate.local"
+      },
+      {
+       "label": "Certificate Intermediate Group",
+       "label_key": "server_policy.cert_intergrp",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "ssl"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "intermediate-certificate-group",
+       "source": "system.certificate.intermediate-certificate-group"
+      },
+      {
+       "label": "Advanced SSL settings",
+       "label_key": "server_pool.advanced_ssl",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "ssl"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "link",
+       "handler": "advancedSsl",
+       "dialog": "ftp-advanced-ssl"
+      }
+     ],
+     "title_key": "server_policy.net_conf"
+    },
+    {
+     "title": "Security Configuration",
+     "fields": [
+      {
+       "label": "FTP Security Profile",
+       "label_key": "server_policy.ftp_profile",
+       "kind": "ref",
+       "key": "ftp-protection-profile",
+       "source": "policy.ftp-profile"
+      },
+      {
+       "label": "Monitor Mode",
+       "label_key": "server_policy.monitor_mode",
+       "kind": "toggle",
+       "key": "monitor-mode",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Syn Cookie",
+       "label_key": "server_policy.syncookie",
+       "cond": {
+        "op": "not",
+        "args": [
+         {
+          "ctx": "HAVE_VIRT_DOCKER",
+          "undefined": true
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "syncookie",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Half Open Threshold",
+       "label_key": "server_policy.halfopen_thresh",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "not",
+          "args": [
+           {
+            "ctx": "HAVE_VIRT_DOCKER",
+            "undefined": true
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "syncookie"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "number",
+       "key": "half-open-threshold",
+       "min": 10,
+       "max": 10000
+      },
+      {
+       "label": "Tags",
+       "label_key": "policy_tags.tags_list",
+       "kind": "ref",
+       "key": "tags"
+      },
+      {
+       "label": "Comments",
+       "label_key": "Comments",
+       "kind": "textarea",
+       "key": "comment"
+      }
+     ],
+     "title_key": "server_policy.security_conf"
+    },
+    {
+     "title": "One Click GSLB Server",
+     "fields": [
+      {
+       "label": "One Click GSLB Server",
+       "label_key": "server_policy.gslb_server",
+       "kind": "toggle",
+       "key": "one-click-gslb",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Host Name",
+       "label_key": "common.host_name",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "one-click-gslb"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "text",
+       "key": "hostname",
+       "required": true
+      },
+      {
+       "label": "Domain Name",
+       "label_key": "server_policy.gslb_server_domain_name",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "one-click-gslb"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "text",
+       "key": "domainname",
+       "required": true,
+       "suffix": "Ends with '.'"
+      },
+      {
+       "label": "Public IP",
+       "label_key": "server_policy.gslb_server_public_ip",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "one-click-gslb"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "table",
+       "source": "publicIPSource"
+      }
+     ],
+     "title_key": "server_policy.gslb_server"
+    }
+   ],
+   "contexts": {
+    "HAVE_VIRT_DOCKER": {
+     "unknown": true
+    }
+   },
+   "new_defaults": {
+    "protocol": "FTP",
+    "deployment-mode": "server-pool",
+    "service": "FTP",
+    "ssl": "enable",
+    "implicit_ssl": "disable",
+    "monitor-mode": "disable",
+    "syncookie": "disable",
+    "half-open-threshold": 8192,
+    "tls-v12": "enable",
+    "tls-v13": "disable",
+    "ssl-noreg": "enable",
+    "use-ciphers-group": "disable"
+   },
+   "component": "fwb-server-policy-ftp-dialog"
+  },
+  "adfs": {
+   "title": {
+    "new": "New Policy",
+    "edit": "Edit Policy"
+   },
+   "blocks": [
+    {
+     "title": null,
+     "fields": [
+      {
+       "label": "Name",
+       "label_key": "Name",
+       "kind": "text",
+       "key": "name",
+       "required": true
+      }
+     ]
+    },
+    {
+     "title": "Network Configuration",
+     "fields": [
+      {
+       "label": "Virtual Server",
+       "label_key": "server_policy.vserver",
+       "kind": "ref",
+       "key": "vserver",
+       "source": "server.vserver",
+       "required": true
+      },
+      {
+       "label": "Server Pool",
+       "label_key": "server_policy.server_pool",
+       "kind": "ref",
+       "key": "server-pool",
+       "source": "server.server-pool-adfs",
+       "required": true
+      },
+      {
+       "label": "ADFS Certificate Authentication Service",
+       "label_key": "server_policy.adfs_service",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "transparent"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "transparent-inspection"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "wccp"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "adfs-certificate-service",
+       "source": [
+        "server.predefined-service",
+        "server.custom-service"
+       ]
+      },
+      {
+       "label": "ADFS Certificate Verification",
+       "label_key": "server_policy.ca_cert_verify",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "transparent"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "transparent-inspection"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "wccp"
+           }
+          ]
+         },
+         {
+          "ref_set": "adfs-certificate-service"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "adfs-certificate-ssl-client-verify",
+       "source": "system.certificate.verify",
+       "required": true
+      },
+      {
+       "label": "HTTPS Service",
+       "label_key": "server_policy.https_service",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "transparent"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "transparent-inspection"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "wccp"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "https-service",
+       "source": [
+        "server.predefined-service",
+        "server.custom-service"
+       ],
+       "required": true
+      },
+      {
+       "label": "HTTP/2",
+       "label_key": "server_policy.http2",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "ctx": "opmode"
+         },
+         {
+          "lit": "reverse-proxy"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "http2",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Enable Multi-certificate",
+       "label_key": "server_policy.multi_cert_display",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "ctx": "opmode"
+         },
+         {
+          "lit": "reverse-proxy"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "multi-certificate",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Multi-certificate",
+       "label_key": "server_policy.multi_lcert",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "multi-certificate"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "certificate-group",
+       "source": "system.certificate.multi-local"
+      },
+      {
+       "label": "Certificate",
+       "label_key": "server_policy.certificate",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "multi-certificate"
+           },
+           {
+            "lit": "disable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "certificate",
+       "source": "system.certificate.local"
+      },
+      {
+       "label": "Certificate Intermediate Group",
+       "label_key": "server_policy.cert_intergrp",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "ctx": "opmode"
+         },
+         {
+          "lit": "reverse-proxy"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "intermediate-certificate-group",
+       "source": "system.certificate.intermediate-certificate-group"
+      },
+      {
+       "label": "Advanced SSL settings",
+       "label_key": "server_pool.advanced_ssl",
+       "kind": "link",
+       "handler": "advancedSsl",
+       "dialog": "adfs-advanced-ssl"
+      }
+     ],
+     "title_key": "server_policy.net_conf"
+    },
+    {
+     "title": "Security Configuration",
+     "fields": [
+      {
+       "label": "Web Protection Profile",
+       "label_key": "server_policy.waf_profile",
+       "kind": "ref",
+       "key": "web-protection-profile",
+       "source": "policy.inline-profile"
+      },
+      {
+       "label": "Replacement Message",
+       "label_key": "server_policy.replace_msg",
+       "kind": "ref",
+       "key": "replacemsg",
+       "source": "system.replacemsg"
+      },
+      {
+       "label": "Monitor Mode",
+       "label_key": "server_policy.monitor_mode",
+       "kind": "toggle",
+       "key": "monitor-mode",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "URL Case Sensitivity",
+       "label_key": "server_policy.case_sensitive",
+       "kind": "toggle",
+       "key": "case-sensitive",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Syn Cookie",
+       "label_key": "server_policy.syncookie",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "not",
+          "args": [
+           {
+            "ctx": "HAVE_VIRT_DOCKER"
+           }
+          ]
+         },
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "reverse-proxy"
+             }
+            ]
+           },
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "transparent"
+             }
+            ]
+           },
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "wccp"
+             }
+            ]
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "syncookie",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Half Open Threshold",
+       "label_key": "server_policy.halfopen_thresh",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "not",
+          "args": [
+           {
+            "ctx": "HAVE_VIRT_DOCKER"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "syncookie"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         },
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "reverse-proxy"
+             }
+            ]
+           },
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "transparent"
+             }
+            ]
+           },
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "wccp"
+             }
+            ]
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "number",
+       "key": "half-open-threshold",
+       "min": 10,
+       "max": 10000
+      },
+      {
+       "label": "Tags",
+       "label_key": "policy_tags.tags_list",
+       "kind": "ref",
+       "key": "tags"
+      },
+      {
+       "label": "Comments",
+       "label_key": "Comments",
+       "kind": "textarea",
+       "key": "comment"
+      }
+     ],
+     "title_key": "server_policy.security_conf"
+    },
+    {
+     "title": "One Click GSLB Server",
+     "fields": [
+      {
+       "label": "One Click GSLB Server",
+       "label_key": "server_policy.gslb_server",
+       "kind": "toggle",
+       "key": "one-click-gslb",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Host Name",
+       "label_key": "common.host_name",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "one-click-gslb"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "text",
+       "key": "hostname",
+       "required": true
+      },
+      {
+       "label": "Domain Name",
+       "label_key": "server_policy.gslb_server_domain_name",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "one-click-gslb"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "text",
+       "key": "domainname",
+       "required": true,
+       "suffix": "Ends with '.'"
+      },
+      {
+       "label": "Public IP",
+       "label_key": "server_policy.gslb_server_public_ip",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "one-click-gslb"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "table",
+       "source": "publicIPSource"
+      }
+     ],
+     "title_key": "server_policy.gslb_server"
+    }
+   ],
+   "contexts": {
+    "HAVE_VIRT_DOCKER": {
+     "device_config": "HAVE_VIRT_DOCKER"
+    }
+   },
+   "new_defaults": {
+    "protocol": "ADFSPIP",
+    "ssl": "enable",
+    "deployment-mode": "server-pool",
+    "http2": "disable",
+    "multi-certificate": "disable",
+    "monitor-mode": "disable",
+    "case-sensitive": "disable",
+    "syncookie": "disable",
+    "half-open-threshold": 8192,
+    "replacemsg": "Predefined",
+    "tls-v12": "enable",
+    "tls-v13": "disable",
+    "ssl-noreg": "enable",
+    "sni": "disable",
+    "sni-strict": "disable",
+    "ssl-client-verify": "",
+    "sni-certificate": "",
+    "use-ciphers-group": "disable"
+   },
+   "component": "fwb-server-policy-adfs-dialog"
+  },
+  "tcp": {
+   "title": {
+    "new": "New Policy",
+    "edit": "Edit Policy"
+   },
+   "blocks": [
+    {
+     "title": null,
+     "fields": [
+      {
+       "label": "Name",
+       "label_key": "Name",
+       "kind": "text",
+       "key": "name",
+       "required": true
+      }
+     ]
+    },
+    {
+     "title": "Network Configuration",
+     "fields": [
+      {
+       "label": "Deployment Mode",
+       "label_key": "server_policy.deploy_mode",
+       "kind": "select",
+       "key": "deployment-mode",
+       "options_by": {
+        "deploymentModeOptions": [
+         {
+          "value": "http-content-routing",
+          "label": "HTTP Content Routing"
+         }
+        ]
+       }
+      },
+      {
+       "label": "V-Zone",
+       "label_key": "server_policy.vzone",
+       "cond": {
+        "op": "or",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "transparent"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "transparent-inspection"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "v-zone",
+       "source": "system.vzone",
+       "required": true
+      },
+      {
+       "label": "Virtual Server",
+       "label_key": "server_policy.vserver",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "ctx": "opmode"
+         },
+         {
+          "lit": "reverse-proxy"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "vserver",
+       "source": "server.vserver",
+       "required": true
+      },
+      {
+       "label": "HTTP Content Routing",
+       "label_key": "server_policy.http_content_routing",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "deployment-mode"
+         },
+         {
+          "lit": "http-content-routing"
+         }
+        ]
+       },
+       "kind": "table",
+       "source": "httpContentRoutingSource"
+      },
+      {
+       "label": "Match Once",
+       "label_key": "server_policy.prefer_cur_session",
+       "help_key": "server_policy.match_tip",
+       "help": "Evaluate the set of headers in the first request only. Following requests within the same single TCP connection will be forwarded to the same server pool.",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "deployment-mode"
+         },
+         {
+          "lit": "http-content-routing"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "prefer-current-session",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Protected Hostnames",
+       "label_key": "server_policy.allow_hosts",
+       "cond": {
+        "op": "ne",
+        "args": [
+         {
+          "field": "allow-hosts"
+         },
+         {
+          "lit": null
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "allow-hosts",
+       "source": "server.allow-hosts",
+       "required_when": {
+        "field": "allow-hosts"
+       }
+      },
+      {
+       "label": "Client Real IP",
+       "label_key": "server_policy.client_real_ip",
+       "help_key": "server_policy.client_real_ip_help",
+       "help": "Enable to use the client source IP and port when connecting to the backend server. Configure FortiWeb as the default gateway on the backend server to ensure the reply goes through FortiWeb.",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "not",
+            "args": [
+             {
+              "ctx": "HAVE_VIRT_DOCKER"
+             }
+            ]
+           },
+           {
+            "ctx": "CONFIG_SYSTEM_FWB_CMINTF"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "client-real-ip",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "IP/IP Range",
+       "label_key": "server_policy.ip_range",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "not",
+            "args": [
+             {
+              "ctx": "HAVE_VIRT_DOCKER"
+             }
+            ]
+           },
+           {
+            "ctx": "CONFIG_SYSTEM_FWB_CMINTF"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "reverse-proxy"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "client-real-ip"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "text",
+       "key": "real-ip-addr",
+       "suffix": "(e.g. \"1.2.3.4, 2001::1, 1.2.3.4-1.2.3.40, 2001::1-2001::100\") "
+      },
+      {
+       "label": "HTTP Service",
+       "label_key": "server_policy.service",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "transparent"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "transparent-inspection"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "wccp"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "service",
+       "source": [
+        "server.predefined-service",
+        "server.custom-service"
+       ]
+      },
+      {
+       "label": "HTTPS Service",
+       "label_key": "server_policy.https_service",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "transparent"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "transparent-inspection"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "ctx": "opmode"
+           },
+           {
+            "lit": "wccp"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "https-service",
+       "source": [
+        "server.predefined-service",
+        "server.custom-service"
+       ]
+      },
+      {
+       "label": "Blocking Port",
+       "label_key": "server_policy.blockport",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "ctx": "opmode"
+         },
+         {
+          "lit": "offline-protection"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "block-port",
+       "source": "system.interface"
+      },
+      {
+       "label": "Data Capture Port",
+       "label_key": "server_policy.port_data",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "ctx": "opmode"
+         },
+         {
+          "lit": "offline-protection"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "data-capture-port",
+       "source": "system.interface"
+      },
+      {
+       "label": "Redirect HTTP to HTTPS",
+       "label_key": "server_policy.http_to_https",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "ctx": "opmode"
+         },
+         {
+          "lit": "reverse-proxy"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "http-to-https",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Traffic Mirror",
+       "label_key": "server_policy.traffic_mirror",
+       "help_key": "server_policy.traffic_mirror_help",
+       "help": "Enable to mirror all traffic to third party devices per the Traffic Mirror policy.",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "reverse-proxy"
+             }
+            ]
+           },
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "transparent"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "ctx": "enableTrafficMirror"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "traffic-mirror",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Traffic Mirror Policy",
+       "label_key": "server_policy.traffic_mirror_profile",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "reverse-proxy"
+             }
+            ]
+           },
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "transparent"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "ctx": "enableTrafficMirror"
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "traffic-mirror"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "traffic-mirror-profile",
+       "source": "server.traffic-mirror"
+      },
+      {
+       "label": "Traffic Mirror Type",
+       "label_key": "server_policy.traffic_mirror_type",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "reverse-proxy"
+             }
+            ]
+           },
+           {
+            "op": "eq",
+            "args": [
+             {
+              "ctx": "opmode"
+             },
+             {
+              "lit": "transparent"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "ctx": "enableTrafficMirror"
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "traffic-mirror"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "radio",
+       "key": "traffic-mirror-type",
+       "options_by": {
+        "trafficMirrorTypes": [
+         {
+          "value": "client-side",
+          "label": "Client Side"
+         },
+         {
+          "value": "server-side",
+          "label": "Server Side"
+         },
+         {
+          "value": "both-side",
+          "label": "Client and Server"
+         }
+        ]
+       }
+      },
+      {
+       "label": "Tags",
+       "label_key": "policy_tags.tags_list",
+       "kind": "ref",
+       "key": "tags"
+      },
+      {
+       "label": "Comments",
+       "label_key": "Comments",
+       "kind": "textarea",
+       "key": "comment"
+      }
+     ],
+     "title_key": "server_policy.net_conf"
+    },
+    {
+     "title": "One Click GSLB Server",
+     "fields": [
+      {
+       "label": "One Click GSLB Server",
+       "label_key": "server_policy.gslb_server",
+       "kind": "toggle",
+       "key": "one-click-gslb",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Host Name",
+       "label_key": "common.host_name",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "one-click-gslb"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "text",
+       "key": "hostname",
+       "required": true
+      },
+      {
+       "label": "Domain Name",
+       "label_key": "server_policy.gslb_server_domain_name",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "one-click-gslb"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "text",
+       "key": "domainname",
+       "required": true,
+       "suffix": "Ends with '.'"
+      },
+      {
+       "label": "Public IP",
+       "label_key": "server_policy.gslb_server_public_ip",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "one-click-gslb"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "table",
+       "source": "publicIPSource"
+      }
+     ],
+     "title_key": "server_policy.gslb_server"
+    }
+   ],
+   "contexts": {
+    "enableTrafficMirror": {
+     "visibility": "traffic-mirror"
+    },
+    "HAVE_VIRT_DOCKER": {
+     "device_config": "HAVE_VIRT_DOCKER"
+    },
+    "CONFIG_SYSTEM_FWB_CMINTF": {
+     "device_config": "CONFIG_SYSTEM_MODEL",
+     "equals": "FWB_CMINTF"
+    }
+   },
+   "new_defaults": {
+    "protocol": "TCPPROXY",
+    "ssl": "enable",
+    "deployment-mode": "http-content-routing",
+    "client-real-ip": "disable",
+    "traffic-mirror": "disable",
+    "traffic-mirror-type": "client-side",
+    "prefer-current-session": "disable"
+   },
+   "component": "fwb-server-policy-tcp-dialog"
+  },
+  "http-advanced-ssl": {
+   "title": {
+    "new": "New Policy",
+    "edit": "Edit Policy"
+   },
+   "blocks": [
+    {
+     "title": "Certificate Settings",
+     "fields": [
+      {
+       "label": "Certificate Verification for HTTPS",
+       "label_key": "server_policy.https_cert_verify",
+       "cond": {
+        "op": "ne",
+        "args": [
+         {
+          "field": "sni-strict"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "ssl-client-verify"
+      },
+      {
+       "label": "Enable Server Name Indication(SNI)",
+       "label_key": "server_policy.sni",
+       "help_key": "server_policy.sni_tips",
+       "help": "Server Name Indication allows multiple HTTPS websites to be served by the same IP address without requiring all those sites to use the same certificate.",
+       "kind": "toggle",
+       "key": "sni",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Enable Strict SNI",
+       "label_key": "server_policy.sni_strict",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "sni"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "sni-strict",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "SNI Policy",
+       "label_key": "server_policy.snicert",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "sni"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "sni-certificate",
+       "required": true
+      },
+      {
+       "label": "Enable URL Based Client Certificate",
+       "label_key": "server_policy.enable_url_cert",
+       "help_key": "server_policy.enable_url_cert_tips",
+       "help": "Defines for which URLs the client will need to submit a certificate, not work for HTTP2.",
+       "cond": {
+        "op": "or",
+        "args": [
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "sni"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         },
+         {
+          "ref_set": "ssl-client-verify"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "urlcert",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "URL Based Client Certificate Group",
+       "label_key": "server_policy.url_cert_group",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "eq",
+            "args": [
+             {
+              "field": "sni"
+             },
+             {
+              "lit": "enable"
+             }
+            ]
+           },
+           {
+            "ref_set": "ssl-client-verify"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "urlcert"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "urlcert-group",
+       "required": true
+      },
+      {
+       "label": "Max HTTP Request Length",
+       "label_key": "server_policy.http_request_length",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "or",
+          "args": [
+           {
+            "op": "eq",
+            "args": [
+             {
+              "field": "sni"
+             },
+             {
+              "lit": "enable"
+             }
+            ]
+           },
+           {
+            "ref_set": "ssl-client-verify"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "urlcert"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "number",
+       "key": "urlcert-hlen",
+       "min": 16,
+       "max": 10240
+      }
+     ],
+     "title_key": "server_policy.cert_set",
+     "cond": {
+      "ctx": "visible_cert_settings",
+      "undefined": true
+     }
+    },
+    {
+     "title": "SSL Connection Settings",
+     "fields": [
+      {
+       "label": "Enable SSL Ciphers Group",
+       "label_key": "server_policy.ssl_ciphers_group",
+       "help_key": "server_policy.ssl_ciphers_group_tip",
+       "help": "Use SSL Ciphers Group",
+       "kind": "toggle",
+       "key": "use-ciphers-group",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "SSL Ciphers Group",
+       "label_key": "server_policy.ssl_ciphers_profile",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "use-ciphers-group"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "ssl-ciphers-group",
+       "required": true
+      },
+      {
+       "label": "Supported SSL Protocols",
+       "label_key": "server_policy.ssl_protocol",
+       "cond": {
+        "op": "ne",
+        "args": [
+         {
+          "field": "use-ciphers-group"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "toggle_rows",
+       "rows": [
+        {
+         "label": "TLS 1.0",
+         "key": "tls-v10"
+        },
+        {
+         "label": "TLS 1.1",
+         "key": "tls-v11"
+        },
+        {
+         "label": "TLS 1.2",
+         "key": "tls-v12"
+        },
+        {
+         "label": "TLS 1.3",
+         "key": "tls-v13"
+        }
+       ],
+       "values": [
+        "enable",
+        "disable"
+       ]
+      },
+      {
+       "label": "SSL/TLS Encryption Level",
+       "label_key": "server_policy.ssl_cipher",
+       "help_key": "server_policy.ssl_cipher_help",
+       "help": "FortiWeb will allow only certain cipher suites depending on the encryption level defined.",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "not",
+          "args": [
+           {
+            "ctx": "fips",
+            "undefined": true
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "field": "use-ciphers-group"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "radio",
+       "key": "ssl-cipher",
+       "options_by": {
+        "encryptLevels": [
+         {
+          "value": "medium",
+          "label": "Medium"
+         },
+         {
+          "value": "high",
+          "label": "High"
+         },
+         {
+          "value": "custom",
+          "label": "Customized"
+         }
+        ]
+       }
+      },
+      {
+       "label": "",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "not",
+          "args": [
+           {
+            "ctx": "fips",
+            "undefined": true
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "ssl-cipher"
+           },
+           {
+            "lit": "custom"
+           }
+          ]
+         },
+         {
+          "op": "not",
+          "args": [
+           {
+            "op": "and",
+            "args": [
+             {
+              "op": "eq",
+              "args": [
+               {
+                "field": "tls-v10"
+               },
+               {
+                "lit": "disable"
+               }
+              ]
+             },
+             {
+              "op": "eq",
+              "args": [
+               {
+                "field": "tls-v11"
+               },
+               {
+                "lit": "disable"
+               }
+              ]
+             },
+             {
+              "op": "eq",
+              "args": [
+               {
+                "field": "tls-v12"
+               },
+               {
+                "lit": "disable"
+               }
+              ]
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "field": "use-ciphers-group"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "multiselect",
+       "key": "ssl-custom-cipher",
+       "options_by": {}
+      },
+      {
+       "label": "",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "not",
+          "args": [
+           {
+            "ctx": "fips",
+            "undefined": true
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "ssl-cipher"
+           },
+           {
+            "lit": "custom"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "tls-v13"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "field": "use-ciphers-group"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "spacer"
+      },
+      {
+       "label": "",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "use-ciphers-group"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "spacer"
+      },
+      {
+       "label": "",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "not",
+          "args": [
+           {
+            "ctx": "fips",
+            "undefined": true
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "ssl-cipher"
+           },
+           {
+            "lit": "custom"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "tls-v13"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "field": "use-ciphers-group"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "multiselect",
+       "key": "tls13-custom-cipher",
+       "options_by": {}
+      },
+      {
+       "label": "RFC 7919 Comply",
+       "label_key": "server_pool.ssl_rfc7919_comply",
+       "kind": "toggle",
+       "key": "rfc7919-comply",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Supported Group",
+       "label_key": "server_pool.ssl_supported_group",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "rfc7919-comply"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "multiselect",
+       "key": "supported-groups",
+       "options_by": {}
+      },
+      {
+       "label": "",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "not",
+          "args": [
+           {
+            "ctx": "fips",
+            "undefined": true
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "ssl-cipher"
+           },
+           {
+            "lit": "custom"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "field": "use-ciphers-group"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "spacer"
+      },
+      {
+       "label": "Disable Client-Initiated SSL Renegotiation",
+       "label_key": "server_policy.ssl_no_reg",
+       "help_key": "server_policy.ssl_no_reg_tip",
+       "help": "Ignores client requests for SSL/TLS renegotiation to protect against DoS attacks that use the disproportionate server-side computing burden during SSL/TLS renegotiation.",
+       "cond": {
+        "op": "ne",
+        "args": [
+         {
+          "field": "use-ciphers-group"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "ssl-noreg",
+       "on": "enable",
+       "off": "disable"
+      }
+     ],
+     "title_key": "server_policy.ssl_con_set",
+     "cond": {
+      "ctx": "visible_ssl_settings",
+      "undefined": true
+     }
+    },
+    {
+     "title": "HTTPS Header Insertion",
+     "fields": [
+      {
+       "label": "Client Certificate Forwarding",
+       "label_key": "server_policy.cert_forward",
+       "help_key": "server_policy.cert_forward_tips",
+       "help": "FortiWeb will forward client certificate information to the web server via a specific HTTP header field.",
+       "kind": "toggle",
+       "key": "client-certificate-forwarding",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Custom Header of CCF Subject",
+       "label_key": "server_policy.cert_forward_name",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "client-certificate-forwarding"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "text",
+       "key": "client-certificate-forwarding-sub-header"
+      },
+      {
+       "label": "Custom Header of CCF Certificate",
+       "label_key": "server_policy.cert_forward_name_cert",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "client-certificate-forwarding"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "text",
+       "key": "client-certificate-forwarding-cert-header"
+      },
+      {
+       "label": "Add HSTS Header",
+       "label_key": "server_policy.hsts_header",
+       "help_key": "server_policy.hsts_header_tips",
+       "help": "Add an HSTS header (\"Strict-Transport-Security\") to responses to declare that browsers should only interact with this web server using secure HTTPS connections. ",
+       "kind": "toggle",
+       "key": "hsts-header",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Max. Age",
+       "label_key": "server_policy.hsts_max_age",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "hsts-header"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "number",
+       "key": "hsts-max-age",
+       "min": 3600,
+       "max": 31536000,
+       "suffix": "Seconds (3600 - 31536000)"
+      },
+      {
+       "label": "Include Sub Domains",
+       "label_key": "server_pool.include_sub_domains",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "hsts-header"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "hsts-include-subdomains",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Preload",
+       "label_key": "server_pool.preload",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "hsts-header"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "hsts-preload",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Add HPKP Header",
+       "label_key": "server_policy.hpkp_header",
+       "help_key": "server_policy.hpkp_header_tip",
+       "help": "HTTP Public Key Pinning (HPKP) is a security mechanism delivered via an HTTP header that ensures clients that the web server certificate is authentic.",
+       "kind": "ref",
+       "key": "hpkp-header"
+      }
+     ],
+     "title_key": "server_policy.hsts_header_control",
+     "cond": {
+      "ctx": "visible_http_header_insertion",
+      "undefined": true
+     }
+    }
+   ],
+   "contexts": {
+    "visible_cert_settings": {
+     "unknown": true
+    },
+    "fips": {
+     "unknown": true
+    },
+    "visible_http_header_insertion": {
+     "unknown": true
+    },
+    "visible_ssl_settings": {
+     "unknown": true
+    }
+   },
+   "component": "fwb-server-policy-advanced-ssl-dialog"
+  },
+  "ftp-advanced-ssl": {
+   "title": {
+    "new": "New Policy",
+    "edit": "Edit Policy"
+   },
+   "blocks": [
+    {
+     "title": "Certificate Settings",
+     "fields": [
+      {
+       "label": "Certificate Verification for HTTPS",
+       "label_key": "server_policy.https_cert_verify",
+       "kind": "ref",
+       "key": "ssl-client-verify"
+      }
+     ],
+     "title_key": "server_policy.cert_set",
+     "cond": {
+      "ctx": "visible_cert_settings",
+      "undefined": true
+     }
+    },
+    {
+     "title": "SSL Connection Settings",
+     "fields": [
+      {
+       "label": "Enable SSL Ciphers Group",
+       "label_key": "server_policy.ssl_ciphers_group",
+       "help_key": "server_policy.ssl_ciphers_group_tip",
+       "help": "Use SSL Ciphers Group",
+       "kind": "toggle",
+       "key": "use-ciphers-group",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "SSL Ciphers Group",
+       "label_key": "server_policy.ssl_ciphers_profile",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "use-ciphers-group"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "ssl-ciphers-group",
+       "required": true
+      },
+      {
+       "label": "Supported SSL Protocols",
+       "label_key": "server_policy.ssl_protocol",
+       "cond": {
+        "op": "ne",
+        "args": [
+         {
+          "field": "use-ciphers-group"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "toggle_rows",
+       "rows": [
+        {
+         "label": "TLS 1.0",
+         "key": "tls-v10"
+        },
+        {
+         "label": "TLS 1.1",
+         "key": "tls-v11"
+        },
+        {
+         "label": "TLS 1.2",
+         "key": "tls-v12"
+        },
+        {
+         "label": "TLS 1.3",
+         "key": "tls-v13"
+        }
+       ],
+       "values": [
+        "enable",
+        "disable"
+       ]
+      },
+      {
+       "label": "",
+       "cond": {
+        "op": "ne",
+        "args": [
+         {
+          "field": "use-ciphers-group"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "spacer"
+      },
+      {
+       "label": "SSL/TLS Encryption Level",
+       "label_key": "server_policy.ssl_cipher",
+       "help_key": "server_policy.ssl_cipher_help",
+       "help": "FortiWeb will allow only certain cipher suites depending on the encryption level defined.",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "not",
+          "args": [
+           {
+            "ctx": "fips",
+            "undefined": true
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "field": "use-ciphers-group"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "radio",
+       "key": "ssl-cipher",
+       "options_by": {
+        "encryptLevels": [
+         {
+          "value": "medium",
+          "label": "Medium"
+         },
+         {
+          "value": "high",
+          "label": "High"
+         },
+         {
+          "value": "custom",
+          "label": "Customized"
+         }
+        ]
+       }
+      },
+      {
+       "label": "",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "not",
+          "args": [
+           {
+            "ctx": "fips",
+            "undefined": true
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "ssl-cipher"
+           },
+           {
+            "lit": "custom"
+           }
+          ]
+         },
+         {
+          "op": "not",
+          "args": [
+           {
+            "op": "and",
+            "args": [
+             {
+              "op": "eq",
+              "args": [
+               {
+                "field": "tls-v10"
+               },
+               {
+                "lit": "disable"
+               }
+              ]
+             },
+             {
+              "op": "eq",
+              "args": [
+               {
+                "field": "tls-v11"
+               },
+               {
+                "lit": "disable"
+               }
+              ]
+             },
+             {
+              "op": "eq",
+              "args": [
+               {
+                "field": "tls-v12"
+               },
+               {
+                "lit": "disable"
+               }
+              ]
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "field": "use-ciphers-group"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "multiselect",
+       "key": "ssl-custom-cipher",
+       "options_by": {}
+      },
+      {
+       "label": "",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "not",
+          "args": [
+           {
+            "ctx": "fips",
+            "undefined": true
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "ssl-cipher"
+           },
+           {
+            "lit": "custom"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "tls-v13"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "field": "use-ciphers-group"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "spacer"
+      },
+      {
+       "label": "",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "not",
+          "args": [
+           {
+            "ctx": "fips",
+            "undefined": true
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "ssl-cipher"
+           },
+           {
+            "lit": "custom"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "tls-v13"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "field": "use-ciphers-group"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "multiselect",
+       "key": "tls13-custom-cipher",
+       "options_by": {}
+      },
+      {
+       "label": "",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "not",
+          "args": [
+           {
+            "ctx": "fips",
+            "undefined": true
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "ssl-cipher"
+           },
+           {
+            "lit": "custom"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "field": "use-ciphers-group"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "spacer"
+      },
+      {
+       "label": "Disable Client-Initiated SSL Renegotiation",
+       "label_key": "server_policy.ssl_no_reg",
+       "help_key": "server_policy.ssl_no_reg_tip",
+       "help": "Ignores client requests for SSL/TLS renegotiation to protect against DoS attacks that use the disproportionate server-side computing burden during SSL/TLS renegotiation.",
+       "cond": {
+        "op": "ne",
+        "args": [
+         {
+          "field": "use-ciphers-group"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "ssl-noreg",
+       "on": "enable",
+       "off": "disable"
+      }
+     ],
+     "title_key": "server_policy.ssl_con_set",
+     "cond": {
+      "ctx": "visible_ssl_settings",
+      "undefined": true
+     }
+    }
+   ],
+   "contexts": {
+    "visible_cert_settings": {
+     "unknown": true
+    },
+    "fips": {
+     "unknown": true
+    },
+    "visible_ssl_settings": {
+     "unknown": true
+    }
+   },
+   "component": "fwb-server-policy-ftp-advanced-ssl-dialog"
+  },
+  "adfs-advanced-ssl": {
+   "title": {
+    "new": "New Policy",
+    "edit": "Edit Policy"
+   },
+   "blocks": [
+    {
+     "title": "Certificate Settings",
+     "fields": [
+      {
+       "label": "Certificate Verification for HTTPS",
+       "label_key": "server_policy.https_cert_verify",
+       "kind": "ref",
+       "key": "ssl-client-verify"
+      },
+      {
+       "label": "Enable Server Name Indication(SNI)",
+       "label_key": "server_policy.sni",
+       "help_key": "server_policy.sni_tips",
+       "help": "Server Name Indication allows multiple HTTPS websites to be served by the same IP address without requiring all those sites to use the same certificate.",
+       "kind": "toggle",
+       "key": "sni",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Enable Strict SNI",
+       "label_key": "server_policy.sni_strict",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "sni"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "sni-strict",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "SNI Policy",
+       "label_key": "server_policy.snicert",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "sni"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "sni-certificate",
+       "required": true
+      }
+     ],
+     "title_key": "server_policy.cert_set",
+     "cond": {
+      "ctx": "visible_cert_settings",
+      "undefined": true
+     }
+    },
+    {
+     "title": "SSL Connection Settings",
+     "fields": [
+      {
+       "label": "Enable SSL Ciphers Group",
+       "label_key": "server_policy.ssl_ciphers_group",
+       "help_key": "server_policy.ssl_ciphers_group_tip",
+       "help": "Use SSL Ciphers Group",
+       "kind": "toggle",
+       "key": "use-ciphers-group",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "SSL Ciphers Group",
+       "label_key": "server_policy.ssl_ciphers_profile",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "use-ciphers-group"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "ssl-ciphers-group",
+       "required": true
+      },
+      {
+       "label": "Supported SSL Protocols",
+       "label_key": "server_policy.ssl_protocol",
+       "cond": {
+        "op": "ne",
+        "args": [
+         {
+          "field": "use-ciphers-group"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "toggle_rows",
+       "rows": [
+        {
+         "label": "TLS 1.0",
+         "key": "tls-v10"
+        },
+        {
+         "label": "TLS 1.1",
+         "key": "tls-v11"
+        },
+        {
+         "label": "TLS 1.2",
+         "key": "tls-v12"
+        },
+        {
+         "label": "TLS 1.3",
+         "key": "tls-v13"
+        }
+       ],
+       "values": [
+        "enable",
+        "disable"
+       ]
+      },
+      {
+       "label": "",
+       "cond": {
+        "op": "ne",
+        "args": [
+         {
+          "field": "use-ciphers-group"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "spacer"
+      },
+      {
+       "label": "SSL/TLS Encryption Level",
+       "label_key": "server_policy.ssl_cipher",
+       "help_key": "server_policy.ssl_cipher_help",
+       "help": "FortiWeb will allow only certain cipher suites depending on the encryption level defined.",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "not",
+          "args": [
+           {
+            "ctx": "fips",
+            "undefined": true
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "field": "use-ciphers-group"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "radio",
+       "key": "ssl-cipher",
+       "options_by": {
+        "encryptLevels": [
+         {
+          "value": "medium",
+          "label": "Medium"
+         },
+         {
+          "value": "high",
+          "label": "High"
+         },
+         {
+          "value": "custom",
+          "label": "Customized"
+         }
+        ]
+       }
+      },
+      {
+       "label": "",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "not",
+          "args": [
+           {
+            "ctx": "fips",
+            "undefined": true
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "ssl-cipher"
+           },
+           {
+            "lit": "custom"
+           }
+          ]
+         },
+         {
+          "op": "not",
+          "args": [
+           {
+            "op": "and",
+            "args": [
+             {
+              "op": "eq",
+              "args": [
+               {
+                "field": "tls-v10"
+               },
+               {
+                "lit": "disable"
+               }
+              ]
+             },
+             {
+              "op": "eq",
+              "args": [
+               {
+                "field": "tls-v11"
+               },
+               {
+                "lit": "disable"
+               }
+              ]
+             },
+             {
+              "op": "eq",
+              "args": [
+               {
+                "field": "tls-v12"
+               },
+               {
+                "lit": "disable"
+               }
+              ]
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "field": "use-ciphers-group"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "multiselect",
+       "key": "ssl-custom-cipher",
+       "options_by": {}
+      },
+      {
+       "label": "",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "not",
+          "args": [
+           {
+            "ctx": "fips",
+            "undefined": true
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "ssl-cipher"
+           },
+           {
+            "lit": "custom"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "tls-v13"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "field": "use-ciphers-group"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "spacer"
+      },
+      {
+       "label": "",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "not",
+          "args": [
+           {
+            "ctx": "fips",
+            "undefined": true
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "ssl-cipher"
+           },
+           {
+            "lit": "custom"
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "tls-v13"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "field": "use-ciphers-group"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "multiselect",
+       "key": "tls13-custom-cipher",
+       "options_by": {}
+      },
+      {
+       "label": "",
+       "cond": {
+        "op": "and",
+        "args": [
+         {
+          "op": "not",
+          "args": [
+           {
+            "ctx": "fips",
+            "undefined": true
+           }
+          ]
+         },
+         {
+          "op": "eq",
+          "args": [
+           {
+            "field": "ssl-cipher"
+           },
+           {
+            "lit": "custom"
+           }
+          ]
+         },
+         {
+          "op": "ne",
+          "args": [
+           {
+            "field": "use-ciphers-group"
+           },
+           {
+            "lit": "enable"
+           }
+          ]
+         }
+        ]
+       },
+       "kind": "spacer"
+      },
+      {
+       "label": "Disable Client-Initiated SSL Renegotiation",
+       "label_key": "server_policy.ssl_no_reg",
+       "help_key": "server_policy.ssl_no_reg_tip",
+       "help": "Ignores client requests for SSL/TLS renegotiation to protect against DoS attacks that use the disproportionate server-side computing burden during SSL/TLS renegotiation.",
+       "cond": {
+        "op": "ne",
+        "args": [
+         {
+          "field": "use-ciphers-group"
+         },
+         {
+          "lit": "enable"
+         }
+        ]
+       },
+       "kind": "toggle",
+       "key": "ssl-noreg",
+       "on": "enable",
+       "off": "disable"
+      }
+     ],
+     "title_key": "server_policy.ssl_con_set",
+     "cond": {
+      "ctx": "visible_ssl_settings",
+      "undefined": true
+     }
+    }
+   ],
+   "contexts": {
+    "visible_cert_settings": {
+     "unknown": true
+    },
+    "fips": {
+     "unknown": true
+    },
+    "visible_ssl_settings": {
+     "unknown": true
+    }
+   },
+   "component": "fwb-server-policy-adfs-advanced-ssl-dialog"
+  },
+  "http-content-routing": {
+   "title": {},
+   "blocks": [
+    {
+     "title": null,
+     "fields": [
+      {
+       "label": "ID",
+       "label_key": "common.id",
+       "kind": "display",
+       "key": "id"
+      },
+      {
+       "label": "HTTP Content Routing Policy Name",
+       "label_key": "server_policy.member_rulename",
+       "kind": "ref",
+       "key": "content-routing-policy-name",
+       "source": "server.http-content-routing-policy",
+       "required": true
+      },
+      {
+       "label": "Status",
+       "label_key": "Status",
+       "kind": "radio",
+       "key": "status",
+       "options": [
+        {
+         "value": "{{ ::opt.value }}",
+         "label": "{{ ::opt.label | lang }}"
+        }
+       ]
+      },
+      {
+       "label": "Server Pool",
+       "label_key": "server_policy.server_pool",
+       "kind": "display",
+       "key": null,
+       "gui_state": "displayedServerPool"
+      },
+      {
+       "label": "Inherit Web Protection Profile",
+       "label_key": "server_policy.profile_inherit",
+       "help_key": "server_policy.profile_inherit_help",
+       "help": "If disabled, choose the web protection profile to be applied to this content routing policy.</br>If enabled, the web protection profile from the server policy will be automatically applied to this content routing policy.",
+       "kind": "toggle",
+       "key": "profile-inherit",
+       "on": "enable",
+       "off": "disable"
+      },
+      {
+       "label": "Web Protection Profile",
+       "label_key": "server_policy.waf_profile",
+       "cond": {
+        "op": "eq",
+        "args": [
+         {
+          "field": "profile-inherit"
+         },
+         {
+          "lit": "disable"
+         }
+        ]
+       },
+       "kind": "ref",
+       "key": "web-protection-profile",
+       "source": "policy.inline-profile"
+      },
+      {
+       "label": "Default",
+       "label_key": "server_policy.member_default",
+       "kind": "select",
+       "key": "is-default",
+       "options_by": {}
+      }
+     ]
+    }
+   ],
+   "new_defaults": {
+    "profile-inherit": "enable",
+    "is-default": "no",
+    "status": "enable"
+   },
+   "component": "fwb-server-policy-http-content-routing-dialog"
+  },
+  "public-ip": {
+   "title": {},
+   "blocks": [
+    {
+     "title": null,
+     "fields": [
+      {
+       "label": "ID",
+       "label_key": "common.id",
+       "kind": "display",
+       "key": "id"
+      },
+      {
+       "label": "IPv4 Address",
+       "label_key": "common.ipv4",
+       "kind": "text",
+       "key": "ip"
+      },
+      {
+       "label": "IPv6 Address",
+       "label_key": "common.ipv6",
+       "kind": "text",
+       "key": "ip6"
+      }
+     ]
+    }
+   ],
+   "component": "fwb-server-policy-public-ip-dialog"
+  }
+ },
+ "unresolved": [
+  {
+   "where": "http-content-routing/server_policy.server_pool",
+   "what": "display",
+   "raw": "$ctrl.displayedServerPool"
+  }
+ ],
+ "rest_check": {
+  "endpoint": "cmdb/server-policy/policy",
+  "witness_rows": 50,
+  "gui_only": {
+   "http": [
+    "cert-type",
+    "web-protection-profile-offline"
+   ]
+  },
+  "not_in_rest": {}
+ },
+ "extractor": {
+  "name": "satom-harvester gui_extract",
+  "version": "0.1.0"
+ },
+ "sources": {
+  "app.min.js": "cb870d4225732226b236a1558a431521be264ce75ecf47b73523da138c66bf11",
+  "lang/en.json": "926706fd8da91300e47af03107ad68e5d661e6eb1342a05cb4c732be3a69a2ff",
+  "ng/fwb-server-policy.js": "e57b94235ee7a70a9c17e27a4bd2788ab804174065f5323d6ab68786f5c98475",
+  "ng/fwb-server-policy.html": "436171e9c0f3f262a165c6b1f3c7fdea7e6d60fcd20cbd1ffcea24c17f8c1a24",
+  "ng/fwb-server-policy-dialog.js": "dede4b48b8357205cb71634bf48676fdd895f8564b1b523859128a6f4963e409",
+  "ng/fwb-server-policy-dialog.html": "549c818c80bd36c31e5a7d2d483450cba43733a6cd9b4d60876ab868f6e394f4",
+  "ng/fwb-server-policy-ftp-dialog.js": "0f89841875e639fdbfcda6347dbe350517b012a1356e119502dd3e02f48048e0",
+  "ng/fwb-server-policy-ftp-dialog.html": "de0ba85e56df46a3e1fb5aa96dac4ddc4b0b69b6541c6f258afc9e0c19171ed6",
+  "ng/fwb-server-policy-adfs-dialog.js": "fcf08348ab34ebf2d2447a4360b00d6308e590e5c5200334a2648b237105f5a6",
+  "ng/fwb-server-policy-adfs-dialog.html": "e7fd910aa34a0979409d8292d532398b11703bc9b550dd4b16b2fbb792099dc4",
+  "ng/fwb-server-policy-tcp-dialog.js": "28b68421a9cdd78678d37ead65ad423328faa3a571eb50b453616e2fabd94107",
+  "ng/fwb-server-policy-tcp-dialog.html": "66523f4af20fb0e3254c08228fd1b0ca3571981a060dfc0ee71ce96c75d5d536",
+  "ng/fwb-server-policy-advanced-ssl-dialog.js": "29e64abd1a562c90c30d333007a7e2ca5b4de75934cbb4a9c2166e6c86509e29",
+  "ng/fwb-server-policy-advanced-ssl-dialog.html": "57574a93b41a9b6bce7aa10a43b73b223b29bcb69852c75b23002b2b415075e3",
+  "ng/fwb-server-policy-ftp-advanced-ssl-dialog.js": "00130fd41db0bb72714bfc8a6d0cf53805351071100246c67aed4be070226fdc",
+  "ng/fwb-server-policy-ftp-advanced-ssl-dialog.html": "c8f24c0469d226d1a3327d3b7142c2cbc62cb13d714b6a67c535d1b83b235b94",
+  "ng/fwb-server-policy-adfs-advanced-ssl-dialog.js": "ba58058e7df554f148856f42863d37a4aebfd155dde3d799668aaddb952b713c",
+  "ng/fwb-server-policy-adfs-advanced-ssl-dialog.html": "643411872409b04631b59cc4dc5b8aa07ca19b0bef8ddac6d3eee9153e09a2c2",
+  "ng/fwb-server-policy-http-content-routing-dialog.js": "fbd10950a596cafe07f74f1ae263bc57be3b42b016e9a2482e0f647d8fda9eca",
+  "ng/fwb-server-policy-http-content-routing-dialog.html": "ea3400646a445ac57b74ef8385fe4461908aa656f3805955d30f7fb5c0197205",
+  "ng/fwb-server-policy-public-ip-dialog.js": "176556cb0ebe84404748301ad8632a7009a8155231db6bc29ddccaea94bc8abf",
+  "ng/fwb-server-policy-public-ip-dialog.html": "bc2fe62c2b1a0dd3a84041b5d98d568449284635dc821e01f2014a5fdde9334c"
+ }
+}

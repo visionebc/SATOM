@@ -781,6 +781,117 @@ _CREATE_EPS = {
 }
 
 
+# ── FortiWeb GUI layout (read-only) ─────────────────────────────────────────
+# Server Policy drawn from a GUI template (services.gui_template): the list,
+# Create New menu and dialogs FortiWeb itself shows, per firmware train. Reads
+# the local cache only — never the device — and writes nothing.
+
+def _gui_device(appl):
+    from ..services import gui_template, read_layer, feature_visibility
+    opmode = None
+    try:
+        rows, _ = read_layer.read_objects(appl.id, 'system_settings')
+        if rows and isinstance(rows[0], dict):
+            opmode = rows[0].get('opmode') or None
+    except Exception as exc:  # noqa: BLE001 — a cold cache leaves opmode unknown
+        log_exception(exc, context='workspace.gui.opmode')
+    try:
+        vis = feature_visibility.toggles_for(appl.id)
+    except Exception as exc:  # noqa: BLE001
+        log_exception(exc, context='workspace.gui.visibility')
+        vis = {}
+    return gui_template.device_context(opmode=opmode, visibility=vis,
+                                       firmware=appl.firmware)
+
+
+def _gui_template_or_404(appl):
+    from flask import abort
+    from ..services import gui_template
+    if appl.kind != 'fortiweb':
+        abort(404)
+    tpl, match = gui_template.select('fortiweb', 'server-policy', appl.fw_version)
+    if tpl is None:
+        abort(404)
+    return tpl, match
+
+
+@bp.route('/<int:appliance_id>/gui')
+@login_required
+@require_permission('protection.view')
+def gui_list(appliance_id):
+    from ..services import gui_template, read_layer
+    appl = visible_appliance_or_404(appliance_id)
+    tpl, match = _gui_template_or_404(appl)
+    dev = _gui_device(appl)
+    rows, meta = read_layer.read_policies(appl)
+    rows = [r for r in (rows or []) if isinstance(r, dict)]
+    view = gui_template.list_view(tpl, rows, dev)
+    labels = tpl['list'].get('value_labels', {})
+    # VIP / Port: FortiWeb joins each row with its virtual server (VIP list and
+    # the vserver's interface). Same join, from the deep cache.
+    joins = {}
+    for r in rows:
+        vips, ports = [], []
+        try:
+            data, _cr, _m = read_layer.policy_full_cached(appl.id, r.get('name'))
+        except Exception:  # noqa: BLE001 — a bad row never breaks the list
+            data = None
+        for v in (data or {}).get('vips') or []:
+            ip = v.get('effective_ip') or v.get('vip') or ''
+            if ip and ip not in vips:
+                vips.append(str(ip))
+            itf = v.get('interface') or ''
+            if itf and itf not in ports:
+                ports.append(str(itf))
+        joins[r.get('name')] = {'vip': vips, 'port': ports, 'deep': data is not None}
+    return render_template('workspace/gui_list.html', appliance=appl, tpl=tpl, match=match,
+                           dev=dev, view=view, labels=labels, cache_meta=meta, joins=joins,
+                           protocol_cell=gui_template.protocol_cell,
+                           status_running=gui_template.status_running)
+
+
+@bp.route('/<int:appliance_id>/gui/policy/<path:name>')
+@login_required
+@require_permission('protection.view')
+def gui_policy(appliance_id, name):
+    from flask import abort
+    from ..services import gui_template, read_layer
+    appl = visible_appliance_or_404(appliance_id)
+    tpl, match = _gui_template_or_404(appl)
+    dev = _gui_device(appl)
+    rows, _ = read_layer.read_objects(appl.id, 'server_policy')
+    row = next((r for r in rows or [] if isinstance(r, dict) and r.get('name') == name), None)
+    if row is None:
+        abort(404)
+    main = tpl['list']['edit_dialog_by_protocol'].get(row.get('protocol') or 'HTTP')
+    key = request.args.get('dialog') or main
+    # only the row's own dialog and the sub-dialogs it links to
+    if key not in tpl['dialogs'] or not (key == main or key.startswith((main or '') + '-')):
+        abort(404)
+    view = gui_template.dialog_view(tpl, key, row, dev)
+    return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
+                           dev=dev, view=view, name=name, main=main, is_new=False)
+
+
+@bp.route('/<int:appliance_id>/gui/new/<dialog>')
+@login_required
+@require_permission('protection.view')
+def gui_new(appliance_id, dialog):
+    """The Create New form as FortiWeb lays it out, filled with its own defaults
+    (a preview: nothing is submitted from this page)."""
+    from flask import abort
+    from ..services import gui_template
+    appl = visible_appliance_or_404(appliance_id)
+    tpl, match = _gui_template_or_404(appl)
+    if dialog not in tpl['list']['edit_dialog_by_protocol'].values():
+        abort(404)
+    dev = _gui_device(appl)
+    row = dict(tpl['dialogs'][dialog].get('new_defaults') or {})
+    view = gui_template.dialog_view(tpl, dialog, row, dev)
+    return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
+                           dev=dev, view=view, name=None, main=dialog, is_new=True)
+
+
 @bp.route('/<int:appliance_id>/new-policy')
 @login_required
 @require_permission('protection.view')

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Server Policy') }} — {{ appliance.name }}{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <span>{{ tpl.menu_path|join(' / ') }}</span><span class="separator">/</span>
+  <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}">{{ appliance.name }}</a>
+</div>
+{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex align-items-center justify-content-between">
+  <h1 class="fw-h1"><i class="bi bi-shield-check me-2 text-accent"></i>{{ _('Server Policy') }} <span class="mono text-muted">{{ appliance.name }}</span></h1>
+  <a class="btn btn-sm btn-fw-outline" href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}">{{ _('SATOM view') }}</a>
+</div>
+{% include 'workspace/_gui_banner.html' %}
+
+<div class="fw-card"><div class="fw-card-body">
+  <div class="fwg-toolbar">
+    {% if view.create_menu|length > 1 %}
+    <details class="fwg-menu">
+      <summary class="btn btn-sm btn-fw-outline"><i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }} <i class="bi bi-caret-down-fill"></i></summary>
+      <div class="fwg-menu-body">
+        {% for it in view.create_menu %}
+        <a href="{{ url_for('workspace.gui_new', appliance_id=appliance.id, dialog=it.dialog) }}">{{ it.label }}{% if it.unknown %} <span class="fwg-unknown-tag">{{ _('(may be hidden on this device)') }}</span>{% endif %}</a>
+        {% endfor %}
+      </div>
+    </details>
+    {% elif view.create_menu %}
+    <a class="btn btn-sm btn-fw-outline" href="{{ url_for('workspace.gui_new', appliance_id=appliance.id, dialog=view.create_menu[0].dialog) }}"><i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }}</a>
+    {% endif %}
+    <span class="text-muted small ms-2"><i class="bi bi-eye me-1"></i>{{ _('Read-only: rows open in view mode; nothing is sent to the device.') }}</span>
+    <span class="text-muted small ms-auto">{{ view.rows|length }} {{ _('policies') }}{% if cache_meta and cache_meta.generated_at %} · {{ _('cache') }} {{ cache_meta.generated_at }}{% endif %}</span>
+  </div>
+  <div class="table-responsive">
+  <table class="fwg-table">
+    <thead><tr>
+      {% for c in view.columns %}<th>{{ c.label }}</th>{% endfor %}
+      {% for c in view.optional_columns %}<th class="fwg-opt" title="{{ _('Optional column in FortiWeb (hidden by default)') }}">{{ c.label }}</th>{% endfor %}
+    </tr></thead>
+    <tbody>
+    {% for r in view.rows %}
+      {% set j = joins.get(r.name) or {} %}
+      <tr>
+      {% for c in view.columns + view.optional_columns %}
+        {% set opt = c in view.optional_columns %}
+        <td{% if opt %} class="fwg-opt"{% endif %}>
+        {% if c.id == 'name' %}
+          <a href="{{ url_for('workspace.gui_policy', appliance_id=appliance.id, name=r.name) }}">{{ r.name }}</a>
+        {% elif c.id == 'id' %}{{ r.id or loop.index }}
+        {% elif c.id in ('vip', 'port') %}
+          {% set vals = j.get(c.id) or [] %}
+          {% for v in vals[:5] %}{{ v }}{% if not loop.last %}<br>{% endif %}{% endfor %}{% if vals|length > 5 %}<br>…{% endif %}
+          {% if not j.get('deep') %}<span class="text-muted" title="{{ _('Needs a deep capture of this policy') }}">—</span>{% endif %}
+        {% elif c.id == 'protocol' %}{{ protocol_cell(r) }}
+        {% elif c.id == 'status' %}
+          {% if status_running(r, dev.opmode) %}<span class="fwg-run"><i class="bi bi-link-45deg"></i> {{ labels.status.enable if labels.status else 'Running' }}</span>
+          {% else %}<span class="fwg-idle"><i class="bi bi-link"></i> {{ labels.status.disable if labels.status else 'Idling' }}</span>{% endif %}
+        {% elif c.id == 'tags' %}{% for t in (r.tags or '').split() %}<span class="fwg-chip">{{ t }}</span>{% endfor %}
+        {% elif c.id in labels %}{{ labels[c.id].get(r.get(c.id), r.get(c.id) or '') }}
+        {% else %}{{ r.get(c.id) or '' }}
+        {% endif %}
+        </td>
+      {% endfor %}
+      </tr>
+    {% else %}
+      <tr><td colspan="{{ view.columns|length + view.optional_columns|length }}" class="text-muted">{{ _('No server policies cached for this device. Refresh it from the SATOM view.') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div></div>
+{% endblock %}

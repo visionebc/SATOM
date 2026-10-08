@@ -1045,6 +1045,7 @@ def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
     try:
         _sweep(appliance_snap, by, deep, plan, cli, job_id=job_id,
                factory_full=factory_full)
+        _close_open_run(appliance_snap.id)
     except BaseException as exc:  # noqa: BLE001 — record, then let it propagate
         try:
             p = _dev_dir(appliance_snap.id) / "progress.json"
@@ -1059,6 +1060,25 @@ def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
         raise
     finally:
         _finish_job(appliance_snap.id, job_id)
+
+
+def _close_open_run(appliance_id: int) -> None:
+    """A sweep that RETURNED is over, so its state on disk must be terminal.
+
+    The sweep only writes ``done`` from its last phase; a phase that returns
+    without writing one would leave a live state behind, a page polling it
+    forever and ``start()`` refusing every new run for 15 minutes. That is a
+    defect, so it is recorded as one rather than dressed up as ``done``."""
+    st = status(appliance_id) or {}
+    if (st.get("state") not in ACTIVE_STATES or st.get("pid") != os.getpid()
+            or (st.get("host") or _HOST) != _HOST):
+        return
+    now = datetime.utcnow().isoformat()
+    st.pop("stop_requested", None)
+    st.update(state=FAILED, finished=now, heartbeat=now,
+              error="The sweep ended without recording how it ended — a "
+                    "defect, not a device error. Run it again.")
+    _write_json(_dev_dir(appliance_id) / "progress.json", st)
 
 
 def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
@@ -1223,8 +1243,21 @@ def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
     cache = _feed_cache(appliance_snap, snapshot)
     if cache.get("error"):
         state["cache_error"] = cache["error"]
-    state.update(state="done", done=total, percent=100, objects=total_objects,
-                 section_count=len(sections), errors=errors, finished=generated_at,
+    # ``done`` is TERMINAL for every reader: both progress pollers stop asking
+    # and the start guard lets a second run in. With a deep or CLI pass still
+    # to come the run is NOT done, so the snapshot's results are written under
+    # a live state and the last phase writes ``done`` itself. Until 2026-10-08
+    # this wrote ``done`` here: the page froze at 100 % while the deep pass
+    # walked 220 WPPs for another 51 s and never showed that it finished.
+    more = (deep and not is_adc) or cli
+    state.update(state="running" if more else "done",
+                 section=(("snapshot saved — starting the deep capture"
+                           if deep and not is_adc else
+                           "snapshot saved — starting the CLI capture")
+                          if more else state.get("section", "")),
+                 done=total, percent=100, objects=total_objects,
+                 section_count=len(sections), errors=errors,
+                 finished=None if more else generated_at,
                  absent_count=len(absent),
                  summary=f"{total_objects} object(s) across {len(sections)} section(s) "
                          f"from {total} endpoint(s)"

@@ -136,7 +136,10 @@
       line.textContent = 'CLI capture (show full-configuration) running… up to 5 min';
     } else if (p.state === 'done') {
       bar.classList.remove('progress-bar-striped', 'progress-bar-animated');
-      let txt = p.summary || `${p.objects} objects across ${p.section_count} sections`;
+      // Says FINISHED in words: a green bar at 100 % is also what the sweep
+      // phase looks like right before the deep pass starts.
+      let txt = 'Finished' + (p.finished ? ' at ' + String(p.finished).slice(11, 19) + ' UTC' : '')
+        + ' — ' + (p.summary || `${p.objects} objects across ${p.section_count} sections`);
       if (p.deep_objects != null) txt += ` · depth: ${p.deep_objects} object(s)`
         + (p.deep_total ? ` from ${p.deep_policies || 0} server policies and ${p.deep_wpps || 0} WPPs` : '');
       if (p.deep_reads != null) txt += ` (${p.deep_reads} device reads, ${p.deep_reused || 0} reused)`;

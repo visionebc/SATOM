@@ -390,6 +390,7 @@
        "kind": "ref",
        "key": "v-zone",
        "source": "system.vzone",
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -409,6 +410,7 @@
        "kind": "ref",
        "key": "vserver",
        "source": "server.vserver",
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -428,6 +430,7 @@
        "kind": "ref",
        "key": "server-pool",
        "source": "server.server-pool",
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -477,7 +480,8 @@
        "help": "A list of hostnames that FortiWeb should allow/block <br /> in the HTTP \"Host\" header. <br /> No Protected Hostnames Policy will Allow All.",
        "kind": "ref",
        "key": "allow-hosts",
-       "source": "server.allow-hosts"
+       "source": "server.allow-hosts",
+       "edit_shortcut": true
       },
       {
        "label": "Client Real IP",
@@ -590,7 +594,8 @@
        "source": [
         "server.predefined-service",
         "server.custom-service"
-       ]
+       ],
+       "edit_shortcut": true
       },
       {
        "label": "HTTPS Service",
@@ -612,6 +617,7 @@
         "server.predefined-service",
         "server.custom-service"
        ],
+       "edit_shortcut": true,
        "required_when": {
         "ctx": "requiredServiceByZtna",
         "undefined": true
@@ -636,7 +642,8 @@
        "source": [
         "server.predefined-service-http3",
         "server.custom-service-http3"
-       ]
+       ],
+       "edit_shortcut": true
       },
       {
        "label": "HTTP/2",
@@ -758,6 +765,7 @@
        "kind": "ref",
        "key": "certificate-group",
        "source": "system.certificate.multi-local",
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -804,6 +812,7 @@
        "kind": "ref",
        "key": "lets-certificate",
        "source": "system.certificate.letsencrypt",
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -849,7 +858,8 @@
        },
        "kind": "ref",
        "key": "certificate",
-       "source": "system.certificate.local"
+       "source": "system.certificate.local",
+       "edit_shortcut": true
       },
       {
        "label": "Certificate Intermediate Group",
@@ -883,7 +893,8 @@
        },
        "kind": "ref",
        "key": "intermediate-certificate-group",
-       "source": "system.certificate.intermediate-certificate-group"
+       "source": "system.certificate.intermediate-certificate-group",
+       "edit_shortcut": true
       },
       {
        "label": "Advanced SSL settings",
@@ -935,7 +946,8 @@
        },
        "kind": "ref",
        "key": "block-port",
-       "source": "system.interface"
+       "source": "system.interface",
+       "edit_shortcut": true
       },
       {
        "label": "Data Capture Port",
@@ -953,7 +965,8 @@
        },
        "kind": "ref",
        "key": "data-capture-port",
-       "source": "system.interface"
+       "source": "system.interface",
+       "edit_shortcut": true
       },
       {
        "label": "Redirect HTTP to HTTPS",
@@ -1102,6 +1115,7 @@
        "kind": "ref",
        "key": "traffic-mirror-profile",
        "source": "server.traffic-mirror",
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -1643,7 +1657,8 @@
        },
        "kind": "ref",
        "key": "acceleration-policy",
-       "source": "app_delivery.acceleration-policy"
+       "source": "app_delivery.acceleration-policy",
+       "edit_shortcut": true
       }
      ],
      "title_key": "server_policy.application_delivery",
@@ -1878,7 +1893,8 @@
        },
        "kind": "ref",
        "key": "ztna-profile",
-       "source": "policy.ztna-profile"
+       "source": "policy.ztna-profile",
+       "edit_shortcut": true
       },
       {
        "label": "Web Protection Profile",
@@ -1912,7 +1928,8 @@
        },
        "kind": "ref",
        "key": "web-protection-profile",
-       "source": "policy.inline-profile"
+       "source": "policy.inline-profile",
+       "edit_shortcut": true
       },
       {
        "label": "Web Protection Profile",
@@ -1946,7 +1963,8 @@
        },
        "kind": "ref",
        "key": "web-protection-profile-offline",
-       "source": "policy.offline-profile"
+       "source": "policy.offline-profile",
+       "edit_shortcut": true
       },
       {
        "label": "Allow List",
@@ -1955,7 +1973,8 @@
        "help": "Select to use Policy Based Allow list instead of Global Allow List",
        "kind": "ref",
        "key": "allow-list",
-       "source": "server.allow-list"
+       "source": "server.allow-list",
+       "edit_shortcut": true
       },
       {
        "label": "Replacement Message",
@@ -1990,6 +2009,7 @@
        "kind": "ref",
        "key": "replacemsg",
        "source": "system.replacemsg",
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -2145,30 +2165,30 @@
     }
    ],
    "contexts": {
-    "enableAcceleration": {
-     "visibility": "acceleration-policy"
-    },
     "enableTrafficMirror": {
      "visibility": "traffic-mirror"
-    },
-    "modeShowZtna": {
-     "ztna_ems": true
-    },
-    "showTrafficLogConfig": {
-     "traffic_log_global": true
-    },
-    "HAVE_VIRT_DOCKER": {
-     "device_config": "HAVE_VIRT_DOCKER"
-    },
-    "modeShowScript": {
-     "opmode_is": "reverse-proxy"
-    },
-    "enableWebCache": {
-     "visibility": "web-cache"
     },
     "CONFIG_SYSTEM_FWB_CMINTF": {
      "device_config": "CONFIG_SYSTEM_MODEL",
      "equals": "FWB_CMINTF"
+    },
+    "enableAcceleration": {
+     "visibility": "acceleration-policy"
+    },
+    "modeShowScript": {
+     "opmode_is": "reverse-proxy"
+    },
+    "modeShowZtna": {
+     "ztna_ems": true
+    },
+    "enableWebCache": {
+     "visibility": "web-cache"
+    },
+    "HAVE_VIRT_DOCKER": {
+     "device_config": "HAVE_VIRT_DOCKER"
+    },
+    "showTrafficLogConfig": {
+     "traffic_log_global": true
     }
    },
    "derived": {
@@ -2279,6 +2299,7 @@
        "kind": "ref",
        "key": "vserver",
        "source": "server.vserver",
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -2287,6 +2308,7 @@
        "kind": "ref",
        "key": "server-pool",
        "source": "server.server-pool-ftp",
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -2298,6 +2320,7 @@
         "server.predefined-service",
         "server.custom-service"
        ],
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -2343,7 +2366,8 @@
        },
        "kind": "ref",
        "key": "certificate",
-       "source": "system.certificate.local"
+       "source": "system.certificate.local",
+       "edit_shortcut": true
       },
       {
        "label": "Certificate Intermediate Group",
@@ -2361,7 +2385,8 @@
        },
        "kind": "ref",
        "key": "intermediate-certificate-group",
-       "source": "system.certificate.intermediate-certificate-group"
+       "source": "system.certificate.intermediate-certificate-group",
+       "edit_shortcut": true
       },
       {
        "label": "Advanced SSL settings",
@@ -2392,7 +2417,8 @@
        "label_key": "server_policy.ftp_profile",
        "kind": "ref",
        "key": "ftp-protection-profile",
-       "source": "policy.ftp-profile"
+       "source": "policy.ftp-profile",
+       "edit_shortcut": true
       },
       {
        "label": "Monitor Mode",
@@ -2584,6 +2610,7 @@
        "kind": "ref",
        "key": "vserver",
        "source": "server.vserver",
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -2592,6 +2619,7 @@
        "kind": "ref",
        "key": "server-pool",
        "source": "server.server-pool-adfs",
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -2640,7 +2668,8 @@
        "source": [
         "server.predefined-service",
         "server.custom-service"
-       ]
+       ],
+       "edit_shortcut": true
       },
       {
        "label": "ADFS Certificate Verification",
@@ -2689,6 +2718,7 @@
        "kind": "ref",
        "key": "adfs-certificate-ssl-client-verify",
        "source": "system.certificate.verify",
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -2738,6 +2768,7 @@
         "server.predefined-service",
         "server.custom-service"
        ],
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -2810,7 +2841,8 @@
        },
        "kind": "ref",
        "key": "certificate-group",
-       "source": "system.certificate.multi-local"
+       "source": "system.certificate.multi-local",
+       "edit_shortcut": true
       },
       {
        "label": "Certificate",
@@ -2844,7 +2876,8 @@
        },
        "kind": "ref",
        "key": "certificate",
-       "source": "system.certificate.local"
+       "source": "system.certificate.local",
+       "edit_shortcut": true
       },
       {
        "label": "Certificate Intermediate Group",
@@ -2862,7 +2895,8 @@
        },
        "kind": "ref",
        "key": "intermediate-certificate-group",
-       "source": "system.certificate.intermediate-certificate-group"
+       "source": "system.certificate.intermediate-certificate-group",
+       "edit_shortcut": true
       },
       {
        "label": "Advanced SSL settings",
@@ -2882,14 +2916,16 @@
        "label_key": "server_policy.waf_profile",
        "kind": "ref",
        "key": "web-protection-profile",
-       "source": "policy.inline-profile"
+       "source": "policy.inline-profile",
+       "edit_shortcut": true
       },
       {
        "label": "Replacement Message",
        "label_key": "server_policy.replace_msg",
        "kind": "ref",
        "key": "replacemsg",
-       "source": "system.replacemsg"
+       "source": "system.replacemsg",
+       "edit_shortcut": true
       },
       {
        "label": "Monitor Mode",
@@ -3215,6 +3251,7 @@
        "kind": "ref",
        "key": "v-zone",
        "source": "system.vzone",
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -3234,6 +3271,7 @@
        "kind": "ref",
        "key": "vserver",
        "source": "server.vserver",
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -3433,7 +3471,8 @@
        "source": [
         "server.predefined-service",
         "server.custom-service"
-       ]
+       ],
+       "edit_shortcut": true
       },
       {
        "label": "HTTPS Service",
@@ -3481,7 +3520,8 @@
        "source": [
         "server.predefined-service",
         "server.custom-service"
-       ]
+       ],
+       "edit_shortcut": true
       },
       {
        "label": "Blocking Port",
@@ -3499,7 +3539,8 @@
        },
        "kind": "ref",
        "key": "block-port",
-       "source": "system.interface"
+       "source": "system.interface",
+       "edit_shortcut": true
       },
       {
        "label": "Data Capture Port",
@@ -3517,7 +3558,8 @@
        },
        "kind": "ref",
        "key": "data-capture-port",
-       "source": "system.interface"
+       "source": "system.interface",
+       "edit_shortcut": true
       },
       {
        "label": "Redirect HTTP to HTTPS",
@@ -3634,7 +3676,8 @@
        },
        "kind": "ref",
        "key": "traffic-mirror-profile",
-       "source": "server.traffic-mirror"
+       "source": "server.traffic-mirror",
+       "edit_shortcut": true
       },
       {
        "label": "Traffic Mirror Type",
@@ -3792,12 +3835,12 @@
     "enableTrafficMirror": {
      "visibility": "traffic-mirror"
     },
-    "HAVE_VIRT_DOCKER": {
-     "device_config": "HAVE_VIRT_DOCKER"
-    },
     "CONFIG_SYSTEM_FWB_CMINTF": {
      "device_config": "CONFIG_SYSTEM_MODEL",
      "equals": "FWB_CMINTF"
+    },
+    "HAVE_VIRT_DOCKER": {
+     "device_config": "HAVE_VIRT_DOCKER"
     }
    },
    "new_defaults": {
@@ -3835,7 +3878,8 @@
         ]
        },
        "kind": "ref",
-       "key": "ssl-client-verify"
+       "key": "ssl-client-verify",
+       "edit_shortcut": true
       },
       {
        "label": "Enable Server Name Indication(SNI)",
@@ -3882,6 +3926,7 @@
        },
        "kind": "ref",
        "key": "sni-certificate",
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -3953,6 +3998,7 @@
        },
        "kind": "ref",
        "key": "urlcert-group",
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -4033,6 +4079,7 @@
        },
        "kind": "ref",
        "key": "ssl-ciphers-group",
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -4540,7 +4587,8 @@
        "help_key": "server_policy.hpkp_header_tip",
        "help": "HTTP Public Key Pinning (HPKP) is a security mechanism delivered via an HTTP header that ensures clients that the web server certificate is authentic.",
        "kind": "ref",
-       "key": "hpkp-header"
+       "key": "hpkp-header",
+       "edit_shortcut": true
       }
      ],
      "title_key": "server_policy.hsts_header_control",
@@ -4569,7 +4617,8 @@
        "label": "Certificate Verification for HTTPS",
        "label_key": "server_policy.https_cert_verify",
        "kind": "ref",
-       "key": "ssl-client-verify"
+       "key": "ssl-client-verify",
+       "edit_shortcut": true
       }
      ],
      "title_key": "server_policy.cert_set",
@@ -4606,6 +4655,7 @@
        },
        "kind": "ref",
        "key": "ssl-ciphers-group",
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -4987,7 +5037,8 @@
        "label": "Certificate Verification for HTTPS",
        "label_key": "server_policy.https_cert_verify",
        "kind": "ref",
-       "key": "ssl-client-verify"
+       "key": "ssl-client-verify",
+       "edit_shortcut": true
       },
       {
        "label": "Enable Server Name Indication(SNI)",
@@ -5034,6 +5085,7 @@
        },
        "kind": "ref",
        "key": "sni-certificate",
+       "edit_shortcut": true,
        "required": true
       }
      ],
@@ -5071,6 +5123,7 @@
        },
        "kind": "ref",
        "key": "ssl-ciphers-group",
+       "edit_shortcut": true,
        "required": true
       },
       {
@@ -5457,6 +5510,7 @@
        "kind": "ref",
        "key": "content-routing-policy-name",
        "source": "server.http-content-routing-policy",
+       "edit_shortcut": true,
        "required": true
       },
       {

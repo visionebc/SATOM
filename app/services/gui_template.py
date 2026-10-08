@@ -290,6 +290,7 @@ def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict) -> dict:
                             for o in _options(f, dev)] if f.get("kind") == "radio" else [],
                 "dialog": f.get("dialog"),
                 "source": f.get("source"),
+                "edit_shortcut": bool(f.get("edit_shortcut")),
                 "unknown": unknown,
                 "unknown_why": (unknowns(b.get("cond"), data, defs, dev)
                                 + unknowns(f.get("cond"), data, defs, dev)) if unknown else [],

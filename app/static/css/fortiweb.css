@@ -2459,11 +2459,12 @@ a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
 .fwg-pane{margin:-24px;min-height:calc(100vh - var(--fw-topbar-height,50px));
   display:flex;flex-direction:column;background:var(--fw-surface,#fff);font-size:14px;}
 .fwg-note{display:flex;gap:10px;align-items:center;padding:3px 10px;font-size:12px;
-  color:var(--fw-text-muted);border-bottom:1px solid var(--fw-border-light,#E8EBEF);}
+  color:var(--fw-text-muted);border-bottom:1px solid var(--fw-border-light,#E8EBEF);
+  padding-right:52px;}
 .fwg-note a{margin-left:auto;}
 .fwg-pane .fw-alert{margin:6px 10px;}
 /* list */
-.fwg-toolbar{display:flex;gap:6px;align-items:center;padding:8px 8px;flex-wrap:wrap;}
+.fwg-toolbar{display:flex;gap:6px;align-items:center;padding:8px 52px 8px 8px;flex-wrap:wrap;}
 .fwg-tb-btn{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 9px;
   border:1px solid var(--fw-border,#D6DAE0);border-radius:2px;background:var(--fw-surface,#fff);
   color:var(--fw-text-primary);font-size:14px;text-decoration:none;cursor:pointer;white-space:nowrap;}
@@ -2500,7 +2501,7 @@ a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
 .fwg-idle{color:var(--fw-text-primary);}
 .fwg-idle i{color:#3D4550;}
 /* dialog */
-.fwg-titlebar{display:flex;align-items:center;gap:12px;padding:6px 15px;
+.fwg-titlebar{display:flex;align-items:center;gap:12px;padding:6px 52px 6px 15px;
   background:#ECEFF3;color:var(--fw-text-primary);}
 .fwg-titlebar .fwg-sub{margin-left:auto;font-size:12px;color:var(--fw-text-muted);}
 .fwg-body{flex:1;overflow:auto;padding:0 0 24px;}
@@ -2526,7 +2527,6 @@ summary.fwg-sec-title::-webkit-details-marker{display:none;}
   border:5px solid transparent;border-top-color:var(--fw-text-primary);border-bottom:0;}
 .fwg-select.is-wide{width:274px;}
 .fwg-pencil{color:var(--fw-text-primary);font-size:14px;}
-.fwg-pencil.is-off{color:var(--fw-text-muted);}
 .fwg-textarea{display:block;width:234px;min-height:70px;padding:4px 8px;white-space:pre-wrap;
   border:1px solid var(--fw-border,#D6DAE0);}
 .fwg-tagbox{display:inline-flex;align-items:center;justify-content:center;gap:4px;

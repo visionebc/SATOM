@@ -6,15 +6,16 @@ hand-written): list columns and the per-operation-mode default column set, the
 Create New menu, every dialog with its section titles, field order, labels,
 control types, options and the condition that shows or hides each field.
 
-Templates live in ``app/registry/gui_templates/<product>/<page>/<train>.json``,
-one per firmware TRAIN (``7.6``, ``8.0``…) because the form is a property of
-the firmware: 8.0.6 renamed *Let's Encrypt* to *ACME* and added two fields to
-the HTTP Content Routing rule (measured 2026-10-08, fortiweb17 vs fortiweb18).
+Templates arrive through the knowledge feed, one per EXACT build, and are
+resolved per device by :mod:`gui_store` (the release ships none). The form is
+a property of the firmware: 8.0.6 renamed *Let's Encrypt* to *ACME* and added
+two fields to the HTTP Content Routing rule (measured 2026-10-08, fortiweb17
+vs fortiweb18).
 
 Selection is honest about the match: :func:`select` returns the template of the
-device's own train when there is one; otherwise the closest OLDER train, and
-the page says so ("built from FortiWeb 7.6.8 — this device runs 8.0.6") so an
-operator never mistakes an older form for the device's.
+device's own build / version / train when there is one; otherwise the closest
+OLDER train, and the page says so ("built from FortiWeb 7.6.8 — this device
+runs 8.0.6") so an operator never mistakes an older form for the device's.
 
 Conditions are evaluated **tri-state** (True / False / None = cannot tell):
 a field whose condition depends on something SATOM cannot read about the device
@@ -23,36 +24,10 @@ take a field away from the operator because of a gap in what we measured.
 """
 from __future__ import annotations
 
-import json
 import re
-from functools import lru_cache
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent / "registry" / "gui_templates"
 SCHEMA = "satom.gui-template/1"
 SCHEMA_V2 = "satom.gui-template/2"
-
-
-def _train_key(train: str) -> tuple:
-    return tuple(int(x) for x in re.findall(r"\d+", train or "")[:2]) or (0, 0)
-
-
-@lru_cache(maxsize=32)
-def _load(path: str) -> dict:
-    tpl = json.loads(Path(path).read_text(encoding="utf-8"))
-    if tpl.get("schema") != SCHEMA:
-        raise ValueError("%s: not a %s template" % (path, SCHEMA))
-    return tpl
-
-
-def available(product: str, page: str) -> list[dict]:
-    """Every shipped template of a page, oldest train first."""
-    d = ROOT / product / page
-    out = []
-    for p in sorted(d.glob("*.json"), key=lambda p: _train_key(p.stem)):
-        tpl = _load(str(p))
-        out.append({"train": tpl["applies_to"], "based_on": tpl["based_on"], "path": str(p)})
-    return out
 
 
 def select(product: str, page: str, fw_version: str | None):
@@ -65,9 +40,10 @@ def select(product: str, page: str, fw_version: str | None):
 
     Resolution is per EXACT build (:func:`gui_store.resolve`): a template the
     knowledge feed imported for the device's own build wins, then its version,
-    its train, the closest older train. The template carries ``origin`` (pack
-    or shipped, the build it was measured on) and ``closeness`` so the page
-    can say how close the layout is.
+    its train, the closest older train. The template carries ``origin`` (the
+    pack and the build it was measured on) and ``closeness`` so the page can
+    say how close the layout is. Pass :func:`gui_store.firmware_of` of the
+    device, not ``fw_version``: the bare version drops the build.
     """
     from . import gui_store
     cand, match, closeness = gui_store.resolve(product, page, fw_version)

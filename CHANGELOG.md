@@ -16,9 +16,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   importer checks the shape and the exact build and rejects any item carrying
   GUI bundle code; it does not assume which harvester measured it.
 - **Per-device resolution**: every FortiWeb-layout page picks the layout of the
-  device's own build, then its version, its train, the closest older train; a
-  knowledge-pack layout beats the one shipped with the release. The banner says
-  which build the layout comes from and whether it is a knowledge-pack layout.
+  device's own build (the page passes the full firmware string, build
+  included), then its version, its train, the closest older train. The banner
+  says which build the layout comes from and that it is a knowledge-pack layout.
+- **The release ships no layout**: the knowledge feed is the only source. A
+  node that has not imported a knowledge pack yet (fresh install, offline,
+  `knowledge.fetch_mode=off`) has no layout; the sidebar's Server Policy leaf
+  then opens SATOM's own Server Policy list with a notice instead of a 404.
 - **GUI changes in reports**: the migration report gains a `gui` block and
   `gui_*` rows (a field FortiWeb's GUI no longer shows is a warning, any other
   change is info), Build compatibility → Compare shows the GUI layout changes,
@@ -72,8 +76,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `/workspace/<id>/gui/policy/<name>[?dialog=…]` and
   `/workspace/<id>/gui/new/<dialog>` (the Create New form with FortiWeb's own
   defaults, as a preview).
-- **Layout templates per firmware train** (`app/registry/gui_templates/`,
-  schema `satom.gui-template/1`), extracted from the GUI a FortiWeb serves by
+- **Layout templates** (schema `satom.gui-template/1`, delivered by the
+  knowledge feed — see above), extracted from the GUI a FortiWeb serves by
   `satom-harvester gui fetch|extract`, never written by hand. The first one is
   **FortiWeb 7.6.x**, built from 7.6.8 build1128: 9 dialogs, 186 fields, every
   field cross-checked against the REST keys of that build. A device on a newer

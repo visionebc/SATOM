@@ -832,13 +832,20 @@ def _gui_subtables(appl, name, tpl, key):
 
 
 def _gui_template_or_404(appl):
-    from flask import abort
-    from ..services import gui_template
+    from flask import abort, flash as _flash, redirect as _redirect, url_for as _url_for
+    from flask_babel import gettext as _
+    from ..services import gui_store, gui_template
     if appl.kind != 'fortiweb':
         abort(404)
-    tpl, match = gui_template.select('fortiweb', 'server-policy', appl.fw_version)
+    tpl, match = gui_template.select('fortiweb', 'server-policy', gui_store.firmware_of(appl))
     if tpl is None:
-        abort(404)
+        # The release ships no layout: a node that has not imported a knowledge
+        # pack yet (fresh install, offline, knowledge.fetch_mode=off) has none.
+        # The sidebar's Server Policy leaf opens this view, so a 404 here would
+        # take Server Policy away; SATOM's own list is the fallback.
+        _flash(_('No FortiWeb GUI layout has been imported on this node yet (it comes '
+                 'with the knowledge packs). Showing the SATOM Server Policy list.'), 'info')
+        abort(_redirect(_url_for('workspace.appliance', appliance_id=appl.id)))
     return tpl, match
 
 

@@ -1,19 +1,19 @@
 """GUI layout templates per EXACT build: where they come from and which one a device gets.
 
-Two sources, one resolver:
-
-* **packs** (knowledge lane, section ``gui-templates``): ``satom.gui-template/2``
-  items the harvester measured on a lab device, imported into
-  ``data/gui-templates/<product>/<page>/<version>-<build>.json`` (each file
-  records its pack provenance). They follow the knowledge feed: a new build
-  needs no SATOM release;
-* **shipped** (``app/registry/gui_templates/<product>/<page>/<train>.json``,
-  ``/1``): the templates a release carries, used when no pack has the page.
+One source, one resolver: the **packs** (knowledge lane, section
+``gui-templates``): ``satom.gui-template/2`` items the harvester measured on a
+lab device, imported into ``data/gui-templates/<product>/<page>/<version>-<build>.json``
+(each file records its pack provenance). They follow the knowledge feed: a new
+build needs no SATOM release. The release carries no layout of its own (the
+7.6 template it used to ship was retired 2026-10-08): a node that has not
+imported a knowledge pack has no layout, and the pages say so and fall back
+to SATOM's own forms -- they never 404.
 
 :func:`resolve` picks, for one device firmware, the closest measured layout:
 same version (exact build first), else same train, else the closest older
-train, else the oldest; a pack beats a shipped template of the same version.
-The caller is told how close it is (``origin``) so the page can say so.
+train, else the oldest. The caller is told how close it is (``origin``) so the
+page can say so. Pass the firmware WITH its build (:func:`firmware_of`): a bare
+``X.Y.Z`` can only ever match by version.
 """
 from __future__ import annotations
 
@@ -38,11 +38,6 @@ def root() -> Path:
     return Path(conf) if conf else data_root() / "gui-templates"
 
 
-def shipped_root() -> Path:
-    from . import gui_template
-    return Path(gui_template.ROOT)
-
-
 def file_for(product: str, page: str, version: str, build: str) -> Path:
     for t in (product, page, version, build):
         if not _TOKEN_RE.match(str(t or "")):
@@ -53,6 +48,20 @@ def file_for(product: str, page: str, version: str, build: str) -> Path:
 def build_of(firmware) -> str:
     m = _BUILD_RE.search(str(firmware or ""))
     return m.group(1) if m else ""
+
+
+def firmware_of(appliance) -> str:
+    """The firmware string to resolve a device's layout with, build included.
+
+    ``Appliance.fw_version`` is the bare ``X.Y.Z`` (the build is gone), so a
+    resolver fed with it can never match a layout by build. The probe stores
+    the full status string in ``firmware`` (``FortiWeb-KVM 8.0.6,build0116…``);
+    older rows keep it in ``model``. The first of the two that carries a build
+    wins, else the bare version."""
+    for src in (getattr(appliance, "firmware", None), getattr(appliance, "model", None)):
+        if build_of(src):
+            return src
+    return getattr(appliance, "fw_version", None) or ""
 
 
 def _vkey(v: str) -> tuple:
@@ -69,25 +78,19 @@ def load(path: Path) -> dict:
 
 
 def candidates(product: str, page: str) -> list:
-    """Every template of a page: ``{"version", "build", "train", "source", "path"}``."""
+    """Every template of a page: ``{"version", "build", "train", "source", "path"}``.
+    Empty outside an app context (no data dir to read)."""
     out = []
     try:
         d = root() / product / page
-    except RuntimeError:            # no app context (a bare script): shipped only
-        d = None
-    for p in sorted(d.glob("*.json")) if d is not None and d.is_dir() else []:
+    except RuntimeError:            # no app context (a bare script): no data dir
+        return out
+    for p in sorted(d.glob("*.json")) if d.is_dir() else []:
         try:
             ident = guikit.identity(load(p))
         except (OSError, ValueError):
             continue
         out.append({**ident, "source": "pack", "path": p})
-    s = shipped_root() / product / page
-    for p in sorted(s.glob("*.json")) if s.is_dir() else []:
-        try:
-            ident = guikit.identity(load(p))
-        except (OSError, ValueError):
-            continue
-        out.append({**ident, "source": "shipped", "path": p})
     return out
 
 
@@ -114,7 +117,7 @@ def resolve(product: str, page: str, firmware) -> tuple:
         return None, None, None
     ver = fv.normalize(firmware)
     build = build_of(firmware)
-    rank = lambda c: (_vkey(c["version"]), c["source"] == "pack", c["build"])  # noqa: E731
+    rank = lambda c: (_vkey(c["version"]), c["build"])  # noqa: E731
     if not ver or len(_vkey(ver)) < 2:
         return max(cands, key=rank), "unknown", "unknown"
     train = fv.line_of(ver)
@@ -122,7 +125,7 @@ def resolve(product: str, page: str, firmware) -> tuple:
     if same_ver:
         exact = [c for c in same_ver if build and c["build"] == build]
         if exact:
-            return max(exact, key=lambda c: c["source"] == "pack"), "exact", "build"
+            return exact[0], "exact", "build"
         return max(same_ver, key=rank), "exact", "version"
     same_train = [c for c in cands if c["train"] == train]
     if same_train:
@@ -135,4 +138,5 @@ def resolve(product: str, page: str, firmware) -> tuple:
     return min(cands, key=rank), "newer", "newer"
 
 
-__all__ = ["root", "file_for", "build_of", "candidates", "resolve", "view_template", "load"]
+__all__ = ["root", "file_for", "build_of", "firmware_of", "candidates", "resolve",
+           "view_template", "load"]

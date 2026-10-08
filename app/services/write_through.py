@@ -86,11 +86,16 @@ def diff_object(appliance_id, coll, mkey, proposed, *, session=None):
 
 def local_update(appliance_id, coll, mkey, fields, *, session=None):
     """Merge approved field changes into the cached object payload (+ recompute
-    hash, refresh the typed projection). Best-effort; returns True if a row was
-    updated."""
+    hash, refresh the typed projection) of EVERY cached layer that holds the
+    object (config, deep…): the readers pick one layer, so updating only the
+    first row found could leave the page on the old value. Best-effort;
+    returns True if a row was updated."""
     from ..extensions import db
     session = session or db.session
     logical = logical_for_collection(coll, _version_for(session, appliance_id))
+    if logical:
+        return local_refresh(appliance_id, logical, mkey, dict(fields or {}),
+                             session=session) > 0
     obj = _find(session, appliance_id, mkey, logical)
     if obj is None:
         return False
@@ -130,6 +135,89 @@ def local_refresh(appliance_id, logical, mkey, payload, *, session=None) -> int:
     if rows:
         session.commit()
     return len(rows)
+
+
+def local_subrows(appliance_id, logical, mkey, subtable, rows, *, session=None) -> int | None:
+    """Replace the cached rows of ONE sub-table of a deep-captured object with
+    a fresh device read of that sub-table (``rows``: the whole list, so a row
+    the device no longer has is dropped and a new one is added). Rows match on
+    ``id``. Returns the rows now cached, or None when the object has no deep
+    capture (its sub-tables are unknown, not empty) or a new row cannot be
+    placed (no sibling row to copy the cache identity from)."""
+    from ..extensions import db
+    from ..models_cache import DeviceObject
+    session = session or db.session
+    if not isinstance(rows, list):
+        return None
+    root = (session.query(DeviceObject)
+            .filter_by(appliance_id=appliance_id, logical_name=logical, mkey=str(mkey),
+                       depth=0, layer="deep").first())
+    if root is None:
+        return None
+    kids = (session.query(DeviceObject)
+            .filter_by(parent_id=root.id, subtable=subtable).order_by(DeviceObject.idx).all())
+    by_id = {str((k.payload or {}).get("id")): k for k in kids}
+    proto = kids[0] if kids else None
+    fresh = [r for r in rows if isinstance(r, dict)]
+    if proto is None and fresh:
+        return None
+    seen = set()
+    for i, r in enumerate(fresh):
+        rid = str(r.get("id"))
+        seen.add(rid)
+        row = by_id.get(rid)
+        if row is None:
+            row = DeviceObject(appliance_id=appliance_id, snapshot_id=proto.snapshot_id,
+                               parent_id=root.id, layer=proto.layer, section=proto.section,
+                               logical_name=proto.logical_name, urn=proto.urn,
+                               subtable=subtable, depth=proto.depth)
+            session.add(row)
+            row.mkey = rid if proto.mkey not in (None, "") else None
+        row.payload = dict(r)
+        row.idx = i
+        try:
+            row.content_hash = device_store.content_hash(row.payload)
+        except Exception:  # noqa: BLE001
+            pass
+    for rid, k in by_id.items():
+        if rid not in seen:
+            session.delete(k)
+    session.commit()
+    return len(fresh)
+
+
+def local_insert(appliance_id, logical, mkey, payload, *, session=None) -> bool:
+    """Cache a top-level object just created on the device (config layer),
+    with the cache identity (section, urn, snapshot) of a sibling of the same
+    type. False when there is no sibling to copy it from or it is already
+    cached (then :func:`local_refresh` applies)."""
+    from ..extensions import db
+    from ..models_cache import DeviceObject
+    session = session or db.session
+    if not isinstance(payload, dict) or not payload:
+        return False
+    if _find(session, appliance_id, str(mkey), logical) is not None:
+        return local_refresh(appliance_id, logical, mkey, payload, session=session) > 0
+    sib = (session.query(DeviceObject)
+           .filter_by(appliance_id=appliance_id, logical_name=logical, depth=0,
+                      layer="config").first())
+    if sib is None:
+        return False
+    obj = DeviceObject(appliance_id=appliance_id, snapshot_id=sib.snapshot_id, parent_id=None,
+                       layer="config", section=sib.section, logical_name=logical, urn=sib.urn,
+                       mkey=str(mkey), payload=dict(payload), depth=0,
+                       idx=(session.query(DeviceObject)
+                            .filter_by(appliance_id=appliance_id, logical_name=logical,
+                                       depth=0, layer="config").count()))
+    try:
+        obj.content_hash = device_store.content_hash(obj.payload)
+    except Exception:  # noqa: BLE001
+        pass
+    session.add(obj)
+    session.flush()
+    _refresh_projection(session, obj)
+    session.commit()
+    return True
 
 
 def local_delete(appliance_id, coll, mkey, *, session=None):

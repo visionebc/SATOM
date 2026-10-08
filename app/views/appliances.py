@@ -526,6 +526,56 @@ def not_in_gui(id):
                            error=error)
 
 
+def _nig_body():
+    body = request.get_json(silent=True) or {}
+    endpoint = str(body.get('endpoint') or '').strip()
+    parent = str(body.get('parent') or '').strip()
+    return body, endpoint, (str(body.get('mkey')).strip() or None
+                            if body.get('mkey') not in (None, '') else None), \
+        ([parent] if parent else ())
+
+
+@bp.route('/<int:id>/not-in-gui/read', methods=['POST'])
+@login_required
+@require_permission('appliances.view')
+def not_in_gui_read(id):
+    """Current values of an object's CLI-only fields, over a read-only SSH
+    session (``show full-configuration``). Any product, any object the
+    device's build has; secrets are never returned."""
+    appliance = visible_appliance_or_404(id)
+    body, endpoint, mkey, parents = _nig_body()
+    names = [str(n) for n in (body.get('names') or []) if n][:200]
+    if not endpoint or not names:
+        return jsonify(ok=False, error='name the object and its fields'), 400
+    from ..services import not_in_gui as nig
+    return jsonify(**nig.cli_values(appliance, endpoint, mkey, names, parent_mkeys=parents))
+
+
+@bp.route('/<int:id>/not-in-gui/save', methods=['POST'])
+@login_required
+@require_permission('config_write')
+def not_in_gui_save(id):
+    """Preview (default) or apply a change to an object's CLI-only fields from
+    the "Not in GUI, but in CLI" section of any product view. Only fields the
+    build serves by CLI alone are written (``cli_writer``: transaction, abort
+    on the first error, readback in a fresh session, audit row)."""
+    appliance = visible_appliance_or_404(id)
+    body, endpoint, mkey, parents = _nig_body()
+    fields = body.get('fields') or {}
+    if not endpoint or not isinstance(fields, dict):
+        return jsonify(ok=False, error='name the object and its fields'), 400
+    if len(fields) > 200:
+        return jsonify(ok=False, error='too many fields in one write'), 400
+    from ..services import not_in_gui as nig
+    do_apply = bool(body.get('apply'))
+    res = nig.save(appliance, endpoint, mkey, fields, parent_mkeys=parents, apply=do_apply)
+    if do_apply:
+        log_action('appliance.not_in_gui.save', target=appliance.name,
+                   detail='%s %s fields=%s ok=%s' % (endpoint, mkey or '', ','.join(sorted(
+                       str(k) for k in fields)), res.get('ok')))
+    return jsonify(**res)
+
+
 @bp.route('/<int:id>/test', methods=['POST'])
 @login_required
 @require_permission('appliances.view')

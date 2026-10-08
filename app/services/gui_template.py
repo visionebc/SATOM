@@ -297,6 +297,7 @@ def _table_view(f: dict, rows, refs: dict) -> dict:
     ``rows`` None = the policy's sub-tables are not in the cache."""
     cols = f.get("columns") or []
     return {"columns": [{"id": c["id"], "label": c["label"]} for c in cols],
+            "subtable": f.get("subtable"),
             "toolbar": f.get("toolbar") or [],
             "row_dialog": f.get("row_dialog"),
             "rows": None if rows is None else
@@ -310,16 +311,17 @@ _EDIT_KINDS = {"toggle", "radio", "select", "text", "number", "textarea", "ref",
                "multiselect", "checks", "toggle_rows"}
 
 
-def _edit_spec(f: dict, d: dict, data: dict, dev: dict) -> dict:
+def _edit_spec(f: dict, d: dict, data: dict, dev: dict, *, new: bool = False) -> dict:
     """How the field is written: the REST key (aliases resolved), the raw value
-    the input starts from, and the choices a select / radio / checks offers."""
+    the input starts from, and the choices a select / radio / checks offers.
+    ``name`` is the object's key: set once, on a new object only."""
     from .fortiweb_field_schema import REF_ENDPOINTS
     kind = f.get("kind")
     key = f.get("key")
     wkey = (d.get("aliases") or {}).get(key, key)
     editable = (kind in _EDIT_KINDS and not f.get("from_ref")
                 and (key is not None or kind == "toggle_rows")
-                and key not in (d.get("derived") or {}) and key != "name")
+                and key not in (d.get("derived") or {}) and (key != "name" or new))
     raw = data.get(wkey)
     return {
         "editable": editable,
@@ -334,13 +336,42 @@ def _edit_spec(f: dict, d: dict, data: dict, dev: dict) -> dict:
     }
 
 
+def bind_device(ast, defs: dict, dev: dict):
+    """The condition with every device fact resolved (opmode, feature
+    visibility, platform) so the browser can re-evaluate it against the form
+    alone: a known fact becomes ``{"lit": value}``, an unknowable one
+    ``{"raw": name}`` (tri-state None, exactly as :func:`evaluate` treats it)."""
+    if not isinstance(ast, dict):
+        return ast
+    if "ctx" in ast:
+        v = None if ast.get("undefined") else _ctx_value(ast["ctx"], defs, dev)
+        return {"raw": ast["ctx"]} if v is None else {"lit": v}
+    if "args" in ast:
+        return {**ast, "args": [bind_device(a, defs, dev) for a in ast["args"]]}
+    return ast
+
+
+#: Kinds the live view keeps (hidden) when their condition is false: the
+#: controls the operator can change. A hidden sub-table, link or display field
+#: has no value to edit; it appears after the save reloads the page.
+_LIVE_KINDS = _EDIT_KINDS
+
+
 def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict, *,
-                subrows: dict | None = None, refs: dict | None = None) -> dict:
+                subrows: dict | None = None, refs: dict | None = None,
+                live: bool = False, new: bool = False) -> dict:
     """Blocks -> fields with ``state`` shown / unknown (hidden ones are dropped
     from ``blocks`` but counted, so the page can say how many the GUI hides).
 
     ``subrows`` {sub-table name: rows | None} fills the inline sub-tables;
-    ``refs`` {cache logical: {name: payload}} serves their joins."""
+    ``refs`` {cache logical: {name: payload}} serves their joins.
+
+    ``live`` (the editable page): hidden CONTROLS stay in ``blocks`` with
+    ``hidden: True``, and every field and block carries ``cond`` (its
+    condition with the device facts bound, :func:`bind_device`), so the page
+    shows and hides them as the operator edits, as FortiWeb's GUI does. The
+    view then has ``live`` = the starting row and the dialog's derived /
+    aliased keys. ``new``: the Create New form (``name`` is writable)."""
     refs = refs or {}
     d = tpl["dialogs"][dialog_key]
     defs = dict(d.get("contexts") or {})
@@ -348,16 +379,20 @@ def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict, *,
     blocks, hidden = [], 0
     for b in d["blocks"]:
         bstate = evaluate(b.get("cond"), data, defs, dev)
-        if bstate is not None and not _truthy(bstate):
+        bhidden = bstate is not None and not _truthy(bstate)
+        if bhidden:
             hidden += len(b["fields"])
-            continue
+            if not live:
+                continue
         fields = []
         for f in b["fields"]:
             if f.get("kind") == "spacer":
                 continue
             st = evaluate(f.get("cond"), data, defs, dev)
-            if st is not None and not _truthy(st):
+            fhidden = st is not None and not _truthy(st)
+            if fhidden and not bhidden:
                 hidden += 1
+            if (fhidden or bhidden) and not (live and f.get("kind") in _LIVE_KINDS):
                 continue
             unknown = bstate is None or st is None
             fields.append({
@@ -383,19 +418,30 @@ def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict, *,
                 "unknown": unknown,
                 "unknown_why": (unknowns(b.get("cond"), data, defs, dev)
                                 + unknowns(f.get("cond"), data, defs, dev)) if unknown else [],
-                **_edit_spec(f, d, data, dev),
+                **_edit_spec(f, d, data, dev, new=new),
             })
+            if live:
+                fields[-1]["hidden"] = fhidden
+                fields[-1]["cond"] = bind_device(f.get("cond"), defs, dev)
         if fields:
             # A fold is FortiWeb's +/- section title. Its initial state when the
             # GUI computes it (raw JS, e.g. "any ML policy set") is not
             # evaluated here: closed, one click away -- nothing is hidden.
             fold = b.get("fold")
-            blocks.append({"title": b.get("title"), "fields": fields,
-                           "unknown": bstate is None,
-                           "fold": bool(fold),
-                           "open": fold.get("open") is True if fold else True})
-    return {"key": dialog_key, "title": d.get("title", {}), "blocks": blocks,
-            "hidden": hidden}
+            blk = {"title": b.get("title"), "fields": fields,
+                   "unknown": bstate is None,
+                   "fold": bool(fold),
+                   "open": fold.get("open") is True if fold else True}
+            if live:
+                blk["hidden"] = bhidden
+                blk["cond"] = bind_device(b.get("cond"), defs, dev)
+            blocks.append(blk)
+    out = {"key": dialog_key, "title": d.get("title", {}), "blocks": blocks,
+           "hidden": hidden}
+    if live:
+        out["live"] = {"row": data, "derived": d.get("derived") or {},
+                       "aliases": d.get("aliases") or {}}
+    return out
 
 
 def list_view(tpl: dict, rows: list[dict], dev: dict) -> dict:

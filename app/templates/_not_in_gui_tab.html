@@ -1,10 +1,11 @@
-{# Per-tab "Not in GUI, but in CLI" for the read-only product views. Expects
-   ``nig_sec`` (services.not_in_gui.for_view, may be None) and ``appliance``. #}
-{% from "_not_in_gui.html" import nig_readonly %}
+{# Per-tab "Not in GUI, but in CLI" for the product views without their own
+   editor: the CLI fields are editable here (macro nig_cli). Expects ``nig_sec``
+   (services.not_in_gui.for_view, may be None) and ``appliance``. #}
+{% from "_not_in_gui.html" import nig_cli with context %}
 {% if appliance %}
 <div class="fw-card mt-3 p-3 fw-nig-tab">
   {% if nig_sec %}
-    {{ nig_readonly(nig_sec, nig_values if nig_values is defined else None) }}
+    {{ nig_cli(nig_sec, appliance, nig_values if nig_values is defined else None) }}
   {% else %}
     <p class="small text-muted mb-1">{{ _('Not in GUI, but in CLI') }}: {{ _('the API library could not be read for this object.') }}</p>
   {% endif %}

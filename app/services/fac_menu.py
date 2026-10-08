@@ -45,6 +45,10 @@ class Item:
     desc: str = ''
     # (registry logical name, tab label) pairs — live tabs on the section page.
     logicals: tuple = field(default=())
+    # API-library endpoints of objects only the CLI serves that this GUI pane
+    # covers: the page renders each one's editable "Not in GUI, but in CLI"
+    # section (permanent rule: a CLI-only element is edited where it lives).
+    cli_objects: tuple = field(default=())
 
 
 @dataclass(frozen=True)
@@ -65,9 +69,9 @@ _MENU = (
         Item('network', 'Network', 'bi-diagram-3',
              'Interfaces, DNS, static routing, Zero Trust tunnels and packet '
              'capture. FortiAuthenticator serves NO REST resource for any of '
-             'them — the API is an identity API, not a device-config API. Use '
-             'the unit GUI or its CLI for network changes.',
-             ()),
+             'them — the API is an identity API, not a device-config API; '
+             'SATOM edits them by CLI below ("Not in GUI, but in CLI").',
+             (), ('system/interface', 'system/dns', 'router/static')),
         Item('administration', 'Administration', 'bi-sliders',
              'System access, HA, firmware, scheduled config backup, SNMP, '
              'licensing, FortiGuard, FTP servers, admin profiles, NetHSMs and '
@@ -76,7 +80,8 @@ _MENU = (
              (('system_scheduled_backup', 'Config auto-backup'),
               ('system_snmp_general', 'SNMP general'),
               ('system_snmp_hosts', 'SNMP hosts'),
-              ('system_ftp_servers', 'FTP servers'))),
+              ('system_ftp_servers', 'FTP servers')),
+             ('system/global', 'system/ha')),
         Item('messaging', 'Messaging', 'bi-envelope',
              'SMTP servers, email services and SMS gateways. The FortiGuard '
              'messaging tab shows the SMS quota the unit reports for token '

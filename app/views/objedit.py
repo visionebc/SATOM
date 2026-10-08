@@ -767,10 +767,16 @@ def save_row(appliance_id):
     ``<sub>?mkey=<parent>&sub_mkey=<id>``. The id stays out of the body.
     """
     appl = visible_appliance_or_404(appliance_id)
-    body = request.get_json(silent=True) or {}
+    return save_row_for(appl, request.get_json(silent=True) or {})
+
+
+def save_row_for(appl, body):
+    """The body of :func:`save_row`, callable with a body built elsewhere (the
+    FortiWeb-layout view saves sub-table rows through it)."""
     coll = objform.collection_of(body.get('collection', ''))
     parent = body.get('parent', '')
     sub_id = body.get('sub_id')
+    appliance_id = appl.id
     fields = _payload(body)
     do_apply = bool(body.get('apply'))
     if not objform.is_known_collection(coll):

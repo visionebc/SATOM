@@ -6,6 +6,50 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — every CLI-only element is editable where it lives, on every product
+
+- The user's rule: every element only the CLI has must be editable in SATOM, in
+  the page of the object it belongs to, in its "Not in GUI, but in CLI" section.
+  On FortiGate, FortiAuthenticator, FortiADC and FortiAnalyzer the section was a
+  read-only table; it is now an editor for users with write permission: each
+  CLI-only field is an input, *Read values over CLI* fills them over a read-only
+  SSH session, *Preview CLI change* shows the exact CLI script, and *Apply* runs
+  it through the CLI writer (one transaction, abort on the first error, read
+  back in a fresh session, audited). A table object asks for the row (the keys
+  the tab read are offered). A write that names a REST field or a field no
+  source measured on the build is refused whole: nothing is sent.
+- Objects only the CLI serves are edited in the same way: on the per-device
+  page (*Everything this device has outside the GUI*) and, for
+  FortiAuthenticator, inside their own GUI pane — *System → Network* hosts
+  `system interface`, `system dns` and `router static`; *System →
+  Administration* hosts `system global` and `system ha`.
+- FortiAnalyzer gets a CLI writer dialect (same `config`/`edit`/`set`/`end`
+  shell). Like FortiGate, FortiAuthenticator and FortiADC it is not verified on
+  a device yet, and the editor says so next to the preview.
+
+### Added — the FortiWeb-layout view edits sub-table rows and creates policies
+
+- HTTP Content Routing rows open an editable dialog (same save as the object
+  editor's row save: reference check, build gate, REST / CLI split inside the
+  parent policy), and the sub-table's *Create New* opens a new row with
+  FortiWeb's own defaults. After an applied write the sub-table is re-read from
+  the device into the SATOM cache. Public IP rows stay read-only: SATOM's
+  registry has no Public IP sub-table, so it neither reads nor writes it.
+- *Create New* of a Server Policy is no longer a preview: it shows the POST
+  first, creates the policy, caches it as the device returns it and opens its
+  page.
+- Fields appear and disappear while you edit, as in FortiWeb's GUI: every field
+  and section carries its condition (device facts resolved by SATOM), and the
+  page re-evaluates it on each change with the same tri-state rules the server
+  uses (unknown = shown). A hidden field is not sent.
+
+### Fixed — a save in the object editor refreshes every cached copy
+
+- `write_through.local_update` merged an applied change into the FIRST cached
+  row it found; the readers prefer the config layer over the deep one, so the
+  page could keep showing the old value. It now updates every layer that holds
+  the object.
+
 ### Fixed — the FortiWeb-layout Server Policy view can edit what it shows
 
 - The view the sidebar opens for *Policy → Server Policy* was read-only: a field
@@ -20,8 +64,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - After a write, SATOM re-reads the policy from the device into its cache (every
   cached layer), so the page reloads with the device's values and the fields
   FortiWeb shows or hides for them.
-- Read-only users see the dialog as before. Sub-table row dialogs (HTTP Content
-  Routing rows, Public IP) and Create New stay read-only in this view.
+- Read-only users see the dialog as before.
 
 ### Fixed — "Not in GUI, but in CLI" is on every object page, also when empty
 

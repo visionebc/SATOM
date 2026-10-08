@@ -190,5 +190,13 @@ def menu_page(item_key):
                 logical, label = lg, lb
                 break
         tab = _load_tab(appliance, logical, label)
+    cli_objects = []
+    if appliance is not None and item.cli_objects:
+        from ..services import not_in_gui
+        try:
+            cli_objects = not_in_gui.cli_objects_for(appliance, item.cli_objects)
+        except Exception:  # noqa: BLE001 — the library never sinks the page
+            cli_objects = []
     return render_template('fac/section.html', group=group, item=item,
-                           fleet=_fac_fleet(), appliance=appliance, tab=tab)
+                           fleet=_fac_fleet(), appliance=appliance, tab=tab,
+                           cli_objects=cli_objects)

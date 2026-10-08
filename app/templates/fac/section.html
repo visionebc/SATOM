@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_not_in_gui.html" import nig_cli with context %}
 {% block title %}FortiAuthenticator — {{ item.label }}{% endblock %}
 
 {% block content %}
@@ -147,8 +148,15 @@
 {% with nig_sec = tab.not_in_gui if tab else None %}{% include "_not_in_gui_tab.html" %}{% endwith %}
 
 <p class="text-muted mt-3 mb-0" style="font-size:12px;">
-  {{ _('Read-only view. Writes go through the') }}
+  {{ _('Read-only view, except the "Not in GUI, but in CLI" section: it writes CLI-only fields over SSH after a preview, and every apply is audited. Other writes go through the') }}
   <a href="{{ url_for('fac_api.index') }}">{{ _('API console') }}</a>{{ _(', where every request is explicit, dry-run by default and audited.') }}
 </p>
+{% endif %}
+{% if appliance and cli_objects %}
+<div class="fw-card mt-3 p-3" data-nig-cli-objects>
+  <h2 class="h6 mb-1">{{ _('Objects only the CLI serves') }} <span class="text-muted">({{ cli_objects|length }})</span></h2>
+  <p class="small text-muted">{{ _('FortiAuthenticator has no REST resource for these: SATOM reads and writes them by CLI.') }}</p>
+  {% for s in cli_objects %}<div class="mb-2" data-nig-object="{{ s.endpoint }}">{{ nig_cli(s, appliance) }}</div>{% endfor %}
+</div>
 {% endif %}
 {% endblock %}

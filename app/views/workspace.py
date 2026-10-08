@@ -928,7 +928,7 @@ def gui_list(appliance_id):
 @require_permission('protection.view')
 def gui_policy(appliance_id, name):
     from flask import abort
-    from ..services import gui_template, read_layer
+    from ..services import gui_template, objform, read_layer
     appl = visible_appliance_or_404(appliance_id)
     tpl, match = _gui_template_or_404(appl)
     dev = _gui_device(appl)
@@ -941,26 +941,49 @@ def gui_policy(appliance_id, name):
     if key not in tpl['dialogs']:
         abort(404)
     row_dialogs = gui_template.row_dialogs(tpl, main)
+    writer = current_user.can('config_write')
+    row_ctx = None
+    is_new_row = False
     if key in row_dialogs:
-        # a sub-table row (?sub=<id>) in the dialog that row opens in FortiWeb
+        # a sub-table row (?sub=<id>) in the dialog that row opens in FortiWeb,
+        # or a new row (?new=1) filled with the GUI's own defaults
         subrows, _refs = _gui_subtables(appl, name, tpl, main)
-        sub = request.args.get('sub')
-        row = next((r for r in subrows.get(row_dialogs[key]) or []
-                    if sub is not None and str(r.get('id')) == sub), None)
-        if row is None:
-            abort(404)
+        st = row_dialogs[key]
+        coll = _gui_subtable_endpoint(tpl, main, st)
+        if request.args.get('new'):
+            if subrows.get(st) is None or not writer:
+                abort(404)      # a sub-table SATOM cannot read is not written blind
+            row = dict(tpl['dialogs'][key].get('new_defaults') or {})
+            is_new_row = True
+        else:
+            sub = request.args.get('sub')
+            row = next((r for r in subrows.get(st) or []
+                        if sub is not None and str(r.get('id')) == sub), None)
+            if row is None:
+                abort(404)
         _subrows, refs = _gui_subtables(appl, name, tpl, key)
-        view = gui_template.dialog_view(tpl, key, row, dev, refs=refs)
+        writable_row = writer and bool(coll) and objform.is_known_collection(coll)
+        view = gui_template.dialog_view(tpl, key, row, dev, refs=refs, live=writable_row)
+        row_ctx = {'subtable': st, 'collection': coll or '', 'writable': writable_row,
+                   'sub_id': '' if is_new_row else str(row.get('id', '')), 'new': is_new_row}
     # otherwise only the row's own dialog and the sub-dialogs it links to
     elif key == main or key.startswith((main or '') + '-'):
         subrows, refs = _gui_subtables(appl, name, tpl, key)
-        view = gui_template.dialog_view(tpl, key, row, dev, subrows=subrows, refs=refs)
+        view = gui_template.dialog_view(tpl, key, row, dev, subrows=subrows, refs=refs,
+                                        live=writer)
     else:
         abort(404)
     # The policy's own dialog and its sub-dialogs (Advanced SSL…) edit the
     # policy object itself: Save goes through workspace.save (REST / CLI split
-    # by the build's channels). Sub-table row dialogs stay read-only here.
-    can_edit = key not in row_dialogs and current_user.can('config_write')
+    # by the build's channels). A sub-table row dialog saves the row through
+    # gui_save_row (the object editor's row save: same split, inside the
+    # parent policy) when SATOM's registry knows the sub-table.
+    can_edit = (row_ctx['writable'] if row_ctx else writer)
+    # sub-tables whose rows this page can create (Create New in their toolbar)
+    writable_subtables = sorted(
+        st for st in row_dialogs.values()
+        if writer and st and objform.is_known_collection(_gui_subtable_endpoint(tpl, main, st)
+                                                         or '-'))
     # Permanent rule: the fields this policy has that the FortiWeb GUI does not
     # show are listed under the main dialog, with their write channel, and are
     # edited there like every other field.
@@ -975,7 +998,62 @@ def gui_policy(appliance_id, name):
     return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
                            dev=dev, view=view, name=name, main=main, is_new=False,
                            not_in_gui=nig, nig_row=row, nig_edit=nig_edit,
-                           can_edit=can_edit, save_ep=EP_POLICY)
+                           can_edit=can_edit, save_ep=EP_POLICY, row_ctx=row_ctx,
+                           writable_subtables=writable_subtables)
+
+
+def _gui_subtable_endpoint(tpl, dialog, subtable):
+    """The REST collection of one inline sub-table of a dialog (the template
+    names it: ``server-policy/policy/http-content-routing-list``)."""
+    for b in tpl['dialogs'][dialog]['blocks']:
+        for f in b['fields']:
+            if f.get('kind') == 'table' and f.get('subtable') == subtable:
+                return f.get('endpoint') or ''
+    return ''
+
+
+@bp.route('/<int:appliance_id>/gui/policy/<path:name>/row', methods=['POST'])
+@login_required
+@require_permission('config_write')
+def gui_save_row(appliance_id, name):
+    """Create / update one sub-table row of a policy from its FortiWeb-layout
+    dialog. The write is the object editor's row save (``objedit.save_row_for``:
+    reference check, build gate, REST / CLI split inside the parent policy);
+    after an applied write the sub-table is re-read from the device into the
+    SATOM cache so the page shows the device's rows."""
+    from ..services import gui_template, objform, read_layer, write_through
+    from .objedit import save_row_for
+    appl = visible_appliance_or_404(appliance_id)
+    tpl, _match = _gui_template_or_404(appl)
+    body = request.get_json(silent=True) or {}
+    st = str(body.get('subtable') or '')
+    rows, _ = read_layer.read_objects(appl.id, 'server_policy')
+    pol = next((r for r in rows or [] if isinstance(r, dict) and r.get('name') == name), None)
+    if pol is None:
+        return jsonify(ok=False, error='policy not in the SATOM cache'), 404
+    main = tpl['list']['edit_dialog_by_protocol'].get(pol.get('protocol') or 'HTTP')
+    if st not in gui_template.row_dialogs(tpl, main).values():
+        return jsonify(ok=False, error='not a sub-table of this policy'), 400
+    coll = _gui_subtable_endpoint(tpl, main, st)
+    do_apply = bool(body.get('apply'))
+    sub_id = body.get('sub_id')
+    resp = save_row_for(appl, {'collection': coll, 'parent': name,
+                               'sub_id': None if sub_id in (None, '') else str(sub_id),
+                               'fields': body.get('fields') or {}, 'apply': do_apply})
+    resp, code = (resp if isinstance(resp, tuple) else (resp, 200))
+    data = resp.get_json() or {}
+    data['cache_refreshed'] = False
+    if do_apply and data.get('ok'):
+        try:
+            client = FortiWebClient(appl)
+            live = client.get(objform.scoped_path(coll, name))
+            got = client._results_list(live.json()) if live.status_code == 200 else None
+            if isinstance(got, list):
+                n = write_through.local_subrows(appl.id, 'server_policy', name, st, got)
+                data['cache_refreshed'] = n is not None
+        except Exception as exc:  # noqa: BLE001 — the write itself succeeded
+            log_exception(exc, context='workspace.gui_save_row.cache')
+    return jsonify(**data), code
 
 
 @bp.route('/<int:appliance_id>/gui/new/<dialog>')
@@ -994,9 +1072,12 @@ def gui_new(appliance_id, dialog):
     row = dict(tpl['dialogs'][dialog].get('new_defaults') or {})
     # a new policy's sub-tables start empty in FortiWeb too
     subrows = {st: [] for st in gui_template.row_dialogs(tpl, dialog).values() if st}
-    view = gui_template.dialog_view(tpl, dialog, row, dev, subrows=subrows)
+    can_edit = current_user.can('config_write')
+    view = gui_template.dialog_view(tpl, dialog, row, dev, subrows=subrows,
+                                    live=can_edit, new=can_edit)
     return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
-                           dev=dev, view=view, name=None, main=dialog, is_new=True)
+                           dev=dev, view=view, name=None, main=dialog, is_new=True,
+                           can_edit=can_edit, save_ep=EP_POLICY, row_ctx=None)
 
 
 @bp.route('/<int:appliance_id>/new-policy')
@@ -1107,5 +1188,15 @@ def create_policy(appliance_id):
         appid = row.app.app_id if row.app is not None else ''
         log_action('appid.assign', target=pname,
                    extra={'app_id_pk': app_id_pk, 'appliance_id': appl.id})
+    # The FortiWeb-layout view reads the cache: cache the new policy as the
+    # device returns it so its page opens right after Create New.
+    cache_refreshed = False
+    if do_apply:
+        try:
+            from ..services import write_through
+            live = FortiWebClient(appl).get_server_policy(pname)
+            cache_refreshed = write_through.local_insert(appl.id, 'server_policy', pname, live)
+        except Exception as exc:  # noqa: BLE001 — the write itself succeeded
+            log_exception(exc, context='workspace.create_policy.cache')
     return jsonify(ok=True, dry_run=not do_apply, steps=results,
-                   app_id=appid)
+                   app_id=appid, cache_refreshed=cache_refreshed)

@@ -828,7 +828,16 @@ def gui_list(appliance_id):
     view = gui_template.list_view(tpl, rows, dev)
     labels = tpl['list'].get('value_labels', {})
     # VIP / Port: FortiWeb joins each row with its virtual server (VIP list and
-    # the vserver's interface). Same join, from the deep cache.
+    # the vserver's interface). Same join, from the deep cache. A vip-list entry
+    # carries an interface only with use-interface-ip; otherwise the port is the
+    # one of the VIP object it names (system vip) -- measured on fortiweb17.
+    try:
+        vip_rows, _ = read_layer.read_objects(appl.id, 'vip')
+    except Exception as exc:  # noqa: BLE001 — a cold cache leaves Port empty
+        log_exception(exc, context='workspace.gui.vip')
+        vip_rows = []
+    vip_itf = {o.get('name'): o.get('interface') or ''
+               for o in vip_rows or [] if isinstance(o, dict)}
     joins = {}
     for r in rows:
         vips, ports = [], []
@@ -840,7 +849,7 @@ def gui_list(appliance_id):
             ip = v.get('effective_ip') or v.get('vip') or ''
             if ip and ip not in vips:
                 vips.append(str(ip))
-            itf = v.get('interface') or ''
+            itf = v.get('interface') or vip_itf.get(v.get('vip')) or ''
             if itf and itf not in ports:
                 ports.append(str(itf))
         joins[r.get('name')] = {'vip': vips, 'port': ports, 'deep': data is not None}

@@ -284,6 +284,10 @@ def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict) -> dict:
                 "suffix": f.get("suffix") or "",
                 "required": bool(f.get("required")),
                 "options": _options(f, dev) if f.get("kind") == "view_switch" else [],
+                # a radio group shows every choice, the current one marked
+                "choices": [{"label": o.get("label"),
+                             "on": str(o.get("value")) == str(data.get(f.get("key")))}
+                            for o in _options(f, dev)] if f.get("kind") == "radio" else [],
                 "dialog": f.get("dialog"),
                 "source": f.get("source"),
                 "unknown": unknown,
@@ -291,8 +295,14 @@ def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict) -> dict:
                                 + unknowns(f.get("cond"), data, defs, dev)) if unknown else [],
             })
         if fields:
+            # A fold is FortiWeb's +/- section title. Its initial state when the
+            # GUI computes it (raw JS, e.g. "any ML policy set") is not
+            # evaluated here: closed, one click away -- nothing is hidden.
+            fold = b.get("fold")
             blocks.append({"title": b.get("title"), "fields": fields,
-                           "unknown": bstate is None})
+                           "unknown": bstate is None,
+                           "fold": bool(fold),
+                           "open": fold.get("open") is True if fold else True})
     return {"key": dialog_key, "title": d.get("title", {}), "blocks": blocks,
             "hidden": hidden}
 

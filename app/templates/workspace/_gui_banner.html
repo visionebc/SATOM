@@ -1,27 +1,36 @@
-{# Which GUI template this page is drawn from, and how well it fits the device. #}
+{# Which GUI template this page is drawn from, and how well it fits the device.
+   An exact match is a one-line note (FortiWeb's own page has no banner); a
+   mismatch stays a warning. `gui_aside` is an optional link on the right. #}
 {% set _b = tpl.based_on %}
 {% if match == 'exact' %}
-<div class="fw-alert fw-alert-info mb-2">
-  <i class="bi bi-layout-text-window me-1"></i>
-  {{ _('FortiWeb %(train)s.x GUI layout — template built from FortiWeb %(ver)s build%(build)s.', train=tpl.applies_to, ver=_b.version, build=_b.build) }}
-  {{ _('This device runs %(dv)s.', dv=appliance.fw_version or '?') }}
+<div class="fwg-note">
+  <i class="bi bi-layout-text-window"></i>
+  <span>{{ _('FortiWeb %(train)s.x GUI layout — template built from FortiWeb %(ver)s build%(build)s.', train=tpl.applies_to, ver=_b.version, build=_b.build) }}
+  {{ _('This device runs %(dv)s.', dv=appliance.fw_version or '?') }} · {{ _('read-only') }}</span>
+  {% if gui_aside %}{{ gui_aside|safe }}{% endif %}
 </div>
-{% elif match == 'older' %}
-<div class="fw-alert fw-alert-warning mb-2">
+{% else %}
+<div class="fwg-note">
+  <i class="bi bi-layout-text-window"></i><span>{{ _('read-only') }}</span>
+  {% if gui_aside %}{{ gui_aside|safe }}{% endif %}
+</div>
+{% if match == 'older' %}
+<div class="fw-alert fw-alert-warning">
   <i class="bi bi-exclamation-triangle me-1"></i>
   {{ _('This device runs FortiWeb %(dv)s, but this layout was built from FortiWeb %(ver)s (%(train)s.x). Newer firmware adds or renames fields in this GUI; those are not shown here.', dv=appliance.fw_version or '?', ver=_b.version, train=tpl.applies_to) }}
 </div>
 {% elif match == 'newer' %}
-<div class="fw-alert fw-alert-warning mb-2">
+<div class="fw-alert fw-alert-warning">
   <i class="bi bi-exclamation-triangle me-1"></i>
   {{ _('This device runs FortiWeb %(dv)s, older than every layout template (oldest: %(ver)s). Some fields shown may not exist on this firmware.', dv=appliance.fw_version or '?', ver=_b.version) }}
 </div>
 {% else %}
-<div class="fw-alert fw-alert-warning mb-2">
+<div class="fw-alert fw-alert-warning">
   <i class="bi bi-question-circle me-1"></i>
   {{ _('The firmware of this device is not known yet; showing the FortiWeb %(train)s.x layout (built from %(ver)s).', train=tpl.applies_to, ver=_b.version) }}
 </div>
 {% endif %}
+{% endif %}
 {% if not dev.opmode %}
-<div class="fw-alert fw-alert-warning mb-2">{{ _('Operation mode not cached for this device: fields that depend on it are shown and marked.') }}</div>
+<div class="fw-alert fw-alert-warning">{{ _('Operation mode not cached for this device: fields that depend on it are shown and marked.') }}</div>
 {% endif %}

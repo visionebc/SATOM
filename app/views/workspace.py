@@ -801,7 +801,7 @@ def _gui_device(appl):
         log_exception(exc, context='workspace.gui.visibility')
         vis = {}
     return gui_template.device_context(opmode=opmode, visibility=vis,
-                                       firmware=appl.firmware)
+                                       firmware=appl.firmware, model=appl.model)
 
 
 def _gui_template_or_404(appl):

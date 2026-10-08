@@ -80,17 +80,21 @@ def select(product: str, page: str, fw_version: str | None):
 # Device context: what the conditions ask about the device
 # --------------------------------------------------------------------------- #
 def device_context(*, opmode: str | None, visibility: dict | None,
-                   firmware: str | None) -> dict:
+                   firmware: str | None, model: str | None = None) -> dict:
     """Facts a template's ``contexts`` resolve against.
 
     ``visibility`` is ``system feature-visibility`` (feature -> enable/disable).
-    ``firmware`` is the full status string (``FortiWeb-KVM 7.6.8,build1128…``):
-    the platform word tells a container build (``HAVE_VIRT_DOCKER``) apart.
+    The platform word of ``FortiWeb-KVM 7.6.8…`` tells a container build
+    (``HAVE_VIRT_DOCKER``) apart. It sits in the full status string, which the
+    appliance row may hold as ``firmware`` or -- as on a1, where ``firmware`` is
+    just ``7.6.8`` -- as ``model``; both are tried.
     """
     platform = None
-    m = re.match(r"\s*FortiWeb-(\S+)\s", firmware or "")
-    if m:
-        platform = m.group(1)
+    for src in (firmware, model):
+        m = re.match(r"\s*FortiWeb-(\S+)\s", src or "")
+        if m:
+            platform = m.group(1)
+            break
     return {"opmode": opmode or None, "visibility": dict(visibility or {}),
             "platform": platform}
 

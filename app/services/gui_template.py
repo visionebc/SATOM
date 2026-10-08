@@ -253,9 +253,83 @@ def _display(field: dict, row: dict, dev: dict):
     return v
 
 
-def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict) -> dict:
+# The objects a sub-table column or a sub-dialog field reads through another
+# table, by the name the template gives them (REST path or GUI data source) ->
+# the SATOM cache logical that holds them.
+REF_LOGICALS = {
+    "server-policy/http-content-routing-policy": "http_content_routing",
+    "server.http-content-routing-policy": "http_content_routing",
+}
+
+
+def needed_refs(tpl: dict, dialog_key: str) -> set[str]:
+    """Cache logicals a dialog's sub-tables / from_ref fields join against."""
+    d = tpl["dialogs"][dialog_key]
+    out = set()
+    for b in d["blocks"]:
+        for f in b["fields"]:
+            for c in f.get("columns") or []:
+                lg = REF_LOGICALS.get((c.get("join") or {}).get("from"))
+                if lg:
+                    out.add(lg)
+            if f.get("from_ref"):
+                ref = next((g for bb in d["blocks"] for g in bb["fields"]
+                            if g.get("key") == f["from_ref"]["key"]), {})
+                lg = REF_LOGICALS.get(ref.get("source"))
+                if lg:
+                    out.add(lg)
+    return out
+
+
+def row_dialogs(tpl: dict, dialog_key: str) -> dict:
+    """{row dialog key: sub-table name} for the sub-tables of a dialog."""
+    return {f["row_dialog"]: f.get("subtable")
+            for b in tpl["dialogs"][dialog_key]["blocks"] for f in b["fields"]
+            if f.get("kind") == "table" and f.get("row_dialog")}
+
+
+def _cell(col: dict, r: dict, refs: dict):
+    bw = col.get("blank_when")
+    if bw and r.get(bw["field"]) == bw["eq"]:
+        return ""
+    j = col.get("join")
+    if j:
+        obj = (refs.get(REF_LOGICALS.get(j.get("from"))) or {}).get(r.get(j["key"])) or {}
+        return obj.get(j["field"]) or ""
+    v = r.get(col["id"])
+    if col.get("labels"):
+        return col["labels"].get(v, v or "")
+    return "" if v is None else v
+
+
+def _from_ref(f: dict, d: dict, data: dict, refs: dict):
+    """A display field showing a field of the object another selector names
+    (content routing: the Server Pool of the chosen routing policy)."""
+    fr = f["from_ref"]
+    ref = next((g for b in d["blocks"] for g in b["fields"] if g.get("key") == fr["key"]), {})
+    obj = (refs.get(REF_LOGICALS.get(ref.get("source"))) or {}).get(data.get(fr["key"])) or {}
+    return obj.get(fr["field"]) or ""
+
+
+def _table_view(f: dict, rows, refs: dict) -> dict:
+    """A sub-table as FortiWeb draws it: toolbar, columns, formatted cells.
+    ``rows`` None = the policy's sub-tables are not in the cache."""
+    cols = f.get("columns") or []
+    return {"columns": [{"id": c["id"], "label": c["label"]} for c in cols],
+            "toolbar": f.get("toolbar") or [],
+            "row_dialog": f.get("row_dialog"),
+            "rows": None if rows is None else
+            [{"id": r.get("id"), "cells": [_cell(c, r, refs) for c in cols]} for r in rows]}
+
+
+def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict, *,
+                subrows: dict | None = None, refs: dict | None = None) -> dict:
     """Blocks -> fields with ``state`` shown / unknown (hidden ones are dropped
-    from ``blocks`` but counted, so the page can say how many the GUI hides)."""
+    from ``blocks`` but counted, so the page can say how many the GUI hides).
+
+    ``subrows`` {sub-table name: rows | None} fills the inline sub-tables;
+    ``refs`` {cache logical: {name: payload}} serves their joins."""
+    refs = refs or {}
     d = tpl["dialogs"][dialog_key]
     defs = dict(d.get("contexts") or {})
     data = _with_derived(row, d)
@@ -279,7 +353,8 @@ def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict) -> dict:
                 "help": f.get("help") or "",
                 "kind": f.get("kind"),
                 "key": f.get("key"),
-                "value": _display(f, data, dev),
+                "value": _from_ref(f, d, data, refs) if f.get("from_ref")
+                else _display(f, data, dev),
                 "on": f.get("on", "enable"),
                 "suffix": f.get("suffix") or "",
                 "required": bool(f.get("required")),
@@ -291,6 +366,8 @@ def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict) -> dict:
                 "dialog": f.get("dialog"),
                 "source": f.get("source"),
                 "edit_shortcut": bool(f.get("edit_shortcut")),
+                "table": _table_view(f, (subrows or {}).get(f.get("subtable")), refs)
+                if f.get("kind") == "table" else None,
                 "unknown": unknown,
                 "unknown_why": (unknowns(b.get("cond"), data, defs, dev)
                                 + unknowns(f.get("cond"), data, defs, dev)) if unknown else [],

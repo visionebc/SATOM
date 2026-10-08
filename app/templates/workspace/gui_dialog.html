@@ -22,8 +22,41 @@
     <table class="fwg-table fwg-rows"><tbody>
     {% for r in f.value or [] %}<tr><td>{{ r.label }}</td><td><span class="fwg-switch {{ 'is-on' if r.value == 'enable' }}"></span></td></tr>{% endfor %}
     </tbody></table>
-  {% elif f.kind == 'table' %}
-    <span class="text-muted">{{ _('Sub-table — shown in the SATOM view of this policy.') }}</span>
+  {% elif f.kind == 'table' and f.table %}
+    {# FortiWeb's inline sub-table: toolbar (Create New / Edit / Delete / Move /
+       Search), then the grid. Edit opens the row's own dialog; the rest write. #}
+    {% set t = f.table %}
+    {% set _ro = _('Read-only: nothing is sent to the device.') %}
+    <div class="fwg-sub" data-fwg-sub>
+      <div class="fwg-toolbar">
+      {% for it in t.toolbar %}
+        {% set a = it.action or '' %}
+        {% if a == 'search' %}
+        <label class="fwg-search mb-0"><input type="search" placeholder="{{ it.label }}" aria-label="{{ it.label }}" data-fwg-search><span aria-hidden="true"><i class="bi bi-search"></i></span></label>
+        {% elif a.startswith('edit') and t.row_dialog and name and t.rows %}
+        <a class="fwg-tb-btn" href="#" aria-disabled="true" data-fwg-edit><i class="bi bi-pencil-fill"></i>{{ it.label }}</a>
+        {% else %}
+        <span class="fwg-tb-btn" aria-disabled="true" title="{{ _ro }}"><i class="bi {{ 'bi-plus-lg' if a.startswith('add') else ('bi-pencil-fill' if a.startswith('edit') else ('bi-trash-fill' if a.startswith('remove') else 'bi-arrow-down-up')) }}"></i>{{ it.label }}</span>
+        {% endif %}
+      {% endfor %}
+      </div>
+      <table class="fwg-table">
+        <thead><tr>{% for c in t.columns %}<th>{{ c.label }}</th>{% endfor %}</tr></thead>
+        <tbody>
+        {% if t.rows is none %}
+          <tr><td colspan="{{ t.columns|length }}" class="text-muted">{{ _('Not in the SATOM cache: this sub-table needs a deep capture of the policy, and SATOM does not capture every sub-table yet.') }}</td></tr>
+        {% else %}
+          {% for r in t.rows %}
+          <tr tabindex="0"{% if t.row_dialog and name %} data-href="{{ url_for('workspace.gui_policy', appliance_id=appliance.id, name=name, dialog=t.row_dialog, sub=r.id) }}"{% endif %}>
+            {% for v in r.cells %}<td>{{ v }}</td>{% endfor %}
+          </tr>
+          {% else %}
+          <tr><td colspan="{{ t.columns|length }}" class="fwg-noresults">{{ _('No results') }}</td></tr>
+          {% endfor %}
+        {% endif %}
+        </tbody>
+      </table>
+    </div>
   {% elif f.kind == 'view_switch' %}
     <span class="fwg-radio">{% for o in f.options %}<span class="{{ 'is-on' if loop.first }}">{{ o.label }}</span>{% endfor %}</span>
     <span class="text-muted small">{{ _('Machine-learning models are managed from their own pages.') }}</span>
@@ -81,4 +114,34 @@
     <a class="fwg-btn" href="{{ back }}">{{ _('Cancel') }}</a>
   </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  // Sub-tables behave like FortiWeb's grid: click selects, double-click /
+  // Enter / Edit opens the row's dialog, Search filters.
+  document.querySelectorAll('[data-fwg-sub]').forEach(function (box) {
+    var edit = box.querySelector('[data-fwg-edit]');
+    var rows = Array.prototype.slice.call(box.querySelectorAll('tbody tr[data-href]'));
+    function select(tr) {
+      rows.forEach(function (r) { r.classList.toggle('is-selected', r === tr); });
+      if (edit) {
+        edit.setAttribute('href', tr ? tr.getAttribute('data-href') : '#');
+        edit.setAttribute('aria-disabled', tr ? 'false' : 'true');
+      }
+    }
+    function open(tr) { window.location.href = tr.getAttribute('data-href'); }
+    rows.forEach(function (tr) {
+      tr.addEventListener('click', function () { select(tr); });
+      tr.addEventListener('dblclick', function () { open(tr); });
+      tr.addEventListener('keydown', function (e) { if (e.key === 'Enter') open(tr); });
+    });
+    var q = box.querySelector('[data-fwg-search]');
+    if (q) q.addEventListener('input', function () {
+      var s = q.value.trim().toLowerCase();
+      rows.forEach(function (tr) { tr.hidden = !!s && tr.textContent.toLowerCase().indexOf(s) < 0; });
+    });
+  });
+})();
+</script>
 {% endblock %}

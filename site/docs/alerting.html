@@ -181,8 +181,10 @@ existed, and the map is explicit rather than clever:</p>
 <p>The <code>device</code> family also carries <code>device.signature_stale</code> and
 <code>device.signature_unreadable</code> (3.0): a FortiWeb whose signature database is
 older than <code>alerts.signature_max_days</code> (default 7), reports it never updated,
-or whose version the daily <code>signature_check</code> action could not read. They ride
-the <em>Device health</em> toggle.</p>
+or whose version the daily <code>signature_check</code> action could not read — and
+<code>device.signature_source_missing</code>: FortiWebs are registered but no signature
+source is configured (or the configured one no longer exists), so nothing feeds
+the local signature index. They ride the <em>Device health</em> toggle.</p>
 <p>Two families are <strong>unfilterable</strong> and no sink configuration can drop them:</p>
 <ul>
 <li><code>engine</code> — the alert engine itself failed. A channel silenced by a crashed

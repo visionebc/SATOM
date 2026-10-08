@@ -6,6 +6,38 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — signature source and local signature index
+
+- **Administrator → Signatures → Signature source**: choose the FortiWeb SATOM
+  collects signatures from. **Save and collect now** reads its whole catalog
+  (read-only REST, a background job). The setting is
+  `signatures.source.fortiweb`.
+- **Local signature index**: every signature id with its class, description
+  and lineage (first seen, last seen, removed in), a snapshot per database
+  version, and what each version added, changed or removed (new tables
+  `signature_snapshots`, `signature_entries`, `signature_changes`; migration
+  `sigidx01_signature_index`; content under `data/signatures/objects/`). A new
+  version notifies every administrator. Snapshot history with a details page and
+  a search over the index on the Signatures page. An empty read is refused; a
+  read equal to the latest snapshot writes nothing.
+- `signature_check` now reads the database versions over REST
+  (`GET /api/v2.0/system/config.fortiguard`: signature DB plus antivirus, IP
+  reputation, GeoIP, known bots and the rest, with licence validity), keeping
+  `diagnose system update info` over SSH as the fallback, and collects the
+  catalog from the source when its version is new. The stale reason names an
+  invalid FortiGuard licence.
+- Alert `device.signature_source_missing`: FortiWebs registered and no
+  signature source (or a deleted one).
+
+### Changed
+
+- The `signature_sync` scheduled action indexes through the signature index and
+  only from the configured source; any other target is refused. Before, any
+  device overwrote the shared catalog, so the cached catalog could belong to
+  whichever box was read last.
+- A failed catalog read from the source makes the `signature_check` round red;
+  a node with no FortiWeb says so instead of reporting "0 current".
+
 ## [3.0.0] - 2026-10-08
 
 ### Added — knowledge feed (3.0.0)

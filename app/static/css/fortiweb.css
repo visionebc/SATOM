@@ -2448,3 +2448,53 @@ a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
   background:var(--fw-surface-alt,#F4F5F7);color:var(--fw-text-secondary,#5A6270);
   border:1px solid var(--fw-border,#D6DAE0);vertical-align:middle;}
 .fw-auto-chip.is-on{display:inline-block;}
+
+/* ── FortiWeb GUI layout (workspace/gui_*.html, services/gui_template.py) ──
+   FortiWeb's own form geometry — label column, value column, section titles
+   with a rule — drawn with SATOM's light theme (no Fortinet assets). */
+.fwg-toolbar{display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;}
+.fwg-menu{position:relative;}
+.fwg-menu>summary{list-style:none;cursor:pointer;}
+.fwg-menu>summary::-webkit-details-marker{display:none;}
+.fwg-menu-body{position:absolute;z-index:20;top:100%;left:0;min-width:220px;margin-top:2px;
+  background:var(--fw-surface,#fff);border:1px solid var(--fw-border,#D6DAE0);
+  border-radius:var(--fw-radius,4px);box-shadow:var(--fw-card-shadow);padding:4px 0;}
+.fwg-menu-body a{display:block;padding:6px 12px;color:var(--fw-text-primary);text-decoration:none;font-size:13px;}
+.fwg-menu-body a:hover{background:var(--fw-surface-alt,#F4F5F7);}
+.fwg-table{width:100%;font-size:13px;border-collapse:collapse;}
+.fwg-table th{background:var(--fw-surface-alt,#F4F5F7);font-weight:600;white-space:nowrap;
+  border-bottom:1px solid var(--fw-border,#D6DAE0);padding:6px 8px;text-align:left;}
+.fwg-table td{border-bottom:1px solid var(--fw-border-light,#E8EBEF);padding:5px 8px;vertical-align:top;}
+.fwg-table tr:hover td{background:var(--fw-surface-alt,#F4F5F7);}
+.fwg-table .fwg-opt{color:var(--fw-text-muted);}
+.fwg-run{color:#15692A;font-weight:600;}
+.fwg-idle{color:#3D4550;}
+.fwg-dialog{max-width:860px;}
+.fwg-section-title{display:flex;align-items:center;gap:10px;margin:18px 0 6px;
+  font-size:14px;font-weight:600;color:var(--fw-text-primary);}
+.fwg-section-title::after{content:"";flex:1;border-bottom:1px solid var(--fw-border,#D6DAE0);}
+.fwg-field{display:grid;grid-template-columns:240px 1fr;gap:12px;align-items:start;
+  padding:5px 0;font-size:13px;}
+.fwg-label{color:var(--fw-text-secondary);padding-top:3px;}
+.fwg-label .bi-question-circle{color:var(--fw-text-muted);margin-left:4px;cursor:help;}
+.fwg-value{min-height:24px;}
+.fwg-input{display:inline-block;min-width:240px;max-width:100%;padding:3px 8px;
+  border:1px solid var(--fw-border,#D6DAE0);border-radius:3px;background:var(--fw-surface-alt,#F4F5F7);
+  color:var(--fw-text-primary);word-break:break-all;}
+.fwg-input.is-empty{color:var(--fw-text-muted);font-style:italic;}
+.fwg-switch{display:inline-block;width:34px;height:18px;border-radius:9px;position:relative;
+  background:#C3C9D1;vertical-align:middle;}
+.fwg-switch::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;
+  border-radius:50%;background:#fff;}
+.fwg-switch.is-on{background:var(--fw-accent);}
+.fwg-switch.is-on::after{left:18px;}
+.fwg-suffix{color:var(--fw-text-muted);margin-left:8px;}
+.fwg-radio{display:inline-flex;gap:14px;flex-wrap:wrap;}
+.fwg-radio span{color:var(--fw-text-muted);}
+.fwg-radio span.is-on{color:var(--fw-text-primary);font-weight:600;}
+.fwg-chip{display:inline-block;padding:1px 7px;margin:0 4px 3px 0;border-radius:3px;
+  border:1px solid var(--fw-border,#D6DAE0);background:var(--fw-surface,#fff);font-size:12px;}
+.fwg-unknown{border-left:3px solid #7A5700;padding-left:8px;}
+.fwg-unknown-tag{font-size:11px;color:#7A5700;margin-left:6px;}
+.fwg-req{color:#8B1C2A;margin-left:2px;}
+.fwg-rows{max-width:360px;}

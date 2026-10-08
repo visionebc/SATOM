@@ -68,6 +68,10 @@
     </div>
   </div>
   <div class="d-flex gap-2">
+    {% if appliance and appliance.kind == 'fortiweb' %}
+    <a class="btn btn-sm btn-fw-outline" href="{{ url_for('workspace.gui_list', appliance_id=appliance.id) }}"
+       title="{{ _('This list and its dialogs as FortiWeb lays them out (read-only)') }}"><i class="bi bi-layout-text-window me-1"></i>{{ _('FortiWeb layout') }}</a>
+    {% endif %}
     {% set _can_write = current_user.can('config_write') %}
     {% if appliance and _can_write %}<a href="{{ url_for('workspace.new_policy', appliance_id=appliance.id) }}" class="btn btn-fw-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>{{ _('New Server Policy') }}</a>
     <a href="{{ url_for('spo_wizard.index', appliance_id=appliance.id) }}" class="btn btn-fw-outline btn-sm"><i class="bi bi-magic me-1"></i>{{ _('From a line profile') }}</a>{% endif %}

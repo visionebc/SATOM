@@ -544,3 +544,105 @@ def import_sigmeta(run, item, p: dict, st: dict) -> dict:
             updated += 1
     db.session.commit()
     return {"added": added, "updated": updated}
+
+
+# ---------------------------------------------------------------------------
+# gui-template -> data/gui-templates/<product>/<page>/<version>-<build>.json
+# ---------------------------------------------------------------------------
+
+#: Code from a GUI bundle never enters a node (texts may: Fortinet's labels and
+#: help are part of the template by decision of 2026-10-08).
+_GUI_CODE_RX = re.compile(r"function\s*\(|=>\s*\{|<\s*/?\s*(div|span|script|form|input|f-[a-z-]+)\b"
+                          r"|\bng-(if|model|click|show|hide|repeat|class)\b|\$ctrl\.|\$scope\.")
+MAX_GUI_PAYLOAD = 8 * 1024 * 1024
+
+
+def _gui_code(node, path="") -> str:
+    if isinstance(node, dict):
+        for k, v in node.items():
+            hit = _gui_code(v, "%s/%s" % (path, k))
+            if hit:
+                return hit
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            hit = _gui_code(v, "%s/%d" % (path, i))
+            if hit:
+                return hit
+    elif isinstance(node, str) and _GUI_CODE_RX.search(node):
+        return "%s: %s" % (path, node[:60])
+    return ""
+
+
+def validate_gui(run, item) -> dict:
+    """A ``satom.gui-template/2`` page layout of one exact build. The importer
+    does not assume who measured it (decision 4: a customer-run harvester may
+    publish templates too) — it checks the shape, the identity and that no
+    bundle code rides along."""
+    from ..vendor import satom_guikit as guikit
+    from . import gui_store
+    data = _payload(run, item)
+    if data.get("schema") != guikit.SCHEMA_V2:
+        raise ItemInvalid("schema %r is not %s" % (data.get("schema"), guikit.SCHEMA_V2))
+    if len(json.dumps(data)) > MAX_GUI_PAYLOAD:
+        raise ItemInvalid("template larger than %d bytes" % MAX_GUI_PAYLOAD)
+    ident = guikit.identity(data)
+    product = _product_of(item, data)
+    if product != ident["product"]:
+        raise ItemInvalid("item product %r but template product %r" % (product, ident["product"]))
+    version = fv.normalize(ident["version"])
+    if not version or version != ident["version"] or not ident["build"].isdigit():
+        raise ItemInvalid("template does not name an exact build (%r build %r)"
+                          % (ident["version"], ident["build"]))
+    try:
+        path = gui_store.file_for(product, ident["page"], version, ident["build"])
+    except ValueError as exc:
+        raise ItemInvalid(str(exc))
+    dialogs = data.get("dialogs")
+    if not isinstance(dialogs, dict) or not dialogs or not isinstance(data.get("list"), dict):
+        raise ItemInvalid("template has no dialogs / list")
+    hit = _gui_code(data)
+    if hit:
+        raise ItemInvalid("template carries GUI bundle code (%s)" % hit)
+    return {"product": product, "page": ident["page"], "version": version,
+            "build": ident["build"], "path": path, "template": data,
+            "sha256": guikit.content_hash(data) + ":" + _canon(data)}
+
+
+def _canon(data: dict) -> str:
+    import hashlib
+    body = {k: v for k, v in data.items() if k != "_import"}
+    return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"),
+                                     ensure_ascii=False).encode()).hexdigest()
+
+
+def _gui_unit(p: dict) -> str:
+    return "gui-template/%s/%s/%s-%s" % (p["product"], p["page"], p["version"], p["build"])
+
+
+def _gui_current(p: dict):
+    path = p["path"]
+    if not path.is_file():
+        return None
+    try:
+        cur = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "unreadable"
+    from ..vendor import satom_guikit as guikit
+    cur = {k: v for k, v in cur.items() if k != "_import"}   # what this node added
+    return guikit.content_hash(cur) + ":" + _canon(cur)
+
+
+def state_gui(run, item, p: dict) -> dict:
+    c = run.claim(_gui_unit(p), _gui_current(p), p["sha256"])
+    return dict(c, page=p["page"], build="%s build%s" % (p["version"], p["build"]),
+                not_in_gui=len(p["template"].get("not_in_gui") or []))
+
+
+def import_gui(run, item, p: dict, st: dict) -> dict:
+    from .api_pack import _write_json
+    body = dict(p["template"])
+    body["_import"] = {"provenance": run.provenance, "built_at": str(run.built_at)}
+    replaced = p["path"].is_file()
+    _write_json(p["path"], body)
+    run.ledger.set(_gui_unit(p), run.provenance)
+    return {"file": str(p["path"].name), "replaced": replaced}

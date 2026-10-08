@@ -6,6 +6,29 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — GUI layouts per exact build, through the knowledge feed
+
+- **Templates per EXACT build** (`satom.gui-template/2`): the knowledge pack
+  carries a new section `gui-templates`; each item is the GUI layout of one
+  page measured on one build by the harvester (with Fortinet's labels and help
+  texts), filed under `data/gui-templates/<product>/<page>/<version>-<build>.json`.
+  A new firmware build no longer needs a SATOM release to get its layout. The
+  importer checks the shape and the exact build and rejects any item carrying
+  GUI bundle code; it does not assume which harvester measured it.
+- **Per-device resolution**: every FortiWeb-layout page picks the layout of the
+  device's own build, then its version, its train, the closest older train; a
+  knowledge-pack layout beats the one shipped with the release. The banner says
+  which build the layout comes from and whether it is a knowledge-pack layout.
+- **GUI changes in reports**: the migration report gains a `gui` block and
+  `gui_*` rows (a field FortiWeb's GUI no longer shows is a warning, any other
+  change is info), Build compatibility → Compare shows the GUI layout changes,
+  `api_library.compare()` carries a `gui` channel, and a bulk apply notes the
+  fields the target build's GUI does not show. Only layouts measured on both
+  builds are compared; otherwise the report says the layout was not measured.
+- `app/vendor/satom_guikit/` — the harvester's GUI-template contract
+  (standard library only), vendored and pinned by hash
+  (`deploy/vendor_guikit.sh`).
+
 ### Added — "Not in GUI, but in CLI": every field a device has, on every product
 
 - **Permanent rule**: SATOM shows every field a device has on its exact build.
@@ -22,8 +45,11 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   CLI writer inside the parent row; a new row carrying a CLI-only field is
   refused before any write, with the reason.
 - **FortiWeb Server Policy layout view**: the REST fields FortiWeb's own GUI
-  does not place (40 on 7.6.8, 45 on 8.0.6) are listed under the main dialog
-  with their values.
+  does not place (34 on 7.6.8, 39 on 8.0.6 — the five new ones are `ssl-ja4`,
+  `tls-pqc-support`, `tls-pqc-groups`, `allow-nonstd-http`,
+  `unnormalized-url-match`) are listed under the main dialog with their
+  values. Toggle groups (Supported SSL Protocols) and list columns (Status,
+  Protocol) count as shown by the GUI.
 - **FortiGate, FortiAuthenticator, FortiADC, FortiAnalyzer**: every table view
   carries the section for its object; FortiADC and FortiAnalyzer say their GUI
   layout and CLI tree are not measured (no lab device) — nothing is hidden.

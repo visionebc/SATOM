@@ -116,11 +116,12 @@ SECTION_FACTORY = "factory"
 SECTION_FIELD_MAP = "field-map"
 SECTION_BASELINES = "baselines"
 SECTION_SIGMETA = "signature-meta"
+SECTION_GUI = "gui-templates"
 #: Sections :func:`export_pack` can write (legacy /1).
 SECTIONS = (SECTION_LIBRARY, SECTION_DOCS, SECTION_CLI)
 #: Sections an import understands.
 IMPORT_SECTIONS = SECTIONS + (SECTION_FACTORY, SECTION_FIELD_MAP, SECTION_BASELINES,
-                              SECTION_SIGMETA)
+                              SECTION_SIGMETA, SECTION_GUI)
 
 KIND_EVIDENCE = "evidence"
 KIND_RELEASE_NOTES = "release-notes"
@@ -131,6 +132,7 @@ KIND_FACTORY = "factory-wpp"
 KIND_FIELD_MAP = "field-map"
 KIND_BASELINE = "baseline"
 KIND_SIGMETA = "signature-meta"
+KIND_GUI = "gui-template"
 #: (section, kind) pairs this node imports. Anything else is skipped with a
 #: visible warning: a newer publisher may ship a kind an older node lacks.
 KINDS = {
@@ -141,6 +143,7 @@ KINDS = {
     SECTION_FIELD_MAP: (KIND_FIELD_MAP,),
     SECTION_BASELINES: (KIND_BASELINE,),
     SECTION_SIGMETA: (KIND_SIGMETA,),
+    SECTION_GUI: (KIND_GUI,),
 }
 #: The kind of an item that names none (every /1 library and CLI item).
 _IMPLICIT_KIND = {SECTION_LIBRARY: KIND_EVIDENCE, SECTION_CLI: KIND_CLI}
@@ -1404,6 +1407,7 @@ def _handlers() -> dict:
         KIND_FIELD_MAP: (k.validate_field_map, k.state_field_map, k.import_field_map),
         KIND_BASELINE: (k.validate_baseline, k.state_baseline, k.import_baseline),
         KIND_SIGMETA: (k.validate_sigmeta, k.state_sigmeta, k.import_sigmeta),
+        KIND_GUI: (k.validate_gui, k.state_gui, k.import_gui),
     }
 
 

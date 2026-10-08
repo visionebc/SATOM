@@ -1627,7 +1627,18 @@ def compare(product: str, base, target, endpoint=None) -> dict:
         # The CLI channel, reported beside the REST answer above and never
         # mixed into it (fields compare only within one kind of evidence).
         "channels": _cli_compare(product, base, target, endpoint, rows=(bb, tb)),
+        # The GUI layout channel (gui_diff): what Fortinet changed ON SCREEN
+        # between the two builds' measured layouts; whole-build compares only.
+        "gui": _gui_compare(product, base, target) if endpoint is None else None,
     }
+
+
+def _gui_compare(product: str, base, target):
+    try:
+        from . import gui_diff
+        return gui_diff.between(product, base, target)
+    except Exception:  # noqa: BLE001 — never sinks a compare
+        return {"pages": [], "error": "GUI layouts could not be compared"}
 
 
 def _channel_twins(product: str, ep) -> list:

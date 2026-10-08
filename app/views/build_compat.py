@@ -215,7 +215,8 @@ def diff_doc(product: str, a: str, b: str, *, q: str = "", page: int = 1,
             "field_moves": tree.get("field_moves") or [],
             "channel_moves": len(ch.get("channel_moves") or []),
             "endpoints": eps[(page - 1) * per_page: page * per_page],
-            "total": total, "page": page, "pages": pages}
+            "total": total, "page": page, "pages": pages,
+            "gui": cmp_.get("gui") or {"pages": []}}
 
 
 @bp.route('/diff')

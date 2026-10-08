@@ -47,6 +47,20 @@
   </div></div>
 </div>
 
+{% if d.gui and d.gui.pages %}
+<div class="fw-card mb-3 p-3" data-bc-gui>
+  <strong>{{ _('GUI layout') }}</strong> <span class="text-muted small">{{ _('what Fortinet changed on screen between the measured layouts of the two builds') }}</span>
+  {% for p in d.gui.pages %}
+    <div class="mt-2 small" data-bc-gui-page="{{ p.page }}"><code>{{ p.page }}</code>
+    {% if p.measured %}
+      {% for c in p.changes %}<div data-bc-gui-change="{{ c.kind }}"><span class="fw-badge {{ 'fw-badge-warning' if c.kind in ('removed', 'dialog_removed') else 'fw-badge-info' }}">{{ c.kind|replace('_', ' ') }}</span> <code>{{ c.dialog }}</code>{% if c.field %} · <code>{{ c.field }}</code>{% endif %}{% if c.from is string or c.to is string %} — {{ c.from or '' }} → {{ c.to or '' }}{% endif %}</div>
+      {% else %}<div class="text-muted">{{ _('No change.') }}</div>{% endfor %}
+    {% else %}<div class="text-muted">{{ p.note }}</div>{% endif %}
+    </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="fw-card mb-3">
   <div class="d-flex flex-wrap align-items-center gap-2" style="padding:10px 14px;border-bottom:1px solid var(--fw-border, #e3e8ef);">
     <strong>{{ _('Changed objects') }}</strong> <span class="fw-badge fw-badge-secondary">{{ d.total }}</span>

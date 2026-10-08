@@ -6,9 +6,17 @@
 <div class="fwg-note">
   <i class="bi bi-layout-text-window"></i>
   <span>{{ _('FortiWeb %(train)s.x GUI layout — template built from FortiWeb %(ver)s build%(build)s.', train=tpl.applies_to, ver=_b.version, build=_b.build) }}
-  {{ _('This device runs %(dv)s.', dv=appliance.fw_version or '?') }} · {{ _('read-only') }}</span>
+  {{ _('This device runs %(dv)s.', dv=appliance.fw_version or '?') }}
+  {% if tpl.origin and tpl.origin.source == 'pack' %}<span class="fw-badge fw-badge-info" data-gui-origin="pack" title="{{ tpl.origin.provenance }}">{{ _('knowledge pack') }}</span>{% endif %}
+  · {{ _('read-only') }}</span>
   {% if gui_aside %}{{ gui_aside|safe }}{% endif %}
 </div>
+{% if tpl.closeness == 'train' %}
+<div class="fw-alert fw-alert-info" data-gui-closeness="train">
+  <i class="bi bi-info-circle me-1"></i>
+  {{ _('No layout was measured on FortiWeb %(dv)s itself; this one is from %(ver)s, the closest build of the same train. Fields this device has and the layout does not place are listed under "Not in GUI, but in CLI".', dv=appliance.fw_version or '?', ver=_b.version) }}
+</div>
+{% endif %}
 {% else %}
 <div class="fwg-note">
   <i class="bi bi-layout-text-window"></i><span>{{ _('read-only') }}</span>

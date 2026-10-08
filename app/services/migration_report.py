@@ -593,6 +593,7 @@ def build(product: str, source, target, text: str, *, view: dict | None = None,
     for blk in cli_schema._full_blocks(text).values():
         chains[blk.path] = cli_schema._full_kind_chain(blk)
     rows = classify(view, device_rows, chains)
+    gui = _gui_block(product, source, target, rows)
     comp = view["completeness"]
     if not comp["complete"]:
         rows.append(_row(SEV_WARN, "target_incomplete", "", "", "", 0,
@@ -616,7 +617,35 @@ def build(product: str, source, target, text: str, *, view: dict | None = None,
                             fields=sum(len({f for r in rs for f in r})
                                        for rs in device_rows.values())),
             "rows": rows, "objects": _objects(rows, device_rows), "library": lib_meta,
-            **base}
+            "gui": gui, **base}
+
+
+#: GUI layout changes (gui_diff): a field the target's GUI no longer shows is a
+#: warning (the operator loses it on screen); every other change is info.
+_GUI_SEV = {"removed": SEV_WARN, "dialog_removed": SEV_WARN}
+
+
+def _gui_block(product: str, source, target, rows: list) -> dict:
+    """The "GUI layout" block between the two builds' resolved templates; each
+    change also becomes a ``gui_<kind>`` row. Never fails the report."""
+    try:
+        from . import gui_diff
+        gui = gui_diff.between(product, source, target)
+    except Exception:  # noqa: BLE001
+        return {"pages": [], "error": "GUI layouts could not be compared"}
+    for p in gui["pages"]:
+        for c in p["changes"]:
+            frm = c["from"] if not isinstance(c["from"], (dict, list)) else "…"
+            to = c["to"] if not isinstance(c["to"], (dict, list)) else "…"
+            rows.append(_row(_GUI_SEV.get(c["kind"], SEV_INFO), "gui_" + c["kind"],
+                             "GUI %s / %s" % (p["page"], c["dialog"]), "", c["field"], 0,
+                             "FortiWeb GUI %s → %s: %s %s (%s → %s)"
+                             % (p["source"].get("version"), p["target"].get("version"),
+                                c["kind"].replace("_", " "), c["field"] or c["dialog"],
+                                frm, to)))
+    # A page whose layout was not measured on one of the builds carries its
+    # note in the block (report["gui"]), not as a finding row.
+    return gui
 
 
 # ---------------------------------------------------------------------------

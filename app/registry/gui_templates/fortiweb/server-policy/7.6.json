@@ -2115,6 +2115,11 @@
         "ctx": "CONFIG_SYSTEM_FWB_CMINTF"
        }
       ]
+     },
+     "fold": {
+      "open": {
+       "raw": "null!=this.anomalyDetectionPolicy||null!=this.botDetectionPolicy||null!=this.apiDiscoveryPolicy"
+      }
      }
     },
     {
@@ -2143,23 +2148,23 @@
     "enableAcceleration": {
      "visibility": "acceleration-policy"
     },
+    "enableTrafficMirror": {
+     "visibility": "traffic-mirror"
+    },
+    "modeShowZtna": {
+     "ztna_ems": true
+    },
     "showTrafficLogConfig": {
      "traffic_log_global": true
     },
     "HAVE_VIRT_DOCKER": {
      "device_config": "HAVE_VIRT_DOCKER"
     },
-    "enableTrafficMirror": {
-     "visibility": "traffic-mirror"
+    "modeShowScript": {
+     "opmode_is": "reverse-proxy"
     },
     "enableWebCache": {
      "visibility": "web-cache"
-    },
-    "modeShowZtna": {
-     "ztna_ems": true
-    },
-    "modeShowScript": {
-     "opmode_is": "reverse-proxy"
     },
     "CONFIG_SYSTEM_FWB_CMINTF": {
      "device_config": "CONFIG_SYSTEM_MODEL",
@@ -3995,9 +4000,8 @@
       }
      ],
      "title_key": "server_policy.cert_set",
-     "cond": {
-      "ctx": "visible_cert_settings",
-      "undefined": true
+     "fold": {
+      "open": true
      }
     },
     {
@@ -4411,9 +4415,8 @@
       }
      ],
      "title_key": "server_policy.ssl_con_set",
-     "cond": {
-      "ctx": "visible_ssl_settings",
-      "undefined": true
+     "fold": {
+      "open": false
      }
     },
     {
@@ -4541,23 +4544,13 @@
       }
      ],
      "title_key": "server_policy.hsts_header_control",
-     "cond": {
-      "ctx": "visible_http_header_insertion",
-      "undefined": true
+     "fold": {
+      "open": false
      }
     }
    ],
    "contexts": {
-    "visible_cert_settings": {
-     "unknown": true
-    },
     "fips": {
-     "unknown": true
-    },
-    "visible_http_header_insertion": {
-     "unknown": true
-    },
-    "visible_ssl_settings": {
      "unknown": true
     }
    },
@@ -4580,9 +4573,8 @@
       }
      ],
      "title_key": "server_policy.cert_set",
-     "cond": {
-      "ctx": "visible_cert_settings",
-      "undefined": true
+     "fold": {
+      "open": true
      }
     },
     {
@@ -4970,20 +4962,13 @@
       }
      ],
      "title_key": "server_policy.ssl_con_set",
-     "cond": {
-      "ctx": "visible_ssl_settings",
-      "undefined": true
+     "fold": {
+      "open": true
      }
     }
    ],
    "contexts": {
-    "visible_cert_settings": {
-     "unknown": true
-    },
     "fips": {
-     "unknown": true
-    },
-    "visible_ssl_settings": {
      "unknown": true
     }
    },
@@ -5053,9 +5038,8 @@
       }
      ],
      "title_key": "server_policy.cert_set",
-     "cond": {
-      "ctx": "visible_cert_settings",
-      "undefined": true
+     "fold": {
+      "open": true
      }
     },
     {
@@ -5443,20 +5427,13 @@
       }
      ],
      "title_key": "server_policy.ssl_con_set",
-     "cond": {
-      "ctx": "visible_ssl_settings",
-      "undefined": true
+     "fold": {
+      "open": false
      }
     }
    ],
    "contexts": {
-    "visible_cert_settings": {
-     "unknown": true
-    },
     "fips": {
-     "unknown": true
-    },
-    "visible_ssl_settings": {
      "unknown": true
     }
    },

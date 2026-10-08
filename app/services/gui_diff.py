@@ -22,14 +22,12 @@ MEASURED = ("build", "version")
 def pages(product: str) -> list:
     from . import gui_store
     out = set()
-    roots = [gui_store.shipped_root() / product]
     try:
-        roots.append(gui_store.root() / product)
-    except RuntimeError:
-        pass
-    for r in roots:
-        if r.is_dir():
-            out.update(p.name for p in r.iterdir() if p.is_dir())
+        r = gui_store.root() / product
+    except RuntimeError:            # no app context: no data dir, no layouts
+        return []
+    if r.is_dir():
+        out.update(p.name for p in r.iterdir() if p.is_dir())
     return sorted(out)
 
 

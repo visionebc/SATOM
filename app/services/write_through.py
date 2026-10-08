@@ -142,8 +142,7 @@ def local_subrows(appliance_id, logical, mkey, subtable, rows, *, session=None) 
     a fresh device read of that sub-table (``rows``: the whole list, so a row
     the device no longer has is dropped and a new one is added). Rows match on
     ``id``. Returns the rows now cached, or None when the object has no deep
-    capture (its sub-tables are unknown, not empty) or a new row cannot be
-    placed (no sibling row to copy the cache identity from)."""
+    capture (its sub-tables are unknown, not empty)."""
     from ..extensions import db
     from ..models_cache import DeviceObject
     session = session or db.session
@@ -159,20 +158,28 @@ def local_subrows(appliance_id, logical, mkey, subtable, rows, *, session=None) 
     by_id = {str((k.payload or {}).get("id")): k for k in kids}
     proto = kids[0] if kids else None
     fresh = [r for r in rows if isinstance(r, dict)]
-    if proto is None and fresh:
-        return None
     seen = set()
     for i, r in enumerate(fresh):
         rid = str(r.get("id"))
         seen.add(rid)
         row = by_id.get(rid)
-        if row is None:
+        if row is None and proto is not None:
             row = DeviceObject(appliance_id=appliance_id, snapshot_id=proto.snapshot_id,
                                parent_id=root.id, layer=proto.layer, section=proto.section,
                                logical_name=proto.logical_name, urn=proto.urn,
                                subtable=subtable, depth=proto.depth)
             session.add(row)
             row.mkey = rid if proto.mkey not in (None, "") else None
+        elif row is None:
+            # The FIRST row of a sub-table the capture saw empty: the identity
+            # the deep store gives every child row (device_store._build_node) —
+            # the root's snapshot, layer and section, ``<root>/<subtable>``.
+            row = DeviceObject(appliance_id=appliance_id, snapshot_id=root.snapshot_id,
+                               parent_id=root.id, layer=root.layer, section=root.section,
+                               logical_name="%s/%s" % (root.logical_name, subtable),
+                               subtable=subtable, depth=(root.depth or 0) + 1,
+                               mkey=device_store._mkey_of(r))
+            session.add(row)
         row.payload = dict(r)
         row.idx = i
         try:

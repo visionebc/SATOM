@@ -980,7 +980,9 @@ def _check_signatures() -> list[dict]:
     or whose version could not be read, is a WARNING in the ``device`` family:
     a WAF on stale signatures is a box protecting against last month."""
     from . import signature_freshness as sf
+    from . import signature_index as sidx
     findings: list[dict] = []
+    findings.extend(_check_signature_source(sidx))
     for row in sf.rows(now=_now()):
         if row["status"] == "ok":
             continue
@@ -991,8 +993,9 @@ def _check_signatures() -> list[dict]:
                 "product": row.get("product") or "fortiweb",
                 "title": f"Signature DB version unreadable on {name}",
                 "detail": (f"{name}: {row.get('reason')}. The last known version "
-                           f"is {row.get('version') or 'none'}. Check SSH access "
-                           f"(the read is `{sf.VERSION_CMD}`).")})
+                           f"is {row.get('version') or 'none'}. Check REST access "
+                           f"(the read is GET {sf.REST_PATH}; `{sf.VERSION_CMD}` "
+                           f"over SSH is the fallback).")})
         else:
             findings.append({
                 "key": "device.signature_stale", "severity": SEV_WARNING,
@@ -1002,6 +1005,31 @@ def _check_signatures() -> list[dict]:
                            f"FortiGuard connectivity and licence (System → "
                            f"FortiGuard).")})
     return findings
+
+
+def _check_signature_source(sidx) -> list[dict]:
+    """FortiWebs registered but no usable signature source: nothing feeds the
+    local signature index, and the Signatures page would show a frozen catalog
+    as if it were current."""
+    from ..models import Appliance
+    out: list[dict] = []
+    for product in sidx.PRODUCTS:
+        live = (Appliance.query.filter(Appliance.kind == product)
+                .filter(Appliance.maintenance.is_(False)).count())
+        if not live or sidx.source_appliance(product) is not None:
+            continue
+        stale_id = sidx.source_id(product)
+        out.append({
+            "key": "device.signature_source_missing", "severity": SEV_WARNING,
+            "product": product,
+            "title": "No signature source configured",
+            "detail": ("%d %s device(s) registered but %s, so SATOM is not "
+                       "collecting their signature database. Choose a source on "
+                       "the Signatures page." % (
+                           live, product,
+                           ("the configured source (appliance %s) no longer exists"
+                            % stale_id) if stale_id else "no signature source is set"))})
+    return out
 
 
 _CHECKS = [

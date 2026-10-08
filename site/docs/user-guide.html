@@ -834,21 +834,61 @@ Prevention — plus the profile itself under Policy → Web Protection Profile
 <li>Profile-level editing shows each sub-policy as a dropdown with Edit/＋,
   down to six levels of nesting.</li>
 </ul>
-<h3 id="81-signature-database-freshness-and-fortiguard-metadata">8.1 Signature database freshness and FortiGuard metadata</h3>
+<h3 id="81-signature-source-signature-index-and-database-freshness">8.1 Signature source, signature index and database freshness</h3>
 <p>Every FortiWeb downloads its own signature database from FortiGuard; SATOM
-never carries signatures. What it does is notice when a box stops updating:
-the daily scheduled action <strong><code>signature_check</code></strong> reads, per FortiWeb, only the
-signature database <strong>version</strong> (<code>diagnose system update info</code>, one read-only
-CLI command over SSH) and records when it last changed. The full signature
-catalog (Administrator → Signatures) is re-read only when a version changed.</p>
-<p><strong>Administrator → Signatures</strong> lists every device with its version, last update,
-the time of the check and a status: <em>current</em>, <em>stale</em> or <em>unreadable</em>. A
-device whose signature database is <strong>older than 7 days</strong> — measured from the
-device's own "last update" time, or, when it gives none, from when SATOM saw the
-version change — or that reports it <strong>never</strong> downloaded an update, or whose
-version cannot be read (SSH off, wrong credentials), raises a <strong>device alert</strong>
-through the alert engine (§26.6): the same family, toggle, routing and cooldown
-as the other device-health alerts. The limit is the setting
+never carries signatures, and no SATOM release or pack is needed for new ones.
+SATOM reads them off a device instead.</p>
+<p><strong>The signature source.</strong> On <strong>Administrator → Signatures</strong> choose one FortiWeb
+as the <em>signature source</em> — one with a valid FortiGuard licence that updates on
+schedule. <strong>Save and collect now</strong> reads its whole signature catalog right away
+(a background job; the job dock tracks it). The read is REST and read-only:</p>
+<table>
+<thead>
+<tr>
+<th>What</th>
+<th>How</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Database versions</td>
+<td><code>GET /api/v2.0/system/config.fortiguard</code> — the attack-signature DB plus antivirus, IP reputation, GeoIP, known bots and the others the firmware reports, with their last update and licence validity, in one call. <code>diagnose system update info</code> over SSH is the fallback (signature DB only).</td>
+</tr>
+<tr>
+<td>Catalog</td>
+<td><code>waf/signature.advanced.dictionaries</code> + <code>.details</code>: every main class, sub-class and signature with its description</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The signature index.</strong> Each read is indexed locally: every signature id with
+its class, description and lineage (the DB version it first appeared in, last
+seen, removed in), plus a <strong>snapshot</strong> per database version. A read whose
+content equals the latest snapshot writes nothing. A new version records what
+it <strong>added, changed</strong> (description or class) <strong>and removed</strong>, rings the bell of
+every administrator, and is listed in the snapshot history with a details page.
+The first snapshot is the <em>baseline</em>: its signatures are not reported as new.
+A read that returns no signatures is refused — it never empties the index. The
+page searches the index by id, description or class (removed signatures on
+request). The index also rewrites the catalog the signature editor and the WPP
+views read. The <code>signature_sync</code> scheduled action collects too, but only from
+the configured source: any other target is refused, so another box's older
+database can never appear as a fleet change.</p>
+<p><strong>Freshness, every FortiWeb.</strong> The daily scheduled action <strong><code>signature_check</code></strong>
+reads the database versions of every FortiWeb (one REST call per box) and
+records when they last changed. When the <strong>source's</strong> signature version is not
+the one the index holds, it collects and indexes the catalog in the same round;
+a failed catalog read makes the round red. The page lists every device with its
+signature DB version and the channel it came from (<code>rest</code> or <code>cli</code>), last
+update, licence, the other databases, the time of the check and a status:
+<em>current</em>, <em>stale</em> or <em>unreadable</em>. A device whose signature database is
+<strong>older than 7 days</strong> — measured from the device's own "last update" time, or,
+when it gives none, from when SATOM saw the version change — or that reports it
+<strong>never</strong> downloaded an update (the reason names an invalid FortiGuard licence
+when the device reports one), or whose version cannot be read (REST and SSH
+both refused), raises a <strong>device alert</strong> through the alert engine (§26.6): the
+same family, toggle, routing and cooldown as the other device-health alerts.
+FortiWebs registered with <strong>no signature source</strong>, or a source that no longer
+exists, raise <code>device.signature_source_missing</code>. The limit is the setting
 <code>alerts.signature_max_days</code>. Devices in maintenance are skipped. A node
 updated from 2.x has no <code>signature_check</code> row until you create it
 (<code>sudo satom execute seed actions --yes</code> on the primary, §22.4).</p>
@@ -1921,7 +1961,7 @@ Server Policy for operators):</p>
 </tr>
 <tr>
 <td>Catalog</td>
-<td><code>appid_import</code> (the nightly AppID feed, §25), <code>knowledge_fetch</code> (knowledge packs from the feed, daily, by mode — §22.4), <code>signature_check</code> (signature database version per FortiWeb, daily — §8.1)</td>
+<td><code>appid_import</code> (the nightly AppID feed, §25), <code>knowledge_fetch</code> (knowledge packs from the feed, daily, by mode — §22.4), <code>signature_check</code> (FortiGuard DB versions per FortiWeb + collection from the signature source, daily — §8.1)</td>
 </tr>
 <tr>
 <td>Firmware</td>

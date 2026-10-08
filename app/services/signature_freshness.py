@@ -1,22 +1,30 @@
-"""Signature DB freshness per device (contract C8).
+"""Signature DB freshness per device (contract C8) and the daily collection
+from the signature source.
 
 Signatures never travel in a knowledge pack: every FortiWeb downloads its own
-from FortiGuard. What SATOM can do is notice when one stops doing so. The
-``signature_check`` scheduled action reads, once a day and per FortiWeb, ONLY
-the signature database version string (``diagnose system update info``, the
-"FortiWeb signature" block), stores it with the time it last changed, and
-refreshes the cached signature catalog (``data/signatures.json``) only when a
-version changed — the catalog walk is hundreds of REST reads, the version read
-is one CLI command.
+from FortiGuard. The ``signature_check`` scheduled action does two things:
 
-The alert engine (``alerts._check_signatures``, family ``device``) raises a
-finding when a device's signature DB is older than ``alerts.signature_max_days``
-(default 7) or could not be read.
+1. **Freshness, every FortiWeb.** It reads ONLY the database versions, over
+   REST — ``GET /api/v2.0/system/config.fortiguard`` answers every FortiGuard
+   database (attack signatures, antivirus, IP reputation, GeoIP, known bots,
+   ...) with its version, last update and licence validity in one call. When
+   REST does not answer, ``diagnose system update info`` over SSH is the
+   fallback (signature DB only). The alert engine
+   (``alerts._check_signatures``, family ``device``) raises a finding when a
+   device's signature DB is older than ``alerts.signature_max_days`` (default
+   7) or could not be read.
+2. **Collection, the source only.** The operator picks ONE FortiWeb as the
+   signature source (``signature_index``). When the source's signature DB
+   version is not the one the local index holds, the whole catalog is read
+   off it and indexed: a snapshot, the delta (new / changed / removed
+   signatures) and a bell notification to the administrators. No source
+   configured is an alert finding, not a silent green.
 
-Verified against the lab FortiWeb 7.6.8 (2026-10-08): the command is read-only
-(``ssh_ops.assert_readonly`` accepts ``diagnose``), and on a box that never
-reached FortiGuard it answers ``Version: 0.00271`` with ``Last Update Date: Wed
-Dec 31 16:00:00 1969`` — the epoch, i.e. "never updated", which is stale.
+Verified against the lab FortiWeb 7.6.8 and 8.0.6 (2026-10-08): both answer
+``config.fortiguard`` (``securityService.buildNumber`` = the CLI's "FortiWeb
+signature" version, ``0.00271`` on an unlicensed box whose
+``lastUpdateTime`` is ``1969-12-31``: the epoch, i.e. never updated). The CLI
+command is read-only (``ssh_ops.assert_readonly`` accepts ``diagnose``).
 FortiADC and the other products: not verified, so not checked.
 
 State lives in ``app_settings`` (``signatures.db_state``, JSON keyed by
@@ -29,6 +37,7 @@ import re
 from datetime import datetime, timedelta, timezone
 
 VERSION_CMD = "diagnose system update info"
+REST_PATH = "/api/v2.0/system/config.fortiguard"
 PRODUCTS = ("fortiweb",)
 K_STATE = "signatures.db_state"
 K_MAX_DAYS = "alerts.signature_max_days"
@@ -39,6 +48,66 @@ _VERSION_RE = re.compile(r"^\s*Version\s*:\s*(\S.*?)\s*$", re.I)
 _UPDATED_RE = re.compile(r"^\s*Last Update Date\s*:\s*(.+?)\s*$", re.I)
 _DATE_FORMATS = ("%a %b %d %H:%M:%S %Y", "%a %b %d %Y", "%Y-%m-%d %H:%M:%S",
                  "%Y-%m-%d")
+
+
+def _device_date(raw) -> tuple[str, bool]:
+    """``(iso, never_updated)`` from a device date string. The epoch
+    (1969/1970) means the device never pulled an update."""
+    raw = str(raw or "").strip()
+    for fmt in _DATE_FORMATS:
+        try:
+            at = datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if at.year <= 1970:
+            return "", True
+        return at.isoformat(timespec="seconds"), False
+    return "", False
+
+
+# config.fortiguard block -> (database label, version key). The signature DB is
+# ``securityService``; the others are reported alongside, never assessed.
+REST_DATABASES = (
+    ("securityService", "signature", "buildNumber"),
+    ("antivirusService", "antivirus", "regularVirusDatabaseVersion"),
+    ("reputationService", "ip_reputation", "reputationBuildNumber"),
+    ("geodbService", "geodb", "geodbVersion"),
+    ("knownBotService", "known_bots", "knownBotVersion"),
+    ("fuzzyWebshellService", "webshell", "fuzzyWebshellVersion"),
+    ("credentialStuffingDefense", "credential_stuffing", "databaseVersion"),
+    ("dlpSignature", "dlp", "databaseVersion"),
+    ("sbclService", "sandbox_cloud", "sandboxCloudVersion"),
+)
+
+
+def parse_fortiguard_config(doc) -> dict:
+    """The ``config.fortiguard`` answer as ``{"version", "engine",
+    "last_update", "never_updated", "licence_valid", "databases"}``.
+
+    ``version`` is ``""`` when the signature block is missing (unreadable).
+    ``databases`` maps a label to ``{"version", "last_update",
+    "never_updated", "valid"}`` for every block the firmware reports."""
+    res = doc.get("results", doc) if isinstance(doc, dict) else {}
+    res = res if isinstance(res, dict) else {}
+    out = {"version": "", "engine": "", "last_update": "", "never_updated": False,
+           "licence_valid": None, "databases": {}}
+    for block, label, key in REST_DATABASES:
+        b = res.get(block)
+        if not isinstance(b, dict):
+            continue
+        last, never = _device_date(b.get("lastUpdateTime"))
+        valid = b.get("is_valid")
+        out["databases"][label] = {
+            "version": str(b.get(key) or ""), "last_update": last,
+            "never_updated": never, "valid": valid if isinstance(valid, bool) else None}
+    sig = out["databases"].get("signature")
+    if sig:
+        out["version"] = sig["version"]
+        out["last_update"] = sig["last_update"]
+        out["never_updated"] = sig["never_updated"]
+        out["licence_valid"] = sig["valid"]
+        out["engine"] = str((res.get("securityService") or {}).get("engineVersion") or "")
+    return out
 
 
 def parse_update_info(text: str) -> dict:
@@ -61,18 +130,8 @@ def parse_update_info(text: str) -> dict:
             out["version"] = m.group(1)
             continue
         m = _UPDATED_RE.match(ln)
-        if m and not out["last_update"]:
-            raw = m.group(1)
-            for fmt in _DATE_FORMATS:
-                try:
-                    at = datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
-                except ValueError:
-                    continue
-                if at.year <= 1970:
-                    out["never_updated"] = True
-                else:
-                    out["last_update"] = at.isoformat(timespec="seconds")
-                break
+        if m and not out["last_update"] and not out["never_updated"]:
+            out["last_update"], out["never_updated"] = _device_date(m.group(1))
     return out
 
 
@@ -128,6 +187,10 @@ def update_entry(prev: dict | None, appliance, parsed: dict | None, error: str,
              "last_change": prev.get("last_change", ""),
              "device_last_update": prev.get("device_last_update", ""),
              "never_updated": bool(prev.get("never_updated")),
+             "licence_valid": prev.get("licence_valid"),
+             "engine": prev.get("engine", ""),
+             "channel": prev.get("channel", ""),
+             "databases": prev.get("databases") or {},
              "error": ""}
     if error or not parsed or not parsed.get("version"):
         entry["error"] = error or "no 'FortiWeb signature' version in the answer"
@@ -136,6 +199,10 @@ def update_entry(prev: dict | None, appliance, parsed: dict | None, error: str,
     entry["version"] = parsed["version"]
     entry["device_last_update"] = parsed.get("last_update") or ""
     entry["never_updated"] = bool(parsed.get("never_updated"))
+    entry["licence_valid"] = parsed.get("licence_valid")
+    entry["engine"] = parsed.get("engine") or ""
+    entry["channel"] = parsed.get("channel") or ""
+    entry["databases"] = parsed.get("databases") or {}
     if changed or not entry["last_change"]:
         entry["last_change"] = now.isoformat(timespec="seconds")
     return entry, changed and bool(prev.get("version"))
@@ -152,9 +219,11 @@ def assess(entry: dict, now: datetime | None = None, limit_days: int | None = No
     if entry.get("error"):
         return {"status": "unreadable", "age_days": None, "since": "",
                 "reason": entry["error"]}
+    unlicensed = entry.get("licence_valid") is False
     if entry.get("never_updated"):
         return {"status": "stale", "age_days": None, "since": "",
-                "reason": "the device reports it never downloaded a signature update"}
+                "reason": "the device reports it never downloaded a signature update"
+                          + ("; its FortiGuard licence is not valid" if unlicensed else "")}
     since = _parse(entry.get("device_last_update")) or _parse(entry.get("last_change"))
     if since is None:
         return {"status": "unreadable", "age_days": None, "since": "",
@@ -162,8 +231,9 @@ def assess(entry: dict, now: datetime | None = None, limit_days: int | None = No
     age = (now - since).days
     if now - since > timedelta(days=limit):
         return {"status": "stale", "age_days": age, "since": since.isoformat(),
-                "reason": "signature DB %s is %d day(s) old (limit %d)"
-                          % (entry.get("version") or "?", age, limit)}
+                "reason": "signature DB %s is %d day(s) old (limit %d)%s"
+                          % (entry.get("version") or "?", age, limit,
+                             "; its FortiGuard licence is not valid" if unlicensed else "")}
     return {"status": "ok", "age_days": age, "since": since.isoformat(), "reason": ""}
 
 
@@ -181,51 +251,96 @@ def rows(now: datetime | None = None) -> list[dict]:
 # ---------------------------------------------------------------------------
 # the scheduled action
 # ---------------------------------------------------------------------------
-def _read_version(appliance) -> tuple[dict | None, str]:
+def read_version_rest(client) -> tuple[dict | None, str]:
+    """The signature DB version (and every other FortiGuard DB) over REST.
+    ``(parsed, "")`` or ``(None, error)``. One GET, read-only."""
+    try:
+        doc = client.api_call("GET", REST_PATH).json()
+    except Exception as exc:  # noqa: BLE001 — REST off, auth, timeout
+        return None, "REST %s: %s: %s" % (REST_PATH, type(exc).__name__, exc)
+    parsed = parse_fortiguard_config(doc)
+    if not parsed["version"]:
+        return None, "REST %s answered no signature version" % REST_PATH
+    parsed["channel"] = "rest"
+    return parsed, ""
+
+
+def read_version_cli(appliance) -> tuple[dict | None, str]:
+    """The fallback: ``diagnose system update info`` over SSH."""
     from . import ssh_ops
     try:
         text = ssh_ops.run_command(appliance, VERSION_CMD, timeout=25.0)
     except Exception as exc:  # noqa: BLE001 — SSH off, auth, timeout: unreadable
-        return None, "%s: %s" % (type(exc).__name__, exc)
-    return parse_update_info(text), ""
+        return None, "CLI: %s: %s" % (type(exc).__name__, exc)
+    parsed = parse_update_info(text)
+    parsed["channel"] = "cli"
+    return parsed, ""
 
 
-def _refresh_catalog(appliance) -> str:
-    """The signature catalog walk (``signature_sync``), run because a version
-    changed. Best effort; the version state is already stored."""
-    import os
-    from flask import current_app
-    from . import signature_catalog
-    client = appliance.build_client()
-    sset = signature_catalog.pick_signature_set(client)
-    if not sset:
-        return "no signature set on %s" % appliance.name
-    sig_db = signature_catalog.sync_signature_database(
-        client, sset, firmware=getattr(appliance, "fw_version", "") or "")
-    path = os.path.join(os.path.dirname(current_app.root_path), "data", "signatures.json")
-    signature_catalog.save_signature_db(sig_db, path)
-    return "%d signatures cached from %s" % (len(sig_db.signatures), appliance.name)
+def _read_version(appliance) -> tuple[dict | None, str]:
+    """REST first; the CLI only when REST does not give a version."""
+    try:
+        client = appliance.build_client()
+    except Exception as exc:  # noqa: BLE001
+        parsed, rest_err = None, "REST client: %s: %s" % (type(exc).__name__, exc)
+    else:
+        parsed, rest_err = read_version_rest(client)
+    if parsed:
+        return parsed, ""
+    parsed, cli_err = read_version_cli(appliance)
+    if parsed and parsed.get("version"):
+        return parsed, ""
+    return parsed, "; ".join(e for e in (rest_err, cli_err) if e)
+
+
+def _collect_from_source(src, entry: dict, collector) -> tuple[bool, str]:
+    """``(ok, line)`` for the catalog step of the round."""
+    from . import signature_index as sidx
+    if getattr(src, "maintenance", False):
+        return True, "catalog: source %s is in maintenance — not read" % src.name
+    if not entry or entry.get("error") or not entry.get("version"):
+        return True, ("catalog: source %s unreadable this round — index kept"
+                      % src.name)
+    if not sidx.needs_collect(src.kind or "fortiweb", entry["version"]):
+        return True, "catalog: index already at %s" % entry["version"]
+    try:
+        res = collector(src)
+    except Exception as exc:  # noqa: BLE001 — a failed read is a red round
+        return False, ("catalog read from %s failed: %s: %s"
+                       % (src.name, type(exc).__name__, exc))
+    try:
+        sidx.announce(res)
+    except Exception:  # noqa: BLE001 — the index is written; the bell is a courtesy
+        pass
+    return True, "catalog: " + sidx.headline(res) + " (from %s)" % src.name
 
 
 def run_check(*, dry_run: bool = False, refresh_catalog: bool = True,
-              reader=None, now: datetime | None = None) -> dict:
-    """Read every FortiWeb's signature DB version. ``{"ok", "summary", "log"}``.
+              reader=None, collector=None, now: datetime | None = None) -> dict:
+    """Read every FortiWeb's FortiGuard DB versions, then index the catalog
+    off the signature source when its version is new. ``{"ok", "summary",
+    "log"}``.
 
     ``ok`` = the round ran; per-device problems are findings for the alert
-    engine, not a red action. ``reader(appliance) -> (parsed, error)`` is
-    injectable for tests."""
+    engine, not a red action. A configured source whose catalog read FAILED
+    is red. ``reader(appliance) -> (parsed, error)`` and
+    ``collector(appliance) -> dict`` are injectable for tests."""
     from ..models import Appliance
+    from . import signature_index as sidx
     now = now or _now()
     reader = reader or _read_version
+    collector = collector or (lambda ap: sidx.collect(ap, taken_by="scheduled"))
     devices = (Appliance.query.filter(Appliance.kind.in_(PRODUCTS))
                .order_by(Appliance.id).all())
     due = [a for a in devices if not getattr(a, "maintenance", False)]
     parked = [a.name for a in devices if getattr(a, "maintenance", False)]
+    src = sidx.source_appliance("fortiweb")
     if dry_run:
         return {"ok": True,
-                "summary": "[dry-run] would read the signature DB version of %d "
-                           "FortiWeb(s)%s" % (len(due), (", %d in maintenance"
-                                                        % len(parked)) if parked else ""),
+                "summary": "[dry-run] would read the FortiGuard DB versions of %d "
+                           "FortiWeb(s)%s; signature source: %s"
+                           % (len(due), (", %d in maintenance" % len(parked))
+                              if parked else "", src.name if src else "none"),
                 "log": "\n".join(a.name for a in due)[:4000]}
     state = load_state()
     limit = max_days()
@@ -239,26 +354,34 @@ def run_check(*, dry_run: bool = False, refresh_catalog: bool = True,
         counts[verdict["status"]] = counts.get(verdict["status"], 0) + 1
         if changed:
             changed_devs.append(ap)
-        lines.append("[%s] %s: %s%s" % (verdict["status"], ap.name,
-                                        entry.get("version") or "-",
-                                        (" (" + verdict["reason"] + ")")
-                                        if verdict["reason"] else ""))
+        lines.append("[%s] %s: %s%s%s" % (
+            verdict["status"], ap.name, entry.get("version") or "-",
+            (" via " + entry["channel"]) if entry.get("channel") and not entry.get("error") else "",
+            (" (" + verdict["reason"] + ")") if verdict["reason"] else ""))
     # Devices that left the fleet leave the state too.
     live = {str(a.id) for a in devices}
     for aid in [k for k in state if k not in live]:
         state.pop(aid, None)
     _save_state(state)
-    if refresh_catalog and changed_devs:
-        try:
-            lines.append("catalog: " + _refresh_catalog(changed_devs[0]))
-        except Exception as exc:  # noqa: BLE001
-            lines.append("catalog refresh failed: %s: %s" % (type(exc).__name__, exc))
+    ok = True
+    if refresh_catalog:
+        if src is not None:
+            ok, line = _collect_from_source(src, state.get(str(src.id)), collector)
+            lines.append(line)
+        elif devices:
+            lines.append("catalog: no signature source configured — choose one on "
+                         "the Signatures page")
     summary = ("%d FortiWeb(s): %d current, %d stale, %d unreadable, %d changed"
                % (len(due), counts["ok"], counts["stale"], counts["unreadable"],
                   len(changed_devs)))
+    if not devices:
+        summary = "0 FortiWeb(s) registered — nothing to read"
     if parked:
         summary += "; in maintenance, skipped: " + ", ".join(parked)
-    return {"ok": True, "summary": summary, "log": "\n".join(lines)[:8000]}
+    if refresh_catalog and devices:
+        summary += "; " + (lines[-1] if lines and lines[-1].startswith("catalog")
+                           else "catalog not read")
+    return {"ok": ok, "summary": summary[:500], "log": "\n".join(lines)[:8000]}
 
 
 # ---------------------------------------------------------------------------
@@ -303,6 +426,7 @@ def meta_count(product: str) -> int:
         return 0
 
 
-__all__ = ["VERSION_CMD", "K_STATE", "K_MAX_DAYS", "DEFAULT_MAX_DAYS",
-           "parse_update_info", "load_state", "update_entry", "assess", "rows",
+__all__ = ["VERSION_CMD", "REST_PATH", "K_STATE", "K_MAX_DAYS", "DEFAULT_MAX_DAYS",
+           "parse_update_info", "parse_fortiguard_config", "read_version_rest",
+           "read_version_cli", "load_state", "update_entry", "assess", "rows",
            "run_check", "meta_for", "meta_count", "max_days"]

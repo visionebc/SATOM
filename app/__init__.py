@@ -2233,6 +2233,10 @@ def create_app(config_override: object | None = None) -> Flask:
             # import create_all() never makes knowledge_signature_meta and the
             # first signature-meta import fails on a missing table.
             from . import models_knowledge  # noqa: F401
+            # The local signature index (snapshots read from the signature
+            # source device). Without this import create_all() never makes the
+            # signature_* tables and the first collection fails on them.
+            from . import models_signatures  # noqa: F401
             # Sentinel's two collectors (http_status, infra) join the
             # fleet collection registry here so the scheduler sidecar — which
             # never imports a view — provisions and runs them like any other.

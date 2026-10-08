@@ -271,13 +271,11 @@ def _sig_state(appliance, name, force_live=False):
 
 
 def _sig_catalog():
-    """The cached signature database (data/signatures.json) or ``None``."""
-    import os
-    from flask import current_app
+    """The cached signature database (data/signatures.json, written from the
+    signature source by ``signature_index``) or ``None``."""
     from ..services import signature_catalog as sigcat
-    path = os.path.join(os.path.dirname(current_app.root_path),
-                        'data', 'signatures.json')
-    return sigcat.load_signature_db(path)
+    from ..services import signature_index as sidx
+    return sigcat.load_signature_db(sidx.catalog_path())
 
 
 @bp.route('/<int:id>/signatures/<path:name>')

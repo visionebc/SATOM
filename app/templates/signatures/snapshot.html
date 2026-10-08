@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Signature snapshot {{ snap.db_version }}{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('signatures.index') }}">{{ _('Signatures') }}</a>
+  <span class="separator">/</span>
+  <span>{{ snap.db_version or snap.id }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-fingerprint me-2 text-accent"></i>{{ _('Signature DB') }} {{ snap.db_version or '?' }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('Read from') }} {{ snap.source_name or '?' }} · {{ snap.taken_at.strftime('%Y-%m-%d %H:%M') }} UTC · {{ snap.sig_count }} {{ _('signatures') }} · {{ _('firmware') }} {{ snap.firmware or '?' }} · {{ snap.taken_by }}
+      {% if prev %}· {{ _('compared with') }} {{ prev.db_version or prev.id }}{% endif %}
+    </p>
+  </div>
+</div>
+
+{% if snap.baseline %}
+<div class="fw-card mb-3"><div class="fw-card-body">
+  <span class="fw-badge fw-badge-info">{{ _('baseline') }}</span>
+  {{ _('The first snapshot of the index: its signatures are the starting point, not new arrivals.') }}
+  {% if removed %}{{ _('Removed below are signatures a lost previous snapshot no longer carries.') }}{% endif %}
+</div></div>
+{% endif %}
+
+{% for title, rows, badge, col in [
+     (_('New signatures'), added, 'success', 'new'),
+     (_('Changed description or class'), changed, 'warning', 'both'),
+     (_('Removed signatures'), removed, 'danger', 'old')] %}
+{% if rows or not snap.baseline %}
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title">{{ title }}</span>
+    <span class="fw-badge fw-badge-{{ badge }}">{{ rows|length }}</span>
+  </div>
+  <div class="fw-card-body">
+    {% if rows %}
+    <table class="fw-table small mb-0">
+      <thead><tr><th>{{ _('Id') }}</th><th>{{ _('Sub-class') }}</th>
+        {% if col == 'both' %}<th>{{ _('Before') }}</th><th>{{ _('After') }}</th>{% else %}<th>{{ _('Description') }}</th>{% endif %}</tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td class="mono">{{ r.sig_id }}</td>
+          <td>{{ r.sub_name }}</td>
+          {% if col == 'both' %}<td>{{ r.old_description }}</td><td>{{ r.new_description }}</td>
+          {% elif col == 'new' %}<td>{{ r.new_description }}</td>
+          {% else %}<td>{{ r.old_description }}</td>{% endif %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="text-muted small">{{ _('None.') }}</div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endfor %}
+{% endblock %}

@@ -24,7 +24,6 @@ device.
 from __future__ import annotations
 
 import json
-import os
 import re
 import traceback
 from dataclasses import dataclass
@@ -35,7 +34,7 @@ from sqlalchemy import text
 
 from ..models import (Appliance, ChangeRequest, ScheduledAction,
                       ScheduledActionRun, db)
-from . import backup, scheduler, signature_catalog
+from . import backup, scheduler
 from .fortiweb_ops import FortiWebOps
 from ..registry import loader as _loader
 
@@ -280,20 +279,28 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "serial per box.",
     ),
     ActionSpec(
-        "signature_sync", "Sync signature database", "admin", needs_targets=True,
-        summary="Refresh the FortiWeb signature catalog from a target device and "
-                "cache it as the shared reference DB (services.signature_catalog).",
+        "signature_sync", "Collect signatures from the source now", "admin",
+        needs_targets=True,
+        summary="Read the whole signature catalog off the target and index it "
+                "(services.signature_index). The target must be the configured "
+                "signature source; any other device is refused, so the index "
+                "never records another box's database as a fleet change. "
+                "signature_check already collects daily when the version moves.",
     ),
     ActionSpec(
-        "signature_check", "Signature DB freshness — read each FortiWeb's version",
+        "signature_check", "Signatures — FortiGuard DB freshness + collect from the source",
         "admin", needs_targets=False,
-        summary="Read ONLY the signature database version of every FortiWeb "
-                "(`diagnose system update info`, one CLI read per box) and record "
-                "when it last changed (services.signature_freshness). The cached "
-                "signature catalog is re-read only when a version changed. The "
-                "alert engine raises a device finding when a box's signature DB "
-                "is older than alerts.signature_max_days (default 7) or cannot "
-                "be read. Read-only; devices in maintenance are skipped. Daily.",
+        summary="Read the FortiGuard database versions of every FortiWeb (one REST "
+                "GET of system/config.fortiguard per box, `diagnose system update "
+                "info` over SSH as the fallback) and record when they last changed "
+                "(services.signature_freshness). When the signature source's DB "
+                "version is not the one the local index holds, read its whole "
+                "signature catalog and index it: a snapshot, the new / changed / "
+                "removed signatures and a notification to the administrators "
+                "(services.signature_index). The alert engine raises a device "
+                "finding for a signature DB older than alerts.signature_max_days "
+                "(default 7), an unreadable one, or no source configured. "
+                "Read-only; devices in maintenance are skipped. Daily.",
     ),
     ActionSpec(
         "knowledge_fetch", "Knowledge packs — check the feed, download, import",
@@ -1212,30 +1219,32 @@ def _do_backup(appliance, dry_run: bool) -> dict:
 
 
 def _do_signature_sync(appliance, dry_run: bool) -> dict:
+    """Collect the signature catalog into the local index — ONLY from the
+    configured signature source. Indexing from any other box would record its
+    (possibly older) database as a transition of the fleet's index."""
+    from . import signature_index
     if appliance is None:
         return {"ok": False,
                 "summary": "signature_sync needs a target device.", "log": ""}
+    src = signature_index.source_appliance(appliance.kind or "fortiweb")
+    if src is None or src.id != appliance.id:
+        return {"ok": False,
+                "summary": (f"{appliance.name} is not the signature source "
+                            f"({src.name if src else 'none configured'}); set it on "
+                            f"the Signatures page or target the source."),
+                "log": ""}
     if dry_run:
         return {"ok": True,
-                "summary": f"[dry-run] would sync signatures from {appliance.name}.",
+                "summary": f"[dry-run] would collect signatures from {appliance.name}.",
                 "log": ""}
-    client = appliance.build_client()
-    sset = signature_catalog.pick_signature_set(client)
-    if not sset:
-        return {"ok": False,
-                "summary": f"No signature set found on {appliance.name}.", "log": ""}
-    sig_db = signature_catalog.sync_signature_database(client, sset)
-    count = len(sig_db.signatures)
-    log = ""
-    try:  # persistence is a bonus - a write failure must not fail the sync
-        path = os.path.join(_data_dir(), "signatures.json")
-        signature_catalog.save_signature_db(sig_db, path)
-        log = f"cached -> {path}"
-    except Exception as exc:  # noqa: BLE001
-        log = f"[cache skipped: {type(exc).__name__}: {exc}]"
+    res = signature_index.collect(appliance, taken_by="scheduled:signature_sync")
+    try:
+        signature_index.announce(res)
+    except Exception:  # noqa: BLE001 — the index is written; the bell is a courtesy
+        pass
     return {"ok": True,
-            "summary": f"{count} signatures synced from {appliance.name}.",
-            "log": log}
+            "summary": f"{appliance.name}: {signature_index.headline(res)}",
+            "log": f"snapshot {res.get('snapshot_id')}"}
 
 
 def _do_system_backup(params: dict, dry_run: bool) -> dict:
@@ -2399,29 +2408,6 @@ def _as_int(value) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
-
-
-def _data_dir() -> str:
-    """The writable data directory (next to the SQLite DB, or project ``data/``).
-
-    Resolved lazily (never at import) and created on demand. Used to cache the
-    signature DB; any failure here is swallowed by the caller.
-    """
-    base = ""
-    try:
-        from flask import current_app
-        uri = current_app.config.get("SQLALCHEMY_DATABASE_URI", "") or ""
-        prefix = "sqlite:///"
-        if uri.startswith(prefix):
-            base = os.path.dirname(uri[len(prefix):])
-    except Exception:  # noqa: BLE001 - outside an app context
-        base = ""
-    if not base:
-        base = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-            "data")
-    os.makedirs(base, exist_ok=True)
-    return base
 
 
 __all__ = [

@@ -47,8 +47,10 @@ existed, and the map is explicit rather than clever:
 The `device` family also carries `device.signature_stale` and
 `device.signature_unreadable` (3.0): a FortiWeb whose signature database is
 older than `alerts.signature_max_days` (default 7), reports it never updated,
-or whose version the daily `signature_check` action could not read. They ride
-the *Device health* toggle.
+or whose version the daily `signature_check` action could not read — and
+`device.signature_source_missing`: FortiWebs are registered but no signature
+source is configured (or the configured one no longer exists), so nothing feeds
+the local signature index. They ride the *Device health* toggle.
 
 Two families are **unfilterable** and no sink configuration can drop them:
 

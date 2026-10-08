@@ -707,23 +707,52 @@ Prevention — plus the profile itself under Policy → Web Protection Profile
 - Profile-level editing shows each sub-policy as a dropdown with Edit/＋,
   down to six levels of nesting.
 
-### 8.1 Signature database freshness and FortiGuard metadata
+### 8.1 Signature source, signature index and database freshness
 
 Every FortiWeb downloads its own signature database from FortiGuard; SATOM
-never carries signatures. What it does is notice when a box stops updating:
-the daily scheduled action **`signature_check`** reads, per FortiWeb, only the
-signature database **version** (`diagnose system update info`, one read-only
-CLI command over SSH) and records when it last changed. The full signature
-catalog (Administrator → Signatures) is re-read only when a version changed.
+never carries signatures, and no SATOM release or pack is needed for new ones.
+SATOM reads them off a device instead.
 
-**Administrator → Signatures** lists every device with its version, last update,
-the time of the check and a status: *current*, *stale* or *unreadable*. A
-device whose signature database is **older than 7 days** — measured from the
-device's own "last update" time, or, when it gives none, from when SATOM saw the
-version change — or that reports it **never** downloaded an update, or whose
-version cannot be read (SSH off, wrong credentials), raises a **device alert**
-through the alert engine (§26.6): the same family, toggle, routing and cooldown
-as the other device-health alerts. The limit is the setting
+**The signature source.** On **Administrator → Signatures** choose one FortiWeb
+as the *signature source* — one with a valid FortiGuard licence that updates on
+schedule. **Save and collect now** reads its whole signature catalog right away
+(a background job; the job dock tracks it). The read is REST and read-only:
+
+| What | How |
+|---|---|
+| Database versions | `GET /api/v2.0/system/config.fortiguard` — the attack-signature DB plus antivirus, IP reputation, GeoIP, known bots and the others the firmware reports, with their last update and licence validity, in one call. `diagnose system update info` over SSH is the fallback (signature DB only). |
+| Catalog | `waf/signature.advanced.dictionaries` + `.details`: every main class, sub-class and signature with its description |
+
+**The signature index.** Each read is indexed locally: every signature id with
+its class, description and lineage (the DB version it first appeared in, last
+seen, removed in), plus a **snapshot** per database version. A read whose
+content equals the latest snapshot writes nothing. A new version records what
+it **added, changed** (description or class) **and removed**, rings the bell of
+every administrator, and is listed in the snapshot history with a details page.
+The first snapshot is the *baseline*: its signatures are not reported as new.
+A read that returns no signatures is refused — it never empties the index. The
+page searches the index by id, description or class (removed signatures on
+request). The index also rewrites the catalog the signature editor and the WPP
+views read. The `signature_sync` scheduled action collects too, but only from
+the configured source: any other target is refused, so another box's older
+database can never appear as a fleet change.
+
+**Freshness, every FortiWeb.** The daily scheduled action **`signature_check`**
+reads the database versions of every FortiWeb (one REST call per box) and
+records when they last changed. When the **source's** signature version is not
+the one the index holds, it collects and indexes the catalog in the same round;
+a failed catalog read makes the round red. The page lists every device with its
+signature DB version and the channel it came from (`rest` or `cli`), last
+update, licence, the other databases, the time of the check and a status:
+*current*, *stale* or *unreadable*. A device whose signature database is
+**older than 7 days** — measured from the device's own "last update" time, or,
+when it gives none, from when SATOM saw the version change — or that reports it
+**never** downloaded an update (the reason names an invalid FortiGuard licence
+when the device reports one), or whose version cannot be read (REST and SSH
+both refused), raises a **device alert** through the alert engine (§26.6): the
+same family, toggle, routing and cooldown as the other device-health alerts.
+FortiWebs registered with **no signature source**, or a source that no longer
+exists, raise `device.signature_source_missing`. The limit is the setting
 `alerts.signature_max_days`. Devices in maintenance are skipped. A node
 updated from 2.x has no `signature_check` row until you create it
 (`sudo satom execute seed actions --yes` on the primary, §22.4).
@@ -1693,7 +1722,7 @@ Server Policy for operators):
   | Monitoring — all four are the ones §14 asks you to schedule | `metrics_scrape` (the Collection sweep, §14.7 — **every 3 minutes**), `deep_monitor` (the deep-monitor probe sweep, §14.3 — **every 3 minutes**, the seed plan's cadence), `monitor_report` (the period summary, §14.9 — *after* the period closes), `inventory_snapshot` (daily inventory counts for §14.2) |
   | Certificates | `cert_scan`, the three `cert_manager_*` renewals (server / client+server / client), `cert_lifecycle` (the revoke-and-cleanup sweep) |
   | Health | `health_check`, `ha_check`, `stats` |
-  | Catalog | `appid_import` (the nightly AppID feed, §25), `knowledge_fetch` (knowledge packs from the feed, daily, by mode — §22.4), `signature_check` (signature database version per FortiWeb, daily — §8.1) |
+  | Catalog | `appid_import` (the nightly AppID feed, §25), `knowledge_fetch` (knowledge packs from the feed, daily, by mode — §22.4), `signature_check` (FortiGuard DB versions per FortiWeb + collection from the signature source, daily — §8.1) |
   | Firmware | `upgrade_prep` (backup + health, flashes nothing) and `upgrade` — fixed date/time, only inside an approved Change Request window; the scheduled executor does **not** flash yet (it reports each target *not executed*), so flash live from the Upgrade page (§36.6) |
   | Escape hatch | `custom_rest` — any FortiWeb REST request you define; GET is a live read, writes go through the snapshot + audit + dry-run path |
 

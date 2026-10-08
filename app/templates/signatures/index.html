@@ -15,62 +15,165 @@
   <div>
     <h1 class="fw-page-title"><i class="bi bi-fingerprint me-2 text-accent"></i>{{ _('Signatures') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      Sync the FortiWeb signature database — every category &rsaquo; sub-class &rsaquo;
-      individual signature, with its description — from a base device into the local
-      reference (<code>data/signatures.json</code>). Read-only against the box.
+      {{ _('Every FortiWeb downloads its signature database from FortiGuard with its own licence. SATOM reads that database off the signature source you choose — read-only, over REST — and indexes it: every signature with its class and description, a snapshot per database version, and what each new version added, changed or removed.') }}
     </p>
   </div>
 </div>
 
-<!-- Cached status -->
-<div class="fw-card mb-3">
+<!-- Signature source -->
+<div class="fw-card mb-3" id="sig-source">
   <div class="fw-card-header">
-    <span class="fw-card-title"><i class="bi bi-database me-2 text-accent"></i>{{ _('Cached database') }}</span>
+    <span class="fw-card-title"><i class="bi bi-hdd-network me-2 text-accent"></i>{{ _('Signature source') }}</span>
+    {% if source %}<span class="fw-badge fw-badge-success">{{ source.name }}</span>
+    {% else %}<span class="fw-badge fw-badge-warning">{{ _('not configured') }}</span>{% endif %}
   </div>
   <div class="fw-card-body">
-    {% if db and db.signatures %}
-      <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-        <span class="fw-badge fw-badge-success"><i class="bi bi-check-circle me-1"></i>{{ _('Cached') }}</span>
-        <span class="fw-badge fw-badge-primary">{{ db.signatures | length }} signatures</span>
-        <span class="fw-badge fw-badge-secondary">{{ db.subclass_count }} sub-classes</span>
-        <span class="fw-badge fw-badge-secondary">firmware {{ db.firmware or '?' }}</span>
-        {% if db.signature_set %}<span class="fw-badge fw-badge-info">set {{ db.signature_set }}</span>{% endif %}
+    {% if appliances %}
+    <p class="text-muted" style="font-size:13px;">
+      {{ _('Choose the FortiWeb SATOM collects signatures from. Pick one with a valid FortiGuard licence that updates on schedule: the daily action') }}
+      <code>signature_check</code> {{ _('reads its signature DB version and, when it moves, reads the whole catalog and indexes it.') }}
+    </p>
+    {% if source_id and not source %}
+    <div class="alert alert-warning py-2 small">{{ _('The configured source (appliance') }} {{ source_id }}) {{ _('no longer exists. Choose another one.') }}</div>
+    {% endif %}
+    <form method="POST" action="{{ url_for('signatures.set_source') }}" class="row g-2 align-items-end" style="max-width:760px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-sm">
+        <label class="fw-form-label mb-1" for="appliance_id">{{ _('Source FortiWeb') }}</label>
+        <select class="form-select" id="appliance_id" name="appliance_id">
+          <option value="">{{ _('— none (do not collect) —') }}</option>
+          {% for a in appliances %}
+          <option value="{{ a.id }}" {{ 'selected' if source and source.id == a.id else '' }}>{{ a.name }} ({{ a.host }}:{{ a.port }})</option>
+          {% endfor %}
+        </select>
       </div>
-      <p class="text-muted mb-0" style="font-size:13px;">
-        {{ _('Synced at') }} <strong>{{ db.generated_at or '?' }}</strong>{{ _('. Re-run a sync to pick up new firmware or new signatures.') }}
-      </p>
+      <div class="col-sm-auto d-flex gap-2">
+        <button type="submit" class="btn btn-fw-secondary"><i class="bi bi-check2 me-1"></i>{{ _('Save') }}</button>
+        <button type="submit" name="collect" value="1" class="btn btn-fw-primary"><i class="bi bi-download me-1"></i>{{ _('Save and collect now') }}</button>
+      </div>
+    </form>
+    {% else %}
+    <div class="fw-empty-state py-4">
+      <div class="fw-empty-state-icon"><i class="bi bi-server"></i></div>
+      <div class="fw-empty-state-title">{{ _('No FortiWeb appliances configured') }}</div>
+      <div class="fw-empty-state-text">{{ _('Add a FortiWeb appliance to collect its signature database.') }}</div>
+      <a href="{{ url_for('appliances.index') }}" class="btn btn-fw-primary mt-2">{{ _('Add Appliance') }}</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Index status + history -->
+<div class="fw-card mb-3" id="sig-index">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-database me-2 text-accent"></i>{{ _('Signature index') }}</span>
+  </div>
+  <div class="fw-card-body">
+    {% if latest %}
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <span class="fw-badge fw-badge-primary">{{ entry_count }} {{ _('signatures') }}</span>
+        <span class="fw-badge fw-badge-secondary">{{ _('DB') }} {{ latest.db_version or '?' }}</span>
+        <span class="fw-badge fw-badge-secondary">{{ latest.subclass_count }} {{ _('sub-classes') }}</span>
+        <span class="fw-badge fw-badge-secondary">{{ _('firmware') }} {{ latest.firmware or '?' }}</span>
+        <span class="text-muted small">{{ _('from') }} {{ latest.source_name or '?' }} · {{ latest.taken_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
+      </div>
+      <table class="fw-table small mb-0">
+        <thead><tr><th>{{ _('Taken') }}</th><th>{{ _('DB version') }}</th><th>{{ _('Source') }}</th><th class="text-end">{{ _('Signatures') }}</th><th class="text-end">{{ _('New') }}</th><th class="text-end">{{ _('Changed') }}</th><th class="text-end">{{ _('Removed') }}</th><th></th></tr></thead>
+        <tbody>
+        {% for s in snapshots %}
+          <tr>
+            <td class="text-nowrap">{{ s.taken_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td class="mono">{{ s.db_version or '—' }}</td>
+            <td>{{ s.source_name or '—' }}</td>
+            <td class="text-end">{{ s.sig_count }}</td>
+            {% if s.baseline %}
+            <td class="text-end" colspan="3"><span class="fw-badge fw-badge-info">{{ _('baseline') }}</span></td>
+            {% else %}
+            <td class="text-end">{% if s.added %}<span class="fw-badge fw-badge-success">+{{ s.added }}</span>{% else %}0{% endif %}</td>
+            <td class="text-end">{% if s.changed %}<span class="fw-badge fw-badge-warning">{{ s.changed }}</span>{% else %}0{% endif %}</td>
+            <td class="text-end">{% if s.removed %}<span class="fw-badge fw-badge-danger">-{{ s.removed }}</span>{% else %}0{% endif %}</td>
+            {% endif %}
+            <td><a href="{{ url_for('signatures.snapshot', sid=s.id) }}">{{ _('details') }}</a></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
     {% else %}
       <div class="fw-empty-state py-4">
         <div class="fw-empty-state-icon"><i class="bi bi-fingerprint"></i></div>
-        <div class="fw-empty-state-title">{{ _('No signature database yet') }}</div>
+        <div class="fw-empty-state-title">{{ _('No signature index yet') }}</div>
         <div class="fw-empty-state-text">
-          {{ _('Pick a base FortiWeb below and sync to read the whole signature catalog.') }}
+          {% if source %}{{ _('Collect now from the source, or wait for the daily signature_check.') }}
+          {% else %}{{ _('Choose a signature source above and collect.') }}{% endif %}
+          {% if db and db.signatures %}<br>{{ _('A catalog read before the index existed is cached:') }} {{ db.signatures | length }} {{ _('signatures') }}, {{ db.generated_at or '?' }}.{% endif %}
         </div>
       </div>
     {% endif %}
   </div>
 </div>
 
-<!-- Signature DB freshness per device (scheduled action signature_check) -->
+<!-- Search the index -->
+<div class="fw-card mb-3" id="sig-search">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-search me-2 text-accent"></i>{{ _('Search the index') }}</span>
+  </div>
+  <div class="fw-card-body">
+    <form method="GET" action="{{ url_for('signatures.index') }}#sig-search" class="row g-2 align-items-end mb-2" style="max-width:760px;">
+      <div class="col-sm">
+        <input type="search" class="form-control" name="q" value="{{ q }}" placeholder="{{ _('Signature id, description or class') }}">
+      </div>
+      <div class="col-sm-auto form-check ms-2">
+        <input class="form-check-input" type="checkbox" id="sig-removed" name="removed" value="1" {{ 'checked' if request.args.get('removed') else '' }}>
+        <label class="form-check-label small" for="sig-removed">{{ _('include removed') }}</label>
+      </div>
+      <div class="col-sm-auto"><button type="submit" class="btn btn-fw-secondary">{{ _('Search') }}</button></div>
+    </form>
+    {% if q %}
+      {% if hits %}
+      <table class="fw-table small mb-0">
+        <thead><tr><th>{{ _('Id') }}</th><th>{{ _('Class') }}</th><th>{{ _('Description') }}</th><th>{{ _('First seen') }}</th><th>{{ _('Status') }}</th></tr></thead>
+        <tbody>
+        {% for h in hits %}
+          <tr>
+            <td class="mono">{{ h.sig_id }}</td>
+            <td>{{ h.main_name }}{% if h.sub_name and h.sub_name != h.main_name %} › {{ h.sub_name }}{% endif %}</td>
+            <td>{{ h.description }}{% if meta.get(h.sig_id) %}<div class="text-muted">{{ meta[h.sig_id].name }}{% if meta[h.sig_id].cve %} · {{ meta[h.sig_id].cve | join(', ') }}{% endif %}</div>{% endif %}</td>
+            <td class="mono text-nowrap">{{ h.first_seen_version }}</td>
+            <td>{% if h.removed_in_version %}<span class="fw-badge fw-badge-danger">{{ _('removed in') }} {{ h.removed_in_version }}</span>{% else %}<span class="fw-badge fw-badge-success">{{ _('current') }}</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if hits|length >= 200 %}<div class="text-muted small mt-1">{{ _('First 200 matches — refine the search.') }}</div>{% endif %}
+      {% else %}
+      <div class="text-muted small">{{ _('No signature matches') }} “{{ q }}”.</div>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<!-- FortiGuard DB freshness per device (scheduled action signature_check) -->
 <div class="fw-card mb-3" id="sig-freshness">
   <div class="fw-card-header">
     <span class="fw-card-title"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Signature DB freshness per device') }}</span>
   </div>
   <div class="fw-card-body">
     <p class="text-muted" style="font-size:13px;">
-      {{ _('The daily scheduled action') }} <code>signature_check</code> {{ _('reads only the signature database version of every FortiWeb and records when it last changed. A device older than') }}
+      {{ _('The daily scheduled action') }} <code>signature_check</code> {{ _('reads the FortiGuard database versions of every FortiWeb (REST, with the CLI as fallback) and records when they last changed. A device older than') }}
       <strong>{{ max_days }}</strong> {{ _('day(s), or whose version cannot be read, raises a device alert.') }}
       {% if meta_count %}<span class="fw-badge fw-badge-info ms-1">{{ meta_count }} {{ _('signatures with FortiGuard metadata from knowledge packs') }}</span>{% endif %}
     </p>
     {% if freshness %}
     <table class="fw-table small mb-0">
-      <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Version') }}</th><th>{{ _('Last update') }}</th><th>{{ _('Checked') }}</th><th>{{ _('Status') }}</th></tr></thead>
+      <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Signature DB') }}</th><th>{{ _('Last update') }}</th><th>{{ _('Licence') }}</th><th>{{ _('Other databases') }}</th><th>{{ _('Checked') }}</th><th>{{ _('Status') }}</th></tr></thead>
       <tbody>
       {% for r in freshness %}
         <tr>
-          <td>{{ r.name }}</td>
-          <td class="mono">{{ r.version or '—' }}</td>
+          <td>{{ r.name }}{% if source and r.appliance_id == source.id|string %} <span class="fw-badge fw-badge-info">{{ _('source') }}</span>{% endif %}</td>
+          <td class="mono">{{ r.version or '—' }}{% if r.channel %} <span class="text-muted">({{ r.channel }})</span>{% endif %}</td>
           <td class="text-nowrap">{{ (r.since or '')[:10] or '—' }}{% if r.age_days is not none %} ({{ r.age_days }} {{ _('d') }}){% endif %}</td>
+          <td>{% if r.licence_valid is sameas true %}<span class="fw-badge fw-badge-success">{{ _('valid') }}</span>{% elif r.licence_valid is sameas false %}<span class="fw-badge fw-badge-danger">{{ _('not valid') }}</span>{% else %}—{% endif %}</td>
+          <td class="small">{% for label, d in (r.databases or {}).items() if label != 'signature' and d.version %}<span class="text-nowrap">{{ label|replace('_', ' ') }} <span class="mono">{{ d.version }}</span></span>{{ ' · ' if not loop.last }}{% else %}—{% endfor %}</td>
           <td class="text-nowrap">{{ (r.checked_at or '')[:16]|replace('T', ' ') }}</td>
           <td>
             {% if r.status == 'ok' %}<span class="fw-badge fw-badge-success">{{ _('current') }}</span>
@@ -83,43 +186,6 @@
     </table>
     {% else %}
     <div class="text-muted small">{{ _('No reading yet — the scheduled action signature_check has not run (seed it with') }} <code>satom execute seed actions --yes</code>).</div>
-    {% endif %}
-  </div>
-</div>
-
-<!-- Sync from a base device -->
-<div class="fw-card">
-  <div class="fw-card-header">
-    <span class="fw-card-title"><i class="bi bi-arrow-repeat me-2 text-accent"></i>{{ _('Sync from a base device') }}</span>
-  </div>
-  <div class="fw-card-body">
-    {% if appliances %}
-    <p class="text-muted" style="font-size:13px;">
-      {{ _('The same FortiGuard signature package is on every box, so any reachable FortiWeb can serve as the base for the sync. The read is') }} <strong>{{ _('read-only') }}</strong>.
-    </p>
-    <form method="POST" action="{{ url_for('signatures.sync') }}" class="row g-2 align-items-end" style="max-width:640px;">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="col-sm">
-        <label class="fw-form-label mb-1" for="appliance_id">{{ _('Base FortiWeb') }}</label>
-        <select class="form-select" id="appliance_id" name="appliance_id" required>
-          {% for a in appliances %}
-          <option value="{{ a.id }}">{{ a.name }} ({{ a.host }}:{{ a.port }})</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-sm-auto">
-        <button type="submit" class="btn btn-fw-primary">
-          <i class="bi bi-download me-1"></i>{{ _('Sync now') }}
-        </button>
-      </div>
-    </form>
-    {% else %}
-    <div class="fw-empty-state py-4">
-      <div class="fw-empty-state-icon"><i class="bi bi-server"></i></div>
-      <div class="fw-empty-state-title">{{ _('No FortiWeb appliances configured') }}</div>
-      <div class="fw-empty-state-text">{{ _('Add a FortiWeb appliance to sync the signature database.') }}</div>
-      <a href="{{ url_for('appliances.index') }}" class="btn btn-fw-primary mt-2">{{ _('Add Appliance') }}</a>
-    </div>
     {% endif %}
   </div>
 </div>

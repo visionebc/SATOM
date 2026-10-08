@@ -2554,6 +2554,13 @@ summary.fwg-sec-title::-webkit-details-marker{display:none;}
   color:var(--fw-text-primary);text-decoration:none;}
 .fwg-btn.is-primary{background:var(--fw-accent);border-color:var(--fw-accent);color:#fff;}
 .fwg-btn[aria-disabled="true"]{opacity:.5;pointer-events:none;}
+button.fwg-btn{cursor:pointer;}
+/* editable layout view: the controls keep the GUI's field width; the review
+   panel sits above the footer and shows the dry-run diff before Apply */
+.fwg-edit{width:auto;min-width:220px;max-width:420px;}
+.fwg-value .form-check-inline{margin-right:10px;}
+.fwg-review{margin:8px 16px;padding:10px 12px;border:1px solid var(--fw-accent);background:#FFFFFF;}
+.fwg-review .fwg-btn{width:auto;padding:0 14px;}
 /* inline sub-table (HTTP Content Routing, Public IP): toolbar + grid in the value column */
 .fwg-subtable{flex:1 1 100%;max-width:900px;border:1px solid var(--fw-border,#D6DAE0);}
 .fwg-subtable .fwg-toolbar{padding:4px;}

@@ -726,10 +726,22 @@ def save(appliance_id):
                        % (mkey, new_wpp or '?', appl.name))
         except Exception:  # noqa: BLE001 — the flag is advisory, never sink the save
             pass
+    # The FortiWeb-layout view draws from the cache: re-read the policy just
+    # written so the page shows the device's value, not the pre-save copy.
+    cache_refreshed = False
+    if do_apply and ok and endpoint == EP_POLICY and ep == endpoint:
+        try:
+            from ..services import write_through
+            live = FortiWebClient(appl).get_server_policy(mkey)
+            cache_refreshed = write_through.local_refresh(
+                appl.id, 'server_policy', mkey, live) > 0
+        except Exception as exc:  # noqa: BLE001 — the write itself succeeded
+            log_exception(exc, context='workspace.save.cache')
     return jsonify(
         ok=ok, dry_run=res.get('dry_run'),
         request=res.get('request'), error=error, cli=cli,
         stale_carveouts=stale_marked, unverified_refs=unverified,
+        cache_refreshed=cache_refreshed, cli_fields=sorted(cli_fields),
     )
 
 
@@ -945,15 +957,25 @@ def gui_policy(appliance_id, name):
         view = gui_template.dialog_view(tpl, key, row, dev, subrows=subrows, refs=refs)
     else:
         abort(404)
+    # The policy's own dialog and its sub-dialogs (Advanced SSL…) edit the
+    # policy object itself: Save goes through workspace.save (REST / CLI split
+    # by the build's channels). Sub-table row dialogs stay read-only here.
+    can_edit = key not in row_dialogs and current_user.can('config_write')
     # Permanent rule: the fields this policy has that the FortiWeb GUI does not
-    # show are listed under the main dialog, with their write channel.
-    nig = None
+    # show are listed under the main dialog, with their write channel, and are
+    # edited there like every other field.
+    nig = nig_edit = None
     if key == main:
-        from ..services import not_in_gui
-        nig = not_in_gui.for_view(appl, 'server-policy/policy', row)
+        if can_edit:
+            from .objedit import _not_in_gui
+            _groups, nig_edit = _not_in_gui(appl, EP_POLICY, row, [])
+        if nig_edit is None:
+            from ..services import not_in_gui
+            nig = not_in_gui.for_view(appl, 'server-policy/policy', row)
     return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
                            dev=dev, view=view, name=name, main=main, is_new=False,
-                           not_in_gui=nig, nig_row=row)
+                           not_in_gui=nig, nig_row=row, nig_edit=nig_edit,
+                           can_edit=can_edit, save_ep=EP_POLICY)
 
 
 @bp.route('/<int:appliance_id>/gui/new/<dialog>')

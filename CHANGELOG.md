@@ -6,6 +6,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — the FortiWeb-layout Server Policy view can edit what it shows
+
+- The view the sidebar opens for *Policy → Server Policy* was read-only: a field
+  such as *Disable Client-Initiated SSL Renegotiation* (`ssl-noreg`, in
+  Advanced SSL settings) was visible but could not be changed there. For users
+  with write permission, the policy dialog and its sub-dialogs (Advanced SSL…)
+  now edit every field in the place it appears, and so does the "Not in GUI,
+  but in CLI" section under the main dialog.
+- Save shows the change first (dry run, with the channel of each field), then
+  writes it through the same route as the SATOM Server Policy page: REST, or
+  the CLI writer for a field that is CLI-only on the device's build.
+- After a write, SATOM re-reads the policy from the device into its cache (every
+  cached layer), so the page reloads with the device's values and the fields
+  FortiWeb shows or hides for them.
+- Read-only users see the dialog as before. Sub-table row dialogs (HTTP Content
+  Routing rows, Public IP) and Create New stay read-only in this view.
+
 ### Fixed — "Not in GUI, but in CLI" is on every object page, also when empty
 
 - The section was only rendered when it had fields, so on every FortiWeb object

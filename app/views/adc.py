@@ -125,9 +125,13 @@ def menu_page(item_key):
                  'cells': [o.get(c) if isinstance(o, dict) else None
                            for c in columns]}
                 for o in raw]
+    nig = None
+    if appliance is not None:
+        from ..services import not_in_gui
+        nig = not_in_gui.for_view(appliance, tab.logical, raw if not error else [])
     return render_template('adc/section.html', group=group, item=item, tab=tab,
                            appliance=appliance, fleet=_adc_fleet(),
-                           rows=rows, columns=columns, error=error)
+                           rows=rows, columns=columns, error=error, not_in_gui=nig)
 
 
 # --------------------------------------------------------------------------- #
@@ -228,7 +232,9 @@ def object_detail(logical):
                 'blank_groups': adc_objform.create_field_groups(st['logical'], blank),
             })
 
-    return render_template('adc/object.html', appliance=appliance,
+    from ..services import not_in_gui
+    nig = None if create else not_in_gui.for_view(appliance, logical, data or {})
+    return render_template('adc/object.html', appliance=appliance, not_in_gui=nig,
                            logical=logical, mkey=mkey, create=create,
                            data=data, error=error, back=back,
                            obj_groups=obj_groups, subtables=subtables,

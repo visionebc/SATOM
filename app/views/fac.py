@@ -148,6 +148,9 @@ def _load_tab(appliance, logical: str, label: str) -> dict:
         tab['error'] = err
     rows = [_scrub(r) for r in rows if isinstance(r, dict)]
     tab['total'] = len(rows)
+    from ..services import not_in_gui
+    tab['not_in_gui'] = not_in_gui.for_view(appliance, logical, rows,
+                                            noise=lambda k: k in _NEVER_RENDER or k == 'resource_uri')
 
     if len(rows) == 1 and _is_singleton(rows[0]):
         tab['kv'] = rows[0]                      # singleton → key/value card

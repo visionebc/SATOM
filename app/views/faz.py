@@ -121,6 +121,8 @@ def _load_tab(appliance, logical: str, label: str) -> dict:
         tab['error'] = err
         return tab
     rows = [r for r in rows if isinstance(r, dict)]
+    from ..services import not_in_gui
+    tab['not_in_gui'] = not_in_gui.for_view(appliance, logical, rows)
     if len(rows) == 1 and not logical.startswith('dvmdb_'):
         # single config object → key/value card (CLI 'get' style)
         tab['kv'] = rows[0]

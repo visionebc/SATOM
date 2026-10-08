@@ -146,6 +146,9 @@
           <a href="{{ url_for('appliances.datasheet', id=appliance.id) }}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf me-1"></i>{{ appliance.datasheet_filename }}</a>
         {% else %}<span class="text-muted">{{ _('none') }}</span>{% endif %}
       </dd>
+      <dt class="col-sm-2">{{ _('Not in GUI') }}</dt>
+      <dd class="col-sm-10"><a href="{{ url_for('appliances.not_in_gui', id=appliance.id) }}" data-nig-link><i class="bi bi-terminal me-1"></i>{{ _('Not in GUI, but in CLI') }}</a>
+        <span class="text-muted small">{{ _('— every field this build has outside the Fortinet GUI') }}</span></dd>
     </dl>
     {% if appliance.interfaces %}
     <div class="table-responsive">

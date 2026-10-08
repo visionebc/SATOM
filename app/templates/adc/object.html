@@ -90,6 +90,8 @@
   </div>
 </div>
 
+{% if not create %}{% with nig_sec = not_in_gui %}{% include "_not_in_gui_tab.html" %}{% endwith %}{% endif %}
+
 {# ── child tables (?pkey=-scoped, registry-derived) ──────────────────────── #}
 {% for st in subtables %}
 <div class="fw-card mb-3" style="padding:18px 20px;">

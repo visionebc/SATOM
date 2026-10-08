@@ -1,4 +1,5 @@
 {% from "workspace/_fields.html" import fld %}
+{% from "_not_in_gui.html" import nig_editable %}
 {# ===================================================================== #}
 {#  Object editor BODY — shared by the full page (objedit/editor.html)   #}
 {#  AND the inline panel served with ?partial=1 (loaded by AJAX into the  #}
@@ -56,11 +57,12 @@
       {% else %}
         {% if not create %}<p class="text-muted mb-0">{{ _('This object exposes no editable scalar fields.') }}</p>{% endif %}
       {% endfor %}
+      {{ nig_editable(not_in_gui, create, mkey, collection) }}
       <div class="mt-2">
         {% if create %}
           <button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-create">
             <i class="bi bi-plus-circle me-1"></i>Review &amp; create</button>
-        {% elif obj_groups %}
+        {% elif obj_groups or (not_in_gui and not_in_gui.fields) %}
           <button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-save">
             <i class="bi bi-check2-circle me-1"></i>Review &amp; save</button>
         {% endif %}
@@ -83,6 +85,7 @@
                data-parent="{{ mkey }}" data-sub-id="{{ row.sub_id }}">
         <summary class="fw-group-head">{{ row.label or ('row ' ~ row.sub_id) }}</summary>
         {% for sec in row.groups %}<div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, true) }}{% endfor %}</div>{% endfor %}
+        {{ nig_editable(row.not_in_gui, false, row.sub_id, st.collection, mkey) }}
         <div class="mt-2">
           <button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-save-row">{{ _('Save row') }}</button>
           <button type="button" class="btn btn-sm btn-fw-danger" data-js="objedit-delete-row">{{ _('Delete') }}</button>
@@ -98,6 +101,7 @@
       <summary class="fw-group-head text-primary">＋ Add {{ st.label }} row</summary>
       {% if st.blank_groups %}
         {% for sec in st.blank_groups %}<div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, true) }}{% endfor %}</div>{% endfor %}
+        {{ nig_editable(st.blank_not_in_gui, true) }}
         <div class="mt-2"><button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-create-row">{{ _('Create row') }}</button></div>
       {% else %}
         <p class="text-muted small mb-0 mt-2">{{ _('No field template is known for this sub-table yet (no curated form and nothing cached). Run a rediscovery / deep capture of a device that already has rows here, then reopen.') }}</p>
@@ -365,6 +369,29 @@ document.addEventListener('DOMContentLoaded', function(){
 // harmless double-run on a full page load (both are idempotent).
 window.fwRefreshVis(document);
 fwExplainAllActions(document);
+// "Not in GUI, but in CLI": read the CLI-only values of one object over a
+// read-only SSH session and fill the inputs (value AND data-orig, so an
+// unchanged field is never sent back).
+function nigReadCli(btn){
+  const sec = btn.closest('[data-nig]'), out = sec.querySelector('.fw-nig-read');
+  const names = Array.prototype.map.call(sec.querySelectorAll('[data-channel="CLI"]'),
+    function(el){ return el.dataset.nigKey; });
+  out.textContent = 'reading…';
+  fwPost('/objedit/'+window.OBJEDIT_AID+'/cli-values', {collection: sec.dataset.collection,
+    mkey: sec.dataset.mkey, parent: sec.dataset.parent || '', names: names}).then(function(j){
+    if (!j.ok){ out.textContent = j.error || 'CLI read failed'; return; }
+    Object.keys(j.values || {}).forEach(function(k){
+      const el = sec.querySelector('[data-nig-key="'+k+'"] .fw-input');
+      const v = j.values[k] == null ? '' : String(j.values[k]);
+      if (el){ el.value = v; el.dataset.orig = v; }
+    });
+    (j.secret || []).forEach(function(k){
+      const el = sec.querySelector('[data-nig-key="'+k+'"] .fw-input');
+      if (el){ el.placeholder = 'secret — not shown'; }
+    });
+    out.textContent = 'read over CLI';
+  });
+}
 function deleteRow(btn){
   const scope = btn.closest('.fw-row-scope'), el = scope.querySelector('.fw-result');
   const base = {collection: scope.dataset.collection, parent: scope.dataset.parent, sub_id: scope.dataset.subId || ''};
@@ -387,7 +414,8 @@ function deleteRow(btn){
     'objedit-save': function(b){ saveObject(b); },
     'objedit-save-row': function(b){ saveRow(b); },
     'objedit-delete-row': function(b){ deleteRow(b); },
-    'objedit-create-row': function(b){ createRow(b); }
+    'objedit-create-row': function(b){ createRow(b); },
+    'nig-read-cli': function(b){ nigReadCli(b); }
   };
   document.addEventListener('click', function(ev){
     const btn = ev.target.closest && ev.target.closest('[data-js]');

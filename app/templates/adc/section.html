@@ -128,6 +128,8 @@
   </table>
 </div>
 
+{% with nig_sec = not_in_gui %}{% include "_not_in_gui_tab.html" %}{% endwith %}
+
 <script nonce="{{ csp_nonce }}">
 (function () {
   var search = document.getElementById('adc-obj-search');

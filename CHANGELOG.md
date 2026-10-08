@@ -6,6 +6,33 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — "Not in GUI, but in CLI": every field a device has, on every product
+
+- **Permanent rule**: SATOM shows every field a device has on its exact build.
+  The fields the Fortinet GUI does not show are no longer missing or mixed into
+  other groups: they are listed in a section titled **"Not in GUI, but in
+  CLI"**, and each one says how SATOM writes it — **REST** (a normal save),
+  **CLI** (the CLI writer over SSH, for fields the API library measured
+  `cli_only` or `hidden` on that build) or *unverified on this build*.
+- **FortiWeb object editor**: the section in every object and in every
+  sub-table row, editable. A field the REST read did not return shows as an
+  empty text box (never a toggle claiming "disabled"); **Read values over CLI**
+  fills it from a read-only `show full-configuration` (secrets are never
+  returned). A sub-table row save now routes its CLI-only fields through the
+  CLI writer inside the parent row; a new row carrying a CLI-only field is
+  refused before any write, with the reason.
+- **FortiWeb Server Policy layout view**: the REST fields FortiWeb's own GUI
+  does not place (40 on 7.6.8, 45 on 8.0.6) are listed under the main dialog
+  with their values.
+- **FortiGate, FortiAuthenticator, FortiADC, FortiAnalyzer**: every table view
+  carries the section for its object; FortiADC and FortiAnalyzer say their GUI
+  layout and CLI tree are not measured (no lab device) — nothing is hidden.
+- **Per-device page** `Appliances → <device> → Not in GUI, but in CLI`
+  (`/appliances/<id>/not-in-gui`): whole objects only the CLI serves (e.g.
+  FortiAuthenticator `system dns`, `system interface`, `router static`) and the
+  CLI-only fields of objects REST serves (FortiGate 8.0.1: 166 fields in 76
+  tables).
+
 ### Added — Server Policy in the FortiWeb GUI layout (read-only)
 
 - **Server Policy → FortiWeb layout**: the policy list, the Create New menu and

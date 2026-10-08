@@ -284,6 +284,26 @@ def _fleet_sample(coll, seg=None, parent_coll=None) -> dict:
 # --------------------------------------------------------------------------- #
 #  Editor page (object fields + each sub-table's rows)                          #
 # --------------------------------------------------------------------------- #
+def _not_in_gui(appl, coll, obj, groups, *, keep_name=False):
+    """Decision 5 (permanent rule): every field the device has on its build is
+    shown; the ones the Fortinet GUI does not show leave their group for the
+    "Not in GUI, but in CLI" section (services.not_in_gui). Never sinks the
+    editor: on any failure the groups stay as they were and no section shows."""
+    from ..services import not_in_gui
+    from ..services.fortiweb_field_schema import descriptor, is_noise
+    kind = objform.object_kind(coll)
+    obj = obj or {}
+    noise = (lambda k: is_noise(k) or (k == 'name' and not keep_name))
+    try:
+        return not_in_gui.apply_to_groups(
+            appl, objform.collection_of(coll), obj, groups, noise=noise,
+            describe=lambda k, v: descriptor(kind, k, v, obj))
+    except Exception:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).exception('not_in_gui section for %s', coll)
+        return groups, None
+
+
 @bp.route('/<int:appliance_id>/edit')
 @login_required
 @require_permission('protection.view')
@@ -322,9 +342,11 @@ def edit(appliance_id):
             sample = _fleet_sample(coll)
         obj_groups = form['groups'] or objform.field_groups(
             coll, sample, keep_name=False)
+        obj_groups, nig = _not_in_gui(appl, coll, sample, obj_groups)
         return render_template(tmpl, appliance=appl, error=None,
                                collection=coll, mkey='', title=title, create=True,
                                obj_groups=_enable_ref_actions(obj_groups), subtables=[],
+                               not_in_gui=nig,
                                help_info=form.get('help'), action_explain=action_explain)
 
     # Device reads are best-effort: the editor STRUCTURE (fields + sub-tables)
@@ -355,7 +377,8 @@ def edit(appliance_id):
             freshness = read_layer.freshness_label(meta)
 
     form = objform.object_form(coll, obj)
-    obj_groups = _enable_ref_actions(form['groups'])
+    groups, nig = _not_in_gui(appl, coll, obj, form['groups'])
+    obj_groups = _enable_ref_actions(groups)
     subtables = []
     for st in form['subtables']:
         rows = _read_rows(client, st['collection'], mkey) if client else []
@@ -367,19 +390,29 @@ def edit(appliance_id):
         blank = objform.blank_row_sample(st['collection'], rows)
         if not blank:
             blank = _fleet_sample(st['collection'], seg=st['seg'], parent_coll=coll)
+        row_views = []
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            rg, rnig = _not_in_gui(appl, st['collection'], r,
+                                   objform.field_groups(st['collection'], r, keep_name=True),
+                                   keep_name=True)
+            row_views.append({'sub_id': r.get('id', r.get('_id', '')),
+                              'label': objform.row_label(r),
+                              'groups': _enable_ref_actions(rg), 'not_in_gui': rnig})
+        bg, bnig = _not_in_gui(appl, st['collection'], blank,
+                               objform.field_groups(st['collection'], blank, keep_name=True),
+                               keep_name=True)
         subtables.append({
             'label': st['label'], 'collection': st['collection'], 'seg': st['seg'],
-            'rows': [{
-                'sub_id': r.get('id', r.get('_id', '')),
-                'label': objform.row_label(r),
-                'groups': _enable_ref_actions(objform.field_groups(st['collection'], r, keep_name=True)),
-            } for r in rows if isinstance(r, dict)],
-            'blank_groups': _enable_ref_actions(objform.field_groups(st['collection'], blank, keep_name=True)),
+            'rows': row_views,
+            'blank_groups': _enable_ref_actions(bg), 'blank_not_in_gui': bnig,
         })
 
     return render_template(tmpl, appliance=appl, error=error,
                            collection=coll, mkey=mkey, title=title, create=False,
                            obj_groups=obj_groups, subtables=subtables,
+                           not_in_gui=nig,
                            data_src=data_src, freshness=freshness,
                            help_info=form.get('help'), action_explain=action_explain)
 
@@ -619,11 +652,11 @@ def _channel_warnings(split) -> list:
     return ['%s: %s' % (k, why) for k, why in sorted((split.get('refused') or {}).items())]
 
 
-def _cli_part(appl, split, mkey, do_apply, rest_ok):
+def _cli_part(appl, split, mkey, do_apply, rest_ok, parent_mkeys=()):
     """Render (dry run) or apply the CLI half; a JSON-ready dict."""
     from ..services import cli_writer
     try:
-        plan = cli_writer.plan_for(appl, split, mkey or None)
+        plan = cli_writer.plan_for(appl, split, mkey or None, parent_mkeys=parent_mkeys)
         writer = cli_writer.CliWriter(appl)
         if not do_apply:
             return writer.render(plan).as_dict()
@@ -645,6 +678,27 @@ def _cli_error(cli) -> str:
         return 'CLI: readback differs for %s' % ', '.join(
             d.get('field', '?') for d in cli['diff'])
     return 'CLI write failed'
+
+
+@bp.route('/<int:appliance_id>/cli-values', methods=['POST'])
+@require_permission('protection.view')
+def cli_values(appliance_id):
+    """Values of the CLI-only fields of one object ("Not in GUI, but in CLI"),
+    read over a read-only SSH session (``show full-configuration``). Secrets
+    are never returned."""
+    appl = visible_appliance_or_404(appliance_id)
+    body = request.get_json(silent=True) or {}
+    coll = objform.collection_of(body.get('collection', ''))
+    if not objform.is_known_collection(coll):
+        return jsonify(ok=False, error='endpoint not allowed'), 400
+    names = [str(n) for n in (body.get('names') or []) if n][:200]
+    if not names:
+        return jsonify(ok=False, error='no fields named'), 400
+    from ..services import not_in_gui
+    parent = body.get('parent') or ''
+    res = not_in_gui.cli_values(appl, coll, body.get('mkey') or None, names,
+                                parent_mkeys=[parent] if parent else ())
+    return jsonify(**res)
 
 
 @bp.route('/<int:appliance_id>/create-object', methods=['POST'])
@@ -765,14 +819,33 @@ def save_row(appliance_id):
     if not fields:
         return jsonify(ok=False, error='every changed field is missing on this build: '
                        + '; '.join(compat['messages']), build_compat=compat), 409
+    # Channel split, same rule as save_object: a field this build serves only
+    # by CLI ("Not in GUI, but in CLI" section) goes by the CLI writer, inside
+    # its parent's row. A NEW row does not exist on the CLI yet, so its
+    # CLI-only fields are refused with the reason (set them once it exists).
+    split = _channel_split(appl, coll, fields)
+    cli_fields = dict((split or {}).get('cli') or {})
+    if cli_fields and sub_id in (None, ''):
+        return jsonify(ok=False, error='%s: CLI-only on this build — create the row first, '
+                       'then set them from its "Not in GUI, but in CLI" section'
+                       % ', '.join(sorted(cli_fields))), 400
+    rest_fields = {k: v for k, v in fields.items() if k not in cli_fields}
     if sub_id in (None, ''):
         path = objform.scoped_path(coll, parent)
         res = ops.create(path, {'data': fields}, dry_run=not do_apply)
-    else:
+    elif rest_fields:
         path = objform.scoped_path(coll, parent, sub_id)
-        res = ops.update(path, '', {'data': fields}, dry_run=not do_apply)
-    return jsonify(ok=res.ok, dry_run=res.get('dry_run'), request=res.get('request'),
-                   error=res.get('error', ''), build_compat=compat)
+        res = ops.update(path, '', {'data': rest_fields}, dry_run=not do_apply)
+    else:
+        from ..services.fortiweb_ops import OpResult
+        res = OpResult(ok=True, dry_run=not do_apply, request=None, error='')
+    cli = (_cli_part(appl, split, str(sub_id), do_apply, res.ok, parent_mkeys=[parent])
+           if cli_fields else None)
+    ok = res.ok and (cli is None or bool(cli.get('ok')))
+    error = res.get('error', '') or (_cli_error(cli) if cli and not cli.get('ok') else '')
+    return jsonify(ok=ok, dry_run=res.get('dry_run'), request=res.get('request'),
+                   error=error, build_compat=compat, cli=cli,
+                   channel_warnings=_channel_warnings(split))
 
 
 @bp.route('/<int:appliance_id>/delete-row', methods=['POST'])

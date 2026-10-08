@@ -2555,7 +2555,7 @@ summary.fwg-sec-title::-webkit-details-marker{display:none;}
 .fwg-btn.is-primary{background:var(--fw-accent);border-color:var(--fw-accent);color:#fff;}
 .fwg-btn[aria-disabled="true"]{opacity:.5;pointer-events:none;}
 /* inline sub-table (HTTP Content Routing, Public IP): toolbar + grid in the value column */
-.fwg-sub{flex:1 1 100%;max-width:900px;border:1px solid var(--fw-border,#D6DAE0);}
-.fwg-sub .fwg-toolbar{padding:4px;}
-.fwg-sub .fwg-table td{height:28px;}
+.fwg-subtable{flex:1 1 100%;max-width:900px;border:1px solid var(--fw-border,#D6DAE0);}
+.fwg-subtable .fwg-toolbar{padding:4px;}
+.fwg-subtable .fwg-table td{height:28px;}
 .fwg-noresults{text-align:center;color:var(--fw-text-muted);}

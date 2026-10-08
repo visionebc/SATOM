@@ -557,6 +557,12 @@ def policy_detail(appliance_id, name):
         'vserver': policy.get('vserver') or '',
         'wpp': wpp_sel,
     }
+    # Permanent rule: every page that edits an object shows its "Not in GUI,
+    # but in CLI" section — this page too, not only the object editor.
+    from .objedit import _not_in_gui
+    policy_sections, policy_nig = _not_in_gui(
+        appl, EP_POLICY, policy, policy_form.build_policy_sections(policy))
+    pool_groups, pool_nig = _not_in_gui(appl, EP_POOL, pool, build_groups('pool', pool))
     return render_template(
         'workspace/policy_detail.html',
         appliance=appl, policy_name=name, policy=policy,
@@ -566,8 +572,8 @@ def policy_detail(appliance_id, name):
         pool_name=policy.get('server-pool') or '', pool=pool, backends=data.get('backends') or [],
         wpp_name=wpp_sel,
         # GUI-faithful, ordered, conditional-visibility sections (the desktop form).
-        policy_sections=policy_form.build_policy_sections(policy),
-        pool_groups=build_groups('pool', pool),
+        policy_sections=policy_sections, policy_nig=policy_nig,
+        pool_groups=pool_groups, pool_nig=pool_nig,
         cr_entries=cr_entries,
         policy_clean=_clean_policy(policy),
         cache_meta=cache_meta,
@@ -678,8 +684,6 @@ def save(appliance_id):
     ep = endpoint
     if endpoint in _CHILD_EPS and child_id not in (None, ''):
         ep = '%s%ssub_mkey=%s' % (endpoint, '&' if '?' in endpoint else '?', child_id)
-    payload = {'data': dict(fields)}   # FortiWeb cmdb writes are {"data": {...}}
-
     # Same pre-write reference check as the object editor: a value naming an
     # object the device does not have is refused HERE, with the field name,
     # instead of coming back as a mute -651 that also discards the good fields.
@@ -689,16 +693,30 @@ def save(appliance_id):
         return jsonify(ok=False, error=ref_validate.message(problems),
                        invalid_refs=problems), 400
 
+    # Same channel split as the object editor: a field CLI-only/hidden on this
+    # build (its "Not in GUI, but in CLI" section) goes by the CLI writer, the
+    # rest by REST. Child rows keep the REST path (they carry no section here).
+    from .objedit import _channel_split, _cli_part, _cli_error
+    split = None if endpoint in _CHILD_EPS else _channel_split(appl, endpoint, fields)
+    cli_fields = dict((split or {}).get('cli') or {})
+    payload = {'data': {k: v for k, v in fields.items() if k not in cli_fields}}
     try:
-        res = FortiWebOps(appl).update(ep, mkey, payload, dry_run=not do_apply)
+        if payload['data']:
+            res = FortiWebOps(appl).update(ep, mkey, payload, dry_run=not do_apply)
+        else:
+            from ..services.fortiweb_ops import OpResult
+            res = OpResult(ok=True, dry_run=not do_apply, request=None, error='')
     except Exception as exc:
         return json_error(exc, 'Save failed on the device', context='workspace.save')
+    cli = _cli_part(appl, split, mkey, do_apply, res.ok) if cli_fields else None
+    ok = res.ok and (cli is None or bool(cli.get('ok')))
+    error = res.get('error', '') or (_cli_error(cli) if cli and not cli.get('ok') else '')
     # Lifecycle hook (WAF rule 1): re-binding a policy's Web Protection Profile
     # orphans the carve-outs authored against the OLD profile — flag them stale
     # (never silently delete; the Exceptions page shows the banner and the
     # operator migrates or removes each one).
     stale_marked = 0
-    if do_apply and res.ok and endpoint == EP_POLICY and 'web-protection-profile' in fields:
+    if do_apply and ok and endpoint == EP_POLICY and 'web-protection-profile' in fields:
         try:
             from ..services import wpp_exceptions as exc_store
             new_wpp = fields.get('web-protection-profile') or ''
@@ -709,8 +727,8 @@ def save(appliance_id):
         except Exception:  # noqa: BLE001 — the flag is advisory, never sink the save
             pass
     return jsonify(
-        ok=res.ok, dry_run=res.get('dry_run'),
-        request=res.get('request'), error=res.get('error', ''),
+        ok=ok, dry_run=res.get('dry_run'),
+        request=res.get('request'), error=error, cli=cli,
         stale_carveouts=stale_marked, unverified_refs=unverified,
     )
 

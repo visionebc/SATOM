@@ -8,8 +8,9 @@
        FortiAuthenticator, FortiADC, FortiAnalyzer): a table of field, channel
        and the value the device returned (or "not readable over REST").
 
-   The section is ALWAYS rendered when it has fields, collapsed, and never
-   merged into another group. #}
+   The section is ALWAYS rendered (collapsed, never merged into another
+   group), also with 0 fields: then it says why — every field is in the
+   Fortinet GUI, or this page's GUI layout is not measured yet. #}
 {% from "workspace/_fields.html" import fld %}
 
 {% macro channel_badge(ch) -%}
@@ -19,17 +20,24 @@
 {%- endif -%}
 {%- endmacro %}
 
+{% macro nig_empty(sec) -%}
+{%- if not sec.fields -%}
+<p class="fw-nig-empty small mb-0">{% if sec.layout_measured %}{{ _('Every field this object has on this build is in the Fortinet GUI.') }}{% elif sec.evidence %}{{ _('No CLI-only field on this build. Fields the Fortinet GUI hides on this page will be listed here once its GUI layout is measured.') }}{% endif %}</p>
+{%- endif -%}
+{%- endmacro %}
+
 {% macro nig_editable(sec, create=false, mkey='', collection='', parent='') %}
-{% if sec and sec.fields %}
+{% if sec %}
 <details class="fw-group fw-nig" data-nig data-collection="{{ collection }}" data-mkey="{{ mkey }}"{% if parent %} data-parent="{{ parent }}"{% endif %}>
   <summary class="fw-group-head">{{ sec.title }} <span class="text-muted">({{ sec.fields|length }})</span></summary>
   <p class="fw-nig-note small text-muted mb-2">{{ sec.note }}</p>
+  {{ nig_empty(sec) }}
   {% if sec.has_cli and mkey and not create %}
     <button type="button" class="btn btn-sm btn-outline-secondary mb-2" data-js="nig-read-cli">
       <i class="bi bi-terminal me-1"></i>{{ _('Read values over CLI') }}</button>
     <span class="fw-nig-read small text-muted"></span>
   {% endif %}
-  <div class="fw-fld-grid">
+  {% if sec.fields %}<div class="fw-fld-grid">
     {% for f in sec.fields %}
       <div class="fw-nig-fld" data-nig-key="{{ f.key }}" data-channel="{{ f.channel }}">
         <div class="fw-nig-ch">{{ channel_badge(f.channel) }}{% if f.unread %} <span class="small text-muted">{{ _('value not read') }}</span>{% endif %}</div>
@@ -40,17 +48,18 @@
         {% endif %}
       </div>
     {% endfor %}
-  </div>
+  </div>{% endif %}
 </details>
 {% endif %}
 {% endmacro %}
 
 {% macro nig_readonly(sec, values=None) %}
-{% if sec and sec.fields %}
+{% if sec %}
 <details class="fw-group fw-nig" data-nig>
   <summary class="fw-group-head">{{ sec.title }} <span class="text-muted">({{ sec.fields|length }})</span></summary>
   <p class="fw-nig-note small text-muted mb-2">{{ sec.note }}</p>
-  <table class="table table-sm fw-nig-table mb-0">
+  {{ nig_empty(sec) }}
+  {% if sec.fields %}<table class="table table-sm fw-nig-table mb-0">
     <thead><tr><th>{{ _('Field') }}</th><th>{{ _('Channel') }}</th><th>{{ _('Type') }}</th><th>{{ _('Value') }}</th></tr></thead>
     <tbody>
     {% for f in sec.fields %}
@@ -62,7 +71,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table>{% endif %}
 </details>
 {% endif %}
 {% endmacro %}

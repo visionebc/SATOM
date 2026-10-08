@@ -145,6 +145,7 @@ def classify(appliance, endpoint: str, obj_keys, *, product: str | None = None,
     or cache). Returns::
 
         {"title", "product", "version", "endpoint", "layout_measured",
+         "evidence" (the library measured this endpoint on this build),
          "layout": {...}, "fields": [{"key", "channel", "lib_channel",
          "in_object", "attrs"}], "moved": set(keys taken out of the groups),
          "note": str}
@@ -218,6 +219,7 @@ def classify(appliance, endpoint: str, obj_keys, *, product: str | None = None,
         note += " The API library has no evidence for this endpoint on this build."
     return {"title": SECTION_TITLE, "product": product, "version": version,
             "endpoint": key, "layout_measured": layout is not None, "layout": linfo,
+            "evidence": bool(ep),
             "fields": [out[k] for k in sorted(out)], "moved": moved, "note": note}
 
 

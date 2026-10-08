@@ -62,6 +62,7 @@ never a delta:
 | `field-map` | `field-map` | field rename **candidates** between two builds, from equal CLI attribute ids |
 | `baselines` | `baseline` | measured endpoint baselines per build, as reference |
 | `signature-meta` | `signature-meta` | public FortiGuard metadata for signature ids (see below) |
+| `gui-templates` | `gui-template` | the GUI layout of one page per exact build (`satom-harvester gui fetch → extract → publish`), with Fortinet's labels and help; the bundle it was read from never ships |
 
 **Signature metadata ships empty.** The harvester checks the FortiGuard site's
 `robots.txt` and terms of use before it reads anything there. They do not

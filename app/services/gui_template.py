@@ -30,6 +30,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent / "registry" / "gui_templates"
 SCHEMA = "satom.gui-template/1"
+SCHEMA_V2 = "satom.gui-template/2"
 
 
 def _train_key(train: str) -> tuple:
@@ -55,25 +56,28 @@ def available(product: str, page: str) -> list[dict]:
 
 
 def select(product: str, page: str, fw_version: str | None):
-    """(template, match) for a device firmware ``X.Y.Z``.
+    """(template, match) for a device firmware (``"7.6.8"`` or the full string
+    ``"FortiWeb-KVM 7.6.8,build1128(GA.M)"``, whose build is then used too).
 
     match: ``exact`` (same train) · ``older`` (closest older train) ·
     ``newer`` (device older than every template) · ``unknown`` (no firmware
     known; newest template). ``(None, None)`` when the page has no template.
+
+    Resolution is per EXACT build (:func:`gui_store.resolve`): a template the
+    knowledge feed imported for the device's own build wins, then its version,
+    its train, the closest older train. The template carries ``origin`` (pack
+    or shipped, the build it was measured on) and ``closeness`` so the page
+    can say how close the layout is.
     """
-    avail = available(product, page)
-    if not avail:
+    from . import gui_store
+    cand, match, closeness = gui_store.resolve(product, page, fw_version)
+    if cand is None:
         return None, None
-    want = _train_key(fw_version or "")
-    if not fw_version or want == (0, 0):
-        return _load(avail[-1]["path"]), "unknown"
-    same = [a for a in avail if _train_key(a["train"]) == want]
-    if same:
-        return _load(same[0]["path"]), "exact"
-    older = [a for a in avail if _train_key(a["train"]) < want]
-    if older:
-        return _load(older[-1]["path"]), "older"
-    return _load(avail[0]["path"]), "newer"
+    tpl = gui_store.view_template(cand)
+    if tpl.get("schema") not in (SCHEMA, SCHEMA_V2):
+        raise ValueError("%s: not a GUI template" % cand["path"])
+    tpl["closeness"] = closeness
+    return tpl, match
 
 
 # --------------------------------------------------------------------------- #

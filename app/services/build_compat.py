@@ -472,6 +472,19 @@ def _n_targets(n: int, devices: bool) -> str:
     return "%d appliance%s" % (n, "" if n == 1 else "s")
 
 
+def _not_in_gui(product: str, o: dict, version: str) -> list:
+    """Payload fields of one checked object that the MEASURED GUI layout of
+    ``version`` does not show (info only: the write is unaffected)."""
+    names = sorted({i.get("field") for i in o.get("findings") or [] if i.get("field")}
+                   | set(o.get("ok") or []) | set(o.get("rest_unverified") or []))
+    try:
+        from . import gui_diff
+        return gui_diff.not_in_gui_fields(product, o.get("endpoint") or "", version,
+                                          names) or []
+    except Exception:  # noqa: BLE001 — advisory, never sinks a check
+        return []
+
+
 def check(product: str, targets: Iterable, objects) -> dict:
     """``objects`` = ``[(endpoint, fields)]`` (fields: names or ``{name: value}``)
     against every target (appliances and/or build strings).
@@ -576,6 +589,14 @@ def check(product: str, targets: Iterable, objects) -> dict:
                                  "on %s %s in %s were never measured — cannot be "
                                  "guaranteed (%s)" % (v, _fmt_fields(bk[F_UNKNOWN]),
                                                       label, who)})
+            hidden = _not_in_gui(product, o, v)
+            if hidden:
+                messages.append({"level": "info", "build": v, "text":
+                                 "on %s %s in %s %s not shown by the FortiWeb GUI (listed "
+                                 "under \"Not in GUI, but in CLI\"): SATOM still writes "
+                                 "%s (%s)" % (v, _fmt_fields(hidden), label,
+                                              "is" if len(hidden) == 1 else "are",
+                                              "it" if len(hidden) == 1 else "them", who)})
     for d in devices:
         b = by_build.get(d["version"]) or {}
         d["level"] = b.get("level", "warn")

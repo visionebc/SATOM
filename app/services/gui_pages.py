@@ -196,7 +196,8 @@ def value_labels(tpl: dict) -> dict:
                 opts = list(f.get("options") or [])
                 for more in (f.get("options_by") or {}).values():
                     opts += list(more or [])
-                for o in opts:
+                from .gui_template import split_labels
+                for o in split_labels(opts):
                     if isinstance(o, dict) and o.get("label"):
                         out.setdefault(k, {}).setdefault(str(o.get("value")), o["label"])
     return out

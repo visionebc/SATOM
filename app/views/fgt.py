@@ -157,6 +157,15 @@ def menu_page(item_key):
     if item is None:
         abort(404)
     appliance = _current_fgt()
+    # a leaf whose every tab has a measured FortiGate GUI page moves there
+    # (services.gui_classic); ?classic=1 keeps this page
+    try:
+        from ..services import gui_classic
+        moved = gui_classic.redirect_item(appliance, item, request.args.get('tab'), request.args)
+    except Exception:  # noqa: BLE001 -- the old page always renders
+        moved = None
+    if moved:
+        return redirect(moved)
     tab = None
     if appliance is not None and item.tabs:
         wanted = (request.args.get('tab') or '').strip()

@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% set _t = view.title.get('new' if (is_new or (row_ctx and row_ctx.new)) else 'edit') or view.title.get('edit') or '' %}
+{% set _gxl = gx.label if gx is defined and gx else 'FortiWeb' %}
+{% set _fwp = not (gp and gp.product and gp.product != 'fortiweb') %}
 {% block title %}{{ _t }}{% if name %} — {{ name }}{% endif %}{% endblock %}
 {# FortiWeb draws a dialog in the content pane: title bar, sections, footer bar. #}
 {# SATOM frame around FortiWeb's dialog: breadcrumb + page header + card.
@@ -10,7 +12,7 @@
   <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
   {% if gp %}
   {% set _mp = tpl.menu_path or [gp.page] %}
-  <a href="{{ url_for('workspace.fwgui_index', appliance_id=appliance.id) }}">{{ _('FortiWeb') }}</a>
+  <a href="{{ url_for('workspace.fwgui_index', appliance_id=appliance.id) }}">{{ _gxl }}</a>
   {% for p in _mp[:-1] %}<span class="separator">/</span><span>{{ p }}</span>{% endfor %}
   <span class="separator">/</span><a href="{{ url_for('workspace.fwgui_list', appliance_id=appliance.id, page=gp.page, v=gp.v) }}">{{ _mp[-1] }}</a>
   {% else %}
@@ -172,7 +174,9 @@
     <div class="fwg-label {{ 'fwg-unknown' if f.unknown }}"{{ live_attrs(f) }}>{% if f.kind != 'link' %}{{ f.label }}{% endif %}
       {%- if f.help %}<i class="bi bi-info-circle-fill" title="{{ f.help|striptags }}"></i>{% endif %}
       {%- if f.unknown %}<span class="fwg-unknown-tag" title="{{ _('Depends on: %(w)s', w=f.unknown_why|join(', ')) }}">{{ _('conditional') }}</span>{% endif %}
-      {%- if f.options_unread %}<span class="fwg-unknown-tag" title="{{ _('FortiWeb offers a list of choices here that the GUI crawl could not read: type the value as the CLI takes it.') }}">{{ _('choices not measured') }}</span>{% endif %}
+      {%- if f.gui_only %}<span class="fw-badge fw-badge-secondary ms-1" data-gui-only title="{{ _('This field has no API on this build: it is shown as the GUI shows it and never saved.') }}">{{ _('No API on this build (GUI only)') }}</span>{% endif %}
+      {%- if f.bound_to and not _fwp %}<span class="fw-badge fw-badge-secondary ms-1" title="{{ _('Saved by the GUI into %(ep)s: shown here, edited on its own page.', ep=f.bound_to) }}">{{ f.bound_to }}</span>{% endif %}
+      {%- if f.options_unread %}<span class="fwg-unknown-tag" title="{{ _('%(p)s offers a list of choices here that the GUI crawl could not read: type the value as the CLI takes it.', p=_gxl) }}">{{ _('choices not measured') }}</span>{% endif %}
     </div>
     <div class="fwg-value"{{ live_attrs(f) }}>{{ value(f) }}</div>
   {% endfor %}
@@ -187,7 +191,7 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi {{ 'bi-layout-sidebar' if gp else 'bi-shield-check' }} me-2 text-accent"></i>{{ _t or view.key }}{% if name %} <span class="text-muted fw-normal">· {{ name }}</span>{% endif %}</h1>
-    <p class="text-muted mb-0" style="font-size:13px;"><strong>{{ appliance.name }}</strong> · {{ appliance.host }}:{{ appliance.port }}{% if appliance.fw_version %} · FortiWeb {{ appliance.fw_version }}{% endif %}</p>
+    <p class="text-muted mb-0" style="font-size:13px;"><strong>{{ appliance.name }}</strong> · {{ appliance.host }}:{{ appliance.port }}{% if appliance.fw_version %} · {{ _gxl }} {{ appliance.fw_version }}{% endif %}</p>
   </div>
   <a class="btn btn-secondary btn-sm" href="{{ back }}"><i class="bi bi-chevron-left me-1"></i>{{ _('Back') }}</a>
 </div>
@@ -195,13 +199,16 @@
   <div class="fwg-titlebar">
     <span>{{ _t or view.key }}</span>
     <span class="fwg-sub">
-      {% if is_new and can_edit and gp %}{{ _('Create New with FortiWeb\'s own defaults. Save shows the request first, then creates the object on %(dev)s.', dev=appliance.name) }}
+      {% if gp and gp.gui_only %}{{ _('No API on this build (GUI only): drawn as %(p)s draws it, read-only. Nothing is sent from this page.', p=_gxl) }}
+      {% elif is_new and can_edit and gp %}{{ _('Create New with %(p)s\'s own defaults. Save shows the request first, then creates the object on %(dev)s.', p=_gxl, dev=appliance.name) }}
       {% elif is_new and can_edit %}{{ _('Create New with FortiWeb\'s own defaults. Save shows the request first, then creates the policy on %(dev)s.', dev=appliance.name) }}
-      {% elif is_new %}{{ _('Preview of the Create New form with FortiWeb\'s own defaults. Nothing is submitted from this page.') }}
-      {% elif row_ctx and row_ctx.new and can_edit %}{{ _('New row with FortiWeb\'s own defaults. Save shows the request first, then creates the row on %(dev)s.', dev=appliance.name) }}
+      {% elif is_new %}{{ _('Preview of the Create New form with %(p)s\'s own defaults. Nothing is submitted from this page.', p=_gxl) }}
+      {% elif row_ctx and row_ctx.new and can_edit %}{{ _('New row with %(p)s\'s own defaults. Save shows the request first, then creates the row on %(dev)s.', p=_gxl, dev=appliance.name) }}
+      {% elif can_edit and not _fwp %}{{ _('Values read from %(dev)s. Save shows the change first, then writes it to the device and reads it back.', dev=appliance.name) }}
       {% elif can_edit %}{{ _('Values from the SATOM cache of %(dev)s. Save shows the change first, then writes it to the device.', dev=appliance.name) }}
+      {% elif not _fwp %}{{ _('View mode: values read from %(dev)s; nothing is sent to it.', dev=appliance.name) }}
       {% else %}{{ _('View mode: values from the SATOM cache of %(dev)s; nothing is sent to it.', dev=appliance.name) }}{% endif %}
-      {% if view.hidden %}· {{ _('%(n)s fields hidden by FortiWeb for these settings.', n=view.hidden) }}{% endif %}
+      {% if view.hidden %}· {{ _('%(n)s fields hidden by %(p)s for these settings.', n=view.hidden, p=_gxl) }}{% endif %}
     </span>
   </div>
   {% include 'workspace/_gui_banner.html' %}
@@ -210,8 +217,10 @@
     {% for t in gp.tabs %}<li class="nav-item"><a role="tab" class="nav-link {{ 'active' if t.i == gp.v }}" aria-selected="{{ 'true' if t.i == gp.v else 'false' }}" href="{{ url_for('workspace.fwgui_list', appliance_id=appliance.id, page=gp.page, v=t.i) }}">{{ t.label }}</a></li>{% endfor %}
   </ul>
   {% endif %}
-  {% if view.rendered_only %}<div class="fwg-note"><i class="bi bi-info-circle"></i><span>{{ _('FortiWeb draws this page with its newer interface: SATOM read the layout from the page as FortiWeb drew it on the lab device. Every field is shown; FortiWeb may hide some of them for other settings.') }}</span></div>{% endif %}
-  {% if gp and gp.missing %}<div class="fw-alert fw-alert-warning">{{ _('This settings object is not in the SATOM cache of %(dev)s and the device did not answer: the form shows FortiWeb\'s layout without values.', dev=appliance.name) }}</div>{% endif %}
+  {% if view.rendered_only %}<div class="fwg-note"><i class="bi bi-info-circle"></i><span>{{ _('%(p)s draws this page with its newer interface: SATOM read the layout from the page as %(p)s drew it on the lab device. Every field is shown; %(p)s may hide some of them for other settings.', p=_gxl) }}</span></div>{% endif %}
+  {% if gp and gp.missing %}<div class="fw-alert fw-alert-warning">{{ _('This settings object is not in the SATOM cache of %(dev)s and the device did not answer: the form shows %(p)s\'s layout without values.', dev=appliance.name, p=_gxl) }}</div>{% endif %}
+  {% if gp and gp.gui_only %}<div class="fw-alert fw-alert-info" data-gui-only-page><i class="bi bi-window me-1"></i>{{ _('No API on this build (GUI only): %(p)s serves this page to its own GUI only, so SATOM shows its layout read-only and never saves it.', p=_gxl) }}</div>{% endif %}
+  {% if gp and gp.monitor %}<div class="fwg-note"><i class="bi bi-activity"></i><span>{{ _('Status view (FortiGate monitor API): read-only.') }}</span></div>{% endif %}
   <div class="fwg-body">
   {% for b in view.blocks %}
     <div class="fwg-block"{% if b.cond is defined %} data-fwg-bcond="{{ b.cond|tojson|forceescape }}"{% if b.hidden %} hidden{% endif %}{% endif %}>
@@ -385,6 +394,9 @@
   // gp (a generic FortiWeb page): object / new-object / row write through the
   // object editor (save-object / create-object / save-row).
   var GP = {{ (gp or none)|tojson }};
+  // a FortiGate / FortiAuthenticator page saves through workspace.fwgui_save
+  // (GuiOps: dry run, apply, read back, drift), never the FortiWeb editor
+  var PX = !!(GP && GP.product && GP.product !== 'fortiweb');
   var MODE = GP ? (GP.mode === 'row' ? 'gp-row' : GP.mode)
            : {{ ('new-policy' if is_new else ('row' if row_ctx else 'policy'))|tojson }};
   var ROW = {{ (row_ctx or {})|tojson }};
@@ -431,6 +443,8 @@
     return out;
   }
   function body(fields, apply) {
+    if (PX) return {page: GP.page, v: GP.v, collection: GP.collection, mkey: GP.name || '',
+                    op: MODE === 'new-object' ? 'create' : 'update', fields: fields, apply: !!apply};
     if (MODE === 'new-policy') return {policy: fields, apply: !!apply};
     if (MODE === 'object') return {collection: GP.collection, mkey: GP.name, fields: fields, apply: !!apply};
     if (MODE === 'new-object') {
@@ -488,7 +502,7 @@
         steps.push({ep: GP.collection, url: SAVE_API, keys: Object.keys(main), make: function (a) {
           return {endpoint: GP.collection, method: GP.method || 'PUT', body: GP.body || 'data', fields: main, apply: !!a}; }});
       } else {
-        steps.push({ep: (GP && GP.collection) || {{ save_ep|tojson }}, url: SAVE, keys: Object.keys(main),
+        steps.push({ep: (GP && GP.collection) || {{ save_ep|tojson }}, url: PX ? GP.save : SAVE, keys: Object.keys(main),
                     main: true, make: function (a) { return body(main, a); }});
       }
     }
@@ -521,7 +535,7 @@
     var fields = {};
     ch.forEach(function (c) { fields[c.key] = c.now; });
     if (MODE === 'new-policy' && !fields.name) { say('Not saved: the policy needs a Name.', true); return; }
-    if (MODE === 'new-object' && !fields.name) { say('Not saved: the object needs a Name.', true); return; }
+    if (MODE === 'new-object' && !PX && !fields.name) { say('Not saved: the object needs a Name.', true); return; }
     var steps = plan(fields);
     say('Checking the change…');
     runAll(steps, false).then(function (res) {
@@ -567,6 +581,19 @@
             (done.length ? ' (already written: ' + done.join(', ') + ')' : '') +
             ((res.rolled_back || []).length ? ' (undone: ' + res.rolled_back.map(function (u) {
               return u.name + (u.ok ? '' : ' FAILED, still on the device'); }).join(', ') + ')' : ''), true);
+        return;
+      }
+      if (PX) {
+        review.hidden = true; pending = null;
+        if (res.verified === false) {
+          say('Saved, but the device stored different values: ' + (res.drift || []).map(function (d) {
+            return d.key + ' = ' + JSON.stringify(d.now); }).join(', ') + '. Reload to see them.', true);
+          return;
+        }
+        say(res.verified ? 'Saved and read back from the device. Reloading…' : 'Saved. Reloading…');
+        if (MODE === 'new-object' && res.mkey) window.location.href = GUI_POLICY.replace('__N__', encodeURIComponent(res.mkey));
+        else if (MODE === 'new-object') window.location.href = DONE;
+        else window.location.reload();
         return;
       }
       if (all.length > 1 || (GP && GP.api)) { review.hidden = true; pending = null; say('Saved. Reloading…'); window.location.reload(); return; }

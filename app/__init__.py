@@ -227,6 +227,29 @@ def create_app(config_override: object | None = None) -> Flask:
     # session['product'], so switching ADOM in one tab flipped every other
     # tab). Only the explicit switches (product.enter / product.set_product
     # and the '/' + '/web/' homes) still write the session.
+    #: The measured-GUI routes shared by FortiWeb, FortiGate and
+    #: FortiAuthenticator (views.workspace, services.gui_products).
+    _GUI_ENGINE_EPS = frozenset({
+        'workspace.fwgui_index', 'workspace.fwgui_list', 'workspace.fwgui_refresh',
+        'workspace.fwgui_object', 'workspace.fwgui_new', 'workspace.fwgui_save'})
+
+    def _gui_engine_kind(ep):
+        """'fortigate' / 'fortiauthenticator' when ``ep`` is a measured-GUI
+        page of such a device (its ``appliance_id``), else None. FortiWeb
+        pages keep the FortiWeb gating exactly as before."""
+        if ep not in _GUI_ENGINE_EPS:
+            return None
+        aid = (request.view_args or {}).get('appliance_id')
+        if not aid:
+            return None
+        try:
+            from .models import Appliance as _ApplGx
+            from .extensions import db as _dbgx
+            kind = _dbgx.session.query(_ApplGx.kind).filter_by(id=int(aid)).scalar()
+        except Exception:  # noqa: BLE001 -- unknown device: the usual gate
+            return None
+        return kind if kind in ('fortigate', 'fortiauthenticator') else None
+
     @app.before_request
     def _product_gate():
         from flask import g, session, redirect, url_for
@@ -321,6 +344,12 @@ def create_app(config_override: object | None = None) -> Flask:
         if bp_name == 'fgt':
             # And for FortiGate.
             eff = 'fortigate'
+        _gx_kind = _gui_engine_kind(ep)
+        if _gx_kind:
+            # The measured-GUI pages (workspace.fwgui_*) of a FortiGate or a
+            # FortiAuthenticator are that product's pages: opening one is an
+            # ADOM jump to the device's own product, like its fgt / fac area.
+            eff = _gx_kind
         g.product = eff
         always = {
             'static', 'index', 'fortiweb_home', 'service_worker',
@@ -330,7 +359,7 @@ def create_app(config_override: object | None = None) -> Flask:
             'product.enter', 'product.fortiadc_home',
             'product.placeholder_home',
         }
-        if ep in always or bp_name in CHROME_BPS or ep.startswith('auth.'):
+        if ep in always or bp_name in CHROME_BPS or ep.startswith('auth.') or _gx_kind:
             return None
         if eff == 'fortiadc':
             # FortiADC sessions get the ADC area + the product-neutral shared
@@ -846,7 +875,8 @@ def create_app(config_override: object | None = None) -> Flask:
         _pmap = {}
         try:
             from .services import gui_classic as _gc
-            _pmap = _gc.page_map(_cur_appl)
+            _pmap = (_gc.page_map(_cur_appl)
+                     if getattr(_cur_appl, 'kind', '') == 'fortiweb' else {})
             if _pmap:
                 _so_nav = _gc.filter_groups(_so_nav, _pmap)
                 _wp_nav = _gc.filter_groups(_wp_nav, _pmap)
@@ -938,6 +968,33 @@ def create_app(config_override: object | None = None) -> Flask:
                 _fgt_nav = ()
         except Exception:
             _fgt_nav = ()
+        # FortiGate / FortiAuthenticator: the device's own menu tree from its
+        # measured GUI layouts (services.gui_pages, like the FortiWeb group);
+        # the old fgt_menu / fac_menu leaves those pages draw leave the
+        # sidebar (services.gui_classic) -- their URLs redirect, ?classic=1
+        # keeps them. The device is the page's own on a GUI page, else the
+        # ADOM's current one.
+        _gx_appl, _gx_nav = None, []
+        try:
+            if prod.get("key") in ("fortigate", "fortiauthenticator"):
+                _gx_appl = _cur_appl
+                _vaid = (request.view_args or {}).get('appliance_id')
+                if (request.endpoint or '').startswith('workspace.fwgui') and _vaid:
+                    from .models import Appliance as _ApplNav
+                    _a = _ApplNav.query.get(int(_vaid))
+                    if _a is not None and _a.kind == prod.get("key"):
+                        _gx_appl = _a
+                if _gx_appl is not None and _gx_appl.kind == prod.get("key"):
+                    from .services import gui_classic as _gc2, gui_pages as _gp2
+                    _gx_nav = _gp2.nav_for(_gx_appl)
+                    if _gx_nav:
+                        _gx_map = _gc2.page_map(_gx_appl)
+                        _fgt_nav = _gc2.filter_product_groups(_fgt_nav, _gx_map)
+                        _fac_nav = _gc2.filter_product_groups(_fac_nav, _gx_map)
+                else:
+                    _gx_appl = None
+        except Exception:
+            _gx_appl, _gx_nav = None, []
         try:
             _env_mode = _store.env_mode()
         except Exception:
@@ -965,6 +1022,8 @@ def create_app(config_override: object | None = None) -> Flask:
             'faz_nav': _faz_nav,
             'fac_nav': _fac_nav,
             'fgt_nav': _fgt_nav,
+            'gx_appliance': _gx_appl,
+            'gx_nav': _gx_nav,
             'current_appliance': _cur_appl,
             'banner_bg': _bg,
             'now': datetime.utcnow(),

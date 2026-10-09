@@ -331,7 +331,9 @@ def _edit_spec(f: dict, d: dict, data: dict, dev: dict, *, new: bool = False) ->
     wkey = (d.get("aliases") or {}).get(key, key)
     editable = (kind in _EDIT_KINDS and not f.get("from_ref")
                 and (key is not None or kind == "toggle_rows")
-                and key not in (d.get("derived") or {}) and (key != "name" or new))
+                and key not in (d.get("derived") or {}) and (key != "name" or new)
+                # measured with no API on this build: shown, never saved
+                and f.get("key_from") != "gui-only")
     raw = data.get(wkey)
     return {
         "editable": editable,
@@ -444,6 +446,7 @@ def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict, *,
                 "options_unread": unread,
                 "bound_to": f.get("bound_to"),
                 "bound_unread": bool(f.get("bound_unread")),
+                "gui_only": f.get("key_from") == "gui-only",
             })
             if live:
                 fields[-1]["hidden"] = fhidden

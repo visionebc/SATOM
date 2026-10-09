@@ -98,6 +98,9 @@
     {% if f.regex %}<button type="button" class="btn btn-sm btn-fw-outline fw-rx-btn" data-rx-context="{{ f.rx_context }}" title="{{ _('Regex calculator — test this pattern against samples') }}">.*</button></div>{% endif %}
   {% elif f.widget == 'number' %}
     <input type="number" class="form-control form-control-sm fw-input" data-key="{{ f.key }}" data-orig="{{ f.value }}" value="{{ f.value }}">
+  {% elif f.widget == 'readonly' %}
+    {# a table or structure of the object: shown, edited on its own page #}
+    <span class="form-control form-control-sm bg-light text-muted" data-readonly-key="{{ f.key }}">{{ f.value }}</span>
   {% else %}
     {% if f.regex %}<div class="fw-rx-wrap d-flex gap-1">{% endif %}
     <input type="text" class="form-control form-control-sm fw-input" data-key="{{ f.key }}" data-orig="{{ f.value }}" value="{{ f.value }}">

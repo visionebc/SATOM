@@ -573,6 +573,27 @@ def _gui_code(node, path="") -> str:
     return ""
 
 
+def _gui_unsafe_endpoint(data: dict) -> str:
+    """A GUI API endpoint (``api:...``) a layout names for reading or writing
+    that is not a configuration object (gui_bound.safe_api): the first one."""
+    from . import gui_bound
+    eps = []
+    for v in data.get("views") or []:
+        eps.append(v.get("endpoint"))
+    for d in (data.get("dialogs") or {}).values():
+        eps.append(d.get("endpoint"))
+        eps.append((d.get("write") or {}).get("endpoint"))
+        for w in d.get("writes") or []:
+            eps.append(w.get("endpoint"))
+        for b in d.get("blocks") or []:
+            for f in b.get("fields") or []:
+                eps.append((f.get("bind") or {}).get("endpoint"))
+    for ep in eps:
+        if isinstance(ep, str) and gui_bound.is_api(ep) and not gui_bound.safe_api(ep):
+            return ep
+    return ""
+
+
 def validate_gui(run, item) -> dict:
     """A ``satom.gui-template/2`` page layout of one exact build. The importer
     does not assume who measured it (decision 4: a customer-run harvester may
@@ -603,6 +624,9 @@ def validate_gui(run, item) -> dict:
     hit = _gui_code(data)
     if hit:
         raise ItemInvalid("template carries GUI bundle code (%s)" % hit)
+    bad = _gui_unsafe_endpoint(data)
+    if bad:
+        raise ItemInvalid("template names an endpoint SATOM never reads or writes (%s)" % bad)
     return {"product": product, "page": ident["page"], "version": version,
             "build": ident["build"], "path": path, "template": data,
             "sha256": guikit.content_hash(data) + ":" + _canon(data)}

@@ -811,6 +811,12 @@ build are listed as <em>Not known on this build (sent by REST as before)</em>. T
 permission is unchanged (the editor's write permission); every CLI write is in
 the audit log as <code>config.cli_write</code>, with field names and the outcome, never a
 value.</p>
+<p>On FortiGate, FortiAuthenticator, FortiADC and FortiAnalyzer the "Not in GUI,
+but in CLI" section of each tab is itself the editor of those fields (<em>Read
+values over CLI</em>, <em>Preview CLI change</em>, <em>Apply</em>), and objects only the CLI
+serves are edited the same way on the device's <em>Everything this device has
+outside the GUI</em> page and, on FortiAuthenticator, in <em>System → Network</em> and
+<em>System → Administration</em>.</p>
 <h2 id="8-web-protection-waf">8. Web Protection (WAF)</h2>
 <p>FortiWeb ADOM → <strong>Web Protection</strong> reproduces the FortiWeb 7.6 Web Protection
 menu tree exactly: Known Attacks (Signatures / Custom Signature), Protocol,

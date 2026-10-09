@@ -1202,23 +1202,30 @@ def fwgui_list(appliance_id, page):
 def _fwgui_form(appl, page, tpl, match, dev, vi, view, tabs):
     """A settings page (no grid): the form over its ONE object, from the SATOM
     cache, else read from the device; Save is a mkey-less update."""
-    from ..services import gui_pages, gui_template, objform
+    from ..services import gui_bound, gui_pages, gui_template, objform
     coll = view.get('endpoint') or ''
     key = view['form']
-    rows, _meta = gui_pages.rows(appl.id, coll)
-    obj = rows[0] if rows else None
-    if obj is None and coll:
+    api = gui_bound.is_api(coll)
+    if api:
+        # a form the GUI writes through its own API (log settings, admin
+        # settings): never cached, read live from the device
+        obj = gui_bound.read(appl, coll)
+    else:
+        rows, _meta = gui_pages.rows(appl.id, coll)
+        obj = rows[0] if rows else None
+    if obj is None and coll and not api:
         from .objedit import _read_object
         try:
             obj = _read_object(FortiWebClient(appl), coll, '', singleton=True) or None
         except Exception as exc:  # noqa: BLE001 — unreachable: drawn empty, said so
             log_exception(exc, context='workspace.fwgui.form')
     can_edit = current_user.can('config_write') and obj is not None \
-        and objform.is_known_collection(coll)
+        and (api or objform.is_known_collection(coll))
     subrows = _fwgui_subrows(appl, tpl, key, None, obj)
-    dview = gui_template.dialog_view(tpl, key, obj or {}, dev, subrows=subrows, live=can_edit)
+    tpl, row, groups = gui_bound.prepare(tpl, key, obj or {}, appl)
+    dview = gui_template.dialog_view(tpl, key, row, dev, subrows=subrows, live=can_edit)
     nig = nig_edit = None
-    if obj is not None:
+    if obj is not None and not api:
         if can_edit:
             from .objedit import _not_in_gui
             _groups, nig_edit = _not_in_gui(appl, coll, obj, [])
@@ -1226,7 +1233,9 @@ def _fwgui_form(appl, page, tpl, match, dev, vi, view, tabs):
             from ..services import not_in_gui
             nig = not_in_gui.for_view(appl, coll, obj)
     gp = {'page': page, 'v': vi, 'collection': coll, 'name': '', 'mode': 'object',
-          'form': True, 'tabs': tabs, 'missing': obj is None}
+          'form': True, 'tabs': tabs, 'missing': obj is None, 'api': api,
+          'method': (tpl['dialogs'][key].get('write') or {}).get('method') or 'PUT',
+          'bound': groups}
     return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
                            dev=dev, view=dview, name='', main=key, is_new=False,
                            not_in_gui=nig, nig_row=obj or {}, nig_edit=nig_edit,
@@ -1263,6 +1272,7 @@ def fwgui_object(appliance_id, page, name):
     writer = current_user.can('config_write')
     row_dialogs = gui_template.row_dialogs(tpl, main)
     row_ctx = None
+    groups = {}
     if key in row_dialogs:
         st = row_dialogs[key]
         sub_coll = gui_pages.table_endpoint(tpl, main, st)
@@ -1285,9 +1295,11 @@ def fwgui_object(appliance_id, page, name):
                    'sub_id': '' if is_new_row else str(row.get('id', '')), 'new': is_new_row}
         can_edit = writable
     elif key == main:
+        from ..services import gui_bound
         subrows = _fwgui_subrows(appl, tpl, key, name, obj)
         can_edit = writer and objform.is_known_collection(coll)
-        dview = gui_template.dialog_view(tpl, key, obj, dev, subrows=subrows, live=can_edit)
+        tpl, prow, groups = gui_bound.prepare(tpl, key, obj, appl)
+        dview = gui_template.dialog_view(tpl, key, prow, dev, subrows=subrows, live=can_edit)
     else:
         abort(404)
     writable_subtables = sorted(
@@ -1303,7 +1315,7 @@ def fwgui_object(appliance_id, page, name):
             from ..services import not_in_gui
             nig = not_in_gui.for_view(appl, coll, obj)
     gp = {'page': page, 'v': vi, 'collection': coll, 'name': name,
-          'mode': 'row' if row_ctx else 'object'}
+          'mode': 'row' if row_ctx else 'object', 'bound': groups if key == main else {}}
     return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
                            dev=dev, view=dview, name=name, main=main, is_new=False,
                            not_in_gui=nig, nig_row=obj, nig_edit=nig_edit,
@@ -1329,12 +1341,67 @@ def fwgui_new(appliance_id, page, dialog):
     row = dict(tpl['dialogs'][dialog].get('new_defaults') or {})
     subrows = {st: [] for st in gui_template.row_dialogs(tpl, dialog).values() if st}
     can_edit = current_user.can('config_write') and objform.is_known_collection(coll)
+    from ..services import gui_bound
+    tpl, row, groups = gui_bound.prepare(tpl, dialog, row, appl, read_device=False)
     dview = gui_template.dialog_view(tpl, dialog, row, dev, subrows=subrows,
                                      live=can_edit, new=can_edit)
-    gp = {'page': page, 'v': vi, 'collection': coll, 'name': None, 'mode': 'new-object'}
+    gp = {'page': page, 'v': vi, 'collection': coll, 'name': None, 'mode': 'new-object',
+          'bound': groups}
     return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
                            dev=dev, view=dview, name=None, main=dialog, is_new=True,
                            can_edit=can_edit, save_ep=coll, row_ctx=None, gp=gp)
+
+@bp.route('/<int:appliance_id>/fwgui-save-api', methods=['POST'])
+@login_required
+@require_permission('config_write')
+def fwgui_save_api(appliance_id):
+    """Save a form FortiWeb's GUI writes through its own API (``api:<path>``:
+    log settings, admin settings): read the current object, set the changed
+    key paths (types kept), send it back with the GUI's own method. Dry run
+    first (the exact request), then apply; the write is snapshotted and
+    audited by FortiWebOps like every other write."""
+    from ..services import gui_bound
+    from ..services.fortiweb_ops import FortiWebOps
+    appl = visible_appliance_or_404(appliance_id)
+    if appl.kind != 'fortiweb':
+        return jsonify(ok=False, error='FortiWeb only'), 400
+    body = request.get_json(silent=True) or {}
+    ep = body.get('endpoint') or ''
+    method = (body.get('method') or 'PUT').upper()
+    fields = body.get('fields') or {}
+    do_apply = bool(body.get('apply'))
+    if not gui_bound.safe_api(ep) or method not in ('PUT', 'POST'):
+        return jsonify(ok=False, error='not a GUI API endpoint'), 400
+    if not isinstance(fields, dict) or not fields:
+        return jsonify(ok=False, error='no changes to save'), 400
+    current = gui_bound.read(appl, ep)
+    if current is None:
+        return jsonify(ok=False, error='the device did not answer for %s: nothing was sent' % ep), 409
+    new = gui_bound.merged(current, fields)
+    diff = gui_bound.changes(current, new)
+    path = gui_bound.rest_path(ep)
+    ops = FortiWebOps(appl)
+    data = {'data': new}
+    if method == 'POST':
+        res = ops.create(path, data, dry_run=not do_apply)
+    else:
+        res = ops.update(path, None, data, dry_run=not do_apply)
+    after = None
+    if do_apply and res.ok:
+        after = gui_bound.read(appl, ep)
+    # what the device stored differently from what was sent (re-read)
+    drift = None if after is None else gui_bound.changes(new, after)
+    if drift:
+        # the device can answer a read before it has committed the write:
+        # one more read before calling it a difference
+        import time as _time
+        _time.sleep(1.0)
+        after = gui_bound.read(appl, ep)
+        drift = None if after is None else gui_bound.changes(new, after)
+    return jsonify(ok=res.ok, dry_run=res.get('dry_run'), request=res.get('request'),
+                   diff=diff, error=res.get('error', ''),
+                   verified=None if drift is None else not drift, drift=drift)
+
 
 @bp.route('/<int:appliance_id>/new-policy')
 @login_required

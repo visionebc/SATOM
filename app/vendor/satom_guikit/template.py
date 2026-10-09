@@ -59,7 +59,8 @@ def _subtable_dialogs(tpl: dict) -> set:
 
 def layout_keys(tpl: dict) -> set:
     """REST field keys of the page's OWN object that the layout places: every
-    dialog field (sub-table dialogs excluded), the REST fields a GUI-only control
+    dialog field (sub-table dialogs excluded) and each extra control of one
+    (``more``), the REST fields a GUI-only control
     is derived from, the REST field an aliased control writes, and the list
     columns (a column the list shows and toggles, e.g. Status, is in the GUI)."""
     sub = _subtable_dialogs(tpl)
@@ -70,10 +71,13 @@ def layout_keys(tpl: dict) -> set:
             continue
         for b in d.get("blocks") or []:
             for f in b.get("fields") or []:
-                if f.get("key"):
+                # a field bound to ANOTHER endpoint (``bind``) is not a key of
+                # the page's own object
+                if f.get("key") and not f.get("bind"):
                     keys.add(f["key"])
-                # a toggle group (Supported SSL Protocols) sets one key per row
-                for r in f.get("rows") or []:
+                # a toggle group (Supported SSL Protocols) sets one key per row;
+                # a field with several controls (Log Type) one per control
+                for r in list(f.get("rows") or []) + list(f.get("more") or []):
                     if isinstance(r, dict) and r.get("key"):
                         keys.add(r["key"])
         for rules in (d.get("derived") or {}).values():

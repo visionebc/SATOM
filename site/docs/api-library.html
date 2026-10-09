@@ -1621,6 +1621,13 @@ Each payload is validated before anything is written; a malformed item is
 <td>the signature metadata table</td>
 <td>id is <code>[A-Za-z0-9_.:-]{1,64}</code>; strings are strings, lists are lists of strings, <code>url</code> is http(s); malformed entries are skipped and counted</td>
 </tr>
+<tr>
+<td><code>gui-templates</code></td>
+<td><code>gui-template</code></td>
+<td><code>satom.gui-template/2</code>: one GUI page of one EXACT build (<code>applies_to: {product, version, build, train}</code>) — dialogs, sections, field order, conditions, options, Fortinet's labels and help, <code>not_in_gui</code> (REST fields the layout does not place), <code>subtable_dialogs</code>; per field the key the GUI was measured writing (<code>key_from: measured</code>), <code>bind</code> {endpoint, key, method} for a field kept in another endpoint, <code>more</code> for the other controls of one field; a settings form the GUI writes through its own API names it <code>api:&lt;path&gt;</code> with the GUI's method in <code>write</code></td>
+<td><code>data/gui-templates/&lt;product&gt;/&lt;page&gt;/&lt;version&gt;-&lt;build&gt;.json</code> (read by the FortiWeb-layout pages — Server Policy and, for generic templates, every page of the <em>FortiWeb</em> sidebar menu — and by the "Not in GUI, but in CLI" section)</td>
+<td>schema must be /2; version is <code>X.Y.Z</code> and build a number; dialogs and list present; any string that looks like GUI bundle code (<code>function(</code>, an HTML tag, an Angular directive, <code>$ctrl.</code>) rejects the item, and so does an <code>api:</code> endpoint that is not a GUI API configuration object (<code>gui_bound.safe_api</code>: no reboot / backup / restore / firmware / license / maintenance / debug paths). The importer does not assume who measured it</td>
+</tr>
 </tbody>
 </table>
 <p>What each target guarantees:</p>

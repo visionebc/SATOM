@@ -65,6 +65,7 @@
       <a href="#3-in-the-object-editor">3. In the object editor</a>
       <a href="#4-lab-verification-fortiweb-806">4. Lab verification (FortiWeb 8.0.6)</a>
       <a href="#5-dialects">5. Dialects</a>
+      <a href="#5b-where-the-cli-only-fields-are-edited">5b. Where the CLI-only fields are edited</a>
       <a href="#6-troubleshooting">6. Troubleshooting</a>
     </aside>
     <div class="doc-body mdx">
@@ -337,11 +338,25 @@ with <code>end</code> first.</p>
 <td>refused</td>
 <td><strong>no</strong></td>
 </tr>
+<tr>
+<td>FortiAnalyzer</td>
+<td>documented</td>
+<td>refused</td>
+<td><strong>no</strong></td>
+</tr>
 </tbody>
 </table>
-<p>A product not listed (FortiAnalyzer) has no CLI writer. An unverified dialect is
-written to the FortiOS-family documentation and shown as unverified in the
-editor; verify it on a lab box before relying on it.</p>
+<p>An unverified dialect is written to the FortiOS-family documentation and shown
+as unverified in the editor; verify it on a lab box before relying on it.</p>
+<h2 id="5b-where-the-cli-only-fields-are-edited">5b. Where the CLI-only fields are edited</h2>
+<p>Every object view carries a "Not in GUI, but in CLI" section. On FortiWeb it is
+part of the object editor (the editor's Save splits REST / CLI). On FortiGate,
+FortiAuthenticator, FortiADC and FortiAnalyzer — and for objects only the CLI
+serves, on the per-device page and in their own GUI pane (FortiAuthenticator
+<em>System → Network</em> and <em>System → Administration</em>) — the section is its own
+editor: <em>Read values over CLI</em>, <em>Preview CLI change</em> (the script), <em>Apply</em>
+(<code>POST /appliances/&lt;id&gt;/not-in-gui/save</code>). It writes only fields the build
+serves by CLI alone; a write naming any other field is refused whole.</p>
 <hr>
 <h2 id="6-troubleshooting">6. Troubleshooting</h2>
 <table>

@@ -1438,6 +1438,22 @@ def _clean_create_fields(fields):
     return out
 
 
+_POLICY_SERVICE_KEYS = ('service', 'https-service', 'http3-service')
+
+
+def _undo_created(ops, created):
+    """Delete, newest first, the top-level objects a failed Create New made
+    (VIP and pool-member rows go with their parent). Only what THIS run
+    created, never inferred from the device; each delete is audited by
+    FortiWebOps like any other."""
+    out = []
+    for label, ep, name in reversed(created):
+        res = ops.delete(ep, name, dry_run=False, check_refs=False)
+        out.append({'label': label, 'name': name, 'ok': res.ok,
+                    'error': res.get('error', '')})
+    return out
+
+
 @bp.route('/<int:appliance_id>/create-policy', methods=['POST'])
 @login_required
 @require_permission('config_write')
@@ -1488,9 +1504,18 @@ def create_policy(appliance_id):
             if pf2:
                 steps.append(('Pool member %d' % (i + 1), _CREATE_EPS['pserver'], pf2, pool_name))
         policy['server-pool'] = pool_name
-    steps.append(('Server Policy', _CREATE_EPS['policy'], _clean_create_fields(policy) | {'name': pname}, None))
+    pol_fields = _clean_create_fields(policy) | {'name': pname}
+    # FortiWeb refuses a policy with no service (errcode -7715 "The service of
+    # policy must be selected") and its own dialog marks the selects required
+    # without preselecting one. Refuse here, before the preview, so a run never
+    # creates the virtual server and pool only to fail on the policy.
+    if not any(pol_fields.get(k) for k in _POLICY_SERVICE_KEYS):
+        return jsonify(ok=False, error='Select an HTTP, HTTPS or HTTP/3 service: '
+                                       'FortiWeb does not create a policy without one'), 400
+    steps.append(('Server Policy', _CREATE_EPS['policy'], pol_fields, None))
 
     results = []
+    created = []   # (label, endpoint, name) of the top-level objects this run made
     for label, ep, payload, child_of in steps:
         full_ep = ep
         if ep in _CHILD_EPS and child_of:
@@ -1504,7 +1529,10 @@ def create_policy(appliance_id):
                         'error': res.get('error', ''), 'request': res.get('request')})
         if not res.ok:
             return jsonify(ok=False, applied=results,
+                           rolled_back=_undo_created(ops, created),
                            error='%s failed: %s' % (label, res.get('error', ''))), 200
+        if not child_of:
+            created.append((label, ep, payload.get('name')))
     appid = ''
     if do_apply and app_id_pk is not None:
         row = appids_svc.assign(app_id_pk=app_id_pk, appliance_id=appl.id,

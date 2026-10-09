@@ -131,7 +131,7 @@ async function doCreate(apply){
   } else if(r.ok){
     box.innerHTML=`<div class="fw-alert fw-alert-ok">✓ Created. <a href="/workspace/${APPL_ID}/policy/${encodeURIComponent(pname)}">Open ${esc(pname)}</a></div><pre class="fw-code-block">${esc(JSON.stringify(r.steps,null,2))}</pre>`;
   } else {
-    box.innerHTML=`<div class="fw-alert fw-alert-err">✗ ${esc(r.error||'failed')}</div><pre class="fw-code-block">${esc(JSON.stringify(r.applied||r,null,2))}</pre>`;
+    box.innerHTML=`<div class="fw-alert fw-alert-err">✗ ${esc(r.error||'failed')}</div><pre class="fw-code-block">${esc(JSON.stringify(r.applied?{applied:r.applied,rolled_back:r.rolled_back}:r,null,2))}</pre>`;
   }
   box.scrollIntoView({behavior:'smooth'});
 }

@@ -637,19 +637,19 @@ def build_groups(kind: str, obj: dict, keep_name: bool = False) -> list[dict]:
 
 # ── CREATE forms ──────────────────────────────────────────────────────────────
 # Empty (skeleton) objects can't reveal widget types from a value, so we drive
-# create forms from data/server_policy_create_skeleton.json — the complete,
-# live-validated field set harvested from the reference 8.0 appliance (fw1).
-# Sample values resolve widget/type only; create renders blank defaults so
-# nothing from another policy is silently carried over.
+# create forms from app/registry/data/server_policy_create_skeleton.json — the
+# complete, live-validated field set harvested from the reference 8.0 appliance.
+# Sample values resolve widget/type only (neutral placeholders, no lab names);
+# create renders blank defaults so nothing from another policy is carried over.
+# It ships with the code: it lived in the untracked data/ directory until
+# 2026-10-09, so every install but the first had an 11-field New Policy form,
+# and the old "except: return {}" hid it. A missing file is a packaging error.
 @lru_cache(maxsize=1)
 def _create_skeleton() -> dict:
     path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                        "..", "data", "server_policy_create_skeleton.json")
-    try:
-        with open(os.path.abspath(path), "r", encoding="utf-8") as fh:
-            return json.load(fh)
-    except Exception:
-        return {}
+                        "registry", "data", "server_policy_create_skeleton.json")
+    with open(path, "r", encoding="utf-8") as fh:
+        return json.load(fh)
 
 
 def create_skeleton_keys(kind: str) -> list:

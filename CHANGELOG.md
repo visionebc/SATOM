@@ -6,6 +6,24 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — Create New Server Policy: a service is required up front, and a failed run undoes itself
+
+- A policy with no HTTP, HTTPS or HTTP/3 service was sent to the device, which
+  refused it (`-7715 The service of policy must be selected`) after the virtual
+  server, its VIPs and the server pool had already been created. FortiWeb's own
+  dialog marks those selects required and preselects none; SATOM now refuses
+  such a policy before anything is written, the preview included.
+- When any step of a Create New fails, the objects that run created are deleted,
+  newest first (VIP and pool-member rows go with their parent), and the result
+  lists what was undone and anything that could not be. Only what that run
+  created is touched.
+- The *New Server Policy* form drew 11 fields instead of ~120 on every
+  installation but the first: the field skeleton it is built from lived in the
+  runtime `data/` directory, which is never shipped, and a missing file was
+  silently read as empty. It now ships with the code (lab names and addresses
+  replaced by neutral placeholders; the widgets are identical) and a missing
+  file is an error.
+
 ### Added — every FortiWeb GUI page, drawn the way FortiWeb draws it
 
 - Until now only Server Policy had FortiWeb's own layout; every other page used

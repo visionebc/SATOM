@@ -1226,6 +1226,10 @@ def _library_plan(doc: dict) -> dict:
                    .filter(~ApiLibEvidence.origin_ref.startswith(_PARTIAL))
                    .first())
             if own is not None:
+                # Facts are kept per build: only a build-scoped document can be
+                # compared endpoint by endpoint. A line / range one stays whole.
+                if (doc.get("scope") or {}).get("kind", "build") != "build":
+                    return {"state": ST_LOCAL}
                 only = _unmeasured(doc, b)
                 if not only:
                     return {"state": ST_LOCAL}

@@ -1169,10 +1169,14 @@ def _local_build(product: str, scope: dict) -> ApiLibBuild | None:
 
 def _unmeasured(doc: dict, build) -> list:
     """Endpoint keys of a pack document whose REST path this node holds no
-    fact for, in that build and source: what no measurement here covered."""
+    field-revealing fact for, in that build and source: what no measurement
+    here covered. A blind read (an empty table: ``fields_known`` false) shows
+    no field, so it does not count -- otherwise the first pack that saw the
+    table empty would keep every later one that saw rows out for good."""
     known = {lib.urn_key(u) for (u,) in db.session.query(ApiLibEndpointFact.urn)
              .filter(ApiLibEndpointFact.build_id == build.id,
-                     ApiLibEndpointFact.source == doc["source"]) if u}
+                     ApiLibEndpointFact.source == doc["source"],
+                     ApiLibEndpointFact.fields_known.is_(True)) if u}
     out = []
     for k, info in (doc.get("endpoints") or {}).items():
         urn = info.get("urn") if isinstance(info, dict) else ""

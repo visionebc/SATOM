@@ -1178,6 +1178,12 @@ unknown (a 2.x pack wrote the copy) or equal, `api_pack` > `knowledge` and,
 inside a lane, the newer pack.
 
 - Data this node measured or wrote itself is never replaced by any pack.
+  Device evidence (a sweep, a CLI dump) of a build this node measured itself
+  is not skipped whole, though: the pack adds the endpoints no measurement on
+  this node covered (by REST path) and leaves the others to the node's own
+  evidence. The rediscovery sweep reads no sub-table, so skipping the whole
+  pack sweep left every sub-table of the build unknown. The import log names
+  the added endpoints (`only`).
 - A copy a pack wrote is **replaced** when the incoming item differs and the
   incoming pack outranks the one that wrote it (newer snapshot; otherwise
   higher lane, or same lane and newer pack). That is how corrections arrive: per (product, version) for release

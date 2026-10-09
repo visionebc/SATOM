@@ -1176,11 +1176,16 @@ def _unmeasured(doc: dict, build) -> list:
     known = {lib.urn_key(u) for (u,) in db.session.query(ApiLibEndpointFact.urn)
              .filter(ApiLibEndpointFact.build_id == build.id,
                      ApiLibEndpointFact.source == doc["source"],
-                     ApiLibEndpointFact.fields_known.is_(True)) if u}
+                     (ApiLibEndpointFact.fields_known.is_(True))
+                     | (ApiLibEndpointFact.verdict == lib.VERDICT_ABSENT)) if u}
     out = []
     for k, info in (doc.get("endpoints") or {}).items():
-        urn = info.get("urn") if isinstance(info, dict) else ""
-        if lib.urn_key(urn or k) not in known:
+        info = info if isinstance(info, dict) else {}
+        # Only what the pack itself measured counts: its own blind reads add
+        # nothing, and taking them would re-import them on every run.
+        if not (info.get("fields") or info.get("verdict") == lib.VERDICT_ABSENT):
+            continue
+        if lib.urn_key(info.get("urn") or k) not in known:
             out.append(k)
     return sorted(out)
 

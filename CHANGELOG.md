@@ -27,6 +27,10 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   on an appliance with a separate SSH password: no caller handed the password
   to the adapter. The adapter now takes it from the appliance, and only that
   one: FortiAuthenticator's REST API key is never sent to the CLI.
+- A policy made with Create New showed its inline tables (HTTP content routing,
+  public IPs) as *not in the SATOM cache* until the next scheduled deep
+  capture. An applied Create New now starts a deep capture of that device in
+  the background; the policy's page fills in within seconds.
 
 ### Added — every FortiWeb GUI page, drawn the way FortiWeb draws it
 

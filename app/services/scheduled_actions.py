@@ -792,9 +792,9 @@ def _do_schema_harvest(appliance, params: dict, dry_run: bool = False) -> dict:
     if appliance.kind in sh.SUPPORTED:
         res = sh.harvest(appliance, probe=bool(params.get("probe", True)))
     else:
-        # FortiAuthenticator (REST schema; its CLI walk needs a secret SATOM
-        # does not store) and FortiAnalyzer (unverified syntax read) go
-        # through their schema adapters.
+        # FortiAuthenticator (REST schema, plus the CLI walk when the appliance
+        # has a separate SSH password) and FortiAnalyzer (unverified syntax
+        # read) go through their schema adapters.
         from . import schema_adapters
         res = schema_adapters.harvest(appliance)
     import json as _json

@@ -23,6 +23,10 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   silently read as empty. It now ships with the code (lab names and addresses
   replaced by neutral placeholders; the widgets are identical) and a missing
   file is an error.
+- The scheduled FortiAuthenticator schema harvest skipped its CLI channel even
+  on an appliance with a separate SSH password: no caller handed the password
+  to the adapter. The adapter now takes it from the appliance, and only that
+  one: FortiAuthenticator's REST API key is never sent to the CLI.
 
 ### Added — every FortiWeb GUI page, drawn the way FortiWeb draws it
 

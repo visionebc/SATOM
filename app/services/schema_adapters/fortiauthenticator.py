@@ -480,6 +480,11 @@ def harvest(appliance, *, ssh_secret: str | None = None, walk_reader=None, full_
                            "skip_reason": doc["skip_reason"],
                            "resources": len(doc.get("endpoints") or {})}
 
+        if ssh_secret is None and walk_reader is None and getattr(appliance, "ssh_password_enc", None):
+            # FAC's stored credential is a REST API key the CLI refuses; only a
+            # separate SSH password set on the appliance opens the CLI channel.
+            # Every caller (the scheduled harvest included) gets it from here.
+            ssh_secret = appliance.ssh_secret
         can_cli = bool(ssh_secret) or walk_reader is not None
         if can_cli:
             walk = (walk_reader(appliance) if walk_reader is not None

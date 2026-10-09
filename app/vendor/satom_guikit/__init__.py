@@ -10,11 +10,12 @@ templates SATOM reads without anything else from this repository.
 * :mod:`.diff` — what changed between the layouts of two builds.
 """
 from .diff import diff
+from .endpoints import is_api, safe_api
 from .strings import merge, split
 from .template import (SCHEMA_V1, SCHEMA_V2, SCHEMAS, content_hash, identity, layout_keys,
                        not_in_gui, to_v2)
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
-__all__ = ["SCHEMA_V1", "SCHEMA_V2", "SCHEMAS", "content_hash", "diff", "identity",
+__all__ = ["is_api", "safe_api", "SCHEMA_V1", "SCHEMA_V2", "SCHEMAS", "content_hash", "diff", "identity",
            "layout_keys", "merge", "not_in_gui", "split", "to_v2", "__version__"]

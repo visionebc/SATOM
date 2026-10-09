@@ -35,21 +35,13 @@ def is_api(ep: str | None) -> bool:
     return (ep or "").startswith(API)
 
 
-#: A GUI API endpoint SATOM may read and write: a configuration object of the
-#: GUI's own API (``log/logconfig.globallogsettings``, ``system/admin.settings``).
-_SAFE_API = re.compile(r"api:(system|log|waf|server|user|network|router|wvs)/[a-z0-9_-]+"
-                       r"(\.[a-z0-9_-]+)*", re.I)
-#: Device actions: never read (a GET can act) and never written, whatever a
-#: layout says -- layouts may come from a harvester SATOM does not run.
-_ACTION = re.compile(r"reboot|shutdown|restore|upgrade|format|factory|reset|logout|backup|"
-                     r"restart|import|upload|execute|exec|action|license|firmware|maintenance|"
-                     r"shell|debug|diagnose|password|token|key|secret|cert", re.I)
-
-
 def safe_api(ep: str | None) -> bool:
-    """True for a GUI API configuration endpoint SATOM may read and write."""
-    ep = ep or ""
-    return bool(_SAFE_API.fullmatch(ep)) and not _ACTION.search(ep[len(API):])
+    """True for a GUI API configuration endpoint SATOM may read and write --
+    the ONE rule the harvester also applies (vendored satom_guikit.safe_api):
+    never a path naming a device action or a secret, whatever a layout says
+    (layouts may come from a harvester SATOM does not run)."""
+    from ..vendor import satom_guikit
+    return satom_guikit.safe_api(ep)
 
 
 def rest_path(ep: str) -> str:

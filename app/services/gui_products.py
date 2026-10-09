@@ -437,9 +437,11 @@ class FortiAuthenticatorAdapter(Adapter):
             if not isinstance(obj, dict) or not obj:
                 return False
             cm = _mkey_of(obj)
-            if op == "create":
-                return write_through.local_insert(appliance.id, logical, cm, obj)
-            return write_through.local_refresh(appliance.id, logical, cm, obj) > 0
+            if op == "update" and write_through.local_refresh(appliance.id, logical, cm, obj) > 0:
+                return True
+            # created, or an object the cache does not hold yet (its last
+            # sweep predates it): cached now, beside its siblings
+            return write_through.local_insert(appliance.id, logical, cm, obj)
         except Exception:  # noqa: BLE001 -- the write itself succeeded
             return False
 

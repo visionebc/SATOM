@@ -57,7 +57,9 @@
       <input type="search" placeholder="{{ _('Search') }}" aria-label="{{ _('Search') }}" data-fwg-search>
     </div>
     <span class="text-muted small ms-auto">{{ rows|length }} {{ _('objects') }}</span>
-    {% if cache_meta and cache_meta.generated_at %}<span class="badge bg-dark border" title="{{ _('Served from the SATOM cache of this device') }}"><i class="bi bi-database me-1"></i>{{ _('cache') }} {{ cache_meta.generated_at|string|truncate(16, True, '') }}</span>{% endif %}
+    {% if view.read_live %}<span class="badge bg-info text-dark" title="{{ _('FortiWeb\'s predefined entries: read from the device through its GUI API, never cached, read-only.') }}"><i class="bi bi-broadcast me-1"></i>{{ _('live') }}</span>
+    {% elif cache_meta and cache_meta.generated_at %}<span class="badge bg-dark border" title="{{ _('Served from the SATOM cache of this device') }}"><i class="bi bi-database me-1"></i>{{ _('cache') }} {{ cache_meta.generated_at|string|truncate(16, True, '') }}</span>{% endif %}
+    {% if view.alias %}<span class="fw-badge fw-badge-secondary" title="{{ view.alias.evidence }}">{{ _('objects of %(c)s', c=view.endpoint) }}{% if view.alias.confidence != 'measured' %} · {{ _('tied by name') }}{% endif %}</span>{% endif %}
     {% if can_edit %}
     <form method="post" action="{{ url_for('workspace.fwgui_refresh', appliance_id=appliance.id, page=page) }}" class="d-inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

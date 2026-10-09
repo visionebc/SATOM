@@ -6,6 +6,48 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — FortiWeb pages that read FortiWeb's own GUI API now show and edit their objects
+
+- About 20 FortiWeb pages (Signatures, OpenAPI File, the XML / TSL CA /
+  Intermediate CA / OCSP certificate lists, Web Vulnerability Scan Policy,
+  FortiSandbox, Automation, FTP Security Profile, DoS Exception Policy, ZTNA
+  Tags, Firewall Admin Policy) were drawn empty and could not be edited: the
+  GUI crawl recorded the collection FortiWeb's GUI reads through its own API
+  (`waf/signatures`), which cmdb answers 500 and SATOM does not cache, while the
+  same objects live in a cmdb collection (`waf/signature`).
+- `app/registry/data/gui_endpoint_alias.json` ties each of them to that
+  collection, measured on fortiweb17 (7.6.8) and fortiweb18 (8.0.6) with GETs
+  only: the same objects on both sides or every layout key among the build's
+  measured fields (`measured`), else the twin by name with both sides empty on
+  the lab (`named`, shown on the page as "tied by name"). GUI keys are renamed to
+  the cmdb keys measured equal row by row (Signatures: alert-only, disabled,
+  exception and FPM counts, custom group, sensitivity); a column FortiWeb
+  computes stays a computed column. Grid, dialog, save path (object editor,
+  audited), sidebar coverage and the "Not in GUI, but in CLI" rule all follow.
+  Verified live: a signature's sensitivity changed through the page on
+  fortiweb18, read back from the device and restored.
+- FortiWeb's predefined Data Types, predefined Global Allow List and the
+  scan history have no cmdb collection: read live through the GUI API (only
+  where the GUI API safety rule allows), read-only, marked *live*.
+- Four collections the GUI lists were missing from the registry: baseline
+  resealed (+4: `dos_prevention_exception`, `ftp_protection_profile_inline`,
+  `system_endpoint_control_tags`, `system_firewall_admin_policy_match_item`).
+- A radio or select whose choices the crawl could not read was drawn as a choice
+  "None" that would have saved the text "None" (121 fields). It is now a text
+  input over the current value, marked *choices not measured*; the harvester
+  (0.8.7) no longer emits such options, and the knowledge pack kb-20261009.5
+  brings back the real choices of 52 of them.
+- Still unbound, on purpose: System Time and Log Download (the GUI API path is
+  a maintenance action SATOM never touches), Backup & Restore, Caching, File
+  Security and ML API Protection Policy (no collection measured to hold them).
+  Local User and User Group > User Group are not in FortiWeb's own menu on
+  these builds, so their SATOM entries stay in the sidebar.
+- `deploy/verify_gui_alias.py <appliance id>...` re-measures the table on a
+  device (GETs only). `tests/test_gui_alias.py` fails if a page keeps the GUI
+  API name, a key or a bind is left behind, a computed column is filled, the
+  table names an unknown collection, a forbidden GUI API path is read, or an
+  unread choice is drawn.
+
 ### Changed — FortiWeb pages: FortiWeb's structure inside the SATOM frame, one menu per page
 
 - Every FortiWeb page drawn from a measured GUI layout (the FortiWeb menu, 145

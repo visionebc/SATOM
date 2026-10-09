@@ -1191,12 +1191,16 @@ def fwgui_list(appliance_id, page):
             for i, v in enumerate(gui_pages.views(tpl))] if len(gui_pages.views(tpl)) > 1 else []
     if view.get('form'):
         return _fwgui_form(appl, page, tpl, match, dev, vi, view, tabs)
-    rows, meta = gui_pages.rows(appl.id, view.get('endpoint'))
+    if view.get('read_live'):
+        # FortiWeb's predefined entries: GUI API only, read live, read-only
+        rows, meta = gui_pages.live_rows(appl, view.get('endpoint'))
+    else:
+        rows, meta = gui_pages.rows(appl.id, view.get('endpoint'))
     return render_template('workspace/fwgui_list.html', appliance=appl, tpl=tpl, match=match,
                            dev=dev, page=page, vi=vi, view=view, rows=rows, cache_meta=meta,
                            tabs=tabs, cell=gui_pages.cell, labels=gui_pages.value_labels(tpl),
                            dialog_for=gui_pages.dialog_for,
-                           can_edit=current_user.can('config_write'),
+                           can_edit=current_user.can('config_write') and not view.get('read_live'),
                            classic=gui_classic.classic_url(appl, view.get('endpoint')))
 
 

@@ -18,8 +18,10 @@
    key it writes (data-gkey) and the value it started from (data-orig); Save
    sends only the ones that changed. #}
 {# pencil(ref, name): FortiWeb's "Edit entry" shortcut beside a reference
-   selector -- opens the selected object in SATOM's object editor. The link
-   follows the select (data-fwg-pencil-for). #}
+   selector -- opens the selected object in a panel stacked over the dialog
+   (FWDrawer), as FortiWeb does and as the SATOM Server Policy page always
+   did; never a new window. The href (same tab) is only the fallback when the
+   drawer script is missing. #}
 {# sub_url(dialog, new, sub): a sub-table row dialog of the current object. #}
 {% macro sub_url(dialog, new=None, sub=None) -%}
   {%- if gp -%}{{ url_for('workspace.fwgui_object', appliance_id=appliance.id, page=gp.page, name=name, v=gp.v, d=dialog, new=new, sub=sub) }}
@@ -28,8 +30,8 @@
 {% macro pencil(ref, name) -%}
   {%- set coll = (ref or '').split('|')[0] -%}
   {%- if coll -%}
-  <a class="fwg-pencil{{ ' is-off' if not name }}" title="{{ _('Edit entry') }}" aria-label="{{ _('Edit entry') }}" target="_blank" rel="noopener"
-     data-fwg-pencil data-base="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=coll) }}"
+  <a class="fwg-pencil{{ ' is-off' if not name }}" title="{{ _('Edit entry') }}" aria-label="{{ _('Edit entry') }}"
+     data-fwg-pencil data-coll="{{ coll }}" data-mkey="{{ name or '' }}" data-base="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=coll) }}"
      href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=coll, mkey=name) if name else '#' }}"><i class="bi bi-pencil-fill" aria-hidden="true"></i></a>
   {%- else -%}<i class="bi bi-pencil-fill fwg-pencil is-off" aria-hidden="true"></i>{%- endif -%}
 {%- endmacro %}
@@ -271,6 +273,24 @@
     if (q) q.addEventListener('input', function () {
       var s = q.value.trim().toLowerCase();
       rows.forEach(function (tr) { tr.hidden = !!s && tr.textContent.toLowerCase().indexOf(s) < 0; });
+    });
+  });
+  // "Edit entry" pencil: the referenced object opens in a panel stacked over
+  // this dialog (FWDrawer), never in a new window. The panel's selects feed
+  // back into the one that opened it, as on the Server Policy page.
+  window.OBJEDIT_AID = {{ appliance.id }};
+  document.querySelectorAll('[data-fwg-pencil]').forEach(function (pen) {
+    pen.addEventListener('click', function (e) {
+      e.preventDefault();
+      if (pen.classList.contains('is-off')) return;
+      var sel = pen.parentElement.querySelector('select[data-ref]');
+      var mkey = sel ? sel.value : pen.dataset.mkey;
+      if (!mkey) return;
+      var val = pen.closest('.fwg-value');
+      var lab = val && val.previousElementSibling;
+      var title = lab ? lab.textContent.trim() : pen.dataset.coll.split('/').pop();
+      if (window.FWDrawer) { window.FWDrawer.openEdit(pen.dataset.coll, mkey, {title: title, opener: sel}); return; }
+      window.location.href = pen.getAttribute('href');
     });
   });
 })();

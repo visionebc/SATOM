@@ -52,6 +52,11 @@ def rest_path(ep: str) -> str:
     return objform.rest_path(ep)
 
 
+def is_subtable(ep: str | None) -> bool:
+    """A cmdb table inside a parent object (more than ``module/object``)."""
+    return not is_api(ep) and (ep or "").count("/") >= 2
+
+
 def bound_key(ep: str, key: str) -> str:
     return "@%s#%s" % (ep, key)
 
@@ -193,7 +198,7 @@ def bound_endpoints(dialog: dict) -> dict:
     for b in dialog.get("blocks") or []:
         for f in b.get("fields") or []:
             bd = f.get("bind")
-            if bd and bd.get("endpoint"):
+            if bd and bd.get("endpoint") and not is_subtable(bd["endpoint"]):
                 out.setdefault(bd["endpoint"], {"method": bd.get("method") or "PUT",
                                                 "body": bd.get("body") or "data"})
     return out
@@ -216,7 +221,7 @@ def prepare(tpl: dict, key: str, row: dict | None, appliance, *, read_device: bo
     if not d0:
         return tpl, row2, {}
     groups = bound_endpoints(d0)
-    if not groups:
+    if not any(f.get("bind") for b in d0.get("blocks") or [] for f in b.get("fields") or []):
         return tpl, row2, {}
     t2 = dict(tpl)
     t2["dialogs"] = dict(tpl["dialogs"])
@@ -237,6 +242,12 @@ def prepare(tpl: dict, key: str, row: dict | None, appliance, *, read_device: bo
         for f in b["fields"]:
             bd = f.get("bind")
             if not bd:
+                continue
+            if is_subtable(bd["endpoint"]):
+                # a sub-table row needs its parent's key, which this field
+                # does not have: shown, never written (the harvester does not
+                # emit such a bind; a layout from elsewhere might)
+                f["kind"], f["bound_unread"] = "display", True
                 continue
             ck = bound_key(bd["endpoint"], bd["key"])
             obj = objs.get(bd["endpoint"])

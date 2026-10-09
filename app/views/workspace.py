@@ -1182,7 +1182,7 @@ def fwgui_index(appliance_id):
 @login_required
 @require_permission('protection.view')
 def fwgui_list(appliance_id, page):
-    from ..services import gui_pages
+    from ..services import gui_classic, gui_pages
     appl = visible_appliance_or_404(appliance_id)
     tpl, match = _fwgui_tpl(appl, page)
     dev = _gui_device(appl)
@@ -1196,7 +1196,29 @@ def fwgui_list(appliance_id, page):
                            dev=dev, page=page, vi=vi, view=view, rows=rows, cache_meta=meta,
                            tabs=tabs, cell=gui_pages.cell, labels=gui_pages.value_labels(tpl),
                            dialog_for=gui_pages.dialog_for,
-                           can_edit=current_user.can('config_write'))
+                           can_edit=current_user.can('config_write'),
+                           classic=gui_classic.classic_url(appl, view.get('endpoint')))
+
+
+@bp.route('/<int:appliance_id>/fwgui/<page>/refresh', methods=['POST'])
+@login_required
+@require_permission('config_write')
+def fwgui_refresh(appliance_id, page):
+    """Pull the device's configuration into the SATOM cache, back to the page
+    (the Refresh the old Server Objects / section pages had)."""
+    from flask import flash, redirect, url_for
+    from ..services import device_sync
+    appl = visible_appliance_or_404(appliance_id)
+    try:
+        run = device_sync.sync_device(appl, publish=False,
+                                      user_label=getattr(current_user, 'username', None),
+                                      trigger='manual')
+        flash(f"Refreshed from {appl.name}: {run.detail}",
+              "success" if run.status == 'ok' else "danger")
+    except Exception as exc:  # noqa: BLE001 — said on the page, never a 500
+        flash(f"Refresh failed: {exc}", "danger")
+    return redirect(url_for('workspace.fwgui_list', appliance_id=appl.id, page=page,
+                            v=request.form.get('v') or None))
 
 
 def _fwgui_form(appl, page, tpl, match, dev, vi, view, tabs):

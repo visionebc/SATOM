@@ -556,6 +556,8 @@ def _writethrough(appliance_id, coll, mkey, fields, op):
             write_through.local_update(appliance_id, coll, mkey, fields)
         elif op == 'delete':
             write_through.local_delete(appliance_id, coll, mkey)
+        elif op == 'create':
+            write_through.local_create(appliance_id, coll, mkey, fields)
         lock_service.release(appliance_id, "%s:%s" % (coll, mkey))
     except Exception:  # noqa: BLE001 — never sink the write
         pass
@@ -753,6 +755,8 @@ def create_object(appliance_id):
         return refusal
     res = FortiWebOps(appl).create(objform.rest_path(coll), {'data': data},
                                    dry_run=not do_apply)
+    if do_apply and res.ok:
+        _writethrough(appliance_id, coll, name, data, 'create')
     return jsonify(ok=res.ok, dry_run=res.get('dry_run'), request=res.get('request'),
                    error=res.get('error', ''), unverified_refs=unverified,
                    build_compat=compat)
@@ -979,6 +983,7 @@ def clone_object(appliance_id):
     res = ops.create(objform.rest_path(coll), {'data': fields}, dry_run=False)
     if not res.ok:
         return jsonify(ok=False, error=res.get('error') or 'create failed')
+    _writethrough(appliance_id, coll, new_name, fields, 'create')
     row_fail = []
     for st in subtables:
         for r in st['rows']:

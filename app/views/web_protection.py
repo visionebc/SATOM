@@ -107,6 +107,11 @@ def index():
 @require_permission('protection.view')
 def overview(id):
     appliance = visible_appliance_or_404(id)
+    # the profile list the FortiWeb menu draws moves there (?classic=1 stays)
+    from ..services import gui_classic
+    moved = gui_classic.redirect_for(appliance, "webprotection_profile_inline", request.args)
+    if moved:
+        return redirect(moved)
     # DB-first: serve from the local source of truth; the device is touched only
     # on an explicit refresh (see web_protection.refresh).
     from ..services import read_layer
@@ -178,6 +183,12 @@ def menu_page(id, item_key):
     tab = wp_menu.tab_for(item, logical)
     if tab is None:
         abort(404)
+    if not item.special:
+        # a collection the FortiWeb menu draws moves there (?classic=1 stays)
+        from ..services import gui_classic
+        moved = gui_classic.redirect_for(appliance, tab.logical, request.args)
+        if moved:
+            return redirect(moved)
 
     from ..services import read_layer, objform, waf_specs
     error = None

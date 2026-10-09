@@ -2,17 +2,25 @@
 {% set _t = view.title.get('new' if (is_new or (row_ctx and row_ctx.new)) else 'edit') or view.title.get('edit') or '' %}
 {% block title %}{{ _t }}{% if name %} — {{ name }}{% endif %}{% endblock %}
 {# FortiWeb draws a dialog in the content pane: title bar, sections, footer bar. #}
-{# Server Policy (not gp) is the SATOM-frame pilot: breadcrumb + page header +
-   card around FortiWeb's dialog. Generic pages (gp) keep the bare layout. #}
-{% block breadcrumb %}{% if not gp %}
+{# SATOM frame around FortiWeb's dialog: breadcrumb + page header + card.
+   Server Policy (not gp) has its own routes; a generic page (gp) shows its
+   FortiWeb menu path. #}
+{% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
   <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  {% if gp %}
+  {% set _mp = tpl.menu_path or [gp.page] %}
+  <a href="{{ url_for('workspace.fwgui_index', appliance_id=appliance.id) }}">{{ _('FortiWeb') }}</a>
+  {% for p in _mp[:-1] %}<span class="separator">/</span><span>{{ p }}</span>{% endfor %}
+  <span class="separator">/</span><a href="{{ url_for('workspace.fwgui_list', appliance_id=appliance.id, page=gp.page, v=gp.v) }}">{{ _mp[-1] }}</a>
+  {% else %}
   <span>{{ _('Policy') }}</span><span class="separator">/</span>
   <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}">{{ appliance.name }}</a><span class="separator">/</span>
   <a href="{{ url_for('workspace.gui_list', appliance_id=appliance.id) }}">{{ _('Server Policy') }}</a>
+  {% endif %}
   {% if name %}<span class="separator">/</span><span>{{ name }}</span>{% endif %}
 </div>
-{% endif %}{% endblock %}
+{% endblock %}
 {% from "_not_in_gui.html" import nig_editable %}
 {# input(f): the writable control of one field. Every control carries the REST
    key it writes (data-gkey) and the value it started from (data-orig); Save
@@ -175,16 +183,14 @@
   {% else %}{% set back = url_for('workspace.fwgui_list', appliance_id=appliance.id, page=gp.page, v=gp.v) %}{% endif %}
 {% elif view.key != main and name %}{% set back = url_for('workspace.gui_policy', appliance_id=appliance.id, name=name) %}
 {% else %}{% set back = url_for('workspace.gui_list', appliance_id=appliance.id) %}{% endif %}
-{% if not gp %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-shield-check me-2 text-accent"></i>{{ _t or view.key }}{% if name %} <span class="text-muted fw-normal">· {{ name }}</span>{% endif %}</h1>
+    <h1 class="fw-page-title"><i class="bi {{ 'bi-layout-sidebar' if gp else 'bi-shield-check' }} me-2 text-accent"></i>{{ _t or view.key }}{% if name %} <span class="text-muted fw-normal">· {{ name }}</span>{% endif %}</h1>
     <p class="text-muted mb-0" style="font-size:13px;"><strong>{{ appliance.name }}</strong> · {{ appliance.host }}:{{ appliance.port }}{% if appliance.fw_version %} · FortiWeb {{ appliance.fw_version }}{% endif %}</p>
   </div>
   <a class="btn btn-secondary btn-sm" href="{{ back }}"><i class="bi bi-chevron-left me-1"></i>{{ _('Back') }}</a>
 </div>
-{% endif %}
-<div class="fwg-pane{{ ' fw-card fwg-satom' if not gp }}">
+<div class="fwg-pane fw-card fwg-satom">
   <div class="fwg-titlebar">
     <span>{{ _t or view.key }}</span>
     <span class="fwg-sub">
@@ -199,9 +205,9 @@
   </div>
   {% include 'workspace/_gui_banner.html' %}
   {% if gp and gp.tabs %}
-  <div class="fwg-tabs" role="tablist">
-    {% for t in gp.tabs %}<a role="tab" class="fwg-tab {{ 'is-on' if t.i == gp.v }}" aria-selected="{{ 'true' if t.i == gp.v else 'false' }}" href="{{ url_for('workspace.fwgui_list', appliance_id=appliance.id, page=gp.page, v=t.i) }}">{{ t.label }}</a>{% endfor %}
-  </div>
+  <ul class="nav nav-tabs fwg-sat-tabs" role="tablist">
+    {% for t in gp.tabs %}<li class="nav-item"><a role="tab" class="nav-link {{ 'active' if t.i == gp.v }}" aria-selected="{{ 'true' if t.i == gp.v else 'false' }}" href="{{ url_for('workspace.fwgui_list', appliance_id=appliance.id, page=gp.page, v=t.i) }}">{{ t.label }}</a></li>{% endfor %}
+  </ul>
   {% endif %}
   {% if view.rendered_only %}<div class="fwg-note"><i class="bi bi-info-circle"></i><span>{{ _('FortiWeb draws this page with its newer interface: SATOM read the layout from the page as FortiWeb drew it on the lab device. Every field is shown; FortiWeb may hide some of them for other settings.') }}</span></div>{% endif %}
   {% if gp and gp.missing %}<div class="fw-alert fw-alert-warning">{{ _('This settings object is not in the SATOM cache of %(dev)s and the device did not answer: the form shows FortiWeb\'s layout without values.', dev=appliance.name) }}</div>{% endif %}

@@ -6,6 +6,15 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — FortiWeb dialogs: "Edit entry" opens a stacked panel, not a new window
+
+- The pencil beside a reference selector (Virtual Server, Server Pool, HTTP
+  Service, …) opened the object editor in a new browser tab. It now opens the
+  selected object in a panel stacked over the dialog, as FortiWeb does and as
+  the SATOM Server Policy page always did: the dialog stays where it was, Esc
+  closes the panel. Applies to every FortiWeb GUI page drawn from a layout.
+   fails if the pencil opens a window again.
+
 ### Fixed — Create New Server Policy: a service is required up front, and a failed run undoes itself
 
 - A policy with no HTTP, HTTPS or HTTP/3 service was sent to the device, which

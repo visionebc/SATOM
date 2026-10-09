@@ -201,7 +201,22 @@ def _with_derived(row: dict, dialog: dict) -> dict:
 def _real(opts) -> list:
     """The choices the crawl actually read: an option it could not read comes
     as ``{"value": null}`` and would be drawn (and saved) as the text "None"."""
-    return [o for o in opts or [] if isinstance(o, dict) and o.get("value") is not None]
+    return split_labels([o for o in opts or [] if isinstance(o, dict) and o.get("value") is not None])
+
+
+def split_labels(opts: list) -> list:
+    """A radio group the crawl read as one text: every option carries the
+    whole group's labels, one per line (``"NTP\nManual settings"`` on both
+    Set Time choices). Line i is option i's label, in the order FortiWeb
+    draws them; when the line count is not the option count nothing is
+    guessed and the options are returned as they came."""
+    labs = [str(o.get("label") or "") for o in opts]
+    if len(opts) < 2 or len(set(labs)) != 1 or "\n" not in labs[0]:
+        return opts
+    parts = [p.strip() for p in labs[0].split("\n") if p.strip()]
+    if len(parts) != len(opts):
+        return opts
+    return [dict(o, label=parts[i]) for i, o in enumerate(opts)]
 
 
 def _options(field: dict, dev: dict) -> list:

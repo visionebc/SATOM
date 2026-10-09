@@ -132,6 +132,12 @@ def layout_keys(product: str, endpoint: str, version: str) -> tuple[set | None, 
         return None, {}
     if not tpl:
         return None, {}
+    if product == "fortiweb":
+        # the page as SATOM draws it: GUI API endpoints tied to their cmdb
+        # collection, the per-field corrections applied (gui_alias) -- the
+        # raw crawl names an endpoint SATOM does not edit
+        from . import gui_alias
+        tpl = gui_alias.apply(page, tpl)
     keys = set(_template_keys(tpl, endpoint_key(endpoint)))
     based = tpl.get("based_on") or {}
     return keys, {"page": page, "match": match,

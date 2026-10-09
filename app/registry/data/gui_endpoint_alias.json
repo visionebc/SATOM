@@ -43,6 +43,224 @@
     }
   },
   "pages": {
+    "time/0": {
+      "cmdb": "system/ntp",
+      "confidence": "measured",
+      "evidence": "The GUI reads system/maintenance.systemtime (timeZone, daylightSaving, the clock) and was measured writing Set Time / Sync Interval to cmdb system/ntp. On fortiweb17 (7.6.8) and fortiweb18 (8.0.6): system/ntp holds ntpsync + syncinterval, system/ntp/ntpserver the server table (pool.ntp.org on both), system/global timezone '04' = GUI timeZone 4 and dst 'disable' = daylightSaving 0. The 8.0.6 crawl tied the server table to system/admin; corrected here.",
+      "fields": [
+        {
+          "dialog": "time_form",
+          "match": {
+            "key": "systemTime"
+          },
+          "set": {
+            "read_api": "system/maintenance.systemtime"
+          }
+        },
+        {
+          "dialog": "time_form",
+          "match": {
+            "key": "timeZone"
+          },
+          "set": {
+            "key": "timezone",
+            "bind": {
+              "endpoint": "system/global",
+              "key": "timezone",
+              "method": "PUT"
+            },
+            "pad": 2
+          }
+        },
+        {
+          "dialog": "time_form",
+          "match": {
+            "key": "daylightSaving"
+          },
+          "set": {
+            "key": "dst",
+            "bind": {
+              "endpoint": "system/global",
+              "key": "dst",
+              "method": "PUT"
+            },
+            "on": "enable",
+            "off": "disable",
+            "label": "Automatically adjust clock for daylight saving changes",
+            "label_key": "system_time.dst"
+          }
+        },
+        {
+          "dialog": "time_form",
+          "match": {
+            "kind": "select",
+            "key": null,
+            "nth": 0
+          },
+          "set": {
+            "cond": {
+              "op": "eq",
+              "args": [
+                {
+                  "field": "ntpsync"
+                },
+                {
+                  "lit": "disable"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "dialog": "time_form",
+          "match": {
+            "kind": "select",
+            "key": null,
+            "nth": 1
+          },
+          "set": {
+            "cond": {
+              "op": "eq",
+              "args": [
+                {
+                  "field": "ntpsync"
+                },
+                {
+                  "lit": "disable"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "dialog": "time_form",
+          "match": {
+            "key": "syncinterval"
+          },
+          "set": {
+            "cond": {
+              "op": "eq",
+              "args": [
+                {
+                  "field": "ntpsync"
+                },
+                {
+                  "lit": "enable"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "dialog": "time_form",
+          "match": {
+            "kind": "table"
+          },
+          "set": {
+            "endpoint": "system/ntp/ntpserver",
+            "subtable": "ntpserver",
+            "columns": [
+              {
+                "id": "id",
+                "label": "ID"
+              },
+              {
+                "id": "server",
+                "label": "Server"
+              },
+              {
+                "id": "ip-type",
+                "label": "IP Type"
+              },
+              {
+                "id": "authentication",
+                "label": "Authentication"
+              },
+              {
+                "id": "key-type",
+                "label": "Key Type"
+              },
+              {
+                "id": "key-id",
+                "label": "Key ID"
+              }
+            ]
+          }
+        },
+        {
+          "dialog": "time_form-row1",
+          "match": {
+            "label": "Server",
+            "nth": 0
+          },
+          "set": {
+            "key": "server",
+            "cond": null
+          }
+        },
+        {
+          "dialog": "time_form-row1",
+          "match": {
+            "label": "Server",
+            "nth": 1
+          },
+          "drop": true
+        },
+        {
+          "dialog": "time_form-row1",
+          "match": {
+            "label": "Server",
+            "nth": 2
+          },
+          "drop": true
+        },
+        {
+          "dialog": "time_form-row1",
+          "match": {
+            "label": "IP Type"
+          },
+          "set": {
+            "key": "ip-type"
+          }
+        },
+        {
+          "dialog": "time_form-row1",
+          "match": {
+            "label": "Authentication"
+          },
+          "set": {
+            "key": "authentication"
+          }
+        },
+        {
+          "dialog": "time_form-row1",
+          "match": {
+            "label": "Key Type"
+          },
+          "set": {
+            "key": "key-type"
+          }
+        },
+        {
+          "dialog": "time_form-row1",
+          "match": {
+            "label": "Key"
+          },
+          "set": {
+            "key": "key"
+          }
+        },
+        {
+          "dialog": "time_form-row1",
+          "match": {
+            "label": "Key ID"
+          },
+          "set": {
+            "key": "key-id"
+          }
+        }
+      ]
+    },
     "fortisandbox/0": {
       "cmdb": "system/fortisandbox", "confidence": "measured",
       "evidence": "The crawl named the FortiGuard object the page also reads; all 6 layout keys (type, server, cache-timeout, email, interval, region) are measured fields of system/fortisandbox on 8.0.6 and its single object answers 200."

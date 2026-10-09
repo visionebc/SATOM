@@ -214,6 +214,42 @@ def body_of(obj: dict, shape: str | None):
     return obj if shape == "bare" else {"data": obj}
 
 
+#: GUI API objects SATOM may READ (never write) though ``safe_api`` refuses
+#: their path: the device clock System Time shows lives under ``maintenance``
+#: with reboot and firmware. A code constant on purpose -- a layout naming
+#: ``read_api`` is honoured only for these paths, and no save route accepts
+#: them (fwgui_save_api still requires ``safe_api``).
+READ_ONLY_API = frozenset({"system/maintenance.systemtime"})
+
+
+def _read_only_values(dialog: dict, row: dict, appliance, client=None) -> None:
+    """Fill the ``read_api`` display fields (GET only, see READ_ONLY_API)."""
+    from ..clients.fortiweb import FortiWebClient
+    got: dict = {}
+    for b in dialog.get("blocks") or []:
+        for f in b.get("fields") or []:
+            ep = f.get("read_api")
+            if not ep:
+                continue
+            f["kind"] = "display"
+            if ep not in READ_ONLY_API:
+                f["bound_unread"] = True
+                continue
+            if ep not in got:
+                try:
+                    client = client or FortiWebClient(appliance)
+                    resp = client.api_call("GET", "/api/v2.0/" + ep)
+                    got[ep] = unwrap(resp.json()) if resp is not None and resp.status_code < 400 else None
+                except Exception:  # noqa: BLE001 -- unreachable: drawn as unknown
+                    got[ep] = None
+            obj = got[ep]
+            if obj is None:
+                f["bound_unread"] = True
+            else:
+                v = get_path(obj, f.get("key") or "")
+                row[f.get("key")] = v.strip() if isinstance(v, str) else v
+
+
 def bound_endpoints(dialog: dict) -> dict:
     """{endpoint: {"method", "body"}} of the dialog's fields bound elsewhere."""
     out: dict = {}
@@ -244,12 +280,21 @@ def prepare(tpl: dict, key: str, row: dict | None, appliance, *, read_device: bo
         return tpl, row2, {}
     _bools_as_switches(d0, row2)
     groups = bound_endpoints(d0)
-    if not any(f.get("bind") for b in d0.get("blocks") or [] for f in b.get("fields") or []):
+    fields0 = [f for b in d0.get("blocks") or [] for f in b.get("fields") or []]
+    if not any(f.get("bind") or f.get("read_api") for f in fields0):
         return tpl, row2, {}
     t2 = dict(tpl)
     t2["dialogs"] = dict(tpl["dialogs"])
     d = copy.deepcopy(d0)
     t2["dialogs"][key] = d
+    if any(f.get("read_api") for f in fields0):
+        if read_device:
+            _read_only_values(d, row2, appliance, client=client)
+        else:
+            for b in d["blocks"]:
+                for f in b["fields"]:
+                    if f.get("read_api"):
+                        f["kind"], f["bound_unread"] = "display", True
     objs: dict = {}
     for ep in groups:
         if not read_device:

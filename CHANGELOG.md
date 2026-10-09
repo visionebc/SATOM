@@ -6,6 +6,30 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — FortiWeb System Time is tied to its REST collections
+
+- System > Maintenance > System Time was drawn without values: the crawl
+  recorded the GUI API object the page reads (`system/maintenance.systemtime`),
+  whose path SATOM never reads or writes. The page now edits cmdb
+  `system/ntp` (Set Time, Sync Interval), with Time Zone and the daylight
+  saving switch saved to `system/global` (`timezone` `04`, `dst`
+  enable/disable, as cmdb spells them) and the NTP server table read from
+  `system/ntp/ntpserver` (the 8.0.6 crawl had tied it to `system/admin`).
+  Measured on fortiweb17 (7.6.8) and fortiweb18 (8.0.6); a write of every
+  field was applied, read back from the device and reverted on both.
+- The device clock is shown read-only through one GET on a path listed in
+  code (`gui_bound.READ_ONLY_API`); no save route accepts it.
+- `gui_endpoint_alias.json` page entries take per-field corrections
+  (`fields`: match by key / label / kind and position; set, drop, or `pad`
+  the choice values to the cmdb spelling); a bind to the collection the view
+  now edits is dropped, the field is saved with its object.
+- Radio groups the crawl read as one text (`"NTP\nManual settings"` on both
+  choices; 83 groups on 38 pages) are split by position, in the form and in
+  the grid cells; nothing is guessed when the line count differs.
+- "Not in GUI, but in CLI" judged pages tied by the alias table on the raw
+  crawl and listed fields the page shows (Set Time and Sync Interval); it now
+  reads the page as SATOM draws it.
+
 ### Added — FortiGate and FortiAuthenticator get the FortiWeb GUI engine
 
 - The measured-GUI pages (`/workspace/<id>/fwgui/...`, same URL names) now

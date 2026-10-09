@@ -52,10 +52,11 @@ def _bare(ep: str) -> str:
     return ep[4:] if ep.startswith("api:") else ep
 
 
-def _rename(fields, km: dict, ep: str) -> None:
-    """GUI keys -> cmdb keys; a ``bind`` to the aliased GUI endpoint itself is
-    dropped: the field now lives in the cmdb object and is saved with it."""
-    gui = {ep, _bare(ep), "api:" + _bare(ep)}
+def _rename(fields, km: dict, ep: str, cmdb: str = "") -> None:
+    """GUI keys -> cmdb keys; a ``bind`` to the aliased GUI endpoint itself, or
+    to the cmdb collection the view now edits, is dropped: the field lives in
+    that object and is saved with it."""
+    gui = {ep, _bare(ep), "api:" + _bare(ep)} | ({cmdb} if cmdb else set())
     for f in fields or []:
         b = f.get("bind")
         if isinstance(b, dict) and b.get("endpoint") in gui:
@@ -87,9 +88,47 @@ def _apply_alias(out: dict, v: dict, ep: str, al: dict) -> None:
         if (dd.get("endpoint") or "") in ("", ep, _bare(ep)):
             dd["endpoint"] = cmdb
         for b in dd.get("blocks") or []:
-            _rename(b.get("fields"), km, ep)
+            _rename(b.get("fields"), km, ep, cmdb)
     if (out.get("endpoint") or "") in (ep, _bare(ep)):
         out["endpoint"] = cmdb
+    _patch_fields(out, al.get("fields") or [])
+
+
+def _matches(f: dict, m: dict) -> bool:
+    return all(f.get(k) == v for k, v in m.items() if k != "nth")
+
+
+def _patch_fields(out: dict, patches: list) -> None:
+    """Per-field corrections of a page entry (``fields``), each measured on
+    the lab: ``{"dialog", "match": {key|label|kind..., "nth"}, "set": {...}}``
+    or ``"drop": true``. Targets are found before anything is dropped, so
+    ``nth`` counts the fields as the layout has them. ``pad`` zero-fills the
+    choice values (FortiWeb's GUI lists time zone ``4``, cmdb holds ``04``);
+    a ``set`` value of null removes that attribute."""
+    plan = []
+    for p in patches:
+        dd = (out.get("dialogs") or {}).get(p.get("dialog"))
+        if not dd:
+            continue
+        m = p.get("match") or {}
+        hits = [(b, f) for b in dd.get("blocks") or [] for f in b.get("fields") or []
+                if _matches(f, m)]
+        nth = m.get("nth", 0)
+        if nth < len(hits):
+            plan.append((p, hits[nth]))
+    for p, (b, f) in plan:
+        if p.get("drop"):
+            b["fields"] = [x for x in b["fields"] if x is not f]
+            continue
+        for k, v in (p.get("set") or {}).items():
+            if k == "pad":
+                f["options"] = [dict(o, value=str(o.get("value")).zfill(int(v)))
+                                if o.get("value") is not None else o
+                                for o in f.get("options") or []]
+            elif v is None:
+                f.pop(k, None)
+            else:
+                f[k] = copy.deepcopy(v)
 
 
 def apply(page: str, tpl):

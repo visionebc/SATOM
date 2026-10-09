@@ -125,6 +125,12 @@ def section(section_key: str):
     error = None
     is_singleton = False
     logical = (request.args.get('type') or '').strip()
+    if logical:
+        # a collection the FortiWeb menu draws moves there (?classic=1 stays)
+        from ..services import gui_classic
+        moved = gui_classic.redirect_for(appliance, logical, request.args)
+        if moved:
+            return redirect(moved)
 
     # Land the section on REAL DATA: with no explicit ?type=, auto-select the
     # first object type that actually has objects on this device (falling back

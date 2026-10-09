@@ -81,6 +81,13 @@ def overview(id):
     freshness = None
     logical = (request.args.get('type') or '').strip()
     if logical:
+        # a collection the FortiWeb menu draws moves there (?classic=1 stays)
+        from flask import redirect
+        from ..services import gui_classic
+        moved = gui_classic.redirect_for(appliance, logical, request.args)
+        if moved:
+            return redirect(moved)
+    if logical:
         # ``?type=`` names a TAB (one REST collection); its PAGE is what the
         # sidebar/breadcrumb show and what the tab strip is drawn from. Looking
         # the page up alone would render the DEFAULT tab's objects under the

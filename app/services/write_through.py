@@ -227,6 +227,15 @@ def local_insert(appliance_id, logical, mkey, payload, *, session=None) -> bool:
     return True
 
 
+def local_create(appliance_id, coll, mkey, payload, *, session=None) -> bool:
+    """:func:`local_insert` by REST collection (what the object editor knows):
+    an object created or cloned shows in its list without waiting for a sync."""
+    from ..extensions import db
+    session = session or db.session
+    logical = logical_for_collection(coll, _version_for(session, appliance_id))
+    return bool(logical) and local_insert(appliance_id, logical, mkey, payload, session=session)
+
+
 def local_delete(appliance_id, coll, mkey, *, session=None):
     """Delete the cached object and all its descendants (by-parent rows), in
     EVERY layer: a policy deleted from the config layer alone stayed in the

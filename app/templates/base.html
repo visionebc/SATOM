@@ -939,6 +939,11 @@
         </div>
       </div>
       {% endif %}
+      {# With the FortiWeb menu drawn, the old entries it replaces are filtered out
+         (services.gui_classic, in the context processor); a group left with
+         nothing inside is not drawn. Server Policy lives in the FortiWeb menu. #}
+      {% set _fwg_on = _fwg_nav and may_open('workspace.index') %}
+      {% if not _fwg_on or server_objects_nav %}
       <!-- LOADBALANCER -->
       <div class="fw-nav-group {{ 'open' if _g_lb }}" data-nav-group="Loadbalancer">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-shield-check fw-nav-section-icon" style="color:#10b981;"></i><span>{{ _('Loadbalancer') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
@@ -946,7 +951,7 @@
           {# Policy -> Server Policy, as FortiWeb's own menu has it. With a FortiWeb
              selected the leaf opens its GUI layout (workspace.gui_*); otherwise
              the device picker. #}
-          {% if may_open('workspace.index') %}
+          {% if may_open('workspace.index') and not _fwg_on %}
           {% set _sp_gui = request.endpoint in ['workspace.gui_list', 'workspace.gui_policy', 'workspace.gui_new'] %}
           <details class="fw-so-parent" {{ 'open' if _sp_gui }}>
             <summary class="fw-nav-item fw-so-parent-head">
@@ -965,6 +970,7 @@
              unconditional open left it permanently expanded, so EVERY page had two sidebar
              sub-menus open at once, breaking the accordion and (via Turbo body-swaps) collapsing
              the area the user was actually in. #}
+          {% if not _fwg_on or server_objects_nav %}
           <details class="fw-so-parent" {{ 'open' if request.blueprint == 'server_objects' }}>
             <summary class="fw-nav-item fw-so-parent-head {{ 'active' if request.endpoint == 'server_objects.overview' and not request.args.get('type') else '' }}">
               <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Server Objects') }}</span>
@@ -1018,8 +1024,10 @@
               {% endif %}
             </div>
           </details>
+          {% endif %}
         </div>
       </div>
+      {% endif %}
 
       <!-- WAF -->
       <div class="fw-nav-group {{ 'open' if _g_waf }}" data-nav-group="WAF">
@@ -1077,13 +1085,14 @@
               </div>
             </div>
           </details>
-          {% if current_appliance %}
+          {% if current_appliance and 'webprotection_profile_inline' not in (fwgui_moved or {}) %}
           {% if may_open('web_protection.overview') %}
           <a class="fw-nav-item {{ 'active' if _wp_active == '__profile__' else '' }}"
              href="{{ url_for('web_protection.overview', id=current_appliance.id) }}">
             <i class="bi bi-shield-fill-check fw-nav-icon"></i><span>{{ _('Web Protection Profile') }}</span></a>
           {% endif %}
           {% endif %}
+          {% if not _fwg_on or web_protection_nav %}
           <details class="fw-so-parent" {{ 'open' if request.blueprint == 'web_protection' and _wp_active != '__profile__' }}>
             <summary class="fw-nav-item fw-so-parent-head">
               <i class="bi bi-shield-exclamation fw-nav-icon"></i><span>{{ _('Web Protection') }}</span>
@@ -1122,6 +1131,7 @@
               {% endif %}
             </div>
           </details>
+          {% endif %}
 
           {# Application Delivery / API Protection / Bot Mitigation / DoS /
              IP Protection — the 5 FortiWeb protection menus, each the appliance's

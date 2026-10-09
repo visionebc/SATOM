@@ -840,6 +840,20 @@ def create_app(config_override: object | None = None) -> Flask:
             ]
         except Exception:
             _waf_nav = []
+        # On a FortiWeb, an old entry whose collections the FortiWeb menu draws
+        # (services.gui_pages, per firmware) leaves the sidebar: one menu per
+        # page. Its URL redirects there; ?classic=1 keeps the old page.
+        _pmap = {}
+        try:
+            from .services import gui_classic as _gc
+            _pmap = _gc.page_map(_cur_appl)
+            if _pmap:
+                _so_nav = _gc.filter_groups(_so_nav, _pmap)
+                _wp_nav = _gc.filter_groups(_wp_nav, _pmap)
+                _cfg_nav = _gc.filter_sections(_cfg_nav, _pmap)
+                _waf_nav = _gc.filter_sections(_waf_nav, _pmap)
+        except Exception:
+            pass
         try:
             from .services import config_sections as _cs3
             _waf_keys = list(_cs3.WAF_AREA_KEYS)
@@ -958,6 +972,7 @@ def create_app(config_override: object | None = None) -> Flask:
             'server_objects_nav': _so_nav,
             'web_protection_nav': _wp_nav,
             'waf_sections_nav': _waf_nav,
+            'fwgui_moved': _pmap,
             'waf_section_keys': _waf_keys,
             'hidden_features': sorted(_fv_hidden),
             'pending_template_count': _pending,

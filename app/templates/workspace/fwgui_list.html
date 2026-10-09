@@ -1,26 +1,43 @@
 {% extends "base.html" %}
-{% block title %}{{ tpl.menu_path[-1] if tpl.menu_path else page }} — {{ appliance.name }}{% endblock %}
-{# A FortiWeb grid page as FortiWeb draws it: tabs (when the page has several
-   collections), toolbar, grid. Rows from the SATOM cache. #}
-{% block breadcrumb %}{% endblock %}
+{% set _leaf = tpl.menu_path[-1] if tpl.menu_path else page %}
+{% block title %}{{ _leaf }} — {{ appliance.name }}{% endblock %}
+{# SATOM frame (breadcrumb, page header, card, tabs, toolbar, table) around a
+   FortiWeb grid page: FortiWeb's menu path, its tabs, its toolbar actions, its
+   columns in its order, its row behaviour. Rows from the SATOM cache. #}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <a href="{{ url_for('workspace.fwgui_index', appliance_id=appliance.id) }}">{{ _('FortiWeb') }}</a>
+  {% for p in (tpl.menu_path or [page])[:-1] %}<span class="separator">/</span><span>{{ p }}</span>{% endfor %}
+  <span class="separator">/</span><span>{{ _leaf }}</span>
+</div>
+{% endblock %}
 {% block content %}
-{% set gui_aside %}<a class="small" href="{{ url_for('workspace.fwgui_index', appliance_id=appliance.id) }}">{{ _('All FortiWeb pages') }}</a>{% endset %}
-<div class="fwg-pane" data-fwg-list>
-  <div class="fwg-crumbs small text-muted">{{ tpl.menu_path|join(' › ') }}</div>
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-layout-sidebar me-2 text-accent"></i>{{ _leaf }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;"><strong>{{ appliance.name }}</strong> · {{ appliance.host }}:{{ appliance.port }}{% if appliance.fw_version %} · FortiWeb {{ appliance.fw_version }}{% endif %}</p>
+  </div>
+  <div class="d-flex gap-2">
+    {% if classic %}<a class="btn btn-secondary btn-sm" href="{{ classic }}" title="{{ _('The SATOM page for these objects: Clone, templates, artifacts and the other SATOM tools.') }}"><i class="bi bi-grid me-1"></i>{{ _('Classic view') }}</a>{% endif %}
+    <a class="btn btn-secondary btn-sm" href="{{ url_for('workspace.fwgui_index', appliance_id=appliance.id) }}"><i class="bi bi-grid-3x3-gap me-1"></i>{{ _('All pages') }}</a>
+  </div>
+</div>
+<div class="fw-card fwg-pane fwg-satom" data-fwg-list>
 {% include 'workspace/_gui_banner.html' %}
   {% if tabs %}
-  <div class="fwg-tabs" role="tablist">
+  <ul class="nav nav-tabs fwg-sat-tabs" role="tablist">
     {% for t in tabs %}
-    <a role="tab" class="fwg-tab {{ 'is-on' if t.i == vi }}" aria-selected="{{ 'true' if t.i == vi else 'false' }}"
-       href="{{ url_for('workspace.fwgui_list', appliance_id=appliance.id, page=page, v=t.i) }}">{{ t.label }}</a>
+    <li class="nav-item"><a role="tab" class="nav-link {{ 'active' if t.i == vi }}" aria-selected="{{ 'true' if t.i == vi else 'false' }}"
+       href="{{ url_for('workspace.fwgui_list', appliance_id=appliance.id, page=page, v=t.i) }}">{{ t.label }}</a></li>
     {% endfor %}
-  </div>
+  </ul>
   {% endif %}
-  <div class="fwg-toolbar">
+  <div class="fw-toolbar fwg-sat-toolbar">
     {% set menu = view.create_menu or [] %}
     {% if menu|length > 1 or (menu and menu[0].label) %}
     <details class="fwg-menu">
-      <summary class="fwg-tb-btn"><i class="bi bi-plus-lg"></i>{{ _('Create New') }}<i class="bi bi-caret-down-fill small"></i></summary>
+      <summary class="btn btn-fw-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }}<i class="bi bi-caret-down-fill small ms-1"></i></summary>
       <div class="fwg-menu-body">
         {% for it in menu %}
         <a href="{{ url_for('workspace.fwgui_new', appliance_id=appliance.id, page=page, dialog=it.dialog) }}">{{ it.label or _('Create New') }}</a>
@@ -28,18 +45,29 @@
       </div>
     </details>
     {% elif menu %}
-    <a class="fwg-tb-btn" href="{{ url_for('workspace.fwgui_new', appliance_id=appliance.id, page=page, dialog=menu[0].dialog) }}"><i class="bi bi-plus-lg"></i>{{ _('Create New') }}</a>
+    <a class="btn btn-fw-primary btn-sm" href="{{ url_for('workspace.fwgui_new', appliance_id=appliance.id, page=page, dialog=menu[0].dialog) }}"><i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }}</a>
     {% endif %}
-    <a class="fwg-tb-btn" href="#" aria-disabled="true" data-fwg-edit><i class="bi bi-pencil-fill"></i>{{ _('Edit') if can_edit else _('View') }}</a>
-    <span class="fwg-tb-btn" aria-disabled="true" title="{{ _('Delete objects from the SATOM object editor.') }}"><i class="bi bi-trash-fill"></i>{{ _('Delete') }}</span>
-    <label class="fwg-search mb-0">
+    <a class="btn btn-secondary btn-sm" href="#" aria-disabled="true" data-fwg-edit><i class="bi bi-pencil me-1"></i>{{ _('Edit') if can_edit else _('View') }}</a>
+    {% if can_edit and view.endpoint %}
+    <button type="button" class="btn btn-secondary btn-sm" aria-disabled="true" data-fwg-clone><i class="bi bi-copy me-1"></i>{{ _('Clone') }}</button>
+    <button type="button" class="btn btn-fw-danger btn-sm" aria-disabled="true" data-fwg-delete><i class="bi bi-trash me-1"></i>{{ _('Delete') }}</button>
+    {% endif %}
+    <div class="fw-search-box">
+      <i class="bi bi-search search-icon" aria-hidden="true"></i>
       <input type="search" placeholder="{{ _('Search') }}" aria-label="{{ _('Search') }}" data-fwg-search>
-      <span aria-hidden="true"><i class="bi bi-search"></i></span>
-    </label>
-    <span class="text-muted small ms-auto">{{ rows|length }} {{ _('objects') }}{% if cache_meta and cache_meta.generated_at %} · {{ _('cache') }} {{ cache_meta.generated_at }}{% endif %}</span>
+    </div>
+    <span class="text-muted small ms-auto">{{ rows|length }} {{ _('objects') }}</span>
+    {% if cache_meta and cache_meta.generated_at %}<span class="badge bg-dark border" title="{{ _('Served from the SATOM cache of this device') }}"><i class="bi bi-database me-1"></i>{{ _('cache') }} {{ cache_meta.generated_at|string|truncate(16, True, '') }}</span>{% endif %}
+    {% if can_edit %}
+    <form method="post" action="{{ url_for('workspace.fwgui_refresh', appliance_id=appliance.id, page=page) }}" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="v" value="{{ vi }}">
+      <button type="submit" class="btn btn-outline-light btn-sm" title="{{ _('Pull live config from the device') }}"><i class="bi bi-arrow-clockwise"></i></button>
+    </form>
+    {% endif %}
   </div>
-  <div class="fwg-grid-wrap">
-  <table class="fwg-table">
+  <div class="fw-table-wrapper">
+  <table class="fw-table">
     <thead><tr>
       <th>#</th>
       {% for c in view.columns %}<th{% if c.unmatched %} title="{{ _('FortiWeb computes this column; SATOM has no REST field for it.') }}"{% endif %}>{{ c.label }}</th>{% endfor %}
@@ -48,15 +76,18 @@
     {% set opens = view.dialogs %}
     {% for r in rows %}
       {% set mk = r.name if r.name is defined and r.name not in (None, '') else r.id %}
-      <tr tabindex="0"{% if opens and dialog_for(view, r) %} data-href="{{ url_for('workspace.fwgui_object', appliance_id=appliance.id, page=page, name=mk, v=vi) }}"{% endif %}>
-        <td>{{ loop.index }}</td>
-        {% for c in view.columns %}<td>{{ cell(r, c, labels) }}</td>{% endfor %}
+      <tr tabindex="0" data-mkey="{{ mk }}"{% if opens and dialog_for(view, r) %} data-href="{{ url_for('workspace.fwgui_object', appliance_id=appliance.id, page=page, name=mk, v=vi) }}"{% endif %}>
+        <td class="text-muted">{{ loop.index }}</td>
+        {% for c in view.columns %}<td>{% if loop.first %}<strong>{{ cell(r, c, labels) }}</strong>{% else %}{{ cell(r, c, labels) }}{% endif %}</td>{% endfor %}
       </tr>
     {% else %}
-      <tr><td colspan="{{ view.columns|length + 1 }}" class="text-muted">
+      <tr><td colspan="{{ view.columns|length + 1 }}"><div class="fw-empty-state py-4">
+        <div class="fw-empty-state-icon" style="font-size:32px;"><i class="bi bi-inbox"></i></div>
+        <div class="fw-empty-state-title">
         {% if view.endpoint %}{{ _('No objects of this type cached for %(dev)s. A configuration sync fills the SATOM cache.', dev=appliance.name) }}
         {% else %}{{ _('This page has no collection SATOM reads.') }}{% endif %}
-      </td></tr>
+        </div>
+      </div></td></tr>
     {% endfor %}
     </tbody>
   </table>
@@ -66,21 +97,67 @@
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">
 (function () {
-  // FortiWeb's grid: click selects a row, double-click / Enter / Edit opens it.
+  // FortiWeb's grid: click selects a row, double-click / Enter / Edit opens it;
+  // Clone and Delete act on the selected row (dry run first, then apply).
   var pane = document.querySelector('[data-fwg-list]');
   if (!pane) return;
+  var COLL = {{ (view.endpoint or '')|tojson }};
+  var AID = {{ appliance.id }};
   var edit = pane.querySelector('[data-fwg-edit]');
-  var rows = Array.prototype.slice.call(pane.querySelectorAll('tbody tr[data-href]'));
+  var del = pane.querySelector('[data-fwg-delete]');
+  var clone = pane.querySelector('[data-fwg-clone]');
+  var all = Array.prototype.slice.call(pane.querySelectorAll('tbody tr[data-mkey]'));
+  var current = null;
   function select(tr) {
-    rows.forEach(function (r) { r.classList.toggle('is-selected', r === tr); });
-    edit.setAttribute('href', tr ? tr.getAttribute('data-href') : '#');
-    edit.setAttribute('aria-disabled', tr ? 'false' : 'true');
+    current = tr;
+    all.forEach(function (r) { r.classList.toggle('is-selected', r === tr); });
+    var href = tr && tr.getAttribute('data-href');
+    edit.setAttribute('href', href || '#');
+    edit.setAttribute('aria-disabled', href ? 'false' : 'true');
+    [del, clone].forEach(function (b) { if (b) b.setAttribute('aria-disabled', tr ? 'false' : 'true'); });
   }
-  function open(tr) { window.location.href = tr.getAttribute('data-href'); }
-  rows.forEach(function (tr) {
+  function open(tr) { if (tr.getAttribute('data-href')) window.location.href = tr.getAttribute('data-href'); }
+  all.forEach(function (tr) {
     tr.addEventListener('click', function () { select(tr); });
     tr.addEventListener('dblclick', function () { open(tr); });
     tr.addEventListener('keydown', function (e) { if (e.key === 'Enter') open(tr); });
+  });
+  function post(url, body) {
+    return fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)}).then(function (r) { return r.json(); });
+  }
+  function fail(j) { alert('Error: ' + ((j && j.error) || 'failed')); }
+  if (del) del.addEventListener('click', function () {
+    if (!current) return;
+    var base = {collection: COLL, mkey: current.dataset.mkey};
+    if (!confirm('Delete "' + base.mkey + '"?\n\nA dry-run preview is shown first; nothing is removed until you confirm again.')) return;
+    post('/objedit/' + AID + '/delete-object', base).then(function (j) {
+      if (!j.ok) return fail(j);
+      var req = j.request || {};
+      if (!confirm('DRY-RUN ' + (req.method || 'DELETE') + ' ' + (req.path || '') + '\n\nApply this delete to the device now?')) return;
+      post('/objedit/' + AID + '/delete-object', Object.assign({}, base, {apply: true})).then(function (j2) {
+        if (!j2.ok) return fail(j2);
+        if (window.FW) FW.toast('Deleted', 'success');
+        location.reload();
+      });
+    });
+  });
+  if (clone) clone.addEventListener('click', function () {
+    if (!current) return;
+    var src = current.dataset.mkey;
+    var nn = prompt('Clone "' + src + '" as:', src + '-copy');
+    if (!nn || nn === src) return;
+    var base = {collection: COLL, mkey: src, new_name: nn};
+    post('/objedit/' + AID + '/clone-object', base).then(function (j) {
+      if (!j.ok) return fail(j);
+      var p = j.plan || {};
+      if (!confirm('DRY-RUN: create "' + nn + '" from "' + src + '"' + (p.rows ? ' with ' + p.rows + ' sub-table row(s)' : '') + '.\n\nApply to the device now?')) return;
+      post('/objedit/' + AID + '/clone-object', Object.assign({}, base, {apply: true})).then(function (j2) {
+        if (!j2.ok) return fail(j2);
+        if (window.FW) FW.toast('Cloned', 'success');
+        location.reload();
+      });
+    });
   });
   var q = pane.querySelector('[data-fwg-search]');
   q.addEventListener('input', function () {

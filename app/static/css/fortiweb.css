@@ -2596,7 +2596,7 @@ button.fwg-btn{cursor:pointer;}
 .fwg-idx-group{font-weight:600;color:var(--fw-text-muted);}
 
 /* ============================================================
-   SATOM frame around a FortiWeb layout (.fwg-satom) — pilot: Server Policy.
+   SATOM frame around a FortiWeb layout (.fwg-satom): every FortiWeb page.
    FortiWeb gives the structure (toolbar actions, columns, sections, fields,
    conditions); SATOM gives the look: card, page header, its buttons, inputs,
    table and badges. Scoped so the bare .fwg-pane pages are untouched.
@@ -2640,3 +2640,8 @@ button.fwg-btn{cursor:pointer;}
 .fwg-satom .fwg-btn{width:auto;min-width:96px;height:34px;padding:0 16px;border-radius:var(--fw-radius);font-weight:500;}
 .fwg-satom .fwg-btn.is-primary{background-image:var(--fw-gradient-brand);border-color:transparent;}
 .fwg-satom .fw-nig-tab{margin:16px 20px 0;}
+.fwg-satom .fwg-sat-tabs{padding:10px 20px 0;margin:0;border-bottom:1px solid var(--fw-border-light);flex-wrap:wrap;}
+.fwg-satom .fwg-sat-tabs .nav-link{font-size:13px;padding:6px 14px;}
+.fwg-satom .fwg-idx{padding:16px 20px;}
+.fwg-satom .fwg-idx .fwg-sec-title{margin:0 0 6px;}
+.fwg-satom .fw-empty-state-title{font-size:13px;font-weight:500;}

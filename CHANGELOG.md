@@ -6,6 +6,31 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — FortiWeb pages: FortiWeb's structure inside the SATOM frame, one menu per page
+
+- Every FortiWeb page drawn from a measured GUI layout (the FortiWeb menu, 145
+  pages per build, Server Policy included) now wears the SATOM look: breadcrumb
+  with FortiWeb's menu path, page header with the device and its firmware, a
+  card, SATOM's buttons, search box, tabs, table, status pills and save bar.
+  Inside, the structure stays FortiWeb's: its menu, tabs, toolbar actions,
+  columns in their order, dialog sections, fields and live show / hide, per
+  firmware build. Requested by the user: "the style is SATOM's, the structural
+  content is the Forti device's".
+- One menu per page: on a FortiWeb, an old Loadbalancer / WAF / Configuration
+  entry whose collections ALL have a FortiWeb page for the device's firmware
+  leaves the sidebar, and its URL redirects there. An entry with any tab the
+  FortiWeb menu does not draw stays, and so does the Signatures editor. Each
+  FortiWeb page links back with *Classic view* (`?classic=1`), where the SATOM
+  tools live: config templates, artifacts, certificate import.
+- The FortiWeb grids gained what the old pages had: Delete and Clone on the
+  selected row (dry run first, then apply, through the object editor's guarded
+  endpoints) and Refresh from the device.
+- An object created or cloned through the object editor is written to the SATOM
+  cache at once; before, it did not show in its list until the next sync.
+- `tests/test_gui_classic.py` fails if an entry leaves the sidebar while one of
+  its tabs has no FortiWeb page, if `?classic=1` is swallowed, or if a created
+  object is not cached.
+
 ### Fixed — FortiWeb dialogs: "Edit entry" opens a stacked panel, not a new window
 
 - The pencil beside a reference selector (Virtual Server, Server Pool, HTTP

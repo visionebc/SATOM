@@ -518,7 +518,9 @@
       if (!res.ok) {
         var done = all.filter(function (r) { return r.ok; }).map(function (r) { return r._ep; });
         say('Not saved: ' + (res._ep ? res._ep + ': ' : '') + (res.error || 'the device refused the change') +
-            (done.length ? ' (already written: ' + done.join(', ') + ')' : ''), true);
+            (done.length ? ' (already written: ' + done.join(', ') + ')' : '') +
+            ((res.rolled_back || []).length ? ' (undone: ' + res.rolled_back.map(function (u) {
+              return u.name + (u.ok ? '' : ' FAILED, still on the device'); }).join(', ') + ')' : ''), true);
         return;
       }
       if (all.length > 1 || (GP && GP.api)) { review.hidden = true; pending = null; say('Saved. Reloading…'); window.location.reload(); return; }

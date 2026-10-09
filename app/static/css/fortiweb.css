@@ -2594,3 +2594,49 @@ button.fwg-btn{cursor:pointer;}
 .fwg-idx ul{list-style:none;padding-left:12px;margin:0;}
 .fwg-idx li{padding:2px 0;}
 .fwg-idx-group{font-weight:600;color:var(--fw-text-muted);}
+
+/* ============================================================
+   SATOM frame around a FortiWeb layout (.fwg-satom) — pilot: Server Policy.
+   FortiWeb gives the structure (toolbar actions, columns, sections, fields,
+   conditions); SATOM gives the look: card, page header, its buttons, inputs,
+   table and badges. Scoped so the bare .fwg-pane pages are untouched.
+   ============================================================ */
+.fwg-pane.fwg-satom{margin:0 0 20px;min-height:0;display:block;font-size:13.5px;}
+.fwg-satom .fwg-note{padding:10px 20px;background:var(--fw-surface-alt);
+  border-bottom:1px solid var(--fw-border-light);font-size:12.5px;color:var(--fw-text-secondary);}
+.fwg-satom .fwg-sat-toolbar{padding:14px 20px;margin:0;border-bottom:1px solid var(--fw-border-light);}
+.fwg-satom .fwg-sat-toolbar .fw-search-box{flex:0 1 280px;}
+.fwg-satom [aria-disabled="true"]{opacity:.45;pointer-events:none;}
+.fwg-satom summary.btn{list-style:none;}
+.fwg-satom summary.btn::-webkit-details-marker{display:none;}
+.fwg-satom .fwg-menu-body{border-radius:var(--fw-radius-lg);box-shadow:var(--fw-card-shadow);padding:4px;margin-top:4px;}
+.fwg-satom .fwg-menu-body a{border-radius:var(--fw-radius);padding:6px 10px;}
+.fwg-satom .fw-table-wrapper{border:0;border-radius:0;margin:0;overflow-x:auto;}
+.fwg-satom .fw-table td,.fwg-satom .fw-table th{white-space:nowrap;}
+.fwg-satom .fw-table td{padding-top:9px;padding-bottom:9px;}
+.fwg-satom .fw-table tbody tr[data-href]{cursor:pointer;}
+.fwg-satom .fw-table tbody tr.is-selected > td{background:color-mix(in srgb, var(--fw-accent) 16%, transparent) !important;}
+.fwg-satom .fw-table tbody tr:focus{outline:2px solid var(--fw-accent);outline-offset:-2px;}
+/* dialog */
+.fwg-satom .fwg-titlebar{padding:14px 20px;background:var(--fw-surface-alt);
+  border-bottom:1px solid var(--fw-border-light);font-weight:600;font-size:14px;}
+.fwg-satom .fwg-titlebar .fwg-sub{font-weight:400;}
+.fwg-satom .fwg-body{padding:4px 0 16px;}
+.fwg-satom .fwg-sec-title{margin:18px 20px 4px;padding:0 0 6px;background:none;
+  border-bottom:2px solid var(--fw-border-light);font-size:14px;font-weight:600;color:var(--fw-text-primary);}
+.fwg-satom .fwg-sec-title i{color:var(--fw-accent);}
+.fwg-satom .fwg-fields{padding:10px 24px 4px;row-gap:8px;column-gap:24px;}
+.fwg-satom .fwg-label{color:var(--fw-text-secondary);font-weight:500;}
+.fwg-satom .fwg-input,.fwg-satom .fwg-textarea{border-radius:var(--fw-radius);}
+.fwg-satom .fwg-edit{border-radius:var(--fw-radius);}
+.fwg-satom .fwg-seg-btn:first-child,.fwg-satom .fwg-radio span:first-child{border-radius:var(--fw-radius) 0 0 var(--fw-radius);}
+.fwg-satom .fwg-seg-btn:last-child,.fwg-satom .fwg-radio span:last-child{border-radius:0 var(--fw-radius) var(--fw-radius) 0;}
+.fwg-satom .fwg-subtable{border-radius:var(--fw-radius-lg);overflow:hidden;}
+.fwg-satom .fwg-subtable .fwg-table th{background:var(--fw-surface-alt);}
+.fwg-satom .fwg-tb-btn{border-radius:var(--fw-radius);}
+.fwg-satom .fwg-review{border-radius:var(--fw-radius-lg);margin:12px 20px;}
+.fwg-satom .fwg-footer{justify-content:flex-end;padding:12px 20px;background:var(--fw-surface);
+  border-top:1px solid var(--fw-border-light);}
+.fwg-satom .fwg-btn{width:auto;min-width:96px;height:34px;padding:0 16px;border-radius:var(--fw-radius);font-weight:500;}
+.fwg-satom .fwg-btn.is-primary{background-image:var(--fw-gradient-brand);border-color:transparent;}
+.fwg-satom .fw-nig-tab{margin:16px 20px 0;}

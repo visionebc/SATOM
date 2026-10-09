@@ -913,6 +913,32 @@
         </div>
       </div>
 
+      {# FORTIWEB MENU — FortiWeb's own menu tree, every page SATOM has a measured
+         GUI layout for (services.gui_pages; layouts come with the knowledge packs).
+         Server Policy opens its hand-tuned view; every other leaf the generic one. #}
+      {% set _fwg_nav = fwgui_nav_for(current_appliance) if current_appliance and current_appliance.kind == 'fortiweb' else [] %}
+      {% if _fwg_nav and may_open('workspace.index') %}
+      {% set _fwg_page = (request.view_args or {}).get('page') if request.endpoint and request.endpoint.startswith('workspace.fwgui') else ('server-policy' if request.endpoint in ['workspace.gui_list', 'workspace.gui_policy', 'workspace.gui_new'] else None) %}
+      {% macro _fwg_node(n, depth, cur) %}
+        {% if n.entry is defined %}
+          {% set e = n.entry %}
+          <a class="fw-nav-item fw-so-nav-flat {{ 'active' if e.page == cur }}" style="padding-left:{{ 14 + depth * 12 }}px"
+             href="{{ url_for(e.special, appliance_id=current_appliance.id) if e.special else url_for('workspace.fwgui_list', appliance_id=current_appliance.id, page=e.page) }}"><span>{{ n.label }}</span></a>
+        {% else %}
+          <details class="fw-so-parent" {{ 'open' if fwgui_contains(n, cur) }}>
+            <summary class="fw-nav-item fw-so-parent-head" style="padding-left:{{ 14 + depth * 12 }}px"><span>{{ n.label }}</span><i class="bi bi-chevron-down fw-so-nav-caret"></i></summary>
+            <div class="fw-so-parent-body"><div class="fw-so-nav">{% for c in n.children %}{{ _fwg_node(c, depth + 1, cur) }}{% endfor %}</div></div>
+          </details>
+        {% endif %}
+      {% endmacro %}
+      <div class="fw-nav-group {{ 'open' if _fwg_page }}" data-nav-group="FortiWeb">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-layout-sidebar fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('FortiWeb') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'workspace.fwgui_index' }}" href="{{ url_for('workspace.fwgui_index', appliance_id=current_appliance.id) }}"><i class="bi bi-grid-3x3-gap fw-nav-icon"></i><span>{{ _('All pages') }}</span></a>
+          {% for n in _fwg_nav %}{{ _fwg_node(n, 0, _fwg_page) }}{% endfor %}
+        </div>
+      </div>
+      {% endif %}
       <!-- LOADBALANCER -->
       <div class="fw-nav-group {{ 'open' if _g_lb }}" data-nav-group="Loadbalancer">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-shield-check fw-nav-section-icon" style="color:#10b981;"></i><span>{{ _('Loadbalancer') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>

@@ -2538,10 +2538,19 @@ summary.fwg-sec-title::-webkit-details-marker{display:none;}
 .fwg-switch.is-on{border-color:var(--fw-accent);background:var(--fw-accent);}
 .fwg-switch.is-on::after{left:9px;background:#fff;}
 .fwg-suffix{color:var(--fw-text-muted);}
-.fwg-radio{display:inline-flex;gap:14px;flex-wrap:wrap;}
-.fwg-radio span::before{content:"";display:inline-block;width:12px;height:12px;margin-right:5px;
-  border:1px solid #3D4550;border-radius:50%;vertical-align:-1px;}
-.fwg-radio span.is-on::before{background:radial-gradient(var(--fw-accent) 45%,transparent 50%);}
+/* FortiWeb draws a radio group as a segmented button bar (Local | Multi
+   Certificate | Let's Encrypt): read-only and editable look the same */
+.fwg-radio,.fwg-seg{display:inline-flex;flex-wrap:wrap;}
+.fwg-radio span,.fwg-seg-btn{display:inline-flex;align-items:center;min-height:25px;padding:2px 9px;
+  margin:0 -1px 0 0;border:1px solid var(--fw-border,#D6DAE0);background:var(--fw-surface,#fff);
+  color:var(--fw-text-primary);cursor:default;}
+.fwg-seg-btn{cursor:pointer;}
+.fwg-radio span.is-on,.fwg-seg-btn:has(.fwg-seg-input:checked){background:var(--fw-accent);
+  border-color:var(--fw-accent);color:#fff;position:relative;z-index:1;}
+.fwg-seg-input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none;}
+.fwg-seg-btn:focus-within{outline:2px solid var(--fw-accent);outline-offset:1px;}
+a.fwg-pencil{text-decoration:none;}
+.fwg-pencil.is-off{opacity:.35;pointer-events:none;}
 .fwg-chip{display:inline-block;padding:0 7px;border-radius:2px;
   border:1px solid var(--fw-border,#D6DAE0);background:var(--fw-surface-alt,#F4F5F7);font-size:13px;}
 .fwg-rows td{height:26px;}
@@ -2573,3 +2582,15 @@ button.fwg-btn{cursor:pointer;}
    live show / hide (author display rules must not override [hidden]) */
 .fwg-block { display: contents; }
 .fwg-pane [hidden] { display: none !important; }
+
+/* generic FortiWeb pages (workspace.fwgui_*): tabs above the grid as FortiWeb
+   draws them, the menu path, and the all-pages index */
+.fwg-crumbs{padding:6px 12px 0;}
+.fwg-tabs{display:flex;gap:0;border-bottom:1px solid var(--fw-border,#D6DAE0);padding:0 12px;}
+.fwg-tab{padding:6px 14px;color:var(--fw-text-primary);text-decoration:none;border:1px solid transparent;
+  border-bottom:0;margin-bottom:-1px;}
+.fwg-tab.is-on{border-color:var(--fw-border,#D6DAE0);background:var(--fw-surface,#fff);font-weight:600;}
+.fwg-idx{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;}
+.fwg-idx ul{list-style:none;padding-left:12px;margin:0;}
+.fwg-idx li{padding:2px 0;}
+.fwg-idx-group{font-weight:600;color:var(--fw-text-muted);}

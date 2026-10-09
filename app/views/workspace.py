@@ -1092,6 +1092,250 @@ def gui_new(appliance_id, dialog):
                            can_edit=can_edit, save_ep=EP_POLICY, row_ctx=None)
 
 
+# ── FortiWeb GUI layout: every other page (generic templates) ───────────────
+# One route set for every page the knowledge feed brought a measured layout for
+# (services.gui_pages): the grid of each tab, the dialog a row opens (variant
+# dialogs by row, e.g. an FTP pool), its inline tables and their row dialogs,
+# and Create New. Reads the SATOM cache; an object's sub-table rows the cache
+# does not hold are read from the device as the object editor does. Writes go
+# through the object editor's endpoints (save-object / create-object /
+# save-row: reference check, build gate, REST / CLI split).
+
+def _fwgui_tpl(appl, page):
+    from flask import abort, flash as _flash, redirect as _redirect, url_for as _url_for
+    from flask_babel import gettext as _
+    from ..services import gui_pages, gui_store
+    if appl.kind != 'fortiweb':
+        abort(404)
+    if page in gui_pages.SPECIAL:
+        abort(_redirect(_url_for(gui_pages.SPECIAL[page], appliance_id=appl.id)))
+    tpl, match = gui_pages.template(page, gui_store.firmware_of(appl))
+    if tpl is None:
+        _flash(_('No FortiWeb GUI layout for this page has been imported on this node '
+                 '(layouts come with the knowledge packs).'), 'info')
+        abort(_redirect(_url_for('workspace.fwgui_index', appliance_id=appl.id)))
+    return tpl, match
+
+
+def _fwgui_subrows(appl, tpl, key, name, obj_row):
+    """{sub-table: rows | None} of a dialog's inline tables, read as the object
+    editor reads them: the device first (a row saved here shows at once), the
+    SATOM cache (deep capture) when the device answers nothing. None = unknown
+    (device unreachable and nothing cached): drawn as such, never as empty."""
+    from ..services import objform
+    from .objedit import _cached_rows, _read_rows
+    out = {}
+    client = None
+    for b in tpl['dialogs'][key]['blocks']:
+        for f in b['fields']:
+            st, coll = f.get('subtable'), f.get('endpoint')
+            if f.get('kind') != 'table' or not st:
+                continue
+            if not coll:
+                out[st] = None
+                continue
+            if not name:
+                # a settings form's table lists a collection of its own
+                # (SNMP communities): cache, else the device
+                from ..services import gui_pages
+                rows, _m = gui_pages.rows(appl.id, coll)
+                if not rows:
+                    try:
+                        client = client or FortiWebClient(appl)
+                        rows = client._safe_list(objform.rest_path(coll)) or []
+                    except Exception as exc:  # noqa: BLE001
+                        log_exception(exc, context='workspace.fwgui.formrows')
+                        rows = None
+                out[st] = rows
+                continue
+            parent = coll.rsplit('/', 1)[0]
+            try:
+                client = client or FortiWebClient(appl)
+                rows = _read_rows(client, coll, name)
+            except Exception as exc:  # noqa: BLE001 — unreachable: the cache decides
+                log_exception(exc, context='workspace.fwgui.subrows')
+                rows = None
+            if not rows:
+                cached = _cached_rows(appl.id, parent, name, st)
+                rows = cached or ([] if rows == [] else None)
+            if rows == [] and _int_or_zero((obj_row or {}).get('sz_' + st)) > 0:
+                rows = None
+            out[st] = rows
+    return out
+
+
+@bp.route('/<int:appliance_id>/fwgui')
+@login_required
+@require_permission('protection.view')
+def fwgui_index(appliance_id):
+    """FortiWeb's menu, every page SATOM has a measured layout for."""
+    from flask import abort
+    from ..services import gui_pages
+    appl = visible_appliance_or_404(appliance_id)
+    if appl.kind != 'fortiweb':
+        abort(404)
+    nav = gui_pages.nav_for(appl)
+    return render_template('workspace/fwgui_index.html', appliance=appl, nav=nav)
+
+
+@bp.route('/<int:appliance_id>/fwgui/<page>')
+@login_required
+@require_permission('protection.view')
+def fwgui_list(appliance_id, page):
+    from ..services import gui_pages
+    appl = visible_appliance_or_404(appliance_id)
+    tpl, match = _fwgui_tpl(appl, page)
+    dev = _gui_device(appl)
+    vi, view = gui_pages.view_of(tpl, request.args.get('v'))
+    tabs = [{'i': i, 'label': gui_pages.tab_label(tpl, v, i)}
+            for i, v in enumerate(gui_pages.views(tpl))] if len(gui_pages.views(tpl)) > 1 else []
+    if view.get('form'):
+        return _fwgui_form(appl, page, tpl, match, dev, vi, view, tabs)
+    rows, meta = gui_pages.rows(appl.id, view.get('endpoint'))
+    return render_template('workspace/fwgui_list.html', appliance=appl, tpl=tpl, match=match,
+                           dev=dev, page=page, vi=vi, view=view, rows=rows, cache_meta=meta,
+                           tabs=tabs, cell=gui_pages.cell, labels=gui_pages.value_labels(tpl),
+                           dialog_for=gui_pages.dialog_for,
+                           can_edit=current_user.can('config_write'))
+
+
+def _fwgui_form(appl, page, tpl, match, dev, vi, view, tabs):
+    """A settings page (no grid): the form over its ONE object, from the SATOM
+    cache, else read from the device; Save is a mkey-less update."""
+    from ..services import gui_pages, gui_template, objform
+    coll = view.get('endpoint') or ''
+    key = view['form']
+    rows, _meta = gui_pages.rows(appl.id, coll)
+    obj = rows[0] if rows else None
+    if obj is None and coll:
+        from .objedit import _read_object
+        try:
+            obj = _read_object(FortiWebClient(appl), coll, '', singleton=True) or None
+        except Exception as exc:  # noqa: BLE001 — unreachable: drawn empty, said so
+            log_exception(exc, context='workspace.fwgui.form')
+    can_edit = current_user.can('config_write') and obj is not None \
+        and objform.is_known_collection(coll)
+    subrows = _fwgui_subrows(appl, tpl, key, None, obj)
+    dview = gui_template.dialog_view(tpl, key, obj or {}, dev, subrows=subrows, live=can_edit)
+    nig = nig_edit = None
+    if obj is not None:
+        if can_edit:
+            from .objedit import _not_in_gui
+            _groups, nig_edit = _not_in_gui(appl, coll, obj, [])
+        if nig_edit is None:
+            from ..services import not_in_gui
+            nig = not_in_gui.for_view(appl, coll, obj)
+    gp = {'page': page, 'v': vi, 'collection': coll, 'name': '', 'mode': 'object',
+          'form': True, 'tabs': tabs, 'missing': obj is None}
+    return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
+                           dev=dev, view=dview, name='', main=key, is_new=False,
+                           not_in_gui=nig, nig_row=obj or {}, nig_edit=nig_edit,
+                           can_edit=can_edit, save_ep=coll, row_ctx=None,
+                           writable_subtables=[], gp=gp)
+
+
+@bp.route('/<int:appliance_id>/fwgui/<page>/o/<path:name>')
+@login_required
+@require_permission('protection.view')
+def fwgui_object(appliance_id, page, name):
+    """One object in the dialog FortiWeb opens for it; ``?d=`` a sub-dialog,
+    or a sub-table row dialog with ``?sub=<id>`` / ``?new=1``."""
+    from flask import abort
+    from ..services import gui_pages, gui_template, objform
+    appl = visible_appliance_or_404(appliance_id)
+    tpl, match = _fwgui_tpl(appl, page)
+    dev = _gui_device(appl)
+    vi, view = gui_pages.view_of(tpl, request.args.get('v'))
+    coll = view.get('endpoint') or ''
+    rows, _meta = gui_pages.rows(appl.id, coll)
+    obj = next((r for r in rows if str(r.get('name', r.get('id', ''))) == name), None)
+    if obj is None:
+        from .objedit import _cached_object
+        obj, _row = _cached_object(appl.id, coll, name)
+    if obj is None:
+        abort(404)
+    main = gui_pages.dialog_for(view, obj)
+    if not main or main not in tpl['dialogs']:
+        abort(404)
+    key = request.args.get('d') or main
+    if key not in tpl['dialogs']:
+        abort(404)
+    writer = current_user.can('config_write')
+    row_dialogs = gui_template.row_dialogs(tpl, main)
+    row_ctx = None
+    if key in row_dialogs:
+        st = row_dialogs[key]
+        sub_coll = gui_pages.table_endpoint(tpl, main, st)
+        subrows = _fwgui_subrows(appl, tpl, main, name, obj)
+        if request.args.get('new'):
+            if subrows.get(st) is None or not writer:
+                abort(404)      # a sub-table SATOM cannot read is not written blind
+            row = dict(tpl['dialogs'][key].get('new_defaults') or {})
+            is_new_row = True
+        else:
+            sub = request.args.get('sub')
+            row = next((r for r in subrows.get(st) or []
+                        if sub is not None and str(r.get('id')) == sub), None)
+            if row is None:
+                abort(404)
+            is_new_row = False
+        writable = writer and bool(sub_coll) and objform.is_known_collection(sub_coll)
+        dview = gui_template.dialog_view(tpl, key, row, dev, live=writable)
+        row_ctx = {'subtable': st, 'collection': sub_coll, 'writable': writable,
+                   'sub_id': '' if is_new_row else str(row.get('id', '')), 'new': is_new_row}
+        can_edit = writable
+    elif key == main:
+        subrows = _fwgui_subrows(appl, tpl, key, name, obj)
+        can_edit = writer and objform.is_known_collection(coll)
+        dview = gui_template.dialog_view(tpl, key, obj, dev, subrows=subrows, live=can_edit)
+    else:
+        abort(404)
+    writable_subtables = sorted(
+        st for st in row_dialogs.values()
+        if writer and st and objform.is_known_collection(
+            gui_pages.table_endpoint(tpl, main, st) or '-'))
+    nig = nig_edit = None
+    if key == main:
+        if can_edit:
+            from .objedit import _not_in_gui
+            _groups, nig_edit = _not_in_gui(appl, coll, obj, [])
+        if nig_edit is None:
+            from ..services import not_in_gui
+            nig = not_in_gui.for_view(appl, coll, obj)
+    gp = {'page': page, 'v': vi, 'collection': coll, 'name': name,
+          'mode': 'row' if row_ctx else 'object'}
+    return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
+                           dev=dev, view=dview, name=name, main=main, is_new=False,
+                           not_in_gui=nig, nig_row=obj, nig_edit=nig_edit,
+                           can_edit=can_edit, save_ep=coll, row_ctx=row_ctx,
+                           writable_subtables=writable_subtables, gp=gp)
+
+
+@bp.route('/<int:appliance_id>/fwgui/<page>/new/<dialog>')
+@login_required
+@require_permission('protection.view')
+def fwgui_new(appliance_id, page, dialog):
+    """Create New as FortiWeb lays it out, filled with its own defaults; Save
+    creates the object through the object editor's create-object."""
+    from flask import abort
+    from ..services import gui_pages, gui_template, objform
+    appl = visible_appliance_or_404(appliance_id)
+    tpl, match = _fwgui_tpl(appl, page)
+    if dialog not in tpl['dialogs'] or dialog in (tpl.get('subtable_dialogs') or ()):
+        abort(404)
+    vi, view = gui_pages.view_for_dialog(tpl, dialog)
+    coll = view.get('endpoint') or ''
+    dev = _gui_device(appl)
+    row = dict(tpl['dialogs'][dialog].get('new_defaults') or {})
+    subrows = {st: [] for st in gui_template.row_dialogs(tpl, dialog).values() if st}
+    can_edit = current_user.can('config_write') and objform.is_known_collection(coll)
+    dview = gui_template.dialog_view(tpl, dialog, row, dev, subrows=subrows,
+                                     live=can_edit, new=can_edit)
+    gp = {'page': page, 'v': vi, 'collection': coll, 'name': None, 'mode': 'new-object'}
+    return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
+                           dev=dev, view=dview, name=None, main=dialog, is_new=True,
+                           can_edit=can_edit, save_ep=coll, row_ctx=None, gp=gp)
+
 @bp.route('/<int:appliance_id>/new-policy')
 @login_required
 @require_permission('protection.view')

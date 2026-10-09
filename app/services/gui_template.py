@@ -280,6 +280,10 @@ def _cell(col: dict, r: dict, refs: dict):
     v = r.get(col["id"])
     if col.get("labels"):
         return col["labels"].get(v, v or "")
+    # FortiWeb's grids title-case the enable / disable switches
+    # (``<key>_val`` is no display twin: on some collections it is an index)
+    if v in ("enable", "disable"):
+        return v.title()
     return "" if v is None else v
 
 
@@ -437,7 +441,10 @@ def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict, *,
                 blk["cond"] = bind_device(b.get("cond"), defs, dev)
             blocks.append(blk)
     out = {"key": dialog_key, "title": d.get("title", {}), "blocks": blocks,
-           "hidden": hidden}
+           "hidden": hidden,
+           # a page of FortiWeb's newer shell: read from what the browser drew
+           # (no template to parse), so show / hide conditions are not known
+           "rendered_only": bool(d.get("rendered_only"))}
     if live:
         out["live"] = {"row": data, "derived": d.get("derived") or {},
                        "aliases": d.get("aliases") or {}}

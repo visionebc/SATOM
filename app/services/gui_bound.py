@@ -220,6 +220,7 @@ def prepare(tpl: dict, key: str, row: dict | None, appliance, *, read_device: bo
         row2.setdefault(k, v)
     if not d0:
         return tpl, row2, {}
+    _bools_as_switches(d0, row2)
     groups = bound_endpoints(d0)
     if not any(f.get("bind") for b in d0.get("blocks") or [] for f in b.get("fields") or []):
         return tpl, row2, {}
@@ -258,6 +259,19 @@ def prepare(tpl: dict, key: str, row: dict | None, appliance, *, read_device: bo
             else:
                 row2[ck] = get_path(obj, bd["key"])
     return t2, row2, groups
+
+
+def _bools_as_switches(dialog: dict, row: dict) -> None:
+    """A GUI API object can hold a switch as a JSON boolean (FortiGuard:
+    ``scheduled: true``); the control draws its on / off value. Saving puts the
+    boolean back (``_typed`` keeps the type the device served)."""
+    for b in dialog.get("blocks") or []:
+        for f in b.get("fields") or []:
+            ctrls = [f] + [m for m in f.get("more") or []]
+            for c in ctrls:
+                k = c.get("key")
+                if c.get("kind", f.get("kind")) in ("toggle", "check") and isinstance(row.get(k), bool):
+                    row[k] = c.get("on", "enable") if row[k] else c.get("off", "disable")
 
 
 def merged(current: dict, fields: dict) -> dict:

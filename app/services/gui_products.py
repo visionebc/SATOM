@@ -361,6 +361,12 @@ class FortiAuthenticatorAdapter(Adapter):
         return None, want
 
     def mkey_of(self, row, endpoint=""):
+        # the detail URL's own key: some resources serve no ``id`` field
+        # (radiusclients, measured on fac01 8.0.3) but every row carries
+        # ``resource_uri`` = /api/v1/<res>/<pk>[/]
+        uri = str((row or {}).get("resource_uri") or "").rstrip("/")
+        if uri.startswith("/api/v1/") and uri.count("/") >= 4:
+            return uri.rsplit("/", 1)[1]
         v = (row or {}).get("id")
         if v not in (None, ""):
             return str(v)

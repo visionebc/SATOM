@@ -57,7 +57,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   as numbers, dry run first, snapshot and audit as for every write. Until now
   these pages were read from cmdb and drawn empty.
 - A layout can only make SATOM read or write a GUI API **configuration object**
-  (`system|log|waf|server|user|network|router|wvs/...`): any path naming an
+  (`system|log|waf|server|user|network|router|wvs|policy/...`; one rule, the
+  harvester's own, vendored with satom_guikit): any path naming an
   action (reboot, backup, restore, firmware, license, maintenance, debug...)
   is never read nor written, and the knowledge importer refuses a layout that
   names one -- layouts may come from a harvester this node does not run.
@@ -67,6 +68,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   if one refuses.
 - Fields with several controls keep all of them (*Log Type*: Event, Attack and
   Traffic log); the layout used to keep only the first.
+- A GUI API object is sent in the shape the GUI uses, measured per endpoint:
+  wrapped in `{"data": ...}` (Admin Settings) or bare (the log settings).
+  FortiWeb answers 200 to the other shape and changes nothing -- a re-read after
+  every save reports, key by key, anything the device kept different
+  (`drift`), so such a save can never pass silently. Verified in the browser
+  on fortiweb18: Other Log Settings 5 -> 6 written, re-read, reverted.
+- A GUI API switch held as a JSON boolean (FortiGuard) is drawn on / off and
+  saved back as a boolean. A field bound to a sub-table of another object is
+  shown, never written (its row needs the parent's key).
+- Coverage after the measured crawl: fortiweb17 (7.6.8) 139 pages, 89.8 % of
+  fields tied to a key (713 measured); fortiweb18 (8.0.6) 122 pages, 91.1 %
+  (519 measured) -- 84.7 % / 86.0 % before, none measured. Fields nothing
+  could measure in the lab (a reference list empty there) are named from the
+  build's CLI schema only when exactly one field fits.
 - Six collections the FortiWeb GUI edits joined the endpoint registry (baseline
   resealed): `system/overlay-tunnel`, `system/replacemsg-custom-header`
   (8.0.6), `waf/site-publish-helper.keytab_file`,

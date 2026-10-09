@@ -1551,5 +1551,19 @@ def create_policy(appliance_id):
             cache_refreshed = write_through.local_insert(appl.id, 'server_policy', pname, live)
         except Exception as exc:  # noqa: BLE001 — the write itself succeeded
             log_exception(exc, context='workspace.create_policy.cache')
+    # Its sub-tables (content routing, public IP) live only in a deep capture,
+    # and the policy's page reads the cache, never the device: capture this
+    # device now (in the background) instead of showing "not in the SATOM
+    # cache" until the next scheduled capture.
+    deep_job = None
+    if do_apply:
+        try:
+            from flask import current_app
+            from ..services import deep_jobs
+            deep_job = (deep_jobs.start_fleet_job(
+                current_app._get_current_object(), [appl.id],
+                by=getattr(current_user, 'username', '') or '') or {}).get('job_id')
+        except Exception as exc:  # noqa: BLE001 — the write itself succeeded
+            log_exception(exc, context='workspace.create_policy.deep')
     return jsonify(ok=True, dry_run=not do_apply, steps=results,
-                   app_id=appid, cache_refreshed=cache_refreshed)
+                   app_id=appid, cache_refreshed=cache_refreshed, deep_job=deep_job)

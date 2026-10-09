@@ -34,6 +34,46 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   pages. Server Policy keeps its hand-tuned view, and SATOM's existing pages
   and menus are unchanged.
 
+### Added — every GUI control tied to the key it writes, measured; log settings with their values
+
+- Asked: "fields that are not tied should have been found with the harvester so
+  every field is bound; bring those pages in with all their fields; the log
+  values must be there too". About one GUI control in five had no REST key: a
+  label or a grid value can only name a key when exactly one fits, an empty lab
+  collection shows no value at all, and several settings forms do not write
+  cmdb.
+- The harvester now **measures** it. During the crawl the browser fails every
+  request that is not a plain read before it leaves Chromium (nothing reaches
+  the device), each dialog is saved once into that gate, and the request the
+  GUI tried to send gives the endpoint and every key path it writes; each
+  control is matched to them by its model path, its value, or, when still
+  unbound, by changing it in place and reading the difference off the next
+  caught request. Port and timeout fields are never changed.
+- Settings forms FortiWeb's GUI writes through its own API -- Global and Other
+  Log Settings (`POST log/logconfig.*`), Admin Settings
+  (`PUT system/admin.settings`), FortiGuard -- are read live from that same
+  endpoint (SATOM's REST token is accepted there) and saved the way the GUI
+  saves them: the current object with the changed keys set by path, numbers kept
+  as numbers, dry run first, snapshot and audit as for every write. Until now
+  these pages were read from cmdb and drawn empty.
+- A layout can only make SATOM read or write a GUI API **configuration object**
+  (`system|log|waf|server|user|network|router|wvs/...`): any path naming an
+  action (reboot, backup, restore, firmware, license, maintenance, debug...)
+  is never read nor written, and the knowledge importer refuses a layout that
+  names one -- layouts may come from a harvester this node does not run.
+- A control FortiWeb keeps in another endpoint than its dialog (Admin Settings'
+  FortiCloud SSO login lives in `system/global`) is read from and saved to that
+  endpoint; one *Save* writes each endpoint in turn and says which were written
+  if one refuses.
+- Fields with several controls keep all of them (*Log Type*: Event, Attack and
+  Traffic log); the layout used to keep only the first.
+- Six collections the FortiWeb GUI edits joined the endpoint registry (baseline
+  resealed): `system/overlay-tunnel`, `system/replacemsg-custom-header`
+  (8.0.6), `waf/site-publish-helper.keytab_file`,
+  `waf/site-publish-helper.oauth-spool`,
+  `waf/site-publish-helper.service-principal-name-pool` and
+  `waf/waiting-room-custom-page`; their pages are now editable.
+
 ### Fixed — Server Policy layout view
 
 - *Retry On Cache Size* showed its unit (*KB (32 - 2048)*) twice when editable.

@@ -112,6 +112,276 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--every-fortiweb-gui-page-drawn-the-way-fortiweb-draws-it">Added — every FortiWeb GUI page, drawn the way FortiWeb draws it</h3>
+<ul>
+<li>Until now only Server Policy had FortiWeb's own layout; every other page used
+  SATOM's forms. The harvester now reads the whole GUI of a lab FortiWeb with a
+  headless browser (<code>satom-harvester gui crawl</code>): the real menu tree, every
+  page's grids and tabs, each dialog with its sections, fields, labels, choices
+  and show / hide conditions, inline tables (members, rules) and the dialog
+  their <em>Create New</em> opens, settings pages with no grid (SNMP, Operation, log
+  settings), and the REST key behind each column and field. One layout per page
+  and exact build travels through the knowledge feed, like the Server Policy
+  layout.</li>
+<li>A new <strong>FortiWeb</strong> sidebar group mirrors FortiWeb's menu, in its order, for
+  every page with a layout (<em>All pages</em> lists them). Each page draws its grid
+  (tabs when the page has several collections; cell text as FortiWeb shows it,
+  never an internal index), opens a row in the dialog of its variant (an FTP
+  pool in the FTP pool dialog), shows inline tables read from the device as the
+  object editor reads them (<em>not in the SATOM cache</em> when it cannot, never an
+  empty table), and offers <em>Create New</em> with FortiWeb's defaults.</li>
+<li>Everything stays editable where it is shown: fields, inline-table rows and new
+  objects save through the object editor's endpoints (reference check, build
+  gate, REST / CLI split, dry run first), and every page carries its <em>Not in
+  GUI, but in CLI</em> section — the permanent rule now works on every page with a
+  measured layout, not only Server Policy.</li>
+<li>Pages FortiWeb draws with its newer shell (Virtual IP, Route, DNS,
+  Automation), dashboards and log viewers have no layout; they keep SATOM's own
+  pages. Server Policy keeps its hand-tuned view, and SATOM's existing pages
+  and menus are unchanged.</li>
+</ul>
+<h3 id="added--every-gui-control-tied-to-the-key-it-writes-measured-log-settings-with-their-values">Added — every GUI control tied to the key it writes, measured; log settings with their values</h3>
+<ul>
+<li>Asked: "fields that are not tied should have been found with the harvester so
+  every field is bound; bring those pages in with all their fields; the log
+  values must be there too". About one GUI control in five had no REST key: a
+  label or a grid value can only name a key when exactly one fits, an empty lab
+  collection shows no value at all, and several settings forms do not write
+  cmdb.</li>
+<li>The harvester now <strong>measures</strong> it. During the crawl the browser fails every
+  request that is not a plain read before it leaves Chromium (nothing reaches
+  the device), each dialog is saved once into that gate, and the request the
+  GUI tried to send gives the endpoint and every key path it writes; each
+  control is matched to them by its model path, its value, or, when still
+  unbound, by changing it in place and reading the difference off the next
+  caught request. Port and timeout fields are never changed.</li>
+<li>Settings forms FortiWeb's GUI writes through its own API -- Global and Other
+  Log Settings (<code>POST log/logconfig.*</code>), Admin Settings
+  (<code>PUT system/admin.settings</code>), FortiGuard -- are read live from that same
+  endpoint (SATOM's REST token is accepted there) and saved the way the GUI
+  saves them: the current object with the changed keys set by path, numbers kept
+  as numbers, dry run first, snapshot and audit as for every write. Until now
+  these pages were read from cmdb and drawn empty.</li>
+<li>A layout can only make SATOM read or write a GUI API <strong>configuration object</strong>
+  (<code>system|log|waf|server|user|network|router|wvs/...</code>): any path naming an
+  action (reboot, backup, restore, firmware, license, maintenance, debug...)
+  is never read nor written, and the knowledge importer refuses a layout that
+  names one -- layouts may come from a harvester this node does not run.</li>
+<li>A control FortiWeb keeps in another endpoint than its dialog (Admin Settings'
+  FortiCloud SSO login lives in <code>system/global</code>) is read from and saved to that
+  endpoint; one <em>Save</em> writes each endpoint in turn and says which were written
+  if one refuses.</li>
+<li>Fields with several controls keep all of them (<em>Log Type</em>: Event, Attack and
+  Traffic log); the layout used to keep only the first.</li>
+<li>Six collections the FortiWeb GUI edits joined the endpoint registry (baseline
+  resealed): <code>system/overlay-tunnel</code>, <code>system/replacemsg-custom-header</code>
+  (8.0.6), <code>waf/site-publish-helper.keytab_file</code>,
+  <code>waf/site-publish-helper.oauth-spool</code>,
+  <code>waf/site-publish-helper.service-principal-name-pool</code> and
+  <code>waf/waiting-room-custom-page</code>; their pages are now editable.</li>
+</ul>
+<h3 id="fixed--server-policy-layout-view">Fixed — Server Policy layout view</h3>
+<ul>
+<li><em>Retry On Cache Size</em> showed its unit (<em>KB (32 - 2048)</em>) twice when editable.</li>
+<li>The <em>Edit entry</em> pencil FortiWeb draws beside a reference selector is back in
+  the editable view and opens the selected object in the object editor; it
+  follows the selection.</li>
+<li>Radio groups (<em>Certificate Type</em>: Local | Multi Certificate | Let's Encrypt,
+  <em>Single Server / Server Balance</em>…) are drawn as FortiWeb's segmented button
+  bar instead of radio buttons, read-only and editable alike.</li>
+</ul>
+<h3 id="added--a-separate-ssh-password-per-appliance">Added — a separate SSH password per appliance</h3>
+<ul>
+<li>FortiAuthenticator's REST authenticates with an API key that its SSH refuses,
+  so on that product every CLI read and write failed with <code>SSH auth failed</code>.
+  An appliance can now carry an SSH password separate from its API credential
+  (<em>Edit appliance → SSH password, if different from the API credential</em>;
+  blank keeps it, a checkbox removes it). Every SSH session uses it when set
+  and the API credential otherwise, so rows without one behave exactly as
+  before. In vault mode it is stored in the appliance's vault record (field
+  <code>ssh_password</code>) and the column keeps only the vault marker; rotating the API
+  credential keeps it, and the vault migration and local-copy scrub cover it.
+  New nullable column <code>appliances.ssh_password_enc</code> (migration <code>sshpw01</code>).</li>
+</ul>
+<h3 id="added--one-click-gslb-public-ip-rows-are-read-and-written">Added — One-click GSLB Public IP rows are read and written</h3>
+<ul>
+<li>The FortiWeb registry now lists <code>server-policy/policy/public-ip-list</code>
+  (<code>server_policy_public_ip_item</code>; the REST serves it on 7.6.8 build1128 and
+  8.0.6 build116) and the deep capture walks it, so the Server Policy layout
+  view draws its rows, opens them in FortiWeb's Public IP dialog, and saves and
+  creates them through the same row save as HTTP Content Routing. A policy that
+  counts Public IP rows (<code>sz_public-ip-list</code>) in a capture taken before this
+  change shows the table as <em>not in the SATOM cache</em>, never as empty, and
+  offers no <em>Create New</em> until the next deep capture reads them.</li>
+<li>After the first row is written into a sub-table the capture saw empty, the
+  re-read now lands in the SATOM cache too (it was dropped for lack of a sibling
+  row to copy the cache identity from, so the page kept showing an empty table).</li>
+</ul>
+<h3 id="added--every-cli-only-element-is-editable-where-it-lives-on-every-product">Added — every CLI-only element is editable where it lives, on every product</h3>
+<ul>
+<li>The user's rule: every element only the CLI has must be editable in SATOM, in
+  the page of the object it belongs to, in its "Not in GUI, but in CLI" section.
+  On FortiGate, FortiAuthenticator, FortiADC and FortiAnalyzer the section was a
+  read-only table; it is now an editor for users with write permission: each
+  CLI-only field is an input, <em>Read values over CLI</em> fills them over a read-only
+  SSH session, <em>Preview CLI change</em> shows the exact CLI script, and <em>Apply</em> runs
+  it through the CLI writer (one transaction, abort on the first error, read
+  back in a fresh session, audited). A table object asks for the row (the keys
+  the tab read are offered). A write that names a REST field or a field no
+  source measured on the build is refused whole: nothing is sent.</li>
+<li>Objects only the CLI serves are edited in the same way: on the per-device
+  page (<em>Everything this device has outside the GUI</em>) and, for
+  FortiAuthenticator, inside their own GUI pane — <em>System → Network</em> hosts
+  <code>system interface</code>, <code>system dns</code> and <code>router static</code>; <em>System →
+  Administration</em> hosts <code>system global</code> and <code>system ha</code>.</li>
+<li>FortiAnalyzer gets a CLI writer dialect (same <code>config</code>/<code>edit</code>/<code>set</code>/<code>end</code>
+  shell). Like FortiGate, FortiAuthenticator and FortiADC it is not verified on
+  a device yet, and the editor says so next to the preview.</li>
+</ul>
+<h3 id="added--the-fortiweb-layout-view-edits-sub-table-rows-and-creates-policies">Added — the FortiWeb-layout view edits sub-table rows and creates policies</h3>
+<ul>
+<li>HTTP Content Routing rows open an editable dialog (same save as the object
+  editor's row save: reference check, build gate, REST / CLI split inside the
+  parent policy), and the sub-table's <em>Create New</em> opens a new row with
+  FortiWeb's own defaults. After an applied write the sub-table is re-read from
+  the device into the SATOM cache. One-click GSLB Public IP rows do the same
+  (see below).</li>
+<li><em>Create New</em> of a Server Policy is no longer a preview: it shows the POST
+  first, creates the policy, caches it as the device returns it and opens its
+  page.</li>
+<li>Fields appear and disappear while you edit, as in FortiWeb's GUI: every field
+  and section carries its condition (device facts resolved by SATOM), and the
+  page re-evaluates it on each change with the same tri-state rules the server
+  uses (unknown = shown). A hidden field is not sent.</li>
+</ul>
+<h3 id="fixed--a-save-in-the-object-editor-refreshes-every-cached-copy">Fixed — a save in the object editor refreshes every cached copy</h3>
+<ul>
+<li><code>write_through.local_update</code> merged an applied change into the FIRST cached
+  row it found; the readers prefer the config layer over the deep one, so the
+  page could keep showing the old value. It now updates every layer that holds
+  the object.</li>
+</ul>
+<h3 id="fixed--the-fortiweb-layout-server-policy-view-can-edit-what-it-shows">Fixed — the FortiWeb-layout Server Policy view can edit what it shows</h3>
+<ul>
+<li>The view the sidebar opens for <em>Policy → Server Policy</em> was read-only: a field
+  such as <em>Disable Client-Initiated SSL Renegotiation</em> (<code>ssl-noreg</code>, in
+  Advanced SSL settings) was visible but could not be changed there. For users
+  with write permission, the policy dialog and its sub-dialogs (Advanced SSL…)
+  now edit every field in the place it appears, and so does the "Not in GUI,
+  but in CLI" section under the main dialog.</li>
+<li>Save shows the change first (dry run, with the channel of each field), then
+  writes it through the same route as the SATOM Server Policy page: REST, or
+  the CLI writer for a field that is CLI-only on the device's build.</li>
+<li>After a write, SATOM re-reads the policy from the device into its cache (every
+  cached layer), so the page reloads with the device's values and the fields
+  FortiWeb shows or hides for them.</li>
+<li>Read-only users see the dialog as before.</li>
+</ul>
+<h3 id="fixed--not-in-gui-but-in-cli-is-on-every-object-page-also-when-empty">Fixed — "Not in GUI, but in CLI" is on every object page, also when empty</h3>
+<ul>
+<li>The section was only rendered when it had fields, so on every FortiWeb object
+  whose GUI layout is not measured yet (everything except Server Policy) it
+  simply did not appear. It is now always rendered, collapsed, with its count
+  and the reason when it is empty: every field is in the Fortinet GUI, no
+  CLI-only field on this build, or the API library has no evidence for the
+  endpoint. Same for the read-only FortiGate / FortiAuthenticator / FortiADC /
+  FortiAnalyzer tabs.</li>
+<li>The main Server Policy page (Policy → Server Policy → a policy) now carries
+  the section for the policy and for its server pool; before, only the object
+  editor and the "FortiWeb layout" view had it.</li>
+<li>That page's Save splits fields by channel like the object editor: a field
+  CLI-only on the device's build goes through the CLI writer, the rest by REST.</li>
+</ul>
+<h3 id="added--gui-layouts-per-exact-build-through-the-knowledge-feed">Added — GUI layouts per exact build, through the knowledge feed</h3>
+<ul>
+<li><strong>Templates per EXACT build</strong> (<code>satom.gui-template/2</code>): the knowledge pack
+  carries a new section <code>gui-templates</code>; each item is the GUI layout of one
+  page measured on one build by the harvester (with Fortinet's labels and help
+  texts), filed under <code>data/gui-templates/&lt;product&gt;/&lt;page&gt;/&lt;version&gt;-&lt;build&gt;.json</code>.
+  A new firmware build no longer needs a SATOM release to get its layout. The
+  importer checks the shape and the exact build and rejects any item carrying
+  GUI bundle code; it does not assume which harvester measured it.</li>
+<li><strong>Per-device resolution</strong>: every FortiWeb-layout page picks the layout of the
+  device's own build (the page passes the full firmware string, build
+  included), then its version, its train, the closest older train. The banner
+  says which build the layout comes from and that it is a knowledge-pack layout.</li>
+<li><strong>The release ships no layout</strong>: the knowledge feed is the only source. A
+  node that has not imported a knowledge pack yet (fresh install, offline,
+  <code>knowledge.fetch_mode=off</code>) has no layout; the sidebar's Server Policy leaf
+  then opens SATOM's own Server Policy list with a notice instead of a 404.</li>
+<li><strong>GUI changes in reports</strong>: the migration report gains a <code>gui</code> block and
+  <code>gui_*</code> rows (a field FortiWeb's GUI no longer shows is a warning, any other
+  change is info), Build compatibility → Compare shows the GUI layout changes,
+  <code>api_library.compare()</code> carries a <code>gui</code> channel, and a bulk apply notes the
+  fields the target build's GUI does not show. Only layouts measured on both
+  builds are compared; otherwise the report says the layout was not measured.</li>
+<li><code>app/vendor/satom_guikit/</code> — the harvester's GUI-template contract
+  (standard library only), vendored and pinned by hash
+  (<code>deploy/vendor_guikit.sh</code>).</li>
+</ul>
+<h3 id="added--not-in-gui-but-in-cli-every-field-a-device-has-on-every-product">Added — "Not in GUI, but in CLI": every field a device has, on every product</h3>
+<ul>
+<li><strong>Permanent rule</strong>: SATOM shows every field a device has on its exact build.
+  The fields the Fortinet GUI does not show are no longer missing or mixed into
+  other groups: they are listed in a section titled <strong>"Not in GUI, but in
+  CLI"</strong>, and each one says how SATOM writes it — <strong>REST</strong> (a normal save),
+  <strong>CLI</strong> (the CLI writer over SSH, for fields the API library measured
+  <code>cli_only</code> or <code>hidden</code> on that build) or <em>unverified on this build</em>.</li>
+<li><strong>FortiWeb object editor</strong>: the section in every object and in every
+  sub-table row, editable. A field the REST read did not return shows as an
+  empty text box (never a toggle claiming "disabled"); <strong>Read values over CLI</strong>
+  fills it from a read-only <code>show full-configuration</code> (secrets are never
+  returned). A sub-table row save now routes its CLI-only fields through the
+  CLI writer inside the parent row; a new row carrying a CLI-only field is
+  refused before any write, with the reason.</li>
+<li><strong>FortiWeb Server Policy layout view</strong>: the REST fields FortiWeb's own GUI
+  does not place (34 on 7.6.8, 39 on 8.0.6 — the five new ones are <code>ssl-ja4</code>,
+  <code>tls-pqc-support</code>, <code>tls-pqc-groups</code>, <code>allow-nonstd-http</code>,
+  <code>unnormalized-url-match</code>) are listed under the main dialog with their
+  values. Toggle groups (Supported SSL Protocols) and list columns (Status,
+  Protocol) count as shown by the GUI.</li>
+<li><strong>FortiGate, FortiAuthenticator, FortiADC, FortiAnalyzer</strong>: every table view
+  carries the section for its object; FortiADC and FortiAnalyzer say their GUI
+  layout and CLI tree are not measured (no lab device) — nothing is hidden.</li>
+<li><strong>Per-device page</strong> <code>Appliances → &lt;device&gt; → Not in GUI, but in CLI</code>
+  (<code>/appliances/&lt;id&gt;/not-in-gui</code>): whole objects only the CLI serves (e.g.
+  FortiAuthenticator <code>system dns</code>, <code>system interface</code>, <code>router static</code>) and the
+  CLI-only fields of objects REST serves (FortiGate 8.0.1: 166 fields in 76
+  tables).</li>
+</ul>
+<h3 id="added--server-policy-in-the-fortiweb-gui-layout-read-only">Added — Server Policy in the FortiWeb GUI layout (read-only)</h3>
+<ul>
+<li><strong>Server Policy → FortiWeb layout</strong>: the policy list, the Create New menu and
+  every dialog (HTTP, FTP, ADFS, TCP proxy, Advanced SSL settings, HTTP Content
+  Routing rule, Public IP) drawn the way FortiWeb's own GUI lays them out —
+  same section titles, field order, labels, control types and options, the
+  same default columns per operation mode, and the same fields shown or
+  hidden by the policy's settings, the operation mode and
+  <code>system feature-visibility</code>. Drawn with SATOM's theme; read-only, served from
+  the local cache (no device calls). Routes <code>/workspace/&lt;id&gt;/gui</code>,
+  <code>/workspace/&lt;id&gt;/gui/policy/&lt;name&gt;[?dialog=…]</code> and
+  <code>/workspace/&lt;id&gt;/gui/new/&lt;dialog&gt;</code> (the Create New form with FortiWeb's own
+  defaults, as a preview).</li>
+<li><strong>Layout templates</strong> (schema <code>satom.gui-template/1</code>, delivered by the
+  knowledge feed — see above), extracted from the GUI a FortiWeb serves by
+  <code>satom-harvester gui fetch|extract</code>, never written by hand. The first one is
+  <strong>FortiWeb 7.6.x</strong>, built from 7.6.8 build1128: 9 dialogs, 186 fields, every
+  field cross-checked against the REST keys of that build. A device on a newer
+  train (8.0.x) gets the 7.6 layout with a warning that newer firmware adds or
+  renames fields; a field whose condition depends on something SATOM cannot
+  read about the device is shown and marked "conditional", never hidden.</li>
+<li><strong>Inline sub-tables</strong> in the policy dialog — HTTP Content Routing and One
+  Click GSLB Public IP — with FortiWeb's toolbar (Create New / Edit / Delete /
+  Move / Search), its default columns and cell formatting (the Server Pool
+  read through the chosen routing policy, an inherited Web Protection Profile
+  left blank). Edit / double-click opens the row in its own dialog
+  (<code>?dialog=http-content-routing&amp;sub=&lt;id&gt;</code>). A sub-table SATOM does not
+  capture yet (Public IP) says so instead of showing an empty grid.</li>
+<li><strong>Sidebar</strong>: Loadbalancer now shows <strong>Policy → Server Policy</strong>, as in
+  FortiWeb's menu; the leaf opens the FortiWeb layout of the device in
+  context (the device picker when none is selected). The SATOM view stays
+  one click away from the layout page.</li>
+</ul>
 <h3 id="added--signature-source-and-local-signature-index">Added — signature source and local signature index</h3>
 <ul>
 <li><strong>Administrator → Signatures → Signature source</strong>: choose the FortiWeb SATOM
@@ -143,6 +413,21 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   whichever box was read last.</li>
 <li>A failed catalog read from the source makes the <code>signature_check</code> round red;
   a node with no FortiWeb says so instead of reporting "0 current".</li>
+</ul>
+<h3 id="fixed--a-rediscovery-with-deep-or-cli-capture-no-longer-looks-finished-halfway">Fixed — a rediscovery with deep or CLI capture no longer looks finished halfway</h3>
+<ul>
+<li>The REST sweep wrote <code>done</code> the moment its own pass ended, even when the deep
+  capture (WPP + policy graph) or the CLI capture was still to run. <code>done</code> is
+  terminal for the Rediscover page and the Capture card, so both stopped
+  polling at 100 % and never showed the later phases or their end, and Start
+  came back while the deep pass was still reading the box. The sweep now keeps
+  the run live (<code>snapshot saved — starting the deep capture</code>) and only the last
+  phase writes <code>done</code>.</li>
+<li>A sweep that returns with its state still live is closed as <code>failed</code> with a
+  sentence saying so, instead of leaving the page polling and blocking new runs
+  for 15 minutes.</li>
+<li>The Rediscover page says <strong>Finished at HH:MM:SS UTC</strong> in words when the run
+  ends.</li>
 </ul>
 <h2 id="300---2026-10-08">[3.0.0] - 2026-10-08</h2>
 <h3 id="added--knowledge-feed-300">Added — knowledge feed (3.0.0)</h3>

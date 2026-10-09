@@ -163,6 +163,11 @@ never a delta:</p>
 <td><code>signature-meta</code></td>
 <td>public FortiGuard metadata for signature ids (see below)</td>
 </tr>
+<tr>
+<td><code>gui-templates</code></td>
+<td><code>gui-template</code></td>
+<td>the GUI layout of one page per exact build, with Fortinet's labels and help: Server Policy from <code>satom-harvester gui fetch → extract → publish</code>, every other page of the menu from <code>gui crawl → extract-all → publish-all</code> (a headless browser on a lab device; <code>"generic": true</code>); the bundle it was read from never ships</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Signature metadata ships empty.</strong> The harvester checks the FortiGuard site's

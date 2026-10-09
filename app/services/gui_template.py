@@ -311,7 +311,7 @@ def _table_view(f: dict, rows, refs: dict) -> dict:
 # Controls the layout view can write back. Sub-tables, links, view switches and
 # display-only fields are not values of the policy object; a derived key
 # (cert-type) is computed by the GUI from other fields and has no REST twin.
-_EDIT_KINDS = {"toggle", "radio", "select", "text", "number", "textarea", "ref",
+_EDIT_KINDS = {"toggle", "check", "radio", "select", "text", "number", "textarea", "ref",
                "multiselect", "checks", "toggle_rows"}
 
 
@@ -423,6 +423,15 @@ def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict, *,
                 "unknown_why": (unknowns(b.get("cond"), data, defs, dev)
                                 + unknowns(f.get("cond"), data, defs, dev)) if unknown else [],
                 **_edit_spec(f, d, data, dev, new=new),
+                # the other controls of the same field (Log Type: Event / Attack /
+                # Traffic log), each a key of the same object
+                "more": [{"key": m["key"], "label": m.get("label") or m["key"],
+                          "kind": m.get("kind") or "check",
+                          "raw": "" if data.get(m["key"]) is None else str(data.get(m["key"])),
+                          "on": m.get("on", "enable"), "off": m.get("off", "disable")}
+                         for m in f.get("more") or [] if m.get("key")],
+                "bound_to": f.get("bound_to"),
+                "bound_unread": bool(f.get("bound_unread")),
             })
             if live:
                 fields[-1]["hidden"] = fhidden

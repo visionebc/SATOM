@@ -396,8 +396,8 @@
     return {endpoint: {{ save_ep|tojson }}, mkey: {{ name|tojson }}, fields: fields, apply: !!apply};
   }
   function say(msg, bad) { if (status) { status.textContent = msg; status.classList.toggle('text-danger', !!bad); } }
-  function post(b) {
-    return fetch(SAVE, {method: 'POST', headers: {'Content-Type': 'application/json'},
+  function post(b, url) {
+    return fetch(url || SAVE, {method: 'POST', headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify(b)}).then(function (r) { return r.json(); });
   }
   document.addEventListener('change', function () {
@@ -460,7 +460,8 @@
     return steps.reduce(function (p, st) {
       return p.then(function (prev) {
         if (prev && !prev.ok) return prev;          // stop at the first refusal
-        return post(st.make(apply)).then(function (r) { r._ep = st.ep; r._keys = st.keys; out.push(r); return r; });
+        // each step goes to ITS endpoint's route (object editor / GUI API save)
+        return post(st.make(apply), st.url).then(function (r) { r._ep = st.ep; r._keys = st.keys; out.push(r); return r; });
       });
     }, Promise.resolve(null)).then(function () { return out; });
   }

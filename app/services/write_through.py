@@ -228,17 +228,24 @@ def local_insert(appliance_id, logical, mkey, payload, *, session=None) -> bool:
 
 
 def local_delete(appliance_id, coll, mkey, *, session=None):
-    """Delete the cached object and all its descendants (by-parent rows)."""
+    """Delete the cached object and all its descendants (by-parent rows), in
+    EVERY layer: a policy deleted from the config layer alone stayed in the
+    deep one (with its virtual server and sub-tables) and the readers that
+    prefer deep went on drawing it."""
     from ..extensions import db
     from ..models_cache import DeviceObject
     session = session or db.session
     logical = logical_for_collection(coll, _version_for(session, appliance_id))
-    obj = _find(session, appliance_id, mkey, logical)
-    if obj is None:
+    q = (session.query(DeviceObject)
+         .filter_by(appliance_id=appliance_id, depth=0, mkey=str(mkey)))
+    if logical:
+        q = q.filter_by(logical_name=logical)
+    roots = [o.id for o in q.all()]
+    if not roots:
         return False
-    # collect the subtree (depth-first via parent_id chain)
-    ids = [obj.id]
-    frontier = [obj.id]
+    # collect the subtrees (depth-first via parent_id chain)
+    ids = list(roots)
+    frontier = list(roots)
     while frontier:
         kids = (session.query(DeviceObject.id)
                 .filter(DeviceObject.parent_id.in_(frontier)).all())

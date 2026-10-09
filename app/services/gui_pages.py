@@ -39,11 +39,17 @@ def page_ids(product: str = PRODUCT) -> list:
 
 
 def template(page: str, firmware, product: str = PRODUCT):
-    """(template, match) of one page for a firmware, or (None, None)."""
+    """(template, match) of one page for a firmware, or (None, None). A view
+    the GUI reads through its own API is tied to the cmdb collection holding
+    the same objects (``gui_alias``, measured)."""
     try:
-        return gui_template.select(product, page, firmware)
+        tpl, match = gui_template.select(product, page, firmware)
     except (OSError, ValueError):
         return None, None
+    if tpl is not None and product == PRODUCT:
+        from . import gui_alias
+        tpl = gui_alias.apply(page, tpl)
+    return tpl, match
 
 
 def entries(firmware, product: str = PRODUCT) -> list:
@@ -158,6 +164,17 @@ def rows(appliance_id: int, endpoint: str) -> tuple:
     return [], first
 
 
+def live_rows(appliance, endpoint: str) -> tuple:
+    """(rows, meta) of a GUI API list with no cmdb twin (FortiWeb's predefined
+    entries, ``gui_alias`` ``live``), read from the device: never cached, only
+    through ``gui_bound.safe_api``. ([], None) when refused or unreachable."""
+    from . import gui_bound
+    got = gui_bound.read_rows(appliance, endpoint)
+    if got is None:
+        return [], None
+    return got, {"generated_at": None, "source": "live", "cached": False}
+
+
 def value_labels(tpl: dict) -> dict:
     """{REST key: {value: label}} from the choices the page's own dialogs offer
     (type reverse-proxy -> "Reverse Proxy"): the text FortiWeb's grid shows."""
@@ -232,5 +249,5 @@ def table_endpoint(tpl: dict, dialog: str, subtable: str) -> str:
 
 
 __all__ = ["PRODUCT", "SPECIAL", "page_ids", "template", "entries", "tree", "nav_for",
-           "contains", "views", "view_of", "tab_label", "rows", "cell", "value_labels", "dialog_for",
+           "contains", "views", "view_of", "tab_label", "rows", "live_rows", "cell", "value_labels", "dialog_for",
            "view_for_dialog", "table_endpoint"]

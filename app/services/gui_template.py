@@ -198,9 +198,15 @@ def _with_derived(row: dict, dialog: dict) -> dict:
     return out
 
 
+def _real(opts) -> list:
+    """The choices the crawl actually read: an option it could not read comes
+    as ``{"value": null}`` and would be drawn (and saved) as the text "None"."""
+    return [o for o in opts or [] if isinstance(o, dict) and o.get("value") is not None]
+
+
 def _options(field: dict, dev: dict) -> list:
-    if field.get("options"):
-        return field["options"]
+    if _real(field.get("options")):
+        return _real(field["options"])
     by = field.get("options_by") or {}
     if not by:
         return []
@@ -209,9 +215,9 @@ def _options(field: dict, dev: dict) -> list:
               "transparent": "tp", "transparent_inspection": "tp", "wccp": "wccp"}.get(mode)
     for name, opts in by.items():
         if suffix and name.endswith("_" + suffix):
-            return opts
+            return _real(opts)
     plain = [o for n, o in by.items() if "_" not in n]
-    return plain[0] if plain else next(iter(by.values()))
+    return _real(plain[0] if plain else next(iter(by.values())))
 
 
 def _display(field: dict, row: dict, dev: dict):
@@ -399,6 +405,11 @@ def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict, *,
             if (fhidden or bhidden) and not (live and f.get("kind") in _LIVE_KINDS):
                 continue
             unknown = bstate is None or st is None
+            # a select / radio whose choices the crawl could not read is a text
+            # input over the current value: never a made-up choice
+            unread = f.get("kind") in ("select", "radio") and not _options(f, dev)
+            if unread:
+                f = dict(f, kind="text")
             fields.append({
                 "label": f.get("label") or "",
                 "help": f.get("help") or "",
@@ -430,6 +441,7 @@ def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict, *,
                           "raw": "" if data.get(m["key"]) is None else str(data.get(m["key"])),
                           "on": m.get("on", "enable"), "off": m.get("off", "disable")}
                          for m in f.get("more") or [] if m.get("key")],
+                "options_unread": unread,
                 "bound_to": f.get("bound_to"),
                 "bound_unread": bool(f.get("bound_unread")),
             })

@@ -172,6 +172,7 @@
     <div class="fwg-label {{ 'fwg-unknown' if f.unknown }}"{{ live_attrs(f) }}>{% if f.kind != 'link' %}{{ f.label }}{% endif %}
       {%- if f.help %}<i class="bi bi-info-circle-fill" title="{{ f.help|striptags }}"></i>{% endif %}
       {%- if f.unknown %}<span class="fwg-unknown-tag" title="{{ _('Depends on: %(w)s', w=f.unknown_why|join(', ')) }}">{{ _('conditional') }}</span>{% endif %}
+      {%- if f.options_unread %}<span class="fwg-unknown-tag" title="{{ _('FortiWeb offers a list of choices here that the GUI crawl could not read: type the value as the CLI takes it.') }}">{{ _('choices not measured') }}</span>{% endif %}
     </div>
     <div class="fwg-value"{{ live_attrs(f) }}>{{ value(f) }}</div>
   {% endfor %}

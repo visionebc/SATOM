@@ -1,0 +1,62 @@
+{
+  "format": "satom.gui-alias/1",
+  "product": "fortiweb",
+  "note": "FortiWeb GUI pages that read a collection through the GUI's own API (/api/v2.0/<x>, answered 500 by cmdb) while the same objects live in a cmdb collection SATOM caches, edits and audits. Measured 2026-10-09 on fortiweb17 (7.6.8 build1128) and fortiweb18 (8.0.6 build116), GETs only. confidence: 'measured' = the same objects on both sides, or every key of the layout among the build's measured fields; 'named' = cmdb twin by name and by the SATOM menu entry with the same label, both sides empty on the lab. keys: GUI key -> cmdb key ('measured' = equal on every row; 'label' = the column title names the cmdb field). computed: columns FortiWeb computes, no cmdb field holds them.",
+  "aliases": {
+    "waf/signatures": {
+      "cmdb": "waf/signature", "confidence": "measured",
+      "evidence": "Same 16 (fortiweb17) and 10 (fortiweb18) signature sets by name on both sides.",
+      "keys": {"alertOnlyCount": "sz_alert_only_list", "signatureDisabledCount": "sz_signature_disable_list",
+               "exceptionCount": "sz_filter_list", "fpmDisableCount": "sz_fpm_disable_list",
+               "subClassDisabledCount": "sz_sub_class_disable_list",
+               "customSignatureGroup": "custom-protection-group", "sensitivity_level": "sensitivity-level"},
+      "key_evidence": "alertOnlyCount / signatureDisabledCount equal on every row with varying values; the other five equal on every row (16/16, 10/10) with constant values.",
+      "computed": ["mainClassEnabledCount"]
+    },
+    "waf/openapi.openapischemafile": {
+      "cmdb": "waf/openapi-file", "confidence": "measured",
+      "evidence": "Same 6 OpenAPI files by name on fortiweb17; both empty on fortiweb18."
+    },
+    "system/certificate.ocsp_sign_certs": {
+      "cmdb": "system/certificate.ocsp-signing-certs", "confidence": "measured",
+      "evidence": "Every layout key among the measured fields of the cmdb collection on 7.6.8 and 8.0.6; both empty on the lab."
+    },
+    "system/certificate.xmlservercertificate": {
+      "cmdb": "system/certificate.xml-server-certificate", "confidence": "named",
+      "evidence": "cmdb GET 200 on both builds, empty; SATOM menu entry 'XML Certificate' (xml_server_certificate)."
+    },
+    "system/certificate.xmlclientcertificate": {
+      "cmdb": "system/certificate.xml-client-certificate", "confidence": "named",
+      "evidence": "cmdb GET 200 on both builds, empty; SATOM menu entry 'XML Certificate' (xml_client_certificate)."
+    },
+    "system/certificate.tslca": {
+      "cmdb": "system/certificate.tsl-ca", "confidence": "named",
+      "evidence": "cmdb GET 200 on both builds, empty; SATOM menu entry 'CA' (certificate_tsl_ca)."
+    },
+    "system/certificate.intermediateca": {
+      "cmdb": "system/certificate.intermediate-certificate", "confidence": "named",
+      "evidence": "cmdb GET 200 on both builds, empty; SATOM menu entry 'Intermediate CA' (system_certificate_intermediate_certificate)."
+    },
+    "wvs/wvspolicy": {
+      "cmdb": "wvs/policy", "confidence": "named",
+      "evidence": "cmdb GET 200 on both builds; both sides empty on the lab."
+    }
+  },
+  "pages": {
+    "fortisandbox/0": {
+      "cmdb": "system/fortisandbox", "confidence": "measured",
+      "evidence": "The crawl named the FortiGuard object the page also reads; all 6 layout keys (type, server, cache-timeout, email, interval, region) are measured fields of system/fortisandbox on 8.0.6 and its single object answers 200."
+    },
+    "automation/0": {
+      "cmdb": "system/automation-stitch", "confidence": "named",
+      "evidence": "The crawl bound no collection (newer GUI shell). Columns Name / Status / Trigger / Action Count / Description are fields of system/automation-stitch (measured on 8.0.6: name, status, trigger, sz_action_member, comments); 8 stitches on both labs.",
+      "keys": {"stitchStatus": "status", "col2": "trigger", "dbVersionType": "sz_action_member"},
+      "key_evidence": "label"
+    }
+  },
+  "live": {
+    "policy/serverobjects.global.predefineddatatype": "FortiWeb's predefined data types (46): GUI API only, cmdb has no collection (500).",
+    "policy/serverobjects.global.predefinedglobalwhitelist": "FortiWeb's predefined global allow list: GUI API only; the cmdb group collection holds the user's groups, not these entries.",
+    "wvs/scanhistory": "Web Vulnerability Scan history: GUI API only, cmdb has no collection."
+  }
+}

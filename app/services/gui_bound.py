@@ -182,6 +182,28 @@ def read(appliance, ep: str, client=None):
         return None
 
 
+def read_rows(appliance, ep: str, client=None):
+    """Every row of a GUI API list from the device (``{"results": [...]}``, or
+    ``{"results": {"datas": [...]}}``); None when refused or unreachable."""
+    from ..clients.fortiweb import FortiWebClient
+    if not is_api(ep) or not safe_api(ep):
+        return None
+    try:
+        client = client or FortiWebClient(appliance)
+        resp = client.api_call("GET", rest_path(ep))
+        if resp is None or resp.status_code >= 400:
+            return None
+        body = resp.json()
+    except Exception:  # noqa: BLE001 -- unreachable: drawn as unknown, said so
+        return None
+    res = body.get("results") if isinstance(body, dict) else body
+    if isinstance(res, dict) and isinstance(res.get("datas"), list):
+        res = res["datas"]
+    if not isinstance(res, list):
+        return None
+    return [r for r in res if isinstance(r, dict)]
+
+
 #: How an object is sent: ``{"data": {...}}`` (cmdb, Admin Settings) or bare
 #: (the log settings forms). An endpoint answers 200 to the other shape and
 #: changes nothing -- the layout carries the shape the GUI was measured using.

@@ -13,7 +13,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   selected object in a panel stacked over the dialog, as FortiWeb does and as
   the SATOM Server Policy page always did: the dialog stays where it was, Esc
   closes the panel. Applies to every FortiWeb GUI page drawn from a layout.
-   fails if the pencil opens a window again.
+  `tests/test_gui_pencil_drawer.py` fails if the pencil opens a window again.
 
 ### Fixed — Create New Server Policy: a service is required up front, and a failed run undoes itself
 

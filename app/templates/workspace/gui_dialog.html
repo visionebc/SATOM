@@ -2,7 +2,17 @@
 {% set _t = view.title.get('new' if (is_new or (row_ctx and row_ctx.new)) else 'edit') or view.title.get('edit') or '' %}
 {% block title %}{{ _t }}{% if name %} — {{ name }}{% endif %}{% endblock %}
 {# FortiWeb draws a dialog in the content pane: title bar, sections, footer bar. #}
-{% block breadcrumb %}{% endblock %}
+{# Server Policy (not gp) is the SATOM-frame pilot: breadcrumb + page header +
+   card around FortiWeb's dialog. Generic pages (gp) keep the bare layout. #}
+{% block breadcrumb %}{% if not gp %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <span>{{ _('Policy') }}</span><span class="separator">/</span>
+  <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}">{{ appliance.name }}</a><span class="separator">/</span>
+  <a href="{{ url_for('workspace.gui_list', appliance_id=appliance.id) }}">{{ _('Server Policy') }}</a>
+  {% if name %}<span class="separator">/</span><span>{{ name }}</span>{% endif %}
+</div>
+{% endif %}{% endblock %}
 {% from "_not_in_gui.html" import nig_editable %}
 {# input(f): the writable control of one field. Every control carries the REST
    key it writes (data-gkey) and the value it started from (data-orig); Save
@@ -163,7 +173,16 @@
   {% else %}{% set back = url_for('workspace.fwgui_list', appliance_id=appliance.id, page=gp.page, v=gp.v) %}{% endif %}
 {% elif view.key != main and name %}{% set back = url_for('workspace.gui_policy', appliance_id=appliance.id, name=name) %}
 {% else %}{% set back = url_for('workspace.gui_list', appliance_id=appliance.id) %}{% endif %}
-<div class="fwg-pane">
+{% if not gp %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-shield-check me-2 text-accent"></i>{{ _t or view.key }}{% if name %} <span class="text-muted fw-normal">· {{ name }}</span>{% endif %}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;"><strong>{{ appliance.name }}</strong> · {{ appliance.host }}:{{ appliance.port }}{% if appliance.fw_version %} · FortiWeb {{ appliance.fw_version }}{% endif %}</p>
+  </div>
+  <a class="btn btn-secondary btn-sm" href="{{ back }}"><i class="bi bi-chevron-left me-1"></i>{{ _('Back') }}</a>
+</div>
+{% endif %}
+<div class="fwg-pane{{ ' fw-card fwg-satom' if not gp }}">
   <div class="fwg-titlebar">
     <span>{{ _t or view.key }}</span>
     <span class="fwg-sub">

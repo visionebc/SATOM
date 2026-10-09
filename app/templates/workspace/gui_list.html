@@ -1,15 +1,32 @@
 {% extends "base.html" %}
 {% block title %}{{ _('Server Policy') }} — {{ appliance.name }}{% endblock %}
-{# FortiWeb's Server Policy page has no breadcrumb or page title: toolbar, then grid. #}
-{% block breadcrumb %}{% endblock %}
+{# SATOM frame (breadcrumb, page header, card, toolbar, table) around FortiWeb's
+   own page: its toolbar actions, its columns in its order, its row behaviour. #}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <span>{{ _('Policy') }}</span><span class="separator">/</span>
+  <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}">{{ appliance.name }}</a><span class="separator">/</span>
+  <span>{{ _('Server Policy') }}</span>
+</div>
+{% endblock %}
 {% block content %}
-{% set gui_aside %}<a class="small" href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}">{{ _('SATOM view') }}</a>{% endset %}
-<div class="fwg-pane" data-fwg-list>
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-shield-check me-2 text-accent"></i>{{ _('Server Policy') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;"><strong>{{ appliance.name }}</strong> · {{ appliance.host }}:{{ appliance.port }}{% if appliance.fw_version %} · FortiWeb {{ appliance.fw_version }}{% endif %}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-secondary btn-sm" href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}"><i class="bi bi-grid me-1"></i>{{ _('SATOM view') }}</a>
+    <a class="btn btn-secondary btn-sm" href="{{ url_for('workspace.index') }}"><i class="bi bi-chevron-left me-1"></i>{{ _('Change Appliance') }}</a>
+  </div>
+</div>
+<div class="fw-card fwg-pane fwg-satom" data-fwg-list>
 {% include 'workspace/_gui_banner.html' %}
-  <div class="fwg-toolbar">
+  <div class="fw-toolbar fwg-sat-toolbar">
     {% if view.create_menu %}
     <details class="fwg-menu">
-      <summary class="fwg-tb-btn"><i class="bi bi-plus-lg"></i>{{ _('Create New') }}<i class="bi bi-caret-down-fill small"></i></summary>
+      <summary class="btn btn-fw-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }}<i class="bi bi-caret-down-fill small ms-1"></i></summary>
       <div class="fwg-menu-body">
         {% for it in view.create_menu %}
         <a href="{{ url_for('workspace.gui_new', appliance_id=appliance.id, dialog=it.dialog) }}">{{ it.label }}{% if it.unknown %} <span class="fwg-unknown-tag" title="{{ _('(may be hidden on this device)') }}">{{ _('conditional') }}</span>{% endif %}</a>
@@ -17,16 +34,17 @@
       </div>
     </details>
     {% endif %}
-    <a class="fwg-tb-btn" href="#" aria-disabled="true" data-fwg-edit><i class="bi bi-pencil-fill"></i>{{ _('Edit') }}</a>
-    <span class="fwg-tb-btn" aria-disabled="true" title="{{ _('Read-only: nothing is sent to the device.') }}"><i class="bi bi-trash-fill"></i>{{ _('Delete') }}</span>
-    <label class="fwg-search mb-0">
+    <a class="btn btn-secondary btn-sm" href="#" aria-disabled="true" data-fwg-edit><i class="bi bi-pencil me-1"></i>{{ _('Edit') }}</a>
+    <span class="btn btn-fw-danger btn-sm" aria-disabled="true" title="{{ _('Read-only: nothing is sent to the device.') }}"><i class="bi bi-trash me-1"></i>{{ _('Delete') }}</span>
+    <div class="fw-search-box">
+      <i class="bi bi-search search-icon" aria-hidden="true"></i>
       <input type="search" placeholder="{{ _('Search') }}" aria-label="{{ _('Search') }}" data-fwg-search>
-      <span aria-hidden="true"><i class="bi bi-search"></i></span>
-    </label>
-    <span class="text-muted small ms-auto">{{ view.rows|length }} {{ _('policies') }}{% if cache_meta and cache_meta.generated_at %} · {{ _('cache') }} {{ cache_meta.generated_at }}{% endif %}</span>
+    </div>
+    <span class="text-muted small ms-auto">{{ view.rows|length }} {{ _('policies') }}</span>
+    {% if cache_meta and cache_meta.generated_at %}<span class="badge bg-dark border" title="{{ _('Served from the SATOM cache of this device') }}"><i class="bi bi-database me-1"></i>{{ _('cache') }} {{ cache_meta.generated_at|string|truncate(16, True, '') }}</span>{% endif %}
   </div>
-  <div class="fwg-grid-wrap">
-  <table class="fwg-table">
+  <div class="fw-table-wrapper">
+  <table class="fw-table">
     <thead><tr>
       {% for c in view.columns %}<th>{{ c.label }}</th>{% endfor %}
     </tr></thead>
@@ -43,9 +61,10 @@
           {% if not j.get('deep') %}<span class="text-muted" title="{{ _('Needs a deep capture of this policy') }}">—</span>{% endif %}
         {% elif c.id == 'protocol' %}{{ protocol_cell(r) }}
         {% elif c.id == 'status' %}
-          {% if status_running(r, dev.opmode) %}<span class="fwg-run"><i class="bi bi-link-45deg"></i> {{ labels.status.enable if labels.status else 'Running' }}</span>
-          {% else %}<span class="fwg-idle"><i class="bi bi-link"></i> {{ labels.status.disable if labels.status else 'Idling' }}</span>{% endif %}
-        {% elif c.id == 'tags' %}{% for t in (r.tags or '').split() %}<span class="fwg-chip">{{ t }}</span>{% endfor %}
+          {% if status_running(r, dev.opmode) %}<span class="fw-status fw-status-online fwg-run"><span class="fw-status-dot"></span>{{ labels.status.enable if labels.status else 'Running' }}</span>
+          {% else %}<span class="fw-status fw-status-unknown fwg-idle"><span class="fw-status-dot"></span>{{ labels.status.disable if labels.status else 'Idling' }}</span>{% endif %}
+        {% elif c.id == 'tags' %}{% for t in (r.tags or '').split() %}<span class="fw-badge fw-badge-secondary me-1">{{ t }}</span>{% endfor %}
+        {% elif c.id == 'name' %}<strong>{{ r.name }}</strong>
         {% elif c.id in labels %}{{ labels[c.id].get(r.get(c.id), r.get(c.id) or '') }}
         {% else %}{{ r.get(c.id) or '' }}
         {% endif %}

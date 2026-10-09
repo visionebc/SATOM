@@ -31,6 +31,10 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   public IPs) as *not in the SATOM cache* until the next scheduled deep
   capture. An applied Create New now starts a deep capture of that device in
   the background; the policy's page fills in within seconds.
+- Deleting an object removed it from the configuration cache only; its deep
+  capture (a policy with its virtual server and inline tables) stayed, and the
+  pages that read the deep capture first kept drawing it. It is now removed
+  from every cache layer.
 
 ### Added — every FortiWeb GUI page, drawn the way FortiWeb draws it
 

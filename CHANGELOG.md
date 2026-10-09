@@ -6,6 +6,42 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — FortiGate and FortiAuthenticator get the FortiWeb GUI engine
+
+- The measured-GUI pages (`/workspace/<id>/fwgui/...`, same URL names) now
+  draw FortiGate and FortiAuthenticator layouts (`satom.gui-template/1`,
+  per exact build from the knowledge packs; exact build, else the nearest,
+  with the banner). `services.gui_products` holds what differs per product:
+  FortiGate rows are read live from cmdb (vdom aware; SATOM keeps no
+  FortiGate config cache) and named by `q_origin_key` / `policyid`; FortiAuthenticator
+  rows come from the SATOM cache, else live, and are addressed by their
+  detail URL key (`resource_uri`; RADIUS clients serve no `id`). FortiWeb
+  pages keep their own read and write path unchanged.
+- Writes keep the FortiWeb ritual: dry run, review, apply, read back from the
+  device, drift reported field by field; every apply is audited with a
+  `ChangeHistory` before-snapshot. FortiGate: `PUT|POST|DELETE
+  /api/v2/cmdb/<path>[/<mkey>]` (new `FortiGateClient.write`, cmdb paths
+  only); FortiAuthenticator: `PATCH|POST|DELETE /api/v1/<res>/[<pk>/]`, with
+  write-through to the SATOM cache. CLI-only fields go through the CLI
+  writer. A save is accepted only for a collection the device's own measured
+  page edits. Pages with no API (`gui:<path>`) and fields measured
+  `key_from: "gui-only"` are drawn read-only and marked "No API on this build
+  (GUI only)"; FortiGate monitor views are read-only.
+- Sidebar: the device's own menu tree from its layouts; the old FortiGate /
+  FortiAuthenticator menu leaves those pages draw leave the sidebar and
+  redirect to them, `?classic=1` keeps the old page. Opening such a page is an
+  ADOM jump to the device's product. "Not in GUI, but in CLI" is on every
+  FortiGate / FortiAuthenticator object, edit and Create New form.
+- `firmware_probe` reads FortiGate (platform, version and build), so a
+  registered FortiGate resolves its exact build.
+- Verified live on a1 with lab devices (layouts staged for the check and
+  removed afterwards; the measured FortiGate / FortiAuthenticator layouts come
+  with the harvester's packs): fgt02 (FortiOS 8.0.1 build0245, registered as
+  appliance 37) create / edit / delete of a `lab-` address read back from the
+  device; fac01 a lab user's last name edited, read back and restored. A
+  FortiAuthenticator `PATCH` of `custom1` answered 202 and changed nothing:
+  the page reported it as drift instead of "saved".
+
 ### Fixed — FortiWeb pages that read FortiWeb's own GUI API now show and edit their objects
 
 - About 20 FortiWeb pages (Signatures, OpenAPI File, the XML / TSL CA /

@@ -707,6 +707,7 @@
 
       {# System / Authentication / SSO / Monitor / Certificates / Logging —
          the unit's OWN nav tree, mirrored from its nav_menu_definition. #}
+      {% include 'partials/nav_gx.html' %}
       {% set _fac_palette = ['#7c3aed','#2563eb','#0891b2','#059669','#d97706','#db2777','#64748b'] %}
       {% for g in fac_nav %}
       {% set _g_active = g.items|selectattr('key', 'equalto', _fac_item)|list %}
@@ -788,6 +789,7 @@
 
       {# Network / Policy & Objects / Security Profiles / VPN / User / System /
          Log — FortiOS GUI top-level groups, read-only (services.fgt_menu). #}
+      {% include 'partials/nav_gx.html' %}
       {% set _fgt_palette = ['#0d9488','#2563eb','#ef4444','#7c3aed','#059669','#64748b','#d97706'] %}
       {% for g in fgt_nav %}
       {% set _g_active = g.items|selectattr('key', 'equalto', _fgt_item)|list %}

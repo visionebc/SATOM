@@ -26,6 +26,7 @@ fortiweb             status.systemstatus                 firmwareVersion
 fortiadc             /api/platform/version               version + build
 fortiauthenticator   GET /api/v1/systeminfo/             firmware
 fortianalyzer        get /sys/status (JSON-RPC)          Version (UNVERIFIED)
+fortigate            GET /api/v2/monitor/system/status   version + build
 ===================  ==================================  ====================
 
 **An empty answer is a failure, not an observation.** If the status call
@@ -166,8 +167,31 @@ def _read_fortianalyzer(appliance) -> dict:
     return _ok(fw, model, _hw_from(f"{platform} {fw} {serial}"), serial=serial)
 
 
+def _read_fortigate(appliance) -> dict:
+    # Live 2026-10-10 (fgt02): GET /api/v2/monitor/system/status ->
+    # {"version": "v8.0.1", "build": 245, "serial": "FGVM...",
+    #  "results": {"model_name": "FortiGate", "model_number": "VM64-KVM",
+    #              "hostname": "fgt02", ...}} (the client flattens it).
+    d = appliance.build_client(timeout=15.0).status_check()
+    d = d if isinstance(d, dict) else {}
+    ver = _first(d, ("version",))
+    if not ver:
+        return _fail("no_version_in_status", f"keys={sorted(d)[:12]}")
+    build = _first(d, ("build",))
+    model = "-".join(x for x in (_first(d, ("model_name",)) or "FortiGate",
+                                 _first(d, ("model_number",))) if x)
+    # the form the other kinds store: platform, version and build together,
+    # so the GUI layouts and the API library resolve the exact build
+    fw = "%s %s%s" % (model, ver if ver.startswith("v") else "v" + ver,
+                      (",build%04d" % int(build)) if build.isdigit() else "")
+    serial = _first(d, ("serial",))
+    return _ok(fw, model, _hw_from(f"{model} {serial}"),
+               hostname=_first(d, ("hostname",)), serial=serial)
+
+
 _READERS = {
     "fortiweb": _read_fortiweb,
+    "fortigate": _read_fortigate,
     "fortiadc": _read_fortiadc,
     "fortianalyzer": _read_fortianalyzer,
     "fortiauthenticator": _read_fortiauthenticator,

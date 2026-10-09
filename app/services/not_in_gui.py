@@ -61,16 +61,21 @@ def layout_pages() -> dict:
     if hit and time.monotonic() - hit[0] < 60:
         return {**hit[1], **out}
     gen: dict = {}
-    for page in gui_pages.page_ids("fortiweb"):
-        if page in gui_pages.SPECIAL:
-            continue
-        tpl, _m = gui_pages.template(page, None)
-        if not tpl:
-            continue
-        eps = [tpl.get("endpoint")] + [v.get("endpoint") for v in gui_pages.views(tpl)]
-        for ep in eps:
-            if ep:
-                gen.setdefault(("fortiweb", endpoint_key(ep)), page)
+    from . import gui_products
+    for product in gui_products.PRODUCTS:
+        for page in gui_pages.page_ids(product):
+            if product == "fortiweb" and page in gui_pages.SPECIAL:
+                continue
+            tpl, _m = gui_pages.template(page, None, product)
+            if not tpl:
+                continue
+            eps = [tpl.get("endpoint")] + [v.get("endpoint") for v in gui_pages.views(tpl)]
+            for ep in eps:
+                # a GUI-only page (``gui:``) or a FortiGate monitor view edits
+                # no REST object: it places no field of one
+                if ep and not gui_products.read_only_endpoint(ep):
+                    gen.setdefault((product, endpoint_key(gui_products.lib_key(product, ep))),
+                                   page)
     _pages_cache[root] = (time.monotonic(), gen)
     return {**gen, **out}
 
@@ -140,7 +145,10 @@ def _template_keys(tpl: dict, endpoint: str) -> set:
     with operation-mode ``contexts`` edits the page's object and one without
     is a sub-table row dialog (content routing, public IP), which belongs to
     another endpoint."""
-    own = endpoint_key(str(tpl.get("endpoint") or ""))
+    from .gui_products import lib_key
+    prod = str(tpl.get("product") or "fortiweb")
+    _k = (lambda ep: endpoint_key(lib_key(prod, str(ep or ""))))  # noqa: E731
+    own = _k(tpl.get("endpoint"))
     keys: set = set()
     if own == endpoint:
         # a list column (Status, Protocol) is shown and set from the GUI list
@@ -149,9 +157,9 @@ def _template_keys(tpl: dict, endpoint: str) -> set:
     sub = set(tpl.get("subtable_dialogs") or ())
     for name, d in (tpl.get("dialogs") or {}).items():
         if "subtable_dialogs" in tpl:
-            dep = endpoint_key(str(d.get("endpoint") or "")) or ("" if name in sub else own)
+            dep = _k(d.get("endpoint")) or ("" if name in sub else own)
         else:
-            dep = endpoint_key(str(d.get("endpoint") or "")) or (own if "contexts" in d else "")
+            dep = _k(d.get("endpoint")) or (own if "contexts" in d else "")
         if dep != endpoint:
             continue
         for b in d.get("blocks") or []:
@@ -245,9 +253,11 @@ def classify(appliance, endpoint: str, obj_keys, *, product: str | None = None,
         note = ("GUI layout not measured for this page on %s %s: this section lists the "
                 "fields the device has outside its REST API." % (product, version))
     else:
-        note = ("GUI layout of FortiWeb %s (%s): fields the Fortinet GUI does not show "
+        from . import gui_products
+        note = ("GUI layout of %s %s (%s): fields the Fortinet GUI does not show "
                 "are listed here with the channel SATOM writes them by."
-                % (linfo.get("based_on") or "?", linfo.get("match") or "?"))
+                % (gui_products.label(product) or "FortiWeb", linfo.get("based_on") or "?",
+                   linfo.get("match") or "?"))
     if version and not ep:
         note += " The API library has no evidence for this endpoint on this build."
     return {"title": SECTION_TITLE, "product": product, "version": version,

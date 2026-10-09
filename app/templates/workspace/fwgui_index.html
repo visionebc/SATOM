@@ -1,10 +1,11 @@
 {% extends "base.html" %}
-{% block title %}{{ _('FortiWeb menu') }} — {{ appliance.name }}{% endblock %}
+{% set _gxl = gx.label if gx is defined and gx else 'FortiWeb' %}
+{% block title %}{{ _('%(p)s menu', p=_gxl) }} — {{ appliance.name }}{% endblock %}
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
   <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
   <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}">{{ appliance.name }}</a><span class="separator">/</span>
-  <span>{{ _('FortiWeb') }}</span>
+  <span>{{ _gxl }}</span>
 </div>
 {% endblock %}
 {% macro node(n) %}
@@ -19,12 +20,12 @@
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-layout-sidebar me-2 text-accent"></i>{{ _('FortiWeb menu') }}</h1>
-    <p class="text-muted mb-0" style="font-size:13px;"><strong>{{ appliance.name }}</strong> · {{ appliance.host }}:{{ appliance.port }}{% if appliance.fw_version %} · FortiWeb {{ appliance.fw_version }}{% endif %}</p>
+    <h1 class="fw-page-title"><i class="bi bi-layout-sidebar me-2 text-accent"></i>{{ _('%(p)s menu', p=_gxl) }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;"><strong>{{ appliance.name }}</strong> · {{ appliance.host }}:{{ appliance.port }}{% if appliance.fw_version %} · {{ _gxl }} {{ appliance.fw_version }}{% endif %}</p>
   </div>
 </div>
 <div class="fwg-pane fw-card fwg-satom">
-  <div class="fwg-note">{{ _('Every FortiWeb page SATOM has a measured GUI layout for, in FortiWeb\'s own menu order. Layouts come with the knowledge packs, per firmware build.') }}</div>
+  <div class="fwg-note">{{ _('Every %(p)s page SATOM has a measured GUI layout for, in %(p)s\'s own menu order. Layouts come with the knowledge packs, per firmware build.', p=_gxl) }}</div>
   <div class="fwg-body">
   {% if nav %}
     <div class="fwg-idx">
@@ -37,7 +38,7 @@
     {% endfor %}
     </div>
   {% else %}
-    <div class="fw-alert fw-alert-info">{{ _('No FortiWeb GUI layout has been imported on this node yet (they come with the knowledge packs).') }}</div>
+    <div class="fw-alert fw-alert-info">{{ _('No %(p)s GUI layout has been imported on this node yet (they come with the knowledge packs).', p=_gxl) }}</div>
   {% endif %}
   </div>
 </div>

@@ -1104,17 +1104,38 @@ def gui_new(appliance_id, dialog):
 def _fwgui_tpl(appl, page):
     from flask import abort, flash as _flash, redirect as _redirect, url_for as _url_for
     from flask_babel import gettext as _
-    from ..services import gui_pages, gui_store
-    if appl.kind != 'fortiweb':
+    from ..services import gui_pages, gui_products, gui_store
+    product = gui_products.product_of(appl)
+    if product is None:
         abort(404)
-    if page in gui_pages.SPECIAL:
+    if product == 'fortiweb' and page in gui_pages.SPECIAL:
         abort(_redirect(_url_for(gui_pages.SPECIAL[page], appliance_id=appl.id)))
-    tpl, match = gui_pages.template(page, gui_store.firmware_of(appl))
+    tpl, match = gui_pages.template(page, gui_store.firmware_of(appl), product)
     if tpl is None:
-        _flash(_('No FortiWeb GUI layout for this page has been imported on this node '
-                 '(layouts come with the knowledge packs).'), 'info')
+        _flash(_('No %(p)s GUI layout for this page has been imported on this node '
+                 '(layouts come with the knowledge packs).', p=gui_products.label(product)),
+               'info')
         abort(_redirect(_url_for('workspace.fwgui_index', appliance_id=appl.id)))
     return tpl, match
+
+
+def _gx(appl):
+    """The product of a GUI page (FortiWeb / FortiGate / FortiAuthenticator):
+    its key and the name the pages say."""
+    from ..services import gui_products
+    p = gui_products.product_of(appl) or 'fortiweb'
+    return {'key': p, 'label': gui_products.label(p), 'fortiweb': p == 'fortiweb'}
+
+
+def _gx_device(appl):
+    """Device facts the conditions read. FortiWeb: opmode + feature
+    visibility from the cache; the other products: firmware / model only
+    (a condition on anything else is unknown -> shown and marked)."""
+    if appl.kind == 'fortiweb':
+        return _gui_device(appl)
+    from ..services import gui_template
+    return gui_template.device_context(opmode=None, visibility={},
+                                       firmware=appl.firmware, model=appl.model)
 
 
 def _fwgui_subrows(appl, tpl, key, name, obj_row):
@@ -1170,12 +1191,12 @@ def _fwgui_subrows(appl, tpl, key, name, obj_row):
 def fwgui_index(appliance_id):
     """FortiWeb's menu, every page SATOM has a measured layout for."""
     from flask import abort
-    from ..services import gui_pages
+    from ..services import gui_pages, gui_products
     appl = visible_appliance_or_404(appliance_id)
-    if appl.kind != 'fortiweb':
+    if gui_products.product_of(appl) is None:
         abort(404)
     nav = gui_pages.nav_for(appl)
-    return render_template('workspace/fwgui_index.html', appliance=appl, nav=nav)
+    return render_template('workspace/fwgui_index.html', appliance=appl, nav=nav, gx=_gx(appl))
 
 
 @bp.route('/<int:appliance_id>/fwgui/<page>')
@@ -1185,10 +1206,12 @@ def fwgui_list(appliance_id, page):
     from ..services import gui_classic, gui_pages
     appl = visible_appliance_or_404(appliance_id)
     tpl, match = _fwgui_tpl(appl, page)
-    dev = _gui_device(appl)
+    dev = _gx_device(appl)
     vi, view = gui_pages.view_of(tpl, request.args.get('v'))
     tabs = [{'i': i, 'label': gui_pages.tab_label(tpl, v, i)}
             for i, v in enumerate(gui_pages.views(tpl))] if len(gui_pages.views(tpl)) > 1 else []
+    if appl.kind != 'fortiweb':
+        return _gx_list(appl, page, tpl, match, dev, vi, view, tabs)
     if view.get('form'):
         return _fwgui_form(appl, page, tpl, match, dev, vi, view, tabs)
     if view.get('read_live'):
@@ -1201,7 +1224,8 @@ def fwgui_list(appliance_id, page):
                            tabs=tabs, cell=gui_pages.cell, labels=gui_pages.value_labels(tpl),
                            dialog_for=gui_pages.dialog_for,
                            can_edit=current_user.can('config_write') and not view.get('read_live'),
-                           classic=gui_classic.classic_url(appl, view.get('endpoint')))
+                           classic=gui_classic.classic_url(appl, view.get('endpoint')),
+                           gx=_gx(appl), mkey_of=None)
 
 
 @bp.route('/<int:appliance_id>/fwgui/<page>/refresh', methods=['POST'])
@@ -1211,8 +1235,18 @@ def fwgui_refresh(appliance_id, page):
     """Pull the device's configuration into the SATOM cache, back to the page
     (the Refresh the old Server Objects / section pages had)."""
     from flask import flash, redirect, url_for
-    from ..services import device_sync
+    from ..services import device_sync, gui_products
     appl = visible_appliance_or_404(appliance_id)
+    if appl.kind == 'fortigate':
+        # SATOM keeps no FortiGate config cache: the pages read the device;
+        # Refresh drops the few-second read memo so the next draw is fresh
+        tpl, _m = _fwgui_tpl(appl, page)
+        from ..services import gui_pages
+        for v in gui_pages.views(tpl):
+            gui_products.adapter(appl).forget(appl, v.get('endpoint') or '')
+        flash(f"Re-read from {appl.name}.", "success")
+        return redirect(url_for('workspace.fwgui_list', appliance_id=appl.id, page=page,
+                                v=request.form.get('v') or None))
     try:
         run = device_sync.sync_device(appl, publish=False,
                                       user_label=getattr(current_user, 'username', None),
@@ -1262,12 +1296,12 @@ def _fwgui_form(appl, page, tpl, match, dev, vi, view, tabs):
           'form': True, 'tabs': tabs, 'missing': obj is None, 'api': api,
           'method': (tpl['dialogs'][key].get('write') or {}).get('method') or 'PUT',
           'body': (tpl['dialogs'][key].get('write') or {}).get('body') or 'data',
-          'bound': groups}
+          'bound': groups, 'product': 'fortiweb'}
     return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
                            dev=dev, view=dview, name='', main=key, is_new=False,
                            not_in_gui=nig, nig_row=obj or {}, nig_edit=nig_edit,
                            can_edit=can_edit, save_ep=coll, row_ctx=None,
-                           writable_subtables=[], gp=gp)
+                           writable_subtables=[], gp=gp, gx=_gx(appl))
 
 
 @bp.route('/<int:appliance_id>/fwgui/<page>/o/<path:name>')
@@ -1280,6 +1314,8 @@ def fwgui_object(appliance_id, page, name):
     from ..services import gui_pages, gui_template, objform
     appl = visible_appliance_or_404(appliance_id)
     tpl, match = _fwgui_tpl(appl, page)
+    if appl.kind != 'fortiweb':
+        return _gx_object(appl, page, tpl, match, name)
     dev = _gui_device(appl)
     vi, view = gui_pages.view_of(tpl, request.args.get('v'))
     coll = view.get('endpoint') or ''
@@ -1342,12 +1378,13 @@ def fwgui_object(appliance_id, page, name):
             from ..services import not_in_gui
             nig = not_in_gui.for_view(appl, coll, obj)
     gp = {'page': page, 'v': vi, 'collection': coll, 'name': name,
-          'mode': 'row' if row_ctx else 'object', 'bound': groups if key == main else {}}
+          'mode': 'row' if row_ctx else 'object', 'bound': groups if key == main else {},
+          'product': 'fortiweb'}
     return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
                            dev=dev, view=dview, name=name, main=main, is_new=False,
                            not_in_gui=nig, nig_row=obj, nig_edit=nig_edit,
                            can_edit=can_edit, save_ep=coll, row_ctx=row_ctx,
-                           writable_subtables=writable_subtables, gp=gp)
+                           writable_subtables=writable_subtables, gp=gp, gx=_gx(appl))
 
 
 @bp.route('/<int:appliance_id>/fwgui/<page>/new/<dialog>')
@@ -1362,6 +1399,8 @@ def fwgui_new(appliance_id, page, dialog):
     tpl, match = _fwgui_tpl(appl, page)
     if dialog not in tpl['dialogs'] or dialog in (tpl.get('subtable_dialogs') or ()):
         abort(404)
+    if appl.kind != 'fortiweb':
+        return _gx_new(appl, page, tpl, match, dialog)
     vi, view = gui_pages.view_for_dialog(tpl, dialog)
     coll = view.get('endpoint') or ''
     dev = _gui_device(appl)
@@ -1373,10 +1412,352 @@ def fwgui_new(appliance_id, page, dialog):
     dview = gui_template.dialog_view(tpl, dialog, row, dev, subrows=subrows,
                                      live=can_edit, new=can_edit)
     gp = {'page': page, 'v': vi, 'collection': coll, 'name': None, 'mode': 'new-object',
-          'bound': groups}
+          'bound': groups, 'product': 'fortiweb'}
     return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
                            dev=dev, view=dview, name=None, main=dialog, is_new=True,
-                           can_edit=can_edit, save_ep=coll, row_ctx=None, gp=gp)
+                           can_edit=can_edit, save_ep=coll, row_ctx=None, gp=gp, gx=_gx(appl))
+
+# ── FortiGate / FortiAuthenticator: the same pages, their own read / write ──
+# (services.gui_products). Rows are the adapter's (FortiGate: live cmdb;
+# FortiAuthenticator: SATOM cache, else live); Save posts to fwgui_save, which
+# dry-runs, then applies through GuiOps (before-read, audit, ChangeHistory),
+# re-reads the object and reports any drift. CLI-only fields go through the
+# CLI writer exactly as on FortiWeb. A page or field with no API on the build
+# (``gui:`` / ``key_from: gui-only``) is drawn read-only and never sent.
+
+def _gx_endpoints(tpl) -> set:
+    from ..services import gui_pages
+    return {v.get('endpoint') or '' for v in gui_pages.views(tpl)} - {''}
+
+
+def _gx_gui_only_keys(tpl) -> set:
+    out = set()
+    for d in (tpl.get('dialogs') or {}).values():
+        for b in d.get('blocks') or []:
+            for f in b.get('fields') or []:
+                if f.get('key') and f.get('key_from') == 'gui-only':
+                    out.add(f['key'])
+    return out
+
+
+def _gx_prepare(tpl, key, coll, row):
+    """Template copy for one dialog of a FortiGate / FortiAuthenticator page:
+    JSON booleans drawn as the control's on / off, and a control the GUI
+    saves into ANOTHER endpoint (``bind``) shown, not written here."""
+    import copy
+    from ..services import gui_bound
+    d0 = (tpl.get('dialogs') or {}).get(key)
+    if not d0:
+        return tpl
+    gui_bound._bools_as_switches(d0, row)
+    if not any((f.get('bind') or {}).get('endpoint') not in (None, '', coll)
+               for b in d0.get('blocks') or [] for f in b.get('fields') or []):
+        return tpl
+    t2 = dict(tpl)
+    t2['dialogs'] = dict(tpl['dialogs'])
+    d = copy.deepcopy(d0)
+    for b in d.get('blocks') or []:
+        for f in b.get('fields') or []:
+            ep = (f.get('bind') or {}).get('endpoint')
+            if ep and ep != coll:
+                f['bound_to'] = ep
+    t2['dialogs'][key] = d
+    return t2
+
+
+def _gx_finish(view, product):
+    from ..services import gui_products
+    gui_products.strip_fortiweb_refs(view)
+    gui_products.gui_only_fields(view)
+    for b in view.get('blocks') or []:
+        for f in b.get('fields') or []:
+            if f.get('bound_to'):
+                f['editable'] = False
+    return view
+
+
+def _gx_describe(k, v):
+    """A "Not in GUI" field of a FortiGate / FortiAuthenticator object: a
+    text control for a scalar, shown read-only for a table or a structure
+    (edited in its own page)."""
+    from ..services import gui_products
+    if isinstance(v, list):
+        names = gui_products._member_names(v)
+        if names is not None:
+            return {'key': k, 'label': k, 'value': names, 'widget': 'text'}
+        return {'key': k, 'label': k, 'value': '%d entries' % len(v), 'widget': 'readonly'}
+    if isinstance(v, dict):
+        return {'key': k, 'label': k, 'value': '{…}', 'widget': 'readonly'}
+    if isinstance(v, bool):
+        return {'key': k, 'label': k, 'value': 'true' if v else 'false', 'widget': 'enum',
+                'options': ['true', 'false']}
+    return {'key': k, 'label': k, 'value': '' if v is None else v, 'widget': 'text'}
+
+
+def _gx_nig(appl, coll, obj, can_edit):
+    """(editable section, read-only section) of "Not in GUI, but in CLI"."""
+    from ..services import gui_products, not_in_gui
+    if gui_products.read_only_endpoint(coll):
+        return None, None
+    key = gui_products.lib_key(appl.kind, coll)
+    ad = gui_products.adapter(appl)
+    noise = (lambda k: k.startswith('q_') or k in ('resource_uri', 'id') or ad.secret(k, None))
+    if can_edit and obj is not None:
+        try:
+            _g, sec = not_in_gui.apply_to_groups(appl, key, obj, [], noise=noise,
+                                                 describe=_gx_describe)
+            return sec, None
+        except Exception as exc:  # noqa: BLE001 -- never sinks the page
+            log_exception(exc, context='workspace.gx.nig')
+    return None, not_in_gui.for_view(appl, key, obj if obj is not None else [], noise=noise)
+
+
+def _gx_render(appl, tpl, match, dev, dview, *, page, vi, coll, name, main, is_new,
+               can_edit, obj=None, tabs=(), form=False, missing=False, row_ctx=None,
+               nig=None, nig_edit=None, mode='object'):
+    from flask import url_for
+    from ..services import gui_products
+    gp = {'page': page, 'v': vi, 'collection': coll, 'name': name, 'mode': mode,
+          'form': form, 'tabs': list(tabs), 'missing': missing, 'api': False,
+          'bound': {}, 'product': appl.kind,
+          'save': url_for('workspace.fwgui_save', appliance_id=appl.id),
+          'gui_only': gui_products.is_gui_only(coll),
+          'monitor': gui_products.is_monitor(coll)}
+    return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
+                           dev=dev, view=dview, name=name, main=main, is_new=is_new,
+                           not_in_gui=nig, nig_row=obj or {}, nig_edit=nig_edit,
+                           can_edit=can_edit, save_ep=coll, row_ctx=row_ctx,
+                           writable_subtables=[], gp=gp, gx=_gx(appl))
+
+
+def _gx_list(appl, page, tpl, match, dev, vi, view, tabs):
+    from ..services import gui_classic, gui_pages, gui_products, gui_template
+    ad = gui_products.adapter(appl)
+    coll = view.get('endpoint') or ''
+    writer = current_user.can('config_write')
+    if view.get('form'):
+        key = view['form']
+        obj = None
+        if not gui_products.is_gui_only(coll):
+            rows, meta = ad.rows(appl, coll)
+            obj = rows[0] if rows else None
+        can_edit = writer and obj is not None and ad.writable(coll)
+        row = ad.form_row(obj or {})
+        t2 = _gx_prepare(tpl, key, coll, row)
+        dview = _gx_finish(gui_template.dialog_view(t2, key, row, dev, live=can_edit), appl.kind)
+        nig_edit, nig = _gx_nig(appl, coll, obj, can_edit)
+        return _gx_render(appl, t2, match, dev, dview, page=page, vi=vi, coll=coll, name='',
+                          main=key, is_new=False, can_edit=can_edit, obj=obj, tabs=tabs,
+                          form=True, missing=obj is None and not gui_products.is_gui_only(coll),
+                          nig=nig, nig_edit=nig_edit)
+    rows, meta = ad.rows(appl, coll)
+    return render_template('workspace/fwgui_list.html', appliance=appl, tpl=tpl, match=match,
+                           dev=dev, page=page, vi=vi, view=view, rows=rows, cache_meta=meta,
+                           tabs=tabs, cell=gui_pages.cell, labels=gui_pages.value_labels(tpl),
+                           dialog_for=gui_pages.dialog_for,
+                           can_edit=writer and ad.writable(coll),
+                           classic=gui_classic.classic_item_url(appl, coll),
+                           gx=_gx(appl), mkey_of=ad.mkey_of,
+                           gui_only=gui_products.is_gui_only(coll))
+
+
+def _gx_object(appl, page, tpl, match, name):
+    from flask import abort
+    from ..services import gui_pages, gui_products, gui_template
+    ad = gui_products.adapter(appl)
+    dev = _gx_device(appl)
+    vi, view = gui_pages.view_of(tpl, request.args.get('v'))
+    coll = view.get('endpoint') or ''
+    rows, _meta = ad.rows(appl, coll)
+    obj = next((r for r in rows if ad.mkey_of(r, coll) == name), None)
+    if obj is None:
+        obj = ad.read(appl, coll, name)
+    if obj is None:
+        abort(404)
+    main = gui_pages.dialog_for(view, obj)
+    if not main or main not in tpl['dialogs']:
+        abort(404)
+    key = request.args.get('d') or main
+    if key not in tpl['dialogs']:
+        abort(404)
+    writer = current_user.can('config_write')
+    row_dialogs = gui_template.row_dialogs(tpl, main)
+    # a nested table is a field of the object itself (FortiOS / Tastypie):
+    # its rows come with the object; a row opens read-only
+    subrows = {st: (obj.get(st) if isinstance(obj.get(st), list) else None)
+               for st in row_dialogs.values() if st}
+    row_ctx = None
+    if key in row_dialogs:
+        st = row_dialogs[key]
+        sub = request.args.get('sub')
+        row = next((r for r in subrows.get(st) or [] if isinstance(r, dict) and sub is not None
+                    and sub in (str(r.get('id')), str(r.get('q_origin_key')), str(r.get('name')))),
+                   None)
+        if row is None or request.args.get('new'):
+            abort(404)
+        dview = _gx_finish(gui_template.dialog_view(tpl, key, ad.form_row(row), dev), appl.kind)
+        row_ctx = {'subtable': st, 'collection': '', 'writable': False,
+                   'sub_id': str(sub), 'new': False}
+        return _gx_render(appl, tpl, match, dev, dview, page=page, vi=vi, coll=coll, name=name,
+                          main=main, is_new=False, can_edit=False, obj=obj, row_ctx=row_ctx,
+                          mode='row')
+    if key != main:
+        abort(404)
+    for st, rws in list(subrows.items()):
+        if isinstance(rws, list):
+            subrows[st] = [dict(r, id=r.get('id', r.get('q_origin_key', r.get('name'))))
+                           for r in rws if isinstance(r, dict)]
+    can_edit = writer and ad.writable(coll)
+    row = ad.form_row(obj)
+    t2 = _gx_prepare(tpl, key, coll, row)
+    dview = _gx_finish(gui_template.dialog_view(t2, key, row, dev, subrows=subrows,
+                                                live=can_edit), appl.kind)
+    nig_edit, nig = _gx_nig(appl, coll, obj, can_edit)
+    return _gx_render(appl, t2, match, dev, dview, page=page, vi=vi, coll=coll, name=name,
+                      main=main, is_new=False, can_edit=can_edit, obj=obj,
+                      nig=nig, nig_edit=nig_edit)
+
+
+def _gx_new(appl, page, tpl, match, dialog):
+    from ..services import gui_pages, gui_products, gui_template
+    ad = gui_products.adapter(appl)
+    vi, view = gui_pages.view_for_dialog(tpl, dialog)
+    coll = view.get('endpoint') or ''
+    dev = _gx_device(appl)
+    row = dict(tpl['dialogs'][dialog].get('new_defaults') or {})
+    subrows = {st: [] for st in gui_template.row_dialogs(tpl, dialog).values() if st}
+    can_edit = current_user.can('config_write') and ad.writable(coll)
+    t2 = _gx_prepare(tpl, dialog, coll, row)
+    dview = _gx_finish(gui_template.dialog_view(t2, dialog, row, dev, subrows=subrows,
+                                                live=can_edit, new=can_edit), appl.kind)
+    # Create New lists the fields the device has outside the GUI too (the
+    # permanent rule): CLI-only ones are set once the object exists
+    nig_edit, nig = _gx_nig(appl, coll, {}, can_edit)
+    return _gx_render(appl, t2, match, dev, dview, page=page, vi=vi, coll=coll, name=None,
+                      main=dialog, is_new=True, can_edit=can_edit, mode='new-object',
+                      nig=nig, nig_edit=nig_edit)
+
+
+def _gx_find_created(ad, appl, coll, body):
+    """The mkey of an object just created (FortiOS answers it as ``mkey``;
+    Tastypie gives no id back): looked up by the identity field sent."""
+    ad.forget(appl, coll) if hasattr(ad, 'forget') else None
+    rows, _m = ad.rows(appl, coll) if appl.kind == 'fortigate' else ([], None)
+    if appl.kind != 'fortigate':
+        _lg, path = ad.resolve(appl, coll)
+        try:
+            rows, _e = ad._client(appl).list_path_with_error(path)
+        except Exception:  # noqa: BLE001
+            rows = []
+    for ident in ('name', 'username', 'label', 'policyid', 'id'):
+        if ident in (body or {}):
+            hit = next((r for r in rows or [] if str(r.get(ident)) == str(body[ident])), None)
+            if hit is not None:
+                return ad.mkey_of(hit, coll), hit
+    return '', None
+
+
+@bp.route('/<int:appliance_id>/fwgui-save', methods=['POST'])
+@login_required
+@require_permission('config_write')
+def fwgui_save(appliance_id):
+    """Save a FortiGate / FortiAuthenticator GUI page (``op`` update / create
+    / delete). Dry run first (the exact request, the change, the CLI script
+    of the CLI-only fields); ``apply`` sends it through GuiOps (before-read,
+    audit, ChangeHistory), re-reads the object from the device and reports
+    any field it stored differently (``drift``); SATOM's copy is updated."""
+    from ..services import cli_writer, gui_pages, gui_products
+    from .objedit import _channel_warnings, _cli_error, _cli_part
+    appl = visible_appliance_or_404(appliance_id)
+    product = gui_products.product_of(appl)
+    if product in (None, 'fortiweb'):
+        return jsonify(ok=False, error='FortiWeb pages save through the object editor'), 400
+    body = request.get_json(silent=True) or {}
+    op = body.get('op') or 'update'
+    if op not in ('update', 'create', 'delete'):
+        return jsonify(ok=False, error='unknown operation'), 400
+    page = str(body.get('page') or '')
+    coll = str(body.get('collection') or '')
+    mkey = str(body.get('mkey') or '')
+    fields = body.get('fields') or {}
+    do_apply = bool(body.get('apply'))
+    tpl, _m = (gui_pages.template(page, gui_store_firmware(appl), product)
+               if page else (None, None))
+    # the collection must be one the device's own measured page edits: the
+    # route can never be pointed at an arbitrary path
+    if tpl is None or coll not in _gx_endpoints(tpl):
+        return jsonify(ok=False, error='endpoint not allowed'), 400
+    ad = gui_products.adapter(appl)
+    if not ad.writable(coll):
+        return jsonify(ok=False, error='No API on this build (GUI only): nothing is sent'), 400
+    if not isinstance(fields, dict) or (op != 'delete' and not fields):
+        return jsonify(ok=False, error='no changes to save'), 400
+    gui_only = sorted(set(fields) & _gx_gui_only_keys(tpl))
+    if gui_only:
+        return jsonify(ok=False, error='No API on this build (GUI only) for: %s; nothing was '
+                                       'sent' % ', '.join(gui_only)), 400
+    if op != 'create' and not mkey and not any(v.get('form') and v.get('endpoint') == coll
+                                               for v in gui_pages.views(tpl)):
+        return jsonify(ok=False, error='name the object'), 400
+    orig = None
+    if op != 'create':
+        orig = ad.read(appl, coll, mkey)
+        if orig is None:
+            return jsonify(ok=False, error='the device did not answer for %s %s: nothing was '
+                                           'sent' % (coll, mkey)), 409
+    # channel split (the same gate as every editor): CLI-only / hidden fields
+    # of this exact build go by SSH, the rest by REST
+    split = None
+    if op != 'delete' and product in cli_writer.DIALECTS:
+        try:
+            split = cli_writer.split_payload(appl, gui_products.lib_key(product, coll), fields)
+        except Exception:  # noqa: BLE001 -- the library never sinks a REST save
+            split = None
+    cli_fields = dict((split or {}).get('cli') or {})
+    rest_fields = {k: v for k, v in fields.items() if k not in cli_fields}
+    data = ad.payload(rest_fields, orig) if op != 'delete' else None
+    ops = gui_products.GuiOps(appl)
+    if op == 'delete' or rest_fields:
+        res = ops.run(op, coll, mkey, data, dry_run=not do_apply)
+    else:
+        res = {'ok': True, 'dry_run': not do_apply, 'request': None, 'error': ''}
+    new_mkey = mkey
+    if do_apply and res['ok'] and op == 'create':
+        new_mkey, _hit = _gx_find_created(ad, appl, coll, data or {})
+    cli = _cli_part(appl, split, new_mkey, do_apply, res['ok']) if cli_fields else None
+    ok = bool(res['ok']) and (cli is None or bool(cli.get('ok')))
+    error = res.get('error') or (_cli_error(cli) if cli and not cli.get('ok') else '')
+    diff = [{'key': k, 'was': (orig or {}).get(k), 'now': v} for k, v in (fields or {}).items()]
+    after = drift = None
+    refreshed = False
+    if do_apply and ok:
+        if hasattr(ad, 'forget'):
+            ad.forget(appl, coll)
+        if op != 'delete':
+            after = ad.read(appl, coll, new_mkey)
+            drift = gui_products.drift(data or {}, after)
+            if drift:
+                # the device can answer a read before it has committed the
+                # write: one more read before calling it a difference
+                import time as _time
+                _time.sleep(1.0)
+                after = ad.read(appl, coll, new_mkey)
+                drift = gui_products.drift(data or {}, after)
+        refreshed = ad.after_write(appl, coll, new_mkey,
+                                   after if after is not None else {**(orig or {}), **(data or {})},
+                                   op)
+    return jsonify(ok=ok, dry_run=not do_apply, request=res.get('request'), diff=diff,
+                   error=error, cli=cli, cli_fields=sorted(cli_fields), mkey=new_mkey,
+                   channel_warnings=_channel_warnings(split),
+                   verified=None if (not do_apply or op == 'delete' or after is None)
+                   else not drift,
+                   drift=drift, cache_refreshed=refreshed)
+
+
+def gui_store_firmware(appl):
+    from ..services import gui_store
+    return gui_store.firmware_of(appl)
+
 
 @bp.route('/<int:appliance_id>/fwgui-save-api', methods=['POST'])
 @login_required

@@ -46,15 +46,18 @@ class FortiGateClient(BaseClient):
         return {'Authorization': f'Bearer {self._token}',
                 'Accept': 'application/json'}
 
-    def _call(self, method: str, path: str, params=None):
+    def _call(self, method: str, path: str, params=None, json_body=None):
         """(payload, error) for one request. ``payload`` is the whole JSON
         envelope (``results`` plus version/build/serial)."""
         q = dict(params or {})
         if self._vdom and 'vdom' not in q:
             q['vdom'] = self._vdom
+        kw = {'headers': self._headers(), 'params': q or None}
+        if json_body is not None:
+            kw['json'] = json_body
+            kw['headers'] = {**kw['headers'], 'Content-Type': 'application/json'}
         try:
-            resp = self._request(method, path, headers=self._headers(),
-                                 params=q or None)
+            resp = self._request(method, path, **kw)
         except Exception as exc:  # noqa: BLE001 — transport
             return None, f'{type(exc).__name__}: {exc}'
         if resp.status_code == 401:
@@ -109,6 +112,24 @@ class FortiGateClient(BaseClient):
         """Not wired in the base ADOM: an empty dict means "unknown", which
         ``services.ha_inventory`` never reads as standalone."""
         return {}
+
+    #: The verbs :meth:`write` sends, and only to a cmdb path.
+    WRITE_METHODS = ('PUT', 'POST', 'DELETE')
+
+    def write(self, method: str, path: str, data=None, **params):
+        """(payload, error) of ONE cmdb write (``PUT`` / ``POST`` / ``DELETE``
+        on ``/api/v2/cmdb/...``) -- the FortiGate GUI pages' save
+        (``services.gui_products``), which dry-runs, audits and re-reads
+        around it. Any other verb or path is refused here, not sent: the
+        monitor tree holds device ACTIONS (reboot, restore), never config.
+        FortiOS answers a refused write with an HTTP error carrying
+        ``cli_error`` / ``error``; it surfaces as ``error``."""
+        method = (method or '').upper()
+        if method not in self.WRITE_METHODS:
+            return None, 'refused: %s is not a cmdb write verb' % method
+        if not str(path or '').startswith('/api/v2/cmdb/'):
+            return None, 'refused: only /api/v2/cmdb/ paths are written'
+        return self._call(method, path, params, json_body=data)
 
     def api_call(self, method: str, path: str, data=None, **params):
         """Raw explorer entry point. GET only in the base ADOM — a write verb

@@ -54,15 +54,17 @@ def template(page: str, firmware, product: str = PRODUCT):
 
 def entries(firmware, product: str = PRODUCT) -> list:
     """[{page, path, order, endpoint, special}] of every page with a layout,
-    in FortiWeb's menu order."""
+    in the product's own menu order (FortiWeb, FortiGate, FortiAuthenticator:
+    ``gui_products``)."""
     out = []
+    special = SPECIAL if product == PRODUCT else {}
     for page in page_ids(product):
         tpl, _m = template(page, firmware, product)
         if tpl is None:
             continue
         out.append({"page": page, "path": list(tpl.get("menu_path") or [page]),
                     "order": tpl.get("menu_order"), "endpoint": tpl.get("endpoint") or "",
-                    "special": SPECIAL.get(page)})
+                    "special": special.get(page)})
     # a page without a measured position (the hand-tuned Server Policy) sits
     # just before the first page of its own menu group
     first: dict = {}
@@ -93,19 +95,22 @@ def tree(items: list) -> list:
 
 
 def nav_for(appliance) -> list:
-    """The FortiWeb menu of the pages SATOM can draw for this device (60 s cache
-    per firmware: the sidebar renders on every page)."""
-    if appliance is None or getattr(appliance, "kind", "") != PRODUCT:
+    """The product menu (FortiWeb / FortiGate / FortiAuthenticator) of the
+    pages SATOM can draw for this device (60 s cache per product and
+    firmware: the sidebar renders on every page)."""
+    from . import gui_products
+    product = gui_products.product_of(appliance)
+    if product is None:
         return []
     fw = gui_store.firmware_of(appliance)
     try:
-        key = (str(gui_store.root()), fw)
+        key = (str(gui_store.root()), product, fw)
     except RuntimeError:
         return []
     hit = _nav_cache.get(key)
     if hit and time.monotonic() - hit[0] < 60:
         return hit[1]
-    t = tree(entries(fw))
+    t = tree(entries(fw, product))
     _nav_cache[key] = (time.monotonic(), t)
     return t
 

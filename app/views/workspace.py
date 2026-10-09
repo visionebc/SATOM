@@ -1235,6 +1235,7 @@ def _fwgui_form(appl, page, tpl, match, dev, vi, view, tabs):
     gp = {'page': page, 'v': vi, 'collection': coll, 'name': '', 'mode': 'object',
           'form': True, 'tabs': tabs, 'missing': obj is None, 'api': api,
           'method': (tpl['dialogs'][key].get('write') or {}).get('method') or 'PUT',
+          'body': (tpl['dialogs'][key].get('write') or {}).get('body') or 'data',
           'bound': groups}
     return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
                            dev=dev, view=dview, name='', main=key, is_new=False,
@@ -1368,9 +1369,10 @@ def fwgui_save_api(appliance_id):
     body = request.get_json(silent=True) or {}
     ep = body.get('endpoint') or ''
     method = (body.get('method') or 'PUT').upper()
+    shape = body.get('body') or 'data'
     fields = body.get('fields') or {}
     do_apply = bool(body.get('apply'))
-    if not gui_bound.safe_api(ep) or method not in ('PUT', 'POST'):
+    if not gui_bound.safe_api(ep) or method not in ('PUT', 'POST') or shape not in gui_bound.BODIES:
         return jsonify(ok=False, error='not a GUI API endpoint'), 400
     if not isinstance(fields, dict) or not fields:
         return jsonify(ok=False, error='no changes to save'), 400
@@ -1381,7 +1383,7 @@ def fwgui_save_api(appliance_id):
     diff = gui_bound.changes(current, new)
     path = gui_bound.rest_path(ep)
     ops = FortiWebOps(appl)
-    data = {'data': new}
+    data = gui_bound.body_of(new, shape)
     if method == 'POST':
         res = ops.create(path, data, dry_run=not do_apply)
     else:

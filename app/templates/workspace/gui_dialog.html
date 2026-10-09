@@ -440,7 +440,7 @@
     if (Object.keys(main).length) {
       if (GP && GP.api) {
         steps.push({ep: GP.collection, url: SAVE_API, keys: Object.keys(main), make: function (a) {
-          return {endpoint: GP.collection, method: GP.method || 'PUT', fields: main, apply: !!a}; }});
+          return {endpoint: GP.collection, method: GP.method || 'PUT', body: GP.body || 'data', fields: main, apply: !!a}; }});
       } else {
         steps.push({ep: (GP && GP.collection) || {{ save_ep|tojson }}, url: SAVE, keys: Object.keys(main),
                     main: true, make: function (a) { return body(main, a); }});
@@ -449,7 +449,8 @@
     Object.keys(bound).forEach(function (ep) {
       var f = bound[ep], api = ep.indexOf('api:') === 0;
       steps.push({ep: ep, url: api ? SAVE_API : SAVE_OBJ, keys: Object.keys(f).map(function (k) { return '@' + ep + '#' + k; }),
-        make: function (a) { return api ? {endpoint: ep, method: ((GP && GP.bound) || {})[ep] || 'PUT', fields: f, apply: !!a}
+        make: function (a) { var g = ((GP && GP.bound) || {})[ep] || {};
+                             return api ? {endpoint: ep, method: g.method || 'PUT', body: g.body || 'data', fields: f, apply: !!a}
                                         : {collection: ep, mkey: '', fields: f, apply: !!a}; }});
     });
     return steps;

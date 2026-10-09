@@ -185,14 +185,25 @@ def read(appliance, ep: str, client=None):
         return None
 
 
+#: How an object is sent: ``{"data": {...}}`` (cmdb, Admin Settings) or bare
+#: (the log settings forms). An endpoint answers 200 to the other shape and
+#: changes nothing -- the layout carries the shape the GUI was measured using.
+BODIES = ("data", "bare")
+
+
+def body_of(obj: dict, shape: str | None):
+    return obj if shape == "bare" else {"data": obj}
+
+
 def bound_endpoints(dialog: dict) -> dict:
-    """{endpoint: method} of the dialog's fields bound elsewhere."""
+    """{endpoint: {"method", "body"}} of the dialog's fields bound elsewhere."""
     out: dict = {}
     for b in dialog.get("blocks") or []:
         for f in b.get("fields") or []:
             bd = f.get("bind")
             if bd and bd.get("endpoint"):
-                out.setdefault(bd["endpoint"], bd.get("method") or "PUT")
+                out.setdefault(bd["endpoint"], {"method": bd.get("method") or "PUT",
+                                                "body": bd.get("body") or "data"})
     return out
 
 

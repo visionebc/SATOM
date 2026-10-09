@@ -73,7 +73,7 @@ def not_in_gui_fields(product: str, endpoint: str, firmware, names) -> list | No
     """Of ``names``, the ones the MEASURED layout of ``firmware`` does not place
     for ``endpoint``; None when no measured layout covers the endpoint."""
     from . import not_in_gui as nig
-    page = nig.LAYOUT_PAGES.get((product, nig.endpoint_key(endpoint)))
+    page = nig.layout_pages().get((product, nig.endpoint_key(endpoint)))
     if not page:
         return None
     tpl, info = layout_of(product, page, firmware)

@@ -6,6 +6,44 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — every FortiWeb GUI page, drawn the way FortiWeb draws it
+
+- Until now only Server Policy had FortiWeb's own layout; every other page used
+  SATOM's forms. The harvester now reads the whole GUI of a lab FortiWeb with a
+  headless browser (`satom-harvester gui crawl`): the real menu tree, every
+  page's grids and tabs, each dialog with its sections, fields, labels, choices
+  and show / hide conditions, inline tables (members, rules) and the dialog
+  their *Create New* opens, settings pages with no grid (SNMP, Operation, log
+  settings), and the REST key behind each column and field. One layout per page
+  and exact build travels through the knowledge feed, like the Server Policy
+  layout.
+- A new **FortiWeb** sidebar group mirrors FortiWeb's menu, in its order, for
+  every page with a layout (*All pages* lists them). Each page draws its grid
+  (tabs when the page has several collections; cell text as FortiWeb shows it,
+  never an internal index), opens a row in the dialog of its variant (an FTP
+  pool in the FTP pool dialog), shows inline tables read from the device as the
+  object editor reads them (*not in the SATOM cache* when it cannot, never an
+  empty table), and offers *Create New* with FortiWeb's defaults.
+- Everything stays editable where it is shown: fields, inline-table rows and new
+  objects save through the object editor's endpoints (reference check, build
+  gate, REST / CLI split, dry run first), and every page carries its *Not in
+  GUI, but in CLI* section — the permanent rule now works on every page with a
+  measured layout, not only Server Policy.
+- Pages FortiWeb draws with its newer shell (Virtual IP, Route, DNS,
+  Automation), dashboards and log viewers have no layout; they keep SATOM's own
+  pages. Server Policy keeps its hand-tuned view, and SATOM's existing pages
+  and menus are unchanged.
+
+### Fixed — Server Policy layout view
+
+- *Retry On Cache Size* showed its unit (*KB (32 - 2048)*) twice when editable.
+- The *Edit entry* pencil FortiWeb draws beside a reference selector is back in
+  the editable view and opens the selected object in the object editor; it
+  follows the selection.
+- Radio groups (*Certificate Type*: Local | Multi Certificate | Let's Encrypt,
+  *Single Server / Server Balance*…) are drawn as FortiWeb's segmented button
+  bar instead of radio buttons, read-only and editable alike.
+
 ### Added — a separate SSH password per appliance
 
 - FortiAuthenticator's REST authenticates with an API key that its SSH refuses,

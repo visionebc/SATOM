@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}{{ tpl.menu_path[-1] if tpl.menu_path else page }} — {{ appliance.name }}{% endblock %}
+{# A FortiWeb grid page as FortiWeb draws it: tabs (when the page has several
+   collections), toolbar, grid. Rows from the SATOM cache. #}
+{% block breadcrumb %}{% endblock %}
+{% block content %}
+{% set gui_aside %}<a class="small" href="{{ url_for('workspace.fwgui_index', appliance_id=appliance.id) }}">{{ _('All FortiWeb pages') }}</a>{% endset %}
+<div class="fwg-pane" data-fwg-list>
+  <div class="fwg-crumbs small text-muted">{{ tpl.menu_path|join(' › ') }}</div>
+{% include 'workspace/_gui_banner.html' %}
+  {% if tabs %}
+  <div class="fwg-tabs" role="tablist">
+    {% for t in tabs %}
+    <a role="tab" class="fwg-tab {{ 'is-on' if t.i == vi }}" aria-selected="{{ 'true' if t.i == vi else 'false' }}"
+       href="{{ url_for('workspace.fwgui_list', appliance_id=appliance.id, page=page, v=t.i) }}">{{ t.label }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <div class="fwg-toolbar">
+    {% set menu = view.create_menu or [] %}
+    {% if menu|length > 1 or (menu and menu[0].label) %}
+    <details class="fwg-menu">
+      <summary class="fwg-tb-btn"><i class="bi bi-plus-lg"></i>{{ _('Create New') }}<i class="bi bi-caret-down-fill small"></i></summary>
+      <div class="fwg-menu-body">
+        {% for it in menu %}
+        <a href="{{ url_for('workspace.fwgui_new', appliance_id=appliance.id, page=page, dialog=it.dialog) }}">{{ it.label or _('Create New') }}</a>
+        {% endfor %}
+      </div>
+    </details>
+    {% elif menu %}
+    <a class="fwg-tb-btn" href="{{ url_for('workspace.fwgui_new', appliance_id=appliance.id, page=page, dialog=menu[0].dialog) }}"><i class="bi bi-plus-lg"></i>{{ _('Create New') }}</a>
+    {% endif %}
+    <a class="fwg-tb-btn" href="#" aria-disabled="true" data-fwg-edit><i class="bi bi-pencil-fill"></i>{{ _('Edit') if can_edit else _('View') }}</a>
+    <span class="fwg-tb-btn" aria-disabled="true" title="{{ _('Delete objects from the SATOM object editor.') }}"><i class="bi bi-trash-fill"></i>{{ _('Delete') }}</span>
+    <label class="fwg-search mb-0">
+      <input type="search" placeholder="{{ _('Search') }}" aria-label="{{ _('Search') }}" data-fwg-search>
+      <span aria-hidden="true"><i class="bi bi-search"></i></span>
+    </label>
+    <span class="text-muted small ms-auto">{{ rows|length }} {{ _('objects') }}{% if cache_meta and cache_meta.generated_at %} · {{ _('cache') }} {{ cache_meta.generated_at }}{% endif %}</span>
+  </div>
+  <div class="fwg-grid-wrap">
+  <table class="fwg-table">
+    <thead><tr>
+      <th>#</th>
+      {% for c in view.columns %}<th{% if c.unmatched %} title="{{ _('FortiWeb computes this column; SATOM has no REST field for it.') }}"{% endif %}>{{ c.label }}</th>{% endfor %}
+    </tr></thead>
+    <tbody>
+    {% set opens = view.dialogs %}
+    {% for r in rows %}
+      {% set mk = r.name if r.name is defined and r.name not in (None, '') else r.id %}
+      <tr tabindex="0"{% if opens and dialog_for(view, r) %} data-href="{{ url_for('workspace.fwgui_object', appliance_id=appliance.id, page=page, name=mk, v=vi) }}"{% endif %}>
+        <td>{{ loop.index }}</td>
+        {% for c in view.columns %}<td>{{ cell(r, c, labels) }}</td>{% endfor %}
+      </tr>
+    {% else %}
+      <tr><td colspan="{{ view.columns|length + 1 }}" class="text-muted">
+        {% if view.endpoint %}{{ _('No objects of this type cached for %(dev)s. A configuration sync fills the SATOM cache.', dev=appliance.name) }}
+        {% else %}{{ _('This page has no collection SATOM reads.') }}{% endif %}
+      </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  // FortiWeb's grid: click selects a row, double-click / Enter / Edit opens it.
+  var pane = document.querySelector('[data-fwg-list]');
+  if (!pane) return;
+  var edit = pane.querySelector('[data-fwg-edit]');
+  var rows = Array.prototype.slice.call(pane.querySelectorAll('tbody tr[data-href]'));
+  function select(tr) {
+    rows.forEach(function (r) { r.classList.toggle('is-selected', r === tr); });
+    edit.setAttribute('href', tr ? tr.getAttribute('data-href') : '#');
+    edit.setAttribute('aria-disabled', tr ? 'false' : 'true');
+  }
+  function open(tr) { window.location.href = tr.getAttribute('data-href'); }
+  rows.forEach(function (tr) {
+    tr.addEventListener('click', function () { select(tr); });
+    tr.addEventListener('dblclick', function () { open(tr); });
+    tr.addEventListener('keydown', function (e) { if (e.key === 'Enter') open(tr); });
+  });
+  var q = pane.querySelector('[data-fwg-search]');
+  q.addEventListener('input', function () {
+    var s = q.value.trim().toLowerCase();
+    Array.prototype.forEach.call(pane.querySelectorAll('tbody tr'), function (tr) {
+      tr.hidden = !!s && tr.textContent.toLowerCase().indexOf(s) < 0;
+    });
+  });
+})();
+</script>
+{% endblock %}

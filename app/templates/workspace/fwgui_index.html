@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}{{ _('FortiWeb menu') }} — {{ appliance.name }}{% endblock %}
+{% block breadcrumb %}{% endblock %}
+{% macro node(n) %}
+  {% if n.entry is defined %}
+    {% set e = n.entry %}
+    <li><a href="{{ url_for(e.special, appliance_id=appliance.id) if e.special else url_for('workspace.fwgui_list', appliance_id=appliance.id, page=e.page) }}">{{ n.label }}</a></li>
+  {% else %}
+    <li><span class="fwg-idx-group">{{ n.label }}</span>
+      <ul>{% for c in n.children %}{{ node(c) }}{% endfor %}</ul></li>
+  {% endif %}
+{% endmacro %}
+{% block content %}
+<div class="fwg-pane">
+  <div class="fwg-titlebar"><span>{{ _('FortiWeb menu') }}</span>
+    <span class="fwg-sub">{{ _('Every FortiWeb page SATOM has a measured GUI layout for, in FortiWeb\'s own menu order. Layouts come with the knowledge packs, per firmware build.') }}</span></div>
+  <div class="fwg-body">
+  {% if nav %}
+    <div class="fwg-idx">
+    {% for top in nav %}
+      <div class="fw-card p-3">
+        <div class="fwg-sec-title mb-2">{{ top.label }}</div>
+        {% if top.entry is defined %}<ul>{{ node(top) }}</ul>
+        {% else %}<ul>{% for c in top.children %}{{ node(c) }}{% endfor %}</ul>{% endif %}
+      </div>
+    {% endfor %}
+    </div>
+  {% else %}
+    <div class="fw-alert fw-alert-info">{{ _('No FortiWeb GUI layout has been imported on this node yet (they come with the knowledge packs).') }}</div>
+  {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -42,6 +42,39 @@ _LIB_REST = frozenset({"both", "rest_only"})
 #: from :mod:`gui_template` (the device's build first, see its resolver).
 LAYOUT_PAGES = {("fortiweb", "server-policy/policy"): "server-policy"}
 
+_pages_cache: dict = {}
+
+
+def layout_pages() -> dict:
+    """``{(product, endpoint key): page}`` of every page whose layout is
+    measured: Server Policy (:data:`LAYOUT_PAGES`) plus every generic page the
+    knowledge feed brought (``gui crawl``), each by the collections its grids
+    and dialogs edit. Cached 60 s (read on every object view)."""
+    import time
+    out = dict(LAYOUT_PAGES)
+    try:
+        from . import gui_pages, gui_store
+        root = str(gui_store.root())
+    except Exception:  # noqa: BLE001 — no app context / data dir: Server Policy only
+        return out
+    hit = _pages_cache.get(root)
+    if hit and time.monotonic() - hit[0] < 60:
+        return {**hit[1], **out}
+    gen: dict = {}
+    for page in gui_pages.page_ids("fortiweb"):
+        if page in gui_pages.SPECIAL:
+            continue
+        tpl, _m = gui_pages.template(page, None)
+        if not tpl:
+            continue
+        eps = [tpl.get("endpoint")] + [v.get("endpoint") for v in gui_pages.views(tpl)]
+        for ep in eps:
+            if ep:
+                gen.setdefault(("fortiweb", endpoint_key(ep)), page)
+    _pages_cache[root] = (time.monotonic(), gen)
+    return {**gen, **out}
+
+
 #: Products whose GUI layout no lab device has measured: no GUI/REST split is
 #: possible, every field is listed and the section says why.
 UNMEASURED_PRODUCTS = frozenset({"fortiadc", "fortianalyzer"})
@@ -83,7 +116,7 @@ def layout_keys(product: str, endpoint: str, version: str) -> tuple[set | None, 
     Keys = every dialog field of the page's dialogs that edit the object
     itself, plus the REST fields a GUI-only control is derived from and the
     REST field an aliased control writes."""
-    page = LAYOUT_PAGES.get((product, endpoint_key(endpoint)))
+    page = layout_pages().get((product, endpoint_key(endpoint)))
     if not page:
         return None, {}
     try:
@@ -430,7 +463,7 @@ def device_inventory(appliance) -> dict:
         elif cli:
             out["fields"].append({"endpoint": key, "cli_path": attrs.get("cli_path") or "",
                                   "fields": cli, "section": _cli_section(appliance, key)})
-    for (prod, ep_key), page in sorted(LAYOUT_PAGES.items()):
+    for (prod, ep_key), page in sorted(layout_pages().items()):
         if prod != product:
             continue
         keys, info = layout_keys(product, ep_key, version)
@@ -488,6 +521,6 @@ def cli_values(appliance, endpoint: str, mkey: str | None, names, *,
             "unset": sorted(set(vals["unset"]) & set(names)), "error": ""}
 
 
-__all__ = ["SECTION_TITLE", "CH_REST", "CH_CLI", "CH_UNVERIFIED", "LAYOUT_PAGES",
+__all__ = ["SECTION_TITLE", "CH_REST", "CH_CLI", "CH_UNVERIFIED", "LAYOUT_PAGES", "layout_pages",
            "classify", "apply_to_groups", "for_view", "device_inventory", "layout_keys",
            "cli_values", "endpoint_key", "save", "cli_objects_for"]

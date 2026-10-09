@@ -1162,6 +1162,12 @@ def create_app(config_override: object | None = None) -> Flask:
         except Exception:  # noqa: BLE001 - chrome must not break on a locale
             return {"ui_lang": _langs.DEFAULT}
 
+    # FortiWeb's menu in the sidebar (services.gui_pages): globals, so every
+    # view renders it without passing anything.
+    from .services import gui_pages as _gui_pages
+    app.jinja_env.globals["fwgui_nav_for"] = _gui_pages.nav_for
+    app.jinja_env.globals["fwgui_contains"] = _gui_pages.contains
+
     @app.context_processor
     def _inject_csp_nonce():
         return {"csp_nonce": getattr(g, "csp_nonce", "")}

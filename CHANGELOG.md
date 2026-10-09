@@ -35,6 +35,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   capture (a policy with its virtual server and inline tables) stayed, and the
   pages that read the deep capture first kept drawing it. It is now removed
   from every cache layer.
+- A knowledge pack's device sweep of a build this node had swept itself was
+  skipped whole, and a node's own sweep reads no sub-table: on FortiWeb 8.0.6
+  every row field of virtual-server VIPs, HTTP content routing and public IPs
+  stayed *unknown* (no channel, warnings on every save). The import now adds
+  the endpoints the node never measured and leaves its own measurements
+  untouched.
 
 ### Added — every FortiWeb GUI page, drawn the way FortiWeb draws it
 

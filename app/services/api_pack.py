@@ -82,7 +82,7 @@ from pathlib import Path
 from flask import current_app
 
 from ..extensions import db
-from ..models_apilib import ApiLibBuild, ApiLibEvidence
+from ..models_apilib import ApiLibBuild, ApiLibEndpointFact, ApiLibEvidence
 from . import api_library as lib
 from . import firmware_versions as fv
 from .update_package_service import TRUST_DIR, up
@@ -1167,11 +1167,35 @@ def _local_build(product: str, scope: dict) -> ApiLibBuild | None:
     return lib._build_row(product, v) if v else None
 
 
+def _unmeasured(doc: dict, build) -> list:
+    """Endpoint keys of a pack document whose REST path this node holds no
+    fact for, in that build and source: what no measurement here covered."""
+    known = {lib.urn_key(u) for (u,) in db.session.query(ApiLibEndpointFact.urn)
+             .filter(ApiLibEndpointFact.build_id == build.id,
+                     ApiLibEndpointFact.source == doc["source"]) if u}
+    out = []
+    for k, info in (doc.get("endpoints") or {}).items():
+        urn = info.get("urn") if isinstance(info, dict) else ""
+        if lib.urn_key(urn or k) not in known:
+            out.append(k)
+    return sorted(out)
+
+
 def _library_state(doc: dict) -> str:
+    return _library_plan(doc)["state"]
+
+
+def _library_plan(doc: dict) -> dict:
+    """``{"state"}``, plus ``"only"``: the endpoints to take from a device
+    document when this node measured the build itself. Its own measurement is
+    never touched, but a pack may ADD what it never covered: a2.x/3.0 node's
+    rediscovery sweep reads no sub-table (``vip-list``, ``public-ip-list``,
+    ``http-content-routing-list``), so skipping the whole pack sweep left those
+    unknown for good (a1, FortiWeb 8.0.6, 2026-10-09)."""
     sha = lib.content_hash(doc)
     if ApiLibEvidence.query.filter_by(product=doc["product"], source=doc["source"],
                                       sha256=sha).first() is not None:
-        return ST_PRESENT
+        return {"state": ST_PRESENT}
     # Vendor claims are the same document everywhere (no witness), so the hash
     # above already answers for them. Anything a device produced is skipped
     # when this node holds its OWN evidence of the same kind for that build.
@@ -1193,8 +1217,11 @@ def _library_state(doc: dict) -> str:
                    .filter(~ApiLibEvidence.origin_ref.startswith(_PARTIAL))
                    .first())
             if own is not None:
-                return ST_LOCAL
-    return ST_NEW
+                only = _unmeasured(doc, b)
+                if not only:
+                    return {"state": ST_LOCAL}
+                return {"state": ST_NEW, "only": only}
+    return {"state": ST_NEW}
 
 
 # -- per kind: validate the payload, say what importing it would do ----------
@@ -1218,8 +1245,14 @@ def _v_library(run: _Run, it: dict):
 
 
 def _s_library(run: _Run, it: dict, doc) -> dict:
-    st = _library_state(doc)
+    plan = _library_plan(doc)
+    st = plan["state"]
     out = {"state": st}
+    if plan.get("only"):
+        out["only"] = plan["only"]
+        out["current"] = PROV_LOCAL
+        out["note"] = ("adds %d endpoint(s) this node's own measurement of the build "
+                       "never covered; the ones it measured stay its own" % len(plan["only"]))
     if st == ST_PRESENT:
         ev = ApiLibEvidence.query.filter_by(product=doc["product"], source=doc["source"],
                                             sha256=lib.content_hash(doc)).first()
@@ -1485,6 +1518,11 @@ def _selected(it: dict, products, sections, ids) -> bool:
 
 
 def _i_library(run: _Run, it: dict, doc, st: dict) -> dict:
+    if st.get("only"):
+        eps = doc.get("endpoints") or {}
+        doc = dict(doc, endpoints={k: eps[k] for k in st["only"] if k in eps},
+                   summary=dict(doc.get("summary") or {}, partial_of=lib.content_hash(doc),
+                                endpoints=len(st["only"])))
     doc = dict(doc, origin_ref="%s%s:%s:%s" % (ORIGIN_PREFIX, run.meta["lane"],
                                                 run.meta["name"], doc.get("source")))
     res = lib.ingest(doc)
@@ -1586,7 +1624,7 @@ def import_pack(path, *, trust_dir=None, products=None, sections=None, ids=None,
             st, payload = _item_state(run, it)
             rec = {"id": it["id"], "section": it["section"], "kind": item_kind(it),
                    "product": it.get("product"), "state": st["state"]}
-            for k in ("warning", "current", "note"):
+            for k in ("warning", "current", "note", "only"):
                 if st.get(k):
                     rec[k] = st[k]
             if st["state"] in IMPORTABLE and not dry_run:

@@ -112,6 +112,42 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="fixed--create-new-server-policy-a-service-is-required-up-front-and-a-failed-run-undoes-itself">Fixed — Create New Server Policy: a service is required up front, and a failed run undoes itself</h3>
+<ul>
+<li>A policy with no HTTP, HTTPS or HTTP/3 service was sent to the device, which
+  refused it (<code>-7715 The service of policy must be selected</code>) after the virtual
+  server, its VIPs and the server pool had already been created. FortiWeb's own
+  dialog marks those selects required and preselects none; SATOM now refuses
+  such a policy before anything is written, the preview included.</li>
+<li>When any step of a Create New fails, the objects that run created are deleted,
+  newest first (VIP and pool-member rows go with their parent), and the result
+  lists what was undone and anything that could not be. Only what that run
+  created is touched.</li>
+<li>The <em>New Server Policy</em> form drew 11 fields instead of ~120 on every
+  installation but the first: the field skeleton it is built from lived in the
+  runtime <code>data/</code> directory, which is never shipped, and a missing file was
+  silently read as empty. It now ships with the code (lab names and addresses
+  replaced by neutral placeholders; the widgets are identical) and a missing
+  file is an error.</li>
+<li>The scheduled FortiAuthenticator schema harvest skipped its CLI channel even
+  on an appliance with a separate SSH password: no caller handed the password
+  to the adapter. The adapter now takes it from the appliance, and only that
+  one: FortiAuthenticator's REST API key is never sent to the CLI.</li>
+<li>A policy made with Create New showed its inline tables (HTTP content routing,
+  public IPs) as <em>not in the SATOM cache</em> until the next scheduled deep
+  capture. An applied Create New now starts a deep capture of that device in
+  the background; the policy's page fills in within seconds.</li>
+<li>Deleting an object removed it from the configuration cache only; its deep
+  capture (a policy with its virtual server and inline tables) stayed, and the
+  pages that read the deep capture first kept drawing it. It is now removed
+  from every cache layer.</li>
+<li>A knowledge pack's device sweep of a build this node had swept itself was
+  skipped whole, and a node's own sweep reads no sub-table: on FortiWeb 8.0.6
+  every row field of virtual-server VIPs, HTTP content routing and public IPs
+  stayed <em>unknown</em> (no channel, warnings on every save). The import now adds
+  the endpoints the node never measured and leaves its own measurements
+  untouched.</li>
+</ul>
 <h3 id="added--every-fortiweb-gui-page-drawn-the-way-fortiweb-draws-it">Added — every FortiWeb GUI page, drawn the way FortiWeb draws it</h3>
 <ul>
 <li>Until now only Server Policy had FortiWeb's own layout; every other page used

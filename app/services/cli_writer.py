@@ -73,7 +73,19 @@ DIALECTS: dict[str, dict] = {
     # box by this writer yet, and ``?`` there opens context help even inside
     # quotes, so it is refused.
     "fortigate": {"abort": True, "question_mark": False, "verified": ""},
-    "fortiauthenticator": {"abort": True, "question_mark": False, "verified": ""},
+    # Measured on fac01 (FACVMKVM 8.0.3 build0099, 2026-10-10): the prompt is
+    # ``> `` at the root and ``(<context>): `` inside (``(dns): ``,
+    # ``(static): ``, ``(1): ``); ``abort`` in a row leaves it AND its table
+    # (back at the root); a singleton has no ``abort`` ("No such command.")
+    # and applies each ``set`` as it is typed -- closing the session without
+    # ``end`` still left the value changed. A failure inside a singleton
+    # therefore cannot be discarded: the writer leaves with ``end`` and says
+    # which lines were already applied.
+    "fortiauthenticator": {"abort": True, "abort_singleton": False, "singleton_live": True,
+                           "question_mark": False,
+                           "verified": "FACVMKVM 8.0.3 build0099 (lab fac01, 2026-10-10): "
+                                       "prompts and abort measured; a singleton applies "
+                                       "each set as typed"},
     "fortiadc": {"abort": True, "question_mark": False, "verified": ""},
     # FortiAnalyzer's CLI is the same config/edit/set/next/end shell with an
     # ``abort`` command; NOT verified on a box (no lab FortiAnalyzer).
@@ -116,6 +128,8 @@ ERROR_PATTERNS: tuple[tuple[str, re.Pattern], ...] = (
     ("in_use", re.compile(r"The (?:object|entry) is (?:in use|used)", re.I)),
     ("invalid_value", re.compile(r"\bInvalid\b|is invalid\b", re.I)),
     ("command_fail", re.compile(r"Command fail", re.I)),
+    # FortiAuthenticator's answer to a field / command it does not have
+    ("no_such_command", re.compile(r"No such command", re.I)),
 )
 _RC = re.compile(r"(?:Return|error) code\s*:?\s*(-\d+)", re.I)
 
@@ -367,12 +381,16 @@ def render_script(plan: CliPlan, *, mask_secrets: bool = True) -> list:
 # A prompt at the end of the buffer: ``host # `` or ``host (context) # ``. The
 # context may hold spaces (``edit "lab x"`` prompts ``(lab x)``).
 _PROMPT = re.compile(r"(?:^|\n)(?P<host>[\w.\-]+) (?:\((?P<ctx>[^\n]*)\) )?# ?$")
+#: FortiAuthenticator's prompt (measured fac01 8.0.3): ``> `` at the root,
+#: ``(<context>): `` inside a ``config`` / ``edit``. Product-specific: a bare
+#: ``> `` line is never read as a prompt on the other products.
+_PROMPT_FAC = re.compile(r"(?:^|\n)(?:\((?P<ctx>[^\n]*)\):|>) ?$")
 
 
-def prompt_context(buf: str):
+def prompt_context(buf: str, product: str | None = None):
     """``(seen, context)`` of the prompt ending ``buf``; context None = root."""
     text = _ANSI.sub("", buf or "").replace("\r", "").rstrip(" ")
-    m = _PROMPT.search(text)
+    m = (_PROMPT_FAC if product == "fortiauthenticator" else _PROMPT).search(text)
     if not m:
         return False, None
     return True, m.group("ctx")
@@ -393,17 +411,18 @@ class CliWriteSession(FortiWriteSSH):
         buf = ""
         start = time.time()
         sh = self._shell
+        product = getattr(getattr(self, "appliance", None), "kind", None)
         while time.time() - start < maxt:
             if sh.recv_ready():
                 buf += sh.recv(16384).decode("utf-8", "replace")
-                seen, _ = prompt_context(buf)
+                seen, _ = prompt_context(buf, product)
                 if seen:
                     time.sleep(0.15)
                     if not sh.recv_ready():
                         break
             else:
                 time.sleep(0.05)
-        seen, ctx = prompt_context(buf)
+        seen, ctx = prompt_context(buf, product)
         lines = strip_echo(_ANSI.sub("", buf).replace("\r", ""), command).split("\n")
         if seen and lines:
             lines = lines[:-1]
@@ -1059,7 +1078,15 @@ class CliWriter:
             if not stack:
                 break
             top = stack[-1]
-            cmd = "abort" if (top.kind == "edit" or top.singleton) else "end"
+            if top.kind == "config" and top.singleton and dialect.get("abort_singleton") is False:
+                # nothing to discard: the singleton's set lines took effect as
+                # typed (FortiAuthenticator); leave it and say so
+                res.notes.append("%s applies each set as it is typed: the lines before the "
+                                 "error were applied and cannot be discarded"
+                                 % (plan.product or "this product"))
+                cmd = "end"
+            else:
+                cmd = "abort" if (top.kind == "edit" or top.singleton) else "end"
             try:
                 out, seen, ctx = sess.send_line(cmd)
             except Exception as exc:  # noqa: BLE001

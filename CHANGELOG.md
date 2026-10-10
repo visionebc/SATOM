@@ -6,6 +6,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — the CLI writer speaks FortiAuthenticator's CLI
+
+- A FortiAuthenticator CLI write never got past `config`: the writer waited
+  for a FortiOS prompt (`host (ctx) # `). Measured on fac01 (FACVMKVM 8.0.3
+  build0099, 2026-10-10): the prompt is `> ` at the root and `(<context>): `
+  inside; `abort` in a row leaves the row and its table; a singleton
+  (`system dns`) has no `abort` ("No such command.") and applies each `set`
+  as typed (closing the session without `end` left the value changed; the
+  lab value was restored and read back). The FAC dialect now reads its own
+  prompt, treats "No such command." as an error, and on a failure inside a
+  singleton leaves with `end` and says the earlier lines were applied
+  (never "nothing applied"). Verified on fac01: `system dns` written and
+  read back in a fresh session through the DNS page.
+
 ### Added — the real FortiGate 8.0.1 and FortiAuthenticator 8.0.3 GUI templates render, edit and save
 
 - The harvester's real crawls (FortiGate 8.0.1 build245: 53 pages;

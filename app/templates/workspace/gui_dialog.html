@@ -207,7 +207,6 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="v" value="{{ gp.v }}">
       <button type="submit" class="btn btn-outline-secondary btn-sm" data-fwg-form-refresh title="{{ _('Pull live config from the device') }}"><i class="bi bi-arrow-clockwise"></i></button></form>{% endif %}
   {% endif %}
-  {% if gp and gp.form and classic is defined and classic %}<a class="btn btn-secondary btn-sm" href="{{ classic }}"><i class="bi bi-grid me-1"></i>{{ _('Classic view') }}</a>{% endif %}
   <a class="btn btn-secondary btn-sm" href="{{ back }}"><i class="bi bi-chevron-left me-1"></i>{{ _('Back') }}</a>
   </div>
 </div>

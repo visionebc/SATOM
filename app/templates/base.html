@@ -677,7 +677,6 @@
 
       {% elif product.key == 'fortiauthenticator' %}
       <!-- ===== FortiAuthenticator — the FAC ADOM left menu (static fac_menu) ===== -->
-      {% set _fac_item = (request.view_args.get('item_key') if (request.endpoint == 'fac.menu_page' and request.view_args) else '') %}
 
       {# ADOM back-link — ALWAYS first (same format as the other ADOMs) #}
       <div class="fw-nav-context" data-nav-context="ADOM">
@@ -705,26 +704,9 @@
         </div>
       </div>
 
-      {# System / Authentication / SSO / Monitor / Certificates / Logging —
-         the unit's OWN nav tree, mirrored from its nav_menu_definition. #}
+      {# The unit's own menu, drawn from its measured GUI layouts; the old
+         fac_menu groups are gone (operator request 2026-10-11). #}
       {% include 'partials/nav_gx.html' %}
-      {% set _fac_palette = ['#7c3aed','#2563eb','#0891b2','#059669','#d97706','#db2777','#64748b'] %}
-      {% for g in fac_nav %}
-      {% set _g_active = g.items|selectattr('key', 'equalto', _fac_item)|list %}
-      <div class="fw-nav-group {{ 'open' if _g_active }}" data-nav-group="{{ g.label }}">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi {{ g.icon }} fw-nav-section-icon" style="color:{{ _fac_palette[loop.index0 % _fac_palette|length] }};"></i><span>{{ g.label }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          {% for item in g.items %}
-          {% if may_open('fac.menu_page') %}
-          <a class="fw-nav-item {{ 'active' if _fac_item == item.key else '' }}"
-             href="{{ url_for('fac.menu_page', item_key=item.key) }}">
-            <i class="bi {{ item.icon }} fw-nav-icon"></i><span>{{ item.label }}</span>
-            {% if not item.logicals %}<i class="bi bi-plug ms-auto" style="opacity:.35;font-size:10px;" title="{{ _('No REST endpoint on this firmware') }}"></i>{% endif %}</a>
-          {% endif %}
-          {% endfor %}
-        </div>
-      </div>
-      {% endfor %}
 
       {# API — registry catalog + live console (registry.view) #}
       {% include 'partials/nav_product_api.html' %}
@@ -755,7 +737,6 @@
 
       {% elif product.key == 'fortigate' %}
       <!-- ===== FortiGate — the FGT ADOM left menu (base, static fgt_menu) ===== -->
-      {% set _fgt_item = (request.view_args.get('item_key') if (request.endpoint == 'fgt.menu_page' and request.view_args) else '') %}
 
       {# ADOM back-link — ALWAYS first (same format as the other ADOMs) #}
       <div class="fw-nav-context" data-nav-context="ADOM">
@@ -787,25 +768,9 @@
         </div>
       </div>
 
-      {# Network / Policy & Objects / Security Profiles / VPN / User / System /
-         Log — FortiOS GUI top-level groups, read-only (services.fgt_menu). #}
+      {# The unit's own menu, drawn from its measured GUI layouts; the old
+         fgt_menu groups are gone (operator request 2026-10-11). #}
       {% include 'partials/nav_gx.html' %}
-      {% set _fgt_palette = ['#0d9488','#2563eb','#ef4444','#7c3aed','#059669','#64748b','#d97706'] %}
-      {% for g in fgt_nav %}
-      {% set _g_active = g.items|selectattr('key', 'equalto', _fgt_item)|list %}
-      <div class="fw-nav-group {{ 'open' if _g_active }}" data-nav-group="{{ g.label }}">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi {{ g.icon }} fw-nav-section-icon" style="color:{{ _fgt_palette[loop.index0 % _fgt_palette|length] }};"></i><span>{{ g.label }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          {% for item in g.items %}
-          {% if may_open('fgt.menu_page') %}
-          <a class="fw-nav-item {{ 'active' if _fgt_item == item.key else '' }}"
-             href="{{ url_for('fgt.menu_page', item_key=item.key) }}">
-            <i class="bi {{ item.icon }} fw-nav-icon"></i><span>{{ item.label }}</span></a>
-          {% endif %}
-          {% endfor %}
-        </div>
-      </div>
-      {% endfor %}
 
       {% include 'partials/nav_automation.html' %}
 
@@ -855,17 +820,6 @@
       {% else %}
       <!-- ===== FortiWeb ===== -->
       {# Active top-level nav section (server-rendered .open = no flash on reload). 2026-07-05 #}
-      {% set _sc_cfg = request.endpoint == 'section_config.section' %}
-      {% set _sc_key = (request.view_args.get('section_key') if (_sc_cfg and request.view_args) else None) %}
-      {# The promoted WAF areas come from config_sections.WAF_AREAS via the
-         context processor. This used to be a hand-copied literal list — the
-         THIRD copy of the same 5 keys — so promoting an area (Machine Learning,
-         Tracking) meant editing three places and a miss left the WAF group
-         collapsed on the very page the operator had just opened. #}
-      {% set _waf_sc = waf_section_keys or [] %}
-      {% set _g_lb   = request.blueprint in ['workspace','server_objects'] %}
-      {% set _g_waf  = request.blueprint == 'web_protection' or (_sc_cfg and _sc_key in _waf_sc) %}
-      {% set _g_cfg  = _sc_cfg and _sc_key not in _waf_sc %}
       {% set _g_ops  = request.blueprint in ['backups','logs','import_backup','scout','reach_batch','config_compare'] %}
       {% set _g_api  = request.blueprint in ['registry','api_explorer','structure'] %}
       {% set _g_adm  = request.blueprint in ['templates','audit','segments','naming','firmware','capacity','signatures','api_tokens'] %}
@@ -940,263 +894,22 @@
           {% for n in _fwg_nav %}{{ _fwg_node(n, 0, _fwg_page) }}{% endfor %}
         </div>
       </div>
-      {% endif %}
-      {# With the FortiWeb menu drawn, the old entries it replaces are filtered out
-         (services.gui_classic, in the context processor); a group left with
-         nothing inside is not drawn. Server Policy lives in the FortiWeb menu. #}
-      {% set _fwg_on = _fwg_nav and may_open('workspace.index') %}
-      {% if not _fwg_on or server_objects_nav %}
-      <!-- LOADBALANCER -->
-      <div class="fw-nav-group {{ 'open' if _g_lb }}" data-nav-group="Loadbalancer">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-shield-check fw-nav-section-icon" style="color:#10b981;"></i><span>{{ _('Loadbalancer') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+      {% elif may_open('workspace.index') %}
+      {# No device picked, or no measured layout for it yet (no knowledge pack
+         imported): Server Policy, the hand-tuned view, stays reachable -- the
+         device's layout view, else the device picker. #}
+      {% set _sp_gui = request.endpoint in ['workspace.gui_list', 'workspace.gui_policy', 'workspace.gui_new'] %}
+      <div class="fw-nav-group {{ 'open' if _sp_gui }}" data-nav-group="FortiWeb">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-layout-sidebar fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('FortiWeb') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
-          {# Policy -> Server Policy, as FortiWeb's own menu has it. With a FortiWeb
-             selected the leaf opens its GUI layout (workspace.gui_*); otherwise
-             the device picker. #}
-          {% if may_open('workspace.index') and not _fwg_on %}
-          {% set _sp_gui = request.endpoint in ['workspace.gui_list', 'workspace.gui_policy', 'workspace.gui_new'] %}
-          <details class="fw-so-parent" {{ 'open' if _sp_gui }}>
-            <summary class="fw-nav-item fw-so-parent-head">
-              <i class="bi bi-shield-check fw-nav-icon"></i><span>{{ _('Policy') }}</span>
-              <i class="bi bi-chevron-down fw-so-nav-caret"></i>
-            </summary>
-            <div class="fw-so-parent-body"><div class="fw-so-nav">
-              <a class="fw-nav-item fw-so-nav-flat {{ 'active' if _sp_gui else '' }}"
-                 href="{{ url_for('workspace.gui_list', appliance_id=current_appliance.id) if current_appliance and current_appliance.kind == 'fortiweb' else url_for('workspace.index') }}">
-                <i class="bi bi-list-ul fw-nav-icon"></i><span>{{ _('Server Policy') }}</span></a>
-            </div></div>
-          </details>
-          {% endif %}
-          {# Server Objects — collapses as a unit (native <details>, no JS / CSP-safe).
-             Open ONLY when its own section is active (like Web Protection / the WAF areas). An
-             unconditional open left it permanently expanded, so EVERY page had two sidebar
-             sub-menus open at once, breaking the accordion and (via Turbo body-swaps) collapsing
-             the area the user was actually in. #}
-          {% if not _fwg_on or server_objects_nav %}
-          <details class="fw-so-parent" {{ 'open' if request.blueprint == 'server_objects' }}>
-            <summary class="fw-nav-item fw-so-parent-head {{ 'active' if request.endpoint == 'server_objects.overview' and not request.args.get('type') else '' }}">
-              <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Server Objects') }}</span>
-              <i class="bi bi-chevron-down fw-so-nav-caret"></i>
-            </summary>
-            <div class="fw-so-parent-body">
-              {% if current_appliance and server_objects_nav %}
-              {# Server Objects sub-menu (GUI-faithful) — each group collapsible; leaf → object list #}
-              <div class="fw-so-nav">
-                {% for group in server_objects_nav %}
-                {# An entry owns EVERY logical of its tabs: matching on the default
-                   one alone leaves the sidebar dead (and the group collapsed) while
-                   the operator is sitting on a non-default tab. #}
-                {% set _grp_logicals = [] %}
-                {% for _it in group.items %}{% for _l in _it.logicals %}{% set _ = _grp_logicals.append(_l) %}{% endfor %}{% endfor %}
-                {% set _grp_active = current_appliance and (request.endpoint == 'server_objects.overview')
-                                     and (request.args.get('type') in _grp_logicals) %}
-                {% if group.flat %}
-                {# Protected Hostnames / Service / Traffic Mirror / X-Forwarded-For /
-                   IP Group are FLAT entries in FortiWeb's own menu — a collapsible
-                   wrapping one child of the same name is chrome FortiWeb doesn't have. #}
-                {% set item = group.items[0] %}
-                {% if may_open('server_objects.overview') %}
-                <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'server_objects.overview' and request.args.get('type') in item.logicals else '' }}"
-                   href="{{ url_for('server_objects.overview', id=current_appliance.id, type=item.logical) }}">
-                  <i class="bi {{ item.icon }} fw-nav-icon"></i><span>{{ item.label }}</span>
-                  {% if item.read_only %}<i class="bi bi-eye fw-so-nav-ro" title="{{ _('Read-only (predefined)') }}"></i>{% endif %}
-                </a>
-                {% endif %}
-                {% else %}
-                <details class="fw-so-nav-group" {{ 'open' if _grp_active }}>
-                  <summary class="fw-so-nav-head">
-                    <i class="bi {{ group.icon }} fw-so-nav-gicon"></i><span>{{ group.label }}</span>
-                    <i class="bi bi-chevron-down fw-so-nav-caret"></i>
-                  </summary>
-                  <div class="fw-so-nav-items">
-                    {% for item in group.items %}
-                    {% if may_open('server_objects.overview') %}
-                    <a class="fw-nav-item fw-so-nav-item {{ 'active' if request.endpoint == 'server_objects.overview' and request.args.get('type') in item.logicals else '' }}"
-                       href="{{ url_for('server_objects.overview', id=current_appliance.id, type=item.logical) }}">
-                      <i class="bi {{ item.icon }} fw-nav-icon"></i><span>{{ item.label }}</span>
-                      {% if item.read_only %}<i class="bi bi-eye fw-so-nav-ro" title="{{ _('Read-only (predefined)') }}"></i>{% endif %}
-                    </a>
-                    {% endif %}
-                    {% endfor %}
-                  </div>
-                </details>
-                {% endif %}
-                {% endfor %}
-              </div>
-              {% endif %}
-            </div>
-          </details>
-          {% endif %}
+          <a class="fw-nav-item fw-so-nav-flat {{ 'active' if _sp_gui }}" href="{{ url_for('workspace.gui_list', appliance_id=current_appliance.id) if current_appliance and current_appliance.kind == 'fortiweb' else url_for('workspace.index') }}"><span>{{ _('Server Policy') }}</span></a>
         </div>
       </div>
       {% endif %}
-
-      <!-- WAF -->
-      {# Search Attack ID, Exceptions & Signature and WAF Artifacts live in
-         Fleet -> WAF (partials/nav_waf.html). What stays here is device-scoped
-         protection config; a group with none of it drawn would be a header with
-         nothing under it, so it is not drawn. #}
-      {% set _waf_has = (current_appliance and 'webprotection_profile_inline' not in (fwgui_moved or {}) and may_open('web_protection.overview'))
-                        or (not _fwg_on or web_protection_nav)
-                        or (current_user and current_user.can('config_write') and waf_sections_nav) %}
-      {% if _waf_has %}
-      <div class="fw-nav-group {{ 'open' if _g_waf }}" data-nav-group="WAF">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-shield-exclamation fw-nav-section-icon" style="color:#f59e0b;"></i><span>WAF</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          {# Web Protection — the whole FortiWeb «Web Protection» menu collapses
-             as a unit (native <details>, no JS / CSP-safe), mirroring the
-             appliance's own left menu (services.wp_menu). Flat groups (Cookie
-             Security, Data Loss Prevention) are direct leaves; the rest are
-             nested collapsible groups. Device-scoped: the tree needs a selected
-             FortiWeb for its leaves. #}
-          {% set _wp_active = request.view_args.get('item_key') if request.endpoint == 'web_protection.menu_page'
-                              else ('signatures' if request.endpoint == 'web_protection.signature_policy'
-                              else ('__profile__' if request.endpoint in ['web_protection.overview', 'web_protection.wpp_detail'] else '')) %}
-          {% if current_appliance and 'webprotection_profile_inline' not in (fwgui_moved or {}) %}
-          {% if may_open('web_protection.overview') %}
-          <a class="fw-nav-item {{ 'active' if _wp_active == '__profile__' else '' }}"
-             href="{{ url_for('web_protection.overview', id=current_appliance.id) }}">
-            <i class="bi bi-shield-fill-check fw-nav-icon"></i><span>{{ _('Web Protection Profile') }}</span></a>
-          {% endif %}
-          {% endif %}
-          {% if not _fwg_on or web_protection_nav %}
-          <details class="fw-so-parent" {{ 'open' if request.blueprint == 'web_protection' and _wp_active != '__profile__' }}>
-            <summary class="fw-nav-item fw-so-parent-head">
-              <i class="bi bi-shield-exclamation fw-nav-icon"></i><span>{{ _('Web Protection') }}</span>
-              <i class="bi bi-chevron-down fw-so-nav-caret"></i>
-            </summary>
-            <div class="fw-so-parent-body">
-              {% if current_appliance and web_protection_nav %}
-              <div class="fw-so-nav">
-                {% for group in web_protection_nav %}
-                  {% if group.flat %}
-                  {% if may_open('web_protection.menu_page') %}
-                  <a class="fw-nav-item fw-so-nav-flat {{ 'active' if _wp_active == group.items[0].key else '' }}"
-                     href="{{ url_for('web_protection.menu_page', id=current_appliance.id, item_key=group.items[0].key) }}">
-                    <i class="bi {{ group.icon }} fw-nav-icon"></i><span>{{ group.label }}</span></a>
-                  {% endif %}
-                  {% else %}
-                  {% set _grp_active = group.items|selectattr('key', 'equalto', _wp_active)|list %}
-                  <details class="fw-so-nav-group" {{ 'open' if _grp_active }}>
-                    <summary class="fw-so-nav-head">
-                      <i class="bi {{ group.icon }} fw-so-nav-gicon"></i><span>{{ group.label }}</span>
-                      <i class="bi bi-chevron-down fw-so-nav-caret"></i>
-                    </summary>
-                    <div class="fw-so-nav-items">
-                      {% for item in group.items %}
-                      {% if may_open('web_protection.menu_page') %}
-                      <a class="fw-nav-item fw-so-nav-item {{ 'active' if _wp_active == item.key else '' }}"
-                         href="{{ url_for('web_protection.menu_page', id=current_appliance.id, item_key=item.key) }}">
-                        <i class="bi {{ item.icon }} fw-nav-icon"></i><span>{{ item.label }}</span></a>
-                      {% endif %}
-                      {% endfor %}
-                    </div>
-                  </details>
-                  {% endif %}
-                {% endfor %}
-              </div>
-              {% endif %}
-            </div>
-          </details>
-          {% endif %}
-
-          {# Application Delivery / API Protection / Bot Mitigation / DoS /
-             IP Protection — the 5 FortiWeb protection menus, each the appliance's
-             own GUI menu collapsed as a native <details> accordion (like Web
-             Protection / Server Objects; services.config_sections, GUI-faithful).
-             A flat group (single leaf == its label) is a direct link; the rest
-             nest. Every leaf opens the section browser with ?type=<logical> and
-             the shared deep objedit editor. Device-scoped. #}
-          {# The protection-area pages are config_write (section_config), so
-             the entries are shown only to users who can open them. #}
-          {% if current_user and current_user.can('config_write') %}
-          {% for area in waf_sections_nav %}
-          {% set _area_active = request.endpoint == 'section_config.section' and request.view_args and request.view_args.get('section_key') == area.key %}
-          <details class="fw-so-parent" {{ 'open' if _area_active }}>
-            <summary class="fw-nav-item fw-so-parent-head {{ 'active' if _area_active and not request.args.get('type') else '' }}">
-              <i class="bi {{ area.icon }} fw-nav-icon"></i><span>{{ area.label }}</span>
-              <i class="bi bi-chevron-down fw-so-nav-caret"></i>
-            </summary>
-            <div class="fw-so-parent-body">
-              {% if current_appliance and area.menu %}
-              {# Web Protection PARITY: each curated GUI group is ONE clickable
-                 menu entry (like a WP item); its object types are the TABS on the
-                 section page (section_config/section.html). #}
-              <div class="fw-so-nav">
-                {% for group in area.menu %}
-                  {% set _grp_active = _area_active and (request.args.get('type') in group.items|map(attribute='logical')|list) %}
-                  {% if may_open('section_config.section') %}
-                  <a class="fw-nav-item fw-so-nav-item {{ 'active' if _grp_active else '' }}"
-                     href="{{ url_for('section_config.section', section_key=area.key, type=group.items[0].logical) }}">
-                    <i class="bi {{ group.icon }} fw-nav-icon"></i><span>{{ group.label }}</span>
-                  </a>
-                  {% endif %}
-                {% endfor %}
-              </div>
-              {% elif not current_appliance %}
-              <div class="fw-so-nav"><span class="fw-nav-item fw-so-nav-item" style="opacity:.5;cursor:default;">{{ _('Select a device') }}</span></div>
-              {% endif %}
-            </div>
-          </details>
-          {% endfor %}
-          {% endif %}
-        </div>
-      </div>
-      {% endif %}
-
-      <!-- CONFIGURATION -->
-      {% if current_user and current_user.can('config_write') %}
-      <div class="fw-nav-group {{ 'open' if _g_cfg }}" data-nav-group="Configuration">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-sliders fw-nav-section-icon" style="color:#06b6d4;"></i><span>{{ _('Configuration') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          {# Each config section expands into a collapsible GUI-faithful tree
-             (section → group → object type), exactly like Server Objects. Native
-             <details>, no JS / CSP-safe. Sections start COLLAPSED (6 of them) —
-             only the active section + its active group auto-open, so the sidebar
-             stays compact. Needs a selected device for the object-list leaves;
-             with none it falls back to a flat link that prompts device pick. #}
-          {% for s in config_sections_nav %}
-          {% set _sec_active = request.view_args and request.view_args.get('section_key') == s.key %}
-          {% if current_appliance and s.menu %}
-          <details class="fw-cfg-section" {{ 'open' if _sec_active }}>
-            <summary class="fw-nav-item fw-cfg-section-head {{ 'active' if _sec_active and not request.args.get('type') else '' }}">
-              <span class="fw-nav-icon fw-nav-emoji">{{ s.emoji }}</span><span>{{ s.label }}</span>
-              <i class="bi bi-chevron-down fw-so-nav-caret"></i>
-            </summary>
-            <div class="fw-cfg-section-body fw-so-nav">
-              {% for group in s.menu %}
-              {% set _grp_active = _sec_active and (request.args.get('type') in group.items|map(attribute='logical')|list) %}
-              <details class="fw-so-nav-group" {{ 'open' if _grp_active }}>
-                <summary class="fw-so-nav-head">
-                  <i class="bi {{ group.icon }} fw-so-nav-gicon"></i><span>{{ group.label }}</span>
-                  <i class="bi bi-chevron-down fw-so-nav-caret"></i>
-                </summary>
-                <div class="fw-so-nav-items">
-                  {% for item in group.items %}
-                  {% if may_open('section_config.section') %}
-                  <a class="fw-nav-item fw-so-nav-item {{ 'active' if _sec_active and request.args.get('type') == item.logical else '' }}"
-                     href="{{ url_for('section_config.section', section_key=s.key, type=item.logical) }}">
-                    <i class="bi {{ item.icon }} fw-nav-icon"></i><span>{{ item.label }}</span>
-                    {% if item.read_only %}<i class="bi bi-eye fw-so-nav-ro" title="{{ _('Read-only (predefined)') }}"></i>{% endif %}
-                  </a>
-                  {% endif %}
-                  {% endfor %}
-                </div>
-              </details>
-              {% endfor %}
-            </div>
-          </details>
-          {% else %}
-          {% if may_open('section_config.section') %}
-          <a class="fw-nav-item {{ 'active' if _sec_active else '' }}"
-             href="{{ url_for('section_config.section', section_key=s.key) }}">
-            <span class="fw-nav-icon fw-nav-emoji">{{ s.emoji }}</span><span>{{ s.label }}</span></a>
-          {% endif %}
-          {% endif %}
-          {% endfor %}
-        </div>
-      </div>
-      {% endif %}
+      {# The old SATOM menus (Loadbalancer, WAF, Configuration) are gone: the
+         FortiWeb group above is the only device menu (operator request
+         2026-10-11). Their pages still serve the actions the new screens call
+         (?classic=1&act=...), but nothing in the sidebar links to them. #}
 
       <!-- OPERATIONS -->
       <div class="fw-nav-group {{ 'open' if _g_ops }}" data-nav-group="Operations">

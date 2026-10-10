@@ -802,93 +802,6 @@ def create_app(config_override: object | None = None) -> Flask:
             _fv_hidden = _fv.hidden_logicals(getattr(_cur_appl, 'id', None))
         except Exception:
             _fv_hidden = frozenset()
-        # FortiWeb config sections for the sidebar (live browsers only). Sourced
-        # from the catalog so it stays in sync; server_objects (own page) and the
-        # read-only Monitor have no menu → excluded.
-        try:
-            from .services import config_catalog as _cc
-            from .services import config_sections as _cs
-            # The WAF protection areas promoted to the top-level WAF group in
-            # the sidebar are excluded here so they don't show twice (WAF group
-            # + admin Configuration submenu). ONE source — config_sections
-            # .WAF_AREAS — feeds this exclusion, the WAF group below and the
-            # template's "keep the group open" test; the three used to carry
-            # three hand-copied lists.
-            _promoted = set(_cs.WAF_AREA_KEYS)
-            # server_objects has its OWN dedicated collapsible sidebar item
-            # (fw-so-parent), so it is excluded here to avoid a duplicate tree.
-            _cfg_skip = _promoted | {'server_objects'}
-            # Each section carries its GUI-faithful curated menu (groups → object
-            # types) so the sidebar expands it into a collapsible tree, exactly
-            # like Server Objects. complete=False = curated groups only (no giant
-            # "everything else" bucket — that stays on the section page).
-            _cfg_nav = [
-                {'key': s.key, 'label': s.label, 'emoji': s.emoji,
-                 'menu': _cs.section_menu(s.key, complete=False,
-                                          hidden=_fv_hidden)}
-                for s in _cc.CONFIG_SECTIONS
-                if _cs.has_menu(s.key) and s.key not in _cfg_skip
-            ]
-        except Exception:
-            _cfg_nav = []
-        # Server Objects menu (groups → object types) for the sidebar submenu.
-        # The GUI-faithful menu lives in services.server_objects; each leaf links
-        # to server_objects.overview(?type=…) under the selected device.
-        try:
-            from .services import server_objects as _so
-            # Traffic Mirror is feature-gated on FortiWeb (system
-            # feature-visibility → traffic-mirror), so this menu takes the gate
-            # too; a page left with no tab drops, and so does an emptied group.
-            _so_nav = _so.server_objects_menu(hidden=_fv_hidden)
-        except Exception:
-            _so_nav = []
-        # Web Protection menu (FortiWeb 7.6 GUI mirror: groups → items) for the
-        # sidebar submenu — the SAME tree the in-page card used, now collapsible
-        # under the sidebar "Web Protection" item. Each leaf links to
-        # web_protection.menu_page under the selected device.
-        try:
-            from .services import wp_menu as _wp
-            # Padding Oracle Protection is feature-gated on FortiWeb
-            # (feature-visibility → padding-oracle, `disable` out of the box).
-            _wp_nav = _wp.menu(_fv_hidden)
-        except Exception:
-            _wp_nav = []
-        # The WAF protection areas promoted to the sidebar WAF group: each the
-        # FortiWeb GUI menu (services.config_sections, GUI-faithful) rendered as
-        # a collapsible accordion (like Web Protection / Server Objects). Each
-        # leaf links into section_config with ?type=<logical>. complete=False =
-        # curated GUI groups only (the "everything else" bucket stays on the page).
-        # The area list is config_sections.WAF_AREAS — the SAME object that drives
-        # _promoted above and waf_section_keys below.
-        try:
-            from .services import config_sections as _cs2
-            _waf_nav = [
-                {'key': _k, 'label': _lbl, 'icon': _ic,
-                 'menu': _cs2.section_menu(_k, complete=False, hidden=_fv_hidden)}
-                for _k, _lbl, _ic in _cs2.WAF_AREAS
-            ]
-        except Exception:
-            _waf_nav = []
-        # On a FortiWeb, an old entry whose collections the FortiWeb menu draws
-        # (services.gui_pages, per firmware) leaves the sidebar: one menu per
-        # page. Its URL redirects there; ?classic=1 keeps the old page.
-        _pmap = {}
-        try:
-            from .services import gui_classic as _gc
-            _pmap = (_gc.page_map(_cur_appl)
-                     if getattr(_cur_appl, 'kind', '') == 'fortiweb' else {})
-            if _pmap:
-                _so_nav = _gc.filter_groups(_so_nav, _pmap)
-                _wp_nav = _gc.filter_groups(_wp_nav, _pmap)
-                _cfg_nav = _gc.filter_sections(_cfg_nav, _pmap)
-                _waf_nav = _gc.filter_sections(_waf_nav, _pmap)
-        except Exception:
-            pass
-        try:
-            from .services import config_sections as _cs3
-            _waf_keys = list(_cs3.WAF_AREA_KEYS)
-        except Exception:
-            _waf_keys = []
         try:
             from flask_login import current_user as _cu
             from .models import Template as _Tpl
@@ -948,32 +861,10 @@ def create_app(config_override: object | None = None) -> Flask:
                 _faz_nav = ()
         except Exception:
             _faz_nav = ()
-        # FortiAuthenticator sidebar menu (only built for fortiauthenticator
-        # sessions; mirrors the unit's own nav_menu_definition, see
-        # services.fac_menu).
-        try:
-            if prod.get("key") == "fortiauthenticator":
-                from .services import fac_menu as _facm
-                _fac_nav = _facm.visible_menu()
-            else:
-                _fac_nav = ()
-        except Exception:
-            _fac_nav = ()
-        # FortiGate sidebar menu (base ADOM; static, see services.fgt_menu).
-        try:
-            if prod.get("key") == "fortigate":
-                from .services import fgt_menu as _fgtm
-                _fgt_nav = _fgtm.visible_menu()
-            else:
-                _fgt_nav = ()
-        except Exception:
-            _fgt_nav = ()
         # FortiGate / FortiAuthenticator: the device's own menu tree from its
-        # measured GUI layouts (services.gui_pages, like the FortiWeb group);
-        # the old fgt_menu / fac_menu leaves those pages draw leave the
-        # sidebar (services.gui_classic) -- their URLs redirect, ?classic=1
-        # keeps them. The device is the page's own on a GUI page, else the
-        # ADOM's current one.
+        # measured GUI layouts (services.gui_pages, like the FortiWeb group) --
+        # the only device menu of these ADOMs. The device is the page's own on
+        # a GUI page, else the ADOM's current one.
         _gx_appl, _gx_nav = None, []
         try:
             if prod.get("key") in ("fortigate", "fortiauthenticator"):
@@ -985,12 +876,8 @@ def create_app(config_override: object | None = None) -> Flask:
                     if _a is not None and _a.kind == prod.get("key"):
                         _gx_appl = _a
                 if _gx_appl is not None and _gx_appl.kind == prod.get("key"):
-                    from .services import gui_classic as _gc2, gui_pages as _gp2
+                    from .services import gui_pages as _gp2
                     _gx_nav = _gp2.nav_for(_gx_appl)
-                    if _gx_nav:
-                        _gx_map = _gc2.page_map(_gx_appl)
-                        _fgt_nav = _gc2.filter_product_groups(_fgt_nav, _gx_map)
-                        _fac_nav = _gc2.filter_product_groups(_fac_nav, _gx_map)
                 else:
                     _gx_appl = None
         except Exception:
@@ -1020,19 +907,11 @@ def create_app(config_override: object | None = None) -> Flask:
             'node_name': _node_name,
             'adc_nav': _adc_nav,
             'faz_nav': _faz_nav,
-            'fac_nav': _fac_nav,
-            'fgt_nav': _fgt_nav,
             'gx_appliance': _gx_appl,
             'gx_nav': _gx_nav,
             'current_appliance': _cur_appl,
             'banner_bg': _bg,
             'now': datetime.utcnow(),
-            'config_sections_nav': _cfg_nav,
-            'server_objects_nav': _so_nav,
-            'web_protection_nav': _wp_nav,
-            'waf_sections_nav': _waf_nav,
-            'fwgui_moved': _pmap,
-            'waf_section_keys': _waf_keys,
             'hidden_features': sorted(_fv_hidden),
             'pending_template_count': _pending,
             'open_report_count': _open_reports,

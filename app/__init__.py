@@ -1851,6 +1851,9 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('compat_check', 'TEXT'),
                 ('validated_builds', 'TEXT'),
                 ('adapted_from_id', 'INTEGER'),
+                # NULLABLE, no backfill: no template decided a new field
+                # before the decision existed.
+                ('field_decisions', 'TEXT'),
             ],
             # Advisor per-message telemetry. NULLABLE with NO default on
             # purpose: every row that predates the feature keeps NULL, which
@@ -2321,6 +2324,10 @@ def create_app(config_override: object | None = None) -> Flask:
             # source device). Without this import create_all() never makes the
             # signature_* tables and the first collection fails on them.
             from . import models_signatures  # noqa: F401
+            # Template <-> device bindings. Without this import create_all()
+            # never makes template_bindings and the template lock, the apply
+            # and the upgrade pre-flight fail on the first lookup.
+            from . import models_tpl_binding  # noqa: F401
             # Sentinel's two collectors (http_status, infra) join the
             # fleet collection registry here so the scheduler sidecar — which
             # never imports a view — provisions and runs them like any other.

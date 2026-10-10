@@ -161,11 +161,16 @@ PROVISION_CATALOG: list[ProvisionSpec] = [
     ProvisionSpec("global", "Global settings / hostname", "global", True,
                   note="cmdb/system/global — hostname, language, admin timeouts…"),
     ProvisionSpec("dns", "DNS", "dns", True),
-    ProvisionSpec("ntp", "NTP / time", "system_time", True,
-                  readonly_fields=("systemTime", "time"),
-                  note="systemtime: only mode/ntpServer/timeZone are writable; "
-                       "systemTime/time are server-managed (read-only) and the PUT "
-                       "doesn't echo the object. Validate against the device."),
+    # cmdb/system/ntp, measured on 7.6.8 and 8.0.6 (2026-10-10): ntpsync,
+    # syncinterval; the NTP servers are rows of system/ntp/ntpserver; time zone
+    # and DST live in Global settings (timezone, dst). This element used to
+    # write system/maintenance.systemtime — the GUI's own API, not cmdb, with
+    # the GUI's field names (mode/ntpServer/daylightSaving): no build has
+    # evidence for it, and SATOM's own GUI layer treats it as read-only.
+    ProvisionSpec("ntp", "NTP", "ntp", True,
+                  note="cmdb/system/ntp — ntpsync, syncinterval. NTP servers: "
+                       "system/ntp/ntpserver rows; time zone and DST: Global "
+                       "settings (timezone, dst)."),
     ProvisionSpec("fortiguard", "FortiGuard (updates)", "system_fortiguard", True),
     # ── Network ──────────────────────────────────────────────────────────
     ProvisionSpec("interface", "Network interface", "interface_2", False,
@@ -199,6 +204,9 @@ CATALOG_BY_KEY: dict[str, ProvisionSpec] = {s.key: s for s in PROVISION_CATALOG}
 CATALOG_BY_ENDPOINT: dict[str, ProvisionSpec] = {
     s.endpoint: s for s in PROVISION_CATALOG if s.endpoint
 }
+#: Read-only fields of endpoints no longer offered but still present in saved
+#: profiles (the old "NTP / time" element wrote ``system_time``).
+_LEGACY_READONLY: dict[str, tuple[str, ...]] = {"system_time": ("systemTime", "time")}
 
 
 # --------------------------------------------------------------------------- #
@@ -268,8 +276,9 @@ def sanitize_payload(endpoint: str, data: dict[str, Any] | None) -> dict[str, An
 
     out = _ops_sanitize(dict(data or {}))
     spec = CATALOG_BY_ENDPOINT.get(endpoint)
-    if spec and isinstance(out, dict):
-        for f in spec.readonly_fields:
+    readonly = spec.readonly_fields if spec else _LEGACY_READONLY.get(endpoint, ())
+    if isinstance(out, dict):
+        for f in readonly:
             out.pop(f, None)
     return out if isinstance(out, dict) else {}
 

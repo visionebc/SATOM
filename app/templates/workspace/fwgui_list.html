@@ -63,6 +63,8 @@
     {% if _fwp or (can_clone is defined and can_clone) %}<button type="button" class="btn btn-secondary btn-sm" aria-disabled="true" data-fwg-clone><i class="bi bi-copy me-1"></i>{{ _('Clone') }}</button>{% endif %}
     <button type="button" class="btn btn-fw-danger btn-sm" aria-disabled="true" data-fwg-delete><i class="bi bi-trash me-1"></i>{{ _('Delete') }}</button>
     {% endif %}
+    {% if can_edit and _fwp and satom is defined and satom.wpp %}<button type="button" class="btn btn-secondary btn-sm" aria-disabled="true" data-fwg-deepclone title="{{ _('Copy the profile AND the objects it references (sub-policies, signatures, rules) under new names, as the classic page did.') }}"><i class="bi bi-diagram-3 me-1"></i>{{ _('Deep clone') }}</button>{% endif %}
+    {% if _fwp and satom is defined and satom.can_template and (satom.wpp or satom.section) %}<button type="button" class="btn btn-secondary btn-sm" aria-disabled="true" data-fwg-savetpl title="{{ _('Read the selected object from the device and save it to the Template Library as a pending template.') }}"><i class="bi bi-bookmark-plus me-1"></i>{{ _('Save as template') }}</button>{% endif %}
     <div class="fw-search-box">
       <i class="bi bi-search search-icon" aria-hidden="true"></i>
       <input type="search" placeholder="{{ _('Search') }}" aria-label="{{ _('Search') }}" data-fwg-search>
@@ -91,9 +93,10 @@
     {% for r in rows %}
       {% if mkey_of %}{% set mk = mkey_of(r, view.endpoint) %}
       {% else %}{% set mk = r.name if r.name is defined and r.name not in (None, '') else r.id %}{% endif %}
-      <tr tabindex="0" data-mkey="{{ mk }}"{% if opens and dialog_for(view, r) %} data-href="{{ url_for('workspace.fwgui_object', appliance_id=appliance.id, page=page, name=mk, v=vi) }}"{% endif %}>
+      {% set _lk = satom is defined and satom.locked and (mk|string) in satom.locked %}
+      <tr tabindex="0" data-mkey="{{ mk }}"{% if _lk %} data-locked="1"{% endif %}{% if opens and dialog_for(view, r) %} data-href="{{ url_for('workspace.fwgui_object', appliance_id=appliance.id, page=page, name=mk, v=vi) }}"{% endif %}>
         <td class="text-muted">{{ loop.index }}</td>
-        {% for c in view.columns %}<td>{% if loop.first %}<strong>{{ cell(r, c, labels) }}</strong>{% else %}{{ cell(r, c, labels) }}{% endif %}</td>{% endfor %}
+        {% for c in view.columns %}<td>{% if loop.first %}<strong>{{ cell(r, c, labels) }}</strong>{% if _lk %} <a href="{{ url_for('templates.index', kind='web-protection-profile') }}" class="fw-badge fw-badge-secondary text-decoration-none" data-fwg-locked title="{{ _('Template-managed: read-only on this device. Edit it in the Template Library — saving an approved template deploys it to every device it governs.') }}"><i class="bi bi-lock-fill me-1"></i>{{ _('Template') }}</a>{% endif %}{% else %}{{ cell(r, c, labels) }}{% endif %}</td>{% endfor %}
       </tr>
     {% else %}
       <tr><td colspan="{{ view.columns|length + 1 }}"><div class="fw-empty-state py-4">
@@ -131,6 +134,9 @@
   var edit = pane.querySelector('[data-fwg-edit]');
   var del = pane.querySelector('[data-fwg-delete]');
   var clone = pane.querySelector('[data-fwg-clone]');
+  var deep = pane.querySelector('[data-fwg-deepclone]');
+  var savetpl = pane.querySelector('[data-fwg-savetpl]');
+  var SATOM = {{ (satom if satom is defined else {})|tojson }};
   var all = Array.prototype.slice.call(pane.querySelectorAll('tbody tr[data-mkey]'));
   var current = null;
   function select(tr) {
@@ -139,7 +145,13 @@
     var href = tr && tr.getAttribute('data-href');
     edit.setAttribute('href', href || '#');
     edit.setAttribute('aria-disabled', href ? 'false' : 'true');
-    [del, clone].forEach(function (b) { if (b) b.setAttribute('aria-disabled', tr ? 'false' : 'true'); });
+    var locked = !!(tr && tr.dataset.locked);
+    [del, clone, deep, savetpl].forEach(function (b) { if (b) b.setAttribute('aria-disabled', tr ? 'false' : 'true'); });
+    // a template-managed profile is read-only here: no Delete, and its
+    // dialog opens for viewing (the server refuses a save anyway)
+    if (del && locked) del.setAttribute('aria-disabled', 'true');
+    if (locked) { edit.innerHTML = '<i class="bi bi-eye me-1"></i>View'; }
+    else if (edit.dataset.label) { edit.innerHTML = edit.dataset.label; }
   }
   function open(tr) { if (tr.getAttribute('data-href')) window.location.href = tr.getAttribute('data-href'); }
   all.forEach(function (tr) {
@@ -152,8 +164,47 @@
       body: JSON.stringify(body)}).then(function (r) { return r.json(); });
   }
   function fail(j) { alert('Error: ' + ((j && j.error) || 'failed')); }
+  if (edit) edit.dataset.label = edit.innerHTML;
+  if (deep) deep.addEventListener('click', function () {
+    if (!current) return;
+    var src = current.dataset.mkey;
+    var nn = prompt('Deep clone "' + src + '" (profile + referenced objects) as:', src + '-copy');
+    if (!nn || nn === src) return;
+    var base = {source: src, new_name: nn};
+    post('/web-protection/' + AID + '/clone/plan', base).then(function (j) {
+      if (!j.ok) return fail(j);
+      var c = j.summary || {};
+      var lines = Object.keys(c).map(function (k) { return k + ': ' + c[k]; }).join(', ');
+      if (!confirm('DRY-RUN deep clone of "' + src + '" as "' + nn + '"\n' + lines +
+                   '\n\n' + String(j.plan || '').slice(0, 1500) + '\n\nCreate on the device now?')) return;
+      post('/web-protection/' + AID + '/clone', base).then(function (j2) {
+        if (!j2.ok) return fail({error: (j2.error || '') + (j2.failures ? ' — ' + j2.failures.map(function (f) { return f.label + ': ' + f.reason; }).join('; ') : '')});
+        if (window.FW) FW.toast('Deep clone created ' + j2.created + ' object(s)', 'success');
+        location.reload();
+      });
+    });
+  });
+  if (savetpl) savetpl.addEventListener('click', function () {
+    if (!current) return;
+    var src = current.dataset.mkey;
+    var nm = prompt('Save "' + src + '" to the Template Library as:', src);
+    if (!nm) return;
+    // a WPP is captured deep (its sub-policies come along); any other config
+    // object with its sub-tables, filed under its Configuration section
+    var url = SATOM.wpp ? '/web-protection/' + AID + '/save-as-template'
+                        : '/objedit/' + AID + '/save-template';
+    var body = SATOM.wpp ? {source: src, name: nm}
+                         : {collection: COLL, mkey: src, section: SATOM.section, name: nm,
+                            note: 'Saved from ' + PAGE + ' on device ' + AID};
+    post(url, body).then(function (j) {
+      if (!j.ok) return fail(j);
+      if (window.FW) FW.toast('Saved "' + (j.name || nm) + '" v' + j.version + ' (pending approval)', 'success');
+      else alert('Saved "' + (j.name || nm) + '" v' + j.version + ' (pending approval)');
+    });
+  });
   if (del) del.addEventListener('click', function () {
     if (!current) return;
+    if (current.dataset.locked) { alert('"' + current.dataset.mkey + '" is template-managed: edit it in the Template Library.'); return; }
     var base = PX ? (TABLE ? {page: PAGE, v: {{ vi|tojson }}, collection: COLL, mkey: '', subtable: TABLE,
                               sub_id: current.dataset.mkey, op: 'delete', fields: {}}
                            : {page: PAGE, v: {{ vi|tojson }}, collection: COLL, mkey: current.dataset.mkey, op: 'delete', fields: {}})

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Template compatibility matrix') }} — SATOM{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <a href="{{ url_for('templates.index') }}">{{ _('Templates') }}</a><span class="separator">/</span>
+  <span>{{ _('Compatibility matrix') }}</span>
+</div>
+{% endblock %}
+{% block content %}
+{% set cls = {'ok': 'success', 'warn': 'warning', 'adapt': 'warning', 'unmeasured': 'secondary', 'block': 'danger'} %}
+{% set lbl = {'ok': _('fits'), 'warn': _('fits, warnings'), 'adapt': _('adapt'), 'unmeasured': _('unmeasured'), 'block': _('blocked')} %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-grid-3x3 me-2 text-accent"></i>{{ _('Template compatibility matrix') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('Every template of this ADOM against every firmware build it knows. A cell opens the comparison for that build.') }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-secondary btn-sm" href="{{ url_for('provisioning.compare') }}"><i class="bi bi-arrow-left-right me-1"></i>{{ _('Compare templates') }}</a>
+    <a class="btn btn-secondary btn-sm" href="{{ url_for('templates.index') }}"><i class="bi bi-collection me-1"></i>{{ _('Template Library') }}</a>
+  </div>
+</div>
+<form class="fw-toolbar mb-2" method="get" action="{{ url_for('templates.matrix') }}">
+  <label class="small text-muted" for="mx-build">{{ _('Add a target build') }}</label>
+  <select class="form-select form-select-sm" style="max-width:220px" id="mx-build" name="build">
+    <option value="">{{ _('— none —') }}</option>
+    {% for b in firmware_choices %}<option value="{{ b.version }}" {{ 'selected' if b.version in extra }}>{{ b.version }}{% if not b.measured %} · {{ _('not measured') }}{% endif %}</option>{% endfor %}
+  </select>
+  <div class="form-check mb-0 ms-2">
+    <input class="form-check-input" type="checkbox" id="mx-all" name="all" value="1" {{ 'checked' if show_all }}>
+    <label class="form-check-label small" for="mx-all">{{ _('Every version (not only the newest)') }}</label>
+  </div>
+  <button type="submit" class="btn btn-secondary btn-sm">{{ _('Show') }}</button>
+</form>
+<div class="fw-card p-0">
+  <div class="fw-table-wrapper">
+  <table class="fw-table" data-matrix>
+    <thead><tr>
+      <th>{{ _('Template') }}</th><th>{{ _('Written for') }}</th><th>{{ _('Bound devices') }}</th>
+      {% for c in cols %}<th title="{{ (fleet.get(c.version) or [])|join(', ') }}">{{ c.version }}
+        {% if fleet.get(c.version) %}<div class="small text-muted">{{ _('%(n)s in fleet', n=fleet[c.version]|length) }}</div>{% elif not c.measured %}<div class="small text-muted">{{ _('not measured') }}</div>{% endif %}</th>{% endfor %}
+    </tr></thead>
+    <tbody>
+    {% for row in grid %}{% set t = row.template %}
+      <tr data-template="{{ t.id }}">
+        <td><strong>{{ t.name }}</strong> v{{ t.version }}<div class="small text-muted">{{ t.kind }} · {{ t.status }}</div></td>
+        <td>{{ t.source_firmware or _('not recorded') }}</td>
+        <td>{{ (bound.get(t.id) or [])|length or _('all (no binding)') }}</td>
+        {% for c in cols %}{% set x = row.cells[c.version] %}
+        <td><a href="{{ url_for('provisioning.compare', a=t.id, build=c.version) }}" class="text-decoration-none" title="{{ x.text }}" data-matrix-cell="{{ x.cell }}"><span class="fw-badge fw-badge-{{ cls.get(x.cell, 'secondary') }}">{{ lbl.get(x.cell, x.cell) }}</span></a></td>
+        {% endfor %}
+      </tr>
+    {% else %}
+      <tr><td colspan="{{ cols|length + 3 }}" class="text-muted">{{ _('No template in this ADOM.') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+<p class="text-muted small mt-2">{{ _('fits = every field is served; adapt = fields renamed, discarded or added by that build without a decision — "Adapt to firmware" makes a new version; unmeasured = no evidence for that build (measure it before trusting it); blocked = an object the build does not serve.') }}</p>
+{% endblock %}

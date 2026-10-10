@@ -33,6 +33,8 @@
       <i class="bi bi-box-seam me-1"></i>{{ _('Factory catalog') }}
     </a>
     {% endif %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('templates.matrix') }}" title="{{ _('Every template against every firmware build of this ADOM') }}"><i class="bi bi-grid-3x3 me-1"></i>{{ _('Compatibility matrix') }}</a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('provisioning.compare') }}" title="{{ _('A template against a newer one, on a build or a device') }}"><i class="bi bi-arrow-left-right me-1"></i>{{ _('Compare') }}</a>
     <button class="btn btn-fw-primary" data-bs-toggle="modal" data-bs-target="#modalAddTemplate">
       <i class="bi bi-plus-lg me-1"></i>{{ _('New Template') }}
     </button>
@@ -107,6 +109,7 @@
           <td style="font-size:13px;">{{ t.author or '—' }}</td>
           <td style="font-size:13px;">{{ t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '—' }}</td>
           <td class="actions-col">
+            <a class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Compare with a newer version') }}" href="{{ url_for('provisioning.compare', a=t.id) }}"><i class="bi bi-arrow-left-right"></i></a>
             <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1" title="{{ _('View') }}"
                     data-js="view-template" data-tpl-id="{{ t.id }}"><i class="bi bi-eye"></i></button>
             <button class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Approval history (who approved / rejected)') }}"
@@ -233,6 +236,14 @@
           <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-cpu me-1"></i>{{ _('Firmware & API compatibility') }}</span></div>
           <div class="fw-card-body" style="font-size:13px;">
             <div id="vt-stamp" class="mb-2"></div>
+            {% if current_user.can('operations.template_approve') %}
+            <div id="vt-stamp-legacy" class="mb-2" style="display:none;">
+              <div class="fw-alert fw-alert-warning mb-1">{{ _('No firmware is recorded for this template (saved before builds were recorded), so newer builds cannot be judged against it. Record the build its body fits best:') }}</div>
+              <button type="button" class="btn btn-sm btn-fw-outline" data-js="vt-stamp-preview">{{ _('Find the build it fits') }}</button>
+              <button type="button" class="btn btn-sm btn-fw-primary" data-js="vt-stamp-save" id="vt-stamp-save" disabled>{{ _('Record that build') }}</button>
+              <div id="vt-stamp-out" class="mt-2"></div>
+            </div>
+            {% endif %}
             <label class="fw-form-label">{{ _('Checked against its own build when saved') }}</label>
             <div id="vt-selfcheck" class="mb-2"></div>
             <label class="fw-form-label">{{ _('Validated builds (approval)') }}</label>
@@ -259,6 +270,34 @@
               </div>
             </div>
             <div id="vt-adapt-out" class="mt-2"></div>
+            <div id="vt-decide" class="mt-2"></div>
+            {% endif %}
+          </div>
+        </div>
+        <div class="fw-card mb-3">
+          <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-link-45deg me-1"></i>{{ _('Devices this template governs') }}</span></div>
+          <div class="fw-card-body" style="font-size:13px;">
+            <div id="vt-bindings" class="mb-2"></div>
+            <div id="vt-placeholders" class="text-muted small mb-2"></div>
+            {% if current_user.can('operations.template_save') %}
+            <div class="row g-2 align-items-end">
+              <div class="col-md-4">
+                <label class="fw-form-label" for="vt-bind-dev">{{ _('Device') }}</label>
+                <select class="form-select form-select-sm" id="vt-bind-dev">
+                  {% for a in appliances %}<option value="{{ a.id }}" data-kind="{{ a.kind }}">{{ a.name }}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="col-md-2">
+                <label class="fw-form-label" for="vt-bind-ver">{{ _('Version') }}</label>
+                <select class="form-select form-select-sm" id="vt-bind-ver"></select>
+              </div>
+              <div class="col-md-4">
+                <label class="fw-form-label" for="vt-bind-vars">{{ _('Variables (JSON)') }}</label>
+                <input class="form-control form-control-sm" id="vt-bind-vars" placeholder='{"vip": "192.0.2.10"}'>
+              </div>
+              <div class="col-md-2"><button type="button" class="btn btn-sm btn-fw-primary" data-js="vt-bind">{{ _('Bind') }}</button></div>
+            </div>
+            <div id="vt-bind-out" class="mt-2"></div>
             {% endif %}
           </div>
         </div>
@@ -526,6 +565,137 @@ function vtRenderCompat(t) {
   if (vb) vb.style.display = (t.status === 'approved') ? '' : 'none';
   var ao = document.getElementById('vt-adapt-out'); if (ao) ao.innerHTML = '';
   var as = document.getElementById('vt-adapt-save'); if (as) as.disabled = true;
+  var dc = document.getElementById('vt-decide'); if (dc) dc.innerHTML = '';
+  var sl = document.getElementById('vt-stamp-legacy');
+  if (sl) sl.style.display = t.source_firmware ? 'none' : '';
+  var so = document.getElementById('vt-stamp-out'); if (so) so.innerHTML = '';
+  var ss = document.getElementById('vt-stamp-save'); if (ss) ss.disabled = true;
+  vtRenderBindings(t);
+}
+
+// --- bindings: the devices this template governs -------------------------
+function vtRenderBindings(t) {
+  var el = document.getElementById('vt-bindings');
+  var rows = t.bindings || [];
+  if (!rows.length) {
+    el.innerHTML = '<span class="text-muted">' + (t.kind === 'web-protection-profile'
+      ? 'No binding: an approved version governs (and locks) this profile on every device of the ADOM.'
+      : 'No binding: applied only where someone pushes it.') + '</span>';
+  } else {
+    el.innerHTML = '<table class="fw-table"><thead><tr><th>Device</th><th>Follows</th><th>Build</th><th>Verdict</th><th>Variables</th><th></th></tr></thead><tbody>' +
+      rows.map(function (b) {
+        return '<tr><td>' + vtEsc(b.appliance) + '</td><td>' + (b.pinned_version ? 'v' + vtEsc(b.pinned_version) : 'newest approved' + (b.version ? ' (v' + vtEsc(b.version) + ')' : '')) +
+          '</td><td>' + vtEsc(b.build || '—') + '</td><td>' + (b.blocking ? '<span class="fw-badge fw-badge-danger">does not fit</span> ' : '<span class="fw-badge fw-badge-success">fits</span> ') +
+          '<span class="small">' + vtEsc(b.reason) + '</span></td><td class="small">' + vtEsc(JSON.stringify(b.variables || {})) +
+          '</td><td><button type="button" class="btn btn-sm btn-outline-danger btn-sm-icon" data-unbind="' + b.id + '" title="Remove binding"><i class="bi bi-x-lg"></i></button></td></tr>';
+      }).join('') + '</tbody></table>';
+    el.querySelectorAll('[data-unbind]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (!confirm('Remove this binding?')) return;
+        var fd = new FormData(); fd.append('csrf_token', vtCsrf());
+        fetch('/templates/bindings/' + btn.dataset.unbind + '/delete', {method: 'POST', body: fd, headers: {'Accept': 'application/json'}})
+          .then(function (r) { return r.json(); }).then(function () { viewTemplate(VT_ID); });
+      });
+    });
+  }
+  var ph = document.getElementById('vt-placeholders');
+  if (ph) ph.textContent = (t.placeholders || []).length
+    ? 'The body asks each device for: ' + t.placeholders.join(', ') + ' (write \x7b\x7b name \x7d\x7d in a value; set it per device here).'
+    : 'The body has no \x7b\x7b variable \x7d\x7d placeholder: every bound device receives the same values.';
+  var ver = document.getElementById('vt-bind-ver');
+  if (ver) {
+    ver.innerHTML = '<option value="">newest approved</option>' + (t.versions || []).map(function (v) {
+      return '<option value="' + v.version + '">v' + v.version + ' · ' + vtEsc(v.status) + '</option>';
+    }).join('');
+  }
+  var dev = document.getElementById('vt-bind-dev');
+  if (dev) Array.prototype.forEach.call(dev.options, function (o) { o.hidden = o.dataset.kind !== (t.product || 'fortiweb'); });
+}
+
+function vtBind() {
+  var out = document.getElementById('vt-bind-out');
+  var fd = new FormData(); fd.append('csrf_token', vtCsrf());
+  fd.append('appliance_id', document.getElementById('vt-bind-dev').value);
+  fd.append('pinned_version', document.getElementById('vt-bind-ver').value);
+  fd.append('variables', document.getElementById('vt-bind-vars').value || '{}');
+  fetch('/templates/' + VT_ID + '/bindings', {method: 'POST', body: fd, headers: {'Accept': 'application/json'}})
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (!j.ok) { out.innerHTML = '<span class="text-danger">' + vtEsc(j.error) + '</span>'; return; }
+      out.innerHTML = '<span class="text-success">Bound ' + vtEsc(j.binding.appliance) + '.</span>';
+      viewTemplate(VT_ID);
+    })
+    .catch(function (e) { out.innerHTML = '<span class="text-danger">' + vtEsc(e.message) + '</span>'; });
+}
+
+// --- legacy stamp ---------------------------------------------------------
+var VT_STAMP = '';
+function vtStamp(confirm) {
+  var out = document.getElementById('vt-stamp-out');
+  var fd = new FormData(); fd.append('csrf_token', vtCsrf());
+  if (confirm) { fd.append('confirm', '1'); fd.append('build', VT_STAMP); }
+  fetch('/templates/' + VT_ID + '/stamp', {method: 'POST', body: fd, headers: {'Accept': 'application/json'}})
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (!j.ok) { out.innerHTML = '<span class="text-danger">' + vtEsc(j.error) + '</span>'; return; }
+      if (j.mode === 'preview') {
+        var c = j.candidates || [];
+        VT_STAMP = (c[0] && !c[0].blocking) ? c[0].build : '';
+        out.innerHTML = '<table class="fw-table"><thead><tr><th>Build</th><th>Fit</th></tr></thead><tbody>' +
+          c.map(function (x, i) { return '<tr><td>' + vtEsc(x.build) + (i === 0 && !x.blocking ? ' <span class="fw-badge fw-badge-success">best fit</span>' : '') +
+            '</td><td>' + vtEsc(x.text) + '</td></tr>'; }).join('') + '</tbody></table>' +
+          (VT_STAMP ? '' : '<span class="text-danger">No measured build fits this body: re-capture it from a device.</span>');
+        document.getElementById('vt-stamp-save').disabled = !VT_STAMP;
+      } else {
+        out.innerHTML = '<span class="text-success">Recorded ' + vtEsc(j.build) + '.</span>';
+        setTimeout(function () { location.reload(); }, 1000);
+      }
+    })
+    .catch(function (e) { out.innerHTML = '<span class="text-danger">' + vtEsc(e.message) + '</span>'; });
+}
+
+// --- decisions for the fields the target build adds -------------------------
+function vtRenderDecisions(plan) {
+  var el = document.getElementById('vt-decide');
+  if (!el) return;
+  var nf = plan.new_fields || {};
+  var keys = Object.keys(nf);
+  if (!keys.length) {
+    el.innerHTML = (plan.new_fields_unknown || []).length
+      ? '<div class="text-muted small">Fields added by ' + vtEsc(plan.target_version) + ' could not be computed for ' + vtEsc(plan.new_fields_unknown.join(', ')) +
+        (plan.source_firmware ? '' : ' (no firmware is recorded for this template)') + '.</div>' : '';
+    return;
+  }
+  var html = '<label class="fw-form-label">' + vtEsc(plan.target_version) + ' adds these fields — decide each one</label>' +
+    '<table class="fw-table"><thead><tr><th>Object</th><th>Field</th><th>Decision</th><th>Value</th></tr></thead><tbody>';
+  keys.forEach(function (k) {
+    nf[k].forEach(function (f) {
+      var spec = ((plan.new_field_specs || {})[k] || {})[f] || {};
+      // a template never stores a secret (services.template_compat._is_secret_field)
+      var secret = /(secret|passw|psk|private|passphrase|-key$|^key$)/i.test(f) ||
+                   ['password', 'secret'].indexOf(String(spec.type || '').toLowerCase()) >= 0;
+      var opts = spec.options || spec.choices || [];
+      var input = opts.length
+        ? '<select class="form-select form-select-sm" data-dval>' + opts.map(function (o) { return '<option>' + vtEsc(o) + '</option>'; }).join('') + '</select>'
+        : '<input class="form-control form-control-sm" data-dval placeholder="' + vtEsc(spec.type || '') + '">';
+      html += '<tr data-dkey="' + vtEsc(k) + '" data-dfield="' + vtEsc(f) + '"><td><code>' + vtEsc(k) + '</code></td><td>' + vtEsc(f) +
+        '</td><td><select class="form-select form-select-sm" data-dmode><option value="default">keep device default</option>' +
+        (secret ? '' : '<option value="set">set a value</option>') + '</select></td><td>' +
+        (secret ? '<span class="text-muted small">secret: set it on the device</span>' : input) + '</td></tr>';
+    });
+  });
+  el.innerHTML = html + '</tbody></table>';
+}
+
+function vtCollectDecisions() {
+  var out = {};
+  document.querySelectorAll('#vt-decide tr[data-dkey]').forEach(function (tr) {
+    var mode = tr.querySelector('[data-dmode]').value;
+    var d = {mode: mode};
+    if (mode === 'set') d.value = tr.querySelector('[data-dval]').value;
+    (out[tr.dataset.dkey] = out[tr.dataset.dkey] || {})[tr.dataset.dfield] = d;
+  });
+  return out;
 }
 
 function vtCsrf() { return document.querySelector('#applyForm input[name=csrf_token]').value; }
@@ -558,13 +728,14 @@ function vtAdapt(confirm) {
   var out = document.getElementById('vt-adapt-out');
   if (!build) { out.innerHTML = '<span class="text-danger">Choose the target build.</span>'; return; }
   var fd = new FormData(); fd.append('csrf_token', vtCsrf()); fd.append('build', build);
-  if (confirm) fd.append('confirm', '1');
+  if (confirm) { fd.append('confirm', '1'); fd.append('decisions', JSON.stringify(vtCollectDecisions())); }
   fetch('/templates/' + VT_ID + '/adapt', {method: 'POST', body: fd, headers: {'Accept': 'application/json'}})
     .then(function (r) { return r.json(); })
     .then(function (j) {
       if (!j.ok) { out.innerHTML = '<span class="text-danger">' + vtEsc(j.error) + '</span>'; document.getElementById('vt-adapt-save').disabled = true; return; }
       if (j.mode === 'preview') {
         out.innerHTML = TplCompat.adaptPlan(j.plan);
+        vtRenderDecisions(j.plan);
         document.getElementById('vt-adapt-save').disabled = !(j.plan.changes > 0 && !(j.plan.absent_keys || []).length);
       } else {
         out.innerHTML = '<span class="text-success">Saved v' + vtEsc(j.version) + ' (pending approval).</span>';
@@ -706,6 +877,9 @@ function renderPreview(j) {
   bind('[data-js="vt-validate"]', function () { vtValidate(); });
   bind('[data-js="vt-adapt-preview"]', function () { vtAdapt(false); });
   bind('[data-js="vt-adapt-save"]', function () { vtAdapt(true); });
+  bind('[data-js="vt-stamp-preview"]', function () { vtStamp(false); });
+  bind('[data-js="vt-stamp-save"]', function () { vtStamp(true); });
+  bind('[data-js="vt-bind"]', function () { vtBind(); });
 })();
 </script>
 {% endblock %}

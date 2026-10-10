@@ -1309,11 +1309,23 @@ class Template(db.Model):
     # JSON {build: verdict}: the builds an approver validated this version for.
     validated_builds = db.Column(db.Text, nullable=True, default="")
     adapted_from_id = db.Column(db.Integer, nullable=True)
+    # JSON {build: {key: {field: {"mode": "default"|"set", "value": …}}}}: what
+    # the author decided for each field a newer build ADDS. Without it a
+    # template "fits" the new build while the device quietly takes defaults.
+    field_decisions = db.Column(db.Text, nullable=True, default="")
 
     @property
     def compat_check_dict(self) -> dict[str, Any]:
         try:
             data = json.loads(self.compat_check or "{}")
+            return data if isinstance(data, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+
+    @property
+    def field_decisions_dict(self) -> dict[str, Any]:
+        try:
+            data = json.loads(self.field_decisions or "{}")
             return data if isinstance(data, dict) else {}
         except (ValueError, TypeError):
             return {}

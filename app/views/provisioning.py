@@ -709,3 +709,82 @@ def template_set_combos(template_id: int):
                detail=f"added={res['added']} removed={res['removed']} total={res['total']}")
     flash(f"Updated combo assignments (+{res['added']} / -{res['removed']}).", 'success')
     return redirect(url_for('provisioning.baselines'))
+
+
+# --------------------------------------------------------------------------- #
+#  Compare: is a newer template a valid replacement on a build / a device?     #
+# --------------------------------------------------------------------------- #
+def _compare_choices(product: str):
+    """Every template of the ADOM, grouped by family, newest version first."""
+    fams: dict = {}
+    for t in list_templates(None):
+        if (t.product or 'fortiweb') != product:
+            continue
+        fams.setdefault((t.kind, t.name), []).append(t)
+    out = []
+    for (kind, name), rows in sorted(fams.items(), key=lambda kv: (kv[0][0], kv[0][1].lower())):
+        out.append({'kind': kind, 'name': name,
+                    'rows': sorted(rows, key=lambda t: t.version, reverse=True)})
+    return out
+
+
+def _default_newer(cur: Template):
+    """The obvious "newer" template for ``cur``: the next version of its family,
+    else the newest version adapted from it."""
+    nxt = (Template.query.filter(Template.kind == cur.kind, Template.name == cur.name,
+                                 Template.version > cur.version)
+           .order_by(Template.version.desc()).first())
+    if nxt is not None:
+        return nxt
+    return (Template.query.filter_by(adapted_from_id=cur.id)
+            .order_by(Template.id.desc()).first())
+
+
+@bp.route('/compare')
+@login_required
+@require_permission('operations.view')
+def compare():
+    """Compare the template a device has with a newer one, on a firmware build
+    (or on one device's running build): field diff + the verdict whether the
+    newer one is valid there. Read-only: nothing is recorded or pushed."""
+    from ..services.templates import get_template as _get
+    product = tc.session_product()
+    choices = _compare_choices(product)
+
+    def _int(name):
+        try:
+            return int(request.args.get(name) or 0) or None
+        except (TypeError, ValueError):
+            return None
+
+    cur = _get(_int('a')) if _int('a') else None
+    new = _get(_int('b')) if _int('b') else None
+    if cur is not None and (cur.product or 'fortiweb') != product:
+        abort(404)
+    if new is not None and (new.product or 'fortiweb') != product:
+        abort(404)
+    if cur is not None and new is None and not request.args.get('b'):
+        new = _default_newer(cur)
+    appliance = None
+    if _int('appliance_id'):
+        appliance = visible_appliance_or_404(_int('appliance_id'))
+    build = (request.args.get('build') or '').strip()
+    result, error = None, ''
+    if cur is not None and new is not None:
+        if cur.id == new.id:
+            error = 'Pick two different templates (or versions) to compare.'
+        else:
+            try:
+                result = tc.compare(cur, new, build, appliance=appliance)
+            except ValueError as exc:
+                error = str(exc)
+    if request.args.get('format') == 'json' or \
+            'application/json' in (request.headers.get('Accept') or ''):
+        if error or result is None:
+            return {'ok': False, 'error': error or 'choose the two templates (a, b)'}, 400
+        return {'ok': True, 'result': result}
+    devices = visible_appliances().filter(Appliance.kind == product).order_by(Appliance.name).all()
+    return render_template('provisioning/compare.html', choices=choices, cur=cur, new=new,
+                           appliance=appliance, build=build, result=result, error=error,
+                           devices=devices, product=product,
+                           firmware_choices=tc.known_builds(product))

@@ -28,6 +28,7 @@ from ..models import Appliance, Template
 from ..models import visible_appliances, visible_appliance_or_404
 from ..services import templates as lib
 from ..services import template_compat as tc
+from ..services import template_bindings as tb
 from ..services.audit import log_action
 from ..services.bulk import BulkRunner, iter_push_items
 
@@ -150,7 +151,30 @@ def detail(template_id: int):
         'adapted_from_id': row.adapted_from_id,
         'compat_check': row.compat_check_dict,
         'validated_builds': row.validated_builds_dict,
+        'field_decisions': row.field_decisions_dict,
+        'product': row.product or 'fortiweb',
+        'placeholders': tb.placeholders(row.body_dict),
+        'bindings': [_binding_json(b) for b in tb.for_template(row)],
+        'versions': [{'id': t.id, 'version': t.version, 'status': t.status,
+                      'source_firmware': t.source_firmware or ''}
+                     for t in tb.family(row.kind, row.name)],
     })
+
+
+def _binding_json(b) -> dict:
+    appl = Appliance.query.get(b.appliance_id)
+    try:
+        st = tb.status(b, appl)
+    except Exception as exc:  # noqa: BLE001 — one unreadable binding never hides the rest
+        st = {'state': 'error', 'blocking': True,
+              'reason': f'{type(exc).__name__}: {exc}'}
+    return {'id': b.id, 'appliance_id': b.appliance_id,
+            'appliance': getattr(appl, 'name', '') or f'device {b.appliance_id}',
+            'pinned_version': b.pinned_version, 'variables': b.variables_dict,
+            'note': b.note or '', 'created_by': b.created_by or '',
+            'state': st.get('state'), 'blocking': bool(st.get('blocking')),
+            'build': st.get('build') or '', 'version': st.get('version'),
+            'reason': st.get('reason') or ''}
 
 
 @bp.route('/<int:template_id>/delete', methods=['POST'])
@@ -281,6 +305,14 @@ def apply(template_id: int):
 
     targets = visible_appliances().filter(Appliance.id.in_(device_ids)).all()
     fleet = len(device_ids) > 1
+    # A body with {{ variables }} is rendered per device from its binding; a
+    # device whose binding leaves one unset is refused (a literal placeholder
+    # would be written to the box). No override: there is no value to write.
+    bodies, missing_vars = tb.render_for_devices(row, device_ids)
+    items_by_device = {aid: iter_push_items(b) for aid, b in bodies.items()}
+    var_blocks = ['%s: no value for %s (set it on the device binding)'
+                  % (next((a.name for a in targets if a.id == aid), aid), ', '.join(m))
+                  for aid, m in sorted(missing_vars.items())]
 
     if not confirm:
         # Dry-run preview only — pure, never contacts a device for real. The
@@ -289,7 +321,12 @@ def apply(template_id: int):
         compat = tc.for_appliances(row, targets, require_validated=fleet)
         # Fields a target's build does not have are stripped per device and
         # shown in the preview (services.build_compat), never dropped silently.
-        preview = BulkRunner(items, skips=compat.get('skips')).preview(device_ids)
+        if var_blocks:
+            compat['blocked'] = True
+            compat['blocks'] = var_blocks + list(compat.get('blocks') or [])
+        compat['variables_missing'] = {str(k): v for k, v in missing_vars.items()}
+        preview = BulkRunner(items, skips=compat.get('skips'),
+                             items_by_device=items_by_device).preview(device_ids)
         log_action('template.apply.preview', target=f'{row.kind}/{row.name}',
                    detail=f'devices={device_ids} items={len(items)} '
                           f'compat_blocked={compat["blocked"]}')
@@ -303,6 +340,14 @@ def apply(template_id: int):
             'can_override': bool(current_user.can('operations.template_approve')),
         })
 
+    if var_blocks:
+        msg = 'Refused: ' + '; '.join(var_blocks)
+        log_action('template.apply.refused', target=f'{row.kind}/{row.name}',
+                   detail=msg[:1500])
+        if wants_json:
+            return jsonify({'ok': False, 'error': msg}), 409
+        flash(msg, 'danger')
+        return redirect(_safe_next(url_for('templates.index')))
     allowed, compat = tc.enforce(
         row, targets, user=current_user,
         override_reason=request.form.get('override_reason', ''),
@@ -336,7 +381,7 @@ def apply(template_id: int):
               'compat_overridden': compat['overridden']},
         audit_action='template.apply',
         audit_target=f'{row.kind}/{row.name}',
-        skips=compat.get('skips'))
+        skips=compat.get('skips'), items_by_device=items_by_device)
     log_action('template.apply.start', target=f'{row.kind}/{row.name}',
                detail=f'devices={device_ids} items={len(items)} job={job["id"]}')
     if wants_json:
@@ -563,7 +608,10 @@ def adapt(template_id: int):
         if request.form.get('confirm') != '1':
             return jsonify({'ok': True, 'mode': 'preview',
                             'plan': tc.adapt_plan(row, build)})
-        new, plan = tc.adapt(row, build, author=current_user.username)
+        new, plan = tc.adapt(row, build, author=current_user.username,
+                             decisions=request.form.get('decisions') or '{}')
+        from ..extensions import db
+        db.session.commit()
     except ValueError as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 400
     log_action('template.adapt', target=f'{row.kind}/{row.name}',
@@ -572,3 +620,115 @@ def adapt(template_id: int):
                       f'{plan["changes"]} change(s)')
     return jsonify({'ok': True, 'mode': 'saved', 'template_id': new.id,
                     'version': new.version, 'plan': plan, 'note': new.note})
+
+
+# --------------------------------------------------------------------------- #
+#  Legacy stamp · device bindings · compatibility matrix                        #
+# --------------------------------------------------------------------------- #
+@bp.route('/<int:template_id>/stamp', methods=['POST'])
+@login_required
+@require_permission('operations.template_approve')
+def stamp(template_id: int):
+    """Record the firmware a LEGACY template (no stamp) was written for.
+
+    Without ``confirm`` returns every measured build, best fit first. With it,
+    stamps ``build`` (or the best fit) — never a build the body does not fit.
+    """
+    row = lib.get_template(template_id)
+    if row is None:
+        abort(404)
+    try:
+        if request.form.get('confirm') != '1':
+            return jsonify({'ok': True, 'mode': 'preview',
+                            'candidates': tc.stamp_candidates(row)})
+        res = tc.stamp_legacy(row, request.form.get('build') or '',
+                              by=current_user.username)
+        from ..extensions import db
+        db.session.commit()
+    except ValueError as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+    log_action('template.stamp', target=f'{row.kind}/{row.name}',
+               detail=f'v{row.version} legacy -> {res["build"]}; {res["note"]}'[:1500])
+    return jsonify({'ok': True, 'mode': 'saved', 'build': res['build'],
+                    'note': res['note'], 'compat_check': row.compat_check_dict})
+
+
+@bp.route('/<int:template_id>/bindings', methods=['POST'])
+@login_required
+@require_permission('operations.template_save')
+def bind(template_id: int):
+    """Bind a device of the template's ADOM (create or update)."""
+    row = lib.get_template(template_id)
+    if row is None:
+        abort(404)
+    try:
+        aid = int(request.form.get('appliance_id') or 0)
+    except (TypeError, ValueError):
+        aid = 0
+    appl = visible_appliances().filter(Appliance.id == aid).first() if aid else None
+    if appl is None:
+        return jsonify({'ok': False, 'error': 'Unknown appliance.'}), 404
+    try:
+        b = tb.bind(appl, row, pinned_version=request.form.get('pinned_version') or None,
+                    variables=request.form.get('variables') or '{}',
+                    note=(request.form.get('note') or '').strip(),
+                    by=current_user.username)
+        from ..extensions import db
+        db.session.commit()
+    except ValueError as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+    log_action('template.bind', target=f'{row.kind}/{row.name}', appliance_id=appl.id,
+               detail=f'pinned={b.pinned_version or "latest approved"} '
+                      f'variables={",".join(sorted(b.variables_dict))}')
+    return jsonify({'ok': True, 'binding': _binding_json(b)})
+
+
+@bp.route('/bindings/<int:binding_id>/delete', methods=['POST'])
+@login_required
+@require_permission('operations.template_save')
+def unbind(binding_id: int):
+    from ..models_tpl_binding import TemplateBinding
+    b = TemplateBinding.query.get(binding_id)
+    if b is None:
+        abort(404)
+    visible_appliance_or_404(b.appliance_id)
+    tb.unbind(binding_id)
+    from ..extensions import db
+    db.session.commit()
+    log_action('template.unbind', target=f'{b.kind}/{b.name}',
+               appliance_id=b.appliance_id, detail='binding removed')
+    return jsonify({'ok': True})
+
+
+@bp.route('/matrix')
+@login_required
+@require_permission('operations.view')
+def matrix():
+    """Every template of the ADOM against every build the ADOM knows (+ ``?build=``
+    a target being considered): fits / adapt / unmeasured / block per cell."""
+    product = tc.session_product()
+    from ..services import version_compat as vc
+    rows = [t for t in lib.list_templates(None) if (t.product or 'fortiweb') == product]
+    if request.args.get('all') != '1':
+        latest = {}
+        for t in rows:
+            k = (t.kind, t.name)
+            if k not in latest or t.version > latest[k].version:
+                latest[k] = t
+        rows = sorted(latest.values(), key=lambda t: (t.kind, t.name.lower()))
+    extra = [b for b in request.args.getlist('build') if b]
+    cols = tc.matrix_builds(product, extra)
+    builds = [c['version'] for c in cols]
+    grid = tc.matrix(rows, builds)
+    fleet = {}
+    for a in visible_appliances().filter(Appliance.kind == product).all():
+        v = vc._resolved(a).get('version') or ''
+        if v:
+            fleet.setdefault(v, []).append(a.name)
+    bound = {}
+    for t in rows:
+        bound[t.id] = [b.appliance_id for b in tb.for_template(t)]
+    return render_template('templates/matrix.html', grid=grid, cols=cols,
+                           fleet=fleet, bound=bound, product=product,
+                           show_all=request.args.get('all') == '1',
+                           extra=extra, firmware_choices=tc.known_builds(product))

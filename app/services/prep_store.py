@@ -132,6 +132,20 @@ def verdict(result: dict | None) -> tuple[bool, str]:
                          % (api["renamed_total"], api.get("target_version") or "?"))
         else:
             parts.append("API surface: no field change measured")
+    tpl = result.get("templates")
+    if isinstance(tpl, dict):
+        if tpl.get("error"):
+            ok = False
+            parts.append("templates NOT checked")
+        elif tpl.get("not_fitting"):
+            ok = False
+            parts.append("templates: %d do not fit %s (adapt them first)"
+                         % (tpl["not_fitting"], tpl.get("target_version") or "?"))
+        else:
+            parts.append("templates: %d fit %s%s" % (
+                len(tpl.get("templates") or []), tpl.get("target_version") or "?",
+                (", %d with undecided new fields" % tpl["undecided"])
+                if tpl.get("undecided") else ""))
     if result.get("permission") is False:
         ok = False
         parts.append("account lacks maintenance permission")

@@ -6,6 +6,75 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — FortiWeb templates across firmware builds and devices: compare, matrix, bindings
+
+- **Provisioning → Compare templates** (`/provisioning/compare`): the template
+  a device has against a newer one (the next version, the version adapted
+  from it, or any template of the same kind), on a firmware build or on one
+  device's running build. It shows the field-by-field difference and a
+  verdict: VALID only when the newer template fits that build (nothing
+  discarded, renamed, absent or unmeasured), decides every field the build
+  adds and, on a device, has a value for each of its variables. Approval is
+  reported apart (a valid pending version can go to one device, not to the
+  fleet). Read-only; also as JSON (`?format=json`). Linked from System
+  Provisioning, the Template Library and every row of both.
+- **Compatibility matrix** (`/templates/matrix`): every template of the ADOM
+  against every measured or fleet build (plus a target being considered):
+  fits / adapt / unmeasured / blocked per cell; a cell opens the comparison.
+- **Device bindings**: a template stays the shared intent of its ADOM and a
+  device is BOUND to it (following the newest approved version or pinned to
+  one), with its own values for the body's `{{ variable }}` placeholders.
+  The apply renders the body per device and refuses a device whose binding
+  leaves a variable unset (no override: there is no value to write). A
+  binding cannot cross ADOMs.
+- **"Adapt to firmware" decides the new fields.** The fields a newer build
+  adds over the template's own build are listed in the preview and each one
+  must be decided (keep the device default or set a value); the decisions
+  are stored with the new version (`templates.field_decisions`) and set
+  values are written into its body. An apply to a newer build with
+  undecided fields warns with their names.
+- **Recording the firmware of a legacy template** (Template Library → View →
+  "Find the build it fits"): every measured build, best fit first; the build
+  is recorded as *authored* only when the body fits it. The six templates on
+  the primary were stamped this way (see below).
+- **Upgrade pre-flight checks the templates that govern the device** against
+  the target build and grades them: a template that does not fit fails the
+  pre-flight (adapting it is the only way to turn it green).
+- **The FortiWeb pages offer the SATOM tools again** (they were reachable only
+  through "Classic view"): a template-managed Web Protection Profile shows a
+  lock badge and its Delete is disabled; Deep clone (profile + referenced
+  objects) and Save as template on Web Protection Profiles; Save as template
+  on configuration objects; Clone / Clone to / Migrate to / Delete on the
+  Server Policy list open the SATOM dialog of the selected policy.
+
+### Changed — a build without evidence blocks a template apply
+
+- A target build with no evidence in the API library (`unmeasured`), and a
+  device that reports no firmware, now BLOCK the template apply (an approver
+  may still override with a reason, audited). They used to pass as a
+  warning, which turned "unknown" into "accepted" by omission. A build whose
+  endpoint is served but whose fields were never read (`blind`) still warns.
+- The template lock of an approved Web Protection Profile follows its
+  bindings: without bindings it locks the profile on every FortiWeb of the
+  ADOM (as before); with bindings, only on the bound devices. The lock no
+  longer reaches devices of another ADOM.
+
+### Fixed — System Provisioning's NTP element wrote the GUI's own API
+
+- The "NTP / time" element of System Provisioning wrote
+  `system/maintenance.systemtime` — FortiWeb's GUI API, not cmdb, with the
+  GUI's field names (`mode`, `ntpServer`, `daylightSaving`). No build has
+  evidence for it and SATOM's GUI layer treats it as read-only, so every
+  profile using it was refused by the firmware check (now that "no evidence"
+  blocks) or, before, pushed blind. The element is now **NTP** on
+  `cmdb/system/ntp` (`ntpsync`, `syncinterval`; servers are
+  `system/ntp/ntpserver` rows; time zone and DST are Global settings),
+  measured on 7.6.8 and 8.0.6. A guard pins that every provisioning element
+  writes a cmdb endpoint.
+- "Adapt to firmware" refuses to store a value for a new field that is a
+  secret (`jwt-token-secret` appears on 8.0.6): a template never stores
+  secrets; only "keep the device default" is offered for it.
+
 ### Fixed — the CLI writer speaks FortiAuthenticator's CLI
 
 - A FortiAuthenticator CLI write never got past `config`: the writer waited

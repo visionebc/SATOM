@@ -6,6 +6,29 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — Template compare and matrix pages printed a Python method as the product name; the matrix took 40 s
+
+Found while taking the documentation screenshots, not by a test:
+
+- **`<built-in method title of str object at 0x…>` in the top bar and footer**
+  of *Compare templates* and *Template compatibility matrix*, with an empty
+  ADOM badge and a broken product icon. Both views passed `product=<str>` to
+  the template, shadowing the product object `base.html` reads. Neither
+  template used it. `tests/test_render_no_product_shadow.py` now fails if any
+  view passes `product=` to a template again (AST scan over `app/`).
+- **Template compatibility matrix: 40-50 s → about 2 s** for 6 templates × 3
+  builds. Every cell re-read the whole firmware build twice (the joined
+  REST/CLI view and the CLI tree): 67 + 67 whole-build reads for 3 builds.
+  `api_library.channel_memo()` shares those reads for the duration of one
+  matrix; it is opt-in and scoped, so a request that ingests and then reads is
+  never answered from a view older than its own write. Same cells, same text.
+- **Not in GUI, but in CLI** (per-device page): the title ran off the right
+  edge behind the bookmark button. The page now uses the standard header
+  (breadcrumb + title).
+- **Template Library**: the Note column had no minimum width; since the fifth
+  action button (Compare) it collapsed to a few characters per line and every
+  row grew to ten lines. It keeps 200 px now.
+
 ### Changed — FortiWeb, FortiGate and FortiAuthenticator ADOMs draw only the device's own menu
 
 Operator request: the old SATOM menus are gone from these three ADOMs. The

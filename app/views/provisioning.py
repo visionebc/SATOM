@@ -786,5 +786,5 @@ def compare():
     devices = visible_appliances().filter(Appliance.kind == product).order_by(Appliance.name).all()
     return render_template('provisioning/compare.html', choices=choices, cur=cur, new=new,
                            appliance=appliance, build=build, result=result, error=error,
-                           devices=devices, product=product,
+                           devices=devices,
                            firmware_choices=tc.known_builds(product))

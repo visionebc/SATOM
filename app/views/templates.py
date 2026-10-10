@@ -729,6 +729,6 @@ def matrix():
     for t in rows:
         bound[t.id] = [b.appliance_id for b in tb.for_template(t)]
     return render_template('templates/matrix.html', grid=grid, cols=cols,
-                           fleet=fleet, bound=bound, product=product,
+                           fleet=fleet, bound=bound,
                            show_all=request.args.get('all') == '1',
                            extra=extra, firmware_choices=tc.known_builds(product))

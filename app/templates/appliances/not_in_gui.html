@@ -1,11 +1,17 @@
 {% extends "base.html" %}
 {% from "_not_in_gui.html" import channel_badge, nig_cli with context %}
 {% block title %}{{ _('Not in GUI, but in CLI') }} — {{ appliance.name }}{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <a href="{{ url_for('appliances.detail', id=appliance.id) }}">{{ appliance.name }}</a><span class="separator">/</span>
+  <span>{{ _('Not in GUI, but in CLI') }}</span>
+</div>
+{% endblock %}
 {% block content %}
-<div class="fw-page-header d-flex align-items-center gap-3 mb-3">
-  <i class="bi bi-terminal text-accent fs-3"></i>
+<div class="fw-page-header">
   <div>
-    <h1 class="h5 mb-0">{{ _('Not in GUI, but in CLI') }}</h1>
+    <h1 class="fw-page-title"><i class="bi bi-terminal me-2 text-accent"></i>{{ _('Not in GUI, but in CLI') }}</h1>
     <div class="text-muted small">
       <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="text-decoration-none">{{ appliance.name }}</a>
       {% if inv %}· {{ inv.product }} {{ inv.version or _('unknown build') }}{% endif %}

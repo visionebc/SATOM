@@ -96,7 +96,7 @@
               <span class="fw-badge fw-badge-info">{{ _('pending') }}</span>
             {% endif %}
           </td>
-          <td style="font-size:13px; max-width:280px;" class="note-cell">
+          <td style="font-size:13px; min-width:200px; max-width:280px;" class="note-cell">
             {% if t.note %}
               {% if t.note|length > 70 %}
                 <span class="note-short">{{ t.note[:70] }}…</span><span class="note-full" style="display:none; white-space:pre-wrap; word-break:break-word;">{{ t.note }}</span>
@@ -107,7 +107,7 @@
             {% else %}—{% endif %}
           </td>
           <td style="font-size:13px;">{{ t.author or '—' }}</td>
-          <td style="font-size:13px;">{{ t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '—' }}</td>
+          <td style="font-size:13px; white-space:nowrap;">{{ t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '—' }}</td>
           <td class="actions-col">
             <a class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Compare with a newer version') }}" href="{{ url_for('provisioning.compare', a=t.id) }}"><i class="bi bi-arrow-left-right"></i></a>
             <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1" title="{{ _('View') }}"

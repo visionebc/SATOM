@@ -29,6 +29,46 @@ Found while taking the documentation screenshots, not by a test:
   action button (Compare) it collapsed to a few characters per line and every
   row grew to ten lines. It keeps 200 px now.
 
+### Fixed — Phone layout: the menu stops working after one navigation, the header runs off-screen, pages wider than the phone
+
+Operator report: on a phone the menu stops working and tables do not fit.
+Measured in a 390px-wide browser against a1, not guessed:
+
+- **Menu (and much more) dead after the first navigation.** Turbo Drive
+  re-executes the scripts in `<body>` on every visit. `main.js` declared
+  `const StatusPoller` and `api.js` `const csrfToken` at the top level; the
+  second declaration is a SyntaxError raised before the file's first line
+  runs, so from the first navigation on **all of `main.js` was dead**: the
+  sidebar button, the `data-fw-confirm` dialogs on destructive actions,
+  `tr[data-href]` row links, auto-submit selects, copy buttons. Desktop was
+  affected too. Both files now declare nothing lexical at the top level;
+  the pollers are reused across visits (their intervals no longer stack, and
+  an auto-refresh countdown started on one page no longer reloads the next).
+  `api.js` reads the CSRF token when the request is made — its global
+  `csrfToken` also collided with the API Explorer page's `function csrfToken()`.
+- **Sidebar toggle bound once.** It looks the button and sidebar up when the
+  tap arrives instead of holding the ones from the first page. On a phone a
+  tap outside the open menu, a tap on the dimmed page behind it, or Escape
+  closes it. Closing it on a phone no longer writes the desktop "collapsed"
+  flag (the next desktop visit from that browser opened with the sidebar
+  hidden).
+- **Five templates** broke the same way on the second visit to the same
+  page (Server Policy detail and New, Exceptions, section configuration,
+  Server Objects overview): their top-level `const`/`let` are now `var`.
+- **Topbar on a phone:** 260px of controls (product switch, tools, search,
+  notifications, user menu with logout) ran off the right edge. The ADOM
+  badge drops its "ADOM:" prefix and truncates its name, the environment and
+  HA badges keep only their icon, the device button is hidden (the sidebar
+  keeps "<device> · change"), and below 420px the logo gives way to the ADOM
+  name.
+- **Pages wider than the phone:** page-header button rows did not wrap, so
+  one row widened the whole page (Server Policies 865px, Deep monitors 541px)
+  and the browser zoomed every card out. Flex rows in the content wrap on a
+  phone (`.flex-nowrap` still opts out), and a bare table that overflows the
+  screen with no scrolling container (Monitoring → Collection, System Backup,
+  Software Update, High Availability) is put in its own horizontal scroll box.
+- Guard: `tests/test_turbo_body_scripts.py`.
+
 ### Changed — FortiWeb, FortiGate and FortiAuthenticator ADOMs draw only the device's own menu
 
 Operator request: the old SATOM menus are gone from these three ADOMs. The

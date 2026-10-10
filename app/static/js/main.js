@@ -42,62 +42,90 @@
 'use strict';
 
 // ============================================================
-// Sidebar Toggle
+// Sidebar Toggle — delegated 2026-10-11
+// Turbo Drive re-executes this file on every visit and swaps the whole
+// <body>, so handlers bound to the toggle button die with the old body and a
+// document listener bound per visit closes over a sidebar that is no longer
+// in the page. The listeners below are bound ONCE on document and look the
+// elements up when the event fires.
+//
+// Desktop collapse is persisted; the phone overlay is NOT. Closing the
+// overlay on a phone used to write the desktop "collapsed" flag, so the next
+// desktop visit from the same browser opened with the sidebar hidden.
 // ============================================================
 (function () {
-  const toggleBtn = document.getElementById('fw-sidebar-toggle');
-  const sidebar   = document.getElementById('fw-sidebar');
-  const main      = document.getElementById('fw-main');
-  const footer    = document.getElementById('fw-footer');
+  var COLLAPSED_KEY = 'fw_sidebar_collapsed';
+  var PHONE_MAX = 768;   // fortiweb.css: @media (max-width: 768px)
 
-  if (!toggleBtn || !sidebar) return;
-
-  const COLLAPSED_KEY = 'fw_sidebar_collapsed';
-
-  function setSidebarState(collapsed) {
-    if (collapsed) {
-      sidebar.classList.add('collapsed');
-      if (main)   main.style.marginLeft = '0';
-      if (footer) footer.style.marginLeft = '0';
-      localStorage.setItem(COLLAPSED_KEY, '1');
-    } else {
-      sidebar.classList.remove('collapsed');
-      if (main)   main.style.marginLeft = '';
-      if (footer) footer.style.marginLeft = '';
-      localStorage.removeItem(COLLAPSED_KEY);
-    }
-
-    // Mobile: use separate class
-    if (window.innerWidth <= 768) {
-      sidebar.classList.toggle('mobile-open', !collapsed);
-      sidebar.classList.remove('collapsed');
-      if (main)   main.style.marginLeft = '';
-      if (footer) footer.style.marginLeft = '';
+  function isPhone() { return window.innerWidth <= PHONE_MAX; }
+  function parts(root) {
+    root = root || document;
+    return {
+      btn:    root.querySelector('#fw-sidebar-toggle'),
+      sb:     root.querySelector('#fw-sidebar'),
+      main:   root.querySelector('#fw-main'),
+      footer: root.querySelector('#fw-footer'),
+    };
+  }
+  function storedCollapsed() {
+    try { return localStorage.getItem(COLLAPSED_KEY) === '1'; } catch (x) { return false; }
+  }
+  function setCollapsed(p, collapsed, persist) {
+    if (!p.sb) return;
+    p.sb.classList.toggle('collapsed', collapsed);
+    if (p.main)   p.main.style.marginLeft = collapsed ? '0' : '';
+    if (p.footer) p.footer.style.marginLeft = collapsed ? '0' : '';
+    if (persist) {
+      try {
+        if (collapsed) localStorage.setItem(COLLAPSED_KEY, '1');
+        else localStorage.removeItem(COLLAPSED_KEY);
+      } catch (x) {}
     }
   }
-
-  // Restore persisted state on load
-  if (window.innerWidth > 768 && localStorage.getItem(COLLAPSED_KEY) === '1') {
-    setSidebarState(true);
+  function setPhoneOpen(p, open) {
+    if (!p.sb) return;
+    p.sb.classList.remove('collapsed');
+    p.sb.classList.toggle('mobile-open', open);
+    if (p.main)   p.main.style.marginLeft = '';
+    if (p.footer) p.footer.style.marginLeft = '';
+    if (p.btn) p.btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    document.body.classList.toggle('fw-sidebar-open', open);
   }
 
-  toggleBtn.addEventListener('click', function () {
-    if (window.innerWidth <= 768) {
-      setSidebarState(sidebar.classList.contains('mobile-open'));
-    } else {
-      setSidebarState(!sidebar.classList.contains('collapsed'));
-    }
-  });
+  if (!window.__fwSidebarToggleBound) {
+    window.__fwSidebarToggleBound = true;
 
-  // Close sidebar overlay on outside click (mobile)
-  document.addEventListener('click', function (e) {
-    if (window.innerWidth <= 768 &&
-        sidebar.classList.contains('mobile-open') &&
-        !sidebar.contains(e.target) &&
-        !toggleBtn.contains(e.target)) {
-      setSidebarState(true);
-    }
-  });
+    document.addEventListener('click', function (e) {
+      var p = parts();
+      if (!p.btn || !p.sb) return;
+      if (p.btn.contains(e.target)) {
+        if (isPhone()) setPhoneOpen(p, !p.sb.classList.contains('mobile-open'));
+        else setCollapsed(p, !p.sb.classList.contains('collapsed'), true);
+        return;
+      }
+      // Phone: a tap outside the open overlay closes it.
+      if (isPhone() && p.sb.classList.contains('mobile-open') && !p.sb.contains(e.target)) {
+        setPhoneOpen(p, false);
+      }
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape' || !isPhone()) return;
+      var p = parts();
+      if (p.sb && p.sb.classList.contains('mobile-open')) setPhoneOpen(p, false);
+    });
+
+    // Apply the desktop collapse to the incoming body BEFORE it is painted,
+    // so a collapsed sidebar does not flash open on every navigation.
+    document.addEventListener('turbo:before-render', function (e) {
+      var nb = e.detail && e.detail.newBody;
+      document.body.classList.remove('fw-sidebar-open');
+      if (nb && !isPhone() && storedCollapsed()) setCollapsed(parts(nb), true, false);
+    });
+  }
+
+  // First load (and any render the hook above did not see).
+  if (!isPhone() && storedCollapsed()) setCollapsed(parts(), true, false);
 })();
 
 // ============================================================
@@ -133,8 +161,13 @@
 
 // ============================================================
 // Status Badge Poller
+// ------------------------------------------------------------
+// `var` + reuse, not `const`: Turbo re-executes this file on every visit, and a
+// second `const` of the same global is a SyntaxError that stops the WHOLE file
+// before its first line runs — sidebar toggle, confirm dialogs, row links and
+// all. One poller for the life of the tab, so its interval never doubles.
 // ============================================================
-const StatusPoller = (function () {
+var StatusPoller = (window.FW && window.FW.StatusPoller) || (function () {
   let intervalId = null;
 
   function updateBadge(applianceId, status) {
@@ -181,6 +214,7 @@ const StatusPoller = (function () {
 
   function start(intervalMs) {
     intervalMs = intervalMs || 30000;
+    stop();
     poll();
     intervalId = setInterval(poll, intervalMs);
   }
@@ -196,16 +230,20 @@ const StatusPoller = (function () {
 document.addEventListener('DOMContentLoaded', function () {
   if (document.querySelector('[data-status-id]')) {
     StatusPoller.start(30000);
+  } else {
+    StatusPoller.stop();
   }
 });
 
 // ============================================================
 // Auto-Refresh for Analysis / Logs Pages
 // ============================================================
-const AutoRefresh = (function () {
+var AutoRefresh = (window.FW && window.FW.AutoRefresh) || (function () {
   let intervalId = null;
 
   function init() {
+    // A countdown started on the previous page must not reload this one.
+    if (intervalId) { clearInterval(intervalId); intervalId = null; }
     const meta = document.querySelector('meta[name="fw-auto-refresh"]');
     if (!meta) return;
 
@@ -526,3 +564,56 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   });
 });
+
+// ============================================================
+// Phone: a table wider than the screen scrolls in its own box — 2026-10-11
+// Lists rendered in .fw-table-wrapper already scroll sideways. A bare
+// Bootstrap .table in a card body does not, and ONE such table widened the
+// whole page (Monitoring → Collection: 759px on a 390px phone), so the
+// browser zoomed every card on it out to fit. Only a table that really
+// overflows and has no scrolling ancestor is wrapped; tables that fit are
+// left alone. Watched with one observer because many tables arrive by
+// fetch() after the page has rendered.
+// ============================================================
+(function () {
+  if (window.__fwPhoneTablesBound) return;
+  window.__fwPhoneTablesBound = true;
+  var PHONE_MAX = 768;   // fortiweb.css: @media (max-width: 768px)
+
+  function scrollsX(el) {
+    var o = getComputedStyle(el).overflowX;
+    return o === 'auto' || o === 'scroll' || o === 'hidden' || o === 'clip';
+  }
+  function fit() {
+    if (window.innerWidth > PHONE_MAX) return;
+    var main = document.getElementById('fw-main');
+    if (!main) return;
+    var limit = document.documentElement.clientWidth + 1;
+    var tables = main.querySelectorAll('table');
+    for (var i = 0; i < tables.length; i++) {
+      var t = tables[i];
+      if (t.closest('.modal, .fw-phone-scroll')) continue;
+      if (t.getBoundingClientRect().right <= limit) continue;
+      var clipped = false;
+      for (var p = t.parentElement; p && p !== main; p = p.parentElement) {
+        if (scrollsX(p)) { clipped = true; break; }
+      }
+      if (clipped) continue;
+      var box = document.createElement('div');
+      box.className = 'fw-phone-scroll';
+      t.parentNode.insertBefore(box, t);
+      box.appendChild(t);
+    }
+  }
+
+  var timer = null;
+  function soon() { clearTimeout(timer); timer = setTimeout(fit, 200); }
+  document.addEventListener('turbo:load', soon);
+  window.addEventListener('resize', soon);
+  if (window.MutationObserver) {
+    new MutationObserver(function () {
+      if (window.innerWidth <= PHONE_MAX) soon();
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  }
+  soon();
+})();

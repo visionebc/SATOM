@@ -172,7 +172,7 @@
 
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">
-const SO_AID = {{ appliance.id }};
+var SO_AID = {{ appliance.id }};
 function soFilter(tableId, q) {
   q = q.toLowerCase();
   document.querySelectorAll('#' + tableId + ' tbody tr').forEach(function (row) {

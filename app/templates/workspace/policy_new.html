@@ -100,7 +100,7 @@
 </tr>
 </script>
 <script nonce="{{ csp_nonce }}">
-const APPL_ID = {{ appliance.id }};
+var APPL_ID = {{ appliance.id }};
 function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 async function loadRef(sel){
   if(sel.dataset.loaded) return; sel.dataset.loaded='1';

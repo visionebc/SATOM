@@ -394,9 +394,9 @@
 
 <script src="{{ url_for('static', filename='js/regex_lab.js') }}" nonce="{{ csp_nonce }}"></script>
 <script nonce="{{ csp_nonce }}">
-const EXC_AID = {{ appliance.id }};
+var EXC_AID = {{ appliance.id }};
 // The assistant opinion is advisor.use; without it only SATOM's own analysis runs.
-const EXC_USE_MODEL = {{ 'true' if current_user.can('advisor.use') else 'false' }};
+var EXC_USE_MODEL = {{ 'true' if current_user.can('advisor.use') else 'false' }};
 function fwPost(url, payload){
   return fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}).then(r=>r.json());
 }
@@ -576,7 +576,7 @@ function hideClonePanel(){
 // profile. A sub-policy left shared carries every carve-out written into it to
 // every Server Policy behind it, which is the leak this whole flow exists to
 // close; discovering it after the write is discovering it too late.
-let CLONE_PLANNED = false;
+var CLONE_PLANNED = false;
 function cloneBody(){
   return {
     source: document.getElementById('clone-src').textContent,
@@ -704,7 +704,7 @@ function purgePolicy(){
   });
 }
 // ── inject to device ──
-let INJECT_EXC = null;
+var INJECT_EXC = null;
 function injectExc(btn){
   const tr = btn.closest('tr');
   INJECT_EXC = {id: tr.dataset.excId, type: tr.dataset.type};
@@ -809,7 +809,7 @@ function detectImport(){
    between "nothing has changed" and "we cannot undo anything here", and only
    one of those is safe to act on.
    --------------------------------------------------------------------------- */
-let HIST_EXC = 0;
+var HIST_EXC = 0;
 function closeHistory(){ document.getElementById('history-panel').classList.add('d-none'); }
 function openHistory(btn){
   const tr = btn.closest('tr');
@@ -919,7 +919,7 @@ function loadRestorable(){
    against a profile, and a profile is usually shared, so "delete this row" and
    "remove this waiver from four policies" can be the same click.
    --------------------------------------------------------------------------- */
-let IMPACT_EXC = 0;
+var IMPACT_EXC = 0;
 function closeImpact(){ document.getElementById('impact-panel').classList.add('d-none'); }
 function deleteExc(excId){
   IMPACT_EXC = excId;
@@ -981,7 +981,7 @@ function runGuardedDelete(ack){
    SHOWN with their reason — a list of only the eligible ones cannot be
    audited, because "not offered" and "not applicable" look identical.
    --------------------------------------------------------------------------- */
-let DEPLOY_EXC = 0;
+var DEPLOY_EXC = 0;
 function closeDeploy(){ document.getElementById('deploy-panel').classList.add('d-none'); }
 function openDeploy(btn){
   DEPLOY_EXC = +btn.closest('tr').dataset.excId;

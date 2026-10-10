@@ -383,17 +383,17 @@
 .fw-topo-hc{font-size:10.5px;margin-left:2px;}
 </style>
 <script nonce="{{ csp_nonce }}">
-const APPL_ID = {{ appliance.id }};
+var APPL_ID = {{ appliance.id }};
 // The FortiWeb-style slide-over panels (objedit_drawer.js) need the appliance id.
 window.OBJEDIT_AID = APPL_ID;
-const POLICY_NAME = {{ policy_name|tojson }};
-const CREATE_FIELDS = {{ create_fields|tojson }};
-const diffModal = (window.bootstrap && document.getElementById('diffModal')) ? new bootstrap.Modal(document.getElementById('diffModal')) : null;
-let pendingApply = null;
-const createModal = (window.bootstrap && document.getElementById('createModal')) ? new bootstrap.Modal(document.getElementById('createModal')) : null;
-let createCtx = null;
+var POLICY_NAME = {{ policy_name|tojson }};
+var CREATE_FIELDS = {{ create_fields|tojson }};
+var diffModal = (window.bootstrap && document.getElementById('diffModal')) ? new bootstrap.Modal(document.getElementById('diffModal')) : null;
+var pendingApply = null;
+var createModal = (window.bootstrap && document.getElementById('createModal')) ? new bootstrap.Modal(document.getElementById('createModal')) : null;
+var createCtx = null;
 
-const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+var esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 function dirtyInputs(scope){ return [...scope.querySelectorAll('.fw-input')].filter(el => el.value !== (el.dataset.orig ?? '')); }
 function refreshDirty(scope){
@@ -422,9 +422,9 @@ function driverVal(key){
   const el = document.querySelector(`#policyConfig [data-key="${key}"]`);
   return el ? String(el.value||'') : '';
 }
-const isOn = k => driverVal(k) === 'enable';
-const isSet = k => driverVal(k).trim() !== '';
-const curMode = () => driverVal('deployment-mode');
+var isOn = k => driverVal(k) === 'enable';
+var isSet = k => driverVal(k).trim() !== '';
+var curMode = () => driverVal('deployment-mode');
 function evalVis(rule){
   if(!rule) return true;
   switch(rule.t){
@@ -646,8 +646,8 @@ function addCrRow(){
 }
 
 // ── New content-routing policy: create the object, then bind a rule for it ──
-const crNewModal = (window.bootstrap && document.getElementById('crNewModal')) ? new bootstrap.Modal(document.getElementById('crNewModal')) : null;
-const poolNewModal = (window.bootstrap && document.getElementById('poolNewModal')) ? new bootstrap.Modal(document.getElementById('poolNewModal')) : null;
+var crNewModal = (window.bootstrap && document.getElementById('crNewModal')) ? new bootstrap.Modal(document.getElementById('crNewModal')) : null;
+var poolNewModal = (window.bootstrap && document.getElementById('poolNewModal')) ? new bootstrap.Modal(document.getElementById('poolNewModal')) : null;
 // Closing the pool modal (Cancel or after Create) returns to the CR policy modal.
 (function(){ const el=document.getElementById('poolNewModal');
   if(el) el.addEventListener('hidden.bs.modal', () => { if(crNewModal) crNewModal.show(); }); })();

@@ -53,9 +53,20 @@ top-level object with ``type = "table"`` (``"singleton"`` for a complex) and
 ``children`` -- the shape ``cli_schema`` folds a nested ``tree`` table into --
 so the two channels join field by field, and nested member names compare too.
 
-FortiGate is catalog-only in SATOM (no FortiGate appliance is managed), so the
-adapter is not live: evidence arrives by pack (the separate harvester tool
-runs the same parser against a device) or by ``flask apilib schema-import``.
+The CLI half of the adapter is not live: ``tree`` evidence arrives by pack (the
+separate harvester tool runs the same parser against a device) or by
+``flask apilib schema-import``. The REST half is also read live from a
+registered FortiGate appliance (``services.apilib_fgt``, run by
+``services.apilib_harvest`` on a firmware change), GET only.
+
+- A per-table **400** says nothing: on 8.0.1 a made-up path
+  (``system/zzz-no-such-table``) and a hardware table the VM cannot serve
+  (``system/np6``) answer the same bare ``{"status": "error",
+  "http_status": 400}``. Such a table stays ``verdict = "error"``; the tables
+  known to be hardware or platform-image features are named in
+  :data:`PLATFORM_TABLES` and carried as ``summary.exceptions`` =
+  ``{key: "platform"}`` (``api_library.EXCEPTION_REASONS``), never as
+  ``absent`` -- the build serves them on the platforms that have the hardware.
 """
 from __future__ import annotations
 
@@ -75,6 +86,55 @@ UNVERIFIED: dict = {}
 GATED_STATUSES = (401, 403)
 #: A per-table answer that measures the path absent on the build.
 ABSENT_STATUSES = (404,)
+
+#: Exception reason (``api_library.EXCEPTION_REASONS``) of :data:`PLATFORM_TABLES`.
+REASON_PLATFORM = "platform"
+
+#: cmdb tables of FortiOS 8.0.1 that a FortiGate-VM cannot serve because they
+#: configure hardware or a platform image the VM is not. Measured on fgt02
+#: (FortiGate-VM64-KVM, 8.0.1 build0245, 2026-10-10): each answers 400 to GET
+#: and to ``?action=schema``; the reason per group is the vendor's 8.0/7.6
+#: documentation (models listed per feature). 51 of the 54 tables that errored
+#: on that box. Not here, because nothing says they are hardware:
+#: ``application/unsanctioned-apps`` (8.0 software feature),
+#: ``system/dnp3-proxy`` and ``system/iscsi`` (no platform statement found).
+PLATFORM_TABLES = frozenset({
+    # NP6/NP7 network processors and the internal switch fabric
+    "system/np6", "system/np6xlite", "system/npu", "system/npu-post",
+    "system/npu-vlink", "system.npu-setting/prp", "monitoring/np6-ipsec-engine",
+    "monitoring/npu-hpe", "system/isf-queue-profile",
+    # hardware ACL: offloaded to an ISF with TCAM, listed models only
+    "firewall/acl", "firewall/acl6",
+    # hardware switch ports, bypass ports, port-level OAM (listed models)
+    "system/physical-switch", "system/virtual-switch", "system/stp",
+    "system/bypass", "ethernet-oam/cfm",
+    # 3G/LTE/cellular modems
+    "system/modem", "system/lte-modem", "system/cellular-modem",
+    "system/cellular-data-plan", "system.3g-modem/custom",
+    # DSL models: DSL policy, TR-069 CPE (FortiGate 70F/71F per 8.0.1 docs)
+    "switch-controller.dsl/policy", "system/cwmp",
+    # FortiWiFi built-in radio
+    "system.wireless/ap-status", "system.wireless/settings",
+    # FortiGate Rugged I/O: serial, digital I/O, voltage alarm, industrial
+    # connectivity (icond), MQTT broker/client
+    "system/serial-port", "system/digital-io", "system/vin-alarm", "system/icond",
+    "system/mqtt-broker", "system/mqtt-client",
+    # chassis management controller (6000/7000 series)
+    "system/smc-ntp",
+    # controllers the docs tie to hardware models: FortiTelemetry controller,
+    # FortiVoice over FortiLink
+    "telemetry-controller/agent", "telemetry-controller/agent-profile",
+    "telemetry-controller/global", "telemetry-controller/profile",
+    "telemetry-controller.application/custom",
+    "telemetry-controller.application/predefine",
+    "voice-controller/managed-voice", "voice-controller/prompt-language",
+    "voice-controller/voice-profile",
+    # cloud-image connectors (AWS, Azure, NSX-T builds of FortiGate-VM)
+    "aws/vpce", "system/vpce", "azure/migration", "azure/vwan-slb",
+    "log.azure-security-center/filter", "log.azure-security-center/setting",
+    "log.azure-security-center2/filter", "log.azure-security-center2/setting",
+    "nsxt/service-chain", "nsxt/setting",
+})
 
 CAT_NESTED = ("table", "complex")
 #: ``get``-style print helpers listed among an object's children: not configuration.
@@ -252,7 +312,9 @@ def evidence_from_schema(body, version: str, build: str, device: dict | None,
     ``errors`` = ``{key: http_status}`` of the per-table reads that did not
     answer 200. A 404 is a measured absence (``verdict = "absent"``: the path
     is no cmdb table on this build); anything else is ``verdict = "error"``
-    (a refused read says nothing about the object).
+    (a refused read says nothing about the object). An errored table of
+    :data:`PLATFORM_TABLES` is named in ``summary.exceptions`` as
+    ``"platform"``; its verdict stays ``error``.
     """
     from .. import firmware_versions as fv
     endpoints, objects = {}, {}
@@ -283,6 +345,10 @@ def evidence_from_schema(body, version: str, build: str, device: dict | None,
                                   "fields": sum(len(e.get("fields") or {})
                                                 for e in endpoints.values()),
                                   "absent": absent, "errors": errs}}}
+    platform = {k: REASON_PLATFORM for k, e in sorted(endpoints.items())
+                if e["verdict"] == "error" and k in PLATFORM_TABLES}
+    if platform:
+        doc["summary"]["exceptions"] = platform
     asked = len(objects) + errs
     if not objects:
         doc.update(healthy=False, skip_reason="the schema answer holds no object")
@@ -385,5 +451,6 @@ ADAPTER = register(Adapter(
     None)
 
 
-__all__ = ["PRODUCT", "UNVERIFIED", "VERIFIED_ON", "SchemaGated", "endpoint_from_schema",
+__all__ = ["PRODUCT", "UNVERIFIED", "VERIFIED_ON", "PLATFORM_TABLES", "REASON_PLATFORM",
+           "SchemaGated", "endpoint_from_schema",
            "evidence_from_schema", "enumerate_keys", "capture", "load_capture_dir", "ADAPTER"]

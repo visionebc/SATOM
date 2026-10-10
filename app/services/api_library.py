@@ -96,9 +96,18 @@ CH_META = "meta"
 CHANNELS = (CH_BOTH, CH_CLI_ONLY, CH_HIDDEN, CH_REST_ONLY, CH_UNKNOWN, CH_META)
 #: The only reasons an endpoint may be left out of "complete". Named, so an
 #: exception is a statement somebody made, not a hole nobody looked at.
+#: ``platform``: the build has the object, the measured box cannot serve it
+#: because it is a hardware or platform-image feature (NPU, modem, hardware
+#: switch, built-in wireless, Rugged I/O, cloud-image connectors...). Measured
+#: on fgt02 (FortiGate-VM64-KVM, FortiOS 8.0.1 build0245): those tables answer
+#: 400 to GET and to ``?action=schema``, the same 400 a made-up path gets, so
+#: the device never says "platform" itself; the classification is a statement
+#: (``schema_adapters.fortigate.PLATFORM_TABLES``), never "absent" from the build.
 EXCEPTION_REASONS = {
     "licence": "the object cannot be read or filled without a licence the lab box lacks",
     "status-object": "a runtime status object: it has no configuration rows to reveal fields",
+    "platform": "a hardware or platform-image feature the measured box (a VM) does not have: "
+                "the build serves the object on other platforms",
 }
 
 VERDICT_OK = "ok"

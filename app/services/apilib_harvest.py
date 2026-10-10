@@ -11,18 +11,26 @@ keeps the library growing afterwards. Three entry points:
 * :func:`needs_harvest` — does this appliance's exact build lack healthy
   evidence from its product's live source?
 
+On demand, for one appliance, from ``flask shell`` (or any app context)::
+
+    from app.services import apilib_harvest
+    apilib_harvest.run(37)      # synchronous; returns {"ok", "msg", ...}
+
 WHY A JOB, NOT A THREAD. A harvest is a full read of the box (a rediscovery
-sweep, or every FortiAuthenticator schema), far too long for the request that
+sweep, every FortiAuthenticator schema, ~780 FortiGate per-table schema
+reads), far too long for the request that
 noticed the version change. :mod:`app.services.jobs` already owns the
 worker-proof state file, the Job Manager page, the failure bell and the
 boot-time orphan sweep; a private thread would be a second, invisible answer
 to "is a harvest running?".
 
 WHICH PRODUCTS. Only products SATOM can read live: FortiWeb and FortiADC via
-the rediscovery sweep, FortiAuthenticator via its Tastypie schema. FortiAnalyzer
-and FortiGate have vendor evidence only, and every entry point says so BY NAME
-("no live harvester for fortianalyzer") — a harvest that silently succeeds
-without reading anything would read as "measured" on the next page.
+the rediscovery sweep, FortiAuthenticator via its Tastypie schema, FortiGate
+via its per-table ``?action=schema`` (``services.apilib_fgt``, GET only through
+``FortiGateClient``, vdom-aware). FortiAnalyzer has vendor evidence only, and
+every entry point says so BY NAME ("no live harvester for fortianalyzer") — a
+harvest that silently succeeds without reading anything would read as
+"measured" on the next page.
 """
 from __future__ import annotations
 
@@ -41,7 +49,7 @@ JOB_TYPE = "apilib_harvest"
 #: asks for evidence FROM THIS SOURCE: vendor or legacy data for a build is a
 #: claim, and it must not stop the build from being measured.
 LIVE_SOURCE = {"fortiweb": "sweep", "fortiadc": "sweep",
-               "fortiauthenticator": "schema"}
+               "fortiauthenticator": "schema", "fortigate": "schema"}
 
 #: A sweep whose progress file says ``running`` blocks a harvest only while it
 #: is this young — the same 15-minute rule ``rediscovery.start`` uses, so a
@@ -253,6 +261,26 @@ def _run_fac(ap) -> dict:
                                     "skip_reason": doc.get("skip_reason") or ""})
 
 
+def _run_fgt(ap) -> dict:
+    """FortiGate: the live per-table ``?action=schema`` (GET-only) + ingest.
+
+    The build is read from the box itself (``monitor/system/status``), so a
+    harvest queued by a firmware change files its evidence under the build the
+    box runs when it is read, not the one the inventory row last saw.
+    """
+    from . import api_library, apilib_fgt
+    raw: dict = {}
+    doc = apilib_fgt.harvest(ap, raw=raw)
+    res = api_library.ingest(doc, raw=raw or None)
+    base = {"product": ap.kind, "harvester": "schema", "appliance": ap.name,
+            "version": (doc.get("scope") or {}).get("version") or "",
+            "counts": (doc.get("summary") or {}).get("counts") or {}}
+    return _outcome(base, ap.name, {"evidence_id": res.get("evidence_id"),
+                                    "created": bool(res.get("created")),
+                                    "healthy": bool(doc.get("healthy")),
+                                    "skip_reason": doc.get("skip_reason") or ""})
+
+
 def _outcome(base: dict, name: str, lib: dict) -> dict:
     """``ok`` only for HEALTHY stored evidence. An unhealthy harvest is kept
     (the record of a failed read is evidence too) but it measured nothing, so
@@ -273,7 +301,7 @@ def _outcome(base: dict, name: str, lib: dict) -> dict:
 
 
 _HARVESTERS = {"fortiweb": _run_sweep, "fortiadc": _run_sweep,
-               "fortiauthenticator": _run_fac}
+               "fortiauthenticator": _run_fac, "fortigate": _run_fgt}
 
 
 def run(appliance_id: int) -> dict:

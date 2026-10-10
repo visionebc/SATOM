@@ -16,7 +16,7 @@
    ``models.visible_appliances()`` and then to ``kind == 'fortiweb'``, so the
    FortiWeb ADOM sees its own boxes and Global sees every FortiWeb.
    ========================================================================= #}
-<div class="fw-nav-subgroup {{ 'open' if request.blueprint == 'waf' }}" data-nav-subgroup="WAF">
+<div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['waf','attack_search','exceptions','artifacts'] }}" data-nav-subgroup="WAF">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-shield-shaded fw-nav-icon"></i><span>{{ _('WAF') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
     {% if may_open('waf.index') %}
@@ -46,6 +46,56 @@
     {% if may_open('waf.exceptions') %}
     <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.exceptions' else '' }}" href="{{ url_for('waf.exceptions', _adom=product.key) }}">
       <i class="bi bi-slash-circle fw-nav-icon"></i><span>{{ _('Exceptions') }}</span></a>
+    {% endif %}
+    {# Device-scoped WAF tools — moved here from the FortiWeb ADOM's own WAF
+       group (2026-10-11, operator request). FortiWeb ADOM only: all three are
+       FortiWeb pages (attack_search / exceptions are pinned to the FortiWeb
+       ADOM in app/__init__.py), and offering them in Global would turn a
+       click into a silent ADOM jump for that tab. #}
+    {% if product.key == 'fortiweb' %}
+    {% if may_open('attack_search.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'attack_search' else '' }}" href="{{ url_for('attack_search.index') }}">
+      <i class="bi bi-search fw-nav-icon"></i><span>{{ _('Search Attack ID') }}</span></a>
+    {% endif %}
+    {% if may_open('exceptions.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'exceptions' else '' }}" href="{{ url_for('exceptions.index') }}">
+      <i class="bi bi-slash-circle fw-nav-icon"></i><span>Exceptions &amp; Signature</span></a>
+    {% endif %}
+    {# WAF Artifacts — collapses as a UNIT, the same shape as Server Objects
+       and Web Protection: <details class="fw-so-parent"> whose <summary>
+       IS the parent row, and fw-so-nav-flat leaves inside fw-so-nav.
+       It used to be three sibling <a>s, two of them carrying `fw-nav-sub`
+       — a class that DOES NOT EXIST in fortiweb.css (the sheet defines
+       fw-nav-subitem and fw-nav-subgroup, neither of which matches). With
+       no rule to match, the two children rendered flush with their parent
+       and at the same weight: three top-level entries wearing the word
+       "Artifact", and no group to collapse. Open only when its own
+       blueprint is active, so the accordion still holds. #}
+    <details class="fw-so-parent" {{ 'open' if request.blueprint == 'artifacts' }}>
+      <summary class="fw-nav-item fw-so-parent-head {{ 'active' if request.blueprint == 'artifacts' else '' }}">
+        <i class="bi bi-file-earmark-lock fw-nav-icon"></i><span>{{ _('WAF Artifacts') }}</span>
+        <i class="bi bi-chevron-down fw-so-nav-caret"></i>
+      </summary>
+      <div class="fw-so-parent-body">
+        <div class="fw-so-nav">
+          {% if may_open('artifacts.index') %}
+          <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'artifacts.index' else '' }}"
+             href="{{ url_for('artifacts.index') }}">
+            <i class="bi bi-journal-text fw-nav-icon"></i><span>{{ _('Object types') }}</span></a>
+          {% endif %}
+          {% if may_open('artifacts.inventory') %}
+          <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint in ['artifacts.inventory', 'artifacts.object_page'] else '' }}"
+             href="{{ url_for('artifacts.inventory') }}">
+            <i class="bi bi-clipboard-data fw-nav-icon"></i><span>{{ _('Inventory') }}</span></a>
+          {% endif %}
+          {% if may_open('artifacts.audit') %}
+          <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'artifacts.audit' else '' }}"
+             href="{{ url_for('artifacts.audit') }}">
+            <i class="bi bi-clipboard-check fw-nav-icon"></i><span>{{ _('Device audit') }}</span></a>
+          {% endif %}
+        </div>
+      </div>
+    </details>
     {% endif %}
   </div>
 </div>

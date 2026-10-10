@@ -1712,6 +1712,9 @@ body.fw-entering-page {
 .fw-nav-subgroup:not(.open) > .fw-nav-subgroup-body { max-height: 0; opacity: 0; }
 .fw-nav-subgroup.open > .fw-nav-subgroup-body { max-height: none; opacity: 1; }
 .fw-nav-subgroup-body > .fw-nav-item { padding-left: 16px; }
+/* A collapsible group inside a submenu (Fleet -> WAF -> WAF Artifacts):
+   its head lines up with the sibling links above it. */
+.fw-nav-subgroup-body > .fw-so-parent > .fw-so-parent-head { padding-left: 16px; }
 
 /* ============================================================
    Fix: Bootstrap .btn-outline-light is near-white (color/border #f8f9fa),

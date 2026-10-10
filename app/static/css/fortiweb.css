@@ -2651,3 +2651,77 @@ button.fwg-btn{cursor:pointer;}
 .fwg-satom .fwg-idx{padding:16px 20px;}
 .fwg-satom .fwg-idx .fwg-sec-title{margin:0 0 6px;}
 .fwg-satom .fw-empty-state-title{font-size:13px;font-weight:500;}
+
+
+/* ============================================================
+   PHONE LAYOUT (<= 768px) — 2026-10-11
+   Measured at 390px wide, not guessed:
+   - the topbar ran 260px of controls (product switch, tools, search,
+     bell, user menu) past the right edge, behind overflow: the user menu
+     and logout were unreachable on a phone;
+   - a page-header button row (`.fw-page-header > .d-flex`) does not wrap,
+     so one long row widened the WHOLE page (Server Policies: 865px) and
+     the browser zoomed every table and card out to fit it.
+   Tables already scroll inside `.fw-table-wrapper`; that stays as is.
+   Same light theme and --fw-* tokens as the rest of the file.
+   ============================================================ */
+@media (max-width: 768px) {
+  .fw-main { padding: 14px 12px; }
+
+  /* Topbar: everything reachable. The identity badges give up their text
+     before any control is pushed off-screen. */
+  .fw-topbar { padding: 0 6px; gap: 2px; }
+  .fw-sidebar-toggle { margin-right: 0; flex-shrink: 0; padding: 6px 8px; }
+  .fw-topbar-brand { margin-right: 2px; gap: 6px; }
+  .fw-topbar-brand > span { display: none; }
+  .fw-topbar .fw-adom-badge {
+    margin-left: 4px !important; flex: 0 1 auto; min-width: 26px; overflow: hidden;
+  }
+  .fw-topbar .fw-adom-prefix { display: none; }
+  .fw-topbar .fw-adom-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .fw-topbar .fw-env-badge,
+  .fw-topbar .fw-harole-badge {
+    font-size: 0 !important; gap: 0 !important; padding: 4px 6px !important;
+    margin-left: 4px !important; flex-shrink: 0;
+  }
+  .fw-topbar .fw-env-badge > i,
+  .fw-topbar .fw-harole-badge > i { font-size: 11px; }
+  /* The device stays one tap away in the sidebar ("<device> · change"). */
+  .fw-topbar .fw-device-center { display: none; }
+  .fw-topbar-actions { flex-shrink: 0; gap: 0; }
+  .fw-topbar-btn { padding: 6px 7px; }
+  .fw-topbar .fw-switch-product .bi-arrow-left-right { display: none; }
+  .fw-user-menu .dropdown-toggle::after { display: none; }
+
+  /* Page header: button rows wrap instead of widening the page. The same
+     goes for any flex row in the content (toolbars such as Analytics'
+     .an-bar): a row that fits stays on one line, one that does not wraps.
+     `.flex-nowrap` (Bootstrap, !important) still opts a row out. */
+  .fw-page-header > * { min-width: 0; max-width: 100%; }
+  #fw-main .d-flex { flex-wrap: wrap; }
+
+  /* Device-layout forms (gui_dialog): the FortiOS look is a max-content
+     label column beside fixed 242/274px inputs, which ran FortiGate's
+     System Settings to 490px. On a phone the label sits above its value. */
+  .fwg-fields { grid-template-columns: minmax(0, 1fr); padding-left: 12px; padding-right: 12px; }
+  .fwg-satom .fwg-fields { padding: 10px 12px 4px; }
+  .fwg-label { white-space: normal; margin-top: 6px; }
+  .fwg-input, .fwg-input.is-ro { max-width: 100%; }
+
+  /* Open overlay: dim the page behind it; a tap there closes it (main.js). */
+  body.fw-sidebar-open::after {
+    content: ""; position: fixed; inset: var(--fw-topbar-height) 0 0 0;
+    background: rgba(15, 23, 42, .35); z-index: 850;
+  }
+  .fw-sidebar.mobile-open { box-shadow: 4px 0 18px rgba(15, 23, 42, .25); }
+}
+
+/* Narrowest phones: the ADOM name outranks the logo (it is what makes an
+   ADOM jump visible); the logo comes back above 420px. */
+@media (max-width: 420px) {
+  .fw-topbar-brand { display: none; }
+}
+
+/* main.js wraps a bare table that overflows a phone screen in this box. */
+.fw-phone-scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.fw-phone-scroll:has(.dropdown-menu.show) { overflow: visible; }

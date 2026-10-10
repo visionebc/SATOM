@@ -8,7 +8,14 @@
 // ============================================================
 // CSRF Token
 // ============================================================
-const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+// Read when the request is made, not bound to a global: Turbo re-executes this
+// file on every visit, and a second top-level `const` of the same name is a
+// SyntaxError that kills the whole file. (A global named `csrfToken` also
+// collided with the API Explorer page's own `function csrfToken()`.)
+function fwApiCsrfToken() {
+  const m = document.querySelector('meta[name="csrf-token"]');
+  return (m && m.content) || '';
+}
 
 // ============================================================
 // Core Fetch Wrapper
@@ -16,7 +23,7 @@ const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || 
 async function apiFetch(url, options = {}) {
   const headers = {
     'Content-Type': 'application/json',
-    'X-CSRFToken': csrfToken,
+    'X-CSRFToken': fwApiCsrfToken(),
     ...options.headers,
   };
 

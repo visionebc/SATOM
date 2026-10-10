@@ -302,10 +302,10 @@ tr.cfg-edit-row > td { background:#F6F8FB; border-top:0; padding:0 !important; }
 .cfg-edit-btn.active { background:var(--fw-accent,#EF5424); color:#fff; border-color:var(--fw-accent,#EF5424); }
 </style>
 <script nonce="{{ csp_nonce }}">
-const CFG_AID = {{ appliance.id if appliance else 'null' }};
-const SECTION_KEY = {{ section.key|tojson }};
-const CAN_SAVE_TPL = {{ ('y' if current_user.can('operations.template_save') else '')|tojson }} ? true : false;
-const SEL_READONLY = {{ 1 if (selected and selected.read_only) else 0 }};
+var CFG_AID = {{ appliance.id if appliance else 'null' }};
+var SECTION_KEY = {{ section.key|tojson }};
+var CAN_SAVE_TPL = {{ ('y' if current_user.can('operations.template_save') else '')|tojson }} ? true : false;
+var SEL_READONLY = {{ 1 if (selected and selected.read_only) else 0 }};
 
 function cfgFilter(tableId, q) {
   q = q.toLowerCase();

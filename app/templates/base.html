@@ -92,7 +92,7 @@
   <span class="fw-adom-badge" title="{{ _('Active administrative domain') }}"
         style="display:inline-flex;align-items:center;gap:5px;margin-left:8px;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap;color:#eaf0fb;background:{{ _adom_c }}26;border:1px solid {{ _adom_c }}99;">
     <i class="bi {{ 'bi-globe2' if product.key == 'global' else 'bi-hdd-rack' }}" style="color:{{ _adom_c }};"></i>
-    ADOM: {{ product.name }}
+    <span class="fw-adom-prefix">ADOM:</span> <span class="fw-adom-name">{{ product.name }}</span>
   </span>
 
   {# Environment badge (PROD/DEV) — replicated setting from the admin console #}

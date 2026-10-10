@@ -1,0 +1,285 @@
+{# The config template library of one configuration section, scoped to the
+   object type on the page: list (View / Apply to devices / Clone / Delete),
+   New template, and the dry-run-first apply. Shared by the classic section
+   page and the FortiWeb pages, so both offer the same library.
+   Context: ``tlib`` = {kind, section_key, section_label, label, templates,
+   appliances, firmware_choices, back_url} (views.section_config.template_library). #}
+{% import "partials/_template_compat.html" as tcx with context %}
+<div data-cfg-tpl-library>
+<div class="fw-card mt-4">
+  <div class="fw-card-header d-flex align-items-center justify-content-between">
+    <span class="fw-card-title"><i class="bi bi-collection me-2"></i>Config template library{% if tlib.label %} · {{ tlib.label }}{% endif %}
+      <span class="text-muted" style="font-weight:normal;font-size:12px;">({{ tlib.kind }})</span>
+    </span>
+    <button class="btn btn-fw-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalNewSectionTemplate">
+      <i class="bi bi-plus-lg me-1"></i>{{ _('New template') }}
+    </button>
+  </div>
+  <div class="fw-card-body p-0">
+    <div class="fw-table-wrapper">
+      <table class="fw-table" id="cfgTplTable">
+        <thead>
+          <tr>
+            <th>{{ _('Name') }}</th>
+            <th>{{ _('Version') }}</th>
+            <th>{{ _('Note') }}</th>
+            <th>{{ _('Created') }}</th>
+            <th class="actions-col">{{ _('Actions') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if tlib.templates %}
+            {% for t in tlib.templates %}
+            <tr>
+              <td><strong>{{ t.name }}</strong>{% if t.locked %} <i class="bi bi-lock-fill text-muted" title="{{ _('Locked') }}"></i>{% endif %}</td>
+              <td>v{{ t.version }}</td>
+              <td style="font-size:13px; max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t.note or '—' }}</td>
+              <td style="font-size:13px;">{{ t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '—' }}</td>
+              <td class="actions-col">
+                <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1" title="{{ _('View') }}"
+                        data-js="tpl-view" data-tpl-id="{{ t.id }}"><i class="bi bi-eye"></i></button>
+                <button class="btn btn-sm btn-fw-primary btn-sm-icon me-1" title="{{ _('Apply to devices') }}"
+                        data-js="tpl-apply" data-tpl-id="{{ t.id }}" data-tpl-name="{{ t.name }}"><i class="bi bi-upload"></i></button>
+                <form method="POST" action="{{ url_for('templates.clone', template_id=t.id) }}" style="display:inline;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="next" value="{{ tlib.back_url }}">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Clone') }}"><i class="bi bi-files"></i></button>
+                </form>
+                <form method="POST" action="{{ url_for('templates.delete', template_id=t.id) }}" style="display:inline;"
+                      data-fw-confirm-form="Delete template '{{ t.name }}' (v{{ t.version }})? This cannot be undone.">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="next" value="{{ tlib.back_url }}">
+                  <button type="submit" class="btn btn-sm btn-outline-danger btn-sm-icon" title="{{ _('Delete') }}"
+                          {{ 'disabled' if t.locked else '' }}><i class="bi bi-trash"></i></button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="5">
+              <div class="fw-empty-state">
+                <div class="fw-empty-state-icon"><i class="bi bi-collection"></i></div>
+                <div class="fw-empty-state-title">No templates for {{ tlib.label or 'this section' }}</div>
+                <div class="fw-empty-state-text">{{ _('Author a') }} <span class="mono">{{ tlib.kind }}</span> template{% if tlib.label %} for {{ tlib.label }}{% endif %} to push this config on demand.</div>
+              </div>
+            </td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- NEW SECTION TEMPLATE MODAL (kind preset to this section) -->
+<div class="modal fade fw-modal" id="modalNewSectionTemplate" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-plus-lg me-2"></i>New {{ tlib.section_label }} template</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('templates.create') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="kind" value="{{ tlib.kind }}">
+        <input type="hidden" name="next" value="{{ tlib.back_url }}">
+        <div class="modal-body">
+          <div class="mb-2">
+            <label class="fw-form-label">{{ _('Name') }} <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" name="name" placeholder="e.g. baseline-{{ tlib.section_key }}" required autocomplete="off">
+          </div>
+          <div class="mb-2">
+            {{ tcx.firmware_select(tlib.firmware_choices, '', required=True) }}
+          </div>
+          <div class="mb-2">
+            <label class="fw-form-label">{{ _('Note') }}</label>
+            <input type="text" class="form-control" name="note" placeholder="{{ _('Optional description') }}">
+          </div>
+          <div class="mb-2">
+            <label class="fw-form-label">{{ _('Body (JSON)') }} <span class="text-danger">*</span></label>
+            <textarea class="form-control" name="body" rows="9" spellcheck="false"
+                      style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;">{}</textarea>
+          </div>
+          <div class="mb-1">
+            <label class="fw-form-label">{{ _('Exceptions (JSON)') }}</label>
+            <textarea class="form-control" name="exceptions" rows="4" spellcheck="false"
+                      placeholder="Optional — JSON object or array of exception rules"
+                      style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save Template') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- VIEW TEMPLATE MODAL -->
+<div class="modal fade fw-modal" id="modalViewTemplate" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-eye me-2"></i><span id="vt-title">{{ _('Template') }}</span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-2 text-muted" style="font-size:13px;" id="vt-meta"></div>
+        <label class="fw-form-label">{{ _('Body') }}</label>
+        <pre style="background:#0d1626; color:#e2e8f0; padding:12px; border-radius:8px; max-height:340px; overflow:auto; font-size:12.5px;"><code id="vt-body"></code></pre>
+        <div id="vt-exc-wrap" style="display:none;">
+          <label class="fw-form-label">{{ _('Exceptions') }}</label>
+          <pre style="background:#0d1626; color:#e2e8f0; padding:12px; border-radius:8px; max-height:200px; overflow:auto; font-size:12.5px;"><code id="vt-exc"></code></pre>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Close') }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- APPLY TO DEVICES MODAL (dry-run preview -> confirm live write) -->
+<div class="modal fade fw-modal" id="modalApplyTemplate" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form method="POST" id="applyForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="confirm" value="1">
+        <input type="hidden" name="next" value="{{ tlib.back_url }}">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-upload me-2"></i>{{ _('Apply') }} <span id="ap-name"></span></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="fw-alert fw-alert-warning d-flex align-items-center gap-2 mb-3">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <span style="font-size:13px;"><strong>{{ _('Live write.') }}</strong> {{ _('Confirm performs a real config push (canary device first; the rest only if the canary succeeds). Preview first.') }}</span>
+          </div>
+          <label class="fw-form-label">{{ _('Target devices') }} <span class="text-danger">*</span></label>
+          {% if tlib.appliances %}
+          <select class="form-select" name="device_ids" id="ap-devices" multiple size="6" required>
+            {% for a in tlib.appliances %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
+          </select>
+          <div class="form-text">{{ _('Hold Ctrl/Cmd to select several. The first selected device is the canary.') }}</div>
+          {% else %}
+          <div class="text-muted" style="font-size:13px;">{{ _('No appliances are configured.') }}</div>
+          {% endif %}
+          <div class="mt-3">
+            <button type="button" class="btn btn-fw-outline btn-sm" data-js="apply-preview">
+              <i class="bi bi-search me-1"></i>{{ _('Dry-run preview') }}
+            </button>
+          </div>
+          <div id="ap-preview" class="mt-3" style="display:none;">
+            <label class="fw-form-label">{{ _('Dry-run preview') }}</label>
+            <div id="ap-preview-box" style="max-height:260px; overflow:auto; border:1px solid var(--fw-border,#dee2e6); border-radius:8px; padding:8px; font-size:12.5px;"></div>
+          </div>
+          <div id="ap-compat"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-danger" id="ap-confirm" disabled>
+            <i class="bi bi-upload me-1"></i>{{ _('Confirm live apply') }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+</div>
+<script src="{{ url_for('static', filename='js/template_compat.js') }}" nonce="{{ csp_nonce }}"></script>
+<script nonce="{{ csp_nonce }}">
+function vtEsc(v) {
+  var d = document.createElement('div');
+  d.textContent = (v === null || v === undefined) ? '' : String(v);
+  return d.innerHTML;
+}
+
+function viewTemplate(id) {
+  fetch('/templates/' + id, {headers: {'Accept': 'application/json'}})
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function (t) {
+      document.getElementById('vt-title').textContent = t.name + ' (v' + t.version + ')';
+      document.getElementById('vt-meta').innerHTML =
+        'Kind: <strong>' + vtEsc(t.kind) + '</strong> · Author: ' + vtEsc(t.author || '—') +
+        ' · Created: ' + vtEsc((t.created_at || '').replace('T', ' ').substring(0, 16)) +
+        (t.note ? '<br>Note: ' + vtEsc(t.note) : '');
+      document.getElementById('vt-body').textContent = t.body;
+      var excWrap = document.getElementById('vt-exc-wrap');
+      if (t.exceptions) {
+        document.getElementById('vt-exc').textContent = t.exceptions;
+        excWrap.style.display = '';
+      } else { excWrap.style.display = 'none'; }
+      if (window.bootstrap) { new bootstrap.Modal(document.getElementById('modalViewTemplate')).show(); }
+    })
+    .catch(function (e) { alert('Could not load template: ' + e.message); });
+}
+
+function openApply(id, name) {
+  var form = document.getElementById('applyForm');
+  form.action = '/templates/' + id + '/apply';
+  document.getElementById('ap-name').textContent = name;
+  document.getElementById('ap-preview').style.display = 'none';
+  document.getElementById('ap-preview-box').innerHTML = '';
+  document.getElementById('ap-compat').innerHTML = '';
+  document.getElementById('ap-confirm').disabled = true;
+  if (window.bootstrap) { new bootstrap.Modal(document.getElementById('modalApplyTemplate')).show(); }
+}
+
+function applySelectedIds() {
+  var sel = document.getElementById('ap-devices');
+  var ids = [];
+  if (sel) { for (var i = 0; i < sel.options.length; i++) { if (sel.options[i].selected) ids.push(sel.options[i].value); } }
+  return ids;
+}
+
+function applyPreview() {
+  var form = document.getElementById('applyForm');
+  var ids = applySelectedIds();
+  if (!ids.length) { alert('Select at least one target device.'); return; }
+  var fd = new FormData();
+  fd.append('csrf_token', form.querySelector('input[name=csrf_token]').value);
+  fd.append('format', 'json');
+  ids.forEach(function (v) { fd.append('device_ids', v); });
+  fetch(form.action, {method: 'POST', body: fd, headers: {'Accept': 'application/json'}})
+    .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); })
+    .then(function (res) {
+      var box = document.getElementById('ap-preview-box');
+      if (!res.ok || !res.j.ok) { box.innerHTML = '<span class="text-danger">' + vtEsc(res.j.error || 'Preview failed') + '</span>'; }
+      else {
+        box.innerHTML = renderPreview(res.j);
+        var c = res.j.compat;
+        document.getElementById('ap-compat').innerHTML = TplCompat.applyPanel(c, res.j.can_override);
+        document.getElementById('ap-confirm').disabled = !!(c && c.blocked && !res.j.can_override);
+      }
+      document.getElementById('ap-preview').style.display = '';
+    })
+    .catch(function (e) { alert('Preview failed: ' + e.message); });
+}
+
+function renderPreview(j) {
+  var html = '<div class="mb-2 text-muted">' + j.item_count + ' push item(s) per device · ' + j.preview.length + ' device(s)</div>';
+  j.preview.forEach(function (d) {
+    html += '<div class="mb-2"><strong>' + vtEsc(d.appliance || ('device ' + d.appliance_id)) + '</strong> ' +
+            (d.ok ? '<span class="fw-badge fw-badge-success">ok</span>' : '<span class="fw-badge fw-badge-danger">error</span>') + '<ul style="margin:.25rem 0 .25rem 1rem;padding:0;">';
+    (d.results || []).forEach(function (r) {
+      var req = r.request || {};
+      html += '<li><span class="mono">' + vtEsc(r.action) + ' ' + vtEsc(req.method || '') + ' ' + vtEsc(req.path || r.endpoint || '') + '</span>' +
+              (r.error ? ' <span class="text-danger">' + vtEsc(r.error) + '</span>' : '') + '</li>';
+    });
+    html += '</ul></div>';
+  });
+  return html;
+}
+
+(function () {
+  document.querySelectorAll('[data-js="tpl-view"]').forEach(function (btn) {
+    btn.addEventListener('click', function () { viewTemplate(Number(this.dataset.tplId)); });
+  });
+  document.querySelectorAll('[data-js="tpl-apply"]').forEach(function (btn) {
+    btn.addEventListener('click', function () { openApply(Number(this.dataset.tplId), this.dataset.tplName); });
+  });
+  var pv = document.querySelector('[data-js="apply-preview"]');
+  if (pv) pv.addEventListener('click', function () { applyPreview(); });
+})();
+</script>

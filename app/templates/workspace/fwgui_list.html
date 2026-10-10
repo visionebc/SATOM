@@ -58,6 +58,13 @@
     {% elif menu %}
     <a class="btn btn-fw-primary btn-sm" href="{{ url_for('workspace.fwgui_new', appliance_id=appliance.id, page=page, dialog=menu[0].dialog) }}"><i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }}</a>
     {% endif %}
+    {% if satom is defined and satom %}
+    {% if satom.create_url %}<a class="btn btn-fw-primary btn-sm" href="{{ satom.create_url }}" data-fwg-satom-new title="{{ _('%(p)s\'s layout has no Create New for these objects; this opens the SATOM editor (dry run first).', p=_gxl) }}"><i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }}</a>{% endif %}
+    {% if satom.generate_url %}<a class="btn btn-fw-primary btn-sm" href="{{ satom.generate_url }}" data-fwg-generate title="{{ _('Certificate Manager: CSR, signing and deploy to this device') }}"><i class="bi bi-magic me-1"></i>{{ _('Generate') }}</a>{% endif %}
+    {% if satom.import_url %}<a class="btn btn-secondary btn-sm" href="{{ satom.import_url }}" data-fwg-import title="{{ _('REST cannot create these certificates: Import writes them over the certificate-only SSH session.') }}"><i class="bi bi-upload me-1"></i>{{ _('Import') }}</a>{% endif %}
+    {% if satom.artifact_kind and can_edit %}<button type="button" class="btn btn-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#artifact-add" data-fwg-artifact><i class="bi bi-file-earmark-arrow-up me-1"></i>{{ _('Upload') }} {{ satom.artifact_label }}</button>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('artifacts.index', kind=satom.artifact_kind) }}"><i class="bi bi-archive me-1"></i>{{ _('Stored copies') }}</a>{% endif %}
+    {% endif %}
     <a class="btn btn-secondary btn-sm" href="#" aria-disabled="true" data-fwg-edit><i class="bi bi-pencil me-1"></i>{{ _('Edit') if can_edit else _('View') }}</a>
     {% if can_edit and view.endpoint %}
     {% if _fwp or (can_clone is defined and can_clone) %}<button type="button" class="btn btn-secondary btn-sm" aria-disabled="true" data-fwg-clone><i class="bi bi-copy me-1"></i>{{ _('Clone') }}</button>{% endif %}
@@ -69,6 +76,11 @@
       <i class="bi bi-search search-icon" aria-hidden="true"></i>
       <input type="search" placeholder="{{ _('Search') }}" aria-label="{{ _('Search') }}" data-fwg-search>
     </div>
+    {% if satom is defined and satom and satom.wpp_list %}
+    <label class="form-check form-check-inline small mb-0" title="{{ _('Hide FortiWeb\'s predefined profiles (remembered per user)') }}">
+      <input class="form-check-input" type="checkbox" data-fwg-hide-default{{ ' checked' if satom.hide_default }}> {{ _('Hide default profiles') }}</label>
+    {% if may_open('factory_catalog.index') %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('factory_catalog.index') }}" data-fwg-factory title="{{ _('Predefined profiles per firmware build and API version') }}"><i class="bi bi-box-seam me-1"></i>{{ _('Factory catalog') }}</a>{% endif %}
+    {% endif %}
     <span class="text-muted small ms-auto">{{ rows|length }} {{ _('objects') }}</span>
     {% if not _fwp and cache_meta and cache_meta.source == 'live' %}<span class="fw-badge fw-badge-info" title="{{ _('Read from the device when the page was drawn') }}"><i class="bi bi-broadcast me-1"></i>{{ _('live') }}</span>
     {% elif view.read_live %}<span class="badge bg-info text-dark" title="{{ _('FortiWeb\'s predefined entries: read from the device through its GUI API, never cached, read-only.') }}"><i class="bi bi-broadcast me-1"></i>{{ _('live') }}</span>
@@ -94,7 +106,8 @@
       {% if mkey_of %}{% set mk = mkey_of(r, view.endpoint) %}
       {% else %}{% set mk = r.name if r.name is defined and r.name not in (None, '') else r.id %}{% endif %}
       {% set _lk = satom is defined and satom.locked and (mk|string) in satom.locked %}
-      <tr tabindex="0" data-mkey="{{ mk }}"{% if _lk %} data-locked="1"{% endif %}{% if opens and dialog_for(view, r) %} data-href="{{ url_for('workspace.fwgui_object', appliance_id=appliance.id, page=page, name=mk, v=vi) }}"{% endif %}>
+      {% set _df = satom is defined and satom and satom.wpp_list and (r.can_view is defined and r.can_view|string == '1') %}
+      <tr tabindex="0" data-mkey="{{ mk }}"{% if _lk %} data-locked="1"{% endif %}{% if _df %} data-default="1"{% if satom.hide_default %} hidden{% endif %}{% endif %}{% if opens and dialog_for(view, r) %} data-href="{{ url_for('workspace.fwgui_object', appliance_id=appliance.id, page=page, name=mk, v=vi) }}"{% endif %}>
         <td class="text-muted">{{ loop.index }}</td>
         {% for c in view.columns %}<td>{% if loop.first %}<strong>{{ cell(r, c, labels) }}</strong>{% if _lk %} <a href="{{ url_for('templates.index', kind='web-protection-profile') }}" class="fw-badge fw-badge-secondary text-decoration-none" data-fwg-locked title="{{ _('Template-managed: read-only on this device. Edit it in the Template Library — saving an approved template deploys it to every device it governs.') }}"><i class="bi bi-lock-fill me-1"></i>{{ _('Template') }}</a>{% endif %}{% else %}{{ cell(r, c, labels) }}{% endif %}</td>{% endfor %}
       </tr>
@@ -114,6 +127,8 @@
   </table>
   </div>
 </div>
+{% if satom is defined and satom and satom.artifact_kind and can_edit %}{% set artifact_kind = satom.artifact_kind %}{% set artifact_label = satom.artifact_label %}{% include 'section_config/_artifact_add.html' %}{% endif %}
+{% if satom is defined and satom and satom.lib %}{% set tlib = satom.lib %}{% include 'section_config/_template_library.html' %}{% endif %}
 {% endblock %}
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">
@@ -136,7 +151,7 @@
   var clone = pane.querySelector('[data-fwg-clone]');
   var deep = pane.querySelector('[data-fwg-deepclone]');
   var savetpl = pane.querySelector('[data-fwg-savetpl]');
-  var SATOM = {{ (satom if satom is defined else {})|tojson }};
+  var SATOM = {{ ({'wpp': satom.wpp, 'section': satom.section} if satom is defined and satom else {})|tojson }};
   var all = Array.prototype.slice.call(pane.querySelectorAll('tbody tr[data-mkey]'));
   var current = null;
   function select(tr) {
@@ -245,11 +260,21 @@
     });
   });
   var q = pane.querySelector('[data-fwg-search]');
-  q.addEventListener('input', function () {
+  var hideDef = pane.querySelector('[data-fwg-hide-default]');
+  function filter() {
     var s = q.value.trim().toLowerCase();
+    var hd = !!(hideDef && hideDef.checked);
     Array.prototype.forEach.call(pane.querySelectorAll('tbody tr'), function (tr) {
-      tr.hidden = !!s && tr.textContent.toLowerCase().indexOf(s) < 0;
+      tr.hidden = (!!s && tr.textContent.toLowerCase().indexOf(s) < 0) || (hd && tr.dataset.default === '1');
     });
+  }
+  q.addEventListener('input', filter);
+  if (hideDef) hideDef.addEventListener('change', function () {
+    filter();
+    // the same per-user preference the classic Web Protection page keeps
+    fetch({{ url_for('web_protection.set_pref')|tojson }}, {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({key: 'hide_default', value: hideDef.checked})}).catch(function () {});
   });
 })();
 </script>

@@ -6,6 +6,42 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — FortiWeb pages offer the SATOM tools their classic pages had
+
+The FortiWeb menu replaced the classic Server Objects, Web Protection and
+Configuration entries, but several SATOM tools stayed behind "Classic view",
+so an operator on the new pages no longer saw them. Measured on fortiweb17
+(7.6.8) and fortiweb18 (8.0.6) by rendering every FortiWeb page and its
+classic page side by side: 214 gaps across 107 page views. Each FortiWeb page
+now carries them:
+
+- **Config template library** of the object's section, scoped to the object
+  type on the page (View / Apply to devices with dry-run preview and the
+  compatibility verdict / Clone / Delete / New template) — on every grid and
+  settings page whose classic page had it (~100 page views). The library is a
+  shared partial (`section_config/_template_library.html`), so the classic
+  section page and the FortiWeb page list the same templates.
+- **Settings forms** (System Time, DNS, SNMP, HA, Advanced, Config Sync,
+  FortiSandbox, ICAP, FortiGate integration, interface operation, …): Save as
+  template (captured whole, filed under the classic section), Refresh from the
+  device and a Classic view link.
+- **Certificates**: Import (over the certificate-only SSH session, the only
+  path that works — REST answers -7721) on Local, CA, Intermediate CA and XML
+  certificates; Generate (Certificate Manager) on Local.
+- **File-backed objects** (XML schema, WSDL, DTD, JSON schema, OpenAPI):
+  Upload to SATOM's artifact store and Stored copies.
+- **Create New through the SATOM editor** where FortiWeb's layout has none
+  but the classic page did (CA Group, CRL, admin replacement messages);
+  never for certificates REST cannot create or for file-backed objects.
+- **Web Protection Profiles**: the Hide default profiles filter (same
+  per-user preference as the classic page) and the Factory catalog link.
+- **Server Policy** (FortiWeb layout): Enable / Disable (same dry-run dialog
+  as Clone / Migrate / Delete), From a line profile, and Refresh, which now
+  returns to the FortiWeb list.
+- A template saved from a FortiWeb page is filed under the section the
+  classic page lists (`gui_classic.classic_leaf`), so it shows in the same
+  library.
+
 ### Added — FortiWeb templates across firmware builds and devices: compare, matrix, bindings
 
 - **Provisioning → Compare templates** (`/provisioning/compare`): the template

@@ -880,6 +880,12 @@ def matrix_builds(product: str = "fortiweb", extra: Iterable[str] = ()) -> list[
 
 def matrix(templates, builds: Iterable[str]) -> list[dict]:
     """``[{template, cells: {build: {cell, text, summary}}}]``."""
+    from . import api_library as lib
+    with lib.channel_memo():
+        return _matrix(templates, builds)
+
+
+def _matrix(templates, builds) -> list[dict]:
     out = []
     for t in templates or []:
         cells = {}

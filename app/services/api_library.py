@@ -33,6 +33,8 @@ import hashlib
 import json
 import os
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime
 
 from sqlalchemy import func, insert, or_, select, update
@@ -1859,12 +1861,49 @@ def _resolve_key(endpoint, rest_names: dict) -> str:
     return urn_key(endpoint)
 
 
+#: ``{(product, version): view}`` while a :func:`channel_memo` block is open.
+_CHANNEL_MEMO: ContextVar = ContextVar("apilib_channel_memo", default=None)
+
+
+@contextmanager
+def channel_memo():
+    """Reuse each build's channel view for the duration of the block.
+
+    :func:`_channel_view` reads the WHOLE build (every endpoint, both
+    channels) whatever endpoint the caller asked about. A caller that asks
+    many questions about the same few builds -- the template x build matrix
+    asked 67 times about 3 builds and took 40-50 s -- opens this block. It is
+    opt-in and scoped on purpose: a request that ingests and then reads must
+    never be answered from a view taken before its own write. Nested blocks
+    share the outer memo.
+    """
+    token = _CHANNEL_MEMO.set({}) if _CHANNEL_MEMO.get() is None else None
+    try:
+        yield
+    finally:
+        if token is not None:
+            _CHANNEL_MEMO.reset(token)
+
+
 def _channel_view(product: str, version) -> dict:
     """Both channels of one build, joined on :func:`urn_key`.
 
     ``{"build", "keys": {key: {"rest": {...}, "tree": rec|None, "full": rec|None,
     "rest_names": [...]}}, "tree_measured", "evidence", "unjoined"}``.
+
+    Callers only read the view (:func:`channels_at` copies what it keeps), which
+    is what makes sharing it inside :func:`channel_memo` safe.
     """
+    memo = _CHANNEL_MEMO.get()
+    if memo is None:
+        return _channel_view_read(product, version)
+    key = (product, fv.normalize(version))
+    if key not in memo:
+        memo[key] = _channel_view_read(product, version)
+    return memo[key]
+
+
+def _channel_view_read(product: str, version) -> dict:
     v = fv.normalize(version)
     b = _build_row(product, v) if v else None
     point = _point_state([b.id], with_fields=True, sources=SOURCES).get(b.id, {}) if b else {}
@@ -2154,7 +2193,21 @@ def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
 
 def _tree_specs(product: str, version, only: str = "") -> tuple[bool, dict]:
     """``(measured, {key: {"attrs", "fields": {name: spec}}})`` from cli_tree,
-    with lab defaults (cli_full on lab evidence) folded in as ``default``."""
+    with lab defaults (cli_full on lab evidence) folded in as ``default``.
+
+    Shared inside :func:`channel_memo` like :func:`_channel_view` (whole build
+    per call; the matrix asked 67 times for 3 builds). The memoised callers
+    only read the result."""
+    memo = _CHANNEL_MEMO.get()
+    if memo is None:
+        return _tree_specs_read(product, version, only)
+    key = ("tree", product, fv.normalize(version), only or "")
+    if key not in memo:
+        memo[key] = _tree_specs_read(product, version, only)
+    return memo[key]
+
+
+def _tree_specs_read(product: str, version, only: str = "") -> tuple[bool, dict]:
     v = fv.normalize(version)
     b = _build_row(product, v) if v else None
     if b is None:

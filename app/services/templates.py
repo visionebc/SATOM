@@ -81,18 +81,37 @@ def get_template(template_id: int) -> Template | None:
     return Template.query.get(template_id)
 
 
-def managed_wpp_names() -> set[str]:
+def managed_wpp_names(appliance_id=None) -> set[str]:
     """Names of Web Protection Profiles governed by an APPROVED template.
 
     A profile whose name matches an approved ``web-protection-profile`` template
     is TEMPLATE-MANAGED: it is read-only everywhere except Administrator →
     Template Library, and editing it there deploys to the whole fleet. This is the
     team rule that keeps per-device drift out of templated profiles.
+
+    ``appliance_id`` scopes the answer to one device: a template that has
+    device bindings (:mod:`services.template_bindings`) governs its bound
+    devices only; one without bindings governs every device of its ADOM, as
+    before. ``None`` = the union (locked on ANY device) — the conservative
+    answer for a caller that has no device in hand.
     """
+    from . import template_bindings as tb
+    try:
+        scope = tb.locked_families(Template.KIND_WEB_PROTECTION)
+    except Exception:  # noqa: BLE001 — no bindings table yet: the global rule
+        from ..extensions import db
+        db.session.rollback()
+        scope = {}
     rows = (Template.query
             .filter_by(kind=Template.KIND_WEB_PROTECTION,
                        status=Template.STATUS_APPROVED)
             .all())
+    if appliance_id is not None:
+        from ..models import Appliance
+        appl = Appliance.query.get(int(appliance_id))
+        kind = getattr(appl, "kind", None)
+        rows = [t for t in rows if (t.product or "fortiweb") == kind
+                and tb.governs(scope.get(t.name), appliance_id)]
     names: set[str] = set()
     for t in rows:
         if t.name:

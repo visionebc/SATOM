@@ -460,15 +460,16 @@ _WPP_COLLECTIONS = ('waf/web-protection-profile.inline-protection',
                     'waf/web-protection-profile.offline-protection')
 
 
-def _template_lock_error(coll, name):
-    """Non-empty reason when (coll, name) targets a template-managed WPP."""
+def _template_lock_error(coll, name, appliance_id=None):
+    """Non-empty reason when (coll, name) targets a template-managed WPP on
+    ``appliance_id`` (``None`` = on any device)."""
     coll = objform.collection_of(coll)
     if not any(coll == c or coll.startswith(c + '/') for c in _WPP_COLLECTIONS):
         return ''
     if not name:
         return ''
     from ..services.templates import managed_wpp_names
-    if str(name) in managed_wpp_names():
+    if str(name) in managed_wpp_names(appliance_id):
         return ('"%s" is a template-managed profile. Edit it in Administrator '
                 '→ Template Library — saving an approved template deploys the '
                 'change to ALL devices.' % name)
@@ -577,7 +578,7 @@ def save_object(appliance_id):
         return jsonify(ok=False, error='endpoint not allowed'), 400
     if not fields:
         return jsonify(ok=False, error='no changes to save'), 400
-    lock = _template_lock_error(coll, mkey)
+    lock = _template_lock_error(coll, mkey, appliance_id)
     if lock:
         return jsonify(ok=False, error=lock), 403
     held = _lease_conflict(appliance_id, coll, mkey)
@@ -742,7 +743,7 @@ def create_object(appliance_id):
     if missing:
         return jsonify(ok=False, error='%s required for this object type'
                        % ' and '.join(missing)), 400
-    lock = _template_lock_error(coll, name)
+    lock = _template_lock_error(coll, name, appliance_id)
     if lock:
         return jsonify(ok=False, error=lock), 403
     data = {k: v for k, v in fields.items() if v not in (None, '', [])}
@@ -787,7 +788,7 @@ def save_row_for(appl, body):
         return jsonify(ok=False, error='endpoint not allowed'), 400
     if not fields:
         return jsonify(ok=False, error='no changes to save'), 400
-    lock = _template_lock_error(coll, parent)
+    lock = _template_lock_error(coll, parent, appl.id)
     if lock:
         return jsonify(ok=False, error=lock), 403
     held = _lease_conflict(appliance_id, coll, parent)
@@ -872,7 +873,7 @@ def delete_row(appliance_id):
         return jsonify(ok=False, error='endpoint not allowed'), 400
     if sub_id in (None, ''):
         return jsonify(ok=False, error='row id required'), 400
-    lock = _template_lock_error(coll, parent)
+    lock = _template_lock_error(coll, parent, appliance_id)
     if lock:
         return jsonify(ok=False, error=lock), 403
     held = _lease_conflict(appliance_id, coll, parent)
@@ -917,7 +918,7 @@ def delete_object(appliance_id):
         return jsonify(ok=False, error='endpoint not allowed'), 400
     if not mkey:
         return jsonify(ok=False, error='object name required'), 400
-    lock = _template_lock_error(coll, mkey)
+    lock = _template_lock_error(coll, mkey, appliance_id)
     if lock:
         return jsonify(ok=False, error=lock), 403
     held = _lease_conflict(appliance_id, coll, mkey)
@@ -954,7 +955,7 @@ def clone_object(appliance_id):
         return jsonify(ok=False, error='mkey and new_name required'), 400
     if new_name == mkey:
         return jsonify(ok=False, error='new name must differ from the source'), 400
-    lock = _template_lock_error(coll, new_name)
+    lock = _template_lock_error(coll, new_name, appliance_id)
     if lock:
         return jsonify(ok=False, error=lock), 403
 

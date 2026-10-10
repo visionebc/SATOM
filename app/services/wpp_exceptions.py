@@ -33,7 +33,7 @@ CAT_SIGNATURE = WppException.CAT_SIGNATURE
 SIG_FILTER_MAX = 128
 
 
-def template_lock_error(wpp_mkey: str) -> str:
+def template_lock_error(wpp_mkey: str, appliance_id=None) -> str:
     """Team rule 2: a template-managed WPP stays CLEAN — no carve-outs on it.
 
     Returns a non-empty, human-readable reason when ``wpp_mkey`` names a Web
@@ -42,7 +42,7 @@ def template_lock_error(wpp_mkey: str) -> str:
     if not wpp_mkey:
         return ""
     from .templates import managed_wpp_names
-    if str(wpp_mkey) in managed_wpp_names():
+    if str(wpp_mkey) in managed_wpp_names(appliance_id):
         return ('"%s" is a template-managed Web Protection Profile — templates '
                 'stay clean (no exceptions). Clone it for the Server Policy and '
                 'author the carve-out on the clone.' % wpp_mkey)

@@ -688,6 +688,16 @@
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]; }); }
 
+  // Deep link from the FortiWeb Server Policy list: ?act=<action>&policy=<name>
+  // opens that action's dialog for that policy (same preview / apply path).
+  setTimeout(function () {
+    try {
+      var qp = new URLSearchParams(window.location.search);
+      var act = qp.get('act'), pol = qp.get('policy');
+      if (act && pol && LABELS[act]) openAction(act, [pol]);
+    } catch (e) { /* an old browser only loses the shortcut */ }
+  }, 0);
+
   function openAction(action, policies) {
     if (!modal || !policies.length) return;
     if (NEEDS_DEST[action] && !hasOtherFw) { alert('No other FortiWeb is registered as a destination.'); return; }

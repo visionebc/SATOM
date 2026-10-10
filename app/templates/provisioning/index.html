@@ -18,6 +18,8 @@
   </div>
   <div class="d-flex gap-2">
     <a class="btn btn-fw-secondary" href="{{ url_for('provisioning.baselines') }}"><i class="bi bi-diagram-3 me-1"></i>{{ _('Baselines') }}</a>
+    <a class="btn btn-fw-secondary" href="{{ url_for('provisioning.compare') }}" title="{{ _('A template against a newer one: field diff and whether it is valid on a build or a device') }}"><i class="bi bi-arrow-left-right me-1"></i>{{ _('Compare templates') }}</a>
+    <a class="btn btn-fw-secondary" href="{{ url_for('templates.matrix') }}"><i class="bi bi-grid-3x3 me-1"></i>{{ _('Compatibility matrix') }}</a>
   <a class="btn btn-fw-primary" href="{{ url_for('provisioning.new') }}"><i class="bi bi-plus-lg me-1"></i>{{ _('New profile') }}</a>
   </div>
 </div>
@@ -90,6 +92,7 @@
               <i class="bi bi-rocket-takeoff"></i>
             </button>
             {% endif %}
+            <a class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Compare with a newer version') }}" href="{{ url_for('provisioning.compare', a=p.id) }}"><i class="bi bi-arrow-left-right"></i></a>
             <a class="btn btn-sm btn-outline-primary btn-sm-icon me-1" title="{{ _('Edit') }}"
                href="{{ url_for('provisioning.edit', template_id=p.id) }}"><i class="bi bi-pencil"></i></a>
             <form method="POST" action="{{ url_for('provisioning.delete', template_id=p.id) }}" style="display:inline;"

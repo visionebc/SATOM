@@ -1219,13 +1219,50 @@ def fwgui_list(appliance_id, page):
         rows, meta = gui_pages.live_rows(appl, view.get('endpoint'))
     else:
         rows, meta = gui_pages.rows(appl.id, view.get('endpoint'))
+    satom = _satom_row_actions(appl, view)
     return render_template('workspace/fwgui_list.html', appliance=appl, tpl=tpl, match=match,
+                           satom=satom,
                            dev=dev, page=page, vi=vi, view=view, rows=rows, cache_meta=meta,
                            tabs=tabs, cell=gui_pages.cell, labels=gui_pages.value_labels(tpl),
                            dialog_for=gui_pages.dialog_for,
                            can_edit=current_user.can('config_write') and not view.get('read_live'),
                            classic=gui_classic.classic_url(appl, view.get('endpoint')),
                            gx=_gx(appl), mkey_of=None)
+
+
+def _satom_row_actions(appl, view):
+    """The SATOM tools a FortiWeb grid offers per row (they used to live only
+    on the classic pages): the template lock of Web Protection Profiles, deep
+    clone and Save as template for them, Save as template for config objects.
+    """
+    from ..services import objform, read_layer
+    from ..services.templates import managed_wpp_names
+    from .objedit import _WPP_COLLECTIONS
+    out = {'wpp': False, 'locked': [], 'section': '',
+           'can_template': current_user.can('operations.template_save')}
+    ep = objform.collection_of(view.get('endpoint') or '')
+    if not ep or view.get('read_live'):
+        return out
+    if any(ep == c for c in _WPP_COLLECTIONS):
+        out['wpp'] = ep == _WPP_COLLECTIONS[0]   # deep clone walks inline WPPs
+        try:
+            out['locked'] = sorted(managed_wpp_names(appl.id))
+        except Exception as exc:  # noqa: BLE001 — never hide the list for this
+            log_exception(exc, context='workspace.fwgui_list.locked')
+        return out
+    try:
+        from ..registry import loader
+        from ..services import config_catalog as cc
+        lns = set(read_layer.registry_logicals(ep))
+        for e in loader.get_all_endpoints():
+            if e.get('name') in lns:
+                sec = cc.SECTION_BY_LABEL.get(e.get('section'))
+                if sec is not None and not sec.readonly:
+                    out['section'] = sec.key
+                    break
+    except Exception as exc:  # noqa: BLE001
+        log_exception(exc, context='workspace.fwgui_list.section')
+    return out
 
 
 @bp.route('/<int:appliance_id>/fwgui/<page>/refresh', methods=['POST'])

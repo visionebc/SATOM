@@ -163,6 +163,21 @@ def prepare(appliance, *, do_backup: bool = True, do_health: bool = True,
                                  "rows": 0,
                                  "error": f"{type(exc).__name__}: {exc}"[:200]}
 
+        # TEMPLATES governing this box against the build it is going to run.
+        # Graded (unlike the API surface): a template that does not fit the
+        # target is refused on its next apply after the upgrade, and the only
+        # way to turn this green is to adapt it — re-running changes nothing.
+        if not is_adc:
+            _say(20, "Pre-flight - checking the templates that govern this "
+                     "device against the target firmware...")
+            try:
+                from . import template_bindings as tb
+                out["templates"] = tb.upgrade_report(appliance, target_version)
+            except Exception as exc:  # noqa: BLE001 — a pre-flight never crashes
+                out["templates"] = {"ok": False, "target_version": target_version,
+                                    "templates": [],
+                                    "error": f"{type(exc).__name__}: {exc}"[:200]}
+
     return out
 
 

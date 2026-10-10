@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Compare templates') }} — SATOM{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <a href="{{ url_for('provisioning.index') }}">{{ _('System Provisioning') }}</a><span class="separator">/</span>
+  <span>{{ _('Compare templates') }}</span>
+</div>
+{% endblock %}
+{% macro cell_badge(c) -%}
+{%- set cls = {'ok': 'success', 'warn': 'warning', 'adapt': 'warning', 'unmeasured': 'secondary', 'block': 'danger'} -%}
+<span class="fw-badge fw-badge-{{ cls.get(c, 'secondary') }}" data-cell="{{ c }}">{{ {'ok': _('fits'), 'warn': _('fits, warnings'), 'adapt': _('adapt'), 'unmeasured': _('unmeasured'), 'block': _('blocked')}.get(c, c) }}</span>
+{%- endmacro %}
+{% macro tpl_options(selected) -%}
+<option value="">{{ _('— choose —') }}</option>
+{% for f in choices %}
+<optgroup label="{{ f.kind }} · {{ f.name }}">
+  {% for t in f.rows %}<option value="{{ t.id }}" {{ 'selected' if selected and selected.id == t.id }}>{{ f.name }} v{{ t.version }} · {{ t.status }}{% if t.source_firmware %} · {{ t.source_firmware }}{% else %} · {{ _('no firmware recorded') }}{% endif %}</option>{% endfor %}
+</optgroup>
+{% endfor %}
+{%- endmacro %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-arrow-left-right me-2 text-accent"></i>{{ _('Compare templates') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('The template a device has against a newer one: what changes field by field, and whether the newer one is valid on a firmware build or on one device before it is provisioned. Read-only: nothing is saved or sent.') }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-secondary btn-sm" href="{{ url_for('templates.matrix') }}"><i class="bi bi-grid-3x3 me-1"></i>{{ _('Compatibility matrix') }}</a>
+    <a class="btn btn-secondary btn-sm" href="{{ url_for('templates.index') }}"><i class="bi bi-collection me-1"></i>{{ _('Template Library') }}</a>
+  </div>
+</div>
+
+<form class="fw-card p-3 mb-3" method="get" action="{{ url_for('provisioning.compare') }}" data-compare-form>
+  <div class="row g-2 align-items-end">
+    <div class="col-lg-3">
+      <label class="fw-form-label" for="cmp-a">{{ _('Current template') }}</label>
+      <select class="form-select form-select-sm" id="cmp-a" name="a">{{ tpl_options(cur) }}</select>
+    </div>
+    <div class="col-lg-3">
+      <label class="fw-form-label" for="cmp-b">{{ _('Newer template') }}</label>
+      <select class="form-select form-select-sm" id="cmp-b" name="b">{{ tpl_options(new) }}</select>
+    </div>
+    <div class="col-lg-2">
+      <label class="fw-form-label" for="cmp-build">{{ _('Firmware build') }}</label>
+      <select class="form-select form-select-sm" id="cmp-build" name="build">
+        <option value="">{{ _('— the device\'s, or the newer template\'s —') }}</option>
+        {% for b in firmware_choices %}<option value="{{ b.version }}" {{ 'selected' if build == b.version }}>{{ b.version }}{% if b.in_fleet %} · {{ _('in fleet') }}{% endif %}{% if not b.measured %} · {{ _('not measured') }}{% endif %}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-lg-2">
+      <label class="fw-form-label" for="cmp-dev">{{ _('Device (optional)') }}</label>
+      <select class="form-select form-select-sm" id="cmp-dev" name="appliance_id">
+        <option value="">{{ _('— none —') }}</option>
+        {% for d in devices %}<option value="{{ d.id }}" {{ 'selected' if appliance and appliance.id == d.id }}>{{ d.name }}{% if d.fw_version %} · {{ d.fw_version }}{% endif %}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-lg-2 d-flex gap-2">
+      <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-search me-1"></i>{{ _('Compare') }}</button>
+    </div>
+  </div>
+  {% if cur and not new %}<div class="fw-alert fw-alert-info mt-2 mb-0">{{ _('"%(n)s" v%(v)s has no newer version and nothing was adapted from it: choose the newer template to compare with.', n=cur.name, v=cur.version) }}</div>{% endif %}
+</form>
+
+{% if error %}<div class="fw-alert fw-alert-danger" data-compare-error>{{ error }}</div>{% endif %}
+
+{% if result %}
+{% set n = result.newer %}{% set c = result.current %}
+<div class="fw-card p-3 mb-3" data-compare-verdict="{{ 'valid' if result.valid else 'invalid' }}">
+  <h2 class="h5 mb-2">
+    {% if result.valid %}<i class="bi bi-check-circle-fill text-success me-2"></i>{% else %}<i class="bi bi-x-octagon-fill text-danger me-2"></i>{% endif %}
+    {{ _('"%(n)s" v%(v)s is', n=n.name, v=n.version) }} <strong>{{ result.verdict }}</strong>{% if result.device %} · {{ result.device.appliance }}{% endif %}
+  </h2>
+  {% if result.reasons %}
+  <ul class="mb-2" data-compare-reasons>{% for r in result.reasons %}<li>{{ r }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if not result.approved %}<div class="fw-alert fw-alert-warning mb-0">{{ _('The newer template is %(s)s: a single device can receive it, a fleet rollout needs it approved.', s=n.status) }}</div>{% endif %}
+</div>
+
+<div class="fw-card p-0 mb-3">
+  <div class="fw-table-wrapper">
+  <table class="fw-table" data-compare-sides>
+    <thead><tr><th></th><th>{{ _('Current') }}</th><th>{{ _('Newer') }}</th></tr></thead>
+    <tbody>
+      <tr><td>{{ _('Template') }}</td><td>{{ c.name }} v{{ c.version }}</td><td>{{ n.name }} v{{ n.version }}</td></tr>
+      <tr><td>{{ _('Status') }}</td><td>{{ c.status }}</td><td>{{ n.status }}</td></tr>
+      <tr><td>{{ _('Written for firmware') }}</td><td>{{ c.source_firmware or _('not recorded') }} · {{ c.provenance }}</td><td>{{ n.source_firmware or _('not recorded') }} · {{ n.provenance }}</td></tr>
+      <tr><td>{{ _('On %(b)s', b=result.build) }}</td><td>{{ cell_badge(c.cell) }} <span class="small">{{ c.text }}</span></td><td>{{ cell_badge(n.cell) }} <span class="small">{{ n.text }}</span></td></tr>
+      <tr><td>{{ _('Approval covers %(b)s', b=result.build) }}</td><td>{{ _('yes') if c.validated_for_build else _('no') }}</td><td>{{ _('yes') if n.validated_for_build else _('no') }}</td></tr>
+      <tr><td>{{ _('New fields of %(b)s not decided', b=result.build) }}</td>
+        <td>{% for k, v in c.undecided.items() %}<div class="small"><code>{{ k }}</code>: {{ v|join(', ') }}</div>{% else %}—{% endfor %}</td>
+        <td>{% for k, v in n.undecided.items() %}<div class="small"><code>{{ k }}</code>: {{ v|join(', ') }}</div>{% else %}—{% endfor %}</td></tr>
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{% if result.device %}
+<div class="fw-card p-3 mb-3" data-compare-device>
+  <h2 class="h6">{{ _('On %(d)s (%(b)s)', d=result.device.appliance, b=result.device.build) }}</h2>
+  {% if result.device.missing_variables %}<div class="fw-alert fw-alert-danger">{{ _('Unset variables on this device\'s binding: %(v)s', v=result.device.missing_variables|join(', ')) }}</div>{% endif %}
+  {% for b in result.device.blocks %}<div class="text-danger small">{{ b }}</div>{% endfor %}
+  {% for w in result.device.warnings %}<div class="text-muted small">{{ w }}</div>{% endfor %}
+  {% if not result.device.blocks and not result.device.warnings and not result.device.missing_variables %}<div class="text-success small">{{ _('No finding on this device.') }}</div>{% endif %}
+</div>
+{% endif %}
+
+<div class="fw-card p-0 mb-3">
+  <div class="p-3 pb-0"><h2 class="h6 mb-0">{{ _('What changes from v%(a)s to v%(b)s', a=c.version, b=n.version) }}
+    <span class="text-muted small ms-2">{{ _('%(a)s object(s) added, %(r)s removed, %(c)s changed', a=result.diff.counts.added, r=result.diff.counts.removed, c=result.diff.counts.changed) }}</span></h2></div>
+  {% if result.diff.identical %}
+  <div class="p-3 text-muted" data-compare-identical>{{ _('The two bodies are identical: only the stamp, the status or the decisions differ.') }}</div>
+  {% else %}
+  <div class="fw-table-wrapper">
+  <table class="fw-table" data-compare-diff>
+    <thead><tr><th>{{ _('Object') }}</th><th>{{ _('Change') }}</th><th>{{ _('Fields') }}</th></tr></thead>
+    <tbody>
+    {% for o in result.diff.objects %}
+      <tr>
+        <td><code>{{ o.key }}</code>{% if o.object %} · {{ o.object }}{% endif %}</td>
+        <td>{% if o.change == 'added' %}<span class="fw-badge fw-badge-success">{{ _('added') }}</span>{% elif o.change == 'removed' %}<span class="fw-badge fw-badge-danger">{{ _('removed') }}</span>{% else %}<span class="fw-badge fw-badge-info">{{ _('changed') }}</span>{% endif %}</td>
+        <td class="small">
+          {% if o.change in ('added', 'removed') %}{{ o.fields|join(', ') }}
+          {% else %}
+            {% for f, v in o.added.items() %}<div><span class="text-success">+ {{ f }}</span> = {{ v }}</div>{% endfor %}
+            {% for f, v in o.removed.items() %}<div><span class="text-danger">− {{ f }}</span> (was {{ v }})</div>{% endfor %}
+            {% for ch in o.changed %}<div><span class="text-info">~ {{ ch.field }}</span>: {{ ch['from'] }} → {{ ch['to'] }}</div>{% endfor %}
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

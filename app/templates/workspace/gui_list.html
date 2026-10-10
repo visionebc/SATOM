@@ -35,7 +35,11 @@
     </details>
     {% endif %}
     <a class="btn btn-secondary btn-sm" href="#" aria-disabled="true" data-fwg-edit><i class="bi bi-pencil me-1"></i>{{ _('Edit') }}</a>
-    <span class="btn btn-fw-danger btn-sm" aria-disabled="true" title="{{ _('Read-only: nothing is sent to the device.') }}"><i class="bi bi-trash me-1"></i>{{ _('Delete') }}</span>
+    {% set _pa = url_for('workspace.appliance', appliance_id=appliance.id) %}
+    <a class="btn btn-secondary btn-sm" href="#" aria-disabled="true" data-fwg-act="clone_here" data-base="{{ _pa }}" title="{{ _('Deep-clone the policy tree on this FortiWeb (dry run first)') }}"><i class="bi bi-files me-1"></i>{{ _('Clone') }}</a>
+    <a class="btn btn-secondary btn-sm" href="#" aria-disabled="true" data-fwg-act="clone_to" data-base="{{ _pa }}" title="{{ _('Deep-clone the policy tree onto another FortiWeb (dry run first)') }}"><i class="bi bi-box-arrow-up-right me-1"></i>{{ _('Clone to') }}</a>
+    <a class="btn btn-secondary btn-sm" href="#" aria-disabled="true" data-fwg-act="migrate_to" data-base="{{ _pa }}" title="{{ _('Move the policy to another FortiWeb (dry run first)') }}"><i class="bi bi-arrow-left-right me-1"></i>{{ _('Migrate to') }}</a>
+    <a class="btn btn-fw-danger btn-sm" href="#" aria-disabled="true" data-fwg-act="delete" data-base="{{ _pa }}" title="{{ _('Delete the policy and the objects only it uses (dry run first)') }}"><i class="bi bi-trash me-1"></i>{{ _('Delete') }}</a>
     <div class="fw-search-box">
       <i class="bi bi-search search-icon" aria-hidden="true"></i>
       <input type="search" placeholder="{{ _('Search') }}" aria-label="{{ _('Search') }}" data-fwg-search>
@@ -51,7 +55,7 @@
     <tbody>
     {% for r in view.rows %}
       {% set j = joins.get(r.name) or {} %}
-      <tr tabindex="0" data-href="{{ url_for('workspace.gui_policy', appliance_id=appliance.id, name=r.name) }}">
+      <tr tabindex="0" data-name="{{ r.name }}" data-href="{{ url_for('workspace.gui_policy', appliance_id=appliance.id, name=r.name) }}">
       {% for c in view.columns %}
         <td>
         {% if c.id == 'id' %}{{ r.id or loop.index }}
@@ -87,10 +91,18 @@
   if (!pane) return;
   var edit = pane.querySelector('[data-fwg-edit]');
   var rows = Array.prototype.slice.call(pane.querySelectorAll('tbody tr[data-href]'));
+  // Clone / Clone to / Migrate to / Delete open the SATOM dialog of the
+  // selected policy (preview, options, then the job) on the policies page.
+  var acts = Array.prototype.slice.call(pane.querySelectorAll('[data-fwg-act]'));
   function select(tr) {
     rows.forEach(function (r) { r.classList.toggle('is-selected', r === tr); });
     edit.setAttribute('href', tr ? tr.getAttribute('data-href') : '#');
     edit.setAttribute('aria-disabled', tr ? 'false' : 'true');
+    acts.forEach(function (a) {
+      a.setAttribute('aria-disabled', tr ? 'false' : 'true');
+      a.setAttribute('href', tr ? a.dataset.base + '?classic=1&act=' + encodeURIComponent(a.dataset.fwgAct) +
+                                  '&policy=' + encodeURIComponent(tr.dataset.name) : '#');
+    });
   }
   function open(tr) { window.location.href = tr.getAttribute('data-href'); }
   rows.forEach(function (tr) {

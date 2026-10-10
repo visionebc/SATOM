@@ -114,7 +114,8 @@ def _res_ok(r) -> bool:
 def start_apply_job(flask_app, *, title: str, items: list[dict],
                     device_ids, by: str, meta: dict | None = None,
                     canary: int = 1, audit_action: str = "bulk.apply",
-                    audit_target: str = "", skips: dict | None = None) -> dict:
+                    audit_target: str = "", skips: dict | None = None,
+                    items_by_device: dict | None = None) -> dict:
     """Launch a canary-gated fleet apply as a background job (services.jobs).
 
     Fleet writes must not run inside an HTTP request: with a large fleet the
@@ -134,7 +135,8 @@ def start_apply_job(flask_app, *, title: str, items: list[dict],
                 pct = int(done * 100 / max(1, total))
                 jobs.set_progress(job_id, pct, f"{name} — {done}/{total} device(s)")
 
-            result = BulkRunner(items, skips=skips).apply(device_ids, canary=canary,
+            result = BulkRunner(items, skips=skips,
+                                items_by_device=items_by_device).apply(device_ids, canary=canary,
                                              progress_cb=_cb, job_id=job_id)
             runs = (result.get("canary") or []) + (result.get("rest") or [])
             ok_count = sum(1 for r in runs if r.get("ok"))
@@ -192,12 +194,20 @@ def start_apply_job(flask_app, *, title: str, items: list[dict],
 
 
 class BulkRunner:
-    def __init__(self, items: list[dict], skips: dict | None = None):
+    def __init__(self, items: list[dict], skips: dict | None = None,
+                 items_by_device: dict | None = None):
         """``skips`` = ``{appliance_id: {endpoint: [field]}}`` — per-device fields
         the build check said that device's build does not have."""
         self.items = items
+        # {appliance_id: items} — a body rendered with one device's binding
+        # variables (services.template_bindings); every other device gets
+        # ``items``.
+        self.items_by_device = {int(k): v for k, v in (items_by_device or {}).items()}
         self.skips = {int(k): v for k, v in (skips or {}).items()
                       if str(k).lstrip("-").isdigit()}
+
+    def _items_for(self, d):
+        return self.items_by_device.get(getattr(d, "id", None), self.items)
 
     def _skips_for(self, d):
         return self.skips.get(getattr(d, "id", None)) or None
@@ -222,7 +232,7 @@ class BulkRunner:
 
     def preview(self, device_ids) -> list[dict]:
         """Dry-run across all targets — pure, no device contact."""
-        return [_run_one(d, self.items, dry_run=True, skips=self._skips_for(d))
+        return [_run_one(d, self._items_for(d), dry_run=True, skips=self._skips_for(d))
                 for d in self._appliances(device_ids)]
 
     def apply(self, device_ids, canary: int = 1, progress_cb=None,
@@ -262,7 +272,7 @@ class BulkRunner:
                     pass
 
         def _run_and_tick(d):
-            r = _run_one(d, self.items, dry_run=False, job_id=job_id,
+            r = _run_one(d, self._items_for(d), dry_run=False, job_id=job_id,
                          skips=self._skips_for(d))
             _tick(r.get("appliance") or "")
             return r

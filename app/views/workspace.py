@@ -240,6 +240,9 @@ def refresh(appliance_id):
             flash("Refresh is FortiWeb-only for now.", "warning")
     except Exception as exc:  # noqa: BLE001
         flash_error(exc, "Refresh failed", context="workspace.refresh")
+    if request.form.get('back') == 'gui':
+        # the FortiWeb Server Policy list refreshes back to itself
+        return redirect(url_for('workspace.gui_list', appliance_id=appliance_id))
     return redirect(url_for('workspace.appliance', appliance_id=appliance_id))
 
 
@@ -1219,7 +1222,7 @@ def fwgui_list(appliance_id, page):
         rows, meta = gui_pages.live_rows(appl, view.get('endpoint'))
     else:
         rows, meta = gui_pages.rows(appl.id, view.get('endpoint'))
-    satom = _satom_row_actions(appl, view)
+    satom = _satom_row_actions(appl, view, page, vi, _page_label(tpl, view, vi, page))
     return render_template('workspace/fwgui_list.html', appliance=appl, tpl=tpl, match=match,
                            satom=satom,
                            dev=dev, page=page, vi=vi, view=view, rows=rows, cache_meta=meta,
@@ -1230,26 +1233,77 @@ def fwgui_list(appliance_id, page):
                            gx=_gx(appl), mkey_of=None)
 
 
-def _satom_row_actions(appl, view):
-    """The SATOM tools a FortiWeb grid offers per row (they used to live only
-    on the classic pages): the template lock of Web Protection Profiles, deep
-    clone and Save as template for them, Save as template for config objects.
+def _page_label(tpl, view, vi, page):
+    """What the operator calls the page's objects: its tab, else its menu leaf."""
+    from ..services import gui_pages
+    if len(gui_pages.views(tpl)) > 1:
+        return gui_pages.tab_label(tpl, view, vi)
+    return (tpl.get('menu_path') or [page])[-1]
+
+
+def _satom_row_actions(appl, view, page=None, vi=0, label=''):
+    """The SATOM tools a FortiWeb page carries over from its classic page:
+    the template lock of Web Protection Profiles, their deep clone and the
+    Hide-default filter; Save as template; the config template library of
+    the object's section; certificate Import / Generate; the artifact upload
+    of a file-backed object; New through the SATOM editor where FortiWeb's
+    layout has no Create New but the classic page had one.
     """
-    from ..services import objform, read_layer
+    from flask import url_for
+    from ..services import cert_import, gui_classic, objform, read_layer, waf_artifacts
     from ..services.templates import managed_wpp_names
     from .objedit import _WPP_COLLECTIONS
-    out = {'wpp': False, 'locked': [], 'section': '',
+    out = {'wpp': False, 'wpp_list': False, 'locked': [], 'section': '', 'lib': None,
+           'hide_default': False, 'import_url': '', 'generate_url': '', 'create_url': '',
+           'artifact_kind': '', 'artifact_label': '',
            'can_template': current_user.can('operations.template_save')}
     ep = objform.collection_of(view.get('endpoint') or '')
     if not ep or view.get('read_live'):
         return out
     if any(ep == c for c in _WPP_COLLECTIONS):
         out['wpp'] = ep == _WPP_COLLECTIONS[0]   # deep clone walks inline WPPs
+        out['wpp_list'] = True
         try:
+            from ..models import UserSetting
+            out['hide_default'] = UserSetting.get(current_user.id, "wpp.hide_default", "0") == "1"
             out['locked'] = sorted(managed_wpp_names(appl.id))
         except Exception as exc:  # noqa: BLE001 — never hide the list for this
             log_exception(exc, context='workspace.fwgui_list.locked')
         return out
+    write = current_user.can('config_write')
+    leaf = gui_classic.classic_leaf(ep)
+    if write and cert_import.spec_for(ep) is not None and leaf:
+        # REST cannot create these (-7721): FortiWeb's Import, over the
+        # certificate-only SSH door, and the Certificate Manager's Generate
+        out['import_url'] = url_for('server_objects.import_object', id=appl.id, type=leaf['logical'])
+        if cert_import.can_generate(ep):
+            out['generate_url'] = url_for('cert_manager.new', appliance_id=appl.id)
+    out['artifact_kind'] = waf_artifacts.kind_for_collection(ep) or ''
+    if out['artifact_kind']:
+        out['artifact_label'] = waf_artifacts.label(out['artifact_kind'])
+    if (write and leaf and not leaf['read_only'] and not view.get('create_menu')
+            and not view.get('form') and not out['artifact_kind']
+            and cert_import.rest_can_create(ep)):
+        out['create_url'] = url_for('objedit.edit', appliance_id=appl.id, collection=leaf['collection'],
+                                    title=leaf['label'], create=1)
+    if leaf and leaf['section']:
+        # the section the classic page files this type's templates under, so
+        # a template saved here shows in the same library
+        from ..services import config_catalog as cc
+        sec = cc.SECTION_BY_KEY.get(leaf['section'])
+        if sec is not None and not sec.readonly:
+            out['section'] = sec.key
+        if write and page is not None:
+            from .section_config import template_library
+            try:
+                out['lib'] = template_library(
+                    leaf['section'], ep, label or leaf['label'],
+                    url_for('workspace.fwgui_list', appliance_id=appl.id, page=page, v=vi or None),
+                    product=appl.kind)
+            except Exception as exc:  # noqa: BLE001 — the page never 500s for it
+                log_exception(exc, context='workspace.fwgui.template_library')
+        if out['section']:
+            return out
     try:
         from ..registry import loader
         from ..services import config_catalog as cc
@@ -1336,7 +1390,10 @@ def _fwgui_form(appl, page, tpl, match, dev, vi, view, tabs):
           'method': (tpl['dialogs'][key].get('write') or {}).get('method') or 'PUT',
           'body': (tpl['dialogs'][key].get('write') or {}).get('body') or 'data',
           'bound': groups, 'product': 'fortiweb'}
+    from ..services import gui_classic
+    satom = None if api else _satom_row_actions(appl, view, page, vi, _page_label(tpl, view, vi, page))
     return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
+                           satom=satom, classic=None if api else gui_classic.classic_url(appl, coll),
                            dev=dev, view=dview, name='', main=key, is_new=False,
                            not_in_gui=nig, nig_row=obj or {}, nig_edit=nig_edit,
                            can_edit=can_edit, save_ep=coll, row_ctx=None,

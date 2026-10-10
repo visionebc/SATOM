@@ -1,0 +1,77 @@
+{# Create / upload a file-backed object (WSDL, XSD, DTD, JSON Schema, OpenAPI,
+   gRPC IDL, Lua) into SATOM's artifact store without leaving the page; the
+   button that opens it is data-bs-target="#artifact-add". Shared by the
+   classic section page and the FortiWeb pages. Context: appliance,
+   artifact_kind, artifact_label. #}
+{% if artifact_kind %}
+<div class="modal fade" id="artifact-add" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-file-earmark-arrow-up me-2"></i>
+          {{ _('New') }} {{ artifact_label }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <ul class="nav nav-tabs mb-3" role="tablist">
+          <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab"
+              data-bs-target="#art-tab-upload" type="button">{{ _('Upload a file') }}</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab"
+              data-bs-target="#art-tab-write" type="button">{{ _('Write it here') }}</button></li>
+        </ul>
+        <div class="tab-content">
+          {# Both tabs post to the SAME two verbs /artifacts already owns. A
+             third upload path here would be a second place for the empty-file
+             and name-extension rules to live, and they would drift. #}
+          <div class="tab-pane fade show active" id="art-tab-upload">
+            <form method="post" enctype="multipart/form-data"
+                  action="{{ url_for('artifacts.upload') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="kind" value="{{ artifact_kind }}">
+              <input type="hidden" name="appliance_id" value="{{ appliance.id }}">
+              <input type="hidden" name="back" value="{{ request.full_path }}">
+              <div class="mb-2">
+                <label class="form-label small">{{ _('Object name') }}
+                  <span class="text-muted">{{ _('(the mkey the device stores it under; blank = the filename)') }}</span></label>
+                <input name="name" class="form-control form-control-sm">
+              </div>
+              <div class="mb-2">
+                <label class="form-label small">{{ _('File') }}</label>
+                <input type="file" name="file" class="form-control form-control-sm" required>
+              </div>
+              <div class="mb-2">
+                <label class="form-label small">{{ _('Note') }}</label>
+                <input name="note" class="form-control form-control-sm"
+                       placeholder="{{ _('where this came from, and why') }}">
+              </div>
+              <button class="btn btn-fw-primary btn-sm" type="submit">
+                <i class="bi bi-upload me-1"></i>{{ _('Store it') }}</button>
+              <span class="text-muted small ms-2">{{ _('Stored in SATOM. Nothing is sent to the appliance by this button.') }}</span>
+            </form>
+          </div>
+          <div class="tab-pane fade" id="art-tab-write">
+            <form method="post" action="{{ url_for('artifacts.save') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="kind" value="{{ artifact_kind }}">
+              <input type="hidden" name="appliance_id" value="{{ appliance.id }}">
+              <input type="hidden" name="back" value="{{ request.full_path }}">
+              <div class="mb-2">
+                <label class="form-label small">{{ _('Object name') }}</label>
+                <input name="name" class="form-control form-control-sm" required>
+              </div>
+              <div class="mb-2">
+                <label class="form-label small">{{ _('Content') }}</label>
+                <textarea name="content" rows="12" class="form-control form-control-sm font-monospace"
+                          placeholder="{{ _('paste the schema / WSDL / DTD here') }}"></textarea>
+              </div>
+              <button class="btn btn-fw-primary btn-sm" type="submit">
+                <i class="bi bi-save me-1"></i>{{ _('Store it') }}</button>
+              <span class="text-muted small ms-2">{{ _('An empty body is refused — it would satisfy every "we have a copy" check and configure nothing.') }}</span>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}

@@ -248,6 +248,44 @@ def classic_url(appliance, endpoint: str):
     return None
 
 
-__all__ = ["page_map", "covered", "filter_groups", "filter_sections", "target",
+def classic_leaf(endpoint: str) -> dict | None:
+    """The old SATOM menu leaf of a FortiWeb page's collection, for the SATOM
+    tools a FortiWeb page carries over from it: ``{"area": "server_objects" |
+    "section", "section": <config section key> | "", "logical", "label",
+    "collection", "read_only"}``, or None. The same menus, in the same order,
+    as :func:`classic_url`, so a template saved from a FortiWeb page is filed
+    under the section whose library the classic page lists."""
+    from . import read_layer
+    lns = set(read_layer.registry_logicals(endpoint or ""))
+    if not lns:
+        return None
+
+    def leaf(area, section, it):
+        return {"area": area, "section": section, "logical": it.logical, "label": it.label,
+                "collection": it.collection, "read_only": bool(it.read_only)}
+    try:
+        from . import server_objects as so
+        for g in so.server_objects_menu(hidden=frozenset()):
+            for it in g.items:
+                for t in it.tabs:
+                    if t.logical in lns:
+                        return leaf("server_objects", "", t)
+    except Exception:  # noqa: BLE001 -- a missing menu only loses the tools
+        pass
+    try:
+        from . import config_catalog as cc, config_sections as cs
+        for s in cc.CONFIG_SECTIONS:
+            if not cs.has_menu(s.key):
+                continue
+            for g in cs.section_menu(s.key, complete=False, hidden=frozenset()):
+                for it in g.items:
+                    if it.logical in lns:
+                        return leaf("section", s.key, it)
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+__all__ = ["page_map", "covered", "filter_groups", "filter_sections", "target", "classic_leaf",
            "redirect_for", "classic_url", "item_keys", "product_covered",
            "filter_product_groups", "redirect_item", "classic_item_url"]

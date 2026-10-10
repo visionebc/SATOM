@@ -200,7 +200,16 @@
     <h1 class="fw-page-title"><i class="bi {{ 'bi-layout-sidebar' if gp else 'bi-shield-check' }} me-2 text-accent"></i>{{ _t or view.key }}{% if name %} <span class="text-muted fw-normal">· {{ gp.display if gp and gp.display else name }}</span>{% endif %}</h1>
     <p class="text-muted mb-0" style="font-size:13px;"><strong>{{ appliance.name }}</strong> · {{ appliance.host }}:{{ appliance.port }}{% if appliance.fw_version %} · {{ _gxl }} {{ appliance.fw_version }}{% endif %}</p>
   </div>
+  <div class="d-flex gap-2">
+  {% if gp and gp.form and satom is defined and satom %}
+    {% if satom.section and satom.can_template and not gp.missing %}<button type="button" class="btn btn-secondary btn-sm" data-fwg-form-savetpl data-collection="{{ gp.collection }}" data-section="{{ satom.section }}" title="{{ _('Read these settings from the device and save them to the Template Library as a pending template.') }}"><i class="bi bi-bookmark-plus me-1"></i>{{ _('Save as template') }}</button>{% endif %}
+    {% if current_user.can('config_write') %}<form method="post" action="{{ url_for('workspace.fwgui_refresh', appliance_id=appliance.id, page=gp.page) }}" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="v" value="{{ gp.v }}">
+      <button type="submit" class="btn btn-outline-secondary btn-sm" data-fwg-form-refresh title="{{ _('Pull live config from the device') }}"><i class="bi bi-arrow-clockwise"></i></button></form>{% endif %}
+  {% endif %}
+  {% if gp and gp.form and classic is defined and classic %}<a class="btn btn-secondary btn-sm" href="{{ classic }}"><i class="bi bi-grid me-1"></i>{{ _('Classic view') }}</a>{% endif %}
   <a class="btn btn-secondary btn-sm" href="{{ back }}"><i class="bi bi-chevron-left me-1"></i>{{ _('Back') }}</a>
+  </div>
 </div>
 <div class="fwg-pane fw-card fwg-satom">
   <div class="fwg-titlebar">
@@ -276,6 +285,31 @@
     <a class="fwg-btn" href="{{ back }}">{{ _('Cancel') }}</a>
   </div>
 </div>
+{% if gp and gp.form and satom is defined and satom and satom.lib %}{% set tlib = satom.lib %}{% include 'section_config/_template_library.html' %}{% endif %}
+{% if gp and gp.form and satom is defined and satom and satom.section %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  // a settings object is captured whole (singleton, mkey-less)
+  var b = document.querySelector('[data-fwg-form-savetpl]');
+  if (!b) return;
+  b.addEventListener('click', function () {
+    var nm = prompt('Save these settings to the Template Library as:', {{ (satom.section ~ '-' ~ gp.page)|tojson }});
+    if (!nm) return;
+    fetch({{ url_for('objedit.save_template_from_object', appliance_id=appliance.id)|tojson }}, {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({collection: b.dataset.collection, mkey: '', singleton: 1, section: b.dataset.section,
+                            name: nm, note: 'Saved from ' + {{ gp.page|tojson }} + ' on device ' + {{ appliance.id }}})})
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) { alert('Error: ' + (j.error || 'failed')); return; }
+        var m = 'Saved "' + (j.name || nm) + '" v' + j.version + ' (pending approval)';
+        if (window.FW) FW.toast(m, 'success'); else alert(m);
+        setTimeout(function () { location.reload(); }, 900);
+      });
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">

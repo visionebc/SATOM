@@ -41,6 +41,23 @@ def _firmware_choices() -> list:
     return tc.known_builds(tc.session_product())
 
 
+def template_library(section_key: str, collection: str | None, label: str,
+                     back_url: str, product: str | None = None) -> dict | None:
+    """Context of ``section_config/_template_library.html``: the config
+    templates of one section scoped to one object type, as the classic
+    section page lists them. None for an unknown section."""
+    sec = config_catalog.SECTION_BY_KEY.get(section_key or '')
+    if sec is None:
+        return None
+    from ..services import template_compat as tc
+    kind = config_catalog.config_template_kind(sec.key)
+    return {'kind': kind, 'section_key': sec.key, 'section_label': sec.label,
+            'label': label or '', 'templates': list_config_templates(kind, collection),
+            'appliances': visible_appliances().order_by(Appliance.name).all(),
+            'firmware_choices': tc.known_builds(product or tc.session_product()),
+            'back_url': back_url}
+
+
 def _row_view(obj: dict) -> dict:
     """A compact list-row projection (name + a couple of GUI-meaningful fields)."""
     if not isinstance(obj, dict):

@@ -1206,7 +1206,7 @@ def fwgui_index(appliance_id):
 @login_required
 @require_permission('protection.view')
 def fwgui_list(appliance_id, page):
-    from ..services import gui_classic, gui_pages
+    from ..services import gui_pages
     appl = visible_appliance_or_404(appliance_id)
     tpl, match = _fwgui_tpl(appl, page)
     dev = _gx_device(appl)
@@ -1229,7 +1229,6 @@ def fwgui_list(appliance_id, page):
                            tabs=tabs, cell=gui_pages.cell, labels=gui_pages.value_labels(tpl),
                            dialog_for=gui_pages.dialog_for,
                            can_edit=current_user.can('config_write') and not view.get('read_live'),
-                           classic=gui_classic.classic_url(appl, view.get('endpoint')),
                            gx=_gx(appl), mkey_of=None)
 
 
@@ -1390,10 +1389,9 @@ def _fwgui_form(appl, page, tpl, match, dev, vi, view, tabs):
           'method': (tpl['dialogs'][key].get('write') or {}).get('method') or 'PUT',
           'body': (tpl['dialogs'][key].get('write') or {}).get('body') or 'data',
           'bound': groups, 'product': 'fortiweb'}
-    from ..services import gui_classic
     satom = None if api else _satom_row_actions(appl, view, page, vi, _page_label(tpl, view, vi, page))
     return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
-                           satom=satom, classic=None if api else gui_classic.classic_url(appl, coll),
+                           satom=satom,
                            dev=dev, view=dview, name='', main=key, is_new=False,
                            not_in_gui=nig, nig_row=obj or {}, nig_edit=nig_edit,
                            can_edit=can_edit, save_ep=coll, row_ctx=None,
@@ -1808,7 +1806,7 @@ def _gx_singleton_table(view, rows, meta):
 
 
 def _gx_list(appl, page, tpl, match, dev, vi, view, tabs):
-    from ..services import gui_classic, gui_pages, gui_products, gui_template
+    from ..services import gui_pages, gui_products, gui_template
     ad = gui_products.adapter(appl)
     coll = view.get('endpoint') or ''
     writer = current_user.can('config_write')
@@ -1854,7 +1852,6 @@ def _gx_list(appl, page, tpl, match, dev, vi, view, tabs):
                            can_edit=writer and ad.writable(coll),
                            can_clone=writer and ad.writable(coll) and not table
                            and not gui_products.is_cli(coll),
-                           classic=gui_classic.classic_item_url(appl, coll),
                            gx=_gx(appl), mkey_of=mkey_of, list_table=table or '',
                            list_note=note, flags=flags,
                            gui_only=gui_products.is_gui_only(coll))

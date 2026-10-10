@@ -6,6 +6,37 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — FortiWeb, FortiGate and FortiAuthenticator ADOMs draw only the device's own menu
+
+Operator request: the old SATOM menus are gone from these three ADOMs. The
+device group (FortiWeb / FortiGate / FortiAuthenticator), built from the
+measured GUI layouts of the device's firmware, is now the only device menu.
+
+- **FortiWeb:** the Loadbalancer (Server Objects), WAF (Web Protection
+  Profile, Web Protection, the protection areas) and Configuration groups are
+  no longer drawn. With no device picked, or no measured layout for it yet
+  (no knowledge pack imported), the FortiWeb group keeps one entry, Server
+  Policy: the device's layout view, else the device picker.
+- **FortiGate / FortiAuthenticator:** the old `fgt_menu` / `fac_menu` groups
+  are no longer drawn.
+- The **Classic view** button is gone from every list and settings page.
+- Collections no measured page draws yet have no sidebar entry any more:
+  64 on fortiweb17 / fortiweb18 (2 Server Objects, 9 WAF, 53 Configuration),
+  9 on fgt02, 26 on fac01. They return as their pages are crawled.
+- Unchanged: the old URLs still redirect to the new page that draws the same
+  collection, and `?classic=1` still opens the old page — the Server Policy
+  Clone / Clone to / Migrate to / Delete dialogs run there. FortiADC and
+  FortiAnalyzer keep their menus: no device GUI has been measured for them.
+- Removed with the menus: the sidebar filters in `services.gui_classic`
+  (`filter_groups`, `filter_sections`, `filter_product_groups`,
+  `classic_url`, `classic_item_url`) and the per-request build of the old
+  menus in the context processor.
+- Guards: `tests/test_fwgui_satom_tools.py` (FortiWeb list and settings page:
+  no old group, no old link, no Classic view), `tests/test_gui_products.py`
+  (FortiGate and FortiAuthenticator), `tests/test_server_objects_menu.py`
+  (no old endpoint in `base.html`), `tests/test_gui_template.py` (Server
+  Policy in the FortiWeb group, with and without a device).
+
 ### Changed — FortiWeb ADOM: Search Attack ID, Exceptions & Signature and WAF Artifacts move to Fleet → WAF
 
 Operator request: the three device-scoped WAF tools sat in the FortiWeb

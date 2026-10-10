@@ -21,7 +21,6 @@
     <p class="text-muted mb-0" style="font-size:13px;"><strong>{{ appliance.name }}</strong> · {{ appliance.host }}:{{ appliance.port }}{% if appliance.fw_version %} · {{ _gxl }} {{ appliance.fw_version }}{% endif %}</p>
   </div>
   <div class="d-flex gap-2">
-    {% if classic %}<a class="btn btn-secondary btn-sm" href="{{ classic }}" title="{{ _('The SATOM page for these objects: Clone, templates, artifacts and the other SATOM tools.') if _fwp else _('The SATOM page that listed these objects before this layout.') }}"><i class="bi bi-grid me-1"></i>{{ _('Classic view') }}</a>{% endif %}
     <a class="btn btn-secondary btn-sm" href="{{ url_for('workspace.fwgui_index', appliance_id=appliance.id) }}"><i class="bi bi-grid-3x3-gap me-1"></i>{{ _('All pages') }}</a>
   </div>
 </div>

@@ -29,6 +29,13 @@
 {% include 'workspace/_gui_banner.html' %}
   {% if gui_only is defined and gui_only %}<div class="fw-alert fw-alert-info" data-gui-only-page><i class="bi bi-window me-1"></i>{{ _('No API on this build (GUI only): this page is drawn read-only and nothing is sent from it.') }}</div>{% endif %}
   {% if cache_meta and cache_meta.error and rows %}<div class="fw-alert fw-alert-warning">{{ cache_meta.error }}</div>{% endif %}
+  {% if list_note is defined and list_note %}<div class="fw-alert fw-alert-info" data-fwg-list-note><i class="bi bi-info-circle me-1"></i>{{ list_note }}</div>{% endif %}
+  {% if list_table is defined and list_table %}<div class="fwg-note" data-fwg-list-table><i class="bi bi-table"></i><span>{{ _('Rows of the %(t)s table of the settings object %(ep)s (tied by the columns the crawl matched): a row is saved by writing %(ep)s with the changed row.', t=list_table, ep=view.endpoint) }}</span></div>{% endif %}
+  {% if flags is defined and flags %}
+    {% if flags.weak %}<div class="fwg-note" data-fwg-weak><i class="bi bi-link-45deg"></i><span>{{ _('Tied by one field: the crawl matched this list to %(ep)s by %(n)s of its attributes only.', ep=view.endpoint, n=(flags.evidence or {}).get('attributes_measured', 1)) }}</span></div>{% endif %}
+    {% if flags.also %}<div class="fwg-note" data-fwg-also><i class="bi bi-collection"></i><span>{{ _('%(p)s also lists objects of %(eps)s on this page; SATOM lists %(ep)s only.', p=_gxl, eps=flags.also|join(', '), ep=view.endpoint) }}</span></div>{% endif %}
+    {% if flags.columns_unknown %}<div class="fwg-note" data-fwg-columns-unknown><i class="bi bi-layout-three-columns"></i><span>{{ _('%(p)s drew no column titles for this list when it was crawled (it was empty): SATOM lists each object by its own name until the columns are measured.', p=_gxl) }}</span></div>{% endif %}
+  {% endif %}
   {% if tabs %}
   <ul class="nav nav-tabs fwg-sat-tabs" role="tablist">
     {% for t in tabs %}
@@ -53,7 +60,7 @@
     {% endif %}
     <a class="btn btn-secondary btn-sm" href="#" aria-disabled="true" data-fwg-edit><i class="bi bi-pencil me-1"></i>{{ _('Edit') if can_edit else _('View') }}</a>
     {% if can_edit and view.endpoint %}
-    {% if _fwp %}<button type="button" class="btn btn-secondary btn-sm" aria-disabled="true" data-fwg-clone><i class="bi bi-copy me-1"></i>{{ _('Clone') }}</button>{% endif %}
+    {% if _fwp or (can_clone is defined and can_clone) %}<button type="button" class="btn btn-secondary btn-sm" aria-disabled="true" data-fwg-clone><i class="bi bi-copy me-1"></i>{{ _('Clone') }}</button>{% endif %}
     <button type="button" class="btn btn-fw-danger btn-sm" aria-disabled="true" data-fwg-delete><i class="bi bi-trash me-1"></i>{{ _('Delete') }}</button>
     {% endif %}
     <div class="fw-search-box">
@@ -118,6 +125,9 @@
   var PX = {{ (not _fwp)|tojson }};
   var PXSAVE = {{ url_for('workspace.fwgui_save', appliance_id=appliance.id)|tojson }};
   var PAGE = {{ page|tojson }};
+  // a list of a settings object's table rows: a row is deleted by writing
+  // the settings object without it
+  var TABLE = {{ (list_table if list_table is defined else '')|tojson }};
   var edit = pane.querySelector('[data-fwg-edit]');
   var del = pane.querySelector('[data-fwg-delete]');
   var clone = pane.querySelector('[data-fwg-clone]');
@@ -144,7 +154,9 @@
   function fail(j) { alert('Error: ' + ((j && j.error) || 'failed')); }
   if (del) del.addEventListener('click', function () {
     if (!current) return;
-    var base = PX ? {page: PAGE, v: {{ vi|tojson }}, collection: COLL, mkey: current.dataset.mkey, op: 'delete', fields: {}}
+    var base = PX ? (TABLE ? {page: PAGE, v: {{ vi|tojson }}, collection: COLL, mkey: '', subtable: TABLE,
+                              sub_id: current.dataset.mkey, op: 'delete', fields: {}}
+                           : {page: PAGE, v: {{ vi|tojson }}, collection: COLL, mkey: current.dataset.mkey, op: 'delete', fields: {}})
                   : {collection: COLL, mkey: current.dataset.mkey};
     var DEL = PX ? PXSAVE : '/objedit/' + AID + '/delete-object';
     if (!confirm('Delete "' + base.mkey + '"?\n\nA dry-run preview is shown first; nothing is removed until you confirm again.')) return;
@@ -164,12 +176,17 @@
     var src = current.dataset.mkey;
     var nn = prompt('Clone "' + src + '" as:', src + '-copy');
     if (!nn || nn === src) return;
-    var base = {collection: COLL, mkey: src, new_name: nn};
-    post('/objedit/' + AID + '/clone-object', base).then(function (j) {
+    // FortiGate / FortiAuthenticator: workspace.fwgui_save (op clone: the
+    // source read from the device, created under the new name through GuiOps)
+    var base = PX ? {page: PAGE, v: {{ vi|tojson }}, collection: COLL, mkey: src, new_name: nn, op: 'clone', fields: {}}
+                  : {collection: COLL, mkey: src, new_name: nn};
+    var CL = PX ? PXSAVE : '/objedit/' + AID + '/clone-object';
+    post(CL, base).then(function (j) {
       if (!j.ok) return fail(j);
-      var p = j.plan || {};
-      if (!confirm('DRY-RUN: create "' + nn + '" from "' + src + '"' + (p.rows ? ' with ' + p.rows + ' sub-table row(s)' : '') + '.\n\nApply to the device now?')) return;
-      post('/objedit/' + AID + '/clone-object', Object.assign({}, base, {apply: true})).then(function (j2) {
+      var p = j.plan || {}, req = j.request || {};
+      if (!confirm('DRY-RUN: create "' + nn + '" from "' + src + '"' + (p.rows ? ' with ' + p.rows + ' sub-table row(s)' : '') +
+                   (PX ? ' (' + (req.method || 'POST') + ' ' + (req.path || '') + ', ' + (p.fields || 0) + ' fields)' : '') + '.\n\nApply to the device now?')) return;
+      post(CL, Object.assign({}, base, {apply: true})).then(function (j2) {
         if (!j2.ok) return fail(j2);
         if (window.FW) FW.toast('Cloned', 'success');
         location.reload();

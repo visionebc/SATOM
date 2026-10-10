@@ -2510,6 +2510,9 @@ a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
   list-style:none;}
 summary.fwg-sec-title{cursor:pointer;}
 summary.fwg-sec-title::-webkit-details-marker{display:none;}
+/* a FortiGate dialog's own tab (its sections follow, in screen order) */
+.fwg-dlg-tab{margin:18px 15px 0;padding:4px 12px;display:inline-block;font-size:13px;font-weight:600;
+  border-bottom:2px solid var(--fw-accent,#0d9488);color:var(--fw-text-primary);}
 .fwg-fold>summary .bi-dash-square-fill{display:none;}
 .fwg-fold[open]>summary .bi-plus-square-fill{display:none;}
 .fwg-fold[open]>summary .bi-dash-square-fill{display:inline-block;}

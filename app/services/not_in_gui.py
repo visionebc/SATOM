@@ -172,6 +172,14 @@ def _template_keys(tpl: dict, endpoint: str) -> set:
             for f in b.get("fields") or []:
                 if f.get("key"):
                     keys.add(f["key"])
+                # FortiAuthenticator: a control showing the negation of a key
+                # (Disabled = not ``active``) places that key; the other
+                # controls of one field (``more``) place theirs
+                if f.get("inverse_of"):
+                    keys.add(str(f["inverse_of"]))
+                for m in f.get("more") or []:
+                    if isinstance(m, dict) and m.get("key"):
+                        keys.add(m["key"])
                 # a toggle group (Supported SSL Protocols) sets one key per row
                 for r in f.get("rows") or []:
                     if isinstance(r, dict) and r.get("key"):

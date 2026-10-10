@@ -6,6 +6,101 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — the real FortiGate 8.0.1 and FortiAuthenticator 8.0.3 GUI templates render, edit and save
+
+- The harvester's real crawls (FortiGate 8.0.1 build245: 53 pages;
+  FortiAuthenticator 8.0.3 build99: 93 pages) run on the GUI engine. Their
+  format extras are understood:
+  - FortiGate dotted key paths into nested objects (`ipv6.ip6-mode`,
+    `http.comfort-interval`): read from the nested object, saved inside it
+    (only the changed sub-key is sent), compared field by field on read-back;
+  - FortiAuthenticator `measured-inverse` controls (Disabled = not `active`):
+    drawn as the negation, saved as the key with the value negated;
+    JSON booleans drawn as the control's on / off and saved as booleans;
+    lists of plain values edited as text and saved as lists;
+  - `cond_gui` (a rule on a control with no API) said in words in the
+    "conditional" hover; `readonly` controls and structure values drawn
+    read-only; a control with no measured key lists its `candidates`
+    ("key not measured"); `fold: true` sections drawn folded (the FAC pages
+    with one answered 500); FortiGate dialog `tab`s drawn as tab headings;
+  - inline tables tied to where their rows are (`gui_products.table_source`):
+    a field of the object (`router/ospf/area`), another collection (SNMP
+    communities on the SNMP form), a `monitor:` list (read-only), or nothing
+    ("the crawl did not tie this table", never drawn as empty);
+  - a list view the crawl tied to a settings object (`system/ipam`) lists
+    the one table field whose rows carry every matched column (IPAM rules);
+    two candidates or none: no rows, and the page says why;
+  - FortiAuthenticator `cli:` objects (DNS, interfaces, static routes) read
+    with `show full-configuration` over a read-only SSH session and saved
+    through the CLI writer (dry run renders the script; the channel gate of
+    the exact build decides); create / delete of a CLI-only object are not
+    offered;
+  - `endpoint_evidence.weak` shown as "tied by one field", `also_endpoints`
+    and `columns_unknown` said on the list (objects listed by their name);
+  - Create New of a dialog another tab owns (Zone on Interfaces, Address
+    Group on Addresses) opened and created in the dialog's own endpoint (it
+    was a 404: FortiGate's `subtable_dialogs` lists them).
+- An inline table row of a FortiGate / FortiAuthenticator object (and a row
+  of a settings object's table) is created, edited and deleted by writing
+  the parent object with the changed row (the other rows kept), with the
+  same dry run -> apply -> re-read -> drift ritual and audit.
+- Clone on FortiGate / FortiAuthenticator lists: the source read from the
+  device, created under the new name (identity, `uuid` and bookkeeping
+  dropped; secrets are never read, so never copied), dry run first.
+- "Read values over CLI" in "Not in GUI, but in CLI" works on every layout
+  page (FortiWeb, FortiGate, FortiAuthenticator): the button had no handler
+  outside the object editor. Read-only SSH route, secrets never returned;
+  settings forms get the button too.
+- "Not in GUI, but in CLI" on FortiGate / FortiAuthenticator Create New, from
+  the keys the crawl measured for the object (`rest_check.rest_keys`, FAC
+  per-view `not_in_gui`); a FAC inverse control and a field's extra controls
+  count as placed.
+
+### Fixed — FortiGate and FortiAuthenticator GUI templates from a pack get FortiWeb's safety rules
+
+- The knowledge importer filed `gui-templates/fortigate` and
+  `gui-templates/fortiauthenticator` items without checking a single
+  endpoint: only FortiWeb's `api:` paths went through `safe_api`. Every
+  endpoint of a FortiGate or FortiAuthenticator layout (page, views, dialogs,
+  table fields, `write`/`writes`, `bind`, FAC `gui_writes`) now follows its
+  product's grammar (`gui_products.unsafe_endpoint`): FortiGate cmdb paths
+  anywhere, `monitor:` and `gui:` only where SATOM reads (a monitor path in a
+  write or bind is an action route); FAC REST resources anywhere, `cli:` and
+  `gui:` only where SATOM reads, crawled form posts only as `gui:` paths; never
+  a path naming a device action (reboot, upgrade, factory, reset, backup,
+  restore, delete, ...) nor FAC's `auth`/`pushauth`. A template that breaks one
+  is rejected, as on FortiWeb; a product with no GUI engine is rejected too.
+- A FortiGate / FortiAuthenticator page may be a list with no dialog (FAC's
+  SAML and system template editors were rejected as "no dialogs / list").
+- A page slug `..` or `.x` is no longer a valid template identity (it filed
+  the template outside its product directory).
+- Measured over the real crawls (FortiGate 8.0.1 build245, FAC 8.0.3
+  build99): 52/53 and 92/93 accepted. Refused: FortiGate FortiTokens
+  (`user.tokens`: its dialog names cmdb `system/device-upgrade` and
+  `system/federated-upgrade`) and FAC Scheduled Backups (`gui:/system/scheduled_backup/`).
+
+### Added — FortiGate in the live API-library harvest; a `platform` exception reason
+
+- A firmware change on a registered FortiGate now queues an `apilib_harvest`
+  job like FortiWeb, FortiADC and FortiAuthenticator (`LIVE_SOURCE`
+  `fortigate: schema`; the `apilib_harvest` scheduled action covers it too).
+  `services.apilib_fgt` reads the build from `monitor/system/status`, then
+  `?action=schema` of every cmdb table the library names for that build and
+  the build below it (the global index is 403 to a read-only token), GET only
+  through `FortiGateClient` (vdom-aware), and ingests a `schema` document. On
+  demand for one appliance: `apilib_harvest.run(<appliance id>)`.
+- `api_library.EXCEPTION_REASONS` gains `platform`: an object the build has
+  but the measured box cannot serve because it is hardware or a platform
+  image. On fgt02 (FortiGate-VM, 8.0.1 build0245) those tables answer the same
+  bare 400 as a path that does not exist, so the device cannot say it:
+  `schema_adapters.fortigate.PLATFORM_TABLES` names 51 of the 54 tables the VM
+  could not serve (NPU, modems, hardware switch, FortiWiFi radio, Rugged I/O,
+  DSL/TR-069, chassis SMC, telemetry/voice controllers, AWS/Azure/NSX-T
+  connectors) and the schema evidence carries them as `summary.exceptions`;
+  they stay `error`, never `absent`. Not classified:
+  `application/unsanctioned-apps`, `system/dnp3-proxy`, `system/iscsi`
+  (nothing says they are hardware).
+
 ### Fixed — a FortiWeb page from another build's menu no longer shows in the sidebar
 
 - A device whose own build was crawled showed pages that only another build

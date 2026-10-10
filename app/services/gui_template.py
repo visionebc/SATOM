@@ -348,7 +348,9 @@ def _edit_spec(f: dict, d: dict, data: dict, dev: dict, *, new: bool = False) ->
                 and (key is not None or kind == "toggle_rows")
                 and key not in (d.get("derived") or {}) and (key != "name" or new)
                 # measured with no API on this build: shown, never saved
-                and f.get("key_from") != "gui-only")
+                and f.get("key_from") != "gui-only"
+                # drawn read-only by the device's own GUI (FortiAuthenticator)
+                and not f.get("readonly"))
     raw = data.get(wkey)
     return {
         "editable": editable,
@@ -462,6 +464,11 @@ def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict, *,
                 "bound_to": f.get("bound_to"),
                 "bound_unread": bool(f.get("bound_unread")),
                 "gui_only": f.get("key_from") == "gui-only",
+                "readonly": bool(f.get("readonly")),
+                # SATOM could not tell which REST key the control shows: the
+                # keys still consistent with it (FortiAuthenticator crawl)
+                "candidates": list(f.get("candidates") or [])
+                if not f.get("key") and f.get("key_from") != "gui-only" else [],
             })
             if live:
                 fields[-1]["hidden"] = fhidden
@@ -474,7 +481,11 @@ def dialog_view(tpl: dict, dialog_key: str, row: dict, dev: dict, *,
             blk = {"title": b.get("title"), "fields": fields,
                    "unknown": bstate is None,
                    "fold": bool(fold),
-                   "open": fold.get("open") is True if fold else True}
+                   # ``fold: true`` (FortiAuthenticator: drawn folded) or
+                   # ``{"open": ...}`` (FortiWeb)
+                   "open": (fold.get("open") is True) if isinstance(fold, dict) else not fold,
+                   # the dialog tab the section sits in (FortiGate dialogs)
+                   "tab": b.get("tab") or ""}
             if live:
                 blk["hidden"] = bhidden
                 blk["cond"] = bind_device(b.get("cond"), defs, dev)

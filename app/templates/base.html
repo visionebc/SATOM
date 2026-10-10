@@ -864,7 +864,7 @@
          collapsed on the very page the operator had just opened. #}
       {% set _waf_sc = waf_section_keys or [] %}
       {% set _g_lb   = request.blueprint in ['workspace','server_objects'] %}
-      {% set _g_waf  = request.blueprint in ['web_protection','exceptions','attack_search','artifacts'] or (_sc_cfg and _sc_key in _waf_sc) %}
+      {% set _g_waf  = request.blueprint == 'web_protection' or (_sc_cfg and _sc_key in _waf_sc) %}
       {% set _g_cfg  = _sc_cfg and _sc_key not in _waf_sc %}
       {% set _g_ops  = request.blueprint in ['backups','logs','import_backup','scout','reach_batch','config_compare'] %}
       {% set _g_api  = request.blueprint in ['registry','api_explorer','structure'] %}
@@ -884,7 +884,7 @@
 
       <!-- FLEET — the Global-ADOM menu, mirrored here but scoped to this
            product's devices/policies (visible_appliances + product_scope). -->
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['calendar_plan','search','dns_tool','architecture','analysis','fleet_objects','metrics','monitoring','deep_monitor','service_monitor','jobs','waf'] }}" data-nav-group="Fleet">
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['calendar_plan','search','dns_tool','architecture','analysis','fleet_objects','metrics','monitoring','deep_monitor','service_monitor','jobs','waf','attack_search','exceptions','artifacts'] }}" data-nav-group="Fleet">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Fleet') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           {% include 'partials/nav_calendar.html' %}
@@ -1032,6 +1032,14 @@
       {% endif %}
 
       <!-- WAF -->
+      {# Search Attack ID, Exceptions & Signature and WAF Artifacts live in
+         Fleet -> WAF (partials/nav_waf.html). What stays here is device-scoped
+         protection config; a group with none of it drawn would be a header with
+         nothing under it, so it is not drawn. #}
+      {% set _waf_has = (current_appliance and 'webprotection_profile_inline' not in (fwgui_moved or {}) and may_open('web_protection.overview'))
+                        or (not _fwg_on or web_protection_nav)
+                        or (current_user and current_user.can('config_write') and waf_sections_nav) %}
+      {% if _waf_has %}
       <div class="fw-nav-group {{ 'open' if _g_waf }}" data-nav-group="WAF">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-shield-exclamation fw-nav-section-icon" style="color:#f59e0b;"></i><span>WAF</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
@@ -1044,49 +1052,6 @@
           {% set _wp_active = request.view_args.get('item_key') if request.endpoint == 'web_protection.menu_page'
                               else ('signatures' if request.endpoint == 'web_protection.signature_policy'
                               else ('__profile__' if request.endpoint in ['web_protection.overview', 'web_protection.wpp_detail'] else '')) %}
-          {% if may_open('attack_search.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'attack_search' else '' }}" href="{{ url_for('attack_search.index') }}">
-            <i class="bi bi-search fw-nav-icon"></i><span>{{ _('Search Attack ID') }}</span></a>
-          {% endif %}
-          {% if may_open('exceptions.index') %}
-          <a class="fw-nav-item" href="{{ url_for('exceptions.index') }}">
-            <i class="bi bi-slash-circle fw-nav-icon"></i><span>Exceptions &amp; Signature</span></a>
-          {% endif %}
-          {# WAF Artifacts — collapses as a UNIT, the same shape as Server Objects
-             and Web Protection: <details class="fw-so-parent"> whose <summary>
-             IS the parent row, and fw-so-nav-flat leaves inside fw-so-nav.
-             It used to be three sibling <a>s, two of them carrying `fw-nav-sub`
-             — a class that DOES NOT EXIST in fortiweb.css (the sheet defines
-             fw-nav-subitem and fw-nav-subgroup, neither of which matches). With
-             no rule to match, the two children rendered flush with their parent
-             and at the same weight: three top-level entries wearing the word
-             "Artifact", and no group to collapse. Open only when its own
-             blueprint is active, so the accordion still holds. #}
-          <details class="fw-so-parent" {{ 'open' if request.blueprint == 'artifacts' }}>
-            <summary class="fw-nav-item fw-so-parent-head {{ 'active' if request.blueprint == 'artifacts' else '' }}">
-              <i class="bi bi-file-earmark-lock fw-nav-icon"></i><span>{{ _('WAF Artifacts') }}</span>
-              <i class="bi bi-chevron-down fw-so-nav-caret"></i>
-            </summary>
-            <div class="fw-so-parent-body">
-              <div class="fw-so-nav">
-                {% if may_open('artifacts.index') %}
-                <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'artifacts.index' else '' }}"
-                   href="{{ url_for('artifacts.index') }}">
-                  <i class="bi bi-journal-text fw-nav-icon"></i><span>{{ _('Object types') }}</span></a>
-                {% endif %}
-                {% if may_open('artifacts.inventory') %}
-                <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint in ['artifacts.inventory', 'artifacts.object_page'] else '' }}"
-                   href="{{ url_for('artifacts.inventory') }}">
-                  <i class="bi bi-clipboard-data fw-nav-icon"></i><span>{{ _('Inventory') }}</span></a>
-                {% endif %}
-                {% if may_open('artifacts.audit') %}
-                <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'artifacts.audit' else '' }}"
-                   href="{{ url_for('artifacts.audit') }}">
-                  <i class="bi bi-clipboard-check fw-nav-icon"></i><span>{{ _('Device audit') }}</span></a>
-                {% endif %}
-              </div>
-            </div>
-          </details>
           {% if current_appliance and 'webprotection_profile_inline' not in (fwgui_moved or {}) %}
           {% if may_open('web_protection.overview') %}
           <a class="fw-nav-item {{ 'active' if _wp_active == '__profile__' else '' }}"
@@ -1177,6 +1142,7 @@
           {% endif %}
         </div>
       </div>
+      {% endif %}
 
       <!-- CONFIGURATION -->
       {% if current_user and current_user.can('config_write') %}

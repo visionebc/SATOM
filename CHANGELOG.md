@@ -6,6 +6,25 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — FortiWeb ADOM: Search Attack ID, Exceptions & Signature and WAF Artifacts move to Fleet → WAF
+
+Operator request: the three device-scoped WAF tools sat in the FortiWeb
+ADOM's own WAF group, apart from the fleet-wide WAF pages. They now live in
+the **Fleet → WAF** submenu, next to Overview / Inventory / Profiles /
+Coverage / Artifacts / Exceptions. WAF Artifacts keeps its collapsible shape
+(Object types, Inventory, Device audit). Same URLs and permissions; only the
+menu location changed.
+
+- FortiWeb ADOM only. The Global console's Fleet → WAF does not list them:
+  these are FortiWeb-ADOM pages, and a link there would switch the tab's ADOM
+  without saying so.
+- The FortiWeb ADOM's WAF group keeps Web Protection Profile, Web Protection
+  and the protection areas, and is no longer drawn when none of them apply
+  (it would have been a header with nothing under it).
+- Guards: `tests/test_waf_fleet.py` (rendered sidebar, both ADOMs) and the
+  Artifacts shape guard in `tests/test_artifact_wpp.py`, now pointed at
+  `partials/nav_waf.html`.
+
 ### Fixed — FortiWeb pages offer the SATOM tools their classic pages had
 
 The FortiWeb menu replaced the classic Server Objects, Web Protection and

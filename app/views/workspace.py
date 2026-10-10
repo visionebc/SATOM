@@ -1685,6 +1685,10 @@ def _gx_render(appl, tpl, match, dev, dview, *, page, vi, coll, name, main, is_n
           'monitor': gui_products.is_monitor(coll),
           'cli': gui_products.is_cli(coll),
           'nig_endpoint': _gx_lib_key(appl, coll) if coll else '',
+          # the name an operator knows the object by (a FAC object's URL key is its id)
+          'display': next((str(obj[k]) for k in ('username', 'name', 'label')
+                           if isinstance(obj, dict) and obj.get(k) not in (None, '')), '')
+          if row_ctx is None and name not in (None, '', '~') else '',
           'error': error or '',
           **_gx_view_flags(tpl, view)}
     return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,

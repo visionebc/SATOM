@@ -6,6 +6,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — a FortiWeb page from another build's menu no longer shows in the sidebar
+
+- A device whose own build was crawled showed pages that only another build
+  has, drawn from the nearest layout: fortiweb17 (7.6.8) listed MCP, Custom
+  Tracking and File List (8.0.6 pages; its REST answers 500), fortiweb18
+  (8.0.6) listed File Exception, Caching and Scan History. `gui_pages.entries`
+  now keeps a borrowed page only when the api library measured the device's
+  build serving one of its collections. A build nobody crawled keeps every
+  page (hiding by measurement would empty its menu). Both lab menus: 145 -> 142.
+- Registry: `system_admin_certificate_remote` (System > Admin > Certificates >
+  Remote); the GUI component declares `url=/cmdb/system/admin-certificate.remote`,
+  GET 200 on 7.6.8 build1128 and 8.0.6 build116. Baseline resealed (498).
+
 ### Fixed — FortiWeb System Time is tied to its REST collections
 
 - System > Maintenance > System Time was drawn without values: the crawl

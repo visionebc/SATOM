@@ -58,9 +58,16 @@ def entries(firmware, product: str = PRODUCT) -> list:
     ``gui_products``)."""
     out = []
     special = SPECIAL if product == PRODUCT else {}
-    for page in page_ids(product):
-        tpl, _m = template(page, firmware, product)
+    got = [(page,) + tuple(template(page, firmware, product)) for page in page_ids(product)]
+    crawled = any(_kind(m) == "exact" for _p, t, m in got if t)
+    for page, tpl, m in got:
         if tpl is None:
+            continue
+        if product == PRODUCT and crawled and _kind(m) != "exact" and page not in special \
+                and not _served(tpl, firmware):
+            # a page of another build's menu (MCP, Custom Tracking on 7.6.8)
+            # whose collections this build was never measured serving: the
+            # device's own menu has no such page (its REST answers 500)
             continue
         out.append({"page": page, "path": list(tpl.get("menu_path") or [page]),
                     "order": tpl.get("menu_order"), "endpoint": tpl.get("endpoint") or "",
@@ -76,6 +83,33 @@ def entries(firmware, product: str = PRODUCT) -> list:
         if e["order"] is None:
             e["order"] = first.get(e["path"][0], 10_000) - 0.5
     return sorted(out, key=lambda e: (e["order"], e["path"]))
+
+
+def _kind(match) -> str:
+    return (match or {}).get("kind") if isinstance(match, dict) else str(match or "")
+
+
+def _served(tpl: dict, firmware) -> bool:
+    """True when the build of ``firmware`` was measured serving one of the
+    collections the page lists or edits (api_library: measured / blind).
+    A build nobody measured answers False for all; :func:`entries` asks only
+    for a build whose own GUI was crawled."""
+    import re as _re
+    from . import api_library
+    m = _re.search(r"(\d+\.\d+\.\d+)", firmware or "")
+    if not m:
+        return True
+    eps = {v.get("endpoint") for v in views(tpl)} | {
+        f.get("endpoint") for d in (tpl.get("dialogs") or {}).values()
+        for b in d.get("blocks") or [] for f in b.get("fields") or [] if f.get("kind") == "table"} | {
+        d.get("endpoint") for d in (tpl.get("dialogs") or {}).values()}
+    for ep in sorted(e for e in eps if e and not e.startswith(("api:", "gui:"))):
+        try:
+            if api_library.fields_at(PRODUCT, ep, m.group(1)).get("status") in ("measured", "blind"):
+                return True
+        except Exception:  # noqa: BLE001 -- the library never hides a page by failing
+            return True
+    return False
 
 
 def tree(items: list) -> list:

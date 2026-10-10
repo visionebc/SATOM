@@ -2,6 +2,16 @@
 {% set _t = view.title.get('new' if (is_new or (row_ctx and row_ctx.new)) else 'edit') or view.title.get('edit') or '' %}
 {% set _gxl = gx.label if gx is defined and gx else 'FortiWeb' %}
 {% set _fwp = not (gp and gp.product and gp.product != 'fortiweb') %}
+{# the object a row / sub-dialog URL names: a settings form has no name and is
+   addressed as "~" (FortiGate / FortiAuthenticator) #}
+{% set _oname = name or ('~' if gp and gp.form and not _fwp else '') %}
+{# where Back / Cancel / a saved row go (top level: the content and the
+   scripts blocks both read it) #}
+{% if gp %}
+  {% if view.key != main and name %}{% set back = url_for('workspace.fwgui_object', appliance_id=appliance.id, page=gp.page, name=name, v=gp.v) %}
+  {% else %}{% set back = url_for('workspace.fwgui_list', appliance_id=appliance.id, page=gp.page, v=gp.v) %}{% endif %}
+{% elif view.key != main and name %}{% set back = url_for('workspace.gui_policy', appliance_id=appliance.id, name=name) %}
+{% else %}{% set back = url_for('workspace.gui_list', appliance_id=appliance.id) %}{% endif %}
 {% block title %}{{ _t }}{% if name %} — {{ name }}{% endif %}{% endblock %}
 {# FortiWeb draws a dialog in the content pane: title bar, sections, footer bar. #}
 {# SATOM frame around FortiWeb's dialog: breadcrumb + page header + card.
@@ -34,7 +44,7 @@
    drawer script is missing. #}
 {# sub_url(dialog, new, sub): a sub-table row dialog of the current object. #}
 {% macro sub_url(dialog, new=None, sub=None) -%}
-  {%- if gp -%}{{ url_for('workspace.fwgui_object', appliance_id=appliance.id, page=gp.page, name=name, v=gp.v, d=dialog, new=new, sub=sub) }}
+  {%- if gp -%}{{ url_for('workspace.fwgui_object', appliance_id=appliance.id, page=gp.page, name=_oname, v=gp.v, d=dialog, new=new, sub=sub) }}
   {%- else -%}{{ url_for('workspace.gui_policy', appliance_id=appliance.id, name=name, dialog=dialog, new=new, sub=sub) }}{%- endif -%}
 {%- endmacro %}
 {% macro pencil(ref, name) -%}
@@ -124,9 +134,9 @@
         {% set a = it.action or '' %}
         {% if a == 'search' %}
         <label class="fwg-search mb-0"><input type="search" placeholder="{{ it.label }}" aria-label="{{ it.label }}" data-fwg-search><span aria-hidden="true"><i class="bi bi-search"></i></span></label>
-        {% elif a.startswith('add') and t.row_dialog and name and t.rows is not none and t.subtable in (writable_subtables or ()) %}
+        {% elif a.startswith('add') and t.row_dialog and _oname and t.rows is not none and t.subtable in (writable_subtables or ()) %}
         <a class="fwg-tb-btn" href="{{ sub_url(t.row_dialog, new=1) }}" data-fwg-add><i class="bi bi-plus-lg"></i>{{ it.label }}</a>
-        {% elif a.startswith('edit') and t.row_dialog and name and t.rows %}
+        {% elif a.startswith('edit') and t.row_dialog and _oname and t.rows %}
         <a class="fwg-tb-btn" href="#" aria-disabled="true" data-fwg-edit><i class="bi bi-pencil-fill"></i>{{ it.label }}</a>
         {% else %}
         <span class="fwg-tb-btn" aria-disabled="true" title="{{ _ro }}"><i class="bi {{ 'bi-plus-lg' if a.startswith('add') else ('bi-pencil-fill' if a.startswith('edit') else ('bi-trash-fill' if a.startswith('remove') else 'bi-arrow-down-up')) }}"></i>{{ it.label }}</span>
@@ -137,10 +147,10 @@
         <thead><tr>{% for c in t.columns %}<th>{{ c.label }}</th>{% endfor %}</tr></thead>
         <tbody>
         {% if t.rows is none %}
-          <tr><td colspan="{{ t.columns|length }}" class="text-muted">{{ _('Not in the SATOM cache: this sub-table needs a deep capture of the policy, and SATOM does not capture every sub-table yet.') }}</td></tr>
+          <tr><td colspan="{{ t.columns|length }}" class="text-muted" data-fwg-table-untied>{% if _fwp %}{{ _('Not in the SATOM cache: this sub-table needs a deep capture of the policy, and SATOM does not capture every sub-table yet.') }}{% else %}{{ _('The GUI crawl did not tie this table to a REST field or collection on this build: SATOM cannot list its rows.') }}{% endif %}</td></tr>
         {% else %}
           {% for r in t.rows %}
-          <tr tabindex="0"{% if t.row_dialog and name %} data-href="{{ sub_url(t.row_dialog, sub=r.id) }}"{% endif %}>
+          <tr tabindex="0"{% if t.row_dialog and _oname and r.id not in (none, '') %} data-href="{{ sub_url(t.row_dialog, sub=r.id) }}"{% endif %}>
             {% for v in r.cells %}<td>{{ v }}</td>{% endfor %}
           </tr>
           {% else %}
@@ -176,6 +186,8 @@
       {%- if f.unknown %}<span class="fwg-unknown-tag" title="{{ _('Depends on: %(w)s', w=f.unknown_why|join(', ')) }}">{{ _('conditional') }}</span>{% endif %}
       {%- if f.gui_only %}<span class="fw-badge fw-badge-secondary ms-1" data-gui-only title="{{ _('This field has no API on this build: it is shown as the GUI shows it and never saved.') }}">{{ _('No API on this build (GUI only)') }}</span>{% endif %}
       {%- if f.bound_to and not _fwp %}<span class="fw-badge fw-badge-secondary ms-1" title="{{ _('Saved by the GUI into %(ep)s: shown here, edited on its own page.', ep=f.bound_to) }}">{{ f.bound_to }}</span>{% endif %}
+      {%- if f.readonly and not _fwp %}<span class="fw-badge fw-badge-secondary ms-1" title="{{ _('Read-only here: the device GUI draws it read-only, or its value is a structure edited on its own page.') }}">{{ _('read-only') }}</span>{% endif %}
+      {%- if f.candidates %}<span class="fwg-unknown-tag" data-key-candidates title="{{ _('The GUI crawl could not tell which REST field this control shows; still consistent with: %(c)s', c=f.candidates|join(', ')) }}">{{ _('key not measured') }}</span>{% endif %}
       {%- if f.options_unread %}<span class="fwg-unknown-tag" title="{{ _('%(p)s offers a list of choices here that the GUI crawl could not read: type the value as the CLI takes it.', p=_gxl) }}">{{ _('choices not measured') }}</span>{% endif %}
     </div>
     <div class="fwg-value"{{ live_attrs(f) }}>{{ value(f) }}</div>
@@ -183,11 +195,6 @@
   </div>
 {% endmacro %}
 {% block content %}
-{% if gp %}
-  {% if view.key != main and name %}{% set back = url_for('workspace.fwgui_object', appliance_id=appliance.id, page=gp.page, name=name, v=gp.v) %}
-  {% else %}{% set back = url_for('workspace.fwgui_list', appliance_id=appliance.id, page=gp.page, v=gp.v) %}{% endif %}
-{% elif view.key != main and name %}{% set back = url_for('workspace.gui_policy', appliance_id=appliance.id, name=name) %}
-{% else %}{% set back = url_for('workspace.gui_list', appliance_id=appliance.id) %}{% endif %}
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi {{ 'bi-layout-sidebar' if gp else 'bi-shield-check' }} me-2 text-accent"></i>{{ _t or view.key }}{% if name %} <span class="text-muted fw-normal">· {{ name }}</span>{% endif %}</h1>
@@ -220,9 +227,14 @@
   {% if view.rendered_only %}<div class="fwg-note"><i class="bi bi-info-circle"></i><span>{{ _('%(p)s draws this page with its newer interface: SATOM read the layout from the page as %(p)s drew it on the lab device. Every field is shown; %(p)s may hide some of them for other settings.', p=_gxl) }}</span></div>{% endif %}
   {% if gp and gp.missing %}<div class="fw-alert fw-alert-warning">{{ _('This settings object is not in the SATOM cache of %(dev)s and the device did not answer: the form shows %(p)s\'s layout without values.', dev=appliance.name, p=_gxl) }}</div>{% endif %}
   {% if gp and gp.gui_only %}<div class="fw-alert fw-alert-info" data-gui-only-page><i class="bi bi-window me-1"></i>{{ _('No API on this build (GUI only): %(p)s serves this page to its own GUI only, so SATOM shows its layout read-only and never saves it.', p=_gxl) }}</div>{% endif %}
+  {% if gp and gp.weak %}<div class="fwg-note" data-fwg-weak><i class="bi bi-link-45deg"></i><span>{{ _('Tied by one field: the crawl matched these objects to %(ep)s by %(n)s of its attributes only. Values are the API\'s; check them against the device before saving.', ep=gp.collection, n=(gp.evidence or {}).get('attributes_measured', 1)) }}</span></div>{% endif %}
+  {% if gp and gp.cli %}<div class="fwg-note" data-fwg-cli><i class="bi bi-terminal"></i><span>{{ _('Served only by the CLI on this build: read with show full-configuration over a read-only SSH session; Save writes it through the CLI writer (dry run first).') }}</span></div>{% endif %}
+  {% if gp and gp.error %}<div class="fw-alert fw-alert-warning" data-fwg-read-error>{{ _('%(dev)s did not answer: %(err)s', dev=appliance.name, err=gp.error) }}</div>{% endif %}
   {% if gp and gp.monitor %}<div class="fwg-note"><i class="bi bi-activity"></i><span>{{ _('Status view (FortiGate monitor API): read-only.') }}</span></div>{% endif %}
   <div class="fwg-body">
+  {% set _tab = namespace(cur='') %}
   {% for b in view.blocks %}
+    {% if b.tab and b.tab != _tab.cur %}{% set _tab.cur = b.tab %}<div class="fwg-dlg-tab" data-fwg-tab>{{ b.tab }}</div>{% endif %}
     <div class="fwg-block"{% if b.cond is defined %} data-fwg-bcond="{{ b.cond|tojson|forceescape }}"{% if b.hidden %} hidden{% endif %}{% endif %}>
     {% if b.title and b.fold %}
       <details class="fwg-fold" {{ 'open' if b.open }}>
@@ -235,9 +247,9 @@
     {% endif %}
     </div>
   {% endfor %}
-  {% if not is_new and view.key == main %}
+  {% if (not is_new or not _fwp) and view.key == main and not row_ctx %}
     {% if nig_edit %}
-      <div class="fw-card mt-3 p-3 fw-nig-tab">{{ nig_editable(nig_edit, mkey=name, collection=save_ep) }}</div>
+      <div class="fw-card mt-3 p-3 fw-nig-tab">{{ nig_editable(nig_edit, create=is_new, mkey=name, collection=save_ep, endpoint=(gp.nig_endpoint if gp else ''), singleton=(gp.form if gp else false)) }}</div>
     {% else %}
       {% with nig_sec = not_in_gui, nig_values = nig_row %}{% include "_not_in_gui_tab.html" %}{% endwith %}
     {% endif %}
@@ -256,6 +268,7 @@
   <div class="fwg-footer">
     {% if can_edit %}
     <button type="button" class="fwg-btn is-primary" data-fwg-save>{{ _('Save') }}</button>
+    {% if not _fwp and row_ctx and row_ctx.source == 'field' and not row_ctx.new and row_ctx.sub_id %}<button type="button" class="fwg-btn" data-fwg-delete-row>{{ _('Delete row') }}</button>{% endif %}
     <span class="small text-muted" data-fwg-status></span>
     {% else %}
     <span class="fwg-btn is-primary" aria-disabled="true" title="{{ _('Read-only: nothing is sent to the device.') }}">{{ _('OK') }}</span>
@@ -295,6 +308,38 @@
   // this dialog (FWDrawer), never in a new window. The panel's selects feed
   // back into the one that opened it, as on the Server Policy page.
   window.OBJEDIT_AID = {{ appliance.id }};
+  // "Read values over CLI" in "Not in GUI, but in CLI": the object's CLI-only
+  // values over a read-only SSH session (show full-configuration), filled into
+  // the inputs as value AND data-orig (an unchanged field is never sent back).
+  // Secrets are never returned: their inputs say so.
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest && e.target.closest('[data-js="nig-read-cli"]');
+    if (!btn) return;
+    e.preventDefault();
+    var sec = btn.closest('[data-nig]'), out = sec.querySelector('.fw-nig-read');
+    var names = Array.prototype.map.call(sec.querySelectorAll('[data-channel="CLI"]'),
+      function (el) { return el.dataset.nigKey; });
+    if (!names.length) { if (out) out.textContent = 'no CLI-only field here'; return; }
+    if (out) out.textContent = 'reading…';
+    fetch({{ url_for('appliances.not_in_gui_read', id=appliance.id)|tojson }}, {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({endpoint: sec.dataset.endpoint || sec.dataset.collection,
+                            mkey: sec.dataset.mkey || '', parent: sec.dataset.parent || '', names: names})})
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) { if (out) out.textContent = j.error || 'CLI read failed'; return; }
+        var vals = j.values || {}, secret = j.secret || [];
+        sec.querySelectorAll('[data-nig-key]').forEach(function (fld) {
+          var k = fld.dataset.nigKey, el = fld.querySelector('.fw-input');
+          if (!el) return;
+          if (secret.indexOf(k) >= 0) { el.value = ''; el.placeholder = 'secret — not shown'; return; }
+          if (!Object.prototype.hasOwnProperty.call(vals, k)) return;
+          var v = vals[k] == null ? '' : String(vals[k]);
+          el.value = v; el.dataset.orig = v;
+        });
+        if (out) out.textContent = 'read over CLI';
+      }).catch(function () { if (out) out.textContent = 'no answer from SATOM'; });
+  });
   document.querySelectorAll('[data-fwg-pencil]').forEach(function (pen) {
     pen.addEventListener('click', function (e) {
       e.preventDefault();
@@ -414,6 +459,24 @@
   var GUI_POLICY = {{ url_for('workspace.gui_policy', appliance_id=appliance.id, name='__N__')|tojson }};
   {% endif %}
   var OPTS = {{ url_for('workspace.cmdb_options', appliance_id=appliance.id)|tojson }};
+  var BACK = {{ back|tojson }};
+  // Delete one row of an inline table (FortiGate / FortiAuthenticator): the
+  // parent object is written without it; dry run first, then apply
+  var delRow = document.querySelector('[data-fwg-delete-row]');
+  if (delRow) delRow.addEventListener('click', function () {
+    if (!confirm('Delete this row?\n\nA dry-run preview is shown first.')) return;
+    var b = {page: GP.page, v: GP.v, collection: GP.collection, mkey: ROW.parent || '',
+             subtable: ROW.subtable, sub_id: ROW.sub_id, op: 'delete', fields: {}};
+    post(b, GP.save).then(function (j) {
+      if (!j.ok) { say('Not deleted: ' + (j.error || 'refused'), true); return; }
+      var req = j.request || {};
+      if (!confirm('DRY-RUN ' + (req.method || 'PUT') + ' ' + (req.path || '') + '\n\nApply this delete to the device now?')) return;
+      post(Object.assign({}, b, {apply: true}), GP.save).then(function (j2) {
+        if (!j2.ok) { say('Not deleted: ' + (j2.error || 'refused'), true); return; }
+        say('Deleted. Reloading…'); window.location.href = BACK;
+      });
+    });
+  });
   var status = document.querySelector('[data-fwg-status]');
   var review = document.querySelector('[data-fwg-review]');
   var reviewBody = document.querySelector('[data-fwg-review-body]');
@@ -443,6 +506,15 @@
     return out;
   }
   function body(fields, apply) {
+    // a row of an inline table: an object of its own collection, or written
+    // inside its parent object (subtable + sub_id)
+    if (PX && MODE === 'gp-row' && ROW.collection)
+      return {page: GP.page, v: GP.v, collection: ROW.collection, mkey: ROW.new ? '' : ROW.sub_id,
+              op: ROW.new ? 'create' : 'update', fields: fields, apply: !!apply};
+    if (PX && MODE === 'gp-row')
+      return {page: GP.page, v: GP.v, collection: GP.collection, mkey: ROW.parent || '',
+              subtable: ROW.subtable, sub_id: ROW.new ? '' : ROW.sub_id,
+              op: ROW.new ? 'create' : 'update', fields: fields, apply: !!apply};
     if (PX) return {page: GP.page, v: GP.v, collection: GP.collection, mkey: GP.name || '',
                     op: MODE === 'new-object' ? 'create' : 'update', fields: fields, apply: !!apply};
     if (MODE === 'new-policy') return {policy: fields, apply: !!apply};
@@ -591,7 +663,8 @@
           return;
         }
         say(res.verified ? 'Saved and read back from the device. Reloading…' : 'Saved. Reloading…');
-        if (MODE === 'new-object' && res.mkey) window.location.href = GUI_POLICY.replace('__N__', encodeURIComponent(res.mkey));
+        if (MODE === 'gp-row') window.location.href = BACK;
+        else if (MODE === 'new-object' && res.mkey) window.location.href = GUI_POLICY.replace('__N__', encodeURIComponent(res.mkey));
         else if (MODE === 'new-object') window.location.href = DONE;
         else window.location.reload();
         return;

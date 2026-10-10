@@ -35,6 +35,7 @@ read-only and marked, never saved.
 from __future__ import annotations
 
 import json
+import re
 import time
 from datetime import datetime
 from urllib.parse import quote
@@ -153,6 +154,63 @@ def _typed(old, new):
     return new
 
 
+def flat_dicts(row: dict) -> dict:
+    """The row with every nested object also under its dotted key path
+    (``{"ipv6": {"ip6-mode": "static"}}`` -> ``"ipv6.ip6-mode": "static"``):
+    the FortiGate templates name a field of a nested object that way
+    (measured: ``ipv6.ip6-mode`` on the interface dialog,
+    ``http.comfort-interval`` on protocol options). Lists stay as they are."""
+    out = dict(row or {})
+
+    def walk(pre, v):
+        for k, x in v.items():
+            if str(k).startswith("q_"):
+                continue
+            p = "%s.%s" % (pre, k)
+            if isinstance(x, dict):
+                walk(p, x)
+            else:
+                out[p] = x
+    for k, v in list((row or {}).items()):
+        if isinstance(v, dict):
+            walk(k, v)
+    return out
+
+
+def is_dotted(key) -> bool:
+    return isinstance(key, str) and "." in key
+
+
+def get_dotted(obj: dict, key: str):
+    cur = obj
+    for seg in key.split("."):
+        if not isinstance(cur, dict) or seg not in cur:
+            return None
+        cur = cur[seg]
+    return cur
+
+
+def set_dotted(out: dict, key: str, value) -> None:
+    """``out["a"]["b"] = value`` for ``"a.b"``: only the changed sub-key is
+    sent (FortiOS sets the attributes a PUT names and keeps the others)."""
+    segs = key.split(".")
+    cur = out
+    for seg in segs[:-1]:
+        if not isinstance(cur.get(seg), dict):
+            cur[seg] = {}
+        cur = cur[seg]
+    cur[segs[-1]] = value
+
+
+def is_cli(endpoint: str | None) -> bool:
+    """A FortiAuthenticator object only the CLI serves (``cli:system/dns``)."""
+    return (endpoint or "").startswith("cli:")
+
+
+def cli_object(endpoint: str | None) -> str:
+    return (endpoint or "")[len("cli:"):].strip("/") if is_cli(endpoint) else ""
+
+
 class Adapter:
     product = ""
     #: the write verb of a partial update
@@ -267,7 +325,9 @@ class FortiGateAdapter(Adapter):
             res, err = self._get(appliance, endpoint)
         except Exception as exc:  # noqa: BLE001 -- drawn as unreadable, never a 500
             res, err = None, "%s: %s" % (type(exc).__name__, exc)
-        meta = {"generated_at": None, "source": "live", "cached": False, "error": err}
+        meta = {"generated_at": None, "source": "live", "cached": False, "error": err,
+                # the endpoint answered ONE settings object, not a table
+                "singleton": isinstance(res, dict)}
         if err:
             return [], meta
         rows = [res] if isinstance(res, dict) else [r for r in (res or []) if isinstance(r, dict)]
@@ -291,7 +351,7 @@ class FortiGateAdapter(Adapter):
         return self.scrub(res) if isinstance(res, dict) else None
 
     def form_row(self, row):
-        out = dict(row or {})
+        out = flat_dicts(row)
         for k, v in list(out.items()):
             names = _member_names(v)
             if names is not None:
@@ -302,13 +362,18 @@ class FortiGateAdapter(Adapter):
         orig = orig or {}
         out = {}
         for k, v in (fields or {}).items():
-            o = orig.get(k)
+            o = get_dotted(orig, k) if is_dotted(k) and k not in orig else orig.get(k)
             if isinstance(o, list) and (_member_names(o) is not None or not o):
-                out[k] = [{"name": n} for n in str(v).split()]
-            elif k in orig:
-                out[k] = _typed(o, v)
+                val = [{"name": n} for n in str(v).split()]
+            elif o is not None or k in orig:
+                val = _typed(o, v)
             else:
-                out[k] = v
+                val = v
+            if is_dotted(k) and k not in orig:
+                # a field of a nested object: sent inside it
+                set_dotted(out, k, val)
+            else:
+                out[k] = val
         return out
 
     def send(self, appliance, method, path, body):
@@ -330,6 +395,7 @@ class FortiGateAdapter(Adapter):
 # FortiAuthenticator
 # --------------------------------------------------------------------------- #
 _FAC_NEVER = ("password", "secret", "passwd", "private_key", "api_key")
+_cli_cache: dict = {}
 
 
 class FortiAuthenticatorAdapter(Adapter):
@@ -360,7 +426,78 @@ class FortiAuthenticatorAdapter(Adapter):
                 return name, urn
         return None, want
 
+    # -- objects only the CLI serves (``cli:system/dns``) -----------------
+    def cli_rows(self, appliance, endpoint: str) -> tuple:
+        """(rows, error) of a CLI-only object, read with ``show
+        full-configuration <path>`` over a read-only SSH session: one row for
+        a singleton, one per ``edit`` for a table (its key in ``_edit``, the
+        name the templates give the CLI row id). The CLI path comes from the
+        API library of the device's exact build; secrets are never returned.
+        Kept a few seconds per device and object (a page reads it twice)."""
+        key = (getattr(appliance, "id", None), endpoint)
+        hit = _cli_cache.get(key)
+        if hit and time.monotonic() - hit[0] < _FGT_TTL:
+            return hit[1], None
+        from . import cli_writer
+        obj = cli_object(endpoint)
+        try:
+            split = cli_writer.split_payload(appliance, obj, {})
+        except Exception as exc:  # noqa: BLE001 -- the library never sinks a page
+            return [], "API library: %s" % exc
+        o = split.get("object") or {}
+        path = " ".join(str(o.get("cli_path") or "").split())
+        if not path:
+            return [], ("the API library does not name the CLI path of %s on this build"
+                        % obj)
+        if o.get("parent"):
+            return [], "%s is nested in another CLI table: not listed here" % obj
+        kind = o.get("kind") or cli_writer.cli_schema.KIND_TABLE
+        plan = cli_writer.CliPlan(product=split.get("product") or FORTIAUTH,
+                                  levels=[cli_writer.CliLevel(path, None, kind)],
+                                  endpoint=split.get("endpoint") or obj)
+        try:
+            read = cli_writer.CliWriter(appliance, audit=False)._read_object(plan)
+        except Exception as exc:  # noqa: BLE001 -- unreachable: said on the page
+            return [], "CLI read failed: %s: %s" % (type(exc).__name__, exc)
+        if read.get("not_found"):
+            return [], "the CLI does not show %s" % path
+        from .not_in_gui import _channels
+        lib = (_channels(split.get("product") or "", split.get("version") or "",
+                         split.get("endpoint") or obj).get("fields") or {})
+
+        def clean(lines):
+            vals = cli_writer.row_values(lines, path)["values"]
+            return {k: v for k, v in vals.items()
+                    if not cli_writer.is_secret(k, (lib.get(k) or {}).get("attrs"))}
+        rows = []
+        for chain, lines in (read.get("rows") or {}).items():
+            if len(chain) != 1 or " ".join(chain[0][0].split()) != path:
+                continue
+            if kind == cli_writer.cli_schema.KIND_SINGLETON:
+                if chain[0][1] is None:
+                    rows.append(clean(lines))
+            elif chain[0][1] is not None:
+                rows.append(dict(clean(lines), _edit=chain[0][1]))
+        _cli_cache[key] = (time.monotonic(), rows)
+        return rows, None
+
+    def forget(self, appliance, endpoint):
+        _cli_cache.pop((getattr(appliance, "id", None), endpoint), None)
+
+    def form_row(self, row):
+        """Tastypie lists of plain values (``groups``, ``ip_list``) as the
+        space-separated text the form edits; JSON booleans stay booleans
+        (the page draws them as the control's on / off)."""
+        out = dict(row or {})
+        for k, v in list(out.items()):
+            if isinstance(v, list) and all(not isinstance(x, (dict, list)) for x in v):
+                out[k] = " ".join(str(x) for x in v)
+        return out
+
     def mkey_of(self, row, endpoint=""):
+        if is_cli(endpoint) or "_edit" in (row or {}):
+            v = (row or {}).get("_edit")
+            return "" if v in (None, "") else str(v)
         # the detail URL's own key: some resources serve no ``id`` field
         # (radiusclients, measured on fac01 8.0.3) but every row carries
         # ``resource_uri`` = /api/v1/<res>/<pk>[/]
@@ -380,6 +517,10 @@ class FortiAuthenticatorAdapter(Adapter):
     def rows(self, appliance, endpoint):
         if not endpoint or is_gui_only(endpoint):
             return [], None
+        if is_cli(endpoint):
+            got, err = self.cli_rows(appliance, endpoint)
+            return got, {"generated_at": None, "source": "live-cli", "cached": False,
+                         "error": err}
         logical, path = self.resolve(appliance, endpoint)
         if logical:
             from . import read_layer
@@ -400,6 +541,14 @@ class FortiAuthenticatorAdapter(Adapter):
     def read(self, appliance, endpoint, mkey):
         if read_only_endpoint(endpoint):
             return None
+        if is_cli(endpoint):
+            self.forget(appliance, endpoint)
+            got, err = self.cli_rows(appliance, endpoint)
+            if err:
+                return None
+            if not mkey:
+                return got[0] if len(got) == 1 and "_edit" not in got[0] else None
+            return next((r for r in got if str(r.get("_edit")) == str(mkey)), None)
         _logical, path = self.resolve(appliance, endpoint)
         if mkey:
             path = path.rstrip("/") + "/%s/" % quote(str(mkey), safe="")
@@ -449,7 +598,11 @@ class FortiAuthenticatorAdapter(Adapter):
         orig = orig or {}
         out = {}
         for k, v in (fields or {}).items():
-            out[k] = _typed(orig[k], v) if k in orig else v
+            o = orig.get(k)
+            if isinstance(o, list) and all(not isinstance(x, (dict, list)) for x in o):
+                out[k] = [_typed(o[0], x) if o else x for x in str(v).split()]
+            else:
+                out[k] = _typed(o, v) if k in orig else v
         return out
 
 
@@ -531,15 +684,96 @@ class GuiOps:
                    detail="mkey=%s dry_run=False error=%s" % (mkey, error))
 
 
+# --------------------------------------------------------------------------- #
+# Endpoints a FortiGate / FortiAuthenticator layout may name (pack importer)
+# --------------------------------------------------------------------------- #
+CLI = "cli:"
+#: Where an endpoint stands in a layout: ``read`` (a view, a dialog, a table
+#: field: SATOM GETs it), ``write`` (a dialog's ``write``/``writes``, a field's
+#: ``bind``: SATOM sends it) and ``gui_write`` (the FortiAuthenticator form post
+#: the crawl observed: informational, SATOM never replays it).
+READ, WRITE, GUI_WRITE = "read", "write", "gui_write"
+#: FortiGate cmdb path after ``/api/v2/cmdb/``: ``firewall/address``,
+#: ``system.dhcp/server``, the sub-table ``router/ospf/area``.
+_FGT_CMDB = re.compile(r"[a-z0-9-]+(\.[a-z0-9-]+)*(/[a-z0-9_-]+){1,3}", re.I)
+_FGT_MONITOR = re.compile(r"monitor:[a-z0-9_-]+(\.[a-z0-9_-]+)*(/[a-z0-9_-]+){1,4}", re.I)
+#: FortiAuthenticator REST resource after ``/api/v1/`` (``localusers``) or its
+#: registry logical (``auth_local_users``), and a CLI object (``cli:system/dns``).
+_FAC_REST = re.compile(r"[a-z][a-z0-9_-]{0,63}", re.I)
+_FAC_CLI = re.compile(r"cli:[a-z0-9_-]+(/[a-z0-9_-]+){0,3}", re.I)
+#: A GUI page path (``gui:/admin/fac_auth/iamuser/<id>/change/``): no ``..``.
+_GUI_PATH = re.compile(r"gui:/((<id>|[a-z0-9_-][a-z0-9_.-]*)/)*([a-z0-9_-][a-z0-9_.-]*)?", re.I)
+#: Device actions, at the start of a word of the path (FortiWeb's list,
+#: ``vendor/satom_guikit``, without its secret words: the cmdb and ``/api/v1/``
+#: trees are configuration whose secrets the adapters scrub, and Password
+#: Policy, FortiToken or Certificates are configuration pages; nor ``action``:
+#: cmdb ``system/automation-action`` is a config table). At a word start so FAC
+#: ``tacacsshellcommand`` (TACACS+ shell command sets) is not ``shell``.
+#: Measured 2026-10-10 over the FortiGate 8.0.1 build245 (53 pages) and FAC
+#: 8.0.3 build99 (93 pages) crawls, it hits two: FortiGate User & Authentication
+#: > FortiTokens (its dialog names cmdb ``system/device-upgrade`` and
+#: ``system/federated-upgrade``, the objects that schedule the device's and the
+#: Fabric's firmware upgrade) and FAC Scheduled Backups (``gui:/system/
+#: scheduled_backup/``: the device ships its whole configuration to a server).
+_ACTION = re.compile(r"(?<![a-z])(reboot|shutdown|restart|restore|upgrade|firmware|factory|reset|"
+                     r"backup|logout|disconnect|revoke|purge|wipe|erase|flush|delete|clear|exec|"
+                     r"shell|debug|diagnose|upload|download|import|maintenance)", re.I)
+#: FortiAuthenticator REST resources that ARE actions (authenticate, push).
+_FAC_ACTION_REST = frozenset({"auth", "pushauth", "pushauthresp"})
+
+
+def unsafe_endpoint(product: str, ep, role: str = READ) -> str:
+    """Why ``ep`` may not stand at ``role`` in a ``product`` layout ("" = it may).
+
+    FortiGate: a cmdb path anywhere; ``monitor:<path>`` and ``gui:<path>``
+    only where SATOM reads (the monitor tree holds status and the device's
+    actions, never configuration: one in a write or a bind is an action
+    route). FortiAuthenticator: a REST resource anywhere; ``cli:<object>`` and
+    ``gui:<path>`` only where SATOM reads; a crawled form post (``gui_writes``)
+    only as ``gui:<path>``. Never a path naming a device action, whatever the
+    method or the role (a GET can act). FortiWeb keeps ``gui_bound.safe_api``."""
+    if ep in (None, ""):
+        return ""
+    if not isinstance(ep, str):
+        return "not an endpoint"
+    if product == FORTIGATE:
+        if role == WRITE and (is_monitor(ep) or is_gui_only(ep)):
+            return "a %s path in a write is a device action route" % ep.split(":", 1)[0]
+        ok = _FGT_CMDB.fullmatch(ep) or (role == READ and (_FGT_MONITOR.fullmatch(ep)
+                                                           or _GUI_PATH.fullmatch(ep)))
+        if not ok:
+            return "not a cmdb path (after /api/v2/cmdb/)" + (
+                "" if role == WRITE else ", monitor: or gui: path")
+    elif product == FORTIAUTH:
+        if role == GUI_WRITE:
+            ok = _GUI_PATH.fullmatch(ep)
+        elif role == WRITE:
+            ok = _FAC_REST.fullmatch(ep)
+        else:
+            ok = _FAC_REST.fullmatch(ep) or _FAC_CLI.fullmatch(ep) or _GUI_PATH.fullmatch(ep)
+        if not ok:
+            return "not a %s" % {GUI_WRITE: "gui: path", WRITE: "REST resource (after /api/v1/)"}.get(
+                role, "REST resource, cli: object or gui: path")
+        if ep.lower() in _FAC_ACTION_REST:
+            return "an authentication action resource"
+    else:
+        return "no endpoint grammar for product %r" % product
+    if _ACTION.search(ep.split(":", 1)[1] if ":" in ep else ep):
+        return "names a device action"
+    return ""
+
+
 def drift(sent: dict, after: dict | None) -> list | None:
     """[{key, sent, now}] of the fields the device stored differently from
     what was sent (compared in the form's text, so ``[{"name": "a"}]`` and
     ``"a"`` agree); None when the object could not be read back."""
     if after is None:
         return None
+    # a nested object is compared field by field (``ipv6.ip6-mode``)
+    sent, after = flat_dicts(sent), flat_dicts(after)
     out = []
     for k, v in (sent or {}).items():
-        if k not in after:
+        if k not in after or isinstance(v, dict):
             continue
         a = after.get(k)
         sv = _member_names(v) if isinstance(v, list) else v
@@ -554,6 +788,127 @@ def drift(sent: dict, after: dict | None) -> list | None:
     return out
 
 
+# --------------------------------------------------------------------------- #
+# Inline tables: where a dialog's table takes its rows from
+# --------------------------------------------------------------------------- #
+#: Row keys a FortiOS / Tastypie table row is addressed by, best first.
+ROW_KEYS = ("q_origin_key", "id", "name", "seq-num", "policyid")
+
+
+def row_id(row: dict) -> str:
+    for k in ROW_KEYS:
+        v = (row or {}).get(k)
+        if v not in (None, ""):
+            return str(v)
+    return ""
+
+
+def table_source(product: str, dialog: dict, field: dict, dialogs: dict | None = None) -> dict:
+    """Where the rows of one inline table come from, as the template measured it.
+
+    ``{"kind": "field", "field": name}`` -- a table INSIDE the dialog's object
+    (FortiGate ``router/ospf/area`` is the ``area`` field of ``router/ospf``;
+    a FortiAuthenticator table whose key was measured): its rows come with the
+    object and a row is saved by writing the parent object with the changed
+    row. ``{"kind": "collection", "endpoint": ep}`` -- the table lists another
+    cmdb table (SNMP communities on the SNMP form: ``system.snmp/community``):
+    a row is an object of its own. ``{"kind": "monitor", "endpoint": ep}`` --
+    status rows, read-only. ``{"kind": None}`` -- the crawl did not tie the
+    table to anything: its rows cannot be listed."""
+    ep = str(field.get("endpoint") or "")
+    rd = (dialogs or {}).get(field.get("row_dialog") or "") or {}
+    rd_ep = str(rd.get("endpoint") or "")
+    dlg_ep = str(dialog.get("endpoint") or "")
+    if product == FORTIAUTH:
+        if field.get("key") and field.get("key_from") in ("measured", "name"):
+            return {"kind": "field", "field": field["key"]}
+        return {"kind": None}
+    if is_monitor(ep):
+        return {"kind": "monitor", "endpoint": ep}
+    cand = ep if ep and ep != dlg_ep else (rd_ep if rd_ep and rd_ep != dlg_ep else "")
+    if not cand:
+        # the crawl named the dialog's own object (OSPF summary addresses
+        # measured as ``router/ospf``): not a table of it
+        return {"kind": None}
+    if dlg_ep and cand.startswith(dlg_ep + "/") and "/" not in cand[len(dlg_ep) + 1:]:
+        return {"kind": "field", "field": cand[len(dlg_ep) + 1:]}
+    if is_monitor(cand) or is_gui_only(cand):
+        return {"kind": None}
+    return {"kind": "collection", "endpoint": cand}
+
+
+def singleton_table(obj: dict, columns: list) -> str | None:
+    """The table field of a settings object a LIST view shows, when the crawl
+    named the settings object instead of its table (FortiGate IPAM Rules
+    measured as ``system/ipam``, which answers one object whose ``rules``
+    field holds the rows). Tied by the columns the crawl did match to REST
+    keys: every one of them must be a key of that field's rows, and exactly
+    one table field may qualify -- otherwise None (no guess)."""
+    want = {c.get("id") for c in columns or [] if isinstance(c, dict) and c.get("id")
+            and not c.get("unmatched") and not c.get("computed")
+            and not str(c.get("id")).startswith("q_")}
+    if not want or not isinstance(obj, dict):
+        return None
+    hits = []
+    for k, v in obj.items():
+        if isinstance(v, list) and v and all(isinstance(r, dict) for r in v):
+            keys = set().union(*(set(r) for r in v))
+            if want <= keys:
+                hits.append(k)
+    return hits[0] if len(hits) == 1 else None
+
+
+def table_write(orig: dict, field: str, op: str, sub_id: str | None, row_body: dict) -> tuple:
+    """``(body, row_before)``: the parent object's write that changes ONE row
+    of its table ``field`` -- the table as the device served it with the row
+    replaced (``update``: the row's fields merged), appended (``create``) or
+    left out (``delete``). Bookkeeping keys (``q_*``) are not sent back.
+    Raises ValueError when the row is not in the table."""
+    rows = [r for r in (orig or {}).get(field) or [] if isinstance(r, dict)]
+    clean = (lambda r: {k: v for k, v in r.items() if not str(k).startswith("q_")})  # noqa: E731
+    out, before = [], None
+    for r in rows:
+        if op != "create" and sub_id not in (None, "") and row_id(r) == str(sub_id):
+            before = r
+            if op == "delete":
+                continue
+            merged = clean(r)
+            for k, v in (row_body or {}).items():
+                if isinstance(v, dict) and isinstance(merged.get(k), dict):
+                    merged[k] = {**merged[k], **v}
+                else:
+                    merged[k] = v
+            out.append(merged)
+        else:
+            out.append(clean(r))
+    if op == "create":
+        out.append(dict(row_body or {}))
+    elif before is None:
+        raise ValueError("row %s is not in the table %s" % (sub_id, field))
+    return {field: out}, before
+
+
+#: Keys a clone never copies: the source's identity and the device's own
+#: bookkeeping (FortiOS gives a new object a new ``uuid``; Tastypie a new id).
+_CLONE_DROP = ("uuid", "resource_uri", "id", "policyid", "seq-num", "_edit", "q_origin_key")
+
+
+def clone_body(product: str, src: dict, src_key: str, new_name: str) -> dict:
+    """The create body of a copy of ``src`` named ``new_name``: every field of
+    the source as the device served it (secrets were never read, so they are
+    not copied), its identity replaced. The name field is the one holding the
+    source's key (``name``; FortiAuthenticator users: ``username``)."""
+    body = {k: v for k, v in (src or {}).items()
+            if not str(k).startswith("q_") and k not in _CLONE_DROP}
+    ident = next((k for k in ("name", "username", "label") if str((src or {}).get(k)) == str(src_key)),
+                 None) or next((k for k in ("name", "username", "label") if k in (src or {})), "name")
+    body[ident] = new_name
+    return body
+
+
 __all__ = ["PRODUCTS", "LABELS", "FORTIWEB", "FORTIGATE", "FORTIAUTH", "product_of", "label",
            "is_gui_only", "is_monitor", "read_only_endpoint", "gui_only_fields",
-           "strip_fortiweb_refs", "lib_key", "adapter", "GuiOps", "drift", "Adapter"]
+           "strip_fortiweb_refs", "lib_key", "adapter", "GuiOps", "drift", "Adapter",
+           "unsafe_endpoint", "READ", "WRITE", "GUI_WRITE", "flat_dicts", "is_cli",
+           "cli_object", "table_source", "singleton_table", "table_write", "clone_body",
+           "row_id"]

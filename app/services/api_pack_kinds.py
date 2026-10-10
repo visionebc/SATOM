@@ -573,24 +573,48 @@ def _gui_code(node, path="") -> str:
     return ""
 
 
-def _gui_unsafe_endpoint(data: dict) -> str:
-    """A GUI API endpoint (``api:...``) a layout names for reading or writing
-    that is not a configuration object (gui_bound.safe_api): the first one."""
-    from . import gui_bound
-    eps = []
+def _gui_endpoints(data: dict) -> list:
+    """``(role, endpoint)`` of every endpoint a layout names (gui_products
+    READ / WRITE / GUI_WRITE). Measured on the 8.0.1 build245 FortiGate and
+    8.0.3 build99 FortiAuthenticator crawls: the page, its views (and a FAC
+    view's ``also_endpoints``), dialogs and table fields are read; a dialog's
+    ``write`` / ``writes`` and a field's ``bind`` are written; a FAC dialog's
+    ``gui_writes`` are the form posts the crawl observed."""
+    from .gui_products import GUI_WRITE, READ, WRITE
+    out = [(READ, data.get("endpoint"))]
     for v in data.get("views") or []:
-        eps.append(v.get("endpoint"))
+        out.append((READ, v.get("endpoint")))
+        out.extend((READ, e) for e in v.get("also_endpoints") or [])
     for d in (data.get("dialogs") or {}).values():
-        eps.append(d.get("endpoint"))
-        eps.append((d.get("write") or {}).get("endpoint"))
-        for w in d.get("writes") or []:
-            eps.append(w.get("endpoint"))
+        out.append((READ, d.get("endpoint")))
+        out.append((WRITE, (d.get("write") or {}).get("endpoint")))
+        out.extend((WRITE, w.get("endpoint")) for w in d.get("writes") or [])
+        out.extend((GUI_WRITE, w.get("endpoint")) for w in d.get("gui_writes") or [])
         for b in d.get("blocks") or []:
             for f in b.get("fields") or []:
-                eps.append((f.get("bind") or {}).get("endpoint"))
-    for ep in eps:
-        if isinstance(ep, str) and gui_bound.is_api(ep) and not gui_bound.safe_api(ep):
-            return ep
+                out.append((READ, f.get("endpoint")))
+                out.append((WRITE, (f.get("bind") or {}).get("endpoint")))
+    return out
+
+
+def _gui_unsafe_endpoint(data: dict, product: str | None = None) -> str:
+    """The first endpoint a layout may not name, "" when none.
+
+    FortiWeb: a GUI API endpoint (``api:...``) that is not a configuration
+    object (gui_bound.safe_api); its cmdb paths are its own. FortiGate and
+    FortiAuthenticator: every endpoint follows its product's grammar and names
+    no device action (gui_products.unsafe_endpoint); the answer is
+    ``<endpoint> (<role>: <why>)``."""
+    from . import gui_bound, gui_products
+    product = product or data.get("product") or gui_products.FORTIWEB
+    for role, ep in _gui_endpoints(data):
+        if product == gui_products.FORTIWEB:
+            if isinstance(ep, str) and gui_bound.is_api(ep) and not gui_bound.safe_api(ep):
+                return ep
+            continue
+        why = gui_products.unsafe_endpoint(product, ep, role)
+        if why:
+            return "%s (%s: %s)" % (ep, role, why)
     return ""
 
 
@@ -600,7 +624,7 @@ def validate_gui(run, item) -> dict:
     publish templates too) — it checks the shape, the identity and that no
     bundle code rides along."""
     from ..vendor import satom_guikit as guikit
-    from . import gui_store
+    from . import gui_products, gui_store
     data = _payload(run, item)
     if data.get("schema") != guikit.SCHEMA_V2:
         raise ItemInvalid("schema %r is not %s" % (data.get("schema"), guikit.SCHEMA_V2))
@@ -610,6 +634,9 @@ def validate_gui(run, item) -> dict:
     product = _product_of(item, data)
     if product != ident["product"]:
         raise ItemInvalid("item product %r but template product %r" % (product, ident["product"]))
+    if product not in gui_products.PRODUCTS:
+        # no endpoint grammar to check its layout against: refused, not filed
+        raise ItemInvalid("no GUI engine for product %r" % product)
     version = fv.normalize(ident["version"])
     if not version or version != ident["version"] or not ident["build"].isdigit():
         raise ItemInvalid("template does not name an exact build (%r build %r)"
@@ -619,12 +646,17 @@ def validate_gui(run, item) -> dict:
     except ValueError as exc:
         raise ItemInvalid(str(exc))
     dialogs = data.get("dialogs")
-    if not isinstance(dialogs, dict) or not dialogs or not isinstance(data.get("list"), dict):
+    # a FortiGate / FortiAuthenticator page may be a list and nothing else
+    # (FAC 8.0.3 build99: the SAML and system template editors, GUI-only lists)
+    list_only = (product != gui_products.FORTIWEB and dialogs == {}
+                 and isinstance(data.get("views"), list) and bool(data["views"]))
+    if (not isinstance(dialogs, dict) or not (dialogs or list_only)
+            or not isinstance(data.get("list"), dict)):
         raise ItemInvalid("template has no dialogs / list")
     hit = _gui_code(data)
     if hit:
         raise ItemInvalid("template carries GUI bundle code (%s)" % hit)
-    bad = _gui_unsafe_endpoint(data)
+    bad = _gui_unsafe_endpoint(data, product)
     if bad:
         raise ItemInvalid("template names an endpoint SATOM never reads or writes (%s)" % bad)
     return {"product": product, "page": ident["page"], "version": version,

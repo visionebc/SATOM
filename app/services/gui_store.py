@@ -26,7 +26,9 @@ from ..vendor import satom_guikit as guikit
 from . import firmware_versions as fv
 
 _BUILD_RE = re.compile(r"build\s*0*(\d+)", re.I)
-_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,80}$")
+#: One path component of a template file: never ``.`` / ``..`` (a page ``..``
+#: filed ``<product>/../<version>-<build>.json`` outside its product).
+_TOKEN_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]{0,79}$")
 
 
 def root() -> Path:

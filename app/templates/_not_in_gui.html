@@ -26,13 +26,15 @@
 {%- endif -%}
 {%- endmacro %}
 
-{% macro nig_editable(sec, create=false, mkey='', collection='', parent='') %}
+{% macro nig_editable(sec, create=false, mkey='', collection='', parent='', endpoint='', singleton=false) %}
 {% if sec %}
-<details class="fw-group fw-nig" data-nig data-collection="{{ collection }}" data-mkey="{{ mkey }}"{% if parent %} data-parent="{{ parent }}"{% endif %}>
+{# data-endpoint: the API-library key the CLI read names (a GUI layout page
+   passes it; the object editor reads by its collection) #}
+<details class="fw-group fw-nig" data-nig data-collection="{{ collection }}" data-mkey="{{ mkey if mkey != '~' else '' }}"{% if endpoint %} data-endpoint="{{ endpoint }}"{% endif %}{% if parent %} data-parent="{{ parent }}"{% endif %}>
   <summary class="fw-group-head">{{ sec.title }} <span class="text-muted">({{ sec.fields|length }})</span></summary>
   <p class="fw-nig-note small text-muted mb-2">{{ sec.note }}</p>
   {{ nig_empty(sec) }}
-  {% if sec.has_cli and mkey and not create %}
+  {% if sec.has_cli and (mkey or singleton) and not create %}
     <button type="button" class="btn btn-sm btn-outline-secondary mb-2" data-js="nig-read-cli">
       <i class="bi bi-terminal me-1"></i>{{ _('Read values over CLI') }}</button>
     <span class="fw-nig-read small text-muted"></span>

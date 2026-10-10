@@ -1237,13 +1237,15 @@ def fwgui_refresh(appliance_id, page):
     from flask import flash, redirect, url_for
     from ..services import device_sync, gui_products
     appl = visible_appliance_or_404(appliance_id)
-    if appl.kind == 'fortigate':
-        # SATOM keeps no FortiGate config cache: the pages read the device;
-        # Refresh drops the few-second read memo so the next draw is fresh
+    if appl.kind in ('fortigate', 'fortiauthenticator'):
+        # FortiGate: SATOM keeps no config cache, the pages read the device;
+        # FortiAuthenticator: its CLI-only objects are read over SSH. Refresh
+        # drops the few-second read memo so the next draw is fresh
         tpl, _m = _fwgui_tpl(appl, page)
         from ..services import gui_pages
         for v in gui_pages.views(tpl):
             gui_products.adapter(appl).forget(appl, v.get('endpoint') or '')
+    if appl.kind == 'fortigate':
         flash(f"Re-read from {appl.name}.", "success")
         return redirect(url_for('workspace.fwgui_list', appliance_id=appl.id, page=page,
                                 v=request.form.get('v') or None))
@@ -1397,10 +1399,18 @@ def fwgui_new(appliance_id, page, dialog):
     from ..services import gui_pages, gui_template, objform
     appl = visible_appliance_or_404(appliance_id)
     tpl, match = _fwgui_tpl(appl, page)
-    if dialog not in tpl['dialogs'] or dialog in (tpl.get('subtable_dialogs') or ()):
+    if dialog not in tpl['dialogs']:
         abort(404)
     if appl.kind != 'fortiweb':
+        # FortiGate's ``subtable_dialogs`` also lists a second tab's dialog
+        # (Address Group on Addresses): a dialog some Create New opens is
+        # creatable; a row dialog is not (it opens inside its object)
+        if not any(it.get('dialog') == dialog for v in gui_pages.views(tpl)
+                   for it in v.get('create_menu') or []):
+            abort(404)
         return _gx_new(appl, page, tpl, match, dialog)
+    if dialog in (tpl.get('subtable_dialogs') or ()):
+        abort(404)
     vi, view = gui_pages.view_for_dialog(tpl, dialog)
     coll = view.get('endpoint') or ''
     dev = _gui_device(appl)
@@ -1417,17 +1427,32 @@ def fwgui_new(appliance_id, page, dialog):
                            dev=dev, view=dview, name=None, main=dialog, is_new=True,
                            can_edit=can_edit, save_ep=coll, row_ctx=None, gp=gp, gx=_gx(appl))
 
+from flask_babel import gettext as _gt  # noqa: E402 -- the FortiGate / FAC section's texts
+
+
 # ── FortiGate / FortiAuthenticator: the same pages, their own read / write ──
 # (services.gui_products). Rows are the adapter's (FortiGate: live cmdb;
-# FortiAuthenticator: SATOM cache, else live); Save posts to fwgui_save, which
-# dry-runs, then applies through GuiOps (before-read, audit, ChangeHistory),
-# re-reads the object and reports any drift. CLI-only fields go through the
-# CLI writer exactly as on FortiWeb. A page or field with no API on the build
-# (``gui:`` / ``key_from: gui-only``) is drawn read-only and never sent.
+# FortiAuthenticator: SATOM cache, else live; its CLI-only objects ``cli:``
+# over a read-only SSH session); Save posts to fwgui_save, which dry-runs,
+# then applies through GuiOps (before-read, audit, ChangeHistory), re-reads
+# the object and reports any drift. CLI-only fields go through the CLI writer
+# exactly as on FortiWeb. A page or field with no API on the build (``gui:``
+# / ``key_from: gui-only``) is drawn read-only and never sent. A row of an
+# inline table is saved by writing its parent object with the changed row.
 
 def _gx_endpoints(tpl) -> set:
+    """Every endpoint the page's own measured layout lists or edits: its
+    views, its dialogs and the collections its inline tables list. The save
+    route only ever writes one of these (never a path the browser names)."""
     from ..services import gui_pages
-    return {v.get('endpoint') or '' for v in gui_pages.views(tpl)} - {''}
+    out = {v.get('endpoint') or '' for v in gui_pages.views(tpl)}
+    for d in (tpl.get('dialogs') or {}).values():
+        out.add(d.get('endpoint') or '')
+        for b in d.get('blocks') or []:
+            for f in b.get('fields') or []:
+                if f.get('kind') == 'table':
+                    out.add(f.get('endpoint') or '')
+    return out - {''}
 
 
 def _gx_gui_only_keys(tpl) -> set:
@@ -1440,29 +1465,120 @@ def _gx_gui_only_keys(tpl) -> set:
     return out
 
 
-def _gx_prepare(tpl, key, coll, row):
-    """Template copy for one dialog of a FortiGate / FortiAuthenticator page:
-    JSON booleans drawn as the control's on / off, and a control the GUI
-    saves into ANOTHER endpoint (``bind``) shown, not written here."""
+def _gx_cond_text(cond_gui, labels) -> str:
+    """A FortiAuthenticator show / hide rule on a control with no REST key
+    (``cond_gui``), in words for the "conditional" hover."""
+    if not isinstance(cond_gui, dict):
+        return ''
+    if cond_gui.get('never'):
+        return _gt('never shown on the forms the crawl opened')
+    parts = []
+    for t in cond_gui.get('all') or []:
+        if isinstance(t, dict) and t.get('control'):
+            parts.append('%s = %s' % (labels.get(t['control']) or t['control'],
+                                      ' / '.join(str(x) for x in t.get('in') or [])))
+    return ('%s (%s)' % (' and '.join(parts), _gt('a control with no API'))) if parts else ''
+
+
+def _gx_truthy(v) -> bool:
+    return v is True or str(v).strip().lower() in ('true', '1', 'yes', 'on', 'enable')
+
+
+def _gx_prepare(tpl, key, coll, row, product):
+    """``(template copy, row, table sources)`` for one dialog of a FortiGate /
+    FortiAuthenticator page, as SATOM draws and saves it:
+
+    * a JSON boolean is drawn as the control's on / off (``true`` /
+      ``false``) and saved back as a boolean;
+    * a FortiAuthenticator control measured as the NEGATION of a key
+      (``measured-inverse``: Disabled = not ``active``) edits ``!<key>``,
+      which the save turns back into the key with the value negated;
+    * a field whose value is a structure (a list of rows, an object) is
+      shown, never typed over as text;
+    * a control the GUI saves into ANOTHER endpoint (``bind``) is shown and
+      marked, not written here;
+    * a rule on a control with no REST key (``cond_gui``) is said in words;
+    * each inline table is tied to where its rows come from
+      (:func:`gui_products.table_source`); ``subtable`` is that source's id."""
     import copy
-    from ..services import gui_bound
+    from ..services import gui_products
     d0 = (tpl.get('dialogs') or {}).get(key)
+    row = dict(row or {})
     if not d0:
-        return tpl
-    gui_bound._bools_as_switches(d0, row)
-    if not any((f.get('bind') or {}).get('endpoint') not in (None, '', coll)
-               for b in d0.get('blocks') or [] for f in b.get('fields') or []):
-        return tpl
-    t2 = dict(tpl)
-    t2['dialogs'] = dict(tpl['dialogs'])
+        return tpl, row, {}
     d = copy.deepcopy(d0)
+    labels = {f.get('gui_name'): f.get('label') for b in d.get('blocks') or []
+              for f in b.get('fields') or [] if f.get('gui_name')}
+    sources = {}
     for b in d.get('blocks') or []:
         for f in b.get('fields') or []:
+            inv = f.get('inverse_of') if f.get('key_from') == 'measured-inverse' else None
+            if inv and not f.get('key'):
+                k = '!' + inv
+                f.update(key=k, on='true', off='false')
+                if f.get('kind') not in ('toggle', 'check'):
+                    f['kind'] = 'check'
+                if row.get(inv) is not None:
+                    row[k] = 'false' if _gx_truthy(row[inv]) else 'true'
+            for c in [f] + [m for m in f.get('more') or [] if isinstance(m, dict)]:
+                if c.get('kind', f.get('kind')) not in ('toggle', 'check') or not c.get('key'):
+                    continue
+                on, off, v = c.get('on', 'enable'), c.get('off', 'disable'), row.get(c['key'])
+                if isinstance(on, bool) or isinstance(off, bool) or \
+                        (isinstance(v, bool) and 'on' not in c):
+                    c['on'], c['off'] = 'true', 'false'
+                    if isinstance(v, bool):
+                        row[c['key']] = 'true' if v else 'false'
+                elif isinstance(v, bool):
+                    row[c['key']] = on if v else off
+            if f.get('key') and f.get('kind') != 'table' and \
+                    isinstance(row.get(f['key']), (list, dict)):
+                f['readonly'] = True
             ep = (f.get('bind') or {}).get('endpoint')
             if ep and ep != coll:
                 f['bound_to'] = ep
+            if f.get('cond_gui') and isinstance(f.get('cond'), dict) and 'raw' in f['cond']:
+                why = _gx_cond_text(f['cond_gui'], labels)
+                if why:
+                    f['cond'] = {'raw': why}
+            if f.get('kind') == 'table':
+                src = gui_products.table_source(product, d, f, tpl.get('dialogs') or {})
+                sid = src.get('field') or src.get('endpoint') or None
+                f['subtable'] = sid
+                if sid:
+                    sources[sid] = src
+    t2 = dict(tpl)
+    t2['dialogs'] = dict(tpl['dialogs'])
     t2['dialogs'][key] = d
-    return t2
+    return t2, row, sources
+
+
+def _gx_subrows(appl, ad, sources, obj, *, new=False):
+    """{table id: rows | None} of a dialog's inline tables. A table inside
+    the object comes with it; another collection / a monitor list is read
+    from the device. None = cannot be listed (drawn as such, never empty)."""
+    from ..services import gui_products
+    out = {}
+    for sid, src in (sources or {}).items():
+        if new:
+            out[sid] = []
+            continue
+        if src['kind'] == 'field':
+            v = (obj or {}).get(src['field'])
+            if isinstance(v, list):
+                out[sid] = [dict(ad.form_row(r), id=gui_products.row_id(r))
+                            for r in v if isinstance(r, dict)]
+            else:
+                # an empty table the device answers as nothing; a key the
+                # object does not carry is unknown
+                out[sid] = [] if (obj is not None and src['field'] in obj
+                                  and v in (None, '')) else None
+        else:
+            rows, meta = ad.rows(appl, src['endpoint'])
+            out[sid] = None if (meta or {}).get('error') else [
+                dict(ad.form_row(r), id=ad.mkey_of(r, src['endpoint']) or gui_products.row_id(r))
+                for r in rows]
+    return out
 
 
 def _gx_finish(view, product):
@@ -1471,7 +1587,7 @@ def _gx_finish(view, product):
     gui_products.gui_only_fields(view)
     for b in view.get('blocks') or []:
         for f in b.get('fields') or []:
-            if f.get('bound_to'):
+            if f.get('bound_to') or f.get('readonly'):
                 f['editable'] = False
     return view
 
@@ -1494,14 +1610,35 @@ def _gx_describe(k, v):
     return {'key': k, 'label': k, 'value': '' if v is None else v, 'widget': 'text'}
 
 
+def _gx_lib_key(appl, coll):
+    """The API-library key of a page endpoint (a CLI-only object by its CLI
+    path key: ``cli:system/dns`` -> ``system/dns``)."""
+    from ..services import gui_products
+    if gui_products.is_cli(coll):
+        return gui_products.cli_object(coll)
+    return gui_products.lib_key(appl.kind, coll)
+
+
+def _gx_template_keys(tpl, view):
+    """The keys the API has for a view's object, as the crawl measured them:
+    FortiAuthenticator's per-view ``not_in_gui`` plus what the page places,
+    FortiGate's ``rest_check.rest_keys`` for the page's own endpoint. Used for
+    Create New, where no object was read yet."""
+    rc = tpl.get('rest_check') or {}
+    if rc.get('endpoint') == (view or {}).get('endpoint') and rc.get('rest_keys'):
+        return list(rc['rest_keys'])
+    return list((view or {}).get('not_in_gui') or [])
+
+
 def _gx_nig(appl, coll, obj, can_edit):
     """(editable section, read-only section) of "Not in GUI, but in CLI"."""
     from ..services import gui_products, not_in_gui
     if gui_products.read_only_endpoint(coll):
         return None, None
-    key = gui_products.lib_key(appl.kind, coll)
+    key = _gx_lib_key(appl, coll)
     ad = gui_products.adapter(appl)
-    noise = (lambda k: k.startswith('q_') or k in ('resource_uri', 'id') or ad.secret(k, None))
+    noise = (lambda k: k.startswith(('q_', '!')) or '.' in k
+             or k in ('resource_uri', 'id', '_edit') or ad.secret(k, None))
     if can_edit and obj is not None:
         try:
             _g, sec = not_in_gui.apply_to_groups(appl, key, obj, [], noise=noise,
@@ -1512,9 +1649,32 @@ def _gx_nig(appl, coll, obj, can_edit):
     return None, not_in_gui.for_view(appl, key, obj if obj is not None else [], noise=noise)
 
 
+def _gx_view_flags(tpl, view):
+    """What the page says about how its objects were tied to the API: the
+    FortiAuthenticator crawl's ``endpoint_evidence`` (``weak``: tied by one
+    field), ``also_endpoints``, ``columns_unknown``."""
+    ev = (view or {}).get('endpoint_evidence') or {}
+    return {'weak': bool(ev.get('weak')),
+            'evidence': ev,
+            'also': list((view or {}).get('also_endpoints') or []),
+            'columns_unknown': bool((view or {}).get('columns_unknown'))}
+
+
+def _gx_writable_tables(appl, sources, can_edit) -> list:
+    """Table ids whose toolbar Create New writes: a table inside the object
+    (written with it) or another collection SATOM may write."""
+    from ..services import gui_products
+    ad = gui_products.adapter(appl)
+    return sorted(sid for sid, src in (sources or {}).items()
+                  if (src.get('kind') == 'field' and can_edit)
+                  or (src.get('kind') == 'collection' and current_user.can('config_write')
+                      and ad.writable(src['endpoint'])))
+
+
 def _gx_render(appl, tpl, match, dev, dview, *, page, vi, coll, name, main, is_new,
                can_edit, obj=None, tabs=(), form=False, missing=False, row_ctx=None,
-               nig=None, nig_edit=None, mode='object'):
+               nig=None, nig_edit=None, mode='object', view=None, error=None,
+               writable_tables=()):
     from flask import url_for
     from ..services import gui_products
     gp = {'page': page, 'v': vi, 'collection': coll, 'name': name, 'mode': mode,
@@ -1522,12 +1682,31 @@ def _gx_render(appl, tpl, match, dev, dview, *, page, vi, coll, name, main, is_n
           'bound': {}, 'product': appl.kind,
           'save': url_for('workspace.fwgui_save', appliance_id=appl.id),
           'gui_only': gui_products.is_gui_only(coll),
-          'monitor': gui_products.is_monitor(coll)}
+          'monitor': gui_products.is_monitor(coll),
+          'cli': gui_products.is_cli(coll),
+          'nig_endpoint': _gx_lib_key(appl, coll) if coll else '',
+          'error': error or '',
+          **_gx_view_flags(tpl, view)}
     return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
                            dev=dev, view=dview, name=name, main=main, is_new=is_new,
                            not_in_gui=nig, nig_row=obj or {}, nig_edit=nig_edit,
                            can_edit=can_edit, save_ep=coll, row_ctx=row_ctx,
-                           writable_subtables=[], gp=gp, gx=_gx(appl))
+                           writable_subtables=list(writable_tables), gp=gp, gx=_gx(appl))
+
+
+def _gx_singleton_table(view, rows, meta):
+    """(table field | None, note) of a LIST view whose endpoint answered one
+    settings object (FortiGate ``system/ipam``): the table field its rows
+    are (tied by the view's matched columns), else a note why none is listed."""
+    from ..services import gui_products
+    if view.get('form') or not (meta or {}).get('singleton') or not rows:
+        return None, ''
+    field = gui_products.singleton_table(rows[0], view.get('columns') or [])
+    if field:
+        return field, ''
+    return None, _gt('The crawl tied this list to the settings object %(ep)s, and none of its '
+                   'tables carries the columns it measured: SATOM cannot tell which rows this '
+                   'list shows, so it lists none.', ep=view.get('endpoint'))
 
 
 def _gx_list(appl, page, tpl, match, dev, vi, view, tabs):
@@ -1537,27 +1716,49 @@ def _gx_list(appl, page, tpl, match, dev, vi, view, tabs):
     writer = current_user.can('config_write')
     if view.get('form'):
         key = view['form']
-        obj = None
-        if not gui_products.is_gui_only(coll):
+        obj, meta = None, None
+        if coll and not gui_products.is_gui_only(coll):
             rows, meta = ad.rows(appl, coll)
             obj = rows[0] if rows else None
         can_edit = writer and obj is not None and ad.writable(coll)
-        row = ad.form_row(obj or {})
-        t2 = _gx_prepare(tpl, key, coll, row)
-        dview = _gx_finish(gui_template.dialog_view(t2, key, row, dev, live=can_edit), appl.kind)
+        t2, row, sources = _gx_prepare(tpl, key, coll, ad.form_row(obj or {}), appl.kind)
+        subrows = _gx_subrows(appl, ad, sources, obj)
+        dview = _gx_finish(gui_template.dialog_view(t2, key, row, dev, subrows=subrows,
+                                                    live=can_edit), appl.kind)
         nig_edit, nig = _gx_nig(appl, coll, obj, can_edit)
         return _gx_render(appl, t2, match, dev, dview, page=page, vi=vi, coll=coll, name='',
                           main=key, is_new=False, can_edit=can_edit, obj=obj, tabs=tabs,
-                          form=True, missing=obj is None and not gui_products.is_gui_only(coll),
-                          nig=nig, nig_edit=nig_edit)
+                          form=True, view=view, error=(meta or {}).get('error'),
+                          missing=obj is None and bool(coll) and not gui_products.is_gui_only(coll),
+                          nig=nig, nig_edit=nig_edit,
+                          writable_tables=_gx_writable_tables(appl, sources, can_edit))
     rows, meta = ad.rows(appl, coll)
+    table, note = _gx_singleton_table(view, rows, meta)
+    mkey_of = ad.mkey_of
+    if table:
+        rows = [r for r in rows[0].get(table) or [] if isinstance(r, dict)]
+        mkey_of = (lambda r, ep='': gui_products.row_id(r))  # noqa: E731
+    elif note:
+        rows = []
+    flags = _gx_view_flags(tpl, view)
+    v2 = view
+    if flags['columns_unknown'] and not view.get('columns'):
+        # FortiAuthenticator drew no column title (the list was empty when
+        # crawled): each object is listed by its own name, said so
+        ident = next((k for k in ('name', 'username', 'label', '_edit')
+                      if any(k in r for r in rows)), None)
+        v2 = dict(view, columns=[{'id': ident, 'label': ident.title() if ident else '',
+                                  'unmatched': ident is None}])
     return render_template('workspace/fwgui_list.html', appliance=appl, tpl=tpl, match=match,
-                           dev=dev, page=page, vi=vi, view=view, rows=rows, cache_meta=meta,
+                           dev=dev, page=page, vi=vi, view=v2, rows=rows, cache_meta=meta,
                            tabs=tabs, cell=gui_pages.cell, labels=gui_pages.value_labels(tpl),
                            dialog_for=gui_pages.dialog_for,
                            can_edit=writer and ad.writable(coll),
+                           can_clone=writer and ad.writable(coll) and not table
+                           and not gui_products.is_cli(coll),
                            classic=gui_classic.classic_item_url(appl, coll),
-                           gx=_gx(appl), mkey_of=ad.mkey_of,
+                           gx=_gx(appl), mkey_of=mkey_of, list_table=table or '',
+                           list_note=note, flags=flags,
                            gui_only=gui_products.is_gui_only(coll))
 
 
@@ -1568,73 +1769,144 @@ def _gx_object(appl, page, tpl, match, name):
     dev = _gx_device(appl)
     vi, view = gui_pages.view_of(tpl, request.args.get('v'))
     coll = view.get('endpoint') or ''
-    rows, _meta = ad.rows(appl, coll)
-    obj = next((r for r in rows if ad.mkey_of(r, coll) == name), None)
-    if obj is None:
-        obj = ad.read(appl, coll, name)
-    if obj is None:
-        abort(404)
-    main = gui_pages.dialog_for(view, obj)
+    writer = current_user.can('config_write')
+    table = None
+    form = bool(view.get('form'))
+    if form:
+        # a settings form (``~`` in its URLs): the one object of its endpoint
+        obj = None
+        if coll and not gui_products.is_gui_only(coll):
+            rows, _meta = ad.rows(appl, coll)
+            obj = rows[0] if rows else None
+        main = view['form']
+        name = '~'
+    else:
+        rows, meta = ad.rows(appl, coll)
+        table, _note = _gx_singleton_table(view, rows, meta)
+        if table:
+            obj = next((r for r in rows[0].get(table) or []
+                        if isinstance(r, dict) and gui_products.row_id(r) == name), None)
+        else:
+            obj = next((r for r in rows if ad.mkey_of(r, coll) == name), None)
+            if obj is None:
+                obj = ad.read(appl, coll, name)
+        if obj is None:
+            abort(404)
+        main = gui_pages.dialog_for(view, obj)
     if not main or main not in tpl['dialogs']:
         abort(404)
     key = request.args.get('d') or main
     if key not in tpl['dialogs']:
         abort(404)
-    writer = current_user.can('config_write')
-    row_dialogs = gui_template.row_dialogs(tpl, main)
-    # a nested table is a field of the object itself (FortiOS / Tastypie):
-    # its rows come with the object; a row opens read-only
-    subrows = {st: (obj.get(st) if isinstance(obj.get(st), list) else None)
-               for st in row_dialogs.values() if st}
-    row_ctx = None
+    t2, row, sources = _gx_prepare(tpl, main, coll, ad.form_row(obj or {}), appl.kind)
+    row_dialogs = gui_template.row_dialogs(t2, main)
     if key in row_dialogs:
-        st = row_dialogs[key]
-        sub = request.args.get('sub')
-        row = next((r for r in subrows.get(st) or [] if isinstance(r, dict) and sub is not None
-                    and sub in (str(r.get('id')), str(r.get('q_origin_key')), str(r.get('name')))),
-                   None)
-        if row is None or request.args.get('new'):
-            abort(404)
-        dview = _gx_finish(gui_template.dialog_view(tpl, key, ad.form_row(row), dev), appl.kind)
-        row_ctx = {'subtable': st, 'collection': '', 'writable': False,
-                   'sub_id': str(sub), 'new': False}
-        return _gx_render(appl, tpl, match, dev, dview, page=page, vi=vi, coll=coll, name=name,
-                          main=main, is_new=False, can_edit=False, obj=obj, row_ctx=row_ctx,
-                          mode='row')
+        return _gx_row(appl, page, t2, match, dev, vi, view, coll, name, main, key,
+                       sources.get(row_dialogs[key]) or {'kind': None}, obj, writer)
     if key != main:
         abort(404)
-    for st, rws in list(subrows.items()):
-        if isinstance(rws, list):
-            subrows[st] = [dict(r, id=r.get('id', r.get('q_origin_key', r.get('name'))))
-                           for r in rws if isinstance(r, dict)]
-    can_edit = writer and ad.writable(coll)
-    row = ad.form_row(obj)
-    t2 = _gx_prepare(tpl, key, coll, row)
-    dview = _gx_finish(gui_template.dialog_view(t2, key, row, dev, subrows=subrows,
+    subrows = _gx_subrows(appl, ad, sources, obj)
+    can_edit = writer and ad.writable(coll) and (obj is not None)
+    row_ctx = None
+    if table:
+        # a row of a settings object's table, listed as its own grid
+        row_ctx = {'subtable': table, 'collection': '', 'writable': can_edit,
+                   'sub_id': name, 'new': False, 'source': 'field', 'parent': ''}
+    dview = _gx_finish(gui_template.dialog_view(t2, main, row, dev, subrows=subrows,
                                                 live=can_edit), appl.kind)
-    nig_edit, nig = _gx_nig(appl, coll, obj, can_edit)
+    nig_edit = nig = None
+    if not table:
+        nig_edit, nig = _gx_nig(appl, coll, obj, can_edit)
     return _gx_render(appl, t2, match, dev, dview, page=page, vi=vi, coll=coll, name=name,
-                      main=main, is_new=False, can_edit=can_edit, obj=obj,
-                      nig=nig, nig_edit=nig_edit)
+                      main=main, is_new=False, can_edit=can_edit, obj=obj, form=form,
+                      row_ctx=row_ctx, mode='row' if table else 'object', view=view,
+                      missing=form and obj is None and bool(coll)
+                      and not gui_products.is_gui_only(coll),
+                      nig=nig, nig_edit=nig_edit,
+                      writable_tables=_gx_writable_tables(appl, sources, can_edit))
+
+
+def _gx_row(appl, page, t2, match, dev, vi, view, coll, name, main, key, src, obj, writer):
+    """One row of an inline table in the dialog its Create New / Edit opens
+    (``?sub=<row id>`` or ``?new=1``). A row inside the object is saved by
+    writing the object with the changed row; a row of another collection is
+    an object of its own; a monitor row or an untied table is read-only."""
+    from flask import abort
+    from ..services import gui_products, gui_template
+    ad = gui_products.adapter(appl)
+    is_new = bool(request.args.get('new'))
+    sub = request.args.get('sub')
+    sid = src.get('field') or src.get('endpoint')
+    rows = _gx_subrows(appl, ad, {sid: src}, obj).get(sid) if sid else None
+    writable = False
+    if src.get('kind') == 'field':
+        writable = writer and ad.writable(coll) and rows is not None
+        row_ctx = {'subtable': src['field'], 'collection': '', 'source': 'field'}
+    elif src.get('kind') == 'collection':
+        writable = writer and ad.writable(src['endpoint'])
+        row_ctx = {'subtable': '', 'collection': src['endpoint'], 'source': 'collection'}
+    else:
+        row_ctx = {'subtable': '', 'collection': '', 'source': src.get('kind') or ''}
+    if is_new:
+        if not writable:
+            abort(404)      # a table SATOM cannot read is not written blind
+        rrow = {}
+    else:
+        rrow = next((r for r in rows or [] if sub is not None and str(r.get('id')) == str(sub)),
+                    None)
+        if rrow is None:
+            abort(404)
+    t3, rrow, _s = _gx_prepare(t2, key, row_ctx['collection'] or coll, ad.form_row(rrow),
+                               appl.kind)
+    dview = _gx_finish(gui_template.dialog_view(t3, key, rrow, dev, live=writable,
+                                                new=is_new and writable), appl.kind)
+    row_ctx.update(writable=writable, sub_id='' if is_new else str(sub), new=is_new,
+                   # the object the row is written inside ('' = a settings form)
+                   parent='' if name == '~' else name)
+    return _gx_render(appl, t3, match, dev, dview, page=page, vi=vi, coll=coll, name=name,
+                      main=main, is_new=False, can_edit=writable, obj=obj, row_ctx=row_ctx,
+                      mode='row', view=view)
 
 
 def _gx_new(appl, page, tpl, match, dialog):
     from ..services import gui_pages, gui_products, gui_template
     ad = gui_products.adapter(appl)
     vi, view = gui_pages.view_for_dialog(tpl, dialog)
-    coll = view.get('endpoint') or ''
+    if not any(r.get('dialog') == dialog for r in view.get('dialogs') or []) and \
+            not any(it.get('dialog') == dialog for it in view.get('create_menu') or []):
+        vi, view = next(((i, v) for i, v in enumerate(gui_pages.views(tpl))
+                         if any(it.get('dialog') == dialog for it in v.get('create_menu') or [])),
+                        (vi, view))
+    # the object Create New makes: the dialog's own endpoint when it names one
+    # (Zone on the Interfaces page creates in ``system/zone``), else the view's
+    coll = (tpl['dialogs'][dialog].get('endpoint') or view.get('endpoint') or '')
     dev = _gx_device(appl)
     row = dict(tpl['dialogs'][dialog].get('new_defaults') or {})
-    subrows = {st: [] for st in gui_template.row_dialogs(tpl, dialog).values() if st}
-    can_edit = current_user.can('config_write') and ad.writable(coll)
-    t2 = _gx_prepare(tpl, dialog, coll, row)
+    can_edit = current_user.can('config_write') and ad.writable(coll) \
+        and not gui_products.is_cli(coll)
+    row_ctx = None
+    if view.get('endpoint') == coll and not view.get('form'):
+        rows, meta = ad.rows(appl, coll)
+        table, note = _gx_singleton_table(view, rows, meta)
+        if table:
+            row_ctx = {'subtable': table, 'collection': '', 'writable': can_edit,
+                       'sub_id': '', 'new': True, 'source': 'field', 'parent': ''}
+        elif note:
+            can_edit = False
+    t2, row, sources = _gx_prepare(tpl, dialog, coll, row, appl.kind)
+    subrows = _gx_subrows(appl, ad, sources, None, new=True)
     dview = _gx_finish(gui_template.dialog_view(t2, dialog, row, dev, subrows=subrows,
                                                 live=can_edit, new=can_edit), appl.kind)
     # Create New lists the fields the device has outside the GUI too (the
-    # permanent rule): CLI-only ones are set once the object exists
-    nig_edit, nig = _gx_nig(appl, coll, {}, can_edit)
+    # permanent rule), from the keys the crawl measured for the object: the
+    # CLI-only ones are set once the object exists
+    nig_edit = nig = None
+    if not row_ctx:
+        nig_edit, nig = _gx_nig(appl, coll, {k: None for k in _gx_template_keys(tpl, view)},
+                                can_edit)
     return _gx_render(appl, t2, match, dev, dview, page=page, vi=vi, coll=coll, name=None,
-                      main=dialog, is_new=True, can_edit=can_edit, mode='new-object',
+                      main=dialog, is_new=True, can_edit=can_edit,
+                      mode='row' if row_ctx else 'new-object', row_ctx=row_ctx, view=view,
                       nig=nig, nig_edit=nig_edit)
 
 
@@ -1657,15 +1929,140 @@ def _gx_find_created(ad, appl, coll, body):
     return '', None
 
 
+def _gx_uninvert(fields: dict) -> dict:
+    """``!active`` (a control showing the negation of ``active``) -> ``active``
+    with the value negated, as the device stores it."""
+    out = {}
+    for k, v in (fields or {}).items():
+        if isinstance(k, str) and k.startswith('!') and len(k) > 1:
+            out[k[1:]] = 'false' if _gx_truthy(v) else 'true'
+        else:
+            out[k] = v
+    return out
+
+
+def _gx_table_allowed(tpl, coll, field, appl, ad) -> bool:
+    """Is ``field`` a table of ``coll`` this page's layout edits? An inline
+    table tied to it (:func:`gui_products.table_source`), or the table a list
+    view of a settings object shows (:func:`gui_products.singleton_table`)."""
+    from ..services import gui_pages, gui_products
+    for d in (tpl.get('dialogs') or {}).values():
+        dep = d.get('endpoint') or ''
+        for b in d.get('blocks') or []:
+            for f in b.get('fields') or []:
+                if f.get('kind') != 'table':
+                    continue
+                src = gui_products.table_source(appl.kind, dict(d, endpoint=dep or coll), f,
+                                                tpl.get('dialogs') or {})
+                if src.get('kind') == 'field' and src.get('field') == field and \
+                        (dep or coll) == coll:
+                    return True
+    for v in gui_pages.views(tpl):
+        if v.get('endpoint') == coll and not v.get('form'):
+            rows, meta = ad.rows(appl, coll)
+            if _gx_singleton_table(v, rows, meta)[0] == field:
+                return True
+    return False
+
+
+def _gx_save_row(appl, ad, tpl, coll, mkey, field, sub_id, op, fields, do_apply):
+    """Create / update / delete ONE row of an inline table: the parent object
+    is written with the changed row (same ritual as every save: dry run, then
+    apply through GuiOps, re-read, drift)."""
+    from ..services import gui_products
+    if not _gx_table_allowed(tpl, coll, field, appl, ad):
+        return jsonify(ok=False, error='not a table of this page'), 400
+    orig = ad.read(appl, coll, mkey or None)
+    if orig is None:
+        return jsonify(ok=False, error='the device did not answer for %s %s: nothing was sent'
+                       % (coll, mkey)), 409
+    before = next((r for r in orig.get(field) or [] if isinstance(r, dict)
+                   and gui_products.row_id(r) == str(sub_id)), None) if op != 'create' else None
+    if op != 'create' and before is None:
+        return jsonify(ok=False, error='row %s is not in %s' % (sub_id, field)), 404
+    row_body = ad.payload(fields, before or {}) if op != 'delete' else {}
+    try:
+        data, _b = gui_products.table_write(orig, field, op, sub_id, row_body)
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 404
+    res = gui_products.GuiOps(appl).run('update', coll, mkey or None, data,
+                                        dry_run=not do_apply)
+    diff = [{'key': '%s[%s].%s' % (field, sub_id or 'new', k), 'was': (before or {}).get(k),
+             'now': v} for k, v in (fields or {}).items()]
+    if op == 'delete':
+        diff = [{'key': '%s[%s]' % (field, sub_id), 'was': 'row', 'now': 'deleted'}]
+    after_row = drift = None
+    new_id = str(sub_id or '')
+    if do_apply and res['ok']:
+        ad.forget(appl, coll) if hasattr(ad, 'forget') else None
+        after = ad.read(appl, coll, mkey or None)
+        rows = [r for r in (after or {}).get(field) or [] if isinstance(r, dict)]
+        if op == 'create':
+            ident = next((k for k in ('name', 'id', 'seq-num') if k in row_body), None)
+            after_row = next((r for r in rows if ident and str(r.get(ident)) == str(row_body[ident])),
+                             None)
+            new_id = gui_products.row_id(after_row) if after_row else ''
+        elif op == 'update':
+            after_row = next((r for r in rows if gui_products.row_id(r) == str(sub_id)), None)
+        if op != 'delete' and after is not None:
+            drift = gui_products.drift(row_body, after_row or {})
+        elif op == 'delete' and after is not None:
+            if any(gui_products.row_id(r) == str(sub_id) for r in rows):
+                drift = [{'key': '%s[%s]' % (field, sub_id), 'sent': 'deleted', 'now': 'present'}]
+            else:
+                drift = []
+    return jsonify(ok=bool(res['ok']), dry_run=not do_apply, request=res.get('request'),
+                   diff=diff, error=res.get('error') or '', cli=None, cli_fields=[],
+                   mkey=mkey, sub_id=new_id, channel_warnings=[],
+                   verified=None if (not do_apply or drift is None) else not drift,
+                   drift=drift, cache_refreshed=False)
+
+
+def _gx_save_cli(appl, ad, coll, mkey, op, fields, do_apply):
+    """Save a FortiAuthenticator object only the CLI serves (``cli:``)
+    through the CLI writer: only its CLI-only fields, gated per exact build
+    (``not_in_gui.save`` -> ``cli_writer.split_payload``); dry run renders the
+    script, apply runs it and reads the object back in a fresh session."""
+    from ..services import gui_products, not_in_gui
+    if op != 'update':
+        return jsonify(ok=False, error='%s is served only by the CLI: SATOM edits its '
+                       'existing settings; create and delete are not offered here'
+                       % gui_products.cli_object(coll)), 400
+    fields = {k: v for k, v in (fields or {}).items() if k != '_edit'}
+    if not fields:
+        return jsonify(ok=False, error='no changes to save'), 400
+    orig = ad.read(appl, coll, mkey or None)
+    if orig is None:
+        return jsonify(ok=False, error='the CLI did not show %s %s: nothing was sent'
+                       % (gui_products.cli_object(coll), mkey)), 409
+    res = not_in_gui.save(appl, gui_products.cli_object(coll), mkey or None, fields,
+                          apply=do_apply)
+    cli = res.get('cli') or {}
+    req = {'method': 'CLI', 'path': gui_products.cli_object(coll) + (' ' + mkey if mkey else ''),
+           'body': cli.get('script') or []}
+    after = drift = None
+    if do_apply and res.get('ok'):
+        after = ad.read(appl, coll, mkey or None)
+        drift = gui_products.drift(fields, after)
+    diff = [{'key': k, 'was': orig.get(k), 'now': v} for k, v in fields.items()]
+    return jsonify(ok=bool(res.get('ok')), dry_run=not do_apply, request=req, diff=diff,
+                   error=res.get('error') or '', cli=cli or None, cli_fields=sorted(fields),
+                   mkey=mkey, channel_warnings=['%s: %s' % kv for kv in
+                                                sorted((res.get('refused') or {}).items())],
+                   verified=None if (not do_apply or after is None) else not drift,
+                   drift=drift, cache_refreshed=False)
+
+
 @bp.route('/<int:appliance_id>/fwgui-save', methods=['POST'])
 @login_required
 @require_permission('config_write')
 def fwgui_save(appliance_id):
     """Save a FortiGate / FortiAuthenticator GUI page (``op`` update / create
-    / delete). Dry run first (the exact request, the change, the CLI script
-    of the CLI-only fields); ``apply`` sends it through GuiOps (before-read,
-    audit, ChangeHistory), re-reads the object from the device and reports
-    any field it stored differently (``drift``); SATOM's copy is updated."""
+    / delete / clone; ``subtable`` + ``sub_id``: one row of an inline table).
+    Dry run first (the exact request, the change, the CLI script of the
+    CLI-only fields); ``apply`` sends it through GuiOps (before-read, audit,
+    ChangeHistory), re-reads the object from the device and reports any field
+    it stored differently (``drift``); SATOM's copy is updated."""
     from ..services import cli_writer, gui_pages, gui_products
     from .objedit import _channel_warnings, _cli_error, _cli_part
     appl = visible_appliance_or_404(appliance_id)
@@ -1674,11 +2071,15 @@ def fwgui_save(appliance_id):
         return jsonify(ok=False, error='FortiWeb pages save through the object editor'), 400
     body = request.get_json(silent=True) or {}
     op = body.get('op') or 'update'
-    if op not in ('update', 'create', 'delete'):
+    if op not in ('update', 'create', 'delete', 'clone'):
         return jsonify(ok=False, error='unknown operation'), 400
     page = str(body.get('page') or '')
     coll = str(body.get('collection') or '')
     mkey = str(body.get('mkey') or '')
+    if mkey == '~':             # a settings form's URL name
+        mkey = ''
+    sub = str(body.get('subtable') or '')
+    sub_id = '' if body.get('sub_id') in (None, '') else str(body.get('sub_id'))
     fields = body.get('fields') or {}
     do_apply = bool(body.get('apply'))
     tpl, _m = (gui_pages.template(page, gui_store_firmware(appl), product)
@@ -1690,15 +2091,26 @@ def fwgui_save(appliance_id):
     ad = gui_products.adapter(appl)
     if not ad.writable(coll):
         return jsonify(ok=False, error='No API on this build (GUI only): nothing is sent'), 400
-    if not isinstance(fields, dict) or (op != 'delete' and not fields):
+    if not isinstance(fields, dict) or (op in ('update', 'create') and not fields):
         return jsonify(ok=False, error='no changes to save'), 400
     gui_only = sorted(set(fields) & _gx_gui_only_keys(tpl))
     if gui_only:
         return jsonify(ok=False, error='No API on this build (GUI only) for: %s; nothing was '
                                        'sent' % ', '.join(gui_only)), 400
-    if op != 'create' and not mkey and not any(v.get('form') and v.get('endpoint') == coll
-                                               for v in gui_pages.views(tpl)):
+    fields = _gx_uninvert(fields)
+    if gui_products.is_cli(coll):
+        return _gx_save_cli(appl, ad, coll, mkey, op, fields, do_apply)
+    if sub:
+        if op == 'clone':
+            return jsonify(ok=False, error='a table row is not cloned'), 400
+        if op != 'create' and not sub_id:
+            return jsonify(ok=False, error='name the row'), 400
+        return _gx_save_row(appl, ad, tpl, coll, mkey, sub, sub_id, op, fields, do_apply)
+    is_form = any(v.get('form') and v.get('endpoint') == coll for v in gui_pages.views(tpl))
+    if op != 'create' and not mkey and not is_form:
         return jsonify(ok=False, error='name the object'), 400
+    if op == 'clone':
+        return _gx_clone(appl, ad, coll, mkey, str(body.get('new_name') or '').strip(), do_apply)
     orig = None
     if op != 'create':
         orig = ad.read(appl, coll, mkey)
@@ -1706,11 +2118,13 @@ def fwgui_save(appliance_id):
             return jsonify(ok=False, error='the device did not answer for %s %s: nothing was '
                                            'sent' % (coll, mkey)), 409
     # channel split (the same gate as every editor): CLI-only / hidden fields
-    # of this exact build go by SSH, the rest by REST
+    # of this exact build go by SSH, the rest by REST. A field of a nested
+    # object (``ipv6.ip6-mode``) is REST: the library names top-level fields.
     split = None
-    if op != 'delete' and product in cli_writer.DIALECTS:
+    flat = {k: v for k, v in fields.items() if not gui_products.is_dotted(k)}
+    if op != 'delete' and product in cli_writer.DIALECTS and flat:
         try:
-            split = cli_writer.split_payload(appl, gui_products.lib_key(product, coll), fields)
+            split = cli_writer.split_payload(appl, gui_products.lib_key(product, coll), flat)
         except Exception:  # noqa: BLE001 -- the library never sinks a REST save
             split = None
     cli_fields = dict((split or {}).get('cli') or {})
@@ -1727,7 +2141,8 @@ def fwgui_save(appliance_id):
     cli = _cli_part(appl, split, new_mkey, do_apply, res['ok']) if cli_fields else None
     ok = bool(res['ok']) and (cli is None or bool(cli.get('ok')))
     error = res.get('error') or (_cli_error(cli) if cli and not cli.get('ok') else '')
-    diff = [{'key': k, 'was': (orig or {}).get(k), 'now': v} for k, v in (fields or {}).items()]
+    flat_orig = gui_products.flat_dicts(orig or {})
+    diff = [{'key': k, 'was': flat_orig.get(k), 'now': v} for k, v in (fields or {}).items()]
     after = drift = None
     refreshed = False
     if do_apply and ok:
@@ -1752,6 +2167,35 @@ def fwgui_save(appliance_id):
                    verified=None if (not do_apply or op == 'delete' or after is None)
                    else not drift,
                    drift=drift, cache_refreshed=refreshed)
+
+
+def _gx_clone(appl, ad, coll, src_key, new_name, do_apply):
+    """Clone: create ``new_name`` with every field of ``src_key`` as the device
+    serves it (secrets are never read, so never copied), through the same
+    dry run -> apply -> re-read ritual as Create New."""
+    from ..services import gui_products
+    if not new_name or new_name == src_key:
+        return jsonify(ok=False, error='name the copy (a name other than the source)'), 400
+    src = ad.read(appl, coll, src_key)
+    if src is None:
+        return jsonify(ok=False, error='the device did not answer for %s %s: nothing was sent'
+                       % (coll, src_key)), 409
+    data = gui_products.clone_body(appl.kind, src, src_key, new_name)
+    res = gui_products.GuiOps(appl).run('create', coll, None, data, dry_run=not do_apply)
+    new_mkey, after, drift = '', None, None
+    if do_apply and res['ok']:
+        new_mkey, _hit = _gx_find_created(ad, appl, coll, data)
+        if new_mkey:
+            after = ad.read(appl, coll, new_mkey)
+            drift = gui_products.drift(data, after)
+        ad.after_write(appl, coll, new_mkey, after if after is not None else data, 'create')
+    return jsonify(ok=bool(res['ok']), dry_run=not do_apply, request=res.get('request'),
+                   diff=[{'key': k, 'was': '', 'now': v} for k, v in sorted(data.items())
+                         if not isinstance(v, (list, dict))],
+                   error=res.get('error') or '', cli=None, cli_fields=[], mkey=new_mkey,
+                   plan={'fields': len(data), 'source': src_key},
+                   channel_warnings=[], verified=None if after is None else not drift,
+                   drift=drift, cache_refreshed=False)
 
 
 def gui_store_firmware(appl):

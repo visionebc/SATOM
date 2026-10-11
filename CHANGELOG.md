@@ -6,6 +6,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — FortiADC: child tables are edited from the measured pages
+
+- **Create New, Edit and Delete row on a FortiADC child table** (pool members,
+  BFD interfaces, HA monitor lists…) now write the row under its parent object
+  (`POST|PUT|DELETE /api/<parent>_child_<table>?pkey=<parent>`), as the classic
+  ADC editor does: a dry run first, then the write, the change record, the
+  audit entry and a re-read. A child table posted as an object of its own is
+  refused (the row would land under no parent).
+- A settings object that has no fields of its own (BFD, Connection Limit) now
+  counts as drawn by the page that lists its child table, so its old menu entry
+  moves there.
+- With knowledge pack `kb-20261011.3` (harvester 0.9.5) the FortiADC pages bind
+  Routing › OSPF's settings to `router_ospf` (they were drawn over the area
+  table), split System Time into its manual and NTP objects, name GLB Host's
+  collection, and add High Availability › Configuration, Security Fabric ›
+  Automation and External Connectors, built from the device's schema.
+
 ### Changed — Server Policy: one list, with its actions on it
 
 - **Clone, Clone to, Migrate to, Enable, Disable and Delete run on the Server

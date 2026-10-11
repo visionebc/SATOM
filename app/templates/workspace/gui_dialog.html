@@ -279,7 +279,7 @@
   <div class="fwg-footer">
     {% if can_edit %}
     <button type="button" class="fwg-btn is-primary" data-fwg-save>{{ _('Save') }}</button>
-    {% if not _fwp and row_ctx and row_ctx.source == 'field' and not row_ctx.new and row_ctx.sub_id %}<button type="button" class="fwg-btn" data-fwg-delete-row>{{ _('Delete row') }}</button>{% endif %}
+    {% if not _fwp and row_ctx and row_ctx.source in ('field', 'child') and not row_ctx.new and row_ctx.sub_id %}<button type="button" class="fwg-btn" data-fwg-delete-row>{{ _('Delete row') }}</button>{% endif %}
     <span class="small text-muted" data-fwg-status></span>
     {% else %}
     <span class="fwg-btn is-primary" aria-disabled="true" title="{{ _('Read-only: nothing is sent to the device.') }}">{{ _('OK') }}</span>

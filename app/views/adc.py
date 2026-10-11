@@ -117,6 +117,15 @@ def menu_page(item_key):
     tab = next((t for t in item.tabs if t.logical == tab_key), item.tabs[0])
 
     appliance = _current_adc()
+    # a leaf whose every tab has a measured FortiADC GUI page moves there
+    # (services.gui_classic); the sidebar no longer links this page at all
+    try:
+        from ..services import gui_classic
+        moved = gui_classic.redirect_item(appliance, item, request.args.get('tab'), request.args)
+    except Exception:  # noqa: BLE001 -- the old page always renders
+        moved = None
+    if moved:
+        return redirect(moved)
     rows, error, columns = [], None, []
     if appliance is not None:
         raw, error = FortiADCClient(appliance).list_with_error(tab.logical)

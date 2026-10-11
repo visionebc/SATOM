@@ -6,6 +6,31 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — The FortiADC ADOM draws only the device's own menu; 23 FortiADC page layouts were refused on import
+
+- **The hand-made FortiADC menu leaves the sidebar**, as it did for FortiWeb,
+  FortiGate and FortiAuthenticator. The device group, built from the GUI
+  layouts measured on its build, is the only device menu. An old
+  `/adc/m/<item>` URL redirects to the measured page drawing the same
+  collections (`?classic=1` keeps the old page; a leaf no measured page covers
+  still renders). With no device, or no layout for its build, the FortiADC
+  group keeps SATOM's own **Signatures** overview.
+- **The Virtual Server wizard** (virtual server, pool and members in one
+  dry-run-first flow) was linked only from the old Virtual Server page: the
+  measured Virtual Server list now has a **Wizard** button.
+- **Layouts refused on import.** The knowledge pack carries 101 FortiADC 7.6.7
+  page layouts; 23 were refused as "malformed": a page with one tab drawn by a
+  GUI widget (System > Settings > Firmware is the hash route
+  `gui:#navigate/Config/system/settings`) and two pages whose child tables are
+  named after a field (`…_child_client_request_header_erase`,
+  `…_child_upload_file_type`) were read as device actions. The FortiADC grammar
+  accepts the hash route where SATOM reads (never in a write), and a child
+  table is checked for actions by its parent entity only. System > Settings,
+  Health Check, LB Profiles, Input Validation and the log and FortiView pages
+  load; System > Debug is still refused.
+- An old URL moves to a collection's configuration page, never to a FortiView
+  dashboard that also reads it (`system_global` went to the Threat Map).
+
 ### Fixed — Approving a WPP template deployed it to every FortiWeb, ignoring bindings and variables; the signature editor had no way in; CLI-only builds blocked every template apply
 
 - **Approval auto-deploy follows the bindings.** Approving a Web Protection

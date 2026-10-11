@@ -842,16 +842,6 @@ def create_app(config_override: object | None = None) -> Flask:
         except Exception:
             _unread_notif = 0
             _notif_preview = []
-        # FortiADC sidebar menu (only built for fortiadc sessions; pure data,
-        # registry-resolved, cached per process — see services.adc_menu).
-        try:
-            if prod.get('key') == 'fortiadc':
-                from .services import adc_menu as _adcm
-                _adc_nav = _adcm.menu()
-            else:
-                _adc_nav = ()
-        except Exception:
-            _adc_nav = ()
         # FortiAnalyzer sidebar menu (only built for fortianalyzer sessions;
         # static curated menu — no backend yet, see services.faz_menu).
         try:
@@ -864,8 +854,9 @@ def create_app(config_override: object | None = None) -> Flask:
             _faz_nav = ()
         # FortiGate / FortiAuthenticator / FortiADC: the device's own menu
         # tree from its measured GUI layouts (services.gui_pages, like the
-        # FortiWeb group) -- the only device menu of the FortiGate and
-        # FortiAuthenticator ADOMs. The device is the page's own on a GUI
+        # FortiWeb group) -- the only device menu of these ADOMs (the
+        # hand-made adc_menu groups left the FortiADC sidebar 2026-10-11).
+        # The device is the page's own on a GUI
         # page, else the ADOM's current one.
         _gx_appl, _gx_nav = None, []
         try:
@@ -884,12 +875,6 @@ def create_app(config_override: object | None = None) -> Flask:
                     _gx_appl = None
         except Exception:
             _gx_appl, _gx_nav = None, []
-        if prod.get("key") == "fortiadc" and _gx_nav:
-            # A FortiADC with a measured layout for its build draws its own
-            # menu (partials/nav_fortiadc.html); the hand-made adc_menu groups
-            # stay the fallback for a device (or no device) with none, so the
-            # ADOM never ends up with an empty menu.
-            _adc_nav = ()
         try:
             _env_mode = _store.env_mode()
         except Exception:
@@ -913,7 +898,6 @@ def create_app(config_override: object | None = None) -> Flask:
             'ha_mode': _ha_mode,
             'node_role': _node_role,
             'node_name': _node_name,
-            'adc_nav': _adc_nav,
             'faz_nav': _faz_nav,
             'gx_appliance': _gx_appl,
             'gx_nav': _gx_nav,

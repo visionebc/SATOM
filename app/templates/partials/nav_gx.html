@@ -1,7 +1,7 @@
 {# FortiGate / FortiAuthenticator / FortiADC: the device's OWN menu tree, every page SATOM
    has a measured GUI layout for (services.gui_pages; layouts per build from
    the knowledge packs), drawn like the FortiWeb group. Since 2026-10-11 the
-   old fgt_menu / fac_menu groups are not drawn at all; their URLs redirect to
+   old fgt_menu / fac_menu / adc_menu groups are not drawn at all; their URLs redirect to
    these pages (services.gui_classic.redirect_for). Expects gx_nav / gx_appliance. #}
 {% if gx_nav and gx_appliance and may_open('workspace.fwgui_index') %}
 {% set _gx_label = {'fortigate': 'FortiGate', 'fortiauthenticator': 'FortiAuthenticator', 'fortiadc': 'FortiADC'}.get(gx_appliance.kind, gx_appliance.kind) %}

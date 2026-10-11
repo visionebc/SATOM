@@ -112,6 +112,31 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="changed--the-fortiadc-adom-draws-only-the-devices-own-menu-23-fortiadc-page-layouts-were-refused-on-import">Changed — The FortiADC ADOM draws only the device's own menu; 23 FortiADC page layouts were refused on import</h3>
+<ul>
+<li><strong>The hand-made FortiADC menu leaves the sidebar</strong>, as it did for FortiWeb,
+  FortiGate and FortiAuthenticator. The device group, built from the GUI
+  layouts measured on its build, is the only device menu. An old
+  <code>/adc/m/&lt;item&gt;</code> URL redirects to the measured page drawing the same
+  collections (<code>?classic=1</code> keeps the old page; a leaf no measured page covers
+  still renders). With no device, or no layout for its build, the FortiADC
+  group keeps SATOM's own <strong>Signatures</strong> overview.</li>
+<li><strong>The Virtual Server wizard</strong> (virtual server, pool and members in one
+  dry-run-first flow) was linked only from the old Virtual Server page: the
+  measured Virtual Server list now has a <strong>Wizard</strong> button.</li>
+<li><strong>Layouts refused on import.</strong> The knowledge pack carries 101 FortiADC 7.6.7
+  page layouts; 23 were refused as "malformed": a page with one tab drawn by a
+  GUI widget (System &gt; Settings &gt; Firmware is the hash route
+  <code>gui:#navigate/Config/system/settings</code>) and two pages whose child tables are
+  named after a field (<code>…_child_client_request_header_erase</code>,
+  <code>…_child_upload_file_type</code>) were read as device actions. The FortiADC grammar
+  accepts the hash route where SATOM reads (never in a write), and a child
+  table is checked for actions by its parent entity only. System &gt; Settings,
+  Health Check, LB Profiles, Input Validation and the log and FortiView pages
+  load; System &gt; Debug is still refused.</li>
+<li>An old URL moves to a collection's configuration page, never to a FortiView
+  dashboard that also reads it (<code>system_global</code> went to the Threat Map).</li>
+</ul>
 <h3 id="fixed--approving-a-wpp-template-deployed-it-to-every-fortiweb-ignoring-bindings-and-variables-the-signature-editor-had-no-way-in-cli-only-builds-blocked-every-template-apply">Fixed — Approving a WPP template deployed it to every FortiWeb, ignoring bindings and variables; the signature editor had no way in; CLI-only builds blocked every template apply</h3>
 <ul>
 <li><strong>Approval auto-deploy follows the bindings.</strong> Approving a Web Protection

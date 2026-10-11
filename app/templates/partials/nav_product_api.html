@@ -8,8 +8,8 @@
    drew its entry for everyone while FortiADC / FortiAnalyzer pinned theirs
    behind users.manage — three rules for one page shape.
    ========================================================================= #}
-{# FortiADC: the device's measured menu sits just above API, where the
-   adc_menu groups end (partials/nav_fortiadc.html; draws nothing elsewhere). #}
+{# FortiADC: the device's measured menu sits just above API, right after the
+   Fleet group (partials/nav_fortiadc.html; draws nothing elsewhere). #}
 {% include 'partials/nav_fortiadc.html' %}
 {% set _api_bp = {'fortiadc': 'adc_api', 'fortianalyzer': 'faz_api',
                   'fortiauthenticator': 'fac_api'}.get(product.key) %}

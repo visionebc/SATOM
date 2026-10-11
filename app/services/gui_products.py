@@ -653,6 +653,10 @@ ADC_CHILD = "_child_"
 #: 7.6.7 build0676): a layout may name one where SATOM reads; the adapter
 #: lists entities only, so such a view reads as an error, never a guess.
 _ADC_GET_HELPER = re.compile(r"[a-z][a-z0-9_]{0,127}/get_[a-z0-9_]{1,64}")
+#: A FortiADC GUI page with no REST entity behind it: the GUI's own hash route
+#: (``gui:#navigate/Config/system/settings`` -- the Firmware tab of System >
+#: Settings, the log pages, FortiView). Read only, like ``gui:/<path>``.
+_ADC_GUI_ROUTE = re.compile(r"gui:#navigate(/[A-Za-z0-9_-][A-Za-z0-9_.-]*)+")
 #: Field names never echoed back: passwords, pass phrases, secrets, PSKs,
 #: private keys, credentials, and any ``key`` / ``token`` (``api-key``,
 #: ``ssh_key``) -- but not ``mkey`` / ``pkey`` (the object's own name) nor
@@ -978,7 +982,9 @@ def unsafe_endpoint(product: str, ep, role: str = READ) -> str:
     """Why ``ep`` may not stand at ``role`` in a ``product`` layout ("" = it may).
 
     FortiADC: a REST entity (``load_balance_virtual_server``) anywhere,
-    ``gui:<path>`` only where SATOM reads, no crawled form post.
+    ``gui:<path>`` and the GUI's hash route ``gui:#navigate/...`` only where
+    SATOM reads, no crawled form post; a child table's own name is never read
+    as an action (only its parent entity's).
     FortiGate: a cmdb path anywhere; ``monitor:<path>`` and ``gui:<path>``
     only where SATOM reads (the monitor tree holds status and the device's
     actions, never configuration: one in a write or a bind is an action
@@ -1002,7 +1008,7 @@ def unsafe_endpoint(product: str, ep, role: str = READ) -> str:
         # the bare REST entity anywhere; ``gui:<path>`` only where SATOM reads
         if role == READ:
             ok = _ADC_ENTITY.fullmatch(ep) or _ADC_GET_HELPER.fullmatch(ep) \
-                or _GUI_PATH.fullmatch(ep)
+                or _GUI_PATH.fullmatch(ep) or _ADC_GUI_ROUTE.fullmatch(ep)
         elif role == WRITE:
             ok = _ADC_ENTITY.fullmatch(ep)
         else:
@@ -1025,7 +1031,14 @@ def unsafe_endpoint(product: str, ep, role: str = READ) -> str:
             return "an authentication action resource"
     else:
         return "no endpoint grammar for product %r" % product
-    if _ACTION.search(ep.split(":", 1)[1] if ":" in ep else ep):
+    body = ep.split(":", 1)[1] if ":" in ep else ep
+    if product == FORTIADC and ADC_CHILD in body:
+        # a child table is a list inside a configuration object: its own name
+        # is a field of that object (``load_balance_profile_child_client_
+        # request_header_erase``: the headers an HTTP profile erases), so only
+        # the parent entity can name an action
+        body = body.split(ADC_CHILD, 1)[0]
+    if _ACTION.search(body):
         return "names a device action"
     return ""
 

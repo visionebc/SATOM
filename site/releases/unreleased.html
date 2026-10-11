@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changed · 174 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changed · 176 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changed · 174 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changed · 176 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changed · 174 entries</span>
-        <ul class="rel-leads"><li>Create New, Edit and Delete row on a FortiADC child table</li><li>Clone, Clone to, Migrate to, Enable, Disable and Delete run on the Server Policy list itself</li><li>Several policies at once</li><li class="rel-more">… and 171 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Changed · 176 entries</span>
+        <ul class="rel-leads"><li>Create New, Edit and Delete row on a FortiADC child table</li><li>Clone, Clone to, Migrate to, Enable, Disable and Delete run on the Server Policy list itself</li><li>Several policies at once</li><li class="rel-more">… and 173 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.0.0.html" data-rel-version="3.0.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.0.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -360,6 +360,20 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="added--fortiadc-not-in-gui-but-in-cli-in-the-device-menu">Added — FortiADC: "Not in GUI, but in CLI" in the device menu</h3>
+<ul>
+<li>The objects a FortiADC has that its own GUI does not draw on that build now
+  have pages of their own, in a menu group titled <strong>Not in GUI, but in CLI</strong>
+  (knowledge pack <code>kb-20261011.5</code>, harvester 0.9.7). On 7.6.7: VDOM and VDOM
+  links, per-VDOM syslog and FortiAnalyzer, the alert e-mail / SNMP trap /
+  syslog / webhook targets, DNS, connection pool, the old Bot Detection and
+  more — 45 objects in 12 pages. Absence is measured: the crawl opened every
+  menu entry and recorded every read. Each page says so above its list.</li>
+<li>An old FortiADC menu entry no longer waits for an object the device's build
+  does not serve (the registry's sweep evidence: App Portal, SSO admin and
+  three more are FortiADC 8.0 objects a 7.6.7 answers 404 for); it moves to
+  the measured page of what the build has.</li>
+</ul>
 <h3 id="added--fortiadc-child-tables-are-edited-from-the-measured-pages">Added — FortiADC: child tables are edited from the measured pages</h3>
 <ul>
 <li><strong>Create New, Edit and Delete row on a FortiADC child table</strong> (pool members,

@@ -6,6 +6,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — FortiADC: "Not in GUI, but in CLI" in the device menu
+
+- The objects a FortiADC has that its own GUI does not draw on that build now
+  have pages of their own, in a menu group titled **Not in GUI, but in CLI**
+  (knowledge pack `kb-20261011.5`, harvester 0.9.7). On 7.6.7: VDOM and VDOM
+  links, per-VDOM syslog and FortiAnalyzer, the alert e-mail / SNMP trap /
+  syslog / webhook targets, DNS, connection pool, the old Bot Detection and
+  more — 45 objects in 12 pages. Absence is measured: the crawl opened every
+  menu entry and recorded every read. Each page says so above its list.
+- An old FortiADC menu entry no longer waits for an object the device's build
+  does not serve (the registry's sweep evidence: App Portal, SSO admin and
+  three more are FortiADC 8.0 objects a 7.6.7 answers 404 for); it moves to
+  the measured page of what the build has.
+
 ### Added — FortiADC: child tables are edited from the measured pages
 
 - **Create New, Edit and Delete row on a FortiADC child table** (pool members,

@@ -40,6 +40,12 @@
 </div>
 {% endif %}
 {% endif %}
+{% if tpl.gui_absent %}
+<div class="fw-alert fw-alert-info" data-gui-absent>
+  <i class="bi bi-terminal me-1"></i>
+  {{ _('Not in GUI, but in CLI: %(dv)s has these objects and its own GUI does not draw them on this build (measured: no page of the GUI reads them). The fields come from the device\'s schema; every change shows its request first.', dv=appliance.name) }}
+</div>
+{% endif %}
 {% if not dev.opmode and _bl == 'FortiWeb' %}
 <div class="fw-alert fw-alert-warning">{{ _('Operation mode not cached for this device: fields that depend on it are shown and marked.') }}</div>
 {% endif %}

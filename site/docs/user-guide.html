@@ -2720,12 +2720,16 @@ audits it; secrets are never echoed back.</p>
   from their parent's dialog: <strong>Create New</strong>, <strong>Edit</strong> and <strong>Delete row</strong> write
   the row under its parent (<code>?pkey=&lt;parent&gt;</code>), with the same dry run first. A
   row is never written as an object of its own.</li>
-<li>
-<p>Pages FortiADC draws with a custom widget SATOM cannot measure (High
+<li>Pages FortiADC draws with a custom widget SATOM cannot measure (High
   Availability › Configuration, Security Fabric › Automation and External
   Connectors) are built from the device's own schema, the metadata the
   FortiADC GUI builds its generic forms from: the fields and their types are the
-  device's, the layout on screen is SATOM's.</p>
+  device's, the layout on screen is SATOM's.</li>
+<li>
+<p><strong>Not in GUI, but in CLI</strong> — a menu group of its own: the objects the device
+  has that its GUI does not draw on that build (measured: no page of the GUI
+  reads them), one page per CLI path, with list, edit dialog and the usual dry
+  run. Each page says so above its list.</p>
 </li>
 <li>
 <p>Object pages use the same form engine: identity/mkey handling, child tables

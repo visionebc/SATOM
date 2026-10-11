@@ -290,6 +290,14 @@ def is_blocking(rep: dict) -> bool:
             or bool((rep.get("counts") or {}).get(vc.STATE_UNMEASURED)))
 
 
+def _blocks_beyond_unmeasured(rep: dict) -> bool:
+    """:func:`is_blocking` without the ``unmeasured`` clause."""
+    return (bool(rep.get("dropped_total")) or bool(rep.get("renamed_total"))
+            or bool(rep.get("absent_keys"))
+            or any(r.get("level") == "block" and r.get("state") != vc.STATE_UNMEASURED
+                   for r in rep.get("rows") or []))
+
+
 def verdict_text(summary: dict) -> str:
     """One sentence for a :func:`summarize` result (or a raw report)."""
     if not summary:
@@ -431,6 +439,20 @@ def for_appliances(template, appliances, *, require_validated: bool = False) -> 
     validated = template.validated_builds_dict
     by_build: dict[str, dict] = {}
     devices, blocks, warnings = [], [], []
+    # Both channels of each target's exact build (services.build_compat via
+    # version_compat.build_check): per-appliance field warnings, the fields to
+    # strip per device, and blocks for invalid values / objects the build lacks.
+    product = getattr(template, "product", "") or next(
+        (vc._product_of(a) for a in appliances or [] if vc._product_of(a)), "fortiweb")
+    build = vc.build_check(product, list(appliances or []), build_objects(template.body_dict))
+    # "unmeasured" blocks because a build with NO evidence was never shown to
+    # fit. A build whose CLI tree answers for every object of the body has
+    # evidence: only its REST sweep is missing, and build_check above already
+    # checks the fields on the channel that was measured. Blocking there made
+    # every apply to a CLI-only build impossible.
+    cli_covered = {v for v, b in (build.get("builds") or {}).items()
+                   if b.get("objects") and all(o.get("present") not in (None, "", "unknown")
+                                               for o in b["objects"])}
     for a in appliances or []:
         name = getattr(a, "name", "") or "device %s" % getattr(a, "id", "?")
         v = vc._resolved(a).get("version") or ""
@@ -447,6 +469,14 @@ def for_appliances(template, appliances, *, require_validated: bool = False) -> 
         rep = by_build[v]
         reasons = []
         blocking = rep["blocking"]
+        unmeasured = sorted({r.get("key") for r in rep.get("rows") or []
+                             if r.get("state") == vc.STATE_UNMEASURED})
+        cli_only = bool(unmeasured) and v in cli_covered
+        if cli_only and blocking and not _blocks_beyond_unmeasured(rep):
+            blocking = False
+            warnings.append("%s (%s): REST never measured %s on this build; its CLI "
+                            "tree did, so the fields are checked on that channel"
+                            % (name, v, ", ".join(unmeasured)))
         if rep.get("absent_keys"):
             reasons.append("%s does not serve %s" % (v, ", ".join(rep["absent_keys"][:4])))
         for r in rep.get("rows") or []:
@@ -456,7 +486,7 @@ def for_appliances(template, appliances, *, require_validated: bool = False) -> 
             for x in r.get("renamed") or []:
                 reasons.append("%s renamed %s.%s → %s (adapt the template)" % (
                     v, r["key"], x["from"], x["to"]))
-            if r.get("state") == vc.STATE_UNMEASURED:
+            if r.get("state") == vc.STATE_UNMEASURED and not cli_only:
                 reasons.append("no evidence for %s on %s — measure the build "
                                "before applying" % (v, r["key"]))
         undecided = undecided_new_fields(template, rep)
@@ -482,12 +512,6 @@ def for_appliances(template, appliances, *, require_validated: bool = False) -> 
                         "reason": "; ".join(reasons) or vc.STATE_LABEL.get(
                             rep["state"], rep["state"])})
     outside = sorted({o for r in by_build.values() for o in r.get("outside") or []})
-    # Both channels of each target's exact build (services.build_compat via
-    # version_compat.build_check): per-appliance field warnings, the fields to
-    # strip per device, and blocks for invalid values / objects the build lacks.
-    product = getattr(template, "product", "") or next(
-        (vc._product_of(a) for a in appliances or [] if vc._product_of(a)), "fortiweb")
-    build = vc.build_check(product, list(appliances or []), build_objects(template.body_dict))
     by_dev = {d.get("appliance_id"): d for d in build.get("devices") or []}
     block_texts = {(m["build"], m["text"]) for m in build.get("messages") or []
                    if m["level"] == "block"}

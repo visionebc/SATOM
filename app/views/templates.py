@@ -403,15 +403,33 @@ def _approval_builds(row: Template) -> list[str]:
     return builds
 
 
-def _wpp_rollout_targets() -> list[int]:
-    """The devices an approved WPP template rolls out to: visible FortiWebs.
+def _wpp_rollout_targets(row: Template | None = None) -> list[int]:
+    """The devices an approved WPP template rolls out to.
 
-    ``visible_appliances()`` in the Global or FortiWeb ADOM also returns
-    FortiADC / FortiAnalyzer / FortiAuthenticator rows, which have no Web
-    Protection Profile to receive.
+    Visible FortiWebs: ``visible_appliances()`` in the Global or FortiWeb ADOM
+    also returns FortiADC / FortiAnalyzer / FortiAuthenticator rows, which have
+    no Web Protection Profile to receive.
+
+    With ``row``, the scope is the one the WPP lock uses
+    (:func:`template_bindings.locked_families`): a family with no binding
+    governs every FortiWeb; a bound family governs only its bound devices, and
+    of those only the ones whose binding FOLLOWS this version -- a device pinned
+    to another version keeps it. The approval used to deploy to every FortiWeb
+    whatever the bindings said.
     """
-    return [a.id for a in visible_appliances()
-            .filter(Appliance.kind == 'fortiweb').all()]
+    ids = [a.id for a in visible_appliances()
+           .filter(Appliance.kind == 'fortiweb').all()]
+    if row is None:
+        return ids
+    binds = tb.for_template(row)
+    if not binds:
+        return ids
+    follows = set()
+    for b in binds:
+        t = tb.resolve(b)
+        if t is not None and t.id == row.id:
+            follows.add(b.appliance_id)
+    return [i for i in ids if i in follows]
 
 
 @bp.route('/<int:template_id>/approve', methods=['POST'])
@@ -451,8 +469,28 @@ def approve(template_id: int):
     from flask import current_app
     if (row.kind == Template.KIND_WEB_PROTECTION
             and not current_app.config.get('TESTING')):
-        device_ids = _wpp_rollout_targets()
+        device_ids = _wpp_rollout_targets(row)
         items = iter_push_items(row.body_dict)
+        if items and not device_ids and tb.for_template(row):
+            flash(f'"{row.name}" v{row.version} was not deployed: no bound device '
+                  'follows this version (their bindings pin another one).', 'info')
+        # {{ variables }} are rendered per device from its binding, as the Apply
+        # button does. A device left without a value holds the whole deploy: a
+        # literal placeholder must never reach a box, and there is no value to
+        # override with.
+        bodies, missing_vars = tb.render_for_devices(row, device_ids)
+        if device_ids and items and missing_vars:
+            names = {a.id: a.name for a in visible_appliances()
+                     .filter(Appliance.id.in_(list(missing_vars))).all()}
+            why = '; '.join('%s: no value for %s' % (names.get(aid, aid), ', '.join(m))
+                            for aid, m in sorted(missing_vars.items()))
+            log_action('template.approve.autodeploy.held',
+                       target=f'{row.kind}/{row.name}',
+                       detail=('variables unset: ' + why)[:1500])
+            flash(f'Fleet deploy of "{row.name}" v{row.version} HELD — {why}. '
+                  'Set the values on the device bindings, then apply.', 'danger')
+            return redirect(_safe_next(url_for('templates.index')))
+        items_by_device = {aid: iter_push_items(b) for aid, b in bodies.items()}
         if device_ids and items:
             allowed, compat = tc.enforce(
                 row, visible_appliances().filter(Appliance.id.in_(device_ids)).all(),
@@ -476,12 +514,13 @@ def approve(template_id: int):
                       'trigger': 'approve'},
                 audit_action='template.apply',
                 audit_target=f'{row.kind}/{row.name}',
-                skips=compat.get('skips'))
+                skips=compat.get('skips'), items_by_device=items_by_device or None)
             log_action('template.approve.autodeploy',
                        target=f'{row.kind}/{row.name}',
                        detail=f'devices={device_ids} items={len(items)} '
                               f'job={job["id"]}')
-            flash(f'Deploying "{row.name}" v{row.version} to ALL '
+            scope = 'the bound' if tb.for_template(row) else 'ALL'
+            flash(f'Deploying "{row.name}" v{row.version} to {scope} '
                   f'{len(device_ids)} device(s) — progress in the job dock.',
                   'info')
     return redirect(_safe_next(url_for('templates.index')))

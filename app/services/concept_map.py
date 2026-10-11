@@ -385,6 +385,12 @@ PAGES: tuple[dict, ...] = (
        "Logs pulled from the device itself."),
 
     # ---- Automation & Change ----------------------------------------------
+    _p("templates.matrix", "Template compatibility matrix", "automation",
+       "template matrix compatibility firmware build fits adapt unmeasured blocked version",
+       "Every template of the ADOM against every firmware build it knows."),
+    _p("provisioning.compare", "Compare templates", "automation",
+       "compare template newer version diff field valid build device variables adapt",
+       "A template against a newer version, field by field, valid or not on a build."),
     _p("templates.index", "Templates", "automation",
        "template desired state reusable config snippet draft approve",
        "Reusable configuration fragments, drafted and approved."),

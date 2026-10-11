@@ -6,6 +6,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — FortiADC: FortiView monitors in the menu
+
+- The FortiView pages (and Global Resources, Adaptive Learning View) are in
+  the FortiADC menu at their place (knowledge pack `kb-20261011.8`). They draw
+  live data, not configuration: the page says so and links to the same page
+  on the device.
+
 ### Added — FortiGate and FortiAuthenticator: what the crawl could not draw
 
 - With knowledge pack `kb-20261011.7` (harvester 0.9.9) the FortiGate ADOM

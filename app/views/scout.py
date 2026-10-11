@@ -143,8 +143,10 @@ def index():
         "field_help": scout_config.walk_help(),
         "report": None,
         "error": "",
-        "form": {"appliance_id": request.form.get("appliance_id", ""),
-                 "policy": request.form.get("policy", ""),
+        # appliance_id/policy also come from the query string: Fleet ->
+        # Architecture links a device element straight to its Scout form.
+        "form": {"appliance_id": request.values.get("appliance_id", ""),
+                 "policy": request.values.get("policy", ""),
                  "hostname": request.form.get("hostname", ""),
                  "port": request.form.get("port", ""),
                  "scheme": request.form.get("scheme", "https"),

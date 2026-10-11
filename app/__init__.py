@@ -440,7 +440,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        # its own devices and probes, and anything added from the
                        # Global ADOM for a device of this product shows up here
                        # automatically. Certificate Manager stays Global-only.
-                       'architecture', 'metrics', 'search', 'analysis',
+                       'architecture', 'netarch', 'metrics', 'search', 'analysis',
                        'fleet_objects', 'dns_tool',
                        'monitoring', 'deep_monitor', 'service_monitor',
                        'monitor_analytics', 'monitor_reports',
@@ -497,7 +497,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        # Scout + Calendar: drawn by the shared Fleet group
                        # (partials/nav_fleet.html) in every ADOM.
                        'scout', 'calendar_plan',
-                       'architecture', 'metrics', 'search', 'analysis',
+                       'architecture', 'netarch', 'metrics', 'search', 'analysis',
                        'fleet_objects', 'dns_tool', 'backups',
                        # Mirrored per-ADOM monitoring (2026-07-28) — see the
                        # ADC note above; scoping is by device kind.
@@ -549,7 +549,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        # can only schedule work it can also see.
                        'scheduled_actions',
                        'scout', 'calendar_plan',   # see the faz_bps note
-                       'architecture', 'metrics', 'search', 'analysis',
+                       'architecture', 'netarch', 'metrics', 'search', 'analysis',
                        'fleet_objects', 'dns_tool',
                        # Mirrored per-ADOM monitoring (2026-07-28) — scoping is
                        # by device kind, so a FAC session sees only FAC boxes.
@@ -589,7 +589,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        'database', 'locks', 'segments', 'device_provision',
                        'cr_types', 'process', 'scheduled_actions',
                        'scout', 'calendar_plan',   # see the faz_bps note
-                       'architecture', 'metrics', 'search', 'analysis',
+                       'architecture', 'netarch', 'metrics', 'search', 'analysis',
                        'fleet_objects', 'dns_tool',
                        'monitoring', 'deep_monitor', 'service_monitor',
                        'monitor_analytics', 'monitor_reports',
@@ -2214,6 +2214,9 @@ def create_app(config_override: object | None = None) -> Flask:
             # never makes template_bindings and the template lock, the apply
             # and the upgrade pre-flight fail on the first lookup.
             from . import models_tpl_binding  # noqa: F401
+            # Fleet -> Architecture drawings. Without this import create_all()
+            # never makes arch_diagrams and the page fails on its first query.
+            from . import models_netarch  # noqa: F401
             # Sentinel's two collectors (http_status, infra) join the
             # fleet collection registry here so the scheduler sidecar — which
             # never imports a view — provisions and runs them like any other.
@@ -2393,6 +2396,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.exceptions", "bp"),
         ("app.views.attack_search", "bp"),
         ("app.views.architecture", "bp"),
+        ("app.views.netarch", "bp"),
         ("app.views.line_profiles", "bp"),
         ("app.views.spo_wizard", "bp"),
         ("app.views.analysis", "bp"),

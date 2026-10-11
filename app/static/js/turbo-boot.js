@@ -30,10 +30,19 @@
   if (!window.Turbo) return;   // Turbo failed to load → app behaves exactly as before.
 
   // Links = Turbo (client-side, preserves the runtime). Forms = native submit.
-  try { window.Turbo.setFormMode('optin'); } catch (e) {}
+  // Turbo.config is the current API; the top-level setters are deprecated
+  // (a console warning on every full load) and kept only as the fallback.
+  var tcfg = window.Turbo.config;
+  try {
+    if (tcfg && tcfg.forms) tcfg.forms.mode = 'optin';
+    else window.Turbo.setFormMode('optin');
+  } catch (e) {}
 
   // Show progress bar immediately (default is 500ms delay).
-  try { window.Turbo.setProgressBarDelay(0); } catch (e) {}
+  try {
+    if (tcfg && tcfg.drive) tcfg.drive.progressBarDelay = 0;
+    else window.Turbo.setProgressBarDelay(0);
+  } catch (e) {}
 
   var origAdd = document.addEventListener.bind(document);
 

@@ -1,4 +1,6 @@
-"""Targeted rediscovery: after a write lands, re-read ONLY what it touched.
+"""Targeted rediscovery + verification: after a write lands, re-read ONLY what
+it touched, keep SATOM's copy current, and check the device now holds what was
+asked.
 
 The pages draw from the DB-first cache; the box is swept on an explicit ⟳ or a
 rediscovery. Every config write SATOM makes to a FortiWeb goes through
@@ -9,13 +11,25 @@ landed on the device while every list kept drawing the pre-write copy until the
 next full sweep (measured 2026-10-12 on fortiweb17: two policies the device had
 enabled were still drawn disabled).
 
-One rule, at the one choke point: an OK write → one GET of the object (or the
-sub-table) it touched → that object's cache rows, in every layer, are refreshed,
-inserted or removed. Nothing else is read, so the cost is one request per write,
-and only when the cache actually holds something to keep current.
+And "ok" used to mean only "the device ACCEPTED the request" (no errcode).
+FortiWeb builds are known to answer 200 and drop a field (see
+``version_compat``), so an accepted write is not proof of a change. The same
+re-read answers both questions.
 
-Never raises into the write path: a failed re-read leaves the row as it was and
-reports why; the next ⟳ fixes it.
+One rule, at the one choke point: an OK write → one GET of the object (or the
+sub-table) it touched →
+
+* **cache**: that object's rows, in every layer, are refreshed, inserted or
+  removed — only when SATOM holds a copy of it;
+* **verify**: every scalar field that was sent is compared with what the device
+  now returns. ``verified`` = all compared fields match (a delete: the object is
+  gone); ``mismatch`` = the device accepted the write and does NOT hold it;
+  ``unverified`` = nothing could be compared (re-read failed, only secrets or
+  sub-tables were sent, a field the read does not return).
+
+The verdict is reported, never acted on here: whether a mismatch fails an
+operation is the caller's decision (``policy_ops`` fails it). Never raises into
+the write path.
 """
 from __future__ import annotations
 
@@ -25,6 +39,17 @@ from urllib.parse import parse_qs
 from . import write_through as wt
 
 log = logging.getLogger(__name__)
+
+VERIFIED, MISMATCH, UNVERIFIED = "verified", "mismatch", "unverified"
+
+#: Field names never compared: the device masks them or never returns them.
+_SECRET_HINTS = ("pass", "secret", "psk", "private", "token")
+
+#: FortiWeb's "no such entry" (HTTP 500, measured on 7.6.8): the object is
+#: ABSENT, which a delete wants and an update/create does not.
+_NOT_FOUND = -3
+
+_ABSENT = object()
 
 
 def _split(path: str) -> tuple[str, dict]:
@@ -57,28 +82,31 @@ def target_of(base: str, version: str = "") -> tuple[str, str | None, str | None
     return "", None, None
 
 
+def _inner(data):
+    if not isinstance(data, dict):
+        return {}
+    return data.get("data") if isinstance(data.get("data"), dict) else data
+
+
 def _name_of(data) -> str:
     """The object name a create carries (``{"data": {"name": …}}`` or bare)."""
-    if not isinstance(data, dict):
-        return ""
-    inner = data.get("data") if isinstance(data.get("data"), dict) else data
-    return str(inner.get("name") or "")
+    return str(_inner(data).get("name") or "")
 
 
-def _results(resp):
-    if resp is None or getattr(resp, "status_code", 500) >= 400:
-        return None
+def _read(client, path):
+    """The ``results`` of a GET, ``_ABSENT`` for "no such entry", None when the
+    read itself failed."""
     try:
-        body = resp.json()
-    except Exception:  # noqa: BLE001 — non-JSON is not a read
+        resp = client.api_call("GET", path)
+        body = resp.json() if resp is not None else None
+    except Exception:  # noqa: BLE001 — no read is not a verdict
         return None
-    if isinstance(body, dict) and "results" in body:
-        res = body["results"]
-        # FortiWeb answers a logical error with HTTP 200 + {"errcode": …}
-        if isinstance(res, dict) and res.get("errcode") not in (None, 0) and "name" not in res:
-            return None
-        return res
-    return None
+    res = body.get("results") if isinstance(body, dict) else None
+    if isinstance(res, dict) and res.get("errcode") not in (None, 0) and "name" not in res:
+        return _ABSENT if res.get("errcode") == _NOT_FOUND else None
+    if getattr(resp, "status_code", 500) >= 400:
+        return None
+    return res
 
 
 def _one(res, name: str):
@@ -88,6 +116,56 @@ def _one(res, name: str):
         hit = [r for r in res if isinstance(r, dict) and str(r.get("name")) == name]
         return hit[0] if hit else None
     return None
+
+
+def _norm(v) -> str:
+    return str(v).strip().lower()
+
+
+def compare(sent, device) -> dict:
+    """Pure: the sent scalar fields against the device's copy.
+
+    ``{"verdict", "checked": [field…], "mismatch": {field: {"sent", "device"}},
+    "unchecked": [field…]}``. Sub-tables (lists/dicts) and secrets are not
+    compared; a masked value (``******``) or a field the read does not return
+    is ``unchecked``. ``int 80`` and ``"80"`` match; case is ignored.
+    """
+    out = {"verdict": UNVERIFIED, "checked": [], "mismatch": {}, "unchecked": []}
+    if not isinstance(device, dict):
+        return out
+    for k, v in _inner(sent).items():
+        if isinstance(v, (list, dict)) or isinstance(v, bool) or v is None:
+            continue
+        if any(h in str(k).lower() for h in _SECRET_HINTS):
+            continue
+        if k not in device:
+            out["unchecked"].append(k)
+            continue
+        dv = device[k]
+        if isinstance(dv, str) and dv and set(dv) == {"*"}:
+            out["unchecked"].append(k)
+            continue
+        if _norm(v) == _norm(dv):
+            out["checked"].append(k)
+        else:
+            out["mismatch"][k] = {"sent": v, "device": dv}
+    if out["mismatch"]:
+        out["verdict"] = MISMATCH
+    elif out["checked"]:
+        out["verdict"] = VERIFIED
+    return out
+
+
+def _gone(verdict_ok: bool, why: str) -> dict:
+    return {"verdict": VERIFIED if verdict_ok else MISMATCH, "checked": [],
+            "mismatch": {} if verdict_ok else {"(object)": {"sent": "deleted",
+                                                           "device": "still present"}},
+            "unchecked": [], "why": why}
+
+
+def _unverified(why: str) -> dict:
+    return {"verdict": UNVERIFIED, "checked": [], "mismatch": {}, "unchecked": [],
+            "why": why}
 
 
 def _cached(session, appliance_id, logical, mkey=None, *, layer=None) -> bool:
@@ -101,65 +179,111 @@ def _cached(session, appliance_id, logical, mkey=None, *, layer=None) -> bool:
     return q.first() is not None
 
 
+def _subtable(session, aid, client, action, base, logical, sub, q, data, out):
+    mkey, row_id = q.get("mkey") or "", q.get("sub_mkey") or ""
+    out["what"] = "%s/%s:%s" % (logical, sub, mkey)
+    if not mkey:
+        out["why"] = "sub-table write without a parent"
+        out["verify"] = _unverified(out["why"])
+        return out
+    rows = _read(client, "%s?mkey=%s" % (base, mkey))
+    if not isinstance(rows, list):
+        out["why"] = "re-read failed"
+        out["verify"] = _unverified(out["why"])
+        return out
+    rows = [r for r in rows if isinstance(r, dict)]
+    if action == "delete":
+        present = any(str(r.get("id")) == row_id for r in rows) if row_id else None
+        out["verify"] = (_unverified("no row id") if present is None
+                         else _gone(not present, "row %s %s" % (
+                             row_id, "still present" if present else "gone")))
+    elif action == "update" and row_id:
+        row = next((r for r in rows if str(r.get("id")) == row_id), None)
+        out["verify"] = (compare(data, row) if row is not None
+                         else _gone(False, "row %s is missing" % row_id) | {
+                             "mismatch": {"(row)": {"sent": "update", "device": "missing"}}})
+    else:
+        # A new row has no id yet: verified when SOME row carries what was sent.
+        verdicts = [compare(data, r) for r in rows]
+        best = next((v for v in verdicts if v["verdict"] == VERIFIED), None)
+        out["verify"] = best or (
+            {"verdict": MISMATCH, "checked": [], "unchecked": [],
+             "mismatch": {"(row)": {"sent": _inner(data), "device": "no row matches"}}}
+            if any(v["checked"] or v["mismatch"] for v in verdicts) or not rows
+            else _unverified("nothing comparable was sent"))
+    if _cached(session, aid, logical, mkey, layer="deep"):
+        n = wt.local_subrows(aid, logical, mkey, sub, rows, session=session)
+        out["refreshed"] = n is not None
+        out["why"] = "sub-table re-read (%s rows)" % n
+    else:
+        # its sub-tables were never captured: unknown, not empty
+        out["why"] = "parent has no deep capture"
+    return out
+
+
 def after_write(appliance, client, action: str, path: str, data=None, *,
                 session=None) -> dict:
-    """Bring the cache rows of what ``action`` on ``path`` touched up to the
-    device. Call ONLY after the device accepted the write.
+    """Re-read what ``action`` on ``path`` touched: refresh the cache rows and
+    verify the device holds the change. Call ONLY after the device accepted it.
 
-    Returns ``{"refreshed": bool, "what": "<logical>[/<sub>]:<mkey>", "why": str}``
-    — ``why`` says what was done or why nothing was (never raises).
+    Returns ``{"refreshed": bool, "what": "<logical>[/<sub>]:<mkey>",
+    "why": str, "verify": {"verdict": verified|mismatch|unverified, …}}``.
+    Never raises.
     """
-    out = {"refreshed": False, "what": "", "why": ""}
+    out = {"refreshed": False, "what": "", "why": "",
+           "verify": _unverified("not checked")}
     try:
         from ..extensions import db
         from ..registry import loader
         session = session or db.session
         aid = getattr(appliance, "id", None)
-        if aid is None:
-            out["why"] = "no appliance id"
-            return out
         base, q = _split(path)
         kind, logical, sub = target_of(base, loader.version_of(appliance))
-        if not kind:
-            out["why"] = "not a registry collection"
-            return out
-        mkey = q.get("mkey") or ""
         if kind == "subtable":
-            out["what"] = "%s/%s:%s" % (logical, sub, mkey)
-            if not mkey:
-                out["why"] = "sub-table write without a parent"
-                return out
-            if not _cached(session, aid, logical, mkey, layer="deep"):
-                # its sub-tables were never captured: unknown, not empty
-                out["why"] = "parent has no deep capture"
-                return out
-            rows = _results(client.api_call("GET", "%s?mkey=%s" % (base, mkey)))
-            if not isinstance(rows, list):
-                out["why"] = "re-read failed"
-                return out
-            n = wt.local_subrows(aid, logical, mkey, sub, rows, session=session)
-            out["refreshed"] = n is not None
-            out["why"] = "sub-table re-read (%s rows)" % n
-            return out
-        name = mkey or (_name_of(data) if action == "create" else "")
-        out["what"] = "%s:%s" % (logical, name)
+            return _subtable(session, aid, client, action, base, logical, sub, q,
+                             data, out)
+        name = q.get("mkey") or (_name_of(data) if action == "create" else "")
+        out["what"] = "%s:%s" % (logical or wt._norm_tail(base), name)
         if not name:
+            # a singleton (system/global…): verify by reading it whole
+            if action == "update":
+                got = _read(client, base)
+                out["verify"] = (compare(data, got) if isinstance(got, dict)
+                                 else _unverified("re-read failed"))
             out["why"] = "write names no object"
             return out
+        got = _read(client, "%s?mkey=%s" % (base, name))
         if action == "delete":
-            out["refreshed"] = bool(wt.local_delete(aid, wt._norm_tail(base), name,
-                                                    session=session))
+            if got is _ABSENT:
+                out["verify"] = _gone(True, "the device no longer has it")
+            elif got is None:
+                out["verify"] = _unverified("re-read failed")
+            else:
+                out["verify"] = _gone(_one(got, name) is None, "the device still has it")
+            if kind and aid is not None:
+                out["refreshed"] = bool(wt.local_delete(aid, wt._norm_tail(base), name,
+                                                        session=session))
             out["why"] = "removed from cache" if out["refreshed"] else "was not cached"
             return out
-        if not _cached(session, aid, logical, name if action != "create" else None):
-            out["why"] = "type not cached on this device"
+        if got is _ABSENT:
+            out["verify"] = _gone(False, "the device does not have it") | {
+                "mismatch": {"(object)": {"sent": action, "device": "not found"}}}
+            out["why"] = "re-read: not found"
             return out
-        obj = _one(_results(client.api_call("GET", "%s?mkey=%s" % (base, name))), name)
+        obj = _one(got, name)
         if obj is None:
             out["why"] = "re-read failed"
+            out["verify"] = _unverified(out["why"])
             return out
-        out["refreshed"] = bool(wt.local_insert(aid, logical, name, obj, session=session))
-        out["why"] = "object re-read"
+        out["verify"] = compare(data, obj)
+        if not kind or aid is None:
+            out["why"] = "not a registry collection"
+        elif not _cached(session, aid, logical, name if action != "create" else None):
+            out["why"] = "type not cached on this device"
+        else:
+            out["refreshed"] = bool(wt.local_insert(aid, logical, name, obj,
+                                                    session=session))
+            out["why"] = "object re-read"
         return out
     except Exception as exc:  # noqa: BLE001 — the write already succeeded
         try:
@@ -169,4 +293,19 @@ def after_write(appliance, client, action: str, path: str, data=None, *,
             pass
         log.warning("object_refresh after %s %s: %s", action, path, exc)
         out["why"] = "error: %s" % exc
+        out["verify"] = _unverified(out["why"])
         return out
+
+
+def describe_mismatch(verify: dict) -> str:
+    """One line for an operator: what the device holds instead of what was sent."""
+    mm = (verify or {}).get("mismatch") or {}
+    parts = []
+    for k, d in list(mm.items())[:4]:
+        if k.startswith("("):
+            parts.append("%s: %s" % (d.get("sent"), d.get("device")))
+        else:
+            parts.append("%s is %r (sent %r)" % (k, d.get("device"), d.get("sent")))
+    more = " (+%d more)" % (len(mm) - 4) if len(mm) > 4 else ""
+    return ("the device accepted the write but does not hold it — "
+            + "; ".join(parts) + more)

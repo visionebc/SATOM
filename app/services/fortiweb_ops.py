@@ -205,17 +205,26 @@ class FortiWebOps:
             ok, err = self._response_ok(resp)
             self._record(action, endpoint, mkey, before, payload, False, err,
                          forced=forced)
-            # Targeted rediscovery: the pages draw from the cache, so re-read
-            # what this write touched (one object or one sub-table) right here,
-            # for every caller at once. Never fatal: see object_refresh.
+            # Targeted rediscovery + verification: re-read what this write
+            # touched (one object or one sub-table) right here, for every
+            # caller at once — the cache follows the device, and ``verify``
+            # says whether the device now HOLDS what was sent (an accepted
+            # write is not proof: builds answer 200 and drop a field). The
+            # verdict is reported; failing on it is the caller's call.
             refresh = None
             if ok:
                 from . import object_refresh
                 refresh = object_refresh.after_write(self.appliance, self.client,
                                                      action, path, payload)
+                v = refresh.get("verify") or {}
+                if v.get("verdict") == object_refresh.MISMATCH:
+                    log_action(f"config.{action}.not_applied", target=endpoint or "",
+                               appliance_id=getattr(self.appliance, "id", None),
+                               detail="mkey=%s %s" % (mkey, object_refresh.describe_mismatch(v)))
             return OpResult(ok=ok, action=action, endpoint=endpoint, mkey=mkey,
                             dry_run=False, request=req, before=before, after=payload, error=err,
-                            cache_refresh=refresh)
+                            cache_refresh=refresh,
+                            verify=(refresh or {}).get("verify"))
         except Exception as exc:  # noqa: BLE001
             self._record(action, endpoint, mkey, before, payload, False, str(exc))
             return OpResult(ok=False, action=action, endpoint=endpoint, mkey=mkey,

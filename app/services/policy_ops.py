@@ -50,6 +50,25 @@ def set_status(ops, policy: str, *, enable: bool, dry_run: bool):
     return ops.update(EP_POLICY, policy, {"data": {"status": status}}, dry_run=dry_run)
 
 
+#: Actions whose result carries the device re-read verdict (object_refresh).
+#: Clone/migrate verify through their own reconciliation report.
+VERIFIED_ACTIONS = ("enable", "disable", "delete")
+
+
+def verified_note(action: str, results: list) -> str:
+    """`` — verified on the device`` / `` — N not verified on the device``
+    for the job message; empty for actions that do not carry a verdict."""
+    if action not in VERIFIED_ACTIONS:
+        return ""
+    done = [r for r in results if r.get("ok")]
+    if not done:
+        return ""
+    unv = sum(1 for r in done
+              if ((r.get("detail") or {}).get("verify") or {}).get("verdict") != "verified")
+    return (" — verified on the device" if not unv
+            else " — %d not verified on the device (re-read failed)" % unv)
+
+
 def delete_policy(ops, policy: str, *, dry_run: bool):
     """Delete the Server Policy object itself. Shared building blocks it
     referenced (WPP, pool, cert, service…) are left in place — a policy delete
@@ -886,6 +905,14 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
             rec["ok"] = bool(getattr(res, "ok", False))
             rec["error"] = res.get("error", "") if hasattr(res, "get") else ""
             rec["detail"] = {"request": res.get("request") if hasattr(res, "get") else None}
+            # Accepted is not applied: the re-read after the write must show
+            # the new status, or the action failed (object_refresh).
+            verify = (res.get("verify") if hasattr(res, "get") else None) or {}
+            if not dry_run:
+                rec["detail"]["verify"] = verify
+                if rec["ok"] and verify.get("verdict") == "mismatch":
+                    from .object_refresh import describe_mismatch
+                    rec["ok"], rec["error"] = False, describe_mismatch(verify)
         elif action == "delete":
             from . import policy_graph as _pg
             from . import clone as _clone
@@ -919,12 +946,14 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                 )
                 rec["ok"] = bool(root_r.get("ok", False))
                 rec["error"] = root_r.get("error", "") or ""
+                verify_root = root_r.get("verify") or {}
                 deleted = [r for r in cascade if r.get("action") == "deleted"]
                 kept = [r for r in cascade
                         if r.get("action") in ("kept", "kept_shared")]
                 failed_items = [r for r in cascade if r.get("action") == "failed"]
                 rec["detail"] = {
                     "cascade": cascade,
+                    "verify": verify_root,
                     "deleted_count": len(deleted),
                     "kept_count": len(kept),
                     "failed_count": len(failed_items),
@@ -2076,6 +2105,7 @@ def start_policy_job(flask_app, *, action: str, source_appl, dest_appl=None,
                         rec.get("error") or ""))
             ok = sum(1 for r in results if r["ok"])
             failed = total - ok
+            verified = verified_note(action, results)
             summary = {"action": action, "label": action_label(action),
                        "source": src_name, "dest": dest_name,
                        "ok": ok, "failed": failed, "total": total,
@@ -2112,9 +2142,9 @@ def start_policy_job(flask_app, *, action: str, source_appl, dest_appl=None,
                                   % (action_label(action), failed, total))
             else:
                 jobs.finish_success(job_id, result=summary,
-                                    message="%s applied to %d/%d server polic%s"
+                                    message="%s applied to %d/%d server polic%s%s"
                                     % (action_label(action), ok, total,
-                                       "y" if total == 1 else "ies"))
+                                       "y" if total == 1 else "ies", verified))
 
     jobs.run_async(flask_app, job["id"], _worker)
     return job

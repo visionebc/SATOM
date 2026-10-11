@@ -2527,12 +2527,25 @@ audits it; secrets are never echoed back.
   nothing.
 - **Naming** patterns for FortiADC are **reference only**: the object editor and
   the virtual-server wizard do not fill in or check names from them.
-- **No Firmware page** in this ADOM: the firmware library stores images, and no
-  path flashes a FortiADC with them.
-- Device actions at parity where the platform allows: test connection,
-  VS inspector, discovery, SSH console with ADC presets, upgrade-prep health
-  battery, SSH config backups. (Firmware flash / restore-apply have **no REST
-  transport on FortiADC** — the UI states this rather than pretending.)
+- **Firmware** in this ADOM: images from the firmware library are flashed by
+  **Upgrade** on the appliance page (REST upload into the inactive partition,
+  then a reboot), and **Boot Partition** reboots into the other partition.
+  Restore-apply is not wired yet.
+- Device actions at parity with FortiWeb: test connection, VS inspector,
+  discovery, SSH console with ADC presets, upgrade-prep health battery, SSH
+  config backups, Upgrade and Boot Partition.
+- **Rediscovery → Capture full depth: every child table (REST)** reads each
+  `<parent>_child_<table>` once per parent object (`?pkey=`). Certificate-group,
+  CA-group and schedule-group members exist only there; the parent rows do not
+  carry them. The result sits beside the sweep snapshot.
+- **VS inspector** draws every reference of a virtual server to the end:
+  content routing → pool → members → real servers and health checks; client
+  SSL profile → certificate group → certificates → intermediate CA; auth
+  policy → user group → RADIUS / LDAP / local user; WAF sub-profiles; method,
+  persistence, profiles. **Live (REST)** reads the box; **From last
+  rediscovery** draws the same tree from the snapshot and its depth capture
+  without contacting the device. A reference to an object that does not exist
+  is shown as *not found on the device*, never dropped.
 
 ### 17.2 FortiAuthenticator
 

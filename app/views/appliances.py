@@ -717,7 +717,25 @@ def inspector(id):
     else:
         from ..services import inspector as insp
     policy = request.args.get('policy', '').strip()
-    result, error = None, None
+    result, error, capture = None, None, None
+    if appliance.kind == 'fortiadc' and request.args.get('source') == 'capture':
+        # The tree out of the last rediscovery + its depth capture: no device
+        # call, so it also answers for a box that is down right now.
+        from ..services import adc_vstree, rediscovery
+        snap = rediscovery.latest_snapshot(appliance.id)
+        deep = rediscovery.adc_deep(appliance.id)
+        if not snap:
+            error = 'No rediscovery snapshot on this node yet: run a rediscovery first.'
+        else:
+            vss = adc_vstree.trees(adc_vstree.index_from_capture(snap, deep),
+                                   only=policy)
+            result = {'policies': vss, 'errors': [], 'count': len(vss)}
+            capture = {'sweep': snap.get('generated_at'),
+                       'deep': (deep or {}).get('generated_at'),
+                       'deep_sweep': (deep or {}).get('sweep_generated_at')}
+        return render_template('appliances/inspector.html', appliance=appliance,
+                               result=result, error=error, one_policy=policy,
+                               capture=capture)
     try:
         client = appliance.build_client()
         if policy:
@@ -744,7 +762,9 @@ def rediscover(id):
         return redirect(url_for('appliances.detail', id=id))
     from ..services import rediscovery, analysis
     is_adc = appliance.kind == 'fortiadc'
-    deep_fresh = None if is_adc \
+    # The ADC depth is its child tables, kept beside the sweep snapshot; the
+    # FortiWeb depth is the WPP/policy layer of the cache.
+    deep_fresh = rediscovery.adc_deep_meta(appliance.id) if is_adc \
         else analysis.deep_freshness([appliance.id]).get(str(appliance.id))
     # What the CLI switch will ACTUALLY do, answered by the same function the
     # worker obeys. Asking it here is the whole point: a page that computed its
@@ -758,7 +778,7 @@ def rediscover(id):
     return render_template('appliances/rediscover.html', appliance=appliance,
                            progress=rediscovery.status(appliance.id),
                            snapshot=rediscovery.latest_snapshot_meta(appliance.id),
-                           deep_fresh=deep_fresh, allow_deep=not is_adc,
+                           deep_fresh=deep_fresh, allow_deep=True,
                            cli_decision=cli_decision,
                            allow_cli=(appliance.kind or 'fortiweb')
                                      in cli_coverage.SUPPORTED_PRODUCTS,

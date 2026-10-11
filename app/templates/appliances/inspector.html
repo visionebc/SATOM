@@ -7,7 +7,20 @@
   <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; Back</a>
 </div>
 {% if is_adc %}
-<p class="text-muted">{{ _('Per virtual-server tree (listener, real server pool + members, profile chain), composed live over REST.') }}</p>
+<p class="text-muted">{{ _('Per virtual-server tree: every reference followed to the end — content routing to pool, members and real servers, health checks, client SSL profile to certificate group and certificates, auth policy to user groups and RADIUS/LDAP servers, WAF sub-profiles.') }}</p>
+<div class="d-flex align-items-center gap-2 mb-2 small">
+  {% set q = {'policy': one_policy} if one_policy else {} %}
+  <a href="{{ url_for('appliances.inspector', id=appliance.id, **q) }}" class="btn btn-sm {{ 'fw-btn-primary' if not capture else 'fw-btn-secondary' }}">{{ _('Live (REST)') }}</a>
+  <a href="{{ url_for('appliances.inspector', id=appliance.id, source='capture', **q) }}" class="btn btn-sm {{ 'fw-btn-primary' if capture else 'fw-btn-secondary' }}">{{ _('From last rediscovery') }}</a>
+  {% if capture %}
+    <span class="text-muted">{{ _('Sweep') }}: {{ capture.sweep or '—' }} · {{ _('depth') }}: {{ capture.deep or _('not captured') }}</span>
+  {% endif %}
+</div>
+{% if capture and not capture.deep %}
+  <div class="fw-alert fw-alert-warning small">{{ _('No depth capture on this node: certificate-group, CA-group and schedule-group members are served only by child tables, so those groups are drawn without members. Run a rediscovery with "Capture full depth" on.') }}</div>
+{% elif capture and capture.deep_sweep and capture.deep_sweep != capture.sweep %}
+  <div class="fw-alert fw-alert-warning small">{{ _('The depth capture belongs to an earlier sweep than the snapshot shown; group members may not match the objects drawn.') }}</div>
+{% endif %}
 {% else %}
 <p class="text-muted">{{ _('Per server-policy tree (virtual server + VIPs, server pool + back-ends, health check, web-protection profile), composed live over REST.') }}</p>
 {% endif %}

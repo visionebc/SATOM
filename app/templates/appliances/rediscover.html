@@ -20,6 +20,9 @@
       <div class="small mt-1">
         {% if deep_fresh and deep_fresh.captured_at %}
           <span class="badge bg-info-subtle text-info-emphasis"><i class="bi bi-diagram-3 me-1"></i>Depth captured: {{ deep_fresh.captured_at }}</span>
+          {% if appliance.kind == 'fortiadc' %}
+          <a href="{{ url_for('appliances.inspector', id=appliance.id, source='capture') }}" class="small ms-1"><i class="bi bi-diagram-2 me-1"></i>{{ _('Virtual-server tree from this capture') }}</a>
+          {% endif %}
         {% else %}
           <span class="badge bg-secondary-subtle text-secondary-emphasis"><i class="bi bi-diagram-3 me-1"></i>{{ _('Depth: not captured') }}</span>
         {% endif %}
@@ -36,7 +39,12 @@
       {% endif %}
     </div>
     <div class="d-flex align-items-center gap-3 flex-wrap">
-      {% if allow_deep is not defined or allow_deep %}
+      {% if appliance.kind == 'fortiadc' %}
+      <div class="form-check form-switch mb-0" title="{{ _('Also read every child table over REST, once per parent object (?pkey=): certificate-group, CA-group and schedule-group members, which the parent rows do not carry, plus pool members and match conditions. Feeds the virtual-server tree.') }}">
+        <input class="form-check-input" type="checkbox" id="redisc-deep">
+        <label class="form-check-label small" for="redisc-deep">{{ _('Capture full depth: every child table (REST)') }} <span class="text-muted">{{ _('(slower)') }}</span></label>
+      </div>
+      {% elif allow_deep is not defined or allow_deep %}
       <div class="form-check form-switch mb-0" title="{{ _('Also walk every WPP + Server Policy dependency graph (sub-tables, rule-lists, disabled signatures, exceptions) and cache it for the Analysis page. Slower — reads more from the box.') }}">
         <input class="form-check-input" type="checkbox" id="redisc-deep">
         <label class="form-check-label small" for="redisc-deep">{{ _('Capture full WPP + policy depth') }} <span class="text-muted">{{ _('(slow)') }}</span></label>
@@ -90,6 +98,13 @@
 
   // Mirror of rediscovery.deep_line() — keep the two in step.
   function deepLine(p) {
+    if (p.deep_kind === 'adc') {
+      if (!p.deep_total) return 'Deep capture: listing child tables…';
+      let a = `Deep capture ${p.deep_done || 0}/${p.deep_total} child-table reads`;
+      if (p.deep_current) a += ` · ${p.deep_current}`;
+      if (p.cli_running) a += ' · CLI capture running alongside';
+      return a;
+    }
     if (!p.deep_total) return 'Deep capture: listing server policies and WPPs…';
     let t = `Deep capture ${p.deep_done || 0}/${p.deep_total} · `
       + `${p.deep_policies || 0} server policies, ${p.deep_wpps || 0} WPPs`;
@@ -140,9 +155,11 @@
       // phase looks like right before the deep pass starts.
       let txt = 'Finished' + (p.finished ? ' at ' + String(p.finished).slice(11, 19) + ' UTC' : '')
         + ' — ' + (p.summary || `${p.objects} objects across ${p.section_count} sections`);
-      if (p.deep_objects != null) txt += ` · depth: ${p.deep_objects} object(s)`
+      if (p.deep_objects != null && p.deep_kind === 'adc') txt += ` · depth: ${p.deep_objects} child row(s) from ${p.deep_total || 0} child-table reads`
+        + (p.deep_errors ? `, ${p.deep_errors} error(s)` : '');
+      else if (p.deep_objects != null) txt += ` · depth: ${p.deep_objects} object(s)`
         + (p.deep_total ? ` from ${p.deep_policies || 0} server policies and ${p.deep_wpps || 0} WPPs` : '');
-      if (p.deep_reads != null) txt += ` (${p.deep_reads} device reads, ${p.deep_reused || 0} reused)`;
+      if (p.deep_reads != null && p.deep_kind !== 'adc') txt += ` (${p.deep_reads} device reads, ${p.deep_reused || 0} reused)`;
       if (p.deep_catalog) txt += ` · ${p.deep_catalog}`;
       if (p.cache_error) txt += ` · local cache not updated: ${p.cache_error}`;
       if (p.deep_error) txt += ` · depth error: ${p.deep_error}`;

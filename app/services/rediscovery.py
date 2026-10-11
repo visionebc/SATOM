@@ -145,6 +145,16 @@ def deep_line(state: dict) -> str:
     """One line for the deep pass: which policy/WPP is being walked, out of how
     many. Before the lists are read there is nothing to count yet, and the line
     says so instead of a bare "running" (SI-0004)."""
+    if state.get("deep_kind") == "adc":
+        if not state.get("deep_total"):
+            return "Deep capture: listing child tables…"
+        line = (f"Deep capture {state.get('deep_done', 0)}/{state['deep_total']} "
+                f"child-table reads")
+        if state.get("deep_current"):
+            line += f" · {state['deep_current']}"
+        if state.get("cli_running"):
+            line += " · CLI capture running alongside"
+        return line
     if not state.get("deep_total"):
         return "Deep capture: listing server policies and WPPs…"
     phase = state.get("deep_phase") or ""
@@ -1249,10 +1259,10 @@ def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
     # a live state and the last phase writes ``done`` itself. Until 2026-10-08
     # this wrote ``done`` here: the page froze at 100 % while the deep pass
     # walked 220 WPPs for another 51 s and never showed that it finished.
-    more = (deep and not is_adc) or cli
+    more = deep or cli
     state.update(state="running" if more else "done",
                  section=(("snapshot saved — starting the deep capture"
-                           if deep and not is_adc else
+                           if deep else
                            "snapshot saved — starting the CLI capture")
                           if more else state.get("section", "")),
                  done=total, percent=100, objects=total_objects,
@@ -1279,15 +1289,19 @@ def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
                         f"saved; the {phase} was skipped.")
         return True
 
-    if deep and not is_adc:  # deep capture is the FortiWeb WPP/policy layer
+    if deep:  # FortiWeb: WPP/policy graph; FortiADC: every child table
         if _stop_before("deep capture"):
             return
         # The CLI dump is one SSH session and the deep pass is REST: they share
         # nothing on the box, so with both asked for they run side by side and
         # the sweep takes the longer of the two instead of their sum.
         cli_run = _start_cli_alongside(appliance_snap, state) if cli else None
-        stopped = _run_deep(appliance_snap, progress_path, state,
-                            finish=cli_run is None)
+        if is_adc:
+            stopped = _run_deep_adc(appliance_snap, progress_path, state,
+                                    snapshot, finish=cli_run is None)
+        else:
+            stopped = _run_deep(appliance_snap, progress_path, state,
+                                finish=cli_run is None)
         if cli_run is not None:
             _join_cli_alongside(cli_run, progress_path, state, stopped)
             cli = False   # captured already, alongside the deep pass
@@ -1565,6 +1579,108 @@ def _run_deep(appliance_snap: SimpleNamespace, progress_path, state: dict,
 
 
 # --------------------------------------------------------------------------- #
+# FortiADC depth — every child table, once per parent row                      #
+# --------------------------------------------------------------------------- #
+#: Beside ``_config.json``: the child rows of the sweep that wrote it. Kept in
+#: its own file for the same reason the FortiWeb depth is its own layer — a
+#: stopped or failed depth pass must never touch the sweep snapshot.
+ADC_DEEP_FILE = "_deep.json"
+
+
+def adc_deep(appliance_id: int) -> dict | None:
+    """The last FortiADC depth capture, or ``None``."""
+    path = _dev_dir(appliance_id) / ADC_DEEP_FILE
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def adc_deep_meta(appliance_id: int) -> dict | None:
+    """``{captured_at, rows, reads, errors}`` of the last ADC depth capture —
+    the shape the Rediscover page's depth badge reads."""
+    d = adc_deep(appliance_id)
+    if not d:
+        return None
+    return {"captured_at": d.get("generated_at"), "rows": d.get("rows", 0),
+            "reads": d.get("reads", 0), "errors": len(d.get("errors") or [])}
+
+
+def latest_snapshot(appliance_id: int) -> dict | None:
+    """The full last sweep snapshot (``_config.json``), or ``None``."""
+    try:
+        return json.loads((_dev_dir(appliance_id) / "_config.json").read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def _run_deep_adc(appliance_snap: SimpleNamespace, progress_path, state: dict,
+                  snapshot: dict, finish: bool = True) -> bool:
+    """Read every registered ``<parent>_child_<x>`` table once per parent row
+    of THIS sweep (``?pkey=<mkey>``) and write :data:`ADC_DEEP_FILE`.
+
+    Returns True when a Stop ended it; what was read so far is DISCARDED and
+    the previous depth file kept, as on FortiWeb: a depth file missing the
+    groups never reached would draw them as empty."""
+    from . import adc_ops, adc_vstree
+    aid = appliance_snap.id
+    state.update(state="deep-running", deep_kind="adc",
+                 section="deep capture (child tables)", finished=None,
+                 deep_total=0, deep_done=0, deep_percent=0)
+    _write_json(progress_path, state)
+
+    def _progress(p: dict) -> None:
+        total = p.get("total") or 0
+        state.update(deep_total=total, deep_done=p.get("done", 0),
+                     deep_percent=(int(p.get("done", 0) * 100 / total)
+                                   if total else 0),
+                     deep_phase="child table",
+                     deep_current=str(p.get("current") or "")[:120],
+                     heartbeat=datetime.utcnow().isoformat())
+        _write_json(progress_path, state)
+
+    try:
+        with _get_flask_app().app_context():
+            plan = adc_vstree.child_plan()
+        res = adc_vstree.capture_children(
+            adc_ops.make_probe(appliance_snap), plan,
+            adc_vstree.parent_rows(snapshot.get("sections")),
+            should_stop=lambda: _stop_requested(aid), progress=_progress)
+    except adc_vstree.ChildCaptureStopped as stop:
+        _finish_stopped(aid, progress_path, state,
+                        f"Stopped during the deep capture, at child-table read "
+                        f"{stop.done}/{stop.total}"
+                        + (f" ({stop.current})" if stop.current else "")
+                        + ". The sweep snapshot was saved; the partial deep "
+                          "capture was discarded and the previous one kept.")
+        return True
+    except DeviceAuthError as exc:
+        state.update(deep_error=str(exc)[:200])
+        res = None
+    except Exception as exc:  # noqa: BLE001 — the sweep already succeeded
+        state.update(deep_error=f"{type(exc).__name__}: {exc}"[:200])
+        res = None
+    if res is not None:
+        _write_json(_dev_dir(aid) / ADC_DEEP_FILE, {
+            "device": appliance_snap.name, "appliance_id": aid,
+            "generated_at": datetime.utcnow().isoformat(),
+            "firmware": snapshot.get("firmware", ""),
+            # Which sweep the parents came from: a tree drawn from this file
+            # and an OLDER _config.json would pair rows of two moments.
+            "sweep_generated_at": snapshot.get("generated_at"),
+            **res,
+        })
+        state.update(section="deep capture complete", deep_objects=res["rows"],
+                     deep_reads=res["reads"], deep_errors=len(res["errors"]),
+                     deep_total=res["pairs"], deep_done=res["pairs"],
+                     deep_percent=100)
+    if finish:
+        state.update(state="done", finished=datetime.utcnow().isoformat())
+    _write_json(progress_path, state)
+    return False
+
+
+# --------------------------------------------------------------------------- #
 # Third pass — capture what the CLI serves                                     #
 # --------------------------------------------------------------------------- #
 # The sweep reads what REST serves. ``show full-configuration`` reads what the
@@ -1802,7 +1918,9 @@ def start(appliance, by: str = "", deep: bool = False,
 
     snap = _client_snapshot(appliance)
     if snap.kind == "fortiadc":
-        deep = False  # deep capture is the FortiWeb WPP/policy layer
+        # The ADC depth is its child tables (services.adc_vstree); there is
+        # no factory WPP catalog to re-read.
+        factory_full = False
     # Resolve the plan HERE (request context): the registry is DB-first and the
     # worker thread has no app context to fall back through.
     plan = plan_for(appliance)

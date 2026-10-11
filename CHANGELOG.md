@@ -23,6 +23,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   tree holds device actions such as reboot), and a `DELETE` on a whole table
   is refused. An **Object key** field URL-encodes names such as `192.0.2.0/24`.
 - Secrets are removed from every answer and from the audited request body.
+- A FortiGate object that is not there (a `404` on `…/<table>/<key>`) now
+  reads "no such object on the device" instead of blaming the firmware.
 
 ### Changed — one menu order in every ADOM
 

@@ -71,6 +71,12 @@ class FortiGateClient(BaseClient):
                           'admin profile does not grant this resource, or '
                           'the source address is not a trusted host.')
         if resp.status_code == 404:
+            # One OBJECT of a table (``/api/v2/cmdb/<a.b>/<c>/<mkey>``) that is
+            # not there is not the firmware's fault: saying "this firmware has
+            # no such resource" after a DELETE would send the operator looking
+            # for an upgrade problem. (Measured on fgt02 2026-10-11.)
+            if path.startswith('/api/v2/cmdb/') and path[13:].strip('/').count('/') >= 2:
+                return None, f'404 — no such object on the device: {path}'
             return None, f'404 — no such resource on this firmware: {path}'
         if resp.status_code >= 400:
             return None, f'HTTP {resp.status_code}: {response_summary(resp)}'

@@ -42,8 +42,24 @@ def _current_username() -> str:
     return "system"
 
 
+def _adc_client(client) -> bool:
+    from . import adc_ops
+    try:
+        return adc_ops.is_adc_client(client)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _is_adc(appliance) -> bool:
+    return (getattr(appliance, "kind", "") or "").strip().lower() == "fortiadc"
+
+
 def firmware_version(client) -> str:
-    """Best-effort current firmware string from system status."""
+    """Best-effort current firmware string from system status (FortiADC:
+    ``/api/platform/version``, in the spelling ``Appliance.firmware`` holds)."""
+    if _adc_client(client):
+        from . import adc_ops
+        return adc_ops.firmware_line(client)
     try:
         res = client._results_one(client.status_check())
         for k in ("firmwareVersion", "firmware_version", "version", "firmware", "ver"):
@@ -56,6 +72,9 @@ def firmware_version(client) -> str:
 
 def check_permission(client) -> bool | None:
     """Does this account hold maintenance (upgrade) permission? None if unknown."""
+    if _adc_client(client):
+        from . import adc_ops
+        return adc_ops.maintenance_permission(client)
     try:
         res = client.get(PERMISSION_ENDPOINT).json()
         results = res.get("results", res) if isinstance(res, dict) else {}
@@ -87,8 +106,8 @@ def prepare(appliance, *, do_backup: bool = True, do_health: bool = True,
             "appliance": appliance.name,
             "generated_at": datetime.utcnow().isoformat(),
             "firmware": adc_ops.firmware_string(client),
-            # FortiADC has no monitor/permission-check equivalent → unknown.
-            "permission": None,
+            # The GUI's own gate: platform/info isSystemAdmin + isSystemWritable.
+            "permission": adc_ops.maintenance_permission(client),
         }
     else:
         out = {
@@ -181,11 +200,12 @@ def prepare(appliance, *, do_backup: bool = True, do_health: bool = True,
     return out
 
 
-def _record(appliance, before: str, after: str, dry_run: bool, error: str = "") -> None:
+def _record(appliance, before: str, after: str, dry_run: bool, error: str = "",
+            endpoint: str = "system/maintenance.firmwareupgradedowngrade") -> None:
     try:
         db.session.add(ChangeHistory(
             appliance_id=getattr(appliance, "id", None),
-            endpoint="system/maintenance.firmwareupgradedowngrade", mkey="",
+            endpoint=endpoint, mkey="",
             action="upgrade", before=json.dumps({"firmware": before}),
             after=json.dumps({"image": after}), dry_run=dry_run,
             username=_current_username(), ts=datetime.utcnow(),
@@ -221,7 +241,13 @@ def push_firmware(appliance, image_bytes: bytes, filename: str, *,
 
     DESTRUCTIVE on a real run (installs + reboots). ``dry_run=True`` (default) only
     validates image + permission. Caller must back up first + gate on confirmation.
+
+    FortiADC takes its own path (:func:`_push_firmware_adc`): no partition
+    argument and no confirmation handshake exist there.
     """
+    if _is_adc(appliance):
+        return _push_firmware_adc(appliance, image_bytes, filename,
+                                  dry_run=dry_run, timeout=timeout)
     client = appliance.build_client(timeout=timeout)
     size = len(image_bytes or b"")
     fw_before = firmware_version(client)
@@ -349,6 +375,74 @@ def push_firmware(appliance, image_bytes: bytes, filename: str, *,
     return plan
 
 
+_ADC_FW_ENDPOINT = "upload/image"
+
+
+def _push_firmware_adc(appliance, image_bytes: bytes, filename: str, *,
+                       dry_run: bool = True, timeout: float = 1800.0) -> dict:
+    """FortiADC flash — the GUI's "Upload Firmware" (see ``adc_ops``): clear the
+    tmp space, multipart POST to ``upload/image``, ``payload == 0`` = accepted
+    (the box installs into its inactive partition and reboots into it).
+
+    Same plan shape as the FortiWeb path so the flash worker, the pages and the
+    report read both alike. A negative payload is a refusal: never monitor a
+    reboot that will not happen."""
+    from . import adc_ops
+    client = appliance.build_client(timeout=timeout)
+    size = len(image_bytes or b"")
+    fw_before = firmware_version(client)
+    plan: dict[str, Any] = {
+        "dry_run": dry_run, "image": filename, "size": size, "device": 0,
+        "part": 0, "active": 0, "firmware_before": fw_before,
+    }
+    if size == 0:
+        raise ValueError("firmware image is empty")
+    if not filename.lower().endswith(".out"):
+        plan["warning"] = f"{filename} does not end in .out — uploading anyway"
+
+    permitted = check_permission(client)
+    plan["permitted"] = permitted
+    if permitted is False:
+        raise PermissionError(
+            f"{appliance.username} may not change the system on {appliance.name} "
+            f"(platform/info: not a writable system administrator)")
+
+    if dry_run:
+        plan["ok"] = True
+        plan["message"] = (
+            f"DRY-RUN — would upload {filename} ({size:,} bytes) to {appliance.name} "
+            f"(upload/image); the appliance would install it into its inactive "
+            f"partition and reboot. No image was sent.")
+        _record(appliance, fw_before, filename, dry_run=True, endpoint=_ADC_FW_ENDPOINT)
+        return plan
+
+    status, payload, steps = adc_ops.upload_image(client, filename, image_bytes,
+                                                  timeout=timeout)
+    plan["response"] = {"status_code": status, "payload": payload}
+    plan["handshake"] = steps
+    accepted = status < 400 and str(payload).strip() == "0"
+    try:
+        plan["errcode"] = int(str(payload).strip())
+    except (TypeError, ValueError):
+        plan["errcode"] = 0 if accepted else -1
+    if not accepted:
+        plan["ok"] = False
+        detail = (f"HTTP {status}" if status >= 400
+                  else f"device errcode {payload}")
+        plan["message"] = (
+            f"{appliance.name} did NOT accept the flash ({detail}). The image was "
+            f"uploaded but not installed and the box will not reboot — firmware "
+            f"unchanged.")
+        _record(appliance, fw_before, filename, dry_run=False,
+                error=plan["message"][:200], endpoint=_ADC_FW_ENDPOINT)
+        return plan
+    plan["ok"] = True
+    plan["message"] = (f"firmware accepted — {appliance.name} is installing into its "
+                       f"inactive partition and rebooting into the new image.")
+    _record(appliance, fw_before, filename, dry_run=False, endpoint=_ADC_FW_ENDPOINT)
+    return plan
+
+
 
 # --------------------------------------------------------------------------- #
 #  Firmware-repository helpers (repo-driven upgrade — no upload at upgrade time) #
@@ -454,8 +548,12 @@ def read_partitions(appliance) -> dict:
     """Read the firmware partition table (mirrors the GUI Firmware page). SAFE
     (GET). Returns {partitions:[{partition,active,version,lastUpgrade,upload}],
     active, alternate}. ``alternate`` is the inactive partition that a boot would
-    switch into (the rollback/roll-forward target)."""
+    switch into (the rollback/roll-forward target). FortiADC: read off
+    ``system_global/boot_partition`` into the same shape."""
     client = appliance.build_client(timeout=15)
+    if _is_adc(appliance):
+        from . import adc_ops
+        return adc_ops.boot_partitions(client)
     raw = client.get(PARTITION_READ_ENDPOINT).json()
     res = raw.get("results", raw) if isinstance(raw, dict) else {}
     parts = res.get("firmware") or []
@@ -468,8 +566,68 @@ def read_partitions(appliance) -> dict:
             "last_backup": res.get("lastBackup")}
 
 
+def boot_alternate_partition(appliance, *, dry_run: bool = True) -> dict:
+    """Reboot a FortiADC into its inactive partition — the GUI's "Boot
+    Alternate Firmware". No image is sent: this is the rollback when the
+    previous build still sits on the other partition.
+
+    Refused, before anything is sent, when the appliance is not a FortiADC (the
+    FortiWeb counterpart is not wired: it reboots even on GET and once
+    corrupted a device), when the inactive partition holds no build (booting
+    an empty partition is not a rollback), and when the account may not change
+    the system. Returns ``{ok, dry_run, message, firmware_before, target,
+    partitions}``."""
+    if not _is_adc(appliance):
+        raise ValueError("booting the alternate partition is wired for FortiADC only")
+    from . import adc_ops
+    client = appliance.build_client(timeout=20)
+    parts = adc_ops.boot_partitions(client)
+    fw_before = firmware_version(client)
+    alt = parts.get("alternate")
+    out: dict[str, Any] = {"dry_run": dry_run, "firmware_before": fw_before,
+                           "target": (alt or {}).get("version") or "",
+                           "partitions": parts["partitions"]}
+    if not alt:
+        out.update(ok=False, refused=True, message=(
+            f"{appliance.name}: the inactive partition holds no firmware build, so "
+            f"there is nothing to boot into. Nothing was sent."))
+        return out
+    permitted = check_permission(client)
+    out["permitted"] = permitted
+    if permitted is False:
+        out.update(ok=False, refused=True, message=(
+            f"{appliance.username} may not change the system on {appliance.name}. "
+            f"Nothing was sent."))
+        return out
+    if dry_run:
+        out.update(ok=True, message=(
+            f"DRY-RUN — would reboot {appliance.name} from partition "
+            f"{(parts.get('active') or {}).get('partition', '?')} into partition "
+            f"{alt.get('partition')} ({alt.get('version')}). Nothing was sent."))
+        _record(appliance, fw_before, alt.get("version") or "", dry_run=True,
+                endpoint="system_global/swap_boot_partition")
+        return out
+    status, payload = adc_ops.swap_boot_partition(client)
+    accepted = status < 400 and str(payload).strip() == "0"
+    out["response"] = {"status_code": status, "payload": payload}
+    if not accepted:
+        out.update(ok=False, message=(
+            f"{appliance.name} refused the partition boot "
+            f"({'HTTP %s' % status if status >= 400 else 'device errcode %s' % payload})."
+            f" It did not reboot."))
+    else:
+        out.update(ok=True, message=(
+            f"{appliance.name} accepted the partition boot and is rebooting into "
+            f"{alt.get('version')}."))
+    _record(appliance, fw_before, alt.get("version") or "", dry_run=False,
+            error="" if accepted else out["message"][:200],
+            endpoint="system_global/swap_boot_partition")
+    return out
+
+
 __all__ = ["prepare", "push_firmware", "check_permission", "firmware_version",
-           "FIRMWARE_ENDPOINT", "compatible_images", "read_image_bytes", "read_partitions"]
+           "FIRMWARE_ENDPOINT", "compatible_images", "read_image_bytes", "read_partitions",
+           "boot_alternate_partition"]
 
 
 # --------------------------------------------------------------------------- #
@@ -534,6 +692,22 @@ def monitor_recovery(appliance, *, progress=None, expect_down: bool = True,
             "elapsed_s": round(_t.monotonic() - started, 1)}
 
 
+def _service_targets(appliance, client):
+    """Published services of the box, per product (virtual servers on ADC)."""
+    if _is_adc(appliance):
+        from . import adc_ops
+        return adc_ops.resolve_targets(client)
+    return service_probe.resolve_targets_from_client(client)
+
+
+def _health_text(appliance) -> str:
+    """The product's read-only SSH battery as one text blob."""
+    if _is_adc(appliance):
+        from . import adc_ops
+        return adc_ops.health_text(appliance)
+    return ssh_ops.health_text(appliance)
+
+
 def post_flash_checks(appliance) -> dict:
     """Basic post-flash system tests: management API reachable (firmware read) +
     service policies HTTP-probed (best-effort). Never raises."""
@@ -546,7 +720,7 @@ def post_flash_checks(appliance) -> dict:
         out["error"] = f"{type(exc).__name__}: {exc}"[:200]
         return out
     try:
-        targets = service_probe.resolve_targets_from_client(client)
+        targets = _service_targets(appliance, client)
         probes = service_probe.probe_targets(targets)
         up = sum(1 for p in probes if (p.get("result") or {}).get("ok"))
         out["services"] = {"total": len(probes), "up": up}
@@ -579,7 +753,7 @@ def postflight(appliance, before: dict | None = None, *, do_health: bool = True,
     if do_services and client is not None:
         _say(90, "Post-flight - re-probing published services...")
         try:
-            targets = service_probe.resolve_targets_from_client(client)
+            targets = _service_targets(appliance, client)
             after = service_probe.probe_targets(targets)
             out["services"] = {"ok": True, "probes": after}
             b = (before or {}).get("services") or {}
@@ -592,7 +766,7 @@ def postflight(appliance, before: dict | None = None, *, do_health: bool = True,
     if do_health:
         _say(94, "Post-flight - re-capturing the system health battery...")
         try:
-            out["health"] = {"ok": True, "text": ssh_ops.health_text(appliance)}
+            out["health"] = {"ok": True, "text": _health_text(appliance)}
         except Exception as exc:  # noqa: BLE001 - SSH may be closed; non-fatal
             out["health"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
 

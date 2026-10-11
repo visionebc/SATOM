@@ -94,6 +94,11 @@ def discovery_plan() -> list[dict]:
     for name, urn in sorted(reg.items()):
         if "_child_" in name or "_child_" in (urn or ""):
             continue
+        # The sweep GETs every row, and on FortiADC some GETs reboot or reset
+        # the box. The registry is editable, so this is checked here, not
+        # assumed of the seed.
+        if side_effect_path(urn):
+            continue
         plan.append({"name": name, "urn": urn,
                      "section": section_of.get(name, "Other")})
     return plan
@@ -385,6 +390,156 @@ def inspect_all(client) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+#  Firmware and boot partitions — the ADC side of services/upgrade             #
+# --------------------------------------------------------------------------- #
+#
+# Every path below was read off the FortiADC 7.6.7 GUI's own bundle (System >
+# Settings > Firmware and Backup & Restore, crawl of fortiadc10 on 2026-10-10)
+# and the reads were run against fortiadc10 on 2026-10-11:
+#
+# * ``GET  /api/system_global/boot_partition`` -> ``[{partno, active, partid,
+#   timestamp}]``; an empty ``partid`` is an empty partition (fortiadc10:
+#   partition 2 is empty).
+# * Upload & install = ``GET /api/system_global/clear_tmp_space`` then a
+#   multipart ``POST /api/upload/image`` (form field ``hasync`` 0/1 = "HA
+#   Cluster Upgrade"; the file field name is free). ``payload == 0`` means
+#   accepted: the box installs into the inactive partition and reboots.
+# * ``GET /api/system_global/swap_boot_partition`` reboots into the inactive
+#   partition. A GET.
+# * ``/api/platform/info`` carries ``isSystemAdmin`` / ``isSystemWritable``:
+#   the GUI disables its firmware controls unless both hold.
+
+ADC_BOOT_PARTITION = "/api/system_global/boot_partition"
+ADC_SWAP_PARTITION = "/api/system_global/swap_boot_partition"
+ADC_CLEAR_TMP = "/api/system_global/clear_tmp_space"
+ADC_UPLOAD_IMAGE = "/api/upload/image"
+ADC_PLATFORM_INFO = "/api/platform/info"
+
+#: GETs that CHANGE the box. FortiADC drives reboot, shutdown, factory reset and
+#: the partition swap through plain GETs (``entity:"platform", _method:"reboot"``
+#: and friends in the 7.6.7 GUI bundle), so "it is only a GET" proves nothing
+#: here. Every generic REST door (the API console, a scheduled custom call)
+#: refuses these; each one has its own page with its own gates, or none at all.
+ADC_SIDE_EFFECT_PATHS: tuple[str, ...] = (
+    "platform/reboot", "platform/shutdown", "platform/reset",
+    "system_global/swap_boot_partition", "system_global/clear_tmp_space",
+    "system_global/restore_config_local", "system_global/restore_config_disk",
+    "system_global/delete_config_disk", "upload/image", "upload/check_config",
+    "upload/vmlicense",
+)
+
+
+def side_effect_path(path: str) -> str:
+    """The entry of :data:`ADC_SIDE_EFFECT_PATHS` that ``path`` reaches, or
+    ``""``. Matched on the path alone (query string dropped, case folded,
+    ``/api/`` prefix and doubled slashes ignored) so ``/API//platform/Reboot?x``
+    cannot slip past."""
+    p = (path or "").split("?", 1)[0].split("#", 1)[0].strip().lower()
+    p = "/".join(seg for seg in p.split("/") if seg)
+    if p.startswith("api/"):
+        p = p[4:]
+    for entry in ADC_SIDE_EFFECT_PATHS:
+        if p == entry or p.startswith(entry + "/"):
+            return entry
+    return ""
+
+
+def is_adc_client(client) -> bool:
+    """True for a FortiADC REST client. Lets a caller outside the ADC modules
+    branch on the product without importing the ADC client itself."""
+    from ..clients.fortiadc import FortiADCClient
+
+    return isinstance(client, FortiADCClient)
+
+
+def firmware_line(client) -> str:
+    """``"7.6.7 build0676,260522"`` — the same spelling
+    :func:`model_inventory_from` writes into ``Appliance.firmware``, so a flash
+    compares before/after in one format. ``""`` on failure."""
+    try:
+        return model_inventory_from(client.platform_version())[2] or ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def maintenance_permission(client) -> bool | None:
+    """May this account flash firmware? The GUI's own test: ``isSystemAdmin``
+    and ``isSystemWritable`` on ``/api/platform/info``. ``None`` = unknown."""
+    try:
+        resp = client._api("GET", ADC_PLATFORM_INFO, params={"vdom": "root"})
+        if client._device_error(resp):
+            return None
+        p = client._payload(resp)
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(p, dict) or "isSystemWritable" not in p:
+        return None
+    return bool(p.get("isSystemWritable")) and bool(p.get("isSystemAdmin", True))
+
+
+def boot_partitions(client) -> dict:
+    """The partition table in the shape ``upgrade.read_partitions`` returns for
+    FortiWeb: ``{partitions:[{partition, active, version, lastUpgrade}], active,
+    alternate}``. ``alternate`` is the inactive partition only when it HOLDS a
+    build — an empty one is never something to boot."""
+    resp = client._api("GET", ADC_BOOT_PARTITION)
+    err = client._device_error(resp)
+    if err:
+        raise RuntimeError(f"boot partition read failed: {err}")
+    raw = client._payload(resp)
+    parts = []
+    for row in raw if isinstance(raw, list) else []:
+        if not isinstance(row, dict):
+            continue
+        parts.append({"partition": row.get("partno"),
+                      "active": 1 if str(row.get("active")) in ("1", "true", "True") else 0,
+                      "version": str(row.get("partid") or "").strip(),
+                      "lastUpgrade": str(row.get("timestamp") or "").strip()})
+    active = next((p for p in parts if p["active"]), None)
+    alternate = next((p for p in parts if not p["active"] and p["version"]), None)
+    return {"partitions": parts, "active": active, "alternate": alternate,
+            "needs_clean_install": False, "last_backup": None}
+
+
+def upload_image(client, filename: str, image_bytes: bytes, *,
+                 ha_sync: bool = False, timeout: float = 1800.0) -> tuple:
+    """Upload + install one image the way the GUI does it. Returns
+    ``(http_status, payload, steps)``; ``payload == 0`` = accepted. The tmp
+    clean-up is best-effort, as in the GUI (its result is not checked there)."""
+    steps = []
+    try:
+        r = client._api("GET", ADC_CLEAR_TMP)
+        steps.append({"sent": "clear_tmp_space", "status": r.status_code})
+    except Exception as exc:  # noqa: BLE001
+        steps.append({"sent": "clear_tmp_space", "error": f"{type(exc).__name__}: {exc}"[:160]})
+    if not client._token:
+        client.login()
+    resp = client._request(
+        "POST", ADC_UPLOAD_IMAGE,
+        headers={"Authorization": f"Bearer {client._token}"},
+        cookies=client._cookies,
+        files={"upload": (filename, image_bytes, "application/octet-stream")},
+        data={"hasync": "1" if ha_sync else "0"}, timeout=timeout)
+    try:
+        payload = resp.json().get("payload")
+    except Exception:  # noqa: BLE001
+        payload = None
+    steps.append({"sent": "upload/image", "status": resp.status_code, "payload": payload})
+    return resp.status_code, payload, steps
+
+
+def swap_boot_partition(client) -> tuple:
+    """Reboot into the inactive partition. ``(http_status, payload)``; the
+    caller must have checked that the partition holds a build."""
+    resp = client._api("GET", ADC_SWAP_PARTITION)
+    try:
+        payload = resp.json().get("payload")
+    except Exception:  # noqa: BLE001
+        payload = None
+    return resp.status_code, payload
+
+
+# --------------------------------------------------------------------------- #
 #  Published-service resolution (upgrade-prep probe baseline)                  #
 # --------------------------------------------------------------------------- #
 
@@ -437,4 +592,6 @@ def resolve_targets(client) -> list[ServiceTarget]:
 __all__ = ["TROUBLESHOOT_ADC", "HEALTH_BATTERY_ADC", "capture_health", "health_text",
            "firmware_string", "inspect_vs", "inspect_all", "build_vs_node",
            "resolve_targets", "discovery_plan", "make_fetcher",
-           "model_inventory"]
+           "model_inventory", "boot_partitions", "upload_image",
+           "swap_boot_partition", "maintenance_permission", "firmware_line",
+           "is_adc_client", "side_effect_path", "ADC_SIDE_EFFECT_PATHS"]

@@ -104,10 +104,14 @@
         </label>
       </div>
       <div id="live-fields" class="d-none border rounded p-3 mb-3" style="background:rgba(248,113,113,.06)">
+        {% if appliance.kind == 'fortiadc' %}
+        <p class="small mb-2">{{ _('FortiADC installs the image into its inactive partition and reboots into it; the running build stays on the other partition as the rollback.') }}</p>
+        {% else %}
         <div class="form-check mb-2">
           <input class="form-check-input" type="checkbox" name="confirm_maturity" id="confirm_maturity">
           <label class="form-check-label" for="confirm_maturity">Confirm maturity change (Mature&harr;Feature, e.g. 7.6&rarr;8.0)</label>
         </div>
+        {% endif %}
         <label class="form-label small">Type the appliance name <code>{{ appliance.name }}</code> to authorise the live reboot:</label>
         <input class="form-control" type="text" name="confirm_name" autocomplete="off" placeholder="{{ appliance.name }}">
       </div>

@@ -68,6 +68,13 @@
     var here = norm(location.pathname), target = norm(want);
     return here === target || here.indexOf(target + '/') === 0;
   }
+  // The job changed what this page draws (its cache rows were re-read): redraw.
+  function reloadSoon() {
+    setTimeout(function () {
+      if (window.Turbo && window.Turbo.visit) window.Turbo.visit(location.href, { action: 'replace' });
+      else location.reload();
+    }, 1200);
+  }
   function fmtBytes(n) {
     n = n || 0;
     if (n >= 1073741824) return (n / 1073741824).toFixed(1) + ' GB';
@@ -356,11 +363,7 @@
             addToastLink(key, jobUrl(jobId), 'View job →');
             autoDismiss(key, res.report_url ? 60000 : 12000); delete tracked[jobId];
             notify(jobId, j);
-            if (res.reload && samePage(res.reload_path))
-              setTimeout(function () {
-                if (window.Turbo && window.Turbo.visit) window.Turbo.visit(location.href, { action: 'replace' });
-                else location.reload();
-              }, 1200);
+            if (res.reload && samePage(res.reload_path)) reloadSoon();
             return;
           }
           if (j.status === 'cancelled') {
@@ -387,7 +390,10 @@
             if (!waiters[jobId]) addResultLink(key, jobId, eres);
             addToastLink(key, jobUrl(jobId), 'View job →');
             autoDismiss(key, eres.report_url ? 60000 : 20000); delete tracked[jobId];
-            notify(jobId, j); return;
+            notify(jobId, j);
+            // A partial failure still changed what succeeded: redraw like a success.
+            if (eres.reload && samePage(eres.reload_path)) reloadSoon();
+            return;
           }
           // running, pausing/paused or cancelling
           var stopping = j.status === 'cancelling';

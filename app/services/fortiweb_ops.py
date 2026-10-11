@@ -205,8 +205,17 @@ class FortiWebOps:
             ok, err = self._response_ok(resp)
             self._record(action, endpoint, mkey, before, payload, False, err,
                          forced=forced)
+            # Targeted rediscovery: the pages draw from the cache, so re-read
+            # what this write touched (one object or one sub-table) right here,
+            # for every caller at once. Never fatal: see object_refresh.
+            refresh = None
+            if ok:
+                from . import object_refresh
+                refresh = object_refresh.after_write(self.appliance, self.client,
+                                                     action, path, payload)
             return OpResult(ok=ok, action=action, endpoint=endpoint, mkey=mkey,
-                            dry_run=False, request=req, before=before, after=payload, error=err)
+                            dry_run=False, request=req, before=before, after=payload, error=err,
+                            cache_refresh=refresh)
         except Exception as exc:  # noqa: BLE001
             self._record(action, endpoint, mkey, before, payload, False, str(exc))
             return OpResult(ok=False, action=action, endpoint=endpoint, mkey=mkey,

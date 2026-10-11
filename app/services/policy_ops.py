@@ -2085,6 +2085,14 @@ def start_policy_job(flask_app, *, action: str, source_appl, dest_appl=None,
                 # request context); the app is mounted under /web. The toast +
                 # Job Manager link straight to the reconciliation report.
                 summary["report_url"] = "/web/workspace/clone-report/%s" % job_id
+            # Every write above already refreshed its own cache rows
+            # (FortiWebOps → object_refresh). Tell the page the operator is on
+            # to redraw — any page of the source box under /workspace/<id> —
+            # so the change shows without waiting for a rediscovery. Also after
+            # a partial failure: the policies that succeeded did change.
+            if ok:
+                summary["reload"] = True
+                summary["reload_path"] = "/web/workspace/%s" % src_id
             log_action(
                 "policy.%s.summary" % action, target=src_name,
                 detail="by=%s %s policies=%s dest=%s ok=%d/%d" % (

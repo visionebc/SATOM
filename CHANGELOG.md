@@ -6,6 +6,29 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — a change made from SATOM shows at once, without a rediscovery
+
+The user reported that enabling or disabling a server policy from the
+FortiWeb Server Policy list did not update the screen until a later
+rediscovery picked the change up from the device. They asked for a
+rediscovery of only the element that changed, as a rule for every action.
+
+- Every configuration write SATOM makes to a FortiWeb now re-reads the
+  object it touched (or, for a sub-table row, that sub-table), right after
+  the device accepts it, and updates SATOM's copy in every cache layer. A
+  deleted object is removed. The cache takes the value the device returns,
+  not the value that was sent.
+- The rule sits at the single write entry point, so it covers enable,
+  disable, delete, clone, bulk changes, scheduled actions, exception
+  injection and the object editor alike, not only the three screens that
+  refreshed their own writes before.
+- Cost: one read per accepted write, and none when SATOM holds no copy of
+  that object type for the device. A refused write reads nothing. A failed
+  re-read never undoes the write: the row stays as it was until the next ⟳.
+- Server-policy actions (enable/disable, delete, clone, migrate) redraw the
+  page you are on when the job ends, including after a partial failure,
+  because the policies that succeeded did change.
+
 ### Changed — every device ADOM draws the FortiWeb menu
 
 The user asked that the FortiADC, FortiAnalyzer, FortiAuthenticator and

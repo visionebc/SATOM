@@ -429,6 +429,9 @@ def _push_firmware_adc(appliance, image_bytes: bytes, filename: str, *,
         plan["ok"] = False
         detail = (f"HTTP {status}" if status >= 400
                   else f"device errcode {payload}")
+        why = adc_ops.error_text(client, payload) if status < 400 else ""
+        if why:
+            detail += f": {why}"
         plan["message"] = (
             f"{appliance.name} did NOT accept the flash ({detail}). The image was "
             f"uploaded but not installed and the box will not reboot — firmware "
@@ -611,10 +614,11 @@ def boot_alternate_partition(appliance, *, dry_run: bool = True) -> dict:
     accepted = status < 400 and str(payload).strip() == "0"
     out["response"] = {"status_code": status, "payload": payload}
     if not accepted:
+        why = adc_ops.error_text(client, payload) if status < 400 else ""
         out.update(ok=False, message=(
             f"{appliance.name} refused the partition boot "
-            f"({'HTTP %s' % status if status >= 400 else 'device errcode %s' % payload})."
-            f" It did not reboot."))
+            f"({'HTTP %s' % status if status >= 400 else 'device errcode %s' % payload}"
+            f"{': ' + why if why else ''}). It did not reboot."))
     else:
         out.update(ok=True, message=(
             f"{appliance.name} accepted the partition boot and is rebooting into "

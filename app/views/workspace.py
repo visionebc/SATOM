@@ -1869,7 +1869,21 @@ def _gx_list(appl, page, tpl, match, dev, vi, view, tabs):
                            and not gui_products.is_cli(coll),
                            gx=_gx(appl), mkey_of=mkey_of, list_table=table or '',
                            list_note=note, flags=flags,
-                           gui_only=gui_products.is_gui_only(coll))
+                           gui_only=gui_products.is_gui_only(coll),
+                           satom=_gx_satom(appl, coll, writer))
+
+
+def _gx_satom(appl, coll, writer):
+    """The SATOM tools a FortiGate / FortiAuthenticator / FortiADC page carries
+    over from the old SATOM menu: FortiADC's Virtual Server wizard (VS + pool +
+    members in one dry-run-first flow), which only the adc_menu page linked."""
+    from flask import url_for
+    out = {'wpp': False, 'section': ''}    # the keys fwgui_list.html serialises to JS
+    if appl.kind == 'fortiadc' and coll == 'load_balance_virtual_server' and writer:
+        # the wizard works on the ADOM's current FortiADC: select this one first
+        out['adc_wizard'] = url_for('adc.use_device', id=appl.id,
+                                    next=url_for('adc.wizard_virtual_server', back=request.full_path))
+    return out
 
 
 def _gx_object(appl, page, tpl, match, name):

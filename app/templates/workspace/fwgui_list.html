@@ -59,6 +59,7 @@
     {% endif %}
     {% if satom is defined and satom %}
     {% if satom.create_url %}<a class="btn btn-fw-primary btn-sm" href="{{ satom.create_url }}" data-fwg-satom-new title="{{ _('%(p)s\'s layout has no Create New for these objects; this opens the SATOM editor (dry run first).', p=_gxl) }}"><i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }}</a>{% endif %}
+    {% if satom.adc_wizard and may_open('adc.wizard_virtual_server') %}<a class="btn btn-secondary btn-sm" href="{{ satom.adc_wizard }}" data-fwg-adc-wizard title="{{ _('SATOM wizard: virtual server, real server pool and members in one flow, dry run first.') }}"><i class="bi bi-magic me-1"></i>{{ _('Wizard') }}</a>{% endif %}
     {% if satom.generate_url %}<a class="btn btn-fw-primary btn-sm" href="{{ satom.generate_url }}" data-fwg-generate title="{{ _('Certificate Manager: CSR, signing and deploy to this device') }}"><i class="bi bi-magic me-1"></i>{{ _('Generate') }}</a>{% endif %}
     {% if satom.import_url %}<a class="btn btn-secondary btn-sm" href="{{ satom.import_url }}" data-fwg-import title="{{ _('REST cannot create these certificates: Import writes them over the certificate-only SSH session.') }}"><i class="bi bi-upload me-1"></i>{{ _('Import') }}</a>{% endif %}
     {% if satom.artifact_kind and can_edit %}<button type="button" class="btn btn-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#artifact-add" data-fwg-artifact><i class="bi bi-file-earmark-arrow-up me-1"></i>{{ _('Upload') }} {{ satom.artifact_label }}</button>

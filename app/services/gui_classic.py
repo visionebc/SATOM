@@ -3,8 +3,8 @@
 SATOM drew device objects in its own pages before the GUI crawl existed:
 FortiWeb Server Objects (``server_objects.overview?type=``), Web Protection
 (``web_protection.menu_page``) and the configuration / WAF sections
-(``section_config.section?type=``); the FortiGate / FortiAuthenticator
-``fgt_menu`` / ``fac_menu`` leaves. Since 2026-10-11 the sidebar of those ADOMs
+(``section_config.section?type=``); the FortiGate / FortiAuthenticator /
+FortiADC ``fgt_menu`` / ``fac_menu`` / ``adc_menu`` leaves. Since 2026-10-11 the sidebar of those ADOMs
 draws only the device's own menu (``gui_pages``); what is left here:
 
 * an old URL for a collection a measured page draws redirects there
@@ -45,7 +45,13 @@ def page_map(appliance) -> dict:
         return hit[1]
     out: dict = {}
     fac = gui_products.adapter(gui_products.FORTIAUTH)
-    for e in gui_pages.entries(fw, product):
+    ents = gui_pages.entries(fw, product)
+    if product == gui_products.FORTIADC:
+        # FortiView (``view.*``) comes first in FortiADC's menu and its
+        # dashboards read configuration entities too: without this,
+        # ``system_global`` would move to the Threat Map, not System > Settings
+        ents = sorted(ents, key=lambda e: e["page"].startswith("view."))
+    for e in ents:
         if e["special"]:
             continue
         tpl, _m = gui_pages.template(e["page"], fw, product)
@@ -69,9 +75,10 @@ def page_map(appliance) -> dict:
 
 
 def item_keys(item) -> list:
-    """The collections an old FortiGate / FortiAuthenticator menu leaf reads:
-    ``fgt_menu`` tabs are (cmdb path, label), ``fac_menu`` logicals are
-    (registry logical, label)."""
+    """The collections an old FortiGate / FortiAuthenticator / FortiADC menu
+    leaf reads: ``fgt_menu`` tabs are (cmdb path, label), ``fac_menu`` logicals
+    are (registry logical, label), ``adc_menu`` tabs carry ``.logical`` (the
+    REST entity name)."""
     pairs = getattr(item, "tabs", None) or getattr(item, "logicals", None) or ()
     return [p[0] if isinstance(p, (tuple, list)) else getattr(p, "logical", p) for p in pairs]
 
@@ -84,7 +91,7 @@ def product_covered(item, pmap: dict) -> bool:
 
 
 def redirect_item(appliance, item, tab=None, args=None):
-    """The GUI page URL an old FortiGate / FortiAuthenticator leaf moves to
+    """The GUI page URL an old FortiGate / FortiAuthenticator / FortiADC leaf moves to
     (the requested tab's page, else the first), or None: ``?classic=1``, no
     device, or a leaf with a tab no measured page draws."""
     from flask import url_for

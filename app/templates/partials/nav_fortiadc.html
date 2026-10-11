@@ -1,11 +1,21 @@
 {# FortiADC ADOM: the selected appliance's OWN menu, drawn from the GUI layouts
    measured on its build (services.gui_pages through partials/nav_gx.html),
-   exactly like the FortiGate / FortiAuthenticator ADOMs. Drawn only when a
-   layout exists for the device: the context processor then empties
-   ``adc_nav``, so the hand-made adc_menu groups base.html draws are the
-   fallback for a device (or no device) with no layout -- the ADOM never ends
-   up with an empty menu. Included at the top of partials/nav_product_api.html,
-   which every FortiADC sidebar draws right after the adc_menu groups. #}
-{% if product and product.key == 'fortiadc' and gx_nav and gx_appliance and gx_appliance.kind == 'fortiadc' %}
+   exactly like the FortiGate / FortiAuthenticator ADOMs. Since 2026-10-11 it
+   is the only device menu: the hand-made adc_menu groups are not drawn, and
+   their /adc/m/<item> pages redirect to the measured page that draws the
+   same collections (services.gui_classic.redirect_item). With no device, or
+   none with a layout for its build, the FortiADC group keeps only SATOM's
+   own Signatures overview (as FortiWeb keeps Server Policy). Included at the
+   top of partials/nav_product_api.html. #}
+{% if product and product.key == 'fortiadc' %}
+{% if gx_nav and gx_appliance and gx_appliance.kind == 'fortiadc' %}
 {% include 'partials/nav_gx.html' %}
+{% elif current_user and current_user.can('protection.view') and may_open('adc.signatures') %}
+<div class="fw-nav-group {{ 'open' if request.endpoint == 'adc.signatures' }}" data-nav-group="FortiADC">
+  <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-layout-sidebar fw-nav-section-icon" style="color:#10b981;"></i><span>FortiADC</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-group-body">
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'adc.signatures' }}" href="{{ url_for('adc.signatures') }}"><i class="bi bi-fingerprint fw-nav-icon"></i><span>{{ _('Signatures') }}</span></a>
+  </div>
+</div>
+{% endif %}
 {% endif %}

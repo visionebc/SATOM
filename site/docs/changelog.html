@@ -112,6 +112,20 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--fortiadc-not-in-gui-but-in-cli-in-the-device-menu">Added — FortiADC: "Not in GUI, but in CLI" in the device menu</h3>
+<ul>
+<li>The objects a FortiADC has that its own GUI does not draw on that build now
+  have pages of their own, in a menu group titled <strong>Not in GUI, but in CLI</strong>
+  (knowledge pack <code>kb-20261011.5</code>, harvester 0.9.7). On 7.6.7: VDOM and VDOM
+  links, per-VDOM syslog and FortiAnalyzer, the alert e-mail / SNMP trap /
+  syslog / webhook targets, DNS, connection pool, the old Bot Detection and
+  more — 45 objects in 12 pages. Absence is measured: the crawl opened every
+  menu entry and recorded every read. Each page says so above its list.</li>
+<li>An old FortiADC menu entry no longer waits for an object the device's build
+  does not serve (the registry's sweep evidence: App Portal, SSO admin and
+  three more are FortiADC 8.0 objects a 7.6.7 answers 404 for); it moves to
+  the measured page of what the build has.</li>
+</ul>
 <h3 id="added--fortiadc-child-tables-are-edited-from-the-measured-pages">Added — FortiADC: child tables are edited from the measured pages</h3>
 <ul>
 <li><strong>Create New, Edit and Delete row on a FortiADC child table</strong> (pool members,

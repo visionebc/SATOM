@@ -2416,6 +2416,10 @@ audits it; secrets are never echoed back.
   Connectors) are built from the device's own schema, the metadata the
   FortiADC GUI builds its generic forms from: the fields and their types are the
   device's, the layout on screen is SATOM's.
+- **Not in GUI, but in CLI** — a menu group of its own: the objects the device
+  has that its GUI does not draw on that build (measured: no page of the GUI
+  reads them), one page per CLI path, with list, edit dialog and the usual dry
+  run. Each page says so above its list.
 
 - Object pages use the same form engine: identity/mkey handling, child tables
   (e.g. pool members) derived automatically, dry-run previews, audit on

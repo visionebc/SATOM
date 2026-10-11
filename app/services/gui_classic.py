@@ -88,9 +88,36 @@ def item_keys(item) -> list:
     return [p[0] if isinstance(p, (tuple, list)) else getattr(p, "logical", p) for p in pairs]
 
 
-def product_covered(item, pmap: dict) -> bool:
+def product_covered(item, pmap: dict, appliance=None) -> bool:
+    """Every collection of an old menu leaf is drawn by a measured page. A
+    collection the device's exact build is measured NOT serving (the old
+    FortiADC menu names 8.0 entities a 7.6.7 answers 404 for) is not
+    waited for: there is nothing to draw."""
     keys = item_keys(item)
-    return bool(keys) and all(k in pmap for k in keys)
+    drawn = [k for k in keys if k in pmap]
+    return bool(drawn) and all(k in pmap or not_served(appliance, k) for k in keys)
+
+
+def not_served(appliance, key: str) -> bool:
+    """Is ``key`` measured as NOT served by the appliance's build (registry
+    sweep evidence)? Unknown is "served": never skipped on a guess."""
+    if appliance is None:
+        return False
+    from . import gui_products
+    product = gui_products.product_of(appliance)
+    if product != gui_products.FORTIADC:
+        return False
+    try:
+        from ..registry import loader
+    except Exception:  # noqa: BLE001
+        return False
+    try:
+        loader.resolve_for(product, key, loader.version_of(appliance))
+    except loader.EndpointNotServed:
+        return True
+    except Exception:  # noqa: BLE001 -- not in the registry: unknown
+        return False
+    return False
 
 
 
@@ -103,9 +130,9 @@ def redirect_item(appliance, item, tab=None, args=None):
     if appliance is None or item is None or (args is not None and args.get("classic")):
         return None
     pmap = page_map(appliance)
-    if not product_covered(item, pmap):
+    if not product_covered(item, pmap, appliance):
         return None
-    keys = item_keys(item)
+    keys = [k for k in item_keys(item) if k in pmap]
     t = pmap.get(tab) if tab in keys else pmap.get(keys[0])
     return url_for("workspace.fwgui_list", appliance_id=appliance.id, page=t["page"],
                    v=t["v"] or None)

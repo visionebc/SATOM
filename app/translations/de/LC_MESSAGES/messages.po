@@ -15850,3 +15850,6 @@ msgstr "zugeordnete Entr(y/ies)-punkte an einem Endpunkt, der nicht mehr existie
 
 msgid "No page matches that search."
 msgstr "Keine Seite entspricht dieser Suche."
+
+msgid "Service Diagram"
+msgstr "Service-Diagramm"

@@ -16,7 +16,7 @@ A Flask application that administers a fleet of FortiWeb appliances:
   FortiWeb 7.6 GUI.
 - **Exceptions & signature carve-outs** authored as desired-state and injected to
   the box on demand.
-- **Fleet Map** (network-design diagram), **Architecture**, **Analysis**
+- **Service Diagram** (network-design diagram), **Analysis**
   (FortiView + packet capture), **Backups**, **Log Collection**, **Rediscovery**,
   **Policy Inspector**, **Firmware upgrade** runbooks, **Change Requests**, and
   **Scheduled Actions**.

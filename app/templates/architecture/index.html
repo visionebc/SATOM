@@ -1,19 +1,19 @@
 {% extends "base.html" %}
 
-{% block title %}Fleet Map{% endblock %}
+{% block title %}Service Diagram{% endblock %}
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
   <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <span>{{ _('Architecture') }}</span>
+  <span>{{ _('Service Diagram') }}</span>
 </div>
 {% endblock %}
 
 {% block content %}
 <div class="fw-page-header mb-3">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('Fleet Map') }}</h1>
+    <h1 class="fw-page-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('Service Diagram') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
       {{ _('Network view of the whole fleet: Internet → published services (VIP:port) → FortiWeb → server pools → back-end servers. Devices start collapsed — click one to unfold its topology. Searching switches to a focused view (zone → device → server policy → backends) so only the matching path is drawn.') }}
     </p>

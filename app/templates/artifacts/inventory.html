@@ -195,7 +195,7 @@
           <div class="mb-1">
             <label class="fw-fld-label">{{ _('Device / ADOM') }}</label>
             <select class="form-select form-select-sm" name="appliance_id" required
-                    title="{{ _('The device this capture reaches out to. Only the pair this page stands on — switch device on the Architecture map.') }}">
+                    title="{{ _('The device this capture reaches out to. Only the pair this page stands on — switch device on the Service Diagram.') }}">
               {% for a in appliances %}
                 <option value="{{ a.id }}" title="{{ a.host }}">{{ appliance_name_parts(a)[0] }} / {{ a.vdom or _('no ADOM') }}</option>
               {% endfor %}
@@ -242,7 +242,7 @@
       #}
       {% if may_open('architecture.index') %}
       <a class="btn btn-fw-outline btn-sm" href="{{ url_for('architecture.index') }}"
-         title="{{ _('Go to the Architecture map and stand on a different device or ADOM. Everything on this page follows it.') }}">
+         title="{{ _('Go to the Service Diagram and stand on a different device or ADOM. Everything on this page follows it.') }}">
         <i class="bi bi-diagram-3 me-1"></i>{{ _('Switch device') }}</a>
       {% endif %}
     {% endif %}

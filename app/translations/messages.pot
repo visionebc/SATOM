@@ -11115,3 +11115,6 @@ msgid ""
 "🔒 Template-managed profile — templates stay clean. On save you'll be "
 "offered a per-policy clone (named from the"
 msgstr ""
+
+msgid "Service Diagram"
+msgstr ""

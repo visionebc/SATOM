@@ -58,7 +58,7 @@
 {% endif %}
 {% if may_open('architecture.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
-  <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Architecture') }}</span></a>
+  <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Service Diagram') }}</span></a>
 {% endif %}
 {% include 'partials/nav_appliances.html' %}
 {% if may_open('fleet_objects.index') %}

@@ -253,22 +253,22 @@ current list:</p>
 <tr>
 <td><strong>Global</strong></td>
 <td><code>/</code></td>
-<td>Fleet-wide dashboard and cross-product tools: Monitoring, Search, Architecture, Analysis, Fleet Objects, Metrics, Jobs, Certificate Manager, DNS Lookup, plus fleet administration (Classification, Database, System Backup, Software Update, Bug Reports)</td>
+<td>Fleet-wide dashboard and cross-product tools: Monitoring, Search, Architecture, Analysis, Fleet Objects, Metrics, Fleet → WAF, Jobs, Certificate Manager, DNS Lookup, plus fleet administration (Classification, Database, System Backup, Software Update, High Availability, Bug Reports)</td>
 </tr>
 <tr>
 <td><strong>FortiWeb</strong></td>
 <td><code>/web/</code></td>
-<td>Everything WAF: Server Policy, Server Objects, Web Protection, Exceptions, Configuration sections, Operations, FortiWeb administration</td>
+<td>Everything WAF: FortiWeb's own menu for the selected device (Policy, Server Objects, Web Protection, System, …), the device-scoped WAF tools under Fleet → WAF (Search Attack ID, Exceptions &amp; Signature, WAF Artifacts), Operations, FortiWeb administration</td>
 </tr>
 <tr>
 <td><strong>FortiADC</strong></td>
 <td><code>/adc/</code></td>
-<td>Load-balancer management: the FortiADC 8.0 GUI menu (Server LB, Link LB, Global LB, WAF, Network…), signatures, and an ADC API console</td>
+<td>Load-balancer management: the device's own menu when a layout exists for its build (otherwise the curated FortiADC 8.0 menu: Server LB, Link LB, Global LB, WAF, Network…), signatures, and an ADC API console</td>
 </tr>
 <tr>
 <td><strong>FortiAuthenticator</strong></td>
 <td><code>/fac/</code></td>
-<td>Identity and access: local/LDAP/RADIUS users and groups, FortiTokens, issued certificates, RADIUS and TACACS+ clients, and a FAC API console</td>
+<td>Identity and access: the unit's own menu (users and groups, RADIUS and TACACS+ clients, Fortinet SSO, certificates…) drawn from its measured GUI, and a FAC API console</td>
 </tr>
 <tr>
 <td><strong>FortiAnalyzer</strong></td>
@@ -278,13 +278,19 @@ current list:</p>
 <tr>
 <td><strong>FortiGate</strong></td>
 <td><code>/fgt/</code></td>
-<td>Next-generation firewall, <strong>read-only</strong> (since 3.0): the FortiOS menu — Network, Policy &amp; Objects, Security Profiles, VPN, User &amp; Authentication, System, Log &amp; Report — read live over the REST API</td>
+<td>Next-generation firewall: the FortiOS menu of the selected unit — Network, Policy &amp; Objects, Security Profiles, VPN, User &amp; Authentication, Security Fabric, System, Log &amp; Report — read live over the REST API, with dry-run-first writes on the pages a measured layout draws (§17.4)</td>
 </tr>
 </tbody>
 </table>
+<p>The <strong>Global</strong> dashboard is where every session starts: the health of SATOM's
+own infrastructure (the HA nodes, the code repository, the backup server), one
+tile per ADOM with its appliance count, the Jobs and Certificates tiles, and a
+row of shortcuts to the global sections. A tile opens that ADOM.</p>
+<p><img alt="Global ADOM dashboard" src="img/screens/global-dashboard.webp">
+<em>The Global dashboard: infrastructure health, one tile per ADOM, and the global sections.</em></p>
 <p>Each product workspace mirrors its appliance's own GUI menu, so an operator who
-knows the device knows where to look. §17 covers what each one adds beyond the
-shared pages.</p>
+knows the device knows where to look. How that menu is built differs by
+product (§3.2); §17 covers what each workspace adds beyond the shared pages.</p>
 <p>Switch ADOMs from the product selector or the <code>‹ Global</code> link at the top of
 each sidebar. <strong>The ADOM is per browser tab</strong> — you can keep FortiWeb open in
 one tab and FortiADC in another; switching in one tab never changes the other.
@@ -304,6 +310,69 @@ Select button still means something. From two appliances up, the choice is
 real and the pages ask for it.</p>
 <p>An appliance in maintenance mode is counted only for operators who may see
 maintenance devices, so this can never hand you a device the picker hides.</p>
+<h3 id="32-the-device-menu-drawn-from-the-devices-own-gui">3.2 The device menu: drawn from the device's own GUI</h3>
+<p>In the <strong>FortiWeb</strong>, <strong>FortiGate</strong>, <strong>FortiAuthenticator</strong> and <strong>FortiADC</strong> ADOMs the sidebar
+has one device menu, named after the product, and it is the <strong>device's own
+menu</strong>: the groups, sub-menus and pages the Fortinet GUI shows, in the
+device's order. SATOM does not keep a menu of its own for these products. It
+builds the menu from the <strong>GUI layouts</strong> measured on real firmware builds,
+which reach the node through the knowledge packs (§22.4), so the menu follows
+the selected device (§3.1):</p>
+<ul>
+<li><strong>Per firmware build.</strong> Each page uses the layout measured on the device's
+  exact build, else the same version, else the same train, else the closest
+  older train. The page header says which build the layout comes from (with a
+  <em>knowledge pack</em> badge) and warns when it is not the device's own.</li>
+<li><strong>Only pages the build has.</strong> When the device's own build was measured, a
+  page that only another build's menu has is left out unless that build was
+  measured serving the page's collections. A build nobody measured shows every
+  page of the nearest layout, since leaving pages out by measurement would empty
+  its menu.</li>
+<li><strong>All pages</strong>, the first entry of the group, opens a grid with every page in
+  the device's menu order, one card per top-level group.</li>
+<li>A knowledge pack that brings new layouts shows up in the menu within about a
+  minute (the menu is cached for 60 seconds per product and build).</li>
+</ul>
+<p><img alt="FortiWeb ADOM with the device menu and All pages" src="img/screens/fwb-workspace.webp">
+<em>FortiWeb ADOM, device fwb-01: the FortiWeb group is FortiWeb's own menu; All pages lists every page by group.</em></p>
+<p>Pages open SATOM's GUI pages (<code>/workspace/&lt;id&gt;/fwgui/&lt;page&gt;</code>): the device's
+structure (tabs, columns, dialogs and fields, with their show/hide rules)
+inside the SATOM frame, and the SATOM tools on top. FortiWeb's Server Policy
+keeps its own hand-tuned view (§5).</p>
+<p><strong>The old SATOM menus are gone.</strong> The FortiWeb ADOM no longer draws the
+Loadbalancer (Server Objects), WAF (Web Protection Profile, Web Protection, the
+protection areas) and Configuration groups, and the FortiGate and
+FortiAuthenticator ADOMs no longer draw their former SATOM section menus. The
+<strong>Classic view</strong> button is gone from every list and settings page too. What
+moved and what did not:</p>
+<ul>
+<li><strong>Bookmarks keep working.</strong> An old URL for a collection that a measured page
+  draws redirects to that page.</li>
+<li><strong>Collections no measured page draws yet have no menu entry.</strong> They come
+  back as their pages are measured and arrive in a knowledge pack. A bookmark to
+  such a page still opens it.</li>
+<li><strong>FortiWeb WAF tools</strong> — Search Attack ID, Exceptions &amp; Signature and WAF
+  Artifacts — are now under <strong>Fleet → WAF</strong> in the FortiWeb ADOM (§9). The URLs
+  and permissions are the same.</li>
+</ul>
+<p><strong>When there is nothing to draw.</strong> In the FortiWeb ADOM, with no device
+selected or no layout imported for it yet (fresh install, offline node, no
+knowledge pack), the FortiWeb group keeps one entry, <strong>Server Policy</strong>. It
+opens the device's Server Policy view, SATOM's own Server Policy list with a
+notice when no layout exists, or the Fleet Map (Architecture), where you pick
+a device, when none is selected. The FortiGate and FortiAuthenticator ADOMs draw no device group in
+that case. Their dashboards, the page each ADOM opens on, still list SATOM's
+section pages (§17.2, §17.4).</p>
+<p><strong>FortiADC draws its own menu only where a layout exists.</strong> A FortiADC whose
+firmware build has a measured layout in the knowledge packs gets the device's
+menu like the other three; any other FortiADC keeps the curated menu of §17.1,
+so the ADOM never ends up empty. <strong>FortiAnalyzer is unchanged</strong>: no device GUI
+has been measured for it, and it keeps the curated menu of §17.3.</p>
+<p><strong>The Global ADOM has no device menu.</strong> It is the fleet-wide console. Its
+Fleet → WAF lists the fleet pages (Overview, Inventory, Profiles, Coverage,
+Artifacts, Exceptions) but not the three FortiWeb tools above. Those are
+FortiWeb-ADOM pages, and a link from Global would switch the tab's ADOM
+without saying so.</p>
 <h2 id="4-registering-and-operating-devices">4. Registering and operating devices</h2>
 <p><strong>Appliances</strong> (sidebar → Fleet → Appliances in each ADOM, Global → Appliances in
 the Global ADOM, or the Global dashboard). The entry is shown to anyone holding
@@ -341,8 +410,9 @@ that will not come online.</p>
    object graph (pools, members, WAF profile sub-policies…). This is what
    powers the DB-first policy detail and the Architecture map. Can run
    fleet-wide and is normally scheduled nightly.
-5. <strong>Factory catalog</strong> (Web Protection → <em>Factory catalog</em>, or Template
-   Library → <em>Factory catalog</em>; needs <em>View registry</em>) — the FortiWeb
+5. <strong>Factory catalog</strong> (the device's <strong>Web Protection Profile</strong> list in the
+   FortiWeb menu → <em>Factory catalog</em>, or Template Library → <em>Factory catalog</em>;
+   needs <em>View registry</em>) — the FortiWeb
    predefined Web Protection Profiles, stored once per <strong>firmware version,
    build number and REST API version</strong>. The first deep pass on a build reads
    them in full; later deep passes rebuild a predefined profile from the
@@ -388,28 +458,120 @@ it is doing.</p>
   <em>Details</em>.</li>
 </ul>
 <h2 id="5-server-policy">5. Server Policy</h2>
-<p>FortiWeb ADOM → <strong>Server Policy</strong> (the landing page once a device is chosen).</p>
+<p>FortiWeb ADOM → sidebar group <strong>FortiWeb</strong> → <strong>Server Policy</strong> (the device's own
+menu, §3). The page is drawn in <strong>FortiWeb's own layout</strong> for the device's
+firmware build: the same toolbar, the same columns in the same order and the
+same row behaviour as the appliance GUI, inside the SATOM frame. The layout
+comes from the knowledge packs (§7.4 explains the banner above the table).</p>
+<p><img alt="Server Policy list in FortiWeb's layout" src="img/screens/fwb-server-policy.webp">
+<em>Server Policy on fwb-01: FortiWeb's toolbar plus the SATOM actions, and the cache badge.</em></p>
 <ul>
-<li>The policy table mirrors the FortiWeb GUI: Name, Deployment Mode, Virtual
-  Server, Server Pool, Web Protection Profile, Monitor Mode, Status.</li>
-<li>Click a policy for the <strong>detail view</strong> — rendered from the deep cache,
-  including the resolved service topology: VIP + port → virtual server → pool
-  → real servers (with live backend health probe when requested).</li>
-<li><strong>Edit</strong> opens the FortiWeb-style form: the same sections as the appliance
-  GUI, dropdowns populated with the device's own objects, and a <strong>＋</strong> next to
-  creatable references (build a new pool / health check / SNI policy inline
-  without leaving the form).</li>
-<li>Saves are <strong>minimal-diff</strong>: only the fields you actually changed travel to
-  the device, computed against the same baseline you saw. You always get a
-  dry-run preview first.</li>
-<li><strong>Delete</strong> runs a safe cascade: the policy plus only the objects <em>nothing
-  else uses</em>; shared building blocks are kept and reported.</li>
-<li><strong>⏰ Schedule</strong> lets an operator schedule a policy enable/disable, a backend
-  enable/disable, or a certificate swap for a specific date/time (see §15).</li>
+<li><strong>Rows come from the SATOM cache</strong> of the device, not from a live read. The
+  badge at the right of the toolbar says when the cache was taken; <strong>⟳
+  (Refresh)</strong> pulls the live configuration from the device and returns to this
+  list (it needs <code>config_write</code>). The VIP and Port columns are joined from the
+  policy's deep capture; a policy without one shows <strong>—</strong> there.</li>
+<li><strong>Click</strong> a row to select it; <strong>double-click</strong>, <strong>Enter</strong> or <strong>Edit</strong> opens
+  it. <strong>Search</strong> filters the visible rows.</li>
+<li><strong>Create New</strong> opens FortiWeb's <em>Create New</em> menu. An entry marked
+  <strong>conditional</strong> may be hidden on this device by a setting SATOM cannot see.
+  The form starts with FortiWeb's own defaults; a policy with no HTTP, HTTPS or
+  HTTP/3 service is refused before anything is written, the preview included.
+  If any step of the create fails, the objects that run created are deleted
+  again, newest first, and the result lists what was undone.</li>
 </ul>
+<h3 id="toolbar-actions-on-the-selected-policy">Toolbar actions on the selected policy</h3>
+<p>FortiWeb's toolbar is extended with the SATOM actions the classic page had.
+Each one acts on the <strong>selected row</strong> and always shows a dry-run preview
+before anything is written:</p>
+<table>
+<thead>
+<tr>
+<th>Button</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Clone</strong></td>
+<td>Deep-clones the policy tree on this FortiWeb under a new name (§6).</td>
+</tr>
+<tr>
+<td><strong>Clone to</strong></td>
+<td>Deep-clones the policy tree onto another FortiWeb (§6).</td>
+</tr>
+<tr>
+<td><strong>Migrate to</strong></td>
+<td>Clones onto another FortiWeb and, only if that lands cleanly, disables the source. The source is never deleted (§6).</td>
+</tr>
+<tr>
+<td><strong>Enable</strong> / <strong>Disable</strong></td>
+<td>Turns the policy on or off. Disable stops the traffic and keeps the object.</td>
+</tr>
+<tr>
+<td><strong>Delete</strong></td>
+<td>Safe cascade: the policy plus only the objects <em>nothing else uses</em>. Web Protection Profiles, certificates, services and shared objects are kept, and the preview lists both.</td>
+</tr>
+</tbody>
+</table>
+<p>These six actions run in SATOM's policy dialog, which lives on the SATOM view
+of the list: the button opens <code>…/workspace/&lt;id&gt;?classic=1&amp;act=&lt;action&gt;&amp;policy=&lt;name&gt;</code>
+and the dialog for that policy opens straight away. Its options, preview and
+background job are the ones described in §6.</p>
+<p>The page header adds three buttons:</p>
+<ul>
+<li><strong>From a line profile</strong> — the wizard in §5.1 (needs <code>config_write</code>).</li>
+<li><strong>SATOM view</strong> — SATOM's own list of the same policies (below).</li>
+<li><strong>Change Appliance</strong> — back to the device picker.</li>
+</ul>
+<h3 id="editing-a-policy">Editing a policy</h3>
+<p><strong>Edit</strong> opens FortiWeb's <em>Edit Server Policy</em> dialog for the policy's protocol,
+with the device's own sections, sub-dialogs and inline tables:</p>
+<ul>
+<li>Fields show and hide <strong>as you edit</strong>, as FortiWeb's GUI does (§7.4).</li>
+<li>Rows of the inline tables open in their own dialog. <strong>Create New</strong> is offered
+  in a table's toolbar only when SATOM knows that sub-table and can read its
+  rows; a table SATOM cannot read is never written blind.</li>
+<li>The pencil beside a reference selector (Virtual Server, Server Pool, HTTP
+  Service…) opens the selected object in a <strong>panel stacked over the dialog</strong>;
+  <strong>Esc</strong> closes it.</li>
+<li>Below the dialog, <strong>Not in GUI, but in CLI</strong> lists every field this policy has
+  on the device's build that FortiWeb's GUI does not show (§7.6).</li>
+<li><strong>Save</strong> works as described in §7.5: you review the change first, then
+  apply it. Before the write, every reference value is checked against the
+  device (§7.1). After a successful write, SATOM reads the policy back from the
+  device so the page shows the stored value.</li>
+</ul>
+<h3 id="the-satom-view">The SATOM view</h3>
+<p><strong>SATOM view</strong> (<code>/web/workspace/&lt;id&gt;</code>) is SATOM's own list of the same
+policies, and the page the FortiWeb ADOM opens on when you enter it with a
+device already selected. It is also the fallback: when no FortiWeb GUI layout has been
+imported on this node yet (a fresh install, or the knowledge feed switched off),
+the Server Policy entry opens this list with a note saying so.</p>
+<ul>
+<li>Filters for name (plain text or <code>/regex/</code>), VIP / IP, backend pool, backend
+  server IP, certificate type and status. The VIP and backend filters read the
+  deep capture.</li>
+<li><strong>Checkboxes and a bulk bar</strong> — Enable, Disable, Clone here, Clone to…,
+  Migrate to…, Delete for many policies at once (§6.5).</li>
+<li><strong>New Server Policy</strong>, <strong>From a line profile</strong> and <strong>Refresh from device</strong>
+  (<code>config_write</code>); <strong>FortiWeb layout</strong> goes back to the list above.</li>
+<li>Click a policy for the <strong>detail view</strong>. It is rendered from the deep cache
+  and includes the resolved service topology: VIP + port → virtual server →
+  pool → real servers. <strong>Check live health</strong> asks the device for the real
+  per-backend health-check state.</li>
+<li>The SATOM edit form has a <strong>＋</strong> next to creatable references, so you can
+  build a new pool, health check or SNI policy inline without leaving the form.
+  Saves are <strong>minimal-diff</strong>: only the fields you changed travel to the device,
+  and you always get a dry-run preview first.</li>
+</ul>
+<p>To enable or disable a policy or a backend, change a backend's IP or port, or
+swap a policy's certificate <strong>at a set date and time</strong>, use a Scheduled Action
+(§15).</p>
 <h3 id="51-new-server-policy-from-a-line--the-wizard">5.1 New Server Policy from a line — the wizard</h3>
 <p><code>/web/workspace/&lt;id&gt;/spo-wizard</code>, reached from the <strong>From a line profile</strong>
-button on the Server Policy page, beside <strong>New Server Policy</strong>.</p>
+button on the Server Policy page (page header) and on its SATOM view, beside
+<strong>New Server Policy</strong>.</p>
 <p>You pick a <strong>line</strong>, and its profile supplies the network segment, the
 certificate class and the Web Protection Profile. The wizard then runs the whole
 chain in one order: IPAM reserves the VIP, DNS publishes the name, the CA issues
@@ -535,9 +697,21 @@ answer differently and write to a backend the summary never named. A recorded
 <code>null</code> therefore means exactly one thing: no backend carried that role when the
 plan was built.</p>
 <h2 id="6-cloning--migrating-policies">6. Cloning &amp; migrating policies</h2>
-<p>From the Server Policy list, <strong>Clone / Migrate</strong> recreates a whole policy tree
+<p><strong>Clone</strong>, <strong>Clone to</strong> and <strong>Migrate to</strong> recreate a whole policy tree
 (virtual server, VIP, pool + members, health checks, content routing, and
-optionally the full WAF profile) on the same or another FortiWeb.</p>
+optionally the full WAF profile) on the same or another FortiWeb. <strong>Migrate
+to</strong> clones first and disables the source only if the clone lands cleanly; the
+source is kept, never deleted.</p>
+<p>Where to start:</p>
+<ul>
+<li><strong>One policy</strong> — on the Server Policy list (§5), select the row and press
+  <strong>Clone</strong>, <strong>Clone to</strong> or <strong>Migrate to</strong>. The dialog opens on the list's
+  SATOM view with that policy filled in.</li>
+<li><strong>Many policies</strong> — on the SATOM view, tick the policies and use the bulk
+  bar (<strong>Clone here</strong>, <strong>Clone to…</strong>, <strong>Migrate to…</strong>), or the ⚙ menu of one
+  row. <em>Clone to</em> and <em>Migrate to</em> are disabled while no other FortiWeb is
+  registered.</li>
+</ul>
 <p>What the guided dialog does for you:</p>
 <ul>
 <li><strong>Pre-flight checklist</strong> (runs automatically): source readable, destination
@@ -546,8 +720,14 @@ optionally the full WAF profile) on the same or another FortiWeb.</p>
   move over SSH), and capacity headroom. Blocking findings disable Apply.</li>
 <li><strong>Dummy VIP rules:</strong> cloned VIPs are rewritten to a placeholder IP so a
   clone can never take real traffic by accident. Admins configure the rewrite
-  rules (e.g. <code>10.x → 240.x</code>) in Settings → Clone/Migrate; single clones can
-  override the suggested IP, bulk clones always use the rules.</li>
+  rules in Settings → Clone / Migrate. A rule replaces the leading octets and
+  keeps the rest (<code>198.51</code> → <code>240.51</code> turns <code>198.51.100.7</code> into <code>240.51.100.7</code>);
+  when no rule matches, the fallback address is used (default <code>203.0.113.9</code>).
+  Single clones can override the suggested IP; bulk clones always use the
+  rules.</li>
+<li><strong>Admin defaults:</strong> whether the Web Protection Profile is copied by default
+  comes from the same settings page and is shown read-only. Tick <strong>Override
+  admin defaults</strong> to change it for this run only.</li>
 <li><strong>WAF profile choice:</strong> if the destination already has a <em>different</em> profile
   with the same name, you choose — use the destination's, or copy the source
   profile under a new name.</li>
@@ -696,21 +876,86 @@ option described above is true of a 60-policy run and of one dialog.</p>
   set; the ceiling exists because the appliance saturates.</li>
 </ul>
 <h2 id="7-server-objects--the-generic-object-editor">7. Server Objects &amp; the generic object editor</h2>
-<p>FortiWeb ADOM → <strong>Server Objects</strong> mirrors the appliance's Server Objects
-menu (Server, Service, SSL, Protected Hostnames, Lists, Global, Certificates).
-Any object opens in the <strong>generic object editor</strong> (<code>objedit</code>), which is also
-used by the Configuration sections and the WAF area:</p>
+<p>Object pages are drawn from <strong>the device's own menu</strong>. In the FortiWeb ADOM the
+sidebar group <strong>FortiWeb</strong> lists every page SATOM has a measured GUI layout for
+on the selected device's firmware build, in FortiWeb's menu order (Server
+Objects → Server → Server Pool, System → Admin → Settings, and so on), and <strong>All
+pages</strong> shows the same menu as a grid. The layouts come with the knowledge
+packs, so the menu follows the build the device actually runs.</p>
+<ul>
+<li>SATOM's old menus (Loadbalancer / Server Objects, WAF, Configuration) are no
+  longer drawn. Old URLs and bookmarks redirect to the page of the device's
+  menu that draws the same collection.</li>
+<li>A collection that no measured page draws yet has no menu entry. It comes back
+  when its page is crawled.</li>
+<li>FortiGate and FortiAuthenticator pages are built the same way and behave as
+  described here, with one difference: their editors read the values from the
+  device, where FortiWeb's read the SATOM cache.</li>
+</ul>
+<p><img alt="Server Pool list in FortiWeb's layout" src="img/screens/fwb-server-pool.webp">
+<em>Server Pool on fwb-01: FortiWeb's toolbar and columns inside the SATOM frame.</em></p>
+<h3 id="working-with-a-list-page">Working with a list page</h3>
+<ul>
+<li><strong>Rows come from the SATOM cache.</strong> The badge at the right of the toolbar
+  says when the cache was taken; <strong>⟳ (Refresh)</strong> pulls the device's
+  configuration into the cache and returns to the page (<code>config_write</code>).
+  FortiWeb's predefined entries are read live from the device instead, carry a
+  <strong>live</strong> badge and are read-only.</li>
+<li><strong>Click</strong> selects a row; <strong>double-click</strong>, <strong>Enter</strong> or <strong>Edit</strong> opens it in
+  its editor. <strong>Search</strong> filters the rows.</li>
+<li><strong>Create New</strong> is FortiWeb's own menu. Where FortiWeb's layout has no Create
+  New but SATOM's classic page had one (CA Group, CRL, admin replacement
+  messages), a <strong>Create New</strong> button opens SATOM's object editor instead. It is
+  never offered for certificates REST cannot create or for file-backed
+  objects.</li>
+<li><strong>Clone</strong> copies the selected object under a new name, with its sub-table
+  rows. <strong>Delete</strong> removes it. Both show a dry run first, and Delete runs the
+  reference check in §7.2.</li>
+<li><strong>Save as template</strong> reads the selected object from the device and saves it
+  to the Template Library as a <em>pending</em> template (§29), filed under the same
+  section the classic page used. A Web Protection Profile is captured with its
+  sub-policies. This needs the template-save permission.</li>
+<li><strong>Deep clone</strong> (inline Web Protection Profiles) copies the profile <em>and</em> the
+  objects it references under new names. The Web Protection Profile list also
+  has <strong>Hide default profiles</strong> and <strong>Factory catalog</strong> (§8).</li>
+<li><strong>Certificates:</strong> <strong>Import</strong> writes Local, CA, Intermediate CA and XML
+  certificates over the certificate-only SSH session, because REST cannot
+  create them. On Local certificates, <strong>Generate</strong> opens the Certificate Manager
+  (§10).</li>
+<li><strong>File-backed objects</strong> (XML schema, WSDL, DTD, JSON schema, OpenAPI):
+  <strong>Upload</strong> files the document in SATOM's artifact store, and <strong>Stored copies</strong>
+  lists what is there.</li>
+<li>Under the table, the <strong>config template library</strong> of the object's section
+  lists the templates for this object type: View, Apply to devices (with
+  dry-run preview and the compatibility verdict), Clone, Delete, New template.</li>
+</ul>
+<h3 id="the-editor">The editor</h3>
+<p>Opening an object shows <strong>the dialog FortiWeb opens for it</strong>: its sections,
+tabs, folding blocks and inline tables, laid out for the device's build. §7.4
+explains the banner and the badges, and §7.5 explains how Save works.</p>
+<ul>
+<li><strong>Inline tables</strong> (pool members, VIP lists, match conditions…) behave like
+  FortiWeb's grid. A row opens in its own dialog. <strong>Create New</strong> is offered
+  only for tables SATOM knows and can read, so a table SATOM cannot read is
+  never written blind.</li>
+<li><strong>Reference selectors</strong> are filled from the device's own objects. The pencil
+  beside one opens the selected object in a <strong>panel stacked over the dialog</strong>,
+  the way FortiWeb drops in a sub-page. <strong>Esc</strong> closes the panel, and choices
+  made in the panel feed back into the selector that opened it.</li>
+<li>Below the main dialog, <strong>Not in GUI, but in CLI</strong> lists the fields this
+  object has on the build that FortiWeb's GUI does not show (§7.6).</li>
+</ul>
+<p>The stacked panel, and the <strong>Create New</strong> button that FortiWeb lacks, use
+SATOM's own <strong>object editor</strong> (<code>objedit</code>):</p>
 <ul>
 <li>Fields render like the FortiWeb GUI: curated labels, enums with GUI names,
   toggles, reference dropdowns; anything uncurated still shows with a raw-JSON
   escape hatch, so nothing is uneditable.</li>
-<li><strong>Sub-tables</strong> (pool members, VIP lists, host lists, match conditions…) are
-  edited in place, several levels deep.</li>
-<li>Editing a referenced object opens a <strong>slide-over panel</strong> stacked to the
-  right — exactly like FortiWeb drops in a sub-page — and every reference
-  dropdown has <strong>✎</strong> (edit selected) and <strong>＋</strong> (create new in place).</li>
+<li><strong>Sub-tables</strong> are edited in place, several levels deep. Every reference
+  dropdown has <strong>✎</strong> (edit the selected object) and <strong>＋</strong> (create a new one
+  in place).</li>
 <li>If the device is unreachable, the editor renders from the <strong>local cache</strong>
-  with an info banner; fields stay editable and Save still targets the device.</li>
+  with an info banner. Fields stay editable and Save still targets the device.</li>
 <li>Every save previews as a dry-run diff before applying.</li>
 </ul>
 <h3 id="71-reference-fields-are-checked-before-the-write">7.1 Reference fields are checked before the write</h3>
@@ -811,43 +1056,288 @@ build are listed as <em>Not known on this build (sent by REST as before)</em>. T
 permission is unchanged (the editor's write permission); every CLI write is in
 the audit log as <code>config.cli_write</code>, with field names and the outcome, never a
 value.</p>
-<p>On FortiGate, FortiAuthenticator, FortiADC and FortiAnalyzer the "Not in GUI,
-but in CLI" section of each tab is itself the editor of those fields (<em>Read
-values over CLI</em>, <em>Preview CLI change</em>, <em>Apply</em>), and objects only the CLI
-serves are edited the same way on the device's <em>Everything this device has
-outside the GUI</em> page and, on FortiAuthenticator, in <em>System → Network</em> and
-<em>System → Administration</em>.</p>
+<p>The cards above belong to SATOM's object editor (the stacked panel and the
+SATOM editor pages). On a page in the device's layout the same split runs on
+the server, and the Server Policy dialog marks such a field <strong>CLI</strong> in the
+<em>Channel</em> column of its review (§7.5).</p>
+<p>On FortiGate and FortiAuthenticator pages in the device's layout, the "Not in
+GUI, but in CLI" section is part of the form, as on FortiWeb (§7.6). On the
+FortiADC and FortiAnalyzer tabs, the section is itself the editor of those
+fields (<em>Read values over CLI</em>, <em>Preview CLI change</em>, <em>Apply</em>). Objects only
+the CLI serves are edited the same way on the device's <em>Not in GUI, but in CLI</em>
+page (§7.7). On FortiAuthenticator they are also edited on the menu page that
+hosts them, which says <em>Served only by the CLI on this build</em>.</p>
+<h3 id="74-pages-in-fortiwebs-layout-banner-and-badges">7.4 Pages in FortiWeb's layout: banner and badges</h3>
+<p>The note above every list and dialog names the layout it is drawn from:
+<em>FortiWeb 7.6.x GUI layout — template built from FortiWeb 7.6.8 build …. This
+device runs 7.6.8.</em> A <strong>knowledge pack</strong> badge means the layout came from an
+imported knowledge pack. Hover the badge to see where it came from. When the
+fit is not exact, the note becomes a warning:</p>
+<table>
+<thead>
+<tr>
+<th>Banner</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><em>No layout was measured on … itself; this one is from …, the closest build of the same train</em></td>
+<td>Fields this device has and the layout does not place are listed under <strong>Not in GUI, but in CLI</strong> (§7.6).</td>
+</tr>
+<tr>
+<td><em>This layout was built from … Newer firmware adds or renames fields …</em></td>
+<td>The device runs a newer build than any layout. Fields the newer build adds are not shown in the form.</td>
+</tr>
+<tr>
+<td><em>… older than every layout template … Some fields shown may not exist on this firmware</em></td>
+<td>The device runs an older build than any layout.</td>
+</tr>
+<tr>
+<td><em>The firmware of this device is not known yet</em></td>
+<td>Run a firmware check on the device.</td>
+</tr>
+<tr>
+<td><em>Operation mode not cached for this device</em></td>
+<td>Fields that depend on the operation mode are shown and marked.</td>
+</tr>
+</tbody>
+</table>
+<p>Fields <strong>show and hide as you edit</strong>, the way FortiWeb's GUI does: every field
+and section carries FortiWeb's condition, and the device's facts are already
+applied. A condition SATOM cannot evaluate leaves the field shown. When
+FortiWeb would hide fields for the current values, the title bar says
+<em>N fields hidden by FortiWeb for these settings</em>.</p>
+<p>Badges next to a label:</p>
+<table>
+<thead>
+<tr>
+<th>Badge</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>conditional</strong></td>
+<td>FortiWeb shows this field only under a condition SATOM cannot evaluate here. Hover to see what it depends on.</td>
+</tr>
+<tr>
+<td><strong>key not measured</strong></td>
+<td>The GUI crawl could not tell which REST field this control shows. Hover to see the candidates.</td>
+</tr>
+<tr>
+<td><strong>choices not measured</strong></td>
+<td>FortiWeb offers a list of choices the crawl could not read. Type the value the way the CLI takes it.</td>
+</tr>
+<tr>
+<td><strong>No API on this build (GUI only)</strong></td>
+<td>The field has no API on this build. It is shown the way the GUI shows it and is never saved. A whole page can be GUI-only too, and is then drawn read-only.</td>
+</tr>
+<tr>
+<td><strong>read-only</strong> / an endpoint name</td>
+<td>FortiGate and FortiAuthenticator: the GUI draws the field read-only, or saves it into another object that is edited on its own page.</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="FortiGate Edit Address with conditional badges" src="img/screens/fgt-address-object.webp">
+<em>Edit Address on fgt-01: conditional fields and "choices not measured" badges.</em></p>
+<p>A <strong>settings page</strong> (a single object such as System → Admin → Settings) adds
+<strong>Save as template</strong>, which captures the whole object as a pending template,
+and <strong>⟳</strong>, which refreshes it from the device, to the page header. The section's
+config template library is listed below the form.</p>
+<h3 id="75-how-a-save-travels">7.5 How a save travels</h3>
+<p>The same sequence runs on every page in a device's layout. Nothing is written
+before you have seen the change.</p>
+<ol>
+<li><strong>Save</strong> collects the fields you changed. Fields hidden by the show/hide
+   rules are not sent, and a field you did not touch is never sent back.
+   Changed fields in <strong>Not in GUI, but in CLI</strong> travel with the rest.</li>
+<li>SATOM runs a <strong>dry run</strong> for each object the change touches. Most changes
+   touch only the dialog's own object. A field that FortiWeb's GUI saves into
+   another object goes to that object, and a form that FortiWeb's GUI writes
+   through its own GUI API goes through that API.</li>
+<li><strong>Review the change</strong> lists each field with <em>Was</em>, <em>New</em> and <em>Channel</em>
+   (<code>REST</code>, <code>REST (GUI API)</code> or <code>CLI</code>). An <em>Endpoint</em> column appears when more
+   than one object is involved, and the raw request is folded underneath. Choose
+   <strong>Back to the form</strong> or <strong>Apply to <device></strong>.</li>
+<li><strong>Apply</strong> writes the objects in order and stops at the first refusal. The
+   message names the endpoint that refused and what was already written.</li>
+<li>On FortiWeb object pages, the server checks the change before anything
+   leaves SATOM:
+   - a template-managed Web Protection Profile is read-only;
+   - another user's edit lease on the object blocks the save;
+   - every reference value must exist on the device (§7.1);
+   - the build compatibility check runs (§7.3): a blocking finding refuses the
+     apply, and fields the build does not have are stripped.</li>
+</ol>
+<p>The Server Policy dialog runs the reference check. On every page the
+   channels then split. REST fields go by REST. Fields the build serves
+   only by CLI go through the CLI writer over SSH, and only after the REST part
+   succeeded. If REST fails, the CLI part is not sent.
+6. After a successful apply, SATOM updates its copy and the page reloads.
+   FortiGate and FortiAuthenticator pages re-read the object from the device.
+   If the device stored a different value, the page says <em>Saved, but the device
+   stored different values: …</em>.</p>
+<p><img alt="System Admin Settings with the Not-in-GUI footer" src="img/screens/fwb-admin-settings.webp">
+<em>System → Admin → Settings on fwb-01, with "Not in GUI, but in CLI" below the form.</em></p>
+<h3 id="76-not-in-gui-but-in-cli">7.6 Not in GUI, but in CLI</h3>
+<p>Every object editor, for all five products, ends with a collapsed section titled
+<strong>Not in GUI, but in CLI (n)</strong>. SATOM shows <strong>every</strong> field the device has on
+its exact build. A field the Fortinet GUI does not show is never dropped and
+never merged into another group: it goes here. The section is always drawn,
+even when it is empty. An empty section says why: every field is in the GUI,
+or the page's GUI layout has not been measured yet.</p>
+<p>Two kinds of evidence decide what is "not in the GUI":</p>
+<ul>
+<li>the <strong>API library</strong> of the device's exact build: a field the CLI has and REST
+  does not is never in the GUI;</li>
+<li>the page's <strong>GUI layout</strong>, where one was measured: a REST field the layout
+  does not place is not in the GUI either. Without a measured layout SATOM
+  cannot tell a GUI field from a REST-only one, so those stay in their usual
+  groups and the section says so.</li>
+</ul>
+<p>Each field carries the channel SATOM writes it by:</p>
+<table>
+<thead>
+<tr>
+<th>Badge</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>REST</strong></td>
+<td>The REST API serves it. A normal Save writes it.</td>
+</tr>
+<tr>
+<td><strong>CLI</strong></td>
+<td>This build does not serve it over REST. Save writes it over SSH through the CLI writer.</td>
+</tr>
+<tr>
+<td><strong>unverified on this build</strong></td>
+<td>No source measured the field on this build. It is shown, never hidden. It is not written until a channel is measured.</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="Edit Server Pool with the Not in GUI section" src="img/screens/fwb-server-pool-object.webp">
+<em>Edit Server Pool on fwb-01: the member table and the collapsed "Not in GUI, but in CLI (7)" section.</em></p>
+<p>In an editor you can write to, the fields in the section are part of the form,
+and Save sends them with the rest (§7.5). On a Create New form, a CLI-only
+field says <em>set it once the object exists</em>.</p>
+<p><strong>Read values over CLI</strong> appears when the section has CLI fields and the
+object exists. It reads their current values over a read-only SSH session
+(<code>show full-configuration</code>) and fills them into the inputs; a value you leave
+unchanged is not sent back. <strong>Secrets are never returned</strong>: their input says
+<em>secret — not shown</em>. Reading needs only view permission. Nothing is written.</p>
+<p>Where a view has no editor of its own (the FortiADC and FortiAnalyzer
+tabs, objects only the CLI serves, read-only users), the section is a table of
+<em>Field / Channel / Type / Value</em>:</p>
+<ul>
+<li>With <code>config_write</code>, each CLI field is an input. Name the row (and its parent
+  row, for a nested table), then use <strong>Read values over CLI</strong>, <strong>Preview CLI
+  change</strong>, which shows the script, and <strong>Apply</strong>.</li>
+<li>REST fields show <em>written by the object's own form</em>.</li>
+<li>Unverified fields show <em>not writable until measured on this build</em>.</li>
+<li>A write that names any REST or unmeasured field is refused whole
+  (<em>nothing was sent: …</em>), so a half-applied change cannot happen.</li>
+<li>When the product's CLI dialect has not been verified on a device yet, a note
+  asks you to read the previewed script before you apply.</li>
+<li>Every apply is recorded in the audit log as <code>appliance.not_in_gui.save</code>.</li>
+</ul>
+<h3 id="77-the-per-device-page">7.7 The per-device page</h3>
+<p><strong>Appliances → <em>device</em> → Not in GUI, but in CLI</strong> (<code>/appliances/&lt;id&gt;/not-in-gui</code>)
+lists everything the device's build has outside the Fortinet GUI, in one
+place. Every section in the views links to it as <em>Everything this device has
+outside the GUI →</em>.</p>
+<p><img alt="Per-device Not in GUI, but in CLI page" src="img/screens/fwb-not-in-gui.webp">
+<em>The per-device page for fwb-01: layout-measured pages, CLI-only objects and CLI-only fields.</em></p>
+<ul>
+<li><strong>Layout-measured pages</strong>: for each page whose GUI layout was measured, the
+  REST fields the Fortinet GUI does not show.</li>
+<li><strong>Objects only the CLI serves</strong>: whole objects REST does not have at all (for
+  example FortiAuthenticator <code>system/dns</code>). Each one is editable as described in
+  §7.6.</li>
+<li><strong>CLI-only fields of objects the REST API serves</strong>: per object, editable the
+  same way.</li>
+</ul>
+<p>If the device's running build is unknown, the page asks you to run a firmware
+check first. For a product with no measured GUI layout and no measured CLI
+tree, the page says that SATOM cannot split GUI fields from CLI-only fields yet.
+In that case every field the REST API returns stays in the object views, and
+nothing is hidden.</p>
 <h2 id="8-web-protection-waf">8. Web Protection (WAF)</h2>
-<p>FortiWeb ADOM → <strong>Web Protection</strong> reproduces the FortiWeb 7.6 Web Protection
-menu tree exactly: Known Attacks (Signatures / Custom Signature), Protocol,
-Access, Input Validation, Cookie Security, Advanced Protection, Data Loss
-Prevention — plus the profile itself under Policy → Web Protection Profile
-(Inline / Offline tabs).</p>
+<p>In the FortiWeb ADOM, the Web Protection pages belong to the device's own menu:
+the <strong>FortiWeb</strong> group in the sidebar. SATOM builds that group from the measured
+GUI layout of the selected device's firmware build (the layouts come with the
+knowledge packs). The pages therefore have the same names and sit in the same
+places as in that FortiWeb's GUI. <strong>Web Protection Profile</strong> is under
+<strong>Policy</strong> (Inline / Offline tabs). The protection areas are under <strong>Web
+Protection</strong>. On a 7.6 build these are Known Attacks (Signatures / Custom
+Signature), Protocol, Access, Input Validation, Cookie Security, Advanced
+Protection and Data Loss Prevention. Another build shows whatever its own GUI
+has. <strong>All pages</strong> at the top of the group lists every page in the device's
+menu order.</p>
+<p>The old SATOM <strong>WAF</strong> group of the FortiWeb ADOM (Web Protection Profile, Web
+Protection and the protection areas) is gone. Its links still work: an old URL
+redirects to the device-menu page that draws the same collection. With no
+device selected, or no measured layout for it yet, the FortiWeb group shows
+only <strong>Server Policy</strong>. A collection that no measured page draws yet has no
+menu entry until its page is crawled. The fleet-wide WAF pages and the
+device-scoped WAF tools (Search Attack ID, Exceptions &amp; Signature, WAF
+Artifacts) are under <strong>Fleet → WAF</strong> (§13.1, §13.2).</p>
+<h3 id="81-web-protection-profiles-and-signatures-in-the-device-menu">8.1 Web Protection Profiles and signatures in the device menu</h3>
+<p><strong>Web Protection Profile</strong> is a FortiWeb-layout list, with the SATOM tools the
+old profile page had:</p>
+<ul>
+<li><strong>Deep clone</strong> (Inline tab) copies the profile and the objects it references
+  (sub-policies, signatures, rules) under new names.</li>
+<li><strong>Save as template</strong> reads the selected profile from the device and saves it
+  to the Template Library as a pending template.</li>
+<li><strong>Hide default profiles</strong> hides the predefined profiles. It is a per-user
+  preference, the same one the old page used.</li>
+<li><strong>Factory catalog</strong> opens the predefined profiles per firmware build and API
+  version.</li>
+<li>A <strong>template-managed</strong> profile carries a <strong>Template</strong> badge. On this device
+  it is read-only: Edit becomes View, and Delete is unavailable. To change it,
+  edit it in the Template Library.</li>
+</ul>
+<p><img alt="Web Protection Profile list: Inline/Offline tabs, Deep clone, Save as template, Hide default profiles, Factory catalog" src="img/screens/fwb-wpp-list.webp">
+<em>The Web Protection Profile list in FortiWeb's own layout, with SATOM's profile tools</em></p>
+<p><strong>Known Attacks → Signatures</strong> is a FortiWeb-layout list as well. Each signature
+policy opens in the FortiWeb-layout object editor.</p>
+<p><img alt="Signatures list in the FortiWeb layout" src="img/screens/fwb-signature.webp">
+<em>Known Attacks → Signatures, drawn from the device's own GUI layout</em></p>
+<p>SATOM's own tools are still served:</p>
 <ul>
 <li><strong>Signatures editor:</strong> browse signature categories, search the full
   signature catalog (2,400+ signatures by name/class/state), open any
   signature's details, disable it, set alert-only, or add a <strong>per-signature
-  exception</strong> — with the same element-type-gated form as the appliance GUI.</li>
+  exception</strong>, with the same element-type-gated form as the appliance GUI. No
+  menu entry leads to it on a device whose layout draws the Signatures page.
+  Open it at <code>/web/web-protection/&lt;device id&gt;/signatures/&lt;signature policy&gt;</code>.</li>
 <li><strong>166 curated object kinds</strong> (ported from the desktop manager and validated
-  against the vendor admin guide) drive the forms: correct enums, field
-  gating, inline help ("what does this do", "how the backend reacts"), and an
-  explanation under every Action dropdown.</li>
-<li><strong>Regex Lab:</strong> every regex-capable field has a <code>.*</code> button that opens a
-  server-side regex tester with curated examples per section; the tested
-  pattern writes back into the field. Its rewrite preview numbers captures the
-  way FortiWeb and FortiADC do: <code>$0</code> is the <strong>first</strong> <code>( … )</code> group, <code>$1</code> the
-  second.</li>
-<li>Profile-level editing shows each sub-policy as a dropdown with Edit/＋,
-  down to six levels of nesting.</li>
+  against the vendor admin guide) drive SATOM's own object forms: correct
+  enums, field gating, inline help ("what does this do", "how the backend
+  reacts"), and an explanation under every Action dropdown.</li>
+<li><strong>Regex Lab:</strong> open it from the <strong>Tools</strong> menu in the top bar (Regex
+  calculator, Regex cheat sheet, Pattern library) on any page. In SATOM's own
+  object editor and on the Exceptions page, every regex-capable field also has
+  a <code>.*</code> button. That button opens the lab on the field and writes the tested
+  pattern back into it. The lab tests patterns server-side with curated
+  examples per section. Its rewrite preview numbers captures the way FortiWeb
+  and FortiADC do: <code>$0</code> is the <strong>first</strong> <code>( … )</code> group, <code>$1</code> the second.</li>
+<li>In SATOM's own editor, profile-level editing shows each sub-policy as a
+  dropdown with Edit/＋, down to six levels of nesting.</li>
 </ul>
-<h3 id="81-signature-source-signature-index-and-database-freshness">8.1 Signature source, signature index and database freshness</h3>
-<p>Every FortiWeb downloads its own signature database from FortiGuard; SATOM
-never carries signatures, and no SATOM release or pack is needed for new ones.
+<h3 id="82-signature-source-signature-index-and-database-freshness">8.2 Signature source, signature index and database freshness</h3>
+<p>Every FortiWeb downloads its own signature database from FortiGuard. SATOM
+does not ship signatures, and new signatures need no SATOM release or pack.
 SATOM reads them off a device instead.</p>
-<p><strong>The signature source.</strong> On <strong>Administrator → Signatures</strong> choose one FortiWeb
-as the <em>signature source</em> — one with a valid FortiGuard licence that updates on
-schedule. <strong>Save and collect now</strong> reads its whole signature catalog right away
-(a background job; the job dock tracks it). The read is REST and read-only:</p>
+<p><strong>The signature source.</strong> On <strong>Administrator → Signatures</strong>, choose one FortiWeb
+as the <em>signature source</em>: one with a valid FortiGuard licence that updates on
+schedule. <strong>Save and collect now</strong> reads its whole signature catalog right away.
+This runs as a background job, which the job dock tracks. The read is REST and
+read-only:</p>
 <table>
 <thead>
 <tr>
@@ -858,7 +1348,7 @@ schedule. <strong>Save and collect now</strong> reads its whole signature catalo
 <tbody>
 <tr>
 <td>Database versions</td>
-<td><code>GET /api/v2.0/system/config.fortiguard</code> — the attack-signature DB plus antivirus, IP reputation, GeoIP, known bots and the others the firmware reports, with their last update and licence validity, in one call. <code>diagnose system update info</code> over SSH is the fallback (signature DB only).</td>
+<td><code>GET /api/v2.0/system/config.fortiguard</code> returns, in one call, the attack-signature DB and the other databases the firmware reports (antivirus, IP reputation, GeoIP, known bots…), with their last update and licence validity. The fallback is <code>diagnose system update info</code> over SSH (signature DB only).</td>
 </tr>
 <tr>
 <td>Catalog</td>
@@ -866,49 +1356,76 @@ schedule. <strong>Save and collect now</strong> reads its whole signature catalo
 </tr>
 </tbody>
 </table>
-<p><strong>The signature index.</strong> Each read is indexed locally: every signature id with
-its class, description and lineage (the DB version it first appeared in, last
-seen, removed in), plus a <strong>snapshot</strong> per database version. A read whose
-content equals the latest snapshot writes nothing. A new version records what
-it <strong>added, changed</strong> (description or class) <strong>and removed</strong>, rings the bell of
-every administrator, and is listed in the snapshot history with a details page.
-The first snapshot is the <em>baseline</em>: its signatures are not reported as new.
-A read that returns no signatures is refused — it never empties the index. The
-page searches the index by id, description or class (removed signatures on
-request). The index also rewrites the catalog the signature editor and the WPP
-views read. The <code>signature_sync</code> scheduled action collects too, but only from
-the configured source: any other target is refused, so another box's older
-database can never appear as a fleet change.</p>
+<p><strong>The signature index.</strong> SATOM indexes each read locally: every signature id
+with its class, description and lineage (the DB version it first appeared in,
+last seen, removed in). It also keeps a <strong>snapshot</strong> per database version.</p>
+<ul>
+<li>A read whose content equals the latest snapshot writes nothing.</li>
+<li>A new version records what it <strong>added, changed</strong> (description or class)
+  <strong>and removed</strong>, and notifies every administrator in the in-app bell. The
+  snapshot history lists it, with a details page.</li>
+<li>The first snapshot is the <em>baseline</em>: its signatures are not reported as new.</li>
+<li>A read that returns no signatures is refused, so it never empties the index.</li>
+</ul>
+<p>The page searches the index by id, description or class (removed signatures on
+request). The index also rewrites the catalog that the signature editor and
+the WPP views read. The <code>signature_sync</code> scheduled action collects too, but
+only from the configured source. It refuses any other target, so another box's
+older database can never appear as a fleet change.</p>
 <p><strong>Freshness, every FortiWeb.</strong> The daily scheduled action <strong><code>signature_check</code></strong>
 reads the database versions of every FortiWeb (one REST call per box) and
 records when they last changed. When the <strong>source's</strong> signature version is not
-the one the index holds, it collects and indexes the catalog in the same round;
-a failed catalog read makes the round red. The page lists every device with its
-signature DB version and the channel it came from (<code>rest</code> or <code>cli</code>), last
-update, licence, the other databases, the time of the check and a status:
-<em>current</em>, <em>stale</em> or <em>unreadable</em>. A device whose signature database is
-<strong>older than 7 days</strong> — measured from the device's own "last update" time, or,
-when it gives none, from when SATOM saw the version change — or that reports it
-<strong>never</strong> downloaded an update (the reason names an invalid FortiGuard licence
-when the device reports one), or whose version cannot be read (REST and SSH
-both refused), raises a <strong>device alert</strong> through the alert engine (§26.6): the
-same family, toggle, routing and cooldown as the other device-health alerts.
-FortiWebs registered with <strong>no signature source</strong>, or a source that no longer
-exists, raise <code>device.signature_source_missing</code>. The limit is the setting
-<code>alerts.signature_max_days</code>. Devices in maintenance are skipped. A node
-updated from 2.x has no <code>signature_check</code> row until you create it
-(<code>sudo satom execute seed actions --yes</code> on the primary, §22.4).</p>
-<p>When a knowledge pack carries <strong>signature metadata</strong> (public FortiGuard
-encyclopedia data: name, severity, category, CVEs, a link — none does yet:
-FortiGuard's terms do not permit redistributing it, so the section ships
-empty until they do), the signature
-search shows a severity badge and the CVEs next to each id it knows, and the
-signature's details add a <strong>FortiGuard</strong> row. Ids with no metadata show as
-before.</p>
+the one the index holds, it collects and indexes the catalog in the same round.
+A failed catalog read makes the round red.</p>
+<p>The page lists every device with:</p>
+<ul>
+<li>its signature DB version and the channel it came from (<code>rest</code> or <code>cli</code>);</li>
+<li>last update and licence;</li>
+<li>the other databases;</li>
+<li>the time of the check;</li>
+<li>a status: <em>current</em>, <em>stale</em> or <em>unreadable</em>.</li>
+</ul>
+<p>The alert engine (§26.6) raises a <strong>device alert</strong> in any of these cases:</p>
+<ul>
+<li>The device's signature database is <strong>older than 7 days</strong>. Age is measured
+  from the device's own "last update" time. When the device gives none, it is
+  measured from when SATOM saw the version change.</li>
+<li>The device reports that it <strong>never</strong> downloaded an update. When the device
+  reports an invalid FortiGuard licence, the alert names it as the reason.</li>
+<li>The device's version cannot be read: REST and SSH both refused.</li>
+</ul>
+<p>These alerts share the family, toggle, routing and cooldown of the other
+device-health alerts. The limit is the setting <code>alerts.signature_max_days</code>.</p>
+<p>FortiWebs registered with <strong>no signature source</strong>, or with a source that no
+longer exists, raise <code>device.signature_source_missing</code>. Devices in
+maintenance are skipped. A node updated from 2.x has no <code>signature_check</code> row
+until you create it (<code>sudo satom execute seed actions --yes</code> on the primary,
+§22.4).</p>
+<p>A knowledge pack can carry <strong>signature metadata</strong>: public FortiGuard
+encyclopedia data (name, severity, category, CVEs, a link). None does yet,
+because FortiGuard's terms do not permit redistributing it, so the section
+ships empty until they do. When a pack carries it, the signature search shows
+a severity badge and the CVEs next to each id it knows, and the signature's
+details add a <strong>FortiGuard</strong> row. Ids with no metadata show as before.</p>
 <h2 id="9-exceptions--signature-carve-outs">9. Exceptions &amp; signature carve-outs</h2>
-<p>FortiWeb ADOM → <strong>Exceptions</strong> is the single place for every policy-bound
-carve-out (WAF exceptions <em>and</em> signature customizations). The team rules the
-app enforces:</p>
+<p><strong>Exceptions &amp; Signature</strong> is the single place to author every policy-bound
+carve-out (WAF exceptions <em>and</em> signature customizations) for one FortiWeb.
+It is in the <strong>Fleet → WAF</strong> submenu of the FortiWeb ADOM, next to Search
+Attack ID and WAF Artifacts. It is not on the Global console's WAF menu,
+because it is a FortiWeb-ADOM page and a link from Global would switch the
+tab's ADOM. The URL is <code>/web/exceptions/&lt;device id&gt;</code>.</p>
+<p>The page always works on one device: the one selected in the FortiWeb ADOM
+(§3.1). Pick it on the Architecture map (Fleet Map) or with <strong>change</strong> next to
+the device name at the top of the sidebar. If no device is selected,
+<code>/web/exceptions/</code> sends you to the Architecture map to pick one.</p>
+<p>The page title names the device: <strong>Exceptions &amp; Signature Carve-outs —
+<device></strong>. The carve-outs it lists are <em>desired state</em> recorded in SATOM.
+Authoring writes nothing to the box: pushing is a separate step. To see who
+across the estate holds a given carve-out, use <strong>Fleet inventory</strong> at the top
+of the page. It opens Fleet → WAF → Exceptions (§13.1).</p>
+<p><img alt="Exceptions &amp; Signature Carve-outs for fwb-01" src="img/screens/fleet-exceptions.webp">
+<em>Fleet → WAF → Exceptions &amp; Signature: the carve-outs authored for fwb-01</em></p>
+<p>The team rules the app enforces:</p>
 <ol>
 <li><strong>Templates stay clean.</strong> A template-managed WAF profile cannot receive
    exceptions — the app blocks the save and offers the fix.</li>
@@ -928,8 +1445,18 @@ app enforces:</p>
   live target object, review the dry-run plan, apply.</li>
 <li><strong>🔎 Detect on device</strong> — read the exceptions that already exist on a box
   and import them as desired-state, bound to the right policy.</li>
-<li><strong>Alignment report</strong> — device → policy → profile → exceptions, with stale
-  detection; exportable.</li>
+<li><strong>Which Server Policy holds a carve-out:</strong> a count of carve-outs per
+  Server Policy, unbound ones included. A banner above it names the carve-outs
+  that went <strong>stale</strong> because their Server Policy was re-bound to another
+  profile. Edit a stale carve-out to re-point it (saving clears the flag), or
+  delete it.</li>
+<li><strong>Filters</strong> (type, category, Server Policy, state, free text over name,
+  profile, policy and payload) are applied by the server, so the counts match
+  the rows you see.</li>
+<li>Per carve-out: <strong>Inject</strong> (push to this device), <strong>Deploy</strong> (place it on
+  other FortiWebs), <strong>Versions and rollback</strong>, and <strong>Delete</strong>. A rollback adds
+  a new version and deletes nothing. <strong>Deleted carve-outs that can still be
+  brought back</strong> are listed separately, with their bindings.</li>
 <li><strong>Analyse before implementing</strong> — SATOM's own deterministic analysis of the
   draft is available to anyone who can open the page; the assistant's opinion
   (the draft is sent to the configured AI provider) is added only for users
@@ -941,11 +1468,30 @@ Deleting always goes through the impact check (the guarded delete).</p>
 <h3 id="91-search-attack-id--from-a-block-page-to-a-reviewed-carve-out">9.1 Search Attack ID — from a block page to a reviewed carve-out</h3>
 <p>When FortiWeb blocks a request it shows the caller a block page carrying an
 <strong>Attack ID</strong> (<code>000000004106</code>). That number is the only thing the person who
-was blocked can give you, and on its own it says nothing. FortiWeb ADOM →
-<strong>WAF → Search Attack ID</strong> resolves it: pick the appliance, paste the ID, and
-SATOM finds the attack-log entry it refers to and puts the whole triage on one
-page — what was blocked, why, whether it should have been, and the exception
-that would let it through if it should not.</p>
+was blocked can give you, and on its own it says nothing. <strong>Search Attack ID</strong>
+resolves it. Paste the reference from the block page and SATOM finds the
+attack-log entry it refers to. The whole triage is then on one page: what was
+blocked, why, whether it should have been, and the exception that would let it
+through if it should not.</p>
+<p>Search Attack ID is in the <strong>Fleet → WAF</strong> submenu of the FortiWeb ADOM
+(<code>/waf/attack-search/</code>). It does not depend on the device selected in the
+sidebar: the reference chooses the appliance.</p>
+<ul>
+<li>The full reference, <code>id-&lt;device&gt;-&lt;number&gt;</code> (for example
+  <code>id-fwb-01-000000004106</code>), names the appliance. SATOM matches it against
+  appliance names, ignoring case. If no name matches, SATOM tries management
+  addresses and warns that the device may have been renamed since the block
+  page was served.</li>
+<li>A bare MSG ID (<code>000000004106</code>, or unpadded <code>4106</code>) names no device. Pick the
+  appliance yourself.</li>
+<li>An appliance you pick explicitly always wins over the one in the reference.</li>
+</ul>
+<p>Opening the page, searching, explaining a field and building a carve-out need
+only the <code>view</code> permission. <strong>Analyze</strong> and <strong>Ask the AI about this field</strong>
+need <code>advisor.use</code>. Saving a carve-out, accepting or rejecting a drafted one,
+and inserting it need <code>config_write</code>.</p>
+<p><img alt="Search Attack ID" src="img/screens/fleet-attack-search.webp">
+<em>Fleet → WAF → Search Attack ID in the FortiWeb ADOM</em></p>
 <p>Everything on this page <strong>reads</strong>. Nothing is pushed to an appliance until you
 explicitly ask for it in §9.6, and no draft leaves the page approved.</p>
 <p><strong>The results table</strong> lists date, MSG ID, type, subtype, policy, source and
@@ -1376,6 +1922,12 @@ device.</p>
 <li><strong>Fleet Objects</strong> — typed, cross-device object listings (server policies,
   WAF profiles, pools…) with filters and CSV export, plus a generic
   any-field search over the entire cache.</li>
+<li><strong>WAF:</strong> the fleet-wide FortiWeb picture, in six read-only pages (Overview,
+  Inventory, Profiles, Coverage, Artifacts, Exceptions; §13.1). It is a
+  submenu of the Global menu and of the FortiWeb ADOM's <strong>Fleet</strong> group. In
+  the FortiWeb ADOM it also holds the device-scoped WAF tools (§13.2). The
+  other ADOMs have no WAF submenu, because they have no FortiWeb objects to
+  count.</li>
 <li><strong>Analysis</strong> — <strong>product-specific by design.</strong> A load balancer, a WAF and
   an identity server do not have the same failure modes, so each ADOM gets a
   page written against the objects that product actually has. There is no
@@ -1468,6 +2020,117 @@ device.</p>
   line the time budget did not reach is named in the report, never dropped.
   Export is tab-separated, one line per difference.
 - <strong>Monitoring / Metrics</strong> — see §14.</p>
+<h3 id="131-fleet--waf-the-fleet-wide-pages">13.1 Fleet → WAF: the fleet-wide pages</h3>
+<p><strong>Fleet → WAF</strong> shows every FortiWeb this console can see on one set of pages.
+In the Global console that is every FortiWeb; in the FortiWeb ADOM, that ADOM's
+own boxes. Every page needs <code>protection.view</code> and <strong>writes nothing</strong>. The pages
+read the source-of-truth snapshots the hourly harvest already took, so opening
+them contacts no appliance. The figures are therefore only as recent as the
+last harvest, and freshness is shown on every page:</p>
+<ul>
+<li>A snapshot older than <strong>26 hours</strong> is still shown but marked <em>stale</em>.</li>
+<li>A device that was never harvested is listed as missing. It is not counted as
+  zero policies and is left out of the denominators.</li>
+<li>The page says how many devices actually reported.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Page</th>
+<th>What it answers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Overview</strong> (<code>/waf/</code>)</td>
+<td>KPI tiles and <strong>What this fleet would want fixed</strong>: policies in monitor mode, with no web protection profile, administratively disabled, or naming a profile missing from the snapshot; TLS policies with no certificate or still accepting TLS 1.0/1.1; custom profiles no policy uses. Six charts (enforcement posture, transport security, protection coverage, signature policy in use, policies per device/ADOM, configuration changes over the last 30 days) and a snapshot-freshness table.</td>
+</tr>
+<tr>
+<td><strong>Inventory</strong></td>
+<td>Every server policy in the fleet, with its enforcement (<em>Blocking</em>, <em>Detection only</em>, <em>No profile</em>, <em>Disabled</em>), TLS, certificate, virtual server, pool, profile and signature policy. Filters: device/ADOM, enforcement, TLS (plain / weak / TLS), free text. CSV export.</td>
+</tr>
+<tr>
+<td><strong>Profiles</strong></td>
+<td>Every web protection profile: custom or predefined, how many policies use it, protections on against slots available. Filter to <em>orphan</em> (custom, used by no policy) or <em>used</em>. CSV export.</td>
+</tr>
+<tr>
+<td><strong>Coverage</strong></td>
+<td>A protection × device/ADOM matrix of <em>on / applicable</em>. A profile that has no slot for a protection is left out of that protection's denominator, not counted as "off". CSV export.</td>
+</tr>
+<tr>
+<td><strong>Artifacts</strong></td>
+<td>File-backed objects (schemas, WSDL, OpenAPI files…) across the fleet, read from the artifact index. For each one: what the estate needs, what SATOM holds, and so what could not be migrated today. States: <em>Held</em>, <em>Blocked</em>, <em>At risk</em>, <em>Borrowed</em>, <em>Orphan copy</em>, <em>Library copy</em>. CSV export.</td>
+</tr>
+<tr>
+<td><strong>Exceptions</strong></td>
+<td>Every carve-out authored in SATOM on every visible device, and which devices hold it. Carve-outs are grouped by their declared library link, or else by identical content. Also listed: stale carve-outs, carve-outs that predate versioning (they cannot be rolled back), and orphans whose appliance is gone. These are <strong>authored</strong> carve-outs, not device state: a carve-out is live only on a box where someone pushed it. CSV export.</td>
+</tr>
+</tbody>
+</table>
+<p>On Artifacts and Exceptions, the filters narrow the table only. The tiles and
+charts above it always describe the whole visible fleet.</p>
+<p><img alt="Fleet → WAF overview" src="img/screens/fleet-waf.webp">
+<em>Fleet → WAF → Overview: KPIs and "What this fleet would want fixed"; the
+sidebar shows the WAF submenu of the FortiWeb ADOM</em></p>
+<p><strong>Export.</strong> Every WAF page has an export panel. Tick the datasets you want
+(overview figures and charts, server policies, web protection profiles,
+protection coverage, artifacts, exceptions with their profiles) and the
+formats (CSV with one file per dataset, an Excel workbook, a PDF report with
+charts). You get one ZIP.</p>
+<ul>
+<li>The selection is in the URL, so you can bookmark a bundle.</li>
+<li>If nothing is ticked, the page warns you and produces no file.</li>
+<li>Each export is recorded in the audit log as <code>waf.export</code>.</li>
+</ul>
+<h3 id="132-fleet--waf-in-the-fortiweb-adom-the-device-tools">13.2 Fleet → WAF in the FortiWeb ADOM: the device tools</h3>
+<p>In the FortiWeb ADOM, the WAF submenu also holds the three device-scoped WAF
+tools. They used to sit in the ADOM's own WAF group, which no longer exists.
+Their URLs and permissions did not change. The Global console's WAF submenu
+does not list them, because they are FortiWeb-ADOM pages and a link from Global
+would switch the tab's ADOM.</p>
+<table>
+<thead>
+<tr>
+<th>Entry</th>
+<th>URL</th>
+<th>Device</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Search Attack ID</strong> (§9.1)</td>
+<td><code>/waf/attack-search/</code></td>
+<td>Not needed: the block-page reference names the appliance, or you pick it on the page</td>
+</tr>
+<tr>
+<td><strong>Exceptions &amp; Signature</strong> (§9)</td>
+<td><code>/web/exceptions/&lt;device id&gt;</code></td>
+<td>Needed. With none selected, <code>/web/exceptions/</code> sends you to the Architecture map</td>
+</tr>
+<tr>
+<td><strong>WAF Artifacts</strong>: Object types · Inventory · Device audit</td>
+<td><code>/artifacts/</code>, <code>/artifacts/inventory</code>, <code>/artifacts/audit</code></td>
+<td>Needed. With none selected, each page sends you to the Architecture map with "Pick a device first"</td>
+</tr>
+</tbody>
+</table>
+<p><strong>WAF Artifacts</strong> is a collapsible entry with three pages. Each page shows one
+device and ADOM: the device selected in the sidebar (§3.1). No control widens
+it to the fleet; for the fleet-wide view, use Fleet → WAF → Artifacts (§13.1).</p>
+<ul>
+<li><strong>Object types:</strong> statistics for the selected device and ADOM, per object
+  type, with the reference for each type.</li>
+<li><strong>Inventory:</strong> every file-backed object the device and ADOM holds, the
+  policies and profiles that use it, and what would block a move. The
+  <strong>Upload a file</strong>, <strong>Author content</strong> and <strong>Capture from device</strong> buttons add a
+  version to SATOM's artifact store and need <code>config_write</code>.</li>
+<li><strong>Device audit:</strong> what SATOM knows about the device's artifacts, on screen,
+  as JSON or as CSV. The CSV has one row per device, policy, profile and
+  artifact. It reads only SATOM's index and contacts no appliance. The report
+  itself warns that a policy created since the last sweep is missing from it.</li>
+</ul>
+<p><img alt="WAF Artifacts inventory" src="img/screens/fleet-artifacts.webp">
+<em>Fleet → WAF → WAF Artifacts → Inventory for the selected device</em></p>
 <h2 id="14-monitoring-fleet-health-metrics--probes">14. Monitoring: fleet health, metrics &amp; probes</h2>
 <p>Monitoring lives in <strong>every</strong> workspace, not only Global. It is scoped by
 device kind, so the FortiWeb workspace shows FortiWeb appliances and nothing
@@ -2034,12 +2697,28 @@ boot.</p>
 </ul>
 <h2 id="17-product-workspaces">17. Product workspaces</h2>
 <p>Beyond the shared pages (appliances, monitoring, backups, jobs, automation),
-each product ADOM carries its own menu, mirrored from the appliance's real GUI
-so the navigation matches what the device itself shows.</p>
+each product ADOM carries its own device menu, so the navigation matches what
+the device itself shows. The menu comes from one of two places:</p>
+<ul>
+<li><strong>The device's measured GUI</strong> — FortiWeb, FortiGate, FortiAuthenticator, and
+  FortiADC when its build has a layout.
+  The menu is the device's own menu, built per firmware build from the GUI
+  layouts in the knowledge packs, with an <strong>All pages</strong> grid. §3.2 explains how
+  it is built and what you see when no layout has been imported. The FortiWeb
+  pages themselves are covered in §5–§10.</li>
+<li><strong>A curated menu</strong> — FortiAnalyzer, and a FortiADC whose build has no layout.
+  SATOM draws a fixed copy of the product's menu.</li>
+</ul>
 <h3 id="171-fortiadc">17.1 FortiADC</h3>
 <p>The <code>/adc/</code> ADOM mirrors the FortiADC 8.0 GUI menu: Server Load Balance, Link
 Load Balance, Global Load Balance, Web Application Firewall, Network Security,
-Network, Shared Resources, User Authentication, System, Log &amp; Report.</p>
+Network, Shared Resources, User Authentication, System, Log &amp; Report. That
+curated menu is the <strong>fallback</strong>: a FortiADC whose firmware build has a measured
+layout in the knowledge packs draws its own menu instead, like the FortiWeb,
+FortiGate and FortiAuthenticator ADOMs (§3.2). On those measured pages rows are
+read live from the device's REST API (SATOM keeps no FortiADC configuration
+cache for them), child tables are read-only, and a write runs dry first, then
+sends, records the change and audits it; secrets are never echoed back.</p>
 <ul>
 <li>Object pages use the same form engine: identity/mkey handling, child tables
   (e.g. pool members) derived automatically, dry-run previews, audit on
@@ -2066,24 +2745,41 @@ Network, Shared Resources, User Authentication, System, Log &amp; Report.</p>
   transport on FortiADC</strong> — the UI states this rather than pretending.)</li>
 </ul>
 <h3 id="172-fortiauthenticator">17.2 FortiAuthenticator</h3>
-<p>The <code>/fac/</code> ADOM mirrors the six top-level groups the unit's own GUI declares:
-<strong>System</strong>, <strong>Authentication</strong>, <strong>Fortinet SSO</strong>, <strong>Monitor</strong>, <strong>Certificate
-Management</strong> and <strong>Logging</strong>.</p>
+<p>The <code>/fac/</code> ADOM draws the unit's <strong>own menu</strong> in a <strong>FortiAuthenticator</strong>
+sidebar group, built from the GUI layouts measured on its firmware build
+(§3.2). With the FortiAuthenticator 8.0.3 layouts, for example, that is
+<strong>System</strong>, <strong>Authentication</strong>, <strong>Fortinet SSO</strong>, <strong>Certificate Management</strong>
+and <strong>Logging</strong>, down to leaves such as Local Users, User Groups, FortiTokens,
+RADIUS Service → Clients and TACACS+ Service → Clients. A group with no
+measured page (Monitor, on those layouts) is not drawn. <strong>All pages</strong> opens
+the whole menu as a grid.</p>
+<p><img alt="FortiAuthenticator ADOM with the device menu" src="img/screens/fac-workspace.webp">
+<em>FortiAuthenticator ADOM: the unit's own menu, every measured page by group.</em></p>
 <ul>
-<li><strong>The GUI is wider than the API, and the pages admit it.</strong> The unit advertises
-  58 REST resources, of which 40 answer a read; its menu has 129 leaves. Panes
-  with nothing behind them (Network, Portals, SAML IdP, LDAP Service, the
-  Monitor group, Certificate Authorities, Log Access…) render an explicit
-  <strong>"no endpoint bound"</strong> state and name which GUI leaves they cover. An empty
-  table would read as "nothing is configured" — which is a different, and
-  wrong, statement.</li>
-<li><strong>Read-only section pages.</strong> Writes go through the API console, where they are
-  dry-run by default, permission-gated and audited.</li>
-<li><strong>Section pages live at <code>/fac/m/&lt;item_key&gt;</code></strong> — one URL per menu leaf, where
-  the key is the leaf's own identifier from the unit's menu definition. Each page
-  loads its tabs from the registry endpoints bound to that leaf, capped at 500
-  rows with the truncation stated rather than silently applied, and it never
-  renders a device refusal as an empty table.</li>
+<li><strong>Rows</strong> come from the SATOM cache (the FAC sweep), else live from the unit.
+  Objects are addressed by their detail URL, because RADIUS clients serve no
+  <code>id</code>. A device refusal is shown as an error, never as an empty table.</li>
+<li><strong>Writes</strong> follow the FortiWeb routine: <strong>dry run</strong> (the exact request, sent
+  nowhere), review, <strong>apply</strong>, read back from the unit, and any field the unit
+  stored differently is reported as <strong>drift</strong>. Every apply is audited with a
+  before-snapshot. The verbs are <code>PATCH | POST | DELETE /api/v1/&lt;resource&gt;/</code>,
+  and a save is accepted only for a collection the device's own measured page
+  edits. You need <code>config_write</code>. Clone and inline-table rows work the same
+  way.</li>
+<li><strong>Objects only the CLI serves</strong> (DNS, interfaces, static routes) are read with
+  <code>show full-configuration</code> over a read-only SSH session and saved through the
+  CLI writer. The dry run shows the script. Create and delete are not offered
+  for them.</li>
+<li><strong>The GUI is wider than the API, and the pages admit it.</strong> A page with no REST
+  behind it, or a field measured as having none, is drawn read-only and marked
+  <strong>"No API on this build (GUI only)"</strong>. Nothing is sent from it.</li>
+<li><strong>Not in GUI, but in CLI</strong> is on every object, edit and Create New form
+  (§7.3).</li>
+<li><strong>SATOM's section pages</strong> (<code>/fac/m/&lt;item_key&gt;</code>) still exist, and the ADOM's
+  dashboard lists them. A section whose every tab a measured page draws opens
+  that page instead. The others render the old read-only section page, capped
+  at 500 rows with the truncation stated, with an explicit <strong>"No endpoint
+  bound."</strong> state where no REST resource is behind the pane.</li>
 <li><strong>API console</strong> (sidebar → API → Registry &amp; console, <code>registry.view</code>) — the
   registry-driven explorer over the FAC catalogue, with live GETs and gated
   writes against a chosen device (§30 covers the registry model behind all four
@@ -2103,7 +2799,7 @@ no Operations group, and that is not an oversight:</p>
 <tbody>
 <tr>
 <td><strong>Certificate Manager (§10)</strong></td>
-<td><strong>No.</strong> Scanning, issuance, deployment and the lifecycle sweep dispatch on FortiWeb and FortiADC only. The unit's own <em>Certificate Management</em> menu group is a <strong>read view of the device's</strong> certificates through the FAC section pages — it is not the fleet Certificate Manager, and material there is not managed, bound or swept by §10.</td>
+<td><strong>No.</strong> Scanning, issuance, deployment and the lifecycle sweep dispatch on FortiWeb and FortiADC only. The unit's own <em>Certificate Management</em> menu group shows <strong>the device's</strong> certificates as the unit draws them. It is not the fleet Certificate Manager, and material there is not managed, bound or swept by §10.</td>
 </tr>
 <tr>
 <td><strong>Device Backups (§11)</strong></td>
@@ -2128,16 +2824,19 @@ no Operations group, and that is not an oversight:</p>
 trailing slash (<code>/api/v1/&lt;resource&gt;/</code>), and secrets are genuinely
 <strong>write-only</strong>: RADIUS client secrets and local-user passwords are <em>absent</em>
 from read payloads, not masked — so they can never leak into the
-configuration source of truth. (The section pages additionally refuse to render
-a handful of secret-looking field names into a table cell even if a future
-firmware starts returning them — a belt to that braces, because the cost of
-being wrong is a credential in every screenshot of the page.)</p>
+configuration source of truth. (SATOM's pages additionally refuse to render
+a handful of secret-looking field names even if a future firmware starts
+returning them — a belt to that braces, because the cost of being wrong is a
+credential in every screenshot of the page.)</p>
 </blockquote>
 <p>Full product notes: <a href="fortiauthenticator.html">docs/fortiauthenticator.md</a>.</p>
 <h3 id="173-fortianalyzer">17.3 FortiAnalyzer</h3>
 <p>The <code>/faz/</code> ADOM mirrors the FortiAnalyzer menu: <strong>Device Manager</strong>,
 <strong>FortiView</strong>, <strong>Log View</strong>, <strong>Fabric View</strong>, <strong>Incidents &amp; Events</strong>,
-<strong>FortiAI</strong>, <strong>Reports</strong> and <strong>System Settings</strong>.</p>
+<strong>FortiAI</strong>, <strong>Reports</strong> and <strong>System Settings</strong>. This menu is curated, not
+measured, and the 2026-10 menu changes of the FortiWeb, FortiGate and
+FortiAuthenticator ADOMs do not apply to it. An admin can trim it at
+<code>Settings → FAZ Menu</code> (§26.12).</p>
 <ul>
 <li>The unit speaks <strong>JSON-RPC</strong> on a single endpoint, in two dialects, and the
   endpoint registry stores which one each URI needs — an upgrade that moves a
@@ -2155,28 +2854,53 @@ being wrong is a credential in every screenshot of the page.)</p>
   between two reads of an idle unit and would defeat change detection.</li>
 </ul>
 <h3 id="174-fortigate">17.4 FortiGate</h3>
-<p>The <code>/fgt/</code> ADOM (since 3.0) is the <strong>base</strong> of the FortiGate workspace: it
-reads a FortiGate live over the FortiOS REST API and <strong>writes nothing</strong>.</p>
+<p>The <code>/fgt/</code> ADOM (since 3.0) reads a FortiGate live over the FortiOS REST API.
+SATOM keeps no FortiGate configuration cache. Since the FortiGate GUI layouts
+arrived, the pages a measured layout draws can also write, dry-run first.</p>
 <ul>
-<li><strong>Dashboard</strong> — the FortiGate device picker (<em>Select</em>) and the live <strong>Unit
-  status</strong> of the selected unit: hostname, firmware, build, serial, model, log
-  disk.</li>
-<li><strong>30 section pages in 7 areas</strong> that follow the FortiOS 8.0 menu — Network,
-  Policy &amp; Objects, Security Profiles, VPN, User &amp; Authentication, System, Log &amp;
-  Report — over 43 cmdb tables, one tab per table, at <code>/fgt/m/&lt;item_key&gt;</code>. A
-  table shows at most 500 rows and says when it truncated.</li>
+<li><strong>Dashboard</strong> (Fleet → Dashboard, and the page the ADOM opens on) — the
+  FortiGate device picker (<em>Select</em>), the live <strong>Unit status</strong> of the selected
+  unit (hostname, firmware, build, serial, model, log disk) and a map of
+  SATOM's section pages.</li>
+<li><strong>The FortiGate menu</strong> — a <strong>FortiGate</strong> sidebar group with the unit's own
+  FortiOS menu, built from the layouts measured on its build (§3.2): Network,
+  Policy &amp; Objects, Security Profiles, VPN, User &amp; Authentication, Security
+  Fabric, System, Log &amp; Report, each down to its pages (Firewall Policy,
+  Addresses, Interfaces, SD-WAN…). <strong>All pages</strong> opens it as a grid. Rows are
+  read live from cmdb (vdom aware). Monitor views are read-only.</li>
+</ul>
+<p><img alt="FortiGate ADOM: the FortiGate menu" src="img/screens/fgt-workspace.webp">
+<em>FortiGate ADOM, device fgt-01: All pages lists the FortiOS menu by group.</em></p>
+<ul>
+<li><strong>Writes</strong> follow the FortiWeb routine: <strong>dry run</strong> (the exact request, sent
+  nowhere), review, <strong>apply</strong>, read back from the unit, and any field FortiOS
+  stored differently is reported as <strong>drift</strong>. Every apply is audited with a
+  before-snapshot. The verbs are <code>PUT | POST | DELETE /api/v2/cmdb/&lt;path&gt;</code>
+  (CLI-only fields go through the CLI writer), and a save is accepted only for
+  a collection the device's own measured page edits. You need <code>config_write</code>.
+  Clone and inline-table rows work the same way. The REST token decides what
+  FortiOS accepts: a read-only admin profile is enough to read, and a write it
+  does not grant is refused by the unit.</li>
+<li><strong>Not in GUI, but in CLI</strong> is on every object, edit and Create New form
+  (§7.3). A page or field measured as having no API is drawn read-only and
+  marked <strong>"No API on this build (GUI only)"</strong>.</li>
+<li><strong>SATOM's section pages</strong> (<code>/fgt/m/&lt;item_key&gt;</code>, 30 pages in 7 areas over 43
+  cmdb tables) are no longer in the sidebar; the dashboard still lists them. A
+  section whose every table a measured page draws opens that page instead. The
+  others render the old <strong>read-only</strong> section page, one tab per table, at most
+  500 rows with the truncation stated.</li>
 <li><strong>A refusal is never an empty table.</strong> A <code>401</code> (wrong token, or an unlicensed
   FortiGate-VM, which answers 401 to everything), <code>403</code> (the token's admin
   profile does not grant the table) or <code>404</code> (no such table on this firmware) is
-  shown as an error; a real empty table says <em>"The device answered successfully
-  with zero objects — this is not an error."</em></li>
+  shown as an error. On a section page, a real empty table says <em>"The device
+  answered successfully with zero objects — this is not an error."</em></li>
 <li><strong>Secrets are never shown</strong>: password, key and secret fields, and every value
   FortiOS returns as <code>ENC …</code>, are dropped before the page renders.</li>
-<li>The shared Fleet and Administration pages, the Release Notes modal (§31.1),
-  <strong>Build compatibility</strong> (§30.11) and <strong>Schema builds</strong> (§30.12) are reachable
-  from its sidebar.</li>
+<li>The shared Fleet and Administration pages and <strong>Build compatibility</strong>
+  (§30.11) are reachable from its sidebar; the Release Notes modal (§31.1) is in
+  the Tools menu.</li>
 </ul>
-<p>Not there yet: writes, an API console and registry binding, backups, firmware,
+<p>Not there yet: an API console and registry binding, backups, firmware,
 templates, HA status and the Migration report. Registration and the details:
 <a href="fortigate.html">docs/fortigate.md</a>.</p>
 <h2 id="18-api-tokens">18. API tokens</h2>
@@ -2467,13 +3191,13 @@ the first-boot dialog described in 21.2.</p>
 <tbody>
 <tr>
 <td><strong>Full</strong></td>
-<td>Address, DNS, machine, boot, then waits for the appliance to answer on the reserved address, registers it and applies the configuration profile. The first-boot dialog is not scripted: the appliance must come up on that address by itself.</td>
-<td>No human step at all. Repeatable and auditable end to end — every action lands in the run log.</td>
+<td>Address, DNS, machine, boot, then waits for the appliance to answer on the reserved address, registers it and hands the system profile over to System Provisioning (21.9). The first-boot dialog is not scripted: the appliance must come up on that address by itself.</td>
+<td>No human step until the configuration push (21.9). Repeatable and auditable end to end — every action lands in the run log.</td>
 <td><strong>Proxmox only.</strong> The most moving parts, so the widest surface for a mid-run failure; this is what rollback exists for.</td>
 </tr>
 <tr>
 <td><strong>Semi</strong></td>
-<td>Builds and boots, then stops. You complete the first-boot dialog on the hypervisor console and resume the run; the resume checks the box answers on its address, registers it and finishes the profile.</td>
+<td>Builds and boots, then stops. You complete the first-boot dialog on the hypervisor console and resume the run; the resume checks the box answers on its address, registers it and finishes the run (21.9).</td>
 <td>Works on <strong>every</strong> backend, including a free-licensed ESXi. The one manual step is the one a human is genuinely required for.</td>
 <td>Not unattended — the run waits until somebody acts on it.</td>
 </tr>
@@ -2491,7 +3215,7 @@ the first-boot dialog described in 21.2.</p>
 </tr>
 <tr>
 <td><strong>Config only</strong></td>
-<td>No hypervisor involved: reserve the address, issue the certificate, register and apply the profile against a machine that already exists.</td>
+<td>No hypervisor involved: reserve the address, publish the DNS record, register a machine that already exists and hand the system profile over (21.9).</td>
 <td>Needs <strong>no hypervisor at all</strong> — the path for physical appliances and for anything built outside SATOM.</td>
 <td>You built the machine, so its CPU, memory, disk and network are outside the run log and outside the audit trail.</td>
 </tr>
@@ -2577,6 +3301,26 @@ tolerated: a fleet with no DDI at all is a supported install, so the DNS step
 <strong>warns</strong> that the record was not created — printing the record to add by hand —
 and the run carries on. A DDI that exists but whose scopes miss the name you
 asked for is a misconfiguration, and that one blocks.</p>
+<h3 id="219-the-last-steps-hand-over-they-do-not-configure">21.9 The last steps hand over; they do not configure</h3>
+<p>A run ends with two steps that sound like work and are deliberately thin:</p>
+<ul>
+<li><strong>Certificate</strong> is a no-op today. It records that no CA profile was selected
+  for the run and moves on; the appliance keeps its factory self-signed
+  certificate, and its row is registered with certificate verification off
+  until you import the device CA in Settings → Trust store.</li>
+<li><strong>Profile</strong> does not push anything. If you picked a system profile on the
+  run, the step marks it <em>ready</em> and names it; you then apply it from
+  <strong>System Provisioning</strong> (§28), with the dry-run preview, the firmware check
+  against the new appliance's build (§29.1.1) and, for a live push, an
+  approved profile. A run with no profile simply leaves the configuration to
+  you.</li>
+</ul>
+<p>That split is on purpose: System Provisioning already owns the dry-run,
+canary, approval and firmware gate for exactly this push, and a second copy of
+that logic inside the run would drift from the reviewed one. It also means the
+new appliance meets the same rule as every other one: a build nobody measured,
+or a device that reports no firmware, <strong>blocks</strong> the template apply until an
+approver overrides it with a reason.</p>
 <p>Backend detail, the capability matrix and the state machine:
 <a href="provisioning-hypervisors.html">docs/provisioning-hypervisors.md</a>.</p>
 <h2 id="22-updating-satom-itself">22. Updating SATOM itself</h2>
@@ -4257,9 +5001,19 @@ a half-parsed snapshot that looks real is worse than no snapshot.</p>
 <h2 id="28-system-provisioning-profiles-and-baselines">28. System provisioning: profiles and baselines</h2>
 <p>FortiWeb ADOM → Automation → <strong>System Provisioning</strong> — the second of the two
 entries named in §21. Device Provisioning builds an appliance that does not
-exist; this one applies <em>system</em> configuration to appliances that already do.</p>
-<p>Every route on this page requires <code>config_write</code>, except approve/reject which
-require the template-approval permission (<code>operations.template_approve</code>).</p>
+exist; this one applies <em>system</em> configuration to appliances that already do.
+The entry appears in the FortiWeb ADOM only.</p>
+<p>The page lists the system profiles (tick <strong>Hide old versions</strong> to see only the
+newest of each), and its header carries four buttons: <strong>Baselines</strong> (28.4),
+<strong>Compare templates</strong> (§29.3), <strong>Compatibility matrix</strong> (§29.4) and <strong>New
+profile</strong>. Each profile row also has a <strong>Compare with a newer version</strong> button,
+which opens the comparison with that profile already chosen as the current
+template.</p>
+<p><img alt="System Provisioning: profile list with the Baselines, Compare templates, Compatibility matrix and New profile buttons" src="img/screens/provisioning.webp">
+<em>System Provisioning — the system profiles of the FortiWeb ADOM, with the comparison tools one click away.</em></p>
+<p>Every route on this page requires <code>config_write</code>, except approve/reject, which
+require the template-approval permission (<code>operations.template_approve</code>), and
+the read-only comparison, which needs only <code>operations.view</code>.</p>
 <h3 id="281-composing-a-system-profile">28.1 Composing a system profile</h3>
 <p>A <strong>system profile</strong> is a declarative list of configuration elements — DNS, NTP,
 RADIUS, SNMP, administrators, and in fact any <code>cmdb</code> object the endpoint registry
@@ -4267,6 +5021,13 @@ knows about, offered grouped by the GUI section it belongs to. For each element
 you pick the object, say whether it is a singleton or carries an mkey, and supply
 its values as JSON. Rows reorder with the up/down buttons, and the order is the
 order they are pushed in.</p>
+<p>Every element writes a <code>cmdb</code> endpoint — never the GUI's own API, which no
+build has evidence for. The <strong>NTP</strong> element writes <code>system/ntp</code> (<code>ntpsync</code>,
+<code>syncinterval</code>); the NTP servers themselves are rows of <code>system/ntp/ntpserver</code>,
+and the time zone and daylight saving live in the Global settings. Profiles
+built with the old "NTP / time" element, which wrote the GUI's
+<code>system/maintenance.systemtime</code>, are refused by the firmware check; rebuild
+that element as <strong>NTP</strong>.</p>
 <p>A profile also carries a <strong>scope</strong> — zone, line, department — drawn from the
 Classification vocabulary. That is what later lets a baseline match devices.</p>
 <p><strong>Secrets are never persisted and are not pushed.</strong> Elements that carry secret
@@ -4293,8 +5054,17 @@ change.</p>
    <code>operations.template_approve</code>, admin-only); a pending or rejected profile
    keeps its preview, and the refused attempt is audited. The preview also
    shows the firmware check for each device, and the live push is refused for a
-   build the profile does not fit or was not validated for (§29.1.1).</li>
+   build the profile does not fit or was not validated for, for a build nobody
+   measured, and for a device that reports no firmware (§29.1.1). An approver
+   can override with an audited reason.</li>
 </ol>
+<blockquote>
+<p><strong>Variables are not rendered here.</strong> A System Provisioning push — a profile
+or a baseline (28.4) — sends each template body as stored. <code>{{ variable }}</code> placeholders and their per-device
+values (device bindings, §29.1.4) are rendered by <strong>Apply</strong> in the Template
+Library and in the section libraries on the FortiWeb pages, not by this page.
+Keep per-device values out of a system profile you push from here.</p>
+</blockquote>
 <p>Choosing <em>Entire fleet</em> is explicit. Selecting "selected devices" and then
 selecting nothing is <strong>refused</strong>, rather than being quietly treated as "all" —
 the empty selection is exactly the shape a fleet-wide accident takes.</p>
@@ -4318,7 +5088,10 @@ this scope have".</p>
   empty facet on a combo means <em>any</em>, so a combo with no zone matches every zone.</li>
 <li><strong>Apply</strong> is the same two-phase machinery: a dry-run preview across the matching
   devices, then a confirmed rollout that runs as a <strong>background job</strong> with live
-  progress in the job dock — a fleet rollout must not live inside an HTTP request.</li>
+  progress in the job dock — a fleet rollout must not live inside an HTTP request.
+  Every composing template must pass the firmware check on every matching
+  device, against builds its approval covers (§29.1.1); one refusal stops the
+  whole rollout unless an approver gives an override reason.</li>
 <li>A baseline that matches no devices, or that has no composing templates, says so
   and does nothing.</li>
 </ul>
@@ -4327,7 +5100,9 @@ is restored on your next visit.</p>
 <h2 id="29-template-library--the-section-catalog">29. Template library &amp; the section catalog</h2>
 <p>Two pages that are the same data seen from two ends: the <strong>Template Library</strong> is
 where desired state is authored and reviewed, and the <strong>Section Catalog</strong> is the
-approved subset, arranged the way FortiWeb arranges it.</p>
+approved subset, arranged the way FortiWeb arranges it. Two read-only tools
+answer the questions that come up when firmware moves: <strong>Compare templates</strong>
+(29.3) and the <strong>Template compatibility matrix</strong> (29.4).</p>
 <h3 id="291-the-template-library">29.1 The Template Library</h3>
 <p>FortiWeb ADOM → Administrator → <strong>Template Library</strong> (users without
 <code>user_manage</code> who hold <code>operations.view</code> find it under <strong>Operations</strong>). A
@@ -4336,6 +5111,28 @@ template is a named,
 system profile, and the other configuration kinds). Editing never overwrites:
 saving produces a <strong>new version</strong> of the same kind and name, and the previous
 version stays.</p>
+<p>The page header links to <strong>FortiWeb Sections</strong> (the Section Catalog, 29.2;
+admins only), the <strong>Factory catalog</strong>, the <strong>Compatibility matrix</strong> and
+<strong>Compare</strong>, next to <strong>New Template</strong>. Each row carries its firmware and
+self-check badges and a <strong>Compare with a newer version</strong> button beside View,
+Apply to devices, Clone and the review actions.</p>
+<p><img alt="Template Library: header buttons FortiWeb Sections, Factory catalog, Compatibility matrix, Compare and New Template above the template list" src="img/screens/template-library.webp">
+<em>The Template Library — each template with the firmware build it was written for, and the tools that judge it against other builds.</em></p>
+<p><strong>Templates can be captured from the FortiWeb pages.</strong> The pages that draw
+FortiWeb's own GUI carry the same tools the older SATOM pages had:</p>
+<ul>
+<li><strong>Save as template</strong> on a Web Protection Profile list and on configuration
+  objects, and on settings forms (System Time, DNS, SNMP, HA and the like),
+  where the whole form is captured. A template saved this way is filed under
+  the same section the older section page uses, so both list it.</li>
+<li>The <strong>config template library</strong> of the object's section, scoped to the
+  object type on the page: View, Apply to devices (dry-run preview with the
+  firmware verdict), Clone, Delete and New template. It is the same shared
+  library, not a copy.</li>
+<li>On Web Protection Profiles, <strong>Deep clone</strong> (the profile and the objects it
+  references); a template-managed profile shows a lock badge and its Delete is
+  disabled (29.1.4).</li>
+</ul>
 <p>Permissions are split three ways, and they are not the same permission:</p>
 <table>
 <thead>
@@ -4376,14 +5173,16 @@ fleet-deployable is a separate, gated decision by someone else.</p>
   can read. <strong>Revoke approval</strong> returns an approved template to pending.</li>
 <li>Applying is two-phase everywhere: a POST without confirmation returns a
   <strong>dry-run preview</strong> and contacts nothing; a confirmed apply runs canary-first
-  and, for more than one device, as a <strong>background job</strong> in the job dock.</li>
+  as a <strong>background job</strong> in the job dock.</li>
 <li><strong>Approval status and deployment are different things.</strong> A template can be
   approved and never applied. The one deliberate exception: approving a <strong>Web
   Protection Profile</strong> template <em>does</em> start a fleet-wide rollout immediately,
   because the team rule is that a template-managed WPP is read-only on the devices
   — the approved version is what must be on every one of them (§9). That
   rollout passes the firmware check below first; when the check refuses a
-  device the rollout is <strong>held</strong> and the page says why.</li>
+  device the rollout is <strong>held</strong> and the page says why. The lock follows the
+  template's device bindings (29.1.4), but the approval rollout itself goes to
+  every FortiWeb you can see in the ADOM.</li>
 </ul>
 <h3 id="2911-firmware-build-and-api-version">29.1.1 Firmware build and API version</h3>
 <p>Every template records the <strong>firmware build its body was written for</strong> and the
@@ -4392,8 +5191,9 @@ View dialog). FortiWeb answers a write carrying a field the build does not know
 with <strong>200 and discards the field</strong>, so a body is only meaningful together with
 the build it came from.</p>
 <ul>
-<li><strong>Captured</strong> templates (<em>Save as template</em> on a Web Protection Profile or on a
-  configuration object) take the build the appliance was running.</li>
+<li><strong>Captured</strong> templates (<em>Save as template</em> on a Web Protection Profile, on a
+  configuration object or on a settings form) take the build the appliance was
+  running.</li>
 <li><strong>Hand-written</strong> templates (New Template, section <em>New template</em>, System
   Provisioning) must pick their build from the list of builds SATOM knows (API
   library, declared firmware, builds running in the fleet). A new version keeps
@@ -4402,7 +5202,8 @@ the build it came from.</p>
   saved without one and says so.</li>
 <li>Templates saved before this existed show <strong>no firmware</strong>. Their fields are
   still checked against every target; renames cannot be, because nothing says
-  which build the body came from.</li>
+  which build the body came from. Record the build they fit (29.1.3).</li>
+<li><strong>Adapted</strong> templates (29.1.2) carry the build they were adapted to.</li>
 </ul>
 <p><strong>Checked at save.</strong> The body is compared against its own build through the API
 library. A field that build does not serve is flagged in the library right away
@@ -4426,7 +5227,7 @@ device's running build:</p>
 </tr>
 <tr>
 <td>fields would be discarded</td>
-<td>the build has no evidence for some fields</td>
+<td>the build does not serve some fields of the body</td>
 <td><strong>blocks</strong></td>
 </tr>
 <tr>
@@ -4440,33 +5241,45 @@ device's running build:</p>
 <td><strong>blocks</strong></td>
 </tr>
 <tr>
-<td>no evidence / fields never measured</td>
-<td>nobody measured that build or endpoint</td>
-<td>warning, never green</td>
+<td>no evidence for that build (<code>unmeasured</code>)</td>
+<td>nobody measured that build</td>
+<td><strong>blocks</strong> — measure the build first</td>
 </tr>
 <tr>
 <td>device reports no firmware</td>
 <td>nothing to compare against</td>
-<td>warning</td>
+<td><strong>blocks</strong></td>
+</tr>
+<tr>
+<td>fields never measured (<code>blind</code>)</td>
+<td>the endpoint is served, its fields were never read</td>
+<td>warning, never green</td>
+</tr>
+<tr>
+<td>new fields not decided</td>
+<td>the build adds fields the template does not decide</td>
+<td>warning, naming the fields — adapt the template to decide them (29.1.2)</td>
 </tr>
 </tbody>
 </table>
+<p>A build nobody measured used to pass as a warning, which turned "unknown" into
+"accepted" by omission; it now blocks like a missing endpoint. A <em>blind</em>
+endpoint still warns, because it at least proves the object can exist on that
+build.</p>
 <p>Sub-table rows and endpoints outside the API sweep are listed as <em>not checked</em>
 rather than counted as fine. A blocked apply can be forced by a user holding
 <code>operations.template_approve</code> who types an <strong>override reason</strong>; the override,
-the reason and what it overrode are written to the audit log.</p>
+the reason and what it overrode are written to the audit log. The one block no
+override lifts is an unset device variable (29.1.4): there is no value to
+write.</p>
 <p><strong>Approval is for builds.</strong> Approving records the builds the template was
 validated for: its own build plus every build its product runs in the visible
 fleet. A <strong>fleet rollout</strong> (several devices, a baseline, a live System
 Provisioning push) to a build outside that set is refused until an approver uses
 <strong>Revalidate for fleet builds</strong> in the View dialog. A new version starts with no
 validations.</p>
-<p><strong>Adapt to firmware.</strong> In the View dialog, pick a target build and <em>Preview</em>:
-SATOM lists the mapped renames it would carry to the new field name and the
-fields the build does not serve that it would remove. <em>Save adapted version</em>
-writes a <strong>new pending version</strong> stamped with the target build, with every
-change listed in its note; the original version is untouched. A body whose
-object the target does not serve at all cannot be adapted.</p>
+<p><strong>A template that does not fit is adapted, never edited in place</strong> — see
+29.1.2.</p>
 <p><strong>Line profiles and the new-policy wizard.</strong> The Line Profiles page shows, for
 each line, the build its Web Protection Profile template was written for and
 the builds its approval covers; the template dropdown lists each version's
@@ -4481,20 +5294,111 @@ other appliances keeps the build it was written for, and editing its payload
 restamps it with the appliance's current build. A rollback or restore brings
 back the build the old payload was written against (carve-outs saved before
 this show <em>unrecorded</em>). <strong>⬆ Inject to device</strong> and the Attack ID insert show
-the verdict for the target's build in the dry-run, with the same rules as the
-table above: fields discarded, renamed or an endpoint not served <strong>block</strong> the
-push, and an approver can override with an audited reason. Today the API sweep
-does not measure the exception sub-tables, so most pushes show <em>no evidence</em> —
-a warning, never green; the check starts blocking on its own once a sweep
-records those fields.</p>
+the verdict for the target's build in the dry-run: fields discarded, renamed or
+an endpoint not served <strong>block</strong> the push, and an approver can override with an
+audited reason. Unlike templates, <em>no evidence</em> is still a <strong>warning</strong> for a
+carve-out, never green: today the API sweep does not measure the exception
+sub-tables, so most pushes show it, and the check starts blocking on its own
+once a sweep records those fields.</p>
+<h3 id="2912-adapt-to-firmware-every-new-field-is-decided">29.1.2 Adapt to firmware: every new field is decided</h3>
+<p>In the View dialog, pick a target build under <strong>Adapt to firmware</strong> and press
+<strong>Preview</strong>. SATOM lists three kinds of change:</p>
+<ul>
+<li><strong>renames</strong> — fields the target serves under a new name; the value is carried
+  to the new name;</li>
+<li><strong>removals</strong> — fields the target does not serve; they are dropped;</li>
+<li><strong>new fields</strong> — fields the target adds over the template's own build. Each
+  one must be <strong>decided</strong>: <em>keep device default</em> (the template leaves the field
+  alone) or <em>set a value</em> (the value is written into the new version's body).
+  Leaving them out silently is how a template "passes" and the upgraded device
+  still behaves differently, so <strong>Save adapted version</strong> is refused until every
+  new field has a decision.</li>
+</ul>
+<p>A field whose value is a <strong>secret</strong> (a password, a shared secret, a key; for
+example <code>jwt-token-secret</code>, which appears on 8.0.6) offers only <em>keep device
+default</em>: a template never stores a secret, so you set it on the device.</p>
+<p><strong>Save adapted version</strong> writes a <strong>new pending version</strong> (adapting is
+authoring, so it needs <code>operations.template_save</code> and a fresh approval) stamped
+with the target build. Its note lists every rename, removal and decision, and
+the decisions are stored with the version. The original version is untouched.
+Two cases are refused: a body whose object the target does not serve at all
+(no field change can make an endpoint exist), and a body with nothing to
+change.</p>
+<p>An apply to a newer build whose new fields the template has not decided is not
+blocked; the preview <strong>warns</strong> with the field names, because the device default
+applies to them.</p>
+<h3 id="2913-recording-the-build-of-a-legacy-template">29.1.3 Recording the build of a legacy template</h3>
+<p>A template saved before builds were recorded shows <strong>no firmware</strong>, and newer
+builds cannot be judged against it. In its View dialog, <strong>Find the build it
+fits</strong> checks the body against every <strong>measured</strong> build of the ADOM and lists
+them best fit first (nothing discarded, nothing unmeasured, the oldest build on
+a tie). <strong>Record that build</strong> stamps the best fit as the build the template was
+<em>authored</em> for (never as <em>captured</em>) and appends a dated line to its note.</p>
+<p>Recording needs <code>operations.template_approve</code>, and it is refused when:</p>
+<ul>
+<li>the template already records a build — a stamp is never rewritten; adapt the
+  template to another build instead (29.1.2);</li>
+<li>no measured build fits the body without discarding fields — re-capture it
+  from a device;</li>
+<li>no build of the product has been measured yet.</li>
+</ul>
+<h3 id="2914-device-bindings-and-per-device-variables">29.1.4 Device bindings and per-device variables</h3>
+<p>A template is the <strong>shared intent of its ADOM</strong>. A device does not get a copy:
+it gets a <strong>binding</strong> to the template family (kind + name), managed in the View
+dialog under <strong>Devices this template governs</strong> (<code>operations.template_save</code>).
+For each binding you choose:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Device</strong></td>
+<td>a device of the template's own ADOM; a binding cannot cross ADOMs (a FortiWeb template cannot govern a FortiADC)</td>
+</tr>
+<tr>
+<td><strong>Version</strong></td>
+<td><strong>newest approved</strong> (the default: the device follows each new approved version) or one version <strong>pinned</strong></td>
+</tr>
+<tr>
+<td><strong>Variables (JSON)</strong></td>
+<td>the device's own values for the body's placeholders, as a flat object <code>{"name": "value"}</code></td>
+</tr>
+</tbody>
+</table>
+<p>A device has at most one binding per family; binding it again updates the
+binding. The bindings table shows, per device, the version it follows, the
+build it is checked against, the verdict (<em>fits</em> / <em>does not fit</em>, with the
+reason) and its variables. A binding whose family has no approved version, or
+whose pinned version no longer exists, whose device reports no firmware, or
+that leaves a variable unset, shows as not fitting.</p>
+<p><strong>Variables.</strong> A value that differs per device (an address, a host name) is
+written in the body as <code>{{ name }}</code> (letters, digits, <code>_</code>, <code>.</code>, <code>-</code>). The View
+dialog lists the names the body asks for. A value that is exactly one
+placeholder takes the variable's value as is; a placeholder inside a longer
+string is replaced by its text. <strong>Apply</strong> (in the Template Library and in the
+section libraries on the FortiWeb pages) renders the body per device, and
+refuses a device whose binding leaves a variable unset — with no override,
+because a literal <code>{{ name }}</code> would otherwise be written to the box. A body
+without placeholders is pushed the same to every device.</p>
+<p><strong>The Web Protection Profile lock follows the bindings.</strong> An approved WPP
+template with <strong>no binding</strong> keeps the old rule: the profile is read-only on
+every FortiWeb of its ADOM. Once it has bindings, it is read-only <strong>only on the
+bound devices</strong>. The lock never reaches a device of another ADOM.</p>
+<p>Bindings also decide which templates the matrix counts as <em>bound</em> (29.4) and
+which templates the upgrade pre-flight checks for a device (29.5).</p>
 <h3 id="292-the-section-catalog">29.2 The Section Catalog</h3>
-<p>FortiWeb ADOM → <strong>Section Catalog</strong> (admin). It lists <strong>only templates whose
+<p>Template Library → <strong>FortiWeb Sections</strong> (admin, <code>user_manage</code>; a badge on the
+button counts the templates pending approval). It lists <strong>only templates whose
 status is <code>approved</code></strong>, grouped by the FortiWeb section each kind belongs to,
 with an unknown-section bucket last so nothing silently vanishes.</p>
 <p>Two things it is not:</p>
 <ul>
-<li>It is <strong>not a live device browser.</strong> That is the <em>Configuration</em> area, which
-  reads what is on the box. This page is <strong>desired state</strong> — what someone decided
+<li>It is <strong>not a live device browser.</strong> That is the device's own pages in the
+  FortiWeb ADOM, which read what is on the box. This page is <strong>desired state</strong> — what someone decided
   should be true, approved.</li>
 <li>It is not the whole library. Pending and rejected templates are absent by
   construction, so the catalog is clean without anyone curating it.</li>
@@ -4504,6 +5408,107 @@ exactly the pool that baselines draw from: a template is authored in the library
 (29.1), approved, appears here grouped by section, and is then assignable to a
 zone × line × department combo in System Provisioning (28.4). A template that
 never got approved cannot reach a baseline, which is the point.</p>
+<h3 id="293-compare-templates">29.3 Compare templates</h3>
+<p>System Provisioning → <strong>Compare templates</strong>, also linked from the Template
+Library (<strong>Compare</strong>), from the matrix and from the <strong>Compare with a newer
+version</strong> button on every row of both lists (<code>operations.view</code>). It answers one
+question before anything is provisioned: <em>is this newer template a valid
+replacement for the one the device has, on this build or on this device?</em> It
+is read-only: nothing is saved or sent.</p>
+<p>Pick:</p>
+<ul>
+<li><strong>Current template</strong> — the one a device has now.</li>
+<li><strong>Newer template</strong> — any template of the same kind in the same ADOM. Opened
+  from a row, it defaults to the next version of the family, or else the newest
+  version adapted from the current one; when neither exists, the page says so
+  and asks you to choose.</li>
+<li><strong>Firmware build</strong> — optional. Empty means the device's running build when a
+  device is chosen, otherwise the newer template's own build.</li>
+<li><strong>Device (optional)</strong> — a device of the ADOM, to check its variables and its
+  own build as well.</li>
+</ul>
+<p><img alt="Compare templates: Current template, Newer template, Firmware build and Device selectors with the Compare button" src="img/screens/template-compare.webp">
+<em>Compare templates — the current template against a newer one, on a build or on one device.</em></p>
+<p>The result has four parts:</p>
+<ol>
+<li><strong>The verdict.</strong> The newer template is <strong>valid</strong> for the build only when it
+   fits the build (nothing discarded, renamed, absent or unmeasured), decides
+   every field the build adds and, on a device, has a value for each of its
+   variables and no device-level block. Every reason it is not valid is listed.
+   Approval is reported apart: a valid <strong>pending</strong> version can go to a single
+   device, but a fleet rollout needs it approved.</li>
+<li><strong>Side by side</strong> — status, the build each was written for and how it got
+   it (captured / authored / adapted), the verdict on the build, whether the
+   approval covers the build, and the new fields of the build each one leaves
+   undecided.</li>
+<li><strong>On the device</strong> (when one is chosen) — unset variables of its binding,
+   blocks and warnings.</li>
+<li><strong>What changes</strong> — the field-by-field difference of the two bodies: objects
+   added, removed or changed, and per changed object the fields added (<code>+</code>),
+   removed (<code>−</code>) and changed (<code>~</code>, old → new). Identical bodies say so: then
+   only the stamp, the status or the decisions differ.</li>
+</ol>
+<p>Append <code>?format=json</code> (or send <code>Accept: application/json</code>) to get the same
+result as JSON.</p>
+<h3 id="294-the-template-compatibility-matrix">29.4 The template compatibility matrix</h3>
+<p>Template Library → <strong>Compatibility matrix</strong> (also from System Provisioning and
+from Compare templates; <code>operations.view</code>). Every template of the ADOM is a
+row, every firmware build the ADOM knows is a column: each build that has been
+measured or runs in the fleet, newest first. A column header counts the
+devices running that build (hover for their names) or says <em>not measured</em>.
+Each row also shows the build the template was <strong>written for</strong> and its
+<strong>bound devices</strong> (a number, or <em>all (no binding)</em>).</p>
+<p><img alt="Template compatibility matrix: templates as rows, firmware builds as columns, one verdict badge per cell" src="img/screens/template-matrix.webp">
+<em>The compatibility matrix — one verdict per template and build; a cell opens the comparison for that build.</em></p>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>fits</strong></td>
+<td>every field is served by that build</td>
+</tr>
+<tr>
+<td><strong>fits, warnings</strong></td>
+<td>served, with warnings — for example fields that were never measured on that endpoint</td>
+</tr>
+<tr>
+<td><strong>adapt</strong></td>
+<td>fields renamed or discarded by that build, or fields it adds that the template has not decided: <strong>Adapt to firmware</strong> (29.1.2) makes a new version</td>
+</tr>
+<tr>
+<td><strong>unmeasured</strong></td>
+<td>no evidence for that build: measure it before trusting it</td>
+</tr>
+<tr>
+<td><strong>blocked</strong></td>
+<td>the build does not serve an object the template writes (or the check could not run)</td>
+</tr>
+</tbody>
+</table>
+<p>Hover a cell for the full verdict; click it to open <strong>Compare templates</strong> for
+that template on that build (29.3).</p>
+<p>Two controls above the grid:</p>
+<ul>
+<li><strong>Add a target build</strong> — adds a column for a build you are considering, even
+  one that has not been measured (expect <em>unmeasured</em> cells until it is).</li>
+<li><strong>Every version (not only the newest)</strong> — by default each family shows only
+  its newest version; tick this to see every version.</li>
+</ul>
+<h3 id="295-templates-and-firmware-upgrades">29.5 Templates and firmware upgrades</h3>
+<p>The upgrade pre-flight (on every product but FortiADC) checks, against the
+target build, every template that governs the device: the templates it is bound to, plus every
+approved template of its ADOM that has no binding at all. That <code>templates</code>
+section is <strong>graded</strong>: a template that does not fit the target fails the
+pre-flight, because its next apply after the upgrade would be refused, and
+re-running the pre-flight changes nothing. Adapt the template (29.1.2), or
+move the binding to an adapted version, before the window. Templates that fit
+but leave new fields undecided are counted in the summary without failing it.
+The pre-flight itself is described in §40.</p>
 <h2 id="30-the-endpoint-registry--the-api-explorer">30. The endpoint registry &amp; the API explorer</h2>
 <p>Every product workspace has an API console (§17.1, §17.2, §17.3 cover the ADC,
 FAC and FAZ ones). This section documents the <strong>FortiWeb</strong> one and, more
@@ -5262,7 +6267,9 @@ before writing:</p>
   have</strong>, <strong>blocks</strong> — the apply is refused, naming every blocking line, unless
   someone with <strong>Approve templates</strong> gives an override reason (audited);</li>
 <li>a build nobody measured says <em>not measured — cannot be guaranteed</em>; it never
-  reads as compatible.</li>
+  reads as compatible. A <strong>template</strong> apply goes further: a target build with no
+  evidence at all, or a device that reports no firmware, <strong>blocks</strong> the apply
+  (someone with <strong>Approve templates</strong> can override with a reason, audited).</li>
 </ul>
 <p>From the console: <code>sudo satom execute apilib compat fortiweb 7.6.8 8.0.6</code> and
 <code>sudo satom execute apilib channels fortiweb 8.0.6</code>.</p>
@@ -6167,7 +7174,8 @@ device-backed panel runs, not a friendlier copy of it.</p>
 <p><strong>There is no Save button here, by design.</strong> A carve-out is assembled from the
 entry <em>as the device reported it</em>, never from values a browser sent back — a
 page that lets a client supply the evidence lets a client author the exception.
-To save, open the same entry in <strong>Attack Search → the entry → Carve-out</strong>: the
+To save, open the same entry in <strong>Search Attack ID</strong> (FortiWeb ADOM →
+<strong>Fleet → WAF</strong>) → the entry → <strong>Carve-out</strong>: the
 recommendation is identical and the evidence is device-read.</p>
 <p>Two optional fields: <strong>Web Protection Profile</strong> names that profile in the
 "where on the device" path shown under each carve-out, and <strong>Decode a payload on
@@ -6415,7 +7423,7 @@ the page instead of on a manual.</p>
 discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
-   the console is either <strong>on the map</strong> (114 today) or <strong>excluded with a written
+   the console is either <strong>on the map</strong> (116 today) or <strong>excluded with a written
    reason</strong> (144 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>
@@ -6701,7 +7709,7 @@ or not that script ran.</p>
 <tbody>
 <tr>
 <td><strong>1 · Pre-upgrade (bulk)</strong></td>
-<td>Runs the pre-flight against every selected device and <strong>persists one record per device</strong> — version, partitions, health, backup.</td>
+<td>Runs the pre-flight against every selected device and <strong>persists one record per device</strong> — version, partitions, health, backup and, once a target version is picked, the <strong>templates</strong> that govern the device graded against that build (a template that does not fit fails the pre-flight until it is adapted).</td>
 </tr>
 <tr>
 <td><strong>2 · Change request</strong></td>
@@ -7606,8 +8614,9 @@ the product).</p>
 <h3 id="418-api-surface-what-the-destination-build-actually-takes">41.8 API surface: what the destination build actually takes</h3>
 <p>Two places now compare a configuration against the API of the firmware it is
 about to meet.</p>
-<p><strong>Cloning or migrating</strong> (Workspace → Policies → the pre-flight checklist). A
-line reading <code>API surface: {device} (7.6.8) → {device} (8.0.5)</code> appears
+<p><strong>Cloning or migrating</strong> (FortiWeb menu → <strong>Server Policy</strong> → <em>Clone to</em> or
+<em>Migrate to</em> → the pre-flight checklist). A line reading
+<code>API surface: fwb-01 (7.6.8) → fwb-02 (8.0.5)</code> appears
 beside the other checks. It reports, per object that would actually be
 written:</p>
 <ul>

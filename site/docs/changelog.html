@@ -112,6 +112,555 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="fixed--approving-a-wpp-template-deployed-it-to-every-fortiweb-ignoring-bindings-and-variables-the-signature-editor-had-no-way-in-cli-only-builds-blocked-every-template-apply">Fixed — Approving a WPP template deployed it to every FortiWeb, ignoring bindings and variables; the signature editor had no way in; CLI-only builds blocked every template apply</h3>
+<ul>
+<li><strong>Approval auto-deploy follows the bindings.</strong> Approving a Web Protection
+  Profile template deployed it to every visible FortiWeb whatever the family's
+  device bindings said, and pushed the body without rendering its
+  <code>{{ variables }}</code> — a literal placeholder could reach a device. It now uses the
+  scope the template lock uses: the bound devices whose binding follows this
+  version (a device pinned to another version keeps it), or every FortiWeb when
+  the family has no binding. Bodies are rendered per device, and a device with
+  no value for a variable <strong>holds the whole deploy</strong> (audited as
+  <code>template.approve.autodeploy.held</code>).</li>
+<li><strong>Signature editor.</strong> SATOM's signature editor (catalog search, per-signature
+  exception, alert-only) was linked only from the classic Web Protection page,
+  which redirects to the device's Signatures list since the classic menus left
+  the ADOMs. The Signatures list now has a <strong>Signature editor</strong> button for the
+  selected profile.</li>
+<li><strong>A build measured only by its CLI tree no longer blocks a template apply.</strong>
+  The "unmeasured blocks" rule refused every apply to a build with no REST sweep
+  even when its CLI tree answered for every object of the template, and the
+  both-channel check had already validated the fields there. It is a warning now
+  ("REST never measured … its CLI tree did"); a build with no evidence at all
+  still blocks.</li>
+<li>Concept Map lists <em>Compare templates</em> and <em>Template compatibility matrix</em>.</li>
+<li>Texts: the "FortiWeb layout" button no longer says read-only (its dialogs
+  save), the FortiGate dashboard header no longer says read-only, the binding
+  variables example uses a documentation address.</li>
+<li>Tests that still pinned the menus removed on 2026-10-11, the old <code>const</code>
+  declaration and the old <code>managed_wpp_names()</code> signature now pin the current
+  behaviour (they were red in the nightly run).</li>
+</ul>
+<h3 id="added--fortiadc-joins-the-measured-gui-engine">Added — FortiADC joins the measured-GUI engine</h3>
+<p>FortiADC is the fourth product drawn from measured GUI layouts, next to FortiWeb,
+FortiGate and FortiAuthenticator (layouts harvested from a lab FortiADC-KVM 7.6.7
+build 0676; knowledge snapshot <code>kb-20261011</code>).</p>
+<ul>
+<li>A FortiADC with a layout for its build draws its own menu; the hand-made
+  FortiADC menu stays the fallback, so the ADOM never ends up empty.</li>
+<li>Rows are read live from the device's REST API (by build, VDOM aware; no
+  FortiADC config cache for these pages), one object by mkey, settings entities
+  as singletons, child tables read-only. Writes go through the same dry run →
+  apply → change history + audit path as the other products; secrets are never
+  echoed back.</li>
+<li>"Not in GUI, but in CLI" says "GUI layout not measured" only while no FortiADC
+  layout exists on the node.</li>
+<li>Clone / Create New on FortiADC pages: a clone no longer keeps the source key,
+  and Create New finds the new object afterwards.</li>
+</ul>
+<h3 id="documentation--the-manual-gets-screenshots-and-eleven-user-guide-sections-catch-up-with-the-new-screens">Documentation — the manual gets screenshots, and eleven user-guide sections catch up with the new screens</h3>
+<ul>
+<li><strong>Screenshots.</strong> 20 captures of the current console in the user guide
+  (<code>docs/img/screens/</code>, published to <code>site/docs/img/</code>) and the six tiles of the
+  site's "See it in action" gallery, which had shown "screenshot pending" since
+  August. They are taken from a live node and <strong>anonymised in the page before the
+  capture</strong> (device and node names, private addresses, host names, serials, MACs,
+  user names), then the rendered text is re-checked against the real identifiers
+  and a capture with a hit is discarded: the published-docs leak scanner reads
+  text and cannot see inside an image. <code>gen_site_docs.py</code> now publishes
+  <code>docs/img/**</code> byte for byte and removes images whose source is gone;
+  <code>test_site_links.py</code> now also fails on an <code>&lt;img src&gt;</code> that does not resolve.</li>
+<li><strong>User guide</strong> — rewritten where the screens changed: §3 (each FortiWeb,
+  FortiGate and FortiAuthenticator ADOM draws the device's own menu; no Classic
+  view), §5–§7 (Server Policy and object pages in the device's GUI layout, how a
+  save travels, "Not in GUI, but in CLI"), §8, §9, §13 (Fleet → WAF: Search
+  Attack ID, Exceptions &amp; Signature, WAF Artifacts), §17 (FortiGate and
+  FortiAuthenticator pages write, dry run first), §21 (the certificate and
+  profile steps of a provisioning run), §28–§29 (Compare templates, the
+  compatibility matrix, Adapt to firmware decisions, bindings, what blocks an
+  apply).</li>
+<li><strong>Other documents</strong> — stale statements corrected in <code>README.md</code>,
+  <code>fortigate.md</code>, <code>fortiauthenticator.md</code>, <code>wpp_exceptions.md</code>,
+  <code>web_protection_profile.md</code>, <code>build-compatibility.md</code> and
+  <code>source-of-truth-spec.md</code> (device-config history is the local SoT store, not
+  git, since 2026-08-05; where the WAF tools live now; unmeasured builds block a
+  template apply).</li>
+<li><strong>Site gallery captions</strong> updated: "Device sync — git-versioned source of
+  truth" became "Metrics" (the git source of truth was retired), and "Four-copy
+  backup coverage" became the coverage table it is.</li>
+</ul>
+<h3 id="fixed--template-compare-and-matrix-pages-printed-a-python-method-as-the-product-name-the-matrix-took-40-s">Fixed — Template compare and matrix pages printed a Python method as the product name; the matrix took 40 s</h3>
+<p>Found while taking the documentation screenshots, not by a test:</p>
+<ul>
+<li><strong><code>&lt;built-in method title of str object at 0x…&gt;</code> in the top bar and footer</strong>
+  of <em>Compare templates</em> and <em>Template compatibility matrix</em>, with an empty
+  ADOM badge and a broken product icon. Both views passed <code>product=&lt;str&gt;</code> to
+  the template, shadowing the product object <code>base.html</code> reads. Neither
+  template used it. <code>tests/test_render_no_product_shadow.py</code> now fails if any
+  view passes <code>product=</code> to a template again (AST scan over <code>app/</code>).</li>
+<li><strong>Template compatibility matrix: 40-50 s → about 2 s</strong> for 6 templates × 3
+  builds. Every cell re-read the whole firmware build twice (the joined
+  REST/CLI view and the CLI tree): 67 + 67 whole-build reads for 3 builds.
+  <code>api_library.channel_memo()</code> shares those reads for the duration of one
+  matrix; it is opt-in and scoped, so a request that ingests and then reads is
+  never answered from a view older than its own write. Same cells, same text.</li>
+<li><strong>Not in GUI, but in CLI</strong> (per-device page): the title ran off the right
+  edge behind the bookmark button. The page now uses the standard header
+  (breadcrumb + title).</li>
+<li><strong>Template Library</strong>: the Note column had no minimum width; since the fifth
+  action button (Compare) it collapsed to a few characters per line and every
+  row grew to ten lines. It keeps 200 px now.</li>
+</ul>
+<h3 id="fixed--phone-layout-the-menu-stops-working-after-one-navigation-the-header-runs-off-screen-pages-wider-than-the-phone">Fixed — Phone layout: the menu stops working after one navigation, the header runs off-screen, pages wider than the phone</h3>
+<p>Operator report: on a phone the menu stops working and tables do not fit.
+Measured in a 390px-wide browser against a1, not guessed:</p>
+<ul>
+<li><strong>Menu (and much more) dead after the first navigation.</strong> Turbo Drive
+  re-executes the scripts in <code>&lt;body&gt;</code> on every visit. <code>main.js</code> declared
+  <code>const StatusPoller</code> and <code>api.js</code> <code>const csrfToken</code> at the top level; the
+  second declaration is a SyntaxError raised before the file's first line
+  runs, so from the first navigation on <strong>all of <code>main.js</code> was dead</strong>: the
+  sidebar button, the <code>data-fw-confirm</code> dialogs on destructive actions,
+  <code>tr[data-href]</code> row links, auto-submit selects, copy buttons. Desktop was
+  affected too. Both files now declare nothing lexical at the top level;
+  the pollers are reused across visits (their intervals no longer stack, and
+  an auto-refresh countdown started on one page no longer reloads the next).
+  <code>api.js</code> reads the CSRF token when the request is made — its global
+  <code>csrfToken</code> also collided with the API Explorer page's <code>function csrfToken()</code>.</li>
+<li><strong>Sidebar toggle bound once.</strong> It looks the button and sidebar up when the
+  tap arrives instead of holding the ones from the first page. On a phone a
+  tap outside the open menu, a tap on the dimmed page behind it, or Escape
+  closes it. Closing it on a phone no longer writes the desktop "collapsed"
+  flag (the next desktop visit from that browser opened with the sidebar
+  hidden).</li>
+<li><strong>Five templates</strong> broke the same way on the second visit to the same
+  page (Server Policy detail and New, Exceptions, section configuration,
+  Server Objects overview): their top-level <code>const</code>/<code>let</code> are now <code>var</code>.</li>
+<li><strong>Topbar on a phone:</strong> 260px of controls (product switch, tools, search,
+  notifications, user menu with logout) ran off the right edge. The ADOM
+  badge drops its "ADOM:" prefix and truncates its name, the environment and
+  HA badges keep only their icon, the device button is hidden (the sidebar
+  keeps "<device> · change"), and below 420px the logo gives way to the ADOM
+  name.</li>
+<li><strong>Pages wider than the phone:</strong> page-header button rows did not wrap, so
+  one row widened the whole page (Server Policies 865px, Deep monitors 541px)
+  and the browser zoomed every card out. Flex rows in the content wrap on a
+  phone (<code>.flex-nowrap</code> still opts out), and a bare table that overflows the
+  screen with no scrolling container (Monitoring → Collection, System Backup,
+  Software Update, High Availability) is put in its own horizontal scroll box.</li>
+<li>Guard: <code>tests/test_turbo_body_scripts.py</code>.</li>
+</ul>
+<h3 id="changed--fortiweb-fortigate-and-fortiauthenticator-adoms-draw-only-the-devices-own-menu">Changed — FortiWeb, FortiGate and FortiAuthenticator ADOMs draw only the device's own menu</h3>
+<p>Operator request: the old SATOM menus are gone from these three ADOMs. The
+device group (FortiWeb / FortiGate / FortiAuthenticator), built from the
+measured GUI layouts of the device's firmware, is now the only device menu.</p>
+<ul>
+<li><strong>FortiWeb:</strong> the Loadbalancer (Server Objects), WAF (Web Protection
+  Profile, Web Protection, the protection areas) and Configuration groups are
+  no longer drawn. With no device picked, or no measured layout for it yet
+  (no knowledge pack imported), the FortiWeb group keeps one entry, Server
+  Policy: the device's layout view, else the device picker.</li>
+<li><strong>FortiGate / FortiAuthenticator:</strong> the old <code>fgt_menu</code> / <code>fac_menu</code> groups
+  are no longer drawn.</li>
+<li>The <strong>Classic view</strong> button is gone from every list and settings page.</li>
+<li>Collections no measured page draws yet have no sidebar entry any more:
+  64 on {device} / {device} (2 Server Objects, 9 WAF, 53 Configuration),
+  9 on fgt02, 26 on {device}. They return as their pages are crawled.</li>
+<li>Unchanged: the old URLs still redirect to the new page that draws the same
+  collection, and <code>?classic=1</code> still opens the old page — the Server Policy
+  Clone / Clone to / Migrate to / Delete dialogs run there. FortiADC and
+  FortiAnalyzer keep their menus: no device GUI has been measured for them.</li>
+<li>Removed with the menus: the sidebar filters in <code>services.gui_classic</code>
+  (<code>filter_groups</code>, <code>filter_sections</code>, <code>filter_product_groups</code>,
+  <code>classic_url</code>, <code>classic_item_url</code>) and the per-request build of the old
+  menus in the context processor.</li>
+<li>Guards: <code>tests/test_fwgui_satom_tools.py</code> (FortiWeb list and settings page:
+  no old group, no old link, no Classic view), <code>tests/test_gui_products.py</code>
+  (FortiGate and FortiAuthenticator), <code>tests/test_server_objects_menu.py</code>
+  (no old endpoint in <code>base.html</code>), <code>tests/test_gui_template.py</code> (Server
+  Policy in the FortiWeb group, with and without a device).</li>
+</ul>
+<h3 id="changed--fortiweb-adom-search-attack-id-exceptions--signature-and-waf-artifacts-move-to-fleet--waf">Changed — FortiWeb ADOM: Search Attack ID, Exceptions &amp; Signature and WAF Artifacts move to Fleet → WAF</h3>
+<p>Operator request: the three device-scoped WAF tools sat in the FortiWeb
+ADOM's own WAF group, apart from the fleet-wide WAF pages. They now live in
+the <strong>Fleet → WAF</strong> submenu, next to Overview / Inventory / Profiles /
+Coverage / Artifacts / Exceptions. WAF Artifacts keeps its collapsible shape
+(Object types, Inventory, Device audit). Same URLs and permissions; only the
+menu location changed.</p>
+<ul>
+<li>FortiWeb ADOM only. The Global console's Fleet → WAF does not list them:
+  these are FortiWeb-ADOM pages, and a link there would switch the tab's ADOM
+  without saying so.</li>
+<li>The FortiWeb ADOM's WAF group keeps Web Protection Profile, Web Protection
+  and the protection areas, and is no longer drawn when none of them apply
+  (it would have been a header with nothing under it).</li>
+<li>Guards: <code>tests/test_waf_fleet.py</code> (rendered sidebar, both ADOMs) and the
+  Artifacts shape guard in <code>tests/test_artifact_wpp.py</code>, now pointed at
+  <code>partials/nav_waf.html</code>.</li>
+</ul>
+<h3 id="fixed--fortiweb-pages-offer-the-satom-tools-their-classic-pages-had">Fixed — FortiWeb pages offer the SATOM tools their classic pages had</h3>
+<p>The FortiWeb menu replaced the classic Server Objects, Web Protection and
+Configuration entries, but several SATOM tools stayed behind "Classic view",
+so an operator on the new pages no longer saw them. Measured on {device}
+(7.6.8) and {device} (8.0.6) by rendering every FortiWeb page and its
+classic page side by side: 214 gaps across 107 page views. Each FortiWeb page
+now carries them:</p>
+<ul>
+<li><strong>Config template library</strong> of the object's section, scoped to the object
+  type on the page (View / Apply to devices with dry-run preview and the
+  compatibility verdict / Clone / Delete / New template) — on every grid and
+  settings page whose classic page had it (~100 page views). The library is a
+  shared partial (<code>section_config/_template_library.html</code>), so the classic
+  section page and the FortiWeb page list the same templates.</li>
+<li><strong>Settings forms</strong> (System Time, DNS, SNMP, HA, Advanced, Config Sync,
+  FortiSandbox, ICAP, FortiGate integration, interface operation, …): Save as
+  template (captured whole, filed under the classic section), Refresh from the
+  device and a Classic view link.</li>
+<li><strong>Certificates</strong>: Import (over the certificate-only SSH session, the only
+  path that works — REST answers -7721) on Local, CA, Intermediate CA and XML
+  certificates; Generate (Certificate Manager) on Local.</li>
+<li><strong>File-backed objects</strong> (XML schema, WSDL, DTD, JSON schema, OpenAPI):
+  Upload to SATOM's artifact store and Stored copies.</li>
+<li><strong>Create New through the SATOM editor</strong> where FortiWeb's layout has none
+  but the classic page did (CA Group, CRL, admin replacement messages);
+  never for certificates REST cannot create or for file-backed objects.</li>
+<li><strong>Web Protection Profiles</strong>: the Hide default profiles filter (same
+  per-user preference as the classic page) and the Factory catalog link.</li>
+<li><strong>Server Policy</strong> (FortiWeb layout): Enable / Disable (same dry-run dialog
+  as Clone / Migrate / Delete), From a line profile, and Refresh, which now
+  returns to the FortiWeb list.</li>
+<li>A template saved from a FortiWeb page is filed under the section the
+  classic page lists (<code>gui_classic.classic_leaf</code>), so it shows in the same
+  library.</li>
+</ul>
+<h3 id="added--fortiweb-templates-across-firmware-builds-and-devices-compare-matrix-bindings">Added — FortiWeb templates across firmware builds and devices: compare, matrix, bindings</h3>
+<ul>
+<li><strong>Provisioning → Compare templates</strong> (<code>/provisioning/compare</code>): the template
+  a device has against a newer one (the next version, the version adapted
+  from it, or any template of the same kind), on a firmware build or on one
+  device's running build. It shows the field-by-field difference and a
+  verdict: VALID only when the newer template fits that build (nothing
+  discarded, renamed, absent or unmeasured), decides every field the build
+  adds and, on a device, has a value for each of its variables. Approval is
+  reported apart (a valid pending version can go to one device, not to the
+  fleet). Read-only; also as JSON (<code>?format=json</code>). Linked from System
+  Provisioning, the Template Library and every row of both.</li>
+<li><strong>Compatibility matrix</strong> (<code>/templates/matrix</code>): every template of the ADOM
+  against every measured or fleet build (plus a target being considered):
+  fits / adapt / unmeasured / blocked per cell; a cell opens the comparison.</li>
+<li><strong>Device bindings</strong>: a template stays the shared intent of its ADOM and a
+  device is BOUND to it (following the newest approved version or pinned to
+  one), with its own values for the body's <code>{{ variable }}</code> placeholders.
+  The apply renders the body per device and refuses a device whose binding
+  leaves a variable unset (no override: there is no value to write). A
+  binding cannot cross ADOMs.</li>
+<li><strong>"Adapt to firmware" decides the new fields.</strong> The fields a newer build
+  adds over the template's own build are listed in the preview and each one
+  must be decided (keep the device default or set a value); the decisions
+  are stored with the new version (<code>templates.field_decisions</code>) and set
+  values are written into its body. An apply to a newer build with
+  undecided fields warns with their names.</li>
+<li><strong>Recording the firmware of a legacy template</strong> (Template Library → View →
+  "Find the build it fits"): every measured build, best fit first; the build
+  is recorded as <em>authored</em> only when the body fits it. The six templates on
+  the primary were stamped this way (see below).</li>
+<li><strong>Upgrade pre-flight checks the templates that govern the device</strong> against
+  the target build and grades them: a template that does not fit fails the
+  pre-flight (adapting it is the only way to turn it green).</li>
+<li><strong>The FortiWeb pages offer the SATOM tools again</strong> (they were reachable only
+  through "Classic view"): a template-managed Web Protection Profile shows a
+  lock badge and its Delete is disabled; Deep clone (profile + referenced
+  objects) and Save as template on Web Protection Profiles; Save as template
+  on configuration objects; Clone / Clone to / Migrate to / Delete on the
+  Server Policy list open the SATOM dialog of the selected policy.</li>
+</ul>
+<h3 id="changed--a-build-without-evidence-blocks-a-template-apply">Changed — a build without evidence blocks a template apply</h3>
+<ul>
+<li>A target build with no evidence in the API library (<code>unmeasured</code>), and a
+  device that reports no firmware, now BLOCK the template apply (an approver
+  may still override with a reason, audited). They used to pass as a
+  warning, which turned "unknown" into "accepted" by omission. A build whose
+  endpoint is served but whose fields were never read (<code>blind</code>) still warns.</li>
+<li>The template lock of an approved Web Protection Profile follows its
+  bindings: without bindings it locks the profile on every FortiWeb of the
+  ADOM (as before); with bindings, only on the bound devices. The lock no
+  longer reaches devices of another ADOM.</li>
+</ul>
+<h3 id="fixed--system-provisionings-ntp-element-wrote-the-guis-own-api">Fixed — System Provisioning's NTP element wrote the GUI's own API</h3>
+<ul>
+<li>The "NTP / time" element of System Provisioning wrote
+  <code>system/maintenance.systemtime</code> — FortiWeb's GUI API, not cmdb, with the
+  GUI's field names (<code>mode</code>, <code>ntpServer</code>, <code>daylightSaving</code>). No build has
+  evidence for it and SATOM's GUI layer treats it as read-only, so every
+  profile using it was refused by the firmware check (now that "no evidence"
+  blocks) or, before, pushed blind. The element is now <strong>NTP</strong> on
+  <code>cmdb/system/ntp</code> (<code>ntpsync</code>, <code>syncinterval</code>; servers are
+  <code>system/ntp/ntpserver</code> rows; time zone and DST are Global settings),
+  measured on 7.6.8 and 8.0.6. A guard pins that every provisioning element
+  writes a cmdb endpoint.</li>
+<li>"Adapt to firmware" refuses to store a value for a new field that is a
+  secret (<code>jwt-token-secret</code> appears on 8.0.6): a template never stores
+  secrets; only "keep the device default" is offered for it.</li>
+</ul>
+<h3 id="fixed--the-cli-writer-speaks-fortiauthenticators-cli">Fixed — the CLI writer speaks FortiAuthenticator's CLI</h3>
+<ul>
+<li>A FortiAuthenticator CLI write never got past <code>config</code>: the writer waited
+  for a FortiOS prompt (<code>host (ctx) #</code>). Measured on {device} (FACVMKVM 8.0.3
+  build0099, 2026-10-10): the prompt is <code>&gt;</code> at the root and <code>(&lt;context&gt;):</code>
+  inside; <code>abort</code> in a row leaves the row and its table; a singleton
+  (<code>system dns</code>) has no <code>abort</code> ("No such command.") and applies each <code>set</code>
+  as typed (closing the session without <code>end</code> left the value changed; the
+  lab value was restored and read back). The FAC dialect now reads its own
+  prompt, treats "No such command." as an error, and on a failure inside a
+  singleton leaves with <code>end</code> and says the earlier lines were applied
+  (never "nothing applied"). Verified on {device}: <code>system dns</code> written and
+  read back in a fresh session through the DNS page.</li>
+</ul>
+<h3 id="added--the-real-fortigate-801-and-fortiauthenticator-803-gui-templates-render-edit-and-save">Added — the real FortiGate 8.0.1 and FortiAuthenticator 8.0.3 GUI templates render, edit and save</h3>
+<ul>
+<li>The harvester's real crawls (FortiGate 8.0.1 build245: 53 pages;
+  FortiAuthenticator 8.0.3 build99: 93 pages) run on the GUI engine. Their
+  format extras are understood:</li>
+<li>FortiGate dotted key paths into nested objects (<code>ipv6.ip6-mode</code>,
+    <code>http.comfort-interval</code>): read from the nested object, saved inside it
+    (only the changed sub-key is sent), compared field by field on read-back;</li>
+<li>FortiAuthenticator <code>measured-inverse</code> controls (Disabled = not <code>active</code>):
+    drawn as the negation, saved as the key with the value negated;
+    JSON booleans drawn as the control's on / off and saved as booleans;
+    lists of plain values edited as text and saved as lists;</li>
+<li><code>cond_gui</code> (a rule on a control with no API) said in words in the
+    "conditional" hover; <code>readonly</code> controls and structure values drawn
+    read-only; a control with no measured key lists its <code>candidates</code>
+    ("key not measured"); <code>fold: true</code> sections drawn folded (the FAC pages
+    with one answered 500); FortiGate dialog <code>tab</code>s drawn as tab headings;</li>
+<li>inline tables tied to where their rows are (<code>gui_products.table_source</code>):
+    a field of the object (<code>router/ospf/area</code>), another collection (SNMP
+    communities on the SNMP form), a <code>monitor:</code> list (read-only), or nothing
+    ("the crawl did not tie this table", never drawn as empty);</li>
+<li>a list view the crawl tied to a settings object (<code>system/ipam</code>) lists
+    the one table field whose rows carry every matched column (IPAM rules);
+    two candidates or none: no rows, and the page says why;</li>
+<li>FortiAuthenticator <code>cli:</code> objects (DNS, interfaces, static routes) read
+    with <code>show full-configuration</code> over a read-only SSH session and saved
+    through the CLI writer (dry run renders the script; the channel gate of
+    the exact build decides); create / delete of a CLI-only object are not
+    offered;</li>
+<li><code>endpoint_evidence.weak</code> shown as "tied by one field", <code>also_endpoints</code>
+    and <code>columns_unknown</code> said on the list (objects listed by their name);</li>
+<li>Create New of a dialog another tab owns (Zone on Interfaces, Address
+    Group on Addresses) opened and created in the dialog's own endpoint (it
+    was a 404: FortiGate's <code>subtable_dialogs</code> lists them).</li>
+<li>An inline table row of a FortiGate / FortiAuthenticator object (and a row
+  of a settings object's table) is created, edited and deleted by writing
+  the parent object with the changed row (the other rows kept), with the
+  same dry run -&gt; apply -&gt; re-read -&gt; drift ritual and audit.</li>
+<li>Clone on FortiGate / FortiAuthenticator lists: the source read from the
+  device, created under the new name (identity, <code>uuid</code> and bookkeeping
+  dropped; secrets are never read, so never copied), dry run first.</li>
+<li>"Read values over CLI" in "Not in GUI, but in CLI" works on every layout
+  page (FortiWeb, FortiGate, FortiAuthenticator): the button had no handler
+  outside the object editor. Read-only SSH route, secrets never returned;
+  settings forms get the button too.</li>
+<li>"Not in GUI, but in CLI" on FortiGate / FortiAuthenticator Create New, from
+  the keys the crawl measured for the object (<code>rest_check.rest_keys</code>, FAC
+  per-view <code>not_in_gui</code>); a FAC inverse control and a field's extra controls
+  count as placed.</li>
+</ul>
+<h3 id="fixed--fortigate-and-fortiauthenticator-gui-templates-from-a-pack-get-fortiwebs-safety-rules">Fixed — FortiGate and FortiAuthenticator GUI templates from a pack get FortiWeb's safety rules</h3>
+<ul>
+<li>The knowledge importer filed <code>gui-templates/fortigate</code> and
+  <code>gui-templates/fortiauthenticator</code> items without checking a single
+  endpoint: only FortiWeb's <code>api:</code> paths went through <code>safe_api</code>. Every
+  endpoint of a FortiGate or FortiAuthenticator layout (page, views, dialogs,
+  table fields, <code>write</code>/<code>writes</code>, <code>bind</code>, FAC <code>gui_writes</code>) now follows its
+  product's grammar (<code>gui_products.unsafe_endpoint</code>): FortiGate cmdb paths
+  anywhere, <code>monitor:</code> and <code>gui:</code> only where SATOM reads (a monitor path in a
+  write or bind is an action route); FAC REST resources anywhere, <code>cli:</code> and
+  <code>gui:</code> only where SATOM reads, crawled form posts only as <code>gui:</code> paths; never
+  a path naming a device action (reboot, upgrade, factory, reset, backup,
+  restore, delete, ...) nor FAC's <code>auth</code>/<code>pushauth</code>. A template that breaks one
+  is rejected, as on FortiWeb; a product with no GUI engine is rejected too.</li>
+<li>A FortiGate / FortiAuthenticator page may be a list with no dialog (FAC's
+  SAML and system template editors were rejected as "no dialogs / list").</li>
+<li>A page slug <code>..</code> or <code>.x</code> is no longer a valid template identity (it filed
+  the template outside its product directory).</li>
+<li>Measured over the real crawls (FortiGate 8.0.1 build245, FAC 8.0.3
+  build99): 52/53 and 92/93 accepted. Refused: FortiGate FortiTokens
+  (<code>user.tokens</code>: its dialog names cmdb <code>system/device-upgrade</code> and
+  <code>system/federated-upgrade</code>) and FAC Scheduled Backups (<code>gui:/system/scheduled_backup/</code>).</li>
+</ul>
+<h3 id="added--fortigate-in-the-live-api-library-harvest-a-platform-exception-reason">Added — FortiGate in the live API-library harvest; a <code>platform</code> exception reason</h3>
+<ul>
+<li>A firmware change on a registered FortiGate now queues an <code>apilib_harvest</code>
+  job like FortiWeb, FortiADC and FortiAuthenticator (<code>LIVE_SOURCE</code>
+  <code>fortigate: schema</code>; the <code>apilib_harvest</code> scheduled action covers it too).
+  <code>services.apilib_fgt</code> reads the build from <code>monitor/system/status</code>, then
+  <code>?action=schema</code> of every cmdb table the library names for that build and
+  the build below it (the global index is 403 to a read-only token), GET only
+  through <code>FortiGateClient</code> (vdom-aware), and ingests a <code>schema</code> document. On
+  demand for one appliance: <code>apilib_harvest.run(&lt;appliance id&gt;)</code>.</li>
+<li><code>api_library.EXCEPTION_REASONS</code> gains <code>platform</code>: an object the build has
+  but the measured box cannot serve because it is hardware or a platform
+  image. On fgt02 (FortiGate-VM, 8.0.1 build0245) those tables answer the same
+  bare 400 as a path that does not exist, so the device cannot say it:
+  <code>schema_adapters.fortigate.PLATFORM_TABLES</code> names 51 of the 54 tables the VM
+  could not serve (NPU, modems, hardware switch, FortiWiFi radio, Rugged I/O,
+  DSL/TR-069, chassis SMC, telemetry/voice controllers, AWS/Azure/NSX-T
+  connectors) and the schema evidence carries them as <code>summary.exceptions</code>;
+  they stay <code>error</code>, never <code>absent</code>. Not classified:
+  <code>application/unsanctioned-apps</code>, <code>system/dnp3-proxy</code>, <code>system/iscsi</code>
+  (nothing says they are hardware).</li>
+</ul>
+<h3 id="fixed--a-fortiweb-page-from-another-builds-menu-no-longer-shows-in-the-sidebar">Fixed — a FortiWeb page from another build's menu no longer shows in the sidebar</h3>
+<ul>
+<li>A device whose own build was crawled showed pages that only another build
+  has, drawn from the nearest layout: {device} (7.6.8) listed MCP, Custom
+  Tracking and File List (8.0.6 pages; its REST answers 500), {device}
+  (8.0.6) listed File Exception, Caching and Scan History. <code>gui_pages.entries</code>
+  now keeps a borrowed page only when the api library measured the device's
+  build serving one of its collections. A build nobody crawled keeps every
+  page (hiding by measurement would empty its menu). Both lab menus: 145 -&gt; 142.</li>
+<li>Registry: <code>system_admin_certificate_remote</code> (System &gt; Admin &gt; Certificates &gt;
+  Remote); the GUI component declares <code>url=/cmdb/system/admin-certificate.remote</code>,
+  GET 200 on 7.6.8 build1128 and 8.0.6 build116. Baseline resealed (498).</li>
+</ul>
+<h3 id="fixed--fortiweb-system-time-is-tied-to-its-rest-collections">Fixed — FortiWeb System Time is tied to its REST collections</h3>
+<ul>
+<li>System &gt; Maintenance &gt; System Time was drawn without values: the crawl
+  recorded the GUI API object the page reads (<code>system/maintenance.systemtime</code>),
+  whose path SATOM never reads or writes. The page now edits cmdb
+  <code>system/ntp</code> (Set Time, Sync Interval), with Time Zone and the daylight
+  saving switch saved to <code>system/global</code> (<code>timezone</code> <code>04</code>, <code>dst</code>
+  enable/disable, as cmdb spells them) and the NTP server table read from
+  <code>system/ntp/ntpserver</code> (the 8.0.6 crawl had tied it to <code>system/admin</code>).
+  Measured on {device} (7.6.8) and {device} (8.0.6); a write of every
+  field was applied, read back from the device and reverted on both.</li>
+<li>The device clock is shown read-only through one GET on a path listed in
+  code (<code>gui_bound.READ_ONLY_API</code>); no save route accepts it.</li>
+<li><code>gui_endpoint_alias.json</code> page entries take per-field corrections
+  (<code>fields</code>: match by key / label / kind and position; set, drop, or <code>pad</code>
+  the choice values to the cmdb spelling); a bind to the collection the view
+  now edits is dropped, the field is saved with its object.</li>
+<li>Radio groups the crawl read as one text (<code>"NTP\nManual settings"</code> on both
+  choices; 83 groups on 38 pages) are split by position, in the form and in
+  the grid cells; nothing is guessed when the line count differs.</li>
+<li>"Not in GUI, but in CLI" judged pages tied by the alias table on the raw
+  crawl and listed fields the page shows (Set Time and Sync Interval); it now
+  reads the page as SATOM draws it.</li>
+</ul>
+<h3 id="added--fortigate-and-fortiauthenticator-get-the-fortiweb-gui-engine">Added — FortiGate and FortiAuthenticator get the FortiWeb GUI engine</h3>
+<ul>
+<li>The measured-GUI pages (<code>/workspace/&lt;id&gt;/fwgui/...</code>, same URL names) now
+  draw FortiGate and FortiAuthenticator layouts (<code>satom.gui-template/1</code>,
+  per exact build from the knowledge packs; exact build, else the nearest,
+  with the banner). <code>services.gui_products</code> holds what differs per product:
+  FortiGate rows are read live from cmdb (vdom aware; SATOM keeps no
+  FortiGate config cache) and named by <code>q_origin_key</code> / <code>policyid</code>; FortiAuthenticator
+  rows come from the SATOM cache, else live, and are addressed by their
+  detail URL key (<code>resource_uri</code>; RADIUS clients serve no <code>id</code>). FortiWeb
+  pages keep their own read and write path unchanged.</li>
+<li>Writes keep the FortiWeb ritual: dry run, review, apply, read back from the
+  device, drift reported field by field; every apply is audited with a
+  <code>ChangeHistory</code> before-snapshot. FortiGate: <code>PUT|POST|DELETE
+  /api/v2/cmdb/&lt;path&gt;[/&lt;mkey&gt;]</code> (new <code>FortiGateClient.write</code>, cmdb paths
+  only); FortiAuthenticator: <code>PATCH|POST|DELETE /api/v1/&lt;res&gt;/[&lt;pk&gt;/]</code>, with
+  write-through to the SATOM cache. CLI-only fields go through the CLI
+  writer. A save is accepted only for a collection the device's own measured
+  page edits. Pages with no API (<code>gui:&lt;path&gt;</code>) and fields measured
+  <code>key_from: "gui-only"</code> are drawn read-only and marked "No API on this build
+  (GUI only)"; FortiGate monitor views are read-only.</li>
+<li>Sidebar: the device's own menu tree from its layouts; the old FortiGate /
+  FortiAuthenticator menu leaves those pages draw leave the sidebar and
+  redirect to them, <code>?classic=1</code> keeps the old page. Opening such a page is an
+  ADOM jump to the device's product. "Not in GUI, but in CLI" is on every
+  FortiGate / FortiAuthenticator object, edit and Create New form.</li>
+<li><code>firmware_probe</code> reads FortiGate (platform, version and build), so a
+  registered FortiGate resolves its exact build.</li>
+<li>Verified live on a1 with lab devices (layouts staged for the check and
+  removed afterwards; the measured FortiGate / FortiAuthenticator layouts come
+  with the harvester's packs): fgt02 (FortiOS 8.0.1 build0245, registered as
+  appliance 37) create / edit / delete of a <code>lab-</code> address read back from the
+  device; {device} a lab user's last name edited, read back and restored. A
+  FortiAuthenticator <code>PATCH</code> of <code>custom1</code> answered 202 and changed nothing:
+  the page reported it as drift instead of "saved".</li>
+</ul>
+<h3 id="fixed--fortiweb-pages-that-read-fortiwebs-own-gui-api-now-show-and-edit-their-objects">Fixed — FortiWeb pages that read FortiWeb's own GUI API now show and edit their objects</h3>
+<ul>
+<li>About 20 FortiWeb pages (Signatures, OpenAPI File, the XML / TSL CA /
+  Intermediate CA / OCSP certificate lists, Web Vulnerability Scan Policy,
+  FortiSandbox, Automation, FTP Security Profile, DoS Exception Policy, ZTNA
+  Tags, Firewall Admin Policy) were drawn empty and could not be edited: the
+  GUI crawl recorded the collection FortiWeb's GUI reads through its own API
+  (<code>waf/signatures</code>), which cmdb answers 500 and SATOM does not cache, while the
+  same objects live in a cmdb collection (<code>waf/signature</code>).</li>
+<li><code>app/registry/data/gui_endpoint_alias.json</code> ties each of them to that
+  collection, measured on {device} (7.6.8) and {device} (8.0.6) with GETs
+  only: the same objects on both sides or every layout key among the build's
+  measured fields (<code>measured</code>), else the twin by name with both sides empty on
+  the lab (<code>named</code>, shown on the page as "tied by name"). GUI keys are renamed to
+  the cmdb keys measured equal row by row (Signatures: alert-only, disabled,
+  exception and FPM counts, custom group, sensitivity); a column FortiWeb
+  computes stays a computed column. Grid, dialog, save path (object editor,
+  audited), sidebar coverage and the "Not in GUI, but in CLI" rule all follow.
+  Verified live: a signature's sensitivity changed through the page on
+  {device}, read back from the device and restored.</li>
+<li>FortiWeb's predefined Data Types, predefined Global Allow List and the
+  scan history have no cmdb collection: read live through the GUI API (only
+  where the GUI API safety rule allows), read-only, marked <em>live</em>.</li>
+<li>Four collections the GUI lists were missing from the registry: baseline
+  resealed (+4: <code>dos_prevention_exception</code>, <code>ftp_protection_profile_inline</code>,
+  <code>system_endpoint_control_tags</code>, <code>system_firewall_admin_policy_match_item</code>).</li>
+<li>A radio or select whose choices the crawl could not read was drawn as a choice
+  "None" that would have saved the text "None" (121 fields). It is now a text
+  input over the current value, marked <em>choices not measured</em>; the harvester
+  (0.8.7) no longer emits such options, and the knowledge pack kb-20261009.5
+  brings back the real choices of 52 of them.</li>
+<li>Still unbound, on purpose: System Time and Log Download (the GUI API path is
+  a maintenance action SATOM never touches), Backup &amp; Restore, Caching, File
+  Security and ML API Protection Policy (no collection measured to hold them).
+  Local User and User Group &gt; User Group are not in FortiWeb's own menu on
+  these builds, so their SATOM entries stay in the sidebar.</li>
+<li><code>deploy/verify_gui_alias.py &lt;appliance id&gt;...</code> re-measures the table on a
+  device (GETs only). <code>tests/test_gui_alias.py</code> fails if a page keeps the GUI
+  API name, a key or a bind is left behind, a computed column is filled, the
+  table names an unknown collection, a forbidden GUI API path is read, or an
+  unread choice is drawn.</li>
+</ul>
+<h3 id="changed--fortiweb-pages-fortiwebs-structure-inside-the-satom-frame-one-menu-per-page">Changed — FortiWeb pages: FortiWeb's structure inside the SATOM frame, one menu per page</h3>
+<ul>
+<li>Every FortiWeb page drawn from a measured GUI layout (the FortiWeb menu, 145
+  pages per build, Server Policy included) now wears the SATOM look: breadcrumb
+  with FortiWeb's menu path, page header with the device and its firmware, a
+  card, SATOM's buttons, search box, tabs, table, status pills and save bar.
+  Inside, the structure stays FortiWeb's: its menu, tabs, toolbar actions,
+  columns in their order, dialog sections, fields and live show / hide, per
+  firmware build. Requested by the user: "the style is SATOM's, the structural
+  content is the Forti device's".</li>
+<li>One menu per page: on a FortiWeb, an old Loadbalancer / WAF / Configuration
+  entry whose collections ALL have a FortiWeb page for the device's firmware
+  leaves the sidebar, and its URL redirects there. An entry with any tab the
+  FortiWeb menu does not draw stays, and so does the Signatures editor. Each
+  FortiWeb page links back with <em>Classic view</em> (<code>?classic=1</code>), where the SATOM
+  tools live: config templates, artifacts, certificate import.</li>
+<li>The FortiWeb grids gained what the old pages had: Delete and Clone on the
+  selected row (dry run first, then apply, through the object editor's guarded
+  endpoints) and Refresh from the device.</li>
+<li>An object created or cloned through the object editor is written to the SATOM
+  cache at once; before, it did not show in its list until the next sync.</li>
+<li><code>tests/test_gui_classic.py</code> fails if an entry leaves the sidebar while one of
+  its tabs has no FortiWeb page, if <code>?classic=1</code> is swallowed, or if a created
+  object is not cached.</li>
+</ul>
+<h3 id="fixed--fortiweb-dialogs-edit-entry-opens-a-stacked-panel-not-a-new-window">Fixed — FortiWeb dialogs: "Edit entry" opens a stacked panel, not a new window</h3>
+<ul>
+<li>The pencil beside a reference selector (Virtual Server, Server Pool, HTTP
+  Service, …) opened the object editor in a new browser tab. It now opens the
+  selected object in a panel stacked over the dialog, as FortiWeb does and as
+  the SATOM Server Policy page always did: the dialog stays where it was, Esc
+  closes the panel. Applies to every FortiWeb GUI page drawn from a layout.
+  <code>tests/test_gui_pencil_drawer.py</code> fails if the pencil opens a window again.</li>
+</ul>
 <h3 id="fixed--create-new-server-policy-a-service-is-required-up-front-and-a-failed-run-undoes-itself">Fixed — Create New Server Policy: a service is required up front, and a failed run undoes itself</h3>
 <ul>
 <li>A policy with no HTTP, HTTPS or HTTP/3 service was sent to the device, which

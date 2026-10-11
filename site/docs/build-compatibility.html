@@ -219,7 +219,7 @@ written reason; the override is audited (<code>template.compat.override</code>,
 <tr>
 <td>Template apply (<code>/templates</code>)</td>
 <td>per-device findings, stripped fields in the preview</td>
-<td>fields stripped per device; blocks refuse unless overridden</td>
+<td>fields stripped per device; blocks refuse unless overridden. A target build with no evidence at all (<code>unmeasured</code>), or a device that reports no firmware, also blocks a template apply (the template's own firmware check), where the payload check here only warns</td>
 </tr>
 <tr>
 <td>Template approval with auto-deploy</td>

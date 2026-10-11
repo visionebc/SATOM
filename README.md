@@ -78,12 +78,12 @@ The complete list, grouped by area. Everything below ships in this repository to
 - Provisioning workflows, hardware inventory, and capacity views.
 
 ### Source of truth & backups
-- **Git source of truth**: every appliance's config is harvested into versioned JSON (`reports/<device>/_config.json`) — product-aware for FortiWeb, FortiADC, and FortiAnalyzer — refreshed hourly and auto-published to git.
+- **Configuration source of truth**: every appliance's config is harvested into per-device JSON (`reports/<device>/_config.json`) — product-aware for FortiWeb, FortiADC, and FortiAnalyzer — refreshed hourly and recorded as a hashed, versioned snapshot in a local content-addressed store (`data/sot/`, index in PostgreSQL); an unchanged config writes no new version. The store is replicated to the standby, carried in every system backup bundle and pushed off-box to the backup server. Git no longer carries device configuration.
 - **System Backup & Restore page**: database bundles (pg_dump), device vault, application-code versions with **one-click code rollback**, and an embedded recovery runbook.
 - **Backup coverage matrix**: every backup stream (code, live DB, DB bundles, device SoT, vault, appliance-pushed configs, firmware) with format, destinations, cadence, and a **live state badge**, plus a per-device SoT freshness strip.
 - **External backup server integration** (SFTP): inventory of configs the appliances push on their own schedule, with per-device **browse / compare / search / download** modals — including a parser for FortiWeb's multi-file backup container format.
-- **Firmware source of truth**: manifest in git, binaries on the backup server, sha256-verified **pull into the console** for restore/upgrade.
-- Git drift view for the SoT tree, reports commit history with an **A→B diff viewer**.
+- **Firmware library**: every image indexed in the database with its sha256, binaries on the node (`data/firmware/`) and inside every backup bundle, retired images archived on the backup server, and a **pull into the console** from the backup server for restore/upgrade.
+- **A→B diff** between any two recorded versions of a device's configuration, served from the local SoT store (no git involved).
 - Peer backup inventory over an unauthenticated health probe, so each node renders the other's inventory without SSH.
 
 ### High availability

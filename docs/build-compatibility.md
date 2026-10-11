@@ -98,7 +98,7 @@ written reason; the override is audited (`template.compat.override`,
 
 | Flow | Preview | Real write |
 |---|---|---|
-| Template apply (`/templates`) | per-device findings, stripped fields in the preview | fields stripped per device; blocks refuse unless overridden |
+| Template apply (`/templates`) | per-device findings, stripped fields in the preview | fields stripped per device; blocks refuse unless overridden. A target build with no evidence at all (`unmeasured`), or a device that reports no firmware, also blocks a template apply (the template's own firmware check), where the payload check here only warns |
 | Template approval with auto-deploy | — | a block **holds** the fleet deploy ("HELD by the firmware check"); adapt the template or apply with an override |
 | System profile apply (provisioning) | findings and stripped fields | canary-gated write with per-device skips; blocks refuse unless overridden |
 | Baseline apply | one report per composing template, skips merged | per-device skips; any block refuses the rollout |

@@ -20,10 +20,13 @@ carve-out was authored for**. The team's rule:
 1. **WPP templates stay clean** — they carry no exceptions (enforced:
    `TemplateLibrary.save` rejects a `web-protection-profile` body with exception
    objects/refs, via `services.exceptions.body_exception_markers`).
-2. To except, **clone** a profile (Operations → Clone → WPP) into a non-template,
-   live profile and bind it to the Server Policy.
-3. Author the exceptions on the **Exceptions** page (sidebar, under Web
-   Protection). They are stored as **desired-state** in the app DB — never written
+2. To except, **clone** a profile into a non-template, live profile and bind it
+   to the Server Policy: the guided WPP clone on the **Exceptions & Signature**
+   page deep-clones it as `wpp-{policy}` and re-binds the policy; **Deep clone**
+   on the device's Web Protection Profile list copies the profile and the
+   objects it references.
+3. Author the exceptions on the **Exceptions & Signature** page (FortiWeb ADOM
+   sidebar → **Fleet → WAF**). They are stored as **desired-state** in the app DB — never written
    to the box from here; injection to FortiWeb is a separate step.
 
 The page also produces the **alignment report**: FortiWeb → Server Policy → WPP →
@@ -225,21 +228,13 @@ step `bound` on a real apply.
 > names are SDK-derived and **not yet round-tripped on a box** — `dry_run` stays the
 > default, review the plan first.
 
-## 7. Git-share (multi-user desired-state)
+## 7. Sharing between operators
 
-Exceptions live in each operator's LOCAL DB, so `services/exception_sync.py` shares
-them through the same per-device git tree the Policy Inspector publishes (the
-multiuser-safe `reports/<device>/` + `pull --rebase` + retry). It adds one file,
-`reports/<device>/_exceptions.json` (type + payload + reason + policies; NEVER
-secrets), mirroring `_inventory.json`:
-
-* **Publish (write-through)** — every add/edit/delete calls
-  `publish_device_exceptions` (off-UI, best-effort) → writes the file + commit/push.
-* **Sync** — the **⤓ Sync from git** button runs `sync_device_exceptions`
-  (`git_pull` ff-only + `import_device_exceptions`), merging other operators'
-  carve-outs into the local DB, **de-duplicated by content key** (`_content_key`:
-  device + WPP + type + payload + policy set) so re-syncing is idempotent and never
-  overwrites a local row.
+The web edition keeps exceptions in its shared PostgreSQL database (the two tables
+of §2), so every operator of this SATOM sees the same rows: there is no
+per-operator copy to merge and no git file. The desktop app shared them through
+`reports/<device>/_exceptions.json` in git; nothing in the web edition reads or
+writes that file, and there is no *Sync from git* button.
 
 ## 8. Caveats / not yet
 

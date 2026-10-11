@@ -15891,3 +15891,6 @@ msgstr "punto/i di ingresso mappato/i su un endpoint che non esiste più"
 
 msgid "No page matches that search."
 msgstr "Nessuna pagina corrisponde a quella ricerca."
+
+msgid "Service Diagram"
+msgstr "Diagramma dei servizi"

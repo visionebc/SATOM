@@ -143,7 +143,7 @@ current list:
 
 | ADOM | URL | Purpose |
 |---|---|---|
-| **Global** | `/` | Fleet-wide dashboard and cross-product tools: Monitoring, Search, Architecture, Analysis, Fleet Objects, Metrics, Fleet → WAF, Jobs, Certificate Manager, DNS Lookup, plus fleet administration (Classification, Database, System Backup, Software Update, High Availability, Bug Reports) |
+| **Global** | `/` | Fleet-wide dashboard and cross-product tools: Monitoring, Search, Service Diagram, Analysis, Fleet Objects, Metrics, Fleet → WAF, Jobs, Certificate Manager, DNS Lookup, plus fleet administration (Classification, Database, System Backup, Software Update, High Availability, Bug Reports) |
 | **FortiWeb** | `/web/` | Everything WAF: FortiWeb's own menu for the selected device (Policy, Server Objects, Web Protection, System, …), the device-scoped WAF tools under Fleet → WAF (Search Attack ID, Exceptions & Signature, WAF Artifacts), Operations, FortiWeb administration |
 | **FortiADC** | `/adc/` | Load-balancer management: the device's own menu when a layout exists for its build (otherwise the curated FortiADC 8.0 menu: Server LB, Link LB, Global LB, WAF, Network…), signatures, and an ADC API console |
 | **FortiAuthenticator** | `/fac/` | Identity and access: the unit's own menu (users and groups, RADIUS and TACACS+ clients, Fortinet SSO, certificates…) drawn from its measured GUI, and a FAC API console |
@@ -172,7 +172,7 @@ notifications, templates and appliances (and vice versa); Global sees all.
 
 Most per-device pages read an **implicit device context** rather than asking
 which appliance you mean on every page. That context is **one slot per ADOM**:
-picking a FortiWeb on the Architecture map and picking a FortiAuthenticator on
+picking a FortiWeb on the Service Diagram and picking a FortiAuthenticator on
 the FAC dashboard are two independent choices, and neither disturbs the other.
 The Global console reads FortiWeb's slot, as it always has.
 
@@ -238,7 +238,7 @@ moved and what did not:
 selected or no layout imported for it yet (fresh install, offline node, no
 knowledge pack), the FortiWeb group keeps one entry, **Server Policy**. It
 opens the device's Server Policy view, SATOM's own Server Policy list with a
-notice when no layout exists, or the Fleet Map (Architecture), where you pick
+notice when no layout exists, or the Service Diagram, where you pick
 a device, when none is selected. The FortiGate and FortiAuthenticator ADOMs draw no device group in
 that case. Their dashboards, the page each ADOM opens on, still list SATOM's
 section pages (§17.2, §17.4).
@@ -290,7 +290,7 @@ the Global ADOM, or the Global dashboard). The entry is shown to anyone holding
    server policy or WPP it is walking and how many are left.
 4. **Deep capture** — a deeper sweep that walks each server policy's whole
    object graph (pools, members, WAF profile sub-policies…). This is what
-   powers the DB-first policy detail and the Architecture map. Can run
+   powers the DB-first policy detail and the Service Diagram. Can run
    fleet-wide and is normally scheduled nightly.
 5. **Factory catalog** (the device's **Web Protection Profile** list in the
    FortiWeb menu → *Factory catalog*, or Template Library → *Factory catalog*;
@@ -1253,9 +1253,9 @@ because it is a FortiWeb-ADOM page and a link from Global would switch the
 tab's ADOM. The URL is `/web/exceptions/<device id>`.
 
 The page always works on one device: the one selected in the FortiWeb ADOM
-(§3.1). Pick it on the Architecture map (Fleet Map) or with **change** next to
+(§3.1). Pick it on the Service Diagram or with **change** next to
 the device name at the top of the sidebar. If no device is selected,
-`/web/exceptions/` sends you to the Architecture map to pick one.
+`/web/exceptions/` sends you to the Service Diagram to pick one.
 
 The page title names the device: **Exceptions & Signature Carve-outs —
 <device>**. The carve-outs it lists are *desired state* recorded in SATOM.
@@ -1902,8 +1902,8 @@ would switch the tab's ADOM.
 | Entry | URL | Device |
 |---|---|---|
 | **Search Attack ID** (§9.1) | `/waf/attack-search/` | Not needed: the block-page reference names the appliance, or you pick it on the page |
-| **Exceptions & Signature** (§9) | `/web/exceptions/<device id>` | Needed. With none selected, `/web/exceptions/` sends you to the Architecture map |
-| **WAF Artifacts**: Object types · Inventory · Device audit | `/artifacts/`, `/artifacts/inventory`, `/artifacts/audit` | Needed. With none selected, each page sends you to the Architecture map with "Pick a device first" |
+| **Exceptions & Signature** (§9) | `/web/exceptions/<device id>` | Needed. With none selected, `/web/exceptions/` sends you to the Service Diagram |
+| **WAF Artifacts**: Object types · Inventory · Device audit | `/artifacts/`, `/artifacts/inventory`, `/artifacts/audit` | Needed. With none selected, each page sends you to the Service Diagram with "Pick a device first" |
 
 **WAF Artifacts** is a collapsible entry with three pages. Each page shows one
 device and ADOM: the device selected in the sidebar (§3.1). No control widens

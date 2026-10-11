@@ -15852,3 +15852,6 @@ msgstr "point d'entré(e/s) mappé(e) vers un point de terminaison qui n'existe 
 
 msgid "No page matches that search."
 msgstr "Aucune page ne correspond à cette recherche."
+
+msgid "Service Diagram"
+msgstr "Diagramme des services"

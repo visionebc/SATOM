@@ -15931,3 +15931,6 @@ msgstr ""
 #, python-format
 msgid "It runs in %(total)d rounds of at most %(size)d appliance(s), %(gap)d minute(s) apart — the first at %(at)s."
 msgstr "Se ejecuta en %(total)d rondas de como mucho %(size)d equipo(s), con %(gap)d minuto(s) entre ellas — la primera a las %(at)s."
+
+msgid "Service Diagram"
+msgstr "Diagrama de servicios"

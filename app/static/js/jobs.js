@@ -45,8 +45,11 @@
     try {
       var q = '?src=page&ev=' + encodeURIComponent(ev);
       if (extra) { for (var k in extra) q += '&' + k + '=' + encodeURIComponent(extra[k]); }
-      if (navigator.sendBeacon) navigator.sendBeacon(DIAG + q);
-      else fetch(DIAG + q, { method: 'GET', keepalive: true });
+      // GET with keepalive, never sendBeacon: a beacon is always a POST and
+      // /_updiag is GET-only (so it never trips CSRF) -- every beacon was a
+      // 405 and no breadcrumb ever reached the log.
+      fetch(DIAG + q, { method: 'GET', keepalive: true, credentials: 'same-origin' })
+        .catch(function () {});
     } catch (e) { /* diagnostics must never throw */ }
   }
   // Does the page the user is on RIGHT NOW match the page a finished job
@@ -482,7 +485,9 @@
 
   function onLoad() {
     ensureDock();
-    diag('nav', { path: location.pathname, uploading: activeXhr ? 1 : 0 });
+    // The breadcrumb answers 'did the upload survive this navigation?' --
+    // with no upload in flight there is no question, only a log line per click.
+    if (activeXhr) diag('nav', { path: location.pathname, uploading: 1 });
     if (!booted) { booted = true; cleanupOldWorkers(); }
     // Every navigation (a bulk apply ends in a redirect): pick up any active
     // job of this user; tracked{} inside trackJob dedupes repeat calls.

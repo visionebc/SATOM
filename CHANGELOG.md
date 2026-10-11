@@ -51,9 +51,24 @@ rediscovery of only the element that changed, as a rule for every action.
   disable, delete, clone, bulk changes, scheduled actions, exception
   injection and the object editor alike, not only the three screens that
   refreshed their own writes before.
-- Cost: one read per accepted write, and none when SATOM holds no copy of
-  that object type for the device. A refused write reads nothing. A failed
-  re-read never undoes the write: the row stays as it was until the next ⟳.
+- **Every accepted write is now verified on the device.** The user asked
+  how SATOM can know a change worked without checking it. Until now "ok"
+  meant only that the FortiWeb accepted the request, and some builds accept a
+  write and silently drop a field. The same re-read now compares every field
+  that was sent with what the device holds: *verified*, *not applied* (the
+  device accepted it and does not hold it — recorded in the audit log as
+  `config.<action>.not_applied`) or *not verified* (the re-read failed, or
+  only secrets or sub-tables were sent, which are not compared). A delete is
+  verified when the device no longer has the object; a new sub-table row when
+  some row carries what was sent.
+- Enable, disable and delete of a server policy now **fail** when the device
+  did not take the change, with the value the device kept in the error. A
+  delete whose policy is still there stops before touching its dependencies.
+  The job message says "verified on the device", or how many could not be
+  verified.
+- Cost: one read per accepted write (the check), whether or not SATOM holds
+  a copy of the object. A refused write reads nothing. A failed re-read never
+  undoes the write: the row stays as it was until the next ⟳.
 - Server-policy actions (enable/disable, delete, clone, migrate) redraw the
   page you are on when the job ends, including after a partial failure,
   because the policies that succeeded did change.

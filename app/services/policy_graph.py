@@ -220,6 +220,12 @@ def execute_delete_plan(ops, plan: dict, *, dry_run: bool) -> list[dict]:
     root_res = ops.delete(root_ep, plan["root"], dry_run=dry_run)
     root_ok = bool(getattr(root_res, "ok", False))
     root_err = root_res.get("error", "") if hasattr(root_res, "get") else ""
+    # Accepted is not deleted: a re-read that still finds the policy fails the
+    # root, so the dependency cleanup below never runs against a live policy.
+    root_verify = (root_res.get("verify") if hasattr(root_res, "get") else None) or {}
+    if root_ok and root_verify.get("verdict") == "mismatch":
+        from .object_refresh import describe_mismatch
+        root_ok, root_err = False, describe_mismatch(root_verify)
     results.append({
         "urn": "cmdb/server-policy/policy",
         "mkey": plan["root"],
@@ -228,6 +234,7 @@ def execute_delete_plan(ops, plan: dict, *, dry_run: bool) -> list[dict]:
         "action": "deleted" if root_ok else "failed",
         "reason": "",
         "error": root_err,
+        "verify": root_verify,
     })
 
     if not root_ok and not dry_run:

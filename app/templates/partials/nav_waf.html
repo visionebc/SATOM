@@ -1,76 +1,54 @@
 {# ============================================================================
-   WAF submenu — ONE definition, TWO call sites (Global and the FortiWeb ADOM).
+   WAF submenu — ONE definition, EVERY ADOM.
 
-   Why a partial and not two copies: partials/nav_monitoring.html exists for
+   Why a partial and not copies: partials/nav_monitoring.html exists for
    exactly this reason — the Monitoring group had already drifted between the
    Global menu and the ADOM menus, and an entry added to one was forgotten in
-   the other. An entry added here appears in both consoles in the same commit.
+   the other. An entry added here appears in every console in the same commit.
 
-   Why NOT in the FortiADC / FortiAnalyzer / FortiAuthenticator ADOMs: the
-   ``waf`` blueprint is not in their allow-lists in app/__init__.py, so those
-   sessions are redirected back to their own home. Rendering a link there would
-   offer a menu entry that bounces — and the pages count FortiWeb objects,
-   which those consoles have none of.
+   Live in Global and FortiWeb only: the pages count FortiWeb web-protection
+   objects. Since 2026-10-11 the other device ADOMs draw the same submenu
+   DISABLED with the reason (FortiWeb is the reference menu,
+   services/adom_menu.py) instead of leaving it out — the ``waf`` blueprint
+   is still not in their allow-lists, so a live link there would bounce.
 
    Scoping is NOT done here: every page filters through
    ``models.visible_appliances()`` and then to ``kind == 'fortiweb'``, so the
    FortiWeb ADOM sees its own boxes and Global sees every FortiWeb.
    ========================================================================= #}
+{% from 'partials/_nav_off.html' import nav_off %}
+{% set _waf_state = adom_menu('waf', product) if product.key != 'global' else none %}
+{% set _waf_on = _waf_state is none or _waf_state.on %}
+{% set _waf_why = '' if _waf_on else _waf_state.reason %}
+{% macro _w(on, why, ep, icon, label, active, href, flat=false) -%}
+{% if may_open(ep) %}{% if on %}<a class="fw-nav-item {{ 'fw-so-nav-flat' if flat }} {{ 'active' if active else '' }}" href="{{ href }}">
+  <i class="bi {{ icon }} fw-nav-icon"></i><span>{{ label }}</span></a>{% else %}{{ nav_off(icon, label, why, flat) }}{% endif %}{% endif %}
+{%- endmacro %}
 <div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['waf','attack_search','exceptions','artifacts'] }}" data-nav-subgroup="WAF">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-shield-shaded fw-nav-icon"></i><span>{{ _('WAF') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
-    {% if may_open('waf.index') %}
-    <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.index' else '' }}" href="{{ url_for('waf.index', _adom=product.key) }}">
-      <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Overview') }}</span></a>
-    {% endif %}
-    {% if may_open('waf.inventory') %}
-    <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.inventory' else '' }}" href="{{ url_for('waf.inventory', _adom=product.key) }}">
-      <i class="bi bi-list-columns-reverse fw-nav-icon"></i><span>{{ _('Inventory') }}</span></a>
-    {% endif %}
-    {% if may_open('waf.profiles') %}
-    <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.profiles' else '' }}" href="{{ url_for('waf.profiles', _adom=product.key) }}">
-      <i class="bi bi-shield-check fw-nav-icon"></i><span>{{ _('Profiles') }}</span></a>
-    {% endif %}
-    {% if may_open('waf.coverage') %}
-    <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.coverage' else '' }}" href="{{ url_for('waf.coverage', _adom=product.key) }}">
-      <i class="bi bi-grid-3x3-gap fw-nav-icon"></i><span>{{ _('Coverage') }}</span></a>
-    {% endif %}
-    {% if may_open('waf.artifacts') %}
-    <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.artifacts' else '' }}" href="{{ url_for('waf.artifacts', _adom=product.key) }}">
-      <i class="bi bi-file-earmark-code fw-nav-icon"></i><span>{{ _('Artifacts') }}</span></a>
-    {% endif %}
+    {{ _w(_waf_on, _waf_why, 'waf.index', 'bi-speedometer2', _('Overview'), request.endpoint == 'waf.index', url_for('waf.index', _adom=product.key)) }}
+    {{ _w(_waf_on, _waf_why, 'waf.inventory', 'bi-list-columns-reverse', _('Inventory'), request.endpoint == 'waf.inventory', url_for('waf.inventory', _adom=product.key)) }}
+    {{ _w(_waf_on, _waf_why, 'waf.profiles', 'bi-shield-check', _('Profiles'), request.endpoint == 'waf.profiles', url_for('waf.profiles', _adom=product.key)) }}
+    {{ _w(_waf_on, _waf_why, 'waf.coverage', 'bi-grid-3x3-gap', _('Coverage'), request.endpoint == 'waf.coverage', url_for('waf.coverage', _adom=product.key)) }}
+    {{ _w(_waf_on, _waf_why, 'waf.artifacts', 'bi-file-earmark-code', _('Artifacts'), request.endpoint == 'waf.artifacts', url_for('waf.artifacts', _adom=product.key)) }}
     {# Fleet-wide carve-outs. Distinct from the device-scoped
-       "Exceptions & Signature" entry in the WAF group: that one authors and
-       pushes for ONE (device, ADOM); this one answers who across the estate
-       has a given carve-out, which the device page structurally cannot. #}
-    {% if may_open('waf.exceptions') %}
-    <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.exceptions' else '' }}" href="{{ url_for('waf.exceptions', _adom=product.key) }}">
-      <i class="bi bi-slash-circle fw-nav-icon"></i><span>{{ _('Exceptions') }}</span></a>
-    {% endif %}
+       "Exceptions & Signature" entry below: that one authors and pushes for
+       ONE (device, ADOM); this one answers who across the estate has a given
+       carve-out, which the device page structurally cannot. #}
+    {{ _w(_waf_on, _waf_why, 'waf.exceptions', 'bi-slash-circle', _('Exceptions'), request.endpoint == 'waf.exceptions', url_for('waf.exceptions', _adom=product.key)) }}
     {# Device-scoped WAF tools — moved here from the FortiWeb ADOM's own WAF
-       group (2026-10-11, operator request). FortiWeb ADOM only: all three are
+       group (2026-10-11, operator request). Device ADOMs only: all three are
        FortiWeb pages (attack_search / exceptions are pinned to the FortiWeb
        ADOM in app/__init__.py), and offering them in Global would turn a
        click into a silent ADOM jump for that tab. #}
-    {% if product.key == 'fortiweb' %}
-    {% if may_open('attack_search.index') %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint == 'attack_search' else '' }}" href="{{ url_for('attack_search.index') }}">
-      <i class="bi bi-search fw-nav-icon"></i><span>{{ _('Search Attack ID') }}</span></a>
-    {% endif %}
-    {% if may_open('exceptions.index') %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint == 'exceptions' else '' }}" href="{{ url_for('exceptions.index') }}">
-      <i class="bi bi-slash-circle fw-nav-icon"></i><span>Exceptions &amp; Signature</span></a>
-    {% endif %}
+    {% if product.key != 'global' %}
+    {{ _w(_waf_on, _waf_why, 'attack_search.index', 'bi-search', _('Search Attack ID'), request.blueprint == 'attack_search', url_for('attack_search.index')) }}
+    {{ _w(_waf_on, _waf_why, 'exceptions.index', 'bi-slash-circle', 'Exceptions & Signature', request.blueprint == 'exceptions', url_for('exceptions.index')) }}
     {# WAF Artifacts — collapses as a UNIT, the same shape as Server Objects
        and Web Protection: <details class="fw-so-parent"> whose <summary>
-       IS the parent row, and fw-so-nav-flat leaves inside fw-so-nav.
-       It used to be three sibling <a>s, two of them carrying `fw-nav-sub`
-       — a class that DOES NOT EXIST in fortiweb.css (the sheet defines
-       fw-nav-subitem and fw-nav-subgroup, neither of which matches). With
-       no rule to match, the two children rendered flush with their parent
-       and at the same weight: three top-level entries wearing the word
-       "Artifact", and no group to collapse. Open only when its own
-       blueprint is active, so the accordion still holds. #}
+       IS the parent row, and fw-so-nav-flat leaves inside fw-so-nav. Open
+       only when its own blueprint is active, so the accordion still holds. #}
     <details class="fw-so-parent" {{ 'open' if request.blueprint == 'artifacts' }}>
       <summary class="fw-nav-item fw-so-parent-head {{ 'active' if request.blueprint == 'artifacts' else '' }}">
         <i class="bi bi-file-earmark-lock fw-nav-icon"></i><span>{{ _('WAF Artifacts') }}</span>
@@ -78,21 +56,9 @@
       </summary>
       <div class="fw-so-parent-body">
         <div class="fw-so-nav">
-          {% if may_open('artifacts.index') %}
-          <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'artifacts.index' else '' }}"
-             href="{{ url_for('artifacts.index') }}">
-            <i class="bi bi-journal-text fw-nav-icon"></i><span>{{ _('Object types') }}</span></a>
-          {% endif %}
-          {% if may_open('artifacts.inventory') %}
-          <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint in ['artifacts.inventory', 'artifacts.object_page'] else '' }}"
-             href="{{ url_for('artifacts.inventory') }}">
-            <i class="bi bi-clipboard-data fw-nav-icon"></i><span>{{ _('Inventory') }}</span></a>
-          {% endif %}
-          {% if may_open('artifacts.audit') %}
-          <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'artifacts.audit' else '' }}"
-             href="{{ url_for('artifacts.audit') }}">
-            <i class="bi bi-clipboard-check fw-nav-icon"></i><span>{{ _('Device audit') }}</span></a>
-          {% endif %}
+          {{ _w(_waf_on, _waf_why, 'artifacts.index', 'bi-journal-text', _('Object types'), request.endpoint == 'artifacts.index', url_for('artifacts.index'), true) }}
+          {{ _w(_waf_on, _waf_why, 'artifacts.inventory', 'bi-clipboard-data', _('Inventory'), request.endpoint in ['artifacts.inventory', 'artifacts.object_page'], url_for('artifacts.inventory'), true) }}
+          {{ _w(_waf_on, _waf_why, 'artifacts.audit', 'bi-clipboard-check', _('Device audit'), request.endpoint == 'artifacts.audit', url_for('artifacts.audit'), true) }}
         </div>
       </div>
     </details>

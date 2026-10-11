@@ -6,6 +6,35 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — every device ADOM draws the FortiWeb menu
+
+The user asked that the FortiADC, FortiAnalyzer, FortiAuthenticator and
+FortiGate ADOMs show every menu and sub-menu entry the FortiWeb ADOM has, each
+one acting only on that ADOM's own kind of device, with permissions still
+applied, the Global ADOM left as it is and the device's own menu untouched.
+
+- Every device ADOM now has the same Fleet › WAF sub-menu, **Operations**
+  group, Automation, Administrator and **Plugins** entries as FortiWeb, in the
+  same places.
+- An entry whose page works for that product is a normal link. Newly reachable:
+  FortiADC **Device Backups**, **Migration Report**, **Firmware** (the image
+  vault, needed now that a FortiADC can be upgraded from it), **Network
+  Segments** and **Signatures** (the FortiADC signature page); FortiGate
+  **Migration Report** and **Plugins**; FortiAnalyzer and FortiAuthenticator
+  **Plugin Studio**.
+- An entry whose page only understands FortiWeb objects is shown greyed out,
+  without a link, and says why on hover (for example "Not available for
+  FortiGate: SATOM has no configuration-backup transport for this product
+  yet"). It never links to FortiWeb configuration from another ADOM.
+- FortiADC **Capacity Limits** is now greyed out: its catalog counts FortiWeb
+  object types, so the page could only offer FortiWeb rows to a FortiADC.
+- A profile without the permission an entry needs sees neither the link nor
+  the greyed entry.
+- Whether an entry works for a product comes from what SATOM already records
+  for that feature (upgrade flow products, automation catalog, firmware and
+  naming capabilities, Lua targets, backup transports), so the menu follows
+  when a feature gains a product.
+
 ### Added — star any left-menu entry into the Bookmarks panel
 
 The user asked to be able to mark menu and sub-menu entries as favourites with

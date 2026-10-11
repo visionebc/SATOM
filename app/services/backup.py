@@ -279,6 +279,14 @@ def ssh_config_backup(appliance) -> bytes:
     return (body + "\n").encode()
 
 
+#: Appliance kinds fetch_device_backup_auto can actually back up: FortiWeb
+#: (REST local-backup, SSH dump fallback) and FortiADC (SSH dump). Any other
+#: kind would fall into the FortiWeb REST path and fail. The Device Backups
+#: menu entry reads this (services/adom_menu.py), so a new transport added
+#: below lights the entry up in that ADOM in the same commit.
+CONFIG_BACKUP_KINDS = ("fortiweb", "fortiadc")
+
+
 def fetch_device_backup_auto(appliance, *, created_by: str = "",
                              method: str = "auto") -> ConfigBackup:
     """Vault-fill orchestrator with a selectable transport.

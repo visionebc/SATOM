@@ -1,0 +1,38 @@
+{# ============================================================================
+   PLUGINS — Custom Views + the studios, scoped to THIS ADOM. ONE definition,
+   EVERY device ADOM (2026-10-11; it was drawn for FortiWeb and FortiADC only).
+
+   Plugin and Lua records are stamped per ADOM (product_scope.stamp /
+   scope_query), so each console lists only its own. Lua Studio is live only
+   where LuaScript.TARGETS has the product — elsewhere it is drawn disabled
+   with the reason (services/adom_menu.py), because an editor with zero valid
+   targets reads as broken. The Global ADOM keeps its own Studio group.
+   ========================================================================= #}
+{% from 'partials/_nav_off.html' import nav_off %}
+{% if product.key != 'global' and not product.placeholder %}
+{% set _m_plg = adom_menu('plugins', product) %}
+{% set _m_lua = adom_menu('lua_studio', product) %}
+<div class="fw-nav-group {{ 'open' if request.blueprint in ['plugins','lua_studio'] }}" data-nav-group="Plugins">
+  <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-puzzle fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Plugins') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-group-body">
+    {% if may_open('plugins.gallery') %}
+    {% if _m_plg.on %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'plugins.gallery' else '' }}" href="{{ url_for('plugins.gallery') }}">
+      <i class="bi bi-grid-1x2 fw-nav-icon"></i><span>{{ _('Custom Views') }}</span></a>
+    {% else %}{{ nav_off('bi-grid-1x2', _('Custom Views'), _m_plg.reason) }}{% endif %}
+    {% endif %}
+    {% if current_user.is_authenticated and current_user.can('studio.plugin_studio') and may_open('plugins.index') %}
+    {% if _m_plg.on %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'plugins' and request.endpoint != 'plugins.gallery' else '' }}" href="{{ url_for('plugins.index') }}">
+      <i class="bi bi-puzzle fw-nav-icon"></i><span>{{ _('Plugin Studio') }}</span></a>
+    {% else %}{{ nav_off('bi-puzzle', _('Plugin Studio'), _m_plg.reason) }}{% endif %}
+    {% endif %}
+    {% if current_user.is_authenticated and current_user.can('studio.lua_studio') and may_open('lua_studio.index') %}
+    {% if _m_lua.on %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'lua_studio' else '' }}" href="{{ url_for('lua_studio.index') }}">
+      <i class="bi bi-braces fw-nav-icon"></i><span>{{ _('Lua Studio') }}</span></a>
+    {% else %}{{ nav_off('bi-braces', _('Lua Studio'), _m_lua.reason) }}{% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endif %}

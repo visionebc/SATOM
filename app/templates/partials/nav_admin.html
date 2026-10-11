@@ -11,15 +11,22 @@
    Studio group. Without user_manage the group is replaced by the Process
    entry on its own (partials/nav_process_group.html), as before.
    ========================================================================= #}
+{% from 'partials/_nav_off.html' import nav_off %}
 {% set _pk = product.key %}
+{# Device ADOMs draw every FortiWeb entry (FortiWeb is the reference menu,
+   2026-10-11): live where the page works for this ADOM's devices, disabled
+   with the reason elsewhere (services/adom_menu.py). Global is unchanged. #}
+{% set _dev = _pk != 'global' and not product.placeholder %}
 {% if current_user and current_user.can('user_manage') %}
 <div class="fw-nav-group" data-nav-group="Administrator">
   <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('Administrator') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-group-body">
     {% include "partials/nav_audit.html" %}
-    {% if _pk in ('fortiweb', 'fortiadc') and may_open('capacity.index') %}
+    {% if _dev and may_open('capacity.index') %}{% set _m = adom_menu('capacity', product) %}
+    {% if _m.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'capacity' else '' }}" href="{{ url_for('capacity.index') }}">
       <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Capacity Limits') }}</span></a>
+    {% else %}{{ nav_off('bi-speedometer2', _('Capacity Limits'), _m.reason) }}{% endif %}
     {% endif %}
     {% include "partials/nav_collection.html" %}
     {% include "partials/nav_cr_types.html" %}
@@ -39,28 +46,42 @@
     <a class="fw-nav-item {{ 'active' if request.endpoint == 'database.py_console_page' else '' }}" href="{{ url_for('database.py_console_page') }}">
       <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Python Console') }}</span></a>
     {% endif %}
-    {% if _pk in ('fortiweb', 'fortianalyzer') and may_open('firmware.index') %}
+    {% if _dev and may_open('firmware.index') %}{% set _m = adom_menu('firmware', product) %}
+    {% if _m.on %}
     <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('firmware.') else '' }}"
-       href="{{ url_for('firmware.index', _adom='fortianalyzer') if _pk == 'fortianalyzer' else url_for('firmware.index') }}">
+       href="{{ url_for('firmware.index') if _pk == 'fortiweb' else url_for('firmware.index', _adom=_pk) }}">
       <i class="bi bi-hdd-stack fw-nav-icon"></i><span>{{ _('Firmware') }}</span></a>
+    {% else %}{{ nav_off('bi-hdd-stack', _('Firmware'), _m.reason) }}{% endif %}
     {% endif %}
-    {% if _pk in ('fortiweb', 'fortiadc') and may_open('naming.index') %}
+    {% if _dev and may_open('naming.index') %}{% set _m = adom_menu('naming', product) %}
+    {% if _m.on %}
     <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('naming.') else '' }}"
-       href="{{ url_for('naming.index', product='fortiadc') if _pk == 'fortiadc' else url_for('naming.index') }}">
+       href="{{ url_for('naming.index') if _pk == 'fortiweb' else url_for('naming.index', product=_pk) }}">
       <i class="bi bi-tag fw-nav-icon"></i><span>{{ _('Naming') }}</span></a>
+    {% else %}{{ nav_off('bi-tag', _('Naming'), _m.reason) }}{% endif %}
     {% endif %}
-    {% if _pk in ('fortiweb', 'fortianalyzer', 'fortiauthenticator', 'fortigate') and may_open('segments.index') %}
+    {% if _dev and may_open('segments.index') %}{% set _m = adom_menu('segments', product) %}
+    {% if _m.on %}
     <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('segments.') else '' }}"
        href="{{ url_for('segments.index') }}">
       <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Network Segments') }}</span></a>
+    {% else %}{{ nav_off('bi-hdd-network', _('Network Segments'), _m.reason) }}{% endif %}
     {% endif %}
-    {% if _pk == 'fortiweb' and may_open('signatures.index') %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint == 'signatures' else '' }}" href="{{ url_for('signatures.index') }}">
+    {# Signatures: FortiWeb's page in FortiWeb, the ADC signature page in
+       FortiADC (adom_menu gives the endpoint), disabled elsewhere. #}
+    {% if _dev %}{% set _m = adom_menu('signatures', product) %}
+    {% if may_open(_m.endpoint or 'signatures.index') %}
+    {% if _m.on %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint == _m.endpoint or (request.blueprint == 'signatures' and _pk == 'fortiweb') else '' }}" href="{{ url_for(_m.endpoint) }}">
       <i class="bi bi-fingerprint fw-nav-icon"></i><span>{{ _('Signatures') }}</span></a>
+    {% else %}{{ nav_off('bi-fingerprint', _('Signatures'), _m.reason) }}{% endif %}
     {% endif %}
-    {% if _pk in ('fortiweb', 'fortiadc') and may_open('templates.index') %}
+    {% endif %}
+    {% if _dev and may_open('templates.index') %}{% set _m = adom_menu('templates', product) %}
+    {% if _m.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'templates' else '' }}" href="{{ url_for('templates.index') }}">
       <i class="bi bi-collection fw-nav-icon"></i><span>{{ _('Template Library') }}</span></a>
+    {% else %}{{ nav_off('bi-collection', _('Template Library'), _m.reason) }}{% endif %}
     {% endif %}
     {% if _pk == 'global' %}{# system-wide pages: the Global ADOM only #}
     {% if may_open('appids.index') %}

@@ -54,8 +54,8 @@ def template(page: str, firmware, product: str = PRODUCT):
 
 def entries(firmware, product: str = PRODUCT) -> list:
     """[{page, path, order, endpoint, special}] of every page with a layout,
-    in the product's own menu order (FortiWeb, FortiGate, FortiAuthenticator:
-    ``gui_products``)."""
+    in the product's own menu order (FortiWeb, FortiGate, FortiAuthenticator,
+    FortiADC: ``gui_products``)."""
     out = []
     special = SPECIAL if product == PRODUCT else {}
     got = [(page,) + tuple(template(page, firmware, product)) for page in page_ids(product)]
@@ -129,8 +129,10 @@ def tree(items: list) -> list:
 
 
 def nav_for(appliance) -> list:
-    """The product menu (FortiWeb / FortiGate / FortiAuthenticator) of the
-    pages SATOM can draw for this device (60 s cache per product and
+    """The product menu (FortiWeb / FortiGate / FortiAuthenticator /
+    FortiADC) of the pages SATOM can draw for this device, from the layouts
+    of its exact build, else the nearest measured one (``gui_store.resolve``);
+    ``[]`` when the product has no layout at all (60 s cache per product and
     firmware: the sidebar renders on every page)."""
     from . import gui_products
     product = gui_products.product_of(appliance)

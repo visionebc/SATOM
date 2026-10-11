@@ -1,9 +1,10 @@
-"""One GUI engine, three products: what differs per product, in one place.
+"""One GUI engine, four products: what differs per product, in one place.
 
 The measured GUI pages (``gui_pages`` / ``gui_template``; layouts per exact
 build from the knowledge packs) are drawn by the same routes and templates for
-FortiWeb, FortiGate and FortiAuthenticator. What is NOT the same is how a
-product's objects are read, named and written; each product has an adapter:
+FortiWeb, FortiGate, FortiAuthenticator and FortiADC. What is NOT the same is
+how a product's objects are read, named and written; each product has an
+adapter:
 
 ============  =====================================  ===========================
 product       rows (list / object)                   write
@@ -18,33 +19,47 @@ FortiGate     live cmdb ``/api/v2/cmdb/<path>``      ``PUT|POST|DELETE`` cmdb
 FortiAuth.    SATOM cache (the FAC sweep, registry    ``PATCH|POST|DELETE``
               logicals), else live ``/api/v1/<res>/``  ``/api/v1/<res>/[<id>/]``
                                                       through the FAC client
+FortiADC      live ``GET /api/<entity>`` (``vdom``    ``POST /api/<entity>``,
+              aware; SATOM keeps no FortiADC config   ``PUT|DELETE /api/<entity>
+              cache for these pages); one object is   ?mkey=<name>`` through
+              ``?mkey=<name>``; a settings entity     ``adc_ops.rest_call``;
+              answers ONE object (singleton); a       mkey = the row's ``mkey``;
+              child table ``<parent>_child_<t>`` is   child tables read-only
+              read with ``?pkey=<parent>``            here
 ============  =====================================  ===========================
 
-Every FortiGate / FortiAuthenticator write goes through :class:`GuiOps`, the
-counterpart of ``FortiWebOps``: a dry run returns the exact request without
-contacting the device; an apply reads the object first (the before-snapshot),
-sends, records a ``ChangeHistory`` row and an audit entry, and never raises.
+Every FortiGate / FortiAuthenticator / FortiADC write goes through
+:class:`GuiOps`, the counterpart of ``FortiWebOps``: a dry run returns the
+exact request without contacting the device; an apply reads the object first
+(the before-snapshot), sends, records a ``ChangeHistory`` row and an audit
+entry, and never raises.
 
 Template endpoints: FortiGate views name the cmdb path after ``/api/v2/cmdb/``
 (``firewall/policy``) or ``monitor:<path>``; FortiAuthenticator views name the
 REST resource after ``/api/v1/`` (``localusers``) or its registry logical
-(``auth_local_users``); a page with no REST at all is ``gui:<url-path>``. A
-field measured ``key_from: "gui-only"`` has no API on that build: drawn
-read-only and marked, never saved.
+(``auth_local_users``); FortiADC views name the bare REST entity
+(``load_balance_virtual_server``, which is also its registry logical); a page
+with no REST at all is ``gui:<url-path>``. A field measured
+``key_from: "gui-only"`` has no API on that build: drawn read-only and marked,
+never saved.
 """
 from __future__ import annotations
 
+import copy
 import json
 import re
 import time
 from datetime import datetime
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
 FORTIWEB, FORTIGATE, FORTIAUTH = "fortiweb", "fortigate", "fortiauthenticator"
-PRODUCTS = (FORTIWEB, FORTIGATE, FORTIAUTH)
-LABELS = {FORTIWEB: "FortiWeb", FORTIGATE: "FortiGate", FORTIAUTH: "FortiAuthenticator"}
-#: Sidebar group icon colour per product (SATOM accents, light theme).
-ICONS = {FORTIWEB: "#ef4444", FORTIGATE: "#0d9488", FORTIAUTH: "#7c3aed"}
+FORTIADC = "fortiadc"
+PRODUCTS = (FORTIWEB, FORTIGATE, FORTIAUTH, FORTIADC)
+LABELS = {FORTIWEB: "FortiWeb", FORTIGATE: "FortiGate", FORTIAUTH: "FortiAuthenticator",
+          FORTIADC: "FortiADC"}
+#: Sidebar group icon colour per product (SATOM accents, light theme; the
+#: FortiADC one is the ADOM colour base.html already gives it).
+ICONS = {FORTIWEB: "#ef4444", FORTIGATE: "#0d9488", FORTIAUTH: "#7c3aed", FORTIADC: "#10b981"}
 
 GUI_ONLY = "gui:"
 MONITOR = "monitor:"
@@ -243,9 +258,19 @@ class Adapter:
         orig = orig or {}
         return {k: (_typed(orig[k], v) if k in orig else v) for k, v in (fields or {}).items()}
 
+    def refusal(self, endpoint: str) -> str:
+        """Why SATOM writes nothing to ``endpoint`` from a GUI page, beyond
+        "no API on this build" ("" = no particular reason)."""
+        return ""
+
     # -- writes ----------------------------------------------------------
     def path(self, endpoint: str, mkey: str | None) -> str:
         raise NotImplementedError
+
+    def request_path(self, appliance, op: str, endpoint: str, mkey: str | None) -> str:
+        """The exact path (query included) a write of ``op`` is sent to;
+        built without contacting the device (the dry run shows it)."""
+        return self.path(endpoint, None if op == "create" else mkey)
 
     def send(self, appliance, method: str, path: str, body) -> tuple:
         """(ok, error)"""
@@ -514,6 +539,13 @@ class FortiAuthenticatorAdapter(Adapter):
         base = "/api/v1/%s/" % (endpoint or "").strip("/")
         return base + ("%s/" % quote(str(mkey), safe="") if mkey not in (None, "") else "")
 
+    def request_path(self, appliance, op, endpoint, mkey):
+        # the registry's REST path of the endpoint (a logical or a resource)
+        _lg, base = self.resolve(appliance, endpoint)
+        if op == "create" or not mkey:
+            return base
+        return base.rstrip("/") + "/%s/" % quote(str(mkey), safe="")
+
     def rows(self, appliance, endpoint):
         if not endpoint or is_gui_only(endpoint):
             return [], None
@@ -606,6 +638,222 @@ class FortiAuthenticatorAdapter(Adapter):
         return out
 
 
+# --------------------------------------------------------------------------- #
+# FortiADC
+# --------------------------------------------------------------------------- #
+#: A FortiADC REST entity: the CLI path with its separators flattened to
+#: underscores (``config load-balance virtual-server`` ->
+#: ``load_balance_virtual_server``); the registry logical has the same name.
+_ADC_ENTITY = re.compile(r"[a-z][a-z0-9_]{0,127}")
+#: A child table of an entity (``load_balance_pool_child_pool_member``): its
+#: rows are read with ``?pkey=<parent mkey>``.
+ADC_CHILD = "_child_"
+#: A GET helper the FortiADC GUI calls beside an entity
+#: (``load_balance_virtual_server/get_vs_advanced_edit_options``, measured on
+#: 7.6.7 build0676): a layout may name one where SATOM reads; the adapter
+#: lists entities only, so such a view reads as an error, never a guess.
+_ADC_GET_HELPER = re.compile(r"[a-z][a-z0-9_]{0,127}/get_[a-z0-9_]{1,64}")
+#: Field names never echoed back: passwords, pass phrases, secrets, PSKs,
+#: private keys, credentials, and any ``key`` / ``token`` (``api-key``,
+#: ``ssh_key``) -- but not ``mkey`` / ``pkey`` (the object's own name) nor
+#: ``key-size`` / ``key_type`` (descriptions of a key, not the key).
+_ADC_SECRET = re.compile(r"(passw|passwd|passphrase|secret|psk|private[-_]?key|credential)"
+                         r"|(^|[-_])(key|token)$", re.I)
+
+
+class FortiADCAdapter(Adapter):
+    """FortiADC: rows live from ``GET /api/<entity>`` (SATOM keeps no
+    FortiADC config cache for these pages), one object by ``?mkey=``, writes
+    ``POST`` / ``PUT ?mkey=`` / ``DELETE ?mkey=`` through
+    ``adc_ops.rest_call`` (the fleet-wide engine never builds the ADC client
+    itself). A settings entity (``system_global``) answers one object: listed
+    as a singleton and updated with an empty ``mkey`` (as
+    ``FortiADCClient.update('system_global', '', ...)``, verified live)."""
+    product = FORTIADC
+    update_method = "PUT"
+
+    # -- naming ----------------------------------------------------------
+    def mkey_of(self, row, endpoint=""):
+        v = (row or {}).get("mkey")
+        if v not in (None, ""):
+            return str(v)
+        return super().mkey_of(row, endpoint)
+
+    def secret(self, key, value):
+        if isinstance(value, str) and value.startswith("ENC "):
+            return True
+        return isinstance(key, str) and key not in ("mkey", "pkey") \
+            and bool(_ADC_SECRET.search(key))
+
+    @staticmethod
+    def is_child(endpoint: str | None) -> bool:
+        return ADC_CHILD in (endpoint or "")
+
+    def writable(self, endpoint):
+        # an entity, never one of its GET helpers nor a child table
+        return super().writable(endpoint) and bool(_ADC_ENTITY.fullmatch(endpoint or "")) \
+            and not self.is_child(endpoint)
+
+    def refusal(self, endpoint):
+        if self.is_child(endpoint):
+            return ("%s is a FortiADC child table (its rows belong to one parent object): "
+                    "edit its rows from the parent in the FortiADC object editor; nothing "
+                    "is sent from this page" % endpoint)
+        return ""
+
+    @staticmethod
+    def vdom_params(appliance) -> dict:
+        """``{"vdom": <name>}`` of a row that administers one virtual domain;
+        nothing for a box with none (or ``global``: the client omits it)."""
+        v = (getattr(appliance, "vdom", "") or "").strip()
+        return {"vdom": v} if v and v.lower() != "global" else {}
+
+    def base_path(self, appliance, endpoint: str) -> tuple:
+        """``(path, error)`` of a template endpoint: the registry's URN for
+        the device's build (an entity that build is measured NOT serving is
+        an error), else ``/api/<entity>``. Never a path the grammar refuses."""
+        ep = (endpoint or "").strip()
+        if not _ADC_ENTITY.fullmatch(ep):
+            return "", "not a FortiADC REST entity: %r" % (endpoint,)
+        try:
+            from ..registry import loader
+        except Exception:  # noqa: BLE001
+            return "/api/%s" % ep, ""
+        try:
+            urn = loader.resolve_for(FORTIADC, ep, loader.version_of(appliance))
+        except loader.EndpointNotServed as exc:
+            return "", str(exc)
+        except Exception:  # noqa: BLE001 -- not in the registry: the entity itself
+            urn = None
+        urn = str(urn or "")
+        if not (urn.startswith("/api/") and _ADC_ENTITY.fullmatch(urn[len("/api/"):])):
+            urn = "/api/%s" % ep
+        return urn, ""
+
+    def path(self, endpoint, mkey):
+        base = "/api/%s" % (endpoint or "").strip()
+        return base + ("?" + urlencode({"mkey": str(mkey)}) if mkey not in (None, "") else "")
+
+    def request_path(self, appliance, op, endpoint, mkey):
+        base, _err = self.base_path(appliance, endpoint)
+        params = {}
+        if op != "create":
+            # a settings entity is addressed with an EMPTY mkey
+            params["mkey"] = "" if mkey in (None, "") else str(mkey)
+        params.update(self.vdom_params(appliance))
+        base = base or "/api/%s" % (endpoint or "").strip()
+        return base + ("?" + urlencode(params) if params else "")
+
+    # -- reads -----------------------------------------------------------
+    def _get(self, appliance, endpoint, params: dict | None = None, *, cached: bool = True):
+        """(payload, error) of one GET, kept a few seconds per device,
+        endpoint and query (a page that lists then opens reads once)."""
+        base, err = self.base_path(appliance, endpoint)
+        if err:
+            return None, err
+        q = dict(params or {})
+        q.update(self.vdom_params(appliance))
+        key = (getattr(appliance, "id", None), endpoint, tuple(sorted(q.items())))
+        hit = _adc_cache.get(key)
+        if cached and hit and time.monotonic() - hit[0] < _FGT_TTL:
+            return copy.deepcopy(hit[1]), None
+        from . import adc_ops
+        payload, err = adc_ops.rest_call(appliance, "GET", base, params=q)
+        if err is None:
+            _adc_cache[key] = (time.monotonic(), copy.deepcopy(payload))
+        return payload, err
+
+    def forget(self, appliance, endpoint):
+        aid = getattr(appliance, "id", None)
+        for k in [k for k in _adc_cache if k[0] == aid and k[1] == endpoint]:
+            _adc_cache.pop(k, None)
+
+    @staticmethod
+    def _is_singleton(res) -> bool:
+        """A settings entity: one object (or one row that names no ``mkey``)."""
+        if isinstance(res, dict):
+            return True
+        return isinstance(res, list) and len(res) == 1 and isinstance(res[0], dict) \
+            and "mkey" not in res[0]
+
+    def rows(self, appliance, endpoint):
+        if not endpoint or is_gui_only(endpoint):
+            return [], None
+        try:
+            res, err = self._get(appliance, endpoint)
+        except Exception as exc:  # noqa: BLE001 -- drawn as unreadable, never a 500
+            res, err = None, "%s: %s" % (type(exc).__name__, exc)
+        meta = {"generated_at": None, "source": "live", "cached": False, "error": err,
+                "singleton": not err and self._is_singleton(res)}
+        if err:
+            return [], meta
+        rows = [res] if isinstance(res, dict) else [r for r in (res or []) if isinstance(r, dict)]
+        return [self.scrub(r) for r in rows], meta
+
+    def child_rows(self, appliance, endpoint: str, parent: str | None) -> tuple:
+        """(rows, error) of a child table of one parent object
+        (``?pkey=<parent>``); no parent (Create New) = no rows."""
+        if not parent:
+            return [], None
+        try:
+            res, err = self._get(appliance, endpoint, {"pkey": str(parent)})
+        except Exception as exc:  # noqa: BLE001
+            return [], "%s: %s" % (type(exc).__name__, exc)
+        if err:
+            return [], err
+        rows = [res] if isinstance(res, dict) else [r for r in (res or []) if isinstance(r, dict)]
+        return [self.scrub(r) for r in rows], None
+
+    def read(self, appliance, endpoint, mkey):
+        if read_only_endpoint(endpoint):
+            return None
+        if not mkey:
+            rows, meta = self.rows(appliance, endpoint)
+            if (meta or {}).get("error") or not rows:
+                return None
+            return rows[0] if (meta or {}).get("singleton") or len(rows) == 1 else None
+        try:
+            res, err = self._get(appliance, endpoint, {"mkey": str(mkey)}, cached=False)
+        except Exception:  # noqa: BLE001
+            return None
+        if err:
+            return None
+        if isinstance(res, list):
+            res = next((r for r in res if isinstance(r, dict)
+                        and str(r.get("mkey", mkey)) == str(mkey)), None)
+        return self.scrub(res) if isinstance(res, dict) and res else None
+
+    def payload(self, fields, orig):
+        """The changed fields only (a partial PUT keeps every key it does not
+        name: ``FortiADCClient.bind_https_admin_cert``, verified live), typed
+        as the device served them; an object of a table also names its own
+        ``mkey`` in the body, as the FortiADC object editor and the vendor's
+        tooling send it. Secrets were never read, so they are never sent."""
+        out = super().payload(fields, orig)
+        mk = (orig or {}).get("mkey")
+        if mk not in (None, "") and "mkey" not in out:
+            out = {"mkey": mk, **out}
+        return out
+
+    # -- writes ----------------------------------------------------------
+    def send(self, appliance, method, path, body):
+        parts = urlsplit(path)
+        params = dict(parse_qsl(parts.query, keep_blank_values=True))
+        from . import adc_ops
+        _payload, err = adc_ops.rest_call(appliance, method, parts.path, params=params,
+                                          body=body)
+        return (not err), (err or "")
+
+    def after_write(self, appliance, endpoint, mkey, obj, op):
+        # SATOM keeps no FortiADC config cache for these pages: the next read
+        # is the device's
+        self.forget(appliance, endpoint)
+        return True
+
+
+_adc_cache: dict = {}
+
+
 class FortiWebAdapter(Adapter):
     """FortiWeb keeps its own path (objedit routes); the adapter only names
     and lists rows the way the FortiWeb pages always did."""
@@ -617,7 +865,7 @@ class FortiWebAdapter(Adapter):
 
 
 _ADAPTERS = {FORTIWEB: FortiWebAdapter(), FORTIGATE: FortiGateAdapter(),
-             FORTIAUTH: FortiAuthenticatorAdapter()}
+             FORTIAUTH: FortiAuthenticatorAdapter(), FORTIADC: FortiADCAdapter()}
 
 
 def adapter(product_or_appliance) -> Adapter:
@@ -627,10 +875,10 @@ def adapter(product_or_appliance) -> Adapter:
 
 
 # --------------------------------------------------------------------------- #
-# The audited write path (FortiGate / FortiAuthenticator)
+# The audited write path (FortiGate / FortiAuthenticator / FortiADC)
 # --------------------------------------------------------------------------- #
 class GuiOps:
-    """FortiWebOps for the other two products: dry run = the exact request,
+    """FortiWebOps for the other products: dry run = the exact request,
     no device contact; apply = before-read, send, ChangeHistory + audit."""
 
     METHODS = {"create": "POST", "delete": "DELETE"}
@@ -641,18 +889,22 @@ class GuiOps:
 
     def request(self, op: str, endpoint: str, mkey: str | None, body) -> dict:
         method = self.METHODS.get(op) or self.ad.update_method
-        path = self.ad.path(endpoint, None if op == "create" else mkey)
-        if self.ad.product == FORTIAUTH:
-            _lg, base = self.ad.resolve(self.appliance, endpoint)
-            path = base if op == "create" or not mkey else \
-                base.rstrip("/") + "/%s/" % quote(str(mkey), safe="")
+        path = self.ad.request_path(self.appliance, op, endpoint, mkey)
         return {"method": method, "path": path, "body": None if op == "delete" else body}
 
     def run(self, op: str, endpoint: str, mkey: str | None, body, *, dry_run: bool = True) -> dict:
         req = self.request(op, endpoint, mkey, body)
         if not self.ad.writable(endpoint):
             return {"ok": False, "dry_run": dry_run, "request": req,
-                    "error": "this page has no API on this build: nothing is sent"}
+                    "error": self.ad.refusal(endpoint)
+                    or "this page has no API on this build: nothing is sent"}
+        if self.ad.product == FORTIADC:
+            # an entity the device's build is measured NOT serving (or a name
+            # the grammar refuses): refused before the dry run says "ok"
+            _base, why = self.ad.base_path(self.appliance, endpoint)
+            if why:
+                return {"ok": False, "dry_run": dry_run, "request": req,
+                        "error": why + ": nothing is sent"}
         if dry_run:
             return {"ok": True, "dry_run": True, "request": req, "error": ""}
         before = None
@@ -725,6 +977,8 @@ _FAC_ACTION_REST = frozenset({"auth", "pushauth", "pushauthresp"})
 def unsafe_endpoint(product: str, ep, role: str = READ) -> str:
     """Why ``ep`` may not stand at ``role`` in a ``product`` layout ("" = it may).
 
+    FortiADC: a REST entity (``load_balance_virtual_server``) anywhere,
+    ``gui:<path>`` only where SATOM reads, no crawled form post.
     FortiGate: a cmdb path anywhere; ``monitor:<path>`` and ``gui:<path>``
     only where SATOM reads (the monitor tree holds status and the device's
     actions, never configuration: one in a write or a bind is an action
@@ -744,6 +998,19 @@ def unsafe_endpoint(product: str, ep, role: str = READ) -> str:
         if not ok:
             return "not a cmdb path (after /api/v2/cmdb/)" + (
                 "" if role == WRITE else ", monitor: or gui: path")
+    elif product == FORTIADC:
+        # the bare REST entity anywhere; ``gui:<path>`` only where SATOM reads
+        if role == READ:
+            ok = _ADC_ENTITY.fullmatch(ep) or _ADC_GET_HELPER.fullmatch(ep) \
+                or _GUI_PATH.fullmatch(ep)
+        elif role == WRITE:
+            ok = _ADC_ENTITY.fullmatch(ep)
+        else:
+            ok = None   # no crawled form post is ever replayed on a FortiADC
+        if not ok:
+            return "not a %s" % ("REST entity (after /api/)" if role == WRITE
+                                 else "REST entity or gui: path" if role == READ
+                                 else "FortiADC endpoint for %s" % role)
     elif product == FORTIAUTH:
         if role == GUI_WRITE:
             ok = _GUI_PATH.fullmatch(ep)
@@ -823,6 +1090,16 @@ def table_source(product: str, dialog: dict, field: dict, dialogs: dict | None =
         if field.get("key") and field.get("key_from") in ("measured", "name"):
             return {"kind": "field", "field": field["key"]}
         return {"kind": None}
+    if product == FORTIADC:
+        # ``{"kind": "child", "endpoint": ep}`` -- a FortiADC child table
+        # (``<parent>_child_<table>``): its rows belong to ONE parent object
+        # and are read with ``?pkey=<parent mkey>``; read-only on these pages
+        cand = ep if ep and ep != dlg_ep else (rd_ep if rd_ep and rd_ep != dlg_ep else "")
+        if not cand or is_gui_only(cand) or not _ADC_ENTITY.fullmatch(cand):
+            return {"kind": None}
+        if ADC_CHILD in cand:
+            return {"kind": "child", "endpoint": cand}
+        return {"kind": "collection", "endpoint": cand}
     if is_monitor(ep):
         return {"kind": "monitor", "endpoint": ep}
     cand = ep if ep and ep != dlg_ep else (rd_ep if rd_ep and rd_ep != dlg_ep else "")
@@ -897,16 +1174,20 @@ def clone_body(product: str, src: dict, src_key: str, new_name: str) -> dict:
     """The create body of a copy of ``src`` named ``new_name``: every field of
     the source as the device served it (secrets were never read, so they are
     not copied), its identity replaced. The name field is the one holding the
-    source's key (``name``; FortiAuthenticator users: ``username``)."""
+    source's key (``name``; FortiAuthenticator users: ``username``; FortiADC:
+    ``mkey``)."""
     body = {k: v for k, v in (src or {}).items()
             if not str(k).startswith("q_") and k not in _CLONE_DROP}
-    ident = next((k for k in ("name", "username", "label") if str((src or {}).get(k)) == str(src_key)),
-                 None) or next((k for k in ("name", "username", "label") if k in (src or {})), "name")
+    # FortiADC names an object by ``mkey``: the copy gets the new one
+    names = ("name", "username", "label", "mkey")
+    ident = next((k for k in names if str((src or {}).get(k)) == str(src_key)),
+                 None) or next((k for k in names if k in (src or {})), "name")
     body[ident] = new_name
     return body
 
 
-__all__ = ["PRODUCTS", "LABELS", "FORTIWEB", "FORTIGATE", "FORTIAUTH", "product_of", "label",
+__all__ = ["PRODUCTS", "LABELS", "FORTIWEB", "FORTIGATE", "FORTIAUTH", "FORTIADC", "ADC_CHILD",
+           "product_of", "label",
            "is_gui_only", "is_monitor", "read_only_endpoint", "gui_only_fields",
            "strip_fortiweb_refs", "lib_key", "adapter", "GuiOps", "drift", "Adapter",
            "unsafe_endpoint", "READ", "WRITE", "GUI_WRITE", "flat_dicts", "is_cli",

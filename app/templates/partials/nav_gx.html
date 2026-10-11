@@ -1,10 +1,11 @@
-{# FortiGate / FortiAuthenticator: the device's OWN menu tree, every page SATOM
+{# FortiGate / FortiAuthenticator / FortiADC: the device's OWN menu tree, every page SATOM
    has a measured GUI layout for (services.gui_pages; layouts per build from
    the knowledge packs), drawn like the FortiWeb group. The old fgt_menu /
    fac_menu leaves these pages replace are filtered out in the context
    processor (services.gui_classic). Expects gx_nav / gx_appliance. #}
 {% if gx_nav and gx_appliance and may_open('workspace.fwgui_index') %}
-{% set _gx_label = {'fortigate': 'FortiGate', 'fortiauthenticator': 'FortiAuthenticator'}.get(gx_appliance.kind, gx_appliance.kind) %}
+{% set _gx_label = {'fortigate': 'FortiGate', 'fortiauthenticator': 'FortiAuthenticator', 'fortiadc': 'FortiADC'}.get(gx_appliance.kind, gx_appliance.kind) %}
+{% set _gx_color = {'fortigate': '#0d9488', 'fortiauthenticator': '#7c3aed', 'fortiadc': '#10b981'}.get(gx_appliance.kind, '#64748b') %}
 {% set _gx_page = (request.view_args or {}).get('page') if request.endpoint and request.endpoint.startswith('workspace.fwgui') else None %}
 {% macro _gx_node(n, depth, cur) %}
   {% if n.entry is defined %}
@@ -18,10 +19,15 @@
   {% endif %}
 {% endmacro %}
 <div class="fw-nav-group {{ 'open' if _gx_page or request.endpoint == 'workspace.fwgui_index' }}" data-nav-group="{{ _gx_label }}">
-  <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-layout-sidebar fw-nav-section-icon" style="color:{{ '#0d9488' if gx_appliance.kind == 'fortigate' else '#7c3aed' }};"></i><span>{{ _gx_label }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-layout-sidebar fw-nav-section-icon" style="color:{{ _gx_color }};"></i><span>{{ _gx_label }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-group-body">
     <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'workspace.fwgui_index' }}" href="{{ url_for('workspace.fwgui_index', appliance_id=gx_appliance.id) }}"><i class="bi bi-grid-3x3-gap fw-nav-icon"></i><span>{{ _('All pages') }}</span></a>
     {% for n in gx_nav %}{{ _gx_node(n, 0, _gx_page) }}{% endfor %}
+    {% if gx_appliance.kind == 'fortiadc' and current_user and current_user.can('protection.view') and may_open('adc.signatures') %}
+    {# SATOM's live signature-policy overview (views/adc.py): kept beside the
+       measured menu, which replaces the adc_menu groups that carried it #}
+    <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'adc.signatures' }}" href="{{ url_for('adc.signatures') }}"><i class="bi bi-fingerprint fw-nav-icon"></i><span>{{ _('Signatures') }}</span></a>
+    {% endif %}
   </div>
 </div>
 {% endif %}

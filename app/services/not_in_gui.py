@@ -80,9 +80,21 @@ def layout_pages() -> dict:
     return {**gen, **out}
 
 
-#: Products whose GUI layout no lab device has measured: no GUI/REST split is
-#: possible, every field is listed and the section says why.
+#: Products whose GUI layout no lab device had measured when SATOM shipped: no
+#: GUI/REST split is possible, every field is listed and the section says why
+#: -- until the knowledge feed brings a layout for the product
+#: (:func:`unmeasured`): FortiADC is measured once a template exists for it.
 UNMEASURED_PRODUCTS = frozenset({"fortiadc", "fortianalyzer"})
+
+
+def unmeasured(product: str | None) -> bool:
+    """True while no GUI layout of ``product`` is on this node: one of
+    :data:`UNMEASURED_PRODUCTS` with no imported template at all. A product
+    with a layout resolves every build to its closest measured one (the
+    menu's own rule), so the "not measured" message would be false."""
+    if product not in UNMEASURED_PRODUCTS:
+        return False
+    return not any(p == product for p, _ep in layout_pages())
 
 
 def endpoint_key(endpoint: str) -> str:
@@ -260,7 +272,7 @@ def classify(appliance, endpoint: str, obj_keys, *, product: str | None = None,
     if not version:
         note = ("The running build of this appliance is unknown, so SATOM cannot tell "
                 "which fields it has outside the GUI. Run a firmware check.")
-    elif product in UNMEASURED_PRODUCTS and layout is None:
+    elif layout is None and unmeasured(product):
         note = ("GUI layout not measured for this product (no lab device): fields the "
                 "REST API returns stay in their groups; nothing is hidden.")
     elif layout is None:
@@ -498,7 +510,7 @@ def device_inventory(appliance) -> dict:
                       if f.get("channel") in _LIB_REST and n not in keys)
         out["layout_pages"].append({"endpoint": ep_key, "page": page, "layout": info,
                                     "rest_not_in_gui": rest})
-    if product in UNMEASURED_PRODUCTS:
+    if unmeasured(product):
         out["note"] = ("GUI layout not measured for this product (no lab device), and its CLI "
                        "tree is not measured either: SATOM cannot split GUI from CLI-only "
                        "fields yet. Every field the REST API returns is shown in the object "

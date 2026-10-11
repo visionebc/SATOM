@@ -1,0 +1,11 @@
+{# FortiADC ADOM: the selected appliance's OWN menu, drawn from the GUI layouts
+   measured on its build (services.gui_pages through partials/nav_gx.html),
+   exactly like the FortiGate / FortiAuthenticator ADOMs. Drawn only when a
+   layout exists for the device: the context processor then empties
+   ``adc_nav``, so the hand-made adc_menu groups base.html draws are the
+   fallback for a device (or no device) with no layout -- the ADOM never ends
+   up with an empty menu. Included at the top of partials/nav_product_api.html,
+   which every FortiADC sidebar draws right after the adc_menu groups. #}
+{% if product and product.key == 'fortiadc' and gx_nav and gx_appliance and gx_appliance.kind == 'fortiadc' %}
+{% include 'partials/nav_gx.html' %}
+{% endif %}

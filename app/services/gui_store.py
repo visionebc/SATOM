@@ -26,6 +26,9 @@ from ..vendor import satom_guikit as guikit
 from . import firmware_versions as fv
 
 _BUILD_RE = re.compile(r"build\s*0*(\d+)", re.I)
+#: FortiADC's firmware column: ``<version> <build>`` with no ``build`` word
+#: (``adc_ops.model_inventory_from``: ``"7.6.7 0676"``).
+_ADC_FW_RE = re.compile(r"^\s*v?\d+\.\d+\.\d+\s+0*(\d+)\s*$")
 #: One path component of a template file: never ``.`` / ``..`` (a page ``..``
 #: filed ``<product>/../<version>-<build>.json`` outside its product).
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]{0,79}$")
@@ -48,7 +51,7 @@ def file_for(product: str, page: str, version: str, build: str) -> Path:
 
 
 def build_of(firmware) -> str:
-    m = _BUILD_RE.search(str(firmware or ""))
+    m = _BUILD_RE.search(str(firmware or "")) or _ADC_FW_RE.match(str(firmware or ""))
     return m.group(1) if m else ""
 
 

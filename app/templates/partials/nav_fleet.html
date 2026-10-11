@@ -1,0 +1,89 @@
+{# ============================================================================
+   FLEET — ONE definition, EVERY ADOM (2026-10-11).
+
+   The Fleet group used to be hand-copied into six branches of base.html, and
+   the copies had drifted: Scout sat in the FortiADC Fleet but not in
+   FortiWeb's, FortiAnalyzer's, FortiAuthenticator's or FortiGate's, and the
+   last three also lacked Calendar, Search, DNS Lookup, Fleet Objects and Jobs.
+   Operator rule: an entry that does not depend on the product appears in EVERY
+   ADOM, in the same position. An entry that does depend on it is listed here
+   with the ADOMs it belongs to, so the exception is written down instead of
+   being a line someone forgot to copy.
+
+   Schema builds and Build compatibility live here (they were pinned to the
+   foot of the sidebar, and Schema builds to FortiWeb plus the API groups).
+
+   Draws the ITEMS only. The caller supplies the wrapper: a collapsible group
+   in a device ADOM, the "Global" context block in the Global ADOM. The
+   section holding the active item is opened by the nav_autoopen filter.
+   ========================================================================= #}
+{% set _pk = product.key %}
+{% if _pk == 'global' and may_open('index') %}
+<a class="fw-nav-item {{ 'active' if request.endpoint == 'index' else '' }}" href="{{ url_for('index') }}">
+  <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Dashboard') }}</span></a>
+{% elif _pk == 'fortigate' and may_open('fgt.index') %}
+<a class="fw-nav-item {{ 'active' if request.endpoint == 'fgt.index' else '' }}" href="{{ url_for('fgt.index') }}">
+  <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Dashboard') }}</span></a>
+{% endif %}
+{% if scout_on and may_open('scout.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'scout' else '' }}" href="{{ url_for('scout.index') }}">
+  <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span></a>
+{% else %}{# Switched off: shown, disabled, with the reason. An ABSENT entry
+   reads as 'this product has no Scout' and sends the operator looking for an
+   installer instead of for the checkbox. #}
+<span class="fw-nav-item disabled text-muted" style="cursor:not-allowed;opacity:.55;"
+      title="{{ _('Scout is switched off for this site (Settings → Scout → Availability).') }}">
+  <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span>
+  <i class="bi bi-slash-circle ms-1 small"></i></span>
+{% endif %}
+{% include 'partials/nav_calendar.html' %}
+{% if may_open('search.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
+  <i class="bi bi-search fw-nav-icon"></i><span>{{ _('Search') }}</span></a>
+{% endif %}
+{% if may_open('dns_tool.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'dns_tool' else '' }}" href="{{ url_for('dns_tool.index') }}">
+  <i class="bi bi-globe fw-nav-icon"></i><span>{{ _('DNS Lookup') }}</span></a>
+{% endif %}
+{% if _pk == 'global' %}{# Global only: the FortiWeb ADOM files these two under
+   Operations › Troubleshooting, and Global has no Operations group. #}
+{% if may_open('reach_batch.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'reach_batch' else '' }}" href="{{ url_for('reach_batch.index') }}">
+  <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Backend Reachability') }}</span></a>
+{% endif %}
+{% if may_open('config_compare.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'config_compare' else '' }}" href="{{ url_for('config_compare.index') }}">
+  <i class="bi bi-file-diff fw-nav-icon"></i><span>{{ _('Config Compare') }}</span></a>
+{% endif %}
+{% endif %}
+{% if may_open('architecture.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
+  <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Architecture') }}</span></a>
+{% endif %}
+{% include 'partials/nav_appliances.html' %}
+{% if may_open('fleet_objects.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'fleet_objects' else '' }}" href="{{ url_for('fleet_objects.index') }}">
+  <i class="bi bi-box-seam fw-nav-icon"></i><span>{{ _('Fleet Objects') }}</span></a>
+{% endif %}
+{% include 'partials/nav_advisor.html' %}
+{% include 'partials/nav_monitoring.html' %}
+{% if _pk in ('global', 'fortiweb') %}{# WAF counts FortiWeb objects; see nav_waf.html #}
+{% include 'partials/nav_waf.html' %}
+{% endif %}
+{% if may_open('jobs.manager') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'jobs' else '' }}" href="{{ url_for('jobs.manager') }}">
+  <i class="bi bi-list-task fw-nav-icon"></i><span>{{ _('Jobs') }}</span></a>
+{% endif %}
+{% if may_open('schema_builds.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'schema_builds' else '' }}" href="{{ url_for('schema_builds.index') }}">
+  <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Schema builds') }}</span></a>
+{% endif %}
+{# API library: fields per firmware build, both channels (views/build_compat.py). #}
+{% if may_open('build_compat.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'build_compat' else '' }}" href="{{ url_for('build_compat.index') }}">
+  <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Build compatibility') }}</span></a>
+{% endif %}
+{% if _pk == 'global' and current_user and current_user.can('user_manage') and may_open('cert_manager.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'cert_manager' else '' }}" href="{{ url_for('cert_manager.index') }}">
+  <i class="bi bi-shield-lock fw-nav-icon"></i><span>{{ _('Certificate Manager') }}</span></a>
+{% endif %}

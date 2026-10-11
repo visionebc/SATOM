@@ -95,7 +95,7 @@
 
       <div class="dsec reveal" id="git">
         <h2><span class="hico">🌳</span> Git history</h2>
-        <p class="lead">The repository carries two assets: the application code and a diffable per-device configuration snapshot, refreshed on a schedule. The git remote is a <b>distribution</b> point, not a custody point — and the dangerous moment is not the outage, it is the return.</p>
+        <p class="lead">The repository carries the application code. Device configuration left git on 2026-08-05 for a local content-addressed history, replicated to the standby and carried in every backup bundle. The git remote is a <b>distribution</b> point, not a custody point — and the dangerous moment is not the outage, it is the return.</p>
         <table class="cmp">
           <tr><th>Guard</th><th>What it prevents</th></tr>
           <tr><td>Commit preservation before <code>reset --hard</code></td><td>Losing commits that exist only on this node. They are parked on permanent <code>refs/backup/*</code> refs, a dirty tree included. <b>If they cannot be parked, the update aborts</b> — a deferred update beats silent history loss</td></tr>

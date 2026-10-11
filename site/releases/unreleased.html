@@ -693,7 +693,7 @@ measured GUI layouts of the device's firmware, is now the only device menu.</p>
 <li>The <strong>Classic view</strong> button is gone from every list and settings page.</li>
 <li>Collections no measured page draws yet have no sidebar entry any more:
   64 on {device} / {device} (2 Server Objects, 9 WAF, 53 Configuration),
-  9 on fgt02, 26 on {device}. They return as their pages are crawled.</li>
+  9 on {device}, 26 on {device}. They return as their pages are crawled.</li>
 <li>Unchanged: the old URLs still redirect to the new page that draws the same
   collection, and <code>?classic=1</code> still opens the old page — the Server Policy
   Clone / Clone to / Migrate to / Delete dialogs run there. FortiADC and
@@ -929,7 +929,7 @@ now carries them:</p>
   demand for one appliance: <code>apilib_harvest.run(&lt;appliance id&gt;)</code>.</li>
 <li><code>api_library.EXCEPTION_REASONS</code> gains <code>platform</code>: an object the build has
   but the measured box cannot serve because it is hardware or a platform
-  image. On fgt02 (FortiGate-VM, 8.0.1 build0245) those tables answer the same
+  image. On {device} (FortiGate-VM, 8.0.1 build0245) those tables answer the same
   bare 400 as a path that does not exist, so the device cannot say it:
   <code>schema_adapters.fortigate.PLATFORM_TABLES</code> names 51 of the 54 tables the VM
   could not serve (NPU, modems, hardware switch, FortiWiFi radio, Rugged I/O,
@@ -1006,7 +1006,7 @@ now carries them:</p>
   registered FortiGate resolves its exact build.</li>
 <li>Verified live on a1 with lab devices (layouts staged for the check and
   removed afterwards; the measured FortiGate / FortiAuthenticator layouts come
-  with the harvester's packs): fgt02 (FortiOS 8.0.1 build0245, registered as
+  with the harvester's packs): {device} (FortiOS 8.0.1 build0245, registered as
   appliance 37) create / edit / delete of a <code>lab-</code> address read back from the
   device; {device} a lab user's last name edited, read back and restored. A
   FortiAuthenticator <code>PATCH</code> of <code>custom1</code> answered 202 and changed nothing:

@@ -112,6 +112,24 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--fortigate-and-fortiauthenticator-what-the-crawl-could-not-draw">Added — FortiGate and FortiAuthenticator: what the crawl could not draw</h3>
+<ul>
+<li>With knowledge pack <code>kb-20261011.7</code> (harvester 0.9.9) the FortiGate ADOM
+  gains its <strong>Not in GUI, but in CLI</strong> group (the 540 objects of 8.0.1 no page
+  of its GUI edits), and the pages the crawl could not bind get the objects
+  they edit, with forms from the device's REST schema: Log Settings (syslog,
+  disk, memory, null device, event filter, report settings), VPN Tunnels
+  (phase 1 / phase 2), Agentless VPN Settings, DNS Servers, Explicit Proxy and
+  more. System &gt; Certificates now stands for the local certificates and CAs it
+  lists.</li>
+<li>FortiAuthenticator pages gain the REST resources the crawl could not tie
+  (TACACS+ clients and policies, RADIUS policy memberships, remote LDAP /
+  RADIUS users, FortiTokens, MAC groups, user certificates, SCEP requests,
+  SNMP); each says it was placed by its page's name. Status objects are
+  read-only.</li>
+<li>A FortiWeb sub-table listed on its own page (Firewall Admin Policy's match
+  list) counts as where its parent object lives.</li>
+</ul>
 <h3 id="added--fortiweb-every-object-of-the-build-has-a-page">Added — FortiWeb: every object of the build has a page</h3>
 <ul>
 <li>With knowledge pack <code>kb-20261011.6</code> (harvester 0.9.8) the FortiWeb ADOM

@@ -53,7 +53,13 @@ def page_map(appliance) -> dict:
         ents = sorted(ents, key=lambda e: e["page"].startswith("view."))
     def names_for(ep):
         if product == gui_pages.PRODUCT:
-            return read_layer.registry_logicals(ep)
+            names = list(read_layer.registry_logicals(ep))
+            if ep.count("/") >= 2:
+                # a sub-table drawn as its own list (Firewall Admin Policy's
+                # match list) is where its parent object lives
+                names += [n for n in read_layer.registry_logicals(ep.rsplit("/", 1)[0])
+                          if n not in names]
+            return names
         if gui_products.read_only_endpoint(ep) and not gui_products.is_monitor(ep):
             return []
         if product == gui_products.FORTIAUTH:

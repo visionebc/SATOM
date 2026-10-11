@@ -324,45 +324,11 @@
 
       {% include 'partials/nav_device_context.html' %}
 
-      <!-- FLEET — the Global-ADOM menu, mirrored here but scoped to this
-           product's devices/policies (visible_appliances + product_scope). -->
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['calendar_plan','scout','search','dns_tool','architecture','analysis','fleet_objects','metrics','monitoring','deep_monitor','service_monitor','jobs','waf'] }}" data-nav-group="Fleet">
+      <!-- FLEET — one definition for every ADOM (partials/nav_fleet.html) -->
+      <div class="fw-nav-group" data-nav-group="Fleet">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Fleet') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
-          {% if scout_on and may_open('scout.index') %}<a class="fw-nav-item {{ 'active' if request.blueprint == 'scout' else '' }}" href="{{ url_for('scout.index') }}">
-            <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span></a>
-          {% else %}{# Switched off: shown, disabled, with the reason. An ABSENT entry
-             reads as 'this product has no Scout' and sends the operator looking
-             for an installer instead of for the checkbox. #}
-          <span class="fw-nav-item disabled text-muted" style="cursor:not-allowed;opacity:.55;"
-                title="{{ _('Scout is switched off for this site (Settings → Scout → Availability).') }}">
-            <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span>
-            <i class="bi bi-slash-circle ms-1 small"></i></span>
-          {% endif %}
-          {% include 'partials/nav_calendar.html' %}
-          {% if may_open('search.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
-            <i class="bi bi-search fw-nav-icon"></i><span>{{ _('Search') }}</span></a>
-          {% endif %}
-          {% if may_open('dns_tool.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'dns_tool' else '' }}" href="{{ url_for('dns_tool.index') }}">
-            <i class="bi bi-globe fw-nav-icon"></i><span>{{ _('DNS Lookup') }}</span></a>
-          {% endif %}
-          {% if may_open('architecture.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
-            <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Architecture') }}</span></a>
-          {% endif %}
-          {% include 'partials/nav_appliances.html' %}
-          {% if may_open('fleet_objects.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'fleet_objects' else '' }}" href="{{ url_for('fleet_objects.index') }}">
-            <i class="bi bi-box-seam fw-nav-icon"></i><span>{{ _('Fleet Objects') }}</span></a>
-          {% endif %}
-          {% include 'partials/nav_advisor.html' %}
-          {% include 'partials/nav_monitoring.html' %}
-          {% if may_open('jobs.manager') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'jobs' else '' }}" href="{{ url_for('jobs.manager') }}">
-            <i class="bi bi-list-task fw-nav-icon"></i><span>{{ _('Jobs') }}</span></a>
-          {% endif %}
+          {% include 'partials/nav_fleet.html' %}
         </div>
       </div>
 
@@ -371,96 +337,14 @@
 
       {% include 'partials/nav_automation.html' %}
 
-      {% if current_user and current_user.can('user_manage') %}
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['audit','users','templates','naming','capacity','database'] }}" data-nav-group="Administrator">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('Administrator') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          {% include "partials/nav_audit.html" %}
-          {% if may_open('capacity.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'capacity' else '' }}" href="{{ url_for('capacity.index') }}">
-            <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Capacity Limits') }}</span></a>
-          {% endif %}
-          {% include "partials/nav_collection.html" %}
-          {% include "partials/nav_cr_types.html" %}
-          {% include "partials/nav_adom_assets.html" %}
-          {% include "partials/nav_console.html" %}
-          {% include "partials/nav_process.html" %}
-          {% include "partials/nav_api_tokens.html" %}
-          {% if may_open('database.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'database' else '' }}" href="{{ url_for('database.index') }}">
-            <i class="bi bi-hdd fw-nav-icon"></i><span>{{ _('Database') }}</span></a>
-          {% endif %}
-          {% if current_user.can('studio.python_console') %}
-          {% if may_open('database.py_console_page') %}
-          <a class="fw-nav-item {{ 'active' if request.endpoint == 'database.py_console_page' else '' }}" href="{{ url_for('database.py_console_page') }}">
-            <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Python Console') }}</span></a>
-          {% endif %}
-          {% endif %}
-          {% if may_open('naming.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'naming' else '' }}" href="{{ url_for('naming.index', product='fortiadc') }}">
-            <i class="bi bi-tag fw-nav-icon"></i><span>{{ _('Naming') }}</span></a>
-          {% endif %}
-          {% if may_open('templates.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'templates' else '' }}" href="{{ url_for('templates.index') }}">
-            <i class="bi bi-collection fw-nav-icon"></i><span>{{ _('Template Library') }}</span></a>
-          {% endif %}
-          {% if may_open('users.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'users' else '' }}" href="{{ url_for('users.index') }}">
-            <i class="bi bi-people fw-nav-icon"></i><span>{{ _('Users') }}</span></a>
-          {% endif %}
-        </div>
-      </div>
-      {% else %}{% include "partials/nav_process_group.html" %}
-      {% endif %}
+      {% include 'partials/nav_admin.html' %}
 
       {% elif product.key == 'global' %}
       <!-- ===== GLOBAL ADOM — fleet-wide, spans FortiWeb + FortiADC ===== -->
       <div class="fw-nav-context" data-nav-context="Global">
         <div class="fw-nav-section fw-nav-context-label"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Global') }}</span></div>
         <div class="fw-nav-group-body">
-          {% if may_open('index') %}
-          <a class="fw-nav-item {{ 'active' if request.endpoint == 'index' else '' }}" href="{{ url_for('index') }}">
-            <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Dashboard') }}</span></a>
-          {% endif %}
-          {% include 'partials/nav_advisor.html' %}
-          {% include 'partials/nav_monitoring.html' %}
-          {% include 'partials/nav_calendar.html' %}
-          {% if may_open('search.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
-            <i class="bi bi-search fw-nav-icon"></i><span>{{ _('Search') }}</span></a>
-          {% endif %}
-          {% if may_open('dns_tool.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'dns_tool' else '' }}" href="{{ url_for('dns_tool.index') }}">
-            <i class="bi bi-globe fw-nav-icon"></i><span>{{ _('DNS Lookup') }}</span></a>
-          {% endif %}
-          {% if may_open('reach_batch.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'reach_batch' else '' }}" href="{{ url_for('reach_batch.index') }}">
-            <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Backend Reachability') }}</span></a>
-          {% endif %}
-          {% if may_open('config_compare.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'config_compare' else '' }}" href="{{ url_for('config_compare.index') }}">
-            <i class="bi bi-file-diff fw-nav-icon"></i><span>{{ _('Config Compare') }}</span></a>
-          {% endif %}
-          {% if may_open('architecture.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
-            <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Architecture') }}</span></a>
-          {% endif %}
-          {% include 'partials/nav_appliances.html' %}
-          {% if may_open('fleet_objects.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'fleet_objects' else '' }}" href="{{ url_for('fleet_objects.index') }}">
-            <i class="bi bi-box-seam fw-nav-icon"></i><span>{{ _('Fleet Objects') }}</span></a>
-          {% endif %}
-          {% include 'partials/nav_waf.html' %}
-          {% if may_open('jobs.manager') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'jobs' else '' }}" href="{{ url_for('jobs.manager') }}">
-            <i class="bi bi-list-task fw-nav-icon"></i><span>{{ _('Jobs') }}</span></a>
-          {% endif %}
-          {% if current_user and current_user.can('user_manage') %}
-          {% if may_open('cert_manager.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'cert_manager' else '' }}" href="{{ url_for('cert_manager.index') }}">
-            <i class="bi bi-shield-lock fw-nav-icon"></i><span>{{ _('Certificate Manager') }}</span></a>
-          {% endif %}
-          {% endif %}
+          {% include 'partials/nav_fleet.html' %}
         </div>
       </div>
 
@@ -481,63 +365,7 @@
 
       {% include 'partials/nav_automation.html' %}
 
-      {% if current_user and current_user.can('user_manage') %}
-      {# Custom Views (Plugin Studio) are ADOM-scoped (FortiWeb/FortiADC) — not surfaced in the Global ADOM. #}
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['audit','users','appids','classification','line_profiles','database','system_backup','self_update','ha','reports'] }}" data-nav-group="Administrator">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('Administrator') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          {% include "partials/nav_audit.html" %}
-          {% include "partials/nav_collection.html" %}
-          {% include "partials/nav_cr_types.html" %}
-          {% include "partials/nav_adom_assets.html" %}
-          {% include "partials/nav_console.html" %}
-          {% include "partials/nav_process.html" %}
-          {% include "partials/nav_api_tokens.html" %}
-          {% if may_open('users.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'users' else '' }}" href="{{ url_for('users.index') }}">
-            <i class="bi bi-people fw-nav-icon"></i><span>{{ _('Users') }}</span></a>
-          {% endif %}
-          {% if may_open('appids.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'appids' else '' }}" href="{{ url_for('appids.index') }}">
-            <i class="bi bi-tags fw-nav-icon"></i><span>{{ _('AppIDs') }}</span></a>
-          {% endif %}
-          {% if may_open('classification.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'classification' else '' }}" href="{{ url_for('classification.index') }}">
-            <i class="bi bi-tags fw-nav-icon"></i><span>{{ _('Classification') }}</span></a>
-          {% endif %}
-          {% if may_open('line_profiles.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'line_profiles' else '' }}" href="{{ url_for('line_profiles.index') }}">
-            <i class="bi bi-signpost-split fw-nav-icon"></i><span>{{ _('Line Profiles') }}</span></a>
-          {% endif %}
-          {% if may_open('database.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'database' else '' }}" href="{{ url_for('database.index') }}">
-            <i class="bi bi-hdd fw-nav-icon"></i><span>{{ _('Database') }}</span></a>
-          {% endif %}
-          {% if may_open('system_backup.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'system_backup' else '' }}" href="{{ url_for('system_backup.index') }}">
-            <i class="bi bi-safe fw-nav-icon"></i><span>System Backup &amp; Restore</span></a>
-          {% endif %}
-          {% if may_open('self_update.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'self_update' else '' }}" href="{{ url_for('self_update.index') }}">
-            <i class="bi bi-arrow-repeat fw-nav-icon"></i><span>{{ _('Software Update') }}</span></a>
-          {% endif %}
-          {% if satom_container_runtime %}
-          {% if may_open('container_ops.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'container_ops' else '' }}" href="{{ url_for('container_ops.index') }}">
-            <i class="bi bi-box-seam fw-nav-icon"></i><span>{{ _('Container operations') }}</span></a>
-          {% endif %}
-          {% endif %}
-          {% if may_open('ha.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'ha' else '' }}" href="{{ url_for('ha.index') }}">
-            <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('High Availability') }}</span></a>
-          {% endif %}
-          {% if may_open('reports.inbox') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'reports' else '' }}" href="{{ url_for('reports.inbox') }}">
-            <i class="bi bi-bug fw-nav-icon"></i><span>{{ _('Bug Reports') }}</span></a>
-          {% endif %}
-        </div>
-      </div>
-      {% endif %}
+      {% include 'partials/nav_admin.html' %}
 
       {# Studio sits OUTSIDE the user_manage block: each entry follows its own
          studio.* key, so a custom profile holding one reaches it without
@@ -588,17 +416,11 @@
 
       {% include 'partials/nav_device_context.html' %}
 
-      <!-- FLEET — Architecture / Analysis / Metrics (shared, product-scoped) -->
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['architecture','analysis','metrics','monitoring','deep_monitor','service_monitor','search','dns_tool','fleet_objects','jobs','waf'] }}" data-nav-group="Fleet">
+      <!-- FLEET — one definition for every ADOM (partials/nav_fleet.html) -->
+      <div class="fw-nav-group" data-nav-group="Fleet">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Fleet') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
-          {% if may_open('architecture.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
-            <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Architecture') }}</span></a>
-          {% endif %}
-          {% include 'partials/nav_appliances.html' %}
-          {% include 'partials/nav_advisor.html' %}
-          {% include 'partials/nav_monitoring.html' %}
+          {% include 'partials/nav_fleet.html' %}
         </div>
       </div>
 
@@ -623,32 +445,9 @@
       {# API — registry catalog + live console (registry.view) #}
       {% include 'partials/nav_product_api.html' %}
 
-      {# Administrator — Audit log / Firmware / Network segment #}
       {% include 'partials/nav_automation.html' %}
 
-      {% if current_user and current_user.can('user_manage') %}
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['audit','firmware','segments'] }}" data-nav-group="Administrator">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('Administrator') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          {% include "partials/nav_audit.html" %}
-          {% include "partials/nav_collection.html" %}
-          {% include "partials/nav_cr_types.html" %}
-          {% include "partials/nav_adom_assets.html" %}
-          {% include "partials/nav_console.html" %}
-          {% include "partials/nav_process.html" %}
-          {% include "partials/nav_api_tokens.html" %}
-          {% if may_open('firmware.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'firmware' else '' }}" href="{{ url_for('firmware.index', _adom='fortianalyzer') }}">
-            <i class="bi bi-cpu fw-nav-icon"></i><span>{{ _('Firmware') }}</span></a>
-          {% endif %}
-          {% if may_open('segments.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'segments' else '' }}" href="{{ url_for('segments.index') }}">
-            <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Network Segments') }}</span></a>
-          {% endif %}
-        </div>
-      </div>
-      {% else %}{% include "partials/nav_process_group.html" %}
-      {% endif %}
+      {% include 'partials/nav_admin.html' %}
 
 
 
@@ -667,17 +466,11 @@
 
       {% include 'partials/nav_device_context.html' %}
 
-      <!-- FLEET — Architecture / Analysis / Metrics (shared, product-scoped) -->
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['architecture','analysis','metrics','monitoring','deep_monitor','service_monitor','search','dns_tool','fleet_objects','jobs','waf'] }}" data-nav-group="Fleet">
+      <!-- FLEET — one definition for every ADOM (partials/nav_fleet.html) -->
+      <div class="fw-nav-group" data-nav-group="Fleet">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Fleet') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
-          {% if may_open('architecture.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
-            <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Architecture') }}</span></a>
-          {% endif %}
-          {% include 'partials/nav_appliances.html' %}
-          {% include 'partials/nav_advisor.html' %}
-          {% include 'partials/nav_monitoring.html' %}
+          {% include 'partials/nav_fleet.html' %}
         </div>
       </div>
 
@@ -688,28 +481,9 @@
       {# API — registry catalog + live console (registry.view) #}
       {% include 'partials/nav_product_api.html' %}
 
-      {# Administrator — Audit log / Network segment #}
       {% include 'partials/nav_automation.html' %}
 
-      {% if current_user and current_user.can('user_manage') %}
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['audit','segments'] }}" data-nav-group="Administrator">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('Administrator') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          {% include "partials/nav_audit.html" %}
-          {% include "partials/nav_collection.html" %}
-          {% include "partials/nav_cr_types.html" %}
-          {% include "partials/nav_adom_assets.html" %}
-          {% include "partials/nav_console.html" %}
-          {% include "partials/nav_process.html" %}
-          {% include "partials/nav_api_tokens.html" %}
-          {% if may_open('segments.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'segments' else '' }}" href="{{ url_for('segments.index') }}">
-            <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Network Segments') }}</span></a>
-          {% endif %}
-        </div>
-      </div>
-      {% else %}{% include "partials/nav_process_group.html" %}
-      {% endif %}
+      {% include 'partials/nav_admin.html' %}
 
 
       {% elif product.key == 'fortigate' %}
@@ -727,21 +501,11 @@
 
       {% include 'partials/nav_device_context.html' %}
 
-      <!-- FLEET — Architecture / Appliances / Monitoring (shared, product-scoped) -->
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['architecture','analysis','metrics','monitoring','deep_monitor','service_monitor','search','dns_tool','fleet_objects','jobs'] }}" data-nav-group="Fleet">
+      <!-- FLEET — one definition for every ADOM (partials/nav_fleet.html) -->
+      <div class="fw-nav-group" data-nav-group="Fleet">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Fleet') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
-          {% if may_open('fgt.index') %}
-          <a class="fw-nav-item {{ 'active' if request.endpoint == 'fgt.index' else '' }}" href="{{ url_for('fgt.index') }}">
-            <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Dashboard') }}</span></a>
-          {% endif %}
-          {% if may_open('architecture.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
-            <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Architecture') }}</span></a>
-          {% endif %}
-          {% include 'partials/nav_appliances.html' %}
-          {% include 'partials/nav_advisor.html' %}
-          {% include 'partials/nav_monitoring.html' %}
+          {% include 'partials/nav_fleet.html' %}
         </div>
       </div>
 
@@ -751,25 +515,7 @@
 
       {% include 'partials/nav_automation.html' %}
 
-      {% if current_user and current_user.can('user_manage') %}
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['audit','segments'] }}" data-nav-group="Administrator">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('Administrator') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          {% include "partials/nav_audit.html" %}
-          {% include "partials/nav_collection.html" %}
-          {% include "partials/nav_cr_types.html" %}
-          {% include "partials/nav_adom_assets.html" %}
-          {% include "partials/nav_console.html" %}
-          {% include "partials/nav_process.html" %}
-          {% include "partials/nav_api_tokens.html" %}
-          {% if may_open('segments.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'segments' else '' }}" href="{{ url_for('segments.index') }}">
-            <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Network Segments') }}</span></a>
-          {% endif %}
-        </div>
-      </div>
-      {% else %}{% include "partials/nav_process_group.html" %}
-      {% endif %}
+      {% include 'partials/nav_admin.html' %}
 
 
       {% elif product.placeholder %}
@@ -797,9 +543,7 @@
       {% else %}
       <!-- ===== FortiWeb ===== -->
       {# Active top-level nav section (server-rendered .open = no flash on reload). 2026-07-05 #}
-      {% set _g_ops  = request.blueprint in ['backups','logs','import_backup','scout','reach_batch','config_compare'] %}
-      {% set _g_api  = request.blueprint in ['registry','api_explorer','structure'] %}
-      {% set _g_adm  = request.blueprint in ['templates','audit','segments','naming','firmware','capacity','signatures','api_tokens'] %}
+      {% set _g_ops  = request.blueprint in ['backups','logs','import_backup','reach_batch','config_compare'] %}
 
       <!-- ADOM back-link — ALWAYS the first entry (same format as FortiADC) -->
       <div class="fw-nav-context" data-nav-context="ADOM">
@@ -813,36 +557,11 @@
 
       {% include 'partials/nav_device_context.html' %}
 
-      <!-- FLEET — the Global-ADOM menu, mirrored here but scoped to this
-           product's devices/policies (visible_appliances + product_scope). -->
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['calendar_plan','search','dns_tool','architecture','analysis','fleet_objects','metrics','monitoring','deep_monitor','service_monitor','jobs','waf','attack_search','exceptions','artifacts'] }}" data-nav-group="Fleet">
+      <!-- FLEET — one definition for every ADOM (partials/nav_fleet.html) -->
+      <div class="fw-nav-group" data-nav-group="Fleet">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Fleet') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
-          {% include 'partials/nav_calendar.html' %}
-          {% if may_open('search.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
-            <i class="bi bi-search fw-nav-icon"></i><span>{{ _('Search') }}</span></a>
-          {% endif %}
-          {% if may_open('dns_tool.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'dns_tool' else '' }}" href="{{ url_for('dns_tool.index') }}">
-            <i class="bi bi-globe fw-nav-icon"></i><span>{{ _('DNS Lookup') }}</span></a>
-          {% endif %}
-          {% if may_open('architecture.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
-            <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Architecture') }}</span></a>
-          {% endif %}
-          {% include 'partials/nav_appliances.html' %}
-          {% if may_open('fleet_objects.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'fleet_objects' else '' }}" href="{{ url_for('fleet_objects.index') }}">
-            <i class="bi bi-box-seam fw-nav-icon"></i><span>{{ _('Fleet Objects') }}</span></a>
-          {% endif %}
-          {% include 'partials/nav_advisor.html' %}
-          {% include 'partials/nav_monitoring.html' %}
-          {% include 'partials/nav_waf.html' %}
-          {% if may_open('jobs.manager') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'jobs' else '' }}" href="{{ url_for('jobs.manager') }}">
-            <i class="bi bi-list-task fw-nav-icon"></i><span>{{ _('Jobs') }}</span></a>
-          {% endif %}
+          {% include 'partials/nav_fleet.html' %}
         </div>
       </div>
 
@@ -897,16 +616,9 @@
              (Search, DNS Lookup, Architecture); these two answer "why is this path
              broken", which is an operational verb.  The Global ADOM keeps its own
              copies under Fleet: it has no Operations group to move them into. #}
-          <div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['scout','reach_batch','config_compare'] }}" data-nav-subgroup="Troubleshooting">
+          <div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['reach_batch','config_compare'] }}" data-nav-subgroup="Troubleshooting">
             <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-life-preserver fw-nav-icon"></i><span>{{ _('Troubleshooting') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
             <div class="fw-nav-subgroup-body">
-              {% if scout_on and may_open('scout.index') %}<a class="fw-nav-item {{ 'active' if request.blueprint == 'scout' else '' }}" href="{{ url_for('scout.index') }}">
-                <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span></a>
-              {% else %}<span class="fw-nav-item disabled text-muted" style="cursor:not-allowed;opacity:.55;"
-                    title="{{ _('Scout is switched off for this site (Settings → Scout → Availability).') }}">
-                <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span>
-                <i class="bi bi-slash-circle ms-1 small"></i></span>
-              {% endif %}
               {% if may_open('reach_batch.index') %}
               <a class="fw-nav-item {{ 'active' if request.blueprint == 'reach_batch' else '' }}" href="{{ url_for('reach_batch.index') }}">
                 <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Backend Reachability') }}</span></a>
@@ -946,52 +658,12 @@
         </div>
       </div>
 
+      {# API — the same group, in the same place, as the other device ADOMs #}
+      {% include 'partials/nav_product_api.html' %}
+
       {% include 'partials/nav_automation.html' %}
 
-      <!-- ADMINISTRATOR -->
-      {% if current_user and current_user.can('user_manage') %}
-      <div class="fw-nav-group {{ 'open' if _g_adm }}" data-nav-group="Administrator">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('Administrator') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          {% include "partials/nav_audit.html" %}
-          {% if may_open('capacity.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'capacity' else '' }}" href="{{ url_for('capacity.index') }}">
-            <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Capacity Limits') }}</span></a>
-          {% endif %}
-          {% include "partials/nav_collection.html" %}
-          {% include "partials/nav_cr_types.html" %}
-          {% include "partials/nav_adom_assets.html" %}
-          {% include "partials/nav_console.html" %}
-          {% include "partials/nav_process.html" %}
-          {% include "partials/nav_api_tokens.html" %}
-          {% if may_open('firmware.index') %}
-          <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('firmware.') else '' }}"
-             href="{{ url_for('firmware.index') }}">
-            <i class="bi bi-hdd-stack fw-nav-icon"></i><span>{{ _('Firmware') }}</span></a>
-          {% endif %}
-          {% if may_open('naming.index') %}
-          <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('naming.') else '' }}"
-             href="{{ url_for('naming.index') }}">
-            <i class="bi bi-tag fw-nav-icon"></i><span>{{ _('Naming') }}</span></a>
-          {% endif %}
-          {% if may_open('segments.index') %}
-          <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('segments.') else '' }}"
-             href="{{ url_for('segments.index') }}">
-            <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Network Segments') }}</span></a>
-          {% endif %}
-          {% if may_open('signatures.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'signatures' else '' }}" href="{{ url_for('signatures.index') }}">
-            <i class="bi bi-fingerprint fw-nav-icon"></i><span>{{ _('Signatures') }}</span></a>
-          {% endif %}
-          {% if may_open('templates.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'templates' else '' }}"
-             href="{{ url_for('templates.index') }}">
-            <i class="bi bi-collection fw-nav-icon"></i><span>{{ _('Template Library') }}</span></a>
-          {% endif %}
-        </div>
-      </div>
-      {% else %}{% include "partials/nav_process_group.html" %}
-      {% endif %}
+      {% include 'partials/nav_admin.html' %}
 
       {% endif %}
 
@@ -1026,30 +698,6 @@
 
       <!-- PROJECT SETTINGS — pinned to the bottom of the sidebar -->
       <div class="fw-nav-bottom">
-        <a class="fw-nav-item" href="{{ docs_url() }}"
-           target="_blank" rel="noopener noreferrer">
-          <i class="bi bi-book fw-nav-icon"></i><span>{{ _('Documentation') }}</span>
-          <i class="bi bi-box-arrow-up-right fw-nav-icon" style="margin-left:auto; opacity:.5; font-size:11px;"></i></a>
-        {# API is product-scoped by agreement: FortiWeb gets the registry hub,
-           pinned here below Documentation. FortiADC / FortiAnalyzer /
-           FortiAuthenticator draw their console as an "API" group in their own
-           menu (partials/nav_product_api.html, registry.view). The Global ADOM
-           gets none (clicking it would silently jump the ADOM). #}
-        {% if product.key == 'fortiweb' and current_user and current_user.can('user_manage') %}
-        {% if may_open('registry.index') %}
-        <a class="fw-nav-item {{ 'active' if _g_api }}" href="{{ url_for('registry.index') }}">
-          <i class="bi bi-code-slash fw-nav-icon"></i><span>API</span></a>
-        {% endif %}
-        {% if may_open('schema_builds.index') %}
-        <a class="fw-nav-item {{ 'active' if request.blueprint == 'schema_builds' }}" href="{{ url_for('schema_builds.index') }}">
-          <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Schema builds') }}</span></a>
-        {% endif %}
-        {% endif %}
-        {# API library: fields per firmware build, both channels (views/build_compat.py). #}
-        {% if may_open('build_compat.index') %}
-        <a class="fw-nav-item {{ 'active' if request.blueprint == 'build_compat' else '' }}" href="{{ url_for('build_compat.index') }}">
-          <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Build compatibility') }}</span></a>
-        {% endif %}
         {% if current_user and current_user.can('users.view') and not current_user.can('user_manage') %}
         {# Read-only user list for users.view holders; managers reach it from the Administrator group / Settings. #}
         {% if may_open('users.index') %}

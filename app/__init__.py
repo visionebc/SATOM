@@ -398,9 +398,9 @@ def create_app(config_override: object | None = None) -> Flask:
                        # only ever reachable in the first two. An ADC operator
                        # saw the entry and the click landed on /adc/ — a live
                        # link that goes nowhere, which reads as broken rather
-                       # than absent. NOT added to faz_bps/fac_bps: those two
-                       # menus do not draw the entry, and allowing a page no
-                       # sidebar offers is widening a gate for nobody.
+                       # than absent. Since 2026-10-11 every ADOM draws ONE
+                       # Fleet group (partials/nav_fleet.html), so Scout and
+                       # Calendar are in faz_bps / fac_bps / fgt_bps too.
                        'calendar_plan',
                        # Change Types is an Administration page, mirrored
                        # into every ADOM for the same reason Change Requests
@@ -494,6 +494,9 @@ def create_app(config_override: object | None = None) -> Flask:
                        # spec.products includes this ADOM, so a console
                        # can only schedule work it can also see.
                        'scheduled_actions',
+                       # Scout + Calendar: drawn by the shared Fleet group
+                       # (partials/nav_fleet.html) in every ADOM.
+                       'scout', 'calendar_plan',
                        'architecture', 'metrics', 'search', 'analysis',
                        'fleet_objects', 'dns_tool', 'backups',
                        # Mirrored per-ADOM monitoring (2026-07-28) — see the
@@ -545,6 +548,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        # spec.products includes this ADOM, so a console
                        # can only schedule work it can also see.
                        'scheduled_actions',
+                       'scout', 'calendar_plan',   # see the faz_bps note
                        'architecture', 'metrics', 'search', 'analysis',
                        'fleet_objects', 'dns_tool',
                        # Mirrored per-ADOM monitoring (2026-07-28) — scoping is
@@ -584,6 +588,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        'advisor', 'adom_assets', 'console',   # see the adc_bps note
                        'database', 'locks', 'segments', 'device_provision',
                        'cr_types', 'process', 'scheduled_actions',
+                       'scout', 'calendar_plan',   # see the faz_bps note
                        'architecture', 'metrics', 'search', 'analysis',
                        'fleet_objects', 'dns_tool',
                        'monitoring', 'deep_monitor', 'service_monitor',

@@ -6,6 +6,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — one menu order in every ADOM
+
+- The Fleet and Administrator groups are now one definition shared by every
+  ADOM, so the entries that do not depend on the product sit in the same place
+  everywhere. Entries that do (WAF, Firmware, Naming, Signatures…) appear only
+  in the ADOMs they belong to.
+- Scout is in the Fleet group of every ADOM (FortiWeb used to file it under
+  Operations > Troubleshooting; FortiAnalyzer, FortiAuthenticator and FortiGate
+  did not show it). FortiAnalyzer, FortiAuthenticator and FortiGate also gain
+  Calendar, Search, DNS Lookup, Fleet Objects and Jobs.
+- Schema builds and Build compatibility moved from the foot of the sidebar
+  into the Fleet group.
+- FortiWeb's API is an **API** group in the same place as in the FortiADC,
+  FortiAnalyzer and FortiAuthenticator ADOMs (it used to be pinned to the foot
+  of the sidebar).
+- The sidebar no longer links Documentation.
+
 ### Added — FortiADC: FortiView monitors in the menu
 
 - The FortiView pages (and Global Resources, Adaptive Learning View) are in

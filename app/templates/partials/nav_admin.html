@@ -1,0 +1,103 @@
+{# ============================================================================
+   ADMINISTRATOR — ONE definition, EVERY ADOM (2026-10-11).
+
+   Same reason as partials/nav_fleet.html: six hand-copied blocks had six
+   different orders, and Database / Users / Python Console showed up in the
+   FortiADC ADOM only. Entries that do not depend on the product come first,
+   in the same order everywhere; the ones that do are named with the ADOMs
+   they belong to.
+
+   Python Console is not drawn in the Global ADOM: Global keeps it in its
+   Studio group. Without user_manage the group is replaced by the Process
+   entry on its own (partials/nav_process_group.html), as before.
+   ========================================================================= #}
+{% set _pk = product.key %}
+{% if current_user and current_user.can('user_manage') %}
+<div class="fw-nav-group" data-nav-group="Administrator">
+  <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('Administrator') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-group-body">
+    {% include "partials/nav_audit.html" %}
+    {% if _pk in ('fortiweb', 'fortiadc') and may_open('capacity.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'capacity' else '' }}" href="{{ url_for('capacity.index') }}">
+      <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Capacity Limits') }}</span></a>
+    {% endif %}
+    {% include "partials/nav_collection.html" %}
+    {% include "partials/nav_cr_types.html" %}
+    {% include "partials/nav_adom_assets.html" %}
+    {% include "partials/nav_console.html" %}
+    {% include "partials/nav_process.html" %}
+    {% include "partials/nav_api_tokens.html" %}
+    {% if may_open('users.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'users' else '' }}" href="{{ url_for('users.index') }}">
+      <i class="bi bi-people fw-nav-icon"></i><span>{{ _('Users') }}</span></a>
+    {% endif %}
+    {% if may_open('database.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'database' and request.endpoint != 'database.py_console_page' else '' }}" href="{{ url_for('database.index') }}">
+      <i class="bi bi-hdd fw-nav-icon"></i><span>{{ _('Database') }}</span></a>
+    {% endif %}
+    {% if _pk != 'global' and current_user.can('studio.python_console') and may_open('database.py_console_page') %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'database.py_console_page' else '' }}" href="{{ url_for('database.py_console_page') }}">
+      <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Python Console') }}</span></a>
+    {% endif %}
+    {% if _pk in ('fortiweb', 'fortianalyzer') and may_open('firmware.index') %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('firmware.') else '' }}"
+       href="{{ url_for('firmware.index', _adom='fortianalyzer') if _pk == 'fortianalyzer' else url_for('firmware.index') }}">
+      <i class="bi bi-hdd-stack fw-nav-icon"></i><span>{{ _('Firmware') }}</span></a>
+    {% endif %}
+    {% if _pk in ('fortiweb', 'fortiadc') and may_open('naming.index') %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('naming.') else '' }}"
+       href="{{ url_for('naming.index', product='fortiadc') if _pk == 'fortiadc' else url_for('naming.index') }}">
+      <i class="bi bi-tag fw-nav-icon"></i><span>{{ _('Naming') }}</span></a>
+    {% endif %}
+    {% if _pk in ('fortiweb', 'fortianalyzer', 'fortiauthenticator', 'fortigate') and may_open('segments.index') %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('segments.') else '' }}"
+       href="{{ url_for('segments.index') }}">
+      <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Network Segments') }}</span></a>
+    {% endif %}
+    {% if _pk == 'fortiweb' and may_open('signatures.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'signatures' else '' }}" href="{{ url_for('signatures.index') }}">
+      <i class="bi bi-fingerprint fw-nav-icon"></i><span>{{ _('Signatures') }}</span></a>
+    {% endif %}
+    {% if _pk in ('fortiweb', 'fortiadc') and may_open('templates.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'templates' else '' }}" href="{{ url_for('templates.index') }}">
+      <i class="bi bi-collection fw-nav-icon"></i><span>{{ _('Template Library') }}</span></a>
+    {% endif %}
+    {% if _pk == 'global' %}{# system-wide pages: the Global ADOM only #}
+    {% if may_open('appids.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'appids' else '' }}" href="{{ url_for('appids.index') }}">
+      <i class="bi bi-tags fw-nav-icon"></i><span>{{ _('AppIDs') }}</span></a>
+    {% endif %}
+    {% if may_open('classification.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'classification' else '' }}" href="{{ url_for('classification.index') }}">
+      <i class="bi bi-tags fw-nav-icon"></i><span>{{ _('Classification') }}</span></a>
+    {% endif %}
+    {% if may_open('line_profiles.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'line_profiles' else '' }}" href="{{ url_for('line_profiles.index') }}">
+      <i class="bi bi-signpost-split fw-nav-icon"></i><span>{{ _('Line Profiles') }}</span></a>
+    {% endif %}
+    {% if may_open('system_backup.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'system_backup' else '' }}" href="{{ url_for('system_backup.index') }}">
+      <i class="bi bi-safe fw-nav-icon"></i><span>System Backup &amp; Restore</span></a>
+    {% endif %}
+    {% if may_open('self_update.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'self_update' else '' }}" href="{{ url_for('self_update.index') }}">
+      <i class="bi bi-arrow-repeat fw-nav-icon"></i><span>{{ _('Software Update') }}</span></a>
+    {% endif %}
+    {% if satom_container_runtime and may_open('container_ops.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'container_ops' else '' }}" href="{{ url_for('container_ops.index') }}">
+      <i class="bi bi-box-seam fw-nav-icon"></i><span>{{ _('Container operations') }}</span></a>
+    {% endif %}
+    {% if may_open('ha.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'ha' else '' }}" href="{{ url_for('ha.index') }}">
+      <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('High Availability') }}</span></a>
+    {% endif %}
+    {% if may_open('reports.inbox') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'reports' else '' }}" href="{{ url_for('reports.inbox') }}">
+      <i class="bi bi-bug fw-nav-icon"></i><span>{{ _('Bug Reports') }}</span></a>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% elif _pk != 'global' %}{# Global draws this fallback under its Studio block #}
+{% include "partials/nav_process_group.html" %}
+{% endif %}

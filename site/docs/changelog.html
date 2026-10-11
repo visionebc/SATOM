@@ -112,6 +112,23 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="changed--one-menu-order-in-every-adom">Changed — one menu order in every ADOM</h3>
+<ul>
+<li>The Fleet and Administrator groups are now one definition shared by every
+  ADOM, so the entries that do not depend on the product sit in the same place
+  everywhere. Entries that do (WAF, Firmware, Naming, Signatures…) appear only
+  in the ADOMs they belong to.</li>
+<li>Scout is in the Fleet group of every ADOM (FortiWeb used to file it under
+  Operations &gt; Troubleshooting; FortiAnalyzer, FortiAuthenticator and FortiGate
+  did not show it). FortiAnalyzer, FortiAuthenticator and FortiGate also gain
+  Calendar, Search, DNS Lookup, Fleet Objects and Jobs.</li>
+<li>Schema builds and Build compatibility moved from the foot of the sidebar
+  into the Fleet group.</li>
+<li>FortiWeb's API is an <strong>API</strong> group in the same place as in the FortiADC,
+  FortiAnalyzer and FortiAuthenticator ADOMs (it used to be pinned to the foot
+  of the sidebar).</li>
+<li>The sidebar no longer links Documentation.</li>
+</ul>
 <h3 id="added--fortiadc-fortiview-monitors-in-the-menu">Added — FortiADC: FortiView monitors in the menu</h3>
 <ul>
 <li>The FortiView pages (and Global Resources, Adaptive Learning View) are in

@@ -1,7 +1,7 @@
 {
   "format": "satom.gui-alias/1",
   "product": "fortiweb",
-  "note": "FortiWeb GUI pages that read a collection through the GUI's own API (/api/v2.0/<x>, answered 500 by cmdb) while the same objects live in a cmdb collection SATOM caches, edits and audits. Measured 2026-10-09 on fortiweb17 (7.6.8 build1128) and fortiweb18 (8.0.6 build116), GETs only. confidence: 'measured' = the same objects on both sides, or every key of the layout among the build's measured fields; 'named' = cmdb twin by name and by the SATOM menu entry with the same label, both sides empty on the lab. keys: GUI key -> cmdb key ('measured' = equal on every row; 'label' = the column title names the cmdb field). computed: columns FortiWeb computes, no cmdb field holds them.",
+  "note": "FortiWeb GUI pages that read a collection through the GUI's own API (/api/v2.0/<x>, answered 500 by cmdb) while the same objects live in a cmdb collection SATOM caches, edits and audits. Measured 2026-10-09 on fortiweb17 (7.6.8 build1128) and fortiweb18 (8.0.6 build116), GETs only. confidence: 'measured' = the same objects on both sides, or every key of the layout among the build's measured fields; 'named' = cmdb twin by name and by the SATOM menu entry with the same label, both sides empty on the lab. keys: GUI key -> cmdb key ('measured' = equal on every row; 'label' = the column title names the cmdb field). computed: columns FortiWeb computes, no cmdb field holds them. derived: a computed column counted from a cached sub-table, measured equal to the GUI.",
   "aliases": {
     "waf/signatures": {
       "cmdb": "waf/signature", "confidence": "measured",
@@ -11,7 +11,9 @@
                "subClassDisabledCount": "sz_sub_class_disable_list",
                "customSignatureGroup": "custom-protection-group", "sensitivity_level": "sensitivity-level"},
       "key_evidence": "alertOnlyCount / signatureDisabledCount equal on every row with varying values; the other five equal on every row (16/16, 10/10) with constant values.",
-      "computed": ["mainClassEnabledCount"]
+      "derived": {"mainClassEnabledCount": {
+        "count": "main_class_list", "where": {"status": "enable"}, "size": "sz_main_class_list",
+        "evidence": "fortiweb17 7.6.8, 2026-10-11: the GUI list's mainClassEnabledCount equals the set's main_class_list rows with status enable on 16/16 sets (6 of 10, 9 of 10, and 0 for the 6 empty sets)."}}
     },
     "waf/openapi.openapischemafile": {
       "cmdb": "waf/openapi-file", "confidence": "measured",

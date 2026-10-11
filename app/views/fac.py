@@ -36,6 +36,7 @@ from ..clients.fortiauthenticator import FortiAuthenticatorClient
 from ..models import Appliance, visible_appliances, visible_appliance_or_404
 from ..registry import loader
 from ..services import device_context, fac_menu
+from ..services import gui_classic
 
 bp = Blueprint('fac', __name__, url_prefix='/fac')
 
@@ -92,6 +93,7 @@ def index():
                            n_items=len(items),
                            n_bound=sum(1 for i in items if i.logicals),
                            current=current, header_dev=current,
+                           links=gui_classic.item_links(current, groups, 'fac.menu_page'),
                            status=status, status_err=status_err)
 
 

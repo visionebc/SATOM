@@ -318,23 +318,29 @@ def matching_devices(baseline: Baseline, query=None) -> list[Appliance]:
     return q.order_by(Appliance.name).all()
 
 
-def baseline_push_items(baseline: Baseline) -> list:
-    """Flatten every composing template's body into ``iter_push_items`` rows,
-    in baseline order (section by section). Reused by the apply path."""
+def baseline_push_parts(baseline: Baseline) -> list:
+    """``[(template, push items)]`` of every composing template, in baseline
+    order (section by section): each template's ``{{ variables }}`` render
+    from ITS bindings (``template_bindings.render_parts_for_devices``)."""
     from .bulk import iter_push_items
     from . import provisioning as prov
-    items: list = []
+    parts: list = []
     for link in baseline.items:
-        t = Template.query.get(link.template_id)
+        t = db.session.get(Template, link.template_id)
         if t is None:
             continue
         if t.kind == Template.KIND_SYSTEM:
             # A system profile body is {"items": [...]}: build its writes the
             # way System Provisioning does, or the combo pushes nothing.
-            items.extend(prov.push_items(prov.SystemProfile.from_template(t)))
+            parts.append((t, prov.push_items(prov.SystemProfile.from_template(t))))
         else:
-            items.extend(iter_push_items(t.body_dict))
-    return items
+            parts.append((t, iter_push_items(t.body_dict)))
+    return parts
+
+
+def baseline_push_items(baseline: Baseline) -> list:
+    """Every composing template's writes flattened, in baseline order."""
+    return [it for _t, items in baseline_push_parts(baseline) for it in items]
 
 
 # --------------------------------------------------------------------------- #

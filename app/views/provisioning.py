@@ -30,6 +30,7 @@ from ..services.templates import delete_template, get_template, list_templates
 from ..services import baselines as B
 from ..services import settings_store
 from ..services import template_compat as tc
+from ..services import template_bindings as tb
 from ..services.bulk import BulkRunner
 
 bp = Blueprint('provisioning', __name__, url_prefix='/provisioning')
@@ -261,9 +262,20 @@ def apply(template_id: int):
     secret_items = [it.label or it.endpoint for it in profile.items
                     if prov._item_is_sensitive(it)]
 
+    # {{ variables }} render per device from its binding, as the template
+    # Apply does: the preview shows the real values, and a device left without
+    # one refuses the live push (a literal placeholder never reaches a box).
+    items_by_device, missing_vars = tb.render_parts_for_devices(
+        [(template, prov.push_items(profile))], device_ids)
+    missing_why = tb.missing_text(missing_vars, {a.id: a.name for a in target_appliances})
+
     if not confirmed:
         compat = tc.for_appliances(template, target_appliances, require_validated=True)
-        preview = prov.apply(profile, device_ids, dry_run=True, skips=compat.get('skips'))
+        preview = prov.apply(profile, device_ids, dry_run=True, skips=compat.get('skips'),
+                             items_by_device=items_by_device)
+        if missing_vars:
+            flash(f'The live deploy will be refused: {missing_why}. Set the values '
+                  'on the device bindings first.', 'danger')
         log_action('provisioning.preview', target=profile.name,
                    detail=f'{mode}, {len(target_appliances)} device(s), host={target_hostname}, '
                           f'change={change_id}, compat_blocked={compat["blocked"]}')
@@ -289,6 +301,12 @@ def apply(template_id: int):
               f'profile can be deployed live. The preview stays available; ask an '
               f'administrator to approve it first.', 'danger')
         return redirect(url_for('provisioning.index'))
+    if missing_vars:
+        log_action('provisioning.apply', target=profile.name,
+                   detail=('refused: variables unset: ' + missing_why)[:1500])
+        flash(f'Deploy of "{profile.name}" refused — {missing_why}. Set the values '
+              'on the device bindings, then apply.', 'danger')
+        return redirect(url_for('provisioning.index'))
     allowed, compat = tc.enforce(
         template, target_appliances, user=current_user,
         override_reason=request.form.get('override_reason', ''),
@@ -303,7 +321,7 @@ def apply(template_id: int):
         return redirect(url_for('provisioning.index'))
     flash(f'Deploying [{change_id}] to {target_hostname} — canary device writes first.', 'warning')
     result = prov.apply(profile, device_ids, dry_run=False, canary=1,
-                        skips=compat.get('skips'))
+                        skips=compat.get('skips'), items_by_device=items_by_device)
     log_action('provisioning.apply', target=profile.name,
                detail=f'{mode}, host={target_hostname}, change={change_id}, aborted={result.get("aborted")}')
     return render_template(
@@ -624,8 +642,12 @@ def baseline_apply(baseline_id: int):
         abort(404)
     devices = B.matching_devices(row, visible_appliances())
     device_ids = [a.id for a in devices]
-    items = B.baseline_push_items(row)
+    parts = B.baseline_push_parts(row)
+    items = [it for _t, its in parts for it in its]
     confirm = request.form.get('confirm') == '1'
+    # each composing template renders its {{ variables }} from its own binding
+    items_by_device, missing_vars = tb.render_parts_for_devices(parts, device_ids)
+    missing_why = tb.missing_text(missing_vars, {a.id: a.name for a in devices})
 
     if not device_ids:
         flash(f'Baseline "{row.name}" matches no devices for its scope.', 'warning')
@@ -638,8 +660,11 @@ def baseline_apply(baseline_id: int):
     if not confirm:
         compat = [tc.for_appliances(t, devices, require_validated=True)
                   for t in composing]
-        preview = BulkRunner(items, skips=tc.merge_skips(c.get('skips') for c in compat)
-                             ).preview(device_ids)
+        preview = BulkRunner(items, skips=tc.merge_skips(c.get('skips') for c in compat),
+                             items_by_device=items_by_device).preview(device_ids)
+        if missing_vars:
+            flash(f'The live rollout will be refused: {missing_why}. Set the values '
+                  'on the device bindings first.', 'danger')
         log_action('baseline.apply.preview', target=row.name,
                    detail=f'devices={device_ids} items={len(items)} '
                           f'compat_blocked={any(c["blocked"] for c in compat)}')
@@ -649,6 +674,12 @@ def baseline_apply(baseline_id: int):
                                compat_reports=compat,
                                can_override=current_user.can('operations.template_approve'))
 
+    if missing_vars:
+        log_action('baseline.apply.refused', target=row.name,
+                   detail=('variables unset: ' + missing_why)[:1500])
+        flash(f'Baseline rollout "{row.name}" refused — {missing_why}. Set the '
+              'values on the device bindings, then apply.', 'danger')
+        return redirect(url_for('provisioning.baselines'))
     # A baseline is a fleet rollout of approved templates: every composing
     # template must fit every matching device's build (or be overridden).
     refused = []
@@ -681,7 +712,7 @@ def baseline_apply(baseline_id: int):
         by=getattr(current_user, 'username', '') or '',
         meta={'baseline_id': row.id, 'name': row.name},
         audit_action='baseline.apply', audit_target=row.name,
-        skips=tc.merge_skips(skips))
+        skips=tc.merge_skips(skips), items_by_device=items_by_device or None)
     log_action('baseline.apply.start', target=row.name,
                detail=f'devices={device_ids} items={len(items)} job={job["id"]}')
     flash(f'Baseline rollout "{row.name}" started for {len(devices)} device(s) '

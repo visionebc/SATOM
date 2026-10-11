@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changed · 160 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changed · 167 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changed · 160 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changed · 167 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changed · 160 entries</span>
-        <ul class="rel-leads"><li>The hand-made FortiADC menu leaves the sidebar</li><li>The Virtual Server wizard</li><li>Layouts refused on import</li><li class="rel-more">… and 157 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Changed · 167 entries</span>
+        <ul class="rel-leads"><li>The dialog&#x27;s save skipped three gates the object editor applies</li><li>Signatures</li><li>FortiGate and FortiAuthenticator dashboards</li><li class="rel-more">… and 164 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.0.0.html" data-rel-version="3.0.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.0.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -360,6 +360,52 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="fixed--the-server-policy-dialog-saves-through-the-same-gates-as-the-object-editor">Fixed — The Server Policy dialog saves through the same gates as the object editor</h3>
+<ul>
+<li><strong>The dialog's save skipped three gates the object editor applies</strong>: the
+  template lock, the edit lease and the build compatibility check. The dialog
+  allow-lists the Web Protection Profile collection (its pencil opens the
+  profile), so a template-managed profile could be edited from a policy and
+  drift from its template on that device. It now refuses a template-managed
+  profile (403), another user's lease (409, nothing sent), a value this exact
+  build rejects (409 on the real write; the preview carries the report), and
+  strips the fields the build lacks instead of losing them behind a 200. A
+  successful write releases the caller's lease, as the editor does.</li>
+<li>The review table's <strong>Channel</strong> column read <code>cli_fields</code>, which only the
+  dialog's own save returned: fields of a bound object, saved through the
+  object editor, were always listed as REST. Every save route now names its
+  CLI fields, and the table keys them like the dialog's rows.</li>
+</ul>
+<h3 id="fixed--system-provisioning-and-baselines-render--variables--per-device">Fixed — System Provisioning and baselines render <code>{{ variables }}</code> per device</h3>
+<ul>
+<li>A System Provisioning profile or a baseline template with a <code>{{ variable }}</code>
+  was pushed as written: the literal placeholder reached every device. Both now
+  render each device's body from its binding, as the template Apply and the
+  approval rollout already did. In a baseline each composing template takes the
+  variables of its own binding. The preview shows the rendered values and says
+  up front when a device has no value; the live deploy (and the canary) is then
+  refused with the device and variable named.</li>
+</ul>
+<h3 id="fixed--measured-pages-signatures-count-dashboard-links-regex-lab-carve-out-drift">Fixed — Measured pages: Signatures count, dashboard links, Regex Lab, carve-out drift</h3>
+<ul>
+<li><strong>Signatures</strong>: <em>Main Class Enabled Count</em> was always empty — FortiWeb
+  computes it and the REST API has no such field. It is now counted from the
+  set's cached main-class rows (<code>status</code> enable), measured equal to what the
+  device's own list shows. A set whose rows are not cached, or are cached with
+  a different number of rows than the set reports, stays empty: never a
+  guessed 0.</li>
+<li><strong>FortiGate and FortiAuthenticator dashboards</strong>: each card links to the
+  measured page that draws its item, instead of to the old menu URL that
+  redirected there; an item no measured page covers still opens the classic
+  page.</li>
+<li><strong>Regex Lab</strong> (the <code>.*</code> calculator) is offered in the measured FortiWeb
+  dialogs on the same fields as the classic forms.</li>
+<li><strong>Exceptions</strong>: a carve-out whose Server Policy is gone, or now uses another
+  Web Protection Profile on the device (changed outside SATOM, where the
+  re-bind hooks never ran), is flagged <strong>DRIFT</strong>, counted in a banner and
+  filterable ("not on the device"). Nothing is flagged when the device's policy
+  list could not be read.</li>
+</ul>
 <h3 id="changed--a-page-layout-with-one-action-tab-imports-without-that-tab-fortiadc-system--settings">Changed — A page layout with one action tab imports without that tab (FortiADC System &gt; Settings)</h3>
 <ul>
 <li>A knowledge-pack page layout that names a device action used to be refused

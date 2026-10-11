@@ -84,6 +84,14 @@ def render(body, variables: dict | None) -> tuple[Any, list[str]]:
     return _walk_strings(copy.deepcopy(body), _sub), sorted(missing)
 
 
+def missing_text(missing: dict, names: dict | None = None) -> str:
+    """``fwb-a: no value for vip, port; fwb-b: …`` for a ``{appliance_id:
+    [missing]}`` map (``names``: ``{appliance_id: name}``)."""
+    names = names or {}
+    return "; ".join("%s: no value for %s" % (names.get(aid, aid), ", ".join(m))
+                     for aid, m in sorted(missing.items()))
+
+
 def clean_variables(raw) -> dict[str, str]:
     """Validate a ``{name: value}`` map from a form/JSON. Raises ``ValueError``."""
     if raw in (None, "", {}):
@@ -211,6 +219,33 @@ def render_for_devices(template: Template, appliance_ids) -> tuple[dict, dict]:
         if miss:
             missing[int(aid)] = miss
     return bodies, missing
+
+
+def render_parts_for_devices(parts, appliance_ids) -> tuple[dict, dict]:
+    """The push items of one or more templates, rendered per device.
+
+    ``parts`` = ``[(template, push items)]`` in push order: a System
+    Provisioning profile is one part, a baseline one per composing template.
+    Each part takes the variables of ITS template's binding on that device.
+    ``({appliance_id: items}, {appliance_id: [missing]})``; both empty when no
+    part has a placeholder (every device then gets the same items).
+    """
+    parts = [(t, list(items or [])) for t, items in parts]
+    if not any(placeholders(items) for _t, items in parts):
+        return {}, {}
+    ids = [int(i) for i in appliance_ids or []]
+    vars_by = [variables_for(t, ids) for t, _items in parts]
+    out, missing = {}, {}
+    for aid in ids:
+        rendered, miss = [], set()
+        for (_t, items), by in zip(parts, vars_by):
+            got, m = render(items, by.get(aid) or {})
+            rendered.extend(got)
+            miss.update(m)
+        out[aid] = rendered
+        if miss:
+            missing[aid] = sorted(miss)
+    return out, missing
 
 
 # ---------------------------------------------------------------------------

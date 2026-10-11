@@ -92,7 +92,7 @@
     {% for it in g.items %}
     <div class="col-md-6 col-lg-4">
       <a class="fw-card d-block h-100 text-decoration-none" style="padding:14px;"
-         href="{{ url_for('fgt.menu_page', item_key=it.key) }}">
+         href="{{ links.get(it.key) or url_for('fgt.menu_page', item_key=it.key) }}">
         <div class="d-flex align-items-center gap-2 mb-1">
           <i class="bi {{ it.icon }} text-accent"></i>
           <strong>{{ it.label }}</strong>

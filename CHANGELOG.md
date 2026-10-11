@@ -6,6 +6,52 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — The Server Policy dialog saves through the same gates as the object editor
+
+- **The dialog's save skipped three gates the object editor applies**: the
+  template lock, the edit lease and the build compatibility check. The dialog
+  allow-lists the Web Protection Profile collection (its pencil opens the
+  profile), so a template-managed profile could be edited from a policy and
+  drift from its template on that device. It now refuses a template-managed
+  profile (403), another user's lease (409, nothing sent), a value this exact
+  build rejects (409 on the real write; the preview carries the report), and
+  strips the fields the build lacks instead of losing them behind a 200. A
+  successful write releases the caller's lease, as the editor does.
+- The review table's **Channel** column read `cli_fields`, which only the
+  dialog's own save returned: fields of a bound object, saved through the
+  object editor, were always listed as REST. Every save route now names its
+  CLI fields, and the table keys them like the dialog's rows.
+
+### Fixed — System Provisioning and baselines render `{{ variables }}` per device
+
+- A System Provisioning profile or a baseline template with a `{{ variable }}`
+  was pushed as written: the literal placeholder reached every device. Both now
+  render each device's body from its binding, as the template Apply and the
+  approval rollout already did. In a baseline each composing template takes the
+  variables of its own binding. The preview shows the rendered values and says
+  up front when a device has no value; the live deploy (and the canary) is then
+  refused with the device and variable named.
+
+### Fixed — Measured pages: Signatures count, dashboard links, Regex Lab, carve-out drift
+
+- **Signatures**: *Main Class Enabled Count* was always empty — FortiWeb
+  computes it and the REST API has no such field. It is now counted from the
+  set's cached main-class rows (`status` enable), measured equal to what the
+  device's own list shows. A set whose rows are not cached, or are cached with
+  a different number of rows than the set reports, stays empty: never a
+  guessed 0.
+- **FortiGate and FortiAuthenticator dashboards**: each card links to the
+  measured page that draws its item, instead of to the old menu URL that
+  redirected there; an item no measured page covers still opens the classic
+  page.
+- **Regex Lab** (the `.*` calculator) is offered in the measured FortiWeb
+  dialogs on the same fields as the classic forms.
+- **Exceptions**: a carve-out whose Server Policy is gone, or now uses another
+  Web Protection Profile on the device (changed outside SATOM, where the
+  re-bind hooks never ran), is flagged **DRIFT**, counted in a banner and
+  filterable ("not on the device"). Nothing is flagged when the device's policy
+  list could not be read.
+
 ### Changed — A page layout with one action tab imports without that tab (FortiADC System > Settings)
 
 - A knowledge-pack page layout that names a device action used to be refused

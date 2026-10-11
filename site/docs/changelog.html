@@ -131,6 +131,10 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <li>Secrets are removed from every answer and from the audited request body.</li>
 <li>A FortiGate object that is not there (a <code>404</code> on <code>…/&lt;table&gt;/&lt;key&gt;</code>) now
   reads "no such object on the device" instead of blaming the firmware.</li>
+<li>The FortiGate section pages read each tab at the path the endpoint registry
+  resolves for the box's build, so a table renamed by an upgrade is fixed by a
+  Registry edit. A table the registry does not serve on that build says so,
+  and the device is not asked.</li>
 </ul>
 <h3 id="changed--one-menu-order-in-every-adom">Changed — one menu order in every ADOM</h3>
 <ul>

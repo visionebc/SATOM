@@ -253,7 +253,7 @@ current list:</p>
 <tr>
 <td><strong>Global</strong></td>
 <td><code>/</code></td>
-<td>Fleet-wide dashboard and cross-product tools: Monitoring, Search, Architecture, Analysis, Fleet Objects, Metrics, Fleet → WAF, Jobs, Certificate Manager, DNS Lookup, plus fleet administration (Classification, Database, System Backup, Software Update, High Availability, Bug Reports)</td>
+<td>Fleet-wide dashboard and cross-product tools: Monitoring, Search, Service Diagram, Analysis, Fleet Objects, Metrics, Fleet → WAF, Jobs, Certificate Manager, DNS Lookup, plus fleet administration (Classification, Database, System Backup, Software Update, High Availability, Bug Reports)</td>
 </tr>
 <tr>
 <td><strong>FortiWeb</strong></td>
@@ -299,7 +299,7 @@ notifications, templates and appliances (and vice versa); Global sees all.</p>
 <h3 id="31-the-selected-device-is-per-adom">3.1 The selected device is per ADOM</h3>
 <p>Most per-device pages read an <strong>implicit device context</strong> rather than asking
 which appliance you mean on every page. That context is <strong>one slot per ADOM</strong>:
-picking a FortiWeb on the Architecture map and picking a FortiAuthenticator on
+picking a FortiWeb on the Service Diagram and picking a FortiAuthenticator on
 the FAC dashboard are two independent choices, and neither disturbs the other.
 The Global console reads FortiWeb's slot, as it always has.</p>
 <p><strong>An ADOM that holds exactly one appliance does not ask.</strong> With no choice to
@@ -359,7 +359,7 @@ moved and what did not:</p>
 selected or no layout imported for it yet (fresh install, offline node, no
 knowledge pack), the FortiWeb group keeps one entry, <strong>Server Policy</strong>. It
 opens the device's Server Policy view, SATOM's own Server Policy list with a
-notice when no layout exists, or the Fleet Map (Architecture), where you pick
+notice when no layout exists, or the Service Diagram, where you pick
 a device, when none is selected. The FortiGate and FortiAuthenticator ADOMs draw no device group in
 that case. Their dashboards, the page each ADOM opens on, still list SATOM's
 section pages (§17.2, §17.4).</p>
@@ -408,7 +408,7 @@ that will not come online.</p>
    server policy or WPP it is walking and how many are left.
 4. <strong>Deep capture</strong> — a deeper sweep that walks each server policy's whole
    object graph (pools, members, WAF profile sub-policies…). This is what
-   powers the DB-first policy detail and the Architecture map. Can run
+   powers the DB-first policy detail and the Service Diagram. Can run
    fleet-wide and is normally scheduled nightly.
 5. <strong>Factory catalog</strong> (the device's <strong>Web Protection Profile</strong> list in the
    FortiWeb menu → <em>Factory catalog</em>, or Template Library → <em>Factory catalog</em>;
@@ -1419,9 +1419,9 @@ Attack ID and WAF Artifacts. It is not on the Global console's WAF menu,
 because it is a FortiWeb-ADOM page and a link from Global would switch the
 tab's ADOM. The URL is <code>/web/exceptions/&lt;device id&gt;</code>.</p>
 <p>The page always works on one device: the one selected in the FortiWeb ADOM
-(§3.1). Pick it on the Architecture map (Fleet Map) or with <strong>change</strong> next to
+(§3.1). Pick it on the Service Diagram or with <strong>change</strong> next to
 the device name at the top of the sidebar. If no device is selected,
-<code>/web/exceptions/</code> sends you to the Architecture map to pick one.</p>
+<code>/web/exceptions/</code> sends you to the Service Diagram to pick one.</p>
 <p>The page title names the device: <strong>Exceptions &amp; Signature Carve-outs —
 <device></strong>. The carve-outs it lists are <em>desired state</em> recorded in SATOM.
 Authoring writes nothing to the box: pushing is a separate step. To see who
@@ -2109,12 +2109,12 @@ would switch the tab's ADOM.</p>
 <tr>
 <td><strong>Exceptions &amp; Signature</strong> (§9)</td>
 <td><code>/web/exceptions/&lt;device id&gt;</code></td>
-<td>Needed. With none selected, <code>/web/exceptions/</code> sends you to the Architecture map</td>
+<td>Needed. With none selected, <code>/web/exceptions/</code> sends you to the Service Diagram</td>
 </tr>
 <tr>
 <td><strong>WAF Artifacts</strong>: Object types · Inventory · Device audit</td>
 <td><code>/artifacts/</code>, <code>/artifacts/inventory</code>, <code>/artifacts/audit</code></td>
-<td>Needed. With none selected, each page sends you to the Architecture map with "Pick a device first"</td>
+<td>Needed. With none selected, each page sends you to the Service Diagram with "Pick a device first"</td>
 </tr>
 </tbody>
 </table>

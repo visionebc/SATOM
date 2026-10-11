@@ -112,6 +112,23 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--fortiadc-child-tables-are-edited-from-the-measured-pages">Added — FortiADC: child tables are edited from the measured pages</h3>
+<ul>
+<li><strong>Create New, Edit and Delete row on a FortiADC child table</strong> (pool members,
+  BFD interfaces, HA monitor lists…) now write the row under its parent object
+  (<code>POST|PUT|DELETE /api/&lt;parent&gt;_child_&lt;table&gt;?pkey=&lt;parent&gt;</code>), as the classic
+  ADC editor does: a dry run first, then the write, the change record, the
+  audit entry and a re-read. A child table posted as an object of its own is
+  refused (the row would land under no parent).</li>
+<li>A settings object that has no fields of its own (BFD, Connection Limit) now
+  counts as drawn by the page that lists its child table, so its old menu entry
+  moves there.</li>
+<li>With knowledge pack <code>kb-20261011.3</code> (harvester 0.9.5) the FortiADC pages bind
+  Routing › OSPF's settings to <code>router_ospf</code> (they were drawn over the area
+  table), split System Time into its manual and NTP objects, name GLB Host's
+  collection, and add High Availability › Configuration, Security Fabric ›
+  Automation and External Connectors, built from the device's schema.</li>
+</ul>
 <h3 id="changed--server-policy-one-list-with-its-actions-on-it">Changed — Server Policy: one list, with its actions on it</h3>
 <ul>
 <li><strong>Clone, Clone to, Migrate to, Enable, Disable and Delete run on the Server

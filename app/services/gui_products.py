@@ -24,8 +24,8 @@ FortiADC      live ``GET /api/<entity>`` (``vdom``    ``POST /api/<entity>``,
               cache for these pages); one object is   ?mkey=<name>`` through
               ``?mkey=<name>``; a settings entity     ``adc_ops.rest_call``;
               answers ONE object (singleton); a       mkey = the row's ``mkey``;
-              child table ``<parent>_child_<t>`` is   child tables read-only
-              read with ``?pkey=<parent>``            here
+              child table ``<parent>_child_<t>`` is   a child table row adds
+              read with ``?pkey=<parent>``            ``pkey=<parent>``
 ============  =====================================  ===========================
 
 Every FortiGate / FortiAuthenticator / FortiADC write goes through
@@ -694,15 +694,11 @@ class FortiADCAdapter(Adapter):
         return ADC_CHILD in (endpoint or "")
 
     def writable(self, endpoint):
-        # an entity, never one of its GET helpers nor a child table
-        return super().writable(endpoint) and bool(_ADC_ENTITY.fullmatch(endpoint or "")) \
-            and not self.is_child(endpoint)
+        # an entity (a child table too: its rows are written with ``pkey``),
+        # never one of its GET helpers
+        return super().writable(endpoint) and bool(_ADC_ENTITY.fullmatch(endpoint or ""))
 
     def refusal(self, endpoint):
-        if self.is_child(endpoint):
-            return ("%s is a FortiADC child table (its rows belong to one parent object): "
-                    "edit its rows from the parent in the FortiADC object editor; nothing "
-                    "is sent from this page" % endpoint)
         return ""
 
     @staticmethod
@@ -738,9 +734,13 @@ class FortiADCAdapter(Adapter):
         base = "/api/%s" % (endpoint or "").strip()
         return base + ("?" + urlencode({"mkey": str(mkey)}) if mkey not in (None, "") else "")
 
-    def request_path(self, appliance, op, endpoint, mkey):
+    def request_path(self, appliance, op, endpoint, mkey, pkey=None):
+        """``pkey``: the parent object of a child table row (``""`` for a
+        settings parent), sent as the classic ADC editor sends it."""
         base, _err = self.base_path(appliance, endpoint)
         params = {}
+        if pkey is not None and self.is_child(endpoint):
+            params["pkey"] = str(pkey)
         if op != "create":
             # a settings entity is addressed with an EMPTY mkey
             params["mkey"] = "" if mkey in (None, "") else str(mkey)
@@ -807,6 +807,19 @@ class FortiADCAdapter(Adapter):
             return [], err
         rows = [res] if isinstance(res, dict) else [r for r in (res or []) if isinstance(r, dict)]
         return [self.scrub(r) for r in rows], None
+
+    def child_read(self, appliance, endpoint: str, parent, mkey):
+        """One row of a child table of ``parent`` (None: not there / unread).
+        A settings parent has no name: its child rows read without ``pkey``
+        (measured on 7.6.7: ``router_bfd_child_interface``)."""
+        if parent:
+            rows, err = self.child_rows(appliance, endpoint, parent)
+        else:
+            rows, meta = self.rows(appliance, endpoint)
+            err = (meta or {}).get("error")
+        if err:
+            return None
+        return next((r for r in rows if str(r.get("mkey")) == str(mkey)), None)
 
     def read(self, appliance, endpoint, mkey):
         if read_only_endpoint(endpoint):
@@ -891,13 +904,18 @@ class GuiOps:
         self.appliance = appliance
         self.ad = adapter(appliance)
 
-    def request(self, op: str, endpoint: str, mkey: str | None, body) -> dict:
+    def request(self, op: str, endpoint: str, mkey: str | None, body, pkey=None) -> dict:
         method = self.METHODS.get(op) or self.ad.update_method
-        path = self.ad.request_path(self.appliance, op, endpoint, mkey)
+        if pkey is None:
+            path = self.ad.request_path(self.appliance, op, endpoint, mkey)
+        else:
+            path = self.ad.request_path(self.appliance, op, endpoint, mkey, pkey=pkey)
         return {"method": method, "path": path, "body": None if op == "delete" else body}
 
-    def run(self, op: str, endpoint: str, mkey: str | None, body, *, dry_run: bool = True) -> dict:
-        req = self.request(op, endpoint, mkey, body)
+    def run(self, op: str, endpoint: str, mkey: str | None, body, *, dry_run: bool = True,
+            pkey=None) -> dict:
+        """``pkey``: a FortiADC child table row is written under its parent."""
+        req = self.request(op, endpoint, mkey, body, pkey)
         if not self.ad.writable(endpoint):
             return {"ok": False, "dry_run": dry_run, "request": req,
                     "error": self.ad.refusal(endpoint)
@@ -913,7 +931,8 @@ class GuiOps:
             return {"ok": True, "dry_run": True, "request": req, "error": ""}
         before = None
         if op != "create":
-            before = self.ad.read(self.appliance, endpoint, mkey)
+            before = (self.ad.child_read(self.appliance, endpoint, pkey, mkey) if pkey is not None
+                      else self.ad.read(self.appliance, endpoint, mkey))
         try:
             ok, err = self.ad.send(self.appliance, req["method"], req["path"], req["body"])
         except Exception as exc:  # noqa: BLE001 -- a dead device is an answer

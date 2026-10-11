@@ -1833,8 +1833,8 @@ def _gx_writable_tables(appl, sources, can_edit) -> list:
     ad = gui_products.adapter(appl)
     return sorted(sid for sid, src in (sources or {}).items()
                   if (src.get('kind') == 'field' and can_edit)
-                  or (src.get('kind') == 'collection' and current_user.can('config_write')
-                      and ad.writable(src['endpoint'])))
+                  or (src.get('kind') in ('collection', 'child')
+                      and current_user.can('config_write') and ad.writable(src['endpoint'])))
 
 
 def _gx_render(appl, tpl, match, dev, dview, *, page, vi, coll, name, main, is_new,
@@ -2028,6 +2028,11 @@ def _gx_row(appl, page, t2, match, dev, vi, view, coll, name, main, key, src, ob
     elif src.get('kind') == 'collection':
         writable = writer and ad.writable(src['endpoint'])
         row_ctx = {'subtable': '', 'collection': src['endpoint'], 'source': 'collection'}
+    elif src.get('kind') == 'child':
+        # a FortiADC child table row: written under its parent (``pkey``)
+        writable = writer and ad.writable(src['endpoint']) and rows is not None \
+            and obj is not None
+        row_ctx = {'subtable': src['endpoint'], 'collection': '', 'source': 'child'}
     else:
         row_ctx = {'subtable': '', 'collection': '', 'source': src.get('kind') or ''}
     if is_new:
@@ -2203,6 +2208,76 @@ def _gx_save_row(appl, ad, tpl, coll, mkey, field, sub_id, op, fields, do_apply)
                    drift=drift, cache_refreshed=False)
 
 
+def _gx_child_allowed(tpl, coll, child, appl) -> bool:
+    """Is ``child`` a FortiADC child table of ``coll`` that this page's
+    layout draws (a table field of one of its dialogs)?"""
+    from ..services import gui_products
+    for d in (tpl.get('dialogs') or {}).values():
+        dep = d.get('endpoint') or coll
+        if dep != coll:
+            continue
+        for b in d.get('blocks') or []:
+            for f in b.get('fields') or []:
+                if f.get('kind') != 'table':
+                    continue
+                src = gui_products.table_source(appl.kind, dict(d, endpoint=dep), f,
+                                                tpl.get('dialogs') or {})
+                if src.get('kind') == 'child' and src.get('endpoint') == child:
+                    return True
+    return False
+
+
+def _gx_save_child(appl, ad, tpl, coll, parent, child, sub_id, op, fields, do_apply):
+    """Create / update / delete ONE row of a FortiADC child table: the row is
+    an object of its own under its parent (``POST|PUT|DELETE
+    /api/<parent>_child_<t>?pkey=<parent>[&mkey=<row>]``, as the classic ADC
+    editor writes it). Dry run first, then GuiOps (before-read, audit,
+    ChangeHistory), re-read, drift."""
+    from ..services import gui_products
+    if not _gx_child_allowed(tpl, coll, child, appl):
+        return jsonify(ok=False, error='not a table of this page'), 400
+    if not parent:
+        return jsonify(ok=False, error='name the parent object'), 400
+    before = None
+    if op != 'create':
+        before = ad.child_read(appl, child, parent, sub_id)
+        if before is None:
+            return jsonify(ok=False, error='row %s is not in %s of %s: nothing was sent'
+                           % (sub_id, child, parent)), 404
+    body = ad.payload(fields, before or {}) if op != 'delete' else None
+    res = gui_products.GuiOps(appl).run(op, child, None if op == 'create' else sub_id, body,
+                                        dry_run=not do_apply, pkey=parent)
+    diff = [{'key': '%s[%s].%s' % (child, sub_id or 'new', k), 'was': (before or {}).get(k),
+             'now': v} for k, v in (fields or {}).items()]
+    if op == 'delete':
+        diff = [{'key': '%s[%s]' % (child, sub_id), 'was': 'row', 'now': 'deleted'}]
+    drift, new_id = None, str(sub_id or '')
+    if do_apply and res['ok']:
+        ad.forget(appl, child)
+        rows, err = ad.child_rows(appl, child, parent)
+        if not err:
+            if op == 'create':
+                ident = str((body or {}).get('mkey') or '')
+                hit = next((r for r in rows if ident and str(r.get('mkey')) == ident), None)
+                if hit is None and rows:
+                    # FortiADC numbers a new row itself: the highest id is the new one
+                    hit = max(rows, key=lambda r: int(r['mkey']) if str(r.get('mkey', '')).isdigit()
+                              else -1)
+                new_id = str((hit or {}).get('mkey') or '')
+                drift = gui_products.drift(body or {}, hit or {})
+            elif op == 'update':
+                hit = next((r for r in rows if str(r.get('mkey')) == str(sub_id)), None)
+                drift = gui_products.drift(body or {}, hit or {})
+            else:
+                drift = ([{'key': '%s[%s]' % (child, sub_id), 'sent': 'deleted', 'now': 'present'}]
+                         if any(str(r.get('mkey')) == str(sub_id) for r in rows) else [])
+    return jsonify(ok=bool(res['ok']), dry_run=not do_apply, request=res.get('request'),
+                   diff=diff, error=res.get('error') or '', cli=None, cli_fields=[],
+                   mkey=parent, sub_id=new_id, channel_warnings=[],
+                   verified=None if (not do_apply or drift is None) else not drift,
+                   drift=drift, cache_refreshed=False)
+
+
 def _gx_save_cli(appl, ad, coll, mkey, op, fields, do_apply):
     """Save a FortiAuthenticator object only the CLI serves (``cli:``)
     through the CLI writer: only its CLI-only fields, gated per exact build
@@ -2279,6 +2354,12 @@ def fwgui_save(appliance_id):
                        or 'No API on this build (GUI only): nothing is sent'), 400
     if not isinstance(fields, dict) or (op in ('update', 'create') and not fields):
         return jsonify(ok=False, error='no changes to save'), 400
+    if product == gui_products.FORTIADC and ad.is_child(coll) and \
+            coll not in {v.get('endpoint') for v in gui_pages.views(tpl)}:
+        # a child table drawn inside its parent's dialog: a row written
+        # without the parent (``pkey``) would land under no object
+        return jsonify(ok=False, error='%s rows belong to a parent object: save them from '
+                                       'its table in the parent dialog' % coll), 400
     gui_only = sorted(set(fields) & _gx_gui_only_keys(tpl))
     if gui_only:
         return jsonify(ok=False, error='No API on this build (GUI only) for: %s; nothing was '
@@ -2291,15 +2372,21 @@ def fwgui_save(appliance_id):
             return jsonify(ok=False, error='a table row is not cloned'), 400
         if op != 'create' and not sub_id:
             return jsonify(ok=False, error='name the row'), 400
+        if product == gui_products.FORTIADC and ad.is_child(sub):
+            return _gx_save_child(appl, ad, tpl, coll, mkey, sub, sub_id, op, fields, do_apply)
         return _gx_save_row(appl, ad, tpl, coll, mkey, sub, sub_id, op, fields, do_apply)
     is_form = any(v.get('form') and v.get('endpoint') == coll for v in gui_pages.views(tpl))
     if op != 'create' and not mkey and not is_form:
         return jsonify(ok=False, error='name the object'), 400
     if op == 'clone':
         return _gx_clone(appl, ad, coll, mkey, str(body.get('new_name') or '').strip(), do_apply)
+    # a list view of a FortiADC child table (BFD interfaces): its parent is a
+    # settings object, which has no name -- rows are written with ``pkey=``
+    pkey = '' if product == gui_products.FORTIADC and ad.is_child(coll) else None
     orig = None
     if op != 'create':
-        orig = ad.read(appl, coll, mkey)
+        orig = (ad.child_read(appl, coll, '', mkey) if pkey is not None
+                else ad.read(appl, coll, mkey))
         if orig is None:
             return jsonify(ok=False, error='the device did not answer for %s %s: nothing was '
                                            'sent' % (coll, mkey)), 409
@@ -2318,7 +2405,7 @@ def fwgui_save(appliance_id):
     data = ad.payload(rest_fields, orig) if op != 'delete' else None
     ops = gui_products.GuiOps(appl)
     if op == 'delete' or rest_fields:
-        res = ops.run(op, coll, mkey, data, dry_run=not do_apply)
+        res = ops.run(op, coll, mkey, data, dry_run=not do_apply, pkey=pkey)
     else:
         res = {'ok': True, 'dry_run': not do_apply, 'request': None, 'error': ''}
     new_mkey = mkey
@@ -2335,14 +2422,16 @@ def fwgui_save(appliance_id):
         if hasattr(ad, 'forget'):
             ad.forget(appl, coll)
         if op != 'delete':
-            after = ad.read(appl, coll, new_mkey)
+            reread = ((lambda: ad.child_read(appl, coll, '', new_mkey)) if pkey is not None
+                      else (lambda: ad.read(appl, coll, new_mkey)))
+            after = reread()
             drift = gui_products.drift(data or {}, after)
             if drift:
                 # the device can answer a read before it has committed the
                 # write: one more read before calling it a difference
                 import time as _time
                 _time.sleep(1.0)
-                after = ad.read(appl, coll, new_mkey)
+                after = reread()
                 drift = gui_products.drift(data or {}, after)
         refreshed = ad.after_write(appl, coll, new_mkey,
                                    after if after is not None else {**(orig or {}), **(data or {})},

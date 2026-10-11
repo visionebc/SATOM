@@ -68,6 +68,11 @@ def page_map(appliance) -> dict:
                 names = [n for n in (lg, gui_products.lib_key(product, ep)) if n]
             else:
                 names = [ep]
+                if product == gui_products.FORTIADC and gui_products.ADC_CHILD in ep:
+                    # a list of a settings object's child table (BFD
+                    # interfaces, Connection Limit rules) is where that
+                    # settings object lives: it has no fields of its own
+                    names.append(ep.split(gui_products.ADC_CHILD)[0])
             for ln in names:
                 out.setdefault(ln, {"page": e["page"], "v": i})
     _map_cache[key] = (time.monotonic(), out)

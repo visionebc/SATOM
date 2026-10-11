@@ -2404,8 +2404,18 @@ curated menu is the **fallback**: a FortiADC whose firmware build has a measured
 layout in the knowledge packs draws its own menu instead, like the FortiWeb,
 FortiGate and FortiAuthenticator ADOMs (§3.2). On those measured pages rows are
 read live from the device's REST API (SATOM keeps no FortiADC configuration
-cache for them), child tables are read-only, and a write runs dry first, then
-sends, records the change and audits it; secrets are never echoed back.
+cache for them), and a write runs dry first, then sends, records the change and
+audits it; secrets are never echoed back.
+
+- **Child tables** (pool members, BFD interfaces, HA monitor lists…) are edited
+  from their parent's dialog: **Create New**, **Edit** and **Delete row** write
+  the row under its parent (`?pkey=<parent>`), with the same dry run first. A
+  row is never written as an object of its own.
+- Pages FortiADC draws with a custom widget SATOM cannot measure (High
+  Availability › Configuration, Security Fabric › Automation and External
+  Connectors) are built from the device's own schema, the metadata the
+  FortiADC GUI builds its generic forms from: the fields and their types are the
+  device's, the layout on screen is SATOM's.
 
 - Object pages use the same form engine: identity/mkey handling, child tables
   (e.g. pool members) derived automatically, dry-run previews, audit on

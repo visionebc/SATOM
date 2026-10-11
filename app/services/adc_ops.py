@@ -239,6 +239,42 @@ def model_inventory_from(p: dict) -> tuple[str | None, str | None, str | None]:
 
 
 # --------------------------------------------------------------------------- #
+#  REST door of the measured GUI pages (services.gui_products)                 #
+# --------------------------------------------------------------------------- #
+
+def rest_call(appliance, method: str, path: str, *, params: dict | None = None,
+              body=None, timeout: float = 20.0) -> tuple:
+    """``(payload, error)`` of ONE call on an already-resolved FortiADC path
+    (``/api/<entity>``), for the measured GUI pages' adapter
+    (``gui_products.FortiADCAdapter``).
+
+    The payload is what the device put in its ``{"payload": ...}`` envelope,
+    unflattened: a list for a collection, an object for a settings singleton
+    (``system_global``), a number for a write. A device refusal (HTTP >= 400,
+    a negative errcode payload) and a transport failure come back as
+    ``error`` -- never raised, never an empty list. Kept here so the
+    fleet-wide GUI engine never constructs the ADC client itself (the import
+    direction ``tests/test_product_separation.py`` locks)."""
+    from ..clients.fortiadc import FortiADCClient
+
+    try:
+        client = FortiADCClient(appliance, timeout=timeout)
+        kw = {"params": params or None}
+        if body is not None:
+            kw["json"] = body
+        resp = client._api(method.upper(), path, **kw)
+    except Exception as exc:  # noqa: BLE001 -- a dead device is an answer
+        return None, f"{type(exc).__name__}: {exc}"
+    err = FortiADCClient._device_error(resp)
+    if err:
+        return None, err
+    try:
+        return FortiADCClient._payload(resp), None
+    except Exception as exc:  # noqa: BLE001
+        return None, f"unparseable response body: {type(exc).__name__}"
+
+
+# --------------------------------------------------------------------------- #
 #  Virtual Server Inspector — the ADC counterpart of the Policy Inspector      #
 # --------------------------------------------------------------------------- #
 

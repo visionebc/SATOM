@@ -1327,15 +1327,16 @@ def fwgui_refresh(appliance_id, page):
     from flask import flash, redirect, url_for
     from ..services import device_sync, gui_products
     appl = visible_appliance_or_404(appliance_id)
-    if appl.kind in ('fortigate', 'fortiauthenticator'):
-        # FortiGate: SATOM keeps no config cache, the pages read the device;
-        # FortiAuthenticator: its CLI-only objects are read over SSH. Refresh
-        # drops the few-second read memo so the next draw is fresh
+    if appl.kind in ('fortigate', 'fortiauthenticator', 'fortiadc'):
+        # FortiGate / FortiADC: SATOM keeps no config cache for these pages,
+        # they read the device; FortiAuthenticator: its CLI-only objects are
+        # read over SSH. Refresh drops the few-second read memo so the next
+        # draw is fresh
         tpl, _m = _fwgui_tpl(appl, page)
         from ..services import gui_pages
         for v in gui_pages.views(tpl):
             gui_products.adapter(appl).forget(appl, v.get('endpoint') or '')
-    if appl.kind == 'fortigate':
+    if appl.kind in ('fortigate', 'fortiadc'):
         flash(f"Re-read from {appl.name}.", "success")
         return redirect(url_for('workspace.fwgui_list', appliance_id=appl.id, page=page,
                                 v=request.form.get('v') or None))
@@ -1665,6 +1666,12 @@ def _gx_subrows(appl, ad, sources, obj, *, new=False):
                 # object does not carry is unknown
                 out[sid] = [] if (obj is not None and src['field'] in obj
                                   and v in (None, '')) else None
+        elif src['kind'] == 'child':
+            # a FortiADC child table: the rows of THIS object (?pkey=)
+            rows, err = ad.child_rows(appl, src['endpoint'], ad.mkey_of(obj or {}))
+            out[sid] = None if err or obj is None else [
+                dict(ad.form_row(r), id=ad.mkey_of(r, src['endpoint']) or gui_products.row_id(r))
+                for r in rows]
         else:
             rows, meta = ad.rows(appl, src['endpoint'])
             out[sid] = None if (meta or {}).get('error') else [
@@ -1729,8 +1736,10 @@ def _gx_nig(appl, coll, obj, can_edit):
         return None, None
     key = _gx_lib_key(appl, coll)
     ad = gui_products.adapter(appl)
+    # bookkeeping keys and the object's own name (FortiADC ``mkey``) are not
+    # fields the GUI hides
     noise = (lambda k: k.startswith(('q_', '!')) or '.' in k
-             or k in ('resource_uri', 'id', '_edit') or ad.secret(k, None))
+             or k in ('resource_uri', 'id', '_edit', 'mkey') or ad.secret(k, None))
     if can_edit and obj is not None:
         try:
             _g, sec = not_in_gui.apply_to_groups(appl, key, obj, [], noise=noise,
@@ -2007,16 +2016,18 @@ def _gx_new(appl, page, tpl, match, dialog):
 
 def _gx_find_created(ad, appl, coll, body):
     """The mkey of an object just created (FortiOS answers it as ``mkey``;
-    Tastypie gives no id back): looked up by the identity field sent."""
+    Tastypie gives no id back): looked up by the identity field sent
+    (FortiADC: the ``mkey`` itself)."""
     ad.forget(appl, coll) if hasattr(ad, 'forget') else None
-    rows, _m = ad.rows(appl, coll) if appl.kind == 'fortigate' else ([], None)
-    if appl.kind != 'fortigate':
+    if appl.kind == 'fortiauthenticator':
         _lg, path = ad.resolve(appl, coll)
         try:
             rows, _e = ad._client(appl).list_path_with_error(path)
         except Exception:  # noqa: BLE001
             rows = []
-    for ident in ('name', 'username', 'label', 'policyid', 'id'):
+    else:
+        rows, _m = ad.rows(appl, coll)
+    for ident in ('name', 'username', 'label', 'mkey', 'policyid', 'id'):
         if ident in (body or {}):
             hit = next((r for r in rows or [] if str(r.get(ident)) == str(body[ident])), None)
             if hit is not None:
@@ -2185,7 +2196,8 @@ def fwgui_save(appliance_id):
         return jsonify(ok=False, error='endpoint not allowed'), 400
     ad = gui_products.adapter(appl)
     if not ad.writable(coll):
-        return jsonify(ok=False, error='No API on this build (GUI only): nothing is sent'), 400
+        return jsonify(ok=False, error=ad.refusal(coll)
+                       or 'No API on this build (GUI only): nothing is sent'), 400
     if not isinstance(fields, dict) or (op in ('update', 'create') and not fields):
         return jsonify(ok=False, error='no changes to save'), 400
     gui_only = sorted(set(fields) & _gx_gui_only_keys(tpl))

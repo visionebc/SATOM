@@ -1254,11 +1254,17 @@ def _satom_row_actions(appl, view, page=None, vi=0, label=''):
     from .objedit import _WPP_COLLECTIONS
     out = {'wpp': False, 'wpp_list': False, 'locked': [], 'section': '', 'lib': None,
            'hide_default': False, 'import_url': '', 'generate_url': '', 'create_url': '',
-           'artifact_kind': '', 'artifact_label': '',
+           'artifact_kind': '', 'artifact_label': '', 'sig_editor': '',
            'can_template': current_user.can('operations.template_save')}
     ep = objform.collection_of(view.get('endpoint') or '')
     if not ep or view.get('read_live'):
         return out
+    if ep == 'waf/signature' and current_user.can('protection.view'):
+        # SATOM's signature editor (catalog search, per-signature exception,
+        # alert-only) was linked only from the classic Web Protection page,
+        # which now redirects here: without this the editor had no way in.
+        out['sig_editor'] = url_for('web_protection.signature_policy', id=appl.id,
+                                    name='__MKEY__')
     if any(ep == c for c in _WPP_COLLECTIONS):
         out['wpp'] = ep == _WPP_COLLECTIONS[0]   # deep clone walks inline WPPs
         out['wpp_list'] = True

@@ -70,6 +70,7 @@
     <button type="button" class="btn btn-fw-danger btn-sm" aria-disabled="true" data-fwg-delete><i class="bi bi-trash me-1"></i>{{ _('Delete') }}</button>
     {% endif %}
     {% if can_edit and _fwp and satom is defined and satom.wpp %}<button type="button" class="btn btn-secondary btn-sm" aria-disabled="true" data-fwg-deepclone title="{{ _('Copy the profile AND the objects it references (sub-policies, signatures, rules) under new names, as the classic page did.') }}"><i class="bi bi-diagram-3 me-1"></i>{{ _('Deep clone') }}</button>{% endif %}
+    {% if satom is defined and satom and satom.sig_editor %}<button type="button" class="btn btn-secondary btn-sm" aria-disabled="true" data-fwg-sigedit data-url="{{ satom.sig_editor }}" title="{{ _('Open the selected signature profile in the SATOM signature editor: search the signature catalog, add a per-signature exception, switch a signature to alert-only.') }}"><i class="bi bi-shield-check me-1"></i>{{ _('Signature editor') }}</button>{% endif %}
     {% if _fwp and satom is defined and satom.can_template and (satom.wpp or satom.section) %}<button type="button" class="btn btn-secondary btn-sm" aria-disabled="true" data-fwg-savetpl title="{{ _('Read the selected object from the device and save it to the Template Library as a pending template.') }}"><i class="bi bi-bookmark-plus me-1"></i>{{ _('Save as template') }}</button>{% endif %}
     <div class="fw-search-box">
       <i class="bi bi-search search-icon" aria-hidden="true"></i>
@@ -150,6 +151,7 @@
   var clone = pane.querySelector('[data-fwg-clone]');
   var deep = pane.querySelector('[data-fwg-deepclone]');
   var savetpl = pane.querySelector('[data-fwg-savetpl]');
+  var sigedit = pane.querySelector('[data-fwg-sigedit]');
   var SATOM = {{ ({'wpp': satom.wpp, 'section': satom.section} if satom is defined and satom else {})|tojson }};
   var all = Array.prototype.slice.call(pane.querySelectorAll('tbody tr[data-mkey]'));
   var current = null;
@@ -160,7 +162,7 @@
     edit.setAttribute('href', href || '#');
     edit.setAttribute('aria-disabled', href ? 'false' : 'true');
     var locked = !!(tr && tr.dataset.locked);
-    [del, clone, deep, savetpl].forEach(function (b) { if (b) b.setAttribute('aria-disabled', tr ? 'false' : 'true'); });
+    [del, clone, deep, savetpl, sigedit].forEach(function (b) { if (b) b.setAttribute('aria-disabled', tr ? 'false' : 'true'); });
     // a template-managed profile is read-only here: no Delete, and its
     // dialog opens for viewing (the server refuses a save anyway)
     if (del && locked) del.setAttribute('aria-disabled', 'true');
@@ -179,6 +181,10 @@
   }
   function fail(j) { alert('Error: ' + ((j && j.error) || 'failed')); }
   if (edit) edit.dataset.label = edit.innerHTML;
+  if (sigedit) sigedit.addEventListener('click', function () {
+    if (!current) return;
+    window.location.href = sigedit.dataset.url.replace('__MKEY__', encodeURIComponent(current.dataset.mkey));
+  });
   if (deep) deep.addEventListener('click', function () {
     if (!current) return;
     var src = current.dataset.mkey;

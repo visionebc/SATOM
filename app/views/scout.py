@@ -143,13 +143,14 @@ def index():
         "field_help": scout_config.walk_help(),
         "report": None,
         "error": "",
-        # appliance_id/policy also come from the query string: Fleet ->
+        # appliance_id/policy/hostname/port/scheme also come from the query
+        # string: Fleet ->
         # Architecture links a device element straight to its Scout form.
         "form": {"appliance_id": request.values.get("appliance_id", ""),
                  "policy": request.values.get("policy", ""),
-                 "hostname": request.form.get("hostname", ""),
-                 "port": request.form.get("port", ""),
-                 "scheme": request.form.get("scheme", "https"),
+                 "hostname": request.values.get("hostname", ""),
+                 "port": request.values.get("port", ""),
+                 "scheme": request.values.get("scheme", "https"),
                  "path": request.form.get("path", "/"),
                  # A checkbox that was cleared and posted sends nothing,
                  # which is indistinguishable from "not on this form". On a

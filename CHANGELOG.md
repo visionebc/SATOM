@@ -25,6 +25,10 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - Secrets are removed from every answer and from the audited request body.
 - A FortiGate object that is not there (a `404` on `…/<table>/<key>`) now
   reads "no such object on the device" instead of blaming the firmware.
+- The FortiGate section pages read each tab at the path the endpoint registry
+  resolves for the box's build, so a table renamed by an upgrade is fixed by a
+  Registry edit. A table the registry does not serve on that build says so,
+  and the device is not asked.
 
 ### Changed — one menu order in every ADOM
 

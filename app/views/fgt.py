@@ -2,7 +2,9 @@
 
 A dashboard with the device picker and the live unit status, plus one
 read-only section page per sidebar leaf (:mod:`app.services.fgt_menu`). Each
-tab is ONE cmdb read through :class:`app.clients.fortigate.FortiGateClient`.
+tab is ONE cmdb read through :class:`app.clients.fortigate.FortiGateClient`,
+at the path the endpoint registry resolves for the box's build
+(:func:`resolve_tab`).
 
 Read-only on purpose: these section pages edit nothing. Writes go through the
 measured GUI pages (``services.gui_products``) and the API console
@@ -131,10 +133,37 @@ def _not_in_gui(appliance, path, results):
                                noise=lambda k: k.startswith('q_') or _is_secret(k, None))
 
 
+def resolve_tab(appliance, path: str) -> tuple[str, str | None]:
+    """(cmdb path to read, error) for one menu tab on THIS box's build.
+
+    The tab names a table; the endpoint registry says where that table lives
+    on the build the box runs (``loader.resolve_for``: an operator's re-point
+    wins, then what the library measured on that build). A table the build
+    does not serve, or that an operator disabled, is an error with the reason
+    — never a silent read of the literal path.
+    """
+    from ..registry import loader
+    try:
+        urn = loader.resolve_for('fortigate', loader.fgt_logical(path),
+                                 loader.version_of(appliance))
+    except KeyError as exc:
+        return path, str(exc)
+    prefix = '/api/v2/cmdb/'
+    if not urn.startswith(prefix):
+        return path, f'registry entry for {path} is not a cmdb table: {urn}'
+    return urn[len(prefix):], None
+
+
 def _load_tab(appliance, path: str, label: str) -> dict:
-    tab = {'path': path, 'label': label, 'url': cmdb_url(path),
-           'rows': [], 'kv': None, 'columns': [], 'error': None,
-           'truncated': False, 'total': 0}
+    read_path, err = resolve_tab(appliance, path)
+    tab = {'path': path, 'label': label, 'url': cmdb_url(read_path),
+           'rows': [], 'kv': None, 'columns': [], 'error': err,
+           'truncated': False, 'total': 0,
+           # the registry said no: the device was never asked
+           'not_served': bool(err)}
+    if err:
+        return tab
+    path = read_path
     results, err = FortiGateClient(appliance, timeout=20.0).cmdb(path)
     if err:
         tab['error'] = err

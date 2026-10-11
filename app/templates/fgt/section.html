@@ -54,7 +54,12 @@
     {% endif %}
   </div>
 
-  {% if tab.error %}
+  {% if tab.error and tab.not_served %}
+  <div class="alert alert-warning" style="font-size:13px;">
+    <strong>{{ _('The endpoint registry does not serve this table on this build — the device was not asked.') }}</strong>
+    <div class="mt-1"><code>{{ tab.error }}</code></div>
+  </div>
+  {% elif tab.error %}
   <div class="alert alert-danger" style="font-size:13px;">
     <strong>The device refused this read{% if tab.total %} after {{ tab.total }} rows{% endif %}.</strong>
     <div class="mt-1"><code>{{ tab.error }}</code></div>

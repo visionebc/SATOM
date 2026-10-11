@@ -11,15 +11,15 @@ with the read-only ``satom-ro`` profile. ``tests/test_fgt_adom.py`` pins the
 list against that capture, so a typo cannot ship as a 400 page.
 
 Each tab path has a registry name (:func:`bound_logicals`, through
-``registry.loader.fgt_logical``): the FortiGate API console
+``registry.loader.fgt_logical``). The section pages READ through it
+(``views.fgt.resolve_tab``: a rename after an upgrade is a Registry edit, as
+on FortiWeb/FAC), and the FortiGate API console
 (``views/fgt_api.py``) groups its catalog by this menu, and
 ``tests/test_fgt_api.py`` asserts every one of those names is in the shipped
 baseline.
 
 What the base deliberately does NOT do yet:
 
-* resolve its tabs through that registry (the FortiWeb/FAC "rename after an
-  upgrade is a Registry edit" contract) — section-page paths are literal;
 * write anything from a section page — they are read-only tables (writes go
   through the measured GUI pages and the API console);
 * cover the whole GUI — only the panes an operator opens first. The full

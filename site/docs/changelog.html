@@ -129,6 +129,8 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   tree holds device actions such as reboot), and a <code>DELETE</code> on a whole table
   is refused. An <strong>Object key</strong> field URL-encodes names such as <code>{ip}/24</code>.</li>
 <li>Secrets are removed from every answer and from the audited request body.</li>
+<li>A FortiGate object that is not there (a <code>404</code> on <code>…/&lt;table&gt;/&lt;key&gt;</code>) now
+  reads "no such object on the device" instead of blaming the firmware.</li>
 </ul>
 <h3 id="changed--one-menu-order-in-every-adom">Changed — one menu order in every ADOM</h3>
 <ul>

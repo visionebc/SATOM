@@ -6,6 +6,35 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Fleet → Architecture: drawn network diagrams with a live overlay
+
+- New page **Fleet → Architecture** (`/net-architecture/`), in every ADOM.
+  Operators draw the path of a service (Internet, LAN, segments/VLANs,
+  FortiGate, FortiWeb, FortiADC, FortiAuthenticator, FortiAnalyzer,
+  back-end servers, management hosts), link the elements and bind each device
+  element to its SATOM appliance. Drawings are stored (`arch_diagrams`);
+  saving needs `config_write` and is audited (`netarch.create/save/delete`).
+- **Read devices** reads the bound devices now, read-only and in parallel:
+  FortiGate interfaces and firewall policies with hit count, bytes and last
+  use (and the implicit-deny counter). Each policy is drawn from its source
+  segment to its destination segment through the segments bound to the
+  firewall's interfaces (by interface name, or by the CIDR that holds the
+  port's address); an interface with nothing drawn behind it is reported.
+  Back-end elements with a probe URL get one HTTP GET (status, latency, one
+  header). Nothing read is cached.
+- A drawing with any error is refused whole. A binding to a device the ADOM
+  cannot see, or of the wrong kind, is refused on save; a stored one is drawn
+  but never read or linked from that ADOM.
+- Device elements link to Scout (appliance pre-selected) and Sentinel. Scout
+  now takes `appliance_id` and `policy` from the query string as well as the
+  form.
+
+### Fixed — "Architecture" still named the Service Diagram in two places
+
+- The Concept Map and the user guide's Fleet tools list still called the
+  Service Diagram "Architecture" after the rename; both now say Service
+  Diagram, and "Architecture" is the new drawing page.
+
 ### Added — FortiGate API: endpoint registry and live console
 
 - The FortiGate ADOM has an **API** group like the other four ADOMs, and its

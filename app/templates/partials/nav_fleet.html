@@ -56,6 +56,10 @@
   <i class="bi bi-file-diff fw-nav-icon"></i><span>{{ _('Config Compare') }}</span></a>
 {% endif %}
 {% endif %}
+{% if may_open('netarch.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'netarch' else '' }}" href="{{ url_for('netarch.index') }}">
+  <i class="bi bi-bounding-box-circles fw-nav-icon"></i><span>{{ _('Architecture') }}</span></a>
+{% endif %}
 {% if may_open('architecture.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
   <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Service Diagram') }}</span></a>

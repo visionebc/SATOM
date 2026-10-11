@@ -1751,7 +1751,52 @@ device.
 
 All in the Global ADOM (also linked from product Fleet groups):
 
-- **Architecture** — an SVG network-design diagram of the whole fleet:
+### 13.0 Architecture: drawing the path, reading the devices
+
+**Fleet → Architecture** (`/net-architecture/`) is the drawn counterpart of the
+Service Diagram. The Service Diagram is derived from the FortiWeb cache; an
+Architecture drawing is what you say the network is, and SATOM checks it
+against what the devices say.
+
+- **Drawing.** Pick an element type and **Add**, drag it into place, **Link**
+  two elements, fill the inspector on the right (label, IP or CIDR, VLAN tag,
+  the SATOM appliance it is, a probe URL), **Save**. Saving needs
+  `config_write`; viewing does not. A drawing with any error — a link to an
+  element that is not there, two elements with one id, a CIDR that is not a
+  network, a binding to a device of the wrong kind — is refused whole and
+  nothing is stored.
+- **Networks behind a firewall.** A LAN or segment element names the
+  FortiGate element it sits behind and, optionally, the interface (`port2`).
+  Without an interface name, the segment is matched to the FortiGate port
+  whose address its CIDR contains. That binding is what puts firewall
+  policies on the drawing.
+- **Read devices** reads, now and read-only, every bound device the current
+  ADOM can see: for a FortiGate its interfaces (address, link, RX/TX) and its
+  policies (interfaces, addresses, services, action, NAT, **hit count, bytes,
+  last use**), plus the implicit-deny counter. Each policy is drawn as an arrow
+  from its source segment to its destination segment (green accept, red
+  deny); click a policy in the inspector to light up its path. A policy whose
+  interface has nothing drawn behind it says **not drawn: portN** instead of
+  disappearing. Back-end elements with a probe URL get one HTTP GET from SATOM
+  (status, latency, one response header of your choice). Nothing read is
+  stored or cached.
+- **Scope.** An element bound to a device of another ADOM is drawn but not
+  read or linked; open the Global ADOM to read it. Binding an element to a
+  device you cannot see is refused on save.
+- **Scout and Sentinel.** A bound device element links to its Device page,
+  to **Scout** with that appliance already selected, and to **Sentinel**.
+- **What it cannot see.** Switches: draw the segments they carry. A FortiGate
+  is read over REST with the token SATOM already holds.
+
+
+- **Architecture** — network diagrams you draw yourself (§13.0). Place the
+  elements of a service path (Internet, LAN, segments/VLANs, FortiGate,
+  FortiWeb, FortiADC, FortiAuthenticator, FortiAnalyzer, back-end servers,
+  management hosts), link them, and SATOM lays the devices' own data on top:
+  FortiGate interfaces and policies with hit counters, each policy drawn from
+  its source segment to its destination segment, and an HTTP probe of every
+  back-end with a URL. Device elements link to Scout and Sentinel.
+- **Service Diagram** — an SVG network-design diagram of the whole fleet:
   Internet → published services (VIP:port, TLS lock) → appliance chassis →
   pools → backend stacks, grouped in zones. Hover lights up a service's full
   path; search (IP/device/policy/profile/pool) focuses the view; click any
@@ -6568,7 +6613,7 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (117 today) or **excluded with a written
+   the console is either **on the map** (118 today) or **excluded with a written
    reason** (144 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.

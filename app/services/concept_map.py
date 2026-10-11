@@ -210,9 +210,15 @@ PAGES: tuple[dict, ...] = (
     _p("appliances.index", "Appliances", "fleet",
        "devices inventory appliance host add register credentials ip serial model",
        "The device inventory — every managed box and how SATOM reaches it."),
-    _p("architecture.index", "Architecture", "fleet",
+    _p("architecture.index", "Service Diagram", "fleet",
        "topology map diagram network wiring vip service graph",
        "Whole-fleet service topology drawn from the device cache."),
+    _p("netarch.index", "Architecture", "fleet",
+       "architecture drawing design network segments vlan firewall policy "
+       "flow hits traffic from where to where backend probe fortigate "
+       "interfaces scout sentinel",
+       "Operator-drawn network diagrams: FortiGate interfaces and policies "
+       "with hit counters, drawn segment to segment, plus back-end probes."),
     _p("fleet_objects.index", "Fleet Objects", "fleet",
        "objects across devices compare duplicate inventory pools servers",
        "One object type across every device at once."),

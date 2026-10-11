@@ -214,8 +214,12 @@ POST-only resources are <code>auth</code>, <code>emergencytoken</code>, <code>id
 <td><code>app/clients/fortiauthenticator.py</code></td>
 </tr>
 <tr>
-<td>Sidebar / section map</td>
+<td>Dashboard section map, API console grouping, harvest list</td>
 <td><code>app/services/fac_menu.py</code></td>
+</tr>
+<tr>
+<td>Sidebar (the device's own GUI menu, from measured layouts)</td>
+<td><code>app/services/gui_pages.py</code>, <code>app/templates/partials/nav_gx.html</code></td>
 </tr>
 <tr>
 <td>Section pages</td>
@@ -244,6 +248,14 @@ serves on <code>GET /</code> to an authenticated session — <strong>6 groups, 1
 is a stronger source than the administration guide (which is what the
 FortiAnalyzer menu was crawled from), because it is what <em>this firmware</em>
 actually renders.</p>
+<p><strong>Not the sidebar any more (since 2026-10-11).</strong> The FortiAuthenticator ADOM's
+sidebar no longer draws these groups. It draws the device's own menu, built
+from the measured GUI layout of the device's firmware build (knowledge packs),
+with <strong>All pages</strong> listing every page in the device's menu order. <code>fac_menu.py</code>
+still drives the dashboard's section map, the API console's grouping and the
+configuration harvest. An old section URL whose resources a measured page draws
+redirects to that page (<code>?classic=1</code> keeps the old one); resources no measured
+page draws yet have no sidebar entry until their pages are crawled.</p>
 <p>The GUI is much wider than the API: 129 leaves against 40 readable resources.
 <strong>16 of the 28 section pages have no bound endpoint</strong> and say so, rather than
 rendering an empty table that reads as "nothing is configured on this device".

@@ -254,9 +254,14 @@ admin guide (per-module action sets vary; this is the union):</p>
 </ul>
 <hr>
 <h2 id="5-editing-model-how-the-app-exposes-all-of-this">5. Editing model (how the app exposes all of this)</h2>
-<p>The WPP is edited from <strong>Web Protection</strong> (main sidebar; CONFIG_WRITE + unlock) via
-the generic object editor — <code>app/views/objedit.py</code> (<code>edit</code>) rendering
-<code>app/templates/objedit/editor.html</code> — the FortiWeb-style form. Each sub-policy is a
+<p>The WPP list is the <strong>Web Protection Profile</strong> page of the device's own FortiWeb
+menu (sidebar → <strong>FortiWeb</strong>; the old <strong>Web Protection</strong> page redirects there).
+Its <strong>Edit</strong> opens the profile in FortiWeb's GUI layout for the device's build
+(<code>workspace.fwgui_object</code>), which saves through the guarded endpoints of the
+generic object editor (CONFIG_WRITE + unlock). That editor —
+<code>app/views/objedit.py</code> (<code>edit</code>) rendering <code>app/templates/objedit/editor.html</code> —
+is also opened directly (a reference's ✎, or Create New where FortiWeb's layout
+has none) and is the FortiWeb-style form described below. Each sub-policy is a
 dropdown with <strong>Edit…</strong> (open the selected object) and <strong>＋</strong> (create a new one).
 Every referenced object — and every level below it — is a curated <strong>kind</strong> in
 <code>app/registry/data/waf_specs.json</code> (166 kinds), merged into
@@ -276,7 +281,7 @@ ever uneditable. Every write goes through <code>FortiWebOps</code> (snapshot + a
 change-history + dry-run; unlock + confirm on a real write) — never a blind write.
 WPP <strong>contents</strong> are read-only from a live Server Policy (the policy form's WPP is a
 changeable <em>dropdown</em>, "View profile details" opens it read-only); they are edited
-here on the Web Protection page or, as desired-state templates, in Settings →
+from the device's Web Protection Profile page (above) or, as desired-state templates, in Settings →
 Templates (locked references → clone to edit).</p>
 <hr>
 <h2 id="6-shared-vs-owned">6. Shared vs owned</h2>
@@ -325,8 +330,12 @@ policy reused across the fleet). So:</p>
 <td><code>app/services/objform.py</code> + <code>app/services/fortiweb_field_schema.py</code> (<code>KIND_SPECS</code>, <code>build_groups</code>); the ref <code>✎</code> comes from <code>objedit._enable_ref_actions</code></td>
 </tr>
 <tr>
-<td>Web Protection page (device → WPP → form)</td>
-<td><code>app/views/web_protection.py</code> + <code>app/templates/web_protection/overview.html</code> (left menu: <code>app/services/wp_menu.py</code>)</td>
+<td>WPP list and edit form (FortiWeb menu → Web Protection Profile → Edit)</td>
+<td><code>app/views/workspace.py</code> (<code>fwgui_list</code>, <code>fwgui_object</code>) + <code>app/templates/workspace/fwgui_list.html</code>, <code>gui_dialog.html</code></td>
+</tr>
+<tr>
+<td>Classic Web Protection page (redirects to the FortiWeb page unless <code>?classic=1</code>)</td>
+<td><code>app/views/web_protection.py</code> + <code>app/templates/web_protection/overview.html</code> (<code>app/services/wp_menu.py</code>)</td>
 </tr>
 <tr>
 <td>CRUD with snapshot + audit + dry-run</td>

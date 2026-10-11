@@ -51,8 +51,13 @@ the recommended choice: the ADOM only ever sends `GET`.
 2. On the dashboard, **Select** the FortiGate to work with (one slot per ADOM,
    per browser tab — user guide §3.1). With exactly one FortiGate registered it
    is selected for you.
-3. Open any section from the sidebar or the dashboard map. Each tab is one cmdb
-   read, shown as a table (a single-instance setting is shown as key/value).
+3. Open a page from the sidebar or a section from the dashboard map. The
+   sidebar's **FortiGate** group is the device's own menu, built from the
+   measured GUI layout of its firmware build (knowledge packs); **All pages**
+   lists every page in the device's menu order. On the dashboard map, a section
+   whose every tab a measured page draws opens that page; any other section
+   opens its section page, where each tab is one cmdb read, shown as a table
+   (a single-instance setting is shown as key/value).
 
 What every section page guarantees:
 

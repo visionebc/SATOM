@@ -66,7 +66,7 @@
       <a href="#4-field-reference-fortiweb-764">4. Field reference (FortiWeb 7.6.4)</a>
       <a href="#5-where-it-lives-in-the-repo">5. Where it lives in the repo</a>
       <a href="#6-inject-to-the-device-save-to-policy">6. Inject to the device (&quot;save to policy&quot;)</a>
-      <a href="#7-git-share-multi-user-desired-state">7. Git-share (multi-user desired-state)</a>
+      <a href="#7-sharing-between-operators">7. Sharing between operators</a>
       <a href="#8-caveats--not-yet">8. Caveats / not yet</a>
       <a href="#9-signature-carve-outs--same-model-same-page-store-v8">9. Signature carve-outs — same model, SAME page (store v8)</a>
     </aside>
@@ -91,10 +91,13 @@ carve-out was authored for</strong>. The team's rule:</p>
 <li><strong>WPP templates stay clean</strong> — they carry no exceptions (enforced:
    <code>TemplateLibrary.save</code> rejects a <code>web-protection-profile</code> body with exception
    objects/refs, via <code>services.exceptions.body_exception_markers</code>).</li>
-<li>To except, <strong>clone</strong> a profile (Operations → Clone → WPP) into a non-template,
-   live profile and bind it to the Server Policy.</li>
-<li>Author the exceptions on the <strong>Exceptions</strong> page (sidebar, under Web
-   Protection). They are stored as <strong>desired-state</strong> in the app DB — never written
+<li>To except, <strong>clone</strong> a profile into a non-template, live profile and bind it
+   to the Server Policy: the guided WPP clone on the <strong>Exceptions &amp; Signature</strong>
+   page deep-clones it as <code>wpp-{policy}</code> and re-binds the policy; <strong>Deep clone</strong>
+   on the device's Web Protection Profile list copies the profile and the
+   objects it references.</li>
+<li>Author the exceptions on the <strong>Exceptions &amp; Signature</strong> page (FortiWeb ADOM
+   sidebar → <strong>Fleet → WAF</strong>). They are stored as <strong>desired-state</strong> in the app DB — never written
    to the box from here; injection to FortiWeb is a separate step.</li>
 </ol>
 <p>The page also produces the <strong>alignment report</strong>: FortiWeb → Server Policy → WPP →
@@ -585,21 +588,12 @@ the <strong>auto-bind</strong> UPDATE above is plumbed + unit-tested (fakes) but
 names are SDK-derived and <strong>not yet round-tripped on a box</strong> — <code>dry_run</code> stays the
 default, review the plan first.</p>
 </blockquote>
-<h2 id="7-git-share-multi-user-desired-state">7. Git-share (multi-user desired-state)</h2>
-<p>Exceptions live in each operator's LOCAL DB, so <code>services/exception_sync.py</code> shares
-them through the same per-device git tree the Policy Inspector publishes (the
-multiuser-safe <code>reports/&lt;device&gt;/</code> + <code>pull --rebase</code> + retry). It adds one file,
-<code>reports/&lt;device&gt;/_exceptions.json</code> (type + payload + reason + policies; NEVER
-secrets), mirroring <code>_inventory.json</code>:</p>
-<ul>
-<li><strong>Publish (write-through)</strong> — every add/edit/delete calls
-  <code>publish_device_exceptions</code> (off-UI, best-effort) → writes the file + commit/push.</li>
-<li><strong>Sync</strong> — the <strong>⤓ Sync from git</strong> button runs <code>sync_device_exceptions</code>
-  (<code>git_pull</code> ff-only + <code>import_device_exceptions</code>), merging other operators'
-  carve-outs into the local DB, <strong>de-duplicated by content key</strong> (<code>_content_key</code>:
-  device + WPP + type + payload + policy set) so re-syncing is idempotent and never
-  overwrites a local row.</li>
-</ul>
+<h2 id="7-sharing-between-operators">7. Sharing between operators</h2>
+<p>The web edition keeps exceptions in its shared PostgreSQL database (the two tables
+of §2), so every operator of this SATOM sees the same rows: there is no
+per-operator copy to merge and no git file. The desktop app shared them through
+<code>reports/&lt;device&gt;/_exceptions.json</code> in git; nothing in the web edition reads or
+writes that file, and there is no <em>Sync from git</em> button.</p>
 <h2 id="8-caveats--not-yet">8. Caveats / not yet</h2>
 <ul>
 <li><strong>Inject is authored/desired-state</strong> — see §6's note: the entry posts to a chosen

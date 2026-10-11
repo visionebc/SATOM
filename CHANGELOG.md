@@ -6,6 +6,85 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — Approving a WPP template deployed it to every FortiWeb, ignoring bindings and variables; the signature editor had no way in; CLI-only builds blocked every template apply
+
+- **Approval auto-deploy follows the bindings.** Approving a Web Protection
+  Profile template deployed it to every visible FortiWeb whatever the family's
+  device bindings said, and pushed the body without rendering its
+  `{{ variables }}` — a literal placeholder could reach a device. It now uses the
+  scope the template lock uses: the bound devices whose binding follows this
+  version (a device pinned to another version keeps it), or every FortiWeb when
+  the family has no binding. Bodies are rendered per device, and a device with
+  no value for a variable **holds the whole deploy** (audited as
+  `template.approve.autodeploy.held`).
+- **Signature editor.** SATOM's signature editor (catalog search, per-signature
+  exception, alert-only) was linked only from the classic Web Protection page,
+  which redirects to the device's Signatures list since the classic menus left
+  the ADOMs. The Signatures list now has a **Signature editor** button for the
+  selected profile.
+- **A build measured only by its CLI tree no longer blocks a template apply.**
+  The "unmeasured blocks" rule refused every apply to a build with no REST sweep
+  even when its CLI tree answered for every object of the template, and the
+  both-channel check had already validated the fields there. It is a warning now
+  ("REST never measured … its CLI tree did"); a build with no evidence at all
+  still blocks.
+- Concept Map lists *Compare templates* and *Template compatibility matrix*.
+- Texts: the "FortiWeb layout" button no longer says read-only (its dialogs
+  save), the FortiGate dashboard header no longer says read-only, the binding
+  variables example uses a documentation address.
+- Tests that still pinned the menus removed on 2026-10-11, the old `const`
+  declaration and the old `managed_wpp_names()` signature now pin the current
+  behaviour (they were red in the nightly run).
+
+### Added — FortiADC joins the measured-GUI engine
+
+FortiADC is the fourth product drawn from measured GUI layouts, next to FortiWeb,
+FortiGate and FortiAuthenticator (layouts harvested from a lab FortiADC-KVM 7.6.7
+build 0676; knowledge snapshot `kb-20261011`).
+
+- A FortiADC with a layout for its build draws its own menu; the hand-made
+  FortiADC menu stays the fallback, so the ADOM never ends up empty.
+- Rows are read live from the device's REST API (by build, VDOM aware; no
+  FortiADC config cache for these pages), one object by mkey, settings entities
+  as singletons, child tables read-only. Writes go through the same dry run →
+  apply → change history + audit path as the other products; secrets are never
+  echoed back.
+- "Not in GUI, but in CLI" says "GUI layout not measured" only while no FortiADC
+  layout exists on the node.
+- Clone / Create New on FortiADC pages: a clone no longer keeps the source key,
+  and Create New finds the new object afterwards.
+
+### Documentation — the manual gets screenshots, and eleven user-guide sections catch up with the new screens
+
+- **Screenshots.** 20 captures of the current console in the user guide
+  (`docs/img/screens/`, published to `site/docs/img/`) and the six tiles of the
+  site's "See it in action" gallery, which had shown "screenshot pending" since
+  August. They are taken from a live node and **anonymised in the page before the
+  capture** (device and node names, private addresses, host names, serials, MACs,
+  user names), then the rendered text is re-checked against the real identifiers
+  and a capture with a hit is discarded: the published-docs leak scanner reads
+  text and cannot see inside an image. `gen_site_docs.py` now publishes
+  `docs/img/**` byte for byte and removes images whose source is gone;
+  `test_site_links.py` now also fails on an `<img src>` that does not resolve.
+- **User guide** — rewritten where the screens changed: §3 (each FortiWeb,
+  FortiGate and FortiAuthenticator ADOM draws the device's own menu; no Classic
+  view), §5–§7 (Server Policy and object pages in the device's GUI layout, how a
+  save travels, "Not in GUI, but in CLI"), §8, §9, §13 (Fleet → WAF: Search
+  Attack ID, Exceptions & Signature, WAF Artifacts), §17 (FortiGate and
+  FortiAuthenticator pages write, dry run first), §21 (the certificate and
+  profile steps of a provisioning run), §28–§29 (Compare templates, the
+  compatibility matrix, Adapt to firmware decisions, bindings, what blocks an
+  apply).
+- **Other documents** — stale statements corrected in `README.md`,
+  `fortigate.md`, `fortiauthenticator.md`, `wpp_exceptions.md`,
+  `web_protection_profile.md`, `build-compatibility.md` and
+  `source-of-truth-spec.md` (device-config history is the local SoT store, not
+  git, since 2026-08-05; where the WAF tools live now; unmeasured builds block a
+  template apply).
+- **Site gallery captions** updated: "Device sync — git-versioned source of
+  truth" became "Metrics" (the git source of truth was retired), and "Four-copy
+  backup coverage" became the coverage table it is.
+
 ### Fixed — Template compare and matrix pages printed a Python method as the product name; the matrix took 40 s
 
 Found while taking the documentation screenshots, not by a test:

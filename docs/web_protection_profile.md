@@ -172,9 +172,14 @@ admin guide (per-module action sets vary; this is the union):
 
 ## 5. Editing model (how the app exposes all of this)
 
-The WPP is edited from **Web Protection** (main sidebar; CONFIG_WRITE + unlock) via
-the generic object editor — `app/views/objedit.py` (`edit`) rendering
-`app/templates/objedit/editor.html` — the FortiWeb-style form. Each sub-policy is a
+The WPP list is the **Web Protection Profile** page of the device's own FortiWeb
+menu (sidebar → **FortiWeb**; the old **Web Protection** page redirects there).
+Its **Edit** opens the profile in FortiWeb's GUI layout for the device's build
+(`workspace.fwgui_object`), which saves through the guarded endpoints of the
+generic object editor (CONFIG_WRITE + unlock). That editor —
+`app/views/objedit.py` (`edit`) rendering `app/templates/objedit/editor.html` —
+is also opened directly (a reference's ✎, or Create New where FortiWeb's layout
+has none) and is the FortiWeb-style form described below. Each sub-policy is a
 dropdown with **Edit…** (open the selected object) and **＋** (create a new one).
 Every referenced object — and every level below it — is a curated **kind** in
 `app/registry/data/waf_specs.json` (166 kinds), merged into
@@ -194,7 +199,7 @@ ever uneditable. Every write goes through `FortiWebOps` (snapshot + audit +
 change-history + dry-run; unlock + confirm on a real write) — never a blind write.
 WPP **contents** are read-only from a live Server Policy (the policy form's WPP is a
 changeable *dropdown*, "View profile details" opens it read-only); they are edited
-here on the Web Protection page or, as desired-state templates, in Settings →
+from the device's Web Protection Profile page (above) or, as desired-state templates, in Settings →
 Templates (locked references → clone to edit).
 
 ---
@@ -226,7 +231,8 @@ policy reused across the fleet). So:
 | Curated edit specs (the ~160 forms) | `app/registry/data/waf_specs.json` (166 kinds) + `app/services/waf_specs.py` (registration) |
 | The FortiWeb-style WPP form | `app/views/objedit.py` (`edit`) + `app/templates/objedit/editor.html` |
 | The shared object-edit engine | `app/services/objform.py` + `app/services/fortiweb_field_schema.py` (`KIND_SPECS`, `build_groups`); the ref `✎` comes from `objedit._enable_ref_actions` |
-| Web Protection page (device → WPP → form) | `app/views/web_protection.py` + `app/templates/web_protection/overview.html` (left menu: `app/services/wp_menu.py`) |
+| WPP list and edit form (FortiWeb menu → Web Protection Profile → Edit) | `app/views/workspace.py` (`fwgui_list`, `fwgui_object`) + `app/templates/workspace/fwgui_list.html`, `gui_dialog.html` |
+| Classic Web Protection page (redirects to the FortiWeb page unless `?classic=1`) | `app/views/web_protection.py` + `app/templates/web_protection/overview.html` (`app/services/wp_menu.py`) |
 | CRUD with snapshot + audit + dry-run | `app/services/fortiweb_ops.py` (`FortiWebOps`) |
 | Specs / editor regression guard | `tests/test_objform.py`, `tests/test_objedit.py`, `tests/test_objedit_blank_forms.py` |
 

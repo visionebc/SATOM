@@ -7,6 +7,12 @@
 > scheduler sidecar). This document is kept as the **design record**; the
 > living operational reference is the internal project knowledge base. Do not implement from here
 > without cross-checking the current code.
+>
+> **Git is retired here (2026-08-05).** Where this record calls git the off-box
+> backup or export, read it as history: the versioned configuration is a local
+> content-addressed store (`data/sot/objects/`, index in PostgreSQL), replicated
+> to the standby, carried in every system backup bundle, and pushed off-box to
+> the backup server by `device_inspect` (user guide §11 and §26.5).
 
 
 > Spec + phased implementation plan. Target: `satom-web` on LXC 248

@@ -93,7 +93,8 @@ POST-only resources are `auth`, `emergencytoken`, `idpsessiondata`,
 | Registry seed | baseline `app/registry/baselines/fortiauthenticator.json` (FortiAuthenticator 8.0.3), applied by `app/services/api_baseline.py` |
 | Registry loader | `app/registry/loader.py` → `resolve_fac` |
 | REST client | `app/clients/fortiauthenticator.py` |
-| Sidebar / section map | `app/services/fac_menu.py` |
+| Dashboard section map, API console grouping, harvest list | `app/services/fac_menu.py` |
+| Sidebar (the device's own GUI menu, from measured layouts) | `app/services/gui_pages.py`, `app/templates/partials/nav_gx.html` |
 | Section pages | `app/views/fac.py`, `app/templates/fac/` |
 | Registry + console | `app/views/fac_api.py`, `app/templates/fac_api/` |
 | Config harvest | `app/services/device_sync.py` → `snapshot_from_fac` |
@@ -110,6 +111,15 @@ serves on `GET /` to an authenticated session — **6 groups, 129 leaves**. That
 is a stronger source than the administration guide (which is what the
 FortiAnalyzer menu was crawled from), because it is what *this firmware*
 actually renders.
+
+**Not the sidebar any more (since 2026-10-11).** The FortiAuthenticator ADOM's
+sidebar no longer draws these groups. It draws the device's own menu, built
+from the measured GUI layout of the device's firmware build (knowledge packs),
+with **All pages** listing every page in the device's menu order. `fac_menu.py`
+still drives the dashboard's section map, the API console's grouping and the
+configuration harvest. An old section URL whose resources a measured page draws
+redirects to that page (`?classic=1` keeps the old one); resources no measured
+page draws yet have no sidebar entry until their pages are crawled.
 
 The GUI is much wider than the API: 129 leaves against 40 readable resources.
 **16 of the 28 section pages have no bound endpoint** and say so, rather than

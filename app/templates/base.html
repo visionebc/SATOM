@@ -545,8 +545,6 @@
 
       {% else %}
       <!-- ===== FortiWeb ===== -->
-      {# Active top-level nav section (server-rendered .open = no flash on reload). 2026-07-05 #}
-      {% set _g_ops  = request.blueprint in ['backups','logs','import_backup','reach_batch','config_compare'] %}
 
       <!-- ADOM back-link — ALWAYS the first entry (same format as FortiADC) -->
       <div class="fw-nav-context" data-nav-context="ADOM">
@@ -610,56 +608,8 @@
          2026-10-11). Their pages stay reachable by address (?classic=1), but
          nothing in the sidebar links to them. #}
 
-      <!-- OPERATIONS -->
-      <div class="fw-nav-group {{ 'open' if _g_ops }}" data-nav-group="Operations">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-tools fw-nav-section-icon" style="color:#94a3b8;"></i><span>{{ _('Operations') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          {# TROUBLESHOOTING — the two diagnostic pages, moved out of this ADOM's
-             Fleet group on 2026-09-08.  Fleet holds pages that DESCRIBE the estate
-             (Search, DNS Lookup, Service Diagram); these two answer "why is this path
-             broken", which is an operational verb.  The Global ADOM keeps its own
-             copies under Fleet: it has no Operations group to move them into. #}
-          <div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['reach_batch','config_compare'] }}" data-nav-subgroup="Troubleshooting">
-            <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-life-preserver fw-nav-icon"></i><span>{{ _('Troubleshooting') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-            <div class="fw-nav-subgroup-body">
-              {% if may_open('reach_batch.index') %}
-              <a class="fw-nav-item {{ 'active' if request.blueprint == 'reach_batch' else '' }}" href="{{ url_for('reach_batch.index') }}">
-                <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Backend Reachability') }}</span></a>
-              {% endif %}
-              {% if may_open('config_compare.index') %}
-              <a class="fw-nav-item {{ 'active' if request.blueprint == 'config_compare' else '' }}" href="{{ url_for('config_compare.index') }}">
-                <i class="bi bi-file-diff fw-nav-icon"></i><span>{{ _('Config Compare') }}</span></a>
-              {% endif %}
-            </div>
-          </div>
-          {% if current_user.can('backups.view') %}
-          {% if may_open('backups.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'backups' else '' }}" href="{{ url_for('backups.index') }}">
-            <i class="bi bi-cloud-arrow-down fw-nav-icon"></i><span>{{ _('Device Backups') }}</span></a>
-          {% endif %}
-          {% endif %}
-          {% if current_user.can('config_write') %}
-          {% if may_open('logs.index') %}
-          <a class="fw-nav-item" href="{{ url_for('logs.index') }}">
-            <i class="bi bi-journal-text fw-nav-icon"></i><span>{{ _('Log Collection') }}</span></a>
-          {% endif %}
-          {% endif %}
-          {% if current_user.can('backups.restore') %}
-          {% if may_open('import_backup.index') %}
-          <a class="fw-nav-item" href="{{ url_for('import_backup.index') }}">
-            <i class="bi bi-file-earmark-arrow-up fw-nav-icon"></i><span>{{ _('Import Backup') }}</span></a>
-          {% endif %}
-          {% endif %}
-          {# Template Library needs only operations.view; administrators reach it
-             under Administrator, everyone else who may open it finds it here. #}
-          {% if current_user and current_user.can('operations.view') and not current_user.can('user_manage') %}
-          {% if may_open('templates.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'templates' else '' }}" href="{{ url_for('templates.index') }}">
-            <i class="bi bi-collection fw-nav-icon"></i><span>{{ _('Template Library') }}</span></a>
-          {% endif %}
-          {% endif %}
-        </div>
-      </div>
+      {# Operations is drawn by partials/nav_product_api.html (partials/nav_operations.html),
+         the same group in the same place as every other device ADOM. #}
 
       {# API — the same group, in the same place, as the other device ADOMs #}
       {% include 'partials/nav_product_api.html' %}
@@ -670,30 +620,8 @@
 
       {% endif %}
 
-      {% if product.key in ('fortiweb', 'fortiadc') %}
-      <!-- PLUGINS — Custom Views + the studios, scoped to THIS ADOM -->
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['plugins','lua_studio'] }}" data-nav-group="Plugins">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-puzzle fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Plugins') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          {% if may_open('plugins.gallery') %}
-          <a class="fw-nav-item {{ 'active' if request.endpoint == 'plugins.gallery' else '' }}" href="{{ url_for('plugins.gallery') }}">
-            <i class="bi bi-grid-1x2 fw-nav-icon"></i><span>{{ _('Custom Views') }}</span></a>
-          {% endif %}
-          {% if current_user.is_authenticated and current_user.can('studio.plugin_studio') %}
-          {% if may_open('plugins.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'plugins' and request.endpoint != 'plugins.gallery' else '' }}" href="{{ url_for('plugins.index') }}">
-            <i class="bi bi-puzzle fw-nav-icon"></i><span>{{ _('Plugin Studio') }}</span></a>
-          {% endif %}
-          {% endif %}
-          {% if current_user.is_authenticated and current_user.can('studio.lua_studio') %}
-          {% if may_open('lua_studio.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'lua_studio' else '' }}" href="{{ url_for('lua_studio.index') }}">
-            <i class="bi bi-braces fw-nav-icon"></i><span>{{ _('Lua Studio') }}</span></a>
-          {% endif %}
-          {% endif %}
-        </div>
-      </div>
-      {% endif %}
+      {# PLUGINS — every device ADOM (partials/nav_plugins.html). #}
+      {% include 'partials/nav_plugins.html' %}
 
       </div><!-- /.fw-nav-top -->
 

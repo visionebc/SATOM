@@ -14,6 +14,9 @@
 {# FortiADC: the device's measured menu sits just above API, right after the
    Fleet group (partials/nav_fortiadc.html; draws nothing elsewhere). #}
 {% include 'partials/nav_fortiadc.html' %}
+{# Operations — after the device menu, before API, in every device ADOM
+   (partials/nav_operations.html; FortiWeb is the reference menu). #}
+{% include 'partials/nav_operations.html' %}
 {% set _api_ep = {'fortiweb': 'registry.index', 'fortiadc': 'adc_api.index',
                   'fortianalyzer': 'faz_api.index',
                   'fortiauthenticator': 'fac_api.index',

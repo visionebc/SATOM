@@ -71,9 +71,9 @@
 {% endif %}
 {% include 'partials/nav_advisor.html' %}
 {% include 'partials/nav_monitoring.html' %}
-{% if _pk in ('global', 'fortiweb') %}{# WAF counts FortiWeb objects; see nav_waf.html #}
+{# WAF counts FortiWeb objects: live in Global and FortiWeb, disabled with the
+   reason in the other device ADOMs (see nav_waf.html). #}
 {% include 'partials/nav_waf.html' %}
-{% endif %}
 {% if may_open('jobs.manager') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'jobs' else '' }}" href="{{ url_for('jobs.manager') }}">
   <i class="bi bi-list-task fw-nav-icon"></i><span>{{ _('Jobs') }}</span></a>

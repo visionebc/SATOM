@@ -1,0 +1,10 @@
+{# A sidebar entry the current ADOM draws but cannot open (services/adom_menu.py).
+   Same look as the switched-off Scout entry in partials/nav_fleet.html: shown,
+   greyed, no link, the reason on hover. Callers check the permission FIRST, so
+   a profile that may not open the page never sees this either. #}
+{% macro nav_off(icon, label, reason, flat=false) -%}
+<span class="fw-nav-item disabled text-muted {{ 'fw-so-nav-flat' if flat }}" style="cursor:not-allowed;opacity:.55;"
+      title="{{ reason }}" data-nav-off="{{ label }}">
+  <i class="bi {{ icon }} fw-nav-icon"></i><span>{{ label }}</span>
+  <i class="bi bi-slash-circle ms-1 small"></i></span>
+{%- endmacro %}

@@ -362,6 +362,12 @@ def create_app(config_override: object | None = None) -> Flask:
         }
         if ep in always or bp_name in CHROME_BPS or ep.startswith('auth.') or _gx_kind:
             return None
+        # A page the device-ADOM menu draws LIVE for this product (the
+        # FortiWeb-reference table, services/adom_menu.py) is reachable here
+        # whatever the hand-kept sets below say: menu and gate share one rule.
+        from .services import adom_menu as _adom_menu
+        if _adom_menu.gate_allows(bp_name, eff):
+            return None
         if eff == 'fortiadc':
             # FortiADC sessions get the ADC area + the product-neutral shared
             # pages (fleet admin, audit, jobs, notifications, own profile) +
@@ -415,11 +421,10 @@ def create_app(config_override: object | None = None) -> Flask:
                        # question, answered once by
                        # process_engine.visible_processes (Process.products).
                        'process',
-                       # NOT firmware (2026-10-03): the Firmware pages are an
-                       # image vault, and no path flashes a FortiADC with
-                       # those images (upgrade.push_firmware is FortiWeb's
-                       # handshake). The ADC sidebar never linked it; an image
-                       # vault for a box nothing can flash was URL-only.
+                       # Firmware (the image vault) is reachable through
+                       # services/adom_menu.py since 2026-10-11: the FortiADC
+                       # upgrade on the appliance page flashes vault images
+                       # (897aa0ea), so the vault is needed here.
                        'device_provision',
                        # Scheduled Actions is mirrored into every ADOM
                        # (2026-08-10). Rows carry ScheduledAction.product
@@ -715,6 +720,13 @@ def create_app(config_override: object | None = None) -> Flask:
     def owns_device_scope(appl):
         from .models import owns_device_scope as _o
         return bool(appl is not None and _o(appl))
+
+    @app.template_global()
+    def adom_menu(key, product):
+        """Device-ADOM sidebar entry state: ``.on`` / ``.reason`` /
+        ``.endpoint`` (services/adom_menu.py)."""
+        from .services.adom_menu import state
+        return state(key, product)
 
     @app.template_global()
     def may_open(endpoint):

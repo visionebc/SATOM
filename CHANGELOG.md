@@ -6,6 +6,34 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Fleet → Architecture: layers, flow trace, autosave, fleet palette
+
+- **Trace a flow:** source IP, destination IP, TCP/UDP/ICMP and port. Every
+  FortiGate on the drawn path answers for itself — its routing lookup gives
+  the ingress and egress interface, its own `policy-lookup` gives the
+  verdict (SATOM never evaluates a rule base) — and the path is drawn in
+  colour from the source host to the destination host: cyan allowed, red
+  denied, amber unknown. Walks several FortiGates in order and stops on the
+  first deny. A public address with no drawn network is the Internet
+  element. TCP traces on a path through a FortiWeb/FortiADC offer **Validate
+  with Scout** (appliance, hostname and port pre-filled; Scout now takes
+  `hostname`, `port` and `scheme` from the query string too).
+- **Layers L2 / L3 / L4 / L7:** L2 ports, MAC, speed, link state and VLAN on
+  the firewall links, and the MAC the FortiGate learned (ARP) on each host;
+  L3 addresses, routes and policy flows; L4 services, active sessions and hit
+  counters per policy; L7 FortiWeb server policies (device cache) drawn to
+  the back-ends they publish, plus HTTP probe answers.
+- **Same canvas as the Service Diagram:** dark network-design view, animated
+  flows, hover lights up everything connected to an element; zoom buttons.
+- **Elements from the fleet:** the Elements palette lists every appliance
+  the ADOM sees, grouped by product; one click adds it bound to its
+  appliance, with its address.
+- **Autosave, undo and redo:** every change saves itself; Undo/Redo buttons
+  and Ctrl+Z / Ctrl+Shift+Z. Saving is versioned: a save based on a version
+  somebody else replaced answers 409 and the page shows theirs, keeping yours
+  one Undo away. Open pages pick up a colleague's save within 15 s. **Read
+  devices** can repeat every 30 s.
+
 ### Added — Fleet → Architecture: drawn network diagrams with a live overlay
 
 - New page **Fleet → Architecture** (`/net-architecture/`), in every ADOM.

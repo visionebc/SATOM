@@ -216,8 +216,19 @@ def fortigate_snapshot(client) -> dict:
             "role": i.get("role") or "", "vlanid": i.get("vlanid") or 0,
             "parent": i.get("interface") or "", "status": i.get("status") or "",
             "link": mon.get("link"), "rx_bytes": mon.get("rx_bytes"),
-            "tx_bytes": mon.get("tx_bytes"),
+            "tx_bytes": mon.get("tx_bytes"), "mac": mon.get("mac") or "",
+            "speed": mon.get("speed"), "rx_errors": mon.get("rx_errors"),
+            "tx_errors": mon.get("tx_errors"),
         })
+
+    # L2: who the firewall has seen on each port. L3: what it routes where.
+    out["arp"] = [{"ip": a.get("ip"), "mac": a.get("mac"), "interface": a.get("interface"),
+                   "age": a.get("age")}
+                  for a in (get("/api/v2/monitor/network/arp") or []) if isinstance(a, dict)]
+    out["routes"] = [{"dst": r.get("ip_mask"), "gateway": r.get("gateway"),
+                      "interface": r.get("interface"), "type": r.get("type"),
+                      "distance": r.get("distance")}
+                     for r in (get("/api/v2/monitor/router/ipv4") or []) if isinstance(r, dict)]
 
     pols = get("/api/v2/cmdb/firewall/policy") or []
     mon = {r.get("policyid"): r for r in (get("/api/v2/monitor/firewall/policy") or [])
@@ -295,6 +306,178 @@ def policy_flows(layout: dict, fgt_node_id: str, snapshot: dict) -> list[dict]:
                       "action": p.get("action"), "status": p.get("status"),
                       "hit_count": p.get("hit_count"), "bytes": p.get("bytes")})
     return flows
+
+
+PROTOCOLS = {"tcp": 6, "udp": 17, "icmp": 1}
+
+
+def locate(layout: dict, ip: str) -> tuple[dict | None, dict | None]:
+    """Where an address sits on the drawing: ``(host element, network element)``.
+
+    The host is an element whose IP is exactly *ip*; the network is the most
+    specific drawn LAN/segment/Internet whose CIDR holds it. Either may be
+    ``None``: an address nobody drew is answered as "not on the drawing", not
+    pinned to the nearest box."""
+    addr = ipaddress.ip_address(ip)
+    host, net, best = None, None, -1
+    for n in layout.get("nodes", []):
+        if n.get("ip") and n["type"] not in ("lan", "segment", "internet"):
+            try:
+                if ipaddress.ip_address(n["ip"]) == addr and host is None:
+                    host = n
+            except ValueError:
+                pass
+        if n.get("cidr"):
+            try:
+                cidr = ipaddress.ip_network(n["cidr"], strict=False)
+            except ValueError:
+                continue
+            if addr in cidr and cidr.prefixlen > best:
+                net, best = n, cidr.prefixlen
+    if net is None and addr.is_global:
+        # A public address nobody drew a network for is the Internet, when
+        # the drawing has one; a private one stays "not on the drawing".
+        net = next((n for n in layout.get("nodes", []) if n["type"] == "internet"
+                    and not n.get("cidr")), None)
+    return host, net
+
+
+def _net_on(layout, fgt_id, interfaces, ifname):
+    by_if = _iface_nodes(layout, fgt_id, {"interfaces": interfaces})
+    ids = by_if.get(ifname) or []
+    return next((n for n in layout["nodes"] if ids and n["id"] == ids[0]), None)
+
+
+def trace(layout: dict, call, src: str, dst: str, proto: str = "tcp",
+          port: int | None = None, max_hops: int = 6) -> dict:
+    """Walk *src* → *dst* through the drawn FortiGates, asking each one.
+
+    ``call(fgt_node_id, path, **params) -> (results, error)`` reads ONE
+    FortiGate (``None`` for an element not bound to a readable device). For
+    every firewall on the way: the ingress interface is the one its routing
+    table uses to reach *src*, the egress the one it uses to reach *dst*, and
+    the verdict is the device's own ``policy-lookup`` — SATOM never evaluates a
+    rule base itself, because a second evaluator could only disagree with the
+    one that forwards the packet. The walk stops on a deny, at the destination
+    network, or when the next network has no firewall drawn in front of it."""
+    for a in (src, dst):
+        ipaddress.ip_address(a)  # ValueError -> the route answers 400
+    proto = (proto or "tcp").lower()
+    if proto not in PROTOCOLS:
+        raise ValueError("protocol must be tcp, udp or icmp")
+    if proto != "icmp":
+        if port is None or not 1 <= int(port) <= 65535:
+            raise ValueError("a tcp/udp trace needs a destination port 1-65535")
+    nodes = {n["id"]: n for n in layout.get("nodes", [])}
+    src_host, src_net = locate(layout, src)
+    dst_host, dst_net = locate(layout, dst)
+    fgts = [n for n in layout.get("nodes", []) if n["type"] == "fortigate"]
+    adj: dict[str, set] = {}
+    for e in layout.get("edges", []):
+        adj.setdefault(e["from"], set()).add(e["to"])
+        adj.setdefault(e["to"], set()).add(e["from"])
+
+    path = [x["id"] for x in (src_host, src_net) if x]
+    hops, verdict, reason = [], "unknown", ""
+    cur, seen = src_net, set()
+    for _ in range(max_hops):
+        if cur is not None:
+            cands = [f for f in fgts if f["id"] not in seen
+                     and (cur.get("gateway") == f["id"] or f["id"] in adj.get(cur["id"], ()))]
+        else:
+            cands = [f for f in fgts if f["id"] not in seen]
+        hop = None
+        for f in cands:
+            rin, err = call(f["id"], "/api/v2/monitor/router/lookup", destination=src)
+            if err is not None or rin is None:
+                hops.append({"fgt": f["id"], "error": err or "not bound to a readable FortiGate"})
+                seen.add(f["id"])
+                continue
+            rout, err = call(f["id"], "/api/v2/monitor/router/lookup", destination=dst)
+            if err is not None:
+                hops.append({"fgt": f["id"], "error": err})
+                seen.add(f["id"])
+                continue
+            ein = ((rin or {}).get("entries") or [{}])[0] if isinstance(rin, dict) else {}
+            eout = ((rout or {}).get("entries") or [{}])[0] if isinstance(rout, dict) else {}
+            iin, iout = ein.get("interface"), eout.get("interface")
+            if not iin or not iout:
+                hops.append({"fgt": f["id"], "error": "no route to %s" % (src if not iin else dst)})
+                seen.add(f["id"])
+                continue
+            if iin == iout and len(cands) > 1:
+                continue  # this firewall is not between them
+            params = {"srcintf": iin, "sourceip": src, "dest": dst,
+                      "protocol": str(PROTOCOLS[proto])}
+            if proto == "icmp":
+                params.update(icmptype="8", icmpcode="0")
+            else:
+                params["destport"] = str(int(port))
+            pl, err = call(f["id"], "/api/v2/monitor/firewall/policy-lookup", **params)
+            if err is not None:
+                hops.append({"fgt": f["id"], "srcintf": iin, "dstintf": iout, "error": err})
+                seen.add(f["id"])
+                continue
+            pl = pl or {}
+            hop = {"fgt": f["id"], "srcintf": iin, "dstintf": iout,
+                   "gateway": eout.get("gateway") or "", "route": eout.get("ip_mask") or "",
+                   "match": bool(pl.get("match")), "policy_id": pl.get("policy_id"),
+                   "action": pl.get("policy_action") or (
+                       pl.get("sec_default_action") if not pl.get("match") else "") or "deny"}
+            break
+        if hop is None:
+            if any(h.get("action") == "accept" for h in hops):
+                # Every firewall that could be asked let it through; past
+                # this network no firewall is drawn, so the drawing says
+                # nothing more about it.
+                verdict = "allowed"
+                reason = "accepted by every drawn firewall; past %s no firewall is drawn" % (
+                    (cur or {}).get("label") or (cur or {}).get("id") or "here")
+            else:
+                reason = ("no drawn FortiGate sits between these addresses" if not hops
+                          else "no FortiGate on the way could be read")
+            break
+        hops.append(hop)
+        seen.add(hop["fgt"])
+        if hop["fgt"] not in path:
+            path.append(hop["fgt"])
+        if hop["action"] != "accept":
+            verdict = "denied"
+            reason = ("implicit deny: no policy matches" if not hop["match"]
+                      else "policy %s denies" % hop["policy_id"])
+            break
+        ifs, _err = call(hop["fgt"], "/api/v2/cmdb/system/interface")
+        interfaces = []
+        for i in (ifs or []):
+            parts = str(i.get("ip") or "").split()
+            if len(parts) == 2 and parts[0] != "0.0.0.0":
+                try:
+                    interfaces.append({"name": i.get("name"),
+                                       "ip": str(ipaddress.ip_interface("%s/%s" % tuple(parts)))})
+                except ValueError:
+                    pass
+        nxt = _net_on(layout, hop["fgt"], interfaces, hop["dstintf"])
+        if nxt is not None and nxt["id"] not in path:
+            path.append(nxt["id"])
+        if nxt is None:
+            verdict = "allowed"
+            reason = "leaves %s on %s, where nothing is drawn" % (
+                nodes[hop["fgt"]].get("label") or hop["fgt"], hop["dstintf"])
+            break
+        if dst_net is not None and nxt["id"] == dst_net["id"]:
+            verdict = "allowed"
+            break
+        cur = nxt
+    else:
+        reason = "more than %d firewalls: stopped" % max_hops
+    if verdict == "allowed":
+        for x in (dst_net, dst_host):
+            if x and x["id"] not in path:
+                path.append(x["id"])
+    return {"src": src, "dst": dst, "proto": proto, "port": port,
+            "src_node": src_host and src_host["id"], "src_net": src_net and src_net["id"],
+            "dst_node": dst_host and dst_host["id"], "dst_net": dst_net and dst_net["id"],
+            "hops": hops, "path": path, "verdict": verdict, "reason": reason}
 
 
 def probe_http(url: str, header: str = "", timeout: float = 4.0) -> dict:

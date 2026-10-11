@@ -1785,6 +1785,28 @@ against what the devices say.
   device you cannot see is refused on save.
 - **Scout and Sentinel.** A bound device element links to its Device page,
   to **Scout** with that appliance already selected, and to **Sentinel**.
+- **Layers.** **L2** draws ports, MAC, speed, link state (green up, red down)
+  and VLAN on the firewall links, and on each host the MAC the FortiGate
+  learned for its address. **L3** shows addresses, routes and the policy
+  flows. **L4** labels each policy with its services, active sessions and
+  hits. **L7** draws FortiWeb server policies (from the device cache) to the
+  drawn back-ends they publish and shows the HTTP probe answers.
+- **Trace a flow.** Enter source, destination, protocol and port (or use
+  **Trace from here / to here** on a host). Each FortiGate on the way is asked
+  for its route to both ends and for its own policy lookup; the path is drawn
+  in colour (cyan allowed, red denied, amber unknown) and the inspector lists
+  each firewall with ingress → egress interface, matched policy and action.
+  A firewall that cannot be read is listed with its error, never skipped. A
+  public address with no network drawn for it lands on the Internet element.
+  TCP traces through a FortiWeb or FortiADC offer **Validate with Scout**.
+- **Adding elements.** **Elements** opens a palette with every appliance of
+  the fleet the ADOM can see (one click adds it, bound and addressed) and the
+  generic types.
+- **Autosave, undo, team work.** Changes save themselves; **Undo/Redo** (and
+  Ctrl+Z / Ctrl+Shift+Z) step through them. Every save carries the version it
+  was based on: if a colleague saved in between, their drawing is shown and
+  yours stays one Undo away. Open pages refresh to a colleague's save within
+  15 seconds.
 - **What it cannot see.** Switches: draw the segments they carry. A FortiGate
   is read over REST with the token SATOM already holds.
 

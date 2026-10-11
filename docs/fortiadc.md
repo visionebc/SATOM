@@ -104,7 +104,7 @@ Measured on fortiadc10:
   follows that rule for every field instead of a fixed list.
 
 The VS Inspector builds one index (live: the referenced tables + the group
-child tables, ~4 s on fortiadc10) and draws every VS from it; `?source=capture`
+child tables; 7.5 s for the 15 VS of fortiadc10, measured 2026-10-12) and draws every VS from it; `?source=capture`
 draws from `_config.json` + `_deep.json` with no device call.
 
 ## Virtual server dependency chain + create-field seed (verified live, fadc 8.0.3, 2026-07-07)

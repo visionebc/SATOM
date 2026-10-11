@@ -1076,12 +1076,16 @@ class AppSetting(db.Model):
 
     @classmethod
     def get(cls, key: str, default: str | None = None) -> str | None:
-        row = cls.query.get(key)
+        # Session.get, not the legacy Query.get: same identity-map lookup, and
+        # this is the hottest read in the app -- the legacy call raised a
+        # LegacyAPIWarning ~23 times per request-test, and the suite kept every
+        # one of them (~140k a night) for its summary.
+        row = db.session.get(cls, key)
         return row.value if row else default
 
     @classmethod
     def set(cls, key: str, value: str) -> None:
-        row = cls.query.get(key)
+        row = db.session.get(cls, key)
         if row is None:
             row = cls(key=key)
             db.session.add(row)

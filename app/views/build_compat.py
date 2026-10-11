@@ -31,12 +31,14 @@ MAX_BUILDS = 8
 #: Cell states of the matrix, in the order the legend shows them.
 CELL_LABEL = {
     "both": "both", "cli_only": "CLI only", "hidden": "hidden", "rest_only": "REST only",
-    "cli": "CLI (REST not measured)", "meta": "meta", "absent": "absent",
+    "cli": "CLI (REST not measured)", "rest": "REST (CLI not measured)", "meta": "meta",
+    "absent": "absent",
     "unknown": "unknown",
 }
 CELL_BADGE = {
     "both": "fw-badge-success", "cli_only": "fw-badge-warning", "hidden": "fw-badge-warning",
-    "rest_only": "fw-badge-info", "cli": "fw-badge-info", "meta": "fw-badge-secondary",
+    "rest_only": "fw-badge-info", "cli": "fw-badge-info", "rest": "fw-badge-info",
+    "meta": "fw-badge-secondary",
     "absent": "fw-badge-danger", "unknown": "fw-badge-secondary",
 }
 ONLY = ("diff", "cli_only", "all")
@@ -94,12 +96,20 @@ def cell(view: dict, key: str, field: str) -> str:
         return "unknown"
     ch = f["channel"]
     if ch == lib.CH_UNKNOWN:
-        return "cli" if f["cli"] == "yes" else ("absent" if f["cli"] == "no" else "unknown")
+        # One channel measured, the other not: say which one saw it. A build
+        # whose CLI schema nobody measured (FortiADC, FortiAnalyzer) still has
+        # every field REST serves; calling it "unknown" hid every REST
+        # difference between two such builds (2026-10-12: 0 of 1742 differ).
+        if f["cli"] == "yes":
+            return "cli"
+        if f["rest"] == "yes":
+            return "rest"
+        return "absent" if f["cli"] == "no" else "unknown"
     return ch
 
 
-_PRESENT = {"both", "cli_only", "hidden", "rest_only", "cli"}
-_REST_YES, _REST_NO = {"both", "rest_only"}, {"cli_only", "hidden"}
+_PRESENT = {"both", "cli_only", "hidden", "rest_only", "cli", "rest"}
+_REST_YES, _REST_NO = {"both", "rest_only", "rest"}, {"cli_only", "hidden"}
 
 
 def differs(cells) -> bool:

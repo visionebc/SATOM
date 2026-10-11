@@ -115,7 +115,7 @@ product={{ sel_product|urlencode }}{% for b in builds %}&b={{ b|urlencode }}{% e
   {% endif %}
 </div>
 <p class="text-muted" style="font-size:12px;">
-  {{ _('both = REST and CLI have it · CLI only = the CLI has it, REST does not serve it (written by the CLI writer) · hidden = only show full-configuration prints it · REST only = REST serves it, the build\'s CLI schema does not list it · CLI (REST not measured) = in the CLI schema, REST never revealed that object on this build · meta = REST bookkeeping, not configuration · absent = measured not there · unknown = no evidence: cannot be guaranteed.') }}
+  {{ _('both = REST and CLI have it · CLI only = the CLI has it, REST does not serve it (written by the CLI writer) · hidden = only show full-configuration prints it · REST only = REST serves it, the build\'s CLI schema does not list it · CLI (REST not measured) = in the CLI schema, REST never revealed that object on this build · REST (CLI not measured) = REST serves it, nobody measured the CLI schema of this build · meta = REST bookkeeping, not configuration · absent = measured not there · unknown = no evidence: cannot be guaranteed.') }}
 </p>
 {% endif %}
 {% endblock %}

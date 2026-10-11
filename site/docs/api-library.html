@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/site.css?v=b0cf1dde95">
+<link rel="stylesheet" href="../assets/site.css?v=405c974d0a">
 <script src="../assets/site.js?v=bf3b55a92e" defer></script>
 </head>
 <body class="wide">
@@ -153,8 +153,10 @@ backfill (§8.3) re-read the archived evidence, and 8.0.3 is back.</p>
 <li><strong>Nothing is deleted.</strong> No code path in this feature deletes a row. A wrong
   rename mapping is retired, not removed.</li>
 <li><strong>Product-agnostic.</strong> FortiWeb, FortiADC, FortiAuthenticator, FortiAnalyzer
-  and FortiGate use the same tables. FortiGate is <strong>catalog-only</strong>: SATOM does
-  not manage FortiGates, but the library holds their API for reference.</li>
+  and FortiGate use the same tables. FortiGate evidence comes from
+  <code>?action=schema</code> (a lab box or a pack), so every FortiGate name in the
+  library is a cmdb path; the FortiGate endpoint registry (§9.9) reads it
+  under flattened names.</li>
 </ul>
 <h3 id="22-build-statuses">2.2 Build statuses</h3>
 <p>Every page reports one of these for a build. They are deliberately distinct.</p>
@@ -695,9 +697,16 @@ when someone last edited it.</p>
 produced from what the library measured on that build.</p>
 <h3 id="91-the-contract">9.1 The contract</h3>
 <ul>
-<li><strong>Pinned to a build.</strong> "The FortiWeb catalog as of 7.6.8", not "the FortiWeb
+<li>
+<p><strong>Five registry products.</strong> FortiWeb (<code>v2.0</code>), FortiADC (<code>v1</code>),
+  FortiAnalyzer (<code>jsonrpc</code>), FortiAuthenticator (<code>v1</code>) and, since 2026-10-11,
+  FortiGate (<code>v2</code>, §9.9). <code>registry.loader.API_VERSION</code> is the one list.</p>
+</li>
+<li>
+<p><strong>Pinned to a build.</strong> "The FortiWeb catalog as of 7.6.8", not "the FortiWeb
   catalog". The API protocol (<code>v2.0</code>, <code>v1</code>, <code>jsonrpc</code>) is recorded separately:
-  it is not the firmware and it is not what changes between builds.</li>
+  it is not the firmware and it is not what changes between builds.</p>
+</li>
 <li><strong>Promoted from measurements, never written by hand.</strong> Promotion takes the
   library's measured sources for that build (<code>sweep</code>, <code>schema</code>, <code>manual</code>,
   <code>legacy_matrix</code>; never <code>vendor_doc</code>). A build nobody measured cannot be
@@ -1028,6 +1037,35 @@ fleet-level analyses (<code>analysis_adc</code>, <code>analysis_fac</code>) and 
 harvest (<code>apilib_fac</code>, which measures against the registry on purpose);
 <code>cli_coverage</code>, <code>discovery_run</code> and <code>device_identity</code>, which account for the
 registry itself.</p>
+<h3 id="99-the-fortigate-registry">9.9 The FortiGate registry</h3>
+<blockquote>
+<p><strong>Since:</strong> 2026-10-11 (unreleased).</p>
+</blockquote>
+<ul>
+<li><strong>Names.</strong> The library keys a FortiGate table by its cmdb path, because
+  <code>?action=schema</code> measures tables. The registry name is that path through
+  ONE rule, <code>registry.loader.fgt_logical</code>: lower-case, every run of
+  non-alphanumerics becomes <code>_</code> (<code>vpn.ipsec/phase1-interface</code> →
+  <code>vpn_ipsec_phase1_interface</code>). <code>api_baseline._measured_at</code> applies it, so the
+  baseline, the per-build view (§9.8) and the FortiGate menu
+  (<code>fgt_menu.bound_logicals</code>) never disagree. Nested paths and non-cmdb URNs
+  are not tables and stay out. On 8.0.1 the rule maps 867 library names to 867
+  distinct registry names.</li>
+<li><strong>First baseline.</strong> FortiOS 8.0.1, promoted from {device}'s <code>?action=schema</code>
+  pass: the 624 tables answered <code>ok</code>. The 98 measured absent and the 145
+  errors (hardware or platform tables a VM cannot serve) are not in it.</li>
+<li><strong>URNs.</strong> <code>registry_write</code> accepts <code>/api/v2/cmdb/&lt;a.b&gt;/&lt;c&gt;</code> only — a table,
+  never one object and never the monitor tree.</li>
+<li><strong>Console</strong> (<code>views/fgt_api.py</code>, <code>/fgt/api/</code>). Reads reach
+  <code>/api/v2/{cmdb,monitor,log}/</code>. Writes are <code>POST</code>/<code>PUT</code>/<code>DELETE</code> (FortiOS
+  has no <code>PATCH</code>), go to <code>/api/v2/cmdb/</code> only, are a dry run until Apply is
+  ticked, need <code>registry.execute_write</code>, and are audited as
+  <code>fgt_api.execute</code>. A <code>DELETE</code> without an object key is refused. Answers and
+  the audited body are scrubbed of secrets by the FortiGate section pages' rule
+  (<code>views.fgt.scrub</code>).</li>
+<li><strong>Fingerprinting.</strong> <code>device_identity.CATALOGS</code> includes FortiGate. Its names
+  share at most 37 with another catalog (FortiADC's), well inside <code>MIN_MARGIN</code>.</li>
+</ul>
 <hr>
 <h2 id="10-limits-that-do-not-go-away">10. Limits that do not go away</h2>
 <ul>

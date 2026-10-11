@@ -341,7 +341,7 @@ def create_app(config_override: object | None = None) -> Flask:
         if bp_name in ('fac', 'fac_api'):
             # Same for FortiAuthenticator.
             eff = 'fortiauthenticator'
-        if bp_name == 'fgt':
+        if bp_name in ('fgt', 'fgt_api'):
             # And for FortiGate.
             eff = 'fortigate'
         _gx_kind = _gui_engine_kind(ep)
@@ -583,7 +583,7 @@ def create_app(config_override: object | None = None) -> Flask:
             # NOT firmware / backups / templates / lua_studio: no transport
             # exists for a FortiGate in any of them, and a page the sidebar
             # does not offer is a gate widened for nobody (see adc_bps).
-            fgt_bps = {'concept_map', 'fgt', 'appliances', 'settings', 'audit',
+            fgt_bps = {'concept_map', 'fgt', 'fgt_api', 'appliances', 'settings', 'audit',
                        'jobs', 'notifications', 'profiles', 'users',
                        'advisor', 'adom_assets', 'console',   # see the adc_bps note
                        'database', 'locks', 'segments', 'device_provision',
@@ -2376,6 +2376,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.fac", "bp"),
         ("app.views.fac_api", "bp"),
         ("app.views.fgt", "bp"),
+        ("app.views.fgt_api", "bp"),
         ("app.views.appliances", "bp"),
         ("app.views.firmware", "bp"),
         ("app.views.jobs", "bp"),

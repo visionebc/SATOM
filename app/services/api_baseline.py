@@ -90,8 +90,8 @@ ARTIFACT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 def products() -> tuple:
     """The products whose registry is built from a baseline.
 
-    The loader's ``API_VERSION`` is the one list of registry products; a
-    catalog-only product (FortiGate) has library data but no registry.
+    The loader's ``API_VERSION`` is the one list of registry products (all
+    five since FortiGate got its API console, 2026-10-11).
     """
     from ..registry.loader import API_VERSION
     return tuple(API_VERSION)
@@ -331,11 +331,21 @@ def _store(product: str, version: str, api_version: str, entries: list, *,
 def _measured_at(product: str, version: str) -> dict:
     """``{name: summary}`` from MEASURED sources only (vendor claims excluded)."""
     from . import api_library
+    measured = api_library.endpoints_at(product, version)
+    if product == "fortigate":
+        # Every FortiGate name in the library IS a cmdb path: ``?action=schema``
+        # is the only thing that measures a FortiGate, and it measures tables.
+        # They become registry names through the loader's one naming rule; a
+        # nested path (``a/b/c``) or a non-cmdb URN is not a table and stays out.
+        from ..registry.loader import fgt_logical
+        return {fgt_logical(n): e for n, e in measured.items()
+                if not e.get("vendor_only") and n.count("/") == 1
+                and str(e.get("urn") or "").startswith("/api/v2/cmdb/")}
     # A name holding "/" is a REST PATH (a schema harvest probes tree objects
     # under their path), not a registry name. Registering a path is
     # discovery_run's job, with the operator's confirmation, never a side
     # effect of promoting a baseline.
-    return {n: e for n, e in api_library.endpoints_at(product, version).items()
+    return {n: e for n, e in measured.items()
             if not e.get("vendor_only") and "/" not in n}
 
 
@@ -529,7 +539,8 @@ def _invalidate(product: str) -> None:
     from ..registry import loader
     {"fortiweb": loader.invalidate_cache, "fortiadc": loader.invalidate_adc_cache,
      "fortianalyzer": loader.invalidate_faz_cache,
-     "fortiauthenticator": loader.invalidate_fac_cache}.get(product, lambda: None)()
+     "fortiauthenticator": loader.invalidate_fac_cache,
+     "fortigate": loader.invalidate_fgt_cache}.get(product, lambda: None)()
     # The per-build views (``loader.registry_for`` / ``resolve_for``) and the
     # fleet view are derived from the rows this just rewrote.
     loader.invalidate_build_views(product)

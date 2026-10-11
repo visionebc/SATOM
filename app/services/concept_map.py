@@ -539,6 +539,9 @@ PAGES: tuple[dict, ...] = (
     _p("fac_api.index", "FortiAuthenticator API", "dev",
        "fac api console rest fortiauthenticator raw call",
        "Raw API console scoped to FortiAuthenticator."),
+    _p("fgt_api.index", "FortiGate API", "dev",
+       "fgt api console rest fortigate fortios cmdb raw call",
+       "Raw API console scoped to FortiGate."),
     # Label is the page's OWN <title>, not a name invented here: it already
     # carries the half that separates it from fleet-wide "WAF Artifacts"
     # (waf.artifacts). The two differ by SCOPE, so both blurbs say their scope

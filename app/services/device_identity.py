@@ -15,7 +15,7 @@ Three writers, and only three:
 
 The product of a device that no longer has an appliance row is established by
 :func:`fingerprint_product`, which matches the snapshot's own endpoint keys
-against the four endpoint registries (seeded from each product's baseline). That is a measurement of the
+against the five endpoint registries (seeded from each product's baseline). That is a measurement of the
 snapshot, not a guess from the name: a device called ``fw7`` and a device called
 ``fortiweb11`` are identified the same way, and a name that lies is ignored.
 A snapshot that matches nothing leaves the product EMPTY rather than picking the
@@ -27,12 +27,14 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-#: The products a snapshot can be fingerprinted as — the four with an
-#: endpoint registry.
-CATALOGS = ("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator")
+#: The products a snapshot can be fingerprinted as — the five with an
+#: endpoint registry (FortiGate since 2026-10-11; its 624 names share at most
+#: 37 with another catalog, FortiADC's, well inside MIN_MARGIN).
+CATALOGS = ("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator",
+            "fortigate")
 
 #: A fingerprint is accepted only when the best family explains this fraction of
-#: the snapshot's endpoint keys. The four catalogs overlap on generic names
+#: the snapshot's endpoint keys. The catalogs overlap on generic names
 #: (``system_global``, ``system_interface`` …), so a bare "highest score wins"
 #: would confidently file a 3-endpoint snapshot under whichever family happens
 #: to list those three.

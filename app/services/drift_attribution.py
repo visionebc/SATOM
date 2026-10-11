@@ -77,7 +77,7 @@ from datetime import datetime
 _BY_ID_PREFIXES = ("config.", "adc.", "faz.")
 _BY_TARGET_EXACT = frozenset({
     "appliance.upgrade",
-    "fac_api.execute", "faz_api.execute", "adc_api.execute",
+    "fac_api.execute", "faz_api.execute", "adc_api.execute", "fgt_api.execute",
 })
 
 # ``faz.device.authorize.failed`` is logged by the SAME helper as its success
@@ -139,6 +139,7 @@ def _succeeded(action: str, extra: dict) -> bool:
     * ``config.*`` — ``fortiweb_ops._record`` logs BOTH previews and refusals,
       so the detail string is the only witness; an unreadable one is a no.
     * ``fac_api.execute`` / ``faz_api.execute`` / ``adc_api.execute`` /
+      ``fgt_api.execute`` /
       ``appliance.upgrade`` — logged even when the call errored, so the
       ``error`` key decides. The consoles log applied WRITES only.
     * ``adc.*`` / ``faz.*`` — the call site returns 502 *before* logging, so
@@ -157,7 +158,8 @@ def _succeeded(action: str, extra: dict) -> bool:
         return False
     if action == "appliance.upgrade" and extra.get("dry_run"):
         return False
-    if action in ("fac_api.execute", "faz_api.execute", "adc_api.execute"):
+    if action in ("fac_api.execute", "faz_api.execute", "adc_api.execute",
+                  "fgt_api.execute"):
         # Older FAZ/ADC console rows include reads (GET); a read is not a
         # write, and treating one as a receipt would silence a real drift.
         return str(extra.get("method", "")).upper() in _MUTATING

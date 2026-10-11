@@ -63,8 +63,8 @@ DEVICE_BLUEPRINTS = frozenset({
     "workspace", "objedit", "spo_wizard", "web_protection", "server_objects",
     "exceptions", "section_config", "structure", "segments", "signatures",
     "line_profiles", "cert_manager", "templates", "change_requests",
-    # FortiADC / FAZ / FAC
-    "adc", "adc_api", "faz", "faz_api", "fac_api",
+    # FortiADC / FAZ / FAC / FortiGate
+    "adc", "adc_api", "faz", "faz_api", "fac_api", "fgt_api",
     # investigation tools that query the box
     "attack_search", "txn_trace", "lua_studio", "api_explorer", "analysis",
     "logs", "scout", "reach_batch", "config_compare", "artifacts",

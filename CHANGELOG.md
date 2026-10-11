@@ -6,6 +6,24 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — FortiGate API: endpoint registry and live console
+
+- The FortiGate ADOM has an **API** group like the other four ADOMs, and its
+  dashboard has an **API console** button. The page lists the endpoint
+  registry grouped by the FortiGate menu (every other table under "Other")
+  and runs live calls against a chosen FortiGate.
+- The registry is seeded from a sealed baseline: the 624 cmdb tables fgt02
+  (FortiOS 8.0.1) served. Names are the table path flattened
+  (`firewall/policy` → `firewall_policy`). Operators can re-point, add or
+  disable entries; a baseline never overwrites their edits.
+- **Writes are dry-run by default**, as on the FortiAuthenticator console:
+  `POST`/`PUT`/`DELETE` show the exact request and send nothing until
+  **Apply** is ticked. Applying needs the "Execute write API calls"
+  permission and is audited. Writes reach `/api/v2/cmdb/` only (the monitor
+  tree holds device actions such as reboot), and a `DELETE` on a whole table
+  is refused. An **Object key** field URL-encodes names such as `192.0.2.0/24`.
+- Secrets are removed from every answer and from the audited request body.
+
 ### Changed — one menu order in every ADOM
 
 - The Fleet and Administrator groups are now one definition shared by every

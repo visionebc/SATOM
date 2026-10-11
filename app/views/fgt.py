@@ -4,8 +4,9 @@ A dashboard with the device picker and the live unit status, plus one
 read-only section page per sidebar leaf (:mod:`app.services.fgt_menu`). Each
 tab is ONE cmdb read through :class:`app.clients.fortigate.FortiGateClient`.
 
-Read-only on purpose: no editor, no API console, no registry binding yet. Those
-arrive as later rounds on top of this shell without moving it.
+Read-only on purpose: these section pages edit nothing. Writes go through the
+measured GUI pages (``services.gui_products``) and the API console
+(``views/fgt_api.py``, registry + dry-run-by-default writes, 2026-10-11).
 
 A device refusal is never rendered as an empty table (same contract as the
 FortiAuthenticator ADOM): "no policies configured" and "the token was

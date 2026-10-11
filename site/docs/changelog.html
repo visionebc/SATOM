@@ -112,6 +112,24 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="changed--server-policy-one-list-with-its-actions-on-it">Changed — Server Policy: one list, with its actions on it</h3>
+<ul>
+<li><strong>Clone, Clone to, Migrate to, Enable, Disable and Delete run on the Server
+  Policy list itself.</strong> They used to send you to SATOM's classic policy list
+  (<code>?classic=1&amp;act=…</code>) to open the dialog there. The dialog, its preview and
+  its job are unchanged; it now opens over the list you are on.</li>
+<li><strong>Several policies at once</strong>: the list has a checkbox per row (and one for
+  every visible row); the six actions run on every ticked policy in one dialog
+  and one bulk run. Edit opens exactly one.</li>
+<li>The classic list's <strong>filters</strong> (VIP / IP, backend pool, backend server IP,
+  certificate type, status, <code>/regex/</code> on the name) and the <strong>clone history</strong>
+  badge moved onto the list.</li>
+<li><strong>The classic SATOM list is gone.</strong> <code>/web/workspace/&lt;id&gt;</code> now opens the
+  Server Policy list, keeping an <code>act</code>/<code>policy</code> deep link. On a node with no
+  knowledge pack yet the list draws FortiWeb 7.6's default columns instead of
+  falling back to the old page; Create New and Edit then open SATOM's policy
+  form and view.</li>
+</ul>
 <h3 id="fixed--the-server-policy-dialog-saves-through-the-same-gates-as-the-object-editor">Fixed — The Server Policy dialog saves through the same gates as the object editor</h3>
 <ul>
 <li><strong>The dialog's save skipped three gates the object editor applies</strong>: the

@@ -1,7 +1,7 @@
 import re
 from urllib.parse import quote
 
-from flask import Blueprint, render_template, jsonify, request
+from flask import Blueprint, render_template, jsonify, request, url_for
 from flask_login import current_user, login_required
 from ..auth.decorators import require_permission
 from ..models import Appliance
@@ -164,57 +164,42 @@ def index():
 @login_required
 @require_permission('protection.view')
 def appliance(appliance_id):
-    appl = visible_appliance_or_404(appliance_id)
-    policies = []
-    error = None
-    meta = {}
+    """The old SATOM Server Policy list. Its page is gone: the address stays
+    (bookmarks, links, ``?act=<action>&policy=<name>`` deep links into the
+    action dialog) and lands on the one list, workspace.gui_list."""
+    from flask import redirect, url_for
+    visible_appliance_or_404(appliance_id)
+    args = request.args.to_dict(flat=False)
+    args.pop('classic', None)
+    return redirect(url_for('workspace.gui_list', appliance_id=appliance_id, **args))
+
+
+def _policy_list_extras(appl, names):
+    """What SATOM adds to FortiWeb's Server Policy list: filter facets (VIP IP /
+    backend server IP / pool / cert type), the clone/migrate history of every
+    row, the OTHER FortiWebs (clone-to / migrate-to targets) and the admin's
+    clone defaults. All DB-first and best-effort: a cold cache never breaks
+    the page (the backend/VIP filters just match nothing)."""
+    from ..services import read_layer as _rl, policy_lineage as _lin, clone_rules as _cr
+    facets = {}
     try:
-        if appl.kind == 'fortiweb':
-            # DB-first: serve the local source of truth; the box is touched only
-            # on an explicit Refresh (see workspace.refresh). Empty cache => the
-            # badge prompts a refresh rather than auto-hitting the device.
-            from ..services import read_layer
-            policies, meta = read_layer.read_policies(appl)
-        # No FortiADC branch: this blueprint is FortiWeb-scoped (the product
-        # gate) and visible_appliance_or_404 hides ADC boxes from that ADOM;
-        # FortiADC virtual servers live in the adc blueprint.
-    except Exception as exc:
-        error = str(exc)
-    from ..services import read_layer as _rl
-    # Filter facets (VIP IP / backend server IP / pool / cert type) + the list of
-    # OTHER FortiWebs (clone-to / migrate-to targets). Both are DB-first — the
-    # facets read the deep cache, the target list is pure config. Best-effort so a
-    # cold cache never breaks the page (backend/VIP filters just show nothing).
-    facets, other_appliances, clone_events = {}, [], {}
-    if appl.kind == 'fortiweb':
-        names = [(p.get('name') if isinstance(p, dict) else getattr(p, 'name', ''))
-                 for p in (policies or [])]
-        names = [n for n in names if n]
-        try:
-            facets = _rl.policy_filter_facets(appl.id, names)
-        except Exception as exc:  # noqa: BLE001
-            log_exception(exc, context='workspace.appliance.facets')
-        # Clone/migrate history for every row on the page — ONE query, keyed by
-        # (appliance, policy name). Deliberately NOT joined onto the cache
-        # projection: device_server_policies is rebuilt on every ingest.
-        from ..services import policy_lineage as _lin
-        clone_events = _lin.for_policies(appl.id, names)
-        other_appliances = [a for a in visible_appliances()
-                            .filter(Appliance.kind == 'fortiweb')
-                            .order_by(Appliance.name).all() if a.id != appl.id]
-    from ..services import clone_rules as _cr
+        facets = _rl.policy_filter_facets(appl.id, names)
+    except Exception as exc:  # noqa: BLE001
+        log_exception(exc, context='workspace.gui.facets')
+    # ONE query, keyed by (appliance, policy name). Deliberately NOT joined onto
+    # the cache projection: device_server_policies is rebuilt on every ingest.
+    clone_events = _lin.for_policies(appl.id, names)
+    other_appliances = [a for a in visible_appliances()
+                        .filter(Appliance.kind == 'fortiweb')
+                        .order_by(Appliance.name).all() if a.id != appl.id]
     try:
         clone_cfg = _cr.config()
         clone_rules_summary = _cr.rules_summary(clone_cfg)
     except Exception:  # noqa: BLE001 — never let settings break the list page
         clone_cfg, clone_rules_summary = {'copy_wpp_default': True}, ''
-    return render_template('workspace/policies.html', appliance=appl,
-                           policies=policies, error=error, cache_meta=meta,
-                           facets=facets, other_appliances=other_appliances,
-                           clone_cfg=clone_cfg,
-                           clone_events=clone_events,
-                           clone_rules_summary=clone_rules_summary,
-                           cache_freshness=_rl.freshness_label(meta) if appl.kind == 'fortiweb' else '')
+    return dict(facets=facets or {}, clone_events=clone_events or {},
+                other_appliances=other_appliances, clone_cfg=clone_cfg,
+                clone_rules_summary=clone_rules_summary)
 
 
 @bp.route('/<int:appliance_id>/refresh', methods=['POST'])
@@ -900,21 +885,25 @@ def _gui_subtables(appl, name, tpl, key, policy=None):
     return subrows, refs
 
 
-def _gui_template_or_404(appl):
-    from flask import abort, flash as _flash, redirect as _redirect, url_for as _url_for
+def _gui_template_or_404(appl, fallback=None):
+    """The imported Server Policy layout for this FortiWeb and how well it fits.
+
+    The release ships no layout: a node that has not imported a knowledge pack
+    yet (fresh install, offline, knowledge.fetch_mode=off) has none. The list
+    (``fallback='list'``) then draws FortiWeb's default columns itself; a
+    dialog page redirects to ``fallback`` (the SATOM editor of the same thing)."""
+    from flask import abort, flash as _flash, redirect as _redirect
     from flask_babel import gettext as _
     from ..services import gui_store, gui_template
     if appl.kind != 'fortiweb':
         abort(404)
     tpl, match = gui_template.select('fortiweb', 'server-policy', gui_store.firmware_of(appl))
     if tpl is None:
-        # The release ships no layout: a node that has not imported a knowledge
-        # pack yet (fresh install, offline, knowledge.fetch_mode=off) has none.
-        # The sidebar's Server Policy leaf opens this view, so a 404 here would
-        # take Server Policy away; SATOM's own list is the fallback.
+        if fallback == 'list':
+            return None, None
         _flash(_('No FortiWeb GUI layout has been imported on this node yet (it comes '
-                 'with the knowledge packs). Showing the SATOM Server Policy list.'), 'info')
-        abort(_redirect(_url_for('workspace.appliance', appliance_id=appl.id)))
+                 'with the knowledge packs). Showing the SATOM editor.'), 'info')
+        abort(_redirect(fallback))
     return tpl, match
 
 
@@ -924,12 +913,20 @@ def _gui_template_or_404(appl):
 def gui_list(appliance_id):
     from ..services import gui_template, read_layer
     appl = visible_appliance_or_404(appliance_id)
-    tpl, match = _gui_template_or_404(appl)
+    tpl, match = _gui_template_or_404(appl, 'list')
     dev = _gui_device(appl)
-    rows, meta = read_layer.read_policies(appl)
+    # DB-first: the local source of truth; the box is touched only on an
+    # explicit Refresh (workspace.refresh).
+    rows, meta, error = [], {}, None
+    try:
+        rows, meta = read_layer.read_policies(appl)
+    except Exception as exc:  # noqa: BLE001 — the page says so instead of a 500
+        log_exception(exc, context='workspace.gui.policies')
+        error = str(exc)
     rows = [r for r in (rows or []) if isinstance(r, dict)]
-    view = gui_template.list_view(tpl, rows, dev)
-    labels = tpl['list'].get('value_labels', {})
+    view = (gui_template.list_view(tpl, rows, dev) if tpl
+            else gui_template.fallback_list_view(rows))
+    labels = tpl['list'].get('value_labels', {}) if tpl else {}
     # VIP / Port: FortiWeb joins each row with its virtual server (VIP list and
     # the vserver's interface). Same join, from the deep cache. A vip-list entry
     # carries an interface only with use-interface-ip; otherwise the port is the
@@ -956,10 +953,12 @@ def gui_list(appliance_id):
             if itf and itf not in ports:
                 ports.append(str(itf))
         joins[r.get('name')] = {'vip': vips, 'port': ports, 'deep': data is not None}
+    extras = _policy_list_extras(appl, [r.get('name') for r in rows if r.get('name')])
     return render_template('workspace/gui_list.html', appliance=appl, tpl=tpl, match=match,
                            dev=dev, view=view, labels=labels, cache_meta=meta, joins=joins,
+                           cache_freshness=read_layer.freshness_label(meta), error=error,
                            protocol_cell=gui_template.protocol_cell,
-                           status_running=gui_template.status_running)
+                           status_running=gui_template.status_running, **extras)
 
 
 @bp.route('/<int:appliance_id>/gui/policy/<path:name>')
@@ -969,7 +968,8 @@ def gui_policy(appliance_id, name):
     from flask import abort
     from ..services import gui_template, objform, read_layer
     appl = visible_appliance_or_404(appliance_id)
-    tpl, match = _gui_template_or_404(appl)
+    tpl, match = _gui_template_or_404(
+        appl, url_for('workspace.policy_detail', appliance_id=appl.id, name=name))
     dev = _gui_device(appl)
     rows, _ = read_layer.read_objects(appl.id, 'server_policy')
     row = next((r for r in rows or [] if isinstance(r, dict) and r.get('name') == name), None)
@@ -1063,7 +1063,8 @@ def gui_save_row(appliance_id, name):
     from ..services import gui_template, objform, read_layer, write_through
     from .objedit import save_row_for
     appl = visible_appliance_or_404(appliance_id)
-    tpl, _match = _gui_template_or_404(appl)
+    tpl, _match = _gui_template_or_404(
+        appl, url_for('workspace.policy_detail', appliance_id=appl.id, name=name))
     body = request.get_json(silent=True) or {}
     st = str(body.get('subtable') or '')
     rows, _ = read_layer.read_objects(appl.id, 'server_policy')
@@ -1104,7 +1105,8 @@ def gui_new(appliance_id, dialog):
     from flask import abort
     from ..services import gui_template
     appl = visible_appliance_or_404(appliance_id)
-    tpl, match = _gui_template_or_404(appl)
+    tpl, match = _gui_template_or_404(
+        appl, url_for('workspace.new_policy', appliance_id=appl.id))
     if dialog not in tpl['list']['edit_dialog_by_protocol'].values():
         abort(404)
     dev = _gui_device(appl)

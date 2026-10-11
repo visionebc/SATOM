@@ -472,7 +472,16 @@ comes from the knowledge packs (§7.4 explains the banner above the table).</p>
   list (it needs <code>config_write</code>). The VIP and Port columns are joined from the
   policy's deep capture; a policy without one shows <strong>—</strong> there.</li>
 <li><strong>Click</strong> a row to select it; <strong>double-click</strong>, <strong>Enter</strong> or <strong>Edit</strong> opens
-  it. <strong>Search</strong> filters the visible rows.</li>
+  it. Tick the <strong>checkboxes</strong> (or the one in the header for every visible row)
+  to select several: the actions below then run on all of them, and <strong>Edit</strong>
+  needs exactly one.</li>
+<li><strong>Search</strong> filters the visible rows by name (plain text or <code>/regex/</code>).
+  <strong>Filters</strong> below the toolbar adds VIP / IP, backend pool, backend server IP,
+  certificate type and status; the VIP and backend filters read the deep
+  capture.</li>
+<li>A policy that was cloned or migrated carries a <strong>copies</strong> badge beside its
+  name; hover it for each copy, where it landed, when, by whom, and the reason
+  of an attempt that failed.</li>
 <li><strong>Create New</strong> opens FortiWeb's <em>Create New</em> menu. An entry marked
   <strong>conditional</strong> may be hidden on this device by a setting SATOM cannot see.
   The form starts with FortiWeb's own defaults; a policy with no HTTP, HTTPS or
@@ -481,9 +490,9 @@ comes from the knowledge packs (§7.4 explains the banner above the table).</p>
   again, newest first, and the result lists what was undone.</li>
 </ul>
 <h3 id="toolbar-actions-on-the-selected-policy">Toolbar actions on the selected policy</h3>
-<p>FortiWeb's toolbar is extended with the SATOM actions the classic page had.
-Each one acts on the <strong>selected row</strong> and always shows a dry-run preview
-before anything is written:</p>
+<p>FortiWeb's toolbar is extended with SATOM's policy actions. Each one acts on the
+<strong>selected rows</strong> and always shows a dry-run preview before anything is
+written:</p>
 <table>
 <thead>
 <tr>
@@ -514,14 +523,15 @@ before anything is written:</p>
 </tr>
 </tbody>
 </table>
-<p>These six actions run in SATOM's policy dialog, which lives on the SATOM view
-of the list: the button opens <code>…/workspace/&lt;id&gt;?classic=1&amp;act=&lt;action&gt;&amp;policy=&lt;name&gt;</code>
-and the dialog for that policy opens straight away. Its options, preview and
-background job are the ones described in §6.</p>
-<p>The page header adds three buttons:</p>
+<p>The six actions open SATOM's policy dialog on this page. Its options, preview
+and background job are the ones described in §6. A link to
+<code>…/workspace/&lt;id&gt;?act=&lt;action&gt;&amp;policy=&lt;name&gt;</code> opens the list with that dialog
+already open for that policy. <strong>Clone to</strong> and <strong>Migrate to</strong> stay disabled
+while no other FortiWeb is registered. A user without <code>config_write</code> sees the
+list without the action buttons.</p>
+<p>The page header adds two buttons:</p>
 <ul>
 <li><strong>From a line profile</strong> — the wizard in §5.1 (needs <code>config_write</code>).</li>
-<li><strong>SATOM view</strong> — SATOM's own list of the same policies (below).</li>
 <li><strong>Change Appliance</strong> — back to the device picker.</li>
 </ul>
 <h3 id="editing-a-policy">Editing a policy</h3>
@@ -542,36 +552,23 @@ with the device's own sections, sub-dialogs and inline tables:</p>
   device (§7.1). After a successful write, SATOM reads the policy back from the
   device so the page shows the stored value.</li>
 </ul>
-<h3 id="the-satom-view">The SATOM view</h3>
-<p><strong>SATOM view</strong> (<code>/web/workspace/&lt;id&gt;</code>) is SATOM's own list of the same
-policies, and the page the FortiWeb ADOM opens on when you enter it with a
-device already selected. It is also the fallback: when no FortiWeb GUI layout has been
-imported on this node yet (a fresh install, or the knowledge feed switched off),
-the Server Policy entry opens this list with a note saying so.</p>
-<ul>
-<li>Filters for name (plain text or <code>/regex/</code>), VIP / IP, backend pool, backend
-  server IP, certificate type and status. The VIP and backend filters read the
-  deep capture.</li>
-<li><strong>Checkboxes and a bulk bar</strong> — Enable, Disable, Clone here, Clone to…,
-  Migrate to…, Delete for many policies at once (§6.5).</li>
-<li><strong>New Server Policy</strong>, <strong>From a line profile</strong> and <strong>Refresh from device</strong>
-  (<code>config_write</code>); <strong>FortiWeb layout</strong> goes back to the list above.</li>
-<li>Click a policy for the <strong>detail view</strong>. It is rendered from the deep cache
-  and includes the resolved service topology: VIP + port → virtual server →
-  pool → real servers. <strong>Check live health</strong> asks the device for the real
-  per-backend health-check state.</li>
-<li>The SATOM edit form has a <strong>＋</strong> next to creatable references, so you can
-  build a new pool, health check or SNI policy inline without leaving the form.
-  Saves are <strong>minimal-diff</strong>: only the fields you changed travel to the device,
-  and you always get a dry-run preview first.</li>
-</ul>
+<h3 id="without-a-knowledge-pack">Without a knowledge pack</h3>
+<p>When no FortiWeb GUI layout has been imported on this node yet (a fresh
+install, or the knowledge feed switched off) the list still opens, with a note
+saying so: FortiWeb 7.6's default columns, the same toolbar actions and
+filters. <strong>Create New</strong> then opens SATOM's New Server Policy form and <strong>Edit</strong>
+opens SATOM's policy view: rendered from the deep cache with the resolved
+service topology (VIP + port → virtual server → pool → real servers), <strong>Check
+live health</strong> for the real per-backend health-check state, and a minimal-diff
+edit form with a <strong>＋</strong> next to creatable references.</p>
+<p>The old SATOM list at <code>/web/workspace/&lt;id&gt;</code> is gone; the address now opens this
+list (an <code>act</code>/<code>policy</code> deep link included).</p>
 <p>To enable or disable a policy or a backend, change a backend's IP or port, or
 swap a policy's certificate <strong>at a set date and time</strong>, use a Scheduled Action
 (§15).</p>
 <h3 id="51-new-server-policy-from-a-line--the-wizard">5.1 New Server Policy from a line — the wizard</h3>
 <p><code>/web/workspace/&lt;id&gt;/spo-wizard</code>, reached from the <strong>From a line profile</strong>
-button on the Server Policy page (page header) and on its SATOM view, beside
-<strong>New Server Policy</strong>.</p>
+button in the Server Policy page header.</p>
 <p>You pick a <strong>line</strong>, and its profile supplies the network segment, the
 certificate class and the Web Protection Profile. The wizard then runs the whole
 chain in one order: IPAM reserves the VIP, DNS publishes the name, the CA issues
@@ -705,12 +702,11 @@ source is kept, never deleted.</p>
 <p>Where to start:</p>
 <ul>
 <li><strong>One policy</strong> — on the Server Policy list (§5), select the row and press
-  <strong>Clone</strong>, <strong>Clone to</strong> or <strong>Migrate to</strong>. The dialog opens on the list's
-  SATOM view with that policy filled in.</li>
-<li><strong>Many policies</strong> — on the SATOM view, tick the policies and use the bulk
-  bar (<strong>Clone here</strong>, <strong>Clone to…</strong>, <strong>Migrate to…</strong>), or the ⚙ menu of one
-  row. <em>Clone to</em> and <em>Migrate to</em> are disabled while no other FortiWeb is
-  registered.</li>
+  <strong>Clone</strong>, <strong>Clone to</strong> or <strong>Migrate to</strong>. The dialog opens on the list with
+  that policy filled in.</li>
+<li><strong>Many policies</strong> — tick their checkboxes on the same list and press the same
+  buttons: one dialog, one bulk run (§6.5). <em>Clone to</em> and <em>Migrate to</em> are
+  disabled while no other FortiWeb is registered.</li>
 </ul>
 <p>What the guided dialog does for you:</p>
 <ul>

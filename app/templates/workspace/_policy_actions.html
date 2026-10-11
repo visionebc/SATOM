@@ -1,0 +1,159 @@
+{# The Server Policy action dialog: Enable / Disable / Clone / Clone to /
+   Migrate to / Delete, always a dry-run preview before the job. Included by
+   the Server Policy list (workspace/gui_list.html) together with
+   _policy_actions_js.html, which opens it: SatomPolicyActions.open(act, names).
+   Needs: appliance, other_appliances, clone_cfg, clone_rules_summary. #}
+<!-- Action modal (preview → apply) -->
+<div class="modal fade" id="actionModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="actionModalTitle">{{ _('Action') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body">
+        <p id="actionModalIntro" class="text-muted"></p>
+        <div id="actionFieldDest" class="mb-3 d-none">
+          <label class="fw-fld-label">{{ _('Destination FortiWeb') }}</label>
+          <select class="form-select form-select-sm" id="actionDest">
+            {% for a in other_appliances %}
+            <option value="{{ a.id }}">{{ a.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div id="actionFieldName" class="mb-3 d-none">
+          <label class="fw-fld-label">{{ _('New policy name') }}</label>
+          <input type="text" class="form-control form-control-sm" id="actionNewName" placeholder="{{ _('new-policy-name') }}" autocomplete="off">
+        </div>
+        <div id="actionFieldVip" class="mb-3 d-none">
+          <label class="fw-fld-label">{{ _('VIP IP for the copy') }}</label>
+          <input type="text" class="form-control form-control-sm" id="actionVipIp" placeholder="{{ _('e.g. 240.1.10.1') }}" autocomplete="off">
+          <div class="form-text" id="actionVipHint" style="font-size:12px;"></div>
+        </div>
+        <div id="actionFieldIface" class="mb-3 d-none">
+          <label class="fw-fld-label">{{ _('Interface binding on the destination') }}</label>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-1" id="actionIfaceTable">
+              <thead><tr>
+                <th>{{ _('Source port') }}</th>
+                <th>{{ _('Used by') }}</th>
+                <th style="min-width:210px;">{{ _('Destination port') }}</th>
+              </tr></thead>
+              <tbody id="actionIfaceBody"></tbody>
+            </table>
+          </div>
+          <div class="form-text" id="actionIfaceHint" style="font-size:12px;"></div>
+        </div>
+        {# File-backed objects (XML schema / DTD / WSDL / OpenAPI / gRPC IDL /
+           JSON schema / Lua script). FortiWeb keeps only their NAME in the
+           configuration, so the tree clone alone produces an EMPTY object. #}
+        <div id="actionFieldArtifacts" class="mb-3 d-none">
+          <label class="fw-fld-label">{{ _('File-backed objects (content, not configuration)') }}</label>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-1" id="actionArtTable">
+              <thead><tr>
+                <th>{{ _('Object') }}</th>
+                <th>{{ _('Type') }}</th>
+                <th>{{ _('Content') }}</th>
+              </tr></thead>
+              <tbody id="actionArtBody"></tbody>
+            </table>
+          </div>
+          <div id="actionArtAckBox" class="fw-card d-none"
+               style="border-left:3px solid #7A5700;padding:8px 10px;">
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" id="actionArtAccept">
+              <label class="form-check-label" for="actionArtAccept" style="font-size:12.5px;">
+                {{ _('Clone anyway — SKIP the objects whose file content is unavailable.') }}
+                <span class="text-muted">{{ _('The copy will not enforce the validation the source does; a rule that references one will fail (-651), and a migrate will NOT disable the source.') }}</span>
+              </label>
+            </div>
+          </div>
+          <div class="form-text" id="actionArtHint" style="font-size:12px;"></div>
+        </div>
+        {# The destination build's NEW fields — offered, never added by default.
+           Rows come from the server's checklist (version_compat via the API
+           library); a blank value means "leave unset", and the engine
+           re-validates every filled value against the destination build. #}
+        <div id="actionFieldNewFields" class="mb-3 d-none">
+          <label class="fw-fld-label">{{ _('Fields the destination build adds (optional)') }}</label>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-1">
+              <thead><tr>
+                <th>{{ _('Object') }}</th>
+                <th>{{ _('Field') }}</th>
+                <th>{{ _('Evidence') }}</th>
+                <th>{{ _('Value') }}</th>
+              </tr></thead>
+              <tbody id="actionNewFieldsBody"></tbody>
+            </table>
+          </div>
+          <div class="form-text" id="actionNewFieldsHint" style="font-size:12px;">{{ _('Nothing is added unless you fill a value. Values are checked against the destination build\'s type and options before anything is written, and only objects this run CREATES receive them.') }}</div>
+        </div>
+        <div id="actionBulkIpNote" class="mb-3 d-none">
+          <span class="fw-badge fw-badge-secondary">{{ _('Bulk') }}</span>
+          <span class="text-muted" style="font-size:12.5px;">{{ _('Each copy\'s VIP gets a') }} <strong>{{ _('dummy IP') }}</strong> automatically, per the admin rules:
+            <code>{{ clone_rules_summary }}</code> (Settings → Clone / Migrate).</span>
+        </div>
+        <div id="actionFieldAdditive" class="mb-3 d-none">
+          <div class="form-check mb-0">
+            <input class="form-check-input" type="checkbox" id="actionAdditiveOnly" checked>
+            <label class="form-check-label" for="actionAdditiveOnly" style="font-size:13px;">
+              <strong>{{ _('Only add what is missing') }}</strong>
+              {{ _('— never write into an object the destination already has') }}
+            </label>
+          </div>
+          <div class="form-text" style="font-size:12px;">{{ _('An object the destination does not have is still created whole, with all of its rows. An object it already has is left exactly as it is: a colliding row is not rewritten AND a missing row is not added. Rows held back this way are listed in the plan and in the report as') }} <code>untouched</code>{{ _(' — they are the only difference a run can produce that leaves no trace on the destination.') }}</div>
+        </div>
+        <div id="actionFieldWppOpts" class="mb-3 d-none">
+          <div class="d-flex align-items-center flex-wrap gap-3">
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" id="actionCopyWpp" {{ 'checked' if clone_cfg.copy_wpp_default }} disabled>
+              <label class="form-check-label" for="actionCopyWpp" style="font-size:13px;">{{ _('Copy Web Protection Profile') }}</label>
+            </div>
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" id="actionOverrideDefaults">
+              <label class="form-check-label" for="actionOverrideDefaults" style="font-size:13px;">{{ _('Override admin defaults') }}</label>
+            </div>
+          </div>
+          <div class="form-text" style="font-size:12px;">{{ _('Values come from the administrator (Settings → Clone / Migrate). Tick "Override admin defaults" to change them for this run only.') }}</div>
+          <div id="actionWppChoice" class="d-none mt-2 p-2" style="border:1px solid rgba(251,191,36,.45);border-radius:8px;">
+            <div style="font-size:13px;" class="mb-1"><i class="bi bi-exclamation-triangle text-warning me-1"></i><span id="actionWppChoiceText"></span></div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="wppChoice" id="wppChoiceDest" value="use_dest">
+              <label class="form-check-label" for="wppChoiceDest" style="font-size:13px;">{{ _('Use the destination\'s existing profile (accepting its differing values)') }}</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="wppChoice" id="wppChoiceNew" value="new" checked>
+              <label class="form-check-label" for="wppChoiceNew" style="font-size:13px;">{{ _('Copy the source profile under a') }} <strong>{{ _('new name') }}</strong></label>
+            </div>
+            <input type="text" class="form-control form-control-sm mt-1" id="actionWppNewName" autocomplete="off">
+            <div class="form-text" id="actionWppNewHint" style="font-size:12px;"></div>
+          </div>
+        </div>
+        <div id="actionChecklist" class="mb-3 d-none">
+          <div class="d-flex align-items-center justify-content-between mb-1">
+            <strong style="font-size:13px;"><i class="bi bi-clipboard-check me-1"></i>{{ _('Pre-flight checklist') }}</strong>
+            <button type="button" class="btn btn-sm btn-fw-outline" id="actionChecklistBtn"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Re-run checks') }}</button>
+          </div>
+          <div id="actionChecklistBody" style="font-size:12.5px;max-height:280px;overflow:auto;"><span class="text-muted">{{ _('Running checks…') }}</span></div>
+        </div>
+        <div id="actionTargets" class="mb-3"></div>
+        <div id="actionPreview" class="d-none">
+          <hr>
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <strong>{{ _('Dry-run preview') }}</strong>
+            <span class="fw-badge fw-badge-secondary" id="actionPreviewBadge"></span>
+          </div>
+          <div id="actionPreviewBody" class="mono" style="font-size:12px;max-height:340px;overflow:auto;"></div>
+        </div>
+        <div id="actionError" class="fw-alert fw-alert-warning d-none mt-2"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+        <button type="button" class="btn btn-fw-outline btn-sm" id="actionPreviewBtn"><i class="bi bi-eye me-1"></i>{{ _('Preview (dry-run)') }}</button>
+        <button type="button" class="btn btn-fw-primary btn-sm" id="actionApplyBtn" disabled><i class="bi bi-lightning-charge me-1"></i>{{ _('Apply for real') }}</button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changed · 167 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changed · 171 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changed · 167 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changed · 171 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changed · 167 entries</span>
-        <ul class="rel-leads"><li>The dialog&#x27;s save skipped three gates the object editor applies</li><li>Signatures</li><li>FortiGate and FortiAuthenticator dashboards</li><li class="rel-more">… and 164 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Changed · 171 entries</span>
+        <ul class="rel-leads"><li>Clone, Clone to, Migrate to, Enable, Disable and Delete run on the Server Policy list itself</li><li>Several policies at once</li><li>The classic SATOM list is gone</li><li class="rel-more">… and 168 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.0.0.html" data-rel-version="3.0.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.0.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -360,6 +360,24 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="changed--server-policy-one-list-with-its-actions-on-it">Changed — Server Policy: one list, with its actions on it</h3>
+<ul>
+<li><strong>Clone, Clone to, Migrate to, Enable, Disable and Delete run on the Server
+  Policy list itself.</strong> They used to send you to SATOM's classic policy list
+  (<code>?classic=1&amp;act=…</code>) to open the dialog there. The dialog, its preview and
+  its job are unchanged; it now opens over the list you are on.</li>
+<li><strong>Several policies at once</strong>: the list has a checkbox per row (and one for
+  every visible row); the six actions run on every ticked policy in one dialog
+  and one bulk run. Edit opens exactly one.</li>
+<li>The classic list's <strong>filters</strong> (VIP / IP, backend pool, backend server IP,
+  certificate type, status, <code>/regex/</code> on the name) and the <strong>clone history</strong>
+  badge moved onto the list.</li>
+<li><strong>The classic SATOM list is gone.</strong> <code>/web/workspace/&lt;id&gt;</code> now opens the
+  Server Policy list, keeping an <code>act</code>/<code>policy</code> deep link. On a node with no
+  knowledge pack yet the list draws FortiWeb 7.6's default columns instead of
+  falling back to the old page; Create New and Edit then open SATOM's policy
+  form and view.</li>
+</ul>
 <h3 id="fixed--the-server-policy-dialog-saves-through-the-same-gates-as-the-object-editor">Fixed — The Server Policy dialog saves through the same gates as the object editor</h3>
 <ul>
 <li><strong>The dialog's save skipped three gates the object editor applies</strong>: the

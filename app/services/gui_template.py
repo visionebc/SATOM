@@ -523,6 +523,23 @@ def list_view(tpl: dict, rows: list[dict], dev: dict) -> dict:
             "rows": rows}
 
 
+# FortiWeb 7.6's default Server Policy columns (reverse proxy, measured on
+# fortiweb17), for a node that has not imported a knowledge pack: the list
+# still draws the device's columns instead of a page of its own.
+FALLBACK_COLUMNS = (("id", "#"), ("name", "Policy Name"), ("vserver", "Virtual Server"),
+                    ("vip", "VIP"), ("port", "Port"), ("protocol", "Protocol"),
+                    ("server-pool", "Server Pool"),
+                    ("web-protection-profile", "Web Protection Profile"),
+                    ("status", "Status"))
+
+
+def fallback_list_view(rows: list[dict]) -> dict:
+    """``list_view`` without a layout: default columns, no Create New dialogs."""
+    return {"columns": [{"id": i, "label": label} for i, label in FALLBACK_COLUMNS],
+            "optional_columns": [], "create_menu": [], "dialog_by_protocol": {},
+            "rows": rows}
+
+
 def protocol_cell(row: dict) -> str:
     """The Protocol column as FortiWeb computes it (fwb-server-policy.js)."""
     proto = row.get("protocol") or ""

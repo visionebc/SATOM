@@ -55,6 +55,10 @@
   {% endif %}
 </div>
 
+{# The pages starred from the left menu. The menu reads its stars from HERE,
+   so a star taken off in this panel goes dark in the menu as well. #}
+<div hidden data-bm-menu-favs='{{ menu_favs|tojson }}'></div>
+
 <div class="bm-foot">
   <label class="bm-check">
     <input type="checkbox" data-bm-showhidden {% if show_hidden %}checked{% endif %}>

@@ -383,6 +383,9 @@ def build_panel(q: str = '') -> dict:
         'lens': stack,
         'lens_url': url_for('auth.profile') + '#bookmark-view',
         'device_count': len(appliances),
+        # The sidebar stars read this, so the panel stays the one authority
+        # on what is starred -- a star removed here goes dark in the menu.
+        'menu_favs': sorted(svc.menu_favorite_urls(current_user, rows, favs)),
     }
 
 
@@ -517,6 +520,20 @@ def place(bid):
 def favorite(bid):
     bm = _visible_or_404(bid)
     svc.set_favorite(current_user, bm, request.form.get('favorite') == '1')
+    return _render(_q())
+
+
+@bp.route('/menu-favorite', methods=['POST'])
+@login_required
+def menu_favorite():
+    """The star on a sidebar entry. Keyed by the page's path, not an id: the
+    menu knows its links, not which bookmark (if any) already points there."""
+    f = request.form
+    try:
+        svc.set_menu_favorite(current_user, f.get('url', ''),
+                              f.get('label', ''), f.get('favorite') == '1')
+    except svc.BookmarkDenied as exc:
+        return _denied(exc)
     return _render(_q())
 
 

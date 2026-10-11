@@ -6,6 +6,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — star any left-menu entry into the Bookmarks panel
+
+The user asked to be able to mark menu and sub-menu entries as favourites with
+a star, have them appear in the bookmarks bar, and remove them the same way.
+Every page entry in the left menu now shows a star on hover; clicking it adds
+the page to **Favourites** in the Bookmarks panel (as a personal link labelled
+"Group › Entry"), and clicking the filled star removes it. Stars are per user
+and per ADOM, like every bookmark.
+
+- Nothing new is stored: a starred entry is a personal link bookmark with a
+  star, so it goes through the same URL check as any link and only pages of
+  this console are accepted.
+- Unstarring deletes that link while it still sits at the root of the panel;
+  a link you filed into a folder, or a team link, only loses its star.
+- The menu reads its stars from the panel, so a star removed in the panel goes
+  dark in the menu as well.
+
 ### Added — FortiADC: Upgrade and Boot Partition on the appliance page
 
 The user asked that a FortiADC appliance offer the same actions as a FortiWeb.

@@ -681,15 +681,16 @@ def detach_member(id, mid):
 
 # ===========================================================================
 # Appliance actions (ported from the desktop app): Policy Inspector,
-# Rediscovery, Console, Upgrade Preparation, Upgrade. Inspector/Rediscovery/
-# Console/Upgrade-Prep serve BOTH kinds (FortiADC branches via services/
-# adc_ops); the firmware flash routes stay FortiWeb-only.
+# Rediscovery, Console, Upgrade Preparation, Upgrade, Boot Partition. Every one
+# serves BOTH kinds; the FortiADC side lives in services/adc_ops (the firmware
+# transport since 2026-10-11, read off the FortiADC 7.6.7 GUI).
 # ===========================================================================
 
-def _fortiweb_or_404(id):
+def _flashable_or_404(id):
     appliance = visible_appliance_or_404(id)
-    if appliance.kind != 'fortiweb':
-        flash('This action is only available for FortiWeb appliances.', 'warning')
+    if appliance.kind not in ('fortiweb', 'fortiadc'):
+        flash('Firmware actions are available for FortiWeb and FortiADC appliances only.',
+              'warning')
         return None, appliance
     return appliance, appliance
 
@@ -1122,7 +1123,7 @@ def upgrade_advisory(id):
     the fragment puts every one of them through the template's autoescape. A
     JSON feed would need a second renderer in JavaScript and hand it the same
     strings unescaped."""
-    appliance, _ = _fortiweb_or_404(id)
+    appliance, _ = _flashable_or_404(id)
     if appliance is None:
         abort(404)
     image = _selected_compatible_image(appliance, request.args.get('image_id'))
@@ -1136,7 +1137,7 @@ def upgrade_advisory(id):
 @require_permission('appliances.apply')
 @require_device_scope
 def upgrade(id):
-    appliance, _ = _fortiweb_or_404(id)
+    appliance, _ = _flashable_or_404(id)
     if appliance is None:
         return redirect(url_for('appliances.detail', id=id))
     from ..services import upgrade as upg
@@ -1166,9 +1167,9 @@ def upgrade(id):
 @require_permission('appliances.apply')
 @require_device_scope
 def upgrade_push(id):
-    appliance, _ = _fortiweb_or_404(id)
+    appliance, _ = _flashable_or_404(id)
     if appliance is None:
-        flash('Not a FortiWeb appliance.', 'danger')
+        flash('Firmware actions need a FortiWeb or FortiADC appliance.', 'danger')
         return redirect(url_for('appliances.detail', id=id))
     from ..services import upgrade as upg
 
@@ -1679,13 +1680,155 @@ def _downgrade_context(appliance):
 @require_permission('appliances.apply')
 @require_device_scope
 def downgrade(id):
-    appliance, _ = _fortiweb_or_404(id)
+    appliance, _ = _flashable_or_404(id)
     if appliance is None:
         return redirect(url_for('appliances.detail', id=id))
     fw, images, relations, default_id, older_exists = _downgrade_context(appliance)
+    parts, parts_error = _partition_table(appliance)
     return render_template('appliances/downgrade.html', appliance=appliance,
                            firmware=fw, images=images, relations=relations,
-                           selected_id=default_id, older_exists=older_exists)
+                           selected_id=default_id, older_exists=older_exists,
+                           partitions=parts, partitions_error=parts_error)
+
+
+def _partition_table(appliance):
+    """``(table, error)`` for the Boot Partition page. FortiADC only: its
+    partition table is what decides whether "boot the other partition" is a
+    rollback or a reboot into nothing, so the page shows it."""
+    if appliance.kind != 'fortiadc':
+        return None, ''
+    from ..services import upgrade as upg
+    try:
+        return upg.read_partitions(appliance), ''
+    except Exception as exc:  # noqa: BLE001 — the page still renders
+        return None, f'{type(exc).__name__}: {exc}'[:200]
+
+
+@bp.route('/<int:id>/downgrade/boot-alternate', methods=['POST'])
+@login_required
+@require_permission('appliances.apply')
+@require_device_scope
+def boot_alternate(id):
+    """Reboot a FortiADC into its inactive partition (no image sent).
+
+    Same gates as the Boot Partition flash: the emergency path needs no change
+    request, so a live run needs the acknowledgement AND the typed appliance
+    name, and every attempt is audited with its outcome. A dry run reads the
+    partition table and sends nothing."""
+    appliance, _ = _flashable_or_404(id)
+    if appliance is None or appliance.kind != 'fortiadc':
+        msg = 'Booting the alternate partition is available for FortiADC appliances only.'
+        if _wants_json():
+            return jsonify({'error': msg}), 400
+        flash(msg, 'warning')
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import upgrade as upg
+    dry_run = request.form.get('dry_run') == 'on'
+    back = url_for('appliances.downgrade', id=id)
+
+    def _answer(msg, ok, code=200):
+        if _wants_json():
+            return jsonify({'ok': ok, 'message': msg} if ok else {'error': msg}), code
+        flash(msg, 'success' if ok else 'danger')
+        return redirect(back)
+
+    if dry_run:
+        try:
+            res = upg.boot_alternate_partition(appliance, dry_run=True)
+        except Exception as exc:  # noqa: BLE001
+            return _answer(f'Partition check failed: {type(exc).__name__}: {exc}', False, 502)
+        return _answer(res['message'], bool(res.get('ok')), 200 if res.get('ok') else 409)
+
+    ack = request.form.get('ack_no_change_control') == 'on'
+    named = (request.form.get('confirm_name', '') or '').strip() == appliance.name
+    if not ack or not named:
+        reason = ('change-control bypass not acknowledged' if not ack
+                  else 'appliance name not typed')
+        log_action('appliance.boot_alternate', target=appliance.name,
+                   extra={'outcome': 'refused', 'reason': reason})
+        return _answer('A live partition boot reboots the appliance and bypasses change '
+                       'control: tick the acknowledgement and type the exact appliance '
+                       'name.', False, 400)
+    from ..services import jobs as jobsvc
+    log_action('appliance.boot_alternate', target=appliance.name,
+               extra={'outcome': 'started',
+                      'change_control': 'bypassed (emergency path, acknowledged)'})
+    job = jobsvc.create_job('firmware_boot_alternate',
+                            f'Boot alternate partition — {appliance.name}',
+                            cancelable=False,
+                            by=getattr(current_user, 'username', '') or '',
+                            meta={'appliance_id': appliance.id})
+    user_id = getattr(current_user, 'id', 0) or 0
+    jobsvc.run_async(current_app._get_current_object(), job['id'],
+                     lambda app, jid: _boot_alt_worker(app, jid, appliance.id,
+                                                       user_id, back))
+    if _wants_json():
+        return jsonify({'job_id': job['id']})
+    flash('Partition boot started — follow it in the jobs panel.', 'info')
+    return redirect(back)
+
+
+def _boot_alt_worker(app, job_id, appliance_id, user_id, link):
+    """Background partition boot: send the swap → watch the reboot → check the
+    box came back on the OTHER build → rediscover. Every exit is audited."""
+    from ..services import upgrade as upg, jobs as jobsvc
+    from ..services import notifications as notify
+    K = notify.Notification
+
+    def _fail(appliance, msg):
+        jobsvc.finish_error(job_id, msg)
+        log_action('appliance.boot_alternate', target=appliance.name,
+                   extra={'outcome': 'failure', 'error': msg[:300]})
+        if user_id:
+            notify.push(user_id, f'Partition boot failed: {appliance.name}',
+                        kind=K.KIND_ERROR, body=msg[:400], link=link)
+
+    with app.app_context():
+        appliance = Appliance.query.get(appliance_id)
+        if appliance is None:
+            jobsvc.finish_error(job_id, 'appliance no longer exists')
+            return
+        try:
+            jobsvc.set_progress(job_id, 5, 'Reading the partition table…')
+            res = upg.boot_alternate_partition(appliance, dry_run=False)
+            if not res.get('ok'):
+                return _fail(appliance, res.get('message') or 'refused')
+            fw_before, target = res.get('firmware_before', ''), res.get('target', '')
+            jobsvc.set_progress(job_id, 40, f'Accepted — rebooting into {target}…')
+            rec = upg.monitor_recovery(
+                appliance, progress=lambda p, m: jobsvc.set_progress(job_id, p, m))
+            if not rec.get('recovered'):
+                return _fail(appliance, f'{appliance.name} did not come back within '
+                                        f'~{int(rec.get("elapsed_s", 0))}s — check the console.')
+            fw_after = rec.get('firmware_after') or ''
+            if fw_before and fw_after == fw_before:
+                return _fail(appliance, f'{appliance.name} is still on {fw_after}: the '
+                                        f'partition boot did not take.')
+            jobsvc.set_progress(job_id, 92, 'Back online — running basic checks…')
+            health = upg.post_flash_checks(appliance)
+            _persist_firmware(appliance, fw_after)
+            try:
+                from ..services import rediscovery
+                jobsvc.set_progress(job_id, 97, 'Rediscovering the appliance…')
+                rediscovery._run(rediscovery._client_snapshot(appliance),
+                                 by='post-boot-alternate', deep=False)
+                rediscovery.maybe_apply_inventory(appliance)
+            except Exception:  # noqa: BLE001 — never sinks a completed boot
+                pass
+            done = (f'{appliance.name} is back online on {fw_after or "?"} (was '
+                    f'{fw_before or "?"}). Recovered in {int(rec.get("elapsed_s", 0))}s.')
+            jobsvc.finish_success(job_id, message=done,
+                                  result={'phase': 'done', 'firmware_before': fw_before,
+                                          'firmware_after': fw_after, 'recovery': rec,
+                                          'health': health, 'reload': True})
+            log_action('appliance.boot_alternate', target=appliance.name,
+                       extra={'outcome': 'success', 'from': fw_before, 'to': fw_after})
+            if user_id:
+                notify.push(user_id, f'Partition boot complete: {appliance.name}',
+                            kind=K.KIND_SUCCESS if health.get('api_ok') else K.KIND_WARNING,
+                            body=done[:400], link=link)
+        except Exception as exc:  # noqa: BLE001
+            _fail(appliance, f'{type(exc).__name__}: {exc}'[:300])
 
 
 @bp.route('/<int:id>/downgrade', methods=['POST'])
@@ -1693,9 +1836,9 @@ def downgrade(id):
 @require_permission('appliances.apply')
 @require_device_scope
 def downgrade_push(id):
-    appliance, _ = _fortiweb_or_404(id)
+    appliance, _ = _flashable_or_404(id)
     if appliance is None:
-        flash('Not a FortiWeb appliance.', 'danger')
+        flash('Firmware actions need a FortiWeb or FortiADC appliance.', 'danger')
         return redirect(url_for('appliances.detail', id=id))
     from ..services import upgrade as upg
 
@@ -1773,10 +1916,12 @@ def downgrade_push(id):
                           'from': result.get('firmware_before', ''),
                           'change_control': 'bypassed (emergency path, acknowledged)'})
     fw, images, relations, default_id, older_exists = _downgrade_context(appliance)
+    parts, parts_error = _partition_table(appliance)
     return render_template('appliances/downgrade.html', appliance=appliance,
                            firmware=result.get('firmware_before', '') or fw,
                            result=result, images=images, relations=relations,
-                           selected_id=image.id, older_exists=older_exists)
+                           selected_id=image.id, older_exists=older_exists,
+                           partitions=parts, partitions_error=parts_error)
 
 
 # ===========================================================================

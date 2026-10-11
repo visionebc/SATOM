@@ -6,6 +6,29 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — FortiADC: Upgrade and Boot Partition on the appliance page
+
+The user asked that a FortiADC appliance offer the same actions as a FortiWeb.
+**Upgrade** and **Boot Partition** now serve FortiADC through the same runbook
+(change control, Scout, pre-flight backup and health, reboot monitoring,
+before/after report, final rediscovery), over the transport the FortiADC GUI
+itself uses: the image goes to the inactive partition and the box reboots into
+it. The Boot Partition page of a FortiADC shows both partitions and offers
+**Boot alternate partition** — a reboot into the build already installed on the
+other partition, no image sent — with the emergency-path gates (acknowledgement,
+typed name, audit) and a refusal before anything is sent when that partition is
+empty. The pre-flight now reads whether the account may change the system
+instead of reporting "unknown", and the post-flight runs the FortiADC health
+battery and virtual-server probes instead of the FortiWeb ones.
+
+### Security — FortiADC GETs that reboot or reset the appliance
+
+On FortiADC, reboot, shutdown, **factory reset** and the partition swap are plain
+GET requests. The FortiADC API console sent any GET for a read-only user, with
+no dry run and no audit entry. Those paths, plus restore and image upload, are
+now refused for every method and permission (and audited) in the API console,
+in scheduled custom REST calls, and in the discovery sweep's endpoint plan.
+
 ### Added — Fleet → Architecture: layers, flow trace, autosave, fleet palette
 
 - **Trace a flow:** source IP, destination IP, TCP/UDP/ICMP and port. Every

@@ -1772,6 +1772,14 @@ def _do_custom_rest(appliance, params: dict, dry_run: bool) -> dict:
         return {"ok": False,
                 "summary": "refused: that endpoint reboots the box even on GET.",
                 "log": ""}
+    from . import adc_ops as _adc_ops
+    _adc_hit = _adc_ops.side_effect_path(path)
+    if _adc_hit:
+        return {"ok": False,
+                "summary": (f"refused: FortiADC {_adc_hit} changes the appliance "
+                            "(reboot, shutdown, factory reset, partition swap, "
+                            "restore or image upload) even on GET; use its own page."),
+                "log": ""}
     if appliance is None:
         return {"ok": False, "summary": "custom REST needs a target device.", "log": ""}
 

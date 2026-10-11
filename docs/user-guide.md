@@ -1701,7 +1701,7 @@ other parses a config file entirely offline.
 
 ## 12. Firmware upgrades
 
-Appliance detail → **Upgrade** (FortiWeb):
+Appliance detail → **Upgrade** (FortiWeb and FortiADC):
 
 1. Upload the `.out` image (or pick a previously uploaded one).
 2. The runbook takes a **mandatory config backup**, probes every published
@@ -1720,6 +1720,18 @@ Appliance detail → **Upgrade** (FortiWeb):
    *"I understand this live flash bypasses change control"* and typing the
    appliance name; the attempt (refused or started) and its outcome are written
    to the audit log.
+
+**FortiADC** takes the same steps with its own transport, the one its GUI uses:
+the image goes to the box's inactive partition and the box reboots into it, so
+there is no maturity question and no partition to choose. The **Boot
+Partition** page of a FortiADC also shows both partitions and, when the
+inactive one holds a build, offers **Boot alternate partition**: a reboot into
+that build with no image sent — the quick rollback. Same gates as the
+emergency flash (acknowledgement + typed name, audited), and it is refused
+before anything is sent when the inactive partition is empty. The FortiADC
+API console and scheduled custom REST calls refuse the paths that change the
+box even on a GET (reboot, shutdown, factory reset, partition swap, restore,
+image upload): use these pages instead.
 
 **The Firmware library** (Fleet → **Firmware**, admin) is the store the upgrade
 step 1 picks from, and it is worth using rather than re-uploading an image per
@@ -2574,7 +2586,7 @@ no Operations group, and that is not an oversight:
 |---|---|
 | **Certificate Manager (§10)** | **No.** Scanning, issuance, deployment and the lifecycle sweep dispatch on FortiWeb and FortiADC only. The unit's own *Certificate Management* menu group shows **the device's** certificates as the unit draws them. It is not the fleet Certificate Manager, and material there is not managed, bound or swept by §10. |
 | **Device Backups (§11)** | **No.** The vault pages are closed to this workspace and not in the FAC menu; the backup transports are written against the FortiWeb/FortiADC backup APIs. |
-| **Firmware upgrade (§12)** | **No.** Upgrade and Boot Partition are FortiWeb-only even on the appliance detail page, and the SSH console, discovery and upgrade-prep actions there are gated to FortiWeb and FortiADC. The firmware library is closed to this workspace too: there is no upgrade path that would consume an image stored there. |
+| **Firmware upgrade (§12)** | **No.** Upgrade and Boot Partition serve FortiWeb and FortiADC only, even on the appliance detail page, and the SSH console, discovery and upgrade-prep actions there are gated to FortiWeb and FortiADC. The firmware library is closed to this workspace too: there is no upgrade path that would consume an image stored there. |
 | **Monitoring (§14)** | **Yes**, with product-appropriate kinds — a baseline plus the **entitlement** set (licence headroom, FortiToken pool), and load/memory read over REST rather than the CLI (§14.3, §14.4). |
 | **Appliances, Audit log, Network segment** | **Yes** — the shared administration pages. |
 

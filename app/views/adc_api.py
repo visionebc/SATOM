@@ -36,7 +36,7 @@ from ..extensions import db
 from ..models import Appliance, Permission, RegistryEndpoint
 from ..models import visible_appliances, visible_appliance_or_404
 from ..registry import loader
-from ..services import adc_menu, registry_write
+from ..services import adc_menu, adc_ops, registry_write
 from ..services.audit import log_action
 from . import _clicoverage, _discovery
 from . import _apiversions, _reconcile
@@ -176,6 +176,18 @@ def execute():
             return jsonify(ok=False, error=str(exc))
         except KeyError:
             return jsonify(ok=False, error=f'Unknown FortiADC endpoint: {endpoint}')
+
+    # Refused for EVERY method and every permission: on FortiADC a plain GET
+    # reboots, shuts down, factory-resets or swaps the boot partition. Those
+    # verbs have their own pages with their own gates.
+    blocked = adc_ops.side_effect_path(path)
+    if blocked:
+        log_action('adc_api.refused', target=appliance.name,
+                   extra={'method': method, 'endpoint': path, 'matched': blocked})
+        return jsonify(ok=False, error=(
+            f'Refused: {blocked} changes the appliance itself (reboot, shutdown, '
+            f'factory reset, partition swap, restore or image upload), even on GET. '
+            f'Use the appliance page: Upgrade, Boot Partition or Restore.'))
 
     mkey = (request.form.get('mkey') or '').strip()
     if mkey:

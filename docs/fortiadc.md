@@ -50,6 +50,25 @@
 * Candidate next steps once verified: field-spec catalog, DB-first cache,
   objedit-style forms, backups/upgrade runbook parity.
 
+## Firmware and the GETs that are writes (fortiadc10, 7.6.7, 2026-10-11)
+
+Read off the FortiADC 7.6.7 GUI bundle (System > Settings > Firmware and
+Backup & Restore); the reads were run against fortiadc10. Code:
+`app/services/adc_ops.py` (transport), `app/services/upgrade.py` (dispatch).
+
+| Action | Call |
+|---|---|
+| Partition table | `GET /api/system_global/boot_partition` → `[{partno, active, partid, timestamp}]`; empty `partid` = empty partition |
+| Flash | `GET /api/system_global/clear_tmp_space`, then multipart `POST /api/upload/image` (`hasync` 0/1, file field name free); `payload` 0 = accepted, installs into the inactive partition and reboots |
+| Boot the other partition | `GET /api/system_global/swap_boot_partition` (reboots) |
+| May this account flash | `GET /api/platform/info?vdom=root` → `isSystemAdmin` + `isSystemWritable` |
+| Config restore (not wired yet) | multipart `POST /api/upload/check_config` (`entire=enable`) → `{ret, file_path}`; `ret` 2 → `POST /api/system_global/restore_config_local {password, filename}`; `ret` 1 = password-protected file |
+
+**Plain GETs change the box:** `platform/reboot`, `platform/shutdown`,
+`platform/reset` (factory reset) and `swap_boot_partition` are all GETs in the
+GUI. `adc_ops.ADC_SIDE_EFFECT_PATHS` lists them; the API console, scheduled
+custom REST calls and the discovery plan refuse every path on it.
+
 
 ## Virtual server dependency chain + create-field seed (verified live, fadc 8.0.3, 2026-07-07)
 

@@ -5,6 +5,8 @@
 (function () {
   'use strict';
 
+  var pick = document.getElementById('naPick');
+  if (pick) pick.addEventListener('change', function () { window.location.href = pick.value; });
   var svg = document.getElementById('naCanvas');
   var cfgEl = document.getElementById('naConfig');
   if (!svg || !cfgEl) return;
@@ -42,7 +44,8 @@
     });
   }
   function byId(id) { for (var i = 0; i < layout.nodes.length; i++) if (layout.nodes[i].id === id) return layout.nodes[i]; return null; }
-  function size(n) { return NET[n.type] ? { w: 230, h: 40 } : { w: 170, h: 50 }; }
+  function size(n) { return NET[n.type] ? { w: 230, h: 50 } : { w: 170, h: 50 }; }
+  function fitText(t, max) { t = String(t || ''); return t.length > max ? t.slice(0, max - 1) + '…' : t; }
   function center(n) { var s = size(n); return { x: n.x + s.w / 2, y: n.y + s.h / 2 }; }
   function setStatus(t, err) { if (statusEl) { statusEl.textContent = t || ''; statusEl.className = 'na-status ms-auto' + (err ? ' na-err' : ''); } }
   function human(b) {
@@ -152,12 +155,14 @@
       el('rect', { x: 0, y: 0, width: 5, height: s.h, rx: 2, fill: col }, g);
       var tt = el('text', { x: 12, y: 13, 'class': 'tt' }, g);
       tt.textContent = (TYPES[n.type] || {}).label || n.type;
+      var chars = Math.floor((s.w - 26) / 6.6);
       var t1 = el('text', { x: 12, y: 28, 'class': 't1' }, g);
-      t1.textContent = n.label || n.id;
+      t1.textContent = fitText(n.label || n.id, chars);
+      var tip = el('title', {}, g); tip.textContent = (n.label || n.id) + (n.note ? '\n' + n.note : '');
       var sub = n.cidr || n.ip || '';
       if (n.vlan) sub = (sub ? sub + ' · ' : '') + 'VLAN ' + n.vlan;
       if (n.interface && NET[n.type]) sub = (sub ? sub + ' · ' : '') + n.interface;
-      if (sub) { var t2 = el('text', { x: 12, y: NET[n.type] ? 28 : 42, 'class': 't2' }, g); t2.textContent = sub; if (NET[n.type]) { t1.setAttribute('y', 27); t2.setAttribute('x', s.w - 10); t2.setAttribute('text-anchor', 'end'); } }
+      if (sub) { var t2 = el('text', { x: 12, y: 42, 'class': 't2' }, g); t2.textContent = fitText(sub, chars + 4); }
       var st = deviceState(n);
       if (st) {
         var c = { ok: '#15692A', warn: '#7A5700', bad: '#8B1C2A', hidden: '#9AA6B8' }[st];

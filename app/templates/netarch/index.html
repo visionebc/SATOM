@@ -12,11 +12,10 @@
 
 {% block head %}
 <style nonce="{{ csp_nonce }}">
-  .na-wrap { display:grid; grid-template-columns: 220px minmax(0,1fr) 340px; gap:12px; align-items:start; }
+  .na-wrap { display:grid; grid-template-columns: minmax(0,1fr) 340px; gap:12px; align-items:start; }
   @media (max-width: 1280px) { .na-wrap { grid-template-columns: 1fr; } }
-  .na-list a { display:block; padding:6px 10px; border-radius:6px; color:var(--fw-text-primary); text-decoration:none; font-size:13px; }
-  .na-list a.active { background:var(--fw-accent-light); color:var(--fw-accent); font-weight:600; }
-  .na-list a:hover { background:var(--fw-surface-alt); }
+  .na-pick { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:8px; }
+  .na-pick .form-select, .na-pick .form-control { width:auto; font-size:13px; }
   .na-toolbar { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:8px; }
   .na-toolbar .btn.on { background:var(--fw-accent); color:#fff; border-color:var(--fw-accent); }
   #naCanvas { width:100%; height:660px; background:#FFFFFF; border:1px solid var(--fw-border); border-radius:var(--fw-radius); display:block; user-select:none; cursor:grab; }
@@ -59,24 +58,25 @@
   </div>
 </div>
 
-<div class="na-wrap">
-  <div class="fw-card p-2">
-    <div class="na-list">
-      {% for d in diagrams %}
-      <a href="{{ url_for('netarch.index', id=d.id) }}" class="{{ 'active' if sel and sel.id == d.id else '' }}">{{ d.name }}</a>
-      {% else %}
-      <div class="text-muted small p-2">{{ _('No drawings yet.') }}</div>
-      {% endfor %}
-    </div>
-    {% if may_edit %}
-    <form method="post" action="{{ url_for('netarch.create') }}" class="mt-2 p-1">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input class="form-control form-control-sm mb-1" name="name" maxlength="120" placeholder="{{ _('New drawing name') }}" required>
-      <button class="btn btn-sm fw-btn-primary w-100"><i class="bi bi-plus-lg"></i> {{ _('New drawing') }}</button>
-    </form>
-    {% endif %}
-  </div>
+<div class="na-pick">
+  {% if diagrams %}
+  <label class="small text-muted" for="naPick">{{ _('Drawing') }}</label>
+  <select id="naPick" class="form-select form-select-sm">
+    {% for d in diagrams %}<option value="{{ url_for('netarch.index', id=d.id) }}" {{ 'selected' if sel and sel.id == d.id else '' }}>{{ d.name }}</option>{% endfor %}
+  </select>
+  {% else %}
+  <span class="small text-muted">{{ _('No drawings yet.') }}</span>
+  {% endif %}
+  {% if may_edit %}
+  <form method="post" action="{{ url_for('netarch.create') }}" class="d-flex gap-1 ms-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input class="form-control form-control-sm" name="name" maxlength="120" placeholder="{{ _('New drawing name') }}" required>
+    <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-plus-lg"></i> {{ _('New drawing') }}</button>
+  </form>
+  {% endif %}
+</div>
 
+<div class="na-wrap">
   <div>
     {% if sel %}
     <div class="na-toolbar">

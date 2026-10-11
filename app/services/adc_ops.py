@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from .inspector import _attrs, render_tree
 from .service_probe import ServiceTarget
 
 # Read-only console presets — every command verified on FortiADC-KVM 8.0.3.
@@ -169,15 +168,18 @@ def make_probe(appliance):
             raise
 
     def _probe(ep: dict):
+        # ``params`` carries the ``pkey`` of a child-table read (the depth
+        # pass, services.adc_vstree); a plan entry of the sweep has none.
+        params = ep.get("params") or None
         if not client._token:
             _login()
-        resp = client._api("GET", ep["urn"])
+        resp = client._api("GET", ep["urn"], params=params)
         if resp.status_code == 401:
             # One fresh login decides: an expired token is renewed and the
             # read retried once; refused credentials stop the sweep.
             client._token = None
             _login()
-            resp = client._api("GET", ep["urn"])
+            resp = client._api("GET", ep["urn"], params=params)
             if resp.status_code == 401:
                 raise _refused(resp)
         if resp.status_code == 404:
@@ -283,79 +285,14 @@ def rest_call(appliance, method: str, path: str, *, params: dict | None = None,
 #  Virtual Server Inspector — the ADC counterpart of the Policy Inspector      #
 # --------------------------------------------------------------------------- #
 
-def _vs_full(client, name: str) -> dict:
-    """Composite read of one virtual server: VS + pool + members."""
-    vs = client.get_object("load_balance_virtual_server", name)
-    pool_name = str(vs.get("pool") or "").strip()
-    pool: dict = {}
-    members: list[dict] = []
-    if pool_name:
-        try:
-            pool = client.get_object("load_balance_pool", pool_name)
-        except Exception:  # noqa: BLE001 — a dangling ref never sinks the tree
-            pool = {}
-        rows, err = client.list_with_error(
-            "load_balance_pool_child_pool_member", pkey=pool_name)
-        if not err:
-            members = [r for r in rows if isinstance(r, dict)]
-    return {"vs": vs, "pool": pool, "members": members}
-
-
-def build_vs_node(full: dict) -> dict:
-    """Turn a ``_vs_full`` composite into the ``{label, children}`` tree the
-    shared inspector renderer draws."""
-    vs = full.get("vs") or {}
-    name = vs.get("mkey") or "(unnamed)"
-    addr = str(vs.get("address") or "").strip()
-    port = str(vs.get("port") or "").strip()
-    root: dict[str, Any] = {
-        "label": f"Virtual Server: {name}"
-        + _attrs(vs, ("status", "availability", "interface", "profile",
-                      "method", "packet-fwd-method")),
-        "children": [],
-    }
-    if addr:
-        root["children"].append({
-            "label": f"Listener: {addr}:{port or '-'}"
-            + _attrs(vs, ("addr-type", "public-ip")),
-            "children": [],
-        })
-    pool = full.get("pool") or {}
-    members = full.get("members") or []
-    if pool or vs.get("pool"):
-        pool_node = {
-            "label": f"Real Server Pool: {vs.get('pool') or pool.get('mkey') or '-'}"
-            + _attrs(pool, ("pool_type", "health-check", "healthcheck",
-                            "rs-profile", "comments")),
-            "children": [],
-        }
-        for m in members:
-            ip = str(m.get("address") or m.get("FQDN") or "-").strip()
-            mport = str(m.get("port") or "").strip()
-            label = f"Member: {ip}:{mport}" if mport else f"Member: {ip}"
-            pool_node["children"].append({
-                "label": label + _attrs(m, ("status", "weight", "availability",
-                                            "backup", "cookie")),
-                "children": [],
-            })
-        root["children"].append(pool_node)
-    # profile chain worth a leaf each when bound
-    for key, lbl in (("profile", "Profile"),
-                     ("client-ssl-profile", "Client SSL Profile"),
-                     ("waf-profile", "WAF Profile"),
-                     ("http2https", "HTTP→HTTPS redirect"),
-                     ("content-routing", "Content Routing"),
-                     ("persistence", "Persistence")):
-        v = str(vs.get(key) or "").strip()
-        if v and v not in ("disable", "0"):
-            root["children"].append({"label": f"{lbl}: {v}", "children": []})
-    return root
-
-
 def inspect_vs(client, name: str) -> dict:
-    """Composite read + rendered tree for one virtual server."""
-    full = _vs_full(client, name)
-    return {"name": name, "full": full, "tree": render_tree(build_vs_node(full))}
+    """Composite read + rendered tree for one virtual server (every reference
+    followed — :mod:`app.services.adc_vstree`)."""
+    from . import adc_vstree
+    got = adc_vstree.trees(adc_vstree.index_live(client), only=name)
+    if not got:
+        raise RuntimeError(f"virtual server {name!r} not found on the device")
+    return got[0]
 
 
 def list_virtual_servers(client):
@@ -372,21 +309,16 @@ def list_virtual_servers(client):
 
 def inspect_all(client) -> dict:
     """Inspect every virtual server on the appliance — same result shape as
-    :func:`app.services.inspector.inspect_all` so the template is shared."""
+    :func:`app.services.inspector.inspect_all` so the template is shared.
+    One index read serves every tree (each VS used to re-read its pool)."""
+    from . import adc_vstree
     rows, err = list_virtual_servers(client)
     if err:
         raise RuntimeError(f"virtual-server list failed: {err}")
-    vss: list[dict] = []
-    errors: list[dict] = []
-    for r in rows:
-        name = str(r.get("mkey") or "").strip()
-        if not name:
-            continue
-        try:
-            vss.append(inspect_vs(client, name))
-        except Exception as exc:  # noqa: BLE001 — one VS never sinks the page
-            errors.append({"name": name, "error": f"{type(exc).__name__}: {exc}"})
-    return {"policies": vss, "errors": errors, "count": len(vss)}
+    index = adc_vstree.index_live(client)
+    vss = adc_vstree.trees(index)
+    return {"policies": vss, "errors": index.get("errors") or [],
+            "count": len(vss)}
 
 
 # --------------------------------------------------------------------------- #

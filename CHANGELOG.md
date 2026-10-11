@@ -6,6 +6,35 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — FortiADC: rediscovery reads every child table over REST, and the virtual-server tree follows every reference
+
+The user pointed out that FortiADC rediscovery only offered the CLI capture
+beside the REST sweep, and asked for the same REST depth and the same
+virtual-server tree that FortiWeb has.
+
+- **Rediscovery → Capture full depth: every child table (REST)** is now
+  offered for FortiADC. It reads each of the 27 `<parent>_child_<table>`
+  tables once per parent object of the sweep. On fortiadc10 the members of
+  certificate groups, CA groups and intermediate-CA groups exist only there,
+  so before this the certificate chain behind a virtual server could not be
+  read at all. A table the build does not serve is asked once and recorded
+  as absent; Stop discards the partial capture and keeps the previous one.
+- **VS Inspector**: each virtual server is drawn to the end of every
+  reference. That covers content routing (with its match conditions) →
+  pool → members → real server and health checks. It also covers client SSL
+  profile → certificate group → certificates → intermediate CA, auth
+  policy → user group → RADIUS / LDAP / local user, WAF sub-profiles,
+  method, persistence, profiles, SNAT and schedule pools. A virtual server
+  with content routing used to show only `Content Routing: enable`.
+- **From last rediscovery** draws the same tree from the snapshot and its
+  depth capture without contacting the device.
+- A reference to an object the device does not have is shown as *not found
+  on the device* instead of being left out.
+
+### Fixed — the FortiADC VS Inspector never showed the client SSL profile
+
+It looked up `client-ssl-profile`; the device spells it `client_ssl_profile`.
+
 ### Fixed — a change made from SATOM shows at once, without a rediscovery
 
 The user reported that enabling or disabling a server policy from the

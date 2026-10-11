@@ -70,6 +70,43 @@ GUI. `adc_ops.ADC_SIDE_EFFECT_PATHS` lists them; the API console, scheduled
 custom REST calls and the discovery plan refuse every path on it.
 
 
+## Depth capture and the virtual-server tree (fortiadc10, 7.6.7, 2026-10-12)
+
+`app/services/adc_vstree.py`. The rediscovery sweep reads the 217 parent
+tables; the 27 `<parent>_child_<table>` tables need `?pkey=<parent mkey>` and
+are read only by the **depth pass** (Rediscover → *Capture full depth*), once
+per parent row of that sweep, into `data/rediscovery/<id>/_deep.json`
+(`sweep_generated_at` names the sweep the parents came from). A 404 table is
+asked once and recorded absent; a stop discards the partial file.
+
+Measured on fortiadc10:
+
+* **Embedded in the parent row** (the child table repeats it): pool members
+  (`pool_member`), routing/rewriting match conditions (`match`), interface
+  secondary/trust/HA lists, persistence lists, ippool `node_member`,
+  certificate-verify `member`, schedule group `member_list`.
+* **Only in the child table**: members of local-cert groups (`local_cert`,
+  `intermediate_cag`, `default`), intermediate-CA groups (`intmed_ca`) and CA
+  groups (`ca`). Without the depth pass a VS's certificate chain cannot be drawn.
+* List fields are **space-separated strings** (`content-routing-list:
+  "cr-a cr-b "`); `NONE` means unset (`rs_profile`).
+* Auth policy rules (`member[].user_group_id`) and user-group members
+  (`member[].radius_server|ldap_server|local_user`) are embedded with no child
+  table.
+* The VS spells `client_ssl_profile`, `auth_policy`, `ips_profile`,
+  `dos_profile`, `ztna_profile`, `scripting_list` with `_` and `waf-profile`,
+  `error-page`, `content-routing-list` with `-`. The reference map (`REFS`) is
+  explicit for that reason: matching values against every table's names was
+  tried and is wrong (`comments` matched a service name, timeouts matched
+  reputation rows).
+* A WAF profile names its sub-profiles by the table suffix
+  (`web_attack_signature` → `security_waf_web_attack_signature`); the tree
+  follows that rule for every field instead of a fixed list.
+
+The VS Inspector builds one index (live: the referenced tables + the group
+child tables, ~4 s on fortiadc10) and draws every VS from it; `?source=capture`
+draws from `_config.json` + `_deep.json` with no device call.
+
 ## Virtual server dependency chain + create-field seed (verified live, fadc 8.0.3, 2026-07-07)
 
 A FortiADC **virtual server** is NOT a flat "name + IP" object — the device

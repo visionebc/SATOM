@@ -882,6 +882,14 @@ packs, so the menu follows the build the device actually runs.</p>
 <li>SATOM's old menus (Loadbalancer / Server Objects, WAF, Configuration) are no
   longer drawn. Old URLs and bookmarks redirect to the page of the device's
   menu that draws the same collection.</li>
+<li><strong>Not in GUI, but in CLI</strong> — a menu group of its own: every object the
+  device's build has that no page of its GUI edits (measured: the crawl opens
+  every menu entry and records what each page reads), one page per CLI root,
+  with list, edit dialog and the usual dry run. Each page says so above its
+  list. FortiADC has the same group (§17.1).</li>
+<li>A page that the GUI draws with a widget SATOM cannot measure (Feature
+  Visibility, Fabric Connectors, External Connector) is drawn from the build's
+  CLI tree at its place in the menu.</li>
 <li>A collection that no measured page draws yet has no menu entry. It comes back
   when its page is crawled.</li>
 <li>FortiGate and FortiAuthenticator pages are built the same way and behave as

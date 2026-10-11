@@ -2428,6 +2428,8 @@ audits it; secrets are never echoed back.
   has that its GUI does not draw on that build (measured: no page of the GUI
   reads them), one page per CLI path, with list, edit dialog and the usual dry
   run. Each page says so above its list.
+- FortiView pages are monitors: they are in the menu at their place, say that
+  they draw live data, and link to the same page on the device.
 
 - Object pages use the same form engine: identity/mkey handling, child tables
   (e.g. pool members) derived automatically, dry-run previews, audit on

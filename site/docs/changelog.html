@@ -112,6 +112,22 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="changed--a-page-layout-with-one-action-tab-imports-without-that-tab-fortiadc-system--settings">Changed — A page layout with one action tab imports without that tab (FortiADC System &gt; Settings)</h3>
+<ul>
+<li>A knowledge-pack page layout that names a device action used to be refused
+  whole. FortiADC 7.6.7 <strong>System &gt; Settings</strong> was lost that way: Basic, System
+  Time, Services and Sync List are configuration, but its <strong>Backup &amp; Restore</strong>
+  tab writes <code>system_auto_backup</code>, which ships the configuration off the
+  device. The importer now cuts out the dialog that names the action and every
+  view that opens it, imports the rest, and says so ("imported without what
+  names an action endpoint …"; the stored layout records what was cut under
+  <code>_import.pruned</code>). The cut endpoint never reaches SATOM.</li>
+<li>Still refused whole: a page whose own endpoint is an action, a page with no
+  view left (FortiAuthenticator Scheduled Backups — its only list opens the
+  dialog that posts the backup; FortiADC System &gt; Debug), and any grammar break
+  (an unknown prefix, <code>../</code>): those point at a broken or tampered pack, not at
+  one tab.</li>
+</ul>
 <h3 id="changed--the-fortiadc-adom-draws-only-the-devices-own-menu-23-fortiadc-page-layouts-were-refused-on-import">Changed — The FortiADC ADOM draws only the device's own menu; 23 FortiADC page layouts were refused on import</h3>
 <ul>
 <li><strong>The hand-made FortiADC menu leaves the sidebar</strong>, as it did for FortiWeb,

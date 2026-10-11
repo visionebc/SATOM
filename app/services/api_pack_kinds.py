@@ -618,6 +618,67 @@ def _gui_unsafe_endpoint(data: dict, product: str | None = None) -> str:
     return ""
 
 
+def _gui_action(product: str, role: str, ep) -> bool:
+    """Whether ``ep`` at ``role`` is refused because it names an ACTION (a
+    reboot, a backup sent off the device, an authentication), as opposed to
+    breaking the product's grammar (``../``, an unknown prefix): an action is
+    pruned out of a page, a grammar break refuses the page."""
+    from . import gui_bound, gui_products
+    if product == gui_products.FORTIWEB:
+        return isinstance(ep, str) and gui_bound.is_api(ep) and not gui_bound.safe_api(ep)
+    return "action" in gui_products.unsafe_endpoint(product, ep, role)
+
+
+def _gui_prune(data: dict, product: str):
+    """``(layout, dropped)``: the layout without the dialogs and views that
+    name an action endpoint, or ``(data, None)`` when nothing usable is left.
+
+    One tab of a page may be an action while the rest is configuration
+    (FortiADC 7.6.7 System > Settings: Basic, System Time, Services and Sync
+    List, plus Backup & Restore on ``system_auto_backup``, which ships the
+    configuration off the device). The whole dialog goes -- never one field of
+    it -- and so does every view that opens it or reads an action. No view
+    left refuses the page (FAC Scheduled Backups: its one list opens the
+    dialog that posts the backup); the page's own endpoint is never cut, so
+    the caller's second check refuses a page that is itself an action."""
+    import copy
+    from .gui_products import GUI_WRITE, READ, WRITE
+
+    def act(role, ep):
+        return _gui_action(product, role, ep)
+    out, dropped = copy.deepcopy(data), []
+    dialogs = out.get("dialogs") if isinstance(out.get("dialogs"), dict) else {}
+    for key, d in list(dialogs.items()):
+        if not isinstance(d, dict):
+            continue
+        eps = [(READ, d.get("endpoint")), (WRITE, (d.get("write") or {}).get("endpoint"))]
+        eps += [(WRITE, w.get("endpoint")) for w in d.get("writes") or []]
+        eps += [(GUI_WRITE, w.get("endpoint")) for w in d.get("gui_writes") or []]
+        for b in d.get("blocks") or []:
+            for f in (b.get("fields") or []) if isinstance(b, dict) else []:
+                eps += [(READ, f.get("endpoint")), (WRITE, (f.get("bind") or {}).get("endpoint"))]
+        if any(act(r, e) for r, e in eps):
+            del dialogs[key]
+            dropped.append("dialog %s" % key)
+    gone = {x.split(" ", 1)[1] for x in dropped}
+    keep = []
+    for i, v in enumerate(out.get("views") or []):
+        refs = {x.get("dialog") if isinstance(x, dict) else x
+                for k in ("dialogs", "create_menu") for x in v.get(k) or []}
+        # a view that opened a dropped dialog goes too: its list would still
+        # offer Clone / Delete on the collection whose write was the action
+        if (act(READ, v.get("endpoint")) or refs & gone
+                or any(act(READ, e) for e in v.get("also_endpoints") or [])):
+            dropped.append("view %d %s" % (i, v.get("label") or v.get("endpoint")))
+            continue
+        keep.append(v)
+    if out.get("views") and not keep:
+        return data, None
+    if "views" in out:
+        out["views"] = keep
+    return out, dropped
+
+
 def validate_gui(run, item) -> dict:
     """A ``satom.gui-template/2`` page layout of one exact build. The importer
     does not assume who measured it (decision 4: a customer-run harvester may
@@ -645,6 +706,18 @@ def validate_gui(run, item) -> dict:
         path = gui_store.file_for(product, ident["page"], version, ident["build"])
     except ValueError as exc:
         raise ItemInvalid(str(exc))
+    hit = _gui_code(data)
+    if hit:
+        raise ItemInvalid("template carries GUI bundle code (%s)" % hit)
+    pruned = []
+    bad = _gui_unsafe_endpoint(data, product)
+    if bad:
+        # an action tab is cut out and the rest of the page imports; what is
+        # left is checked again, and a grammar break still refuses the page
+        trimmed, dropped = _gui_prune(data, product)
+        if not dropped or _gui_unsafe_endpoint(trimmed, product):
+            raise ItemInvalid("template names an endpoint SATOM never reads or writes (%s)" % bad)
+        data, pruned = trimmed, dropped
     dialogs = data.get("dialogs")
     # a FortiGate / FortiAuthenticator page may be a list and nothing else
     # (FAC 8.0.3 build99: the SAML and system template editors, GUI-only lists)
@@ -653,14 +726,9 @@ def validate_gui(run, item) -> dict:
     if (not isinstance(dialogs, dict) or not (dialogs or list_only)
             or not isinstance(data.get("list"), dict)):
         raise ItemInvalid("template has no dialogs / list")
-    hit = _gui_code(data)
-    if hit:
-        raise ItemInvalid("template carries GUI bundle code (%s)" % hit)
-    bad = _gui_unsafe_endpoint(data, product)
-    if bad:
-        raise ItemInvalid("template names an endpoint SATOM never reads or writes (%s)" % bad)
     return {"product": product, "page": ident["page"], "version": version,
             "build": ident["build"], "path": path, "template": data,
+            "pruned": pruned, "pruned_for": bad if pruned else "",
             "sha256": guikit.content_hash(data) + ":" + _canon(data)}
 
 
@@ -690,14 +758,20 @@ def _gui_current(p: dict):
 
 def state_gui(run, item, p: dict) -> dict:
     c = run.claim(_gui_unit(p), _gui_current(p), p["sha256"])
-    return dict(c, page=p["page"], build="%s build%s" % (p["version"], p["build"]),
-                not_in_gui=len(p["template"].get("not_in_gui") or []))
+    out = dict(c, page=p["page"], build="%s build%s" % (p["version"], p["build"]),
+               not_in_gui=len(p["template"].get("not_in_gui") or []))
+    if p.get("pruned"):
+        out["warning"] = ("imported without what names an action endpoint (%s): %s"
+                          % (p["pruned_for"], ", ".join(p["pruned"])))
+    return out
 
 
 def import_gui(run, item, p: dict, st: dict) -> dict:
     from .api_pack import _write_json
     body = dict(p["template"])
     body["_import"] = {"provenance": run.provenance, "built_at": str(run.built_at)}
+    if p.get("pruned"):
+        body["_import"]["pruned"] = p["pruned"]
     replaced = p["path"].is_file()
     _write_json(p["path"], body)
     run.ledger.set(_gui_unit(p), run.provenance)

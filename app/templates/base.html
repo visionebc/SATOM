@@ -763,6 +763,7 @@
        data-bm-prefs="{{ url_for('bookmarks.prefs') }}"
        data-bm-create="{{ url_for('bookmarks.create') }}"
        data-bm-adopt-url="{{ url_for('bookmarks.adopt') }}"
+       data-bm-menu-fav-url="{{ url_for('bookmarks.menu_favorite') }}"
        data-bm-csrf="{{ csrf_token() }}">
   <button type="button" class="bm-tab" id="bm-tab" title="{{ _('Bookmarks') }}">
     <i class="bi bi-bookmark-star"></i>
@@ -891,6 +892,12 @@
   function render(html, keepFocus) {
     panel.innerHTML = html;
     wire();
+    var mf = panel.querySelector('[data-bm-menu-favs]');
+    if (mf) {
+      try { menuFavs = JSON.parse(mf.getAttribute('data-bm-menu-favs') || '[]'); }
+      catch (e) { menuFavs = []; }
+      decorateMenu();
+    }
     var b = panel.querySelector('[data-bm-node="r:shared"] .fw-badge-primary');
     var n = b ? parseInt((b.textContent || '0').trim(), 10) : 0;
     if (n > 0) { badge.textContent = n; badge.hidden = false; }
@@ -1031,6 +1038,88 @@
       });
     });
   }
+
+  // ---- Stars on the left menu ---------------------------------------------
+  // A starred entry is a personal LINK bookmark with a star, so it lands in
+  // the panel's Favourites root and nothing new has to be stored. The list
+  // of starred pages comes from the panel itself; until the panel has
+  // answered it is null and NO star is drawn -- an empty outline would claim
+  // "not starred" about a page that might be.
+  var menuFavs = null;
+
+  function menuUrl(a) { return a.pathname + a.search; }
+
+  // "Fleet › Scout", not "Scout": the same word heads entries in several
+  // groups ("Overview", "Settings"), and the Favourites list shows no menu.
+  // The NEAREST heading names the entry: a sub-menu ("Monitoring ›") first,
+  // then the section, then the Global block, which has a label, not a toggle.
+  function menuLabel(a) {
+    var own = a.querySelector(':scope > span:not(.fw-nav-star)');
+    own = ((own || a).textContent || '').replace(/\s+/g, ' ').trim();
+    var grp = a.closest('.fw-nav-subgroup, .fw-nav-group, .fw-nav-context');
+    var head = grp && grp.querySelector(
+      ':scope > .fw-nav-subtoggle span, :scope > .fw-nav-section span');
+    var g = head ? (head.textContent || '').trim() : '';
+    return (g && g !== own ? g + ' › ' + own : own).slice(0, 160);
+  }
+
+  function decorateMenu() {
+    var side = document.getElementById('fw-sidebar');
+    if (!side || menuFavs === null) return;
+    side.querySelectorAll('a.fw-nav-item[href]').forEach(function (a) {
+      // Pages of this console only: the panel refuses anything else, and a
+      // star that can only fail is worse than no star.
+      var href = a.getAttribute('href') || '';
+      if (href.charAt(0) !== '/' || href.charAt(1) === '/' ||
+          a.origin !== location.origin) return;
+      var star = a.querySelector(':scope > .fw-nav-star');
+      if (!star) {
+        star = document.createElement('span');
+        star.className = 'fw-nav-star';
+        star.setAttribute('role', 'button');
+        star.tabIndex = 0;
+        star.appendChild(document.createElement('i'));
+        a.appendChild(star);
+      }
+      var on = menuFavs.indexOf(menuUrl(a)) !== -1;
+      star.classList.toggle('on', on);
+      star.firstChild.className = 'bi bi-star' + (on ? '-fill' : '');
+      star.title = on ? 'Remove from favourites' : 'Add to favourites';
+      star.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  function toggleStar(star) {
+    var a = star.closest('a.fw-nav-item');
+    if (!a || star.classList.contains('busy')) return;
+    star.classList.add('busy');
+    post(rail.dataset.bmMenuFavUrl, {
+      url: menuUrl(a), label: menuLabel(a),
+      favorite: star.classList.contains('on') ? '0' : '1'
+    }).then(function () { star.classList.remove('busy'); },
+            function () { star.classList.remove('busy'); });
+  }
+
+  // Capture phase on `document`, which Turbo never replaces: the star sits
+  // INSIDE the menu link, so the click has to be stopped before the link --
+  // or Turbo's own listener -- turns it into a navigation.
+  document.addEventListener('click', function (ev) {
+    var star = ev.target.closest && ev.target.closest('#fw-sidebar .fw-nav-star');
+    if (!star) return;
+    ev.preventDefault(); ev.stopPropagation();
+    toggleStar(star);
+  }, true);
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    var star = ev.target.closest && ev.target.closest('#fw-sidebar .fw-nav-star');
+    if (!star) return;
+    ev.preventDefault(); ev.stopPropagation();
+    toggleStar(star);
+  }, true);
+  // Every visit brings a new sidebar; the list of starred pages survives in
+  // the permanent rail and is re-applied to it.
+  document.addEventListener('turbo:load', decorateMenu);
+  document.addEventListener('turbo:render', decorateMenu);
 
   function openAdd() {
     var kind = document.getElementById('bmAddKind');

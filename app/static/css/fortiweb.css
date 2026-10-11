@@ -355,6 +355,29 @@ div.fw-nav-section.fw-nav-context-label {
 .fw-nav-subitem:hover { color: var(--fw-sidebar-text-hover); }
 .fw-nav-subitem.active .fw-nav-emoji { opacity: 1; }
 
+/* Favourite star on a menu entry (drawn by the bookmarks rail script).
+   Outline only on hover, so forty rows of empty stars do not compete with the
+   labels; a starred entry keeps its filled star in the sidebar's active
+   amber. Devices with no hover show the outline faintly, or it could never
+   be reached. */
+.fw-nav-item .fw-nav-star {
+  margin-left: auto;
+  padding: 0 2px;
+  font-size: 12px;
+  line-height: 1;
+  flex-shrink: 0;
+  color: var(--fw-sidebar-section);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity var(--fw-transition), color var(--fw-transition);
+}
+.fw-nav-item:hover .fw-nav-star,
+.fw-nav-item .fw-nav-star:focus-visible { opacity: .7; }
+.fw-nav-item .fw-nav-star:hover { opacity: 1; color: var(--fw-sidebar-active); }
+.fw-nav-item .fw-nav-star.on { opacity: 1; color: var(--fw-sidebar-active); }
+.fw-nav-item .fw-nav-star.busy { opacity: .4; pointer-events: none; }
+@media (hover: none) { .fw-nav-item .fw-nav-star { opacity: .45; } }
+
 /* ============================================================
    Server Objects sidebar sub-menu — collapsible groups under
    the "Server Objects" nav item (GUI-faithful tree). 2026-07-04

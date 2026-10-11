@@ -730,6 +730,84 @@ def set_favorite(user, bm: Bookmark, favorite: bool) -> None:
     db.session.commit()
 
 
+#: Longest page address a sidebar star may store. A menu entry is a console
+#: path plus, at most, a short query; anything longer did not come from the menu.
+MENU_URL_MAX = 2000
+
+
+def _menu_url(raw) -> str:
+    """The page a sidebar star points at, or :class:`BookmarkDenied`.
+
+    Only a path of THIS console: the star is drawn on the console's own menu,
+    so an absolute URL, a ``//host`` or a scheme reaching this function did
+    not come from a menu entry. The link check is the same one every link
+    bookmark passes, so the two cannot disagree about what is safe.
+    """
+    safe, why = safe_link_url(raw)
+    if safe is None or not safe.startswith("/"):
+        raise BookmarkDenied(
+            "bad_menu_url",
+            why or "a menu favourite must be a page of this console")
+    if len(safe) > MENU_URL_MAX:
+        raise BookmarkDenied("bad_menu_url", "that page address is too long")
+    return safe
+
+
+def menu_favorite_urls(user, rows: Iterable[Bookmark] | None = None,
+                       favs: set[int] | None = None) -> set[str]:
+    """The console pages *user* has starred — what lights the sidebar stars.
+
+    Read from the bookmarks themselves, never from a list of its own: a star
+    taken off in the Bookmarks panel has to go dark in the menu too, and two
+    stores of one fact would disagree the first time somebody used the other
+    control.
+    """
+    rows = visible_bookmarks(user) if rows is None else rows
+    favs = favorites(user) if favs is None else favs
+    return {
+        bm.url for bm in rows
+        if bm.kind == KIND_LINK and bm.id in favs
+        and (bm.url or "").startswith("/")
+    }
+
+
+def set_menu_favorite(user, url, label: str = "", favorite: bool = True) -> None:
+    """Star or unstar a sidebar entry for *user*.
+
+    Starring reuses a link to the same page that *user* already sees — their
+    own first, a team one otherwise — and only creates a personal link when
+    there is none: a second star must not mint a second row.
+
+    Unstarring removes the star from every link to that page, and DELETES the
+    personal one when it still sits at the root of the panel — that row
+    existed only to carry the star, and leaving it would keep the entry in the
+    Bookmarks panel after the operator took it out. One the operator filed
+    into a folder is theirs to delete, and a team link is not theirs at all:
+    both keep their row and lose only the star.
+    """
+    url = _menu_url(url)
+    links = [bm for bm in visible_bookmarks(user)
+             if bm.kind == KIND_LINK and bm.url == url]
+    if favorite:
+        own = next((b for b in links if b.scope == SCOPE_PERSONAL
+                    and b.owner_user_id == user.id), None)
+        target = own or (links[0] if links else None)
+        if target is None:
+            target = create(user, KIND_LINK, url=url,
+                            label=(label or "").strip()[:160] or url)
+        set_favorite(user, target, True)
+        return
+    placed = placements(user)
+    favs = favorites(user)
+    for bm in links:
+        if bm.id in favs:
+            set_favorite(user, bm, False)
+        row = placed.get(bm.id)
+        if (bm.scope == SCOPE_PERSONAL and bm.owner_user_id == user.id
+                and (row is None or row.parent_id is None)):
+            delete(bm, user)
+
+
 def delete(bm: Bookmark, user) -> None:
     """Remove a bookmark. Author or admin only.
 

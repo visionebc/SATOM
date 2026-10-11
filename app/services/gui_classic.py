@@ -84,7 +84,10 @@ def page_map(appliance) -> dict:
         for i, v in enumerate(views):
             # ``covers``: the cmdb objects a FortiWeb GUI API settings page
             # edits (Global Log Settings is log/disk, log/syslogd...)
-            for ep in [v.get("endpoint") or ""] + [c for c in v.get("covers") or ()
+            # ``also_endpoints``: what a FortiAuthenticator list shows besides
+            # its own resource (Local Users: the group memberships)
+            for ep in [v.get("endpoint") or ""] + [c for k in ("covers", "also_endpoints")
+                                                    for c in v.get(k) or ()
                                                     if isinstance(c, str)]:
                 for ln in names_for(ep):
                     out.setdefault(ln, {"page": e["page"], "v": i})

@@ -6,18 +6,18 @@
    rule in FortiWeb than in the other ADOMs).
 
    Gated on ``registry.view``, the permission the console pages themselves
-   require (views/registry.py, adc_api.py, faz_api.py, fac_api.py).
+   require (views/registry.py, adc_api.py, faz_api.py, fac_api.py, fgt_api.py).
 
-   FortiGate has no API console yet (views/fgt.py: no registry binding), so no
-   group is drawn there rather than an empty one. Schema builds moved to the
-   Fleet group (partials/nav_fleet.html).
+   FortiGate joined 2026-10-11 (views/fgt_api.py), so every device ADOM draws
+   the group. Schema builds moved to the Fleet group (partials/nav_fleet.html).
    ========================================================================= #}
 {# FortiADC: the device's measured menu sits just above API, right after the
    Fleet group (partials/nav_fortiadc.html; draws nothing elsewhere). #}
 {% include 'partials/nav_fortiadc.html' %}
 {% set _api_ep = {'fortiweb': 'registry.index', 'fortiadc': 'adc_api.index',
                   'fortianalyzer': 'faz_api.index',
-                  'fortiauthenticator': 'fac_api.index'}.get(product.key) %}
+                  'fortiauthenticator': 'fac_api.index',
+                  'fortigate': 'fgt_api.index'}.get(product.key) %}
 {% set _api_bps = ['registry', 'api_explorer', 'structure'] if product.key == 'fortiweb'
                   else [(_api_ep or '').split('.')[0]] %}
 {% if _api_ep and current_user and current_user.can('registry.view') and may_open(_api_ep) %}

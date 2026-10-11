@@ -37,24 +37,29 @@ NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
 #: and ``(product, api_version, name)`` is the uniqueness key — so the wrong
 #: default does not collide, it DUPLICATES.
 DEFAULT_API_VERSION = {"fortiweb": "v2.0", "fortiadc": "v1",
-                       "fortianalyzer": "jsonrpc", "fortiauthenticator": "v1"}
+                       "fortianalyzer": "jsonrpc", "fortiauthenticator": "v1",
+                       "fortigate": "v2"}
 
 #: Products whose catalog this writer will touch — every product that has a
-#: catalog editor (FortiWeb registry page, and the FortiADC, FortiAnalyzer and
-#: FortiAuthenticator API pages). A product outside this list has no editor,
+#: catalog editor (FortiWeb registry page, and the FortiADC, FortiAnalyzer,
+#: FortiAuthenticator and FortiGate API pages). A product outside this list has no editor,
 #: and silently accepting a write for it would create rows nothing renders.
 WRITABLE_PRODUCTS = ("fortiweb", "fortiadc", "fortianalyzer",
-                     "fortiauthenticator")
+                     "fortiauthenticator", "fortigate")
 
 #: FortiAuthenticator URNs must stay under the REST root: the console posts to
 #: whatever the catalog names, and the appliance GUI/admin views live on the
 #: same origin and answer to the same session.
 _FAC_URN_RE = re.compile(r"^/api/v1/[A-Za-z0-9_./\-]*$")
+#: FortiGate URNs are cmdb tables: the console WRITES whatever a name resolves
+#: to, and the monitor tree holds device actions (reboot, restore), not config.
+_FGT_URN_RE = re.compile(r"^/api/v2/cmdb/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+$")
 
 #: The reason a URN is refused, per product (the example a user needs).
 _URN_HINT = {
     "fortianalyzer": "URN must be an absolute JSON-RPC url (e.g. /dvmdb/device).",
     "fortiauthenticator": "URN must be a path under /api/v1/.",
+    "fortigate": "URN must be a cmdb table (e.g. /api/v2/cmdb/firewall/policy).",
 }
 
 
@@ -72,7 +77,8 @@ def validate(product: str, name: str, urn: str) -> str:
         return ('Endpoint name may only contain letters, digits, "_", "-" '
                 'and ".".')
     if not urn.startswith("/") or (
-            product == "fortiauthenticator" and not _FAC_URN_RE.match(urn)):
+            product == "fortiauthenticator" and not _FAC_URN_RE.match(urn)) or (
+            product == "fortigate" and not _FGT_URN_RE.match(urn)):
         return _URN_HINT.get(product, "URN must be an absolute API path "
                              "(e.g. /api/v2.0/cmdb/... or /api/load_balance_pool).")
     return ""
@@ -140,6 +146,8 @@ def invalidate(product: str) -> None:
         loader.invalidate_faz_cache()
     elif product == "fortiauthenticator":
         loader.invalidate_fac_cache()
+    elif product == "fortigate":
+        loader.invalidate_fgt_cache()
     else:
         loader.invalidate_cache()
 

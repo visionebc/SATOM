@@ -10,11 +10,18 @@ in the 618-table schema captured with ``?action=schema`` AND answers GET 200
 with the read-only ``satom-ro`` profile. ``tests/test_fgt_adom.py`` pins the
 list against that capture, so a typo cannot ship as a 400 page.
 
+Each tab path has a registry name (:func:`bound_logicals`, through
+``registry.loader.fgt_logical``): the FortiGate API console
+(``views/fgt_api.py``) groups its catalog by this menu, and
+``tests/test_fgt_api.py`` asserts every one of those names is in the shipped
+baseline.
+
 What the base deliberately does NOT do yet:
 
-* bind leaves through the endpoint registry (the FortiWeb/FAC "rename after an
-  upgrade is a Registry edit" contract) — paths are literal here;
-* write anything — section pages are read-only tables;
+* resolve its tabs through that registry (the FortiWeb/FAC "rename after an
+  upgrade is a Registry edit" contract) — section-page paths are literal;
+* write anything from a section page — they are read-only tables (writes go
+  through the measured GUI pages and the API console);
 * cover the whole GUI — only the panes an operator opens first. The full
   table list per build lives in the API library (Build compatibility).
 """
@@ -164,3 +171,14 @@ def find_item(key: str):
 
 def all_paths() -> list[str]:
     return [p for g in _MENU for it in g.items for p, _ in it.tabs]
+
+
+def item_logicals(item: Item) -> tuple:
+    """``((registry name, tab label), ...)`` of one leaf, in tab order."""
+    from ..registry.loader import fgt_logical
+    return tuple((fgt_logical(p), label) for p, label in item.tabs)
+
+
+def bound_logicals() -> tuple:
+    """Every registry name the menu binds, in menu order."""
+    return tuple(lg for g in _MENU for it in g.items for lg, _ in item_logicals(it))

@@ -23,6 +23,7 @@ templates (``name``/``urn``/``path``/``section``/``methods``/``method``).
 from __future__ import annotations
 
 import logging
+import re
 import time
 
 log = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ API_VERSION = {
     "fortiadc": "v1",
     "fortianalyzer": "jsonrpc",
     "fortiauthenticator": "v1",
+    "fortigate": "v2",
 }
 
 _shipped_cache: dict | None = None
@@ -311,6 +313,80 @@ def resolve_fac(name: str) -> str:
             f"unknown FortiAuthenticator registry endpoint: {name!r}") from None
 
 
+# ---------------------------------------------------------------------------
+# FortiGate registry (product='fortigate', api_version='v2')
+# ---------------------------------------------------------------------------
+# Same contract again. URNs are FortiOS cmdb paths (``/api/v2/cmdb/<a.b>/<c>``).
+# The API library names a FortiGate table by its path (``firewall.service/custom``)
+# because that is what ``?action=schema`` measures; the registry name is that
+# path flattened by :func:`fgt_logical` (``firewall_service_custom``). ONE
+# function, so the baseline, the per-build evidence view and the FGT menu can
+# never disagree about what a table is called.
+
+_FGT_NAME_RE = re.compile(r"[^a-z0-9]+")
+
+_fgt_shipped_cache: dict | None = None
+_fgt_db_cache: dict = {"map": None, "ts": 0.0}
+
+
+def fgt_logical(path: str) -> str:
+    """``vpn.ipsec/phase1-interface`` → ``vpn_ipsec_phase1_interface``."""
+    return _FGT_NAME_RE.sub("_", (path or "").lower()).strip("_")
+
+
+def _fgt_shipped_registry() -> dict:
+    """``{name: urn}`` of the shipped fortigate baseline — the no-database fallback."""
+    global _fgt_shipped_cache
+    if _fgt_shipped_cache is None:
+        from ..services.api_baseline import artifact_map
+        _fgt_shipped_cache = artifact_map("fortigate")
+    return _fgt_shipped_cache
+
+
+def _fgt_db_registry() -> dict | None:
+    now = time.monotonic()
+    if _fgt_db_cache["map"] is not None and (now - _fgt_db_cache["ts"]) < _CACHE_TTL:
+        return _fgt_db_cache["map"]
+    try:
+        from ..models import RegistryEndpoint
+        rows = RegistryEndpoint.query.filter_by(
+            product="fortigate",
+            api_version=API_VERSION["fortigate"], enabled=True).all()
+        if not rows:
+            return None
+        reg = {r.name: r.urn for r in rows}
+    except Exception:  # noqa: BLE001 — any DB hiccup -> shipped baseline
+        return None
+    _fgt_db_cache["map"] = reg
+    _fgt_db_cache["ts"] = now
+    return reg
+
+
+def invalidate_fgt_cache() -> None:
+    _fgt_db_cache["map"] = None
+    _fgt_db_cache["ts"] = 0.0
+    invalidate_build_views("fortigate")
+
+
+def load_fgt_registry() -> dict:
+    """The active FortiGate ``{logical_name: urn}`` map (DB first,
+    shipped-baseline fallback)."""
+    reg = _fgt_db_registry()
+    if reg is not None:
+        return reg
+    return _fgt_shipped_registry()
+
+
+def resolve_fgt(name: str) -> str:
+    """Resolve a FortiGate logical endpoint name to its cmdb path."""
+    reg = load_fgt_registry()
+    try:
+        return reg[name]
+    except KeyError:
+        raise KeyError(
+            f"unknown FortiGate registry endpoint: {name!r}") from None
+
+
 def load_product_registry(product: str) -> dict:
     """The active ``{name: urn}`` map of any registry product."""
     return {
@@ -318,6 +394,7 @@ def load_product_registry(product: str) -> dict:
         "fortiadc": load_adc_registry,
         "fortianalyzer": load_faz_registry,
         "fortiauthenticator": load_fac_registry,
+        "fortigate": load_fgt_registry,
     }[product]()
 
 
@@ -328,6 +405,7 @@ def _resolve_registry(product: str, name: str) -> str:
         "fortiadc": resolve_adc,
         "fortianalyzer": resolve_faz,
         "fortiauthenticator": resolve_fac,
+        "fortigate": resolve_fgt,
     }[product](name)
 
 

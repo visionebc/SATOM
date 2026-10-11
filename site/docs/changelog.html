@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/site.css?v=b0cf1dde95">
+<link rel="stylesheet" href="../assets/site.css?v=405c974d0a">
 <script src="../assets/site.js?v=bf3b55a92e" defer></script>
 </head>
 <body class="wide">
@@ -112,6 +112,24 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--fortigate-api-endpoint-registry-and-live-console">Added — FortiGate API: endpoint registry and live console</h3>
+<ul>
+<li>The FortiGate ADOM has an <strong>API</strong> group like the other four ADOMs, and its
+  dashboard has an <strong>API console</strong> button. The page lists the endpoint
+  registry grouped by the FortiGate menu (every other table under "Other")
+  and runs live calls against a chosen FortiGate.</li>
+<li>The registry is seeded from a sealed baseline: the 624 cmdb tables {device}
+  (FortiOS 8.0.1) served. Names are the table path flattened
+  (<code>firewall/policy</code> → <code>firewall_policy</code>). Operators can re-point, add or
+  disable entries; a baseline never overwrites their edits.</li>
+<li><strong>Writes are dry-run by default</strong>, as on the FortiAuthenticator console:
+  <code>POST</code>/<code>PUT</code>/<code>DELETE</code> show the exact request and send nothing until
+  <strong>Apply</strong> is ticked. Applying needs the "Execute write API calls"
+  permission and is audited. Writes reach <code>/api/v2/cmdb/</code> only (the monitor
+  tree holds device actions such as reboot), and a <code>DELETE</code> on a whole table
+  is refused. An <strong>Object key</strong> field URL-encodes names such as <code>{ip}/24</code>.</li>
+<li>Secrets are removed from every answer and from the audited request body.</li>
+</ul>
 <h3 id="changed--one-menu-order-in-every-adom">Changed — one menu order in every ADOM</h3>
 <ul>
 <li>The Fleet and Administrator groups are now one definition shared by every

@@ -88,6 +88,12 @@ UNSUPPORTED_REASON = {
         "FortiAuthenticator's CLI is a minimal network shell — the GUI/API is "
         "the superset of it, not the subset. No appliance of this kind has "
         "ever been read over SSH by SATOM, so there is no evidence to diff."),
+    "fortigate": (
+        "SATOM has no parser for a FortiOS configuration dump, so there is no "
+        "vault diff to show here. FortiGate's CLI-versus-REST channels are "
+        "measured per build by the API library (CLI tree against "
+        "?action=schema) and shown on every object under 'Not in GUI, but in "
+        "CLI'."),
 }
 
 # ``config global`` / ``config vdom`` are SCOPE CONTAINERS, not config tables:

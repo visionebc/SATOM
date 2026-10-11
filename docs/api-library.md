@@ -84,8 +84,10 @@ The JSON matrix file still exists, as an **export only** (§7).
 - **Nothing is deleted.** No code path in this feature deletes a row. A wrong
   rename mapping is retired, not removed.
 - **Product-agnostic.** FortiWeb, FortiADC, FortiAuthenticator, FortiAnalyzer
-  and FortiGate use the same tables. FortiGate is **catalog-only**: SATOM does
-  not manage FortiGates, but the library holds their API for reference.
+  and FortiGate use the same tables. FortiGate evidence comes from
+  `?action=schema` (a lab box or a pack), so every FortiGate name in the
+  library is a cmdb path; the FortiGate endpoint registry (§9.9) reads it
+  under flattened names.
 
 ### 2.2 Build statuses
 
@@ -516,6 +518,10 @@ produced from what the library measured on that build.
 
 ### 9.1 The contract
 
+- **Five registry products.** FortiWeb (`v2.0`), FortiADC (`v1`),
+  FortiAnalyzer (`jsonrpc`), FortiAuthenticator (`v1`) and, since 2026-10-11,
+  FortiGate (`v2`, §9.9). `registry.loader.API_VERSION` is the one list.
+
 - **Pinned to a build.** "The FortiWeb catalog as of 7.6.8", not "the FortiWeb
   catalog". The API protocol (`v2.0`, `v1`, `jsonrpc`) is recorded separately:
   it is not the firmware and it is not what changes between builds.
@@ -751,6 +757,34 @@ fleet-level analyses (`analysis_adc`, `analysis_fac`) and the FortiAuthenticator
 harvest (`apilib_fac`, which measures against the registry on purpose);
 `cli_coverage`, `discovery_run` and `device_identity`, which account for the
 registry itself.
+
+### 9.9 The FortiGate registry
+
+> **Since:** 2026-10-11 (unreleased).
+
+- **Names.** The library keys a FortiGate table by its cmdb path, because
+  `?action=schema` measures tables. The registry name is that path through
+  ONE rule, `registry.loader.fgt_logical`: lower-case, every run of
+  non-alphanumerics becomes `_` (`vpn.ipsec/phase1-interface` →
+  `vpn_ipsec_phase1_interface`). `api_baseline._measured_at` applies it, so the
+  baseline, the per-build view (§9.8) and the FortiGate menu
+  (`fgt_menu.bound_logicals`) never disagree. Nested paths and non-cmdb URNs
+  are not tables and stay out. On 8.0.1 the rule maps 867 library names to 867
+  distinct registry names.
+- **First baseline.** FortiOS 8.0.1, promoted from fgt02's `?action=schema`
+  pass: the 624 tables answered `ok`. The 98 measured absent and the 145
+  errors (hardware or platform tables a VM cannot serve) are not in it.
+- **URNs.** `registry_write` accepts `/api/v2/cmdb/<a.b>/<c>` only — a table,
+  never one object and never the monitor tree.
+- **Console** (`views/fgt_api.py`, `/fgt/api/`). Reads reach
+  `/api/v2/{cmdb,monitor,log}/`. Writes are `POST`/`PUT`/`DELETE` (FortiOS
+  has no `PATCH`), go to `/api/v2/cmdb/` only, are a dry run until Apply is
+  ticked, need `registry.execute_write`, and are audited as
+  `fgt_api.execute`. A `DELETE` without an object key is refused. Answers and
+  the audited body are scrubbed of secrets by the FortiGate section pages' rule
+  (`views.fgt.scrub`).
+- **Fingerprinting.** `device_identity.CATALOGS` includes FortiGate. Its names
+  share at most 37 with another catalog (FortiADC's), well inside `MIN_MARGIN`.
 
 ---
 

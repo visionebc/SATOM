@@ -2178,7 +2178,7 @@ switch, built-in wireless, Rugged I/O, telemetry/voice controllers, cloud
 connectors). On FortiGate 8.0.1 the VM answers those tables with the same bare
 400 as a path that does not exist, so the device cannot say it; the FortiGate
 adapter names them (<code>schema_adapters.fortigate.PLATFORM_TABLES</code>, 51 of the 54
-tables fgt02 could not serve) in the schema evidence, and they stay <code>error</code>,
+tables {device} could not serve) in the schema evidence, and they stay <code>error</code>,
 never <code>absent</code>.</p>
 <p><code>compare(product, base, target)</code> adds <code>channels</code>: <code>channel_moves</code> (a field
 whose channel changed, e.g. <code>absent -&gt; cli_only</code>), and the like-for-like <code>tree</code>

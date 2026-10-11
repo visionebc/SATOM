@@ -396,7 +396,7 @@
   catalogue. The tree alone is not the whole schema on FortiOS: 9 REST tables
   (<code>llm/*</code>, <code>waf/signature</code>, <code>system/vdom</code> ...) are absent from it and show as
   <code>rest_only</code> in the channel view.</li>
-<li><code>tree</code> parsing: a prompt glued to the first line is cut, not blanked (fgt02
+<li><code>tree</code> parsing: a prompt glued to the first line is cut, not blanked ({device}
   lost <code>system datasource type</code>; a glued FortiWeb dump grew 9 phantom objects),
   and a FortiOS field name with a space (<code>default value</code>) is read whole.</li>
 <li>The channel view compares the members of nested objects REST and the CLI

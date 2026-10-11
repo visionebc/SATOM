@@ -73,15 +73,15 @@ source of truth  rate-limit +    cron catalog: syncs, backups, cert scans,
 <section class="wrap reveal">
   <div class="sec-head">
     <span class="eyebrow">Data flow</span>
-    <h2>How a device becomes a git commit</h2>
+    <h2>How a device becomes a versioned snapshot</h2>
     <p>Every appliance is harvested, normalized, cached and versioned through one shared pipeline.</p>
   </div>
   <div class="flow">
-    <div class="step"><div class="n">1</div><h4>Appliance</h4><p>FortiWeb / FortiADC / FortiAnalyzer</p></div>
+    <div class="step"><div class="n">1</div><h4>Appliance</h4><p>FortiWeb / FortiADC / FortiAnalyzer / FortiAuthenticator / FortiGate</p></div>
     <div class="step"><div class="n">2</div><h4>Client</h4><p>REST or JSON-RPC, SSH fallback</p></div>
     <div class="step"><div class="n">3</div><h4>Snapshot</h4><p>Canonical shape per device kind</p></div>
     <div class="step"><div class="n">4</div><h4>Postgres</h4><p>Device store — DB-first reads</p></div>
-    <div class="step"><div class="n">5</div><h4>Git</h4><p>reports/&lt;device&gt;/_config.json</p></div>
+    <div class="step"><div class="n">5</div><h4>History</h4><p>Content-addressed snapshot, indexed in Postgres</p></div>
   </div>
   <div class="callout"><span class="cico">🔧</span><p>The REST/JSON-RPC endpoint map lives in a database <b>registry</b>, so a firmware upgrade that moves a URI is fixed from the UI — no redeploy.</p></div>
 </section>
@@ -142,7 +142,7 @@ source of truth  rate-limit +    cron catalog: syncs, backups, cert scans,
     <div class="card"><div class="ico">🔑</div><h3>One-paste cluster join</h3>
       <p>The primary generates a single join key at install time; paste it on the secondary and replication, shared secrets and node certificates configure themselves. Each node mints its own leaf certificate locally.</p></div>
     <div class="card"><div class="ico">🧯</div><h3>Defense-in-depth backups</h3>
-      <p>Live database, portable backup bundles, git-versioned device configs and an external SFTP backup server — four independent copies across failure domains, summarized in a live coverage matrix.</p></div>
+      <p>Live database, portable backup bundles, the content-addressed configuration history and an external SFTP backup server — four independent copies across failure domains, summarized in a live coverage matrix.</p></div>
   </div>
 </section>
 

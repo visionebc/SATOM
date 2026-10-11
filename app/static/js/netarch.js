@@ -128,7 +128,10 @@
             'class': 'na-flow ' + cls + (hl ? ' hl' : '') + (vis ? '' : ' off'),
             'marker-end': 'url(#naArrow' + cls + ')' }, gFlows);
           if (vis) {
-            var t = el('text', { x: (p.x + 2 * cx + q.x) / 4, y: (p.y + 2 * cy + q.y) / 4, 'text-anchor': 'middle',
+            // Label a third of the way from the source: at the midpoint every flow
+            // through one FortiGate stacked its label on the firewall element.
+            var u = 0.33, a1 = (1 - u) * (1 - u), b1 = 2 * u * (1 - u), c1 = u * u;
+            var t = el('text', { x: a1 * p.x + b1 * cx + c1 * q.x, y: a1 * p.y + b1 * cy + c1 * q.y, 'text-anchor': 'middle',
               'class': 'na-flow-label ' + cls }, gFlows);
             t.textContent = '#' + f.policy + ' ' + (f.name || '') + ' · ' + (f.hit_count === null || f.hit_count === undefined ? '?' : f.hit_count) + ' hits';
           }

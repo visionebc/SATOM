@@ -29,6 +29,15 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   now takes `appliance_id` and `policy` from the query string as well as the
   form.
 
+### Fixed — the upload breadcrumbs never reached the log (405 on every page)
+
+- `jobs.js` sent its upload breadcrumbs with `navigator.sendBeacon`, which is
+  always a POST, to `/_updiag`, which is GET-only on purpose (it never trips
+  CSRF). Every breadcrumb answered 405, the browser console showed an error
+  on every navigation, and the transfer diagnostics were blind. They now go
+  as a keepalive GET, and the navigation breadcrumb is sent only while an
+  upload is in flight (the only time it answers anything).
+
 ### Fixed — "Architecture" still named the Service Diagram in two places
 
 - The Concept Map and the user guide's Fleet tools list still called the

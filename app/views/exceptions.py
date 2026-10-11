@@ -38,17 +38,35 @@ def _clone_suggestion(appliance, source, policies):
 
 
 def _device_lists(appliance):
-    """Best-effort server-policy + WPP names off the device (for the pickers)."""
-    policies, wpps = [], []
+    """Best-effort server-policy + WPP names off the device (for the pickers),
+    and the live ``{policy: wpp}`` bindings read with them -- ``None`` when
+    the policy list could not be read (unknown is not "no policy")."""
+    policies, wpps, bindings = [], [], None
     try:
         client = FortiWebClient(appliance)
         raw = client.list_server_policies()
-        rows = raw.get('results', raw.get('data', [])) if isinstance(raw, dict) else []
-        policies = sorted(r.get('name', '') for r in rows if isinstance(r, dict) and r.get('name'))
+        got = raw.get('results', raw.get('data')) if isinstance(raw, dict) else None
+        rows = [r for r in got if isinstance(r, dict) and r.get('name')] \
+            if isinstance(got, list) else []
+        policies = sorted(r['name'] for r in rows)
+        if isinstance(got, list):
+            bindings = {r['name']: (r.get('web-protection-profile') or '') for r in rows}
         wpps = sorted(client.cmdb_names(_WPP_COLL))
     except Exception:  # noqa: BLE001 — dead device → empty pickers, page still works
         pass
-    return policies, wpps
+    return policies, wpps, bindings
+
+
+def _drift(appliance_id, bindings):
+    """Carve-outs the device no longer backs (``store.alignment``): a Server
+    Policy they name is gone or now binds another profile -- changed on the
+    device itself, where SATOM's re-bind hooks never ran. Already-flagged
+    stale ones and unbound ones (no policy named) are not drift. Nothing when
+    the bindings could not be read."""
+    if bindings is None:
+        return set()
+    return {e.id for e in store.alignment(appliance_id, bindings)['stale']
+            if e.policy_names and not getattr(e, 'stale', False)}
 
 
 @bp.route('/')
@@ -76,8 +94,9 @@ def list_exceptions(id):
     The fleet-wide counterpart is ``waf.exceptions``.
     """
     appliance = visible_appliance_or_404(id)
-    policies, wpps = _device_lists(appliance)
+    policies, wpps, bindings = _device_lists(appliance)
     all_items = store.list_exceptions(appliance.id)
+    drift = _drift(appliance.id, bindings)
 
     sel_type = (request.args.get('type') or '').strip()
     sel_cat = (request.args.get('category') or '').strip()
@@ -94,6 +113,8 @@ def list_exceptions(id):
         items = [i for i in items if sel_policy in i.policy_names]
     if sel_state == 'stale':
         items = [i for i in items if i.stale]
+    elif sel_state == 'drift':
+        items = [i for i in items if i.id in drift]
     elif sel_state == 'disabled':
         items = [i for i in items if not i.enabled]
     elif sel_state == 'unversioned':
@@ -139,6 +160,7 @@ def list_exceptions(id):
         wpps=wpps,
         managed_wpps=managed_wpp_names(),
         stale_count=sum(1 for it in all_items if getattr(it, 'stale', False)),
+        drift=drift, bindings_read=bindings is not None,
         unversioned_count=sum(1 for it in all_items if not it.lineage),
         restorable_count=len(versions.restorable_for(appliance.id)),
         present_types=sorted(present_types.items(), key=lambda kv: kv[1]),

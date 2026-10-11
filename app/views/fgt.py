@@ -24,6 +24,7 @@ from ..auth.decorators import require_permission
 from ..clients.fortigate import FortiGateClient, cmdb_url
 from ..models import Appliance, visible_appliances, visible_appliance_or_404
 from ..services import device_context, fgt_menu
+from ..services import gui_classic
 
 bp = Blueprint('fgt', __name__, url_prefix='/fgt')
 
@@ -87,6 +88,7 @@ def index():
                            n_items=sum(len(g.items) for g in groups),
                            n_paths=len(fgt_menu.all_paths()),
                            current=current, header_dev=current,
+                           links=gui_classic.item_links(current, groups, 'fgt.menu_page'),
                            status=status, status_err=status_err)
 
 

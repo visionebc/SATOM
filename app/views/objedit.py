@@ -631,7 +631,7 @@ def save_object(appliance_id):
     return jsonify(ok=ok, dry_run=res.get('dry_run'), request=res.get('request'),
                    diff=diff, error=error,
                    unverified_refs=unverified, build_compat=compat, cli=cli,
-                   channel_warnings=_channel_warnings(split))
+                   cli_fields=sorted(cli_fields), channel_warnings=_channel_warnings(split))
 
 
 def _channel_split(appl, coll, fields):
@@ -856,7 +856,7 @@ def save_row_for(appl, body):
     error = res.get('error', '') or (_cli_error(cli) if cli and not cli.get('ok') else '')
     return jsonify(ok=ok, dry_run=res.get('dry_run'), request=res.get('request'),
                    error=error, build_compat=compat, cli=cli,
-                   channel_warnings=_channel_warnings(split))
+                   cli_fields=sorted(cli_fields), channel_warnings=_channel_warnings(split))
 
 
 @bp.route('/<int:appliance_id>/delete-row', methods=['POST'])

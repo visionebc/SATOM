@@ -687,19 +687,34 @@ def save(appliance_id):
     ep = endpoint
     if endpoint in _CHILD_EPS and child_id not in (None, ''):
         ep = '%s%ssub_mkey=%s' % (endpoint, '&' if '?' in endpoint else '?', child_id)
-    # Same pre-write reference check as the object editor: a value naming an
-    # object the device does not have is refused HERE, with the field name,
-    # instead of coming back as a mute -651 that also discards the good fields.
-    from ..services import ref_validate
-    problems, unverified = ref_validate.check(appl, fields)
-    if problems:
-        return jsonify(ok=False, error=ref_validate.message(problems),
-                       invalid_refs=problems), 400
+    # The same gates as the object editor (objedit.save_object), in the same
+    # order: this dialog writes the same objects, so it cannot be the way
+    # around them. A template-managed WPP stays read-only here (its ✎ opens
+    # it); another user's edit lease refuses the write; a reference to an
+    # object the device does not have is refused with the field name instead
+    # of a mute -651; the build check refuses what this exact build rejects
+    # and strips the fields it lacks. Child rows are gated on their parent.
+    from .objedit import (_channel_split, _channel_warnings, _cli_part, _cli_error,
+                          _compat_gate, _lease_conflict, _ref_guard, _template_lock_error)
+    lock = _template_lock_error(endpoint, mkey, appl.id)
+    if lock:
+        return jsonify(ok=False, error=lock), 403
+    held = _lease_conflict(appl.id, endpoint, mkey)
+    if held:
+        return held
+    refusal, unverified = _ref_guard(appl, fields)
+    if refusal:
+        return refusal
+    refusal, fields, compat = _compat_gate(appl, endpoint, fields, do_apply)
+    if refusal:
+        return refusal
+    if not fields:
+        return jsonify(ok=False, error='every changed field is missing on this build: '
+                       + '; '.join(compat['messages']), build_compat=compat), 409
 
     # Same channel split as the object editor: a field CLI-only/hidden on this
     # build (its "Not in GUI, but in CLI" section) goes by the CLI writer, the
     # rest by REST. Child rows keep the REST path (they carry no section here).
-    from .objedit import _channel_split, _cli_part, _cli_error
     split = None if endpoint in _CHILD_EPS else _channel_split(appl, endpoint, fields)
     cli_fields = dict((split or {}).get('cli') or {})
     payload = {'data': {k: v for k, v in fields.items() if k not in cli_fields}}
@@ -740,11 +755,20 @@ def save(appliance_id):
                 appl.id, 'server_policy', mkey, live) > 0
         except Exception as exc:  # noqa: BLE001 — the write itself succeeded
             log_exception(exc, context='workspace.save.cache')
+    if do_apply and ok and mkey and ep == endpoint:
+        # the object editor's write-through releases the lease the same way
+        # (a child row leaves its parent's lease to the parent's editor)
+        try:
+            from ..services import lock_service, objform
+            lock_service.release(appl.id, '%s:%s' % (objform.collection_of(endpoint), mkey))
+        except Exception:  # noqa: BLE001 — never sink the write
+            pass
     return jsonify(
         ok=ok, dry_run=res.get('dry_run'),
         request=res.get('request'), error=error, cli=cli,
         stale_carveouts=stale_marked, unverified_refs=unverified,
         cache_refreshed=cache_refreshed, cli_fields=sorted(cli_fields),
+        build_compat=compat, channel_warnings=_channel_warnings(split),
     )
 
 
@@ -1222,6 +1246,7 @@ def fwgui_list(appliance_id, page):
         rows, meta = gui_pages.live_rows(appl, view.get('endpoint'))
     else:
         rows, meta = gui_pages.rows(appl.id, view.get('endpoint'))
+    rows = _fwgui_derived(appl, view, rows)
     satom = _satom_row_actions(appl, view, page, vi, _page_label(tpl, view, vi, page))
     return render_template('workspace/fwgui_list.html', appliance=appl, tpl=tpl, match=match,
                            satom=satom,
@@ -1230,6 +1255,38 @@ def fwgui_list(appliance_id, page):
                            dialog_for=gui_pages.dialog_for,
                            can_edit=current_user.can('config_write') and not view.get('read_live'),
                            gx=_gx(appl), mkey_of=None)
+
+
+def _fwgui_derived(appl, view, rows):
+    """Grid columns FortiWeb computes from a sub-table (``gui_alias`` entry
+    ``derived``: a signature set's Main Class Enabled Count = its
+    ``main_class_list`` rows with ``status`` enable), counted from the cached
+    sub-table rows. A row whose sub-table is not cached -- or is cached with a
+    different number of rows than the object's own size field says -- stays
+    empty: never a guessed 0. The cached rows themselves are never touched."""
+    cols = [c for c in view.get('columns') or [] if c.get('derived')]
+    if not cols or not rows:
+        return rows
+    from .objedit import _cached_rows
+    coll = view.get('endpoint') or ''
+    out = []
+    for r in rows:
+        r = dict(r)
+        for c in cols:
+            spec = c['derived']
+            size = r.get(spec['size']) if spec.get('size') else None
+            if size in (0, '0'):
+                r[c['id']] = 0
+                continue
+            sub = _cached_rows(appl.id, coll, r.get(spec.get('mkey') or 'name'),
+                               spec.get('count'))
+            if not sub or (size is not None and str(len(sub)) != str(size)):
+                continue
+            where = spec.get('where') or {}
+            r[c['id']] = sum(1 for x in sub
+                             if all(str(x.get(k)) == str(v) for k, v in where.items()))
+        out.append(r)
+    return out
 
 
 def _page_label(tpl, view, vi, page):

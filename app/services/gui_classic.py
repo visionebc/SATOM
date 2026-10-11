@@ -116,6 +116,23 @@ def redirect_item(appliance, item, tab=None, args=None):
 
 
 
+def item_links(appliance, groups, endpoint: str) -> dict:
+    """``{item key: URL}`` for a dashboard's menu map: the measured page an
+    old FortiGate / FortiAuthenticator leaf moves to (:func:`redirect_item`),
+    else the classic page ``endpoint`` still draws for it. A card links where
+    the item lives instead of through a redirect."""
+    from flask import url_for
+    out = {}
+    for g in groups or []:
+        for it in getattr(g, "items", None) or []:
+            try:
+                moved = redirect_item(appliance, it)
+            except Exception:  # noqa: BLE001 -- the classic page always renders
+                moved = None
+            out[it.key] = moved or url_for(endpoint, item_key=it.key)
+    return out
+
+
 def target(appliance, logical: str):
     """{"page", "v"} of the FortiWeb page drawing ``logical``, or None."""
     if not logical:

@@ -12,7 +12,8 @@ the lab, evidence per entry):
 
 * ``aliases`` -- GUI endpoint -> cmdb collection, with the GUI keys renamed to
   the cmdb keys measured equal (``keys``) and the columns FortiWeb computes
-  (``computed``: drawn as such, never a guessed field);
+  (``computed``: drawn as such, never a guessed field; ``derived``: counted
+  from a cached sub-table the way FortiWeb counts it, measured equal);
 * ``pages`` -- the same for one view of one page (``<page>/<view index>``), when
   the endpoint is shared or the crawl bound none;
 * ``live`` -- GUI API lists with no cmdb twin (FortiWeb's predefined entries):
@@ -71,12 +72,18 @@ def _apply_alias(out: dict, v: dict, ep: str, al: dict) -> None:
     cmdb = al["cmdb"]
     km = dict(al.get("keys") or {})
     computed = set(al.get("computed") or ())
+    derived = dict(al.get("derived") or {})
     v["gui_endpoint"] = ep
     v["endpoint"] = cmdb
     v["alias"] = {"confidence": al.get("confidence") or "named",
                   "evidence": al.get("evidence") or ""}
     for col in v.get("columns") or []:
-        if col.get("id") in computed:
+        if col.get("id") in derived:
+            # FortiWeb computes it from a sub-table SATOM caches: counted from
+            # those rows (workspace._fwgui_derived), never a guessed field
+            col["derived"] = copy.deepcopy(derived[col["id"]])
+            col.pop("unmatched", None)
+        elif col.get("id") in computed:
             col["unmatched"] = True
         elif col.get("id") in km:
             col["id"] = km[col["id"]]

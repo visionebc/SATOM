@@ -1113,6 +1113,16 @@ def create_app(config_override: object | None = None) -> Flask:
     app.jinja_env.globals["fwgui_nav_for"] = _gui_pages.nav_for
     app.jinja_env.globals["fwgui_contains"] = _gui_pages.contains
 
+    # The Regex Lab ".*" button: the SAME field rule as the classic forms
+    # (waf_specs.REGEX_KEYS), and the same context (the collection's kind).
+    def _fw_regex_ctx(key, coll=""):
+        from .services import objform as _objform, waf_specs as _waf_specs
+        bare = str(key or "").rsplit("#", 1)[-1]
+        if bare not in _waf_specs.REGEX_KEYS:
+            return None
+        return _objform.object_kind(coll) if coll else ""
+    app.jinja_env.globals["fw_regex_ctx"] = _fw_regex_ctx
+
     @app.context_processor
     def _inject_csp_nonce():
         return {"csp_nonce": getattr(g, "csp_nonce", "")}

@@ -33,6 +33,14 @@
 </div>
 {% endif %}
 
+{% if drift %}
+<div class="alert alert-warning py-2" data-exc-drift>
+  <i class="bi bi-arrow-left-right me-1"></i>
+  <strong>{{ _('%(n)s carve-out(s) no longer match the device', n=drift|length) }}</strong> {{ _('— a Server Policy they name is gone or now uses another Web Protection Profile. It changed on the device, outside SATOM. Re-point each one at the policy\'s current profile, or delete it.') }}
+  <a href="{{ url_for('exceptions.list_exceptions', id=appliance.id, state='drift') }}">{{ _('Show them') }}</a>
+</div>
+{% endif %}
+
 {# ── inventory tally ───────────────────────────────────────────────────── #}
 <div class="row g-2 mb-3">
   <div class="col-6 col-md-3">
@@ -99,6 +107,7 @@
     <option value="">{{ _('Any state') }}</option>
     <option value="active" {{ 'selected' if selected.state == 'active' }}>{{ _('active') }}</option>
     <option value="stale" {{ 'selected' if selected.state == 'stale' }}>{{ _('stale') }}</option>
+    <option value="drift" {{ 'selected' if selected.state == 'drift' }}>{{ _('not on the device') }}</option>
     <option value="disabled" {{ 'selected' if selected.state == 'disabled' }}>{{ _('disabled') }}</option>
     <option value="unversioned" {{ 'selected' if selected.state == 'unversioned' }}>{{ _('predates versioning') }}</option>
   </select>
@@ -123,7 +132,8 @@
               data-policies="{{ it.policy_names|join(',') }}"
               data-payload='{{ it.payload_dict|tojson }}'>
             <td><span class="badge bg-{{ 'info' if it.category == cat_exception else 'warning' }}">{{ it.category }}</span>
-              {% if it.stale %}<span class="badge bg-danger ms-1" title="{{ it.stale_reason }}">{{ _('STALE') }}</span>{% endif %}</td>
+              {% if it.stale %}<span class="badge bg-danger ms-1" title="{{ it.stale_reason }}">{{ _('STALE') }}</span>{% endif %}
+              {% if it.id in drift %}<span class="fw-badge fw-badge-warning ms-1" title="{{ _('A Server Policy it names is gone or binds another profile on the device') }}">{{ _('DRIFT') }}</span>{% endif %}</td>
             <td>{{ it.exc_type }}
               {% if not it.lineage %}<span class="badge bg-secondary ms-1"
                 title="{{ _('Authored before the versioner — there is no earlier state to return to') }}">{{ _('no history') }}</span>{% endif %}

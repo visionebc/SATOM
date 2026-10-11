@@ -6,6 +6,24 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — FortiGate and FortiAuthenticator: what the crawl could not draw
+
+- With knowledge pack `kb-20261011.7` (harvester 0.9.9) the FortiGate ADOM
+  gains its **Not in GUI, but in CLI** group (the 540 objects of 8.0.1 no page
+  of its GUI edits), and the pages the crawl could not bind get the objects
+  they edit, with forms from the device's REST schema: Log Settings (syslog,
+  disk, memory, null device, event filter, report settings), VPN Tunnels
+  (phase 1 / phase 2), Agentless VPN Settings, DNS Servers, Explicit Proxy and
+  more. System > Certificates now stands for the local certificates and CAs it
+  lists.
+- FortiAuthenticator pages gain the REST resources the crawl could not tie
+  (TACACS+ clients and policies, RADIUS policy memberships, remote LDAP /
+  RADIUS users, FortiTokens, MAC groups, user certificates, SCEP requests,
+  SNMP); each says it was placed by its page's name. Status objects are
+  read-only.
+- A FortiWeb sub-table listed on its own page (Firewall Admin Policy's match
+  list) counts as where its parent object lives.
+
 ### Added — FortiWeb: every object of the build has a page
 
 - With knowledge pack `kb-20261011.6` (harvester 0.9.8) the FortiWeb ADOM

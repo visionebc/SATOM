@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changed · 176 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changed · 179 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changed · 176 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changed · 179 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changed · 176 entries</span>
-        <ul class="rel-leads"><li>Create New, Edit and Delete row on a FortiADC child table</li><li>Clone, Clone to, Migrate to, Enable, Disable and Delete run on the Server Policy list itself</li><li>Several policies at once</li><li class="rel-more">… and 173 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Changed · 179 entries</span>
+        <ul class="rel-leads"><li>Create New, Edit and Delete row on a FortiADC child table</li><li>Clone, Clone to, Migrate to, Enable, Disable and Delete run on the Server Policy list itself</li><li>Several policies at once</li><li class="rel-more">… and 176 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.0.0.html" data-rel-version="3.0.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.0.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -360,6 +360,24 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="added--fortiweb-every-object-of-the-build-has-a-page">Added — FortiWeb: every object of the build has a page</h3>
+<ul>
+<li>With knowledge pack <code>kb-20261011.6</code> (harvester 0.9.8) the FortiWeb ADOM
+  gains a <strong>Not in GUI, but in CLI</strong> menu group: every object of the device's
+  build that no page of its GUI edits, with list, edit dialog and dry run (89
+  objects on 7.6.8, 124 on 8.0.6). The old SATOM menu entries that pointed at
+  them (V-Zone, Policy Route, Local User, Automation, RAID, CAPTCHA…) now move
+  there.</li>
+<li>Feature Visibility, Fabric Connectors and External Connector, which the GUI
+  draws with its own widgets, get pages at their place in the menu; Operation
+  gains System Settings, Administrators SSO Admin, IP Reputation its policy,
+  Sensitive Data Logging its settings.</li>
+<li>An old menu entry also moves to a page that draws its object <strong>inside a
+  dialog</strong> (SNMP communities on the SNMP form, NTP on System Settings) or edits
+  it through the <strong>GUI API</strong> (Global Log Settings = disk / syslog / alert mail
+  / FortiAnalyzer; Admin Settings = password policy; FortiGuard = update
+  override and schedule, antivirus). A page's own lists keep priority.</li>
+</ul>
 <h3 id="added--fortiadc-not-in-gui-but-in-cli-in-the-device-menu">Added — FortiADC: "Not in GUI, but in CLI" in the device menu</h3>
 <ul>
 <li>The objects a FortiADC has that its own GUI does not draw on that build now

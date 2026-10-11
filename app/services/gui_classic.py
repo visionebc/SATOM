@@ -51,32 +51,77 @@ def page_map(appliance) -> dict:
         # dashboards read configuration entities too: without this,
         # ``system_global`` would move to the Threat Map, not System > Settings
         ents = sorted(ents, key=lambda e: e["page"].startswith("view."))
+    def names_for(ep):
+        if product == gui_pages.PRODUCT:
+            return read_layer.registry_logicals(ep)
+        if gui_products.read_only_endpoint(ep) and not gui_products.is_monitor(ep):
+            return []
+        if product == gui_products.FORTIAUTH:
+            lg, _path = fac.resolve(appliance, ep)
+            return [n for n in (lg, gui_products.lib_key(product, ep)) if n]
+        names = [ep]
+        if product == gui_products.FORTIADC and gui_products.ADC_CHILD in ep:
+            # a list of a settings object's child table (BFD interfaces,
+            # Connection Limit rules) is where that settings object lives:
+            # it has no fields of its own
+            names.append(ep.split(gui_products.ADC_CHILD)[0])
+        return names
+
+    inside = []
     for e in ents:
         if e["special"]:
             continue
         tpl, _m = gui_pages.template(e["page"], fw, product)
         if tpl is None:
             continue
-        for i, v in enumerate(gui_pages.views(tpl)):
-            ep = v.get("endpoint") or ""
-            if product == gui_pages.PRODUCT:
-                names = read_layer.registry_logicals(ep)
-            elif gui_products.read_only_endpoint(ep) and not gui_products.is_monitor(ep):
-                names = []
-            elif product == gui_products.FORTIAUTH:
-                lg, _path = fac.resolve(appliance, ep)
-                names = [n for n in (lg, gui_products.lib_key(product, ep)) if n]
-            else:
-                names = [ep]
-                if product == gui_products.FORTIADC and gui_products.ADC_CHILD in ep:
-                    # a list of a settings object's child table (BFD
-                    # interfaces, Connection Limit rules) is where that
-                    # settings object lives: it has no fields of its own
-                    names.append(ep.split(gui_products.ADC_CHILD)[0])
-            for ln in names:
-                out.setdefault(ln, {"page": e["page"], "v": i})
+        views = gui_pages.views(tpl)
+        for i, v in enumerate(views):
+            # ``covers``: the cmdb objects a FortiWeb GUI API settings page
+            # edits (Global Log Settings is log/disk, log/syslogd...)
+            for ep in [v.get("endpoint") or ""] + [c for c in v.get("covers") or ()
+                                                    if isinstance(c, str)]:
+                for ln in names_for(ep):
+                    out.setdefault(ln, {"page": e["page"], "v": i})
+        for dk, ep in dialog_endpoints(tpl):
+            inside.append((ep, e["page"], view_of_dialog(views, dk)))
+    # what a page draws INSIDE a dialog (SNMP communities as a table of the
+    # SNMP form, NTP written by the Settings form) is drawn there too -- after
+    # every page's own lists, which stay where a collection moves first
+    for ep, page, i in inside:
+        for ln in names_for(ep):
+            out.setdefault(ln, {"page": page, "v": i})
     _map_cache[key] = (time.monotonic(), out)
     return out
+
+
+def dialog_endpoints(tpl: dict) -> list:
+    """``[(dialog key, endpoint)]`` a page's dialogs draw or write besides
+    their own object: an inline table, a ``write`` / ``writes`` target, a
+    field ``bind``. A reference selector names a source, not something the
+    page draws, and is left out."""
+    out = []
+    for dk, d in (tpl.get("dialogs") or {}).items():
+        if not isinstance(d, dict):
+            continue
+        eps = [d.get("endpoint"), (d.get("write") or {}).get("endpoint")]
+        eps += [(w or {}).get("endpoint") for w in d.get("writes") or []]
+        for b in d.get("blocks") or []:
+            for f in (b.get("fields") or []) if isinstance(b, dict) else []:
+                if f.get("kind") == "table":
+                    eps.append(f.get("endpoint"))
+                eps.append((f.get("bind") or {}).get("endpoint"))
+        out.extend((dk, ep) for ep in eps if isinstance(ep, str) and ep)
+    return out
+
+
+def view_of_dialog(views: list, dk: str) -> int:
+    """The index of the view that opens dialog ``dk`` (0 when none says)."""
+    for i, v in enumerate(views):
+        refs = {x.get("dialog") if isinstance(x, dict) else x
+                for k in ("dialogs", "create_menu") for x in v.get(k) or []}
+        if dk in refs or v.get("form") == dk:
+            return i
+    return 0
 
 
 def item_keys(item) -> list:

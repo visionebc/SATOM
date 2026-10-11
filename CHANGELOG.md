@@ -6,6 +6,24 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — FortiWeb: every object of the build has a page
+
+- With knowledge pack `kb-20261011.6` (harvester 0.9.8) the FortiWeb ADOM
+  gains a **Not in GUI, but in CLI** menu group: every object of the device's
+  build that no page of its GUI edits, with list, edit dialog and dry run (89
+  objects on 7.6.8, 124 on 8.0.6). The old SATOM menu entries that pointed at
+  them (V-Zone, Policy Route, Local User, Automation, RAID, CAPTCHA…) now move
+  there.
+- Feature Visibility, Fabric Connectors and External Connector, which the GUI
+  draws with its own widgets, get pages at their place in the menu; Operation
+  gains System Settings, Administrators SSO Admin, IP Reputation its policy,
+  Sensitive Data Logging its settings.
+- An old menu entry also moves to a page that draws its object **inside a
+  dialog** (SNMP communities on the SNMP form, NTP on System Settings) or edits
+  it through the **GUI API** (Global Log Settings = disk / syslog / alert mail
+  / FortiAnalyzer; Admin Settings = password policy; FortiGuard = update
+  override and schedule, antivirus). A page's own lists keep priority.
+
 ### Added — FortiADC: "Not in GUI, but in CLI" in the device menu
 
 - The objects a FortiADC has that its own GUI does not draw on that build now

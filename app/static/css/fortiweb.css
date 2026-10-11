@@ -2612,6 +2612,10 @@ button.fwg-btn{cursor:pointer;}
   border-bottom:1px solid var(--fw-border-light);font-size:12.5px;color:var(--fw-text-secondary);}
 .fwg-satom .fwg-sat-toolbar{padding:14px 20px;margin:0;border-bottom:1px solid var(--fw-border-light);}
 .fwg-satom .fwg-sat-toolbar .fw-search-box{flex:0 1 280px;}
+.fwg-satom .fwg-sat-filters{padding:8px 20px;border-bottom:1px solid var(--fw-border-light);font-size:12.5px;}
+.fwg-satom .fwg-sat-filters summary{cursor:pointer;color:var(--fw-text-secondary);font-weight:500;}
+.fwg-satom .fwg-sat-filters[open] summary{margin-bottom:8px;}
+.fwg-satom .fw-table .check-col{width:34px;cursor:default;}
 .fwg-satom [aria-disabled="true"]{opacity:.45;pointer-events:none;}
 .fwg-satom summary.btn{list-style:none;}
 .fwg-satom summary.btn::-webkit-details-marker{display:none;}

@@ -6,6 +6,24 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — Server Policy: one list, with its actions on it
+
+- **Clone, Clone to, Migrate to, Enable, Disable and Delete run on the Server
+  Policy list itself.** They used to send you to SATOM's classic policy list
+  (`?classic=1&act=…`) to open the dialog there. The dialog, its preview and
+  its job are unchanged; it now opens over the list you are on.
+- **Several policies at once**: the list has a checkbox per row (and one for
+  every visible row); the six actions run on every ticked policy in one dialog
+  and one bulk run. Edit opens exactly one.
+- The classic list's **filters** (VIP / IP, backend pool, backend server IP,
+  certificate type, status, `/regex/` on the name) and the **clone history**
+  badge moved onto the list.
+- **The classic SATOM list is gone.** `/web/workspace/<id>` now opens the
+  Server Policy list, keeping an `act`/`policy` deep link. On a node with no
+  knowledge pack yet the list draws FortiWeb 7.6's default columns instead of
+  falling back to the old page; Create New and Edit then open SATOM's policy
+  form and view.
+
 ### Fixed — The Server Policy dialog saves through the same gates as the object editor
 
 - **The dialog's save skipped three gates the object editor applies**: the

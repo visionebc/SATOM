@@ -528,6 +528,18 @@ def upload_image(client, filename: str, image_bytes: bytes, *,
     return resp.status_code, payload, steps
 
 
+def error_text(client, code) -> str:
+    """The box's own wording for a negative payload, off ``/api/platform/errMsg``
+    (the table the GUI loads at start: 1276 entries on fortiadc10, e.g. ``-28``
+    = "File is not an update file."). ``""`` when unknown or unreadable."""
+    try:
+        resp = client._api("GET", "/api/platform/errMsg", params={"vdom": "root"})
+        table = client._payload(resp)
+        return str((table or {}).get(str(code)) or "").strip() if isinstance(table, dict) else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def swap_boot_partition(client) -> tuple:
     """Reboot into the inactive partition. ``(http_status, payload)``; the
     caller must have checked that the partition holds a build."""

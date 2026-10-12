@@ -135,7 +135,27 @@ POLICY: dict[str, dict] = {
         "note": "Restart recycles the cluster; the app's pool reconnects and "
                 "the runner verifies health afterwards. Never stopped from here.",
     },
+    # Not a SATOM unit, and not drawn on the Services card (``card: False``):
+    # it is reachable from exactly one place, the HA link repair on the
+    # PRIMARY (app/services/ha_link.py), which says WHY before it offers it.
+    # Restart only: a stopped logind refuses every new login on the box,
+    # including the operator's own SSH. The runner additionally refuses it on
+    # any node that is not the primary (``_SVC_PRIMARY_ONLY``).
+    "systemd-logind.service": {
+        "actions": ("restart",),
+        "label": "Login manager (systemd-logind)",
+        "note": "Registers every SSH login. When it loses a job, sshd waits on "
+                "it forever and the standby can no longer fetch code from this "
+                "node. Restart re-registers; open sessions survive.",
+        "card": False,
+    },
 }
+
+#: Units in POLICY that only a primary may act on. The web side checks the role
+#: before it enqueues (ha_link.repair_refusal) and the runner re-checks it
+#: against its own Postgres (``_SVC_PRIMARY_ONLY`` there), so a hand-written
+#: request on a standby is refused too.
+PRIMARY_ONLY = ("systemd-logind.service",)
 
 #: Units the runner must refuse even if some future edit lists them. Rule 2 is
 #: the one that fails silently and unrecoverably, so it gets an explicit deny
@@ -188,6 +208,8 @@ def states() -> list[dict]:
         return []
     out = []
     for unit, entry in POLICY.items():
+        if not entry.get("card", True):
+            continue          # reachable only through its own guarded action
         installed = _show(unit, "LoadState") != "not-found"
         row = {
             "unit": unit,

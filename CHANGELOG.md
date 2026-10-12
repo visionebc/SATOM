@@ -6,6 +6,29 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — opening a FortiWeb signature profile in the GUI no longer counts as config drift
+
+The source-of-truth store hashed `sub_table_type`, `sub_table_id` and
+`sub_table_action`: the echo of the last sub-table edit that FortiWeb carries
+on the parent row and never prints in `show full-configuration`. Opening a
+profile in the GUI flips `Table` to `Main`, so an unchanged device minted a
+version and raised a drift alert. Measured on the live store: 7 of 63
+consecutive FortiWeb version pairs differed in nothing else.
+
+- `sot_store.normalise` drops those keys at any depth (`EDIT_OP_KEYS`, now
+  owned by the store and shared with the factory catalog).
+- **A new identity rule is no longer a change.** `record()` re-hashes the
+  newest stored body under the current rules; when it matches, the row moves
+  onto the new identity instead of minting a version. Without this the deploy
+  itself would have raised one drift alert for each of the 19 devices whose
+  newest version predates a rule. If the stored body cannot be read, a version
+  is minted as before.
+- The module comment claimed the stored blob keeps every field; it never did
+  (the blob is the canonical body the hash is taken over). Corrected.
+- `test_the_menu_entry_is_in_every_admin_block` checked `base.html` for
+  includes that moved into the shared `partials/nav_admin.html`; it now checks
+  the shared block.
+
 ### Changed — every write SATOM makes to a FortiWeb, FortiGate, FortiAuthenticator or FortiADC is checked on the device
 
 The user asked how SATOM knows an apply worked if it never looks at the result,

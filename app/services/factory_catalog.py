@@ -62,9 +62,10 @@ REVERSE_REF_KEYS = frozenset({"q_ref", "q_ref_string"})
 #: operation parameters the box echoes on the parent row, never in ``show
 #: full-configuration``. Opening a predefined signature profile in the GUI
 #: flips ``sub_table_type`` Table -> Main, and every catalog entry stopped
-#: matching that box (2026-10-12, fortiweb18 "Alert Only"). Left out of identity.
-EDIT_OP_KEYS = frozenset({"sub_table_type", "sub_table_type_val", "sub_table_id",
-                          "sub_table_id_val", "sub_table_action", "sub_table_action_val"})
+#: matching that box (2026-10-12, fortiweb18 "Alert Only"). Owned by the SoT
+#: store, whose ``normalise`` drops them too; kept here explicitly so identity
+#: does not depend on that.
+from .sot_store import EDIT_OP_KEYS  # noqa: E402
 _NOT_IDENTITY = REVERSE_REF_KEYS | EDIT_OP_KEYS
 
 KIND_INLINE = "wpp_inline"

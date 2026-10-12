@@ -1381,16 +1381,16 @@ def fwgui_refresh(appliance_id, page):
     from flask import flash, redirect, url_for
     from ..services import device_sync, gui_products
     appl = visible_appliance_or_404(appliance_id)
-    if appl.kind in ('fortigate', 'fortiauthenticator', 'fortiadc'):
-        # FortiGate / FortiADC: SATOM keeps no config cache for these pages,
-        # they read the device; FortiAuthenticator: its CLI-only objects are
-        # read over SSH. Refresh drops the few-second read memo so the next
-        # draw is fresh
+    if appl.kind in ('fortigate', 'fortiauthenticator', 'fortiadc', 'fortianalyzer'):
+        # FortiGate / FortiADC / FortiAnalyzer: SATOM keeps no config cache
+        # for these pages, they read the device; FortiAuthenticator: its
+        # CLI-only objects are read over SSH. Refresh drops the few-second
+        # read memo so the next draw is fresh
         tpl, _m = _fwgui_tpl(appl, page)
         from ..services import gui_pages
         for v in gui_pages.views(tpl):
             gui_products.adapter(appl).forget(appl, v.get('endpoint') or '')
-    if appl.kind in ('fortigate', 'fortiadc'):
+    if appl.kind in ('fortigate', 'fortiadc', 'fortianalyzer'):
         flash(f"Re-read from {appl.name}.", "success")
         return redirect(url_for('workspace.fwgui_list', appliance_id=appl.id, page=page,
                                 v=request.form.get('v') or None))
@@ -1918,6 +1918,9 @@ def _gx_list(appl, page, tpl, match, dev, vi, view, tabs):
                            gx=_gx(appl), mkey_of=mkey_of, list_table=table or '',
                            list_note=note, flags=flags,
                            gui_only=gui_products.is_gui_only(coll),
+                           # a live monitor links its page on the device
+                           monitor_href=gui_products.device_gui_url(appl, view.get('gui_href'))
+                           if view.get('monitor') else '',
                            satom=_gx_satom(appl, coll, writer))
 
 
@@ -2340,6 +2343,10 @@ def fwgui_save(appliance_id):
     if sub:
         if op == 'clone':
             return jsonify(ok=False, error='a table row is not cloned'), 400
+        if product == gui_products.FORTIANALYZER and not ad.writable(sub):
+            # a table inside a FortiAnalyzer table row: read-only here
+            return jsonify(ok=False, error=ad.refusal(sub)
+                           or 'this table is read-only here: nothing is sent'), 400
         if op != 'create' and not sub_id:
             return jsonify(ok=False, error='name the row'), 400
         if product == gui_products.FORTIADC and ad.is_child(sub):
@@ -2365,7 +2372,10 @@ def fwgui_save(appliance_id):
     # object (``ipv6.ip6-mode``) is REST: the library names top-level fields.
     split = None
     flat = {k: v for k, v in fields.items() if not gui_products.is_dotted(k)}
-    if op != 'delete' and product in cli_writer.DIALECTS and flat:
+    # FortiAnalyzer: the JSON-RPC /cli/global URL IS the CLI path -- one
+    # channel, every field goes by JSON-RPC (no SSH CLI write)
+    if op != 'delete' and product in cli_writer.DIALECTS and flat \
+            and product != gui_products.FORTIANALYZER:
         try:
             split = cli_writer.split_payload(appl, gui_products.lib_key(product, coll), flat)
         except Exception:  # noqa: BLE001 -- the library never sinks a REST save

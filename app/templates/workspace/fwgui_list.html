@@ -26,7 +26,7 @@
 </div>
 <div class="fw-card fwg-pane fwg-satom" data-fwg-list>
 {% include 'workspace/_gui_banner.html' %}
-  {% if view is defined and view.monitor %}<div class="fw-alert fw-alert-info" data-fwg-monitor><i class="bi bi-activity me-1"></i>{{ _('Live monitor: %(dev)s draws this page from live data (it is not configuration).', dev=appliance.name) }}{% if appliance.kind == 'fortiadc' and view.gui_href %} <a href="https://{{ appliance.host }}:{{ appliance.port }}/ui/{{ view.gui_href }}" target="_blank" rel="noopener" data-fwg-monitor-link>{{ _('Open it on the device') }} <i class="bi bi-box-arrow-up-right"></i></a>{% endif %}</div>
+  {% if view is defined and view.monitor %}<div class="fw-alert fw-alert-info" data-fwg-monitor><i class="bi bi-activity me-1"></i>{{ _('Live monitor: %(dev)s draws this page from live data (it is not configuration).', dev=appliance.name) }}{% if monitor_href is defined and monitor_href %} <a href="{{ monitor_href }}" target="_blank" rel="noopener" data-fwg-monitor-link>{{ _('Open it on the device') }} <i class="bi bi-box-arrow-up-right"></i></a>{% endif %}</div>
   {% elif gui_only is defined and gui_only %}<div class="fw-alert fw-alert-info" data-gui-only-page><i class="bi bi-window me-1"></i>{{ _('No API on this build (GUI only): this page is drawn read-only and nothing is sent from it.') }}</div>{% endif %}
   {% if cache_meta and cache_meta.error and rows %}<div class="fw-alert fw-alert-warning">{{ cache_meta.error }}</div>{% endif %}
   {% if list_note is defined and list_note %}<div class="fw-alert fw-alert-info" data-fwg-list-note><i class="bi bi-info-circle me-1"></i>{{ list_note }}</div>{% endif %}

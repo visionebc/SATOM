@@ -234,9 +234,10 @@ def create_app(config_override: object | None = None) -> Flask:
         'workspace.fwgui_object', 'workspace.fwgui_new', 'workspace.fwgui_save'})
 
     def _gui_engine_kind(ep):
-        """'fortigate' / 'fortiauthenticator' / 'fortiadc' when ``ep`` is a
-        measured-GUI page of such a device (its ``appliance_id``), else None.
-        FortiWeb pages keep the FortiWeb gating exactly as before."""
+        """'fortigate' / 'fortiauthenticator' / 'fortiadc' / 'fortianalyzer'
+        when ``ep`` is a measured-GUI page of such a device (its
+        ``appliance_id``), else None. FortiWeb pages keep the FortiWeb gating
+        exactly as before."""
         if ep not in _GUI_ENGINE_EPS:
             return None
         aid = (request.view_args or {}).get('appliance_id')
@@ -248,7 +249,8 @@ def create_app(config_override: object | None = None) -> Flask:
             kind = _dbgx.session.query(_ApplGx.kind).filter_by(id=int(aid)).scalar()
         except Exception:  # noqa: BLE001 -- unknown device: the usual gate
             return None
-        return kind if kind in ('fortigate', 'fortiauthenticator', 'fortiadc') else None
+        return kind if kind in ('fortigate', 'fortiauthenticator', 'fortiadc',
+                                'fortianalyzer') else None
 
     @app.before_request
     def _product_gate():
@@ -347,9 +349,9 @@ def create_app(config_override: object | None = None) -> Flask:
         _gx_kind = _gui_engine_kind(ep)
         if _gx_kind:
             # The measured-GUI pages (workspace.fwgui_*) of a FortiGate, a
-            # FortiAuthenticator or a FortiADC are that product's pages:
-            # opening one is an ADOM jump to the device's own product, like
-            # its fgt / fac / adc area.
+            # FortiAuthenticator, a FortiADC or a FortiAnalyzer are that
+            # product's pages: opening one is an ADOM jump to the device's own
+            # product, like its fgt / fac / adc / faz area.
             eff = _gx_kind
         g.product = eff
         always = {
@@ -869,15 +871,18 @@ def create_app(config_override: object | None = None) -> Flask:
                 _faz_nav = ()
         except Exception:
             _faz_nav = ()
-        # FortiGate / FortiAuthenticator / FortiADC: the device's own menu
-        # tree from its measured GUI layouts (services.gui_pages, like the
-        # FortiWeb group) -- the only device menu of these ADOMs (the
-        # hand-made adc_menu groups left the FortiADC sidebar 2026-10-11).
+        # FortiGate / FortiAuthenticator / FortiADC / FortiAnalyzer: the
+        # device's own menu tree from its measured GUI layouts
+        # (services.gui_pages, like the FortiWeb group) -- the only device
+        # menu of the first three ADOMs (the hand-made adc_menu groups left the
+        # FortiADC sidebar 2026-10-11); FortiAnalyzer keeps faz_menu as the
+        # fallback while no layout exists.
         # The device is the page's own on a GUI
         # page, else the ADOM's current one.
         _gx_appl, _gx_nav = None, []
         try:
-            if prod.get("key") in ("fortigate", "fortiauthenticator", "fortiadc"):
+            if prod.get("key") in ("fortigate", "fortiauthenticator", "fortiadc",
+                                   "fortianalyzer"):
                 _gx_appl = _cur_appl
                 _vaid = (request.view_args or {}).get('appliance_id')
                 if (request.endpoint or '').startswith('workspace.fwgui') and _vaid:

@@ -6,6 +6,42 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — FortiAnalyzer joins the measured-GUI engine
+
+- FortiAnalyzer is the fifth product SATOM draws from measured GUI layouts
+  (knowledge-pack templates per exact build, `satom.gui-template/2`). Its pages
+  read the device live over JSON-RPC `get` on the URL the layout names: a
+  `/cli/global/...` table answers its rows, keyed by the field the table's
+  own `syntax` names (read once, in the same session); an object answers one
+  object. A table inside a row of another table is read under that REAL row
+  and is read-only. Monitor pages (FortiView, Log View...) say "Live monitor",
+  query nothing and link the page on the device.
+- Writes go through the same audited path as the other products: the dry run
+  shows the exact JSON-RPC request and contacts nothing; apply reads the object
+  first, sends `add` (create), `update` (only the attributes sent change) or
+  `delete` on the object's own URL, records the change and re-reads the object
+  to verify it (`-3` afterwards = gone). A password is never shown or sent
+  back (JSON-RPC answers it as `["ENC", ...]`); a name with a slash, a table
+  inside a row and the configuration backup are refused before anything is
+  sent; no field goes by SSH (the JSON-RPC URL is the CLI path).
+- Templates are checked against a FortiAnalyzer endpoint grammar on import:
+  `/cli/global/system|fmupdate/...` anywhere; ADOM data, status reads, monitor
+  trees and GUI routes only where SATOM reads; device actions are cut out of a
+  page (log auto-deletion and firmware-manager timeouts are configuration).
+- The FortiAnalyzer ADOM draws the device's own menu when a layout exists for
+  its build (partials/nav_fortianalyzer.html), and keeps the curated menu as
+  the fallback. "GUI layout not measured" is no longer said once a
+  FortiAnalyzer layout is on the node.
+
+### Fixed — FortiAnalyzer schema harvest measured nothing on a real 7.6.7
+
+- The live schema read asked `syntax` on `/cli/global/system` and
+  `/cli/global/fmupdate`; a real FortiAnalyzer 7.6.7 answers `-3` for a
+  branch. It now walks the objects SATOM knows by name (API library and
+  registry) one by one, follows each object's sub-objects, asks a table's
+  children under its first real row, records `-3` as absent and any other
+  refusal as not measured, and stops at a request budget.
+
 ### Added — FortiADC: every object the GUI does not draw, with its rows, on the per-device page
 
 - **Appliances → *device* → Not in GUI, but in CLI** now lists the whole

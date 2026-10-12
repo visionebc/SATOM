@@ -25,10 +25,16 @@ from pathlib import Path
 from ..vendor import satom_guikit as guikit
 from . import firmware_versions as fv
 
+#: ``build<n>`` anywhere: FortiWeb ``8.0.6,build0116``, FortiGate
+#: ``v8.0.1,build0245``, FortiAnalyzer's ``/sys/status`` Version
+#: ``v7.6.7-build3737 260601 (GA.M)`` and ``7.6.7 build3737`` (the release
+#: date after the build is never taken for it).
 _BUILD_RE = re.compile(r"build\s*0*(\d+)", re.I)
 #: FortiADC's firmware column: ``<version> <build>`` with no ``build`` word
-#: (``adc_ops.model_inventory_from``: ``"7.6.7 0676"``).
-_ADC_FW_RE = re.compile(r"^\s*v?\d+\.\d+\.\d+\s+0*(\d+)\s*$")
+#: (``adc_ops.model_inventory_from``: ``"7.6.7 0676"``). A build has at most
+#: five digits: the six-digit release date FortiAnalyzer prints after its
+#: version (``v7.6.7 260601`` when the build is reported apart) is not one.
+_ADC_FW_RE = re.compile(r"^\s*v?\d+\.\d+\.\d+\s+0*(\d{1,5})\s*$")
 #: One path component of a template file: never ``.`` / ``..`` (a page ``..``
 #: filed ``<product>/../<version>-<build>.json`` outside its product).
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]{0,79}$")

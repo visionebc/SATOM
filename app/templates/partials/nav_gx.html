@@ -1,11 +1,11 @@
-{# FortiGate / FortiAuthenticator / FortiADC: the device's OWN menu tree, every page SATOM
+{# FortiGate / FortiAuthenticator / FortiADC / FortiAnalyzer: the device's OWN menu tree, every page SATOM
    has a measured GUI layout for (services.gui_pages; layouts per build from
    the knowledge packs), drawn like the FortiWeb group. Since 2026-10-11 the
    old fgt_menu / fac_menu / adc_menu groups are not drawn at all; their URLs redirect to
    these pages (services.gui_classic.redirect_for). Expects gx_nav / gx_appliance. #}
 {% if gx_nav and gx_appliance and may_open('workspace.fwgui_index') %}
-{% set _gx_label = {'fortigate': 'FortiGate', 'fortiauthenticator': 'FortiAuthenticator', 'fortiadc': 'FortiADC'}.get(gx_appliance.kind, gx_appliance.kind) %}
-{% set _gx_color = {'fortigate': '#0d9488', 'fortiauthenticator': '#7c3aed', 'fortiadc': '#10b981'}.get(gx_appliance.kind, '#64748b') %}
+{% set _gx_label = {'fortigate': 'FortiGate', 'fortiauthenticator': 'FortiAuthenticator', 'fortiadc': 'FortiADC', 'fortianalyzer': 'FortiAnalyzer'}.get(gx_appliance.kind, gx_appliance.kind) %}
+{% set _gx_color = {'fortigate': '#0d9488', 'fortiauthenticator': '#7c3aed', 'fortiadc': '#10b981', 'fortianalyzer': '#d97706'}.get(gx_appliance.kind, '#64748b') %}
 {% set _gx_page = (request.view_args or {}).get('page') if request.endpoint and request.endpoint.startswith('workspace.fwgui') else None %}
 {% macro _gx_node(n, depth, cur) %}
   {% if n.entry is defined %}

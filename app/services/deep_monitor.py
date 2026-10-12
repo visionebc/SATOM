@@ -108,10 +108,12 @@ KIND_PRODUCTS = {
     # July), and dropping it here would have removed working coverage on the
     # strength of an assumption. Narrowing it is a separate decision, with a
     # live device to test against.
+    # FortiGate reads REST too (``monitor/system/resource/usage``, see
+    # :func:`_run_box_fgt`): its credential is an API token, not a CLI login.
     "cpu":             ("fortiweb", "fortiadc", "fortianalyzer",
-                        "fortiauthenticator"),
+                        "fortiauthenticator", "fortigate"),
     "memory":          ("fortiweb", "fortiadc", "fortianalyzer",
-                        "fortiauthenticator"),
+                        "fortiauthenticator", "fortigate"),
     # `diagnose system top` -- FortiWeb only (also "No such command." on fac01).
     "proxyd":          ("fortiweb",),
     # FortiWeb runtime telemetry.
@@ -923,6 +925,10 @@ def run_box(probe, kind: str) -> dict:
     # asked in the wrong language. Its CPU and memory come over REST instead.
     if (probe.appliance.kind or "") == "fortiauthenticator":
         return _run_box_rest(probe, kind)
+    # FortiGate: the appliance row carries a REST API token, not a CLI login,
+    # and FortiOS words its CLI differently (`get system performance status`).
+    if (probe.appliance.kind or "") == "fortigate":
+        return _run_box_fgt(probe, kind)
     try:
         raw = ssh_ops.run_command(probe.appliance, PERF_CMD,
                                   timeout=float(probe.timeout_s or 15))
@@ -1299,6 +1305,9 @@ def _api_client(probe):
         from ..clients.fortiauthenticator import FortiAuthenticatorClient
         return (FortiAuthenticatorClient(ap, timeout=float(probe.timeout_s or 15)),
                 None)
+    if product == "fortigate":
+        from ..clients.fortigate import FortiGateClient
+        return FortiGateClient(ap, timeout=float(probe.timeout_s or 15)), None
     from ..clients.fortiweb import FortiWebClient
     return FortiWebClient(ap, timeout=float(probe.timeout_s or 15)), None
 
@@ -1710,6 +1719,97 @@ def _run_box_rest(probe, kind: str) -> dict:
         "value2_num": (parsed.get("disk_used_pct") if kind == "memory" else None),
         "fingerprint": "",
         "payload": {"endpoint": "/api/v1/systeminfo/", "metric": kind,
+                    "transport": "rest", "parsed": parsed},
+    }
+
+
+# ---------------------------------------------------------------------------
+# FortiGate box metrics — REST ``monitor/system/resource/usage``
+# ---------------------------------------------------------------------------
+
+FGT_RESOURCE_ENDPOINT = "/api/v2/monitor/system/resource/usage"
+
+#: FortiOS resource member -> the key every box reader shares (the ``cpu`` /
+#: ``memory`` keys are :data:`BOX_METRICS`'s, so the grading is the same).
+FGT_RESOURCE_KEYS = (
+    ("cpu", "cpu_busy"),
+    ("mem", "mem_used_pct"),
+    ("disk", "disk_used_pct"),
+    ("session", "sessions"),
+)
+
+
+def _fgt_current(member: Any):
+    """``[{"current": 7, "historical": {...}}]`` -> 7.0; anything else -> None.
+
+    A bare number or a bare dict is tolerated so a firmware that unwraps the
+    one-element list degrades to correct, not to empty. Absent stays None:
+    a missing reading graded as 0 % would read as an idle box.
+    """
+    if isinstance(member, list):
+        member = member[0] if member else None
+    if isinstance(member, dict):
+        member = member.get("current")
+    if member is None or isinstance(member, bool):
+        return None
+    try:
+        return float(member)
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_fgt_resource_usage(results: Any) -> dict:
+    """``GET /api/v2/monitor/system/resource/usage`` ``results`` -> flat dict.
+
+    One parser for the ``cpu`` / ``memory`` probes and the ``box`` scrape
+    collector. UNVERIFIED against a live FortiGate: the endpoint and its shape
+    are FortiOS's documented monitor API, not a measurement on fgt02, so every
+    member is read defensively and a member that is not there is ``None``.
+    """
+    if not isinstance(results, dict):
+        results = {}
+    return {key: _fgt_current(results.get(src)) for src, key in FGT_RESOURCE_KEYS}
+
+
+def _run_box_fgt(probe, kind: str) -> dict:
+    """CPU / memory for a FortiGate, read over REST. Never raises."""
+    meta = BOX_METRICS.get(kind)
+    if not meta:
+        return {"status": "error", "detail": "unknown box metric %r" % kind,
+                "payload": {}}
+    client, err = _api_client(probe)
+    if err:
+        return err
+    try:
+        results, fail = client.resource_usage()
+    except Exception as exc:  # noqa: BLE001 -- an unreachable box is a result
+        results, fail = None, "%s: %s" % (type(exc).__name__, exc)
+    if fail:
+        return {"status": "crit",
+                "detail": "monitor API did not answer: %s" % fail,
+                "payload": {"endpoint": FGT_RESOURCE_ENDPOINT,
+                            "transport": "rest", "error": str(fail)}}
+    parsed = parse_fgt_resource_usage(results)
+    val = parsed.get(meta["key"])
+    if val is None:
+        return {"status": "error",
+                "detail": ("%s returned no %s reading -- the members it did "
+                           "return are captured in the sample payload"
+                           % (FGT_RESOURCE_ENDPOINT, meta["label"])),
+                "payload": {"endpoint": FGT_RESOURCE_ENDPOINT, "metric": kind,
+                            "transport": "rest", "parsed": parsed,
+                            "members": sorted(results)[:40]}}
+    status, note = _grade_pct(val, warn_num=th.num(probe, "warn_pct", kind),
+                              crit_num=th.num(probe, "crit_pct", kind))
+    bits = ["%s %g%%" % (meta["label"], val)]
+    if note:
+        bits.append(note)
+    return {
+        "status": status, "detail": "; ".join(bits),
+        "value_num": val,
+        "value2_num": None,
+        "fingerprint": "",
+        "payload": {"endpoint": FGT_RESOURCE_ENDPOINT, "metric": kind,
                     "transport": "rest", "parsed": parsed},
     }
 

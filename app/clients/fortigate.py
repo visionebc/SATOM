@@ -114,6 +114,25 @@ class FortiGateClient(BaseClient):
     def status_check(self):
         return self.sys_status()
 
+    #: Box CPU / memory / disk / session counters. Documented FortiOS monitor
+    #: endpoint (present since FortiOS 5.6); NOT yet measured on fgt02, so the
+    #: shape is parsed defensively by ``deep_monitor.parse_fgt_resource_usage``.
+    RESOURCE_USAGE_PATH = '/api/v2/monitor/system/resource/usage'
+
+    def resource_usage(self):
+        """(results, error) of ``GET /api/v2/monitor/system/resource/usage``.
+
+        ``results`` is the dict keyed by resource (``cpu``, ``mem``, ``disk``,
+        ``session`` ...), each a one-element list whose ``current`` is the
+        reading now. A read, never an action: the monitor tree's actions are
+        POSTs and this client sends none of them."""
+        payload, err = self._call('GET', self.RESOURCE_USAGE_PATH)
+        if err:
+            return None, err
+        if not isinstance(payload, dict) or not isinstance(payload.get('results'), dict):
+            return None, 'response has no "results" object'
+        return payload['results'], None
+
     def ha_status(self) -> dict:
         """Not wired in the base ADOM: an empty dict means "unknown", which
         ``services.ha_inventory`` never reads as standalone."""

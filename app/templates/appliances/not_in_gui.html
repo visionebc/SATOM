@@ -34,6 +34,31 @@
   </div>
   {% endfor %}
 
+  {% if inv.absent %}
+  {% set can_read = may_open('appliances.not_in_gui_rows') %}
+  <div class="fw-card mb-3 p-3" data-nig-absent>
+    <h2 class="h6">{{ _('Objects the device\'s GUI does not draw') }} <span class="text-muted">({{ inv.absent|length }})</span></h2>
+    <p class="small text-muted mb-2">{{ _('The device has these objects and serves them over REST; no page of its own GUI reads them on this build. Their rows are read from the device when this page opens (read only).') }}</p>
+    {% for o in inv.absent %}
+    <div class="mb-3" data-nig-object="{{ o.endpoint }}" data-why="{{ o.why }}">
+      <div class="small mb-1">
+        <strong>{{ o.label }}</strong> <code>{{ o.endpoint }}</code> {{ channel_badge('REST') }}
+        {% if o.group %}<span class="text-muted">— {{ o.group }}</span>{% endif %}
+        {% if o.page and may_open('workspace.fwgui_list') %}
+          <a class="ms-1" href="{{ url_for('workspace.fwgui_list', appliance_id=appliance.id, page=o.page, v=o.v or None) }}">{{ _('Open its page') }}</a>
+        {% elif o.why == 'no_page' %}
+          <span class="text-muted">— {{ _('no measured page of this build reads it: this list is where SATOM shows it') }}</span>
+        {% endif %}
+        <span class="text-muted ms-1" data-nig-rows-count></span>
+      </div>
+      {% if can_read %}
+      <div data-nig-rows data-src="{{ url_for('appliances.not_in_gui_rows', id=appliance.id, ep=o.endpoint) }}"><span class="small text-muted">{{ _('Reading rows…') }}</span></div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   <div class="fw-card mb-3 p-3">
     <h2 class="h6">{{ _('Objects only the CLI serves') }} <span class="text-muted">({{ inv.objects|length }})</span></h2>
     {% if inv.objects %}

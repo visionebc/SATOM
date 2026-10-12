@@ -23,6 +23,12 @@
   <div class="fw-nav-group-body">
     <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'workspace.fwgui_index' }}" href="{{ url_for('workspace.fwgui_index', appliance_id=gx_appliance.id) }}"><i class="bi bi-grid-3x3-gap fw-nav-icon"></i><span>{{ _('All pages') }}</span></a>
     {% for n in gx_nav %}{{ _gx_node(n, 0, _gx_page) }}{% endfor %}
+    {% if may_open('appliances.not_in_gui') %}
+    {# every object and field this device has outside its GUI, in one page
+       (the menu's own "Not in GUI, but in CLI" group holds the objects SATOM
+       draws a page for; this page also lists what has none) #}
+    <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'appliances.not_in_gui' }}" href="{{ url_for('appliances.not_in_gui', id=gx_appliance.id) }}" data-nav-nig><i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Not in GUI, but in CLI') }}</span></a>
+    {% endif %}
     {% if gx_appliance.kind == 'fortiadc' and current_user and current_user.can('protection.view') and may_open('adc.signatures') %}
     {# SATOM's live signature-policy overview (views/adc.py): kept beside the
        measured menu, which replaces the adc_menu groups that carried it #}

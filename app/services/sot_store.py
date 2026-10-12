@@ -22,9 +22,16 @@ Design rules:
   is byte-identical; hashing them would defeat the dedup entirely and quietly
   reintroduce the unbounded growth this store exists to stop. The same is true
   of fields NESTED inside ``sections`` -- the appliance's own clock, its
-  internal object handles, and its reverse-reference projections -- which is
-  what :func:`normalise` strips. Stripping happens on the way to the HASH
-  only; the stored blob keeps every field.
+  internal object handles, its reverse-reference projections and the echo
+  of the last sub-table edit -- which is what :func:`normalise` strips. The
+  blob IS the canonical body (it is what the hash is taken over), so a
+  stripped field is absent from history and diff as well: that is the point,
+  a field the appliance moves on its own is not configuration.
+* **A new identity rule is not a configuration change.** Adding a rule moves
+  the hash of every snapshot it touches; without care the next harvest of an
+  unchanged device minted a version and raised a drift alert per device.
+  :func:`record` re-hashes the newest stored body under the current rules
+  and, when it matches, moves that row onto the new identity instead.
 * **Blobs live under ``data/``** so the existing ``satom-ha-datasync`` rsync
   replicates them to the standby and the system-backup bundles include them.
   No new replication mechanism.
@@ -66,9 +73,10 @@ VOLATILE_KEYS = ("generated_at", "errors")
 # kept -- the goal is to stop reporting the clock, not to stop reporting time
 # configuration.
 #
-# This governs IDENTITY only. ``record()`` still stores the snapshot whole, so
-# history, diff and restore keep seeing exactly what the appliance returned.
-# The rules decide when a version is MINTED, never what it contains.
+# The blob is the canonical body the hash is taken over, so a stripped field
+# is absent from the stored version too -- history and diff show configuration,
+# not the appliance's own churn. (This comment used to claim the snapshot was
+# stored whole; it never was: ``record()`` writes ``canonical_bytes``.)
 
 #: Wall-clock readings. Dropped only inside an object that carries
 #: ``CLOCK_MARKER``, so a configuration field that happens to be named
@@ -96,6 +104,17 @@ ROLLING_KEYS = frozenset({"allow-time"})
 #: when that sibling is present, so a standalone ``*_val`` field stays hashed.
 HANDLE_SUFFIX = "_val"
 
+#: FortiWeb's last sub-table EDIT -- which sub-table, which row, add/edit/
+#: delete -- echoed on the parent row. Absent from ``show full-configuration``;
+#: opening a signature profile in the GUI flips ``sub_table_type`` Table ->
+#: Main with no configuration change. Measured on a1 (2026-10-12): 7 of the 63
+#: consecutive FortiWeb version pairs differed in nothing else, each one a
+#: drift alert. Every other reader in this product already treats
+#: ``sub_table*`` as noise (field schema, workspace, write ops, factory
+#: catalog). Dropped at any depth: the names exist on no other product.
+EDIT_OP_KEYS = frozenset({"sub_table_type", "sub_table_type_val", "sub_table_id",
+                          "sub_table_id_val", "sub_table_action", "sub_table_action_val"})
+
 
 def normalise(value):
     """Strip appliance-side churn so the identity tracks CONFIGURATION.
@@ -115,7 +134,7 @@ def normalise(value):
             continue
         if key.endswith(HANDLE_SUFFIX) and key[:-len(HANDLE_SUFFIX)] in value:
             continue
-        if key in ROLLING_KEYS:
+        if key in ROLLING_KEYS or key in EDIT_OP_KEYS:
             continue
         if key in REF_LIST_KEYS and isinstance(val, str):
             out[key] = "\n".join(sorted(p for p in val.split("\n") if p))
@@ -190,6 +209,48 @@ def canonical_bytes(snapshot: dict) -> bytes:
     body = {k: v for k, v in snapshot.items() if k not in VOLATILE_KEYS}
     return json.dumps(normalise(body), sort_keys=True, default=str,
                       separators=(",", ":")).encode("utf-8")
+
+
+def _write_blob(sha: str, raw: bytes) -> Path:
+    """Write ``raw`` under its content address (atomic rename); idempotent."""
+    blob = _blob_path(sha)
+    if not blob.exists():
+        blob.parent.mkdir(parents=True, exist_ok=True)
+        tmp = blob.with_suffix(".tmp")
+        with gzip.open(tmp, "wb", compresslevel=6) as fh:
+            fh.write(raw)
+        os.replace(tmp, blob)
+    return blob
+
+
+def _reidentify(row, raw: bytes, sha: str) -> bool:
+    """Move ``row`` onto identity ``sha`` if it holds the same configuration.
+
+    The stored body was canonicalised under the rules of the day it was
+    written. When a rule is added (the nested rules on 2026-08-11, the
+    sub-table echo on 2026-10-12) the newest row keeps its old hash, and the
+    next harvest of an UNCHANGED device hashes differently. Re-hash the stored
+    body under today's rules; if it matches, write the new blob and repoint the
+    row -- no version, no drift alert. The old blob becomes an orphan that
+    :func:`prune` collects. Anything unreadable answers False, so a version is
+    minted: the safe direction.
+    """
+    try:
+        old = _blob_path(row.sha256)
+        if not old.exists() and not fetch_blob(row.sha256):
+            return False
+        with gzip.open(old, "rb") as fh:
+            body = json.loads(fh.read().decode("utf-8"))
+        if hashlib.sha256(canonical_bytes(body)).hexdigest() != sha:
+            return False
+        blob = _write_blob(sha, raw)
+    except Exception:  # noqa: BLE001 -- fall back to minting, never sink a harvest
+        return False
+    row.sha256 = sha
+    row.size_raw = len(raw)
+    row.size_gz = blob.stat().st_size
+    row.evacuated_at = None
+    return True
 
 
 def _retention(product: str = "") -> tuple[int, int]:
@@ -271,18 +332,14 @@ def record(device: str, snapshot: dict, *, source: str = "harvest") -> dict:
     latest = (SotVersion.query.filter_by(device=device)
               .order_by(SotVersion.taken_at.desc(), SotVersion.id.desc())
               .first())
-    if latest and latest.sha256 == sha:
+    if latest and (latest.sha256 == sha or _reidentify(latest, raw, sha)):
         latest.last_seen_at = now
         db.session.commit()
         return {"changed": False, "version_id": latest.id, "sha256": sha}
 
     blob = _blob_path(sha)
     if not blob.exists():
-        blob.parent.mkdir(parents=True, exist_ok=True)
-        tmp = blob.with_suffix(".tmp")
-        with gzip.open(tmp, "wb", compresslevel=6) as fh:
-            fh.write(raw)
-        os.replace(tmp, blob)
+        _write_blob(sha, raw)
         # A device that reverts to an older configuration re-writes a blob
         # that was evacuated. Every row on that sha is local again, and a row
         # still flagged evacuated would send the next read to the network for

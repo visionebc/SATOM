@@ -60,6 +60,16 @@ def _verdict(appliance, client, method, path, body, result):
     return device_verify.after_request(appliance, client, method, path, body)
 
 
+def _device_path(endpoint_path: str) -> str:
+    """The path sent to the device: the URL's ``<path>`` AND its query string.
+    ``<path:…>`` stops at ``?``, and FortiWeb / FortiADC name the object a
+    write touches in the query (``DELETE …/vserver?mkey=x``, a child row's
+    ``?pkey=``): dropping it sent a delete without its object and re-read
+    nothing. The verifiers read ``mkey`` / ``pkey`` from this same string."""
+    qs = request.query_string.decode('latin-1')
+    return '/' + endpoint_path + ('?' + qs if qs else '')
+
+
 def _check_write_permission():
     """A raw write through the proxy is the same act as a raw write from the
     API Explorer, so it needs the same key: ``registry.execute_write`` (the
@@ -89,13 +99,14 @@ def fortiweb_proxy(id, endpoint_path):
         return jsonify({'error': 'not a FortiWeb appliance'}), 400
     try:
         client = client_for(appliance)
-        result = client.api_call(method, '/' + endpoint_path, body)
-        verify = _verdict(appliance, client, method, '/' + endpoint_path, body, result)
+        path = _device_path(endpoint_path)
+        result = client.api_call(method, path, body)
+        verify = _verdict(appliance, client, method, path, body, result)
         if method in WRITE_METHODS:
             log_action(
                 'api.proxy.fw',
                 appliance_id=appliance.id,
-                detail=f'{method} /{endpoint_path}'
+                detail=f'{method} {path}'
                        + (f' verify={verify["verdict"]}' if verify else ''),
             )
         try:
@@ -135,13 +146,14 @@ def fortiadc_proxy(id, endpoint_path):
                                  f'appliance page: Upgrade, Boot Partition or Restore.'}), 403
     try:
         client = client_for(appliance)
-        result = client.api_call(method, '/' + endpoint_path, body)
-        verify = _verdict(appliance, client, method, '/' + endpoint_path, body, result)
+        path = _device_path(endpoint_path)
+        result = client.api_call(method, path, body)
+        verify = _verdict(appliance, client, method, path, body, result)
         if method in WRITE_METHODS:
             log_action(
                 'api.proxy.adc',
                 appliance_id=appliance.id,
-                detail=f'{method} /{endpoint_path}'
+                detail=f'{method} {path}'
                        + (f' verify={verify["verdict"]}' if verify else ''),
             )
         try:

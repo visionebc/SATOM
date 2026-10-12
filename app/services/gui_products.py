@@ -1339,6 +1339,38 @@ def verdict_view(verify: dict | None) -> dict | None:
             "text": label_ + (": " + detail if detail else "")}
 
 
+def cli_verify(cli: dict | None) -> dict | None:
+    """The GuiOps-shaped verdict of an applied CLI write, from the read-back
+    the CLI writer made in a fresh session (``CliWriteResult.readback`` /
+    ``diff``) -- the read-back that decides its ``ok``. None when nothing was
+    verified: a dry run, a refused script, or an error before the read-back.
+
+    * any ``diff`` -> ``mismatch`` (each field: what was sent, what the device
+      printed);
+    * else every field the read-back printed back -> ``verified``;
+    * secrets (printed encrypted) are ``unchecked``; nothing compared ->
+      ``unverified``."""
+    if not isinstance(cli, dict) or cli.get("dry_run") or cli.get("error"):
+        return None
+    fields = ((cli.get("readback") or {}).get("cli") or {}).get("fields") or {}
+    diff = cli.get("diff") or []
+    if not fields and not diff:
+        return None
+    lost = next((d for d in diff if d.get("expected") in ("readback", "readable")), None)
+    if lost:
+        # the object could not be read back: nothing is known, not "kept"
+        return _unverified("the CLI read-back failed: %s" % (lost.get("got") or "no answer"))
+    checked = [k for k, s in fields.items() if str(s).startswith("ok")]
+    unchecked = [k for k, s in fields.items() if str(s).startswith("present")]
+    mismatch = {str(d.get("field") or "(object)"): {"sent": d.get("expected"),
+                                                     "device": d.get("got")}
+                for d in diff}
+    verdict = ("mismatch" if mismatch else "verified" if checked else "unverified")
+    return {"verdict": verdict, "checked": checked, "unchecked": unchecked,
+            "mismatch": mismatch,
+            "why": "" if verdict != "unverified" else "nothing sent could be compared"}
+
+
 def _pick_row(ad, rows, sent: dict, ident: str | None, known: set | None, id_of):
     """``(row, verify)`` of a row just CREATED in ``rows``: the one carrying
     the identity that was sent (``ident``), else among the rows that were not

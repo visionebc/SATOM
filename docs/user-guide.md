@@ -2577,7 +2577,10 @@ audits it; secrets are never echoed back.
 - **Rediscovery → Capture full depth: every child table (REST)** reads each
   `<parent>_child_<table>` once per parent object (`?pkey=`). Certificate-group,
   CA-group and schedule-group members exist only there; the parent rows do not
-  carry them. The result sits beside the sweep snapshot.
+  carry them. The result sits beside the sweep snapshot. It is also loaded
+  into the cache's deep layer, which Analysis reads (deep-object picker,
+  sub-element counts, fleet inventory, FortiADC object inventory), and into
+  the API library as measured for that build.
 - **VS inspector** draws every reference of a virtual server to the end:
   content routing → pool → members → real servers and health checks; client
   SSL profile → certificate group → certificates → intermediate CA; auth

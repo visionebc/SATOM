@@ -1456,13 +1456,16 @@ def _feed_cache(appliance_snap, snapshot: dict) -> dict:
         return {"error": ("%s: %s" % (type(exc).__name__, exc))[:200]}
 
 
-def _ingest_library(appliance_snap, snapshot: dict) -> dict:
+def _ingest_library(appliance_snap, snapshot: dict, *,
+                    origin: str = "rediscovery:") -> dict:
     """File this sweep's snapshot as API-library evidence. NEVER raises.
 
     Returns ``{evidence_id, created, healthy, skip_reason}`` or ``{error}``.
     A library failure is logged and reported, but it cannot fail the sweep:
     ``_config.json`` and the by-version archive are already on disk and stay
-    the export every existing consumer reads.
+    the export every existing consumer reads. ``origin`` prefixes the
+    ``origin_ref``: the ADC depth pass files its child tables under
+    ``api_library.DEPTH_ORIGIN_PREFIX`` (partial evidence of the build).
     """
     aid = appliance_snap.id
     try:
@@ -1472,7 +1475,7 @@ def _ingest_library(appliance_snap, snapshot: dict) -> dict:
         version = _version_of(snapshot)
         # Same origin_ref shape as api_library.backfill, so the provenance of
         # a live ingest and of a later backfill of the same file reads alike.
-        ref = "rediscovery:%d@%s" % (aid, version or "unversioned")
+        ref = "%s%d@%s" % (origin, aid, version or "unversioned")
         with _library_app().app_context():
             try:
                 doc = api_library.evidence_from_sweep(
@@ -1614,6 +1617,76 @@ def latest_snapshot(appliance_id: int) -> dict | None:
         return None
 
 
+def _feed_deep_cache_adc(appliance_snap, snapshot: dict, deep_doc: dict) -> dict:
+    """The ADC depth capture into the cache's ``deep`` layer. NEVER raises.
+
+    Replaces the device's deep layer like the FortiWeb depth does
+    (``device_sync.persist_deep_snapshot``): the sweep's rows of every parent
+    table whose child table this build serves, each with the child rows read
+    for it (``adc_vstree.deep_sections``). Returns ``{objects, sections}``
+    or ``{error}``."""
+    try:
+        from . import adc_vstree, device_sync
+        sections = adc_vstree.deep_sections(snapshot.get("sections"), deep_doc)
+        snap = {"device": appliance_snap.name, "appliance_id": appliance_snap.id,
+                "generated_at": deep_doc.get("generated_at"),
+                "total_objects": sum(len(rows) for eps in sections.values()
+                                     for rows in eps.values()),
+                "section_count": len(sections), "sections": sections, "errors": []}
+        with _get_flask_app().app_context():
+            res = device_sync.persist_deep_snapshot(appliance_snap, snap,
+                                                    trigger="rediscovery")
+        if sections and not res:
+            # persist_deep_snapshot records its own failure on the SyncRun
+            return {"error": "deep cache ingest failed (see the harvest history)"}
+        return {"objects": sum(v.get("objects", 0) for v in res.values()),
+                "sections": len(res)}
+    except Exception as exc:  # noqa: BLE001 — never let the cache sink a sweep
+        _log.warning("rediscovery: ADC deep cache ingest failed for appliance %s: %s",
+                     appliance_snap.id, exc, exc_info=True)
+        return {"error": ("%s: %s" % (type(exc).__name__, exc))[:200]}
+
+
+def depth_evidence(snapshot: dict, deep_doc: dict) -> dict:
+    """The ADC depth capture as a sweep-shaped snapshot of the CHILD tables
+    alone, for ``api_library.evidence_from_sweep``: one ledger entry per
+    child table read, its rows across every parent, the sweep's firmware.
+
+    A table that answered for at least one parent is ``ok`` (the library's
+    own merge rule: an answer anywhere proves the build serves it); the
+    section is its parent's. ``{}`` when no child table was read."""
+    ledger = (deep_doc or {}).get("endpoint_status") or {}
+    if not ledger:
+        return {}
+    sweep_led = (snapshot or {}).get("endpoint_status") or {}
+    status, rows = {}, {}
+    for name, led in sorted(ledger.items()):
+        led = led or {}
+        status[name] = {
+            "urn": led.get("urn") or "",
+            "section": (sweep_led.get(led.get("parent")) or {}).get("section") or "",
+            "verdict": "ok" if led.get("parents") else (led.get("verdict") or "error"),
+            "rows": led.get("rows", 0)}
+    for name, per in ((deep_doc or {}).get("children") or {}).items():
+        rows[name] = [r for parent_rows in (per or {}).values()
+                      for r in parent_rows or [] if isinstance(r, dict)]
+    return {"device": deep_doc.get("device"), "appliance_id": deep_doc.get("appliance_id"),
+            "generated_at": deep_doc.get("generated_at"),
+            "firmware": (snapshot or {}).get("firmware", ""),
+            "endpoint_status": status, "sections": {"Child tables": rows}}
+
+
+def _ingest_library_depth(appliance_snap, snapshot: dict, deep_doc: dict) -> dict:
+    """The child tables the depth pass read, filed in the API library as
+    measured for this build. ``{}`` when nothing was read; never raises."""
+    from . import api_library
+    measured = depth_evidence(snapshot, deep_doc)
+    if not measured:
+        return {}
+    return _ingest_library(appliance_snap, measured,
+                           origin=api_library.DEPTH_ORIGIN_PREFIX)
+
+
 def _run_deep_adc(appliance_snap: SimpleNamespace, progress_path, state: dict,
                   snapshot: dict, finish: bool = True) -> bool:
     """Read every registered ``<parent>_child_<x>`` table once per parent row
@@ -1661,7 +1734,7 @@ def _run_deep_adc(appliance_snap: SimpleNamespace, progress_path, state: dict,
         state.update(deep_error=f"{type(exc).__name__}: {exc}"[:200])
         res = None
     if res is not None:
-        _write_json(_dev_dir(aid) / ADC_DEEP_FILE, {
+        deep_doc = {
             "device": appliance_snap.name, "appliance_id": aid,
             "generated_at": datetime.utcnow().isoformat(),
             "firmware": snapshot.get("firmware", ""),
@@ -1669,11 +1742,24 @@ def _run_deep_adc(appliance_snap: SimpleNamespace, progress_path, state: dict,
             # and an OLDER _config.json would pair rows of two moments.
             "sweep_generated_at": snapshot.get("generated_at"),
             **res,
-        })
+        }
+        _write_json(_dev_dir(aid) / ADC_DEEP_FILE, deep_doc)
         state.update(section="deep capture complete", deep_objects=res["rows"],
                      deep_reads=res["reads"], deep_errors=len(res["errors"]),
                      deep_total=res["pairs"], deep_done=res["pairs"],
                      deep_percent=100)
+        # The file feeds the VS tree; the cache's ``deep`` layer and the API
+        # library are what everything else reads (Analysis, the library's
+        # per-build answer) — same two homes as the FortiWeb depth and the
+        # sweep. Each outcome under its own key: neither can fail
+        # a capture that is already on disk.
+        cache = _feed_deep_cache_adc(appliance_snap, snapshot, deep_doc)
+        state["deep_cache" if "error" not in cache else "deep_cache_error"] = \
+            cache.get("error") or cache
+        lib = _ingest_library_depth(appliance_snap, snapshot, deep_doc)
+        if lib:
+            state["deep_apilib" if "error" not in lib else "deep_apilib_error"] = \
+                lib.get("error") or lib
     if finish:
         state.update(state="done", finished=datetime.utcnow().isoformat())
     _write_json(progress_path, state)

@@ -120,18 +120,35 @@ def orphan_objects(device_ids=None) -> list[dict]:
     return out
 
 
-def deep_objects(device_ids=None, logical_name: str = _WPP_LOGICAL) -> list[dict]:
+def object_drilldown(appliance_id: int, logical_name: str, mkey: str) -> dict | None:
+    """The nested sub-tree of any depth-0 deep object (a FortiADC parent and
+    the child-table rows its depth capture read)."""
+    return _drilldown(appliance_id, logical_name, mkey)
+
+
+def deep_objects(device_ids=None, logical_name: str | None = _WPP_LOGICAL, *,
+                 kind: str | None = None) -> list[dict]:
     """Depth-0 deep objects of a type (WPPs or server policies) with their device
-    — drives the drill-down picker. ``{appliance_id, device, mkey}``."""
+    — drives the drill-down picker. ``{appliance_id, device, logical_name, mkey}``.
+
+    ``kind`` (an appliance kind) instead lists EVERY depth-0 deep object of
+    the devices of that kind: a FortiADC's deep layer is its depth capture,
+    one parent type per child table (pools, certificate groups, …), so there
+    is no single type to pick."""
     from ..models import Appliance
     names = {a.id: a.name for a in Appliance.query.all()}
-    q = DeviceObject.query.filter_by(layer="deep", depth=0, logical_name=logical_name)
+    q = DeviceObject.query.filter_by(layer="deep", depth=0)
+    if kind:
+        q = q.filter(DeviceObject.appliance_id.in_(
+            [a.id for a in Appliance.query.filter_by(kind=kind).all()] or [-1]))
+    else:
+        q = q.filter_by(logical_name=logical_name)
     if device_ids:
         q = q.filter(DeviceObject.appliance_id.in_(list(device_ids)))
-    q = q.order_by(DeviceObject.appliance_id, DeviceObject.mkey)
+    q = q.order_by(DeviceObject.appliance_id, DeviceObject.logical_name, DeviceObject.mkey)
     return [{"appliance_id": o.appliance_id,
              "device": names.get(o.appliance_id, str(o.appliance_id)),
-             "mkey": o.mkey} for o in q.all()]
+             "logical_name": o.logical_name, "mkey": o.mkey} for o in q.all()]
 
 
 # --- Fleet inventory (cardinality) -----------------------------------------
@@ -140,6 +157,10 @@ _POOL_LN = "server_policy/server_pool"
 _VIP_LN = "server_policy/vserver/vip-list"
 _SNI_LN = "certificate_sni"
 _CERT_LN = "certificate"
+# FortiADC: its deep layer is the depth capture (services.adc_vstree), where a
+# pool is a top-level object and its members are the child table's rows.
+_ADC_POOL_LN = "load_balance_pool"
+_ADC_MEMBER_LN = "load_balance_pool/pool_member"
 
 
 def _scope(q, device_ids):
@@ -151,7 +172,8 @@ def fleet_inventory(device_ids=None) -> dict:
     DISTINCT server pools (and which are unique vs shared), how many back-end real
     servers and on what ports, how many VIPs, SNI policies and certificates. All
     over the deep cache (every device); bounded queries (the leaf real-server set
-    is naturally small); never a live box."""
+    is naturally small); never a live box. FortiADC pools (``server_pools.adc``)
+    and their members (back-ends) come from its depth capture."""
     from ..models import Appliance
     names = {a.id: a.name for a in Appliance.query.all()}
 
@@ -184,21 +206,29 @@ def fleet_inventory(device_ids=None) -> dict:
     distinct_pools = len(pool_use)
     unique_pools = sum(1 for c in pool_use.values() if c == 1)
 
-    # Back-ends (real servers) + port histogram, from the small leaf set.
+    # FortiADC pools: one top-level object each, no policy nesting them, so
+    # they are counted beside the FortiWeb pools, never as "unique"/"shared".
+    d_adc_pool = per_dev(_ADC_POOL_LN, 0)
+
+    # Back-ends (real servers) + port histogram, from the small leaf set:
+    # FortiWeb pool members and FortiADC pool members (``address``; the ADC
+    # pads values with spaces).
     be_rows = _scope(db.session.query(DeviceObject.appliance_id, DeviceObject.payload)
                      .filter(DeviceObject.layer == "deep",
-                             DeviceObject.logical_name == _BACKEND_LN), device_ids).all()
+                             DeviceObject.logical_name.in_((_BACKEND_LN, _ADC_MEMBER_LN))),
+                     device_ids).all()
     ports: dict = {}
     ips: set = set()
     d_be: dict = {}
     for aid, pay in be_rows:
         pay = pay or {}
         p = pay.get("port") or pay.get("https-port") or pay.get("http-port")
-        if p not in (None, "", 0, "0"):
-            ports[str(p)] = ports.get(str(p), 0) + 1
-        ip = pay.get("ip")
+        p = str(p).strip() if p is not None else ""
+        if p not in ("", "0"):
+            ports[p] = ports.get(p, 0) + 1
+        ip = str(pay.get("ip") or pay.get("address") or "").strip()
         if ip:
-            ips.add((aid, str(ip)))
+            ips.add((aid, ip))
         d_be[aid] = d_be.get(aid, 0) + 1
     port_list = sorted(({"port": k, "count": v} for k, v in ports.items()),
                        key=lambda r: r["count"], reverse=True)
@@ -206,7 +236,7 @@ def fleet_inventory(device_ids=None) -> dict:
     d_pol = per_dev("server_policy", 0)
     d_sni = per_dev(_SNI_LN, 0)
     d_cert = per_dev(_CERT_LN, 0)
-    d_pool: dict = {}
+    d_pool: dict = dict(d_adc_pool)
     for (aid, _mk) in pool_use:
         d_pool[aid] = d_pool.get(aid, 0) + 1
 
@@ -223,7 +253,8 @@ def fleet_inventory(device_ids=None) -> dict:
             "server_policies": n_policies,
             "server_pools": {"distinct": distinct_pools, "unique": unique_pools,
                              "shared": distinct_pools - unique_pools,
-                             "references": len(pool_rows)},
+                             "references": len(pool_rows),
+                             "adc": sum(d_adc_pool.values())},
             "backends": {"count": len(be_rows), "distinct_ips": len(ips)},
             "vips": n_vips, "sni": n_sni, "certificates": n_certs,
         },

@@ -355,7 +355,7 @@ def create_app(config_override: object | None = None) -> Flask:
         always = {
             'static', 'index', 'fortiweb_home', 'service_worker',
             'upload_worker', 'updiag', 'healthz', 'healthz_primary',
-            'healthz_backups', 'healthz_cert_renewals',
+            'healthz_backups', 'healthz_cert_renewals', 'healthz_reconciler',
             'product.select', 'product.set_product', 'product.switch',
             'product.enter', 'product.fortiadc_home',
             'product.placeholder_home',
@@ -1328,6 +1328,22 @@ def create_app(config_override: object | None = None) -> Flask:
                             'vault': inv['vault']}), 200
         except Exception as exc:
             return jsonify({'ok': False, 'error': str(exc)}), 500
+
+    # -- reconciler probe (same pattern as /healthz/backups) --------------
+    # THIS node's own reconciler tick, so the PRIMARY can say whether the
+    # standby is fetching from it -- the standby's Postgres is read-only and
+    # its data/ is overwritten by the datasync, so asking it is the only way
+    # to learn its real state. Publishes reconciler.PUBLIC_FIELDS plus short
+    # shas and a redacted one-line error: nothing the peer could not already
+    # infer from /healthz (which publishes the full sha), no paths, no detail.
+    @app.route('/healthz/reconciler')
+    def healthz_reconciler():
+        from flask import jsonify
+        try:
+            from .services import reconciler as _rec
+            return jsonify({'ok': True, 'reconciler': _rec.public_status()}), 200
+        except Exception as exc:  # noqa: BLE001
+            return jsonify({'ok': False, 'error': type(exc).__name__}), 500
 
     # -- renewal-journal probe (same pattern as /healthz/backups) ---------
     # The PEER's Renewals page calls this so one page shows BOTH nodes without

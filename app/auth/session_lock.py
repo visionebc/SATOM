@@ -39,7 +39,7 @@ STAMP_GRANULARITY = 15
 #: Endpoints the front-end calls on a timer (static/js and base.html).
 POLL_ENDPOINTS = frozenset({
     "static", "healthz", "healthz_primary", "healthz_backups",
-    "healthz_cert_renewals", "service_worker", "upload_worker", "updiag",
+    "healthz_cert_renewals", "healthz_reconciler", "service_worker", "upload_worker", "updiag",
     "notifications.unread",          # top-bar bell (base.html, every 30 s)
     "jobs.index", "jobs.get",        # job dock + per-job toast (jobs.js)
     "jobs.response",

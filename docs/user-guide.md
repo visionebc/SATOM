@@ -3369,6 +3369,91 @@ day something goes wrong:
   promotion is an operator decision the stack deliberately refuses to undo for
   you.
 
+### 24.1 The HA link — when the standby stops taking code from the primary
+
+The standby gets new code by running `git fetch` against the **primary's**
+repository over SSH, as the service account (its reconciler does it every
+minute). That one channel can fail while everything else stays green: root
+SSH, the `data/` sync, replication and both web UIs keep working.
+
+**What it looked like (2026-10-11).** `systemd-logind` on the primary lost a
+job (`Failed to start session scope session-NNNN.scope: Connection timed out`).
+From then on every SSH login of the service account stayed in logind state
+`opening`: sshd waits on `pam_systemd` and never runs the command, so every
+fetch hung for 120 s and the standby silently stopped converging. The fix was
+`systemctl restart systemd-logind` on the primary; the standby caught up within
+one reconciler cycle.
+
+**Where you see it now.**
+
+- *Software Update & HA* on the **primary** has an **HA link** card. It shows
+  the standby's own account of itself — *in sync*, *N commits behind*, or
+  *cannot fetch from this node since <time>: <error>* — plus this node's
+  `systemd-logind` (logins of the service account stuck in `opening` for more
+  than 60 s, or a `loginctl` that does not answer) and whether `sshd` answers.
+  The standby's state comes from its `/healthz/reconciler` probe (the same
+  unauthenticated peer-probe pattern as `/healthz/backups`; it publishes the
+  decision, the commit counts, short shas, the time and a one-line redacted
+  error — nothing else). The lag is computed on the primary against its own
+  branch head, because a standby that cannot fetch measures itself against a
+  stale `origin` and would read "0 behind".
+- Each node's reconciler status is **node-local** (`state/reconciler-status.json`,
+  outside `data/`). It used to live in `data/`, which the data sync overwrites
+  with the primary's copy every five minutes, so the standby's file always
+  named the primary. A fetch timeout is now recorded as a `fetch-error`
+  decision with the error and how long the streak has lasted, instead of an
+  exception in the journal.
+- The *Deploy automation* card on **each** node's Software Update & HA page
+  shows **this node's own** last reconciler tick, read from that file — on the
+  standby that is the standby's own decision, including *cannot fetch since
+  <time> (N failed attempts in a row): <error>*. The record the primary
+  publishes into the replicated settings is shown below it, labelled
+  *Primary's reconciler*, only on a node it does not describe.
+- A code update (and its rollback) now restarts `satom-reconciler` along with
+  the scheduler (`try-restart`: a stopped reconciler stays stopped). Before,
+  the loop kept running the release it was started with — on 2026-10-11 the
+  standby's had been up since the morning on code older than its tree. Until
+  a node's reconciler has been restarted once on this release, it still
+  writes its record to the old `data/` path; the page reads that as a
+  fallback, but only when the record names this node.
+- The alert engine (Settings → Alerts, git family) raises **HA link broken**
+  when the standby has been failing to fetch for more than 10 minutes or this
+  node's login path is wedged — once per incident: it re-arms only after the
+  link has been seen healthy again.
+- `satom ha check` on the primary prints the same check in the console
+  (`satom show runbook ha-link` is the offline procedure).
+
+**Repairing it.** *Repair HA link…* on the card (admin, `user_manage`), or
+`sudo satom ha repair` on the primary. Both first show a **preview** — the
+current check, what the repair does and what it does not — and change nothing
+until you confirm (the button) or add `--yes` (the CLI). Confirmed, it:
+
+- restarts `systemd-logind` on the primary — not from the web worker, but by
+  enqueuing an allowlisted request for the privileged runner, the same queue as
+  every Settings → Services action (logind is restart-only there and is not
+  drawn on the Services card);
+- follows the runner's steps, then re-runs the check and shows before and after;
+- is written to the audit log (`ha.link.repair`, or `ha.link.repair.refused`).
+
+It does **not** touch the standby or anything over SSH, restart `sshd`, the web
+app, PostgreSQL or the data sync, or end open sessions (logind re-attaches
+them). It cannot fix a dead `sshd`, an unreachable standby or a refused key —
+the check names those separately (`sshd-down`, `standby-unreachable`) so the
+button is not pressed for the wrong fault. It **refuses on a standby or a
+standalone node** and says why: the login service on the fetch path is the
+primary's. The runner re-checks the role against its own PostgreSQL as well.
+
+**Manual fallback**, if the app itself cannot run the check:
+
+```bash
+loginctl list-sessions
+loginctl show-session <id> -p Name -p State -p Timestamp   # 'opening' for minutes = wedged
+journalctl -u systemd-logind --since -2h | grep -i 'session scope'
+sudo systemctl restart systemd-logind
+# on the standby, read-only: is it fetching again?
+journalctl -u satom-reconciler -n 20
+```
+
 ## 25. AppIDs
 
 Global ADOM → Administrator → **AppIDs** (admin, `user_manage`).

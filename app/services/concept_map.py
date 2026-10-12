@@ -721,6 +721,7 @@ EXCLUDED: dict[str, str] = {
     # Machinery: health probes, service worker, selftest, legacy redirects.
     "healthz": "health probe", "healthz_backups": "health probe",
     "healthz_cert_renewals": "health probe", "healthz_primary": "health probe",
+    "healthz_reconciler": "health probe",
     "updiag": "health probe", "favicon_ico": "asset",
     "service_worker": "asset", "upload_worker": "asset",
     "_selftest_403": "selftest", "_selftest_404": "selftest",

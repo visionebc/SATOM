@@ -278,9 +278,10 @@ This is the part that can take a customer offline, so it has the most gates.
 ## 7b. Documentation leaving the building
 
 Section 7 covers files arriving from outside. This one covers text going the
-other way, which is the direction that cannot be undone: `site/` is pushed to
-GitHub Pages by the release sync, and a published page is cached and indexed
-whether or not it is deleted afterwards.
+other way, which is the direction that cannot be undone: `site/` ships in the
+public GitHub mirror with every release sync, and its pages are deployed to the
+public site, where a published page is cached and indexed whether or not it is
+deleted afterwards.
 
 **What it prevents.** Two different rots, and one disclosure.
 

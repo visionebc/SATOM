@@ -416,9 +416,12 @@ with the device's own sections, sub-dialogs and inline tables:
 - Below the dialog, **Not in GUI, but in CLI** lists every field this policy has
   on the device's build that FortiWeb's GUI does not show (§7.6).
 - **Save** works as described in §7.5: you review the change first, then
-  apply it. Before the write, every reference value is checked against the
-  device (§7.1). After a successful write, SATOM reads the policy back from the
-  device so the page shows the stored value.
+  apply it. Before the write, the dialog runs the same checks as the object
+  editor: a template-managed Web Protection Profile stays read-only, another
+  user's edit lease blocks the save, every reference value is checked against
+  the device (§7.1) and the build compatibility check runs (§7.3). After a
+  successful write, SATOM reads the policy back from the device so the page
+  shows the stored value.
 
 ### Without a knowledge pack
 
@@ -1001,19 +1004,28 @@ before you have seen the change.
    **Back to the form** or **Apply to <device>**.
 4. **Apply** writes the objects in order and stops at the first refusal. The
    message names the endpoint that refused and what was already written.
-5. On FortiWeb object pages, the server checks the change before anything
-   leaves SATOM:
-   - a template-managed Web Protection Profile is read-only;
-   - another user's edit lease on the object blocks the save;
+5. On FortiWeb object pages and in the Server Policy dialog, the server checks
+   the change before anything leaves SATOM, in this order:
+   - a template-managed Web Protection Profile is read-only: the save is
+     refused and points you to the Template Library. This holds when the
+     profile is opened from a policy's pencil, too;
+   - another user's edit lease on the object blocks the save, and nothing is
+     sent. A row of an inline table is checked against its parent's lease;
    - every reference value must exist on the device (§7.1);
    - the build compatibility check runs (§7.3): a blocking finding refuses the
-     apply, and fields the build does not have are stripped.
+     apply and names the finding, and fields the build does not have are
+     stripped instead of being lost behind a success. The dry run is never
+     refused by this check; the object editor shows its report in the review.
+     If every changed field is missing on the build, nothing is saved.
 
-   The Server Policy dialog runs the reference check. On every page the
-   channels then split. REST fields go by REST. Fields the build serves
+   The channels then split. REST fields go by REST. Fields the build serves
    only by CLI go through the CLI writer over SSH, and only after the REST part
-   succeeded. If REST fails, the CLI part is not sent.
-6. After a successful apply, SATOM updates its copy and the page reloads.
+   succeeded. If REST fails, the CLI part is not sent. The *Channel* column of
+   the review names the CLI fields of every object in the change, a bound
+   object's included.
+6. After a successful apply, SATOM releases your edit lease on the object (a
+   row of an inline table leaves its parent's lease alone), updates its copy
+   and the page reloads.
    FortiGate and FortiAuthenticator pages re-read the object from the device.
    If the device stored a different value, the page says *Saved, but the device
    stored different values: …*.
@@ -1162,9 +1174,10 @@ SATOM's own tools are still served:
   reacts"), and an explanation under every Action dropdown.
 - **Regex Lab:** open it from the **Tools** menu in the top bar (Regex
   calculator, Regex cheat sheet, Pattern library) on any page. In SATOM's own
-  object editor and on the Exceptions page, every regex-capable field also has
-  a `.*` button. That button opens the lab on the field and writes the tested
-  pattern back into it. The lab tests patterns server-side with curated
+  object editor, in the dialogs of the pages in FortiWeb's layout (the Server
+  Policy dialog included) and on the Exceptions page, every regex-capable
+  field also has a `.*` button. That button opens the lab on the field and
+  writes the tested pattern back into it. The lab tests patterns server-side with curated
   examples per section. Its rewrite preview numbers captures the way FortiWeb
   and FortiADC do: `$0` is the **first** `( … )` group, `$1` the second.
 - In SATOM's own editor, profile-level editing shows each sub-policy as a
@@ -1276,7 +1289,9 @@ The team rules the app enforces:
    and re-submits your change — one flow.
 3. **Lifecycle.** Exceptions are bound to server policies. Deleting a policy
    purges its carve-outs; swapping a policy's WAF profile flags them **STALE**
-   (never silently deleted) with a banner to re-target.
+   (never silently deleted) with a banner to re-target. A change made on the
+   device itself, outside SATOM, is caught when the page opens: such
+   carve-outs are flagged **DRIFT** (below).
 4. **Capacity.** Injections check device limits (e.g. 128 filter entries per
    signature set) and clone operations check profile headroom.
 
@@ -1291,6 +1306,20 @@ Other tools on the page:
   that went **stale** because their Server Policy was re-bound to another
   profile. Edit a stale carve-out to re-point it (saving clears the flag), or
   delete it.
+- **DRIFT — not on the device:** each time the page opens, SATOM reads the
+  device's Server Policies and the profile each one uses, and compares them
+  with the carve-outs. A carve-out is flagged **DRIFT** when no Server Policy
+  it names is still on the device using the profile it was authored for: the
+  policy is gone, or it now uses another Web Protection Profile. That happens
+  when the change was made on the device itself, outside SATOM, where the
+  re-bind hooks behind **STALE** never ran. A warning banner gives the count,
+  *n carve-out(s) no longer match the device*, with **Show them**; each such
+  row carries a **DRIFT** warning badge next to its category; and the *State*
+  filter has a **not on the device** option. Re-point each one at the
+  policy's current profile, or delete it. Carve-outs already flagged STALE and
+  carve-outs bound to no policy are never flagged DRIFT. If the device's
+  policy list cannot be read, nothing is flagged: an unreachable device is not
+  evidence that a policy is gone.
 - **Filters** (type, category, Server Policy, state, free text over name,
   profile, policy and payload) are applied by the server, so the counts match
   the rows you see.
@@ -2670,6 +2699,13 @@ arrived, the pages a measured layout draws can also write, dry-run first.
 - **Not in GUI, but in CLI** is on every object, edit and Create New form
   (§7.3). A page or field measured as having no API is drawn read-only and
   marked **"No API on this build (GUI only)"**.
+- **API console** (sidebar → API → Registry & console, `registry.view`) — the
+  FortiGate registry browsed as the FortiGate menu, and a live console. `GET`
+  reads the `cmdb`, `monitor` and `log` trees. `POST`, `PUT` and `DELETE` are
+  **dry-run by default** (tick **Apply** to send; `registry.execute_write`),
+  audited and read back. Writes go to `/api/v2/cmdb/` only, never to the
+  monitor tree's actions (reboot, restore, firmware), and a `DELETE` must name
+  an object.
 - **SATOM's section pages** (`/fgt/m/<item_key>`, 30 pages in 7 areas over 43
   cmdb tables) are no longer in the sidebar; the dashboard still lists them. A
   section whose every table a measured page draws opens that page instead. The
@@ -2686,8 +2722,8 @@ arrived, the pages a measured layout draws can also write, dry-run first.
   (§30.11) are reachable from its sidebar; the Release Notes modal (§31.1) is in
   the Tools menu.
 
-Not there yet: an API console and registry binding, backups, firmware,
-templates, HA status and the Migration report. Registration and the details:
+Not there yet: backups, firmware, templates, HA status and the Migration
+report. Registration and the details:
 [docs/fortigate.md](fortigate.md).
 
 ## 18. API tokens
@@ -4509,10 +4545,10 @@ corroboration first.
 The list SATOM publishes for a border firewall to read, and the place you take
 an address off it.
 
-**SATOM never writes to a FortiGate.** There is no FortiGate client in this
-product and no credential that could write one. You create the deny policy
-that references the feed, once, before any incident — exactly as you create
-the FortiWeb IP list that `block_ip` appends to.
+**Sentinel never writes to a FortiGate.** It only publishes the feed, and the
+FortiGate reads it; nothing in Sentinel calls the FortiGate API. You create
+the deny policy that references the feed, once, before any incident — exactly
+as you create the FortiWeb IP list that `block_ip` appends to.
 
 **Turning it on.** Press *Generate token*, then switch on *Publish the border
 blocklist feed* in Settings → Sentinel → Border blocklist feed. The page then
@@ -4678,11 +4714,14 @@ Then it is two-phase, as everywhere else in the product:
    measured, and for a device that reports no firmware (§29.1.1). An approver
    can override with an audited reason.
 
-> **Variables are not rendered here.** A System Provisioning push — a profile
-> or a baseline (28.4) — sends each template body as stored. `{{ variable }}` placeholders and their per-device
-> values (device bindings, §29.1.4) are rendered by **Apply** in the Template
-> Library and in the section libraries on the FortiWeb pages, not by this page.
-> Keep per-device values out of a system profile you push from here.
+**Variables are rendered per device.** A profile may carry `{{ variable }}`
+placeholders (§29.1.4). Each device's writes are rendered from that device's
+binding to the profile, as the Template Library's **Apply** does, so the preview
+shows the values each device will receive. A device whose binding leaves a
+variable unset is named in the preview (*The live deploy will be refused: …*),
+and the live deploy, canary included, is then refused with the device and the
+variable named. There is no override: set the value on the device's binding
+first. A profile without placeholders is pushed the same to every device.
 
 Choosing *Entire fleet* is explicit. Selecting "selected devices" and then
 selecting nothing is **refused**, rather than being quietly treated as "all" —
@@ -4715,6 +4754,10 @@ this scope have".
   Every composing template must pass the firmware check on every matching
   device, against builds its approval covers (§29.1.1); one refusal stops the
   whole rollout unless an approver gives an override reason.
+- `{{ variables }}` render per device here too, and each composing template
+  takes the variables of **its own** binding on that device. The preview names
+  every device left without a value, and the rollout is then refused before it
+  starts, with the devices and variables named (no override).
 - A baseline that matches no devices, or that has no composing templates, says so
   and does nothing.
 
@@ -4951,8 +4994,9 @@ that leaves a variable unset, shows as not fitting.
 written in the body as `{{ name }}` (letters, digits, `_`, `.`, `-`). The View
 dialog lists the names the body asks for. A value that is exactly one
 placeholder takes the variable's value as is; a placeholder inside a longer
-string is replaced by its text. **Apply** (in the Template Library and in the
-section libraries on the FortiWeb pages) renders the body per device, and
+string is replaced by its text. **Apply** (in the Template Library, in the
+section libraries on the FortiWeb pages, and in System Provisioning and its
+baselines, §28.2 and §28.4) renders the body per device, and
 refuses a device whose binding leaves a variable unset — with no override,
 because a literal `{{ name }}` would otherwise be written to the box. A body
 without placeholders is pushed the same to every device.
@@ -5077,9 +5121,9 @@ The pre-flight itself is described in §40.
 
 ## 30. The endpoint registry & the API explorer
 
-Every product workspace has an API console (§17.1, §17.2, §17.3 cover the ADC,
-FAC and FAZ ones). This section documents the **FortiWeb** one and, more
-importantly, the **registry model all four share**.
+Every product workspace has an API console (§17.1, §17.2, §17.3 and §17.4
+cover the ADC, FAC, FAZ and FortiGate ones). This section documents the
+**FortiWeb** one and, more importantly, the **registry model all five share**.
 
 ### 30.1 What the registry is
 
@@ -6746,7 +6790,7 @@ discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
    the console is either **on the map** (118 today) or **excluded with a written
-   reason** (144 today — JSON feeds, downloads, redirects and fragments that
+   reason** (145 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the

@@ -23,6 +23,13 @@ Two kinds of evidence decide what is "not in the GUI":
    a GUI field from a REST-only one, so those stay in their usual groups and
    the section says the layout was not measured.
 
+A whole object can be outside the GUI too: the knowledge pack ships a page
+marked ``gui_absent`` for the objects no page of the device's GUI reads
+(FortiADC 7.6.7: VDOM, per-VDOM syslog, alert targets…, measured by the
+crawl), and on FortiADC the registry names what the build serves that no
+measured page reads at all. :func:`absent_objects` lists both for the
+per-device page; their rows are read on demand (:func:`absent_rows`).
+
 Nothing here touches a device: the section is built from the library and the
 layout; values of CLI fields are read on demand by :func:`cli_values`.
 """
@@ -152,7 +159,9 @@ def layout_keys(product: str, endpoint: str, version: str) -> tuple[set | None, 
         tpl = gui_alias.apply(page, tpl)
     keys = set(_template_keys(tpl, endpoint_key(endpoint)))
     based = tpl.get("based_on") or {}
-    return keys, {"page": page, "match": match,
+    # a ``gui_absent`` page is SATOM's, built from the device's schema: what
+    # it places is what SATOM draws, and the device's GUI draws none of it
+    return keys, {"page": page, "match": match, "gui_absent": bool(tpl.get("gui_absent")),
                   "based_on": based.get("version") or tpl.get("applies_to") or ""}
 
 
@@ -278,6 +287,12 @@ def classify(appliance, endpoint: str, obj_keys, *, product: str | None = None,
     elif layout is None:
         note = ("GUI layout not measured for this page on %s %s: this section lists the "
                 "fields the device has outside its REST API." % (product, version))
+    elif linfo.get("gui_absent"):
+        from . import gui_products
+        note = ("No page of the %s %s GUI reads this object (measured): SATOM draws it "
+                "from the device's schema. The fields its page does not place are listed "
+                "here with the channel SATOM writes them by."
+                % (gui_products.label(product) or product, linfo.get("based_on") or "?"))
     else:
         from . import gui_products
         note = ("GUI layout of %s %s (%s): fields the Fortinet GUI does not show "
@@ -476,7 +491,8 @@ def device_inventory(appliance) -> dict:
     from . import api_library as lib
     product, version = _build_of(appliance)
     out = {"title": SECTION_TITLE, "product": product, "version": version,
-           "objects": [], "fields": [], "layout_pages": [], "note": "", "complete": False}
+           "objects": [], "fields": [], "layout_pages": [], "absent": [], "note": "",
+           "complete": False}
     if not version:
         out["note"] = ("The running build of this appliance is unknown: run a firmware check "
                        "so SATOM can name the fields it has outside the GUI.")
@@ -503,13 +519,14 @@ def device_inventory(appliance) -> dict:
         if prod != product:
             continue
         keys, info = layout_keys(product, ep_key, version)
-        if keys is None:
-            continue
+        if keys is None or info.get("gui_absent"):
+            continue  # a page of objects the GUI does not draw: ``absent`` below
         rest = sorted(n for n, f in ((view.get("endpoints") or {}).get(ep_key, {})
                                      .get("fields") or {}).items()
                       if f.get("channel") in _LIB_REST and n not in keys)
         out["layout_pages"].append({"endpoint": ep_key, "page": page, "layout": info,
                                     "rest_not_in_gui": rest})
+    out["absent"] = absent_objects(appliance)
     if unmeasured(product):
         out["note"] = ("GUI layout not measured for this product (no lab device), and its CLI "
                        "tree is not measured either: SATOM cannot split GUI from CLI-only "
@@ -519,6 +536,119 @@ def device_inventory(appliance) -> dict:
         out["note"] = ("The CLI tree of %s %s is not measured: CLI-only fields cannot be named "
                        "until it is (satom-harvester)." % (product, version))
     return out
+
+
+WHY_GUI_ABSENT, WHY_NO_PAGE = "gui_absent", "no_page"
+
+
+def absent_objects(appliance) -> list:
+    """Whole objects the device has that its own GUI does not draw, in its
+    menu order: ``[{"endpoint", "label", "group", "page", "v", "columns",
+    "why"}]``.
+
+    * ``gui_absent`` -- every view of a page the knowledge pack marks
+      ``gui_absent`` for the device's firmware (the crawl opened every menu
+      entry and recorded every read; these objects were read by none). SATOM
+      draws them from the device's schema at ``page`` / view ``v``.
+    * ``no_page`` -- FortiADC only: an entity of the registry the build serves
+      that no measured page of the build reads at all (7.6.7: ``system_auto_backup``,
+      whose GUI tab is an action and was pruned from the layout). ``page`` is
+      None: this list is the only place SATOM shows it. The registry is the
+      FortiADC entity catalog; on FortiWeb / FortiGate / FortiAuthenticator a
+      collection without a page is a mapping gap of the crawl, not an absence,
+      so it is not claimed here.
+
+    Nothing here reads the device; :func:`absent_rows` does, one object at a
+    time."""
+    from . import gui_pages, gui_products, gui_store
+    product = gui_products.product_of(appliance)
+    if product is None:
+        return []
+    fw = gui_store.firmware_of(appliance)
+    out: list = []
+    seen: set = set()
+    for e in gui_pages.entries(fw, product):
+        if e.get("special"):
+            continue
+        tpl, _m = gui_pages.template(e["page"], fw, product)
+        if not tpl or not tpl.get("gui_absent"):
+            continue
+        group = " / ".join(str(p) for p in (e.get("path") or [])[1:]) or e["page"]
+        for i, v in enumerate(gui_pages.views(tpl)):
+            ep = v.get("endpoint") or ""
+            if not ep or ep in seen or gui_products.read_only_endpoint(ep):
+                continue
+            seen.add(ep)
+            out.append({"endpoint": ep, "label": gui_pages.tab_label(tpl, v, i),
+                        "group": group, "page": e["page"], "v": i,
+                        "columns": [c for c in v.get("columns") or []
+                                    if isinstance(c, dict) and c.get("id")],
+                        "why": WHY_GUI_ABSENT})
+    if product == gui_products.FORTIADC:
+        out.extend(_adc_unplaced(appliance, seen))
+    return out
+
+
+def _adc_unplaced(appliance, seen: set) -> list:
+    """FortiADC registry entities the device's build serves that no measured
+    page reads (:func:`gui_classic.page_map`, which already holds every
+    ``gui_absent`` view). A child table lives in its parent's page; an entity
+    the build is measured NOT serving (the 8.0 App Portal / SSO admin a 7.6.7
+    answers 404 for) is not the device's. No page at all for the build = no
+    layout to compare with: nothing is claimed."""
+    from . import gui_classic, gui_products
+    try:
+        from ..registry import loader
+        reg = loader.load_adc_registry()
+    except Exception:  # noqa: BLE001 -- no registry: nothing to compare
+        log.exception("not_in_gui: FortiADC registry")
+        return []
+    pmap = gui_classic.page_map(appliance)
+    if not pmap:
+        return []
+    labels: dict = {}
+    try:
+        from . import adc_menu
+        labels = {t.logical: t.label for g in adc_menu.menu() for it in g.items for t in it.tabs}
+    except Exception:  # noqa: BLE001 -- the entity name is label enough
+        pass
+    out = []
+    for key in sorted(reg):
+        if key in pmap or key in seen:
+            continue
+        if gui_products.ADC_CHILD in key and key.split(gui_products.ADC_CHILD)[0] in pmap:
+            continue
+        if gui_classic.not_served(appliance, key):
+            continue
+        out.append({"endpoint": key, "label": labels.get(key) or key, "group": "",
+                    "page": None, "v": 0, "columns": [], "why": WHY_NO_PAGE})
+    return out
+
+
+def absent_rows(appliance, endpoint: str) -> dict | None:
+    """The rows of ONE object of :func:`absent_objects`, read through the
+    product's GUI adapter (FortiADC: ``GET /api/<entity>``, a few seconds of
+    cache, secrets scrubbed). None when *endpoint* is not one of them -- this
+    never reads an arbitrary path. ``{"object", "rows", "columns",
+    "singleton", "error"}``; a settings object lists every field."""
+    obj = next((o for o in absent_objects(appliance) if o["endpoint"] == endpoint), None)
+    if obj is None:
+        return None
+    from . import gui_products
+    try:
+        rows, meta = gui_products.adapter(appliance).rows(appliance, endpoint)
+    except Exception as exc:  # noqa: BLE001 -- drawn as unreadable
+        rows, meta = [], {"error": "%s: %s" % (type(exc).__name__, exc)}
+    meta = meta or {}
+    rows = [r for r in rows or [] if isinstance(r, dict)]
+    columns = list(obj["columns"])
+    if not columns:
+        keys: list = []
+        for r in rows:
+            keys.extend(k for k in r if k not in keys)
+        columns = [{"id": k, "label": k} for k in keys]
+    return {"object": obj, "rows": rows, "columns": columns,
+            "singleton": bool(meta.get("singleton")), "error": meta.get("error") or ""}
 
 
 def cli_values(appliance, endpoint: str, mkey: str | None, names, *,
@@ -559,4 +689,5 @@ def cli_values(appliance, endpoint: str, mkey: str | None, names, *,
 
 __all__ = ["SECTION_TITLE", "CH_REST", "CH_CLI", "CH_UNVERIFIED", "LAYOUT_PAGES", "layout_pages",
            "classify", "apply_to_groups", "for_view", "device_inventory", "layout_keys",
-           "cli_values", "endpoint_key", "save", "cli_objects_for"]
+           "cli_values", "endpoint_key", "save", "cli_objects_for", "absent_objects",
+           "absent_rows"]

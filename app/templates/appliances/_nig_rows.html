@@ -1,0 +1,31 @@
+{# Rows of one object the device's GUI does not draw
+   (appliances.not_in_gui_rows, loaded by static/js/nig_cli.js into the
+   per-device page). A settings object lists every field; a table lists the
+   columns of the page SATOM draws it on (every field when it has none). #}
+<div data-nig-rows-loaded data-count="{{ rows|length }}">
+{% if error %}
+  <p class="small text-danger mb-0" data-nig-rows-error>{{ _('Not read:') }} {{ error }}</p>
+{% elif singleton and rows %}
+  <table class="table table-sm fw-nig-table mb-0">
+    <thead><tr><th>{{ _('Field') }}</th><th>{{ _('Value') }}</th></tr></thead>
+    <tbody>
+    {% for k in rows[0] %}
+      <tr data-nig-key="{{ k }}"><td><code>{{ k }}</code></td><td class="small">{{ cell(rows[0], {'id': k}) }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+{% elif rows %}
+  <div class="table-responsive">
+  <table class="table table-sm fw-nig-table mb-0">
+    <thead><tr>{% for c in columns %}<th>{{ c.label or c.id }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr data-nig-row>{% for c in columns %}<td class="small">{{ cell(r, c) }}</td>{% endfor %}</tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+{% else %}
+  <p class="small text-muted mb-0">{{ _('No rows on the device.') }}</p>
+{% endif %}
+</div>

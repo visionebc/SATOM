@@ -1087,6 +1087,15 @@ outside the GUI →*.
 
 - **Layout-measured pages**: for each page whose GUI layout was measured, the
   REST fields the Fortinet GUI does not show.
+- **Objects the device's GUI does not draw**: whole objects the device serves
+  over REST that no page of its own GUI reads on this build (FortiADC 7.6.7:
+  VDOM and VDOM links, per-VDOM syslog and FortiAnalyzer, DNS, ISP provinces,
+  connection pool, alert targets…), each with its rows, read from the device
+  when the page opens (read only; secrets are never shown) and a link to the
+  page SATOM draws it on. On FortiADC the list also names what the build serves
+  that no measured page reads at all (7.6.7: Auto Backup, whose GUI tab is an
+  action): this page is where SATOM shows it. An object the build answers 404
+  for is not listed.
 - **Objects only the CLI serves**: whole objects REST does not have at all (for
   example FortiAuthenticator `system/dns`). Each one is editable as described in
   §7.6.
@@ -2506,7 +2515,9 @@ audits it; secrets are never echoed back.
 - **Not in GUI, but in CLI** — a menu group of its own: the objects the device
   has that its GUI does not draw on that build (measured: no page of the GUI
   reads them), one page per CLI path, with list, edit dialog and the usual dry
-  run. Each page says so above its list.
+  run. Each page says so above its list. The last entry of the device's menu,
+  also titled *Not in GUI, but in CLI*, opens the per-device page (§7.7), which
+  lists all of them with their rows.
 - FortiView pages are monitors: they are in the menu at their place, say that
   they draw live data, and link to the same page on the device.
 

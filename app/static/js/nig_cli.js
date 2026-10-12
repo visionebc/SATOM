@@ -105,6 +105,30 @@
     });
   }
 
+  // Per-device page: the rows of each object the device's GUI does not draw,
+  // read (GET, read only) a few at a time so the device is not flooded.
+  function loadRows() {
+    var queue = Array.prototype.slice.call(document.querySelectorAll('[data-nig-rows][data-src]'));
+    function next() {
+      var box = queue.shift();
+      if (!box) return;
+      fetch(box.dataset.src, { headers: { 'Accept': 'text/html' } }).then(function (r) {
+        return r.text().then(function (t) { return r.ok ? t : '<p class="small text-danger mb-0">HTTP ' + r.status + '</p>'; });
+      }).catch(function (e) {
+        return '<p class="small text-danger mb-0">' + esc(e) + '</p>';
+      }).then(function (html) {
+        box.innerHTML = html;
+        var got = box.querySelector('[data-nig-rows-loaded]');
+        var cnt = box.parentNode.querySelector('[data-nig-rows-count]');
+        if (got && cnt && !got.querySelector('[data-nig-rows-error]')) cnt.textContent = '(' + got.dataset.count + ')';
+        next();
+      });
+    }
+    for (var i = 0; i < 3; i++) next();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadRows);
+  else loadRows();
+
   var FNS = { 'nig-cli-read': read, 'nig-cli-preview': preview, 'nig-cli-apply': applyChange };
   document.addEventListener('click', function (ev) {
     var btn = ev.target.closest && ev.target.closest('[data-js]');

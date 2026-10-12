@@ -947,6 +947,19 @@ def maintenance(ctx, args):
 
 
 # -- support bundle --------------------------------------------------------
+def _create_private(path: Path):
+    """Open a NEW file for writing, mode 0600 from the first byte.
+
+    The bundle lives in world-writable /var/tmp under a predictable name.
+    Creating it with the default umask and narrowing it afterwards leaves a
+    window in which any local account can open it and keep the descriptor;
+    writing through a name someone planted first puts a root-owned file
+    wherever it points. O_EXCL|O_NOFOLLOW refuses both."""
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                 0o600)
+    return os.fdopen(fd, "wb")
+
+
 def support_bundle(ctx, args):
     """Collect everything a diagnosis needs into one file.
 
@@ -1019,7 +1032,8 @@ def support_bundle(ctx, args):
                     shutil.copytree(p, units_dir / p.name, dirs_exist_ok=True)
             except Exception:  # noqa: BLE001
                 pass
-        with tarfile.open(dest, "w:gz") as tar:
+        with _create_private(dest) as fh, \
+                tarfile.open(fileobj=fh, mode="w:gz") as tar:
             tar.add(tmp, arcname="satom-support-%s-%s" % (ctx.host, ts))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

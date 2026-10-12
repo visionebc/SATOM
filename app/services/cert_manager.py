@@ -258,7 +258,10 @@ def _build_env(extra: dict | None = None, *, home: str = "") -> dict[str, str]:
     argv — which also keeps them out of the command line, /proc and the logs."""
     env = {k: os.environ[k] for k in _ENV_PASSTHROUGH if os.environ.get(k)}
     env.setdefault("PATH", _ENV_DEFAULT_PATH)
-    env["HOME"] = home or env.get("HOME") or "/tmp"
+    # Never a shared, world-writable directory: a signer keeps state under
+    # $HOME (account keys, tickets, config) with the app's privileges. Callers
+    # pass the ACME account dir, or their own private per-call temp dir.
+    env["HOME"] = home or env.get("HOME") or os.path.expanduser("~")
     for k, v in (extra or {}).items():
         if k and v is not None:
             env[str(k)] = str(v)
@@ -430,7 +433,7 @@ def sign_csr(cert_class: str, csr_pem: str) -> tuple[str, str]:
         try:
             proc = subprocess.run(argv, capture_output=True, text=True,
                                   timeout=_SIGN_TIMEOUT, cwd=d,
-                                  env=_build_env(env, home=mapping.get("acme_path", "")))
+                                  env=_build_env(env, home=mapping.get("acme_path") or d))
         except FileNotFoundError as exc:
             raise CertManagerError(
                 f"signing binary not found: {argv[0]!r} — install it or set {{bin}} "
@@ -1033,7 +1036,7 @@ def revoke_certificate(cert: ManagedCertificate, *, delete_from_box: bool = Fals
                 argv = _argv_from_template(cmd_tmpl, dict(mapping, cert=cert_path))
                 proc = subprocess.run(argv, capture_output=True,
                                       text=True, timeout=_SIGN_TIMEOUT, cwd=d,
-                                      env=_build_env(env, home=mapping.get("acme_path", "")))
+                                      env=_build_env(env, home=mapping.get("acme_path") or d))
                 ca_ok = proc.returncode == 0
                 ca_log = _redact_all(f"[{protocol}] [rc={proc.returncode}] "
                                      f"{proc.stdout}\n{proc.stderr}", secrets)[:2000]

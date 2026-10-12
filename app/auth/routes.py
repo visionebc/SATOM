@@ -231,6 +231,31 @@ def logout():
 # ---------------------------------------------------------------------------
 # Password recovery (local accounts only)
 # ---------------------------------------------------------------------------
+def _reset_link(token: str) -> str:
+    """The absolute password-reset URL mailed to the account owner.
+
+    ``url_for(_external=True)`` takes its host from the request's Host header,
+    which the shipped nginx vhost (a ``default_server``) forwards verbatim. An
+    unauthenticated POST to /forgot with ``Host: attacker.example`` would then
+    mail the victim a live reset token pointing at the attacker's server. The
+    request's host is therefore kept only when Flask already validated it
+    (``TRUSTED_HOSTS`` configured) or when it is one of this node's own names;
+    any other host is replaced by the node's FQDN.
+    """
+    import socket
+    from urllib.parse import urlsplit, urlunsplit
+
+    link = url_for('auth.reset_password', token=token, _external=True)
+    parts = urlsplit(link)
+    if current_app.config.get('TRUSTED_HOSTS'):
+        return link
+    fqdn = socket.getfqdn()
+    own = {n.lower() for n in (socket.gethostname(), fqdn) if n}
+    if (parts.hostname or '').lower() in own:
+        return link
+    return urlunsplit((parts.scheme, fqdn, parts.path, parts.query, ''))
+
+
 @bp.route('/forgot', methods=['GET', 'POST'])
 @limiter.limit('5 per 15 minutes')
 def forgot_password():
@@ -246,7 +271,7 @@ def forgot_password():
         # accounts reset their password at the directory.
         if user and user.is_active and user.is_local and user.recovery_email:
             token = twofa.make_reset_token(user.id)
-            link = url_for('auth.reset_password', token=token, _external=True)
+            link = _reset_link(token)
             body = (f"Hello {user.username},\n\n"
                     f"A password reset was requested for your SATOM account.\n"
                     f"Open this link to choose a new password (valid for 1 hour):\n\n"

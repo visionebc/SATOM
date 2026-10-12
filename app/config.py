@@ -65,6 +65,12 @@ class Config:
     # Firmware/backup uploads — cap so a runaway upload 413s instead of
     # OOMing a gunicorn worker. Real FortiWeb .out images are ~100-500 MB.
     MAX_CONTENT_LENGTH: int = int(os.environ.get("MAX_UPLOAD_MB", "600")) * 1024 * 1024
+    # Host names this console answers to (comma-separated, e.g. a public alias
+    # in front of the node). Unset = any Host is served, and absolute links
+    # that must not follow the Host header (password reset) use the node FQDN.
+    TRUSTED_HOSTS: list[str] | None = [
+        h.strip() for h in os.environ.get("TRUSTED_HOSTS", "").split(",")
+        if h.strip()] or None
 
 
 class DevelopmentConfig(Config):

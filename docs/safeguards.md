@@ -13695,7 +13695,7 @@ to point at production.
 
 `ulimit -v 1500000` and `timeout -s KILL 200` on every child, `python3 -u`,
 baseline-green required before scoring, `__pycache__` purged per round (never
-`deploy/__pycache__` — it is root-owned), tree restored by content and verified
+the one under `deploy/` — it is root-owned), tree restored by content and verified
 by SHA-256, suite re-run green after the last restore. A negative rc, 124 or 137
 counts as **killed by the resource cap** and is reported as such; a missing
 anchor counts as a **survivor**, never a kill.
@@ -13802,7 +13802,7 @@ copies of "what is a usable key" drift the day one of them grows a rule.
 
 Same harness rules as §157: `ulimit -v 1500000` and `timeout -s KILL 200` on
 every child, `python3 -u`, baseline-green required before scoring,
-`__pycache__` purged per round (never `deploy/__pycache__`), tree restored by
+`__pycache__` purged per round (never the one under `deploy/`), tree restored by
 content and verified by SHA-256, suite re-run green after the last restore, a
 missing anchor scored as a **survivor**.
 

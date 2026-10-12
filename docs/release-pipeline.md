@@ -38,7 +38,7 @@ a gate that must be green before the next one runs.
 |---|---|---|---|
 | 1 | **Primary node** | the only node where code is written | targeted tests for the zone touched; every new guard mutation-tested; service restarted if Python or templates changed; `/healthz` 200 |
 | 2 | **Standby node** | pulls straight from the primary — no remote involved | converged to the primary's HEAD; unit up; `/healthz` 200 on the app port and through the TLS edge; zero failed units |
-| 3 | **The suite** | the full run, on the primary | exit code 0 |
+| 3 | **The suite** | the full run, on the internal test platform (never on a node) | the platform's run for the exact release commit reports `passed` |
 | 4 | **Dev remote** | the private repository, full history | derived pages regenerated (below); push accepted |
 | 5 | **Documentation site** | its web root **is** a checkout of the repository | `git fetch && git reset --hard origin/<branch>`; there is no build step, the pull *is* the deploy |
 | 6 | **Public mirror** | sanitised history, release artefacts, tagged releases | stages 1–4 of this document |
@@ -60,35 +60,25 @@ cache-busting stamp) and list the downloads directory on each. When the node is
 **ahead**, the correct repair is to bring the checkout forward; never publish
 over it to make the two agree.
 
-**Step 3 costs wall clock *and* disk, and the disk half is the one that bites.**
-The suite is serial: there is no `pytest-xdist` on the primary, and installing
-one would change what the tests contend over rather than just how fast they run.
-Two things are measured, and only those two are claimed here:
+**Step 3 never runs on a node.** The pipeline's guard and suite steps submit
+the exact release commit to the internal test platform (satom-audit) and poll
+for the verdict; production nodes never run pytest. Running the suite on the
+primary cost it ~4.9 GB of fixture tmpdirs per run and contended with the live
+service — release 12 died of `ENOSPC` that way. The rules that remain:
 
-- **A full run leaves ~4.9 GB of fixture tmpdirs.** pytest keeps the last three
-  runs under `/tmp/pytest-of-<user>` and deletes nothing else, so three releases
-  fill a 25 GB root. That is not hypothetical: release 12 died of `ENOSPC`, and
-  release 13 then overran its budget three times, *each retry adding another
-  4.9 GB*. The retry made the condition that caused the failure strictly worse.
-- **The old 3600 s budget was chosen, not measured, and the suite overran it
-  three times running.** A timed partial run (6 % of ~4,965 tests in 487 s) puts
-  a full pass near two hours. The exact total is deliberately **not** written
-  down here — a partial run is a projection — so the figure to trust is the one
-  the pipeline's own `suite` step records, in `satom_releases.steps_json`.
-
-Three rules follow, and all three live in code rather than in habit:
-
-- every pipeline `pytest` runs under its **own `--basetemp`**, dropped before
-  *and* after. The verdict stays pytest's own `rc`: the cleanup is deliberately
-  not chained with `&&`, or a failed `rm` would read as a failed suite;
-- the step **refuses to start** below `SUITE_MIN_FREE_MB`. An `ENOSPC` part-way
-  through surfaces as a test failure, which reads as a code defect and is not
-  one. An unreadable `df` refuses too — *"I could not check"* and *"there is
-  space"* are opposite facts and only one of them is safe to act on;
-- a suite **timeout is diagnosed, never retried**. It is not transport
-  contention, which is the only thing `retry_transient` is for. To raise
-  `SUITE_TIMEOUT_S`, take the number from a completed `suite` step — never from
-  a guess, which is how 3600 got there.
+- the commit must be fetchable by the platform, so the pipeline pushes it to a
+  temporary `release-guards/r<id>` branch of the dev remote first and deletes
+  it once the verdict is in (the public mirror only receives `main` and
+  release tags, so the branch never leaves the dev remote);
+- **only `passed` passes.** Failed, error, cancelled, a run that never started,
+  ran over its budget, or reports a different commit stops the release, with
+  the run's URL and its failing tests in the step log;
+- time spent queued behind other runs does not count against the step's
+  budget; a run over its budget is cancelled and **diagnosed, never retried**.
+  To raise `SUITE_TIMEOUT_S`, take the number from a completed `suite` step —
+  never from a guess.
+- there is no fallback to running the suite on a node: if the platform is down,
+  repair it and resume the release from the failed step.
 
 ---
 

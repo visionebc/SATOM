@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changed · 272 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changed · 292 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changed · 272 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changed · 292 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changed · 272 entries</span>
-        <ul class="rel-leads"><li>data/ is 0750</li><li>System bundles are 0600 from creation</li><li>The device config vault writes 0600 files in 0700 directories</li><li class="rel-more">… and 269 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Changed · 292 entries</span>
+        <ul class="rel-leads"><li>Appliances → device → Not in GUI, but in CLI</li><li>User guide §7.5 and §5</li><li>User guide §28.2, §28.4 and §29.1.4</li><li class="rel-more">… and 289 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.0.0.html" data-rel-version="3.0.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.0.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -360,6 +360,93 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="added--fortiadc-every-object-the-gui-does-not-draw-with-its-rows-on-the-per-device-page">Added — FortiADC: every object the GUI does not draw, with its rows, on the per-device page</h3>
+<ul>
+<li><strong>Appliances → <em>device</em> → Not in GUI, but in CLI</strong> now lists the whole
+  objects the device serves over REST that no page of its own GUI reads on
+  its build, each with its rows (read from the device when the page opens,
+  read only, secrets never shown) and a link to the page SATOM draws it on.
+  On a lab FortiADC 7.6.7: 46 objects — the 45 of the <code>gui_absent</code> pages of the
+  knowledge pack (VDOM and VDOM links, per-VDOM syslog and FortiAnalyzer, DNS,
+  ISP provinces, connection pool, alert targets…) and Auto Backup, which the
+  build serves but no measured page reads (its GUI tab is an action): this
+  page is now where SATOM shows it. The list is derived from the layouts and
+  the registry, never hard-coded; an object the build answers 404 for is not
+  listed.</li>
+<li>The device's menu (FortiADC, FortiGate, FortiAuthenticator) ends with a
+  <strong>Not in GUI, but in CLI</strong> entry that opens this page.</li>
+</ul>
+<h3 id="fixed--not-in-gui-but-in-cli-no-longer-treats-satoms-schema-pages-as-the-fortinet-gui">Fixed — "Not in GUI, but in CLI" no longer treats SATOM's schema pages as the Fortinet GUI</h3>
+<ul>
+<li>The pages of objects the device's GUI does not draw (<code>gui_absent</code>) were read
+  as measured GUI layouts: their section said "GUI layout of FortiADC 7.6.7
+  (exact)" and the per-device page listed each of them as a layout-measured
+  page. The section now says no page of the device's GUI reads the object, and
+  those objects are listed as whole objects (above) instead.</li>
+</ul>
+<h3 id="added--fortiadc-depth-capture-in-the-cache-analysis-and-the-api-library">Added — FortiADC depth capture in the cache, Analysis and the API library</h3>
+<ul>
+<li>A FortiADC rediscovery with "Capture full depth" now also files its child-table rows in the cache's deep layer, as FortiWeb's depth does: every parent of a child table this build serves (pools, certificate groups, content routing and rewriting, schedule groups…) with the rows read for it, stored as <code>&lt;parent&gt;/&lt;child&gt;</code> under the parent. Where the child table answered rows, the copy the parent embeds is left out, so a pool member is never counted twice.</li>
+<li>Analysis (Global): the deep-object picker has a "FortiADC object (child tables)" type that opens any captured parent with its members. Sub-element counts include FortiADC child tables, and the fleet inventory counts FortiADC pools and their members as back-ends (IPs and ports included).</li>
+<li>Analysis (FortiADC): the object inventory counts the 27 <code>…_child_…</code> tables from the depth capture. Before, they read 0 on every device because the sweep never reads them.</li>
+<li>API library: the child tables the depth pass read are recorded as measured for the build they ran on (verdict and field names), with a <code>rediscovery-depth:</code> origin. That evidence is partial, so on its own it never marks a build as harvested.</li>
+</ul>
+<h3 id="changed--fortiadc-vs-inspector-reads-only-what-the-virtual-servers-reach">Changed — FortiADC VS Inspector reads only what the virtual servers reach</h3>
+<ul>
+<li>The live VS Inspector now follows references outward from the virtual servers. Each table is read once, child tables are read only for the groups a virtual server actually reaches, and the whole walk uses one reused connection. It used to read about 45 tables and the child table of every group on the box. Measured on a lab FortiADC with 15 virtual servers: 7.6 s and 90 reads before, 0.8 s and 70 reads after; a single virtual server went from 7.8 s to 0.4 s (90 reads to 37). The trees are identical.</li>
+</ul>
+<h3 id="changed--sqlalchemy-2-primary-key-lookups">Changed — SQLAlchemy 2 primary-key lookups</h3>
+<ul>
+<li>Every legacy <code>Model.query.get(id)</code> in the application (78 calls across 38 modules) now uses <code>db.session.get(Model, id)</code>, the SQLAlchemy 2 form. Behaviour is unchanged (identity-map hit first, <code>None</code> when the row is absent); the test suite no longer drowns in <code>LegacyAPIWarning</code> lines coming from application code.</li>
+<li>Two handlers that imported <code>db</code> locally <em>after</em> the new lookup (template-binding removal and the managed-WPP lock scope) now use the module-level import, so the lookup can never hit an unbound local.</li>
+</ul>
+<h3 id="changed--release-guards-run-on-the-test-platform-never-on-a-node">Changed — release guards run on the test platform, never on a node</h3>
+<ul>
+<li>The release pipeline's targeted guards and full suite are submitted to the
+  internal test platform for the exact release commit and must report
+  <code>passed</code>; nothing runs pytest on a production node any more (that run cost
+  the primary ~4.9 GB of temporary files per release and competed with the
+  live service). <code>docs/release-pipeline.md</code> describes the new step.</li>
+</ul>
+<h3 id="fixed--write-verification-leftovers-policy-editor-create-new-fortiauthenticator-rename">Fixed — write verification leftovers (policy editor, Create New, FortiAuthenticator rename)</h3>
+<ul>
+<li>The Server Policy editor no longer reads a policy back a second time after saving it: the write's own re-read already refreshed SATOM's copy (the REST part in the write itself, the CLI part in the CLI writer's readback), and the dialog reports that refresh. One request fewer per save, same cached content.</li>
+<li>Create New (Server Policy) now fails a step the device accepted but does not hold — the re-read must find what was sent, as clone and migrate already require — and undoes that object together with the rest of the run instead of reporting the policy created.</li>
+<li>FortiAuthenticator: renaming an object SATOM caches by name (user groups, RADIUS clients, RADIUS policies) moves its cached row to the new name instead of keeping the old row beside a new one; deleting it afterwards no longer leaves the old name behind (measured on a lab FortiAuthenticator 8.0.3).</li>
+</ul>
+<h3 id="fixed--documentation-that-still-described-old-behaviour">Fixed — Documentation that still described old behaviour</h3>
+<ul>
+<li><strong>User guide §7.5 and §5</strong>: the Server Policy dialog was documented as
+  running only the reference check. It runs the object editor's gates in the
+  same order: the template lock on a template-managed Web Protection Profile,
+  another user's edit lease (an inline-table row is checked against its
+  parent's), the reference check and the build compatibility check; a
+  successful write releases your lease.</li>
+<li><strong>User guide §28.2, §28.4 and §29.1.4</strong>: System Provisioning and baselines
+  render <code>{{ variables }}</code> per device from each template's binding. The note
+  saying they push the body as stored is gone; the preview names a device left
+  without a value, and the live push is refused.</li>
+<li><strong>User guide §9</strong>: the Exceptions page's <strong>DRIFT</strong> flag (a carve-out whose
+  Server Policy is gone, or uses another profile, on the device) is documented:
+  the banner, the badge, the <em>not on the device</em> filter, and when nothing is
+  flagged. §8.1 adds the Regex Lab button in the measured FortiWeb dialogs.</li>
+<li><strong>Hypervisor provisioning</strong>: <code>config_only</code> (and <code>full</code>) were said to issue
+  the certificate and apply the profile. No mode configures the appliance: the
+  certificate step is a no-op and the profile step only hands over to System
+  Provisioning.</li>
+<li><strong>FortiGate</strong>: the README, <code>docs/fortigate.md</code>, the overview and the user
+  guide called the workspace read-only and said there was no API console. The
+  measured pages save <code>cmdb</code> objects (dry run first, <code>config_write</code>, audited
+  and read back) and the API console sends <code>POST</code>/<code>PUT</code>/<code>DELETE</code> to
+  <code>/api/v2/cmdb/</code> only, dry-run by default (<code>registry.execute_write</code>). The
+  section pages stay read-only.</li>
+<li><strong>Site</strong>: <code>site/README.md</code> described publication through GitHub Pages and a
+  <code>gh-pages</code> branch; Pages is off and the public site is assembled by its own
+  repository from part of <code>site/</code>. <code>site/index.html</code>, still served by a node's
+  own nginx, named three products and a git source of truth: it now names the
+  five products and the content-addressed configuration history, and the git
+  source-of-truth guard covers it.</li>
+</ul>
 <h3 id="security--device-configurations-and-database-bundles-are-no-longer-readable-by-other-local-accounts">Security — device configurations and database bundles are no longer readable by other local accounts</h3>
 <p>The service runs with <code>UMask=0022</code>, so everything it wrote under <code>data/</code> was
 <code>0755</code>/<code>0644</code>: every device configuration in the backup vault

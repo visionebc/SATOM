@@ -380,7 +380,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*115 commands in 43 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*117 commands in 43 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -452,6 +452,7 @@ Active probes that reach out — sockets, database handshakes, compilers, peers.
 | `satom diagnose scheduler` | — | — | Is anything automated actually firing here? |
 | `satom diagnose units` | — | — | Unit inventory and whether the privilege model survived. |
 | `satom diagnose config` | — | — | The .env: present, correctly owned, internally consistent. |
+| `satom diagnose data` | — | — | Is anything under data/ readable by another local account? |
 | `satom diagnose database` | — | — | Connect, replication role, TLS, lock waits. |
 | `satom diagnose python` | — | — | venv integrity, compileall, and the LAZY-import smoke test. |
 | `satom diagnose network` | — | — | Listening ports, nginx -t, local HTTPS probe. |
@@ -504,6 +505,7 @@ Everything that changes state. **Root required.** Without it each command refuse
 | `satom execute repair jobs [--older-than N] [--yes]` | yes | ! | Sweep ghost jobs and prune the terminated ledger. |
 | `satom execute repair tmp [--older-than N] [--yes]` | yes | ! | Delete aged scratch under data/tmp. Nothing else prunes it. |
 | `satom execute repair nginx [--yes]` | yes | ! | Re-pin the proxied Host header and the served names in the vhost. |
+| `satom execute repair data [--yes]` | yes | ! | Close data/ to other accounts: 0750, vault and bundles owner-only. |
 | `satom execute cert renew` | yes | — | Run the renewal pass now instead of waiting for 03:30. |
 | `satom execute alerts run [--dry-run]` | yes | — | Evaluate the health checks now. |
 | `satom execute backup db` | yes | — | pg_dump the application database into data/system_backups/. |

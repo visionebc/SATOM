@@ -34,8 +34,43 @@ def backups_dir() -> Path:
     # the production tree could destroy real bundles. conftest sets this.
     d = Path(os.environ.get("SATOM_BACKUPS_DIR")
              or (_repo_root() / "data" / "system_backups"))
-    d.mkdir(parents=True, exist_ok=True)
+    d.mkdir(mode=0o700, parents=True, exist_ok=True)
+    _keep_private_dir(d)
     return d
+
+
+# [SATOM-DATA-PERMS] A bundle is a pg_dump (password hashes, encrypted device
+# credentials) plus the recovery seal. The service runs with UMask=0022, so
+# every bundle used to land 0644 in a 0755 directory: readable by www-data,
+# postfix, redis -- any local account. The directory is kept 0700 and every
+# bundle is created 0600; narrowing a file AFTER it is written leaves a window
+# in which another account can open it and keep the descriptor.
+def _keep_private_dir(d: Path) -> None:
+    """Narrow ``d`` to owner-only if it is looser. Never widens; best-effort
+    (a directory this process does not own is reported by `satom diagnose
+    data`, not fought over here)."""
+    try:
+        mode = d.stat().st_mode & 0o7777
+        if mode & 0o077:
+            os.chmod(d, mode & ~0o077)
+    except OSError:
+        pass
+
+
+def _open_private(path: Path):
+    """Open ``path`` for writing, mode 0600 from the first byte.
+
+    O_NOFOLLOW: a name planted as a symlink is refused, not written through.
+    The fchmod covers a pre-existing file (O_CREAT's mode only applies to a
+    file this call creates)."""
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
+                 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+    except OSError:
+        os.close(fd)
+        raise
+    return os.fdopen(fd, "wb")
 
 
 def reports_dir() -> Path:
@@ -148,7 +183,7 @@ def create_backup(*, include_reports: bool = True, publish_git: bool = False,
     conn = conn or _conn_from_app()
     ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     stage = backups_dir() / f"_stage-{ts}"
-    stage.mkdir(parents=True, exist_ok=True)
+    stage.mkdir(mode=0o700, parents=True, exist_ok=True)
     detail = []
     try:
         dump_path = stage / "db.dump"
@@ -211,7 +246,8 @@ def create_backup(*, include_reports: bool = True, publish_git: bool = False,
 
         name = f"fmw-backup-{ts}.tar.gz"
         bundle = backups_dir() / name
-        with tarfile.open(bundle, "w:gz") as tar:
+        with _open_private(bundle) as fh, \
+                tarfile.open(fileobj=fh, mode="w:gz") as tar:
             tar.add(stage, arcname=f"fmw-backup-{ts}")
         size = bundle.stat().st_size
 
@@ -373,7 +409,8 @@ def ensure_local(name: str) -> dict:
         return {"ok": False,
                 "detail": f"size mismatch on fetch ({len(data)} != {expect})"}
     tmp = path.with_suffix(".part")
-    tmp.write_bytes(data)
+    with _open_private(tmp) as fh:
+        fh.write(data)
     os.replace(tmp, path)
     return {"ok": True, "path": str(path), "fetched": True, "size": len(data)}
 
@@ -434,7 +471,7 @@ def restore_backup(name: str, *, conn: dict | None = None,
                            label="pre-restore-safety")
     # 2) extract
     work = backups_dir() / f"_restore-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
-    work.mkdir(parents=True, exist_ok=True)
+    work.mkdir(mode=0o700, parents=True, exist_ok=True)
     try:
         with tarfile.open(bundle, "r:gz") as tar:
             members = [m for m in tar.getmembers() if _safe_member(m, work)]

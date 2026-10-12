@@ -112,6 +112,42 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="security--device-configurations-and-database-bundles-are-no-longer-readable-by-other-local-accounts">Security — device configurations and database bundles are no longer readable by other local accounts</h3>
+<p>The service runs with <code>UMask=0022</code>, so everything it wrote under <code>data/</code> was
+<code>0755</code>/<code>0644</code>: every device configuration in the backup vault
+(<code>data/backups/&lt;id&gt;/</code>, full appliance configurations with their encrypted
+secrets and keys) and every system bundle (<code>data/system_backups/</code>, a database
+dump with password hashes and encrypted device credentials, plus the recovery
+seal) could be read by any other account on the node — the web server, the
+mail server, Redis, a monitoring agent. Nothing in <code>data/</code> is served by nginx,
+so the directory is closed instead of changing the service umask (which the
+ACME webroot still needs).</p>
+<ul>
+<li><strong><code>data/</code> is <code>0750</code></strong>, owned by the service account, whose group has no
+  other members.</li>
+<li><strong>System bundles are <code>0600</code> from creation</strong>, in a <code>0700</code> directory — written
+  through a private file descriptor, not narrowed after the archive is
+  complete. A bundle fetched back from the off-box backup server is written
+  the same way.</li>
+<li><strong>The device config vault writes <code>0600</code> files in <code>0700</code> directories</strong>, and
+  narrows a vault directory an older release left open on its next write.</li>
+<li><strong><code>satom diagnose data</code></strong> (also part of <code>satom diagnose all</code>) fails when
+  <code>data/</code> is looser than <code>0750</code> or anything under the vault, the bundle store,
+  the ACME account, the recovery seal or the shared PKI is readable by group
+  or other.</li>
+<li><strong><code>satom execute repair data --yes</code></strong> applies the rule: <code>data/</code> to <code>0750</code>,
+  directories under those trees to <code>0700</code> and files to <code>0600</code>. It only removes
+  permission bits, never follows a link, skips an entry replaced between scan
+  and change, prints its plan without <code>--yes</code>, and is a no-op on a clean node.</li>
+<li><strong>Existing nodes converge on their own.</strong> The update runner runs the same
+  repair after every update, on both the git and the offline-package path. The
+  runner applies its own refresh only from the next update on, so the update
+  that brings this release closes the vault and bundle directories as soon as
+  the application uses them, and <code>data/</code> itself on the following update — or
+  immediately with <code>sudo satom execute repair data --yes</code>.</li>
+<li><strong>The installer</strong> sets the same modes on a fresh install and narrows what an
+  older release left open on a reinstall.</li>
+</ul>
 <h3 id="security--fixes-from-the-static-analysis-review-of-the-nightly-scan">Security — fixes from the static-analysis review of the nightly scan</h3>
 <p>Every bandit, semgrep and gitleaks finding of the nightly satom-audit scan was
 reviewed. Most were false positives or accepted by design and are dismissed

@@ -360,6 +360,10 @@
         </div>
       </div>
       <div class="fw-card-body p-0" style="height: calc(100% - 52px);">
+        <div data-verdict-wrap class="d-none px-3 pt-2" style="font-size:12px;">
+          <span id="resp-verify" data-verdict-badge class="fw-badge d-none"
+                style="white-space:normal;text-align:left;"></span>
+        </div>
         <pre id="resp-body"
              class="fw-code-block m-0"
              style="min-height:500px; border-radius:0 0 8px 8px;">Execute a request to see the response here.</pre>
@@ -414,6 +418,7 @@
 {% endblock %}
 
 {% block scripts %}
+{% include 'partials/_write_verdict.html' %}
 <script nonce="{{ csp_nonce }}">
 var requestHistory = [];
 
@@ -437,6 +442,7 @@ async function runRequest() {
   statusEl.textContent = '…';
   statusEl.className = 'fw-badge fw-badge-secondary';
   timeEl.textContent = '';
+  window.satomVerdictBadge(document.getElementById('resp-verify'), null);
 
   const t0 = Date.now();
   try {
@@ -470,6 +476,8 @@ async function runRequest() {
       statusEl.className   = 'fw-badge ' + (j.status < 400 ? 'fw-badge-success' : 'fw-badge-danger');
       const formatted = typeof j.result === 'object' ? JSON.stringify(j.result, null, 2) : String(j.result);
       respEl.innerHTML = syntaxHighlight(formatted);
+      // The device re-read of an applied write, beside the raw reply.
+      window.satomVerdictBadge(document.getElementById('resp-verify'), j.verify);
       addHistory(method, (j.path || path).split('?')[0], j.status);
     } else {
       statusEl.textContent = 'Error';

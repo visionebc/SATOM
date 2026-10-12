@@ -194,7 +194,9 @@ def deploy(sid):
         script.deployed_at = datetime.utcnow()
         db.session.commit()
     log_action("lua.deploy", target=script.name,
-               extra={"dry_run": dry, "appliance_id": script.appliance_id})
+               extra={"dry_run": dry, "appliance_id": script.appliance_id,
+                      "verify": (result.get("verify") or {}).get("verdict"),
+                      "error": result.get("error") or None})
     return jsonify(ok=(not result.get("error")), dry_run=dry, result=result)
 
 

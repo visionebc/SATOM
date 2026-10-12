@@ -185,7 +185,12 @@
     show(); title.textContent = 'Created';
     out.innerHTML = '<div class="fw-alert fw-alert-success">Virtual server <strong>' +
       esc(j.vs_name) + '</strong> and ' + j.created.length + ' object(s) created.</div>' +
-      '<ul style="font-size:12px;">' + j.created.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul>' +
+      // Each step's device re-read: verified, or "not verified" and why.
+      '<ul style="font-size:12px;">' + j.created.map(function (m, i) {
+        var v = (j.verify || [])[i];
+        var badge = v ? ' <span class="fw-badge ' + (v.verdict === 'verified' ? 'fw-badge-success' : 'fw-badge-warning') +
+          '">' + esc(v.label) + '</span>' : '';
+        return '<li>' + esc(m) + badge + '</li>'; }).join('') + '</ul>' +
       '<a class="btn btn-fw-primary btn-sm" href="' + BACK + '">See it in the list</a>';
   }
   function renderApplyFail(j) {

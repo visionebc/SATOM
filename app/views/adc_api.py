@@ -36,7 +36,7 @@ from ..extensions import db
 from ..models import Appliance, Permission, RegistryEndpoint
 from ..models import visible_appliances, visible_appliance_or_404
 from ..registry import loader
-from ..services import adc_menu, adc_ops, registry_write
+from ..services import adc_menu, adc_ops, device_verify, registry_write
 from ..services.audit import log_action
 from . import _clicoverage, _discovery
 from . import _apiversions, _reconcile
@@ -210,24 +210,32 @@ def execute():
                        note=('Dry run — nothing was sent. Re-submit with Apply '
                              'to perform this write on the device.'))
 
+    client = FortiADCClient(appliance)
     try:
-        resp = FortiADCClient(appliance).api_call(method, path, body)
+        resp = client.api_call(method, path, body)
     except Exception as exc:  # noqa: BLE001
         if write:
             log_action('adc_api.execute', target=appliance.name,
                        extra={'method': method, 'endpoint': path,
                               'error': str(exc)})
         return jsonify(ok=False, error=str(exc), request=preview)
+    refused = _write_error(resp) if write else None
+    # An ACCEPTED write is re-read (services.device_verify): the verdict rides
+    # next to the device's reply, which is returned untouched. A refused write
+    # has nothing to verify; a read has no verdict.
+    verify = (device_verify.adc_after_write(appliance, client, device_verify.op_of(method),
+                                            path=path, sent=body)
+              if write and not refused else None)
     if write:
         log_action('adc_api.execute', target=appliance.name,
-                   extra={'method': method, 'endpoint': path,
-                          'error': _write_error(resp)})
+                   extra={'method': method, 'endpoint': path, 'error': refused,
+                          'verify': (verify or {}).get('verdict')})
     try:
         result = resp.json()
     except Exception:  # noqa: BLE001
         result = resp.text
     return jsonify(ok=True, dry_run=False, status=resp.status_code, path=path,
-                   request=preview, result=result)
+                   request=preview, result=result, verify=verify)
 
 
 # --------------------------------------------------------------------------- #

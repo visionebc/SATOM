@@ -833,12 +833,23 @@ def swap_gui_cert(appliance, cert_name, *, dry_run=True):
         if dry_run:
             return {"ok": True, "error": "", "request": req, "dry_run": True}
         try:
-            appliance.build_client(timeout=8.0).bind_https_admin_cert(cert_name)
+            client = appliance.build_client(timeout=8.0)
+            client.bind_https_admin_cert(cert_name)
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc), "request": req, "dry_run": False}
+        # The settings singleton re-read: the admin GUI must now serve THIS
+        # certificate, or the swap did not happen whatever the PUT answered.
+        from . import device_verify
+        v = device_verify.adc_after_write(appliance, client, "update",
+                                          logical="system_global", mkey="",
+                                          sent=req["body"])
         log_action("certmgr.swap_gui", target=cert_name,
-                   appliance_id=getattr(appliance, "id", None))
-        return {"ok": True, "error": "", "request": req, "dry_run": False}
+                   appliance_id=getattr(appliance, "id", None),
+                   detail=device_verify.label(v))
+        if device_verify.failed(v):
+            return {"ok": False, "error": device_verify.label(v), "request": req,
+                    "dry_run": False, "verify": v}
+        return {"ok": True, "error": "", "request": req, "dry_run": False, "verify": v}
     r = FortiWebOps(appliance).update(GLOBAL_EP, None, {GUI_CERT_FIELD: cert_name},
                                       dry_run=dry_run)
     return _op_result(r, dry_run)
@@ -917,9 +928,20 @@ def remove_device_certificate(appliance, store_label, cert_name, *,
         except Exception as exc:  # noqa: BLE001
             _audit_remove(appliance, cert_name, ok=False, detail=str(exc))
             return {"ok": False, "removed": False, "bindings": [], "error": str(exc)}
+        # Verified by absence: an accepted delete of a certificate the box
+        # still holds (a binding the usage walk could not see) is a failure,
+        # not "removed".
+        from . import device_verify
+        v = device_verify.adc_after_write(appliance, client, "delete",
+                                          logical=logical, mkey=cert_name)
+        if device_verify.failed(v):
+            _audit_remove(appliance, cert_name, ok=False, detail=device_verify.label(v))
+            return {"ok": False, "removed": False, "bindings": [],
+                    "error": device_verify.label(v), "verify": v}
         _audit_remove(appliance, cert_name, ok=True,
-                      detail=f"removed store={store_label} by={actor or _actor()} (REST)")
-        return {"ok": True, "removed": True, "error": "", "bindings": []}
+                      detail=f"removed store={store_label} by={actor or _actor()} (REST; "
+                             f"{device_verify.label(v)})")
+        return {"ok": True, "removed": True, "error": "", "bindings": [], "verify": v}
 
     try:
         if store_label == "Local":

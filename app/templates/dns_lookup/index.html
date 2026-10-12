@@ -702,11 +702,15 @@
     var body = document.createElement('tbody');
     (res.results || []).forEach(function (r) {
       var tr = document.createElement('tr');
+      // A step the device re-read: "ok" means it is gone from the box; an
+      // accepted delete nothing could re-read says "not verified" and why.
+      var unv = r.ok && r.verify === 'unverified';
       tr.innerHTML =
-        '<td style="width:92px;"><span class="badge ' + (r.ok ? 'text-bg-success' : 'text-bg-danger') + '">' +
-          (r.ok ? 'ok' : 'failed') + '</span></td>' +
+        '<td style="width:92px;"><span class="badge ' +
+          (unv ? 'text-bg-warning' : (r.ok ? 'text-bg-success' : 'text-bg-danger')) + '">' +
+          (unv ? 'not verified' : (r.ok ? 'ok' : 'failed')) + '</span></td>' +
         '<td>' + esc(r.label) + '</td>' +
-        '<td class="text-muted">' + esc(r.error || r.action || '') + '</td>';
+        '<td class="text-muted">' + esc(r.error || (unv ? r.verify_label : '') || r.action || '') + '</td>';
       body.appendChild(tr);
     });
     tbl.appendChild(body);

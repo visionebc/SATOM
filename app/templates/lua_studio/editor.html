@@ -141,10 +141,18 @@
         // refusals (no target, lint failed) come back as a top-level error
         var err = r.error || d.error;
         if (err) h += '<div class="an-err">'+esc(err)+'</div>';
+        // The device re-read after a real push (FortiADC): what the box now
+        // holds, not just that it accepted the request.
+        var v = r.verify;
+        if (v && v.verdict) {
+          var cls = {verified:'fw-badge-success', mismatch:'fw-badge-danger'}[v.verdict] || 'fw-badge-warning';
+          h += '<div class="mb-2"><span class="fw-badge '+cls+'">'+esc(v.label||v.verdict)+'</span></div>';
+        }
         if (d.result) h += '<pre class="an-pre">'+esc(JSON.stringify(r.body_preview||r, null, 2))+'</pre>';
         if (r.note) h += '<div class="an-warn">'+esc(r.note)+'</div>';
         out.innerHTML = h;
-        if (real && d.ok) setTimeout(function(){ location.reload(); }, 800);
+        // "Not verified" stays on screen: the operator has to read why.
+        if (real && d.ok && (!v || v.verdict === 'verified')) setTimeout(function(){ location.reload(); }, 800);
       }).catch(function(e){ out.textContent = 'Error: '+e; });
   }
   document.getElementById('btn-dryrun').addEventListener('click', function(){ doDeploy(false); });

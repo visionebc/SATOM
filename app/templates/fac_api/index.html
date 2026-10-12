@@ -177,6 +177,10 @@
 
       <div class="mt-3" id="fac-out-wrap" style="display:none;">
         <div class="text-muted mb-1" style="font-size:11px;">{{ _('Response') }}</div>
+        <div data-verdict-wrap class="d-none mb-1" style="font-size:12px;">
+          <span id="fac-verify" data-verdict-badge class="fw-badge d-none"
+                style="white-space:normal;text-align:left;"></span>
+        </div>
         <pre id="fac-out" class="mb-0" style="font-size:11px;max-height:26rem;
              overflow:auto;white-space:pre-wrap;padding:12px;
              background:var(--fw-pre-bg,var(--fw-surface-alt));
@@ -187,6 +191,7 @@
   </div>
 </div>
 
+{% include 'partials/_write_verdict.html' %}
 <script nonce="{{ csp_nonce }}">
 (function () {
   var methodSel = document.getElementById('fac-method');
@@ -221,6 +226,7 @@
     var out = document.getElementById('fac-out');
     document.getElementById('fac-out-wrap').style.display = '';
     out.textContent = 'Running…';
+    window.satomVerdictBadge(document.getElementById('fac-verify'), null);
     var fd = new FormData();
     fd.append('appliance_id', document.getElementById('fac-appliance').value);
     fd.append('endpoint', document.getElementById('fac-endpoint').value);
@@ -234,7 +240,11 @@
       headers: {'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''}
     })
     .then(function (r) { return r.json(); })
-    .then(function (d) { out.textContent = JSON.stringify(d, null, 2); })
+    .then(function (d) {
+      out.textContent = JSON.stringify(d, null, 2);
+      // The device re-read of an applied write, beside the raw reply.
+      window.satomVerdictBadge(document.getElementById('fac-verify'), d.verify);
+    })
     .catch(function (e) { out.textContent = 'Request failed: ' + e; });
   });
 })();

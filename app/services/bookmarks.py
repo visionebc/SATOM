@@ -681,7 +681,7 @@ def place(user, bm: Bookmark, parent_id: int | None = None,
     """File *bm* for *user* only. Filing a team bookmark is not editing it —
     this writes exclusively to the acting user's own placement row."""
     if parent_id is not None:
-        folder = Bookmark.query.get(parent_id)
+        folder = db.session.get(Bookmark, parent_id)
         if folder is None or folder.kind != KIND_FOLDER:
             raise BookmarkDenied("bad_folder", "no such folder")
         if folder.owner_user_id != user.id:
@@ -690,7 +690,7 @@ def place(user, bm: Bookmark, parent_id: int | None = None,
             raise BookmarkDenied("foreign_folder", "not your folder")
         if folder.id == bm.id:
             raise BookmarkDenied("folder_cycle", "a folder cannot contain itself")
-    row = BookmarkPlacement.query.get((user.id, bm.id))
+    row = db.session.get(BookmarkPlacement, (user.id, bm.id))
     if row is None:
         row = BookmarkPlacement(user_id=user.id, bookmark_id=bm.id)
         db.session.add(row)
@@ -711,7 +711,7 @@ def set_hidden(user, bm: Bookmark, hidden: bool) -> BookmarkPlacement:
     if bm.scope != SCOPE_TEAM:
         raise BookmarkDenied("not_shared",
                              "only shared bookmarks can be hidden; delete your own")
-    row = BookmarkPlacement.query.get((user.id, bm.id))
+    row = db.session.get(BookmarkPlacement, (user.id, bm.id))
     if row is None:
         row = BookmarkPlacement(user_id=user.id, bookmark_id=bm.id)
         db.session.add(row)
@@ -722,7 +722,7 @@ def set_hidden(user, bm: Bookmark, hidden: bool) -> BookmarkPlacement:
 
 def set_favorite(user, bm: Bookmark, favorite: bool) -> None:
     """Star/unstar for *user* only — including on a team bookmark."""
-    row = BookmarkFavorite.query.get((user.id, bm.id))
+    row = db.session.get(BookmarkFavorite, (user.id, bm.id))
     if favorite and row is None:
         db.session.add(BookmarkFavorite(user_id=user.id, bookmark_id=bm.id))
     elif not favorite and row is not None:

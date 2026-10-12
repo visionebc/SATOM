@@ -18,6 +18,8 @@ implementations is the one that ends up being the real one.
 """
 from __future__ import annotations
 
+from ..extensions import db
+
 
 def _int_or_none(value):
     try:
@@ -86,7 +88,7 @@ def select_action(device_name: str, op: str) -> dict:
         if cr_id is None:
             rejected.append([row.id, row.name, "not bound to a change request"])
             continue
-        ok, reason = crmod.cr_runnable(ChangeRequest.query.get(cr_id))
+        ok, reason = crmod.cr_runnable(db.session.get(ChangeRequest, cr_id))
         if not ok:
             rejected.append([row.id, row.name, "CR %s: %s" % (cr_id, reason)])
             continue

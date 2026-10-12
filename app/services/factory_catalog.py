@@ -53,6 +53,7 @@ from typing import Any
 
 from . import clone, clone_scope
 from . import deep_capture as dc
+from ..extensions import db
 
 #: Reverse-reference projections. ``q_ref`` counts the objects pointing AT a
 #: profile, which is how many policies use it on THIS appliance — usage, not
@@ -662,7 +663,7 @@ def entries(product: str = "fortiweb", firmware: str = "", build_no: str | None 
 
 
 def get(entry_id: int):
-    return _model().query.get(entry_id)
+    return db.session.get(_model(), entry_id)
 
 
 def stale(row) -> bool:

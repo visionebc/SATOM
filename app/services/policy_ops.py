@@ -31,6 +31,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from . import clone
+from ..extensions import db
 
 EP_POLICY = "/api/v2.0/cmdb/server-policy/policy"
 
@@ -2172,8 +2173,8 @@ def start_policy_job(flask_app, *, action: str, source_appl, dest_appl=None,
             from .audit import log_action
             from . import policy_lineage as lineage
             from . import notifications as notify
-            src = Appliance.query.get(src_id)
-            dst = Appliance.query.get(dest_id) if dest_id else None
+            src = db.session.get(Appliance, src_id)
+            dst = db.session.get(Appliance, dest_id) if dest_id else None
             results = []
             total = len(policies)
             # PROFILES ONCE PER RUN. Several policies routinely share one Web

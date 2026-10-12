@@ -1763,7 +1763,7 @@ def save_dns_tool():
 
 def _dnsb_or_404(backend_id: int):
     from ..models_dnsbackend import DnsBackend
-    row = DnsBackend.query.get(backend_id)
+    row = db.session.get(DnsBackend, backend_id)
     if row is None:
         abort(404)
     return row
@@ -2575,7 +2575,7 @@ def activate_theme(tid):
     if err:
         flash(err, 'danger')
     else:
-        row = UiTheme.query.get(tid)
+        row = db.session.get(UiTheme, tid)
         log_action('settings.theme.activate', detail='name=%s' % row.name)
         flash('Theme %r applied.' % row.name, 'success')
     return _theme_redirect()
@@ -2704,7 +2704,7 @@ def reset_theme():
 
 def _hv_target_or_404(target_id: int):
     from ..models_provision import HypervisorTarget
-    row = HypervisorTarget.query.get(target_id)
+    row = db.session.get(HypervisorTarget, target_id)
     if row is None:
         abort(404)
     return row
@@ -2746,7 +2746,7 @@ def hypervisor_save():
     if not host:
         return jsonify({'ok': False, 'error': 'a host is required'}), 400
 
-    row = HypervisorTarget.query.get(int(tid)) if tid.isdigit() else None
+    row = db.session.get(HypervisorTarget, int(tid)) if tid.isdigit() else None
     creating = row is None
     # Uniqueness is checked BEFORE the row joins the session. With the add()
     # first, SQLAlchemy's autoflush pushes the pending INSERT to satisfy the

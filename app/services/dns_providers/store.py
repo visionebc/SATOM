@@ -11,6 +11,7 @@ from datetime import datetime
 
 from . import FIELD_SPECS, PROVIDERS
 from .base import ProviderError  # noqa: F401  (re-exported for callers)
+from ...extensions import db
 
 #: Set once the AppSetting singleton has been folded into a row. Kept as its
 #: own key rather than inferred from "are there rows?" — an operator who
@@ -74,7 +75,7 @@ def save_backend(data: dict, backend_id: object = None):
 
     row = None
     if backend_id not in (None, "", 0, "0"):
-        row = DnsBackend.query.get(int(backend_id))
+        row = db.session.get(DnsBackend, int(backend_id))
         if row is None:
             raise BackendError("That backend no longer exists.")
     clash = DnsBackend.query.filter(

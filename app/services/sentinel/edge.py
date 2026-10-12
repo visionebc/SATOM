@@ -73,6 +73,7 @@ from datetime import datetime, timedelta
 from ...models import Appliance
 from ...models_sentinel import SentinelEdgeMap
 from . import config
+from ...extensions import db
 
 #: The JSON-RPC routes this module drives. NOT registry-resolved, and that is
 #: on purpose: every FortiAnalyzer entry of the endpoint baseline
@@ -117,7 +118,7 @@ def analyzer_of(row):
     """
     if row is None or not row.analyzer_id:
         return None
-    a = Appliance.query.get(row.analyzer_id)
+    a = db.session.get(Appliance, row.analyzer_id)
     if a is None or a.kind != "fortianalyzer":
         return None
     return a

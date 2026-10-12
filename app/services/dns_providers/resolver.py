@@ -34,6 +34,7 @@ module's to make (the rule §130 was restored on).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from ...extensions import db
 
 #: Refusal codes. Stable strings: blockers, run steps and tests name them.
 NO_BACKEND = "no_backend"        # nothing enabled carries the role at all
@@ -210,7 +211,7 @@ def backend_by_id(backend_id: object):
     except (TypeError, ValueError):
         return None
     try:
-        return DnsBackend.query.get(bid)
+        return db.session.get(DnsBackend, bid)
     except Exception:  # noqa: BLE001
         return None
 

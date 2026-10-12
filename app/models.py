@@ -1162,12 +1162,12 @@ class UserSetting(db.Model):
 
     @classmethod
     def get(cls, user_id: int, key: str, default: str | None = None) -> str | None:
-        row = cls.query.get((user_id, key))
+        row = db.session.get(cls, (user_id, key))
         return row.value if row else default
 
     @classmethod
     def set(cls, user_id: int, key: str, value: str) -> None:
-        row = cls.query.get((user_id, key))
+        row = db.session.get(cls, (user_id, key))
         if row is None:
             row = cls(user_id=user_id, key=key)
             db.session.add(row)

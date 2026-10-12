@@ -22,7 +22,7 @@ def list_baselines() -> list[Baseline]:
 
 
 def get_baseline(baseline_id: int) -> Baseline | None:
-    return Baseline.query.get(baseline_id)
+    return db.session.get(Baseline, baseline_id)
 
 
 def approved_templates() -> list[Template]:
@@ -71,7 +71,7 @@ def _link_rows(template_ids: list[int]) -> list[BaselineTemplate]:
     Raises ``ValueError`` if any id is missing or not approved."""
     rows: list[BaselineTemplate] = []
     for pos, tid in enumerate(template_ids):
-        t = Template.query.get(tid)
+        t = db.session.get(Template, tid)
         if t is None:
             raise ValueError(f"Template {tid} not found")
         if t.status != Template.STATUS_APPROVED:
@@ -104,7 +104,7 @@ def update_baseline(baseline_id: int, *, name: str | None = None,
                     department: str | None = None,
                     template_ids: list[int] | None = None,
                     note: str | None = None) -> Baseline:
-    b = Baseline.query.get(baseline_id)
+    b = db.session.get(Baseline, baseline_id)
     if b is None:
         raise ValueError(f"Baseline {baseline_id} not found")
     if name is not None:
@@ -131,7 +131,7 @@ def update_baseline(baseline_id: int, *, name: str | None = None,
 
 
 def delete_baseline(baseline_id: int) -> bool:
-    b = Baseline.query.get(baseline_id)
+    b = db.session.get(Baseline, baseline_id)
     if b is None:
         return False
     db.session.delete(b)
@@ -220,7 +220,7 @@ def assigned_templates(baseline: Baseline) -> list[Template]:
     """Resolve a combo's links to Template rows, in assignment order."""
     out = []
     for link in baseline.items:
-        t = Template.query.get(link.template_id)
+        t = db.session.get(Template, link.template_id)
         if t is not None:
             out.append(t)
     return out
@@ -272,10 +272,10 @@ def group_by_section(templates: list[Template]) -> list[tuple[str, str, list[Tem
 
 def combo_assign(baseline_id: int, template_id: int) -> Baseline:
     """Assign one approved template to a combo (idempotent)."""
-    b = Baseline.query.get(baseline_id)
+    b = db.session.get(Baseline, baseline_id)
     if b is None:
         raise ValueError(f"Combo {baseline_id} not found")
-    t = Template.query.get(template_id)
+    t = db.session.get(Template, template_id)
     if t is None:
         raise ValueError(f"Template {template_id} not found")
     if t.status != Template.STATUS_APPROVED:
@@ -291,7 +291,7 @@ def combo_assign(baseline_id: int, template_id: int) -> Baseline:
 
 def combo_unassign(baseline_id: int, template_id: int) -> Baseline:
     """Remove a template from a combo (the junction row is deleted)."""
-    b = Baseline.query.get(baseline_id)
+    b = db.session.get(Baseline, baseline_id)
     if b is None:
         raise ValueError(f"Combo {baseline_id} not found")
     link = next((l for l in b.items if l.template_id == template_id), None)
@@ -358,7 +358,7 @@ def set_template_combos(template_id: int, combo_ids) -> dict:
     """Sync a template's combo memberships to EXACTLY ``combo_ids`` (add the
     missing links, drop the deselected ones). Idempotent. The template must be
     approved. Returns {'added', 'removed', 'total'}."""
-    t = Template.query.get(template_id)
+    t = db.session.get(Template, template_id)
     if t is None:
         raise ValueError(f"Template {template_id} not found")
     if t.status != Template.STATUS_APPROVED:
@@ -371,7 +371,7 @@ def set_template_combos(template_id: int, combo_ids) -> dict:
     have = {l.baseline_id for l in links}
     added = removed = 0
     for cid in want - have:
-        b = Baseline.query.get(cid)
+        b = db.session.get(Baseline, cid)
         if b is None:
             continue
         b.items.append(BaselineTemplate(template_id=template_id,

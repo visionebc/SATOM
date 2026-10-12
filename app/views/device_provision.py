@@ -49,7 +49,7 @@ def _run_or_404(run_id: int):
     Answering 403 would confirm that a run with that id exists elsewhere.
     """
     from ..models_provision import ProvisionRun
-    row = ProvisionRun.query.get(run_id)
+    row = db.session.get(ProvisionRun, run_id)
     if row is None or not product_scope.visible_product(row.product):
         abort(404)
     return row

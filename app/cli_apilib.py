@@ -14,6 +14,7 @@ import os
 import click
 from flask import current_app
 from flask.cli import AppGroup
+from .extensions import db
 
 apilib_cli = AppGroup("apilib", help="API library: backfill, import and inspect evidence.")
 
@@ -120,7 +121,7 @@ def schema_harvest_cmd(appliance, lab, no_probe):
     from .services import schema_harvest
     ap = None
     if str(appliance).isdigit():
-        ap = Appliance.query.get(int(appliance))
+        ap = db.session.get(Appliance, int(appliance))
     if ap is None:
         ap = Appliance.query.filter_by(name=appliance).first()
     if ap is None:
@@ -217,7 +218,7 @@ def migration_report_cmd(appliance, target, backup_id):
     from .services import migration_report
     ap = None
     if str(appliance).isdigit():
-        ap = Appliance.query.get(int(appliance))
+        ap = db.session.get(Appliance, int(appliance))
     if ap is None:
         ap = Appliance.query.filter_by(name=appliance).first()
     if ap is None:
@@ -238,7 +239,7 @@ def adapter_harvest_cmd(appliance, ssh_secret_env):
 
     from .models import Appliance
     from .services import schema_adapters as sa
-    ap = Appliance.query.get(int(appliance)) if str(appliance).isdigit() else None
+    ap = db.session.get(Appliance, int(appliance)) if str(appliance).isdigit() else None
     ap = ap or Appliance.query.filter_by(name=appliance).first()
     if ap is None:
         raise click.ClickException("no appliance %r" % appliance)

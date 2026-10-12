@@ -79,7 +79,7 @@ MAX_WORKERS = 8
 COLLECTORS: dict = {
     "box": {
         "label": "Box resources (CPU, memory, sessions)",
-        "products": ("fortiweb", "fortiadc", "fortiauthenticator"),
+        "products": ("fortiweb", "fortiadc", "fortiauthenticator", "fortigate"),
         "interval": 3, "params": {},
     },
     "capacity": {
@@ -289,6 +289,28 @@ def _collect_box(appliance, params, ts) -> list:
                           f.get("disk_used_bytes"), ts),
             vm_store.line("satom_box_disk_total_bytes", L,
                           f.get("disk_total_bytes"), ts),
+        ]
+    if appliance.kind == "fortigate":
+        # REST with the appliance's API token — the row holds no CLI login.
+        # Same parser as the cpu/memory probes (deep_monitor), so the scrape
+        # and the probe can never disagree about what the box said.
+        from ..clients.fortigate import FortiGateClient
+        from . import deep_monitor as dm
+        results, err = FortiGateClient(appliance, timeout=10.0).resource_usage()
+        if err:
+            raise RuntimeError(str(err)[:150])
+        f = dm.parse_fgt_resource_usage(results)
+        if f.get("cpu_busy") is None and f.get("mem_used_pct") is None:
+            # A 200 with neither reading is a shape we do not know, not a box
+            # at 0 %: fail the scrape (satom_scrape_up 0) instead.
+            raise RuntimeError("%s carried no cpu or mem reading"
+                               % dm.FGT_RESOURCE_ENDPOINT)
+        L = _labels(appliance)
+        return [
+            vm_store.line("satom_box_cpu_pct", L, f.get("cpu_busy"), ts),
+            vm_store.line("satom_box_mem_pct", L, f.get("mem_used_pct"), ts),
+            vm_store.line("satom_box_disk_pct", L, f.get("disk_used_pct"), ts),
+            vm_store.line("satom_box_sessions", L, f.get("sessions"), ts),
         ]
     # FortiADC: `get system performance` over read-only SSH — same parser the
     # deep monitors trust (REST has no equivalent on this product).

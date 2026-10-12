@@ -321,6 +321,7 @@ def all_checks(ctx, args):
         ("health", cmd_get.system_health),
         ("install", k.install),
         ("config", k.config),
+        ("data", k.data),
         ("units", k.units),
         ("code", k.code),
         ("network", network),

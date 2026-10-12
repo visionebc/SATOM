@@ -1160,6 +1160,18 @@ mkdir -p "$APP_DIR/data" "$APP_DIR/state" "$LOG_DIR" "$APP_DIR/.ssh"
 chown -R "${APP_USER}:${APP_USER}" "$APP_DIR" "$LOG_DIR"
 chmod 750 "$APP_DIR"
 chmod 700 "$APP_DIR/state" "$APP_DIR/.ssh"
+# [SATOM-DATA-PERMS] data/ holds the device config vault (full appliance
+# configurations), the system bundles (pg_dump + recovery seal) and keys. The
+# service UMask stays 0022 (nginx must read the ACME webroot), so the directory
+# itself is closed: 0750 with no group members, and the two secret trees
+# owner-only. A reinstall over an existing node also narrows what an older
+# release left 0644. `satom diagnose data` grades the same rule and
+# `satom execute repair data --yes` (run by the update runner too) applies it.
+chmod 750 "$APP_DIR/data"
+mkdir -p "$APP_DIR/data/backups" "$APP_DIR/data/system_backups"
+chown "${APP_USER}:${APP_USER}" "$APP_DIR/data/backups" "$APP_DIR/data/system_backups"
+find "$APP_DIR/data/backups" "$APP_DIR/data/system_backups" -type d -exec chmod 700 {} +
+find "$APP_DIR/data/backups" "$APP_DIR/data/system_backups" -type f -exec chmod 600 {} +
 if [ -f "$APP_DIR/.env" ]; then
     chown root:"$APP_USER" "$APP_DIR/.env"; chmod 640 "$APP_DIR/.env"
 fi

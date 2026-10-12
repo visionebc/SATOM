@@ -410,8 +410,105 @@ def config(ctx, args):
     return r
 
 
+# [SATOM-DATA-PERMS] data/ holds the device config vault (full appliance
+# configurations), the system bundles (pg_dump + recovery seal), the ACME
+# account keys and the shared PKI. The service runs with UMask=0022 -- kept on
+# purpose, nginx must read the ACME webroot it writes -- so everything it
+# created there was 0755/0644 and readable by every local account: www-data,
+# postfix, redis, the wazuh agent. Nothing in data/ is served by nginx and no
+# other account needs it, so the directory itself is the gate (0750, no group
+# members) and the trees that hold secrets are owner-only underneath it as
+# defence in depth.
+DATA_DIR_LOOSE = 0o027          # data/: group write, any bit for other
+PRIVATE_LOOSE = 0o077           # private trees: any bit for group or other
+PRIVATE_TREES = ("backups", "system_backups", "acme", "recovery", "pki-shared")
+
+
+def _raise(exc):
+    raise exc
+
+
+def data_exposure(data_dir):
+    """Entries under ``data_dir`` that another local account could read.
+
+    Returns a list of dicts ``{path, mode, want, is_dir, dev, ino}``; ``want``
+    only ever REMOVES bits from ``mode``. Pure apart from lstat: a symlink is
+    never followed and never reported (chmod on a link changes its target).
+    A directory this process cannot read raises PermissionError -- "could not
+    look" must not read as "nothing exposed".
+    """
+    out = []
+    base = Path(data_dir)
+
+    def _grade(p, loose):
+        st = os.lstat(p)
+        if stat.S_ISLNK(st.st_mode):
+            return
+        mode = stat.S_IMODE(st.st_mode)
+        if mode & loose:
+            out.append({"path": str(p), "mode": mode, "want": mode & ~loose,
+                        "is_dir": stat.S_ISDIR(st.st_mode),
+                        "dev": st.st_dev, "ino": st.st_ino})
+
+    try:
+        top = os.lstat(base)
+    except FileNotFoundError:
+        return out
+    if not stat.S_ISDIR(top.st_mode):
+        return out
+    _grade(base, DATA_DIR_LOOSE)
+    for name in PRIVATE_TREES:
+        tree = base / name
+        try:
+            if not stat.S_ISDIR(os.lstat(tree).st_mode):
+                continue
+        except FileNotFoundError:
+            continue
+        _grade(tree, PRIVATE_LOOSE)
+        for root, dirs, files in os.walk(tree, onerror=_raise):
+            for n in dirs + files:
+                _grade(Path(root) / n, PRIVATE_LOOSE)
+    return out
+
+
+def data(ctx, args):
+    """Is anything under data/ readable by another local account?"""
+    r = Result("ok", "data directory")
+    d = ctx.app_dir / "data"
+    try:
+        found = data_exposure(d)
+    except PermissionError:
+        # 0750 owned by the service account is the CORRECT state, and it is
+        # exactly what stops a non-member from looking. Saying "clean" here
+        # would be a fail-open; saying "exposed" would be a lie.
+        r = Result("warn", "cannot evaluate data/ permissions", exit_code=4)
+        r.note("data/ is not readable as %s, which is the correct state for an "
+               "account outside '%s'. Re-run with sudo." % (ctx.user, ctx.app_user))
+        return r
+    try:
+        mode = oct(stat.S_IMODE(os.lstat(d).st_mode))
+    except OSError:
+        mode = "missing"
+    rows = [("data/", mode), ("private trees", ", ".join(PRIVATE_TREES))]
+    r.rows("", rows)
+    if not found:
+        r.rows("exposure", [("readable by other accounts", "none")])
+        return r
+    r.status = "bad"
+    files = [f for f in found if not f["is_dir"]]
+    r.rows("exposure", [
+        ("entries too open", "%d (%d files)" % (len(found), len(files))),
+    ] + [(f["path"], "%s -> %s" % (oct(f["mode"]), oct(f["want"])))
+         for f in found[:12]])
+    r.note("Another local account (www-data, postfix, redis, an agent) can read "
+           "device configurations or database bundles. The service UMask stays "
+           "0022 on purpose; close the directory instead: "
+           "`satom execute repair data --yes`.")
+    return r
+
+
 # Vhost directories the installer may have used, per distro family.
-NGINX_VHOST_DIRS = ("/etc/nginx/sites-enabled", "/etc/nginx/vhosts.d",
+NGINX_VHOST_DIRS =("/etc/nginx/sites-enabled", "/etc/nginx/vhosts.d",
                     "/etc/nginx/conf.d")
 
 

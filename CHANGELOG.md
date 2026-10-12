@@ -6,6 +6,43 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Security — device configurations and database bundles are no longer readable by other local accounts
+
+The service runs with `UMask=0022`, so everything it wrote under `data/` was
+`0755`/`0644`: every device configuration in the backup vault
+(`data/backups/<id>/`, full appliance configurations with their encrypted
+secrets and keys) and every system bundle (`data/system_backups/`, a database
+dump with password hashes and encrypted device credentials, plus the recovery
+seal) could be read by any other account on the node — the web server, the
+mail server, Redis, a monitoring agent. Nothing in `data/` is served by nginx,
+so the directory is closed instead of changing the service umask (which the
+ACME webroot still needs).
+
+- **`data/` is `0750`**, owned by the service account, whose group has no
+  other members.
+- **System bundles are `0600` from creation**, in a `0700` directory — written
+  through a private file descriptor, not narrowed after the archive is
+  complete. A bundle fetched back from the off-box backup server is written
+  the same way.
+- **The device config vault writes `0600` files in `0700` directories**, and
+  narrows a vault directory an older release left open on its next write.
+- **`satom diagnose data`** (also part of `satom diagnose all`) fails when
+  `data/` is looser than `0750` or anything under the vault, the bundle store,
+  the ACME account, the recovery seal or the shared PKI is readable by group
+  or other.
+- **`satom execute repair data --yes`** applies the rule: `data/` to `0750`,
+  directories under those trees to `0700` and files to `0600`. It only removes
+  permission bits, never follows a link, skips an entry replaced between scan
+  and change, prints its plan without `--yes`, and is a no-op on a clean node.
+- **Existing nodes converge on their own.** The update runner runs the same
+  repair after every update, on both the git and the offline-package path. The
+  runner applies its own refresh only from the next update on, so the update
+  that brings this release closes the vault and bundle directories as soon as
+  the application uses them, and `data/` itself on the following update — or
+  immediately with `sudo satom execute repair data --yes`.
+- **The installer** sets the same modes on a fresh install and narrows what an
+  older release left open on a reinstall.
+
 ### Security — fixes from the static-analysis review of the nightly scan
 
 Every bandit, semgrep and gitleaks finding of the nightly satom-audit scan was

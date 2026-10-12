@@ -344,6 +344,33 @@ def import_shipped_api_pack(st):
     st.step("import shipped API pack", ok, detail)
 
 
+def tighten_data_dir(st):
+    """[SATOM-DATA-PERMS] Close data/ to every account but the service account.
+
+    Runs the operator CLI's ``execute repair data --yes`` -- the same code an
+    operator runs by hand, from the root-owned copy refreshed just before this
+    call -- so a node installed before the fix converges on its next update
+    instead of waiting for someone to read `satom diagnose data`. It only
+    narrows modes (data/ 0750, the vault and bundle trees 0700/0600) and is a
+    no-op on a clean node. NON-FATAL: an exposed directory is a finding, not a
+    reason to roll a healthy update back.
+    """
+    cli = "/usr/local/sbin/satom"
+    st.begin("data/ permissions")
+    try:
+        p = subprocess.run([cli, "execute", "repair", "data", "--yes"],
+                           capture_output=True, text=True, timeout=300)
+        out = (p.stdout or p.stderr or "").strip()
+        ok = p.returncode == 0
+        detail = out[-300:] if ok else (
+            "%s -- the update itself is fine; retry with: "
+            "sudo %s execute repair data --yes" % (out[-250:], cli))
+    except Exception as exc:  # noqa: BLE001
+        ok, detail = False, "%s -- retry with: sudo %s execute repair data --yes" % (
+            str(exc)[:200], cli)
+    st.step("data/ permissions", ok, detail)
+
+
 def route_audit_ok():
     """Every ``url_for()`` endpoint written in a template exists in the url_map.
 
@@ -679,6 +706,8 @@ def process(req_path):
         except Exception as exc:  # noqa: BLE001
             # Never fail an update because the console tool did not refresh.
             st.step("refresh operator CLI", False, str(exc)[:200])
+        # After the CLI refresh: the verb it runs ships with this release.
+        tighten_data_dir(st)
 
         new = git("rev-parse", "HEAD").stdout.strip()
         restart_and_validate(st, is_standby, app_was_active,
@@ -1290,6 +1319,7 @@ def package_change(req_path):
                                     text=True, timeout=180)
                 st.step("refresh %s" % label, cr.returncode == 0,
                         (cr.stdout or cr.stderr or "").strip()[-200:])
+        tighten_data_dir(st)
 
         # -- 10. restart and prove it works ----------------------------------
         restart_and_validate(st, is_standby, app_was_active,

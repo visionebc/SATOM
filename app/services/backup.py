@@ -151,8 +151,35 @@ def vault_root() -> str:
     else:
         base = os.path.join(os.path.dirname(current_app.root_path), "data")
     d = os.path.join(base, "backups")
-    os.makedirs(d, exist_ok=True)
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    _keep_private_dir(d)
     return d
+
+
+# [SATOM-DATA-PERMS] Every vault entry is a FULL appliance configuration:
+# encrypted secrets, private keys, the whole policy. The service runs with
+# UMask=0022, so the vault used to be 0755 directories of 0644 files that any
+# local account (www-data, postfix, redis) could read. Directories are kept
+# 0700 and files are created 0600 -- from the first byte, not narrowed after.
+def _keep_private_dir(d: str) -> None:
+    """Narrow ``d`` to owner-only if it is looser. Never widens; best-effort
+    (`satom diagnose data` reports what this process could not fix)."""
+    try:
+        mode = os.stat(d).st_mode & 0o7777
+        if mode & 0o077:
+            os.chmod(d, mode & ~0o077)
+    except OSError:
+        pass
+
+
+def _write_private(path: str, data: bytes) -> None:
+    """Write ``data`` to ``path`` with mode 0600 from creation. O_NOFOLLOW so
+    a planted symlink is refused rather than written through; the fchmod
+    covers a file that already existed."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "wb") as fh:
+        os.fchmod(fh.fileno(), 0o600)
+        fh.write(data)
 
 
 def store_bytes(*, appliance_id: int, appliance_name: str, data: bytes, filename: str,
@@ -170,11 +197,11 @@ def store_bytes(*, appliance_id: int, appliance_name: str, data: bytes, filename
     db.session.add(cb)
     db.session.flush()  # mint id
     dest_dir = os.path.join(vault_root(), str(cb.id))
-    os.makedirs(dest_dir, exist_ok=True)
+    os.makedirs(dest_dir, mode=0o700, exist_ok=True)
+    _keep_private_dir(dest_dir)
     dest_path = os.path.join(dest_dir, safe_name)
     try:
-        with open(dest_path, "wb") as fh:
-            fh.write(data)
+        _write_private(dest_path, data)
         cb.stored_path = dest_path
         db.session.commit()
     except Exception:  # noqa: BLE001

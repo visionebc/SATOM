@@ -498,6 +498,84 @@ def repair_nginx(ctx, args):
     return r
 
 
+def _narrow(entry):
+    """chmod one entry from a data_exposure() plan, as root, in a tree the
+    SERVICE ACCOUNT owns. Opened with O_NOFOLLOW and checked against the
+    planned inode, so a name swapped for a symlink between the scan and the
+    chmod is skipped instead of followed to wherever it points. Only removes
+    bits. Returns True if the mode was changed."""
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+    if entry["is_dir"]:
+        flags |= os.O_DIRECTORY
+    fd = os.open(entry["path"], flags)
+    try:
+        st = os.fstat(fd)
+        if (st.st_dev, st.st_ino) != (entry["dev"], entry["ino"]):
+            return False
+        mode = st.st_mode & 0o7777
+        new = mode & entry["want"]
+        if new == mode:
+            return False
+        os.fchmod(fd, new)
+        return True
+    finally:
+        os.close(fd)
+
+
+def repair_data(ctx, args):
+    """Close data/ to every account but the service account.
+
+    [SATOM-DATA-PERMS] data/ 0750; every directory under the private trees
+    (device config vault, system bundles, ACME, recovery seal, shared PKI)
+    0700 and every file 0600. Narrows only, never widens, never follows a
+    link. Idempotent: a clean node prints "nothing to repair". The update
+    runner calls this after every update so existing nodes converge on their
+    own.
+    """
+    d = ctx.app_dir / "data"
+    try:
+        plan = cmd_checks.data_exposure(d)
+    except OSError as exc:
+        return Result("bad", "cannot read %s: %s" % (d, exc), exit_code=4)
+    r = Result("ok", "execute repair data")
+    if not plan:
+        r.rows("", [("state", "already private - nothing to repair")])
+        return r
+    rows = [(e["path"], "%s -> %s" % (oct(e["mode"]), oct(e["want"])))
+            for e in plan[:20]]
+    if len(plan) > 20:
+        rows.append(("...", "%d more" % (len(plan) - 20)))
+    if not _yes(args):
+        out = Result("warn", "execute repair data", exit_code=2)
+        out.rows("plan (%d entries)" % len(plan), rows)
+        out.lines("apply", ["  sudo satom execute repair data --yes"])
+        out.note("Nothing written.")
+        return out
+    r.rows("plan (%d entries)" % len(plan), rows)
+    changed, skipped, failed = 0, 0, []
+    for e in plan:
+        try:
+            if _narrow(e):
+                changed += 1
+            else:
+                skipped += 1
+        except OSError as exc:
+            failed.append((e["path"], str(exc)))
+    r.rows("result", [("narrowed", changed), ("skipped (changed underneath)", skipped),
+                      ("failed", len(failed))])
+    if failed:
+        r.worst("warn")
+        r.rows("failures", failed[:10])
+    try:
+        left = cmd_checks.data_exposure(d)
+    except OSError:
+        left = []
+    if left:
+        r.worst("warn")
+        r.note("%d entries are still too open; re-run to see them." % len(left))
+    return r
+
+
 def repair_tmp(ctx, args):
     """Delete aged scratch under data/tmp. Nothing else prunes it."""
     days = _opt_int(args, "--older-than", 7)

@@ -68,6 +68,21 @@
     var here = norm(location.pathname), target = norm(want);
     return here === target || here.indexOf(target + '/') === 0;
   }
+  // The device THIS page is about (base.html stamps it from the URL's
+  // appliance_id; empty on pages that name no device).
+  function pageAppliance() {
+    var m = document.querySelector('meta[name="page-appliance"]');
+    return m ? String(m.getAttribute('content') || '') : '';
+  }
+  // Did the finished job write to the device this page draws? Every device
+  // write a job makes is recorded in ``wrote_to`` (services/jobs.note_write),
+  // so ANY job — not only the ones that name a reload_path — redraws the pages
+  // of the box it changed.
+  function wroteHere(j) {
+    var here = pageAppliance();
+    if (!here || !j || !j.wrote_to) return false;
+    return j.wrote_to.map(String).indexOf(here) >= 0;
+  }
   // The job changed what this page draws (its cache rows were re-read): redraw.
   function reloadSoon() {
     setTimeout(function () {
@@ -363,7 +378,7 @@
             addToastLink(key, jobUrl(jobId), 'View job →');
             autoDismiss(key, res.report_url ? 60000 : 12000); delete tracked[jobId];
             notify(jobId, j);
-            if (res.reload && samePage(res.reload_path)) reloadSoon();
+            if ((res.reload && samePage(res.reload_path)) || wroteHere(j)) reloadSoon();
             return;
           }
           if (j.status === 'cancelled') {
@@ -380,7 +395,10 @@
                              message: (j.message || 'Stopped') + extra });
             addToastLink(key, jobUrl(jobId), 'View job →');
             autoDismiss(key, (cres.mid_change && cres.mid_change.length) ? 60000 : 15000);
-            delete tracked[jobId]; notify(jobId, j); return;
+            delete tracked[jobId]; notify(jobId, j);
+            // What landed before the Stop changed this device's pages too.
+            if (wroteHere(j)) reloadSoon();
+            return;
           }
           if (j.status === 'error') {
             var eres = j.result || {};
@@ -392,7 +410,7 @@
             autoDismiss(key, eres.report_url ? 60000 : 20000); delete tracked[jobId];
             notify(jobId, j);
             // A partial failure still changed what succeeded: redraw like a success.
-            if (eres.reload && samePage(eres.reload_path)) reloadSoon();
+            if ((eres.reload && samePage(eres.reload_path)) || wroteHere(j)) reloadSoon();
             return;
           }
           // running, pausing/paused or cancelling

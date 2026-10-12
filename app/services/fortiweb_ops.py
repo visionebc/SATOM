@@ -213,6 +213,9 @@ class FortiWebOps:
             # verdict is reported; failing on it is the caller's call.
             refresh = None
             if ok:
+                # A job that wrote here asks this device's pages to redraw.
+                from . import jobs as _jobs
+                _jobs.note_write(getattr(self.appliance, "id", None))
                 from . import object_refresh
                 refresh = object_refresh.after_write(self.appliance, self.client,
                                                      action, path, payload)

@@ -34,7 +34,7 @@ from sqlalchemy import text
 
 from ..models import (Appliance, ChangeRequest, ScheduledAction,
                       ScheduledActionRun, db)
-from . import backup, scheduler
+from . import backup, object_refresh, scheduler
 from .fortiweb_ops import FortiWebOps
 from ..registry import loader as _loader
 
@@ -1818,17 +1818,30 @@ def _do_custom_rest(appliance, params: dict, dry_run: bool) -> dict:
     else:  # DELETE
         result = ops.delete(path, mkey, dry_run=dry_run)
 
+    # Accepted is not applied: the re-read decides (object_refresh).
+    object_refresh.enforce(result)
     ok = bool(result.get("ok"))
     err = result.get("error") or ""
     if dry_run:
         summary = f"[dry-run] {desc} on {appliance.name} (preview)"
     elif ok:
-        summary = f"{desc} on {appliance.name}"
+        summary = f"{desc} on {appliance.name}" + _verify_suffix(result)
     else:
         summary = (f"{desc} on {appliance.name} - {err}" if err
                    else f"{desc} on {appliance.name} - failed")
     return {"ok": ok, "summary": summary,
             "log": json.dumps(result.get("request") or {})[:_LOG_MAX]}
+
+
+def _verify_suffix(result) -> str:
+    """What the re-read said about a write that stands (a mismatch already
+    failed it via ``object_refresh.enforce``)."""
+    v = object_refresh.verdict_of(result)
+    if v == object_refresh.VERIFIED:
+        return " — verified on the device"
+    if v == object_refresh.UNVERIFIED:
+        return " — not verified on the device (re-read could not compare it)"
+    return ""
 
 
 # --- user-scope object ops (mutate the box via FortiWebOps) ----------------- #
@@ -1844,8 +1857,10 @@ def _do_user_op(key: str, appliance, params: dict, dry_run: bool) -> dict:
         policy = str(params.get("policy") or "").strip()
         if not policy:
             return {"ok": False, "summary": "no server policy selected.", "log": ""}
+        # FortiWeb takes a cmdb write as {"data": {...}}: the bare body answered
+        # HTTP 500 on fortiweb18 (8.0.6, 2026-10-12) — this action never landed.
         result = ops.update(SERVER_POLICY_EP, policy,
-                            {"status": status_val}, dry_run=dry_run)
+                            {"data": {"status": status_val}}, dry_run=dry_run)
         label = f"{verb} server policy {policy} on {appliance.name}"
     elif key == "backend_set_status":
         pool = str(params.get("server_pool") or "").strip()
@@ -1857,7 +1872,8 @@ def _do_user_op(key: str, appliance, params: dict, dry_run: bool) -> dict:
         # pass mkey=None (its _path leaves an endpoint that already has a query as-is).
         endpoint = SERVER_POOL_MEMBER_EP + "?" + urlencode(
             {"mkey": pool, "sub_mkey": member})
-        result = ops.update(endpoint, None, {"status": status_val}, dry_run=dry_run)
+        result = ops.update(endpoint, None, {"data": {"status": status_val}},
+                            dry_run=dry_run)
         label = f"{verb} backend {member}@{pool} on {appliance.name}"
     elif key == "backend_set_config":
         pool = str(params.get("server_pool") or "").strip()
@@ -1875,7 +1891,7 @@ def _do_user_op(key: str, appliance, params: dict, dry_run: bool) -> dict:
             return {"ok": False, "summary": "set a new ip and/or port.", "log": ""}
         endpoint = SERVER_POOL_MEMBER_EP + "?" + urlencode(
             {"mkey": pool, "sub_mkey": member})
-        result = ops.update(endpoint, None, payload, dry_run=dry_run)
+        result = ops.update(endpoint, None, {"data": payload}, dry_run=dry_run)
         changed = ", ".join(f"{k}={v}" for k, v in payload.items())
         label = f"backend {member}@{pool} -> {changed} on {appliance.name}"
     else:  # swap_certificate
@@ -1885,16 +1901,17 @@ def _do_user_op(key: str, appliance, params: dict, dry_run: bool) -> dict:
             return {"ok": False, "summary": "set the server policy + certificate.",
                     "log": ""}
         result = ops.update(SERVER_POLICY_EP, policy,
-                            {"certificate": cert}, dry_run=dry_run)
+                            {"data": {"certificate": cert}}, dry_run=dry_run)
         label = f"certificate -> {cert} on policy {policy} ({appliance.name})"
 
+    object_refresh.enforce(result)
     ok = bool(result.get("ok"))
     err = result.get("error") or ""
     prefix = "[dry-run] " if dry_run else ""
     if dry_run:
         summary = f"{prefix}{label} (preview)"
     elif ok:
-        summary = label
+        summary = label + _verify_suffix(result)
     else:
         summary = f"{label} - {err}" if err else f"{label} - failed"
     return {"ok": ok, "summary": summary,

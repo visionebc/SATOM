@@ -280,10 +280,18 @@ def device_cert_swap():
     else:
         flash(f"Unknown swap target {kind!r}.", "danger")
         return redirect(url_for("cert_manager.device_cert", store=store_label, name=cert_name))
-    flash((f"Swapped {kind} onto {cert_name} on {a.name}." if res.get("ok")
+    flash((f"Swapped {kind} onto {cert_name} on {a.name}.{_verdict_note(res)}" if res.get("ok")
            else f"Swap failed: {res.get('error')}"),
           "success" if res.get("ok") else "danger")
     return redirect(url_for("cert_manager.device_cert", store=store_label, name=cert_name))
+
+
+def _verdict_note(res: dict) -> str:
+    """`` (Verified on the device)`` / `` (Not verified: …)`` after a success
+    message, when the write was re-read (the FortiADC REST paths); nothing
+    otherwise. A mismatch never gets here: it is reported as the failure."""
+    v = (res or {}).get("verify")
+    return " (%s)" % v["label"] if isinstance(v, dict) and v.get("label") else ""
 
 
 @bp.route("/device-cert/remove", methods=["POST"])
@@ -299,7 +307,7 @@ def device_cert_remove():
     res = cm.remove_device_certificate(a, store_label, cert_name, dry_run=False,
                                        actor=current_user.username)
     if res.get("removed"):
-        flash(f"Removed {cert_name} from {a.name}.", "success")
+        flash(f"Removed {cert_name} from {a.name}.{_verdict_note(res)}", "success")
     else:
         flash(f"Not removed: {res.get('error')}", "warning")
     return redirect(url_for("cert_manager.device_cert", store=store_label, name=cert_name))

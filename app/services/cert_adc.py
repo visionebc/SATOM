@@ -15,8 +15,12 @@ from __future__ import annotations
 import re
 
 from ..clients.fortiadc import FortiADCClient, FortiADCError
+from . import device_verify
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,63}$")
+
+#: The Local certificate store (cert + key pairs) — what an upload lands in.
+LOCAL_STORE = "system_certificate_local"
 
 
 class CertAdcError(RuntimeError):
@@ -55,14 +59,38 @@ def deploy_certificate(appliance, name: str, cert_pem: str, key_pem: str,
         client.upload_local_certificate(name, cert_pem, key_pem)
     except FortiADCError as exc:
         raise CertAdcError(f"FortiADC rejected the certificate upload: {exc}") from exc
-    lines = [f"uploaded Local certificate {name!r} to {appliance.name} (REST)"]
+    # An accepted upload is not proof the store now holds the certificate: it
+    # is re-read by NAME only. The PEMs are never compared (the store answers
+    # the decoded certificate, never the key, and certificate material has no
+    # place in a verdict or an audit line).
+    v = device_verify.adc_after_write(appliance, client, "create",
+                                      logical=LOCAL_STORE, mkey=name,
+                                      sent={"mkey": name})
+    if device_verify.failed(v):
+        raise CertAdcError(f"FortiADC accepted the upload of {name!r} but "
+                           f"{device_verify.label(v)}")
+    lines = [f"uploaded Local certificate {name!r} to {appliance.name} (REST, "
+             + _outcome(v) + ")"]
     if bind_admin:
         try:
             client.bind_https_admin_cert(name)
-            lines.append(f"bound admin HTTPS server cert → {name}")
+            b = device_verify.adc_after_write(appliance, client, "update",
+                                              logical="system_global", mkey="",
+                                              sent={"https-server-cert": name})
+            if device_verify.failed(b):
+                lines.append(f"WARNING: admin-cert bind not applied: {device_verify.label(b)}")
+            else:
+                lines.append(f"bound admin HTTPS server cert → {name} ({_outcome(b)})")
         except FortiADCError as exc:
             lines.append(f"WARNING: admin-cert bind failed: {exc}")
     return "; ".join(lines)
+
+
+def _outcome(v: dict) -> str:
+    """The verdict as the transcript words it: "verified on the device" or
+    "not verified: <why>" (a mismatch never reaches a success transcript)."""
+    s = device_verify.label(v)
+    return s[:1].lower() + s[1:]
 
 
 def remove_certificate(appliance, name: str, *, secret: str | None = None) -> str:
@@ -70,10 +98,17 @@ def remove_certificate(appliance, name: str, *, secret: str | None = None) -> st
     name = assert_cert_name(name)
     client = FortiADCClient(appliance)
     try:
-        client.delete('system_certificate_local', name)
+        client.delete(LOCAL_STORE, name)
     except FortiADCError as exc:
         raise CertAdcError(f"FortiADC refused to delete {name!r}: {exc}") from exc
-    return f"deleted Local certificate {name!r} from {appliance.name}"
+    # A delete is verified by ABSENCE (the measured ``{"payload": null}``): a
+    # referenced certificate the box acknowledged and kept is a failure.
+    v = device_verify.adc_after_write(appliance, client, "delete",
+                                      logical=LOCAL_STORE, mkey=name)
+    if device_verify.failed(v):
+        raise CertAdcError(f"FortiADC accepted the delete of {name!r} but "
+                           f"{device_verify.label(v)}")
+    return f"deleted Local certificate {name!r} from {appliance.name} ({_outcome(v)})"
 
 
 # --------------------------------------------------------------------------- #

@@ -49,7 +49,7 @@ from ..extensions import db
 from ..models import (Appliance, Permission, RegistryEndpoint,
                       visible_appliances, visible_appliance_or_404)
 from ..registry import loader
-from ..services import fgt_menu, registry_write
+from ..services import device_verify, fgt_menu, registry_write
 from ..services.audit import log_action
 from . import _clicoverage
 from .fgt import scrub
@@ -129,6 +129,18 @@ def _resolve_target(endpoint: str, version: str = ''):
         return None, str(exc)
 
 
+def _scrubbed_verdict(v):
+    """The verdict with the device's values scrubbed like the reply: a
+    mismatch quotes what the device holds, and FortiOS may hold an ``ENC``
+    secret the comparison never looked at — but a field name that merely
+    differs must not carry one into the page either."""
+    if not isinstance(v, dict):
+        return v
+    out = dict(v)
+    out['mismatch'] = scrub(v.get('mismatch') or {})
+    return out
+
+
 def _with_key(path: str, mkey: str) -> str:
     """``path`` + the URL-encoded object key. ``/`` in a key is encoded too:
     an address named ``192.0.2.0/24`` is ONE path segment to FortiOS."""
@@ -203,13 +215,22 @@ def execute():
     else:
         payload, call_err = client.write(method, path, data=data)
 
+    # An ACCEPTED write is re-read (services.device_verify): the verdict is
+    # added beside the device's reply, never folded into it.
+    verify = None
+    if method in _WRITE_METHODS and not call_err:
+        verify = device_verify.fgt_after_write(appliance, client,
+                                               device_verify.op_of(method), path,
+                                               data, payload)
     if method in _WRITE_METHODS:
         log_action('fgt_api.execute', f'{appliance.name}:{path}',
-                   {'method': method, 'body': scrub(data), 'error': call_err})
+                   {'method': method, 'body': scrub(data), 'error': call_err,
+                    'verify': (verify or {}).get('verdict')})
 
     if call_err:
         return jsonify(ok=False, error=call_err, request=preview)
-    return jsonify(ok=True, dry_run=False, request=preview, result=scrub(payload))
+    return jsonify(ok=True, dry_run=False, request=preview, result=scrub(payload),
+                   verify=_scrubbed_verdict(verify))
 
 
 @bp.route('/endpoint/save', methods=['POST'])

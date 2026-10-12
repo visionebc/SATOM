@@ -203,11 +203,22 @@ def analyze(code: str, target: str = "fortiweb") -> dict[str, Any]:
 # Logical scripting endpoints, resolved through the registry loader per product.
 _SCRIPTING_LOGICAL = {
     "fortiweb": "policy_scripting",   # cmdb/server-policy/scripting
-    "fortiadc": "system_script",      # /api/system_script (see endpoints_fortiadc)
+    # ``system_script`` was never a FortiADC entity: the registry has no such
+    # name, so every real push died on a KeyError. The scripting objects live
+    # in ``/api/system_scripting`` (52 rows on fortiadc10, 7.6.7 build0676:
+    # ``{mkey, script, type, file}``, measured 2026-10-12).
+    "fortiadc": "system_scripting",
 }
-# The content field name differs by platform/firmware and is NOT yet verified
-# live on these boxes — keep dry-run default and confirm before a real push.
+# The content field name differs by platform/firmware. FortiADC's is MEASURED
+# (``script``, above); FortiWeb's is not (its scripts are a file object, see
+# ``deploy``) — keep dry-run default and confirm before a real push.
 _CONTENT_FIELD = {"fortiweb": "content", "fortiadc": "script"}
+#: The object key field: FortiADC names every object ``mkey``.
+_NAME_FIELD = {"fortiweb": "name", "fortiadc": "mkey"}
+#: The FortiADC script type the editor writes (every measured row of an
+#: HTTP-event script carries ``type: HTTP``; Lua Studio's ADC dialect is the
+#: ``when HTTP_REQUEST {…}`` event block).
+_ADC_SCRIPT_TYPE = "HTTP"
 
 
 def deploy_plan(script, code: str) -> dict[str, Any]:
@@ -215,15 +226,21 @@ def deploy_plan(script, code: str) -> dict[str, Any]:
     target = script.target
     logical = _SCRIPTING_LOGICAL.get(target, "")
     field = _CONTENT_FIELD.get(target, "content")
-    body = {"name": script.deploy_object or script.name, field: code}
+    body = {_NAME_FIELD.get(target, "name"): script.deploy_object or script.name,
+            field: code}
+    if target == "fortiadc":
+        body["type"] = _ADC_SCRIPT_TYPE
     return {
         "target": target,
         "logical": logical,
         "method": "POST/PUT",
         "content_field": field,
         "body_preview": body,
-        "verified": False,
-        "note": ("Scripting wire format is not yet round-tripped live on this "
+        "verified": target == "fortiadc",
+        "note": ("FortiADC: the scripting object's fields were measured on "
+                 "7.6.7; a real push is re-read and compared on the device."
+                 if target == "fortiadc" else
+                 "Scripting wire format is not yet round-tripped live on this "
                  "fleet (license-locked). Review before a non-dry-run push."),
     }
 
@@ -243,20 +260,45 @@ def deploy(script, code: str, appliance, *, dry_run: bool = True) -> dict[str, A
         # Never let "no target" read as a successful push.
         return {**plan, "dry_run": True,
                 "error": "no target appliance -- nothing was pushed"}
+    if script.target != "fortiadc" or getattr(appliance, "kind", "") != "fortiadc":
+        # The FortiWeb client has no ``create``: this branch used to send
+        # NOTHING and still answer "deployed" (``device_response: "None"``),
+        # and the view stamped the script deployed. A FortiWeb script is a
+        # file object (``policy.scripting.text`` then the cmdb row — the WAF
+        # artifacts path), not a cmdb body Lua Studio could write. Said, not
+        # faked.
+        return {**plan, "dry_run": False,
+                "error": ("nothing was pushed: Lua Studio deploys FortiADC scripts "
+                          "only — a FortiWeb script is uploaded as a file through "
+                          "the policy's Scripting artifact")}
     try:
         from ..clients import client_for
-        from ..registry import loader as reg
+        from . import device_verify
         client = client_for(appliance)
-        if script.target == "fortiadc":
-            urn = reg.resolve_adc(plan["logical"])
+        body = plan["body_preview"]
+        name = str(body.get("mkey") or "")
+        # Create, or update the object of that name: a POST over an existing
+        # mkey is refused by the box, so the pre-read decides the verb.
+        rows, err = client.list_with_error(plan["logical"])
+        exists = any(isinstance(r, dict) and str(r.get("mkey")) == name for r in rows)
+        if err:
+            return {**plan, "dry_run": False, "pre_read_error": err,
+                    "error": f"pre-read failed, nothing was pushed: {err}"}
+        if exists:
+            resp, op = client.update(plan["logical"], name, body), "update"
         else:
-            urn = reg.resolve(plan["logical"])
-        rows, err = (client.list_with_error(urn) if hasattr(client, "list_with_error")
-                     else ([], None))
-        # Create (or update) the scripting object.
-        resp = client.create(plan["logical"], plan["body_preview"]) \
-            if hasattr(client, "create") else None
-        return {**plan, "dry_run": False, "device_response": str(resp)[:400],
-                "pre_read_error": err}
+            resp, op = client.create(plan["logical"], body), "create"
+        # Verified by identity (the object of that name, of that type), not
+        # by content: the box may re-flow a script body (line endings,
+        # trailing blanks) and a byte compare would fail a deploy that
+        # landed. The whole body still goes in, so the cache gets the row.
+        v = device_verify.adc_after_write(appliance, client, op,
+                                          logical=plan["logical"], mkey=name, sent=body,
+                                          compare=("mkey", "type"))
+        out = {**plan, "dry_run": False, "device_response": str(resp)[:400],
+               "pre_read_error": err, "operation": op, "verify": v}
+        if device_verify.failed(v):
+            out["error"] = device_verify.label(v)
+        return out
     except Exception as exc:  # noqa: BLE001 — surface, do not swallow
         return {**plan, "dry_run": False, "error": f"{type(exc).__name__}: {exc}"}

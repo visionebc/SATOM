@@ -41,7 +41,7 @@ from ..extensions import db
 from ..models import (Appliance, Permission, RegistryEndpoint,
                       visible_appliances, visible_appliance_or_404)
 from ..registry import loader
-from ..services import fac_menu, registry_write
+from ..services import device_verify, fac_menu, registry_write
 from ..services.audit import log_action
 from . import _clicoverage
 
@@ -167,13 +167,22 @@ def execute():
     else:
         payload, call_err = client.api_call(method, path, data=data)
 
+    # An ACCEPTED write is re-read (services.device_verify) — a 2xx is not
+    # proof here either (the bulk 207 above) — and the verdict is added beside
+    # the device's reply, never folded into it.
+    verify = None
+    if method in _WRITE_METHODS and not call_err:
+        verify = device_verify.fac_after_write(appliance, client,
+                                               device_verify.op_of(method), path,
+                                               data, payload)
     if method in _WRITE_METHODS:
         log_action('fac_api.execute', f'{appliance.name}:{path}',
-                   {'method': method, 'body': data, 'error': call_err})
+                   {'method': method, 'body': data, 'error': call_err,
+                    'verify': (verify or {}).get('verdict')})
 
     if call_err:
         return jsonify(ok=False, error=call_err, request=preview)
-    return jsonify(ok=True, dry_run=False, request=preview, result=payload)
+    return jsonify(ok=True, dry_run=False, request=preview, result=payload, verify=verify)
 
 
 @bp.route('/endpoint/save', methods=['POST'])

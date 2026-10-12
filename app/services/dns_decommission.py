@@ -810,6 +810,7 @@ def apply(appliance, *, policy: str, hostname: str = "", include_dns: bool = Tru
 def _execute(appliance, plan_dict: dict, *, actor: str = "") -> dict:
     from . import cert_manager as _cm
     from . import clone as _clone
+    from . import device_verify
     from . import dns_providers
     from . import exception_lifecycle as _exc
     from . import policy_graph as _pg
@@ -819,14 +820,35 @@ def _execute(appliance, plan_dict: dict, *, actor: str = "") -> dict:
     policy = plan_dict["target"]["policy"]
     results: list = []
 
-    def _rec(it, ok, error=""):
-        results.append({"stage": it["stage"], "kind": it["kind"],
-                        "label": it["label"], "action": it["action"],
-                        "ok": bool(ok), "error": str(error or "")})
+    def _rec(it, ok, error="", verify=None):
+        row = {"stage": it["stage"], "kind": it["kind"],
+               "label": it["label"], "action": it["action"],
+               "ok": bool(ok), "error": str(error or "")}
+        if verify is not None:
+            row["verify"] = verify.get("verdict")
+            row["verify_label"] = verify.get("label", "")
+        results.append(row)
 
     def _op(res):
         return (bool(getattr(res, "ok", False)),
                 res.get("error", "") if hasattr(res, "get") else "")
+
+    def _adc_delete(it):
+        """One FortiADC delete, verified by ABSENCE: the box acknowledging a
+        delete of an object it keeps (still referenced) is a failed step, not
+        "ok" — the decommission would otherwise report a service retired that
+        is still there."""
+        try:
+            adc_client.delete(it["endpoint"], it["mkey"])
+        except Exception as exc:  # noqa: BLE001
+            _rec(it, False, exc)
+            return
+        v = device_verify.adc_after_write(appliance, adc_client, "delete",
+                                          logical=it["endpoint"], mkey=it["mkey"])
+        if device_verify.failed(v):
+            _rec(it, False, device_verify.label(v), verify=v)
+        else:
+            _rec(it, True, verify=v)
 
     doing = [i for i in plan_dict["items"] if i["action"] in (DELETE, UNBIND)]
     stage = lambda key: [i for i in doing if i["stage"] == key]  # noqa: E731
@@ -851,11 +873,7 @@ def _execute(appliance, plan_dict: dict, *, actor: str = "") -> dict:
         from ..clients import client_for
         adc_client = client_for(appliance)
         for it in stage("policy"):
-            try:
-                adc_client.delete(it["endpoint"], it["mkey"])
-                _rec(it, True)
-            except Exception as exc:  # noqa: BLE001
-                _rec(it, False, exc)
+            _adc_delete(it)
     else:
         from ..clients.fortiweb import FortiWebClient
         ops = FortiWebOps(appliance)
@@ -892,22 +910,15 @@ def _execute(appliance, plan_dict: dict, *, actor: str = "") -> dict:
             res = _cm.remove_device_certificate(
                 appliance, it.get("store") or "Local", it["mkey"],
                 dry_run=False, actor=actor)
-            _rec(it, res.get("ok") and res.get("removed"), res.get("error", ""))
+            _rec(it, res.get("ok") and res.get("removed"), res.get("error", ""),
+                 verify=res.get("verify") if isinstance(res.get("verify"), dict) else None)
         elif adc_client is not None:
-            try:
-                adc_client.delete(it["endpoint"], it["mkey"])
-                _rec(it, True)
-            except Exception as exc:  # noqa: BLE001
-                _rec(it, False, exc)
+            _adc_delete(it)
 
     # ---- WAF profile ------------------------------------------------------- #
     for it in stage("wpp"):
         if adc_client is not None:
-            try:
-                adc_client.delete(it["endpoint"], it["mkey"])
-                _rec(it, True)
-            except Exception as exc:  # noqa: BLE001
-                _rec(it, False, exc)
+            _adc_delete(it)
         else:
             _rec(it, *_op(FortiWebOps(appliance).delete(WPP_EP, it["mkey"],
                                                         dry_run=False)))

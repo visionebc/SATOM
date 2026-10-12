@@ -149,6 +149,8 @@
         body: JSON.stringify({ mkey: mkey })
       }).then(function (r) { return r.json(); }).then(function (j) {
         if (!j.ok) { alert('Delete failed: ' + (j.error || 'unknown')); return; }
+        // Accepted but nothing could re-read it: say so before the list redraws.
+        if (j.verify && j.verify.verdict === 'unverified') alert('Deleted. ' + j.verify.label);
         window.location.reload();
       });
     });

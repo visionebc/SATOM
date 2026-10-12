@@ -1865,7 +1865,7 @@ nothing else, can rebuild the installation from any copy.</p>
 are §27. Neither is a backup: one collects read-only diagnostics over SSH, the
 other parses a config file entirely offline.</p>
 <h2 id="12-firmware-upgrades">12. Firmware upgrades</h2>
-<p>Appliance detail → <strong>Upgrade</strong> (FortiWeb):</p>
+<p>Appliance detail → <strong>Upgrade</strong> (FortiWeb and FortiADC):</p>
 <ol>
 <li>Upload the <code>.out</code> image (or pick a previously uploaded one).</li>
 <li>The runbook takes a <strong>mandatory config backup</strong>, probes every published
@@ -1885,6 +1885,17 @@ other parses a config file entirely offline.</p>
    appliance name; the attempt (refused or started) and its outcome are written
    to the audit log.</li>
 </ol>
+<p><strong>FortiADC</strong> takes the same steps with its own transport, the one its GUI uses:
+the image goes to the box's inactive partition and the box reboots into it, so
+there is no maturity question and no partition to choose. The <strong>Boot
+Partition</strong> page of a FortiADC also shows both partitions and, when the
+inactive one holds a build, offers <strong>Boot alternate partition</strong>: a reboot into
+that build with no image sent — the quick rollback. Same gates as the
+emergency flash (acknowledgement + typed name, audited), and it is refused
+before anything is sent when the inactive partition is empty. The FortiADC
+API console and scheduled custom REST calls refuse the paths that change the
+box even on a GET (reboot, shutdown, factory reset, partition swap, restore,
+image upload): use these pages instead.</p>
 <p><strong>The Firmware library</strong> (Fleet → <strong>Firmware</strong>, admin) is the store the upgrade
 step 1 picks from, and it is worth using rather than re-uploading an image per
 device.</p>
@@ -1913,8 +1924,75 @@ device.</p>
 </ul>
 <h2 id="13-fleet-tools">13. Fleet tools</h2>
 <p>All in the Global ADOM (also linked from product Fleet groups):</p>
+<h3 id="130-architecture-drawing-the-path-reading-the-devices">13.0 Architecture: drawing the path, reading the devices</h3>
+<p><strong>Fleet → Architecture</strong> (<code>/net-architecture/</code>) is the drawn counterpart of the
+Service Diagram. The Service Diagram is derived from the FortiWeb cache; an
+Architecture drawing is what you say the network is, and SATOM checks it
+against what the devices say.</p>
 <ul>
-<li><strong>Architecture</strong> — an SVG network-design diagram of the whole fleet:
+<li><strong>Drawing.</strong> Pick an element type and <strong>Add</strong>, drag it into place, <strong>Link</strong>
+  two elements, fill the inspector on the right (label, IP or CIDR, VLAN tag,
+  the SATOM appliance it is, a probe URL), <strong>Save</strong>. Saving needs
+  <code>config_write</code>; viewing does not. A drawing with any error — a link to an
+  element that is not there, two elements with one id, a CIDR that is not a
+  network, a binding to a device of the wrong kind — is refused whole and
+  nothing is stored.</li>
+<li><strong>Networks behind a firewall.</strong> A LAN or segment element names the
+  FortiGate element it sits behind and, optionally, the interface (<code>port2</code>).
+  Without an interface name, the segment is matched to the FortiGate port
+  whose address its CIDR contains. That binding is what puts firewall
+  policies on the drawing.</li>
+<li><strong>Read devices</strong> reads, now and read-only, every bound device the current
+  ADOM can see: for a FortiGate its interfaces (address, link, RX/TX) and its
+  policies (interfaces, addresses, services, action, NAT, <strong>hit count, bytes,
+  last use</strong>), plus the implicit-deny counter. Each policy is drawn as an arrow
+  from its source segment to its destination segment (green accept, red
+  deny); click a policy in the inspector to light up its path. A policy whose
+  interface has nothing drawn behind it says <strong>not drawn: portN</strong> instead of
+  disappearing. Back-end elements with a probe URL get one HTTP GET from SATOM
+  (status, latency, one response header of your choice). Nothing read is
+  stored or cached.</li>
+<li><strong>Scope.</strong> An element bound to a device of another ADOM is drawn but not
+  read or linked; open the Global ADOM to read it. Binding an element to a
+  device you cannot see is refused on save.</li>
+<li><strong>Scout and Sentinel.</strong> A bound device element links to its Device page,
+  to <strong>Scout</strong> with that appliance already selected, and to <strong>Sentinel</strong>.</li>
+<li><strong>Layers.</strong> <strong>L2</strong> draws ports, MAC, speed, link state (green up, red down)
+  and VLAN on the firewall links, and on each host the MAC the FortiGate
+  learned for its address. <strong>L3</strong> shows addresses, routes and the policy
+  flows. <strong>L4</strong> labels each policy with its services, active sessions and
+  hits. <strong>L7</strong> draws FortiWeb server policies (from the device cache) to the
+  drawn back-ends they publish and shows the HTTP probe answers.</li>
+<li><strong>Trace a flow.</strong> Enter source, destination, protocol and port (or use
+  <strong>Trace from here / to here</strong> on a host). Each FortiGate on the way is asked
+  for its route to both ends and for its own policy lookup; the path is drawn
+  in colour (cyan allowed, red denied, amber unknown) and the inspector lists
+  each firewall with ingress → egress interface, matched policy and action.
+  A firewall that cannot be read is listed with its error, never skipped. A
+  public address with no network drawn for it lands on the Internet element.
+  TCP traces through a FortiWeb or FortiADC offer <strong>Validate with Scout</strong>.</li>
+<li><strong>Adding elements.</strong> <strong>Elements</strong> opens a palette with every appliance of
+  the fleet the ADOM can see (one click adds it, bound and addressed) and the
+  generic types.</li>
+<li><strong>Autosave, undo, team work.</strong> Changes save themselves; <strong>Undo/Redo</strong> (and
+  Ctrl+Z / Ctrl+Shift+Z) step through them. Every save carries the version it
+  was based on: if a colleague saved in between, their drawing is shown and
+  yours stays one Undo away. Open pages refresh to a colleague's save within
+  15 seconds.</li>
+<li>
+<p><strong>What it cannot see.</strong> Switches: draw the segments they carry. A FortiGate
+  is read over REST with the token SATOM already holds.</p>
+</li>
+<li>
+<p><strong>Architecture</strong> — network diagrams you draw yourself (§13.0). Place the
+  elements of a service path (Internet, LAN, segments/VLANs, FortiGate,
+  FortiWeb, FortiADC, FortiAuthenticator, FortiAnalyzer, back-end servers,
+  management hosts), link them, and SATOM lays the devices' own data on top:
+  FortiGate interfaces and policies with hit counters, each policy drawn from
+  its source segment to its destination segment, and an HTTP probe of every
+  back-end with a URL. Device elements link to Scout and Sentinel.</p>
+</li>
+<li><strong>Service Diagram</strong> — an SVG network-design diagram of the whole fleet:
   Internet → published services (VIP:port, TLS lock) → appliance chassis →
   pools → backend stacks, grouped in zones. Hover lights up a service's full
   path; search (IP/device/policy/profile/pool) focuses the view; click any
@@ -2760,12 +2838,25 @@ audits it; secrets are never echoed back.</p>
   nothing.</li>
 <li><strong>Naming</strong> patterns for FortiADC are <strong>reference only</strong>: the object editor and
   the virtual-server wizard do not fill in or check names from them.</li>
-<li><strong>No Firmware page</strong> in this ADOM: the firmware library stores images, and no
-  path flashes a FortiADC with them.</li>
-<li>Device actions at parity where the platform allows: test connection,
-  VS inspector, discovery, SSH console with ADC presets, upgrade-prep health
-  battery, SSH config backups. (Firmware flash / restore-apply have <strong>no REST
-  transport on FortiADC</strong> — the UI states this rather than pretending.)</li>
+<li><strong>Firmware</strong> in this ADOM: images from the firmware library are flashed by
+  <strong>Upgrade</strong> on the appliance page (REST upload into the inactive partition,
+  then a reboot), and <strong>Boot Partition</strong> reboots into the other partition.
+  Restore-apply is not wired yet.</li>
+<li>Device actions at parity with FortiWeb: test connection, VS inspector,
+  discovery, SSH console with ADC presets, upgrade-prep health battery, SSH
+  config backups, Upgrade and Boot Partition.</li>
+<li><strong>Rediscovery → Capture full depth: every child table (REST)</strong> reads each
+  <code>&lt;parent&gt;_child_&lt;table&gt;</code> once per parent object (<code>?pkey=</code>). Certificate-group,
+  CA-group and schedule-group members exist only there; the parent rows do not
+  carry them. The result sits beside the sweep snapshot.</li>
+<li><strong>VS inspector</strong> draws every reference of a virtual server to the end:
+  content routing → pool → members → real servers and health checks; client
+  SSL profile → certificate group → certificates → intermediate CA; auth
+  policy → user group → RADIUS / LDAP / local user; WAF sub-profiles; method,
+  persistence, profiles. <strong>Live (REST)</strong> reads the box; <strong>From last
+  rediscovery</strong> draws the same tree from the snapshot and its depth capture
+  without contacting the device. A reference to an object that does not exist
+  is shown as <em>not found on the device</em>, never dropped.</li>
 </ul>
 <h3 id="172-fortiauthenticator">17.2 FortiAuthenticator</h3>
 <p>The <code>/fac/</code> ADOM draws the unit's <strong>own menu</strong> in a <strong>FortiAuthenticator</strong>
@@ -2830,7 +2921,7 @@ no Operations group, and that is not an oversight:</p>
 </tr>
 <tr>
 <td><strong>Firmware upgrade (§12)</strong></td>
-<td><strong>No.</strong> Upgrade and Boot Partition are FortiWeb-only even on the appliance detail page, and the SSH console, discovery and upgrade-prep actions there are gated to FortiWeb and FortiADC. The firmware library is closed to this workspace too: there is no upgrade path that would consume an image stored there.</td>
+<td><strong>No.</strong> Upgrade and Boot Partition serve FortiWeb and FortiADC only, even on the appliance detail page, and the SSH console, discovery and upgrade-prep actions there are gated to FortiWeb and FortiADC. The firmware library is closed to this workspace too: there is no upgrade path that would consume an image stored there.</td>
 </tr>
 <tr>
 <td><strong>Monitoring (§14)</strong></td>
@@ -3772,6 +3863,84 @@ day something goes wrong:</p>
   promotion is an operator decision the stack deliberately refuses to undo for
   you.</li>
 </ul>
+<h3 id="241-the-ha-link--when-the-standby-stops-taking-code-from-the-primary">24.1 The HA link — when the standby stops taking code from the primary</h3>
+<p>The standby gets new code by running <code>git fetch</code> against the <strong>primary's</strong>
+repository over SSH, as the service account (its reconciler does it every
+minute). That one channel can fail while everything else stays green: root
+SSH, the <code>data/</code> sync, replication and both web UIs keep working.</p>
+<p><strong>What it looked like (2026-10-11).</strong> <code>systemd-logind</code> on the primary lost a
+job (<code>Failed to start session scope session-NNNN.scope: Connection timed out</code>).
+From then on every SSH login of the service account stayed in logind state
+<code>opening</code>: sshd waits on <code>pam_systemd</code> and never runs the command, so every
+fetch hung for 120 s and the standby silently stopped converging. The fix was
+<code>systemctl restart systemd-logind</code> on the primary; the standby caught up within
+one reconciler cycle.</p>
+<p><strong>Where you see it now.</strong></p>
+<ul>
+<li><em>Software Update &amp; HA</em> on the <strong>primary</strong> has an <strong>HA link</strong> card. It shows
+  the standby's own account of itself — <em>in sync</em>, <em>N commits behind</em>, or
+  <em>cannot fetch from this node since <time>: <error></em> — plus this node's
+  <code>systemd-logind</code> (logins of the service account stuck in <code>opening</code> for more
+  than 60 s, or a <code>loginctl</code> that does not answer) and whether <code>sshd</code> answers.
+  The standby's state comes from its <code>/healthz/reconciler</code> probe (the same
+  unauthenticated peer-probe pattern as <code>/healthz/backups</code>; it publishes the
+  decision, the commit counts, short shas, the time and a one-line redacted
+  error — nothing else). The lag is computed on the primary against its own
+  branch head, because a standby that cannot fetch measures itself against a
+  stale <code>origin</code> and would read "0 behind".</li>
+<li>Each node's reconciler status is <strong>node-local</strong> (<code>state/reconciler-status.json</code>,
+  outside <code>data/</code>). It used to live in <code>data/</code>, which the data sync overwrites
+  with the primary's copy every five minutes, so the standby's file always
+  named the primary. A fetch timeout is now recorded as a <code>fetch-error</code>
+  decision with the error and how long the streak has lasted, instead of an
+  exception in the journal.</li>
+<li>The <em>Deploy automation</em> card on <strong>each</strong> node's Software Update &amp; HA page
+  shows <strong>this node's own</strong> last reconciler tick, read from that file — on the
+  standby that is the standby's own decision, including <em>cannot fetch since
+  <time> (N failed attempts in a row): <error></em>. The record the primary
+  publishes into the replicated settings is shown below it, labelled
+  <em>Primary's reconciler</em>, only on a node it does not describe.</li>
+<li>A code update (and its rollback) now restarts <code>satom-reconciler</code> along with
+  the scheduler (<code>try-restart</code>: a stopped reconciler stays stopped). Before,
+  the loop kept running the release it was started with — on 2026-10-11 the
+  standby's had been up since the morning on code older than its tree. Until
+  a node's reconciler has been restarted once on this release, it still
+  writes its record to the old <code>data/</code> path; the page reads that as a
+  fallback, but only when the record names this node.</li>
+<li>The alert engine (Settings → Alerts, git family) raises <strong>HA link broken</strong>
+  when the standby has been failing to fetch for more than 10 minutes or this
+  node's login path is wedged — once per incident: it re-arms only after the
+  link has been seen healthy again.</li>
+<li><code>satom ha check</code> on the primary prints the same check in the console
+  (<code>satom show runbook ha-link</code> is the offline procedure).</li>
+</ul>
+<p><strong>Repairing it.</strong> <em>Repair HA link…</em> on the card (admin, <code>user_manage</code>), or
+<code>sudo satom ha repair</code> on the primary. Both first show a <strong>preview</strong> — the
+current check, what the repair does and what it does not — and change nothing
+until you confirm (the button) or add <code>--yes</code> (the CLI). Confirmed, it:</p>
+<ul>
+<li>restarts <code>systemd-logind</code> on the primary — not from the web worker, but by
+  enqueuing an allowlisted request for the privileged runner, the same queue as
+  every Settings → Services action (logind is restart-only there and is not
+  drawn on the Services card);</li>
+<li>follows the runner's steps, then re-runs the check and shows before and after;</li>
+<li>is written to the audit log (<code>ha.link.repair</code>, or <code>ha.link.repair.refused</code>).</li>
+</ul>
+<p>It does <strong>not</strong> touch the standby or anything over SSH, restart <code>sshd</code>, the web
+app, PostgreSQL or the data sync, or end open sessions (logind re-attaches
+them). It cannot fix a dead <code>sshd</code>, an unreachable standby or a refused key —
+the check names those separately (<code>sshd-down</code>, <code>standby-unreachable</code>) so the
+button is not pressed for the wrong fault. It <strong>refuses on a standby or a
+standalone node</strong> and says why: the login service on the fetch path is the
+primary's. The runner re-checks the role against its own PostgreSQL as well.</p>
+<p><strong>Manual fallback</strong>, if the app itself cannot run the check:</p>
+<pre><code class="language-bash">loginctl list-sessions
+loginctl show-session &lt;id&gt; -p Name -p State -p Timestamp   # 'opening' for minutes = wedged
+journalctl -u systemd-logind --since -2h | grep -i 'session scope'
+sudo systemctl restart systemd-logind
+# on the standby, read-only: is it fetching again?
+journalctl -u satom-reconciler -n 20
+</code></pre>
 <h2 id="25-appids">25. AppIDs</h2>
 <p>Global ADOM → Administrator → <strong>AppIDs</strong> (admin, <code>user_manage</code>).</p>
 <p>An <strong>AppID</strong> is two things at once, which is why it has its own catalog rather
@@ -7446,7 +7615,7 @@ the page instead of on a manual.</p>
 discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
-   the console is either <strong>on the map</strong> (117 today) or <strong>excluded with a written
+   the console is either <strong>on the map</strong> (118 today) or <strong>excluded with a written
    reason</strong> (144 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>

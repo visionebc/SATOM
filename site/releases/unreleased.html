@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changed · 194 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changed · 257 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changed · 194 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changed · 257 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changed · 194 entries</span>
-        <ul class="rel-leads"><li>Writes are dry-run by default</li><li>Create New, Edit and Delete row on a FortiADC child table</li><li>Clone, Clone to, Migrate to, Enable, Disable and Delete run on the Server Policy list itself</li><li class="rel-more">… and 191 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Changed · 257 entries</span>
+        <ul class="rel-leads"><li>FortiGate CPU and memory are measured</li><li>The FortiGate ADOM&#x27;s Analysis page says there is no analysis for FortiGate</li><li>Offline update packages and every rollback recompile the language catalogues</li><li class="rel-more">… and 254 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.0.0.html" data-rel-version="3.0.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.0.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -360,6 +360,390 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="fixed--the-nightly-satom-audit-review-is-green-again">Fixed — the nightly satom-audit review is green again</h3>
+<p>The nightly full-suite review (satom-audit) had been red for days: 86 failed
+tests, most of them guards that never followed a refactor, plus a handful of
+real defects they had been pointing at.</p>
+<ul>
+<li><strong>FortiGate CPU and memory are measured.</strong> FortiGate became an ADOM with no
+  collector and no cpu/memory probe, so a FortiGate was onboarded and never
+  measured while the fleet board offered CPU/memory panels that could only be
+  empty. The <em>Box resources</em> collector and the CPU/memory monitors now read
+  FortiOS <code>GET /api/v2/monitor/system/resource/usage</code>; a missing reading is an
+  error, never 0 %. Not yet measured against a real FortiGate.</li>
+<li><strong>The FortiGate ADOM's Analysis page says there is no analysis for
+  FortiGate</strong>, and <code>/analysis/data</code> answers 404 for a refused or unmapped ADOM
+  instead of falling through to the FortiWeb WAF analysis.</li>
+<li><strong>Offline update packages and every rollback recompile the language
+  catalogues.</strong> Before, an air-gapped node updated by package kept the
+  translations it was installed with, and a rollback kept the catalogue
+  compiled from the newer release.</li>
+<li><strong>Werkzeug 3.1.8 → 3.1.9</strong> (CVE-2026-102598 / GHSA-g6x2-hccm-hh4m; it only
+  affects <code>safe_join</code> on Windows, so SATOM on Linux was not exploitable).</li>
+<li>Booting a FortiADC into its alternate partition no longer wraps a second job
+  around the job it already starts.</li>
+<li>The web-cache feature toggle no longer names the removed <code>cache_policy</code>
+  endpoint; the Build compatibility page no longer overrides the layout's
+  <code>products</code> global.</li>
+<li>The FP triage payload field uses the small control of the rest of the
+  modal, and the inspector's Live / From last rediscovery buttons use the
+  product's button style.</li>
+<li>The node-TLS private-key placeholder is built in the template, so the
+  release secret scanner no longer aborts on it (what the operator sees is
+  unchanged).</li>
+<li>The API manual's endpoint table lists
+  <code>POST /change-requests/&lt;id&gt;/external-approval</code>.</li>
+<li>Test guards now check the promise where it lives: the sidebar as it renders
+  in every ADOM (not include counts in <code>base.html</code>), catalogues compiled from
+  the committed <code>.po</code> files (not a node's <code>.mo</code>), field schemas from the
+  shipped API pack plus a fixture tree (not a node's <code>data/field_schemas</code>),
+  and host-independent fixtures for self-update and the upgrade feed. The
+  release-notes picker guards were retired with the Discover panel they
+  tested.</li>
+</ul>
+<h3 id="fixed--opening-a-fortiweb-signature-profile-in-the-gui-no-longer-counts-as-config-drift">Fixed — opening a FortiWeb signature profile in the GUI no longer counts as config drift</h3>
+<p>The source-of-truth store hashed <code>sub_table_type</code>, <code>sub_table_id</code> and
+<code>sub_table_action</code>: the echo of the last sub-table edit that FortiWeb carries
+on the parent row and never prints in <code>show full-configuration</code>. Opening a
+profile in the GUI flips <code>Table</code> to <code>Main</code>, so an unchanged device minted a
+version and raised a drift alert. Measured on the live store: 7 of 63
+consecutive FortiWeb version pairs differed in nothing else.</p>
+<ul>
+<li><code>sot_store.normalise</code> drops those keys at any depth (<code>EDIT_OP_KEYS</code>, now
+  owned by the store and shared with the factory catalog).</li>
+<li><strong>A new identity rule is no longer a change.</strong> <code>record()</code> re-hashes the
+  newest stored body under the current rules; when it matches, the row moves
+  onto the new identity instead of minting a version. Without this the deploy
+  itself would have raised one drift alert for each of the 19 devices whose
+  newest version predates a rule. If the stored body cannot be read, a version
+  is minted as before.</li>
+<li>The module comment claimed the stored blob keeps every field; it never did
+  (the blob is the canonical body the hash is taken over). Corrected.</li>
+<li><code>test_the_menu_entry_is_in_every_admin_block</code> checked <code>base.html</code> for
+  includes that moved into the shared <code>partials/nav_admin.html</code>; it now checks
+  the shared block.</li>
+</ul>
+<h3 id="fixed--leftovers-of-the-write-verification-round">Fixed — leftovers of the write-verification round</h3>
+<ul>
+<li><strong>The /api proxy forwards the query string.</strong> Both proxies (FortiWeb and
+  FortiADC) sent only the URL path, so <code>DELETE …/vserver?mkey=x</code> reached the
+  device as a bare collection DELETE, a <code>?pkey=</code> child-table read lost its
+  parent, and the write verdict re-read nothing. The query now reaches the
+  device, the verifier and the audit row.</li>
+<li><strong>Deleting a policy deletes the VIP it owns.</strong> The cascade delete kept every
+  system VIP, so deleting a same-box clone left the VIP the clone had created.
+  A VIP is now ref-counted like its virtual server: deleted (after the virtual
+  server that lists it) when no other policy reaches it, kept when one does.
+  Dependencies are now deleted shallowest first (a referrer before what it
+  references): the dependency walk is not deepest-first as the code assumed,
+  so a VIP was tried before its virtual server. An object refused "in use" is
+  retried while a pass still deletes something.</li>
+<li><strong>"The entry is used." is recognised as a shared object.</strong> FortiWeb 7.6.8
+  refuses deleting an object still referenced with HTTP 500 errcode -23
+  "The entry is used." (measured on a lab FortiWeb). The cascade's safety net
+  did not know those words and reported such an object as a failed delete; it
+  is now kept as shared.</li>
+<li><strong>FortiAuthenticator CLI-only settings: one verdict, and it decides.</strong> The
+  badge of a CLI-only save came from a second, cruder re-read that could
+  contradict the CLI writer's own read-back (the one that sets the outcome).
+  The verdict is now that read-back: a field the device printed differently is
+  "Not applied: the device kept X (sent Y)", fails the save and is audited
+  <code>config.update.not_applied</code>, like every other verified write.</li>
+<li>Test guard: in the FortiADC ADOM the Automations entry is drawn greyed with
+  its reason (ADOM menu parity) and must never be a link; the old guard still
+  required it to be absent and was red on <code>main</code>.</li>
+</ul>
+<h3 id="changed--every-write-satom-makes-to-a-fortiweb-fortigate-fortiauthenticator-or-fortiadc-is-checked-on-the-device">Changed — every write SATOM makes to a FortiWeb, FortiGate, FortiAuthenticator or FortiADC is checked on the device</h3>
+<p>The user asked how SATOM knows an apply worked if it never looks at the result,
+and then asked for the rule to hold for every product and every write path
+(FortiAnalyzer comes later). Until now "ok" meant only that the device accepted
+the request.</p>
+<ul>
+<li><strong>FortiWeb — the verdict decides.</strong> An accepted write whose re-read does not
+  show it now FAILS, with the value the device kept, in clone, migrate (the
+  source must read back disabled), bulk, scheduled actions, the object editor
+  and exception injection; "unverified" is reported, never failed. Row counters
+  (<code>sz_*</code>) and the source <code>id</code> a copied sub-table row carries are not compared
+  (measured false positives on a 99-write cross-box clone).</li>
+<li><strong>FortiWeb — same-box clone.</strong> The copy gets its own virtual server and VIP
+  (<code>&lt;name&gt;-&lt;new policy&gt;</code>): FortiWeb refuses the same service twice on one VIP
+  (-7212), a second VIP on one address (-7970) and an interface-address
+  listener (-7637), so such a copy is refused before any write; if the policy
+  itself is refused (e.g. -4, policy limit) its vserver and VIP are deleted
+  again.</li>
+<li><strong>FortiWeb — every writer keeps the cache in step.</strong> CLI writes, file-backed
+  artifact uploads (object and content re-read) and Sentinel's direct writes
+  now update SATOM's copy; the object editor no longer writes the values it
+  sent over the device's copy, and the duplicate re-reads in the row and
+  policy-create routes are gone. Deleting a policy the device does not have
+  answers at once (one read, nothing written). Any job that wrote to a device
+  redraws that device's pages when it ends. Scheduled policy/backend/
+  certificate actions, which sent a body FortiWeb rejected (HTTP 500), now work.</li>
+<li><strong>FortiGate, FortiAuthenticator and FortiADC configuration pages.</strong> Every
+  create, update, delete and table-row edit is read back and compared; a value
+  the device did not keep fails the save ("Not applied: the device kept
+  comment = 'old' (sent 'new')") and is audited as <code>config.&lt;action&gt;.not_applied</code>.
+  Saves show a badge: <em>Verified on the device</em>, <em>Not applied</em> or <em>Not verified</em>
+  (with the reason). The FortiAuthenticator and FortiADC copies follow the
+  re-read, including FortiADC child-table rows; FortiGate has no SATOM copy and
+  is always read live. Measured on {device} 8.0.3: the device accepts a PATCH of a
+  local user's <code>custom3</code> and does not keep it.</li>
+<li><strong>FortiADC writers.</strong> Certificate upload/delete, the admin-certificate swap,
+  Lua Studio deploys, the decommission's deletes, the ADC object editor and its
+  virtual-server wizard, and <code>POST /api/v1/adc/rules</code> (new error
+  <code>502 not_applied</code>) re-read what they touched, keep SATOM's FortiADC copy
+  current and fail on a mismatch. Certificates and Lua scripts are checked by
+  name, never by content. Lua Studio can now actually deploy to FortiADC (it
+  targeted an endpoint no build serves); a FortiWeb target says nothing was
+  pushed instead of reporting a deploy.</li>
+<li><strong>API consoles.</strong> The FortiADC, FortiGate and FortiAuthenticator consoles, the
+  API Explorer and the <code>/api</code> proxy show the same verdict next to the device's
+  unchanged raw reply; the proxy sends it as <code>X-SATOM-Verify</code> headers. Consoles
+  report, they do not fail. Secrets and certificate material are never compared
+  or shown, and the FortiADC reboot/shutdown/partition-swap paths are never read.</li>
+</ul>
+<h3 id="added--the-primary-can-see-alert-on-and-repair-a-standby-that-cannot-fetch-code-from-it">Added — the primary can see, alert on and repair a standby that cannot fetch code from it</h3>
+<p>On 2026-10-11 systemd-logind on the primary lost a job; every SSH login of the
+service account then stayed in logind state <code>opening</code>, the standby's <code>git fetch</code>
+timed out on every reconciler tick, and the standby stopped converging without
+anything turning red. The user asked for a way to repair it from the primary,
+from the GUI or the CLI, documented.</p>
+<ul>
+<li><strong>HA link card</strong> on Software Update &amp; HA (primary): the standby's own state —
+  <em>in sync</em>, <em>N commits behind</em> (measured against the primary's branch head), or
+  <em>cannot fetch from this node since <time>: <error></em> — plus this node's
+  systemd-logind (service-account logins stuck in <code>opening</code> for over 60 s, or a
+  <code>loginctl</code> that does not answer) and sshd.</li>
+<li><strong><code>/healthz/reconciler</code></strong>, a minimal unauthenticated peer probe in the
+  <code>/healthz/backups</code> pattern: decision, commit counts, short shas, time, and a
+  one-line error with URL credentials redacted.</li>
+<li><strong>Repair HA link</strong> (button, <code>user_manage</code>, CSRF-protected, audited) and
+  <strong><code>satom ha check</code> / <code>satom ha repair [--yes]</code></strong>: preview first, then restart
+  systemd-logind on the primary through the privileged runner and show the
+  check before and after. Refused, with the reason, on a standby or a
+  standalone node; the runner re-checks the role against its own PostgreSQL.
+  <code>systemd-logind</code> joins the service allowlist as restart-only and is not drawn
+  on the Services card. Nothing is restarted on the standby.</li>
+<li><strong>Alert</strong> <em>HA link broken</em> (git family) when the standby has been failing to
+  fetch for more than 10 minutes or the login path is wedged — once per
+  incident; it re-arms only after the link is seen healthy.</li>
+<li>Runbook <code>satom show runbook ha-link</code> and user guide §24.1.</li>
+</ul>
+<h3 id="fixed--each-nodes-reconciler-status-is-its-own-and-the-reconciler-runs-the-code-on-disk">Fixed — each node's reconciler status is its own, and the reconciler runs the code on disk</h3>
+<ul>
+<li>The status file moved from <code>data/reconciler-status.json</code> to the node-local
+  <code>state/reconciler-status.json</code>. In <code>data/</code> the data sync replaced the
+  standby's copy with the primary's every five minutes, so the standby's
+  status always named the primary. The Deploy automation card on each node now
+  shows that node's own last tick; the primary-published record is shown
+  separately, labelled.</li>
+<li>A <code>git fetch</code> that times out is now a <code>fetch-error</code> decision with its error
+  and how long the streak has lasted (<code>fetch_error_since</code>, <code>fetch_failures</code>).
+  Before, the timeout escaped as an exception: the tick died with a traceback
+  in the journal and recorded nothing.</li>
+<li>Code updates and their rollbacks now <code>try-restart</code> <code>satom-reconciler</code> with the
+  scheduler. Before, the loop kept running the release it was started with.</li>
+</ul>
+<h3 id="security--the-api-proxy-no-longer-reaches-fortiadcs-side-effect-gets">Security — the <code>/api</code> proxy no longer reaches FortiADC's side-effect GETs</h3>
+<p>On FortiADC a plain GET reboots, shuts down, factory-resets or swaps the boot
+partition. The ADC console refused those paths, but <code>/api/adc/&lt;id&gt;/proxy/...</code>
+sent them to the device for anyone with <code>registry.view</code> in the Global ADOM. It
+now refuses them for every method, before any connection, and audits the
+refusal (<code>api.proxy.adc_refused</code>). The API Explorer, which is pinned to the
+FortiWeb ADOM and cannot see a FortiADC today, carries the same refusal
+(<code>api_explorer.refused</code>) in case that pin moves.</p>
+<h3 id="added--fortiadc-rediscovery-reads-every-child-table-over-rest-and-the-virtual-server-tree-follows-every-reference">Added — FortiADC: rediscovery reads every child table over REST, and the virtual-server tree follows every reference</h3>
+<p>The user pointed out that FortiADC rediscovery only offered the CLI capture
+beside the REST sweep, and asked for the same REST depth and the same
+virtual-server tree that FortiWeb has.</p>
+<ul>
+<li><strong>Rediscovery → Capture full depth: every child table (REST)</strong> is now
+  offered for FortiADC. It reads each of the 27 <code>&lt;parent&gt;_child_&lt;table&gt;</code>
+  tables once per parent object of the sweep. On {device} the members of
+  certificate groups, CA groups and intermediate-CA groups exist only there,
+  so before this the certificate chain behind a virtual server could not be
+  read at all. A table the build does not serve is asked once and recorded
+  as absent; Stop discards the partial capture and keeps the previous one.</li>
+<li><strong>VS Inspector</strong>: each virtual server is drawn to the end of every
+  reference. That covers content routing (with its match conditions) →
+  pool → members → real server and health checks. It also covers client SSL
+  profile → certificate group → certificates → intermediate CA, auth
+  policy → user group → RADIUS / LDAP / local user, WAF sub-profiles,
+  method, persistence, profiles, SNAT and schedule pools. A virtual server
+  with content routing used to show only <code>Content Routing: enable</code>.</li>
+<li><strong>From last rediscovery</strong> draws the same tree from the snapshot and its
+  depth capture without contacting the device.</li>
+<li>A reference to an object the device does not have is shown as <em>not found
+  on the device</em> instead of being left out.</li>
+</ul>
+<h3 id="fixed--the-fortiadc-vs-inspector-never-showed-the-client-ssl-profile">Fixed — the FortiADC VS Inspector never showed the client SSL profile</h3>
+<p>It looked up <code>client-ssl-profile</code>; the device spells it <code>client_ssl_profile</code>.</p>
+<h3 id="fixed--a-change-made-from-satom-shows-at-once-without-a-rediscovery">Fixed — a change made from SATOM shows at once, without a rediscovery</h3>
+<p>The user reported that enabling or disabling a server policy from the
+FortiWeb Server Policy list did not update the screen until a later
+rediscovery picked the change up from the device. They asked for a
+rediscovery of only the element that changed, as a rule for every action.</p>
+<ul>
+<li>Every configuration write SATOM makes to a FortiWeb now re-reads the
+  object it touched (or, for a sub-table row, that sub-table), right after
+  the device accepts it, and updates SATOM's copy in every cache layer. A
+  deleted object is removed. The cache takes the value the device returns,
+  not the value that was sent.</li>
+<li>The rule sits at the single write entry point, so it covers enable,
+  disable, delete, clone, bulk changes, scheduled actions, exception
+  injection and the object editor alike, not only the three screens that
+  refreshed their own writes before.</li>
+<li><strong>Every accepted write is now verified on the device.</strong> The user asked
+  how SATOM can know a change worked without checking it. Until now "ok"
+  meant only that the FortiWeb accepted the request, and some builds accept a
+  write and silently drop a field. The same re-read now compares every field
+  that was sent with what the device holds: <em>verified</em>, <em>not applied</em> (the
+  device accepted it and does not hold it — recorded in the audit log as
+  <code>config.&lt;action&gt;.not_applied</code>) or <em>not verified</em> (the re-read failed, or
+  only secrets or sub-tables were sent, which are not compared). A delete is
+  verified when the device no longer has the object; a new sub-table row when
+  some row carries what was sent.</li>
+<li>Enable, disable and delete of a server policy now <strong>fail</strong> when the device
+  did not take the change, with the value the device kept in the error. A
+  delete whose policy is still there stops before touching its dependencies.
+  The job message says "verified on the device", or how many could not be
+  verified.</li>
+<li>Cost: one read per accepted write (the check), whether or not SATOM holds
+  a copy of the object. A refused write reads nothing. A failed re-read never
+  undoes the write: the row stays as it was until the next ⟳.</li>
+<li>Server-policy actions (enable/disable, delete, clone, migrate) redraw the
+  page you are on when the job ends, including after a partial failure,
+  because the policies that succeeded did change.</li>
+</ul>
+<h3 id="changed--every-device-adom-draws-the-fortiweb-menu">Changed — every device ADOM draws the FortiWeb menu</h3>
+<p>The user asked that the FortiADC, FortiAnalyzer, FortiAuthenticator and
+FortiGate ADOMs show every menu and sub-menu entry the FortiWeb ADOM has, each
+one acting only on that ADOM's own kind of device, with permissions still
+applied, the Global ADOM left as it is and the device's own menu untouched.</p>
+<ul>
+<li>Every device ADOM now has the same Fleet › WAF sub-menu, <strong>Operations</strong>
+  group, Automation, Administrator and <strong>Plugins</strong> entries as FortiWeb, in the
+  same places.</li>
+<li>An entry whose page works for that product is a normal link. Newly reachable:
+  FortiADC <strong>Device Backups</strong>, <strong>Migration Report</strong>, <strong>Firmware</strong> (the image
+  vault, needed now that a FortiADC can be upgraded from it), <strong>Network
+  Segments</strong> and <strong>Signatures</strong> (the FortiADC signature page); FortiGate
+  <strong>Migration Report</strong> and <strong>Plugins</strong>; FortiAnalyzer and FortiAuthenticator
+  <strong>Plugin Studio</strong>.</li>
+<li>An entry whose page only understands FortiWeb objects is shown greyed out,
+  without a link, and says why on hover (for example "Not available for
+  FortiGate: SATOM has no configuration-backup transport for this product
+  yet"). It never links to FortiWeb configuration from another ADOM.</li>
+<li>FortiADC <strong>Capacity Limits</strong> is now greyed out: its catalog counts FortiWeb
+  object types, so the page could only offer FortiWeb rows to a FortiADC.</li>
+<li>A profile without the permission an entry needs sees neither the link nor
+  the greyed entry.</li>
+<li>Whether an entry works for a product comes from what SATOM already records
+  for that feature (upgrade flow products, automation catalog, firmware and
+  naming capabilities, Lua targets, backup transports), so the menu follows
+  when a feature gains a product.</li>
+</ul>
+<h3 id="added--star-any-left-menu-entry-into-the-bookmarks-panel">Added — star any left-menu entry into the Bookmarks panel</h3>
+<p>The user asked to be able to mark menu and sub-menu entries as favourites with
+a star, have them appear in the bookmarks bar, and remove them the same way.
+Every page entry in the left menu now shows a star on hover; clicking it adds
+the page to <strong>Favourites</strong> in the Bookmarks panel (as a personal link labelled
+"Group › Entry"), and clicking the filled star removes it. Stars are per user
+and per ADOM, like every bookmark.</p>
+<ul>
+<li>Nothing new is stored: a starred entry is a personal link bookmark with a
+  star, so it goes through the same URL check as any link and only pages of
+  this console are accepted.</li>
+<li>Unstarring deletes that link while it still sits at the root of the panel;
+  a link you filed into a folder, or a team link, only loses its star.</li>
+<li>The menu reads its stars from the panel, so a star removed in the panel goes
+  dark in the menu as well.</li>
+</ul>
+<h3 id="added--fortiadc-upgrade-and-boot-partition-on-the-appliance-page">Added — FortiADC: Upgrade and Boot Partition on the appliance page</h3>
+<p>The user asked that a FortiADC appliance offer the same actions as a FortiWeb.
+<strong>Upgrade</strong> and <strong>Boot Partition</strong> now serve FortiADC through the same runbook
+(change control, Scout, pre-flight backup and health, reboot monitoring,
+before/after report, final rediscovery), over the transport the FortiADC GUI
+itself uses: the image goes to the inactive partition and the box reboots into
+it. The Boot Partition page of a FortiADC shows both partitions and offers
+<strong>Boot alternate partition</strong> — a reboot into the build already installed on the
+other partition, no image sent — with the emergency-path gates (acknowledgement,
+typed name, audit) and a refusal before anything is sent when that partition is
+empty. The pre-flight now reads whether the account may change the system
+instead of reporting "unknown", and the post-flight runs the FortiADC health
+battery and virtual-server probes instead of the FortiWeb ones.</p>
+<h3 id="security--fortiadc-gets-that-reboot-or-reset-the-appliance">Security — FortiADC GETs that reboot or reset the appliance</h3>
+<p>On FortiADC, reboot, shutdown, <strong>factory reset</strong> and the partition swap are plain
+GET requests. The FortiADC API console sent any GET for a read-only user, with
+no dry run and no audit entry. Those paths, plus restore and image upload, are
+now refused for every method and permission (and audited) in the API console,
+in scheduled custom REST calls, and in the discovery sweep's endpoint plan.</p>
+<h3 id="added--fleet--architecture-layers-flow-trace-autosave-fleet-palette">Added — Fleet → Architecture: layers, flow trace, autosave, fleet palette</h3>
+<ul>
+<li><strong>Trace a flow:</strong> source IP, destination IP, TCP/UDP/ICMP and port. Every
+  FortiGate on the drawn path answers for itself — its routing lookup gives
+  the ingress and egress interface, its own <code>policy-lookup</code> gives the
+  verdict (SATOM never evaluates a rule base) — and the path is drawn in
+  colour from the source host to the destination host: cyan allowed, red
+  denied, amber unknown. Walks several FortiGates in order and stops on the
+  first deny. A public address with no drawn network is the Internet
+  element. TCP traces on a path through a FortiWeb/FortiADC offer <strong>Validate
+  with Scout</strong> (appliance, hostname and port pre-filled; Scout now takes
+  <code>hostname</code>, <code>port</code> and <code>scheme</code> from the query string too).</li>
+<li><strong>Layers L2 / L3 / L4 / L7:</strong> L2 ports, MAC, speed, link state and VLAN on
+  the firewall links, and the MAC the FortiGate learned (ARP) on each host;
+  L3 addresses, routes and policy flows; L4 services, active sessions and hit
+  counters per policy; L7 FortiWeb server policies (device cache) drawn to
+  the back-ends they publish, plus HTTP probe answers.</li>
+<li><strong>Same canvas as the Service Diagram:</strong> dark network-design view, animated
+  flows, hover lights up everything connected to an element; zoom buttons.</li>
+<li><strong>Elements from the fleet:</strong> the Elements palette lists every appliance
+  the ADOM sees, grouped by product; one click adds it bound to its
+  appliance, with its address.</li>
+<li><strong>Autosave, undo and redo:</strong> every change saves itself; Undo/Redo buttons
+  and Ctrl+Z / Ctrl+Shift+Z. Saving is versioned: a save based on a version
+  somebody else replaced answers 409 and the page shows theirs, keeping yours
+  one Undo away. Open pages pick up a colleague's save within 15 s. <strong>Read
+  devices</strong> can repeat every 30 s.</li>
+</ul>
+<h3 id="added--fleet--architecture-drawn-network-diagrams-with-a-live-overlay">Added — Fleet → Architecture: drawn network diagrams with a live overlay</h3>
+<ul>
+<li>New page <strong>Fleet → Architecture</strong> (<code>/net-architecture/</code>), in every ADOM.
+  Operators draw the path of a service (Internet, LAN, segments/VLANs,
+  FortiGate, FortiWeb, FortiADC, FortiAuthenticator, FortiAnalyzer,
+  back-end servers, management hosts), link the elements and bind each device
+  element to its SATOM appliance. Drawings are stored (<code>arch_diagrams</code>);
+  saving needs <code>config_write</code> and is audited (<code>netarch.create/save/delete</code>).</li>
+<li><strong>Read devices</strong> reads the bound devices now, read-only and in parallel:
+  FortiGate interfaces and firewall policies with hit count, bytes and last
+  use (and the implicit-deny counter). Each policy is drawn from its source
+  segment to its destination segment through the segments bound to the
+  firewall's interfaces (by interface name, or by the CIDR that holds the
+  port's address); an interface with nothing drawn behind it is reported.
+  Back-end elements with a probe URL get one HTTP GET (status, latency, one
+  header). Nothing read is cached.</li>
+<li>A drawing with any error is refused whole. A binding to a device the ADOM
+  cannot see, or of the wrong kind, is refused on save; a stored one is drawn
+  but never read or linked from that ADOM.</li>
+<li>Device elements link to Scout (appliance pre-selected) and Sentinel. Scout
+  now takes <code>appliance_id</code> and <code>policy</code> from the query string as well as the
+  form.</li>
+</ul>
+<h3 id="fixed--the-upload-breadcrumbs-never-reached-the-log-405-on-every-page">Fixed — the upload breadcrumbs never reached the log (405 on every page)</h3>
+<ul>
+<li><code>jobs.js</code> sent its upload breadcrumbs with <code>navigator.sendBeacon</code>, which is
+  always a POST, to <code>/_updiag</code>, which is GET-only on purpose (it never trips
+  CSRF). Every breadcrumb answered 405, the browser console showed an error
+  on every navigation, and the transfer diagnostics were blind. They now go
+  as a keepalive GET, and the navigation breadcrumb is sent only while an
+  upload is in flight (the only time it answers anything).</li>
+</ul>
+<h3 id="fixed--architecture-still-named-the-service-diagram-in-two-places">Fixed — "Architecture" still named the Service Diagram in two places</h3>
+<ul>
+<li>The Concept Map and the user guide's Fleet tools list still called the
+  Service Diagram "Architecture" after the rename; both now say Service
+  Diagram, and "Architecture" is the new drawing page.</li>
+</ul>
 <h3 id="added--fortigate-api-endpoint-registry-and-live-console">Added — FortiGate API: endpoint registry and live console</h3>
 <ul>
 <li>The FortiGate ADOM has an <strong>API</strong> group like the other four ADOMs, and its

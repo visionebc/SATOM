@@ -212,6 +212,13 @@ The API never issues an HTML login redirect — you always get JSON.</p>
 <td>Poll the outcome of a run</td>
 </tr>
 <tr>
+<td><code>POST</code></td>
+<td><code>/change-requests/&lt;id&gt;/external-approval</code></td>
+<td>admin</td>
+<td>—</td>
+<td>Record the external change authority's verdict on a change request in <strong>External</strong> approval mode (below)</td>
+</tr>
+<tr>
 <td><code>GET</code></td>
 <td><code>/waf/exception-types</code></td>
 <td>read</td>
@@ -595,6 +602,12 @@ straight to the appliance because there is no desired-state store for it. So:</p
   built locally — no session is opened.</li>
 <li>Creating a name that already exists is refused with <code>409 already_exists</code>
   rather than risking an overwrite of an object your token does not own.</li>
+<li>An applied create is <strong>read back</strong> from the appliance. The <code>201</code> answer
+  carries <code>verify</code>: <code>verified</code> (the appliance holds the object with the fields
+  you sent), or <code>unverified</code> with the reason (only secrets were sent, the
+  re-read failed). An appliance that accepted the POST and does not hold the
+  object answers <code>502 not_applied</code>, with <code>verify.mismatch</code> naming each field
+  the appliance holds differently.</li>
 <li><strong>There is no DELETE.</strong> Without a store there is no recorded author, so
   "delete only what you created" cannot be proven, and an endpoint that cannot
   tell your object from an operator's is a way to remove someone else's
@@ -686,6 +699,11 @@ straight to the appliance because there is no desired-state store for it. So:</p
 <td>502</td>
 <td><code>device_error</code></td>
 <td>The appliance rejected or could not serve the write</td>
+</tr>
+<tr>
+<td>502</td>
+<td><code>not_applied</code></td>
+<td>The appliance accepted the write, but reading it back shows it does not hold it (<code>verify</code> says what differs)</td>
 </tr>
 </tbody>
 </table>

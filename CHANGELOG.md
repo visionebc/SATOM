@@ -6,6 +6,48 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — the nightly satom-audit review is green again
+
+The nightly full-suite review (satom-audit) had been red for days: 86 failed
+tests, most of them guards that never followed a refactor, plus a handful of
+real defects they had been pointing at.
+
+- **FortiGate CPU and memory are measured.** FortiGate became an ADOM with no
+  collector and no cpu/memory probe, so a FortiGate was onboarded and never
+  measured while the fleet board offered CPU/memory panels that could only be
+  empty. The *Box resources* collector and the CPU/memory monitors now read
+  FortiOS `GET /api/v2/monitor/system/resource/usage`; a missing reading is an
+  error, never 0 %. Not yet measured against a real FortiGate.
+- **The FortiGate ADOM's Analysis page says there is no analysis for
+  FortiGate**, and `/analysis/data` answers 404 for a refused or unmapped ADOM
+  instead of falling through to the FortiWeb WAF analysis.
+- **Offline update packages and every rollback recompile the language
+  catalogues.** Before, an air-gapped node updated by package kept the
+  translations it was installed with, and a rollback kept the catalogue
+  compiled from the newer release.
+- **Werkzeug 3.1.8 → 3.1.9** (CVE-2026-102598 / GHSA-g6x2-hccm-hh4m; it only
+  affects `safe_join` on Windows, so SATOM on Linux was not exploitable).
+- Booting a FortiADC into its alternate partition no longer wraps a second job
+  around the job it already starts.
+- The web-cache feature toggle no longer names the removed `cache_policy`
+  endpoint; the Build compatibility page no longer overrides the layout's
+  `products` global.
+- The FP triage payload field uses the small control of the rest of the
+  modal, and the inspector's Live / From last rediscovery buttons use the
+  product's button style.
+- The node-TLS private-key placeholder is built in the template, so the
+  release secret scanner no longer aborts on it (what the operator sees is
+  unchanged).
+- The API manual's endpoint table lists
+  `POST /change-requests/<id>/external-approval`.
+- Test guards now check the promise where it lives: the sidebar as it renders
+  in every ADOM (not include counts in `base.html`), catalogues compiled from
+  the committed `.po` files (not a node's `.mo`), field schemas from the
+  shipped API pack plus a fixture tree (not a node's `data/field_schemas`),
+  and host-independent fixtures for self-update and the upgrade feed. The
+  release-notes picker guards were retired with the Discover panel they
+  tested.
+
 ### Fixed — opening a FortiWeb signature profile in the GUI no longer counts as config drift
 
 The source-of-truth store hashed `sub_table_type`, `sub_table_id` and

@@ -13202,7 +13202,7 @@ to point at production.</p>
 </code></pre>
 <p><code>ulimit -v 1500000</code> and <code>timeout -s KILL 200</code> on every child, <code>python3 -u</code>,
 baseline-green required before scoring, <code>__pycache__</code> purged per round (never
-<code>deploy/__pycache__</code> — it is root-owned), tree restored by content and verified
+the one under <code>deploy/</code> — it is root-owned), tree restored by content and verified
 by SHA-256, suite re-run green after the last restore. A negative rc, 124 or 137
 counts as <strong>killed by the resource cap</strong> and is reported as such; a missing
 anchor counts as a <strong>survivor</strong>, never a kill.</p>
@@ -13291,7 +13291,7 @@ copies of "what is a usable key" drift the day one of them grows a rule.</p>
 </code></pre>
 <p>Same harness rules as §157: <code>ulimit -v 1500000</code> and <code>timeout -s KILL 200</code> on
 every child, <code>python3 -u</code>, baseline-green required before scoring,
-<code>__pycache__</code> purged per round (never <code>deploy/__pycache__</code>), tree restored by
+<code>__pycache__</code> purged per round (never the one under <code>deploy/</code>), tree restored by
 content and verified by SHA-256, suite re-run green after the last restore, a
 missing anchor scored as a <strong>survivor</strong>.</p>
 <h2 id="159--a-filter-is-a-view-preference-and-a-split-is-a-permission-2026-09-09">§159 — a filter is a view preference, and a split is a permission (2026-09-09)</h2>

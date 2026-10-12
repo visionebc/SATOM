@@ -633,6 +633,36 @@ That is exactly how the standby silently reverted to <code>User=root</code> afte
 in <code>.git/</code>, <code>data/jobs/</code> and <code>reports/</code>. The symptoms are indirect: git publish
 keeps working, because git renames refs and only needs the directory, while some
 other write fails quietly.</p>
+<h3 id="ha--the-ha-link-can-the-standby-fetch-code-from-this-primary"><code>ha</code> — the HA link: can the standby fetch code from this primary?</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ha check</code></td>
+<td>Read-only. The standby's <strong>own</strong> reconciler record (over <code>/healthz/reconciler</code>), this node's <code>systemd-logind</code> (logins of the service account stuck in <code>opening</code> for more than 60 s) and whether <code>sshd</code> answers. Exit 1 when the link is broken</td>
+</tr>
+<tr>
+<td><code>ha repair</code></td>
+<td><strong>Preview</strong> — the check, what the repair does and does not do. Exits 2; nothing changes</td>
+</tr>
+<tr>
+<td><code>ha repair --yes [--wait N]</code></td>
+<td>Root. Enqueues <code>restart systemd-logind</code> for the privileged runner (the same allowlisted request as the GUI's <em>Repair HA link</em> button), waits up to N s (default 90) for the runner, then re-checks and prints before and after</td>
+</tr>
+</tbody>
+</table>
+<p>Both delegate to <code>app/services/ha_link.py</code> and run it as the service account,
+so the console, the Software Update &amp; HA page and the alert can never give
+different answers. The repair is <strong>role-guarded</strong>: on a standby or a standalone
+node it refuses and says why, and the runner refuses a hand-written request on
+any node whose Postgres is not the primary. When the app itself cannot start,
+<code>ha check</code> prints the manual commands instead. The full procedure is
+<code>satom show runbook ha-link</code>; the background is in the user guide, §24.1.</p>
 <h3 id="the-complete-table">The complete table</h3>
 <p>Everything above is a curated tour — grouped, with the reasoning. The table
 below is the <em>exhaustive</em> list, and it is <strong>generated from the live registry</strong>
@@ -643,7 +673,7 @@ check. <code>tests/test_docs_publication.py</code> fails the suite when this blo
 longer matches the console you are running.</p>
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-<p><em>113 commands in 42 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
+<p><em>115 commands in 43 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
 <h3 id="get"><code>get</code></h3>
 <p>Read state. Every command below works as <strong>any user</strong> — this is the half of the console that has to keep working when everything else does not.</p>
 <table>
@@ -1369,6 +1399,31 @@ longer matches the console you are running.</p>
 <td style="text-align: center;">yes</td>
 <td style="text-align: center;">!</td>
 <td>Promote this standby to primary. Requires --yes.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="ha"><code>ha</code></h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th style="text-align: center;">Root</th>
+<th style="text-align: center;">!</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>satom ha check</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td>Standby's own fetch state + this node's logind/sshd. Read-only; run it on the primary.</td>
+</tr>
+<tr>
+<td><code>satom ha repair [--yes] [--wait SECONDS]</code></td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: center;">—</td>
+<td>Restart systemd-logind on THIS primary via the privileged runner, then re-check. Preview unless --yes.</td>
 </tr>
 </tbody>
 </table>

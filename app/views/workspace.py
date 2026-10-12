@@ -2260,17 +2260,29 @@ def _gx_save_cli(appl, ad, coll, mkey, op, fields, do_apply):
     cli = res.get('cli') or {}
     req = {'method': 'CLI', 'path': gui_products.cli_object(coll) + (' ' + mkey if mkey else ''),
            'body': cli.get('script') or []}
-    after = drift = None
-    if do_apply and res.get('ok'):
-        after = ad.read(appl, coll, mkey or None)
-        drift = gui_products.drift(fields, after)
+    # The verdict is the CLI writer's own read-back (a fresh session, the one
+    # that decides ``ok``): a second, cruder re-read here used to draw the
+    # badge and could contradict the outcome. A mismatch fails the save with
+    # what the device kept, audited as every GuiOps write that did not land.
+    verify = gui_products.cli_verify(cli) if do_apply else None
+    error = res.get('error') or ''
+    if verify and verify['verdict'] == 'mismatch':
+        from ..services.audit import log_action
+        from ..services.object_refresh import describe_mismatch
+        error = gui_products.verdict_view(verify)['text']
+        log_action('config.update.not_applied',
+                   target='%s:%s' % (ad.product, gui_products.cli_object(coll)),
+                   appliance_id=appl.id,
+                   detail='mkey=%s %s' % (mkey, describe_mismatch(verify)))
+    if do_apply and hasattr(ad, 'forget'):
+        ad.forget(appl, coll)       # the page's next read is the device's
     diff = [{'key': k, 'was': orig.get(k), 'now': v} for k, v in fields.items()]
-    return jsonify(ok=bool(res.get('ok')), dry_run=not do_apply, request=req, diff=diff,
-                   error=res.get('error') or '', cli=cli or None, cli_fields=sorted(fields),
+    return jsonify(ok=bool(res.get('ok')) and not (verify and verify['verdict'] == 'mismatch'),
+                   dry_run=not do_apply, request=req, diff=diff,
+                   error=error, cli=cli or None, cli_fields=sorted(fields),
                    mkey=mkey, channel_warnings=['%s: %s' % kv for kv in
                                                 sorted((res.get('refused') or {}).items())],
-                   verified=None if (not do_apply or after is None) else not drift,
-                   drift=drift, cache_refreshed=False)
+                   **_gx_verdict({'verify': verify}, do_apply))
 
 
 @bp.route('/<int:appliance_id>/fwgui-save', methods=['POST'])

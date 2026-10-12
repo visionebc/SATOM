@@ -12,17 +12,21 @@ Design constraints from server_policy.md §5:
   - By-parent sub-tables (vip-list, pserver-list, …) are auto-deleted with
     their parent; no explicit DELETE call is issued for them.
   - Always-skip: cmdb/waf/*, certificates, service, ssl-ciphers, replacemsg,
-    v-zone, system VIPs.
-  - Potentially exclusive (check ref-count): vserver, server-pool, health,
+    v-zone.
+  - Potentially exclusive (check ref-count): vserver, system VIP (a same-box
+    clone owns the VIP it created; kept, it was left behind on every delete),
+    server-pool, health,
     allow-hosts, allow-list, persistence-policy, scripting,
     http-content-routing-policy, ip-group, ztna-profile, traffic-mirror,
     acceleration.policy, acceleration.exception.
   - The root policy is always deleted first; dependencies follow in
     reverse-collect order so that any nested shared dependency (CR policy →
     pool) is resolved before the leaf.
-  - execute_delete_plan() treats a FortiWeb "in use" / "being used" error as
-    confirmation that the object is shared with a non-walking policy and
-    records it as kept_shared rather than failed.
+  - execute_delete_plan() treats a FortiWeb "in use" error (7.6.8: HTTP 500
+    errcode -23 "The entry is used.", measured on fortiweb17 deleting a VIP a
+    vserver still lists) as confirmation that the object is shared with
+    something the walk did not see (a vserver no policy uses) and records it
+    as kept_shared rather than failed.
 """
 from __future__ import annotations
 
@@ -38,7 +42,6 @@ _SKIP_PREFIXES = (
     "cmdb/system/certificate", # .local / .letsencrypt / .sni / .intermediate-*
     "cmdb/system/replacemsg",  # replacement message groups
     "cmdb/system/v-zone",      # bridge/v-zone (system-wide)
-    "cmdb/system/vip",         # VIP address objects (system-wide)
 )
 
 # Exact URNs that are always-skip (not caught by prefix matching).
@@ -73,9 +76,9 @@ def _is_in_use_error(error: str) -> bool:
     """True when a FortiWeb delete error means the object is referenced
     by another entity (rather than a real device/network error)."""
     low = error.lower()
-    return any(phrase in low for phrase in (
+    return "errcode -23:" in low or any(phrase in low for phrase in (
         "in use", "being used", "referred", "referenced",
-        "still refer", "used by",
+        "still refer", "used by", "entry is used",
     ))
 
 

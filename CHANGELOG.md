@@ -29,6 +29,32 @@ consecutive FortiWeb version pairs differed in nothing else.
   includes that moved into the shared `partials/nav_admin.html`; it now checks
   the shared block.
 
+### Fixed — leftovers of the write-verification round
+
+- **The /api proxy forwards the query string.** Both proxies (FortiWeb and
+  FortiADC) sent only the URL path, so `DELETE …/vserver?mkey=x` reached the
+  device as a bare collection DELETE, a `?pkey=` child-table read lost its
+  parent, and the write verdict re-read nothing. The query now reaches the
+  device, the verifier and the audit row.
+- **Deleting a policy deletes the VIP it owns.** The cascade delete kept every
+  system VIP, so deleting a same-box clone left the VIP the clone had created.
+  A VIP is now ref-counted like its virtual server: deleted (after the virtual
+  server that lists it) when no other policy reaches it, kept when one does.
+- **"The entry is used." is recognised as a shared object.** FortiWeb 7.6.8
+  refuses deleting an object still referenced with HTTP 500 errcode -23
+  "The entry is used." (measured on a lab FortiWeb). The cascade's safety net
+  did not know those words and reported such an object as a failed delete; it
+  is now kept as shared.
+- **FortiAuthenticator CLI-only settings: one verdict, and it decides.** The
+  badge of a CLI-only save came from a second, cruder re-read that could
+  contradict the CLI writer's own read-back (the one that sets the outcome).
+  The verdict is now that read-back: a field the device printed differently is
+  "Not applied: the device kept X (sent Y)", fails the save and is audited
+  `config.update.not_applied`, like every other verified write.
+- Test guard: in the FortiADC ADOM the Automations entry is drawn greyed with
+  its reason (ADOM menu parity) and must never be a link; the old guard still
+  required it to be absent and was red on `main`.
+
 ### Changed — every write SATOM makes to a FortiWeb, FortiGate, FortiAuthenticator or FortiADC is checked on the device
 
 The user asked how SATOM knows an apply worked if it never looks at the result,

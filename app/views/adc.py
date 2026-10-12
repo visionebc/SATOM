@@ -31,7 +31,7 @@ from flask_login import login_required
 from ..auth.decorators import require_permission
 from ..clients.fortiadc import FortiADCClient, FortiADCError
 from ..models import Appliance, Permission, visible_appliances, visible_appliance_or_404
-from ..services import adc_menu, adc_objform, device_context
+from ..services import adc_menu, adc_objform, device_context, device_verify
 from ..services.audit import log_action
 
 bp = Blueprint('adc', __name__, url_prefix='/adc')
@@ -58,6 +58,21 @@ def _mkey_of(obj: dict):
     if not isinstance(obj, dict):
         return str(obj)
     return obj.get('mkey') or obj.get('name') or obj.get('id') or '—'
+
+
+def _verify(appliance, client, op, logical, mkey=None, sent=None, pkey=None) -> dict:
+    """Re-read what one accepted write touched (``services.device_verify``):
+    the device answering "OK" is not the device holding the change. Every
+    write below goes through here, so "Applied" on this editor means the box
+    serves it — or the page says it could not be verified, and why."""
+    return device_verify.adc_after_write(appliance, client, op, logical=logical,
+                                         mkey=mkey, sent=sent, pkey=pkey)
+
+
+def _not_applied(v: dict):
+    """A write the device accepted and does not hold: a failed save, with the
+    fields that differ (``describe_mismatch``), never "Applied"."""
+    return jsonify(ok=False, error=device_verify.label(v), verify=v), 502
 
 
 def _derive_columns(rows: list) -> list[str]:
@@ -312,9 +327,15 @@ def form_save_object(logical):
         client.update(logical, mkey, payload)
     except (FortiADCError, Exception) as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc)), 502
+    # Compared on what the operator CHANGED: the rest of the body is the
+    # device's own copy echoed back.
+    v = _verify(appliance, client, 'update', logical, mkey, {**fields, 'mkey': mkey})
     log_action('adc.update', target=f'{logical}/{mkey}',
-               detail={'fields': sorted(fields)}, appliance_id=appliance.id)
-    return jsonify(ok=True, dry_run=False)
+               detail={'fields': sorted(fields), 'verify': v['verdict']},
+               appliance_id=appliance.id)
+    if device_verify.failed(v):
+        return _not_applied(v)
+    return jsonify(ok=True, dry_run=False, verify=v)
 
 
 @bp.route('/obj/<logical>/create-object', methods=['POST'])
@@ -345,8 +366,12 @@ def form_create_object(logical):
         client.create(logical, payload)
     except (FortiADCError, Exception) as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc)), 502
-    log_action('adc.create', target=f'{logical}/{mkey}', appliance_id=appliance.id)
-    return jsonify(ok=True, dry_run=False, mkey=mkey)
+    v = _verify(appliance, client, 'create', logical, mkey, payload)
+    log_action('adc.create', target=f'{logical}/{mkey}', appliance_id=appliance.id,
+               detail={'verify': v['verdict']})
+    if device_verify.failed(v):
+        return _not_applied(v)
+    return jsonify(ok=True, dry_run=False, mkey=mkey, verify=v)
 
 
 @bp.route('/obj/<logical>/save-row', methods=['POST'])
@@ -382,9 +407,12 @@ def form_save_row(logical):
             client.create(logical, payload, pkey=pkey)
         except (FortiADCError, Exception) as exc:  # noqa: BLE001
             return jsonify(ok=False, error=str(exc)), 502
+        v = _verify(appliance, client, 'create', logical, None, payload, pkey=pkey)
         log_action('adc.row_create', target=f'{logical}?pkey={pkey}',
-                   appliance_id=appliance.id)
-        return jsonify(ok=True, dry_run=False)
+                   appliance_id=appliance.id, detail={'verify': v['verdict']})
+        if device_verify.failed(v):
+            return _not_applied(v)
+        return jsonify(ok=True, dry_run=False, verify=v)
 
     # update — merge onto the current row so un-shown keys survive the PUT
     rows, err = client.list_with_error(logical, pkey=pkey)
@@ -403,9 +431,14 @@ def form_save_row(logical):
         client.update(logical, sub_mkey, payload, pkey=pkey)
     except (FortiADCError, Exception) as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc)), 502
+    v = _verify(appliance, client, 'update', logical, sub_mkey,
+                {**fields, 'mkey': sub_mkey}, pkey=pkey)
     log_action('adc.row_update', target=f'{logical}?pkey={pkey}&mkey={sub_mkey}',
-               detail={'fields': sorted(fields)}, appliance_id=appliance.id)
-    return jsonify(ok=True, dry_run=False)
+               detail={'fields': sorted(fields), 'verify': v['verdict']},
+               appliance_id=appliance.id)
+    if device_verify.failed(v):
+        return _not_applied(v)
+    return jsonify(ok=True, dry_run=False, verify=v)
 
 
 @bp.route('/obj/<logical>/delete-row', methods=['POST'])
@@ -430,9 +463,12 @@ def form_delete_row(logical):
         client.delete(logical, sub_mkey, pkey=pkey)
     except (FortiADCError, Exception) as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc)), 502
+    v = _verify(appliance, client, 'delete', logical, sub_mkey, pkey=pkey)
     log_action('adc.row_delete', target=f'{logical}?pkey={pkey}&mkey={sub_mkey}',
-               appliance_id=appliance.id)
-    return jsonify(ok=True, dry_run=False)
+               appliance_id=appliance.id, detail={'verify': v['verdict']})
+    if device_verify.failed(v):
+        return _not_applied(v)
+    return jsonify(ok=True, dry_run=False, verify=v)
 
 
 @bp.route('/obj/<logical>/save', methods=['POST'])
@@ -454,15 +490,19 @@ def object_save(logical):
     try:
         if mkey:
             client.update(logical, mkey, payload)
-            action = 'adc.update'
+            action, op = 'adc.update', 'update'
         else:
             client.create(logical, payload)
-            action = 'adc.create'
+            action, op = 'adc.create', 'create'
             mkey = _mkey_of(payload)
     except (FortiADCError, Exception) as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc)), 502
-    log_action(action, target=f'{logical}/{mkey}', appliance_id=appliance.id)
-    return jsonify(ok=True, mkey=mkey)
+    v = _verify(appliance, client, op, logical, mkey if mkey != '—' else None, payload)
+    log_action(action, target=f'{logical}/{mkey}', appliance_id=appliance.id,
+               detail={'verify': v['verdict']})
+    if device_verify.failed(v):
+        return _not_applied(v)
+    return jsonify(ok=True, mkey=mkey, verify=v)
 
 
 @bp.route('/obj/<logical>/delete', methods=['POST'])
@@ -476,12 +516,17 @@ def object_delete(logical):
     mkey = body.get('mkey')
     if not mkey:
         return jsonify(ok=False, error='mkey required'), 400
+    client = FortiADCClient(appliance)
     try:
-        FortiADCClient(appliance).delete(logical, mkey)
+        client.delete(logical, mkey)
     except (FortiADCError, Exception) as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc)), 502
-    log_action('adc.delete', target=f'{logical}/{mkey}', appliance_id=appliance.id)
-    return jsonify(ok=True)
+    v = _verify(appliance, client, 'delete', logical, mkey)
+    log_action('adc.delete', target=f'{logical}/{mkey}', appliance_id=appliance.id,
+               detail={'verify': v['verdict']})
+    if device_verify.failed(v):
+        return _not_applied(v)
+    return jsonify(ok=True, verify=v)
 
 
 # --------------------------------------------------------------------------- #
@@ -526,15 +571,21 @@ def _wizard_conflicts(client, steps):
     return conflicts
 
 
-def _wizard_rollback(client, created):
-    """Best-effort reverse delete of what THIS run created (avoid orphans)."""
+def _wizard_rollback(client, created, appliance=None):
+    """Best-effort reverse delete of what THIS run created (avoid orphans).
+    An object is reported rolled back only when the device no longer has it
+    (or nothing could re-read it): an accepted delete the box kept is an
+    orphan, and saying "rolled back" would hide it."""
     done = []
     for logical, mkey, pkey in reversed(created):
         try:
             client.delete(logical, mkey, pkey=pkey) if pkey else client.delete(logical, mkey)
-            done.append(mkey)
         except Exception:  # noqa: BLE001
-            pass
+            continue
+        if appliance is not None and mkey and device_verify.failed(
+                _verify(appliance, client, 'delete', logical, mkey, pkey=pkey)):
+            continue
+        done.append(mkey)
     return done
 
 
@@ -576,7 +627,7 @@ def wizard_virtual_server_apply():
             preview.append({'label': st['label'], 'method': 'POST',
                             'path': path, 'body': st['payload']})
         return jsonify(ok=True, dry_run=True, steps=preview)
-    created = []
+    created, verdicts = [], []
     for st in steps:
         try:
             if st['kind'] == 'child':
@@ -586,12 +637,23 @@ def wizard_virtual_server_apply():
                 client.create(st['logical'], st['payload'])
                 created.append((st['logical'], st['mkey'], None))
         except (FortiADCError, Exception) as exc:  # noqa: BLE001
-            rolled = _wizard_rollback(client, created)
+            rolled = _wizard_rollback(client, created, appliance)
             return jsonify(ok=False, failed_step=st['label'], error=str(exc),
                            created=[c[1] for c in created],
+                           rolled_back=rolled), 502
+        # Each step is re-read before the next one names it: a pool the box
+        # accepted and does not hold would make every later step fail on a
+        # reference, or worse, bind the virtual server to nothing.
+        v = _verify(appliance, client, 'create', st['logical'], st['mkey'], st['payload'],
+                    pkey=st['pkey'] if st['kind'] == 'child' else None)
+        verdicts.append({'step': st['label'], 'verdict': v['verdict'], 'label': v['label']})
+        if device_verify.failed(v):
+            rolled = _wizard_rollback(client, created, appliance)
+            return jsonify(ok=False, failed_step=st['label'], error=device_verify.label(v),
+                           created=[c[1] for c in created], verify=verdicts,
                            rolled_back=rolled), 502
     vs_name = str(body.get('vs_name', '')).strip()
     log_action('adc.wizard_create', target='virtual_server/%s' % vs_name,
                detail={'objects': len(created)}, appliance_id=appliance.id)
     return jsonify(ok=True, dry_run=False, vs_name=vs_name,
-                   created=[c[1] for c in created])
+                   created=[c[1] for c in created], verify=verdicts)

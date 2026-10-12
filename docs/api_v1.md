@@ -394,6 +394,12 @@ straight to the appliance because there is no desired-state store for it. So:
   built locally — no session is opened.
 * Creating a name that already exists is refused with `409 already_exists`
   rather than risking an overwrite of an object your token does not own.
+* An applied create is **read back** from the appliance. The `201` answer
+  carries `verify`: `verified` (the appliance holds the object with the fields
+  you sent), or `unverified` with the reason (only secrets were sent, the
+  re-read failed). An appliance that accepted the POST and does not hold the
+  object answers `502 not_applied`, with `verify.mismatch` naming each field
+  the appliance holds differently.
 * **There is no DELETE.** Without a store there is no recorded author, so
   "delete only what you created" cannot be proven, and an endpoint that cannot
   tell your object from an operator's is a way to remove someone else's
@@ -420,6 +426,7 @@ straight to the appliance because there is no desired-state store for it. So:
 | 500 | `registry_mismatch` | The rule type resolved to an endpoint SATOM cannot address — report it; retrying will not help |
 | 502 | `device_unreachable` | SATOM could not open a session to the appliance |
 | 502 | `device_error` | The appliance rejected or could not serve the write |
+| 502 | `not_applied` | The appliance accepted the write, but reading it back shows it does not hold it (`verify` says what differs) |
 
 ---
 

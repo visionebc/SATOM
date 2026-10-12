@@ -278,6 +278,29 @@ def flight(kind, label):
         return False, "flight(%s) error: %s" % (kind, exc)
 
 
+def compile_catalogues(st, label="pybabel compile (language catalogues)"):
+    """Rebuild the compiled language catalogues from the .po now in the tree.
+
+    The .mo files are DERIVED and travel neither in the repository nor in an
+    update package (whose app.tar.gz is a ``git archive``), so EVERY path that
+    replaces the code tree -- a git update, an offline package, and the
+    rollback of either -- has to run this, or the node keeps serving the
+    catalogue of another revision: new strings fall back to English, and a
+    msgid that changed keeps the old translation.
+
+    Never aborts: an old catalogue is worse than a new one, but both beat a
+    reverted update. A failure is recorded as a failed step and the caller
+    carries on.
+    """
+    st.begin(label)
+    try:
+        pb = run([str(VENV / "pybabel"), "compile", "-d",
+                  str(APP / "app" / "translations")], timeout=300, user=APP_USER)
+        st.step(label, pb.returncode == 0, pb.stderr)
+    except Exception as exc:  # noqa: BLE001 -- best effort by design
+        st.step(label, False, str(exc)[:300])
+
+
 def import_shipped_api_pack(st):
     """Import the API library pack the new release carries (api-packs/).
 
@@ -593,13 +616,8 @@ def process(req_path):
         # The .mo files are DERIVED and no longer travel in the repo, so an
         # update that brings new .po files leaves the interface in English
         # until they are recompiled. Outside the do_pip block on purpose: a
-        # code-only update also brings catalogues. Never aborts -- an old
-        # catalogue is worse than a new one, but both beat a reverted update.
-        st.begin("pybabel compile (language catalogues)")
-        pb = run([str(VENV / "pybabel"), "compile", "-d",
-                  str(APP / "app" / "translations")], timeout=300, user=APP_USER)
-        st.step("pybabel compile (language catalogues)",
-                pb.returncode == 0, pb.stderr)
+        # code-only update also brings catalogues.
+        compile_catalogues(st)
 
         # Migrations run on the PRIMARY only; on a standby the schema arrives
         # via streaming replication, and `flask db upgrade` would fail on the
@@ -695,6 +713,9 @@ def process(req_path):
             if req.get("do_pip", True):
                 run([str(VENV / "pip"), "install", "-q", "-r",
                      str(APP / "requirements.txt")], timeout=900, user=APP_USER)
+            # The update already compiled the NEW .po; put back the catalogue
+            # of the code that runs again.
+            compile_catalogues(st, "pybabel compile (rolled-back catalogues)")
             subprocess.run(["systemctl", "restart", SCHED], timeout=60)
             restart_reconciler()
             if not app_was_active:
@@ -1228,6 +1249,11 @@ def package_change(req_path):
         if p.returncode != 0:
             raise RuntimeError("offline pip install failed")
 
+        # app.tar.gz is a `git archive`: it brings the new .po and no .mo, so
+        # without this the node goes on serving the previous release's
+        # catalogue.
+        compile_catalogues(st)
+
         # -- 8. migrations (primary only) ------------------------------------
         if not is_standby:
             env = dict(os.environ, FLASK_APP="wsgi.py")
@@ -1318,6 +1344,7 @@ def package_change(req_path):
                 run([str(VENV / "pip"), "install", "-q", "-r", str(freeze)],
                     timeout=1800, user=APP_USER)
             _chown_tree()
+            compile_catalogues(st, "pybabel compile (rolled-back catalogues)")
             subprocess.run(["systemctl", "restart", SCHED], timeout=60)
             restart_reconciler()
             if not app_was_active:

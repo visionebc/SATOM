@@ -24,7 +24,8 @@ A Flask application that administers a fleet of FortiWeb appliances:
   decouples the app from firmware-specific URLs.
 - **Other product workspaces** beside FortiWeb: [FortiADC](fortiadc.md),
   [FortiAuthenticator](fortiauthenticator.md), FortiAnalyzer, and since 3.0 a
-  read-only [FortiGate](fortigate.md) workspace (user guide §17).
+  [FortiGate](fortigate.md) workspace: read live, with dry-run-first object
+  edits on its measured pages and API console (user guide §17).
 - **Vendor knowledge from signed packs** (3.0): release notes, upgrade paths and
   the API knowledge of builds no local appliance runs arrive as signed API and
   knowledge packs ([API library](api-library.md) §12,

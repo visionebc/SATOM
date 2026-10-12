@@ -14,7 +14,7 @@ not redundant — each one survives a different failure.
 | Surface | Where | Audience | Survives |
 |---|---|---|---|
 | **Repository** | `docs/*.md` | whoever edits it | everything; this is the source |
-| **Public site** | `site/docs/*.html` → GitHub Pages | operators, evaluators, integrators, auditors | the whole installation being down |
+| **Public site** | `site/docs/*.html` → satom.visionebc.com (its own repository and node; not GitHub Pages) | operators, evaluators, integrators, auditors | the whole installation being down |
 | **Console** | `satom show docs`, `show runbook`, `show privilege`, `show paths` | an operator on a broken or isolated node | no browser, no network, no database |
 
 **The application does not serve documentation.** It used to, at `/docs`, and
@@ -175,7 +175,7 @@ page.
 | [`web_protection_profile.md`](web_protection_profile.md) | The ~40 sub-policy WAF bundle, field by field. |
 | [`wpp_exceptions.md`](wpp_exceptions.md) | Authoring and injecting WAF exceptions and signature carve-outs. |
 | [`fortiadc.md`](fortiadc.md) | REST conventions, object map and current coverage for FortiADC. |
-| [`fortigate.md`](fortigate.md) | The read-only FortiGate workspace: REST API token, the section pages, how FortiOS answers and what is not there yet. |
+| [`fortigate.md`](fortigate.md) | The FortiGate workspace: REST API token, the measured pages and their writes, the API console, the read-only section pages, how FortiOS answers and what is not there yet. |
 
 ---
 

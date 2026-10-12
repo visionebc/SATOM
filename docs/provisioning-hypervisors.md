@@ -170,14 +170,21 @@ sending commands at it blindly turns them into failed logins against an
 
 | mode | what it does |
 |---|---|
-| `full` | create, boot, configure and onboard without stopping |
+| `full` | create, boot, wait for the appliance to answer and onboard it without stopping, then hand over to the profile |
 | `semi` | create and boot, then stop for the first-boot console; resume once the appliance answers |
 | `dhcp` | create and boot without reserving an address; the appliance takes a lease, SATOM probes the management address entered on the run (it does not discover the lease), then continues |
 | `vm_only` | create the machine and stop |
-| `config_only` | the machine exists already — reserve the address, issue the certificate, apply the profile |
+| `config_only` | the machine exists already — reserve the address, create the DNS record, wait for it to answer and register it; the certificate step is a no-op and the profile is only handed over (see below) |
 
 `semi` is the mode that always works. `full` is offered only where the
 capability probe says the serial console is reachable.
+
+No mode configures the appliance. The last two steps hand over: **certificate**
+(`cert_installed`) is a no-op until a CA profile can be selected for a run, so
+the appliance keeps its factory self-signed certificate and is registered with
+certificate verification off; **profile** (`profile_applied`) pushes nothing,
+it marks the selected system profile as ready, to be applied from System
+Provisioning with its dry run, firmware check and approval (user guide §21.9).
 
 ### 4.2 Addressing
 
@@ -254,7 +261,7 @@ answer to that fact.
 | **semi** | Builds and boots, then stops. The operator completes the first-boot dialog on the hypervisor console and resumes. | Works on **every** backend, including a free-licensed ESXi. The one manual step is the one a human is genuinely required for. | Not unattended — a run waits until somebody acts on it. |
 | **dhcp** | Builds and boots; the appliance takes a lease and SATOM probes the management address entered on the run (it does not discover the lease). | Unattended without a serial console. | You must know the address (a DHCP reservation) and enter it; without one the run stops at the reachability step. Not every appliance takes a lease on its factory configuration. |
 | **vm_only** | Creates and powers on the machine. Stops. | Smallest blast radius. Right when the appliance is configured by another team or tool. | No address, no DNS, no registration — nothing else in SATOM knows the machine exists. |
-| **config_only** | Skips machine creation: address, DNS, registration and profile against a machine that already exists. | Needs **no hypervisor at all**. The path for physical appliances and anything built outside SATOM. | You built the machine, so its CPU, memory, disk and network are outside the run log and outside the audit trail. |
+| **config_only** | Skips machine creation: address, DNS, reachability and registration against a machine that already exists, then the same profile handover as every mode. | Needs **no hypervisor at all**. The path for physical appliances and anything built outside SATOM. | You built the machine, so its CPU, memory, disk and network are outside the run log and outside the audit trail. |
 
 `MODE_STEPS` in `app/services/provision_runner.py` is the single source for
 these plans, and the UI renders the plan from it before anything runs. Adding a

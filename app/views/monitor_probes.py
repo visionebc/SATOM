@@ -257,7 +257,7 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
 
     def get_probe(pid: int):
         """Fetch a probe of THIS page's kinds, or (None, response)."""
-        probe = MonitorProbe.query.get(pid)
+        probe = db.session.get(MonitorProbe, pid)
         if probe is None or probe.kind not in kinds:
             # A probe that exists but belongs to the other page is a 404 here,
             # not a 403: from this page's point of view it does not exist.
@@ -740,7 +740,7 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
     def _run_discover(app, job_id, aid, what, uid, link, product=""):
         with app.app_context():
             try:
-                appliance = Appliance.query.get(aid)
+                appliance = db.session.get(Appliance, aid)
                 jobsvc.update_job(job_id, percent=10,
                                   message=f"Reading {appliance.name}…")
                 parts, total = [], 0

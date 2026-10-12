@@ -31,6 +31,7 @@ from ..services import signature_catalog as sigcat
 from ..services import signature_index as sidx
 from ..services import jobs as jobsvc
 from ..services import notifications as notify
+from ..extensions import db
 
 bp = Blueprint('signatures', __name__, url_prefix='/signatures')
 
@@ -158,11 +159,11 @@ def sync():
 def snapshot(sid):
     """What one snapshot added, changed and removed."""
     from ..models_signatures import SignatureSnapshot
-    snap = SignatureSnapshot.query.get(sid)
+    snap = db.session.get(SignatureSnapshot, sid)
     if snap is None:
         abort(404)
     rows = sidx.changes(snap.id)
-    prev = SignatureSnapshot.query.get(snap.prev_snapshot_id) if snap.prev_snapshot_id else None
+    prev = db.session.get(SignatureSnapshot, snap.prev_snapshot_id) if snap.prev_snapshot_id else None
     return render_template('signatures/snapshot.html', snap=snap, prev=prev,
                            added=[r for r in rows if r.kind == 'added'],
                            changed=[r for r in rows if r.kind == 'changed'],

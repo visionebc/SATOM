@@ -619,7 +619,7 @@ def add_member(id):
     attach_id = (request.form.get('attach_id') or '').strip()
 
     if attach_id:
-        m = Appliance.query.get(int(attach_id)) if attach_id.isdigit() else None
+        m = db.session.get(Appliance, int(attach_id)) if attach_id.isdigit() else None
         if m is None or not m.is_standalone or m.id == node0.id:
             flash('Pick an existing standalone appliance to attach.', 'danger')
             return redirect(url_for('appliances.detail', id=id))
@@ -1110,7 +1110,7 @@ def _selected_compatible_image(appliance, image_id):
         return None
     if iid not in {fw.id for fw in upg.compatible_images(appliance)}:
         return None
-    return FirmwareImage.query.get(iid)
+    return db.session.get(FirmwareImage, iid)
 
 
 def _scout_for(appliance, image, *, asked=True, current=None):
@@ -1418,8 +1418,8 @@ def _flash_worker(app, job_id, appliance_id, image_id, filename,
             pass
 
     with app.app_context():
-        appliance = Appliance.query.get(appliance_id)
-        image = FirmwareImage.query.get(image_id)
+        appliance = db.session.get(Appliance, appliance_id)
+        image = db.session.get(FirmwareImage, image_id)
         if appliance is None or image is None:
             jobsvc.finish_error(job_id, "appliance or image no longer exists")
             return
@@ -1804,7 +1804,7 @@ def _boot_alt_worker(app, job_id, appliance_id, user_id, link):
                         kind=K.KIND_ERROR, body=msg[:400], link=link)
 
     with app.app_context():
-        appliance = Appliance.query.get(appliance_id)
+        appliance = db.session.get(Appliance, appliance_id)
         if appliance is None:
             jobsvc.finish_error(job_id, 'appliance no longer exists')
             return

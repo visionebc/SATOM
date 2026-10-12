@@ -140,7 +140,7 @@ def _finalize_upload(app, job_id: str, image_id: int, dest_path: str,
     from ..services import notifications as notify
     with app.app_context():
         try:
-            fw = FirmwareImage.query.get(image_id)
+            fw = db.session.get(FirmwareImage, image_id)
             if fw is None:
                 raise ValueError(f"firmware row {image_id} not found")
             total = os.path.getsize(dest_path)
@@ -377,7 +377,7 @@ def upload():
 def _image_in_scope(image_id):
     """One image by id, under the same ADOM rule as the list: a concrete ADOM
     reaches only its own product's images, Global reaches all."""
-    fw = FirmwareImage.query.get(image_id)
+    fw = db.session.get(FirmwareImage, image_id)
     _adom = getattr(g, "product", None)
     if fw is not None and _adom and _adom != "global" and fw.product != _adom:
         return None

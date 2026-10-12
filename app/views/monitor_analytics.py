@@ -126,7 +126,7 @@ def data():
 @require_permission(Permission.VIEW)
 def panel_data(pid: int):
     """One panel, refreshed on its own (per-panel range, auto-refresh)."""
-    panel = MonitorPanel.query.get(pid)
+    panel = db.session.get(MonitorPanel, pid)
     if panel is None or _get_board_of(panel) is None:
         return jsonify({"ok": False, "error": "not found"}), 404
     start, end, key = _window()
@@ -331,7 +331,7 @@ def _next_panel_pos(board) -> int:
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
 def update_panel(pid: int):
-    panel = MonitorPanel.query.get(pid)
+    panel = db.session.get(MonitorPanel, pid)
     board = _get_board_of(panel) if panel else None
     if panel is None or board is None:
         return jsonify({"ok": False, "error": "not found"}), 404
@@ -350,7 +350,7 @@ def update_panel(pid: int):
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
 def delete_panel(pid: int):
-    panel = MonitorPanel.query.get(pid)
+    panel = db.session.get(MonitorPanel, pid)
     board = _get_board_of(panel) if panel else None
     if panel is None or board is None:
         return jsonify({"ok": False, "error": "not found"}), 404

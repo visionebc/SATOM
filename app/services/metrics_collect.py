@@ -68,6 +68,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import vm_store
+from ..extensions import db
 
 # Tolerance subtracted from the interval when deciding "due": the sweep runs
 # on the scheduler tick, so a probe interval that misses the tick by seconds
@@ -1256,7 +1257,7 @@ def sweep() -> dict:
         def _one(t_id):
             with app_obj.app_context():
                 from ..models_metrics import ScrapeTarget
-                t = ScrapeTarget.query.get(t_id)
+                t = db.session.get(ScrapeTarget, t_id)
                 return run_target(t) if t else {"ok": False, "detail": "gone"}
 
         ids = [t.id for t in due]

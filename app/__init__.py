@@ -122,7 +122,7 @@ def create_app(config_override: object | None = None) -> Flask:
     @login_manager.user_loader
     def load_user(user_id: str):
         from .models import User
-        return User.query.get(int(user_id))
+        return db.session.get(User, int(user_id))
 
     # Idle session lock (Settings -> General -> Session Lock). Registered
     # before every other before_request gate so a locked session reaches none.
@@ -882,7 +882,7 @@ def create_app(config_override: object | None = None) -> Flask:
                 _vaid = (request.view_args or {}).get('appliance_id')
                 if (request.endpoint or '').startswith('workspace.fwgui') and _vaid:
                     from .models import Appliance as _ApplNav
-                    _a = _ApplNav.query.get(int(_vaid))
+                    _a = db.session.get(_ApplNav, int(_vaid))
                     if _a is not None and _a.kind == prod.get("key"):
                         _gx_appl = _a
                 if _gx_appl is not None and _gx_appl.kind == prod.get("key"):

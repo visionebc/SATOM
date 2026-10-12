@@ -78,7 +78,7 @@ def list_config_templates(kind: str, collection: str | None = None) -> list[Temp
 
 
 def get_template(template_id: int) -> Template | None:
-    return Template.query.get(template_id)
+    return db.session.get(Template, template_id)
 
 
 def managed_wpp_names(appliance_id=None) -> set[str]:
@@ -99,7 +99,6 @@ def managed_wpp_names(appliance_id=None) -> set[str]:
     try:
         scope = tb.locked_families(Template.KIND_WEB_PROTECTION)
     except Exception:  # noqa: BLE001 — no bindings table yet: the global rule
-        from ..extensions import db
         db.session.rollback()
         scope = {}
     rows = (Template.query
@@ -108,7 +107,7 @@ def managed_wpp_names(appliance_id=None) -> set[str]:
             .all())
     if appliance_id is not None:
         from ..models import Appliance
-        appl = Appliance.query.get(int(appliance_id))
+        appl = db.session.get(Appliance, int(appliance_id))
         kind = getattr(appl, "kind", None)
         rows = [t for t in rows if (t.product or "fortiweb") == kind
                 and tb.governs(scope.get(t.name), appliance_id)]
@@ -243,7 +242,7 @@ def clone_template(template_id: int, new_name: str | None = None) -> Template:
     next version if the chosen name already exists for that kind. Raises
     ``ValueError`` if the source template does not exist.
     """
-    src = Template.query.get(template_id)
+    src = db.session.get(Template, template_id)
     if src is None:
         raise ValueError(f"Template {template_id} not found")
     name = (new_name or "").strip() or f"{src.name} (copy)"
@@ -267,7 +266,7 @@ def clone_template(template_id: int, new_name: str | None = None) -> Template:
 def delete_template(template_id: int) -> bool:
     """Delete a template by id. Locked templates are refused. Returns True if
     a row was removed."""
-    row = Template.query.get(template_id)
+    row = db.session.get(Template, template_id)
     if row is None or row.locked:
         return False
     db.session.delete(row)
@@ -278,7 +277,7 @@ def delete_template(template_id: int) -> bool:
 def approve_template(template_id: int, reviewer: str) -> Template:
     """Mark a template APPROVED (fleet-deployable). Clears any prior rejection
     reason. Raises ``ValueError`` if the template does not exist."""
-    row = Template.query.get(template_id)
+    row = db.session.get(Template, template_id)
     if row is None:
         raise ValueError(f"Template {template_id} not found")
     row.status = Template.STATUS_APPROVED
@@ -293,7 +292,7 @@ def approve_template(template_id: int, reviewer: str) -> Template:
 def reject_template(template_id: int, reviewer: str, reason: str = "") -> Template:
     """Mark a template REJECTED with an author-visible reason. Raises
     ``ValueError`` if the template does not exist."""
-    row = Template.query.get(template_id)
+    row = db.session.get(Template, template_id)
     if row is None:
         raise ValueError(f"Template {template_id} not found")
     row.status = Template.STATUS_REJECTED
@@ -308,7 +307,7 @@ def reject_template(template_id: int, reviewer: str, reason: str = "") -> Templa
 def unapprove_template(template_id: int, reviewer: str) -> Template:
     """Revoke approval — returns the template to PENDING so it can be
     re-reviewed. Raises ``ValueError`` if the template does not exist."""
-    row = Template.query.get(template_id)
+    row = db.session.get(Template, template_id)
     if row is None:
         raise ValueError(f"Template {template_id} not found")
     row.status = Template.STATUS_PENDING

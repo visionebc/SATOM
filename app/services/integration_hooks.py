@@ -33,6 +33,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from ..extensions import db
 
 # NOTE: `subprocess` is deliberately absent from this module, and
 # tests/test_integration_hooks.py asserts that the name never appears in this
@@ -603,7 +604,7 @@ def delete_secret(name: str, by: str = "system") -> bool:
     name = validate_secret_name(name)
     try:
         from ..models import AppSetting, db
-        row = AppSetting.query.get(K_SECRET_PREFIX + name)
+        row = db.session.get(AppSetting, K_SECRET_PREFIX + name)
         if row is None:
             return False
         db.session.delete(row)

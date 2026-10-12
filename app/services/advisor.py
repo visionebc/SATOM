@@ -878,7 +878,7 @@ def _run_exchange(conv_id: int, username: str, text: str,
     from .audit import log_action
 
     attachments = attachments or []
-    conv = AdvisorConversation.query.get(conv_id)
+    conv = db.session.get(AdvisorConversation, conv_id)
     if conv is None:
         yield ("error", {"error": "conversation not found"})
         return
@@ -941,7 +941,7 @@ def _run_exchange(conv_id: int, username: str, text: str,
             prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
             stopped=bool(stopped))
         db.session.add(msg)
-        row = AdvisorConversation.query.get(conv_id)
+        row = db.session.get(AdvisorConversation, conv_id)
         if row is not None:
             row.updated_at = datetime.utcnow()
             if row.title in ("", "New conversation") and text:

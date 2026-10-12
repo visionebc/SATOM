@@ -155,7 +155,7 @@ def _target(run: ProvisionRun):
     from ..models_provision import HypervisorTarget
     if not run.target_id:
         return None
-    return HypervisorTarget.query.get(run.target_id)
+    return db.session.get(HypervisorTarget, run.target_id)
 
 
 def _step_ip_reserved(run: ProvisionRun) -> StepResult:
@@ -416,7 +416,7 @@ def _image_path(run: ProvisionRun) -> str:
         from ..models_firmware import FirmwareImage
     except ImportError:
         return ""
-    img = FirmwareImage.query.get(run.firmware_id)
+    img = db.session.get(FirmwareImage, run.firmware_id)
     return getattr(img, "stored_path", "") or "" if img else ""
 
 

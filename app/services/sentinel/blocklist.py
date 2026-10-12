@@ -309,7 +309,7 @@ def release(entry_id: int, *, actor: str = "", reason: str = "") -> dict:
     pattern that produced them, and "why was this customer blocked last
     Tuesday" is the question that actually gets asked.
     """
-    row = SentinelBlockEntry.query.get(int(entry_id or 0))
+    row = db.session.get(SentinelBlockEntry, int(entry_id or 0))
     if row is None:
         return {"ok": False, "reason": "no such entry"}
     if row.status != SentinelBlockEntry.ACTIVE:

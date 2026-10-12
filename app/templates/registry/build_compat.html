@@ -20,7 +20,7 @@ product={{ sel_product|urlencode }}{% for b in builds %}&b={{ b|urlencode }}{% e
     <div class="col-md-2">
       <label class="fw-fld-label" for="bcProduct">{{ _('Product') }}</label>
       <select class="form-select form-select-sm" id="bcProduct" name="product">
-        {% for p in products %}<option value="{{ p }}" {{ 'selected' if p == sel_product }}>{{ p }}</option>{% endfor %}
+        {% for p in compat_products %}<option value="{{ p }}" {{ 'selected' if p == sel_product }}>{{ p }}</option>{% endfor %}
       </select>
     </div>
     <div class="col-md-4">

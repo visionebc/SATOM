@@ -855,6 +855,8 @@ class CliWriter:
                     if not gone:
                         res.diff.append({"field": "(object)", "expected": "deleted",
                                          "got": "still present", "channel": "rest"})
+                    else:
+                        out["cache"] = self._follow_cache(plan, gone=True)
                 res.readback["rest"] = out
                 return
             path = urn if mkey is None else "%s?mkey=%s" % (urn, quote(str(mkey), safe=""))
@@ -871,6 +873,7 @@ class CliWriter:
                 res.readback["rest"] = out
                 return
             self._compare_rest(plan, res, out, row, plan.set, plan.unset, "")
+            subs: dict = {}
             for ch in plan.children:
                 cid = res.assigned_ids.get(ch.words, ch.mkey)
                 sub = "%s/%s" % (urn, ".".join(ch.words.split()))
@@ -878,6 +881,16 @@ class CliWriter:
                     sub, quote(str(mkey), safe=""), quote(str(cid), safe="")))
                 rows = (body or {}).get("results") if isinstance(body, dict) else None
                 rows = rows if isinstance(rows, list) else [rows] if isinstance(rows, dict) else []
+                seg = ".".join(ch.words.split())
+                if seg not in subs:
+                    # the WHOLE sub-table, for the cache (a row read alone
+                    # cannot tell a deleted sibling from an unread one)
+                    try:
+                        st, sb = reader("%s?mkey=%s" % (sub, quote(str(mkey), safe="")))
+                        whole = (sb or {}).get("results") if isinstance(sb, dict) else None
+                        subs[seg] = whole if (st < 400 and isinstance(whole, list)) else None
+                    except Exception:  # noqa: BLE001 — cache input only, never the verdict
+                        subs[seg] = None
                 crow = next((r for r in rows if isinstance(r, dict)
                              and str(r.get("id", r.get("_id", ""))) == str(cid)), None)
                 label = "%s[%s]" % (ch.words, cid)
@@ -893,9 +906,44 @@ class CliWriter:
                     out["fields"][label] = "row not returned"
                     continue
                 self._compare_rest(plan, res, out, crow, ch.set, ch.unset, label + ".")
+            out["cache"] = self._follow_cache(plan, row=row, subs=subs)
         except Exception as exc:  # noqa: BLE001
             out["skipped"] = "REST readback failed: %s" % exc
         res.readback["rest"] = out
+
+    def _follow_cache(self, plan: CliPlan, *, row: dict | None = None,
+                      gone: bool = False, subs: dict | None = None) -> bool:
+        """Keep SATOM's cache in step with what the REST readback just returned
+        (the DEVICE's copy, never the values sent) — the rule every FortiWebOps
+        write follows (``object_refresh``). Only objects SATOM already caches
+        are touched; sub-tables only when their parent has a deep capture.
+        Returns whether a cache row changed. Never raises."""
+        aid = getattr(self.appliance, "id", None)
+        mkey = plan.target.mkey
+        if aid is None or not plan.endpoint or mkey is None:
+            return False
+        try:
+            from . import write_through as wt
+            from ..registry import loader
+            if gone:
+                return bool(wt.local_delete(aid, plan.endpoint, mkey))
+            logical = wt.logical_for_collection(plan.endpoint,
+                                                loader.version_of(self.appliance))
+            if not logical or not isinstance(row, dict):
+                return False
+            changed = wt.local_refresh(aid, logical, mkey, row) > 0
+            for seg, rows in (subs or {}).items():
+                if isinstance(rows, list) and wt.local_subrows(
+                        aid, logical, mkey, seg, rows) is not None:
+                    changed = True
+            return changed
+        except Exception:  # noqa: BLE001 — the write already stands
+            try:
+                from ..extensions import db
+                db.session.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            return False
 
     @staticmethod
     def _compare_rest(plan, res, out, row, sets, unsets, prefix):

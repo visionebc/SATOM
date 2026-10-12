@@ -122,6 +122,8 @@ _EXEMPT_FROM_GAPS: frozenset = frozenset(_CERT_URNS) | frozenset(_REST_UNREACHAB
 # The VIP address object — the one payload a clone rewrites when the copy must
 # come up on a dummy IP (bulk clones, or the IP the operator typed).
 _VIP_URN = "cmdb/system/vip"
+_VSERVER_URN = "cmdb/server-policy/vserver"
+_VIPLIST_URN = "cmdb/server-policy/vserver/vip-list"
 _WPP_URNS = (_WPP_INLINE, _WPP_OFFLINE)
 
 #: Public alias. The comparison page has to recognise a WPP root so it can
@@ -272,6 +274,9 @@ class CloneItem:
     applied: bool = False
     result: str = ""
     verified: str = ""   # after a real clone: present | missing | unverifiable
+    #: The write's own re-read verdict (``object_refresh``): verified |
+    #: mismatch | unverified; "" when nothing was written.
+    check: str = ""
     #: FortiWeb PREDEFINED marker, read off the RAW payload before
     #: ``clean_for_write`` strips it. See :func:`clone_scope.is_factory`.
     factory: bool = False
@@ -298,6 +303,7 @@ class CloneItem:
             "mkey": self.mkey, "parent_mkey": self.parent_mkey, "kind": self.kind,
             "depth": self.depth, "status": self.status, "note": self.note,
             "result": self.result, "verified": self.verified,
+            "check": self.check,
             "factory": bool(self.factory), "scope": self.scope,
             "scope_reason": self.scope_reason, "renamed_from": self.renamed_from,
             "dst_row_key": self.dst_row_key,
@@ -727,7 +733,8 @@ class ClonePlanner:
              wpp_suffix: str = "", deep_suffix: str = "",
              managed: dict | None = None,
              additive_only: bool = False,
-             clone_anyway: Iterable[str] = ()) -> list[CloneItem]:
+             clone_anyway: Iterable[str] = (),
+             own_listener: str = "") -> list[CloneItem]:
         """Walk the source tree and classify each item vs the destination.
 
         ``follow_wpp=False`` prunes the Web Protection Profile subtree (the copy
@@ -762,6 +769,20 @@ class ClonePlanner:
             if wpp is not None:
                 rename_wpp(items, wpp_new_name or (wpp.mkey + wpp_suffix))
         self.renames: list[dict] = []
+        if own_listener:
+            # SAME-BOX clone of a Server Policy: the copy needs its OWN virtual
+            # server and VIP. Measured on fortiweb17 (7.6.8) / fortiweb18
+            # (8.0.6): a second policy on the same vserver — or on a NEW vserver
+            # naming the same VIP — with the same service answers -7212 "The
+            # same service port cannot be used for one Virtual IP twice", and a
+            # second VIP object on the same address answers -7970. So the
+            # vserver and its VIPs are copied under ``<name>-<own_listener>``
+            # (the VIP address is rewritten by the caller); everything else
+            # (pool, WPP, …) stays shared, as before.
+            self.renames = deep_rename(items, own_listener,
+                                       listener_keys(items),
+                                       exists=self._exists_at_dst,
+                                       index=via_field_index(_rich(root)))
         if deep_suffix:
             classify_scope(items, managed)
             created = resolve_shared(items, self._refs, root_mkey=mkey,
@@ -925,6 +946,72 @@ def disable_root(items: list[CloneItem]) -> None:
             payload["status"] = "disable"
             it.payload = payload
             return
+
+
+def listener_keys(items: list[CloneItem]) -> set[tuple[str, str]]:
+    """``{(urn, mkey)}`` of the ROOT policy's virtual server and of the VIP
+    objects its vip-list rows name — what a same-box copy must own."""
+    root = next((it for it in items if it.depth == 0 and it.kind == "object"),
+                None)
+    if root is None or not isinstance(root.payload, dict):
+        return set()
+    vs = str(root.payload.get("vserver") or "")
+    if not vs:
+        return set()
+    keys = {(_VSERVER_URN, vs)}
+    for it in items:
+        if (it.kind == "subrow" and it.urn == _VIPLIST_URN
+                and it.parent_mkey == vs and isinstance(it.payload, dict)):
+            vip = str(it.payload.get("vip") or "")
+            if vip:
+                keys.add((_VIP_URN, vip))
+    return keys
+
+
+def vip_addresses(items: list[CloneItem]) -> dict[str, str]:
+    """``{VIP mkey: address}`` as the plan stands now (before a rewrite)."""
+    return {it.mkey: str(it.payload.get("vip") or "") for it in items
+            if it.urn == _VIP_URN and it.kind == "object"
+            and isinstance(it.payload, dict)}
+
+
+def listener_blockers(items: list[CloneItem],
+                      before: dict[str, str] | None = None) -> list[str]:
+    """Why a same-box copy planned with ``own_listener`` cannot come up, BEFORE
+    anything is written. Empty = it can.
+
+    * a vip-list row on the INTERFACE address: the copy would listen on the same
+      address and port (fortiweb18 8.0.6: -7637 "The service of this port is in
+      use.");
+    * a copied VIP still on the source address: -7970 "The IP address of VIP is
+      already used by another VIP." (fortiweb18 8.0.6). ``before`` is
+      :func:`vip_addresses` taken before the VIP rewrite.
+    """
+    before = before or {}
+    out: list[str] = []
+    renamed = {it.mkey for it in items
+               if it.urn == _VSERVER_URN and it.kind == "object" and it.renamed_from}
+    for it in items:
+        if (it.kind == "subrow" and it.urn == _VIPLIST_URN
+                and it.parent_mkey in renamed and isinstance(it.payload, dict)
+                and str(it.payload.get("use-interface-ip") or "") == "enable"):
+            out.append(
+                'virtual server "%s" listens on the interface address of %s — a '
+                "copy on the same box would listen on the same address and port "
+                "(FortiWeb -7637). Clone it to another appliance, or give the "
+                "original a VIP first." % (it.parent_mkey,
+                                           it.payload.get("interface") or "?"))
+    for it in items:
+        if (it.urn == _VIP_URN and it.kind == "object" and it.renamed_from
+                and it.status == "create" and isinstance(it.payload, dict)
+                and str(it.payload.get("vip") or "").split("/")[0]
+                == str(before.get(it.mkey, "")).split("/")[0]):
+            out.append(
+                'VIP "%s" would keep the address %s of "%s" — FortiWeb refuses a '
+                "second VIP on one address (-7970). Give the copy a VIP address "
+                '(or "auto").' % (it.mkey, it.payload.get("vip") or "?",
+                                  it.renamed_from))
+    return out
 
 
 def vip_items(items: list[CloneItem]) -> list[CloneItem]:
@@ -1526,6 +1613,9 @@ def outcome(items: list[CloneItem]) -> dict:
         "untouched": [r for r in rows if r["status"] == "untouched"],
         "verified_missing": [r for r in created if r.get("verified") == "missing"],
         "unverifiable": [r for r in created if r.get("verified") == "unverifiable"],
+        # The write's own re-read could not compare anything (re-read failed,
+        # only secrets/sub-tables sent): reported, never failed.
+        "unverified_writes": [r for r in created if r.get("check") == "unverified"],
     }
 
 
@@ -1543,4 +1633,5 @@ __all__ = [
     "via_field_index", "classify_scope", "resolve_shared", "deep_rename",
     "wants_by_logical",
     "interface_fields", "interface_refs", "set_interface",
+    "listener_keys", "listener_blockers", "vip_addresses",
 ]

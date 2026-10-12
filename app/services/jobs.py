@@ -209,6 +209,78 @@ def set_progress(job_id: str, percent: int, message: str | None = None) -> None:
     update_job(job_id, **fields)
 
 
+# ── which devices a job WROTE to (generic page reload) ─────────────────────
+#: The job a thread is working for: bound by :func:`run_async` for the worker
+#: thread, and by :func:`bound` for helper threads a worker starts itself (a
+#: pool does not inherit thread-locals).
+_RUN = threading.local()
+_WROTE: dict = {}
+_WROTE_LOCK = threading.Lock()
+
+
+def current_job_id() -> str | None:
+    """The job this thread runs for, or None (a request handler, the scheduler)."""
+    jid = getattr(_RUN, "job_id", None)
+    if jid:
+        return jid
+    try:
+        from . import job_progress
+        return getattr(job_progress.current(), "job_id", None)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+class bound:
+    """``with jobs.bound(job_id):`` — make this thread work for ``job_id``."""
+
+    def __init__(self, job_id: str | None) -> None:
+        self.job_id = job_id
+
+    def __enter__(self):
+        self._prev = getattr(_RUN, "job_id", None)
+        if self.job_id:
+            _RUN.job_id = self.job_id
+        return self
+
+    def __exit__(self, *exc) -> bool:
+        _RUN.job_id = self._prev
+        return False
+
+
+def note_write(appliance_id) -> None:
+    """A device write landed on ``appliance_id`` from the job running on this
+    thread: record it in the job's ``wrote_to`` so ``jobs.js`` redraws any page
+    OF THAT DEVICE when the job ends (success, error or stop alike — what landed
+    changed what those pages draw). One file write per NEW device, no-op outside
+    a job. Never raises."""
+    jid = current_job_id()
+    if not jid or appliance_id is None:
+        return
+    try:
+        aid = int(appliance_id)
+    except (TypeError, ValueError):
+        return
+    with _WROTE_LOCK:
+        seen = _WROTE.setdefault(jid, set())
+        if aid in seen:
+            return
+        seen.add(aid)
+
+    def _add(st):
+        ids = st.setdefault("wrote_to", [])
+        if aid not in ids:
+            ids.append(aid)
+    try:
+        mutate_job(jid, _add)
+    except Exception:  # noqa: BLE001 — a reload hint never sinks a write
+        pass
+
+
+def _forget_writes(job_id: str) -> None:
+    with _WROTE_LOCK:
+        _WROTE.pop(job_id, None)
+
+
 def finish_success(job_id: str, *, message: str = "", result=None) -> None:
     update_job(job_id, status=SUCCESS, percent=100, message=message,
                result=result, error=None,
@@ -359,6 +431,7 @@ def run_async(flask_app, job_id: str, worker) -> None:
     update_job(job_id, status=RUNNING, pid=os.getpid(), host=_HOST)
 
     def _runner():
+        _RUN.job_id = job_id
         try:
             result = worker(flask_app, job_id)
             st = get_job(job_id) or {}
@@ -379,6 +452,9 @@ def run_async(flask_app, job_id: str, worker) -> None:
             st = get_job(job_id) or {}
             if st.get("status") in _ACTIVE:   # worker didn't record its own error
                 finish_error(job_id, f"{type(exc).__name__}: {exc}"[:300])
+        finally:
+            _RUN.job_id = None
+            _forget_writes(job_id)
 
     threading.Thread(target=_runner, name=f"job-{job_id}", daemon=True).start()
 

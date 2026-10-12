@@ -273,12 +273,18 @@ def _step(name: str, res, *, note: str = "") -> dict:
     result down with it, and the entry it had genuinely just created was
     reported as rejected).
     """
+    # Accepted is not applied: an entry the device re-read does not show fails
+    # here with the value the device kept (object_refresh); "unverified" is
+    # carried on the step and reported, never failed.
+    from . import object_refresh
+    object_refresh.enforce(res)
     ok = bool(getattr(res, "ok", res.get("ok")))
     dup = not ok and is_duplicate(res)
     if dup:
         ok, note = True, note or "already-present"
     return {"step": name, "ok": ok, "duplicate": dup, "note": note,
-            "request": res.get("request"), "error": res.get("error", "")}
+            "request": res.get("request"), "error": res.get("error", ""),
+            "verify": object_refresh.verdict_of(res)}
 
 
 def container_exists(ops, pcoll: str, target: str) -> bool | None:
@@ -350,7 +356,8 @@ def apply_injection(ops, *, exc_type: str, payload: dict, target: str,
     entry = steps[-1]
     return {"ok": all(s["ok"] for s in steps), "plan": plan, "steps": steps,
             "dry_run": dry_run,
-            "already_present": bool(entry.get("duplicate"))}
+            "already_present": bool(entry.get("duplicate")),
+            "verify": entry.get("verify") or ""}
 
 
 # --------------------------------------------------------------------------- #

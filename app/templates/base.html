@@ -12,6 +12,8 @@
      turbo-boot.js mirrors it into sessionStorage (per browser tab) and sends
      it back as X-ADOM on every request, so each tab keeps its own ADOM. #}
   <meta name="current-product" content="{{ product.key if product else '' }}">
+  {# The device this page draws (jobs.js redraws it when a job wrote there). #}
+  <meta name="page-appliance" content="{{ (request.view_args or {}).get('appliance_id', '') }}">
   <title>{% block title %}{{ product.title if product else 'SATOM' }}{% endblock %}</title>
 
   <!-- Favicon -->

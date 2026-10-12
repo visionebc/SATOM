@@ -108,6 +108,20 @@ def plan_cascade_delete(reader, policy_name: str) -> dict:
     delete (current behaviour before this module existed).
     """
     from . import clone as _clone
+    from .object_refresh import presence
+
+    # A policy the device does not have has nothing to cascade: answer in one
+    # GET instead of walking every other policy's tree (minutes on a 50-policy
+    # box). FortiWeb 7.6.8 answers a missing mkey with HTTP 500 errcode -3; a
+    # read that FAILED is not "absent" and falls through to the normal walk.
+    try:
+        there = presence(reader.client, "api/v2.0/cmdb/server-policy/policy",
+                         policy_name)
+    except Exception:  # noqa: BLE001
+        there = None
+    if there is False:
+        return {"root": policy_name, "to_delete": [], "to_keep": [],
+                "by_parent": [], "absent": True}
 
     planner = _clone.ClonePlanner(reader, reader)
 

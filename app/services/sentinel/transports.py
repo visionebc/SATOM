@@ -128,6 +128,21 @@ def _child_rows(client, path) -> list:
     return res if isinstance(res, list) else []
 
 
+def _follow(client, action: str, path: str, data=None) -> None:
+    """Keep SATOM's cache in step with a write this module has just made (and
+    verifies itself): one re-read of what it touched, via the same
+    ``object_refresh.after_write`` every FortiWebOps write goes through. Never
+    raises — the device write already stands."""
+    appl = getattr(client, "appliance", None)
+    if appl is None:
+        return
+    try:
+        from ..object_refresh import after_write
+        after_write(appl, client, action, (path or "").lstrip("/"), data)
+    except Exception:  # noqa: BLE001 — cache hygiene only
+        pass
+
+
 def _err(resp) -> str:
     """A device refusal in words, or '' when the device accepted.
 
@@ -198,11 +213,12 @@ class BlockIpTransport:
                                            "ip": ip},
                                    evidence={"already_present": True})
 
-        resp = client.post(f"{_IPLIST}/members?mkey={SENTINEL_LIST}",
-                           {"data": {"type": "black-ip", "ip": ip}})
+        body = {"data": {"type": "black-ip", "ip": ip}}
+        resp = client.post(f"{_IPLIST}/members?mkey={SENTINEL_LIST}", body)
         err = _err(resp)
         if err:
             return TransportResult(False, f"appliance refused the member: {err}")
+        _follow(client, "create", f"{_IPLIST}/members?mkey={SENTINEL_LIST}", body)
 
         # The device's own answer is not the proof. Re-read.
         row = self._member_for(client, ip)
@@ -236,6 +252,7 @@ class BlockIpTransport:
         err = _err(resp)
         if err:
             return TransportResult(False, f"delete refused: {err}")
+        _follow(client, "delete", f"{_IPLIST}/members?mkey={SENTINEL_LIST}&sub_mkey={mid}")
         still, _ = self.verify_applied(client, handle)
         if still:
             return TransportResult(False, f"{ip} is STILL listed after delete")
@@ -324,11 +341,12 @@ class BlockCountryTransport:
                                            "country": country},
                                    evidence={"already_present": True})
 
-        resp = client.post(f"{_GEO}/country-list?mkey={SENTINEL_GEO_LIST}",
-                           {"data": {"country-name": country}})
+        body = {"data": {"country-name": country}}
+        resp = client.post(f"{_GEO}/country-list?mkey={SENTINEL_GEO_LIST}", body)
         err = _err(resp)
         if err:
             return TransportResult(False, f"appliance refused the country: {err}")
+        _follow(client, "create", f"{_GEO}/country-list?mkey={SENTINEL_GEO_LIST}", body)
 
         row = self._row_for(client, country)
         if not row:
@@ -360,6 +378,8 @@ class BlockCountryTransport:
         err = _err(resp)
         if err:
             return TransportResult(False, f"delete refused: {err}")
+        _follow(client, "delete",
+                f"{_GEO}/country-list?mkey={SENTINEL_GEO_LIST}&sub_mkey={mid}")
         still, _ = self.verify_applied(client, handle)
         if still:
             return TransportResult(False, f"{country} is STILL listed after delete")
@@ -475,11 +495,12 @@ class RaiseProtectionTransport:
                 False, "refusing to raise a policy whose current profile could "
                        "not be read — the undo would have nothing to restore")
 
-        resp = client.put(f"{_POLICY}?mkey={policy}",
-                          {"data": {"web-protection-profile": target}})
+        body = {"data": {"web-protection-profile": target}}
+        resp = client.put(f"{_POLICY}?mkey={policy}", body)
         err = _err(resp)
         if err:
             return TransportResult(False, f"appliance refused the change: {err}")
+        _follow(client, "update", f"{_POLICY}?mkey={policy}", body)
 
         now = self._current(client, policy)
         if now != target:
@@ -514,11 +535,12 @@ class RaiseProtectionTransport:
         if self._current(client, policy) == previous:
             return TransportResult(True, f"policy '{policy}' is already back on "
                                          f"'{previous}'")
-        resp = client.put(f"{_POLICY}?mkey={policy}",
-                          {"data": {"web-protection-profile": previous}})
+        body = {"data": {"web-protection-profile": previous}}
+        resp = client.put(f"{_POLICY}?mkey={policy}", body)
         err = _err(resp)
         if err:
             return TransportResult(False, f"restore refused: {err}")
+        _follow(client, "update", f"{_POLICY}?mkey={policy}", body)
         now = self._current(client, policy)
         if now != previous:
             return TransportResult(
@@ -588,6 +610,8 @@ def arm_geo_policy(client: FortiWebClient, policy: str, *,
             "name": SENTINEL_GEO_LIST, "action": "block-period",
             "block-period": int(block_period), "severity": "High"}})
         e = _err(r)
+        if not e:
+            _follow(client, "create", _GEO, {"data": {"name": SENTINEL_GEO_LIST}})
         if not step("list", not e, e or f"created {SENTINEL_GEO_LIST} "
                                         f"(device-side expiry {block_period}s)"):
             return {"ok": False, "steps": steps}
@@ -602,6 +626,9 @@ def arm_geo_policy(client: FortiWebClient, policy: str, *,
     r = client.put(f"{_WPP}?mkey={wpp}",
                    {"data": {"geo-block-list-policy": SENTINEL_GEO_LIST}})
     e = _err(r)
+    if not e:
+        _follow(client, "update", f"{_WPP}?mkey={wpp}",
+                {"data": {"geo-block-list-policy": SENTINEL_GEO_LIST}})
     if not step("bind", not e,
                 e or f"profile '{wpp}'.geo-block-list-policy = {SENTINEL_GEO_LIST}"):
         return {"ok": False, "steps": steps}
@@ -634,6 +661,8 @@ def arm_policy(client: FortiWebClient, policy: str, *, block_period: int = 600) 
             "name": SENTINEL_LIST, "action": "block-period",
             "block-period": int(block_period), "severity": "High"}})
         e = _err(r)
+        if not e:
+            _follow(client, "create", _IPLIST, {"data": {"name": SENTINEL_LIST}})
         if not step("list", not e, e or f"created {SENTINEL_LIST} "
                                         f"(device-side expiry {block_period}s)"):
             return {"ok": False, "steps": steps}
@@ -648,6 +677,9 @@ def arm_policy(client: FortiWebClient, policy: str, *, block_period: int = 600) 
     r = client.put(f"{_WPP}?mkey={wpp}",
                    {"data": {"ip-list-policy": SENTINEL_LIST}})
     e = _err(r)
+    if not e:
+        _follow(client, "update", f"{_WPP}?mkey={wpp}",
+                {"data": {"ip-list-policy": SENTINEL_LIST}})
     if not step("bind", not e, e or f"profile '{wpp}'.ip-list-policy = {SENTINEL_LIST}"):
         return {"ok": False, "steps": steps}
 

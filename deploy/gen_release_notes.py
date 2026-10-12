@@ -493,6 +493,12 @@ def main(argv: list[str] | None = None) -> int:
                     help="exit 1 if the published release notes are stale; write nothing")
     args = ap.parse_args(argv)
 
+    try:
+        gsd._dp.require_site_rules()
+    except gsd._dp.OverlayError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
     pages = build()
 
     findings: list[str] = []

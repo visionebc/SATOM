@@ -6,6 +6,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — the documentation generators refuse a source tree without the site rules
+
+`deploy/gen_site_docs.py` and `deploy/gen_release_notes.py` redact this site's
+node names with the untracked overlay `data/publication-rules.local.json`.
+Without it they fell back to the generic rules, and the leak scan, reading the
+same empty table, still reported "0 leaks": pages generated in a git worktree
+carried internal node names.
+
+- Both generators now stop with exit 2 when the overlay is missing from a
+  source tree (one that still carries the adversarial identifier corpus that
+  publication strips). A deployed node and a published mirror are unaffected.
+- The Scout entry of the Fleet menu is hidden for a user without the Scout
+  permission instead of claiming that Scout is switched off for the site.
+
 ### Fixed — the nightly satom-audit review is green again
 
 The nightly full-suite review (satom-audit) had been red for days: 86 failed
@@ -17,7 +31,7 @@ real defects they had been pointing at.
   measured while the fleet board offered CPU/memory panels that could only be
   empty. The *Box resources* collector and the CPU/memory monitors now read
   FortiOS `GET /api/v2/monitor/system/resource/usage`; a missing reading is an
-  error, never 0 %. Not yet measured against a real FortiGate.
+  error, never 0 %. Verified against a lab FortiGate on FortiOS 8.0.1.
 - **The FortiGate ADOM's Analysis page says there is no analysis for
   FortiGate**, and `/analysis/data` answers 404 for a refused or unmapped ADOM
   instead of falling through to the FortiWeb WAF analysis.

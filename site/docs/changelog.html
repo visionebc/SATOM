@@ -112,6 +112,19 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="fixed--the-documentation-generators-refuse-a-source-tree-without-the-site-rules">Fixed — the documentation generators refuse a source tree without the site rules</h3>
+<p><code>deploy/gen_site_docs.py</code> and <code>deploy/gen_release_notes.py</code> redact this site's
+node names with the untracked overlay <code>data/publication-rules.local.json</code>.
+Without it they fell back to the generic rules, and the leak scan, reading the
+same empty table, still reported "0 leaks": pages generated in a git worktree
+carried internal node names.</p>
+<ul>
+<li>Both generators now stop with exit 2 when the overlay is missing from a
+  source tree (one that still carries the adversarial identifier corpus that
+  publication strips). A deployed node and a published mirror are unaffected.</li>
+<li>The Scout entry of the Fleet menu is hidden for a user without the Scout
+  permission instead of claiming that Scout is switched off for the site.</li>
+</ul>
 <h3 id="fixed--the-nightly-satom-audit-review-is-green-again">Fixed — the nightly satom-audit review is green again</h3>
 <p>The nightly full-suite review (satom-audit) had been red for days: 86 failed
 tests, most of them guards that never followed a refactor, plus a handful of
@@ -122,7 +135,7 @@ real defects they had been pointing at.</p>
   measured while the fleet board offered CPU/memory panels that could only be
   empty. The <em>Box resources</em> collector and the CPU/memory monitors now read
   FortiOS <code>GET /api/v2/monitor/system/resource/usage</code>; a missing reading is an
-  error, never 0 %. Not yet measured against a real FortiGate.</li>
+  error, never 0 %. Verified against a lab FortiGate on FortiOS 8.0.1.</li>
 <li><strong>The FortiGate ADOM's Analysis page says there is no analysis for
   FortiGate</strong>, and <code>/analysis/data</code> answers 404 for a refused or unmapped ADOM
   instead of falling through to the FortiWeb WAF analysis.</li>

@@ -28,9 +28,10 @@
 {% if scout_on and may_open('scout.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'scout' else '' }}" href="{{ url_for('scout.index') }}">
   <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span></a>
-{% else %}{# Switched off: shown, disabled, with the reason. An ABSENT entry
+{% elif not scout_on %}{# Switched off: shown, disabled, with the reason. An ABSENT entry
    reads as 'this product has no Scout' and sends the operator looking for an
-   installer instead of for the checkbox. #}
+   installer instead of for the checkbox. Switched on but not permitted is
+   hidden like every other entry: "switched off" would be false. #}
 <span class="fw-nav-item disabled text-muted" style="cursor:not-allowed;opacity:.55;"
       title="{{ _('Scout is switched off for this site (Settings → Scout → Availability).') }}">
   <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span>

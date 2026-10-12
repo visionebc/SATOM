@@ -191,8 +191,10 @@ def index():
         if builds else None
     a = request.args.get("a") or (builds[0] if len(builds) >= 2 else "")
     b = request.args.get("b2") or (builds[-1] if len(builds) >= 2 else "")
-    # ``product`` is base.html's ADOM product object: never shadow it.
-    return render_template("registry/build_compat.html", products=products,
+    # ``product`` and ``products`` are layout globals (the ADOM product object
+    # and the ADOM registry): a view keyword must never shadow either one.
+    return render_template("registry/build_compat.html",
+                           compat_products=products,
                            sel_product=product, known=known, builds=builds, m=m,
                            only=only, q=q, meta=meta, a=a, b=b,
                            cell_label=CELL_LABEL, cell_badge=CELL_BADGE,

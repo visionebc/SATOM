@@ -128,11 +128,9 @@ def index():
     )
 
 
-def _csv_cell(value) -> str:
-    """A text cell that a spreadsheet will not evaluate as a formula (targets
-    and payloads carry user-typed text)."""
-    text = '' if value is None else str(value)
-    return "'" + text if text[:1] in ('=', '+', '-', '@') else text
+# A text cell that a spreadsheet will not evaluate as a formula (targets and
+# payloads carry user-typed text).
+from ..services.csv_safe import spreadsheet_safe as _csv_cell  # noqa: E402
 
 
 #: Upper bound on one export, so a click cannot stream the whole table.

@@ -26,6 +26,7 @@ from ..services import report_builder
 from ..services import plugin_sandbox
 from ..services import py_console as pyc
 from ..services import py_examples
+from ..services.csv_safe import spreadsheet_safe
 from ..services.audit import log_action
 from ..extensions import db
 from ..models import DbReport
@@ -76,9 +77,11 @@ def query_csv():
         return Response(f"error,{res['error']}\n", mimetype="text/csv")
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(res["columns"])
+    # Cells are database text that operators, devices and failed logins wrote
+    # (audit usernames, object names): never let a spreadsheet evaluate them.
+    w.writerow([spreadsheet_safe(c) for c in res["columns"]])
     for row in res["rows"]:
-        w.writerow(row)
+        w.writerow([spreadsheet_safe(c) for c in row])
     return Response(buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition":
                              "attachment; filename=query_result.csv"})

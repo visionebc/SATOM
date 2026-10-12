@@ -56,6 +56,7 @@ from dataclasses import dataclass, field as _dc_field
 
 from ..registry import loader
 from . import api_matrix
+from ..extensions import db
 
 # ---------------------------------------------------------------------------
 # products
@@ -725,7 +726,7 @@ def read_dump(backup_id: int) -> tuple[str, dict]:
     """
     from ..models_backup import ConfigBackup
 
-    row = ConfigBackup.query.get(backup_id)
+    row = db.session.get(ConfigBackup, backup_id)
     if row is None:
         return "", {}
     rec = next((r for r in evidence_index() if r["backup_id"] == backup_id), None)

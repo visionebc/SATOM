@@ -40,6 +40,7 @@ import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+from ..extensions import db
 
 PRODUCTS = ("fortiweb",)
 K_SOURCE = "signatures.source.%s"
@@ -97,7 +98,7 @@ def source_appliance(product: str = "fortiweb"):
     aid = source_id(product)
     if aid is None:
         return None
-    ap = Appliance.query.get(aid)
+    ap = db.session.get(Appliance, aid)
     return ap if ap is not None and (ap.kind or "") == product else None
 
 

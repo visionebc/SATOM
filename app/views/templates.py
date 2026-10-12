@@ -31,6 +31,7 @@ from ..services import template_compat as tc
 from ..services import template_bindings as tb
 from ..services.audit import log_action
 from ..services.bulk import BulkRunner, iter_push_items
+from ..extensions import db
 
 bp = Blueprint('templates', __name__, url_prefix='/templates')
 
@@ -162,7 +163,7 @@ def detail(template_id: int):
 
 
 def _binding_json(b) -> dict:
-    appl = Appliance.query.get(b.appliance_id)
+    appl = db.session.get(Appliance, b.appliance_id)
     try:
         st = tb.status(b, appl)
     except Exception as exc:  # noqa: BLE001 — one unreadable binding never hides the rest
@@ -727,12 +728,11 @@ def bind(template_id: int):
 @require_permission('operations.template_save')
 def unbind(binding_id: int):
     from ..models_tpl_binding import TemplateBinding
-    b = TemplateBinding.query.get(binding_id)
+    b = db.session.get(TemplateBinding, binding_id)
     if b is None:
         abort(404)
     visible_appliance_or_404(b.appliance_id)
     tb.unbind(binding_id)
-    from ..extensions import db
     db.session.commit()
     log_action('template.unbind', target=f'{b.kind}/{b.name}',
                appliance_id=b.appliance_id, detail='binding removed')

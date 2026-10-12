@@ -53,6 +53,7 @@ import json
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+from ..extensions import db
 
 # Snapshot keys that change every sweep without the device config changing.
 VOLATILE_KEYS = ("generated_at", "errors")
@@ -423,7 +424,7 @@ def load(version_id: int) -> dict | None:
 def db_get(version_id: int):
     from ..models_sot import SotVersion
     try:
-        return SotVersion.query.get(int(version_id))
+        return db.session.get(SotVersion, int(version_id))
     except Exception:  # noqa: BLE001
         return None
 

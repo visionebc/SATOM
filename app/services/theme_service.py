@@ -35,6 +35,7 @@ import time
 
 from .theme_tokens import (DEFAULTS, GROUP_ORDER, TOKENS, TOKEN_NAMES,  # noqa: F401
                            by_group)
+from ..extensions import db
 
 __all__ = [
     "validate_tokens", "audit_contrast", "css_for", "active_theme",
@@ -312,7 +313,7 @@ def set_active(theme_id: int) -> "str | None":
     """Activate one theme. Returns an error string, or ``None`` on success."""
     from ..extensions import db
     from ..models_theme import UiTheme
-    row = UiTheme.query.get(theme_id)
+    row = db.session.get(UiTheme, theme_id)
     if row is None:
         return "Theme not found."
     UiTheme.query.filter(UiTheme.is_active.is_(True)).update(

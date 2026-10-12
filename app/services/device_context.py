@@ -18,6 +18,7 @@ from __future__ import annotations
 from flask import g, session
 
 from ..models import Appliance
+from ..extensions import db
 
 SESSION_KEY = "appliance_id"           # FortiWeb slot (legacy key, kept)
 SESSION_KEY_ADC = "appliance_id_adc"   # FortiADC slot
@@ -113,7 +114,7 @@ def current_appliance() -> Appliance | None:
         return g.__dict__[_G_CACHE]
     key = _active_key()
     aid = session.get(key)
-    appl = Appliance.query.get(int(aid)) if aid else None
+    appl = db.session.get(Appliance, int(aid)) if aid else None
     # Product gate: a device of the OTHER product must never be this ADOM's
     # implicit context. Re-home it to its own slot instead of dropping it.
     if appl is not None and _key_for(appl) != key:
@@ -140,7 +141,7 @@ def current_appliance() -> Appliance | None:
 def set_current(appliance_id: int) -> None:
     """Remember the selection in the slot matching the DEVICE's kind (not the
     session product), so a pick made from the Global map lands correctly."""
-    appl = Appliance.query.get(int(appliance_id))
+    appl = db.session.get(Appliance, int(appliance_id))
     key = _key_for(appl) if appl is not None else _active_key()
     session[key] = int(appliance_id)
     g.__dict__.pop(_G_CACHE, None)

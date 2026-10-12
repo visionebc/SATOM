@@ -16,6 +16,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from ..models import Appliance
+from . import object_refresh
 from .fortiweb_ops import FortiWebOps
 
 _MAX_WORKERS = 8
@@ -85,6 +86,10 @@ def _run_one(appliance, items, dry_run, *, job_id=None, skips=None) -> dict:
             r = ops.delete(it["endpoint"], it.get("mkey"), dry_run=dry_run)
         else:
             r = {"ok": False, "error": f"unknown action {action}", "endpoint": it.get("endpoint")}
+        if not dry_run:
+            # Accepted is not applied: a write the re-read does not show fails
+            # here, with the value the device kept (object_refresh).
+            object_refresh.enforce(r)
         results.append(r)
         if not dry_run and _res_ok(r):
             # A real write that landed — record it as mid-change context (the
@@ -101,6 +106,9 @@ def _run_one(appliance, items, dry_run, *, job_id=None, skips=None) -> dict:
         "committed": committed,
         "results": results,
         "skipped": skipped,
+        # Landed, but the re-read could not compare anything: reported only.
+        "unverified": sum(1 for r in results if _res_ok(r)
+                          and object_refresh.verdict_of(r) == object_refresh.UNVERIFIED),
     }
 
 
@@ -152,6 +160,7 @@ def start_apply_job(flask_app, *, title: str, items: list[dict],
                              "ok": bool(r.get("ok")),
                              "cancelled": bool(r.get("cancelled"))} for r in runs],
                 "mid_change": mid_change,
+                "unverified": sum(int(r.get("unverified") or 0) for r in runs),
                 "detail": result,
             }
             try:
@@ -184,9 +193,13 @@ def start_apply_job(flask_app, *, title: str, items: list[dict],
                     job_id, f"Completed with failures — "
                             f"{ok_count}/{len(runs)} device(s) ok")
             else:
+                unv = summary["unverified"]
                 jobs.finish_success(
                     job_id,
-                    message=f"Applied to {ok_count}/{len(runs)} device(s)",
+                    message=(f"Applied to {ok_count}/{len(runs)} device(s)"
+                             + (f" — {unv} write(s) not verified on the device "
+                                "(re-read failed)" if unv else
+                                " — verified on the device")),
                     result=summary)
 
     jobs.run_async(flask_app, job["id"], _worker)
@@ -272,8 +285,10 @@ class BulkRunner:
                     pass
 
         def _run_and_tick(d):
-            r = _run_one(d, self._items_for(d), dry_run=False, job_id=job_id,
-                         skips=self._skips_for(d))
+            # Pool threads do not inherit the job binding (jobs.note_write).
+            with jobsvc.bound(job_id):
+                r = _run_one(d, self._items_for(d), dry_run=False, job_id=job_id,
+                             skips=self._skips_for(d))
             _tick(r.get("appliance") or "")
             return r
 

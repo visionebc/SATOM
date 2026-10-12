@@ -45,6 +45,11 @@ VERIFIED, MISMATCH, UNVERIFIED = "verified", "mismatch", "unverified"
 #: Field names never compared: the device masks them or never returns them.
 _SECRET_HINTS = ("pass", "secret", "psk", "private", "token")
 
+#: Read-only counters the device derives itself (``sz_vip-list`` = how many
+#: rows the sub-table holds). A clone echoes the source's count in the parent's
+#: POST, before its rows exist: comparing it is a false mismatch.
+_DERIVED_PREFIXES = ("sz_",)
+
 #: FortiWeb's "no such entry" (HTTP 500, measured on 7.6.8): the object is
 #: ABSENT, which a delete wants and an update/create does not.
 _NOT_FOUND = -3
@@ -109,6 +114,18 @@ def _read(client, path):
     return res
 
 
+def presence(client, base: str, mkey: str):
+    """Does the device hold ``mkey`` in collection ``base``? ``True`` / ``False``
+    (FortiWeb answered "entry not found", errcode -3) / ``None`` (the read
+    itself failed — unknown, never "absent"). One GET."""
+    got = _read(client, "%s?mkey=%s" % ((base or "").lstrip("/"), mkey))
+    if got is _ABSENT:
+        return False
+    if got is None:
+        return None
+    return _one(got, str(mkey)) is not None
+
+
 def _one(res, name: str):
     if isinstance(res, dict):
         return res if res else None
@@ -126,8 +143,8 @@ def compare(sent, device) -> dict:
     """Pure: the sent scalar fields against the device's copy.
 
     ``{"verdict", "checked": [field…], "mismatch": {field: {"sent", "device"}},
-    "unchecked": [field…]}``. Sub-tables (lists/dicts) and secrets are not
-    compared; a masked value (``******``) or a field the read does not return
+    "unchecked": [field…]}``. Sub-tables (lists/dicts), secrets and derived
+    counters (``sz_*``) are not compared; a masked value (``******``) or a field the read does not return
     is ``unchecked``. ``int 80`` and ``"80"`` match; case is ignored.
     """
     out = {"verdict": UNVERIFIED, "checked": [], "mismatch": {}, "unchecked": []}
@@ -137,6 +154,8 @@ def compare(sent, device) -> dict:
         if isinstance(v, (list, dict)) or isinstance(v, bool) or v is None:
             continue
         if any(h in str(k).lower() for h in _SECRET_HINTS):
+            continue
+        if str(k).startswith(_DERIVED_PREFIXES):
             continue
         if k not in device:
             out["unchecked"].append(k)
@@ -204,11 +223,15 @@ def _subtable(session, aid, client, action, base, logical, sub, q, data, out):
                              "mismatch": {"(row)": {"sent": "update", "device": "missing"}}})
     else:
         # A new row has no id yet: verified when SOME row carries what was sent.
-        verdicts = [compare(data, r) for r in rows]
+        # The ``id`` a copied row carries is the SOURCE's; the box assigns its
+        # own, so it is not compared.
+        inner = _inner(data)
+        sent = {k: v for k, v in inner.items() if k != "id"} if isinstance(inner, dict) else data
+        verdicts = [compare(sent, r) for r in rows]
         best = next((v for v in verdicts if v["verdict"] == VERIFIED), None)
         out["verify"] = best or (
             {"verdict": MISMATCH, "checked": [], "unchecked": [],
-             "mismatch": {"(row)": {"sent": _inner(data), "device": "no row matches"}}}
+             "mismatch": {"(row)": {"sent": sent, "device": "no row matches"}}}
             if any(v["checked"] or v["mismatch"] for v in verdicts) or not rows
             else _unverified("nothing comparable was sent"))
     if _cached(session, aid, logical, mkey, layer="deep"):
@@ -309,3 +332,27 @@ def describe_mismatch(verify: dict) -> str:
     more = " (+%d more)" % (len(mm) - 4) if len(mm) > 4 else ""
     return ("the device accepted the write but does not hold it — "
             + "; ".join(parts) + more)
+
+
+def verdict_of(res) -> str:
+    """The re-read verdict an ``OpResult`` carries ("" when none: dry-run,
+    refused write, or a writer that did not verify)."""
+    v = (res.get("verify") if hasattr(res, "get") else None) or {}
+    return str(v.get("verdict") or "") if isinstance(v, dict) else ""
+
+
+def enforce(res):
+    """The caller-side rule: an ACCEPTED write the device does not hold is a
+    FAILED write. Flips ``res["ok"]`` to False and puts the value the device
+    kept in ``res["error"]`` (``not_applied=True``) on a ``mismatch``;
+    ``unverified`` is left ok (reported, not failed). Returns ``res``; a
+    non-dict (or a dry-run) passes through untouched. Never raises."""
+    try:
+        if (isinstance(res, dict) and res.get("ok") and not res.get("dry_run")
+                and verdict_of(res) == MISMATCH):
+            res["ok"] = False
+            res["not_applied"] = True
+            res["error"] = describe_mismatch(res.get("verify"))
+    except Exception:  # noqa: BLE001
+        pass
+    return res

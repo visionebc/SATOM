@@ -77,7 +77,7 @@ def _replace_set(ops, coll, desired, *, dry_run):
         # would refuse a wipe whose rows are re-added two lines below.
         ops.delete(path, str(any_id), dry_run=False, check_refs=False)
     for p in desired_payloads:
-        res = ops.create(path, {"data": p}, dry_run=False)
+        res = _held(ops.create(path, {"data": p}, dry_run=False))
         if not res.ok:
             # Roll back to the original set, best-effort.
             try:
@@ -548,20 +548,25 @@ def _compat_gate(appl, coll, fields, do_apply):
     return None, fields, report
 
 
-def _writethrough(appliance_id, coll, mkey, fields, op):
-    """Phase 5: after an APPROVED apply, keep the local source of truth
-    consistent (no full re-sweep) and release the edit lease. Best-effort."""
+def _release_lease(appliance_id, coll, mkey):
+    """After an APPROVED apply, release the edit lease. Best-effort.
+
+    The cache is NOT written here: ``FortiWebOps`` already re-read what the
+    write touched and stored the DEVICE's copy (``object_refresh``). Merging
+    the SENT fields over it (as this did until 2026-10) would put back exactly
+    what a build that drops a field did not keep."""
     try:
-        from ..services import write_through, lock_service
-        if op == 'update':
-            write_through.local_update(appliance_id, coll, mkey, fields)
-        elif op == 'delete':
-            write_through.local_delete(appliance_id, coll, mkey)
-        elif op == 'create':
-            write_through.local_create(appliance_id, coll, mkey, fields)
+        from ..services import lock_service
         lock_service.release(appliance_id, "%s:%s" % (coll, mkey))
     except Exception:  # noqa: BLE001 — never sink the write
         pass
+
+
+def _held(res):
+    """Accepted is not applied: a write the device re-read does not show FAILS,
+    with the value the device kept (``object_refresh.enforce``). Returns res."""
+    from ..services import object_refresh
+    return object_refresh.enforce(res)
 
 
 @bp.route('/<int:appliance_id>/save-object', methods=['POST'])
@@ -601,8 +606,8 @@ def save_object(appliance_id):
     cli_fields = dict((split or {}).get('cli') or {})
     rest_fields = {k: v for k, v in fields.items() if k not in cli_fields}
     if rest_fields:
-        res = FortiWebOps(appl).update(objform.rest_path(coll), mkey, {'data': rest_fields},
-                                       dry_run=not do_apply)
+        res = _held(FortiWebOps(appl).update(objform.rest_path(coll), mkey,
+                                             {'data': rest_fields}, dry_run=not do_apply))
     else:
         from ..services.fortiweb_ops import OpResult
         res = OpResult(ok=True, dry_run=not do_apply, request=None, error='')
@@ -611,7 +616,7 @@ def save_object(appliance_id):
     error = res.get('error', '') or (_cli_error(cli) if cli and not cli.get('ok') else '')
     diff = None
     if do_apply and ok:
-        _writethrough(appliance_id, coll, mkey, fields, 'update')
+        _release_lease(appliance_id, coll, mkey)
         # Lifecycle hook (WAF rule 1): swapping a Server Policy's WPP from the
         # generic editor also flags that policy's authored carve-outs stale.
         if (objform.collection_of(coll) == 'server-policy/policy'
@@ -629,7 +634,7 @@ def save_object(appliance_id):
         from ..services import write_through as _wt
         diff = _wt.diff_object(appliance_id, coll, mkey, fields)
     return jsonify(ok=ok, dry_run=res.get('dry_run'), request=res.get('request'),
-                   diff=diff, error=error,
+                   diff=diff, error=error, verify=res.get('verify'),
                    unverified_refs=unverified, build_compat=compat, cli=cli,
                    cli_fields=sorted(cli_fields), channel_warnings=_channel_warnings(split))
 
@@ -754,12 +759,13 @@ def create_object(appliance_id):
     refusal, data, compat = _compat_gate(appl, coll, data, do_apply)
     if refusal:
         return refusal
-    res = FortiWebOps(appl).create(objform.rest_path(coll), {'data': data},
-                                   dry_run=not do_apply)
+    res = _held(FortiWebOps(appl).create(objform.rest_path(coll), {'data': data},
+                                         dry_run=not do_apply))
     if do_apply and res.ok:
-        _writethrough(appliance_id, coll, name, data, 'create')
+        _release_lease(appliance_id, coll, name)
     return jsonify(ok=res.ok, dry_run=res.get('dry_run'), request=res.get('request'),
-                   error=res.get('error', ''), unverified_refs=unverified,
+                   error=res.get('error', ''), verify=res.get('verify'),
+                   unverified_refs=unverified,
                    build_compat=compat)
 
 
@@ -806,9 +812,10 @@ def save_row_for(appl, body):
         path = objform.rest_path(coll)
         fld = _server_field(coll)
         if sub_id in (None, ''):
-            res = ops.create(path, {'data': fields}, dry_run=not do_apply)
+            res = _held(ops.create(path, {'data': fields}, dry_run=not do_apply))
             return jsonify(ok=res.ok, dry_run=res.get('dry_run'),
-                           request=res.get('request'), error=res.get('error', ''))
+                           request=res.get('request'), error=res.get('error', ''),
+                           verify=res.get('verify'))
         rows = ops.client._safe_list(path) or []
         desired = []
         for r in rows:
@@ -843,10 +850,10 @@ def save_row_for(appl, body):
     rest_fields = {k: v for k, v in fields.items() if k not in cli_fields}
     if sub_id in (None, ''):
         path = objform.scoped_path(coll, parent)
-        res = ops.create(path, {'data': fields}, dry_run=not do_apply)
+        res = _held(ops.create(path, {'data': fields}, dry_run=not do_apply))
     elif rest_fields:
         path = objform.scoped_path(coll, parent, sub_id)
-        res = ops.update(path, '', {'data': rest_fields}, dry_run=not do_apply)
+        res = _held(ops.update(path, '', {'data': rest_fields}, dry_run=not do_apply))
     else:
         from ..services.fortiweb_ops import OpResult
         res = OpResult(ok=True, dry_run=not do_apply, request=None, error='')
@@ -855,7 +862,9 @@ def save_row_for(appl, body):
     ok = res.ok and (cli is None or bool(cli.get('ok')))
     error = res.get('error', '') or (_cli_error(cli) if cli and not cli.get('ok') else '')
     return jsonify(ok=ok, dry_run=res.get('dry_run'), request=res.get('request'),
-                   error=error, build_compat=compat, cli=cli,
+                   error=error, verify=res.get('verify'),
+                   cache_refreshed=bool((res.get('cache_refresh') or {}).get('refreshed')),
+                   build_compat=compat, cli=cli,
                    cli_fields=sorted(cli_fields), channel_warnings=_channel_warnings(split))
 
 
@@ -899,10 +908,10 @@ def delete_row(appliance_id):
 
     if not parent:
         return jsonify(ok=False, error='parent + row id required'), 400
-    res = ops.delete(objform.scoped_path(coll, parent, sub_id), '',
-                     dry_run=not do_apply)
+    res = _held(ops.delete(objform.scoped_path(coll, parent, sub_id), '',
+                           dry_run=not do_apply))
     return jsonify(ok=res.ok, dry_run=res.get('dry_run'), request=res.get('request'),
-                   error=res.get('error', ''))
+                   error=res.get('error', ''), verify=res.get('verify'))
 
 
 @bp.route('/<int:appliance_id>/delete-object', methods=['POST'])
@@ -924,13 +933,14 @@ def delete_object(appliance_id):
     held = _lease_conflict(appliance_id, coll, mkey)
     if held:
         return held
-    res = FortiWebOps(appl).delete(objform.rest_path(coll), mkey,
-                                   dry_run=not do_apply,
-                                   force=bool(body.get('force')))
+    res = _held(FortiWebOps(appl).delete(objform.rest_path(coll), mkey,
+                                         dry_run=not do_apply,
+                                         force=bool(body.get('force'))))
     if do_apply and res.ok:
-        _writethrough(appliance_id, coll, mkey, {}, 'delete')
+        _release_lease(appliance_id, coll, mkey)
     return jsonify(ok=res.ok, dry_run=res.get('dry_run'), request=res.get('request'),
-                   error=res.get('error', ''), blocked=res.get('blocked'))
+                   error=res.get('error', ''), blocked=res.get('blocked'),
+                   verify=res.get('verify'))
 
 
 @bp.route('/<int:appliance_id>/clone-object', methods=['POST'])
@@ -981,18 +991,18 @@ def clone_object(appliance_id):
         return jsonify(ok=True, dry_run=True, plan=plan)
 
     ops = FortiWebOps(appl)
-    res = ops.create(objform.rest_path(coll), {'data': fields}, dry_run=False)
+    res = _held(ops.create(objform.rest_path(coll), {'data': fields}, dry_run=False))
     if not res.ok:
         return jsonify(ok=False, error=res.get('error') or 'create failed')
-    _writethrough(appliance_id, coll, new_name, fields, 'create')
+    _release_lease(appliance_id, coll, new_name)
     row_fail = []
     for st in subtables:
         for r in st['rows']:
             rf = sanitize_payload({k: v for k, v in r.items() if k != 'id'})
             if not rf:
                 continue
-            rr = ops.create(objform.scoped_path(st['collection'], new_name),
-                            {'data': rf}, dry_run=False)
+            rr = _held(ops.create(objform.scoped_path(st['collection'], new_name),
+                                  {'data': rf}, dry_run=False))
             if not rr.ok:
                 row_fail.append({'sub': st['seg'],
                                  'error': rr.get('error') or 'row create failed'})

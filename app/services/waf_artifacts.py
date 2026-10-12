@@ -347,6 +347,97 @@ def fetch(client, kind: str, name: str, *, vdom: str = "") -> tuple[bytes | None
 
 
 def push(client, kind: str, name: str, blob: bytes, *, vdom: str = "") -> tuple[bool, str]:
+    """:func:`push_checked` as ``(ok, error)`` — a push the re-read contradicts
+    is NOT ok."""
+    out = push_checked(client, kind, name, blob, vdom=vdom)
+    return out["ok"], out["error"]
+
+
+def _same_content(kind: str, sent: bytes, got: bytes) -> bool | None:
+    """Does the device's copy carry what was sent? ``None`` = cannot tell.
+
+    OpenAPI is re-emitted as sorted YAML even when JSON was uploaded, so it is
+    compared as a parsed document, never as bytes; everything else as text with
+    surrounding whitespace ignored (``fetch`` already trims the DTD junk tail).
+    """
+    a = sent.decode("utf-8", "replace")
+    b = got.decode("utf-8", "replace")
+    if kind == "openapi":
+        try:
+            import yaml
+            return yaml.safe_load(a) == yaml.safe_load(b)
+        except Exception:  # noqa: BLE001 — unparseable: not proof either way
+            return None
+    return a.strip() == b.strip()
+
+
+def confirm(client, kind: str, name: str, blob: bytes, *, vdom: str = "") -> dict:
+    """Re-read what a push wrote: the cmdb OBJECT (and SATOM's cache of it —
+    ``object_refresh.after_write``, the rule every FortiWebOps write follows)
+    and, where the firmware gives it back, the CONTENT.
+
+    ``{"verdict": verified|mismatch|unverified, "why", "cache"}``. ``verified``
+    needs both the object and its content; a kind the device will not read back
+    (XSD, WSDL, gRPC IDL) is ``unverified`` at best. Never raises."""
+    from . import object_refresh as orf
+    spec = KINDS.get(kind) or {}
+    urn = str(spec.get("urn") or "")
+    path = "/api/v2.0/" + urn.lstrip("/")
+    appl = getattr(client, "appliance", None)
+    obj, why, cache = orf.UNVERIFIED, "", False
+    try:
+        if appl is not None:
+            ref = orf.after_write(appl, client, "create", path, {"data": {"name": name}})
+            v = ref.get("verify") or {}
+            obj = (orf.MISMATCH if v.get("verdict") == orf.MISMATCH
+                   else orf.VERIFIED if v.get("verdict") == orf.VERIFIED
+                   else orf.UNVERIFIED)
+            cache = bool(ref.get("refreshed"))
+        else:
+            there = orf.presence(client, path, name)
+            obj = (orf.VERIFIED if there else orf.MISMATCH if there is False
+                   else orf.UNVERIFIED)
+    except Exception:  # noqa: BLE001
+        obj = orf.UNVERIFIED
+    if obj == orf.MISMATCH:
+        return {"verdict": orf.MISMATCH, "cache": cache,
+                "why": "the upload was accepted but %s %r is not on the device"
+                       % (label(kind), name)}
+    if not spec.get("read"):
+        return {"verdict": orf.UNVERIFIED, "cache": cache,
+                "why": "%s cannot be read back from FortiWeb — content not checked"
+                       % label(kind)}
+    got, err = fetch(client, kind, name, vdom=vdom)
+    if got is None:
+        return {"verdict": orf.UNVERIFIED, "cache": cache,
+                "why": "content read-back failed: %s" % err}
+    same = _same_content(kind, blob, got)
+    if same is False:
+        return {"verdict": orf.MISMATCH, "cache": cache,
+                "why": "the upload was accepted but the device holds different "
+                       "content for %s %r (%d bytes sent, %d read back)"
+                       % (label(kind), name, len(blob), len(got))}
+    if same is None or obj != orf.VERIFIED:
+        return {"verdict": orf.UNVERIFIED, "cache": cache,
+                "why": why or "content or object could not be compared"}
+    return {"verdict": orf.VERIFIED, "cache": cache, "why": "object and content read back"}
+
+
+def push_checked(client, kind: str, name: str, blob: bytes, *, vdom: str = "") -> dict:
+    """Create the object at a destination WITH its content, then
+    :func:`confirm` it. ``{"ok", "error", "verify"}``: an accepted upload the
+    re-read contradicts is ``ok=False`` with what the device holds; one it
+    cannot check is ok and ``verify["verdict"] == "unverified"``."""
+    ok, err = _push(client, kind, name, blob, vdom=vdom)
+    if not ok:
+        return {"ok": False, "error": err, "verify": None}
+    v = confirm(client, kind, name, blob, vdom=vdom)
+    if v["verdict"] == "mismatch":
+        return {"ok": False, "error": v["why"], "verify": v}
+    return {"ok": True, "error": "", "verify": v}
+
+
+def _push(client, kind: str, name: str, blob: bytes, *, vdom: str = "") -> tuple[bool, str]:
     """Create the object at a destination WITH its content.
 
     This is what makes a clone of a file-backed object real. Verified for all

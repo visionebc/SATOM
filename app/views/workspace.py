@@ -1060,7 +1060,7 @@ def gui_save_row(appliance_id, name):
     reference check, build gate, REST / CLI split inside the parent policy);
     after an applied write the sub-table is re-read from the device into the
     SATOM cache so the page shows the device's rows."""
-    from ..services import gui_template, objform, read_layer, write_through
+    from ..services import gui_template, read_layer
     from .objedit import save_row_for
     appl = visible_appliance_or_404(appliance_id)
     tpl, _match = _gui_template_or_404(
@@ -1082,17 +1082,9 @@ def gui_save_row(appliance_id, name):
                                'fields': body.get('fields') or {}, 'apply': do_apply})
     resp, code = (resp if isinstance(resp, tuple) else (resp, 200))
     data = resp.get_json() or {}
-    data['cache_refreshed'] = False
-    if do_apply and data.get('ok'):
-        try:
-            client = FortiWebClient(appl)
-            live = client.get(objform.scoped_path(coll, name))
-            got = client._results_list(live.json()) if live.status_code == 200 else None
-            if isinstance(got, list):
-                n = write_through.local_subrows(appl.id, 'server_policy', name, st, got)
-                data['cache_refreshed'] = n is not None
-        except Exception as exc:  # noqa: BLE001 — the write itself succeeded
-            log_exception(exc, context='workspace.gui_save_row.cache')
+    # The sub-table was already re-read into the cache by the write itself
+    # (FortiWebOps -> object_refresh); save_row_for reports whether it was.
+    data.setdefault('cache_refreshed', False)
     return jsonify(**data), code
 
 
@@ -2669,14 +2661,8 @@ def create_policy(appliance_id):
                    extra={'app_id_pk': app_id_pk, 'appliance_id': appl.id})
     # The FortiWeb-layout view reads the cache: cache the new policy as the
     # device returns it so its page opens right after Create New.
-    cache_refreshed = False
-    if do_apply:
-        try:
-            from ..services import write_through
-            live = FortiWebClient(appl).get_server_policy(pname)
-            cache_refreshed = write_through.local_insert(appl.id, 'server_policy', pname, live)
-        except Exception as exc:  # noqa: BLE001 — the write itself succeeded
-            log_exception(exc, context='workspace.create_policy.cache')
+    # (FortiWebOps already re-read it into the cache: object_refresh.)
+    cache_refreshed = bool(do_apply and ((res.get('cache_refresh') or {}).get('refreshed')))
     # Its sub-tables (content routing, public IP) live only in a deep capture,
     # and the policy's page reads the cache, never the device: capture this
     # device now (in the background) instead of showing "not in the SATOM

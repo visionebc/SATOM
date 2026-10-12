@@ -88,6 +88,7 @@ Paths are relative to the base URL. **Scope** is the minimum token scope;
 | `GET`  | `/actions` | read | — | Scheduled actions visible to the token |
 | `POST` | `/actions/<id>/run` | write | — | Trigger a **non-destructive** action |
 | `GET`  | `/actions/runs/<run_id>` | read | — | Poll the outcome of a run |
+| `POST` | `/change-requests/<id>/external-approval` | admin | — | Record the external change authority's verdict on a change request in **External** approval mode (below) |
 | `GET`  | `/waf/exception-types` | read | — | The allow-list of WAF carve-out types (§6) |
 | `GET`  | `/waf/exceptions` | read | — | Carve-outs this token authored (`?all=1` needs `admin`) |
 | `GET`  | `/waf/exceptions/<id>` | read | — | One carve-out |

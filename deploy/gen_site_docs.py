@@ -374,6 +374,12 @@ def main() -> int:
                     help="exit 1 if the published pages are stale; write nothing")
     args = ap.parse_args()
 
+    try:
+        _dp.require_site_rules()
+    except _dp.OverlayError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
     missing = [m for m, *_ in PAGES if not source_for(m).is_file()]
     if missing:
         print("error: missing source documents: " + ", ".join(missing), file=sys.stderr)

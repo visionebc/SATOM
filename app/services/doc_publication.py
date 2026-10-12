@@ -323,6 +323,32 @@ def _load_overlay(root=None) -> dict:
 
 _OVERLAY = _load_overlay()
 
+# The adversarial corpus of real internal identifiers lives only in the
+# development repository: the publisher drops it by path. Its presence is what
+# marks a SOURCE tree -- a git worktree, a fresh clone -- which has every
+# site-specific identifier in it and, unlike a deployed node, no ``.env`` to
+# make _load_overlay() refuse. Generating pages there without the overlay
+# applied only the generic rules, and the scanner, reading the same empty
+# table, still printed "0 leaks" (2026-10-12: node names in generated pages).
+SOURCE_TREE_MARKER = pathlib.Path("tests") / "fixtures" / "internal_identifier_samples.json"
+
+
+def require_site_rules(root=None) -> None:
+    """Raise OverlayError when publishing generators must not run in `root`.
+
+    Called first by every generator that writes published pages. A published
+    mirror (no corpus) and a deployed node (overlay present) pass; a source
+    tree without the overlay does not."""
+    base = ROOT_DIR if root is None else pathlib.Path(root)
+    if (base / "data" / OVERLAY_NAME).is_file() or (base / OVERLAY_NAME).is_file():
+        return
+    if (base / SOURCE_TREE_MARKER).is_file():
+        raise OverlayError(
+            f"{base / 'data' / OVERLAY_NAME} is missing in a source tree. "
+            "Pages generated here would carry this site's node names and the "
+            "leak scan would still report 0 leaks. Copy the overlay from a "
+            "node's data/ first (and delete it after generating).")
+
 
 def _overlay_rules(key: str, overlay=None) -> list[tuple[re.Pattern, str]]:
     out = []

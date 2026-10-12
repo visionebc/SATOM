@@ -16,6 +16,7 @@ from ..services import policy_form
 from ..services import policy_ops
 from ..services import policy_links
 from ..services.fortiweb_ops import FortiWebOps
+from ..services import object_refresh
 from ..services import appids as appids_svc
 from ..services.audit import log_action
 from ..errors import flash_error, json_error, log_exception
@@ -729,17 +730,13 @@ def save(appliance_id):
                        % (mkey, new_wpp or '?', appl.name))
         except Exception:  # noqa: BLE001 — the flag is advisory, never sink the save
             pass
-    # The FortiWeb-layout view draws from the cache: re-read the policy just
-    # written so the page shows the device's value, not the pre-save copy.
-    cache_refreshed = False
-    if do_apply and ok and endpoint == EP_POLICY and ep == endpoint:
-        try:
-            from ..services import write_through
-            live = FortiWebClient(appl).get_server_policy(mkey)
-            cache_refreshed = write_through.local_refresh(
-                appl.id, 'server_policy', mkey, live) > 0
-        except Exception as exc:  # noqa: BLE001 — the write itself succeeded
-            log_exception(exc, context='workspace.save.cache')
+    # The FortiWeb-layout view draws from the cache. The write itself already
+    # re-read what it touched into it -- the REST half in FortiWebOps
+    # (object_refresh), the CLI half in the CLI writer's REST readback -- so
+    # the page shows the device's value without a second read here.
+    cache_refreshed = bool(do_apply and ok and (
+        (res.get('cache_refresh') or {}).get('refreshed')
+        or (((cli or {}).get('readback') or {}).get('rest') or {}).get('cache')))
     if do_apply and ok and mkey and ep == endpoint:
         # the object editor's write-through releases the lease the same way
         # (a child row leaves its parent's lease to the parent's editor)
@@ -2599,10 +2596,16 @@ def create_policy(appliance_id):
             results.append({'label': label, 'endpoint': full_ep,
                             'body': {'data': payload}, 'dry_run': True})
             continue
-        res = ops.create(full_ep, {'data': payload}, dry_run=False)
+        # Accepted is not applied: the re-read (object_refresh) must find what
+        # was sent, as clone and migrate require.
+        res = object_refresh.enforce(ops.create(full_ep, {'data': payload}, dry_run=False))
         results.append({'label': label, 'endpoint': full_ep, 'ok': res.ok,
                         'error': res.get('error', ''), 'request': res.get('request')})
         if not res.ok:
+            if res.get('not_applied') and not child_of:
+                # the device accepted it, so it exists (not as sent): undone
+                # with the rest of the run
+                created.append((label, ep, payload.get('name')))
             return jsonify(ok=False, applied=results,
                            rolled_back=_undo_created(ops, created),
                            error='%s failed: %s' % (label, res.get('error', ''))), 200

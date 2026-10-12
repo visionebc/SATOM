@@ -557,6 +557,33 @@ def _cached(ids: list[int]) -> dict:
     return {(a, n): c for a, n, c in rows}
 
 
+def _cached_children(ids: list[int]) -> tuple[dict, dict]:
+    """Child-table rows the depth capture put in the ``deep`` layer, keyed
+    like the registry names the table: ``(device, "<parent>_child_<sub>") ->
+    rows`` (stored as ``<parent>/<sub>`` at depth 1), plus each table's
+    section. Without this the 27 child tables read 0 on every device — the
+    sweep never reads them, only the depth pass does."""
+    if not ids:
+        return {}, {}
+    rows = (db.session.query(DeviceObject.appliance_id, DeviceObject.logical_name,
+                             DeviceObject.section, db.func.count(DeviceObject.id))
+            .filter(DeviceObject.appliance_id.in_(ids),
+                    DeviceObject.layer == "deep", DeviceObject.depth == 1)
+            .group_by(DeviceObject.appliance_id, DeviceObject.logical_name,
+                      DeviceObject.section)
+            .all())
+    counts: dict = {}
+    sect: dict = {}
+    for aid, logical, section, n in rows:
+        parent, _sep, sub = (logical or "").partition("/")
+        if not parent or not sub:
+            continue
+        name = "%s_child_%s" % (parent, sub)
+        counts[(aid, name)] = counts.get((aid, name), 0) + int(n)
+        sect.setdefault(name, section or "Other")
+    return counts, sect
+
+
 def _sections(ids: list[int]) -> dict:
     """``logical_name -> section``, taken from the harvest itself.
 
@@ -588,6 +615,15 @@ def inventory(appliances: list) -> dict:
     ids = [a.id for a in appliances]
     counts = _cached(ids)
     sect = _sections(ids)
+    kid_counts, kid_sect = _cached_children(ids)
+    # Only a child table the registry names: a depth-1 row of the deep layer
+    # is otherwise an embedded list, already counted from the config layer.
+    for key, n in kid_counts.items():
+        if key[1] in reg:
+            counts[key] = counts.get(key, 0) + n
+    for name, section in kid_sect.items():
+        if name in reg:
+            sect.setdefault(name, section)
     seen_ep = {n for (_a, n) in counts}
 
     names = sorted(set(reg) | seen_ep)

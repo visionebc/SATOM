@@ -338,6 +338,16 @@ def policy_drill(appliance_id, mkey):
     return jsonify(analysis_deep.server_policy_drilldown(appliance_id, mkey) or {})
 
 
+@bp.route('/deep/object/<int:appliance_id>/<logical>/<path:mkey>')
+@login_required
+@require_permission(Permission.VIEW)
+def object_drill(appliance_id, logical, mkey):
+    """Any depth-0 deep object with its sub-tree (a FortiADC parent and the
+    child-table rows of its depth capture)."""
+    visible_appliance_or_404(appliance_id)
+    return jsonify(analysis_deep.object_drilldown(appliance_id, logical, mkey) or {})
+
+
 @bp.route('/deep/run', methods=['POST'])
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
@@ -367,6 +377,11 @@ def deep_run():
 @require_permission(Permission.VIEW)
 def deep_objects():
     kind = (request.args.get('kind') or 'wpp').lower()
+    if kind == 'adc':
+        # every parent the FortiADC depth capture holds (pools, certificate
+        # groups, routing…): one picker, the logical name rides with each row
+        return jsonify(analysis_deep.deep_objects(
+            device_ids=_deep_device_ids(request.args), kind='fortiadc'))
     logical = 'server_policy' if kind in ('policy', 'server_policy') else 'web_protection_profile'
     return jsonify(analysis_deep.deep_objects(
         device_ids=_deep_device_ids(request.args), logical_name=logical))

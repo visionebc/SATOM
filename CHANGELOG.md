@@ -6,6 +6,109 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — every write SATOM makes to a FortiWeb, FortiGate, FortiAuthenticator or FortiADC is checked on the device
+
+The user asked how SATOM knows an apply worked if it never looks at the result,
+and then asked for the rule to hold for every product and every write path
+(FortiAnalyzer comes later). Until now "ok" meant only that the device accepted
+the request.
+
+- **FortiWeb — the verdict decides.** An accepted write whose re-read does not
+  show it now FAILS, with the value the device kept, in clone, migrate (the
+  source must read back disabled), bulk, scheduled actions, the object editor
+  and exception injection; "unverified" is reported, never failed. Row counters
+  (`sz_*`) and the source `id` a copied sub-table row carries are not compared
+  (measured false positives on a 99-write cross-box clone).
+- **FortiWeb — same-box clone.** The copy gets its own virtual server and VIP
+  (`<name>-<new policy>`): FortiWeb refuses the same service twice on one VIP
+  (-7212), a second VIP on one address (-7970) and an interface-address
+  listener (-7637), so such a copy is refused before any write; if the policy
+  itself is refused (e.g. -4, policy limit) its vserver and VIP are deleted
+  again.
+- **FortiWeb — every writer keeps the cache in step.** CLI writes, file-backed
+  artifact uploads (object and content re-read) and Sentinel's direct writes
+  now update SATOM's copy; the object editor no longer writes the values it
+  sent over the device's copy, and the duplicate re-reads in the row and
+  policy-create routes are gone. Deleting a policy the device does not have
+  answers at once (one read, nothing written). Any job that wrote to a device
+  redraws that device's pages when it ends. Scheduled policy/backend/
+  certificate actions, which sent a body FortiWeb rejected (HTTP 500), now work.
+- **FortiGate, FortiAuthenticator and FortiADC configuration pages.** Every
+  create, update, delete and table-row edit is read back and compared; a value
+  the device did not keep fails the save ("Not applied: the device kept
+  comment = 'old' (sent 'new')") and is audited as `config.<action>.not_applied`.
+  Saves show a badge: *Verified on the device*, *Not applied* or *Not verified*
+  (with the reason). The FortiAuthenticator and FortiADC copies follow the
+  re-read, including FortiADC child-table rows; FortiGate has no SATOM copy and
+  is always read live. Measured on fac01 8.0.3: the device accepts a PATCH of a
+  local user's `custom3` and does not keep it.
+- **FortiADC writers.** Certificate upload/delete, the admin-certificate swap,
+  Lua Studio deploys, the decommission's deletes, the ADC object editor and its
+  virtual-server wizard, and `POST /api/v1/adc/rules` (new error
+  `502 not_applied`) re-read what they touched, keep SATOM's FortiADC copy
+  current and fail on a mismatch. Certificates and Lua scripts are checked by
+  name, never by content. Lua Studio can now actually deploy to FortiADC (it
+  targeted an endpoint no build serves); a FortiWeb target says nothing was
+  pushed instead of reporting a deploy.
+- **API consoles.** The FortiADC, FortiGate and FortiAuthenticator consoles, the
+  API Explorer and the `/api` proxy show the same verdict next to the device's
+  unchanged raw reply; the proxy sends it as `X-SATOM-Verify` headers. Consoles
+  report, they do not fail. Secrets and certificate material are never compared
+  or shown, and the FortiADC reboot/shutdown/partition-swap paths are never read.
+
+### Added — the primary can see, alert on and repair a standby that cannot fetch code from it
+
+On 2026-10-11 systemd-logind on the primary lost a job; every SSH login of the
+service account then stayed in logind state `opening`, the standby's `git fetch`
+timed out on every reconciler tick, and the standby stopped converging without
+anything turning red. The user asked for a way to repair it from the primary,
+from the GUI or the CLI, documented.
+
+- **HA link card** on Software Update & HA (primary): the standby's own state —
+  *in sync*, *N commits behind* (measured against the primary's branch head), or
+  *cannot fetch from this node since <time>: <error>* — plus this node's
+  systemd-logind (service-account logins stuck in `opening` for over 60 s, or a
+  `loginctl` that does not answer) and sshd.
+- **`/healthz/reconciler`**, a minimal unauthenticated peer probe in the
+  `/healthz/backups` pattern: decision, commit counts, short shas, time, and a
+  one-line error with URL credentials redacted.
+- **Repair HA link** (button, `user_manage`, CSRF-protected, audited) and
+  **`satom ha check` / `satom ha repair [--yes]`**: preview first, then restart
+  systemd-logind on the primary through the privileged runner and show the
+  check before and after. Refused, with the reason, on a standby or a
+  standalone node; the runner re-checks the role against its own PostgreSQL.
+  `systemd-logind` joins the service allowlist as restart-only and is not drawn
+  on the Services card. Nothing is restarted on the standby.
+- **Alert** *HA link broken* (git family) when the standby has been failing to
+  fetch for more than 10 minutes or the login path is wedged — once per
+  incident; it re-arms only after the link is seen healthy.
+- Runbook `satom show runbook ha-link` and user guide §24.1.
+
+### Fixed — each node's reconciler status is its own, and the reconciler runs the code on disk
+
+- The status file moved from `data/reconciler-status.json` to the node-local
+  `state/reconciler-status.json`. In `data/` the data sync replaced the
+  standby's copy with the primary's every five minutes, so the standby's
+  status always named the primary. The Deploy automation card on each node now
+  shows that node's own last tick; the primary-published record is shown
+  separately, labelled.
+- A `git fetch` that times out is now a `fetch-error` decision with its error
+  and how long the streak has lasted (`fetch_error_since`, `fetch_failures`).
+  Before, the timeout escaped as an exception: the tick died with a traceback
+  in the journal and recorded nothing.
+- Code updates and their rollbacks now `try-restart` `satom-reconciler` with the
+  scheduler. Before, the loop kept running the release it was started with.
+
+### Security — the `/api` proxy no longer reaches FortiADC's side-effect GETs
+
+On FortiADC a plain GET reboots, shuts down, factory-resets or swaps the boot
+partition. The ADC console refused those paths, but `/api/adc/<id>/proxy/...`
+sent them to the device for anyone with `registry.view` in the Global ADOM. It
+now refuses them for every method, before any connection, and audits the
+refusal (`api.proxy.adc_refused`). The API Explorer, which is pinned to the
+FortiWeb ADOM and cannot see a FortiADC today, carries the same refusal
+(`api_explorer.refused`) in case that pin moves.
+
 ### Added — FortiADC: rediscovery reads every child table over REST, and the virtual-server tree follows every reference
 
 The user pointed out that FortiADC rediscovery only offered the CLI capture

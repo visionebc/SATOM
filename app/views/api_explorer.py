@@ -482,6 +482,18 @@ def execute():
     if _host_is_blocked(appliance.host or ''):
         m = 'Appliance host is not permitted.'
         return jsonify({'ok': False, 'error': m, 'msg': m}), 400
+    # On FortiADC a plain GET reboots, shuts down, factory-resets or swaps the
+    # boot partition: refused for every method, as in the ADC console.
+    if appliance.kind == 'fortiadc':
+        from ..services.adc_ops import side_effect_path
+        blocked = side_effect_path(endpoint)
+        if blocked:
+            log_action('api_explorer.refused', target=appliance.name,
+                       extra={'method': method, 'endpoint': endpoint, 'matched': blocked})
+            m = ('Refused: %s changes the appliance itself (reboot, shutdown, factory '
+                 'reset, partition swap, restore or image upload), even on GET. Use the '
+                 'appliance page: Upgrade, Boot Partition or Restore.' % blocked)
+            return jsonify({'ok': False, 'refused': True, 'error': m, 'msg': m}), 403
 
     body = None
     if body_raw:

@@ -1,29 +1,51 @@
-# FortiGate — the read-only ADOM (base)
+# FortiGate — the FortiGate ADOM
 
-> **Since:** SATOM 3.0.0. This is the **base** of the FortiGate workspace: it
-> reads a FortiGate live over the FortiOS REST API and writes nothing. Editors,
-> an API console and registry binding are later rounds on top of the same shell.
-> Measured against a FortiGate-VM running FortiOS **8.0.1 build0245**.
+> **Since:** SATOM 3.0.0, which shipped the read-only **base**: it read a
+> FortiGate live over the FortiOS REST API and wrote nothing. The measured GUI
+> pages (with their editors), the API console and the registry binding of the
+> section pages came later, on top of the same shell. Measured against a
+> FortiGate-VM running FortiOS **8.0.1 build0245**.
 
 ## 1. What it is
 
 The `/fgt/` ADOM is SATOM's sixth workspace (user guide §3 and §17.4). It gives
-an operator who knows the FortiOS GUI the same top-level menu, and every pane
-behind it is a **read-only table read live from the selected FortiGate**:
+an operator who knows the FortiOS GUI the same top-level menu. Everything is
+**read live from the selected FortiGate**: SATOM keeps no FortiGate
+configuration cache.
 
 - a **dashboard** with the device picker, the live unit status (hostname,
   firmware, build, serial, model, log disk) and a map of every section;
+- the **FortiGate menu**: the pages of the unit's own GUI, drawn from the
+  layout measured on its build (knowledge packs). These pages **write**:
+  update, create, delete and clone of a `cmdb` object, and the rows of its
+  inline tables, as `PUT` / `POST` / `DELETE` on `/api/v2/cmdb/<path>`. Every
+  save is a **dry run** first (the exact request, sent nowhere); the apply
+  needs `config_write`, is audited with a before-snapshot and a `ChangeHistory`
+  row, and is read back from the unit: a field FortiOS holds differently fails
+  the save as **drift**. A save is accepted only for a collection the page
+  itself edits. Monitor views, GUI-only pages and fields measured with no API
+  are drawn read-only and never saved;
+- the **API console** (sidebar → API, `registry.view`): the FortiGate registry
+  browsed as the FortiGate menu, and a live console. `GET` reads the `cmdb`,
+  `monitor` and `log` trees. `POST`, `PUT` and `DELETE` are **dry-run by
+  default**; sending one needs `registry.execute_write` and is audited and
+  read back. Writes go to `/api/v2/cmdb/` only, and a `DELETE` must name an
+  object: a table-wide `DELETE` is refused, not sent;
 - **30 section pages** in **7 areas** that follow the FortiOS 8.0 menu —
   Network, Policy & Objects, Security Profiles, VPN, User & Authentication,
-  System, Log & Report — covering **43 cmdb tables**, one tab per table;
+  System, Log & Report — covering **43 cmdb tables**, one tab per table. These
+  stay **read-only**; each tab is one `cmdb` read at the path the endpoint
+  registry resolves for the unit's build;
 - the shared, product-scoped pages every ADOM has: Appliances, Jobs,
   Notifications, Audit log, Monitoring, Metrics, Search, Architecture,
   Analysis, Change requests, Scheduled actions, Process, API tokens, the
   Release Notes modal, and the API library pages **Build compatibility** and
   **Schema builds**.
 
-SATOM is still not a firewall manager: nothing in this ADOM changes a
-FortiGate.
+SATOM is still not a firewall manager. It edits one object at a time on one
+FortiGate; it never sends the monitor tree's actions (reboot, restore, firmware
+upgrade), and there are no FortiGate backups, templates or fleet rollouts
+(§6).
 
 ## 2. Registering a FortiGate
 
@@ -38,8 +60,10 @@ Administrator → **Appliances** → *Add appliance*, kind **`fortigate`**:
 | TLS verification | as for any appliance: import the FortiGate's CA under Settings → Trust store, or turn verification off for that device |
 
 The token is stored encrypted in the same column as the other products'
-credentials. A **read-only admin profile** on the FortiGate is enough and is
-the recommended choice: the ADOM only ever sends `GET`.
+credentials. A **read-only admin profile** on the FortiGate is enough to read
+everything this ADOM shows. The token's admin profile also decides what a write
+may do: a write the profile does not grant is refused by the unit. Give the
+token a read-write profile only if operators are to edit from SATOM.
 
 > **Licence.** A FortiGate-VM **without a valid licence** answers `401` to every
 > REST call except `license/status`. SATOM's error text says so, because "wrong
@@ -117,8 +141,8 @@ Release Notes modal of this ADOM ([release notes](release_notes.md)).
 
 | Not in the base ADOM | Why |
 |---|---|
-| Any write (object editor, raw JSON, policy changes) | read-only by design in this round; the client refuses every verb but `GET` |
-| API console / endpoint registry binding | section paths are literal; a rename after an upgrade is not yet a Registry edit |
+| Writes outside `/api/v2/cmdb/` | the monitor tree holds device actions (reboot, restore, firmware upgrade); the client refuses any other path or verb, not sends it |
+| Edits on the section pages | they stay read-only; edit from the FortiGate menu's measured pages or the API console |
 | Backups, restore, firmware upgrade, templates, Lua | no FortiGate transport exists in those features; the workspace does not offer them |
 | Migration report | needs a stored `show full-configuration` dump, and no FortiGate backup is stored yet |
 | HA status | not read; the HA tab shows the HA settings table only |

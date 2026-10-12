@@ -2,14 +2,23 @@
 
 A multi-user **Flask web platform for managing fleets of Fortinet appliances**
 — **FortiWeb** (WAF), **FortiADC** (ADC/load balancer), **FortiAnalyzer**
-(logs & analytics), **FortiAuthenticator** (identity) and, read-only,
-**FortiGate** — over their REST/JSON-RPC APIs and SSH/CLI, with a local, queryable copy of every device's configuration so
-the UI stays fast even when the appliances are slow, unreachable, or license-locked.
+(logs & analytics), **FortiAuthenticator** (identity) and **FortiGate**
+(read live, with dry-run-first object edits) — over their REST/JSON-RPC APIs and
+SSH/CLI, with a local, queryable copy of every device's configuration (FortiGate
+excepted: it is always read live) so the UI stays fast even when the appliances
+are slow, unreachable, or license-locked.
 
 > **Not a firewall manager.** SATOM manages application-delivery, identity and
-> analytics appliances. Its FortiGate workspace (3.0) **reads** a FortiGate's
-> configuration and changes nothing: it is **not** a FortiManager or a
-> FortiGate/NGFW policy tool. See [docs/fortigate.md](docs/fortigate.md).
+> analytics appliances. Its FortiGate workspace reads a FortiGate's
+> configuration live and can edit it one object at a time: the pages drawn
+> from the unit's measured GUI layout save `cmdb` objects (dry run first, then
+> an audited apply that is read back and verified, `config_write`), and the
+> FortiGate API console sends `POST`/`PUT`/`DELETE` to `/api/v2/cmdb/` only,
+> dry-run by default (`registry.execute_write` to apply). It never calls the
+> monitor tree's actions (reboot, restore, firmware) and keeps no FortiGate
+> configuration copy, backups, templates or fleet rollouts: it is **not** a
+> FortiManager or a FortiGate/NGFW policy tool. See
+> [docs/fortigate.md](docs/fortigate.md).
 
 - **Version:** see [`VERSION`](VERSION) · **Status:** production · **License:** [Elastic License 2.0](LICENSE) · [Security policy](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Release pipeline](docs/release-pipeline.md)
 - **~60 Flask blueprints · ~80 service modules · 700+ unit/integration tests · 500 tracked files**
@@ -230,7 +239,7 @@ Reference documents (deep dives):
 - [docs/wpp_exceptions.md](docs/wpp_exceptions.md) — WAF exceptions workflow & data model
 - [docs/source-of-truth-spec.md](docs/source-of-truth-spec.md) — device cache / source-of-truth spec
 - [docs/fortiadc.md](docs/fortiadc.md) — FortiADC REST conventions
-- [docs/fortigate.md](docs/fortigate.md) — the read-only FortiGate workspace
+- [docs/fortigate.md](docs/fortigate.md) — the FortiGate workspace
 - [docs/release_notes.md](docs/release_notes.md) — vendor release-notes corpus (from signed packs) & upgrade planning
 - [docs/knowledge-harvester.md](docs/knowledge-harvester.md) — where the API and knowledge packs come from
 - [docs/upgrading-to-3.0.md](docs/upgrading-to-3.0.md) — what 3.0 changes and what to do when you update

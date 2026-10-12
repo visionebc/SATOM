@@ -57,7 +57,7 @@
       '<div class="col-md-6">' +
       '<label class="form-label small fw-bold mb-1" for="fw-fp-payload">Decode a payload on its own</label>' +
       '<div class="input-group input-group-sm">' +
-      '<input id="fw-fp-payload" class="form-control font-monospace" placeholder="%3Cscript%3E… or base64">' +
+      '<input id="fw-fp-payload" class="form-control form-control-sm font-monospace" placeholder="%3Cscript%3E… or base64">' +
       '<button class="btn btn-sm btn-outline-secondary" id="fw-fp-decode" type="button">Decode</button></div></div>' +
       '</div>' +
       '<div id="fw-fp-err" class="text-danger small mt-2"></div>' +

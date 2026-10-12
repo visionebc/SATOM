@@ -103,9 +103,32 @@ Measured on fortiadc10:
   (`web_attack_signature` → `security_waf_web_attack_signature`); the tree
   follows that rule for every field instead of a fixed list.
 
-The VS Inspector builds one index (live: the referenced tables + the group
-child tables; 7.5 s for the 15 VS of fortiadc10, measured 2026-10-12) and draws every VS from it; `?source=capture`
-draws from `_config.json` + `_deep.json` with no device call.
+The VS Inspector builds one index and draws every VS from it. Live, the
+index is read breadth-first from the VS rows: each round reads the child
+tables of the groups just reached (`?pkey=`), then every table those rows
+name, once per table, on one reused connection. Only what a VS reaches is
+read. For the 15 VS of fortiadc10 that is 70 reads in 0.8 s; reading every
+table `REFS` could reach plus every group's child table took 90 reads and
+7.6 s (2026-10-12). One VS (`?policy=`) takes 37 reads and 0.4 s. The trees
+are identical. `?source=capture` draws from `_config.json` + `_deep.json`
+with no device call.
+
+The depth pass also feeds two other stores, like the FortiWeb depth does:
+
+* **Cache, `layer='deep'`** (`adc_vstree.deep_sections` →
+  `device_sync.persist_deep_snapshot`, replace per device). Each row of a
+  parent table whose child table this build serves becomes a depth-0 object.
+  The child rows read for it sit at depth 1 as `<parent>/<child>`, the key
+  the gx write-through already keeps. When the child table answered rows,
+  the list the parent embeds for the same members is dropped. Analysis reads
+  this layer: the Global deep-object picker (*FortiADC object*), sub-element
+  counts, the fleet inventory (pools, and pool members as back-ends), and
+  the FortiADC object inventory's `…_child_…` rows.
+* **API library**: the child tables as sweep evidence of the build, with
+  origin `rediscovery-depth:<id>@<version>`. A table that answered for any
+  parent is `ok`, and field names come from its rows. This evidence is
+  partial: `apilib_harvest.needs_harvest` and the pack import's "local
+  measurement wins" rule ignore it, as they ignore a schema harvest's probe.
 
 ## Virtual server dependency chain + create-field seed (verified live, fadc 8.0.3, 2026-07-07)
 

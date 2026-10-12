@@ -59,6 +59,10 @@ SOURCE_SCHEMA = "schema"
 SOURCE_VENDOR = "vendor_doc"
 SOURCE_MANUAL = "manual"
 SOURCE_LEGACY = "legacy_matrix"
+#: ``origin_ref`` prefix of the FortiADC depth pass (``services.rediscovery``):
+#: sweep evidence of the CHILD tables alone. Partial, like a schema harvest's
+#: probe — it never makes a build "harvested" on its own.
+DEPTH_ORIGIN_PREFIX = "rediscovery-depth:"
 #: The CLI channel. ``cli_tree`` is the schema the appliance's ``tree`` command
 #: prints (objects, fields, types, options, CLI ids); ``cli_full`` is the field
 #: NAMES ``show full-configuration`` reveals per object, hidden fields included.

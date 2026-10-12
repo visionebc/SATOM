@@ -1223,7 +1223,10 @@ def _library_plan(doc: dict) -> dict:
                    .filter(~ApiLibEvidence.origin_ref.startswith(ORIGIN_PREFIX))
                    # A schema harvest's REST probe is partial: it does not
                    # make this node's own measurement of the build complete.
+                   # Nor does the FortiADC depth pass (child tables only).
                    .filter(~ApiLibEvidence.origin_ref.startswith(_PARTIAL))
+                   .filter(~ApiLibEvidence.origin_ref.startswith(
+                       lib.DEPTH_ORIGIN_PREFIX))
                    .first())
             if own is not None:
                 # Facts are kept per build: only a build-scoped document can be

@@ -10,6 +10,7 @@ from ..models import visible_appliances, visible_appliance_or_404
 from ..clients import client_for
 from ..services.audit import log_action
 from ..services import api_library as apilib
+from ..services import device_verify
 from . import _clicoverage, _discovery
 from ..registry import loader, tree
 # The catalog editor (New / Edit / Disable) lives on the Registry blueprint and
@@ -429,6 +430,29 @@ def schema_harvest(appliance_id):
                     'result': json.loads(json.dumps(res, default=str))})
 
 
+def _verify_write(appliance, client, method, endpoint, body, resp):
+    """The device re-read of one raw write (``services.device_verify``), only
+    when the device ACCEPTED it — a refusal is already the answer, and has
+    nothing to verify. The verdict is added beside the raw reply, which is
+    returned untouched.
+
+    Acceptance is each product's own rule: FortiWeb answers HTTP 200 with a
+    body ``errcode`` on a logical refusal (``FortiWebOps._response_ok``);
+    FortiADC a negative ``payload``."""
+    kind = getattr(appliance, 'kind', '') or 'fortiweb'
+    if kind == 'fortiweb':
+        from ..services.fortiweb_ops import FortiWebOps
+        accepted, _err = FortiWebOps._response_ok(resp)
+    elif kind == 'fortiadc':
+        accepted = not device_verify.adc_refusal(resp)
+    else:
+        return device_verify.unverified(
+            'this console re-reads FortiWeb and FortiADC writes only', what=endpoint)
+    if not accepted:
+        return None
+    return device_verify.after_request(appliance, client, method, endpoint, body)
+
+
 def _truthy(value) -> bool:
     return str(value or '').strip().lower() in ('1', 'true', 'yes', 'on')
 
@@ -499,16 +523,20 @@ def execute():
     try:
         client = client_for(appliance)
         resp = client.api_call(method, endpoint, body)
+        verify = (_verify_write(appliance, client, method, endpoint, body, resp)
+                  if method in WRITE_METHODS else None)
         log_action('api_explorer.execute', target=appliance.name,
                    extra={'method': method, 'endpoint': endpoint,
                           'library_state': guard['state'],
-                          'confirm_unserved': guard['confirmed']})
+                          'confirm_unserved': guard['confirmed'],
+                          'verify': (verify or {}).get('verdict')})
         try:
             result = resp.json()
         except Exception:
             result = resp.text
         return jsonify({'ok': True, 'status': resp.status_code, 'result': result,
-                        'warning': guard['warning'], 'library': guard})
+                        'warning': guard['warning'], 'library': guard,
+                        'verify': verify})
     except Exception as exc:
         return jsonify({'ok': False, 'error': str(exc), 'msg': str(exc),
                         'library': guard})

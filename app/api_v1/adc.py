@@ -27,7 +27,7 @@ from flask import g, jsonify, request
 from ..clients.fortiadc import FortiADCClient, FortiADCError
 from ..extensions import limiter
 from ..models import visible_appliance_or_404
-from ..services import adc_objform
+from ..services import adc_objform, device_verify
 from ..services.audit import log_action
 from . import bp
 from .auth import audit_extra, token_required
@@ -232,9 +232,19 @@ def adc_create_rule():
                    extra=audit_extra(appliance_id=appliance.id, error=str(exc)))
         return _err(502, "device_error", str(exc))
 
+    # The create is re-read: "applied" means the device HOLDS the object with
+    # the fields that were sent, not only that it accepted the POST.
+    v = device_verify.adc_after_write(appliance, client, "create", logical=logical,
+                                      mkey=mkey, sent=payload)
+    if device_verify.failed(v):
+        log_action("api.adc_rule.create_failed", target=f"{logical}/{mkey}",
+                   extra=audit_extra(appliance_id=appliance.id,
+                                     error=device_verify.label(v)))
+        return _err(502, "not_applied", device_verify.label(v), verify=v)
+
     log_action("api.adc_rule.create", target=f"{logical}/{mkey}",
                extra=audit_extra(appliance_id=appliance.id, logical=logical,
-                                 fields=sorted(payload)))
+                                 fields=sorted(payload), verify=v["verdict"]))
     return jsonify({"ok": True, "applied": True, "dry_run": False,
                     "logical": logical, "mkey": mkey,
-                    "appliance_id": appliance.id}), 201
+                    "appliance_id": appliance.id, "verify": v}), 201

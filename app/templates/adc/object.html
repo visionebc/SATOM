@@ -194,8 +194,13 @@
       body: JSON.stringify(payload) }).then(function (r) { return r.json(); });
   }
   // Dry-run preview → explicit "Apply to device" — the objedit contract.
+  function escH(t) {
+    return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; });
+  }
   function show(el, j, applyFn) {
-    if (!j.ok) { el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">' + (j.error || 'failed') + '</div>'; return; }
+    // escaped: a "not applied" error quotes the device's own values
+    if (!j.ok) { el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">' + escH(j.error || 'failed') + '</div>'; return; }
     if (j.dry_run) {
       var req = j.request || {};
       el.innerHTML = '<div class="alert alert-info mt-2 mb-0">'
@@ -204,8 +209,13 @@
         + JSON.stringify(req.body, null, 2) + '</pre>'
         + '<button type="button" class="btn btn-sm btn-fw-danger adc-apply">Apply to device</button></div>';
       el.querySelector('.adc-apply').onclick = applyFn;
+    } else if (j.verify && j.verify.verdict === 'unverified') {
+      // Accepted, but the re-read could not confirm it: stays on screen.
+      el.innerHTML = '<div class="alert alert-warning mt-2 mb-0">Applied to device. '
+        + '<span class="fw-badge fw-badge-warning">' + escH(j.verify.label) + '</span></div>';
     } else {
-      el.innerHTML = '<div class="alert alert-success mt-2 mb-0">Applied to device.</div>';
+      el.innerHTML = '<div class="alert alert-success mt-2 mb-0">Applied to device. '
+        + '<span class="fw-badge fw-badge-success">Verified on the device</span></div>';
       setTimeout(function () { location.reload(); }, 800);
     }
   }
@@ -232,8 +242,10 @@
     post(ep('create-object'), base).then(function (j) {
       show(el, j, function () {
         post(ep('create-object'), Object.assign({}, base, { apply: true })).then(function (j2) {
-          if (!j2.ok) { el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">' + (j2.error || 'failed') + '</div>'; return; }
-          el.innerHTML = '<div class="alert alert-success mt-2 mb-0">Created. Opening editor…</div>';
+          if (!j2.ok) { el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">' + escH(j2.error || 'failed') + '</div>'; return; }
+          el.innerHTML = '<div class="alert alert-success mt-2 mb-0">Created. '
+            + (j2.verify ? '<span class="fw-badge ' + (j2.verify.verdict === 'verified' ? 'fw-badge-success' : 'fw-badge-warning')
+                + '">' + escH(j2.verify.label) + '</span> ' : '') + 'Opening editor…</div>';
           setTimeout(function () {
             location.href = '/adc/obj/' + encodeURIComponent(LOGICAL)
               + '?mkey=' + encodeURIComponent(name) + '&back=' + encodeURIComponent(BACK);
@@ -299,8 +311,8 @@
       body: JSON.stringify({ mkey: MKEY || null, data: txt })
     }).then(function (r) { return r.json(); }).then(function (j) {
       if (!j.ok) { msg.textContent = 'Failed: ' + (j.error || 'unknown'); return; }
-      msg.textContent = 'Saved.';
-      setTimeout(function () { location.reload(); }, 700);
+      msg.textContent = 'Saved. ' + ((j.verify && j.verify.label) || '');
+      if (!j.verify || j.verify.verdict === 'verified') setTimeout(function () { location.reload(); }, 700);
     }).catch(function (e) { msg.textContent = 'Failed: ' + e; });
   });
 })();

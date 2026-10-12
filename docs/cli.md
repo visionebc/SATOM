@@ -352,6 +352,22 @@ in `.git/`, `data/jobs/` and `reports/`. The symptoms are indirect: git publish
 keeps working, because git renames refs and only needs the directory, while some
 other write fails quietly.
 
+### `ha` — the HA link: can the standby fetch code from this primary?
+
+| Command | Notes |
+|---|---|
+| `ha check` | Read-only. The standby's **own** reconciler record (over `/healthz/reconciler`), this node's `systemd-logind` (logins of the service account stuck in `opening` for more than 60 s) and whether `sshd` answers. Exit 1 when the link is broken |
+| `ha repair` | **Preview** — the check, what the repair does and does not do. Exits 2; nothing changes |
+| `ha repair --yes [--wait N]` | Root. Enqueues `restart systemd-logind` for the privileged runner (the same allowlisted request as the GUI's *Repair HA link* button), waits up to N s (default 90) for the runner, then re-checks and prints before and after |
+
+Both delegate to `app/services/ha_link.py` and run it as the service account,
+so the console, the Software Update & HA page and the alert can never give
+different answers. The repair is **role-guarded**: on a standby or a standalone
+node it refuses and says why, and the runner refuses a hand-written request on
+any node whose Postgres is not the primary. When the app itself cannot start,
+`ha check` prints the manual commands instead. The full procedure is
+`satom show runbook ha-link`; the background is in the user guide, §24.1.
+
 ### The complete table
 
 Everything above is a curated tour — grouped, with the reasoning. The table
@@ -364,7 +380,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*113 commands in 42 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*115 commands in 43 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -505,6 +521,13 @@ Everything that changes state. **Root required.** Without it each command refuse
 | `satom execute preflight [<label>]` | yes | — | Capture a health baseline BEFORE a risky change. |
 | `satom execute postflight` | yes | — | Diff the current health against the last preflight. |
 | `satom execute promote` | yes | ! | Promote this standby to primary. Requires --yes. |
+
+### `ha`
+
+| Command | Root | ! | What it does |
+|---|:--:|:--:|---|
+| `satom ha check` | — | — | Standby's own fetch state + this node's logind/sshd. Read-only; run it on the primary. |
+| `satom ha repair [--yes] [--wait SECONDS]` | yes | — | Restart systemd-logind on THIS primary via the privileged runner, then re-check. Preview unless --yes. |
 
 ### `tree`
 

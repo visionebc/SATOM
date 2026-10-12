@@ -61,13 +61,35 @@ def current_revision() -> dict:
     return {"sha": sha, "short": short, "subject": subject, "date": date, "branch": branch}
 
 
+#: Upper bound for the one network call in ``check_remote``. On the standby the
+#: remote is the PRIMARY over SSH, and on 2026-10-11 that call hung for exactly
+#: this long on every reconciler tick (see app/services/ha_link.py).
+FETCH_TIMEOUT = 120
+
+
 def check_remote(fetch: bool = True) -> dict:
-    """``git fetch`` + compare local HEAD vs ``origin/BRANCH``."""
+    """``git fetch`` + compare local HEAD vs ``origin/BRANCH``.
+
+    A fetch that TIMES OUT is an error like any other, not an exception. It
+    used to escape as ``subprocess.TimeoutExpired``: the reconciler's tick died
+    with a traceback in the journal, published nothing, and the standby went on
+    showing whatever its status file said last -- which, because the datasync
+    overwrote that file with the primary's copy, was "up-to-date". The compare
+    below still runs against the last ``origin/BRANCH`` this node DID fetch, so
+    the numbers it returns are stale-but-true and the error says why.
+    """
     err = ""
     if fetch:
-        f = _git("fetch", "origin", BRANCH, timeout=120)
-        if f.returncode != 0:
-            err = (f.stderr or "git fetch failed").strip()
+        try:
+            f = _git("fetch", "origin", BRANCH, timeout=FETCH_TIMEOUT)
+            if f.returncode != 0:
+                err = (f.stderr or "git fetch failed").strip()
+        except subprocess.TimeoutExpired:
+            err = ("git fetch timed out after %ds: the remote accepted no data "
+                   "(on a standby the remote is the primary over SSH)"
+                   % FETCH_TIMEOUT)
+        except OSError as exc:
+            err = "git fetch could not run: %s" % exc
     cur = current_revision()
     tgt = _git("rev-parse", "origin/%s" % BRANCH).stdout.strip()
     behind_raw = _git("rev-list", "--count", "HEAD..origin/%s" % BRANCH).stdout.strip()

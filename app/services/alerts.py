@@ -1032,9 +1032,31 @@ def _check_signature_source(sidx) -> list[dict]:
     return out
 
 
+#: Keys whose check reported them AFFIRMATIVELY cleared during the last
+#: evaluate(). run() lifts their cooldown, so an alert of this kind notifies on
+#: every ok -> broken transition: without it, a second outage inside the
+#: cooldown window of the first would be suppressed as if it were the same one.
+#: Only checks that can tell "healthy" from "could not tell" may add to it.
+_CLEARED: set = set()
+
+
+def _check_ha_link() -> list[dict]:
+    """The standby cannot fetch code from this primary (app/services/ha_link).
+
+    Same toggle as the git checks: it is the git-sync path between the nodes,
+    and a new toggle would default to OFF on every saved settings form.
+    """
+    from . import ha_link
+    findings, cleared = ha_link.alert_findings()
+    if cleared:
+        _CLEARED.add(ha_link.ALERT_KEY)
+    return findings
+
+
 _CHECKS = [
     (K_CHK_CERT, _check_cert),
     (K_CHK_GIT, _check_git),
+    (K_CHK_GIT, _check_ha_link),
     (K_CHK_DEVICE, _check_devices),
     # Same toggle and family as device health: a stale signature DB is the
     # device's health, and a new toggle would default to OFF on every saved
@@ -1051,6 +1073,7 @@ _CHECKS = [
 def evaluate() -> list[dict]:
     """Run every enabled check and return the merged findings list (no dispatch,
     no cooldown) — used by the run loop AND by the Settings 'Preview' button."""
+    _CLEARED.clear()
     findings: list[dict] = []
     for toggle_key, fn in _CHECKS:
         if not _flag(toggle_key):
@@ -1147,6 +1170,14 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
                 "skipped": "read-only replica — notification is primary-only"}
 
     state = _load_state()
+    # Re-arm transition alerts whose condition is now affirmatively gone. Done
+    # here and not in evaluate(): the Preview button evaluates too, and a
+    # preview must never change what the next real run sends.
+    rearm = [k for k in _CLEARED if k in state]
+    if rearm:
+        for k in rearm:
+            state.pop(k, None)
+        _save_state(state)
     cooldown_h = _int(K_COOLDOWN_H, 6)
     fresh = [f for f in findings
              if force or not _in_cooldown(state, f["key"], cooldown_h)]

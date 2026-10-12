@@ -18,6 +18,7 @@ from . import cmd_diagnose as d
 from . import cmd_docs as b
 from . import cmd_execute as e
 from . import cmd_fix as f
+from . import cmd_ha as ha
 from . import cmd_knowledge as kn
 from . import cmd_migration as mg
 from . import cmd_get as g
@@ -372,6 +373,16 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
            run=e.postflight, needs_root=True),
         _n("promote", "Promote this standby to primary. Requires --yes.",
            run=e.promote, needs_root=True, danger=True),
+    ),
+    _group("ha", "HA link: can the standby fetch code from this primary? "
+                 "Check it, and repair the primary's login service.",
+        _n("check", "Standby's own fetch state + this node's logind/sshd. "
+                    "Read-only; run it on the primary.",
+           run=ha.check),
+        _n("repair", "Restart systemd-logind on THIS primary via the privileged "
+                     "runner, then re-check. Preview unless --yes.",
+           run=ha.repair, needs_root=True,
+           usage="ha repair [--yes] [--wait SECONDS]"),
     ),
     _n("tree", "The whole command tree. Alias for 'show tree'.",
        run=t.tree,

@@ -2541,7 +2541,7 @@
                 <div class="mb-2"><label class="form-label" style="font-size:12px;">{{ _('Certificate (PEM)') }}</label>
                   <textarea name="cert_text" rows="4" class="form-control form-control-sm font-monospace" style="font-size:11px;" placeholder="-----BEGIN CERTIFICATE-----&#10;…&#10;-----END CERTIFICATE-----"></textarea></div>
                 <div class="mb-2"><label class="form-label" style="font-size:12px;">{{ _('Private key (PEM, unencrypted)') }} <span class="text-muted">{{ _('(empty for a CSR generated here)') }}</span></label>
-                  <textarea name="key_text" rows="4" class="form-control form-control-sm font-monospace" style="font-size:11px;" autocomplete="off" spellcheck="false" placeholder="-----BEGIN PRIVATE KEY-----&#10;…&#10;-----END PRIVATE KEY-----"></textarea></div>
+                  <textarea name="key_text" rows="4" class="form-control form-control-sm font-monospace" style="font-size:11px;" autocomplete="off" spellcheck="false" {% set d = "-" * 5 %}placeholder="{{ d }}BEGIN PRIVATE KEY{{ d }}&#10;…&#10;{{ d }}END PRIVATE KEY{{ d }}"></textarea></div>
                 <div class="mb-2"><label class="form-label" style="font-size:12px;">{{ _('Chain / intermediates (optional)') }}</label>
                   <textarea name="chain_text" rows="3" class="form-control form-control-sm font-monospace" style="font-size:11px;" placeholder="-----BEGIN CERTIFICATE-----&#10;…&#10;-----END CERTIFICATE-----"></textarea></div>
               </div>

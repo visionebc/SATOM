@@ -63,6 +63,8 @@
       <a href="#rest-conventions">REST conventions</a>
       <a href="#where-things-live">Where things live</a>
       <a href="#status--pending-needs-the-lab-vm">Status / pending (needs the lab VM)</a>
+      <a href="#firmware-and-the-gets-that-are-writes-device-767-2026-10-11">Firmware and the GETs that are writes ({device}, 7.6.7, 2026-10-11)</a>
+      <a href="#depth-capture-and-the-virtual-server-tree-device-767-2026-10-12">Depth capture and the virtual-server tree ({device}, 7.6.7, 2026-10-12)</a>
       <a href="#virtual-server-dependency-chain--create-field-seed-verified-live-fadc-803-2026-07-07">Virtual server dependency chain + create-field seed (verified live, fadc 8.0.3, 2026-07-07)</a>
     </aside>
     <div class="doc-body mdx">
@@ -148,6 +150,78 @@ lands: probe the registry, verify a write round-trip, then update this file.</p>
 <li>Candidate next steps once verified: field-spec catalog, DB-first cache,
   objedit-style forms, backups/upgrade runbook parity.</li>
 </ul>
+<h2 id="firmware-and-the-gets-that-are-writes-device-767-2026-10-11">Firmware and the GETs that are writes ({device}, 7.6.7, 2026-10-11)</h2>
+<p>Read off the FortiADC 7.6.7 GUI bundle (System &gt; Settings &gt; Firmware and
+Backup &amp; Restore); the reads were run against {device}. Code:
+<code>app/services/adc_ops.py</code> (transport), <code>app/services/upgrade.py</code> (dispatch).</p>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Call</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Partition table</td>
+<td><code>GET /api/system_global/boot_partition</code> → <code>[{partno, active, partid, timestamp}]</code>; empty <code>partid</code> = empty partition</td>
+</tr>
+<tr>
+<td>Flash</td>
+<td><code>GET /api/system_global/clear_tmp_space</code>, then multipart <code>POST /api/upload/image</code> (<code>hasync</code> 0/1, file field name free); <code>payload</code> 0 = accepted, installs into the inactive partition and reboots</td>
+</tr>
+<tr>
+<td>Boot the other partition</td>
+<td><code>GET /api/system_global/swap_boot_partition</code> (reboots)</td>
+</tr>
+<tr>
+<td>May this account flash</td>
+<td><code>GET /api/platform/info?vdom=root</code> → <code>isSystemAdmin</code> + <code>isSystemWritable</code></td>
+</tr>
+<tr>
+<td>Config restore (not wired yet)</td>
+<td>multipart <code>POST /api/upload/check_config</code> (<code>entire=enable</code>) → <code>{ret, file_path}</code>; <code>ret</code> 2 → <code>POST /api/system_global/restore_config_local {password, filename}</code>; <code>ret</code> 1 = password-protected file</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Plain GETs change the box:</strong> <code>platform/reboot</code>, <code>platform/shutdown</code>,
+<code>platform/reset</code> (factory reset) and <code>swap_boot_partition</code> are all GETs in the
+GUI. <code>adc_ops.ADC_SIDE_EFFECT_PATHS</code> lists them; the API console, scheduled
+custom REST calls and the discovery plan refuse every path on it.</p>
+<h2 id="depth-capture-and-the-virtual-server-tree-device-767-2026-10-12">Depth capture and the virtual-server tree ({device}, 7.6.7, 2026-10-12)</h2>
+<p><code>app/services/adc_vstree.py</code>. The rediscovery sweep reads the 217 parent
+tables; the 27 <code>&lt;parent&gt;_child_&lt;table&gt;</code> tables need <code>?pkey=&lt;parent mkey&gt;</code> and
+are read only by the <strong>depth pass</strong> (Rediscover → <em>Capture full depth</em>), once
+per parent row of that sweep, into <code>data/rediscovery/&lt;id&gt;/_deep.json</code>
+(<code>sweep_generated_at</code> names the sweep the parents came from). A 404 table is
+asked once and recorded absent; a stop discards the partial file.</p>
+<p>Measured on {device}:</p>
+<ul>
+<li><strong>Embedded in the parent row</strong> (the child table repeats it): pool members
+  (<code>pool_member</code>), routing/rewriting match conditions (<code>match</code>), interface
+  secondary/trust/HA lists, persistence lists, ippool <code>node_member</code>,
+  certificate-verify <code>member</code>, schedule group <code>member_list</code>.</li>
+<li><strong>Only in the child table</strong>: members of local-cert groups (<code>local_cert</code>,
+  <code>intermediate_cag</code>, <code>default</code>), intermediate-CA groups (<code>intmed_ca</code>) and CA
+  groups (<code>ca</code>). Without the depth pass a VS's certificate chain cannot be drawn.</li>
+<li>List fields are <strong>space-separated strings</strong> (<code>content-routing-list:
+  "cr-a cr-b "</code>); <code>NONE</code> means unset (<code>rs_profile</code>).</li>
+<li>Auth policy rules (<code>member[].user_group_id</code>) and user-group members
+  (<code>member[].radius_server|ldap_server|local_user</code>) are embedded with no child
+  table.</li>
+<li>The VS spells <code>client_ssl_profile</code>, <code>auth_policy</code>, <code>ips_profile</code>,
+  <code>dos_profile</code>, <code>ztna_profile</code>, <code>scripting_list</code> with <code>_</code> and <code>waf-profile</code>,
+  <code>error-page</code>, <code>content-routing-list</code> with <code>-</code>. The reference map (<code>REFS</code>) is
+  explicit for that reason: matching values against every table's names was
+  tried and is wrong (<code>comments</code> matched a service name, timeouts matched
+  reputation rows).</li>
+<li>A WAF profile names its sub-profiles by the table suffix
+  (<code>web_attack_signature</code> → <code>security_waf_web_attack_signature</code>); the tree
+  follows that rule for every field instead of a fixed list.</li>
+</ul>
+<p>The VS Inspector builds one index (live: the referenced tables + the group
+child tables; 7.5 s for the 15 VS of {device}, measured 2026-10-12) and draws every VS from it; <code>?source=capture</code>
+draws from <code>_config.json</code> + <code>_deep.json</code> with no device call.</p>
 <h2 id="virtual-server-dependency-chain--create-field-seed-verified-live-fadc-803-2026-07-07">Virtual server dependency chain + create-field seed (verified live, fadc 8.0.3, 2026-07-07)</h2>
 <p>A FortiADC <strong>virtual server</strong> is NOT a flat "name + IP" object — the device
 refuses a create that has no load-balance pool, and the pool needs a real-server

@@ -42,6 +42,7 @@ import ssl
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from flask import has_app_context
@@ -248,6 +249,12 @@ def _ssl_context(cfg: dict):
 
 def _request(cfg: dict, method: str, path: str, token: str = "", body=None) -> dict:
     url = "%s/v1/%s" % (cfg["addr"], path.lstrip("/"))
+    # urllib also opens file:// (and a '#' in the address cuts off the /v1/...
+    # suffix), which would turn the vault-address setting into a way to read
+    # this node's files. A vault is a network service; refuse anything else.
+    if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
+        raise VaultError("the vault address must be an http(s) URL (got %r)"
+                         % str(cfg.get("addr") or "")[:80])
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Content-Type", "application/json")

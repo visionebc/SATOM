@@ -399,8 +399,18 @@ def all_bundles() -> list:
 
 
 def _safe_member(member: tarfile.TarInfo, dest: Path) -> bool:
+    # create_backup writes regular files and directories only (copytree and
+    # copy2 dereference links), but a bundle also travels off-box and comes
+    # back through ensure_local, so it is read as untrusted. Links are refused
+    # outright: the path test below cannot see where a link points, and a later
+    # member written THROUGH a symlink lands outside the restore directory (a
+    # hard link aliases any file on the box). is_relative_to, not a string
+    # prefix: "_restore-1" is a prefix of the sibling "_restore-12".
+    if not (member.isfile() or member.isdir()):
+        return False
+    root = dest.resolve()
     target = (dest / member.name).resolve()
-    return str(target).startswith(str(dest.resolve()))
+    return target == root or target.is_relative_to(root)
 
 
 def restore_backup(name: str, *, conn: dict | None = None,
@@ -428,7 +438,10 @@ def restore_backup(name: str, *, conn: dict | None = None,
     try:
         with tarfile.open(bundle, "r:gz") as tar:
             members = [m for m in tar.getmembers() if _safe_member(m, work)]
-            tar.extractall(work, members=members)
+            if hasattr(tarfile, "data_filter"):
+                tar.extractall(work, members=members, filter="data")
+            else:
+                tar.extractall(work, members=members)
         roots = list(work.glob("fmw-backup-*"))
         root = roots[0] if roots else work
         # Read the recovery fingerprints BEFORE touching the database: a

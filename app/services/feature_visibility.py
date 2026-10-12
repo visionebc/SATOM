@@ -83,8 +83,10 @@ GATES: dict[str, frozenset[str]] = {
         "mobile_api_protection_policy", "mobile_api_protection_rule",
     }),
     "padding-oracle": frozenset({"padding_oracle"}),
+    # ``cache_policy`` (waf/cache-policy) left the registry with the 7.6.8
+    # baseline: its URN answers -20001 on every measured build.
     "web-cache": frozenset({
-        "web_cache_policy", "waf_web_cache_rule", "cache_policy",
+        "web_cache_policy", "waf_web_cache_rule",
     }),
     "firewall": frozenset({
         "system_firewall_address", "system_firewall_service",

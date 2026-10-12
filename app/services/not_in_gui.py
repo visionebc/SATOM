@@ -90,7 +90,8 @@ def layout_pages() -> dict:
 #: Products whose GUI layout no lab device had measured when SATOM shipped: no
 #: GUI/REST split is possible, every field is listed and the section says why
 #: -- until the knowledge feed brings a layout for the product
-#: (:func:`unmeasured`): FortiADC is measured once a template exists for it.
+#: (:func:`unmeasured`): FortiADC and FortiAnalyzer are measured once a
+#: template exists for them (both are GUI products, ``gui_products.PRODUCTS``).
 UNMEASURED_PRODUCTS = frozenset({"fortiadc", "fortianalyzer"})
 
 

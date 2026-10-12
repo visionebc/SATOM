@@ -26,9 +26,16 @@ FortiADC      live ``GET /api/<entity>`` (``vdom``    ``POST /api/<entity>``,
               answers ONE object (singleton); a       mkey = the row's ``mkey``;
               child table ``<parent>_child_<t>`` is   a child table row adds
               read with ``?pkey=<parent>``            ``pkey=<parent>``
+FortiAnal.    live JSON-RPC ``get <url>`` (the        JSON-RPC ``add <table>``,
+              ``/cli/global/...`` URL IS the CLI      ``update <url>[/<mkey>]``,
+              path); a table answers rows, keyed by   ``delete <table>/<mkey>``
+              the mkey its ``syntax`` names; an       on the object's own URL;
+              object answers ONE object; a table      a table inside a row is
+              inside a row (``{parent}``) is read     read-only
+              under one REAL row
 ============  =====================================  ===========================
 
-Every FortiGate / FortiAuthenticator / FortiADC write goes through
+Every FortiGate / FortiAuthenticator / FortiADC / FortiAnalyzer write goes through
 :class:`GuiOps`, the counterpart of ``FortiWebOps``: a dry run returns the
 exact request without contacting the device; an apply reads the object first
 (the before-snapshot), sends, records a ``ChangeHistory`` row and an audit
@@ -40,8 +47,9 @@ Template endpoints: FortiGate views name the cmdb path after ``/api/v2/cmdb/``
 (``firewall/policy``) or ``monitor:<path>``; FortiAuthenticator views name the
 REST resource after ``/api/v1/`` (``localusers``) or its registry logical
 (``auth_local_users``); FortiADC views name the bare REST entity
-(``load_balance_virtual_server``, which is also its registry logical); a page
-with no REST at all is ``gui:<url-path>``. A field measured
+(``load_balance_virtual_server``, which is also its registry logical);
+FortiAnalyzer views name the JSON-RPC URL (``/cli/global/system/admin/user``);
+a page with no REST at all is ``gui:<url-path>``. A field measured
 ``key_from: "gui-only"`` has no API on that build: drawn read-only and marked,
 never saved.
 """
@@ -56,12 +64,15 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
 FORTIWEB, FORTIGATE, FORTIAUTH = "fortiweb", "fortigate", "fortiauthenticator"
 FORTIADC = "fortiadc"
-PRODUCTS = (FORTIWEB, FORTIGATE, FORTIAUTH, FORTIADC)
+FORTIANALYZER = "fortianalyzer"
+PRODUCTS = (FORTIWEB, FORTIGATE, FORTIAUTH, FORTIADC, FORTIANALYZER)
 LABELS = {FORTIWEB: "FortiWeb", FORTIGATE: "FortiGate", FORTIAUTH: "FortiAuthenticator",
-          FORTIADC: "FortiADC"}
+          FORTIADC: "FortiADC", FORTIANALYZER: "FortiAnalyzer"}
 #: Sidebar group icon colour per product (SATOM accents, light theme; the
-#: FortiADC one is the ADOM colour base.html already gives it).
-ICONS = {FORTIWEB: "#ef4444", FORTIGATE: "#0d9488", FORTIAUTH: "#7c3aed", FORTIADC: "#10b981"}
+#: FortiADC and FortiAnalyzer ones are the ADOM colours base.html already
+#: gives them).
+ICONS = {FORTIWEB: "#ef4444", FORTIGATE: "#0d9488", FORTIAUTH: "#7c3aed", FORTIADC: "#10b981",
+         FORTIANALYZER: "#d97706"}
 
 GUI_ONLY = "gui:"
 MONITOR = "monitor:"
@@ -269,7 +280,17 @@ class Adapter:
         "no API on this build" ("" = no particular reason)."""
         return ""
 
+    def preflight(self, op: str, endpoint: str, mkey) -> str:
+        """Why THIS write cannot be sent at all ("" = it can), decided before
+        the dry run says "ok" and without contacting the device."""
+        return ""
+
     # -- writes ----------------------------------------------------------
+    def write_method(self, op: str, endpoint: str, mkey) -> str:
+        """The verb of a write of ``op`` ("" = the HTTP verb GuiOps picks:
+        ``POST`` / ``DELETE`` / :attr:`update_method`)."""
+        return ""
+
     def path(self, endpoint: str, mkey: str | None) -> str:
         raise NotImplementedError
 
@@ -1291,8 +1312,421 @@ class FortiWebAdapter(Adapter):
         return gui_pages.rows(appliance.id, endpoint)
 
 
+# --------------------------------------------------------------------------- #
+# FortiAnalyzer
+# --------------------------------------------------------------------------- #
+#: The JSON-RPC prefix of FortiAnalyzer's global configuration: the URL IS the
+#: CLI path (``config system admin user`` <-> ``/cli/global/system/admin/user``).
+FAZ_CLI_PREFIX = "/cli/global/"
+#: CLI sections under ``/cli/global/`` (the rest of the JSON-RPC tree is ADOM
+#: data or monitors, never configuration a page writes).
+FAZ_SECTIONS = ("system", "fmupdate")
+_FAZ_WORD = re.compile(r"[a-z0-9][a-z0-9_-]{0,79}")
+#: A table nested in a row of another table: the vendor's ``{<parent>}`` row
+#: placeholder (``.../admin/user/{user}/dashboard``), filled with a REAL row.
+_FAZ_PH = re.compile(r"\{[a-z0-9_-]{1,64}\}")
+#: ADOM data a page may READ (Device Manager: ``/dvmdb/adom/{adom}/device``).
+_FAZ_DATA = re.compile(r"/dvmdb(/([A-Za-z0-9_][A-Za-z0-9_.-]{0,79}|\{[a-z0-9_-]{1,64}\})){1,8}")
+#: Status reads a dashboard names.
+_FAZ_SYS = frozenset({"/sys/status", "/sys/ha/status"})
+#: The JSON-RPC 2.0 (``apiver 3``) monitor trees (Log View, FortiView, Event
+#: Monitor, Incidents, Reports, UEBA, SOAR): a page may name one where it
+#: reads, SATOM never queries them from a page (a ``get`` there runs a search
+#: or needs a task id) -- the page is a live monitor drawn on the device.
+_FAZ_MONITOR = re.compile(r"/(logview|fortiview|eventmgmt|incidentmgmt|report|fazsys|ueba|"
+                          r"soarmgmt)(/([A-Za-z0-9_][A-Za-z0-9_.-]{0,79}|\{[a-z0-9_-]{1,64}\}))"
+                          r"{1,10}")
+#: Configuration objects whose CLI name reads like a device action
+#: (measured in the 7.6.7 build3737 ``tree``): log / report auto-deletion
+#: settings and the firmware-manager timeouts. Their own path is not an
+#: action; what follows it still is checked. ``system backup all-settings``
+#: (ships the configuration off the device) stays an action.
+_FAZ_NOT_ACTIONS = ("/cli/global/system/auto-delete",
+                    "/cli/global/fmupdate/fwm-setting/upgrade-timeout")
+#: JSON-RPC status code of an object the device does not have (7.6.7).
+FAZ_ABSENT = -3
+_FAZ_CODE = re.compile(r"device code (-?\d+)")
+#: A row's own key when the table's ``syntax`` could not be read: the CLI
+#: ``edit`` keys of the measured 7.6.7 tables, most common first.
+_FAZ_MKEY_GUESS = ("name", "userid", "profileid", "fieldname", "seq_num", "id", "priority")
+_faz_cache: dict = {}
+_faz_mkeys: dict = {}
+
+
+def faz_cli_url(ep) -> bool:
+    """``ep`` is a FortiAnalyzer configuration URL: ``/cli/global/<section>/
+    <object>...``; a ``{placeholder}`` only right after a table word, never
+    at the end (a template names tables and objects, not one row)."""
+    if not isinstance(ep, str) or not ep.startswith(FAZ_CLI_PREFIX):
+        return False
+    parts = ep[len(FAZ_CLI_PREFIX):].split("/")
+    if len(parts) < 2 or parts[0] not in FAZ_SECTIONS:
+        return False
+    prev_word = False
+    for p in parts[1:]:
+        if _FAZ_PH.fullmatch(p):
+            if not prev_word:
+                return False
+            prev_word = False
+        elif _FAZ_WORD.fullmatch(p):
+            prev_word = True
+        else:
+            return False
+    return prev_word
+
+
+def faz_is_child(ep) -> bool:
+    """A table inside a row of another table (``.../user/{user}/dashboard``)."""
+    return faz_cli_url(ep) and "{" in ep
+
+
+def faz_is_monitor(ep) -> bool:
+    return isinstance(ep, str) and bool(_FAZ_MONITOR.fullmatch(ep))
+
+
+def _faz_action_body(ep: str) -> str:
+    """What of ``ep`` the device-action check reads: an object measured as
+    configuration loses its own name (:data:`_FAZ_NOT_ACTIONS`)."""
+    for ok in _FAZ_NOT_ACTIONS:
+        if ep == ok or ep.startswith(ok + "/"):
+            return ep[len(ok):]
+    return ep
+
+
+def _faz_code(err) -> int | None:
+    m = _FAZ_CODE.search(str(err or ""))
+    return int(m.group(1)) if m else None
+
+
+def _faz_syntax_mkey(data) -> str:
+    """The mkey a ``syntax`` answer names (7.6.7: ``{"/system/admin/user":
+    {"type": "table", "mkey": "userid", "attr": {...}}}`` -- one node)."""
+    if not isinstance(data, dict):
+        return ""
+    nodes = [n for n in data.values() if isinstance(n, dict)]
+    if len(nodes) != 1:
+        return ""
+    return str(nodes[0].get("mkey") or "")
+
+
+class FortiAnalyzerAdapter(Adapter):
+    """FortiAnalyzer: rows live from JSON-RPC ``get <url>`` (SATOM keeps no
+    FortiAnalyzer configuration cache for these pages). A table answers its
+    rows -- each one keyed by the table's mkey, read once from its ``syntax``
+    (kept as the row's ``q_origin_key``, the FortiOS bookkeeping key the
+    engine already skips) -- an object answers ONE object (singleton). A
+    table inside a row of another table is only answered under a REAL row:
+    read with the parent row's key in its ``{placeholder}``, read-only here.
+
+    Writes go to the object's own URL: ``add <table>`` (create), ``update
+    <table>/<mkey>`` or ``update <object>`` (only the attributes sent change;
+    ``set`` is not used: it creates or replaces), ``delete <table>/<mkey>``.
+    Each call opens its own JSON-RPC session and logs out."""
+    product = FORTIANALYZER
+    update_method = "update"
+
+    # -- naming ----------------------------------------------------------
+    def mkey_of(self, row, endpoint=""):
+        v = (row or {}).get("q_origin_key")
+        if v not in (None, ""):
+            return str(v)
+        return super().mkey_of(row, endpoint)
+
+    def secret(self, key, value):
+        if isinstance(value, str) and value.startswith("ENC "):
+            return True
+        if isinstance(value, list) and value and value[0] == "ENC":
+            # JSON-RPC answers an encrypted attribute as ["ENC", "<blob>"]
+            return True
+        return isinstance(key, str) and key not in ("mkey", "pkey") \
+            and bool(_ADC_SECRET.search(key))
+
+    def writable(self, endpoint):
+        # a configuration object or table of its own, never a table inside a
+        # row (its parent's row decides where it lands), ADOM data or a monitor
+        return super().writable(endpoint) and faz_cli_url(endpoint) \
+            and not faz_is_child(endpoint) and not _ACTION.search(_faz_action_body(endpoint))
+
+    def refusal(self, endpoint):
+        if faz_cli_url(endpoint) and _ACTION.search(_faz_action_body(endpoint)):
+            return "%s names a device action: nothing is sent" % endpoint
+        if faz_is_child(endpoint):
+            return ("%s is a table inside a row of another FortiAnalyzer table: read-only "
+                    "on these pages, nothing is sent" % endpoint)
+        if faz_is_monitor(endpoint) or (endpoint or "").startswith(("/dvmdb/", "/sys/")):
+            return ("%s is FortiAnalyzer ADOM data or a live monitor: read-only on these "
+                    "pages, nothing is sent" % endpoint)
+        return ""
+
+    def preflight(self, op, endpoint, mkey):
+        if mkey not in (None, "") and ("/" in str(mkey) or "\\" in str(mkey)):
+            return ("the FortiAnalyzer object %r cannot be addressed in a JSON-RPC URL "
+                    "(it holds a slash): nothing is sent" % str(mkey))
+        if op == "delete" and mkey in (None, ""):
+            return "name the object to delete: nothing is sent"
+        return ""
+
+    # -- one JSON-RPC session per call -------------------------------------
+    def _client(self, appliance):
+        from ..clients.fortianalyzer import FortiAnalyzerClient
+        return FortiAnalyzerClient(appliance, timeout=20.0)
+
+    def _session(self, appliance, fn):
+        c = self._client(appliance)
+        try:
+            return fn(c)
+        finally:
+            try:
+                c.logout()
+            except Exception:  # noqa: BLE001 -- the session dies with the client
+                pass
+
+    def _fetch(self, appliance, endpoint: str, url: str | None = None, *,
+               cached: bool = True) -> tuple:
+        """``(data, error)`` of ``get <url>`` (``url``: a child read's real
+        URL, else the endpoint), kept a few seconds per device and URL. A
+        table's first read also asks its ``syntax`` in the same session, for
+        the mkey its rows are keyed by (kept per device and endpoint)."""
+        url = url or endpoint
+        aid = getattr(appliance, "id", None)
+        key = (aid, url)
+        hit = _faz_cache.get(key)
+        if cached and hit and time.monotonic() - hit[0] < _FGT_TTL:
+            return copy.deepcopy(hit[1]), None
+        known = bool(_faz_mkeys.get((aid, endpoint)))
+
+        def go(c):
+            data, err = c.call("get", url)
+            if err is None and isinstance(data, list) and not known:
+                syn, serr = c.call("get", url, option=["syntax"])
+                mk = _faz_syntax_mkey(syn) if serr is None else ""
+                if mk:
+                    _faz_mkeys[(aid, endpoint)] = mk
+            return data, err
+        data, err = self._session(appliance, go)
+        if err is None:
+            _faz_cache[key] = (time.monotonic(), copy.deepcopy(data))
+        return data, err
+
+    def forget(self, appliance, endpoint):
+        aid = getattr(appliance, "id", None)
+        base = (endpoint or "").split("/{", 1)[0]
+        for k in [k for k in _faz_cache if k[0] == aid and (k[1] == base or
+                                                            str(k[1]).startswith(base + "/"))]:
+            _faz_cache.pop(k, None)
+
+    def mkey_field(self, appliance, endpoint: str, rows=()) -> str:
+        """The key field of a table's rows: measured (``syntax``), else the
+        first CLI ``edit`` key every row carries, else ""."""
+        mk = _faz_mkeys.get((getattr(appliance, "id", None), endpoint))
+        if mk:
+            return mk
+        rows = [r for r in rows or () if isinstance(r, dict)]
+        return next((k for k in _FAZ_MKEY_GUESS if rows and all(k in r for r in rows)), "")
+
+    def _own(self, row: dict, mk: str) -> dict:
+        out = self.scrub(row)
+        if mk and out.get(mk) not in (None, ""):
+            out["q_origin_key"] = str(out[mk])
+        return out
+
+    def _unreadable(self, endpoint: str) -> str:
+        if faz_is_monitor(endpoint):
+            return ("a live monitor: %s draws it on the device; SATOM does not query it "
+                    "from a page" % label(self.product))
+        if faz_is_child(endpoint):
+            return ("%s is a table inside a row of another table: its rows are listed "
+                    "under that row" % endpoint)
+        if not (faz_cli_url(endpoint) or _FAZ_DATA.fullmatch(endpoint or "")
+                or endpoint in _FAZ_SYS):
+            return "not a FortiAnalyzer JSON-RPC URL: %r" % (endpoint,)
+        return ""
+
+    # -- reads -----------------------------------------------------------
+    def rows(self, appliance, endpoint):
+        if not endpoint or is_gui_only(endpoint):
+            return [], None
+        meta = {"generated_at": None, "source": "live", "cached": False, "error": None,
+                "singleton": False}
+        why = self._unreadable(endpoint)
+        if why:
+            return [], dict(meta, error=why)
+        try:
+            data, err = self._fetch(appliance, endpoint)
+        except Exception as exc:  # noqa: BLE001 -- drawn as unreadable, never a 500
+            data, err = None, "%s: %s" % (type(exc).__name__, exc)
+        if err:
+            return [], dict(meta, error=err)
+        if isinstance(data, dict):
+            return [self.scrub(data)], dict(meta, singleton=True)
+        rows = [r for r in data or [] if isinstance(r, dict)]
+        mk = self.mkey_field(appliance, endpoint, rows)
+        return [self._own(r, mk) for r in rows], meta
+
+    def child_rows(self, appliance, endpoint: str, parent) -> tuple:
+        """(rows, error) of a table inside ONE row of its parent table: the
+        placeholder filled with that row's key (no parent: Create New = no
+        rows)."""
+        if not parent:
+            return [], None
+        phs = re.findall(r"\{[^{}/]+\}", endpoint or "")
+        if not faz_is_child(endpoint) or len(phs) != 1:
+            return [], "not a FortiAnalyzer table inside one table row: %r" % (endpoint,)
+        if "/" in str(parent) or "\\" in str(parent):
+            return [], "the parent row %r cannot be addressed in a JSON-RPC URL" % str(parent)
+        url = endpoint.replace(phs[0], str(parent))
+        try:
+            data, err = self._fetch(appliance, endpoint, url)
+        except Exception as exc:  # noqa: BLE001
+            return [], "%s: %s" % (type(exc).__name__, exc)
+        if err:
+            return [], err
+        rows = [data] if isinstance(data, dict) else [r for r in data or []
+                                                       if isinstance(r, dict)]
+        mk = self.mkey_field(appliance, endpoint, rows)
+        return [self._own(r, mk) for r in rows], None
+
+    def child_read(self, appliance, endpoint, parent, mkey):
+        rows, err = self.child_rows(appliance, endpoint, parent)
+        if err:
+            return None
+        return next((r for r in rows if self.mkey_of(r) == str(mkey)), None)
+
+    def _get_one(self, appliance, endpoint, mkey) -> tuple:
+        """``(state, obj)`` of ONE object read from the device now."""
+        url = self.path(endpoint, mkey)
+        try:
+            data, err = self._fetch(appliance, endpoint, url, cached=False)
+        except Exception:  # noqa: BLE001 -- no read is not a verdict
+            return UNREAD, None
+        if err:
+            gone = mkey not in (None, "") and _faz_code(err) == FAZ_ABSENT
+            return (ABSENT if gone else UNREAD), None
+        if isinstance(data, list):
+            data = data[0] if len(data) == 1 else None
+        if data in (None, {}):
+            return (ABSENT if mkey not in (None, "") else UNREAD), None
+        if not isinstance(data, dict):
+            return UNREAD, None
+        obj = self.scrub(data)
+        if mkey not in (None, ""):
+            obj["q_origin_key"] = str(mkey)
+        return FOUND, obj
+
+    def read(self, appliance, endpoint, mkey):
+        if read_only_endpoint(endpoint) or self._unreadable(endpoint):
+            return None
+        if not mkey:
+            rows, meta = self.rows(appliance, endpoint)
+            if (meta or {}).get("error") or not rows:
+                return None
+            return rows[0] if (meta or {}).get("singleton") or len(rows) == 1 else None
+        if "/" in str(mkey) or "\\" in str(mkey):
+            return None
+        _state, obj = self._get_one(appliance, endpoint, mkey)
+        return obj
+
+    def form_row(self, row):
+        """Nested objects as their dotted key paths, lists of plain values
+        (``allowaccess``, ``ip``) as the space-separated text the form edits."""
+        out = flat_dicts(row)
+        for k, v in list(out.items()):
+            if isinstance(v, list) and all(not isinstance(x, (dict, list)) for x in v):
+                out[k] = " ".join(str(x) for x in v)
+        return out
+
+    def payload(self, fields, orig):
+        """The changed attributes only (``update`` keeps every attribute it
+        does not name), typed as the device served them; a list of plain
+        values goes back as a list; a field of a nested object inside it."""
+        orig = orig or {}
+        out = {}
+        for k, v in (fields or {}).items():
+            if str(k).startswith("q_"):
+                continue
+            o = get_dotted(orig, k) if is_dotted(k) and k not in orig else orig.get(k)
+            if isinstance(o, list) and all(not isinstance(x, (dict, list)) for x in o):
+                val = [_typed(o[0], x) if o else x for x in str(v).split()]
+            elif o is not None or k in orig:
+                val = _typed(o, v)
+            else:
+                val = v
+            if is_dotted(k) and k not in orig:
+                set_dotted(out, k, val)
+            else:
+                out[k] = val
+        return out
+
+    # -- writes ----------------------------------------------------------
+    def write_method(self, op, endpoint, mkey):
+        return {"create": "add", "delete": "delete"}.get(op, "update")
+
+    def path(self, endpoint, mkey):
+        return (endpoint or "") + ("/%s" % mkey if mkey not in (None, "") else "")
+
+    def request_path(self, appliance, op, endpoint, mkey):
+        return self.path(endpoint, None if op == "create" else mkey)
+
+    def send(self, appliance, method, path, body):
+        ok, err, _data = self.send_full(appliance, method, path, body)
+        return ok, err
+
+    def send_full(self, appliance, method, path, body):
+        data, err = self._session(appliance, lambda c: c.call(method, path, body))
+        return (not err), (err or ""), data
+
+    def read_back(self, appliance, endpoint, mkey, pkey=None):
+        """FortiAnalyzer answers a missing object with status ``-3 Object does
+        not exist`` (measured on 7.6.7 build3737, 2026-10-12, by the harvester's
+        syntax walk); any other refusal -- ``-11`` no permission, a dead
+        session -- is no answer at all."""
+        self.forget(appliance, endpoint)
+        if faz_is_child(endpoint):
+            return UNREAD, None
+        return self._get_one(appliance, endpoint, mkey)
+
+    def find_created(self, appliance, endpoint, body, answer=None):
+        # ``add`` names the new object by the table's key, which the body sent
+        mk = self.mkey_field(appliance, endpoint)
+        if not mk:
+            # this worker has not read the table yet: once (rows + syntax)
+            mk = self.mkey_field(appliance, endpoint, self.live_rows(appliance, endpoint))
+        if mk and (body or {}).get(mk) not in (None, ""):
+            return str(body[mk])
+        if isinstance(answer, dict) and len(answer) == 1:
+            v = next(iter(answer.values()))
+            if isinstance(v, (str, int)) and str(v) in {str(x) for x in (body or {}).values()}:
+                return str(v)
+        return super().find_created(appliance, endpoint, body, answer)
+
+    def after_write(self, appliance, endpoint, mkey, obj, op, pkey=None):
+        # no FortiAnalyzer config cache behind these pages: only the few-
+        # second read cache goes, so the next read is the device's
+        self.forget(appliance, endpoint)
+        return True
+
+
+def device_gui_url(appliance, href) -> str:
+    """The device's own GUI page of a measured ``gui_href`` (a live monitor
+    links there), "" when there is none or the href is not a plain in-app
+    route. FortiADC: ``/ui/#navigate/...``; FortiAnalyzer: its SPA routes
+    live under ``/ui/`` (``/ui/fortiview/...``)."""
+    kind = getattr(appliance, "kind", "")
+    href = str(href or "").strip()
+    if kind not in (FORTIADC, FORTIANALYZER) or not href:
+        return ""
+    if not re.fullmatch(r"[#/A-Za-z0-9][A-Za-z0-9_.~:/#?=&%+-]{0,300}", href) \
+            or href.startswith("//") or ".." in href:
+        return ""
+    base = "https://%s:%s" % (getattr(appliance, "host", ""), getattr(appliance, "port", ""))
+    if href.startswith("/ui/"):
+        return base + href
+    return base + "/ui/" + href.lstrip("/")
+
+
 _ADAPTERS = {FORTIWEB: FortiWebAdapter(), FORTIGATE: FortiGateAdapter(),
-             FORTIAUTH: FortiAuthenticatorAdapter(), FORTIADC: FortiADCAdapter()}
+             FORTIAUTH: FortiAuthenticatorAdapter(), FORTIADC: FortiADCAdapter(),
+             FORTIANALYZER: FortiAnalyzerAdapter()}
 
 
 def adapter(product_or_appliance) -> Adapter:
@@ -1465,7 +1899,9 @@ class GuiOps:
         self.ad = adapter(appliance)
 
     def request(self, op: str, endpoint: str, mkey: str | None, body, pkey=None) -> dict:
-        method = self.METHODS.get(op) or self.ad.update_method
+        # FortiAnalyzer names its own JSON-RPC verbs (add / update / delete)
+        method = self.ad.write_method(op, endpoint, mkey) or self.METHODS.get(op) \
+            or self.ad.update_method
         if pkey is None:
             path = self.ad.request_path(self.appliance, op, endpoint, mkey)
         else:
@@ -1495,6 +1931,9 @@ class GuiOps:
             if why:
                 return {"ok": False, "dry_run": dry_run, "request": req,
                         "error": why + ": nothing is sent"}
+        why = self.ad.preflight(op, endpoint, mkey)
+        if why:
+            return {"ok": False, "dry_run": dry_run, "request": req, "error": why}
         if dry_run:
             return {"ok": True, "dry_run": True, "request": req, "error": ""}
         before = None
@@ -1720,8 +2159,12 @@ def unsafe_endpoint(product: str, ep, role: str = READ) -> str:
     actions, never configuration: one in a write or a bind is an action
     route). FortiAuthenticator: a REST resource anywhere; ``cli:<object>`` and
     ``gui:<path>`` only where SATOM reads; a crawled form post (``gui_writes``)
-    only as ``gui:<path>``. Never a path naming a device action, whatever the
-    method or the role (a GET can act). FortiWeb keeps ``gui_bound.safe_api``."""
+    only as ``gui:<path>``. FortiAnalyzer: a ``/cli/global/<section>/...``
+    JSON-RPC URL anywhere (a ``{row}`` placeholder only after a table word);
+    ``/dvmdb/...``, ``/sys/status``, the JSON-RPC 2.0 monitor trees
+    (``/logview``, ``/fortiview``...) and ``gui:<path>`` only where SATOM
+    reads; no crawled form post. Never a path naming a device action, whatever
+    the method or the role (a GET can act). FortiWeb keeps ``gui_bound.safe_api``."""
     if ep in (None, ""):
         return ""
     if not isinstance(ep, str):
@@ -1747,6 +2190,24 @@ def unsafe_endpoint(product: str, ep, role: str = READ) -> str:
             return "not a %s" % ("REST entity (after /api/)" if role == WRITE
                                  else "REST entity or gui: path" if role == READ
                                  else "FortiADC endpoint for %s" % role)
+    elif product == FORTIANALYZER:
+        # a /cli/global configuration URL anywhere; ADOM data, status reads,
+        # the monitor trees and ``gui:<path>`` only where SATOM reads; no
+        # crawled form post is ever replayed
+        if role == READ:
+            ok = faz_cli_url(ep) or _FAZ_DATA.fullmatch(ep) or ep in _FAZ_SYS \
+                or faz_is_monitor(ep) or _GUI_PATH.fullmatch(ep)
+        elif role == WRITE:
+            ok = faz_cli_url(ep)
+        else:
+            ok = None
+        if not ok:
+            return "not a %s" % ("/cli/global configuration URL" if role == WRITE
+                                 else "FortiAnalyzer JSON-RPC URL or gui: path" if role == READ
+                                 else "FortiAnalyzer endpoint for %s" % role)
+        if _ACTION.search(_faz_action_body(ep)):
+            return "names a device action"
+        return ""
     elif product == FORTIAUTH:
         if role == GUI_WRITE:
             ok = _GUI_PATH.fullmatch(ep)
@@ -1833,6 +2294,19 @@ def table_source(product: str, dialog: dict, field: dict, dialogs: dict | None =
         if field.get("key") and field.get("key_from") in ("measured", "name"):
             return {"kind": "field", "field": field["key"]}
         return {"kind": None}
+    if product == FORTIANALYZER:
+        # ``{"kind": "child", "endpoint": ep}`` -- a table inside ONE row of
+        # the dialog's own table (``<dialog url>/{<row>}/<table>``): read with
+        # that row's key, read-only on these pages; another /cli/global table
+        # is a collection of its own
+        cand = ep if ep and ep != dlg_ep else (rd_ep if rd_ep and rd_ep != dlg_ep else "")
+        if not faz_cli_url(cand):
+            return {"kind": None}
+        if faz_is_child(cand):
+            if cand.rsplit("/{", 1)[0] != dlg_ep:
+                return {"kind": None}
+            return {"kind": "child", "endpoint": cand}
+        return {"kind": "collection", "endpoint": cand}
     if product == FORTIADC:
         # ``{"kind": "child", "endpoint": ep}`` -- a FortiADC child table
         # (``<parent>_child_<table>``): its rows belong to ONE parent object
@@ -1923,13 +2397,20 @@ def clone_body(product: str, src: dict, src_key: str, new_name: str) -> dict:
             if not str(k).startswith("q_") and k not in _CLONE_DROP}
     # FortiADC names an object by ``mkey``: the copy gets the new one
     names = ("name", "username", "label", "mkey")
-    ident = next((k for k in names if str((src or {}).get(k)) == str(src_key)),
-                 None) or next((k for k in names if k in (src or {})), "name")
+    ident = next((k for k in names if str((src or {}).get(k)) == str(src_key)), None)
+    if ident is None and product == FORTIANALYZER:
+        # a FortiAnalyzer table is keyed by the field its syntax names
+        # (admin users: ``userid``): the one holding the source's key
+        ident = next((k for k, v in (src or {}).items()
+                      if not str(k).startswith("q_") and not isinstance(v, (dict, list))
+                      and str(v) == str(src_key)), None)
+    ident = ident or next((k for k in names if k in (src or {})), "name")
     body[ident] = new_name
     return body
 
 
 __all__ = ["PRODUCTS", "LABELS", "FORTIWEB", "FORTIGATE", "FORTIAUTH", "FORTIADC", "ADC_CHILD",
+           "FORTIANALYZER", "faz_cli_url", "faz_is_child", "faz_is_monitor", "device_gui_url",
            "product_of", "label",
            "is_gui_only", "is_monitor", "read_only_endpoint", "gui_only_fields",
            "strip_fortiweb_refs", "lib_key", "adapter", "GuiOps", "drift", "Adapter",

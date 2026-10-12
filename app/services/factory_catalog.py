@@ -58,6 +58,14 @@ from . import deep_capture as dc
 #: profile, which is how many policies use it on THIS appliance — usage, not
 #: content. Kept in the tree an appliance gets, left out of identity.
 REVERSE_REF_KEYS = frozenset({"q_ref", "q_ref_string"})
+#: FortiWeb's last sub-table EDIT (which sub-table, which row, add/edit/delete):
+#: operation parameters the box echoes on the parent row, never in ``show
+#: full-configuration``. Opening a predefined signature profile in the GUI
+#: flips ``sub_table_type`` Table -> Main, and every catalog entry stopped
+#: matching that box (2026-10-12, fortiweb18 "Alert Only"). Left out of identity.
+EDIT_OP_KEYS = frozenset({"sub_table_type", "sub_table_type_val", "sub_table_id",
+                          "sub_table_id_val", "sub_table_action", "sub_table_action_val"})
+_NOT_IDENTITY = REVERSE_REF_KEYS | EDIT_OP_KEYS
 
 KIND_INLINE = "wpp_inline"
 KIND_OFFLINE = "wpp_offline"
@@ -93,7 +101,7 @@ def _strip(value):
     if isinstance(value, list):
         return [_strip(v) for v in value]
     if isinstance(value, dict):
-        return {k: _strip(v) for k, v in value.items() if k not in REVERSE_REF_KEYS}
+        return {k: _strip(v) for k, v in value.items() if k not in _NOT_IDENTITY}
     return value
 
 
@@ -103,7 +111,8 @@ def identity(value):
     ``sot_store.normalise`` first — the rules the source-of-truth store
     already uses for "is this a configuration change" (internal ``*_val``
     handles, the clock, rolling windows) — then the reverse-reference
-    counters, which describe the appliance's usage of the object."""
+    counters, which describe the appliance's usage of the object, and the
+    echo of the last sub-table edit (:data:`EDIT_OP_KEYS`)."""
     from .sot_store import normalise
     return _strip(normalise(value))
 

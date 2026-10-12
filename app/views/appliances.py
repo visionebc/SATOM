@@ -531,6 +531,23 @@ def not_in_gui(id):
                            error=error)
 
 
+@bp.route('/<int:id>/not-in-gui/rows')
+@login_required
+@require_permission('protection.view')
+def not_in_gui_rows(id):
+    """The rows of ONE object the device's GUI does not draw (an HTML
+    fragment the per-device page loads into its card). Read only, through
+    the product's GUI adapter -- the permission of the pages that draw the
+    same rows; an object outside that list is a 404, never a read."""
+    appliance = visible_appliance_or_404(id)
+    from ..services import gui_pages, not_in_gui as nig
+    got = nig.absent_rows(appliance, (request.args.get('ep') or '').strip())
+    if got is None:
+        abort(404)
+    return render_template('appliances/_nig_rows.html', appliance=appliance, cell=gui_pages.cell,
+                           **got)
+
+
 def _nig_body():
     body = request.get_json(silent=True) or {}
     endpoint = str(body.get('endpoint') or '').strip()

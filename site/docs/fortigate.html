@@ -69,31 +69,53 @@
       <a href="#7-troubleshooting">7. Troubleshooting</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="fortigate--the-read-only-adom-base">FortiGate — the read-only ADOM (base)</h1>
+<h1 id="fortigate--the-fortigate-adom">FortiGate — the FortiGate ADOM</h1>
 <blockquote>
-<p><strong>Since:</strong> SATOM 3.0.0. This is the <strong>base</strong> of the FortiGate workspace: it
-reads a FortiGate live over the FortiOS REST API and writes nothing. Editors,
-an API console and registry binding are later rounds on top of the same shell.
-Measured against a FortiGate-VM running FortiOS <strong>8.0.1 build0245</strong>.</p>
+<p><strong>Since:</strong> SATOM 3.0.0, which shipped the read-only <strong>base</strong>: it read a
+FortiGate live over the FortiOS REST API and wrote nothing. The measured GUI
+pages (with their editors), the API console and the registry binding of the
+section pages came later, on top of the same shell. Measured against a
+FortiGate-VM running FortiOS <strong>8.0.1 build0245</strong>.</p>
 </blockquote>
 <h2 id="1-what-it-is">1. What it is</h2>
 <p>The <code>/fgt/</code> ADOM is SATOM's sixth workspace (user guide §3 and §17.4). It gives
-an operator who knows the FortiOS GUI the same top-level menu, and every pane
-behind it is a <strong>read-only table read live from the selected FortiGate</strong>:</p>
+an operator who knows the FortiOS GUI the same top-level menu. Everything is
+<strong>read live from the selected FortiGate</strong>: SATOM keeps no FortiGate
+configuration cache.</p>
 <ul>
 <li>a <strong>dashboard</strong> with the device picker, the live unit status (hostname,
   firmware, build, serial, model, log disk) and a map of every section;</li>
+<li>the <strong>FortiGate menu</strong>: the pages of the unit's own GUI, drawn from the
+  layout measured on its build (knowledge packs). These pages <strong>write</strong>:
+  update, create, delete and clone of a <code>cmdb</code> object, and the rows of its
+  inline tables, as <code>PUT</code> / <code>POST</code> / <code>DELETE</code> on <code>/api/v2/cmdb/&lt;path&gt;</code>. Every
+  save is a <strong>dry run</strong> first (the exact request, sent nowhere); the apply
+  needs <code>config_write</code>, is audited with a before-snapshot and a <code>ChangeHistory</code>
+  row, and is read back from the unit: a field FortiOS holds differently fails
+  the save as <strong>drift</strong>. A save is accepted only for a collection the page
+  itself edits. Monitor views, GUI-only pages and fields measured with no API
+  are drawn read-only and never saved;</li>
+<li>the <strong>API console</strong> (sidebar → API, <code>registry.view</code>): the FortiGate registry
+  browsed as the FortiGate menu, and a live console. <code>GET</code> reads the <code>cmdb</code>,
+  <code>monitor</code> and <code>log</code> trees. <code>POST</code>, <code>PUT</code> and <code>DELETE</code> are <strong>dry-run by
+  default</strong>; sending one needs <code>registry.execute_write</code> and is audited and
+  read back. Writes go to <code>/api/v2/cmdb/</code> only, and a <code>DELETE</code> must name an
+  object: a table-wide <code>DELETE</code> is refused, not sent;</li>
 <li><strong>30 section pages</strong> in <strong>7 areas</strong> that follow the FortiOS 8.0 menu —
   Network, Policy &amp; Objects, Security Profiles, VPN, User &amp; Authentication,
-  System, Log &amp; Report — covering <strong>43 cmdb tables</strong>, one tab per table;</li>
+  System, Log &amp; Report — covering <strong>43 cmdb tables</strong>, one tab per table. These
+  stay <strong>read-only</strong>; each tab is one <code>cmdb</code> read at the path the endpoint
+  registry resolves for the unit's build;</li>
 <li>the shared, product-scoped pages every ADOM has: Appliances, Jobs,
   Notifications, Audit log, Monitoring, Metrics, Search, Architecture,
   Analysis, Change requests, Scheduled actions, Process, API tokens, the
   Release Notes modal, and the API library pages <strong>Build compatibility</strong> and
   <strong>Schema builds</strong>.</li>
 </ul>
-<p>SATOM is still not a firewall manager: nothing in this ADOM changes a
-FortiGate.</p>
+<p>SATOM is still not a firewall manager. It edits one object at a time on one
+FortiGate; it never sends the monitor tree's actions (reboot, restore, firmware
+upgrade), and there are no FortiGate backups, templates or fleet rollouts
+(§6).</p>
 <h2 id="2-registering-a-fortigate">2. Registering a FortiGate</h2>
 <p>Administrator → <strong>Appliances</strong> → <em>Add appliance</em>, kind <strong><code>fortigate</code></strong>:</p>
 <table>
@@ -127,8 +149,10 @@ FortiGate.</p>
 </tbody>
 </table>
 <p>The token is stored encrypted in the same column as the other products'
-credentials. A <strong>read-only admin profile</strong> on the FortiGate is enough and is
-the recommended choice: the ADOM only ever sends <code>GET</code>.</p>
+credentials. A <strong>read-only admin profile</strong> on the FortiGate is enough to read
+everything this ADOM shows. The token's admin profile also decides what a write
+may do: a write the profile does not grant is refused by the unit. Give the
+token a read-write profile only if operators are to edit from SATOM.</p>
 <blockquote>
 <p><strong>Licence.</strong> A FortiGate-VM <strong>without a valid licence</strong> answers <code>401</code> to every
 REST call except <code>license/status</code>. SATOM's error text says so, because "wrong
@@ -258,12 +282,12 @@ Release Notes modal of this ADOM (<a href="release-notes.html">release notes</a>
 </thead>
 <tbody>
 <tr>
-<td>Any write (object editor, raw JSON, policy changes)</td>
-<td>read-only by design in this round; the client refuses every verb but <code>GET</code></td>
+<td>Writes outside <code>/api/v2/cmdb/</code></td>
+<td>the monitor tree holds device actions (reboot, restore, firmware upgrade); the client refuses any other path or verb, not sends it</td>
 </tr>
 <tr>
-<td>API console / endpoint registry binding</td>
-<td>section paths are literal; a rename after an upgrade is not yet a Registry edit</td>
+<td>Edits on the section pages</td>
+<td>they stay read-only; edit from the FortiGate menu's measured pages or the API console</td>
 </tr>
 <tr>
 <td>Backups, restore, firmware upgrade, templates, Lua</td>

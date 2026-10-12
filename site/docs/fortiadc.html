@@ -219,9 +219,32 @@ asked once and recorded absent; a stop discards the partial file.</p>
   (<code>web_attack_signature</code> → <code>security_waf_web_attack_signature</code>); the tree
   follows that rule for every field instead of a fixed list.</li>
 </ul>
-<p>The VS Inspector builds one index (live: the referenced tables + the group
-child tables; 7.5 s for the 15 VS of {device}, measured 2026-10-12) and draws every VS from it; <code>?source=capture</code>
-draws from <code>_config.json</code> + <code>_deep.json</code> with no device call.</p>
+<p>The VS Inspector builds one index and draws every VS from it. Live, the
+index is read breadth-first from the VS rows: each round reads the child
+tables of the groups just reached (<code>?pkey=</code>), then every table those rows
+name, once per table, on one reused connection. Only what a VS reaches is
+read. For the 15 VS of {device} that is 70 reads in 0.8 s; reading every
+table <code>REFS</code> could reach plus every group's child table took 90 reads and
+7.6 s (2026-10-12). One VS (<code>?policy=</code>) takes 37 reads and 0.4 s. The trees
+are identical. <code>?source=capture</code> draws from <code>_config.json</code> + <code>_deep.json</code>
+with no device call.</p>
+<p>The depth pass also feeds two other stores, like the FortiWeb depth does:</p>
+<ul>
+<li><strong>Cache, <code>layer='deep'</code></strong> (<code>adc_vstree.deep_sections</code> →
+  <code>device_sync.persist_deep_snapshot</code>, replace per device). Each row of a
+  parent table whose child table this build serves becomes a depth-0 object.
+  The child rows read for it sit at depth 1 as <code>&lt;parent&gt;/&lt;child&gt;</code>, the key
+  the gx write-through already keeps. When the child table answered rows,
+  the list the parent embeds for the same members is dropped. Analysis reads
+  this layer: the Global deep-object picker (<em>FortiADC object</em>), sub-element
+  counts, the fleet inventory (pools, and pool members as back-ends), and
+  the FortiADC object inventory's <code>…_child_…</code> rows.</li>
+<li><strong>API library</strong>: the child tables as sweep evidence of the build, with
+  origin <code>rediscovery-depth:&lt;id&gt;@&lt;version&gt;</code>. A table that answered for any
+  parent is <code>ok</code>, and field names come from its rows. This evidence is
+  partial: <code>apilib_harvest.needs_harvest</code> and the pack import's "local
+  measurement wins" rule ignore it, as they ignore a schema harvest's probe.</li>
+</ul>
 <h2 id="virtual-server-dependency-chain--create-field-seed-verified-live-fadc-803-2026-07-07">Virtual server dependency chain + create-field seed (verified live, fadc 8.0.3, 2026-07-07)</h2>
 <p>A FortiADC <strong>virtual server</strong> is NOT a flat "name + IP" object — the device
 refuses a create that has no load-balance pool, and the pool needs a real-server

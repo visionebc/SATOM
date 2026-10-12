@@ -522,9 +522,10 @@ git --no-optional-locks ls-files | \
 </ul>
 <h2 id="7b-documentation-leaving-the-building">7b. Documentation leaving the building</h2>
 <p>Section 7 covers files arriving from outside. This one covers text going the
-other way, which is the direction that cannot be undone: <code>site/</code> is pushed to
-GitHub Pages by the release sync, and a published page is cached and indexed
-whether or not it is deleted afterwards.</p>
+other way, which is the direction that cannot be undone: <code>site/</code> ships in the
+public GitHub mirror with every release sync, and its pages are deployed to the
+public site, where a published page is cached and indexed whether or not it is
+deleted afterwards.</p>
 <p><strong>What it prevents.</strong> Two different rots, and one disclosure.</p>
 <table>
 <thead>

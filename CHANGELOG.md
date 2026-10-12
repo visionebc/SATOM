@@ -6,6 +6,90 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — FortiADC: every object the GUI does not draw, with its rows, on the per-device page
+
+- **Appliances → *device* → Not in GUI, but in CLI** now lists the whole
+  objects the device serves over REST that no page of its own GUI reads on
+  its build, each with its rows (read from the device when the page opens,
+  read only, secrets never shown) and a link to the page SATOM draws it on.
+  On a lab FortiADC 7.6.7: 46 objects — the 45 of the `gui_absent` pages of the
+  knowledge pack (VDOM and VDOM links, per-VDOM syslog and FortiAnalyzer, DNS,
+  ISP provinces, connection pool, alert targets…) and Auto Backup, which the
+  build serves but no measured page reads (its GUI tab is an action): this
+  page is now where SATOM shows it. The list is derived from the layouts and
+  the registry, never hard-coded; an object the build answers 404 for is not
+  listed.
+- The device's menu (FortiADC, FortiGate, FortiAuthenticator) ends with a
+  **Not in GUI, but in CLI** entry that opens this page.
+
+### Fixed — "Not in GUI, but in CLI" no longer treats SATOM's schema pages as the Fortinet GUI
+
+- The pages of objects the device's GUI does not draw (`gui_absent`) were read
+  as measured GUI layouts: their section said "GUI layout of FortiADC 7.6.7
+  (exact)" and the per-device page listed each of them as a layout-measured
+  page. The section now says no page of the device's GUI reads the object, and
+  those objects are listed as whole objects (above) instead.
+
+### Added — FortiADC depth capture in the cache, Analysis and the API library
+- A FortiADC rediscovery with "Capture full depth" now also files its child-table rows in the cache's deep layer, as FortiWeb's depth does: every parent of a child table this build serves (pools, certificate groups, content routing and rewriting, schedule groups…) with the rows read for it, stored as `<parent>/<child>` under the parent. Where the child table answered rows, the copy the parent embeds is left out, so a pool member is never counted twice.
+- Analysis (Global): the deep-object picker has a "FortiADC object (child tables)" type that opens any captured parent with its members. Sub-element counts include FortiADC child tables, and the fleet inventory counts FortiADC pools and their members as back-ends (IPs and ports included).
+- Analysis (FortiADC): the object inventory counts the 27 `…_child_…` tables from the depth capture. Before, they read 0 on every device because the sweep never reads them.
+- API library: the child tables the depth pass read are recorded as measured for the build they ran on (verdict and field names), with a `rediscovery-depth:` origin. That evidence is partial, so on its own it never marks a build as harvested.
+
+### Changed — FortiADC VS Inspector reads only what the virtual servers reach
+- The live VS Inspector now follows references outward from the virtual servers. Each table is read once, child tables are read only for the groups a virtual server actually reaches, and the whole walk uses one reused connection. It used to read about 45 tables and the child table of every group on the box. Measured on a lab FortiADC with 15 virtual servers: 7.6 s and 90 reads before, 0.8 s and 70 reads after; a single virtual server went from 7.8 s to 0.4 s (90 reads to 37). The trees are identical.
+
+### Changed — SQLAlchemy 2 primary-key lookups
+
+- Every legacy `Model.query.get(id)` in the application (78 calls across 38 modules) now uses `db.session.get(Model, id)`, the SQLAlchemy 2 form. Behaviour is unchanged (identity-map hit first, `None` when the row is absent); the test suite no longer drowns in `LegacyAPIWarning` lines coming from application code.
+- Two handlers that imported `db` locally *after* the new lookup (template-binding removal and the managed-WPP lock scope) now use the module-level import, so the lookup can never hit an unbound local.
+
+### Changed — release guards run on the test platform, never on a node
+
+- The release pipeline's targeted guards and full suite are submitted to the
+  internal test platform for the exact release commit and must report
+  `passed`; nothing runs pytest on a production node any more (that run cost
+  the primary ~4.9 GB of temporary files per release and competed with the
+  live service). `docs/release-pipeline.md` describes the new step.
+
+### Fixed — write verification leftovers (policy editor, Create New, FortiAuthenticator rename)
+- The Server Policy editor no longer reads a policy back a second time after saving it: the write's own re-read already refreshed SATOM's copy (the REST part in the write itself, the CLI part in the CLI writer's readback), and the dialog reports that refresh. One request fewer per save, same cached content.
+- Create New (Server Policy) now fails a step the device accepted but does not hold — the re-read must find what was sent, as clone and migrate already require — and undoes that object together with the rest of the run instead of reporting the policy created.
+- FortiAuthenticator: renaming an object SATOM caches by name (user groups, RADIUS clients, RADIUS policies) moves its cached row to the new name instead of keeping the old row beside a new one; deleting it afterwards no longer leaves the old name behind (measured on a lab FortiAuthenticator 8.0.3).
+
+### Fixed — Documentation that still described old behaviour
+
+- **User guide §7.5 and §5**: the Server Policy dialog was documented as
+  running only the reference check. It runs the object editor's gates in the
+  same order: the template lock on a template-managed Web Protection Profile,
+  another user's edit lease (an inline-table row is checked against its
+  parent's), the reference check and the build compatibility check; a
+  successful write releases your lease.
+- **User guide §28.2, §28.4 and §29.1.4**: System Provisioning and baselines
+  render `{{ variables }}` per device from each template's binding. The note
+  saying they push the body as stored is gone; the preview names a device left
+  without a value, and the live push is refused.
+- **User guide §9**: the Exceptions page's **DRIFT** flag (a carve-out whose
+  Server Policy is gone, or uses another profile, on the device) is documented:
+  the banner, the badge, the *not on the device* filter, and when nothing is
+  flagged. §8.1 adds the Regex Lab button in the measured FortiWeb dialogs.
+- **Hypervisor provisioning**: `config_only` (and `full`) were said to issue
+  the certificate and apply the profile. No mode configures the appliance: the
+  certificate step is a no-op and the profile step only hands over to System
+  Provisioning.
+- **FortiGate**: the README, `docs/fortigate.md`, the overview and the user
+  guide called the workspace read-only and said there was no API console. The
+  measured pages save `cmdb` objects (dry run first, `config_write`, audited
+  and read back) and the API console sends `POST`/`PUT`/`DELETE` to
+  `/api/v2/cmdb/` only, dry-run by default (`registry.execute_write`). The
+  section pages stay read-only.
+- **Site**: `site/README.md` described publication through GitHub Pages and a
+  `gh-pages` branch; Pages is off and the public site is assembled by its own
+  repository from part of `site/`. `site/index.html`, still served by a node's
+  own nginx, named three products and a git source of truth: it now names the
+  five products and the content-addressed configuration history, and the git
+  source-of-truth guard covers it.
+
 ### Security — device configurations and database bundles are no longer readable by other local accounts
 
 The service runs with `UMask=0022`, so everything it wrote under `data/` was

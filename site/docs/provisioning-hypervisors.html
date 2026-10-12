@@ -236,7 +236,7 @@ sending commands at it blindly turns them into failed logins against an
 <tbody>
 <tr>
 <td><code>full</code></td>
-<td>create, boot, configure and onboard without stopping</td>
+<td>create, boot, wait for the appliance to answer and onboard it without stopping, then hand over to the profile</td>
 </tr>
 <tr>
 <td><code>semi</code></td>
@@ -252,12 +252,18 @@ sending commands at it blindly turns them into failed logins against an
 </tr>
 <tr>
 <td><code>config_only</code></td>
-<td>the machine exists already — reserve the address, issue the certificate, apply the profile</td>
+<td>the machine exists already — reserve the address, create the DNS record, wait for it to answer and register it; the certificate step is a no-op and the profile is only handed over (see below)</td>
 </tr>
 </tbody>
 </table>
 <p><code>semi</code> is the mode that always works. <code>full</code> is offered only where the
 capability probe says the serial console is reachable.</p>
+<p>No mode configures the appliance. The last two steps hand over: <strong>certificate</strong>
+(<code>cert_installed</code>) is a no-op until a CA profile can be selected for a run, so
+the appliance keeps its factory self-signed certificate and is registered with
+certificate verification off; <strong>profile</strong> (<code>profile_applied</code>) pushes nothing,
+it marks the selected system profile as ready, to be applied from System
+Provisioning with its dry run, firmware check and approval (user guide §21.9).</p>
 <h3 id="42-addressing">4.2 Addressing</h3>
 <p>IPAM is used <strong>only</strong> when the operator turns it on for that run <em>and</em> the
 address step resolves to <strong>an enabled backend carrying the IPAM role whose scope
@@ -349,7 +355,7 @@ answer to that fact.</p>
 </tr>
 <tr>
 <td><strong>config_only</strong></td>
-<td>Skips machine creation: address, DNS, registration and profile against a machine that already exists.</td>
+<td>Skips machine creation: address, DNS, reachability and registration against a machine that already exists, then the same profile handover as every mode.</td>
 <td>Needs <strong>no hypervisor at all</strong>. The path for physical appliances and anything built outside SATOM.</td>
 <td>You built the machine, so its CPU, memory, disk and network are outside the run log and outside the audit trail.</td>
 </tr>

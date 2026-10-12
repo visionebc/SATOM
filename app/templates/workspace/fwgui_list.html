@@ -141,8 +141,22 @@
   if (!pane) return;
   var COLL = {{ (view.endpoint or '')|tojson }};
   var AID = {{ appliance.id }};
-  // FortiGate / FortiAuthenticator: Delete goes through workspace.fwgui_save
+  // FortiGate / FortiAuthenticator / FortiADC: Delete goes through
+  // workspace.fwgui_save, which re-reads and verifies every applied write
   var PX = {{ (not _fwp)|tojson }};
+  // the toast of an applied write: what the re-read proved (j.verdict is
+  // gui_products.verdict_view; a write the device did not keep fails, and
+  // fail() shows its error: "Not applied: the device kept ...")
+  function done(j, what) {
+    var v = (j && j.verdict) || null;
+    if (!PX || !v || v.verdict === 'verified') {
+      if (window.FW) FW.toast(what + (v ? ' — ' + v.label.toLowerCase() : ''), 'success');
+      return 0;
+    }
+    var msg = what + ' on the device — ' + v.text;
+    if (window.FW) FW.toast(msg, 'warning'); else alert(msg);
+    return 2500;
+  }
   var PXSAVE = {{ url_for('workspace.fwgui_save', appliance_id=appliance.id)|tojson }};
   var PAGE = {{ page|tojson }};
   // a list of a settings object's table rows: a row is deleted by writing
@@ -239,8 +253,7 @@
       if (!confirm('DRY-RUN ' + (req.method || 'DELETE') + ' ' + (req.path || '') + '\n\nApply this delete to the device now?')) return;
       post(DEL, Object.assign({}, base, {apply: true})).then(function (j2) {
         if (!j2.ok) return fail(j2);
-        if (window.FW) FW.toast('Deleted', 'success');
-        location.reload();
+        window.setTimeout(function () { location.reload(); }, done(j2, 'Deleted'));
       });
     });
   });
@@ -261,8 +274,7 @@
                    (PX ? ' (' + (req.method || 'POST') + ' ' + (req.path || '') + ', ' + (p.fields || 0) + ' fields)' : '') + '.\n\nApply to the device now?')) return;
       post(CL, Object.assign({}, base, {apply: true})).then(function (j2) {
         if (!j2.ok) return fail(j2);
-        if (window.FW) FW.toast('Cloned', 'success');
-        location.reload();
+        window.setTimeout(function () { location.reload(); }, done(j2, 'Cloned'));
       });
     });
   });

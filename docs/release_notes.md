@@ -322,8 +322,7 @@ because an absent entry reads as a product that never had the feature.
   against an isolated corpus.
 - `tests/test_release_notes_products.py` — section maps, labels, routes and the
   pack import, per product.
-- `tests/test_release_notes_pages.py`, `tests/test_release_notes_picker.py` —
-  the published pages and the version pickers.
+- `tests/test_release_notes_pages.py` — the published release-notes pages.
 - `tests/test_release_notes_nogit.py` — the removed git controls stay removed.
 - `tests/test_no_vendor_http.py` — no vendor HTTP in the product.
 - `tests/test_release_advisor.py`, `tests/test_advisor_admonitions.py` — the

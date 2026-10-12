@@ -75,6 +75,7 @@ DEVICE_BLUEPRINTS = frozenset({
 EXCLUDED = {
     "appliances.upgrade_push": "already a background job (_spawn_flash_job)",
     "appliances.downgrade_push": "already a background job (_spawn_flash_job)",
+    "appliances.boot_alternate": "the live boot is already a background job (run_async); the dry run is one read",
     "appliances.rediscover_start": "own worker; mirrored into a job by services.rediscovery",
     "appliances.rediscover_stop": "control for a running sweep; must answer at once",
     "backups.create_backup": "already a background job",

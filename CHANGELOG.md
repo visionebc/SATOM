@@ -40,6 +40,10 @@ consecutive FortiWeb version pairs differed in nothing else.
   system VIP, so deleting a same-box clone left the VIP the clone had created.
   A VIP is now ref-counted like its virtual server: deleted (after the virtual
   server that lists it) when no other policy reaches it, kept when one does.
+  Dependencies are now deleted shallowest first (a referrer before what it
+  references): the dependency walk is not deepest-first as the code assumed,
+  so a VIP was tried before its virtual server. An object refused "in use" is
+  retried while a pass still deletes something.
 - **"The entry is used." is recognised as a shared object.** FortiWeb 7.6.8
   refuses deleting an object still referenced with HTTP 500 errcode -23
   "The entry is used." (measured on a lab FortiWeb). The cascade's safety net

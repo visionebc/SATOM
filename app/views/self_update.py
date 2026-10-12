@@ -67,13 +67,95 @@ def index():
         ha=cluster.full_state(),
         deploy_mode=reconciler.deploy_mode_orm(),
         reconcile=reconciler.last_status_orm(),
+        # THIS node's own tick (node-local state/, never replicated): on the
+        # standby the replicated record above is the PRIMARY's.
+        reconcile_local=reconciler.local_status(),
         watch_promote=request.args.get("watch_promote", ""),
         watch=request.args.get("watch", "") or _active_update(history),
         uploads=upkg.list_uploads(),
         trust=upkg.trust_state(),
         api_packs=_api_pack_state(),
         knowledge=_knowledge_state(),
+        ha_link=_ha_link_state(),
     )
+
+
+def _ha_link_state() -> dict:
+    """The HA link card. Reads only (loginctl, a banner, the peer probe) --
+    bounded by their own timeouts, and never raises into the page."""
+    from ..services import ha_link
+    try:
+        return dict(ha_link.check(), error="")
+    except Exception as exc:  # noqa: BLE001 — shown in the card, not a 500
+        return {"error": "%s: %s" % (type(exc).__name__, exc), "verdict": "n/a",
+                "problems": [], "standby": [], "applicable": False,
+                "repair": {"allowed": False, "refusal": str(exc),
+                           "recommended": False, "does": [], "does_not": []}}
+
+
+# ---------------------------------------------------------------------------
+# HA link: "can the standby fetch from me?"   [SATOM-HA-LINK-VIEWS]
+# ---------------------------------------------------------------------------
+# Same split as every other privileged action on this page: the web worker
+# reads and ENQUEUES; the root runner restarts the unit. The preview is the
+# default -- a POST without confirm=1 returns the plan and changes nothing.
+
+@bp.route("/ha-link")
+@login_required
+@require_permission("user_manage")
+def ha_link_check():
+    """Re-run the HA link check (the card's Re-check button)."""
+    from ..services import ha_link
+    return jsonify(ha_link.check())
+
+
+@bp.route("/ha-link/repair", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def ha_link_repair():
+    """Preview, or with ``confirm=1`` enqueue, the logind restart.
+
+    Role-guarded in ``ha_link.request_repair`` (primary in HA mode only) and
+    again by the root runner; CSRF-protected like every POST here (the global
+    CSRFProtect; the page sends X-CSRFToken). A refusal answers 409 with the
+    reason, so the button can say why instead of failing generically.
+    """
+    from ..services import ha_link
+    payload = request.get_json(silent=True) or request.form
+    confirm = str(payload.get("confirm") or "") in ("1", "true", "yes")
+    who = getattr(current_user, "username", "?")
+    try:
+        res = ha_link.request_repair(who, origin="ha-link-gui",
+                                     dry_run=not confirm)
+    except runtime.CapabilityUnavailable as exc:
+        return jsonify({"ok": False, "refused": exc.reason}), 409
+    except ValueError as exc:
+        return jsonify({"ok": False, "refused": str(exc)}), 400
+    before = res.get("before") or {}
+    if res.get("refused"):
+        if confirm:
+            log_action("ha.link.repair.refused", target=res.get("node") or "",
+                       extra={"reason": res["refused"][:200],
+                              "role": before.get("role")})
+        return jsonify(res), 409
+    if confirm:
+        log_action("ha.link.repair", target=res.get("node") or "",
+                   extra={"request": res.get("uid"), "unit": res.get("unit"),
+                          "verdict_before": before.get("verdict"),
+                          "problems_before": [p.get("code") for p in
+                                              before.get("problems") or []],
+                          "already_queued": bool(res.get("already_queued"))})
+    return jsonify(res)
+
+
+@bp.route("/ha-link/repair/<uid>")
+@login_required
+@require_permission("user_manage")
+def ha_link_repair_status(uid):
+    """The queued repair's progress; once it is done, a fresh check (after)."""
+    from ..services import ha_link
+    out = ha_link.repair_outcome(uid)
+    return jsonify(out), (404 if out.get("state") == "unknown" else 200)
 
 
 def _knowledge_state() -> dict:

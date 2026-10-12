@@ -98,17 +98,111 @@
       </div>
     </form>
     <hr class="my-2">
-    {% if reconcile %}
-    <div class="small">
-      <span class="text-muted">{{ _('Reconciler last tick:') }}</span>
-      <span class="badge bg-info text-dark">{{ reconcile.decision }}</span>
+    {# THIS node's own reconciler tick, from its node-local state/ file. The
+       replicated record below is published by the PRIMARY only, so on a
+       standby it describes the primary -- it is shown separately, labelled. #}
+    {% set rl = reconcile_local %}
+    <div class="small" id="reconcile-local">
+      <span class="text-muted">{{ _('This node\'s reconciler, last tick:') }}</span>
+      {% if rl %}
+        <span class="fw-badge fw-badge-{{ 'danger' if rl.decision in ('fetch-error', 'error') else 'success' if rl.decision == 'up-to-date' else 'info' }}">{{ rl.decision }}</span>
+        {{ _('on') }} <span class="font-monospace">{{ rl.node }} ({{ rl.role }})</span>,
+        {{ rl.behind }} {{ _('behind') }} — <em>{{ rl.detail }}</em>
+        <span class="text-muted">({{ rl.at | localtime }})</span>
+        {% if rl.decision == 'fetch-error' %}
+        <div class="mt-1"><span class="fw-badge fw-badge-danger">{{ _('cannot fetch') }}</span>
+          {{ _('since') }} {{ (rl.fetch_error_since or rl.at) | localtime }}
+          ({{ rl.fetch_failures or 1 }} {{ _('failed attempt(s) in a row') }}){% if rl.error %}: <code>{{ rl.error }}</code>{% endif %}
+          {% if this_role == 'standby' %}<div class="text-muted">{{ _('The primary\'s HA link card shows this too, and repairs the primary\'s side: Software Update & HA on the primary, or') }} <code>satom ha check</code> {{ _('there.') }}</div>{% endif %}
+        </div>
+        {% endif %}
+      {% else %}
+        <span class="text-muted">{{ _('no tick recorded on this node yet — satom-reconciler is not running here, or has not ticked since it started.') }}</span>
+      {% endif %}
+    </div>
+    {% if reconcile and (not rl or reconcile.node != rl.node) and reconcile.node != this_node %}
+    <div class="small mt-1" id="reconcile-primary">
+      <span class="text-muted">{{ _('Primary\'s reconciler (replicated record):') }}</span>
+      <span class="fw-badge fw-badge-secondary">{{ reconcile.decision }}</span>
       {{ _('on') }} <span class="font-monospace">{{ reconcile.node }} ({{ reconcile.role }})</span>,
-      {{ reconcile.behind }} behind — <em>{{ reconcile.detail }}</em>
+      {{ reconcile.behind }} {{ _('behind') }}
       <span class="text-muted">({{ reconcile.at | localtime }})</span>
     </div>
-    {% else %}
-    <div class="small text-muted">{{ _('Reconciler has not published a tick yet (the standby\'s state is probed live).') }}</div>
     {% endif %}
+  </div>
+</div>
+
+{# HA link [SATOM-HA-LINK]: can the standby fetch code from THIS node? The
+   standby's own reconciler record is read over /healthz/reconciler (its
+   data/ is a copy of ours, so nothing local can answer this), and this node's
+   login path is read with loginctl. Repair = restart systemd-logind here,
+   through the privileged runner; preview first, then confirm. #}
+{% set hl = ha_link %}
+{% set hl_badge = {'ok': 'success', 'warning': 'warning', 'broken': 'danger'} %}
+{% set hl_label = {'ok': _('healthy'), 'warning': _('check'), 'broken': _('broken'), 'n/a': _('not applicable here')} %}
+<div class="fw-card mb-3" id="ha-link-card">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-link-45deg me-2 text-accent"></i>{{ _('HA link — can the standby fetch code from this node?') }}</span>
+    <span id="ha-link-verdict" class="fw-badge fw-badge-{{ hl_badge.get(hl.verdict, 'secondary') }}">{{ hl_label.get(hl.verdict, hl.verdict) }}</span>
+  </div>
+  <div class="fw-card-body small">
+    {% if hl.error %}
+      <div class="alert alert-warning small mb-2">{{ _('The HA link check failed:') }} {{ hl.error }}</div>
+    {% endif %}
+    <div id="ha-link-body">
+    {% if hl.applicable %}
+      {% for s in hl.standby %}
+        <div class="mb-1"><span class="text-muted">{{ _('Standby') }}</span>
+          <span class="fw-badge fw-badge-{{ {'in-sync': 'success', 'fetch-error': 'danger'}.get(s.state, 'warning') }}">{{ s.state }}</span>
+          {{ s.text }}</div>
+      {% else %}
+        <div class="mb-1 text-muted">{{ _('No standby is registered in the HA node registry, so nothing fetches from this node.') }}</div>
+      {% endfor %}
+    {% elif hl.repair and hl.repair.refusal %}
+      <div class="mb-1 text-muted">{{ hl.repair.refusal }}</div>
+    {% endif %}
+    {% if hl.logind %}
+      <div class="mb-1"><span class="text-muted">{{ _('Login service on this node (systemd-logind):') }}</span>
+        {% if hl.logind.responsive is sameas false %}<span class="fw-badge fw-badge-danger">{{ _('not responding') }}</span>
+        {% elif hl.logind.responsive is none %}<span class="fw-badge fw-badge-secondary">{{ _('unknown') }}</span>
+        {% elif hl.logind.stuck %}<span class="fw-badge fw-badge-danger">{{ hl.logind.stuck|length }} {{ _('stuck login(s)') }}</span>
+        {% else %}<span class="fw-badge fw-badge-success">{{ _('answering') }}</span>{% endif %}
+        <span class="text-muted">{{ hl.logind.sessions }} {{ _('session(s),') }} {{ hl.logind.opening }} {{ _('opening; logins of') }} <code>{{ hl.logind.user }}</code> {{ _('count as stuck after 60 s in "opening"') }}</span>
+      </div>
+    {% endif %}
+    {% if hl.sshd %}
+      <div class="mb-1"><span class="text-muted">sshd:</span>
+        {% if hl.sshd.ok %}<span class="fw-badge fw-badge-success">{{ _('answering') }}</span> <code>{{ hl.sshd.banner }}</code>
+        {% else %}<span class="fw-badge fw-badge-danger">{{ _('not answering') }}</span> {{ hl.sshd.error }}{% endif %}
+      </div>
+    {% endif %}
+    {% if hl.problems %}
+      <ul class="mb-2 mt-2">
+        {% for p in hl.problems %}
+          <li><span class="fw-badge fw-badge-{{ 'danger' if p.severity == 'critical' else 'warning' }}">{{ p.code }}</span> {{ p.text }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    </div>
+    <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-js="ha-link-recheck">
+        <i class="bi bi-arrow-clockwise me-1"></i>{{ _('Re-check') }}</button>
+      <button type="button" data-js="ha-link-repair"
+              class="btn btn-sm {{ 'btn-danger' if hl.repair and hl.repair.recommended else 'btn-outline-danger' }}"
+              {% if not (hl.repair and hl.repair.allowed) %}disabled title="{{ hl.repair.refusal if hl.repair else '' }}"{% endif %}>
+        <i class="bi bi-wrench-adjustable me-1"></i>{{ _('Repair HA link…') }}</button>
+      <span class="text-muted">{{ _('CLI:') }} <code>satom ha check</code> · <code>sudo satom ha repair --yes</code> · <code>satom show runbook ha-link</code></span>
+    </div>
+    <div id="ha-link-preview" class="d-none mt-2 p-2" style="border:1px solid var(--fw-border, #dee2e6);border-radius:6px;">
+      <div class="fw-bold mb-1">{{ _('Restart systemd-logind on') }} <span class="font-monospace">{{ this_node }}</span>?</div>
+      <div class="text-muted">{{ _('This repair:') }}</div>
+      <ul id="ha-link-does" class="mb-1"></ul>
+      <div class="text-muted">{{ _('It does not:') }}</div>
+      <ul id="ha-link-does-not" class="mb-2"></ul>
+      <button type="button" class="btn btn-sm btn-danger" data-js="ha-link-confirm">{{ _('Restart systemd-logind now') }}</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-js="ha-link-cancel">{{ _('Cancel') }}</button>
+    </div>
+    <div id="ha-link-progress" class="d-none mt-2" role="status" aria-live="polite"></div>
   </div>
 </div>
 
@@ -1106,6 +1200,130 @@
       return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
     });
   }
+
+  // --- HA link: re-check, preview, confirm, follow, show before/after ------
+  // The preview is a POST without confirm=1: the server answers the plan (or
+  // why it refuses) and changes nothing. Only the confirm button enqueues.
+  var HL_CHECK = '{{ url_for("self_update.ha_link_check") }}';
+  var HL_REPAIR = '{{ url_for("self_update.ha_link_repair") }}';
+  var HL_STATUS = '{{ url_for("self_update.ha_link_repair_status", uid="__UID__") }}';
+  var hlBadge = {ok: 'success', warning: 'warning', broken: 'danger'};
+  var hlVerdict = document.getElementById('ha-link-verdict');
+  var hlBody = document.getElementById('ha-link-body');
+  var hlPrev = document.getElementById('ha-link-preview');
+  var hlProg = document.getElementById('ha-link-progress');
+  function hlPost(confirm) {
+    return fetch(HL_REPAIR, {method: 'POST', credentials: 'same-origin',
+      headers: {'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/json'},
+      body: JSON.stringify({confirm: confirm ? '1' : ''})})
+      .then(function (r) { return r.json(); });
+  }
+  function hlSummary(c) {
+    if (!c) { return ''; }
+    var h = '<span class="fw-badge fw-badge-' + (hlBadge[c.verdict] || 'secondary') + '">' +
+      escapeHtml(c.verdict) + '</span>';
+    (c.standby || []).forEach(function (s) { h += ' ' + escapeHtml(s.text); });
+    if ((c.problems || []).length) {
+      h += '<ul class="mb-1">';
+      c.problems.forEach(function (p) {
+        h += '<li><code>' + escapeHtml(p.code) + '</code> ' + escapeHtml(p.text) + '</li>';
+      });
+      h += '</ul>';
+    }
+    return h;
+  }
+  function hlShowVerdict(c) {
+    if (!hlVerdict || !c) { return; }
+    hlVerdict.className = 'fw-badge fw-badge-' + (hlBadge[c.verdict] || 'secondary');
+    hlVerdict.textContent = c.verdict;
+  }
+  function hlList(id, items) {
+    var el = document.getElementById(id);
+    if (!el) { return; }
+    el.innerHTML = '';
+    (items || []).forEach(function (t) {
+      var li = document.createElement('li'); li.textContent = t; el.appendChild(li);
+    });
+  }
+  var hlRecheck = document.querySelector('[data-js="ha-link-recheck"]');
+  if (hlRecheck) hlRecheck.addEventListener('click', function () {
+    hlRecheck.setAttribute('disabled', 'disabled');
+    fetch(HL_CHECK, {credentials: 'same-origin'}).then(function (r) { return r.json(); })
+      .then(function (c) {
+        hlRecheck.removeAttribute('disabled');
+        hlShowVerdict(c);
+        if (hlBody) { hlBody.innerHTML = hlSummary(c) ||
+          '<span class="text-muted">' + escapeHtml((c.repair || {}).refusal || '') + '</span>'; }
+      })
+      .catch(function () { hlRecheck.removeAttribute('disabled'); });
+  });
+  var hlRepair = document.querySelector('[data-js="ha-link-repair"]');
+  if (hlRepair) hlRepair.addEventListener('click', function () {
+    hlProg.classList.add('d-none');
+    hlPost(false).then(function (d) {
+      if (d.refused) {
+        hlProg.innerHTML = '<span class="text-danger">' + escapeHtml(d.refused) + '</span>';
+        hlProg.classList.remove('d-none');
+        return;
+      }
+      hlList('ha-link-does', d.does);
+      hlList('ha-link-does-not', d.does_not);
+      hlPrev.classList.remove('d-none');
+    }).catch(function () {
+      hlProg.innerHTML = '<span class="text-danger">Preview failed.</span>';
+      hlProg.classList.remove('d-none');
+    });
+  });
+  var hlCancel = document.querySelector('[data-js="ha-link-cancel"]');
+  if (hlCancel) hlCancel.addEventListener('click', function () { hlPrev.classList.add('d-none'); });
+  var hlConfirm = document.querySelector('[data-js="ha-link-confirm"]');
+  if (hlConfirm) hlConfirm.addEventListener('click', function () {
+    hlConfirm.setAttribute('disabled', 'disabled');
+    hlPost(true).then(function (d) {
+      hlPrev.classList.add('d-none');
+      hlConfirm.removeAttribute('disabled');
+      hlProg.classList.remove('d-none');
+      if (d.refused || !d.uid) {
+        hlProg.innerHTML = '<span class="text-danger">' + escapeHtml(d.refused || 'Not queued.') + '</span>';
+        return;
+      }
+      var before = '<div><span class="text-muted">Before:</span> ' + hlSummary(d.before) + '</div>';
+      hlProg.innerHTML = before + '<div>Queued <code>' + escapeHtml(d.uid) +
+        '</code> — waiting for the privileged runner…</div>';
+      var tries = 0;
+      (function poll() {
+        tries += 1;
+        fetch(HL_STATUS.replace('__UID__', encodeURIComponent(d.uid)), {credentials: 'same-origin'})
+          .then(function (r) { return r.json(); })
+          .then(function (s) {
+            var steps = (s.steps || []).map(function (st) {
+              return '<li>' + (st.ok ? '✓ ' : '✗ ') + escapeHtml(st.name) +
+                (st.detail ? ' — ' + escapeHtml(st.detail) : '') + '</li>';
+            }).join('');
+            var html = before + '<div>Runner: <strong>' + escapeHtml(s.state) + '</strong></div>' +
+              (steps ? '<ol class="mb-1">' + steps + '</ol>' : '');
+            if (s.done) {
+              html += '<div><span class="text-muted">After:</span> ' + hlSummary(s.after) + '</div>';
+              if (s.after) { hlShowVerdict(s.after); }
+              if (s.after && s.after.verdict !== 'ok') {
+                html += '<div class="text-muted">The standby retries every minute; re-check in a minute ' +
+                  'if it still reports a fetch error from before the repair.</div>';
+              }
+              hlProg.innerHTML = html;
+              return;
+            }
+            hlProg.innerHTML = html;
+            if (tries < 60) { setTimeout(poll, 2000); }
+          })
+          .catch(function () { if (tries < 60) { setTimeout(poll, 2000); } });
+      })();
+    }).catch(function () {
+      hlConfirm.removeAttribute('disabled');
+      hlProg.innerHTML = '<span class="text-danger">Could not queue the repair.</span>';
+      hlProg.classList.remove('d-none');
+    });
+  });
 })();
 </script>
 {% endblock %}

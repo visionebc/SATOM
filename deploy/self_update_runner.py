@@ -32,6 +32,24 @@ STA = APP / "data" / "update-status"
 VENV = APP / "venv" / "bin"
 SERVICE = "satom.service"
 SCHED = "satom-scheduler.service"
+RECONCILER = "satom-reconciler.service"
+
+
+def restart_reconciler():
+    """Restart the reconciler loop IF it is running (``try-restart``).
+
+    It is a long-running process that imports the app's modules once, so a
+    code update that does not restart it leaves it running the previous
+    release indefinitely. On 2026-10-11 satom-node-2's reconciler had been up
+    since 11:00Z while its tree was at a commit from 23:55Z. Restarting it in
+    the same places as the scheduler keeps "the code on disk" and "the code
+    that reconciles" the same thing. ``try-restart`` leaves a stopped or
+    disabled reconciler alone. Never fails the update.
+    """
+    try:
+        subprocess.run(["systemctl", "try-restart", RECONCILER], timeout=60)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _app_user_from_tree():
@@ -352,6 +370,7 @@ def restart_and_validate(st, is_standby, app_was_active, label):
     """
     st.begin("restart services")
     subprocess.run(["systemctl", "restart", SCHED], timeout=60)
+    restart_reconciler()
     if app_was_active:
         subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
         st.step("restart services", True, "%s + scheduler%s"
@@ -677,6 +696,7 @@ def process(req_path):
                 run([str(VENV / "pip"), "install", "-q", "-r",
                      str(APP / "requirements.txt")], timeout=900, user=APP_USER)
             subprocess.run(["systemctl", "restart", SCHED], timeout=60)
+            restart_reconciler()
             if not app_was_active:
                 ok, _ = import_smoke_ok()
             else:
@@ -1299,6 +1319,7 @@ def package_change(req_path):
                     timeout=1800, user=APP_USER)
             _chown_tree()
             subprocess.run(["systemctl", "restart", SCHED], timeout=60)
+            restart_reconciler()
             if not app_was_active:
                 ok, _ = import_smoke_ok()
             else:
@@ -1385,7 +1406,36 @@ _SERVICE_POLICY = {
     "satom-ha-datasync.timer": ("start", "stop", "restart"),
     "nginx.service": ("start", "restart", "reload"),
     "postgresql.service": ("restart",),
+    # The HA link repair (app/services/ha_link.py). Restart only: a stopped
+    # logind refuses every new login on the box, the operator's included.
+    "systemd-logind.service": ("restart",),
 }
+
+# Units only a PRIMARY may act on, re-checked here against this node's own
+# Postgres rather than trusted from the request's "role" field (which the web
+# side writes and a forged request can write too). logind is listed because
+# the repair exists for the primary's side of the standby's git fetch; on a
+# standby nothing fetches from it, so a restart there fixes nothing and is
+# refused rather than "succeeding".
+_SVC_PRIMARY_ONLY = ("systemd-logind.service",)
+
+
+def _svc_node_role():
+    """'primary' | 'standby' | 'unknown' from this node's Postgres.
+
+    Tri-state on purpose. ``pg_in_recovery()`` answers False when it cannot
+    ask, which is the right default for the update path and the wrong one for
+    a guard: "could not tell" must refuse, not pass as primary.
+    """
+    try:
+        r = subprocess.run(
+            ["runuser", "-u", "postgres", "--", "psql", "-tAc",
+             "select pg_is_in_recovery()"],
+            capture_output=True, text=True, timeout=15)
+    except Exception:  # noqa: BLE001
+        return "unknown"
+    v = (r.stdout or "").strip()
+    return "standby" if v == "t" else "primary" if v == "f" else "unknown"
 
 # Units whose action can take the console down. Anything else is verified by
 # its own state alone -- running health_ok() after stopping the alert timer
@@ -1474,6 +1524,14 @@ def service_action(req_path):
                 % (action, unit, ", ".join(_SERVICE_POLICY[unit])))
         st.finish("failed", error="action not allowed")
         return
+    if unit in _SVC_PRIMARY_ONLY:
+        role = _svc_node_role()
+        if role != "primary":
+            st.step("validate role", False,
+                    "%s is acted on only on the PRIMARY; this node is %s"
+                    % (unit, role))
+            st.finish("failed", error="primary only")
+            return
     if _svc_prop(unit, "LoadState") == "not-found":
         st.step("validate unit", False, "%s is not installed on this node" % unit)
         st.finish("failed", error="unit not installed")

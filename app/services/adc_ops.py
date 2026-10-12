@@ -289,7 +289,7 @@ def inspect_vs(client, name: str) -> dict:
     """Composite read + rendered tree for one virtual server (every reference
     followed — :mod:`app.services.adc_vstree`)."""
     from . import adc_vstree
-    got = adc_vstree.trees(adc_vstree.index_live(client), only=name)
+    got = adc_vstree.trees(adc_vstree.index_live(client, only=name), only=name)
     if not got:
         raise RuntimeError(f"virtual server {name!r} not found on the device")
     return got[0]

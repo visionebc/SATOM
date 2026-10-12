@@ -116,6 +116,7 @@ def needs_harvest(appliance) -> bool:
     build = ApiLibBuild.query.filter_by(product=product, version=version).first()
     if build is None:
         return True
+    from .api_library import DEPTH_ORIGIN_PREFIX as _DEPTH
     from .schema_harvest import ORIGIN_PREFIX as _PARTIAL
     hit = db.session.execute(
         select(ApiLibEvidence.id).where(
@@ -125,8 +126,10 @@ def needs_harvest(appliance) -> bool:
             ApiLibEvidence.scope_kind == "build",
             ApiLibEvidence.healthy.is_(True),
             # A schema harvest's REST probe is sweep-shaped but PARTIAL: it
-            # asked only what the tree had and the sweep did not cover.
-            ~ApiLibEvidence.origin_ref.startswith(_PARTIAL)).limit(1)).first()
+            # asked only what the tree had and the sweep did not cover. So is
+            # the FortiADC depth pass (child tables only).
+            ~ApiLibEvidence.origin_ref.startswith(_PARTIAL),
+            ~ApiLibEvidence.origin_ref.startswith(_DEPTH)).limit(1)).first()
     return hit is None
 
 

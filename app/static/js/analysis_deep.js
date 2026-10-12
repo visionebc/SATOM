@@ -164,7 +164,7 @@
     inv = inv || {}; var t = inv.totals || {}; var pool = t.server_pools || {}; var be = t.backends || {};
     var tiles = [
       ["Server policies", t.server_policies || 0, ""],
-      ["Server pools", pool.distinct || 0, (pool.unique || 0) + " unique \u00b7 " + (pool.shared || 0) + " shared"],
+      ["Server pools", (pool.distinct || 0) + (pool.adc || 0), (pool.unique || 0) + " unique \u00b7 " + (pool.shared || 0) + " shared" + (pool.adc ? " \u00b7 " + pool.adc + " FortiADC" : "")],
       ["Back-end servers", be.count || 0, (be.distinct_ips || 0) + " distinct IPs"],
       ["VIPs", t.vips || 0, ""],
       ["SNI policies", t.sni || 0, ""],
@@ -223,7 +223,10 @@
     getJSON(withDevices("deep/objects?kind=" + kind)).then(function (objs) {
       var sel = $("deepObj");
       sel.innerHTML = objs.length ? objs.map(function (o) {
-        return '<option value="' + o.appliance_id + "|" + esc(o.mkey) + '">' + esc(o.device) + " · " + esc(o.mkey) + "</option>";
+        // FortiADC: every parent type in one list, so the type is shown and
+        // carried (data-logical) to the drill-down
+        var typ = kind === "adc" ? esc(o.logical_name) + " · " : "";
+        return '<option value="' + o.appliance_id + "|" + esc(o.mkey) + '" data-logical="' + esc(o.logical_name || "") + '">' + esc(o.device) + " · " + typ + esc(o.mkey) + "</option>";
       }).join("") : '<option value="">(none captured)</option>';
       loadDrill();
     });
@@ -232,9 +235,14 @@
     var v = $("deepObj").value; var cont = $("deepTree");
     if (!v) { cont.innerHTML = '<div class="ana-empty">No object selected</div>'; return; }
     var parts = v.split("|"), aid = parts[0], mkey = parts.slice(1).join("|");
-    var kind = $("deepKind").value === "policy" ? "policy" : "wpp";
+    var sel = $("deepKind").value;
+    var url = "deep/" + (sel === "policy" ? "policy" : "wpp") + "/" + aid + "/" + encodeURIComponent(mkey);
+    if (sel === "adc") {
+      var opt = $("deepObj").selectedOptions[0];
+      url = "deep/object/" + aid + "/" + encodeURIComponent((opt && opt.getAttribute("data-logical")) || "") + "/" + encodeURIComponent(mkey);
+    }
     cont.innerHTML = '<div class="ana-empty">Loading…</div>';
-    getJSON("deep/" + kind + "/" + aid + "/" + encodeURIComponent(mkey)).then(function (tree) {
+    getJSON(url).then(function (tree) {
       if (!tree || !tree.logical_name) { cont.innerHTML = '<div class="ana-empty">Nothing captured for this object</div>'; return; }
       cont.innerHTML = treeHTML(tree, 0);
       wireTree(cont);

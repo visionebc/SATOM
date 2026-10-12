@@ -145,6 +145,57 @@ def capture_children(probe: Callable, plan: list[dict], parents: dict,
             "reads": reads, "rows": rows_total, "pairs": total}
 
 
+def deep_sections(sections: dict, capture: dict) -> dict:
+    """The sweep's parent rows with the child rows :func:`capture_children`
+    read for them, in the shape the cache's ``deep`` layer ingests
+    (``{section: {parent: [row + {"_deep": {sub: rows}}]}}``).
+
+    Every row of a parent table whose child table this build serves is a
+    depth-0 object, child rows or not: "captured, no members" is a fact and a
+    missing parent would read as "never captured". A child row lands as
+    ``<parent>/<sub>`` at depth 1 — the key the gx write-through already
+    keeps (``gui_products._adc_store_children``). Where the child table
+    answered rows, the list the parent embeds for the same members is left
+    out (``MEMBERS``): the same rows twice would count every pool member
+    twice. Where it answered none, the embedded list stays — the tree's own
+    rule (:func:`_members`): an empty child answer is not taken as proof that
+    the parent's own list is wrong."""
+    ledger = (capture or {}).get("endpoint_status") or {}
+    got = (capture or {}).get("children") or {}
+    served: dict[str, list[tuple[str, str]]] = {}
+    for name, led in sorted(ledger.items()):
+        if (led or {}).get("verdict") == "absent":
+            continue
+        parent, sub = split_child(name)
+        if parent and sub:
+            served.setdefault(parent, []).append((name, sub))
+    out: dict[str, dict] = {}
+    for section, eps in (sections or {}).items():
+        for parent, rows in (eps or {}).items():
+            if parent not in served or not isinstance(rows, list):
+                continue
+            deep_rows = []
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                mkey = str(row.get("mkey") or "")
+                kids, drop = {}, set()
+                for name, sub in served[parent]:
+                    child_rows = [r for r in (got.get(name) or {}).get(mkey) or []
+                                  if isinstance(r, dict)]
+                    if child_rows:
+                        kids[sub] = child_rows
+                        drop.add(sub)
+                        if name in MEMBERS:
+                            drop.add(MEMBERS[name][2])
+                own = {k: v for k, v in row.items() if k not in drop}
+                if kids:
+                    own["_deep"] = kids
+                deep_rows.append(own)
+            out.setdefault(section, {})[parent] = deep_rows
+    return out
+
+
 # --------------------------------------------------------------------------- #
 #  Index                                                                      #
 # --------------------------------------------------------------------------- #
@@ -162,51 +213,75 @@ def index_from_capture(snapshot: dict, deep: dict | None) -> dict:
     return {"tables": tables, "children": dict((deep or {}).get("children") or {})}
 
 
-def _tables_needed() -> set[str]:
-    need = {"load_balance_virtual_server"}
-    for refs in REFS.values():
-        for _f, _l, target in refs:
-            need.add(target)
-    for parent, _sub, _emb, _f, target in MEMBERS.values():
-        need.add(parent)
-        if target:
-            need.add(target)
-    need.update(WAF_SUBS_OF)
-    return need
+def _row_refs(index: dict, table: str, row: dict) -> set[tuple[str, str]]:
+    """Every ``(table, mkey)`` one row points at — through its own fields, its
+    member rows (child table or embedded list, as :func:`_members` picks) and,
+    on a WAF profile, its sub-profiles. The same edges :func:`_expand` draws,
+    so a read driven by this set reaches exactly what the tree shows."""
+    out: set[tuple[str, str]] = set()
+
+    def _refs(refs_key: str, r: dict) -> None:
+        for field, _label, target in REFS.get(refs_key, ()):
+            if target:
+                out.update((target, v) for v in _values(r.get(field)))
+
+    mkey = str(row.get("mkey") or "")
+    for child, (parent, *_rest) in MEMBERS.items():
+        if parent == table:
+            for m in _members(index, child, mkey, row):
+                _refs(child, m)
+    for field, _label, refs_key in EMBEDDED.get(table, ()):
+        rows = row.get(field)
+        for m in rows if isinstance(rows, list) else []:
+            if isinstance(m, dict):
+                _refs(refs_key, m)
+    _refs(table, row)
+    if table in WAF_SUBS_OF:
+        for field, value in row.items():
+            target = f"security_waf_{field}"
+            if target != table:
+                out.update((target, v) for v in _values(value))
+    return out
 
 
-def index_live(client, registry: dict | None = None) -> dict:
-    """Read, once, every table the tree can reach plus the child tables of the
-    groups it draws. ``client`` is a connected FortiADC client."""
+def index_live(client, registry: dict | None = None, *, only: str = "") -> dict:
+    """Read what the virtual servers reach — and only that.
+
+    Breadth-first from the VS rows (``only``: one VS): each round reads the
+    child tables of the groups just reached (``?pkey=``), then every table the
+    round's rows name (one read per table, never per object). Until
+    2026-10-12 this read every table :data:`REFS` could ever reach (~45) and
+    the child table of EVERY group on the box: 90 reads and 7.6 s for 15 VS
+    on fortiadc10, most of them for objects no VS uses. The tree is the same:
+    an object is drawn only when a reference reaches it, and every referenced
+    table is read before anything is drawn from it. One reused connection
+    for the whole walk (a fresh TLS session per read was half the cost).
+    ``client`` is a connected FortiADC client."""
+    import contextlib
     if registry is None:
         from ..registry import loader
         registry = loader.load_adc_registry()
     tables: dict[str, dict] = {}
+    children: dict[str, dict] = {}
     errors: list[dict] = []
+    index = {"tables": tables, "children": children, "errors": errors}
+    asked: set[str] = set()
 
     def _read(names) -> None:
         for name in sorted(names):
-            if name not in registry or name in tables:
+            if name not in registry or name in asked:
                 continue
+            asked.add(name)
             rows, err = client.list_with_error(name)
             if err:
                 errors.append({"endpoint": name, "error": str(err)[:200]})
                 continue
             tables[name] = _by_mkey(rows)
 
-    _read(_tables_needed())
-    # Only the WAF sub-profile tables a profile actually names: the registry
-    # has ~40 ``security_waf_*`` tables and reading all of them doubled the
-    # page's time for nothing the tree draws.
-    _read({f"security_waf_{field}"
-           for table in WAF_SUBS_OF
-           for row in (tables.get(table) or {}).values()
-           for field, value in row.items() if _values(value)})
-    children: dict[str, dict] = {}
-    for child, (parent, *_rest) in MEMBERS.items():
-        if child not in registry:
-            continue
-        for mkey in tables.get(parent, {}):
+    def _read_members(table: str, mkey: str) -> None:
+        for child, (parent, *_rest) in MEMBERS.items():
+            if parent != table or child not in registry:
+                continue
             rows, err = client.list_with_error(child, pkey=mkey)
             if err:
                 errors.append({"endpoint": child, "pkey": mkey, "error": str(err)[:200]})
@@ -214,7 +289,26 @@ def index_live(client, registry: dict | None = None) -> dict:
             rows = [r for r in rows or [] if isinstance(r, dict)]
             if rows:
                 children.setdefault(child, {})[mkey] = rows
-    return {"tables": tables, "children": children, "errors": errors}
+
+    keep = getattr(client, "keep_alive", None)
+    with (keep() if callable(keep) else contextlib.nullcontext()):
+        _read({"load_balance_virtual_server"})
+        vss = tables.get("load_balance_virtual_server") or {}
+        frontier = {("load_balance_virtual_server", m) for m in vss
+                    if not only or m == only}
+        done: set[tuple[str, str]] = set()
+        while frontier:
+            done |= frontier
+            rows = [(t, m, (tables.get(t) or {}).get(m)) for t, m in sorted(frontier)]
+            rows = [(t, m, r) for t, m, r in rows if r is not None]
+            for t, m, _r in rows:
+                _read_members(t, m)
+            refs: set[tuple[str, str]] = set()
+            for t, _m, r in rows:
+                refs |= _row_refs(index, t, r)
+            _read({t for t, _m in refs})
+            frontier = refs - done
+    return index
 
 
 # --------------------------------------------------------------------------- #
@@ -532,5 +626,6 @@ def count_nodes(node: dict) -> int:
 
 __all__: list[Any] = [
     "ChildCaptureStopped", "build_vs_tree", "capture_children", "child_plan",
-    "index_from_capture", "index_live", "parent_rows", "split_child", "trees",
+    "deep_sections", "index_from_capture", "index_live", "parent_rows", "split_child",
+    "trees",
 ]

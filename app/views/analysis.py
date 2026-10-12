@@ -52,11 +52,20 @@ def _parse_filters(args) -> dict:
 #: optimisation over an ``if``: it is the thing that makes a missing page fail
 #: LOUDLY, as ``analysis/unavailable.html``, instead of quietly borrowing
 #: another product's dashboard.
+#: The refusal page. Mapping an ADOM to it is a DECISION, written down: that
+#: product has nothing in SATOM's store an Analysis page could be built from.
+UNAVAILABLE = 'analysis/unavailable.html'
+
 ANALYSIS_PAGES = {
     'fortiweb': 'analysis/index.html',
     'fortiadc': 'analysis/adc.html',
     'fortianalyzer': 'analysis/faz.html',
     'fortiauthenticator': 'analysis/fac.html',
+    # FortiGate: SATOM reads its configuration and live status but stores no
+    # FortiGate traffic, attack or event logs, so no question this area asks
+    # has data behind it. Told so, rather than handed the FortiWeb dashboard
+    # (or its /data feed) scoped to devices that have no WAF objects.
+    'fortigate': UNAVAILABLE,
     # Global is the string 'global' (product_scope.GLOBAL), and '' is the
     # no-context case — a background thread, or a session stamped before the
     # ADOM split. Both must resolve, and both must resolve to the WIDEST page,
@@ -96,10 +105,10 @@ def index():
     product = _product()
     svc = _analysis_service(product)
     tpl = ANALYSIS_PAGES.get(product)
-    if tpl is None:
+    if tpl is None or tpl == UNAVAILABLE:
         # An ADOM nobody wrote a page for gets told so. Handing it the FortiWeb
         # dashboard would be a page that cannot answer, dressed as one that can.
-        return render_template('analysis/unavailable.html', product_key=product)
+        return render_template(UNAVAILABLE, product_key=product)
     ctx = {'options': svc.filter_options()}
     if product in ANALYSIS_SERVICE:
         # These pages render server-side: the numbers are DB-first and cheap,
@@ -112,7 +121,13 @@ def index():
 @login_required
 @require_permission(Permission.VIEW)
 def data():
-    return jsonify(_analysis_service(_product()).analyze(_parse_filters(request.args)))
+    product = _product()
+    if ANALYSIS_PAGES.get(product) in (None, UNAVAILABLE):
+        # The page refuses this ADOM; its JSON feed must not answer with the
+        # FortiWeb-shaped analysis behind it.
+        return jsonify({'error': 'no analysis is built for this ADOM',
+                        'product': product}), 404
+    return jsonify(_analysis_service(product).analyze(_parse_filters(request.args)))
 
 
 @bp.route('/faz-ops')

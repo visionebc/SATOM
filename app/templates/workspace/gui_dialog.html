@@ -486,8 +486,27 @@
   // gp (a generic FortiWeb page): object / new-object / row write through the
   // object editor (save-object / create-object / save-row).
   var GP = {{ (gp or none)|tojson }};
-  // a FortiGate / FortiAuthenticator page saves through workspace.fwgui_save
-  // (GuiOps: dry run, apply, read back, drift), never the FortiWeb editor
+  // a FortiGate / FortiAuthenticator / FortiADC page saves through
+  // workspace.fwgui_save (GuiOps: dry run, apply, then a re-read that
+  // VERIFIES the write -- a value the device does not hold fails the save),
+  // never the FortiWeb editor
+  // what the re-read could not check, in words (the save stands, unproven);
+  // r.verdict is gui_products.verdict_view: {verdict, level, label, detail, text}
+  function unverifiedNote(r) {
+    var v = (r && r.verdict) || {};
+    return 'Saved on the device, but not verified' + (v.detail ? ': ' + v.detail : '') + '.';
+  }
+  // the verdict as a badge: Verified on the device / Not applied / Not verified
+  function verdictBadge(r) {
+    var v = r && r.verdict;
+    return v ? '<span class="fw-badge fw-badge-' + esc(v.level) + ' me-1" data-fwg-verdict="' +
+      esc(v.verdict) + '">' + esc(v.label) + '</span>' : '';
+  }
+  // a write the device accepted but did not keep: what it kept instead
+  function notApplied(r) {
+    var v = r && r.verdict;
+    return v && v.verdict === 'mismatch' ? 'Not saved: ' + (v.detail || 'the device did not keep it') : '';
+  }
   var PX = !!(GP && GP.product && GP.product !== 'fortiweb');
   var MODE = GP ? (GP.mode === 'row' ? 'gp-row' : GP.mode)
            : {{ ('new-policy' if is_new else ('row' if row_ctx else 'policy'))|tojson }};
@@ -519,8 +538,14 @@
       var req = j.request || {};
       if (!confirm('DRY-RUN ' + (req.method || 'PUT') + ' ' + (req.path || '') + '\n\nApply this delete to the device now?')) return;
       post(Object.assign({}, b, {apply: true}), GP.save).then(function (j2) {
-        if (!j2.ok) { say('Not deleted: ' + (j2.error || 'refused'), true); return; }
-        say('Deleted. Reloading…'); window.location.href = BACK;
+        if (!j2.ok) { say(notApplied(j2).replace(/^Not saved/, 'Not deleted') || 'Not deleted: ' + (j2.error || 'refused'), true, j2); return; }
+        if (j2.verified !== true) {
+          // the re-read could not prove the row gone: say so before leaving
+          say(unverifiedNote(j2).replace(/^Saved/, 'Deleted') + ' Reloading…', true, j2);
+          window.setTimeout(function () { window.location.href = BACK; }, 2500);
+          return;
+        }
+        say('Deleted. Reloading…', false, j2); window.location.href = BACK;
       });
     });
   });
@@ -574,7 +599,12 @@
     if (MODE === 'row') return {subtable: ROW.subtable, sub_id: ROW.sub_id, fields: fields, apply: !!apply};
     return {endpoint: {{ save_ep|tojson }}, mkey: {{ name|tojson }}, fields: fields, apply: !!apply};
   }
-  function say(msg, bad) { if (status) { status.textContent = msg; status.classList.toggle('text-danger', !!bad); } }
+  function say(msg, bad, r) {
+    if (!status) return;
+    var badge = verdictBadge(r);
+    if (badge) status.innerHTML = badge + esc(msg); else status.textContent = msg;
+    status.classList.toggle('text-danger', !!bad);
+  }
   function post(b, url) {
     return fetch(url || SAVE, {method: 'POST', headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify(b)}).then(function (r) { return r.json(); });
@@ -700,6 +730,7 @@
       btn.disabled = false;
       if (!res.ok) {
         var done = all.filter(function (r) { return r.ok; }).map(function (r) { return r._ep; });
+        if (PX && notApplied(res)) { say(notApplied(res), true, res); return; }
         say('Not saved: ' + (res._ep ? res._ep + ': ' : '') + (res.error || 'the device refused the change') +
             (done.length ? ' (already written: ' + done.join(', ') + ')' : '') +
             ((res.rolled_back || []).length ? ' (undone: ' + res.rolled_back.map(function (u) {
@@ -708,16 +739,18 @@
       }
       if (PX) {
         review.hidden = true; pending = null;
-        if (res.verified === false) {
-          say('Saved, but the device stored different values: ' + (res.drift || []).map(function (d) {
-            return d.key + ' = ' + JSON.stringify(d.now); }).join(', ') + '. Reload to see them.', true);
-          return;
-        }
-        say(res.verified ? 'Saved and read back from the device. Reloading…' : 'Saved. Reloading…');
-        if (MODE === 'gp-row') window.location.href = BACK;
-        else if (MODE === 'new-object' && res.mkey) window.location.href = GUI_POLICY.replace('__N__', encodeURIComponent(res.mkey));
-        else if (MODE === 'new-object') window.location.href = DONE;
-        else window.location.reload();
+        // (a mismatch never gets here: GuiOps fails it, notApplied above
+        // names what the device kept)
+        var go = function () {
+          if (MODE === 'gp-row') window.location.href = BACK;
+          else if (MODE === 'new-object' && res.mkey) window.location.href = GUI_POLICY.replace('__N__', encodeURIComponent(res.mkey));
+          else if (MODE === 'new-object') window.location.href = DONE;
+          else window.location.reload();
+        };
+        if (res.verified === true) { say('Saved. Reloading…', false, res); go(); return; }
+        // unverified (or a CLI-only save, which the CLI writer checks itself)
+        say((res.verdict ? unverifiedNote(res) : 'Saved.') + ' Reloading…', !!res.verdict, res);
+        if (res.verdict) window.setTimeout(go, 2500); else go();
         return;
       }
       if (all.length > 1 || (GP && GP.api)) { review.hidden = true; pending = null; say('Saved. Reloading…'); window.location.reload(); return; }

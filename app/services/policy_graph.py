@@ -19,9 +19,9 @@ Design constraints from server_policy.md §5:
     allow-hosts, allow-list, persistence-policy, scripting,
     http-content-routing-policy, ip-group, ztna-profile, traffic-mirror,
     acceleration.policy, acceleration.exception.
-  - The root policy is always deleted first; dependencies follow in
-    reverse-collect order so that any nested shared dependency (CR policy →
-    pool) is resolved before the leaf.
+  - The root policy is always deleted first; dependencies follow shallowest
+    first (a referrer before what it references), and an object refused
+    "in use" is retried while a pass still deletes something.
   - execute_delete_plan() treats a FortiWeb "in use" error (7.6.8: HTTP 500
     errcode -23 "The entry is used.", measured on fortiweb17 deleting a VIP a
     vserver still lists) as confirmation that the object is shared with
@@ -100,9 +100,8 @@ def plan_cascade_delete(reader, policy_name: str) -> dict:
             "by_parent": [(urn, mkey, label), ...],          # auto-deleted sub-rows
         }
 
-    Items in ``to_delete`` are in reverse-collect order (most-dependent first
-    relative to the sub-tree they head — so a CR policy appears before the pool
-    it references).  This is the correct order for ``execute_delete_plan``.
+    Items in ``to_delete`` are shallowest first (a referrer before what it
+    references — a vserver before its VIP, a CR policy before its pools).  This is the correct order for ``execute_delete_plan``.
     The root policy itself is NOT included in any list; the executor always
     deletes it first, explicitly.
 
@@ -160,15 +159,17 @@ def plan_cascade_delete(reader, policy_name: str) -> dict:
         except Exception:
             pass
 
-    # Classify each item from the target's tree.
-    # Reversed src_items = delete order: root is last in collect (everything
-    # else is deepest-first) so reversing puts root first; a CR policy appears
-    # before the pool it references, etc.
+    # Classify each item from the target's tree, in DELETE order: a referrer
+    # before what it references = shallowest first (stable, so siblings keep
+    # the walk's order). The walk is NOT deepest-first: on fortiweb18 it
+    # yields vserver(1), vip(3), vip-list(2), pool(1)… — reversing it tried
+    # the VIP before the vserver that still listed it ("The entry is used.").
+    src_items = sorted(reversed(src_items), key=lambda it: it.depth)
     to_delete: list[tuple[str, str, str]] = []
     to_keep: list[tuple[str, str, str, str, list]] = []
     by_parent: list[tuple[str, str, str]] = []
 
-    for item in reversed(src_items):
+    for item in src_items:
         if item.depth == 0:
             continue  # root policy — excluded; executor deletes it explicitly
 
@@ -207,8 +208,10 @@ def execute_delete_plan(ops, plan: dict, *, dry_run: bool) -> list[dict]:
     Delete order:
       1. Root server policy — ALWAYS first (removes all references so
          dependencies are no longer "in use").
-      2. ``plan["to_delete"]`` items in the order supplied (reverse-collect,
-         so CR policies precede the pools they reference).
+      2. ``plan["to_delete"]`` items in the order supplied (shallowest first,
+         so a vserver precedes its VIP and a CR policy the pools it
+         references); an item refused "in use" is retried while a pass still
+         deletes something.
 
     On a real run: if FortiWeb returns an "in use" / "being used" error for a
     dependency, the item is reclassified as ``kept_shared`` (not ``failed``).
@@ -267,21 +270,18 @@ def execute_delete_plan(ops, plan: dict, *, dry_run: bool) -> list[dict]:
                             "reason": reason, "error": ""})
         return results
 
-    # ── 2. Exclusively-owned dependencies (in reverse-collect order) ─────────
-    for urn, mkey, label in plan["to_delete"]:
-        ep = _objform.rest_path(urn)
-        res = ops.delete(ep, mkey, dry_run=dry_run)
+    # ── 2. Exclusively-owned dependencies (shallowest first) ─────────────────
+    def _attempt(urn, mkey, label):
+        res = ops.delete(_objform.rest_path(urn), mkey, dry_run=dry_run)
         ok = bool(getattr(res, "ok", False))
         err = res.get("error", "") if hasattr(res, "get") else ""
-
         if ok:
             action = "deleted"
         elif _is_in_use_error(err):
             action = "kept_shared"  # another policy claims it; safe to leave
         else:
             action = "failed"
-
-        results.append({
+        return {
             "urn": urn,
             "mkey": mkey,
             "label": label,
@@ -289,7 +289,21 @@ def execute_delete_plan(ops, plan: dict, *, dry_run: bool) -> list[dict]:
             "action": action,
             "reason": "in-use" if action == "kept_shared" else "",
             "error": err if action == "failed" else "",
-        })
+        }
+
+    deps = [_attempt(*item) for item in plan["to_delete"]]
+    # An "in use" refusal can come from a referrer deleted LATER in the same
+    # pass (the walk's depth is the first path that reached an object, not
+    # every path). Retry those while a pass still deletes something.
+    while not dry_run:
+        retry = [i for i, r in enumerate(deps) if r["action"] == "kept_shared"]
+        again = {i: _attempt(deps[i]["urn"], deps[i]["mkey"], deps[i]["label"])
+                 for i in retry}
+        if not any(r["action"] == "deleted" for r in again.values()):
+            break
+        for i, r in again.items():
+            deps[i] = r
+    results.extend(deps)
 
     # ── 3. Always-kept items (informational only) ────────────────────────────
     for urn, mkey, label, reason, _shared in plan["to_keep"]:

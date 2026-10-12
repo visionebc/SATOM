@@ -122,6 +122,17 @@ def fortiadc_proxy(id, endpoint_path):
 
     if appliance.kind != 'fortiadc':
         return jsonify({'error': 'not a FortiADC appliance'}), 400
+    # On FortiADC a plain GET reboots, shuts down, factory-resets or swaps the
+    # boot partition: refused for every method, as in the ADC console.
+    from ..services.adc_ops import side_effect_path
+    blocked = side_effect_path(endpoint_path)
+    if blocked:
+        log_action('api.proxy.adc_refused', appliance_id=appliance.id,
+                   detail=f'{method} /{endpoint_path} matched {blocked}')
+        return jsonify({'error': f'Refused: {blocked} changes the appliance itself '
+                                 f'(reboot, shutdown, factory reset, partition swap, '
+                                 f'restore or image upload), even on GET. Use the '
+                                 f'appliance page: Upgrade, Boot Partition or Restore.'}), 403
     try:
         client = client_for(appliance)
         result = client.api_call(method, '/' + endpoint_path, body)

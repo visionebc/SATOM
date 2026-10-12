@@ -29,6 +29,9 @@ class FortiWebClient(BaseClient):
         self._username = appliance.username
         self._password = appliance.password
         self._vdom = getattr(appliance, 'vdom', None)
+        # Writers outside FortiWebOps (sentinel transports, artifact uploads)
+        # keep SATOM's cache in step through object_refresh, which needs the row.
+        self.appliance = appliance
         # The build this box runs: names resolve per build (registry.loader.resolve_for).
         from ..registry import loader
         self.fw_version = loader.version_of(appliance)

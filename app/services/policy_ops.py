@@ -244,10 +244,12 @@ def _push_artifact(ops, item, kind: str, blob: bytes, ctx: dict) -> None:
     """
     from . import waf_artifacts as wa
     from .audit import log_action
-    ok, err = wa.push(ops.client, kind, item.mkey, blob,
-                      vdom=str(ctx.get("dst_vdom") or ""))
-    if not ok:
-        raise RuntimeError("upload failed: %s" % err)
+    out = wa.push_checked(ops.client, kind, item.mkey, blob,
+                          vdom=str(ctx.get("dst_vdom") or ""))
+    item.check = ((out.get("verify") or {}).get("verdict") or "")
+    if not out["ok"]:
+        raise RuntimeError(("upload failed: %s" % out["error"]) if not out.get("verify")
+                           else out["error"])
     try:
         log_action("artifact.push", "%s %s -> %s (%d bytes)"
                    % (wa.label(kind), item.mkey,
@@ -267,7 +269,8 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
                  wpp_only_if_missing: bool = False,
                  certs: dict | None = None,
                  wpp_decisions: dict | None = None,
-                 new_fields: dict | None = None) -> list[clone.CloneItem]:
+                 new_fields: dict | None = None,
+                 same_box: bool = False) -> list[clone.CloneItem]:
     """Plan the full policy tree on the source and create the missing objects on
     the ``ops`` device (same box or another). The new root is left DISABLED.
 
@@ -317,6 +320,18 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
       leaving the subtree on: an existing profile's object is already left
       alone, but its ~40 sub-tables are not, so today a clone can add a
       signature list to a live profile that other policies share.
+
+    * ``same_box`` — the copy lands on the SOURCE appliance. It then gets its
+      own virtual server and VIP(s) (``<name>-<new policy name>``), and the run
+      is refused BEFORE any write when the copy could not come up (a VIP left on
+      the source address, a vserver on the interface address — see
+      :func:`clone.listener_blockers`). If the policy itself is then refused
+      (e.g. -4 "maximum number of entries"), the vserver/VIPs this run created
+      for it are deleted again: they exist only for that policy.
+
+    Every write is checked against the device's re-read (``object_refresh``):
+    a ``mismatch`` fails that item with the value the device kept; an
+    ``unverified`` one is recorded on the item (``check``) and reported.
 
     * ``new_fields`` — ``{"values": {logical: {field: value}}}``: fields the
       DESTINATION build serves that the source object lacks, which the operator
@@ -394,7 +409,10 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
             "promises not to. Pick one.")
     items = planner.plan(clone.ROOT_SERVER_POLICY, policy, new_name=new_name,
                          follow_wpp=copy_wpp, wpp_new_name=wpp_new_name,
-                         wpp_suffix=wpp_suffix, additive_only=additive_only)
+                         wpp_suffix=wpp_suffix, additive_only=additive_only,
+                         own_listener=((new_name or policy + "-copy")
+                                       if same_box else ""))
+    vip_before = clone.vip_addresses(items)
     if dst_wpp:
         clone.repoint_wpp(items, dst_wpp)
     # NEW, COMPARE AND DECIDE. Applied to the PLAN, before completeness, the VIP
@@ -437,6 +455,14 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
         clone.set_vip_ip(items, transform=lambda ip: clone_rules.dummy_ip(ip, cfg))
     elif vip_ip:
         clone.set_vip_ip(items, ip=vip_ip)
+    if same_box:
+        # Refused before ANY write, preview included: a same-box copy that
+        # cannot listen anywhere new is refused by the box at the policy create,
+        # after its objects were written.
+        blockers = clone.listener_blockers(items, vip_before)
+        if blockers:
+            raise RuntimeError("the copy cannot come up on the same appliance: "
+                               + " ".join(blockers[:3]))
     # BEFORE the write, after the VIP rewrite. Both rewrites MERGE into the
     # payload ({**payload, field: value}) rather than replacing it, so the
     # order is not load-bearing TODAY — it becomes load-bearing the moment
@@ -544,8 +570,11 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
             res = ops.create(ep, {"data": item.payload}, mkey=mkey, dry_run=False)
         if not res.ok:
             raise RuntimeError(res.get("error") or "write failed")
+        _fail_on_mismatch(res, item)
 
     clone.apply_clone(items, _write, dry_run=dry_run)
+    if same_box and not dry_run:
+        _rollback_listener(ops, items)
     if not dry_run:
         # Confirm against the destination what actually landed (read-only).
         try:
@@ -553,6 +582,52 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
         except Exception:  # noqa: BLE001 — verification is advisory
             pass
     return items
+
+
+def _fail_on_mismatch(res, item=None) -> str:
+    """The device re-read verdict of an accepted write (``object_refresh``).
+    Records it on ``item.check``; RAISES on a mismatch with the value the device
+    kept — accepted is not applied. Returns the verdict ("" when none)."""
+    from .object_refresh import MISMATCH, describe_mismatch, verdict_of
+    verdict = verdict_of(res)
+    if item is not None:
+        item.check = verdict
+    if verdict == MISMATCH:
+        raise RuntimeError(describe_mismatch(res.get("verify")))
+    return verdict
+
+
+def _rollback_listener(ops, items) -> None:
+    """Same-box clone whose POLICY was not created: delete the virtual server and
+    VIP(s) this run created for it (they exist only for that policy; left behind
+    they hold an address and a vserver name nobody uses). vserver first — its
+    vip-list rows name the VIPs, and go with it."""
+    root = next((it for it in items if it.depth == 0 and it.kind == "object"), None)
+    if root is None or root.applied or not root.result.startswith("error"):
+        return
+    from . import objform
+    own = [it for it in items if it.kind == "object" and it.applied
+           and it.renamed_from and it.urn in (clone._VSERVER_URN, clone._VIP_URN)]
+    own.sort(key=lambda it: 0 if it.urn == clone._VSERVER_URN else 1)
+    for it in own:
+        try:
+            res = ops.delete(objform.rest_path(it.urn), it.mkey, dry_run=False,
+                             check_refs=False)
+            ok = bool(res.get("ok")) if isinstance(res, dict) else bool(
+                getattr(res, "ok", False))
+        except Exception:  # noqa: BLE001 — report, keep going
+            ok = False
+        if ok:
+            it.applied = False
+            it.result = "rolled back"
+            it.note = ((it.note + " · ") if it.note else "") + (
+                "deleted again — the policy it was created for was refused")
+            for sub in items:
+                if sub.kind == "subrow" and sub.parent_mkey == it.mkey and sub.applied:
+                    sub.applied, sub.result = False, "rolled back"
+        else:
+            it.note = ((it.note + " · ") if it.note else "") + (
+                "could NOT be deleted after the policy was refused — remove it by hand")
 
 
 def clone_summary(items: list[clone.CloneItem]) -> dict[str, int]:
@@ -614,6 +689,21 @@ def _failed_msg(report: dict) -> str:
         head += ": " + ", ".join(names[:5])
         if len(names) > 5:
             head += " …(+%d)" % (len(names) - 5)
+    # The device's own words for the first one — "failed" alone sends the
+    # operator to the report for what one line can say (-4 "maximum number of
+    # entries", a re-read mismatch…).
+    first = str((fails[0].get("result") if fails else "") or "")
+    for pre in ("error: RuntimeError: ", "error: "):
+        if first.startswith(pre):
+            first = first[len(pre):]
+            break
+    if first:
+        head += " — " + first[:300]
+    rolled = [r for r in (report.get("items") or []) if r.get("result") == "rolled back"
+              and r.get("kind") == "object"]
+    if rolled:
+        head += " (its own virtual server/VIP were deleted again: %s)" % ", ".join(
+            r.get("mkey") or "?" for r in rolled[:4])
     return head
 
 
@@ -686,15 +776,32 @@ def migrate_policy(dst_planner, dst_ops, src_ops, policy: str, *,
                 "(or re-run without additive mode) before cutting over."
                 % summary["untouched"],
         }
+    kept_reason = ""
     if clone_ok and not dry_run:
         res = set_status(src_ops, policy, enable=False, dry_run=False)
         source_disabled = bool(getattr(res, "ok", False))
-    return {
+        if source_disabled:
+            # Accepted is not applied: the source must READ disabled, or it is
+            # still serving and the migration did not cut over.
+            try:
+                _fail_on_mismatch(res)
+            except RuntimeError as exc:
+                source_disabled = False
+                kept_reason = "the source was NOT disabled: %s" % exc
+                clone_ok = False   # the cut-over did not happen
+        elif hasattr(res, "get"):
+            kept_reason = "disabling the source failed: %s" % (res.get("error") or "?")
+    out = {
         "ok": bool(clone_ok),
         "summary": summary,
         "items": items,
         "source_disabled": source_disabled,
     }
+    if kept_reason:
+        out["source_kept_reason"] = kept_reason
+        if not clone_ok:
+            out["error"] = "copy created, but " + kept_reason
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -919,6 +1026,29 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
             from ..clients.fortiweb import FortiWebClient
             reader = _clone.ClientReader(FortiWebClient(source_appl))
             plan = _pg.plan_cascade_delete(reader, policy)
+            if plan.get("absent"):
+                # The device has no such policy (one GET, errcode -3): nothing
+                # to delete or cascade. The desired state holds; SATOM's stale
+                # copy is dropped so the list stops drawing it.
+                dropped = False
+                if not dry_run:
+                    try:
+                        from . import write_through as _wt
+                        dropped = bool(_wt.local_delete(
+                            source_appl.id, "server-policy/policy", policy))
+                    except Exception:  # noqa: BLE001 — cache hygiene only
+                        dropped = False
+                rec["ok"] = True
+                rec["detail"] = {
+                    "absent": True, "cache_dropped": dropped,
+                    "note": "%s has no policy %r — nothing to delete" % (
+                        getattr(source_appl, "name", "the device"), policy),
+                    "verify": {"verdict": "verified", "checked": [],
+                               "mismatch": {}, "unchecked": [],
+                               "why": "already absent on the device"},
+                    "to_delete_count": 0, "to_keep_count": 0,
+                }
+                return rec
             if dry_run:
                 rec["ok"] = True
                 rec["detail"] = {
@@ -969,7 +1099,7 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
         elif action == "clone_here":
             planner = _planner(source_appl, source_appl)
             items = clone_policy(planner, _ops(source_appl), policy,
-                                 new_name=new_name, dry_run=dry_run,
+                                 new_name=new_name, dry_run=dry_run, same_box=True,
                                  vip_ip=vip_ip, copy_wpp=copy_wpp,
                                  wpp_new_name=wpp_new_name, wpp_suffix=wpp_suffix,
                                  artifacts=art_ctx, reconcile_rows=reconcile_rows,
@@ -1055,7 +1185,7 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                              "iface_map": dict(iface_map),
                              "no_content": report["skipped_no_content"]}
             if not out["ok"]:
-                rec["error"] = ("%s — source left live" % _failed_msg(report)
+                rec["error"] = out.get("error") or ("%s — source left live" % _failed_msg(report)
                                 if report["failed"] else "clone failed — source left live")
             rec["detail"]["certificates"] = cert_ctx.get("rows") or []
             if nf_ctx:

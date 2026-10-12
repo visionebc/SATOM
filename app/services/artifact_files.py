@@ -24,6 +24,7 @@ from __future__ import annotations
 import difflib
 
 from . import waf_artifacts as wa
+from ..extensions import db
 
 #: Same cap the upload form enforces. These objects are schemas, not archives;
 #: the cap exists so a mis-picked ISO cannot fill the partition the SoT store
@@ -211,7 +212,7 @@ def delete_version(row_id: int) -> tuple[bool, str, bool]:
     from ..models import db
     from ..models_artifacts import WafArtifact
 
-    row = WafArtifact.query.get(row_id)
+    row = db.session.get(WafArtifact, row_id)
     if row is None:
         return False, "no such version", False
     sha, name, kind = row.sha256, row.name, row.kind

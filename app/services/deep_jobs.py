@@ -23,6 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 from . import jobs
+from ..extensions import db
 
 JOB_TYPE = "deep_capture"
 _DONE = "ingested"
@@ -125,7 +126,7 @@ def capture_device(flask_app, appliance_id: int) -> int:
     from . import device_sync
     from ..models import Appliance
     with flask_app.app_context():
-        appliance = Appliance.query.get(appliance_id)
+        appliance = db.session.get(Appliance, appliance_id)
         if appliance is None:
             raise ValueError("appliance %s not found" % appliance_id)
         snap = device_sync.deep_snapshot_from_device(appliance)

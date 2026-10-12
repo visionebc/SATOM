@@ -23,6 +23,7 @@ from ..services import backup as backup_svc
 from ..services import jobs as jobsvc
 from ..services import notifications as notify
 from ..services.audit import log_action
+from ..extensions import db
 
 bp = Blueprint('backups', __name__, url_prefix='/backups')
 
@@ -65,7 +66,7 @@ def _run_backup_job(app, job_id, appliance_id, user_id, created_by, link,
                     method="auto"):
     """Worker: pull a backup off the device into the vault, then notify."""
     with app.app_context():
-        appliance = Appliance.query.get(appliance_id)
+        appliance = db.session.get(Appliance, appliance_id)
         if appliance is None:
             jobsvc.finish_error(job_id, "appliance no longer exists")
             return

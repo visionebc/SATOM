@@ -68,6 +68,7 @@ from ..services import (advisor, attack_carveout, attack_field_intel, attack_log
 from ..services import wpp_exceptions as store
 from ..services.audit import log_action
 from ..services.fortiweb_ops import FortiWebOps
+from ..extensions import db
 
 bp = Blueprint('attack_search', __name__, url_prefix='/waf/attack-search')
 
@@ -1105,7 +1106,7 @@ def insert_exception(exc_id):
 #  Accept / adapt / reject the drafted carve-out                                #
 # --------------------------------------------------------------------------- #
 def _prop_or_404(pid: int) -> AdvisorProposal:
-    prop = AdvisorProposal.query.get(pid)
+    prop = db.session.get(AdvisorProposal, pid)
     if prop is None:
         from flask import abort
         abort(404)

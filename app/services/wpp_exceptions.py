@@ -687,7 +687,7 @@ def _appliance(appliance_id):
 
 
 def get(exc_id: int) -> WppException | None:
-    return WppException.query.get(exc_id)
+    return db.session.get(WppException, exc_id)
 
 
 def _set_policies(exc: WppException, policies: list[str]) -> None:

@@ -183,7 +183,7 @@ def bind(appliance: Appliance, template: Template, *, pinned_version=None,
 
 
 def unbind(binding_id: int) -> TemplateBinding | None:
-    row = TemplateBinding.query.get(binding_id)
+    row = db.session.get(TemplateBinding, binding_id)
     if row is not None:
         db.session.delete(row)
         db.session.flush()
@@ -338,7 +338,7 @@ def status(binding: TemplateBinding, appliance=None, *, build: str = "") -> dict
     from . import template_compat as tc
     from . import version_compat as vc
     tpl = resolve(binding)
-    appliance = appliance or Appliance.query.get(binding.appliance_id)
+    appliance = appliance or db.session.get(Appliance, binding.appliance_id)
     build = build or (vc._resolved(appliance).get("version") if appliance else "") or ""
     out = {"binding_id": binding.id, "appliance_id": binding.appliance_id,
            "appliance": getattr(appliance, "name", "") or "",

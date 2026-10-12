@@ -55,6 +55,7 @@ part of the outage.
 from __future__ import annotations
 
 from .. import vm_store
+from ...extensions import db
 
 #: Traffic-log field names that could carry the response code. Several
 #: spellings because the exact one is UNVERIFIED (see the module docstring) and
@@ -210,7 +211,7 @@ def collect_infra(appliance, params, ts) -> list:
             "VM id and node are all required) — the VM and host layers stay "
             "UNKNOWN rather than being reported as healthy")
 
-    target = HypervisorTarget.query.get(topo.hypervisor_target_id)
+    target = db.session.get(HypervisorTarget, topo.hypervisor_target_id)
     if target is None:
         raise RuntimeError(f"hypervisor target {topo.hypervisor_target_id} is gone")
 

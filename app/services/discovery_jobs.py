@@ -33,6 +33,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import discovery_run, jobs
+from ..extensions import db
 
 #: The job type. One string, referenced by the UI and the guards alike.
 JOB_TYPE = "discovery_probe"
@@ -88,7 +89,7 @@ def _execute(job_id: str, *, product: str, appliance_id: int,
     from ..services import rediscovery
     from ..services.audit import log_action
 
-    appliance = Appliance.query.get(appliance_id)
+    appliance = db.session.get(Appliance, appliance_id)
     if appliance is None:
         # Deleted between the click and the dispatch. An error, never an empty
         # result: "no findings" and "there was nothing to ask" read the same on

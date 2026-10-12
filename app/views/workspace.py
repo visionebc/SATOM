@@ -1592,8 +1592,8 @@ from flask_babel import gettext as _gt  # noqa: E402 -- the FortiGate / FAC sect
 # (services.gui_products). Rows are the adapter's (FortiGate: live cmdb;
 # FortiAuthenticator: SATOM cache, else live; its CLI-only objects ``cli:``
 # over a read-only SSH session); Save posts to fwgui_save, which dry-runs,
-# then applies through GuiOps (before-read, audit, ChangeHistory), re-reads
-# the object and reports any drift. CLI-only fields go through the CLI writer
+# then applies through GuiOps (before-read, audit, ChangeHistory, then ONE
+# re-read that verifies the write and refreshes SATOM's copy). CLI-only fields go through the CLI writer
 # exactly as on FortiWeb. A page or field with no API on the build (``gui:``
 # / ``key_from: gui-only``) is drawn read-only and never sent. A row of an
 # inline table is saved by writing its parent object with the changed row.
@@ -2098,25 +2098,29 @@ def _gx_new(appl, page, tpl, match, dialog):
                       nig=nig, nig_edit=nig_edit)
 
 
-def _gx_find_created(ad, appl, coll, body):
-    """The mkey of an object just created (FortiOS answers it as ``mkey``;
-    Tastypie gives no id back): looked up by the identity field sent
-    (FortiADC: the ``mkey`` itself)."""
-    ad.forget(appl, coll) if hasattr(ad, 'forget') else None
-    if appl.kind == 'fortiauthenticator':
-        _lg, path = ad.resolve(appl, coll)
-        try:
-            rows, _e = ad._client(appl).list_path_with_error(path)
-        except Exception:  # noqa: BLE001
-            rows = []
-    else:
-        rows, _m = ad.rows(appl, coll)
-    for ident in ('name', 'username', 'label', 'mkey', 'policyid', 'id'):
-        if ident in (body or {}):
-            hit = next((r for r in rows or [] if str(r.get(ident)) == str(body[ident])), None)
-            if hit is not None:
-                return ad.mkey_of(hit, coll), hit
-    return '', None
+def _gx_verdict(res, do_apply) -> dict:
+    """The answer fields of a save from the read-back ``GuiOps.run`` made of
+    it (it re-reads, verifies and refreshes SATOM's copy for every write; a
+    route re-reads nothing itself): ``verified`` True / False / None
+    (``unverified``, a dry run, a refused write), ``drift`` the fields the
+    device holds differently (``[]`` when verified), ``verify`` the verdict
+    itself (its ``why`` says what could not be checked), ``verdict`` how the
+    page draws it (``gui_products.verdict_view``), ``cache_refreshed``.
+    A mismatch already made ``ok`` False with what the device kept as
+    ``error``."""
+    from ..services.gui_products import verdict_view
+    v = (res or {}).get('verify') if do_apply else None
+    if not v:
+        return {'verified': None, 'drift': None, 'verify': None, 'verdict': None,
+                'cache_refreshed': False}
+    verdict = v.get('verdict')
+    drift = [{'key': k, 'sent': d.get('sent'), 'now': d.get('device')}
+             for k, d in (v.get('mismatch') or {}).items()]
+    return {'verified': True if verdict == 'verified' else False if verdict == 'mismatch'
+            else None,
+            'drift': None if verdict == 'unverified' else drift, 'verify': v,
+            'verdict': verdict_view(v),
+            'cache_refreshed': bool(((res or {}).get('cache_refresh') or {}).get('refreshed'))}
 
 
 def _gx_uninvert(fields: dict) -> dict:
@@ -2158,7 +2162,7 @@ def _gx_table_allowed(tpl, coll, field, appl, ad) -> bool:
 def _gx_save_row(appl, ad, tpl, coll, mkey, field, sub_id, op, fields, do_apply):
     """Create / update / delete ONE row of an inline table: the parent object
     is written with the changed row (same ritual as every save: dry run, then
-    apply through GuiOps, re-read, drift)."""
+    apply through GuiOps, which re-reads the parent and verifies THAT row)."""
     from ..services import gui_products
     if not _gx_table_allowed(tpl, coll, field, appl, ad):
         return jsonify(ok=False, error='not a table of this page'), 400
@@ -2175,37 +2179,19 @@ def _gx_save_row(appl, ad, tpl, coll, mkey, field, sub_id, op, fields, do_apply)
         data, _b = gui_products.table_write(orig, field, op, sub_id, row_body)
     except ValueError as exc:
         return jsonify(ok=False, error=str(exc)), 404
-    res = gui_products.GuiOps(appl).run('update', coll, mkey or None, data,
-                                        dry_run=not do_apply)
+    res = gui_products.GuiOps(appl).run(
+        'update', coll, mkey or None, data, dry_run=not do_apply,
+        table={'field': field, 'op': op, 'sub_id': sub_id or None, 'row': row_body})
     diff = [{'key': '%s[%s].%s' % (field, sub_id or 'new', k), 'was': (before or {}).get(k),
              'now': v} for k, v in (fields or {}).items()]
     if op == 'delete':
         diff = [{'key': '%s[%s]' % (field, sub_id), 'was': 'row', 'now': 'deleted'}]
-    after_row = drift = None
     new_id = str(sub_id or '')
-    if do_apply and res['ok']:
-        ad.forget(appl, coll) if hasattr(ad, 'forget') else None
-        after = ad.read(appl, coll, mkey or None)
-        rows = [r for r in (after or {}).get(field) or [] if isinstance(r, dict)]
-        if op == 'create':
-            ident = next((k for k in ('name', 'id', 'seq-num') if k in row_body), None)
-            after_row = next((r for r in rows if ident and str(r.get(ident)) == str(row_body[ident])),
-                             None)
-            new_id = gui_products.row_id(after_row) if after_row else ''
-        elif op == 'update':
-            after_row = next((r for r in rows if gui_products.row_id(r) == str(sub_id)), None)
-        if op != 'delete' and after is not None:
-            drift = gui_products.drift(row_body, after_row or {})
-        elif op == 'delete' and after is not None:
-            if any(gui_products.row_id(r) == str(sub_id) for r in rows):
-                drift = [{'key': '%s[%s]' % (field, sub_id), 'sent': 'deleted', 'now': 'present'}]
-            else:
-                drift = []
+    if do_apply and res.get('verify') is not None and op == 'create':
+        new_id = str(res.get('sub_id') or '')
     return jsonify(ok=bool(res['ok']), dry_run=not do_apply, request=res.get('request'),
                    diff=diff, error=res.get('error') or '', cli=None, cli_fields=[],
-                   mkey=mkey, sub_id=new_id, channel_warnings=[],
-                   verified=None if (not do_apply or drift is None) else not drift,
-                   drift=drift, cache_refreshed=False)
+                   mkey=mkey, sub_id=new_id, channel_warnings=[], **_gx_verdict(res, do_apply))
 
 
 def _gx_child_allowed(tpl, coll, child, appl) -> bool:
@@ -2232,7 +2218,8 @@ def _gx_save_child(appl, ad, tpl, coll, parent, child, sub_id, op, fields, do_ap
     an object of its own under its parent (``POST|PUT|DELETE
     /api/<parent>_child_<t>?pkey=<parent>[&mkey=<row>]``, as the classic ADC
     editor writes it). Dry run first, then GuiOps (before-read, audit,
-    ChangeHistory), re-read, drift."""
+    ChangeHistory, the row re-read and verified; a new row is the id that
+    was not there before the write)."""
     from ..services import gui_products
     if not _gx_child_allowed(tpl, coll, child, appl):
         return jsonify(ok=False, error='not a table of this page'), 400
@@ -2251,31 +2238,12 @@ def _gx_save_child(appl, ad, tpl, coll, parent, child, sub_id, op, fields, do_ap
              'now': v} for k, v in (fields or {}).items()]
     if op == 'delete':
         diff = [{'key': '%s[%s]' % (child, sub_id), 'was': 'row', 'now': 'deleted'}]
-    drift, new_id = None, str(sub_id or '')
-    if do_apply and res['ok']:
-        ad.forget(appl, child)
-        rows, err = ad.child_rows(appl, child, parent)
-        if not err:
-            if op == 'create':
-                ident = str((body or {}).get('mkey') or '')
-                hit = next((r for r in rows if ident and str(r.get('mkey')) == ident), None)
-                if hit is None and rows:
-                    # FortiADC numbers a new row itself: the highest id is the new one
-                    hit = max(rows, key=lambda r: int(r['mkey']) if str(r.get('mkey', '')).isdigit()
-                              else -1)
-                new_id = str((hit or {}).get('mkey') or '')
-                drift = gui_products.drift(body or {}, hit or {})
-            elif op == 'update':
-                hit = next((r for r in rows if str(r.get('mkey')) == str(sub_id)), None)
-                drift = gui_products.drift(body or {}, hit or {})
-            else:
-                drift = ([{'key': '%s[%s]' % (child, sub_id), 'sent': 'deleted', 'now': 'present'}]
-                         if any(str(r.get('mkey')) == str(sub_id) for r in rows) else [])
+    new_id = str(sub_id or '')
+    if do_apply and res.get('verify') is not None and op == 'create':
+        new_id = str(res.get('mkey') or '')
     return jsonify(ok=bool(res['ok']), dry_run=not do_apply, request=res.get('request'),
                    diff=diff, error=res.get('error') or '', cli=None, cli_fields=[],
-                   mkey=parent, sub_id=new_id, channel_warnings=[],
-                   verified=None if (not do_apply or drift is None) else not drift,
-                   drift=drift, cache_refreshed=False)
+                   mkey=parent, sub_id=new_id, channel_warnings=[], **_gx_verdict(res, do_apply))
 
 
 def _gx_save_cli(appl, ad, coll, mkey, op, fields, do_apply):
@@ -2321,8 +2289,9 @@ def fwgui_save(appliance_id):
     / delete / clone; ``subtable`` + ``sub_id``: one row of an inline table).
     Dry run first (the exact request, the change, the CLI script of the
     CLI-only fields); ``apply`` sends it through GuiOps (before-read, audit,
-    ChangeHistory), re-reads the object from the device and reports any field
-    it stored differently (``drift``); SATOM's copy is updated."""
+    ChangeHistory), which re-reads the object from the device, verifies it
+    (a field it holds differently fails the save: ``drift``, ``verify``) and
+    updates SATOM's copy from that re-read."""
     from ..services import cli_writer, gui_pages, gui_products
     from .objedit import _channel_warnings, _cli_error, _cli_part
     appl = visible_appliance_or_404(appliance_id)
@@ -2409,45 +2378,28 @@ def fwgui_save(appliance_id):
     else:
         res = {'ok': True, 'dry_run': not do_apply, 'request': None, 'error': ''}
     new_mkey = mkey
-    if do_apply and res['ok'] and op == 'create':
-        new_mkey, _hit = _gx_find_created(ad, appl, coll, data or {})
+    if do_apply and op == 'create' and res.get('verify') is not None:
+        # GuiOps identified the new object on the device (FortiOS / Tastypie
+        # answer it, FortiADC names it in the body)
+        new_mkey = res.get('mkey') or ''
     cli = _cli_part(appl, split, new_mkey, do_apply, res['ok']) if cli_fields else None
     ok = bool(res['ok']) and (cli is None or bool(cli.get('ok')))
     error = res.get('error') or (_cli_error(cli) if cli and not cli.get('ok') else '')
     flat_orig = gui_products.flat_dicts(orig or {})
     diff = [{'key': k, 'was': flat_orig.get(k), 'now': v} for k, v in (fields or {}).items()]
-    after = drift = None
-    refreshed = False
-    if do_apply and ok:
-        if hasattr(ad, 'forget'):
-            ad.forget(appl, coll)
-        if op != 'delete':
-            reread = ((lambda: ad.child_read(appl, coll, '', new_mkey)) if pkey is not None
-                      else (lambda: ad.read(appl, coll, new_mkey)))
-            after = reread()
-            drift = gui_products.drift(data or {}, after)
-            if drift:
-                # the device can answer a read before it has committed the
-                # write: one more read before calling it a difference
-                import time as _time
-                _time.sleep(1.0)
-                after = reread()
-                drift = gui_products.drift(data or {}, after)
-        refreshed = ad.after_write(appl, coll, new_mkey,
-                                   after if after is not None else {**(orig or {}), **(data or {})},
-                                   op)
+    if do_apply and ok and res.get('verify') is None and hasattr(ad, 'forget'):
+        # CLI fields only: no REST write for GuiOps to re-read -- the next
+        # read of this object is the device's (the CLI writer verifies its own)
+        ad.forget(appl, coll)
     return jsonify(ok=ok, dry_run=not do_apply, request=res.get('request'), diff=diff,
                    error=error, cli=cli, cli_fields=sorted(cli_fields), mkey=new_mkey,
-                   channel_warnings=_channel_warnings(split),
-                   verified=None if (not do_apply or op == 'delete' or after is None)
-                   else not drift,
-                   drift=drift, cache_refreshed=refreshed)
+                   channel_warnings=_channel_warnings(split), **_gx_verdict(res, do_apply))
 
 
 def _gx_clone(appl, ad, coll, src_key, new_name, do_apply):
     """Clone: create ``new_name`` with every field of ``src_key`` as the device
     serves it (secrets are never read, so never copied), through the same
-    dry run -> apply -> re-read ritual as Create New."""
+    dry run -> apply -> verified re-read ritual as Create New."""
     from ..services import gui_products
     if not new_name or new_name == src_key:
         return jsonify(ok=False, error='name the copy (a name other than the source)'), 400
@@ -2457,20 +2409,13 @@ def _gx_clone(appl, ad, coll, src_key, new_name, do_apply):
                        % (coll, src_key)), 409
     data = gui_products.clone_body(appl.kind, src, src_key, new_name)
     res = gui_products.GuiOps(appl).run('create', coll, None, data, dry_run=not do_apply)
-    new_mkey, after, drift = '', None, None
-    if do_apply and res['ok']:
-        new_mkey, _hit = _gx_find_created(ad, appl, coll, data)
-        if new_mkey:
-            after = ad.read(appl, coll, new_mkey)
-            drift = gui_products.drift(data, after)
-        ad.after_write(appl, coll, new_mkey, after if after is not None else data, 'create')
+    new_mkey = (res.get('mkey') or '') if do_apply and res.get('verify') is not None else ''
     return jsonify(ok=bool(res['ok']), dry_run=not do_apply, request=res.get('request'),
                    diff=[{'key': k, 'was': '', 'now': v} for k, v in sorted(data.items())
                          if not isinstance(v, (list, dict))],
                    error=res.get('error') or '', cli=None, cli_fields=[], mkey=new_mkey,
                    plan={'fields': len(data), 'source': src_key},
-                   channel_warnings=[], verified=None if after is None else not drift,
-                   drift=drift, cache_refreshed=False)
+                   channel_warnings=[], **_gx_verdict(res, do_apply))
 
 
 def gui_store_firmware(appl):

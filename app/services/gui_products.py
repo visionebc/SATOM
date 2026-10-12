@@ -20,8 +20,8 @@ FortiAuth.    SATOM cache (the FAC sweep, registry    ``PATCH|POST|DELETE``
               logicals), else live ``/api/v1/<res>/``  ``/api/v1/<res>/[<id>/]``
                                                       through the FAC client
 FortiADC      live ``GET /api/<entity>`` (``vdom``    ``POST /api/<entity>``,
-              aware; SATOM keeps no FortiADC config   ``PUT|DELETE /api/<entity>
-              cache for these pages); one object is   ?mkey=<name>`` through
+              aware; the pages do not read SATOM's    ``PUT|DELETE /api/<entity>
+              FortiADC cache); one object is          ?mkey=<name>`` through
               ``?mkey=<name>``; a settings entity     ``adc_ops.rest_call``;
               answers ONE object (singleton); a       mkey = the row's ``mkey``;
               child table ``<parent>_child_<t>`` is   a child table row adds
@@ -32,7 +32,9 @@ Every FortiGate / FortiAuthenticator / FortiADC write goes through
 :class:`GuiOps`, the counterpart of ``FortiWebOps``: a dry run returns the
 exact request without contacting the device; an apply reads the object first
 (the before-snapshot), sends, records a ``ChangeHistory`` row and an audit
-entry, and never raises.
+entry, then re-reads what it wrote with the product's own read, verifies it
+(a value the device did not keep fails the write), keeps SATOM's copy current,
+and never raises.
 
 Template endpoints: FortiGate views name the cmdb path after ``/api/v2/cmdb/``
 (``firewall/policy``) or ``monitor:<path>``; FortiAuthenticator views name the
@@ -226,6 +228,10 @@ def cli_object(endpoint: str | None) -> str:
     return (endpoint or "")[len("cli:"):].strip("/") if is_cli(endpoint) else ""
 
 
+#: What a re-read found (``Adapter.read_back``).
+FOUND, ABSENT, UNREAD = "found", "absent", "unread"
+
+
 class Adapter:
     product = ""
     #: the write verb of a partial update
@@ -276,9 +282,90 @@ class Adapter:
         """(ok, error)"""
         raise NotImplementedError
 
-    def after_write(self, appliance, endpoint: str, mkey: str, obj, op: str) -> bool:
-        """Keep SATOM's copy current (write-through); True when it was."""
+    def send_full(self, appliance, method: str, path: str, body) -> tuple:
+        """(ok, error, payload): ``send`` plus what the device answered, which
+        names a created object on some products (FortiOS ``mkey``, Tastypie's
+        object). The default knows no answer."""
+        ok, err = self.send(appliance, method, path, body)
+        return ok, err, None
+
+    def after_write(self, appliance, endpoint: str, mkey: str, obj, op: str,
+                    pkey=None) -> bool:
+        """Keep SATOM's copy current (write-through); True when it was.
+        ``pkey``: the parent of a FortiADC child table row."""
         return False
+
+    # -- read-back (GuiOps verification) ----------------------------------
+    def read_back(self, appliance, endpoint: str, mkey, pkey=None) -> tuple:
+        """``(state, obj)`` of the object a write touched, read from the DEVICE
+        (never a cache): ``FOUND`` + the scrubbed object, ``ABSENT`` (the
+        device says it has no such object -- each product says it its own way,
+        so only the product adapters can tell it from a failed read) or
+        ``UNREAD``. The default cannot tell absent from unreadable."""
+        obj = (self.child_read(appliance, endpoint, pkey, mkey) if pkey is not None
+               else self.read(appliance, endpoint, mkey))
+        return (FOUND, obj) if isinstance(obj, dict) else (UNREAD, None)
+
+    def child_read(self, appliance, endpoint, parent, mkey):
+        return None
+
+    def find_created(self, appliance, endpoint: str, body, answer=None) -> str:
+        """The mkey of an object just created: from the device's answer when
+        it names one, else looked up on the device by the identity field
+        that was sent ("" = not found)."""
+        rows = self.live_rows(appliance, endpoint)
+        for ident in ("name", "username", "label", "mkey", "policyid", "id"):
+            if ident in (body or {}):
+                hit = next((r for r in rows if str(r.get(ident)) == str(body[ident])), None)
+                if hit is not None:
+                    return self.mkey_of(hit, endpoint)
+        return ""
+
+    def live_rows(self, appliance, endpoint: str) -> list:
+        """Every row of ``endpoint`` as the device serves it NOW."""
+        if hasattr(self, "forget"):
+            self.forget(appliance, endpoint)
+        rows, meta = self.rows(appliance, endpoint)
+        return [] if (meta or {}).get("error") else [r for r in rows or [] if isinstance(r, dict)]
+
+    def shape(self, row) -> dict:
+        """The comparable view of a sent body or a device object, ONE shape
+        for both sides of :func:`object_refresh.compare` (which compares
+        scalars only, and skips booleans):
+
+        * a nested object becomes its dotted key paths (FortiGate
+          ``ipv6.ip6-mode``), as the forms name and send them;
+        * a member list (``[{"name": "port1", "q_origin_key": "port1"}]``) or
+          a list of plain values (FortiAuthenticator ``groups``) becomes its
+          sorted, space-joined names -- the set is what was asked;
+        * a boolean becomes ``true`` / ``false`` (FortiAuthenticator's
+          ``active``: otherwise never compared at all);
+        * secrets and bookkeeping keys (``q_*``) are left out: never compared,
+          never returned."""
+        out = {}
+        for k, v in flat_dicts(row if isinstance(row, dict) else {}).items():
+            if str(k).startswith("q_") or self.secret(str(k).rsplit(".", 1)[-1], v) \
+                    or self.secret(k, v) or isinstance(v, dict):
+                continue
+            if isinstance(v, bool):
+                v = "true" if v else "false"
+            elif isinstance(v, list):
+                names = _member_names(v)
+                if names is not None:
+                    v = " ".join(sorted(names.split()))
+                elif all(not isinstance(x, (dict, list)) for x in v):
+                    v = " ".join(sorted(str(x) for x in v))
+            out[k] = self.norm_value(k, v)
+        return out
+
+    def norm_value(self, key, value):
+        """A product's own spelling of one value, the same on both sides."""
+        return value
+
+    def cache_note(self, refreshed: bool) -> str:
+        """What ``after_write`` did to SATOM's copy, in words."""
+        return ("SATOM keeps no %s config cache: its read cache was dropped, the next "
+                "read is the device's" % label(self.product))
 
     def secret(self, key: str, value) -> bool:
         return False
@@ -297,6 +384,25 @@ class Adapter:
 _FGT_MKEYS = ("q_origin_key", "name", "policyid", "seq-num", "id")
 _FGT_TTL = 15.0
 _fgt_cache: dict = {}
+_IP_CIDR = re.compile(r"(\d{1,3}(?:\.\d{1,3}){3})\s*/\s*(\d{1,2})")
+
+
+def _fgt_ip(value):
+    """An IPv4 ``address/prefix`` as FortiOS stores it, ``address mask``
+    (fgt02 8.0.1: a subnet sent as ``192.0.2.0/24`` reads back
+    ``192.0.2.0 255.255.255.0``) -- so the read-back compares the same
+    spelling. Anything else is returned as it is."""
+    if not isinstance(value, str):
+        return value
+    m = _IP_CIDR.fullmatch(value.strip())
+    if not m or int(m.group(2)) > 32:
+        return value
+    import ipaddress
+    try:
+        ipaddress.IPv4Address(m.group(1))
+    except ValueError:
+        return value
+    return "%s %s" % (m.group(1), ipaddress.IPv4Network("0.0.0.0/%s" % m.group(2)).netmask)
 
 
 class FortiGateAdapter(Adapter):
@@ -402,16 +508,54 @@ class FortiGateAdapter(Adapter):
         return out
 
     def send(self, appliance, method, path, body):
+        ok, err, _payload = self.send_full(appliance, method, path, body)
+        return ok, err
+
+    def send_full(self, appliance, method, path, body):
         payload, err = self._client(appliance).write(method, path, body)
         if err:
-            return False, err
+            return False, err, payload
         if isinstance(payload, dict) and payload.get("status") not in (None, "success"):
             return False, "status %s: %s" % (payload.get("status"),
-                                            payload.get("cli_error") or payload.get("error") or "")
-        return True, ""
+                                            payload.get("cli_error") or payload.get("error") or ""), \
+                payload
+        return True, "", payload
 
-    def after_write(self, appliance, endpoint, mkey, obj, op):
-        # SATOM keeps no FortiGate config cache: the next read is the device's
+    def read_back(self, appliance, endpoint, mkey, pkey=None):
+        """FortiOS answers a missing object of a table with HTTP 404, which
+        the client words ``404 — no such object on the device: <path>``
+        (measured on fgt02 8.0.1 build0245, 2026-10-12: ``GET
+        /api/v2/cmdb/firewall/address/<none>`` and ``firewall/policy/999999``).
+        Any other error -- a refused token, a timeout -- is no answer at all."""
+        self.forget(appliance, endpoint)
+        path = endpoint + ("/" + quote(str(mkey), safe="") if mkey not in (None, "") else "")
+        try:
+            res, err = self._client(appliance).cmdb(path)
+        except Exception:  # noqa: BLE001 -- no read is not a verdict
+            return UNREAD, None
+        if err:
+            gone = mkey not in (None, "") and str(err).startswith("404 — no such object")
+            return (ABSENT if gone else UNREAD), None
+        if isinstance(res, list):
+            if not res:
+                return (ABSENT if mkey not in (None, "") else UNREAD), None
+            res = res[0]
+        return (FOUND, self.scrub(res)) if isinstance(res, dict) else (UNREAD, None)
+
+    def find_created(self, appliance, endpoint, body, answer=None):
+        # FortiOS names the new object in its answer (``"mkey": "lab-b"``,
+        # a policy's new ``policyid``): no lookup by name needed
+        if isinstance(answer, dict) and answer.get("mkey") not in (None, ""):
+            return str(answer["mkey"])
+        return super().find_created(appliance, endpoint, body, answer)
+
+    def norm_value(self, key, value):
+        return _fgt_ip(value)
+
+    def after_write(self, appliance, endpoint, mkey, obj, op, pkey=None):
+        # SATOM keeps no FortiGate config cache (no device_objects rows: fgt02
+        # has none, 2026-10-12) -- the pages read cmdb live; only the few-
+        # second read cache goes, so the next read is the device's
         self.forget(appliance, endpoint)
         return True
 
@@ -595,10 +739,62 @@ class FortiAuthenticatorAdapter(Adapter):
         return self.scrub(got) if isinstance(got, dict) else None
 
     def send(self, appliance, method, path, body):
-        _got, err = self._client(appliance).api_call(method, path, body)
-        return (not err), (err or "")
+        ok, err, _got = self.send_full(appliance, method, path, body)
+        return ok, err
 
-    def after_write(self, appliance, endpoint, mkey, obj, op):
+    def send_full(self, appliance, method, path, body):
+        got, err = self._client(appliance).api_call(method, path, body)
+        return (not err), (err or ""), got
+
+    def read_back(self, appliance, endpoint, mkey, pkey=None):
+        """Tastypie answers a missing detail with HTTP 404 and an empty body,
+        which the client words ``HTTP 404: `` (measured on fac01 8.0.3
+        build0099, 2026-10-12: ``/api/v1/localusers/999999/``,
+        ``usergroups/``, ``radiusclients/``, and a group just deleted). Any
+        other error is no answer at all. CLI-only objects never come here
+        (they save through the CLI writer)."""
+        if is_cli(endpoint):
+            return UNREAD, None
+        _logical, path = self.resolve(appliance, endpoint)
+        if mkey not in (None, ""):
+            path = path.rstrip("/") + "/%s/" % quote(str(mkey), safe="")
+        try:
+            got, err = self._client(appliance).api_call("GET", path)
+        except Exception:  # noqa: BLE001
+            return UNREAD, None
+        if err:
+            gone = mkey not in (None, "") and str(err).startswith("HTTP 404")
+            return (ABSENT if gone else UNREAD), None
+        if isinstance(got, dict) and isinstance(got.get("objects"), list):
+            got = got["objects"][0] if len(got["objects"]) == 1 and not mkey else None
+        return (FOUND, self.scrub(got)) if isinstance(got, dict) else (UNREAD, None)
+
+    def find_created(self, appliance, endpoint, body, answer=None):
+        # Tastypie answers a POST with the new object (fac01 8.0.3:
+        # ``{"id": 18, "name": ..., "resource_uri": "/api/v1/usergroups/18"}``)
+        # -- its detail URL names it
+        if isinstance(answer, list) and len(answer) == 1:
+            answer = answer[0]
+        if isinstance(answer, dict) and (answer.get("resource_uri") or answer.get("id")):
+            mk = self.mkey_of(answer, endpoint)
+            if mk:
+                return mk
+        return super().find_created(appliance, endpoint, body, answer)
+
+    def live_rows(self, appliance, endpoint):
+        # the device, never the sweep's cache (a new object is not in it yet)
+        _lg, path = self.resolve(appliance, endpoint)
+        try:
+            rows, _e = self._client(appliance).list_path_with_error(path)
+        except Exception:  # noqa: BLE001
+            rows = []
+        return [r for r in rows or [] if isinstance(r, dict)]
+
+    def cache_note(self, refreshed):
+        return ("SATOM's cached copy follows the re-read" if refreshed
+                else "not in SATOM's cache (no registry collection, or nothing to store)")
+
+    def after_write(self, appliance, endpoint, mkey, obj, op, pkey=None):
         from . import write_through
         from .device_store import _mkey_of
         logical, _path = self.resolve(appliance, endpoint)
@@ -666,8 +862,9 @@ _ADC_SECRET = re.compile(r"(passw|passwd|passphrase|secret|psk|private[-_]?key|c
 
 
 class FortiADCAdapter(Adapter):
-    """FortiADC: rows live from ``GET /api/<entity>`` (SATOM keeps no
-    FortiADC config cache for these pages), one object by ``?mkey=``, writes
+    """FortiADC: rows live from ``GET /api/<entity>`` (the pages never read
+    SATOM's FortiADC cache; a write keeps it current, :meth:`after_write`),
+    one object by ``?mkey=``, writes
     ``POST`` / ``PUT ?mkey=`` / ``DELETE ?mkey=`` through
     ``adc_ops.rest_call`` (the fleet-wide engine never builds the ADC client
     itself). A settings entity (``system_global``) answers one object: listed
@@ -861,14 +1058,194 @@ class FortiADCAdapter(Adapter):
                                           body=body)
         return (not err), (err or "")
 
-    def after_write(self, appliance, endpoint, mkey, obj, op):
-        # SATOM keeps no FortiADC config cache for these pages: the next read
-        # is the device's
+    def read_back(self, appliance, endpoint, mkey, pkey=None):
+        """FortiADC answers a missing object with HTTP 200 and ``{"payload":
+        null}`` -- no error at all (measured on fortiadc10 7.6.7 build0676,
+        2026-10-12: ``GET /api/load_balance_real_server?mkey=<none>``); a
+        child table of a parent with no such row (or no such parent) answers
+        its rows without it (``?pkey=<none>`` -> ``[]``). So: a read that
+        answered and does not hold the object = absent; an error = no answer."""
         self.forget(appliance, endpoint)
-        return True
+        if pkey is not None and self.is_child(endpoint):
+            rows = self.child_all(appliance, endpoint, pkey)
+            if rows is None:
+                return UNREAD, None
+            hit = next((r for r in rows if str(r.get("mkey")) == str(mkey)), None)
+            return (FOUND, hit) if hit is not None else (ABSENT, None)
+        if mkey in (None, ""):
+            obj = self.read(appliance, endpoint, None)
+            return (FOUND, obj) if isinstance(obj, dict) else (UNREAD, None)
+        try:
+            res, err = self._get(appliance, endpoint, {"mkey": str(mkey)}, cached=False)
+        except Exception:  # noqa: BLE001
+            return UNREAD, None
+        if err:
+            return UNREAD, None
+        if isinstance(res, list):
+            res = next((r for r in res if isinstance(r, dict)
+                        and str(r.get("mkey", mkey)) == str(mkey)), None)
+        if res in (None, {}):
+            return ABSENT, None
+        return (FOUND, self.scrub(res)) if isinstance(res, dict) else (UNREAD, None)
+
+    def child_all(self, appliance, endpoint, pkey) -> list | None:
+        """Every row of a child table of ``pkey`` as the device serves it NOW
+        (None: unread). A settings parent (``pkey`` "") has no name: its rows
+        are the entity's own list."""
+        self.forget(appliance, endpoint)
+        if pkey:
+            rows, err = self.child_rows(appliance, endpoint, pkey)
+        else:
+            rows, meta = self.rows(appliance, endpoint)
+            err = (meta or {}).get("error")
+        return None if err else rows
+
+    def find_created(self, appliance, endpoint, body, answer=None):
+        # an object of a table names itself (``mkey``) in the body it was sent
+        mk = (body or {}).get("mkey")
+        return str(mk) if mk not in (None, "") else ""
+
+    def cache_note(self, refreshed):
+        return ("SATOM's cached copy follows the re-read" if refreshed
+                else "not in SATOM's cache (this entity was never swept on this device)")
+
+    def after_write(self, appliance, endpoint, mkey, obj, op, pkey=None):
+        """The gx pages read the device live: their few-second read cache
+        goes (a child row also lives inside its parent's answer --
+        ``load_balance_pool`` carries ``pool_member`` -- so both go). But the
+        sweep keeps every entity in ``device_objects`` (logical = the entity,
+        a child table as depth-1 rows ``<entity>/<field>``; fortiadc10: 970
+        rows, measured 2026-10-12), which the inventory, search and VS tree
+        read: that copy follows the re-read (``obj``) of a top-level object,
+        or a fresh read of the parent's child rows. True when a cached row
+        changed; never raises."""
+        self.forget(appliance, endpoint)
+        child = self.is_child(endpoint)
+        if child:
+            self.forget(appliance, endpoint.split(ADC_CHILD, 1)[0])
+        aid = getattr(appliance, "id", None)
+        if aid is None:
+            return False
+        try:
+            if child:
+                parent, sub = endpoint.split(ADC_CHILD, 1)
+                rows = self.child_all(appliance, endpoint, "" if pkey is None else str(pkey))
+                if rows is None:
+                    return False
+                return _adc_store_children(aid, parent, "" if pkey is None else str(pkey),
+                                           sub, rows)
+            return _adc_store_object(aid, endpoint, mkey, obj, op)
+        except Exception:  # noqa: BLE001 -- the write itself succeeded
+            try:
+                from ..extensions import db
+                db.session.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            return False
 
 
 _adc_cache: dict = {}
+
+
+def _cache_subtree(session, roots: list) -> list:
+    """The ids of ``roots`` and every row under them (parent_id chain)."""
+    from ..models_cache import DeviceObject
+    ids, frontier = list(roots), list(roots)
+    while frontier:
+        frontier = [r[0] for r in session.query(DeviceObject.id)
+                    .filter(DeviceObject.parent_id.in_(frontier)).all()]
+        ids.extend(frontier)
+    return ids
+
+
+def _adc_store_object(aid, logical, mkey, obj, op) -> bool:
+    """A FortiADC top-level object in ``device_objects`` after a write: a
+    delete drops it (every layer, with its child rows); an update / create
+    merges the re-read's own fields into the cached rows (inserted beside a
+    sibling when the cache lacks it) and replaces its child-table rows."""
+    from ..extensions import db
+    from ..models_cache import DeviceObject
+    from . import device_store, write_through
+    session = db.session
+    base = session.query(DeviceObject).filter_by(appliance_id=aid, logical_name=logical,
+                                                 depth=0)
+    if op == "delete":
+        # the cache names an object as the sweep did (``_mkey_of``: name,
+        # mkey, id); the write named it by mkey -- either may hold it
+        keys = {str(mkey or "")}
+        if isinstance(obj, dict):
+            keys.add(device_store._mkey_of(obj))
+        keys.discard("")
+        roots = [o.id for o in base.filter(DeviceObject.mkey.in_(sorted(keys))).all()]
+        if not roots:
+            return False
+        session.query(DeviceObject).filter(DeviceObject.id.in_(
+            _cache_subtree(session, roots))).delete(synchronize_session=False)
+        session.commit()
+        return True
+    if not isinstance(obj, dict) or not obj:
+        return False
+    own, subs = device_store.split_payload(obj)
+    cm = device_store._mkey_of(obj) or str(mkey or "")
+    if write_through.local_refresh(aid, logical, cm, own, session=session) == 0 \
+            and not write_through.local_insert(aid, logical, cm, own, session=session):
+        return False
+    for root in base.filter_by(mkey=cm).all():
+        for sub, rows in subs.items():
+            _adc_sync_children(session, root, sub, rows)
+    session.commit()
+    return True
+
+
+def _adc_store_children(aid, parent, pkey: str, sub: str, rows: list) -> bool:
+    """The cached child rows ``<parent>/<sub>`` of ONE parent object replaced
+    by the device's rows (``?pkey=`` re-read). False: the parent is not
+    cached (its rows are unknown, not empty)."""
+    from ..extensions import db
+    from ..models_cache import DeviceObject
+    session = db.session
+    roots = (session.query(DeviceObject)
+             .filter_by(appliance_id=aid, logical_name=parent, mkey=pkey, depth=0).all())
+    for root in roots:
+        _adc_sync_children(session, root, sub, rows)
+    if roots:
+        session.commit()
+    return bool(roots)
+
+
+def _adc_sync_children(session, root, sub: str, rows: list) -> None:
+    """Rows of the child table ``sub`` under ``root`` = ``rows`` (matched on
+    the cache key ``_mkey_of``; a row the device no longer has is dropped
+    with what hangs under it, keys the read omits -- secrets -- are kept)."""
+    from ..models_cache import DeviceObject
+    from . import device_store
+    kids = (session.query(DeviceObject).filter_by(parent_id=root.id, subtable=sub)
+            .order_by(DeviceObject.idx).all())
+    by_key = {str(k.mkey or ""): k for k in kids}
+    seen = set()
+    for i, r in enumerate(x for x in rows or [] if isinstance(x, dict)):
+        own, _subs = device_store.split_payload(r)
+        key = device_store._mkey_of(r)
+        seen.add(key)
+        row = by_key.get(key)
+        if row is None:
+            row = DeviceObject(appliance_id=root.appliance_id, snapshot_id=root.snapshot_id,
+                               parent_id=root.id, layer=root.layer, section=root.section,
+                               logical_name="%s/%s" % (root.logical_name, sub),
+                               urn=kids[0].urn if kids else None, subtable=sub,
+                               depth=(root.depth or 0) + 1, mkey=key)
+            session.add(row)
+            payload = dict(own)
+        else:
+            payload = {**(row.payload or {}), **own}
+        row.payload = payload
+        row.idx = i
+        row.content_hash = device_store.content_hash(payload)
+    gone = [k.id for key, k in by_key.items() if key not in seen]
+    if gone:
+        session.query(DeviceObject).filter(DeviceObject.id.in_(
+            _cache_subtree(session, gone))).delete(synchronize_session=False)
+    session.flush()
 
 
 class FortiWebAdapter(Adapter):
@@ -894,11 +1271,129 @@ def adapter(product_or_appliance) -> Adapter:
 # --------------------------------------------------------------------------- #
 # The audited write path (FortiGate / FortiAuthenticator / FortiADC)
 # --------------------------------------------------------------------------- #
+def _gone_verdict(gone: bool, what: str, why: str) -> dict:
+    """A delete's verdict: the object (or row) is gone = verified."""
+    return {"verdict": "verified" if gone else "mismatch", "checked": [], "unchecked": [],
+            "mismatch": {} if gone else {what: {"sent": "deleted", "device": "still present"}},
+            "why": why}
+
+
+def _unverified(why: str) -> dict:
+    return {"verdict": "unverified", "checked": [], "mismatch": {}, "unchecked": [], "why": why}
+
+
+def _missing(what: str, sent: str) -> dict:
+    """An update / create the device does not hold at all."""
+    return {"verdict": "mismatch", "checked": [], "unchecked": [],
+            "mismatch": {what: {"sent": sent, "device": "not found"}},
+            "why": "the device does not have it"}
+
+
+#: How a page draws a verdict: badge level (``.fw-badge-<level>``) and label.
+VERDICT_BADGE = {"verified": ("success", "Verified on the device"),
+                 "mismatch": ("danger", "Not applied"),
+                 "unverified": ("warning", "Not verified")}
+
+
+def kept(verify: dict) -> str:
+    """What the device holds instead of what was sent, for an operator:
+    ``the device kept comment = 'old' (sent 'new')``; a whole object / row:
+    ``the object is still present (sent: deleted)``. Secrets never reach a
+    verdict (``object_refresh.compare`` never compares them)."""
+    mm = (verify or {}).get("mismatch") or {}
+    whole, fields = [], []
+    for k, d in list(mm.items())[:4]:
+        d = d if isinstance(d, dict) else {}
+        if str(k).startswith("("):
+            whole.append("the %s is %s (sent: %s)" % (str(k).strip("()"), d.get("device"),
+                                                     d.get("sent")))
+        else:
+            fields.append("%s = %r (sent %r)" % (k, d.get("device"), d.get("sent")))
+    parts = whole + (["the device kept " + ", ".join(fields)] if fields else [])
+    more = " (+%d more)" % (len(mm) - 4) if len(mm) > 4 else ""
+    return "; ".join(parts) + more
+
+
+def verdict_view(verify: dict | None) -> dict | None:
+    """``{"verdict", "level", "label", "detail", "text"}`` of a GuiOps
+    verdict, as the pages draw it (None: nothing was verified -- a dry run,
+    a refused write, a CLI-only save):
+
+    * verified -> "Verified on the device";
+    * mismatch -> "Not applied: the device kept comment = 'old' (sent 'new')";
+    * unverified -> "Not verified: <why>[; not read back: <fields>]"."""
+    if not isinstance(verify, dict) or not verify.get("verdict"):
+        return None
+    v = verify["verdict"]
+    level, label_ = VERDICT_BADGE.get(v, VERDICT_BADGE["unverified"])
+    if v == "verified":
+        detail = ""
+    elif v == "mismatch":
+        detail = kept(verify)
+    else:
+        unchecked = [str(x) for x in verify.get("unchecked") or []]
+        detail = "; ".join(x for x in (
+            verify.get("why") or ("nothing sent could be compared" if not unchecked else ""),
+            ("not read back: " + ", ".join(unchecked)) if unchecked else "") if x)
+    return {"verdict": v, "level": level, "label": label_, "detail": detail,
+            "text": label_ + (": " + detail if detail else "")}
+
+
+def _pick_row(ad, rows, sent: dict, ident: str | None, known: set | None, id_of):
+    """``(row, verify)`` of a row just CREATED in ``rows``: the one carrying
+    the identity that was sent (``ident``), else among the rows that were not
+    there before (``known``; None: unread, every row is a candidate) the one
+    holding what was sent. No candidate = the device holds no such row."""
+    from .object_refresh import VERIFIED, compare
+    shaped = ad.shape(sent)
+    if ident:
+        hit = next((r for r in rows if str(r.get(ident)) == str(sent.get(ident))), None)
+        if hit is None:
+            return None, _missing("(row)", "create")
+        return hit, compare(shaped, ad.shape(hit))
+    cands = [r for r in rows if known is None or id_of(r) not in known]
+    if not cands:
+        return None, _missing("(row)", "create")
+    verdicts = [(r, compare(shaped, ad.shape(r))) for r in cands]
+    best = next(((r, v) for r, v in verdicts if v["verdict"] == VERIFIED), None)
+    if best:
+        return best
+    if known is not None and len(cands) == 1:
+        return verdicts[0]           # THE new row, and it differs: a mismatch
+    return None, (_unverified("the new row could not be told from the others")
+                  if known is None else
+                  {"verdict": "mismatch", "checked": [], "unchecked": [],
+                   "mismatch": {"(row)": {"sent": "create",
+                                           "device": "not found among the new rows"}},
+                   "why": "%d new rows, none holds what was sent" % len(cands)})
+
+
 class GuiOps:
     """FortiWebOps for the other products: dry run = the exact request,
-    no device contact; apply = before-read, send, ChangeHistory + audit."""
+    no device contact; apply = before-read, send, ChangeHistory + audit,
+    then ONE re-read of what the write touched (the object, the child row
+    under ``pkey``, or the inline-table row of ``table``) that
+
+    * **verifies** it: every scalar field sent is compared with the device's
+      copy (``object_refresh.compare`` on :meth:`Adapter.shape` of both
+      sides) -> ``verified`` / ``mismatch`` / ``unverified``; a delete is
+      verified when the device says the object is gone. "ok" used to mean
+      only "the device ACCEPTED the request"; an accepted write the device
+      does not hold is a failed operation (``ok`` False, the mismatch as
+      the error, audited ``config.<op>.not_applied``, as on FortiWeb);
+      ``unverified`` keeps ``ok`` and says why;
+    * **refreshes** SATOM's copy from it (``Adapter.after_write``: the
+      FortiAuthenticator and FortiADC ``device_objects`` rows; FortiGate has
+      no cache, only the pages' few-second read cache is dropped).
+
+    ``verdict`` (:func:`verdict_view`) is how the pages draw the verdict.
+
+    Never raises."""
 
     METHODS = {"create": "POST", "delete": "DELETE"}
+    #: One more read before a difference is called a mismatch: a device can
+    #: answer a read before it has committed the write.
+    REREAD_DELAY = 1.0
 
     def __init__(self, appliance):
         self.appliance = appliance
@@ -913,8 +1408,16 @@ class GuiOps:
         return {"method": method, "path": path, "body": None if op == "delete" else body}
 
     def run(self, op: str, endpoint: str, mkey: str | None, body, *, dry_run: bool = True,
-            pkey=None) -> dict:
-        """``pkey``: a FortiADC child table row is written under its parent."""
+            pkey=None, table: dict | None = None) -> dict:
+        """``pkey``: a FortiADC child table row is written under its parent.
+        ``table``: the write is a parent object carrying ONE changed row of
+        its inline table (``{"field", "op", "sub_id", "row"}``, as
+        :func:`table_write` built it): that row is what is verified.
+
+        An applied write returns, beside ``ok`` / ``error`` / ``before``:
+        ``verify`` (the verdict), ``cache_refresh``, ``after`` (the re-read,
+        secrets scrubbed), ``mkey`` (the object written -- a created one's
+        own) and ``sub_id`` (the inline-table row)."""
         req = self.request(op, endpoint, mkey, body, pkey)
         if not self.ad.writable(endpoint):
             return {"ok": False, "dry_run": dry_run, "request": req,
@@ -933,12 +1436,155 @@ class GuiOps:
         if op != "create":
             before = (self.ad.child_read(self.appliance, endpoint, pkey, mkey) if pkey is not None
                       else self.ad.read(self.appliance, endpoint, mkey))
+        known = None
+        if op == "create" and pkey is not None and hasattr(self.ad, "child_all"):
+            # FortiADC numbers a new child row itself and answers no id: the
+            # new row is the one that was not there before the write
+            try:
+                rows = self.ad.child_all(self.appliance, endpoint, pkey)
+            except Exception:  # noqa: BLE001
+                rows = None
+            known = None if rows is None else {str(r.get("mkey")) for r in rows}
+        answer = None
         try:
-            ok, err = self.ad.send(self.appliance, req["method"], req["path"], req["body"])
+            ok, err, answer = self.ad.send_full(self.appliance, req["method"], req["path"],
+                                                req["body"])
         except Exception as exc:  # noqa: BLE001 -- a dead device is an answer
             ok, err = False, "%s: %s" % (type(exc).__name__, exc)
         self._record(op, endpoint, mkey, before, req["body"], err)
-        return {"ok": ok, "dry_run": False, "request": req, "error": err, "before": before}
+        out = {"ok": ok, "dry_run": False, "request": req, "error": err, "before": before}
+        if not ok:
+            return out
+        try:
+            out.update(self._verify(op, endpoint, mkey, body, pkey, table, before, known,
+                                    answer))
+        except Exception as exc:  # noqa: BLE001 -- the write already succeeded
+            out.update(verify=_unverified("error: %s" % exc), cache_refresh=None,
+                       after=None, mkey=mkey, sub_id=None)
+        v = out.get("verify") or {}
+        out["verdict"] = verdict_view(v)
+        if v.get("verdict") == "mismatch":
+            # accepted, not held: the operation FAILED, saying what the device
+            # kept; audited as on FortiWeb (``FortiWebOps._apply``)
+            from .audit import log_action
+            from .object_refresh import describe_mismatch
+            out["ok"], out["error"] = False, out["verdict"]["text"]
+            log_action("config.%s.not_applied" % op, target="%s:%s" % (self.ad.product, endpoint),
+                       appliance_id=getattr(self.appliance, "id", None),
+                       detail="mkey=%s %s" % (out.get("mkey") or mkey, describe_mismatch(v)))
+        return out
+
+    # -- read-back ---------------------------------------------------------
+    def _verify(self, op, endpoint, mkey, body, pkey, table, before, known, answer) -> dict:
+        """One re-read of what the write touched -> verdict, then SATOM's copy
+        follows that re-read. A mismatch is read once more after
+        ``REREAD_DELAY`` before it stands."""
+        ad, a = self.ad, self.appliance
+        target = mkey
+        if op == "create" and table is None and pkey is None:
+            target = ad.find_created(a, endpoint, body, answer)
+        res = None
+        for attempt in (0, 1):
+            if attempt:
+                time.sleep(self.REREAD_DELAY)
+            res = self._judge(op, endpoint, target, body, pkey, table, before, known)
+            if res["verify"].get("verdict") != "mismatch":
+                break
+        # the cache follows the device, whatever the verdict
+        if table is not None:
+            c_op, c_key, c_obj = "update", target, res["obj"]
+        elif pkey is not None:
+            c_op, c_key, c_obj = op, res["id"] or target, res["obj"]
+        elif op == "delete" and res["state"] == FOUND:
+            # the device still has it: the cache keeps what it holds
+            c_op, c_key, c_obj = "update", target, res["obj"]
+        elif res["state"] == ABSENT or op == "delete":
+            # gone: the cache row goes too. The before-snapshot names it: the
+            # FortiAuthenticator cache keys some objects by name, the write by
+            # id (fac01 usergroups: cached ``satom_verify_g1``, deleted as
+            # ``/usergroups/20/`` -- without it the row stayed, measured
+            # 2026-10-12)
+            c_op, c_key, c_obj = "delete", target, before if isinstance(before, dict) else None
+        else:
+            c_op, c_key, c_obj = op, target, res["obj"]
+        try:
+            refreshed = bool(ad.after_write(a, endpoint, c_key or "", c_obj, c_op, pkey=pkey))
+        except Exception:  # noqa: BLE001
+            refreshed = False
+        cache = {"refreshed": refreshed, "what": "%s:%s" % (endpoint, c_key or ""),
+                 "why": ad.cache_note(refreshed)}
+        obj = res["obj"] if table is not None or pkey is None else res["row"]
+        return {"verify": res["verify"], "cache_refresh": cache, "after": obj,
+                "mkey": (res["id"] if pkey is not None else target) or (mkey or ""),
+                "sub_id": res["sub_id"]}
+
+    def _judge(self, op, endpoint, target, body, pkey, table, before, known) -> dict:
+        from .object_refresh import compare
+        ad, a = self.ad, self.appliance
+        out = {"state": UNREAD, "obj": None, "row": None, "id": None, "sub_id": None,
+               "verify": _unverified("not checked")}
+        if op == "create" and table is None and pkey is None and not target:
+            out["verify"] = _unverified("the new object could not be identified on the device")
+            return out
+        if op == "create" and pkey is not None:
+            rows = ad.child_all(a, endpoint, pkey) if hasattr(ad, "child_all") else None
+            if rows is None:
+                out["verify"] = _unverified("re-read failed")
+                return out
+            out["state"] = FOUND
+            ident = "mkey" if (body or {}).get("mkey") not in (None, "") else None
+            row, out["verify"] = _pick_row(ad, rows, body or {}, ident, known,
+                                           lambda r: str(r.get("mkey")))
+            out["row"] = out["obj"] = row
+            out["id"] = str(row.get("mkey")) if row else None
+            return out
+        state, obj = ad.read_back(a, endpoint, target, pkey)
+        out["state"], out["obj"] = state, obj
+        if pkey is not None:
+            out["row"], out["id"] = obj, str(target or "")
+        if state == UNREAD:
+            out["verify"] = _unverified("re-read failed")
+            return out
+        if table is not None:
+            return self._judge_row(out, table, before)
+        if op == "delete":
+            out["verify"] = _gone_verdict(state == ABSENT, "(row)" if pkey is not None
+                                          else "(object)",
+                                          "the device no longer has it" if state == ABSENT
+                                          else "the device still has it")
+            return out
+        if state == ABSENT:
+            out["verify"] = _missing("(row)" if pkey is not None else "(object)", op)
+            return out
+        out["verify"] = compare(ad.shape(body), ad.shape(obj))
+        return out
+
+    def _judge_row(self, out, table, before) -> dict:
+        """The inline-table row a parent write changed, in the re-read parent."""
+        from .object_refresh import compare
+        ad = self.ad
+        field, rop = table.get("field"), table.get("op")
+        sub_id, sent = table.get("sub_id"), table.get("row") or {}
+        if out["state"] == ABSENT:
+            out["verify"] = _missing("(object)", "update")
+            return out
+        rows = [r for r in (out["obj"] or {}).get(field) or [] if isinstance(r, dict)]
+        hit = next((r for r in rows if sub_id not in (None, "") and row_id(r) == str(sub_id)),
+                   None)
+        if rop == "delete":
+            out["verify"] = _gone_verdict(hit is None, "(row)", "row %s %s" % (
+                sub_id, "gone" if hit is None else "still present"))
+        elif rop == "update":
+            out["verify"] = (compare(ad.shape(sent), ad.shape(hit)) if hit is not None
+                             else _missing("(row)", "update"))
+        else:
+            ident = next((k for k in ("name", "id", "seq-num") if k in sent), None)
+            known = {row_id(r) for r in (before or {}).get(field) or [] if isinstance(r, dict)} \
+                if isinstance(before, dict) else None
+            hit, out["verify"] = _pick_row(ad, rows, sent, ident, known, row_id)
+        out["row"] = hit
+        out["sub_id"] = row_id(hit) if hit else (str(sub_id) if sub_id else "")
+        return out
 
     def _record(self, op, endpoint, mkey, before, after, error):
         from ..models import ChangeHistory, db

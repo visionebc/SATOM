@@ -34,6 +34,7 @@ import hashlib
 import json
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime
 
@@ -118,6 +119,11 @@ def build_prompt(incident, evidence: list, context: dict | None = None) -> str:
 
 
 def _post(url: str, body: dict, timeout: float) -> dict:
+    # A model endpoint is a network service. urllib also opens file:// (and a
+    # '#' in ai_url cuts off the /api/chat suffix), which would turn the setting
+    # into a way to read this node's files. ValueError: the caller reports it.
+    if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
+        raise ValueError("ai_url must be an http(s) URL")
     req = urllib.request.Request(
         url, data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json"})

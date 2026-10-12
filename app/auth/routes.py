@@ -238,19 +238,21 @@ def _reset_link(token: str) -> str:
     which the shipped nginx vhost (a ``default_server``) forwards verbatim. An
     unauthenticated POST to /forgot with ``Host: attacker.example`` would then
     mail the victim a live reset token pointing at the attacker's server. The
-    request's host is therefore kept only when Flask already validated it
-    (``TRUSTED_HOSTS`` configured) or when it is one of this node's own names;
-    any other host is replaced by the node's FQDN.
+    request's host (and its port, for a NAT on a non-standard port) is kept only
+    when it is one of this node's own names or listed in ``LINK_HOSTS``; any
+    other host is replaced by the node's FQDN.
+
+    ``LINK_HOSTS`` and not Flask's ``TRUSTED_HOSTS``: the latter answers 400 to
+    every other Host, which would break the by-IP health and peer probes.
     """
     import socket
     from urllib.parse import urlsplit, urlunsplit
 
     link = url_for('auth.reset_password', token=token, _external=True)
     parts = urlsplit(link)
-    if current_app.config.get('TRUSTED_HOSTS'):
-        return link
     fqdn = socket.getfqdn()
     own = {n.lower() for n in (socket.gethostname(), fqdn) if n}
+    own |= {h.lower() for h in current_app.config.get('LINK_HOSTS') or ()}
     if (parts.hostname or '').lower() in own:
         return link
     return urlunsplit((parts.scheme, fqdn, parts.path, parts.query, ''))

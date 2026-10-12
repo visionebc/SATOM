@@ -6,6 +6,38 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Security — fixes from the static-analysis review of the nightly scan
+
+Every bandit, semgrep and gitleaks finding of the nightly satom-audit scan was
+reviewed. Most were false positives or accepted by design and are dismissed
+with a note in satom-audit; these were real:
+
+- **The password-reset link no longer follows a forged Host header.** The
+  unauthenticated *Forgot password* form built the mailed link from the
+  request's Host, which the shipped nginx vhost forwards verbatim, so a request
+  with `Host: attacker.example` mailed the victim a live reset token pointing
+  at another server. The link keeps the request's host only when it is one of
+  the node's own names or is listed in the new `LINK_HOSTS` setting
+  (comma-separated, for a public alias in front of the node); any other host
+  is replaced by the node FQDN.
+- **The SQL console's CSV export neutralises formulas.** Cells written by
+  operators, devices or failed logins (audit usernames) reached the
+  spreadsheet as live formulas. It now uses the same neutralisation as the
+  audit export (shared `csv_safe.spreadsheet_safe`).
+- **System restore refuses link members and uses a real containment test.**
+  Bundles come back from the off-box backup host, so they are read as
+  untrusted: only regular files and directories are extracted, containment is
+  `Path.is_relative_to` (a string prefix let a sibling `_restore-12` pass for
+  `_restore-1`), and the `data` extraction filter is used where available.
+- **A certificate signer no longer runs with `HOME=/tmp`.** It gets its own
+  private per-call directory (or the ACME account directory).
+- **The CLI support bundle is private from its first byte**: created
+  exclusively, without following links, with mode 0600, instead of being
+  narrowed after it was written.
+- **The vault address and the Sentinel model endpoint must be http(s).** A
+  `file://` address (with `#` cutting off the fixed suffix) turned either
+  setting into a reader for the node's files.
+
 ### Fixed — the documentation generators refuse a source tree without the site rules
 
 `deploy/gen_site_docs.py` and `deploy/gen_release_notes.py` redact this site's

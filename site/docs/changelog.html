@@ -112,6 +112,37 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="security--fixes-from-the-static-analysis-review-of-the-nightly-scan">Security — fixes from the static-analysis review of the nightly scan</h3>
+<p>Every bandit, semgrep and gitleaks finding of the nightly satom-audit scan was
+reviewed. Most were false positives or accepted by design and are dismissed
+with a note in satom-audit; these were real:</p>
+<ul>
+<li><strong>The password-reset link no longer follows a forged Host header.</strong> The
+  unauthenticated <em>Forgot password</em> form built the mailed link from the
+  request's Host, which the shipped nginx vhost forwards verbatim, so a request
+  with <code>Host: attacker.example</code> mailed the victim a live reset token pointing
+  at another server. The link keeps the request's host only when it is one of
+  the node's own names or is listed in the new <code>LINK_HOSTS</code> setting
+  (comma-separated, for a public alias in front of the node); any other host
+  is replaced by the node FQDN.</li>
+<li><strong>The SQL console's CSV export neutralises formulas.</strong> Cells written by
+  operators, devices or failed logins (audit usernames) reached the
+  spreadsheet as live formulas. It now uses the same neutralisation as the
+  audit export (shared <code>csv_safe.spreadsheet_safe</code>).</li>
+<li><strong>System restore refuses link members and uses a real containment test.</strong>
+  Bundles come back from the off-box backup host, so they are read as
+  untrusted: only regular files and directories are extracted, containment is
+  <code>Path.is_relative_to</code> (a string prefix let a sibling <code>_restore-12</code> pass for
+  <code>_restore-1</code>), and the <code>data</code> extraction filter is used where available.</li>
+<li><strong>A certificate signer no longer runs with <code>HOME=/tmp</code>.</strong> It gets its own
+  private per-call directory (or the ACME account directory).</li>
+<li><strong>The CLI support bundle is private from its first byte</strong>: created
+  exclusively, without following links, with mode 0600, instead of being
+  narrowed after it was written.</li>
+<li><strong>The vault address and the Sentinel model endpoint must be http(s).</strong> A
+  <code>file://</code> address (with <code>#</code> cutting off the fixed suffix) turned either
+  setting into a reader for the node's files.</li>
+</ul>
 <h3 id="fixed--the-documentation-generators-refuse-a-source-tree-without-the-site-rules">Fixed — the documentation generators refuse a source tree without the site rules</h3>
 <p><code>deploy/gen_site_docs.py</code> and <code>deploy/gen_release_notes.py</code> redact this site's
 node names with the untracked overlay <code>data/publication-rules.local.json</code>.

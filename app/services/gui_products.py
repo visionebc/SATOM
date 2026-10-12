@@ -663,20 +663,23 @@ class FortiAuthenticatorAdapter(Adapter):
                 out[k] = " ".join(str(x) for x in v)
         return out
 
-    def mkey_of(self, row, endpoint=""):
-        if is_cli(endpoint) or "_edit" in (row or {}):
-            v = (row or {}).get("_edit")
-            return "" if v in (None, "") else str(v)
-        # the detail URL's own key: some resources serve no ``id`` field
-        # (radiusclients, measured on fac01 8.0.3) but every row carries
-        # ``resource_uri`` = /api/v1/<res>/<pk>[/]
+    @staticmethod
+    def detail_key(row) -> str:
+        """The detail URL's own key of a Tastypie row (``""`` when it carries
+        none): some resources serve no ``id`` field (radiusclients, measured
+        on fac01 8.0.3) but every row carries ``resource_uri`` =
+        /api/v1/<res>/<pk>[/]."""
         uri = str((row or {}).get("resource_uri") or "").rstrip("/")
         if uri.startswith("/api/v1/") and uri.count("/") >= 4:
             return uri.rsplit("/", 1)[1]
         v = (row or {}).get("id")
-        if v not in (None, ""):
-            return str(v)
-        return super().mkey_of(row, endpoint)
+        return "" if v in (None, "") else str(v)
+
+    def mkey_of(self, row, endpoint=""):
+        if is_cli(endpoint) or "_edit" in (row or {}):
+            v = (row or {}).get("_edit")
+            return "" if v in (None, "") else str(v)
+        return self.detail_key(row) or super().mkey_of(row, endpoint)
 
     def path(self, endpoint, mkey):
         # the template endpoint alone (no device read): resolved at send time
@@ -814,6 +817,8 @@ class FortiAuthenticatorAdapter(Adapter):
             if not isinstance(obj, dict) or not obj:
                 return False
             cm = _mkey_of(obj)
+            if op == "update" and mkey not in (None, "") and cm:
+                self._rekey(appliance, logical, str(mkey), cm)
             if op == "update" and write_through.local_refresh(appliance.id, logical, cm, obj) > 0:
                 return True
             # created, or an object the cache does not hold yet (its last
@@ -821,6 +826,34 @@ class FortiAuthenticatorAdapter(Adapter):
             return write_through.local_insert(appliance.id, logical, cm, obj)
         except Exception:  # noqa: BLE001 -- the write itself succeeded
             return False
+
+    def _rekey(self, appliance, logical: str, pk: str, cm: str) -> None:
+        """A rename of an object the cache keys by NAME (usergroups,
+        radiusclients, radiuspolicies) while the write names it by id: its
+        rows still under the old name move to the new one, in every layer, so
+        the re-read refreshes them instead of inserting a second row beside
+        them (fac01 8.0.3, 2026-10-12: group 26 renamed -> both names cached;
+        its delete then left the old name behind). A layer that already holds
+        the new name only loses the stale row."""
+        from ..extensions import db
+        from ..models_cache import DeviceObject
+        rows = (db.session.query(DeviceObject)
+                .filter_by(appliance_id=appliance.id, logical_name=logical, depth=0).all())
+        held = {r.layer for r in rows if r.mkey == cm}
+        moved = False
+        for r in rows:
+            if r.mkey == cm or self.detail_key(r.payload) != pk:
+                continue
+            if r.layer in held:
+                (db.session.query(DeviceObject).filter_by(parent_id=r.id)
+                 .delete(synchronize_session=False))
+                db.session.delete(r)
+            else:
+                r.mkey = cm
+                held.add(r.layer)
+            moved = True
+        if moved:
+            db.session.commit()
 
     def payload(self, fields, orig):
         orig = orig or {}

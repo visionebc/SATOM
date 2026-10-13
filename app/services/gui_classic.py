@@ -4,7 +4,8 @@ SATOM drew device objects in its own pages before the GUI crawl existed:
 FortiWeb Server Objects (``server_objects.overview?type=``), Web Protection
 (``web_protection.menu_page``) and the configuration / WAF sections
 (``section_config.section?type=``); the FortiGate / FortiAuthenticator /
-FortiADC ``fgt_menu`` / ``fac_menu`` / ``adc_menu`` leaves. Since 2026-10-11 the sidebar of those ADOMs
+FortiADC / FortiAnalyzer ``fgt_menu`` / ``fac_menu`` / ``adc_menu`` / ``faz_menu``
+leaves. Since 2026-10-11 the sidebar of those ADOMs
 draws only the device's own menu (``gui_pages``); what is left here:
 
 * an old URL for a collection a measured page draws redirects there
@@ -29,7 +30,8 @@ def page_map(appliance) -> dict:
     device's firmware draws (60 s cache per product and firmware, like the
     menu). The key is what the product's old SATOM menu names a collection
     by: FortiWeb a registry logical, FortiGate the cmdb path, FortiAuthenticator
-    the registry logical (and the REST resource name)."""
+    the registry logical (and the REST resource name), FortiAnalyzer the
+    registry logical (and the ``/cli/global/...`` URL)."""
     from . import gui_products
     product = gui_products.product_of(appliance)
     if product is None:
@@ -51,7 +53,20 @@ def page_map(appliance) -> dict:
         # dashboards read configuration entities too: without this,
         # ``system_global`` would move to the Threat Map, not System > Settings
         ents = sorted(ents, key=lambda e: e["page"].startswith("view."))
+    faz_urls: dict = {}
+    if product == gui_products.FORTIANALYZER:
+        # the old /faz/m/ leaves name a collection by its registry logical
+        # (the names faz.menu_page reads); a layout names its JSON-RPC URL
+        from ..registry import loader
+        for lg, urn in (loader.load_faz_registry() or {}).items():
+            faz_urls.setdefault(urn, []).append(lg)
+
     def names_for(ep):
+        if product == gui_products.FORTIANALYZER:
+            # a monitor, ADOM data, a GUI-private call: not where an old
+            # leaf's live configuration tab moves (the template loader has
+            # already made the measured relative endpoints absolute)
+            return [ep] + faz_urls.get(ep, []) if gui_products.faz_cli_url(ep) else []
         if product == gui_pages.PRODUCT:
             names = list(read_layer.registry_logicals(ep))
             if ep.count("/") >= 2:
@@ -137,7 +152,7 @@ def item_keys(item) -> list:
     """The collections an old FortiGate / FortiAuthenticator / FortiADC menu
     leaf reads: ``fgt_menu`` tabs are (cmdb path, label), ``fac_menu`` logicals
     are (registry logical, label), ``adc_menu`` tabs carry ``.logical`` (the
-    REST entity name)."""
+    REST entity name), ``faz_menu`` logicals are (registry logical, label)."""
     pairs = getattr(item, "tabs", None) or getattr(item, "logicals", None) or ()
     return [p[0] if isinstance(p, (tuple, list)) else getattr(p, "logical", p) for p in pairs]
 
@@ -177,7 +192,8 @@ def not_served(appliance, key: str) -> bool:
 
 
 def redirect_item(appliance, item, tab=None, args=None):
-    """The GUI page URL an old FortiGate / FortiAuthenticator / FortiADC leaf moves to
+    """The GUI page URL an old FortiGate / FortiAuthenticator / FortiADC /
+    FortiAnalyzer leaf moves to
     (the requested tab's page, else the first), or None: ``?classic=1``, no
     device, or a leaf with a tab no measured page draws."""
     from flask import url_for

@@ -46,6 +46,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   and ADOM data may stand where the GUI writes (recorded), and only a
   `/cli/global` URL is ever sent.
 
+### Fixed — FortiAnalyzer model name and the old FortiAnalyzer pages
+
+- The firmware probe stored a FortiAnalyzer's model as
+  `FortiAnalyzer-FortiAnalyzer-VM64-KVM`: `/sys/status` `Platform Full Name`
+  already names the product. The product is now added only when the platform
+  does not start with it (FortiAuthenticator's `FACVMKVM` keeps its prefix).
+  Measured on faz02 (7.6.7 build3737).
+- An old curated FortiAnalyzer page (`/faz/m/<item>`) redirects to the
+  measured GUI page of the device's build when every one of its tabs is drawn
+  there (the requested tab's page, else the first), as `/adc/m/` does for
+  FortiADC. A layout's `/cli/global/...` endpoint is matched to the registry
+  name the old page reads. On faz02 (7.6.7 build3737) 12 of the 34 leaves move
+  (Network, Admin, Certificates, Mail Server, Syslog Server, Log Forwarding...);
+  leaves with a monitor, ADOM-data, status or backup tab (Logs, Reports,
+  Incidents, Devices, HA live status, Miscellaneous Settings...) or no tab keep
+  their page, and `?classic=1` still opens it.
+
 ### Fixed — FortiAnalyzer schema harvest measured nothing on a real 7.6.7
 
 - The live schema read asked `syntax` on `/cli/global/system` and

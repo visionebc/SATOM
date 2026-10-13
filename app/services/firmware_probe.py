@@ -15,9 +15,9 @@ SoT version, no Change Request. That is what makes it safe to expose on
 
 **Why it is per-kind.** The four vendors put the version in four different
 places. Every shape below was read off the live devices on 2026-08-13 except
-FortiAnalyzer, whose only registered box is retired -- that branch is written
-from the documented ``/sys/status`` shape, reads a candidate list rather than
-one key, and is marked UNVERIFIED so nobody mistakes it for measured.
+FortiAnalyzer and FortiGate, read off faz02 (2026-10-13) and fgt02
+(2026-10-10); the FortiAnalyzer branch still reads a candidate list rather
+than one key.
 
 ===================  ==================================  ====================
 kind                 status call                         version key
@@ -25,7 +25,7 @@ kind                 status call                         version key
 fortiweb             status.systemstatus                 firmwareVersion
 fortiadc             /api/platform/version               version + build
 fortiauthenticator   GET /api/v1/systeminfo/             firmware
-fortianalyzer        get /sys/status (JSON-RPC)          Version (UNVERIFIED)
+fortianalyzer        get /sys/status (JSON-RPC)          Version
 fortigate            GET /api/v2/monitor/system/status   version + build
 ===================  ==================================  ====================
 
@@ -62,6 +62,21 @@ def _hw_from(blob: str) -> str | None:
     if not up.strip():
         return None
     return "vm" if any(h in up for h in _VM_HINTS) else "hardware"
+
+
+def _product_model(product: str, platform: str) -> str | None:
+    """``<product>-<platform>``, unless the platform already names the product.
+
+    FortiAnalyzer's ``Platform Full Name`` is the whole model
+    ("FortiAnalyzer-VM64-KVM", faz02 2026-10-13) while FortiAuthenticator's
+    firmware head is only the platform ("FACVMKVM"): prefixing blindly stored
+    "FortiAnalyzer-FortiAnalyzer-VM64-KVM"."""
+    platform = (platform or "").strip()
+    if not platform:
+        return None
+    if platform.lower().startswith(product.lower()):
+        return platform
+    return f"{product}-{platform}"
 
 
 def _unwrap(raw):
@@ -148,12 +163,15 @@ def _read_fortiauthenticator(appliance) -> dict:
     # The head token is the platform: "FACVMKVM v8.0.3, ..." -> "FACVMKVM".
     parts = fw.split()
     head = parts[0].strip() if parts else ""
-    model = f"FortiAuthenticator-{head}" if head else None
+    model = _product_model("FortiAuthenticator", head)
     return _ok(fw, model, _hw_from(f"{head} {fw} {serial}"), serial=serial)
 
 
 def _read_fortianalyzer(appliance) -> dict:
-    # UNVERIFIED against a live box (the only FAZ row is retired). Candidate
+    # Live 2026-10-13 (faz02, 7.6.7): get /sys/status ->
+    # {"Version": "v7.6.7-build3737 260601 (GA.M)", "Platform Type":
+    #  "FAZVM64-KVM", "Platform Full Name": "FortiAnalyzer-VM64-KVM",
+    #  "Serial Number": "FAZ-VM...", "Hostname": "faz02", ...}. Candidate
     # keys, not one assumed key, so a shape surprise degrades to a clean
     # "no_version_in_status" instead of a confidently wrong version.
     d = appliance.build_client(timeout=15.0).status_check()
@@ -163,7 +181,7 @@ def _read_fortianalyzer(appliance) -> dict:
         return _fail("no_version_in_status", f"keys={sorted(d)[:12]}")
     platform = _first(d, ("Platform Full Name", "Platform Type", "platform"))
     serial = _first(d, ("Serial Number", "serial"))
-    model = f"FortiAnalyzer-{platform}" if platform else None
+    model = _product_model("FortiAnalyzer", platform)
     return _ok(fw, model, _hw_from(f"{platform} {fw} {serial}"), serial=serial)
 
 

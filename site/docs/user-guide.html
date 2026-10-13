@@ -4515,6 +4515,23 @@ replicated to the standby node by <code>satom-ha-datasync</code>, and carried in
 system backup bundle. <code>device_sync</code> and <code>device_inspect</code> are the actions that
 feed it (§15). The design is in
 <a href="source-of-truth.html">source-of-truth-spec.md</a>.</p>
+<h4 id="what-does-not-count-as-a-change">What does not count as a change</h4>
+<p>Some values in a harvest move without anyone changing the configuration. They
+are left out of the version, so they never raise <strong>Config drift</strong>:</p>
+<ul>
+<li>the appliance's own clock (only inside the object that carries it — time
+  zone and NTP settings next to it still count);</li>
+<li>the order of reverse-reference lists, FortiWeb's rolling cookie
+  <code>allow-time</code>, internal numeric handles (<code>*_val</code> next to their name) and
+  FortiWeb's echo of the last sub-table edit (<code>sub_table_*</code>);</li>
+<li><strong>FortiADC live state</strong>: <code>availability</code> of virtual servers, pools and
+  interfaces, and the computed <code>status</code> (OK, Expired) of local, CA and
+  intermediate CA certificates. The configured state beside them — a virtual
+  server's enable/disable/maintain, a certificate's validity dates — still
+  counts, and so does <code>status</code> in every other table.</li>
+</ul>
+<p>When one of these rules is added, the newest version of each device is
+re-keyed in place on its next sync: no new version, no alert.</p>
 <h4 id="two-lifetimes-the-snapshot-and-the-change-log">Two lifetimes: the snapshot and the change log</h4>
 <p>Since <strong>2026-08-30</strong> these are two different things and each has its own
 window. The <strong>snapshot</strong> is the harvested configuration itself and it is large;
@@ -4787,6 +4804,11 @@ policy (what happens then), and the two are kept apart deliberately.</p>
   scheduler that stops firing produces no failed runs at all and would otherwise
   be invisible — and the <strong>device alert floor</strong>, the severity at which device
   health starts mailing.</li>
+<li><code>satom get alerts status</code> shows the result of the <strong>last email</strong> the engine
+  tried to send, and reports <strong>bad</strong> when it was not delivered — complete
+  settings are not delivery. A local relay that refuses the recipient
+  (<code>454 Relay access denied</code>) shows up there; fix the transport, then use
+  <strong>Send test email</strong>.</li>
 <li>The <strong>Scheduled automation</strong> check also raises a warning when a SATOM process
   (web, scheduler, reconciler) is running code older than the files on disk
   for more than 15 minutes — an update that restarted only the web service.

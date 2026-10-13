@@ -119,6 +119,43 @@ HANDLE_SUFFIX = "_val"
 EDIT_OP_KEYS = frozenset({"sub_table_type", "sub_table_type_val", "sub_table_id",
                           "sub_table_id_val", "sub_table_action", "sub_table_action_val"})
 
+#: Live state FortiADC computes and returns inside configuration rows. A
+#: virtual server's ``availability`` flips HEALTHY <-> DEAD with its backends
+#: and a local certificate's ``status`` turns OK -> Expired with the calendar;
+#: neither is in ``show full-configuration`` and no operator sets either.
+#: Measured on a1 (2026-10-13): every fortiadc10 version since 2026-10-12 --
+#: four versions and 20 "Config drift" alerts -- differed in nothing else, and
+#: the device swung back to an earlier identity when the VS recovered.
+#: Keyed by TABLE, never by field name alone: ``status`` is configuration
+#: (enable/disable/maintain) in dozens of other FortiADC tables, and FortiGate
+#: and FortiAnalyzer carry an admin ``status`` in their own ``system_interface``.
+#: The configured state survives next to each stripped field (``status`` on the
+#: VS, ``validfrom``/``validto`` on the certificate), so a real change -- a VS
+#: disabled, a certificate replaced -- is still a new version.
+RUNTIME_ROW_FIELDS = {
+    "load_balance_virtual_server": frozenset({"availability"}),
+    "load_balance_pool": frozenset({"availability"}),
+    "system_interface": frozenset({"availability"}),
+    "system_certificate_local": frozenset({"status"}),
+    "system_certificate_ca": frozenset({"status"}),
+    "system_certificate_intermediate_ca": frozenset({"status"}),
+}
+#: A certificate's computed ``status`` is stripped only in a row that carries
+#: the validity it is computed from; a row without it keeps the field hashed.
+RUNTIME_REQUIRES = {"status": "validto"}
+
+
+def _strip_runtime(table: str, rows):
+    fields = RUNTIME_ROW_FIELDS[table]
+
+    def one(row):
+        if not isinstance(row, dict):
+            return row
+        return {k: v for k, v in row.items()
+                if not (k in fields and RUNTIME_REQUIRES.get(k, k) in row)}
+
+    return [one(r) for r in rows] if isinstance(rows, list) else one(rows)
+
 
 def normalise(value):
     """Strip appliance-side churn so the identity tracks CONFIGURATION.
@@ -140,6 +177,8 @@ def normalise(value):
             continue
         if key in ROLLING_KEYS or key in EDIT_OP_KEYS:
             continue
+        if key in RUNTIME_ROW_FIELDS:
+            val = _strip_runtime(key, val)
         if key in REF_LIST_KEYS and isinstance(val, str):
             out[key] = "\n".join(sorted(p for p in val.split("\n") if p))
             continue

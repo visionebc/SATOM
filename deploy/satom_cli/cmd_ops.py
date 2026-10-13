@@ -705,6 +705,15 @@ def user_list(ctx, args):
     return r
 
 
+def _last_email(raw: str) -> dict:
+    """Parse ``alerts.last_email``; anything unreadable is "no attempt yet"."""
+    try:
+        val = json.loads(raw) if raw else {}
+    except ValueError:
+        return {}
+    return val if isinstance(val, dict) else {}
+
+
 def alerts_status(ctx, args):
     """Will anyone actually be told? That is the whole question here."""
     rows, err = dbq.query(ctx, dbq.SETTINGS_ALERTS)
@@ -733,6 +742,13 @@ def alerts_status(ctx, args):
         ("timer", "%s (%s)" % (ctx.unit_state("alerts")["active"],
                                ctx.unit_state("alerts")["result"])),
     ])
+    last = _last_email(s.get("alerts.last_email", ""))
+    if last:
+        r.rows("last email", [
+            ("at", last.get("at", "?")),
+            ("result", "delivered" if last.get("ok") else
+             "REFUSED: %s" % (last.get("detail") or "send failed")),
+        ])
     checks = sorted((k.split(".")[-1], v) for k, v in s.items() if k.startswith("alerts.check"))
     if checks:
         r.rows("checks", [(k, "on" if dbq.bool_of(v) else "OFF") for k, v in checks])
@@ -753,6 +769,15 @@ def alerts_status(ctx, args):
                "%s:%s. If that MTA is missing or refuses to relay, the alert "
                "is accepted and silently dropped — check the mail log, not "
                "this page." % (host, s.get("email.port", "25")))
+    if enabled and last and not last.get("ok"):
+        # Judge the last ATTEMPT, not the configuration: on a1 the settings
+        # were complete and this page said "ok" while the relay answered
+        # "454 Relay access denied" to every alert for three weeks.
+        r.status = "bad"
+        r.note("The last alert email was not delivered (%s). Alerts reach "
+               "the in-app bell only until the mail transport is fixed — "
+               "Settings → Email & Alerts → Send test email."
+               % (last.get("detail") or "send failed"))
     if off:
         r.worst("warn")
         r.note("Disabled checks: %s" % ", ".join(off))

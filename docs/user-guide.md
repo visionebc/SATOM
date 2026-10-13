@@ -3985,6 +3985,25 @@ system backup bundle. `device_sync` and `device_inspect` are the actions that
 feed it (§15). The design is in
 [source-of-truth-spec.md](source-of-truth-spec.md).
 
+#### What does not count as a change
+
+Some values in a harvest move without anyone changing the configuration. They
+are left out of the version, so they never raise **Config drift**:
+
+- the appliance's own clock (only inside the object that carries it — time
+  zone and NTP settings next to it still count);
+- the order of reverse-reference lists, FortiWeb's rolling cookie
+  `allow-time`, internal numeric handles (`*_val` next to their name) and
+  FortiWeb's echo of the last sub-table edit (`sub_table_*`);
+- **FortiADC live state**: `availability` of virtual servers, pools and
+  interfaces, and the computed `status` (OK, Expired) of local, CA and
+  intermediate CA certificates. The configured state beside them — a virtual
+  server's enable/disable/maintain, a certificate's validity dates — still
+  counts, and so does `status` in every other table.
+
+When one of these rules is added, the newest version of each device is
+re-keyed in place on its next sync: no new version, no alert.
+
 #### Two lifetimes: the snapshot and the change log
 
 Since **2026-08-30** these are two different things and each has its own
@@ -4255,6 +4274,11 @@ policy (what happens then), and the two are kept apart deliberately.
   scheduler that stops firing produces no failed runs at all and would otherwise
   be invisible — and the **device alert floor**, the severity at which device
   health starts mailing.
+- `satom get alerts status` shows the result of the **last email** the engine
+  tried to send, and reports **bad** when it was not delivered — complete
+  settings are not delivery. A local relay that refuses the recipient
+  (`454 Relay access denied`) shows up there; fix the transport, then use
+  **Send test email**.
 - The **Scheduled automation** check also raises a warning when a SATOM process
   (web, scheduler, reconciler) is running code older than the files on disk
   for more than 15 minutes — an update that restarted only the web service.

@@ -6,6 +6,32 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — FortiADC live state was reported as configuration drift
+
+- A FortiADC returns the live state of some objects inside their configuration
+  rows: a virtual server's or pool's **availability** (HEALTHY, DEAD …), an
+  interface's availability, and a certificate's **status** (OK, Expired). Each
+  flip minted a configuration version and raised **Config drift … it came from
+  the device side**. On the lab box fortiadc10 every version since 2026-10-12
+  — four versions and 20 drift alerts — differed in nothing else, and the
+  device swung back to an earlier version when the virtual server recovered.
+- These fields are no longer part of a configuration version. The rule is
+  keyed by table: `status` stays configuration in every other FortiADC table,
+  and the configured state next to each stripped field (the virtual server's
+  enable/disable/maintain, the certificate's validity dates) still mints a
+  version when it changes. Existing histories are re-keyed in place on the
+  next sync; it creates no version and no alert.
+
+### Fixed — `satom get alerts status` said "ok" while every alert email was refused
+
+- The status judged the settings, not delivery. On a1 the settings were
+  complete and the status said **ok** while the local mail relay answered
+  `454 4.7.1 Relay access denied` to every alert from 2026-09-23 onward: 186
+  refusals, nothing delivered, alerts reached the in-app bell only.
+- The alert engine now keeps the outcome of its last send attempt, and the
+  status shows it under **last email** and turns **bad** when that attempt was
+  not delivered.
+
 ### Fixed — two sidebar groups named "Automation", and a Process entry lost next to Studio
 
 - A profile without user management (operator, read-only) saw the Process

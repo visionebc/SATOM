@@ -51,6 +51,7 @@ K_GIT_BEHIND_MAX = "alerts.git_behind_max"  # warn when standby lags > N commits
 K_GIT_AHEAD_MAX_H = "alerts.git_ahead_max_hours"  # warn when a commit stays unpushed
 K_BACKUP_MAX_H = "alerts.backup_max_hours"  # warn when newest bundle older than N h
 K_STATE = "alerts.state"                  # JSON {alert_key: last_fired_iso}
+K_LAST_EMAIL = "alerts.last_email"        # JSON {at, ok, detail} of the last send attempt
 # per-check enable toggles (default on)
 K_CHK_CERT = "alerts.check.cert"
 K_CHK_GIT = "alerts.check.git"
@@ -287,6 +288,17 @@ def _load_state() -> dict:
 
 def _save_state(state: dict) -> None:
     AppSetting.set(K_STATE, json.dumps(state))
+
+
+def _record_email_outcome(res) -> None:
+    res = res or {}
+    try:
+        AppSetting.set(K_LAST_EMAIL, json.dumps({
+            "at": _now().isoformat(timespec="seconds"),
+            "ok": bool(res.get("ok")),
+            "detail": str(res.get("detail") or "")[:300]}))
+    except Exception:  # noqa: BLE001 -- bookkeeping must never sink a run
+        pass
 
 
 def _in_cooldown(state: dict, key: str, cooldown_h: int) -> bool:
@@ -1289,6 +1301,11 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
                 delivered.update(f["key"] for f in mail)
         else:
             result["email"] = {"ok": False, "detail": "no recipients configured"}
+        # The outcome of the last attempt, kept where `satom get alerts status`
+        # reads it. Without it the status page judged the CONFIGURATION and
+        # said "ok" while the relay refused every message for three weeks
+        # (a1, 2026-09-23 -> 2026-10-13: 186 refusals, 0 delivered).
+        _record_email_outcome(result["email"])
 
     # ONE POST carrying every matching finding, not one per finding: the
     # router exists so a channel stops being a hose, and twelve POSTs per

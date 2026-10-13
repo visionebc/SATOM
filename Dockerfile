@@ -94,7 +94,9 @@ COPY migrations/     ./migrations/
 # the allowlist is keeping data/ and venv/ out, not shaving kilobytes.
 COPY deploy/         ./deploy/
 COPY scripts/        ./scripts/
-COPY wsgi.py VERSION requirements.txt babel.cfg pytest.ini ./
+# pytest.ini and tests/ are internal (2026-10-08): the release payload drops
+# them (export-ignore), so the image never COPYs them.
+COPY wsgi.py VERSION requirements.txt babel.cfg ./
 COPY acme_providers.yaml ./
 COPY LICENSE NOTICE README.md CHANGELOG.md ./
 

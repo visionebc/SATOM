@@ -660,6 +660,40 @@ def product_of_firmware(firmware: str | None) -> str:
     return ""
 
 
+def _hidden_appliance_ids() -> set[int]:
+    """Appliance ids the CURRENT user may NOT see — maintenance devices they
+    lack ``appliances.view_maintenance`` for, or another ADOM's devices — so
+    their vault dumps stay out of a user-facing evidence list.
+
+    This is the maintenance-mode choke point applied to the backup vault: the
+    CLI-coverage block/read routes hand over scrubbed device configuration, and
+    a dump still carries its source device's id, so a hidden box's config would
+    otherwise be one URL parameter away from an operator who cannot see the box.
+
+    Returns an EMPTY set outside a request context or for an anonymous caller.
+    That is deliberate and matches ``models.visible_appliances``' contract: the
+    background capture/report jobs (rediscovery, api_pack, schema_harvest,
+    migration_report) act on the whole fleet on purpose — maintenance mode
+    exists so an admin's automation still reaches a hidden box — and must never
+    be narrowed to one user's view. A dump from a DELETED appliance (an id no
+    live row owns) is never hidden by this: it is not a visible device being
+    concealed, and it is the main evidence the vault still holds.
+    """
+    from flask import has_request_context
+    if not has_request_context():
+        return set()
+    from flask_login import current_user
+    if not getattr(current_user, "is_authenticated", False):
+        return set()
+    from ..models import Appliance, visible_appliances
+    try:
+        all_ids = {a.id for a in Appliance.query.all()}
+        visible = {a.id for a in visible_appliances(user=current_user).all()}
+    except Exception:  # noqa: BLE001 — visibility must never crash the page.
+        return set()
+    return all_ids - visible
+
+
 def evidence_index(product: str | None = None) -> list:
     """Vault dumps usable as CLI evidence, newest first.
 
@@ -668,11 +702,19 @@ def evidence_index(product: str | None = None) -> list:
     ``config``… Everything else is listed with the reason it cannot be used, on
     purpose: a dump silently missing from this list is indistinguishable from a
     device that was never captured.
+
+    Dumps whose source appliance is hidden from the current user (see
+    :func:`_hidden_appliance_ids`) are dropped ENTIRELY — not listed as
+    unusable — because naming them at all would confirm a maintenance device
+    the user may not see.
     """
     from ..models_backup import ConfigBackup
 
+    hidden = _hidden_appliance_ids()
     out: list = []
     for row in ConfigBackup.query.order_by(ConfigBackup.created_at.desc()).all():
+        if row.appliance_id in hidden:
+            continue
         prod = product_of_firmware(row.firmware)
         rec = {
             "backup_id": row.id, "appliance_id": row.appliance_id,
@@ -728,6 +770,12 @@ def read_dump(backup_id: int) -> tuple[str, dict]:
 
     row = db.session.get(ConfigBackup, backup_id)
     if row is None:
+        return "", {}
+    # A dump from a device hidden from this user is a 404, not a refusal: do
+    # not confirm the row exists. ``evidence_index`` already drops it, so this
+    # is the belt to that braces, kept explicit so a future caller of
+    # ``read_dump`` cannot bypass the maintenance-mode gate.
+    if row.appliance_id in _hidden_appliance_ids():
         return "", {}
     rec = next((r for r in evidence_index() if r["backup_id"] == backup_id), None)
     if not rec or not rec["usable"]:

@@ -73,7 +73,11 @@
     opts.headers = Object.assign({'X-CSRFToken': csrf, 'Content-Type':'application/json'}, opts.headers||{});
     return fetch(url, opts).then(function(r){ return r.json(); });
   }
-  function esc(s){ var d=document.createElement('div'); d.textContent = s==null?'':String(s); return d.innerHTML; }
+  // The div/textContent trick encodes & < > but NOT " or ', so a value placed
+  // in a double-quoted attribute (e.g. data-key="...") could break out of it.
+  // Encode quotes too, since esc() is used in attribute context below.
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
 
   function refresh(){
     api('/settings/ai/state').then(function(d){

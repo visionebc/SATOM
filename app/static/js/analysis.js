@@ -65,7 +65,7 @@
     tb.innerHTML = arr.map(fn).join("");
   }
 
-  function pill(on, txt) { return '<span class="ana-pill ' + (on ? "on" : "off") + '">' + txt + '</span>'; }
+  function pill(on, txt) { return '<span class="ana-pill ' + (on ? "on" : "off") + '">' + esc(txt) + '</span>'; }
 
   function render(d) {
     lastData = d;

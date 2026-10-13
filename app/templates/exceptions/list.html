@@ -785,15 +785,15 @@ function detectRun(){
   document.getElementById('detect-msg').textContent = 'Reading device…';
   document.getElementById('detect-results').innerHTML = '';
   fwPost('/exceptions/'+EXC_AID+'/detect', {}).then(function(j){
-    if (!j.ok){ document.getElementById('detect-msg').innerHTML = '<span class="text-danger">'+(j.error||'failed')+'</span>'; return; }
+    if (!j.ok){ document.getElementById('detect-msg').innerHTML = '<span class="text-danger">'+esc(j.error||'failed')+'</span>'; return; }
     window.DETECTED = j.found || [];
     document.getElementById('detect-msg').textContent = j.found.length + ' carve-out(s) across ' + (j.policies||0) + ' policies';
     if (!j.found.length){ document.getElementById('detect-results').innerHTML = '<div class="text-muted small">No per-signature exceptions on the device.</div>'; return; }
     let html = '<table class="table table-sm"><thead><tr><th></th><th>Policy</th><th>Set</th><th>Signature</th><th>Element</th></tr></thead><tbody>';
     j.found.forEach(function(f, i){
       html += '<tr><td><input type="checkbox" class="det-pick" data-i="'+i+'" checked></td>'
-        + '<td>'+f.policy+'</td><td>'+f.signature_set+'</td><td>'+f.signature_id+'</td>'
-        + '<td class="small">'+((f.payload||{})['match-target']||'')+'</td></tr>';
+        + '<td>'+esc(f.policy)+'</td><td>'+esc(f.signature_set)+'</td><td>'+esc(f.signature_id)+'</td>'
+        + '<td class="small">'+esc((f.payload||{})['match-target']||'')+'</td></tr>';
     });
     html += '</tbody></table><button class="btn btn-sm btn-fw-primary" data-js="detect-import">Import selected</button>';
     document.getElementById('detect-results').innerHTML = html;

@@ -337,6 +337,23 @@ def _rejected_targets(spec) -> list[str]:
                   if (r.kind or 'fortiweb').strip().lower() not in kinds)
 
 
+def _can_view_maintenance() -> bool:
+    return bool(getattr(current_user, 'is_authenticated', False)
+                and current_user.can('appliances.view_maintenance'))
+
+
+def _visible_target_ids(spec) -> set[int]:
+    """Appliance ids of this action's product kinds the current user may see.
+
+    ``visible_appliances`` already applies the ADOM scope and the maintenance
+    filter, so for an operator this is exactly the devices they may manage —
+    the explicit set an empty (whole-fleet) selection collapses to, and the
+    allow-list a posted id is checked against."""
+    kinds = list(spec.products) or ['fortiweb']
+    return {a.id for a in
+            visible_appliances().filter(Appliance.kind.in_(kinds)).all()}
+
+
 def _apply_form(action: ScheduledAction) -> bool:
     """Read the editor form onto ``action`` (no commit). Returns False (and
     flashes) on a validation miss so the caller can bounce back to the form."""
@@ -368,6 +385,29 @@ def _apply_form(action: ScheduledAction) -> bool:
         flash('This action cannot target %s.' % ', '.join(bad), 'danger')
         return False
 
+    targets = _build_targets()
+    # Maintenance-mode containment. An operator who cannot SEE a device must not
+    # be able to aim an action at it, and must not inherit the whole-fleet
+    # fan-out that an empty selection means — that fan-out would sweep in the
+    # very maintenance boxes hidden from them on EVERY future run, scheduled or
+    # manual. So a non-admin's targets are confined to their visible fleet:
+    # a hidden id posted back is refused, and an empty selection is frozen to
+    # the explicit visible set rather than left as "the whole fleet". Admins
+    # (appliances.view_maintenance) keep the empty-means-fleet behaviour.
+    if spec.needs_targets and not _can_view_maintenance():
+        visible = _visible_target_ids(spec)
+        hidden = [t for t in targets if t not in visible]
+        if hidden:
+            flash('This action targets a device you are not allowed to manage.',
+                  'danger')
+            return False
+        if not targets:
+            if not visible:
+                flash('You have no devices you can target with this action.',
+                      'danger')
+                return False
+            targets = sorted(visible)
+
     kind = (request.form.get('schedule_kind') or 'once').strip()
     if spec.forced_schedule_kind:          # e.g. 'upgrade' is locked to 'once'
         kind = spec.forced_schedule_kind
@@ -378,7 +418,7 @@ def _apply_form(action: ScheduledAction) -> bool:
     action.name = name[:128]
     action.action = spec.key
     action.scope = spec.scope              # scope is derived from the spec
-    action.targets = json.dumps(_build_targets())
+    action.targets = json.dumps(targets)
     if spec.key == 'custom_rest':
         custom = _custom_rest_params()
         if not custom.get('endpoint'):
@@ -599,7 +639,15 @@ def _run_now(id):
     # execute_and_record may block for the client timeout. That is acceptable for
     # a deliberate, manual trigger; the unattended timer path uses the very same
     # execute_and_record from the scheduler sidecar.
-    run = sa.execute_and_record(action, trigger="manual")
+    # A manual run reaches maintenance boxes on purpose (you park a box to work
+    # on it) — but only ones the operator may SEE. For a non-admin, confine the
+    # run to their visible fleet so Run-now cannot act on, or fan an empty
+    # target list out onto, a device hidden from them. Admins pass None and the
+    # fleet-wide manual behaviour is unchanged.
+    spec = sa.get_spec(action.action)
+    visible_ids = (None if _can_view_maintenance() or spec is None
+                   else _visible_target_ids(spec))
+    run = sa.execute_and_record(action, trigger="manual", visible_ids=visible_ids)
     if run is None:
         flash('This action is already running — try again shortly.', 'warning')
     else:

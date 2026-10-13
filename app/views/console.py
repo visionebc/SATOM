@@ -90,7 +90,7 @@ def index():
 
 @bp.route("/run", methods=["POST"])
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
+@require_permission("appliances.apply")
 def run():
     raw = (request.form.get("script") or "")[:MAX_SCRIPT]
     ack = request.form.get("ack_disruptive") == "1"
@@ -213,7 +213,7 @@ def verify():
 
 @bp.route("/bundle", methods=["POST"])
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
+@require_permission("appliances.apply")
 def bundle():
     """Package a transcript (plus the read-only battery) for a TAC ticket."""
     try:

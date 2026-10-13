@@ -241,7 +241,7 @@ function fwCliHtml(j){
   return h + '</div>';
 }
 function fwShow(el, j, applyFn){
-  if (!j.ok){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">'+(j.error||'failed')
+  if (!j.ok){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">'+fwEsc(j.error||'failed')
     + (j.cli ? fwCliHtml(j) : '') + '</div>'; return; }
   if (j.dry_run){
     const req = j.request || {};
@@ -250,9 +250,9 @@ function fwShow(el, j, applyFn){
       let rows = '';
       Object.keys(j.diff).forEach(function(k){
         const d = j.diff[k];
-        rows += '<tr><td class="small fw-bold">'+k+'</td>'
-          + '<td class="small text-muted"><del>'+(d.before===null||d.before===undefined?'∅':JSON.stringify(d.before))+'</del></td>'
-          + '<td class="small text-success">'+JSON.stringify(d.after)+'</td></tr>';
+        rows += '<tr><td class="small fw-bold">'+fwEsc(k)+'</td>'
+          + '<td class="small text-muted"><del>'+(d.before===null||d.before===undefined?'∅':fwEsc(JSON.stringify(d.before)))+'</del></td>'
+          + '<td class="small text-success">'+fwEsc(JSON.stringify(d.after))+'</td></tr>';
       });
       diffHtml = '<div class="small fw-bold mb-1">Changes vs local source of truth</div>'
         + '<table class="table table-sm mb-2"><thead><tr><th class="small">Field</th><th class="small">Before</th><th class="small">After</th></tr></thead><tbody>'
@@ -261,8 +261,8 @@ function fwShow(el, j, applyFn){
     el.innerHTML = '<div class="alert alert-info mt-2 mb-0">'
       + fwCompatHtml(j.build_compat)
       + diffHtml
-      + (j.request ? '<div class="small text-muted mb-1">'+req.method+' '+req.path+'</div>'
-         + '<pre class="mb-2 small" style="max-height:200px;overflow:auto">'+JSON.stringify(req.body, null, 2)+'</pre>' : '')
+      + (j.request ? '<div class="small text-muted mb-1">'+fwEsc(req.method)+' '+fwEsc(req.path)+'</div>'
+         + '<pre class="mb-2 small" style="max-height:200px;overflow:auto">'+fwEsc(JSON.stringify(req.body, null, 2))+'</pre>' : '')
       + fwCliHtml(j)
       + '<button type="button" class="btn btn-sm btn-fw-danger fw-apply">Apply to device</button></div>';
     el.querySelector('.fw-apply').onclick = applyFn;
@@ -299,16 +299,16 @@ function createObject(btn){
   const coll = scope.dataset.collection;
   const base = {collection: coll, mkey: name, fields: fwCollectChanged(scope)};
   fwPost('/objedit/'+window.OBJEDIT_AID+'/create-object', base).then(function(j){
-    if (!j.ok){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">'+(j.error||'failed')+'</div>'; return; }
+    if (!j.ok){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">'+fwEsc(j.error||'failed')+'</div>'; return; }
     const req = j.request || {};
     el.innerHTML = '<div class="alert alert-info mt-2 mb-0">'
       + fwCompatHtml(j.build_compat)
-      + '<div class="small text-muted mb-1">'+req.method+' '+req.path+'</div>'
-      + '<pre class="mb-2 small" style="max-height:200px;overflow:auto">'+JSON.stringify(req.body, null, 2)+'</pre>'
+      + '<div class="small text-muted mb-1">'+fwEsc(req.method)+' '+fwEsc(req.path)+'</div>'
+      + '<pre class="mb-2 small" style="max-height:200px;overflow:auto">'+fwEsc(JSON.stringify(req.body, null, 2))+'</pre>'
       + '<button type="button" class="btn btn-sm btn-fw-danger fw-apply">Create on device</button></div>';
     el.querySelector('.fw-apply').onclick = function(){
       fwPost('/objedit/'+window.OBJEDIT_AID+'/create-object', Object.assign({}, base, {apply:true})).then(function(j2){
-        if (!j2.ok){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">'+(j2.error||'failed')+'</div>'; return; }
+        if (!j2.ok){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">'+fwEsc(j2.error||'failed')+'</div>'; return; }
         el.innerHTML = '<div class="alert alert-success mt-2 mb-0">Created. Opening editor…</div>';
         if (window.FW) FW.toast('Created on device', 'success');
         const ctx = scope.closest('[data-fw-objedit]');

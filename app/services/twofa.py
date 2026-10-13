@@ -25,6 +25,7 @@ import hashlib
 import io
 import json
 import secrets
+import time
 
 import pyotp
 
@@ -75,6 +76,36 @@ def verify_totp(secret: str, code: str) -> bool:
         return pyotp.TOTP(secret).verify(code, valid_window=1)
     except Exception:  # noqa: BLE001
         return False
+
+
+def verify_totp_step(secret: str, code: str, last_step: int | None = None,
+                     valid_window: int = 1) -> int | None:
+    """Verify *code* and return the absolute TOTP timestep it matched, or
+    ``None`` when it is invalid.
+
+    Unlike :func:`verify_totp` this is replay-aware: a step that is not
+    strictly newer than *last_step* is rejected even if the code is
+    arithmetically correct, so a code already spent on this account cannot be
+    used again inside its ``valid_window`` (~90 s). Callers persist the returned
+    step on the user and pass it back as *last_step* next time.
+    """
+    if not secret or not code:
+        return None
+    code = str(code).strip().replace(" ", "")
+    if not code.isdigit():
+        return None
+    try:
+        totp = pyotp.TOTP(secret)
+        current = int(time.time()) // totp.interval
+        for offset in range(-valid_window, valid_window + 1):
+            step = current + offset
+            if last_step is not None and step <= last_step:
+                continue
+            if secrets.compare_digest(code, str(totp.generate_otp(step))):
+                return step
+        return None
+    except Exception:  # noqa: BLE001
+        return None
 
 
 # ---- secret storage (encrypted column round-trip) -------------------------
@@ -153,26 +184,68 @@ def _serializer():
                                   salt="fmw-password-recovery")
 
 
-def make_reset_token(user_id: int) -> str:
-    return _serializer().dumps({"uid": int(user_id)})
+def _pw_fingerprint(password_hash: str | None) -> str:
+    """A short, non-reversible fingerprint of the stored password hash.
+
+    Embedded in the reset token so the link is bound to the password it was
+    issued against: the hash (and therefore this fingerprint) changes the
+    moment the password is reset, which both kills a stolen old link and makes
+    a token single-use — replaying the same link after it set a new password
+    fails because the hash it named is gone. A SHA-256 slice, not the hash
+    itself: the token is signed, not encrypted, so its payload is readable."""
+    if not password_hash:
+        return ""
+    return hashlib.sha256(password_hash.encode()).hexdigest()[:16]
 
 
-def read_reset_token(token: str, max_age: int = RESET_MAX_AGE) -> int | None:
-    """Return the user id encoded in *token*, or ``None`` if invalid/expired."""
+def make_reset_token(user_id: int, password_hash: str | None = None) -> str:
+    return _serializer().dumps({"uid": int(user_id),
+                                "pw": _pw_fingerprint(password_hash)})
+
+
+def _load_reset_token(token: str, max_age: int):
     from itsdangerous import BadSignature, SignatureExpired
 
     try:
         data = _serializer().loads(token, max_age=max_age)
-        return int(data.get("uid"))
-    except (BadSignature, SignatureExpired, ValueError, TypeError, KeyError):
+    except (BadSignature, SignatureExpired, ValueError, TypeError):
         return None
+    return data if isinstance(data, dict) else None
+
+
+def read_reset_token(token: str, max_age: int = RESET_MAX_AGE) -> int | None:
+    """Return the user id encoded in *token*, or ``None`` if invalid/expired."""
+    data = _load_reset_token(token, max_age)
+    if data is None:
+        return None
+    try:
+        return int(data["uid"])
+    except (KeyError, ValueError, TypeError):
+        return None
+
+
+def reset_token_hash_ok(token: str, password_hash: str | None,
+                        max_age: int = RESET_MAX_AGE) -> bool:
+    """True when *token* is bound to a password hash that still matches.
+
+    A token minted without a binding (no ``pw`` claim) is accepted so callers
+    that do not pass the hash keep working; a bound token is rejected once the
+    hash it names has changed, which is what makes the link die on first use."""
+    data = _load_reset_token(token, max_age)
+    if data is None:
+        return False
+    bound = data.get("pw") or ""
+    if not bound:
+        return True
+    return secrets.compare_digest(bound, _pw_fingerprint(password_hash))
 
 
 __all__ = [
     "ISSUER", "BACKUP_CODE_COUNT", "RESET_MAX_AGE",
     "generate_secret", "provisioning_uri", "qr_svg", "verify_totp",
+    "verify_totp_step",
     "encrypt_secret", "decrypt_secret",
     "generate_backup_codes", "hash_code", "encode_codes",
     "remaining_backup_codes", "consume_backup_code",
-    "make_reset_token", "read_reset_token",
+    "make_reset_token", "read_reset_token", "reset_token_hash_ok",
 ]

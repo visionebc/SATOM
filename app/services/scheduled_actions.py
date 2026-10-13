@@ -1928,7 +1928,8 @@ def _do_user_op(key: str, appliance, params: dict, dry_run: bool) -> dict:
 # --------------------------------------------------------------------------- #
 #  Run-and-record (the single fire path: sidecar tick + the page's "Run now")    #
 # --------------------------------------------------------------------------- #
-def execute_and_record(action_row, *, trigger: str = "schedule"):
+def execute_and_record(action_row, *, trigger: str = "schedule",
+                       visible_ids: set[int] | None = None):
     """Claim, run, and persist one ``ScheduledAction`` fire.
 
     1. **DB-claim dedupe** - an atomic ``UPDATE ... SET running_at=now WHERE id=:id
@@ -2038,7 +2039,8 @@ def execute_and_record(action_row, *, trigger: str = "schedule"):
             # (4) Run per target.
             if not gated:
                 status, summary, log_lines = _run_targets(
-                    action_row, spec, params, trigger=trigger, run=run)
+                    action_row, spec, params, trigger=trigger, run=run,
+                    visible_ids=visible_ids)
     except Exception as exc:  # noqa: BLE001 - a run must never crash the sidecar
         status = "failed"
         summary = f"{type(exc).__name__}: {exc}"
@@ -2141,7 +2143,8 @@ def _progress_close(row, ok: bool, summary: str) -> None:
 
 
 def _run_targets(action_row, spec: ActionSpec, params: dict, *,
-                 trigger: str = "schedule", run=None):
+                 trigger: str = "schedule", run=None,
+                 visible_ids: set[int] | None = None):
     """Resolve the action's targets and run it against each; aggregate the outcome.
 
     Returns ``(status, summary, log_lines)`` where status is one of
@@ -2155,7 +2158,8 @@ def _run_targets(action_row, spec: ActionSpec, params: dict, *,
     persisted as each device starts and finishes rather than accumulated in
     memory and written once at the end.
     """
-    targets = _resolve_targets(action_row, spec, trigger=trigger)
+    targets = _resolve_targets(action_row, spec, trigger=trigger,
+                               visible_ids=visible_ids)
     if spec.needs_targets and not targets:
         parked = _parked_targets(action_row, spec) if trigger != "manual" else []
         if parked:
@@ -2196,13 +2200,21 @@ def _run_targets(action_row, spec: ActionSpec, params: dict, *,
 
 
 def _resolve_targets(action_row, spec: ActionSpec, *,
-                     trigger: str = "schedule") -> list:
+                     trigger: str = "schedule",
+                     visible_ids: set[int] | None = None) -> list:
     """The appliances an action fires against.
 
     A no-target action (``needs_targets`` False) runs exactly once (``[None]``).
     Otherwise ``targets_list`` selects appliances by id, constrained to the
     action's ``spec.products`` kinds; an empty list means the whole fleet of
     those kinds. ``single_target`` actions take only the first.
+
+    ``visible_ids`` scopes the result to a particular operator's view: when it
+    is given (a non-admin Run-now, which fires with ``trigger="manual"`` and so
+    would otherwise reach maintenance boxes), devices outside that set are
+    dropped — and an empty ``targets_list`` therefore resolves to that
+    operator's visible fleet, NOT the whole fleet. ``None`` (the scheduler and
+    admins) keeps the fleet-wide behaviour maintenance mode depends on.
     """
     if not spec.needs_targets:
         return [None]
@@ -2212,6 +2224,8 @@ def _resolve_targets(action_row, spec: ActionSpec, *,
     if ids:
         q = q.filter(Appliance.id.in_(ids))
     devices = q.all()
+    if visible_ids is not None:
+        devices = [d for d in devices if d.id in visible_ids]
     if trigger != "manual":
         # Maintenance suppressed alerts but not work: the hourly sweep kept
         # hammering parked boxes and grading each as a failure, which pinned the

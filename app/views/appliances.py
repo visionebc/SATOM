@@ -370,13 +370,21 @@ def edit_save(id):
     password = request.form.get('password', '')
     ssh_password = request.form.get('ssh_password', '')
     ssh_clear = request.form.get('ssh_password_clear') == 'on'
+    # Relaxing TLS verification is a retarget of the TRUST, not the address:
+    # with verify_ssl off the next sync will hand the stored API password to
+    # whatever presents a certificate on that host, so a MITM on the path can
+    # capture it. Turning it from on to OFF therefore demands the password be
+    # re-entered, exactly like pointing the row somewhere new.
+    new_verify_ssl = request.form.get('verify_ssl') == 'on'
+    verify_ssl_relaxed = bool(appliance.verify_ssl) and not new_verify_ssl
     api_retarget = (host_changed or user_changed or kind_changed
-                    or new_port != appliance.port)
+                    or new_port != appliance.port or verify_ssl_relaxed)
     ssh_retarget = (host_changed or user_changed) and appliance.has_ssh_password
     if (api_retarget and not password) or (
             ssh_retarget and not (ssh_password or ssh_clear)):
-        flash('Changing the host, port or username requires re-entering the '
-              'password.', 'danger')
+        flash('Changing the host, port or username — or turning off SSL '
+              'certificate verification — requires re-entering the password.',
+              'danger')
         return redirect(url_for('appliances.edit', id=appliance.id))
 
     appliance.name = request.form.get('name', appliance.name).strip()
@@ -391,7 +399,7 @@ def edit_save(id):
     appliance.host = new_host
     appliance.port = new_port
     appliance.username = new_username
-    appliance.verify_ssl = request.form.get('verify_ssl') == 'on'
+    appliance.verify_ssl = new_verify_ssl
     appliance.vdom = request.form.get('vdom', appliance.vdom or '').strip() or None
     appliance.tags = request.form.get('tags', appliance.tags or '').strip() or None
     appliance.department = request.form.get('department', appliance.department or '').strip() or None

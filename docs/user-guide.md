@@ -4586,7 +4586,12 @@ stored preference is that language — read it before withdrawing one.
 
 What this gate does not touch is the catalogues. Text keeps being authored and
 translated for every language in the registry, so a language switched back on
-is complete the moment it reappears instead of starting from empty.
+is complete the moment it reappears instead of starting from empty. That promise
+is held by a release guard, not by goodwill: every string the interface can show
+must have a translation in `es`, `de`, `fr` and `it`, with the same placeholders
+and markup as the English, or the build is red. (Until 3.1.0 nothing checked it,
+and about 2,700 strings added since the previous translation sweep rendered in
+English in every other language.)
 
 ### 26.13 Security and Change Password — self-service, for every account
 

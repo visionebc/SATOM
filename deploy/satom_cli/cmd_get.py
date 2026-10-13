@@ -96,6 +96,22 @@ def system_health(ctx, args):
     if code != 200:
         r.worst("bad")
 
+    # A process running older code than the tree is healthy to systemd and to
+    # /healthz. The scheduler is the one that bites: it ran 2026-10-11 code
+    # for 45 h on the primary after deploys that restarted only the web, and
+    # its device sync left the FortiGate out with "6/6 ok".
+    from .cmd_checks import code as _code_check
+    fresh = _code_check(ctx, [])
+    stale = fresh.data.get("stale") or {}
+    if stale:
+        r.rows("code", [(a, "STALE — older than the newest %s on disk" % k)
+                        for a, k in sorted(stale.items())])
+        r.worst("warn")
+        r.note("Restart: %s   (detail: satom diagnose code)"
+               % "  ".join("sudo satom execute restart %s" % a for a in sorted(stale)))
+    else:
+        r.rows("code", [("running processes", "none older than the code on disk")])
+
     rc, out, _ = run(["df", "-h", str(ctx.app_dir)])
     disk = out.splitlines()[-1].split() if rc == 0 and len(out.splitlines()) > 1 else []
     if disk:

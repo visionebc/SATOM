@@ -198,6 +198,7 @@ def code(ctx, args):
         else:
             rows.append((alias, "current (started %.1f h after)" % (-delta_h)))
     r.rows("", rows)
+    r.set(stale=stale)
     if stale:
         r.status = "warn"
         r.note("Restart: %s" % "  ".join("sudo satom execute restart %s" % a for a in stale))
@@ -407,7 +408,50 @@ def config(ctx, args):
         r.note("A wrong FERNET_KEY does not fail at boot. It fails later, when "
                "something tries to decrypt an appliance password or an SFTP "
                "credential — and it looks like a wrong password.")
+
+    # [SATOM-LINK-HOSTS] The password-reset mail keeps the request's host only
+    # when it is one of the node's own names or listed in LINK_HOSTS; any other
+    # Host header (forgeable on the unauthenticated /auth/forgot) is replaced by
+    # the node FQDN. So the FQDN must be a name a user can open, and a
+    # LINK_HOSTS entry must be a bare host name: it is compared with the URL's
+    # hostname, so "https://x" or "x:8443" never matches anything.
+    import socket
+    served = sorted({n for _, t in satom_vhosts() for n in vhost_server_names(t)})
+    rows, worst, notes = link_hosts_report(
+        socket.getfqdn(), socket.gethostname(), e.get("LINK_HOSTS", ""), served)
+    r.rows("password-reset links", rows)
+    r.worst(worst)
+    for n in notes:
+        r.note(n)
     return r
+
+
+def link_hosts_report(fqdn, hostname, link_hosts_raw, served):
+    """(rows, status, notes) for the reset-link host rule. Pure, so a test can
+    pin it without a node. Mirrors ``app/auth/routes._reset_link``."""
+    fqdn = (fqdn or "").lower()
+    listed = [h.strip().lower() for h in (link_hosts_raw or "").split(",") if h.strip()]
+    own = {n.lower() for n in (hostname, fqdn) if n} | set(listed)
+    rows = [("fallback host", fqdn or "?"),
+            ("LINK_HOSTS", ", ".join(listed) or "(empty)")]
+    status, notes = "ok", []
+    if fqdn and "." not in fqdn:
+        status = "warn"
+        rows.append(("fallback", "SINGLE-LABEL — a mailed link to https://%s/ does "
+                                 "not resolve off this LAN" % fqdn))
+        notes.append("Give the node a resolvable FQDN (/etc/hosts or DNS search "
+                     "domain), or add the name users open to LINK_HOSTS in .env "
+                     "and restart web.")
+    bad = [h for h in listed if "/" in h or ":" in h]
+    if bad:
+        status = "warn"
+        rows.append(("never matches", ", ".join(bad)))
+        notes.append("LINK_HOSTS takes bare host names (no scheme, no port, no "
+                     "path); those entries match no request.")
+    for n in served:
+        rows.append((n, "kept in the link" if n in own
+                     else "link rewritten to %s" % (fqdn or "?")))
+    return rows, status, notes
 
 
 # [SATOM-DATA-PERMS] data/ holds the device config vault (full appliance

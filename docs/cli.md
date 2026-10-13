@@ -184,7 +184,7 @@ Two rules run through the whole table and are enforced by
 | Command | What it answers |
 |---|---|
 | `get system status` | Identity, version, git head, HA role, and *your* privilege level |
-| `get system health` | **Start here.** Units + `/healthz` + disk, folded into one status |
+| `get system health` | **Start here.** Units + `/healthz` + code freshness + disk, folded into one status. A process older than the code on disk (the scheduler after a deploy that restarted only the web) is a warning |
 | `get system performance` | Load, memory, filesystems |
 | `get system disk` | Space, **inodes**, and the directories that actually grow here |
 | `get system interface` | Addresses and the ports SATOM cares about |
@@ -198,7 +198,10 @@ Two rules run through the whole table and are enforced by
 | `get backup status` | The four copies side by side, with their real ages |
 | `get backup list` | The bundles `execute restore db` accepts |
 | `get scheduler status` | Scheduled actions: what exists, last run, failure streak, overdue |
-| `get device status` | Appliances: sync state, maintenance flag, last contact |
+| `get device status` | Appliances: when the configuration last reached the local store (warns past 26 h or never), the web console's last reachability probe, maintenance flag |
+| `get device config [<device> [<section> [<table>]]]` | The configuration as SATOM last harvested it — from the local store, never from the box |
+| `get device naming [<device> [--table <type>]] [--product <p>]` | Naming Discovery: the pattern each object type already follows (`vs-{name}`), how many objects follow it, the exceptions with their reason, the Naming scheme pattern and how many objects match it; without a device, the fleet consensus per product. Read from the stored tree, run as the service account (root) |
+| `get signatures status` | FortiGuard signature DB version and age per FortiWeb (stale past `alerts.signature_max_days`, or never updated), the signature source, and what the local signature index holds |
 | `get monitor status` | Probe states; parked devices are shown but do not raise the roll-up |
 | `get job list` | The background-job ledger, including ghosts |
 | `get update history` | Recent updates, and whether the runner ever picked them up |
@@ -225,6 +228,13 @@ otherwise only see indirectly, through their consequences.
 | `show schedule` | What *should* run and how often |
 | `show runbook [<topic>]` | **Offline recovery procedures** — see below |
 | `show changelog` | The most recent release notes from the tree |
+| `show docs [<page>]` | The manual, from the tree. Works with no network |
+| `show trust` | Public keys this node accepts, per purpose (update, api_pack, knowledge) |
+| `show package <file>` | Inspect an update package without applying it |
+| `show apipack` | API library packs on this node and what was imported from them |
+| `show knowledge` | Knowledge packs per lane (age), the feed, the mode and the last fetch |
+| `show layouts [<product>]` | Measured GUI layouts per product and exact build (config, live-monitor and "Not in GUI, but in CLI" pages, source pack), and whether each device has one for its exact build |
+| `show tree` | The whole command tree in one view |
 | `show version` | App, CLI, Python, node |
 
 `show runbook` carries twelve procedures inside the binary: `web-down`,
@@ -380,7 +390,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*117 commands in 43 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*120 commands in 44 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -405,8 +415,10 @@ Read state. Every command below works as **any user** — this is the half of th
 | `satom get scheduler status` | — | — | What exists, when it last ran, what is overdue. |
 | `satom get api versions [<product>]` | — | — | Firmware lines SATOM has evidence for, and how much. |
 | `satom get api preflight <appliance\|line> <object> <field>... [--product <p>]` | — | — | Would a payload of these fields be understood on that line? 'unmeasured' is an answer, never a yes. |
-| `satom get device status` | — | — | Sync state, maintenance flag, last contact. |
+| `satom get device status` | — | — | Last sync to the local store, last reachability probe, maintenance flag. |
 | `satom get device config [<device> [<section> [<table>]]] [--version <id>]` | — | — | The device's configuration as SATOM last harvested it — read from the LOCAL store, never from the box. |
+| `satom get device naming [<device> [--table <type>]] [--product <p>]` | — | — | The naming convention each object type already follows, from the stored tree — exceptions, fleet consensus. |
+| `satom get signatures status` | — | — | DB version and age per device, the source, what the index holds. |
 | `satom get monitor status` | — | — | Probe states, and how much coverage is disabled. |
 | `satom get job list` | — | — | The ledger, including ghosts that keep the dock's toast open. |
 | `satom get update history` | — | — | Recent updates and whether the runner ever picked them up. |
@@ -425,6 +437,7 @@ Configuration, reference material and the console's own map. Also unprivileged: 
 | `satom show package <file.tar.gz>` | — | — | Inspect an update package without applying it. |
 | `satom show apipack` | — | — | API library packs on this node and what was imported from them. |
 | `satom show knowledge` | — | — | Knowledge packs per lane (age), the feed, the mode and the last fetch. |
+| `satom show layouts [<product>]` | — | — | Measured GUI layouts per product and build, and which device has one for its exact build. |
 | `satom show config` | — | — | The .env, with secrets redacted. |
 | `satom show units` | — | — | Alias -> systemd unit map, with install state. |
 | `satom show services` | — | — | What each unit is FOR, and which ones are off limits. |

@@ -152,7 +152,10 @@ def tree(ctx, tokens):
 
     where = " ".join(["satom"] + path)
     every = list(_descend(node))
-    groups = sum(1 for n in every if n.children)
+    # The node asked for is the heading, not one of its groups: counting it
+    # made the whole tree say 44 groups where docs/cli.md (generated from the
+    # same tree) said 43.
+    groups = sum(1 for n in every[1:] if n.children)
     cmds = sum(1 for n in every if n.run is not None and not n.children)
     roots = sum(1 for n in every if n.needs_root)
     dangers = sum(1 for n in every if n.danger)

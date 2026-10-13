@@ -6,6 +6,55 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — the operator CLI catches up with 3.x: naming, signatures, layouts
+
+- **`satom get device naming [<device> [--table <type>]] [--product <p>]`** —
+  Naming Discovery from the console: per object type, the pattern the device
+  already follows, how many objects follow it, the exceptions with their reason,
+  the types that share `{name}` through a reference and the Naming scheme
+  pattern of that type with how many objects match it.
+  Without a device: the fleet consensus per product (all agree / devices
+  differ / one device only). It reads the stored configuration tree and runs
+  the application's own analysis as the service account (`flask naming
+  discover`), so it cannot disagree with the Discovery tab; the device is not
+  contacted. `--table` takes the key or the label the page shows; an unknown
+  type fails and lists the valid ones.
+- **`satom get signatures status`** — the FortiGuard signature DB version and
+  age of every FortiWeb, judged by the same rules as the alert (stale past
+  `alerts.signature_max_days`, or a device that never downloaded an update),
+  the configured signature source, and what the local signature index holds,
+  with a warning when the index is behind its source's current DB.
+- **`satom show layouts [<product>]`** — the measured GUI layouts on the node
+  per product and exact build (configuration, live-monitor and "Not in GUI,
+  but in CLI" pages, the knowledge packs they came from), and whether each
+  managed device has a layout for its exact build (exact / same version /
+  same train / other build / none).
+- **`satom diagnose config`** checks the host rule of password-reset links:
+  the node FQDN that replaces a forged or unlisted Host must be a dotted
+  name, `LINK_HOSTS` entries must be bare host names (an entry with a scheme
+  or a port matches no request), and every name the vhost serves is listed as
+  kept in the link or rewritten.
+
+### Fixed — the operator CLI read the wrong state in two places
+
+- **`satom get device status` called hourly-synced devices "never synced".** It
+  read `appliances.last_status`, the web console's reachability badge cache,
+  which is written only when someone opens the Appliances list: on a live
+  primary, three devices synced at 07:17 were reported "never synced". The sync
+  column now comes from the source-of-truth store (when the configuration last
+  reached it; a warning past 26 h or never) and the badge is shown apart as the
+  last probe.
+- **`satom get system health` did not look at code freshness.** On a live
+  primary the scheduler ran code 45 hours older than the tree, because deploys
+  restarted only the web service, while every unit was `active` and `/healthz`
+  answered 200; its hourly device sync reported "6/6 ok" and left the
+  FortiGate out (the old code did not list FortiGate for that action). The
+  roll-up now warns when web, scheduler or reconciler started before the
+  newest source on disk, and names the restart (`satom diagnose code` has the
+  detail).
+- `satom show tree` counted the root as a group (44 where the generated
+  reference said 43).
+
 ### Changed — Settings → ADOM Menus replaces FAZ Menu: hide the pages SATOM does not draw as configuration, in every ADOM
 
 - **Settings → User Interface → ADOM Menus** has one switch per kind of page,

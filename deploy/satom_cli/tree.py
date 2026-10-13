@@ -14,6 +14,7 @@ one moment a traceback is least useful.
 from . import cmd_apipack as ap
 from . import cmd_apiver as v
 from . import cmd_checks as k
+from . import cmd_content as c
 from . import cmd_diagnose as d
 from . import cmd_docs as b
 from . import cmd_execute as e
@@ -100,11 +101,19 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
                      "[--product <p>]"),
         ),
         _group("device", "Managed appliances.",
-            _n("status", "Sync state, maintenance flag, last contact.", run=o.device_status),
+            _n("status", "Last sync to the local store, last reachability probe, "
+                         "maintenance flag.", run=o.device_status),
             _n("config", "The device's configuration as SATOM last harvested it — "
                          "read from the LOCAL store, never from the box.",
                run=o.device_config,
                usage="get device config [<device> [<section> [<table>]]] [--version <id>]"),
+            _n("naming", "The naming convention each object type already follows, "
+                         "from the stored tree — exceptions, fleet consensus.",
+               run=c.device_naming, usage=c.NAMING_USAGE),
+        ),
+        _group("signatures", "FortiGuard signature databases and the local signature index.",
+            _n("status", "DB version and age per device, the source, what the index holds.",
+               run=c.signatures_status),
         ),
         _group("monitor", "Probes.",
             _n("status", "Probe states, and how much coverage is disabled.",
@@ -143,6 +152,9 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
            run=ap.show_apipacks),
         _n("knowledge", "Knowledge packs per lane (age), the feed, the mode and the last fetch.",
            run=kn.show_knowledge),
+        _n("layouts", "Measured GUI layouts per product and build, and which device "
+                      "has one for its exact build.",
+           run=c.show_layouts, usage="show layouts [<product>]"),
         _n("config", "The .env, with secrets redacted.", run=s.config),
         _n("units", "Alias -> systemd unit map, with install state.", run=s.units),
         _n("services", "What each unit is FOR, and which ones are off limits.",

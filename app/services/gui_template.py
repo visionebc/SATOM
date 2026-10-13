@@ -52,6 +52,11 @@ def select(product: str, page: str, fw_version: str | None):
     tpl = gui_store.view_template(cand)
     if tpl.get("schema") not in (SCHEMA, SCHEMA_V2):
         raise ValueError("%s: not a GUI template" % cand["path"])
+    if product == "fortianalyzer":
+        # the harvester names FortiAnalyzer endpoints relative and by kind
+        # (JSON-RPC / the GUI's private calls): the engine's form of them
+        from .gui_products import faz_template
+        tpl = faz_template(tpl)
     tpl["closeness"] = closeness
     return tpl, match
 

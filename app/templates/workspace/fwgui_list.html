@@ -27,6 +27,7 @@
 <div class="fw-card fwg-pane fwg-satom" data-fwg-list>
 {% include 'workspace/_gui_banner.html' %}
   {% if view is defined and view.monitor %}<div class="fw-alert fw-alert-info" data-fwg-monitor><i class="bi bi-activity me-1"></i>{{ _('Live monitor: %(dev)s draws this page from live data (it is not configuration).', dev=appliance.name) }}{% if monitor_href is defined and monitor_href %} <a href="{{ monitor_href }}" target="_blank" rel="noopener" data-fwg-monitor-link>{{ _('Open it on the device') }} <i class="bi bi-box-arrow-up-right"></i></a>{% endif %}</div>
+  {% elif device_managed is defined and device_managed %}<div class="fw-alert fw-alert-info" data-fwg-device-managed="{{ device_managed }}"><i class="bi bi-box-arrow-up-right me-1"></i>{{ _('Managed on the device: %(dev)s edits this page through its own GUI calls, which SATOM never replays. SATOM draws its layout read-only; nothing is sent from it.', dev=appliance.name) }}{% if device_href %} <a href="{{ device_href }}" target="_blank" rel="noopener" data-fwg-device-link>{{ _('Open it on the device') }} <i class="bi bi-box-arrow-up-right"></i></a>{% endif %}</div>
   {% elif gui_only is defined and gui_only %}<div class="fw-alert fw-alert-info" data-gui-only-page><i class="bi bi-window me-1"></i>{{ _('No API on this build (GUI only): this page is drawn read-only and nothing is sent from it.') }}</div>{% endif %}
   {% if cache_meta and cache_meta.error and rows %}<div class="fw-alert fw-alert-warning">{{ cache_meta.error }}</div>{% endif %}
   {% if list_note is defined and list_note %}<div class="fw-alert fw-alert-info" data-fwg-list-note><i class="bi bi-info-circle me-1"></i>{{ list_note }}</div>{% endif %}
@@ -45,7 +46,8 @@
   </ul>
   {% endif %}
   <div class="fw-toolbar fwg-sat-toolbar">
-    {% set menu = view.create_menu or [] %}
+    {# a page managed on the device offers no Create New: nothing is sent from it #}
+    {% set menu = [] if (device_managed is defined and device_managed) else (view.create_menu or []) %}
     {% if menu|length > 1 or (menu and menu[0].label) %}
     <details class="fwg-menu">
       <summary class="btn btn-fw-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }}<i class="bi bi-caret-down-fill small ms-1"></i></summary>

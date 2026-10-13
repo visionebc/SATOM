@@ -33,6 +33,12 @@ import os
 from functools import lru_cache
 
 # ── noise: server-managed / internal keys never shown as editable fields ──────
+# ``host-for-deny`` / ``url-for-deny`` look like settings (the API library even
+# calls them channel "both": the build's tree lists them, cli_id 501/503) but
+# are not configurable — measured on fortiweb17 7.6.8, 2026-10-13: REST PUT
+# answers 200 and keeps them empty, ``set host-for-deny`` answers "Parsing error
+# at 'host-for-deny'. err=1", and ``show full-configuration`` never prints them.
+# Do not take them out of the noise to satisfy "every field is shown".
 _NOISE_EXACT = {
     "id", "_id", "seq", "flag", "mkey", "q_ref", "q_type", "q_ref_string",
     "policy-id", "server-pool-id", "profile-id", "server-id", "sub_table_id",

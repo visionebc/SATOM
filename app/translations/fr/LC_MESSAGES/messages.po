@@ -222,10 +222,6 @@ msgstr "(affiché sur l'axe)"
 msgid "(slow)"
 msgstr "(lente)"
 
-#: app/templates/settings/index.html:3308
-msgid "(this ADOM only)"
-msgstr "(seulement cette ADOM)"
-
 #: app/templates/settings/index.html:1014
 #, python-brace-format
 msgid "(uid={username})"
@@ -244,14 +240,6 @@ msgstr "(magasin de politique de sécurité locale versionné + sauvegardes pous
 #: app/templates/exceptions/list.html:140
 msgid "(what the clone will carry)"
 msgstr "(ce que le clone portera)"
-
-#: app/templates/api_tokens/index.html:224
-msgid "(what — all unchecked = no restriction)"
-msgstr "(ce qui — tout non vérifié = aucune restriction)"
-
-#: app/templates/api_tokens/index.html:88
-msgid "(what — leave all unchecked for no restriction)"
-msgstr "(laisser tout non coché pour aucune restriction)"
 
 #: app/templates/api_tokens/index.html:240
 msgid "(where — empty = no restriction)"
@@ -305,10 +293,6 @@ msgstr ", et les pages de surveillance indiquent clairement lesquels sont lesque
 msgid ", because a permanent remote-root path on your hypervisor is your decision, not a side effect of a capability probe. The Test button reports which transport a target will actually use, and only claims the shell after running a command on it."
 msgstr "car un chemin d'accès racine distant permanent sur votre hyperviseur est une décision de votre part, et non un effet secondaire d'une sonde de capacité. Le bouton Test indique quel transport un cible utilisera réellement, et ne revendique la coquille qu'après avoir exécuté une commande dessus."
 
-#: app/templates/appliances/restore.html:12
-msgid ", interrupting every service it fronts. A"
-msgstr "en interrompant tous les services qu'il présente."
-
 #: app/templates/appids/index.html:122
 msgid ", left disabled by default)."
 msgstr ", désactivé par défaut."
@@ -361,10 +345,6 @@ msgstr "Un certificat toujours lié n'est jamais manipulé."
 msgid ". Backup codes remaining:"
 msgstr ". Codes de sauvegarde restants :"
 
-#: app/templates/classification/index.html:21
-msgid ". Each appliance is assigned one value per catalog on its Edit page. One entry per line."
-msgstr ". Chaque appareil est attribué une valeur par catalogue sur sa page d'édition. Une entrée par ligne."
-
 #: app/templates/settings/index.html:839
 msgid ". Email uses the transport configured above — set it to external SMTP if the local relay can't reach your inbox."
 msgstr ". L'e-mail utilise le transport configuré ci-dessus — définissez-le sur SMTP externe si le relais local ne peut pas atteindre votre boîte de réception."
@@ -405,10 +385,6 @@ msgstr ". Une licence payante ou vCenter le débloque ; sinon, SATOM retombe sur
 msgid ". Proxmox does; a standalone ESXi does not, at any licence tier. That single fact is what the modes are about."
 msgstr "Proxmox le fait ; un ESXi autonome ne le fait pas, à n'importe quel niveau de licence. Ce seul fait est ce que les modes concernent."
 
-#: app/templates/signatures/index.html:40
-msgid ". Re-run a sync to pick up new firmware or new signatures."
-msgstr ". Exécutez à nouveau une synchronisation pour récupérer de nouveaux micrologiciels ou de nouvelles signatures."
-
 #: app/templates/provisioning/device_index.html:33
 msgid ". The machine-building modes are therefore not offered below — rather than shown as buttons that would fail partway through."
 msgstr ". Les modes de construction de la machine ne sont donc pas proposés ci-dessous — plutôt affichés sous forme de boutons qui échoueraient à mi-parcours."
@@ -416,10 +392,6 @@ msgstr ". Les modes de construction de la machine ne sont donc pas proposés ci-
 #: app/templates/provisioning/device_index.html:85
 msgid ". The path for physical appliances and for anything built outside SATOM."
 msgstr ". Le chemin pour les appareils physiques et tout ce qui est construit en dehors de SATOM."
-
-#: app/templates/provisioning/apply.html:74
-msgid ". The write is canary-gated: the first device runs alone and, if it fails, the rest are skipped. Secrets in sensitive items are applied live but are never stored in the profile."
-msgstr ". L'écriture est canarisée : le premier appareil fonctionne seul et, en cas de défaillance, les autres sont sautés. Les secrets dans les éléments sensibles sont appliqués en direct mais ne sont jamais stockés dans le profil."
 
 #: app/templates/settings/index.html:1836
 msgid ". This holds the issuers it"
@@ -546,10 +518,6 @@ msgstr "3. Stockage de l'état sécurisé versionné (local + hors boîte)"
 msgid "30 days"
 msgstr "30 jours"
 
-#: app/templates/system_backup/index.html:508
-msgid "4. External backup server (backup-server)"
-msgstr "4. Serveur de sauvegarde externe (backup-server)"
-
 #: app/templates/monitoring/_probe_page.html:248
 msgid "7 days"
 msgstr "7 jours"
@@ -645,10 +613,6 @@ msgstr "Une sauvegarde de la base de données est effectuée en premier ; le ser
 #: app/templates/structure/index.html:29
 msgid "A deliberate"
 msgstr "Un délibéré"
-
-#: app/templates/settings/index.html:981
-msgid "A directory user is created on first sign-in with this profile; an admin can elevate them later under Users."
-msgstr "Un utilisateur de répertoire est créé lors de la première connexion avec ce profil ; un administrateur peut ensuite les élever sous la section Utilisateurs."
 
 #: app/templates/plugins/list.html:19
 msgid "A dozen ready-made views — fleet KPIs, a full server-policy table,"
@@ -764,10 +728,6 @@ msgstr "ADM/Produits"
 #: app/templates/settings/index.html:77
 msgid "AI Advisor"
 msgstr "Conseiller IA"
-
-#: app/templates/workspace/browse.html:16
-msgid "API Browse"
-msgstr "Navigation API"
 
 #: app/templates/audit/index.html:62
 msgid "API Call"
@@ -1009,13 +969,6 @@ msgstr "Ajouter une adresse IP"
 #: app/templates/users/_panel.html:175
 msgid "Add User"
 msgstr "Ajouter un utilisateur"
-
-msgid "Add a FortiWeb appliance to start managing backups."
-msgstr "Ajouter un appareil FortiWeb pour commencer à gérer les sauvegardes."
-
-#: app/templates/signatures/index.html:84
-msgid "Add a FortiWeb appliance to sync the signature database."
-msgstr "Ajouter un appareil FortiWeb pour synchroniser la base de données des signatures."
 
 #: app/templates/adc_api/index.html:64 app/templates/api_explorer/index.html:56
 #: app/templates/faz_api/index.html:65
@@ -1288,10 +1241,6 @@ msgstr "Toutes les classes"
 msgid "All departments"
 msgstr "Tous les départements"
 
-#: app/templates/partials/release_notes_modal.html:80
-msgid "All discovered (slow)"
-msgstr "Tous les éléments découverts (lents)"
-
 #: app/templates/architecture/_picker.html:57
 #: app/templates/provisioning/baselines.html:51
 #: app/templates/provisioning/baselines.html:240
@@ -1349,10 +1298,6 @@ msgstr "Autoriser les fournisseurs externes"
 msgid "Allow read-only tool calls (mode C)"
 msgstr "Autoriser les appels d'outils en lecture seule (mode C)"
 
-#: app/templates/analysis/dashboard.html:80
-msgid "Allowed Requests"
-msgstr "Demandes autorisées"
-
 #: app/templates/settings/index.html:326
 msgid "Also apply on the peer node(s)"
 msgstr "Appliquer également sur le(s) nœud(s) pair(s)"
@@ -1372,10 +1317,6 @@ msgstr "Parcourez également chaque graphe de dépendance de la politique WPP + 
 #: app/templates/settings/index.html:902
 msgid "An enabled action whose due time passed this long ago is reported: a scheduler that stops firing produces no failed runs at all."
 msgstr "Une action activée dont la date d'échéance a été dépassée il y a longtemps est signalée : un planificateur qui cesse de fonctionner ne génère aucune exécution échouée du tout."
-
-#: app/templates/provisioning/form.html:84
-msgid "An ordered list of provisioning elements — each maps a configuration object (any section) to a JSON payload. Add / reorder / remove elements, then save as a versioned profile and apply to one device or the fleet (dry-run → canary). Secret fields (passwords, shared secrets) are stripped on save and re-entered at apply time."
-msgstr "Une liste ordonnée des éléments de provisionnement — chaque élément mappe un objet de configuration (n'importe quelle section) à une charge utile JSON. Ajoutez / réordonnez / supprimez des éléments, puis enregistrez en tant que profil versionné et appliquez à un appareil ou à la flotte (essai sec → canari). Les champs secrets (mots de passe, secrets partagés) sont effacés lors de l'enregistrement et saisis à nouveau au moment de l'application."
 
 #: app/templates/errors/500.html:31
 msgid "An unexpected error occurred while processing your request. The problem has been logged."
@@ -1709,10 +1650,6 @@ msgstr "À"
 msgid "At boot"
 msgstr "Au démarrage"
 
-#: app/templates/auth/reset.html:47 app/templates/settings/index.html:3528
-msgid "At least 8 characters"
-msgstr "Au moins 8 caractères"
-
 #: app/templates/advisor/index.html:50
 msgid "Attach context"
 msgstr "Ajouter du contexte"
@@ -1725,17 +1662,9 @@ msgstr "Attacher le disque de l'appareil"
 msgid "Attached"
 msgstr "Joint"
 
-#: app/templates/analysis/dashboard.html:66
-msgid "Attack Events"
-msgstr "Événements d'attaque"
-
 #: app/templates/attack_search/index.html:67
 msgid "Attack ID"
 msgstr "Identifiant d'attaque"
-
-#: app/templates/analysis/dashboard.html:101
-msgid "Attack Types"
-msgstr "Types d'attaques"
 
 #: app/templates/analysis/dashboard.html:203
 msgid "Attacks"
@@ -1836,17 +1765,9 @@ msgstr "Déploiement automatique — réconciliateur (en attente en premier, pui
 msgid "Auto-apply"
 msgstr "Application automatique"
 
-#: app/templates/analysis/dashboard.html:27
-msgid "Auto-refresh in"
-msgstr "Actualisation automatique en"
-
 #: app/templates/jobs/manager.html:26
 msgid "Auto-refreshing every 3s"
 msgstr "Actualisation automatique toutes les 3 secondes"
-
-#: app/templates/scheduled_actions/index.html:20
-msgid "Automate fleet maintenance — backups, signature syncs and gated changes — on a schedule. Jobs are fired by the scheduler sidecar, never by the web workers."
-msgstr "Automatiser l'entretien de la flotte — sauvegardes, synchronisation des signatures et modifications contrôlées — selon un planning. Les tâches sont déclenchées par le côté planificateur, jamais par les travailleurs web."
 
 #: app/templates/cert_manager/detail.html:8
 #: app/templates/cert_manager/device_cert.html:9
@@ -2054,10 +1975,6 @@ msgstr "Vide"
 msgid "Base DN"
 msgstr "DN de base"
 
-#: app/templates/signatures/index.html:67
-msgid "Base FortiWeb"
-msgstr "Base FortiWeb"
-
 #: app/templates/integrations/index.html:26 app/templates/settings/_ai.html:51
 msgid "Base URL"
 msgstr "URL de base"
@@ -2065,10 +1982,6 @@ msgstr "URL de base"
 #: app/templates/provisioning/index.html:20
 msgid "Baselines"
 msgstr "Bases de référence"
-
-#: app/templates/product/fortiadc.html:16
-msgid "Basic structure ready"
-msgstr "Structure de base prête"
 
 #: app/templates/upgrade_flow/index.html:192
 msgid "Batched rollouts"
@@ -2111,10 +2024,6 @@ msgstr "Durée de blocage (secondes)"
 msgid "Blocked"
 msgstr "Bloqué"
 
-#: app/templates/analysis/dashboard.html:89
-msgid "Blocked Requests"
-msgstr "Demandes bloquées"
-
 #: app/templates/plugins/editor.html:97
 #: app/templates/provisioning/apply.html:32
 #: app/templates/section_config/section.html:337
@@ -2151,10 +2060,6 @@ msgstr "Atténuation des bots"
 #: app/templates/upgrade_flow/index.html:217
 msgid "Both live on the change itself: the consolidated spreadsheet is generated from its frozen inventory (merged across every bound pre-upgrade run), and execution is its one-shot scheduled action, re-gated at fire time against the approved window."
 msgstr "Les deux résident sur le changement lui-même : la feuille de calcul consolidée est générée à partir de son inventaire figé (fusionné sur chaque exécution pré-mise à niveau liée), et l'exécution est son action planifiée unique, réexaminée au moment du feu par rapport à la fenêtre approuvée."
-
-#: app/templates/settings/index.html:1912
-msgid "Both slots are read in a single pass — one dedupe check, one bundle rebuild. Re-importing a certificate already held updates it in place."
-msgstr "Les deux emplacements sont lus en un seul passage — une vérification de déduplication, une reconstruction d'ensemble. La réimportation d'un certificat déjà détenu le met à jour en place."
 
 #: app/templates/change_requests/form.html:236
 msgid "Both times are read in"
@@ -2239,10 +2144,6 @@ msgstr "Construire n'importe quel appel REST FortiWeb et le planifier."
 #: app/templates/provisioning/device_index.html:65
 msgid "Builds and boots the machine, then"
 msgstr "Construit et démarre la machine, puis"
-
-#: app/templates/provisioning/device_index.html:71
-msgid "Builds and boots; the appliance takes a lease, SATOM finds it at that address and carries on."
-msgstr "Construction et démarrage ; l'appareil prend une location, SATOM le trouve à cette adresse et continue."
 
 #: app/templates/adc/wizard_vs.html:19
 msgid "Builds the whole load-balancing chain on"
@@ -2360,10 +2261,6 @@ msgstr "Fraisness de la cache"
 #: app/templates/signatures/index.html:33
 msgid "Cached"
 msgstr "En mémoire cache"
-
-#: app/templates/signatures/index.html:28
-msgid "Cached database"
-msgstr "Base de données mise en cache"
 
 #: app/templates/cr_types/index.html:108
 msgid "Calls:"
@@ -2768,10 +2665,6 @@ msgstr "Effacer la clé HMAC stockée"
 msgid "Clear stored password"
 msgstr "Effacer le mot de passe stocké"
 
-#: app/templates/settings/index.html:2545
-msgid "Clear stored secret"
-msgstr "Effacer le secret stocké"
-
 #: app/templates/base.html:188
 msgid "Clear the bell — the notifications stay on the Notifications page"
 msgstr "Vider la notification — les notifications restent sur la page des Notifications"
@@ -2821,10 +2714,6 @@ msgstr "Client"
 msgid "Client IP"
 msgstr "Adresse IP du client"
 
-#: app/templates/change_requests/detail.html:441
-msgid "Client-facing draft — sending is out of scope; use \"Mark notified\" once delivered."
-msgstr "Brouillon destiné à l'interface client — l'envoi est hors champ ; utiliser « Mark notifié » une fois livré."
-
 #: app/templates/database/index.html:132 app/templates/profiles/_panel.html:59
 #: app/templates/section_config/section.html:258
 #: app/templates/settings/index.html:2689
@@ -2835,10 +2724,6 @@ msgstr "Cloner"
 #: app/templates/web_protection/section.html:112
 msgid "Clone (copies the object and its sub-table rows under a new name)"
 msgstr "Cloner (copie l'objet et ses lignes de sous-tables sous un nouveau nom)"
-
-#: app/templates/workspace/policies.html:225
-msgid "Clone (same box)…"
-msgstr "Cloner (même boîte)..."
 
 #: app/templates/settings/index.html:111
 msgid "Clone / Migrate"
@@ -2860,21 +2745,9 @@ msgstr "Cloner le profil de protection Web"
 msgid "Clone button to get an editable copy."
 msgstr "Bouton Cloner pour obtenir une copie modifiable."
 
-#: app/templates/workspace/policies.html:144
-msgid "Clone here"
-msgstr "Cloner ici"
-
 #: app/templates/exceptions/list.html:144
 msgid "Clone name"
 msgstr "Nom de la copie"
-
-#: app/templates/workspace/policies.html:226
-msgid "Clone to another FortiWeb…"
-msgstr "Cloner vers un autre FortiWeb..."
-
-#: app/templates/workspace/policies.html:145
-msgid "Clone to…"
-msgstr "Cloner vers…"
 
 #: app/templates/_example_browser.html:15 app/templates/adc_api/index.html:337
 #: app/templates/api_explorer/index.html:293
@@ -3065,10 +2938,6 @@ msgstr "Fichier de configuration (.conf)"
 msgid "Configure"
 msgstr "Configurer"
 
-#: app/templates/cert_manager/index.html:103
-msgid "Configure ADCS first"
-msgstr "Configurer ADCS en premier"
-
 #: app/templates/settings/index.html:526
 msgid "Configure Repository"
 msgstr "Configurer le dépôt"
@@ -3076,10 +2945,6 @@ msgstr "Configurer le dépôt"
 #: app/templates/workspace/index.html:73
 msgid "Configure at least one FortiWeb appliance to manage server policies."
 msgstr "Configurer au moins un appareil FortiWeb pour gérer les politiques de serveur."
-
-#: app/templates/cert_manager/new.html:26
-msgid "Configure the ADCS connection first in"
-msgstr "Configurer d'abord la connexion ADCS"
 
 #: app/templates/settings/index.html:3535
 msgid "Confirm New Password"
@@ -3349,10 +3214,6 @@ msgstr "Créer un jeton"
 msgid "Create your first automation — a recurring config backup, a signature sync, or a one-shot maintenance task."
 msgstr "Créer votre première automatisation - une sauvegarde de configuration récurrente, un synchronisme de signatures ou une tâche de maintenance ponctuelle."
 
-#: app/templates/cert_manager/index.html:96
-msgid "Create your first certificate — generate a CSR, sign it at your ADCS, and deploy it to a FortiWeb."
-msgstr "Créer votre premier certificat — générer une CSR, la signer auprès de votre ADCS et le déployer sur un FortiWeb."
-
 #: app/templates/section_config/section.html:238
 #: app/templates/templates/index.html:69 app/templates/users/_panel.html:74
 msgid "Created"
@@ -3475,10 +3336,6 @@ msgstr "Cache de base de données"
 msgid "DB replication"
 msgstr "Réplication de base de données"
 
-#: app/templates/system_backup/index.html:511
-msgid "DB: ≤ 24 h · per-device schedule (fw6: ≤ 24 h)"
-msgstr "Base de données : ≤ 24 heures · programmation par appareil (fw6 : ≤ 24 heures)"
-
 #: app/templates/adc_api/index.html:240
 #: app/templates/api_explorer/index.html:192
 #: app/templates/scheduled_actions/form.html:135
@@ -3500,10 +3357,6 @@ msgstr "Recherche DNS — serveurs de résolution"
 #: app/templates/settings/index.html:101
 msgid "DNS Records"
 msgstr "Enregistrements DNS"
-
-#: app/templates/settings/index.html:2507
-msgid "DNS Records — IPAM / DDI provider"
-msgstr "Enregistrements DNS — Fournisseur IPAM/DDI"
 
 #: app/templates/settings/index.html:1379
 msgid "DNS provider"
@@ -3684,10 +3537,6 @@ msgstr "Défaut par défaut"
 msgid "Define exactly what each role can do, then assign profiles to users."
 msgstr "Définissez précisément ce que chaque rôle peut faire, puis attribuez des profils aux utilisateurs."
 
-#: app/templates/users/_panel.html:204
-msgid "Defines exactly what the user can do. Manage profiles under Admin → Profiles."
-msgstr "Définit exactement ce que l'utilisateur est autorisé à faire. Gérer les profils sous Admin → Profils."
-
 #: app/templates/plugins/editor.html:63
 msgid "Definition"
 msgstr "Définition"
@@ -3789,10 +3638,6 @@ msgstr "Déployer l'automatisation"
 #: app/templates/lua_studio/editor.html:81
 msgid "Deploy for real"
 msgstr "Déployer pour de vrai"
-
-#: app/templates/cert_manager/new.html:63
-msgid "Deploy to the device after signing (upload cert + key over SSH)"
-msgstr "Déployer sur l'appareil après la signature (télécharger le certificat + clé via SSH)"
 
 #: app/templates/provisioning/index.html:148
 msgid "Deploy:"
@@ -4346,10 +4191,6 @@ msgstr "Modifier l'endpoint"
 msgid "Edit Template"
 msgstr "Modifier le modèle"
 
-#: app/templates/users/edit.html:17
-msgid "Edit User"
-msgstr "Modifier l'utilisateur"
-
 #: app/templates/adc_api/index.html:104 app/templates/adc_api/index.html:154
 #: app/templates/api_explorer/index.html:98
 #: app/templates/faz_api/index.html:106 app/templates/faz_api/index.html:156
@@ -4383,10 +4224,6 @@ msgstr "Modifier le texte"
 #: app/templates/workspace/policy_detail.html:141
 msgid "Edit the selected VIP object"
 msgstr "Modifier l'objet VIP sélectionné"
-
-#: app/templates/faz/section.html:112
-msgid "Edit the selected device (single selection)"
-msgstr "Modifier l'appareil sélectionné (sélection unique)"
 
 #: app/templates/workspace/_fields.html:87
 msgid "Edit the selected object"
@@ -4646,10 +4483,6 @@ msgstr "Tout est générique - choisissez l'émission"
 msgid "Everything needed to roll this system back: application"
 msgstr "Tout ce qui est nécessaire pour annuler cette mise à niveau : application"
 
-#: app/templates/provisioning/device_index.html:59
-msgid "Everything: address, DNS, machine, boot, walks the first-boot dialog over the serial console, registers the appliance, applies the profile."
-msgstr "Tout : adresse, DNS, machine, démarrage, parcourt le dialogue de premier démarrage via la console série, enregistre l'appareil, applique le profil."
-
 #: app/templates/dns_lookup/index.html:45
 msgid "Exact match"
 msgstr "Correspondance exacte"
@@ -4822,10 +4655,6 @@ msgstr "Colonnes supplémentaires (conservées par AppID)"
 #: app/templates/provisioning/apply.html:23
 msgid "FAILED"
 msgstr "ÉCHOUÉ"
-
-#: app/templates/settings/index.html:126
-msgid "FAZ Menu"
-msgstr "Menu FAZ"
 
 #: app/templates/workspace/clone_report.html:58
 msgid "Failed objects"
@@ -5014,19 +4843,11 @@ msgstr "Image du micrologiciel (depuis le dépôt)"
 msgid "Firmware major"
 msgstr "Mise à jour majeure du micrologiciel"
 
-#: app/templates/settings/index.html:661
-msgid "Firmware path"
-msgstr "Chemin du micrologiciel"
-
 #: app/templates/appliances/downgrade.html:44
 #: app/templates/appliances/downgrade.html:56
 #: app/templates/appliances/upgrade.html:66
 msgid "Firmware repository"
 msgstr "Répertoire de micrologiciels"
-
-#: app/templates/settings/index.html:607
-msgid "Firmware source-of-truth repository"
-msgstr "Répertoire de dépôt de vérité de la source du micrologiciel"
 
 #: app/templates/upgrade_flow/index.html:157
 msgid "Firmware upgrade — batched rollout"
@@ -5149,10 +4970,6 @@ msgstr "Explorateur de l'API-Registre FortiAnalyzer"
 #: app/templates/faz/index.html:22
 msgid "FortiAnalyzer devices"
 msgstr "Dispositifs FortiAnalyzer"
-
-#: app/templates/settings/index.html:3308
-msgid "FortiAnalyzer menu visibility"
-msgstr "Visibilité du menu FortiAnalyzer"
 
 #: app/templates/fac/index.html:7 app/templates/fac/section.html:10
 #: app/templates/monitoring/_probe_page.html:402
@@ -5326,10 +5143,6 @@ msgstr "Configuration générale"
 #: app/templates/database/report_edit.html:135
 msgid "Generate SQL"
 msgstr "Générer une requête SQL"
-
-#: app/templates/cert_manager/new.html:19
-msgid "Generate a CSR, sign it at your ADCS, and (optionally) deploy the cert + key to the device. The new certificate is"
-msgstr "Générer un CSR, le signer auprès de votre ADCS, et (facultativement) déployer le certificat + la clé sur l'appareil. Le nouveau certificat est"
 
 #: app/templates/monitoring/reports.html:64
 msgid "Generate a report now"
@@ -5674,17 +5487,9 @@ msgstr "Nom d'hôte (DNS)"
 msgid "Hostnames / IPs — one per line"
 msgstr "Noms d'hôte / Adresses IP — un par ligne"
 
-#: app/templates/system_backup/index.html:51
-msgid "Hourly sync (id5) records a version on every config change; nightly publish 02:45 (id12) pushes new blobs off-box — FortiWeb, FortiADC"
-msgstr "Synchronisation horaire (id5) enregistre une version à chaque modification de configuration ; publication nocturne à 02:45 (id12) pousse de nouveaux blobs hors boîte — FortiWeb, FortiADC"
-
 #: app/templates/system_backup/index.html:17
 msgid "How / cadence"
 msgstr "Comment / rythme"
-
-#: app/templates/settings/index.html:216
-msgid "How application log lines are written"
-msgstr "Comment les lignes de journal d'application sont écrites"
 
 #: app/templates/provisioning/device_index.html:42
 msgid "How far SATOM can take it — pick a mode"
@@ -5693,10 +5498,6 @@ msgstr "Jusqu'où SATOM peut-il aller - choisissez un mode"
 #: app/templates/system_backup/index.html:495
 msgid "How it gets there"
 msgstr "Comment cela arrive-t-il"
-
-#: app/templates/settings/index.html:206
-msgid "How often appliance online/offline status is checked"
-msgstr "À quelle fréquence l'état en ligne/hors ligne de l'appareil est-il vérifié ?"
 
 #: app/templates/settings/index.html:2150
 msgid "How this endpoint is referred to when provisioning."
@@ -5859,10 +5660,6 @@ msgstr "Dans le sélecteur"
 #: app/templates/capacity/index.html:77
 msgid "In use (fleet max)"
 msgstr "En utilisation (flotte maximale)"
-
-#: app/templates/settings/index.html:199
-msgid "Inactivity before the session expires and re-asks for the password"
-msgstr "Inactivité avant l'expiration de la session et demande réitérée du mot de passe"
 
 #: app/templates/monitoring/report_detail.html:79
 #: app/templates/monitoring/reports.html:108
@@ -6118,10 +5915,6 @@ msgstr "Étiquettes (X)"
 #: app/templates/cr_types/edit.html:129
 msgid "Language"
 msgstr "Langue"
-
-#: app/templates/analysis/dashboard.html:102
-msgid "Last 24 hours"
-msgstr "Dernières 24 heures"
 
 #: app/templates/users/_panel.html:75
 msgid "Last Login"
@@ -6541,9 +6334,6 @@ msgstr "Gérer les lignes VIP..."
 msgid "Manage application users and roles"
 msgstr "Gérer les utilisateurs et les rôles des applications"
 
-msgid "Manage backups"
-msgstr "Gérer les sauvegardes"
-
 #: app/templates/dns_lookup/index.html:63
 msgid "Manage in Settings → DNS Lookup"
 msgstr "Gérer dans Paramètres → Recherche DNS"
@@ -6722,21 +6512,9 @@ msgstr "Expression MetricsQL"
 msgid "Migrate"
 msgstr "Migrer"
 
-#: app/templates/workspace/policies.html:227
-msgid "Migrate to another FortiWeb…"
-msgstr "Migrer vers un autre FortiWeb..."
-
-#: app/templates/workspace/policies.html:146
-msgid "Migrate to…"
-msgstr "Migrer vers…"
-
 #: app/templates/monitoring/report_detail.html:118
 msgid "Min"
 msgstr "Min"
-
-#: app/templates/users/_panel.html:188
-msgid "Min. 8 characters"
-msgstr "Min. 8 caractères"
 
 #: app/templates/monitoring/analytics.html:273
 msgid "Min/max band"
@@ -6947,10 +6725,6 @@ msgstr "Nécessite une attention"
 #: app/templates/provisioning/device_index.html:85
 msgid "Needs"
 msgstr "Besoins"
-
-#: app/templates/provisioning/device_index.html:61
-msgid "Needs an API serial console. Most moving parts, so the widest surface for a mid-run failure — which is why rollback exists."
-msgstr "Nécessite une console sérielle API. La plupart des éléments mobiles, donc la plus grande surface pour une défaillance en cours de route — c'est pourquoi le retour en arrière existe."
 
 #: app/templates/web_protection/signature_policy.html:31
 msgid "Neither the cache nor the device returned the sub-lists"
@@ -7244,10 +7018,6 @@ msgstr "Aucun FortiAuthenticator n'est sélectionné."
 msgid "No FortiWeb appliances configured"
 msgstr "Aucun appareil FortiWeb configuré"
 
-#: app/templates/base.html:554
-msgid "No REST endpoint on this firmware"
-msgstr "Aucun point de terminaison REST dans ce micrologiciel"
-
 #: app/templates/upgrade_flow/progress.html:84
 msgid "No action is bound yet. Approve and schedule the change first — the bound one-shot action is what this page watches."
 msgstr "Aucune action n'est encore liée. Approuvez et planifiez d'abord le changement — c'est l'action unique liée que cette page surveille."
@@ -7322,10 +7092,6 @@ msgstr "Aucun modèle approuvé pour le moment. Créez un profil dans"
 msgid "No approved templates yet. Save a template (e.g. from Web Protection), then approve it in the"
 msgstr "Aucun modèle approuvé pour le moment. Enregistrez un modèle (par exemple, provenant de la protection Web), puis approuvez-le dans"
 
-#: app/templates/analysis/dashboard.html:223
-msgid "No attack data available"
-msgstr "Aucune donnée d'attaque disponible"
-
 #: app/templates/audit/index.html:168
 msgid "No audit entries"
 msgstr "Aucune entrée d'audit"
@@ -7386,10 +7152,6 @@ msgstr "Aucune conversation encore."
 msgid "No data moves here."
 msgstr "Aucune donnée ne circule ici."
 
-#: app/templates/workspace/browse.html:29
-msgid "No data returned."
-msgstr "Aucune donnée retournée."
-
 #: app/templates/architecture/_picker.html:109
 msgid "No devices match your filter."
 msgstr "Aucun appareil ne correspond à votre filtre."
@@ -7425,10 +7187,6 @@ msgstr "Aucune exception configurée"
 #: app/templates/cert_manager/renewals.html:205
 msgid "No failed sign / deploy / swap / renew / revoke event on any managed certificate. These are the certificates SATOM issues for the appliances (ADCS or ACME), which is a different pipeline from the node's own TLS certificate above."
 msgstr "Aucun événement d'échec de signature / déploiement / échange / renouvellement / révocation de certificat n'a été signalé pour aucun des certificats gérés. Il s'agit des certificats émis par SATOM pour les appareils (ADCS ou ACME), qui suivent une chaîne différente de celle du certificat TLS propre au nœud mentionné précédemment."
-
-#: app/templates/adc/object.html:141
-msgid "No field template is known for this child table yet — no sibling rows exist to derive it from. Use the Raw JSON editor below, or create the first row on a device that already has one."
-msgstr "Aucun modèle de champ n'est connu pour cette table enfant jusqu'à présent — aucune ligne sœur n'existe pour l'en déduire. Utilisez l'éditeur JSON brut ci-dessous, ou créez la première ligne sur un appareil qui en possède déjà une."
 
 #: app/templates/objedit/_body.html:100
 msgid "No field template is known for this sub-table yet (no curated form and nothing cached). Run a rediscovery / deep capture of a device that already has rows here, then reopen."
@@ -7657,10 +7415,6 @@ msgstr "Aucun groupe de serveurs n'a été trouvé."
 msgid "No signature database cached — signature names/descriptions and the search need it. Sync it once in"
 msgstr "Aucune base de données de signatures mise en cache — les noms/descriptions de signatures et la recherche en ont besoin. Synchronisez-la une fois en"
 
-#: app/templates/signatures/index.html:45
-msgid "No signature database yet"
-msgstr "Aucune base de données de signatures encore"
-
 #: app/templates/adc/signatures.html:109
 msgid "No signature policies"
 msgstr "Pas de politiques de signature"
@@ -7684,10 +7438,6 @@ msgstr "Aucun modèle encore"
 #: app/templates/api_tokens/index.html:166
 msgid "No tokens yet."
 msgstr "Aucun jeton pour le moment."
-
-#: app/templates/analysis/dashboard.html:182
-msgid "No traffic data available"
-msgstr "Aucune donnée de trafic disponible"
 
 #: app/templates/workspace/_fields.html:111
 msgid "No unsaved changes"
@@ -7747,10 +7497,6 @@ msgstr "Le nœud TLS détient le certificat de ce nœud"
 msgid "Node name (hostname)"
 msgstr "Nom du nœud (nom d'hôte)"
 
-#: app/templates/settings/index.html:1719
-msgid "Node-local — each HA node serves its own hostname's cert (never replicated). CA-issued certs auto-renew nightly; imported certs alert on expiry only."
-msgstr "Local au nœud — chaque nœud HA sert son propre certificat pour son nom d'hôte (jamais répliqué). Les certificats émis par l'autorité de certification se renouvellent automatiquement toutes les nuits ; les certificats importés déclenchent une alerte à leur expiration."
-
 #: app/templates/settings/index.html:1744
 msgid "Node-to-node encryption (Postgres replication)"
 msgstr "Cryptage nœud à nœud (réplication Postgres)"
@@ -7785,10 +7531,6 @@ msgstr "Non trouvé"
 #: app/templates/dns_lookup/index.html:220
 msgid "Not found in any source:"
 msgstr "Non trouvé dans aucune source :"
-
-#: app/templates/change_requests/detail.html:41
-msgid "Not runnable"
-msgstr "Non exécutable"
 
 #: app/templates/upgrade_flow/progress.html:97
 msgid "Not startable right now:"
@@ -8217,10 +7959,6 @@ msgstr "Autre"
 msgid "Other endpoints"
 msgstr "Autres points de terminaison"
 
-#: app/templates/integrations/index.html:7
-msgid "Outbound links to systems SATOM does not own: NetBox for maintenance windows, and your own Python hooks for everything else (CRM, ticketing, chat). Every integration here is optional — with all of them off, change requests and upgrades work exactly as before. Nothing on this page is contacted while the page renders."
-msgstr "Liens sortants vers des systèmes que SATOM ne possède pas : NetBox pour les fenêtres de maintenance, et vos propres scripts Python pour tout le reste (CRM, tickets, chat). Chaque intégration ici est optionnelle — avec toutes désactivées, les demandes de changement et les mises à jour fonctionnent exactement comme avant. Rien sur cette page n'est contacté pendant le rendu de la page."
-
 #: app/templates/database/py_console.html:61
 msgid "Output (stdout)"
 msgstr "Sortie (stdout)"
@@ -8343,10 +8081,6 @@ msgstr "Par modèle × firmware :"
 msgid "Per server-policy tree (virtual server + VIPs, server pool + back-ends, health check, web-protection profile), composed live over REST."
 msgstr "Arborescence de politique serveur (serveur virtuel + VIP, pool de serveurs + backends, vérification de santé, profil de protection web), composée en direct via REST."
 
-#: app/templates/appliances/inspector.html:10
-msgid "Per virtual-server tree (listener, real server pool + members, profile chain), composed live over REST."
-msgstr "Selon l'arbre de serveur virtuel (auditeur, piscine de serveurs réels + membres, chaîne de profil), composé en direct via REST."
-
 #: app/templates/system_backup/index.html:103
 msgid "Per-device SoT:"
 msgstr "SoT par appareil :"
@@ -8396,10 +8130,6 @@ msgstr "Physique / Inventaire"
 msgid "Pick"
 msgstr "Sélectionner"
 
-#: app/templates/signatures/index.html:47
-msgid "Pick a base FortiWeb below and sync to read the whole signature catalog."
-msgstr "Choisissez une base FortiWeb ci-dessous et synchronisez pour lire le catalogue complet des signatures."
-
 #: app/templates/partials/release_notes_modal.html:190
 msgid "Pick a current and target version, then Show advisory."
 msgstr "Sélectionnez une version actuelle et une version cible, puis affichez les avis."
@@ -8440,10 +8170,6 @@ msgstr "Choisissez-en un sur le tableau de bord FortiADC"
 msgid "Pick one on the FortiAnalyzer dashboard"
 msgstr "Choisissez-en un sur le tableau de bord FortiAnalyzer"
 
-#: app/templates/settings/index.html:2510
-msgid "Pick the backend the"
-msgstr "Sélectionnez le backend le"
-
 #: app/templates/system_backup/index.html:448
 msgid "Pick two versions of the SAME device to see what changed between them."
 msgstr "Choisissez deux versions du MÊME appareil pour voir ce qui a changé entre elles."
@@ -8460,10 +8186,6 @@ msgstr "Pipeline"
 #: app/templates/settings/index.html:2886
 msgid "Placeholder (scaffold only)"
 msgstr "Placeholder (seulement un modèle)"
-
-#: app/templates/settings/index.html:212
-msgid "Plain text (level — message)"
-msgstr "Texte en clair (niveau — message)"
 
 #: app/templates/workspace/policies.html:111
 msgid "Plain text = case-insensitive substring. Wrap in slashes for regex, e.g. /pol-.*-prod/ or /^vs-/i"
@@ -8700,10 +8422,6 @@ msgstr "Aperçu de la copie"
 msgid "Previous"
 msgstr "Précédent"
 
-#: app/templates/system_backup/index.html:30
-msgid "Primary 248 (read-write) · standby 249 (streaming replica)"
-msgstr "Principal 248 (lecture-écriture) · secondaire 249 (réplique en streaming)"
-
 #: app/templates/database/index.html:36
 msgid "Primary key"
 msgstr "Clé principale"
@@ -8741,10 +8459,6 @@ msgstr "Probes qui n'ont signalé rien"
 #: app/templates/_encryption_health.html:33
 msgid "Probing channels (DB TLS · node HTTPS · SoT)…"
 msgstr "Test des canaux (TLS de base de données · HTTPS de nœud · SoT)..."
-
-#: app/templates/_infra_health.html:41
-msgid "Probing nodes, Gitea and backup-server…"
-msgstr "Test des nœuds, Gitea et backup-server..."
 
 #: app/templates/monitoring/_probe_page.html:328
 msgid "Process"
@@ -8855,10 +8569,6 @@ msgstr "Seul Proxmox."
 #: app/templates/settings/index.html:1838
 msgid "Public roots stay trusted — this bundle adds to them, it does not replace them."
 msgstr "Les racines publiques restent fiables — ce paquet ajoute à elles, il ne les remplace pas."
-
-#: app/templates/partials/release_notes_modal.html:106
-msgid "Publish to git"
-msgstr "Publier sur git"
 
 #: app/templates/architecture/index.html:63
 msgid "Published service (VIP:port)"
@@ -9090,17 +8800,9 @@ msgstr "En lecture seule"
 msgid "Read-only (predefined)"
 msgstr "En lecture seule (prédéfinie)"
 
-#: app/templates/fac/section.html:149
-msgid "Read-only view. Writes go through the"
-msgstr "Vue en lecture seule. Les écritures passent par"
-
 #: app/templates/upgrade_flow/index.html:27
 msgid "Read-only. Config backup, health battery, maintenance permission, and an HTTP baseline of every published service — persisted as citable evidence."
 msgstr "Lecture seule. Sauvegarde de configuration, batterie de santé, autorisation de maintenance et une base ligne HTTP de chaque service publié — persistés en tant que preuves citables."
-
-#: app/templates/partials/release_notes_modal.html:117
-msgid "Reads docs.fortinet.com — no appliance needed. New versions merge in."
-msgstr "Lit la documentation de fortinet.com — aucun appareil nécessaire. Les nouvelles versions sont intégrées."
 
 #: app/templates/exceptions/list.html:214
 msgid "Reads per-signature exceptions live off the box (server policy → WPP → signature set → filter list) and imports the ones you select, bound to their policy."
@@ -9162,14 +8864,6 @@ msgstr "Récemment résolu"
 msgid "Recipient"
 msgstr "Destinataire"
 
-#: app/templates/self_update/index.html:110
-msgid "Reconciler has not published a tick yet (the standby's state is probed live)."
-msgstr "Le réconciliateur n'a pas encore publié de mise à jour (l'état du secondaire est vérifié en direct)."
-
-#: app/templates/self_update/index.html:103
-msgid "Reconciler last tick:"
-msgstr "Dernier réconciliateur de tick :"
-
 #: app/templates/system_backup/index.html:133
 msgid "Record versions + push off-box now"
 msgstr "Versions des enregistrements + poussée hors boîte maintenant"
@@ -9212,10 +8906,6 @@ msgstr "Références ({nom de la clé étrangère} → {nom de la table}.{nom de
 #: app/templates/web_protection/section.html:32
 msgid "Refresh"
 msgstr "Rafraîchir"
-
-#: app/templates/analysis/dashboard.html:36
-msgid "Refresh Now"
-msgstr "Actualiser maintenant"
 
 #: app/templates/section_config/section.html:121
 #: app/templates/workspace/policies.html:45
@@ -9421,10 +9111,6 @@ msgstr "Rapports"
 msgid "Repository"
 msgstr "Répertoire"
 
-#: app/templates/settings/index.html:612
-msgid "Repository URL"
-msgstr "URL du dépôt"
-
 #: app/templates/adc_api/index.html:215
 #: app/templates/api_explorer/index.html:164
 #: app/templates/faz_api/index.html:217
@@ -9448,10 +9134,6 @@ msgstr "Demande par"
 #: app/templates/analysis/dashboard.html:144
 msgid "Requests"
 msgstr "Demandes"
-
-#: app/templates/analysis/dashboard.html:117
-msgid "Requests per hour"
-msgstr "Demandes par heure"
 
 #: app/templates/settings/index.html:463
 msgid "Require administrator approval"
@@ -9719,10 +9401,6 @@ msgstr "Exécuter détecter"
 msgid "Run history"
 msgstr "Historique d'exécution"
 
-#: app/templates/partials/release_notes_modal.html:114
-msgid "Run in background"
-msgstr "Exécuter en arrière-plan"
-
 #: app/templates/provisioning/device_detail.html:51
 msgid "Run log"
 msgstr "Journal d'exécution"
@@ -9752,10 +9430,6 @@ msgstr "Exécuter la balayage maintenant"
 #: app/templates/cert_manager/renewals.html:37
 msgid "Run the same pass the nightly timer runs, on this node, now"
 msgstr "Exécuter la même passe que celle exécutée par le minuteur nocturne sur ce nœud, maintenant"
-
-#: app/templates/change_requests/detail.html:39
-msgid "Runnable"
-msgstr "Exécutable"
 
 #: app/templates/jobs/manager.html:36
 msgid "Running"
@@ -10029,10 +9703,6 @@ msgstr "Sauvegarder le hyperviseur"
 msgid "Save mapping"
 msgstr "Enregistrer la cartographie"
 
-#: app/templates/settings/index.html:3350
-msgid "Save menu visibility"
-msgstr "Enregistrer la visibilité du menu"
-
 #: app/templates/high_availability/index.html:171
 msgid "Save mode"
 msgstr "Mode de sauvegarde"
@@ -10135,10 +9805,6 @@ msgstr "Structure de base prête"
 msgid "Scan devices"
 msgstr "Balayage des appareils"
 
-#: app/templates/partials/release_notes_modal.html:50
-msgid "Scan from Fortinet…"
-msgstr "Analyse depuis Fortinet…"
-
 #: app/templates/monitoring/index.html:70
 msgid "Scan hardware (SSH)"
 msgstr "Balayage du matériel (SSH)"
@@ -10147,14 +9813,6 @@ msgstr "Balayage du matériel (SSH)"
 #: app/templates/scheduled_actions/index.html:34
 msgid "Schedule"
 msgstr "Planification"
-
-#: app/templates/appliances/upgrade.html:110
-msgid "Schedule for later"
-msgstr "Planifier pour plus tard"
-
-#: app/templates/appliances/upgrade.html:127
-msgid "Schedule upgrade"
-msgstr "Planifier la mise à niveau"
 
 #: app/templates/appliances/upgrade.html:125
 msgid "Scheduled Action"
@@ -10373,9 +10031,6 @@ msgstr "Sélectionner tout (visible)"
 #: app/templates/server_objects/index.html:18
 msgid "Select an appliance to browse its Server Objects — servers, services, certificates, SSL ciphers, IP groups and more."
 msgstr "Sélectionnez un appareil pour parcourir ses objets serveur — serveurs, services, certificats, ciffrures SSL, groupes d'adresses IP et plus encore."
-
-msgid "Select an appliance to manage its configuration backups"
-msgstr "Sélectionnez un appareil pour gérer ses sauvegardes de configuration."
 
 #: app/templates/workspace/index.html:17
 msgid "Select an appliance to view its server policies"
@@ -10610,10 +10265,6 @@ msgstr "Stockage des paramètres"
 msgid "Settings → Change Password"
 msgstr "Paramètres → Changer le mot de passe"
 
-#: app/templates/web_protection/signature_policy.html:45
-msgid "Settings → Signatures"
-msgstr "Paramètres → Signatures"
-
 #: app/templates/analysis/adc.html:91 app/templates/analysis/fac.html:143
 #: app/templates/web_protection/signature_policy.html:59
 #: app/templates/web_protection/signature_policy.html:175
@@ -10688,10 +10339,6 @@ msgstr "Afficher l'avis d'alerte"
 #: app/templates/database/index.html:28
 msgid "Show as list"
 msgstr "Afficher sous forme de liste"
-
-#: app/templates/settings/index.html:237
-msgid "Show raw JSON config on policy detail pages"
-msgstr "Afficher la configuration JSON brute sur les pages de détails des politiques"
 
 #: app/templates/audit/index.html:87
 #: app/templates/provisioning/baselines.html:81
@@ -10892,10 +10539,6 @@ msgstr "Commencez par un exemple de script"
 msgid "Start now"
 msgstr "Commencez maintenant"
 
-#: app/templates/partials/release_notes_modal.html:111
-msgid "Start scan"
-msgstr "Démarrer la balayage"
-
 #: app/templates/settings/index.html:1046
 msgid "StartTLS"
 msgstr "StartTLS"
@@ -10955,17 +10598,9 @@ msgstr "État"
 msgid "Status"
 msgstr "Statut"
 
-#: app/templates/settings/index.html:203
-msgid "Status Poll Interval (seconds)"
-msgstr "Intervalle de sondage d'état (secondes)"
-
 #: app/templates/web_protection/signature_policy.html:216
 msgid "Status in this policy"
 msgstr "Statut dans cette politique"
-
-#: app/templates/settings/index.html:298
-msgid "Status poll"
-msgstr "Sondage de statut"
 
 #: app/templates/cert_manager/renewals.html:213
 #: app/templates/provisioning/device_detail.html:58
@@ -11139,10 +10774,6 @@ msgstr "Synchronisation"
 msgid "Sync directory users"
 msgstr "Synchroniser les répertoires utilisateurs"
 
-#: app/templates/signatures/index.html:57
-msgid "Sync from a base device"
-msgstr "Synchronisation depuis un appareil de base"
-
 #: app/templates/partials/release_notes_modal.html:54
 msgid "Sync from git"
 msgstr "Synchronisation depuis Git"
@@ -11158,10 +10789,6 @@ msgstr "Groupes de synchronisation / DN OU"
 #: app/templates/signatures/index.html:76
 msgid "Sync now"
 msgstr "Synchroniser maintenant"
-
-#: app/templates/signatures/index.html:40
-msgid "Synced at"
-msgstr "Synchronisé à"
 
 #: app/templates/profiles/_panel.html:39 app/templates/profiles/edit.html:20
 msgid "System"
@@ -11247,10 +10874,6 @@ msgstr "Prendre l'adresse depuis IPAM"
 msgid "Target"
 msgstr "Cible"
 
-#: app/templates/cert_manager/new.html:36
-msgid "Target FortiWeb"
-msgstr "Cible FortiWeb"
-
 #: app/templates/provisioning/index.html:165
 msgid "Target device hostname for this deployment."
 msgstr "Nom d'hôte du dispositif cible pour ce déploiement."
@@ -11299,22 +10922,6 @@ msgstr "Nom du modèle"
 #: app/templates/exceptions/list.html:44
 msgid "Template-managed profile — carve-outs on it are blocked"
 msgstr "Profil géré par un modèle — les exceptions sur celui-ci sont bloquées"
-
-#: app/templates/web_protection/overview.html:176
-msgid "Template-managed: edit in Administrator → WPP Templates"
-msgstr "Géré par modèle : modifier dans Administrateur → Modèles WPP"
-
-#: app/templates/web_protection/overview.html:116
-msgid "Template-managed: edit in Administrator → WPP Templates (deploys to ALL devices)"
-msgstr "Géré par modèle : modifier dans Administrateur → Modèles WPP (déploie sur TOUS les appareils)"
-
-#: app/templates/web_protection/overview.html:103
-msgid "Template-managed: read-only here. Edit in Administrator → WPP Templates — approving a change there deploys it to ALL devices."
-msgstr "Géré par modèle : en lecture seule ici. Modifier dans l'administrateur → Modèles WPP — approuver un changement le déploie sur TOUS les appareils."
-
-#: app/templates/web_protection/overview.html:169
-msgid "Template-managed: read-only here. Edit in Administrator → WPP Templates."
-msgstr "Géré par modèle : en lecture seule ici. Éditer dans Administrateur → Modèles WPP."
 
 #: app/templates/templates/index.html:9 app/templates/templates/index.html:16
 msgid "Templates"
@@ -11376,10 +10983,6 @@ msgstr "La zone de recherche est la requête dans ce mode — saisissez n'import
 #: app/templates/adc_api/index.html:29
 msgid "The FortiADC endpoint"
 msgstr "Le point de terminaison FortiADC"
-
-#: app/templates/product/fortiadc.html:18
-msgid "The FortiADC manager scaffold is in place. Modules (virtual servers, real servers, load-balancing pools, health checks) will be added here."
-msgstr "Le cadre du gestionnaire FortiADC est en place. Les modules (serveurs virtuels, serveurs réels, groupes d'équilibrage de charge, contrôles de santé) seront ajoutés ici."
 
 #: app/templates/faz_api/index.html:29
 msgid "The FortiAnalyzer endpoint"
@@ -11473,10 +11076,6 @@ msgstr "La licence gratuite limite l'accès"
 msgid "The full WPP sub-tree + Server-Policy dependency graph captured into the cache (opt-in deep rediscovery). Every sub-element is queryable here — no live device calls. Click ⤢ on any chart to expand, change type, top-N, and export CSV/PNG."
 msgstr "L'ensemble de la sous-structure WPP + le graphe de dépendance de la politique du serveur capturés dans le cache (redécouverte profonde optionnelle). Chaque élément subsidiaire est interrogeable ici - sans appels de dispositifs actifs. Cliquez ⤢ sur n'importe quel graphique pour l'étendre, modifier son type, les meilleurs N et exporter en CSV/PNG."
 
-#: app/templates/settings/index.html:1737
-msgid "The key must match the certificate; nginx is config-tested and rolled back automatically if the new cert is bad."
-msgstr "La clé doit correspondre au certificat ; nginx est testé en configuration et rebroussé automatiquement si le nouveau cert est mauvais."
-
 #: app/templates/monitoring/reports.html:77
 msgid "The last complete one"
 msgstr "Le dernier complet"
@@ -11517,10 +11116,6 @@ msgstr "La section de la piscine n'a jamais été récoltée pour les appareils 
 msgid "The profile"
 msgstr "(Le profil)"
 
-#: app/templates/users/edit.html:35
-msgid "The profile defines exactly what this user can do."
-msgstr "Le profil définit exactement ce que cet utilisateur est autorisé à faire."
-
 #: app/templates/change_requests/detail.html:211
 msgid "The published services this window takes offline,"
 msgstr "Les services publiés que cette fenêtre met hors ligne,"
@@ -11532,10 +11127,6 @@ msgstr "Le registre n'expose aucun type d'objet de configuration pour cette sect
 #: app/templates/backups/list.html:88
 msgid "The reliable path when device-side backup fails (e.g. FortiWeb returns -901 with a backup password set)."
 msgstr "Le chemin fiable lorsque la sauvegarde côté appareil échoue (par exemple, FortiWeb retourne -901 avec un mot de passe de sauvegarde défini)."
-
-#: app/templates/signatures/index.html:62
-msgid "The same FortiGuard signature package is on every box, so any reachable FortiWeb can serve as the base for the sync. The read is"
-msgstr "Le même paquet de signatures FortiGuard est présent sur chaque boîte, donc n'importe quel FortiWeb accessible peut servir de base pour la synchronisation. La lecture est"
 
 #: app/templates/settings/index.html:1882
 msgid "The self-signed trust anchor."
@@ -11554,10 +11145,6 @@ msgstr "Les services de clés stables se résolvent par — lettres, chiffres, \
 #: app/templates/structure/index.html:23
 msgid "The structure tree deliberately covers only the Server Policy + Web Protection Profile dependency subgraph — not the whole registry (System, Network, Monitor, Log objects hang off no policy)."
 msgstr "L'arbre de structure ne couvre délibérément que le sous-graphe de dépendance de la politique du serveur + du profil de protection web — et non l'ensemble du registre (les objets Système, Réseau, Surveillance, Journal ne sont pas liés à une politique)."
-
-#: app/templates/appliances/upgrade.html:125
-msgid "The upgrade is recorded as a one-shot"
-msgstr "La mise à niveau est enregistrée comme une opération ponctuelle."
 
 #: app/templates/analysis/adc.html:115
 msgid "The virtual-server section has never been harvested for the devices in scope. This is not “no published services” — it is no data."
@@ -11614,10 +11201,6 @@ msgstr "Cette action n'a pas été déclenchée. Utilisez « Exécuter maintenan
 #: app/templates/scheduled_actions/form.html:227
 msgid "This action is locked to a one-time ("
 msgstr "Cette action est verrouillée pour une utilisation unique ("
-
-#: app/templates/workspace/policies.html:242
-msgid "This appliance has no server policies configured, or the connection could not be established."
-msgstr "Cet appareil n'a aucune politique de serveur configurée, ou la connexion ne pourrait pas être établie."
 
 #: app/templates/attack_search/index.html:195
 msgid "This appliance holds no attack-log entries at all."
@@ -11816,19 +11399,6 @@ msgstr "Outils"
 msgid "Top"
 msgstr "En haut"
 
-#: app/templates/analysis/dashboard.html:135
-#: app/templates/analysis/dashboard.html:196
-msgid "Top 10"
-msgstr "Les 10 meilleures pratiques"
-
-#: app/templates/analysis/dashboard.html:195
-msgid "Top Attacked Policies"
-msgstr "Les politiques les plus attaquées"
-
-#: app/templates/analysis/dashboard.html:134
-msgid "Top Traffic Sources"
-msgstr "Meilleures sources de trafic"
-
 #: app/templates/metrics/index.html:189
 msgid "Top Users"
 msgstr "Les meilleurs utilisateurs"
@@ -11858,10 +11428,6 @@ msgstr "Nombre total d'appareils"
 msgid "Total Backups"
 msgstr "Total des sauvegardes"
 
-#: app/templates/workspace/policies.html:62
-msgid "Total Policies"
-msgstr "Nombre total de politiques"
-
 #: app/templates/appliances/flash_reports.html:48
 msgid "Total Reports"
 msgstr "Total des rapports"
@@ -11877,10 +11443,6 @@ msgstr "Perte totale des deux nœuds"
 #: app/templates/import_backup/index.html:50
 msgid "Total objects"
 msgstr "Nombre total d'objets"
-
-#: app/templates/analysis/dashboard.html:116
-msgid "Traffic Trend"
-msgstr "Tendance du trafic"
 
 #: app/templates/analysis/adc.html:144
 msgid "Traffic log"
@@ -11934,14 +11496,6 @@ msgstr "Magasin de confiance"
 #: app/templates/registry/index.html:163
 msgid "Try in API Explorer"
 msgstr "Essayer dans l'Explorateur d'API"
-
-#: app/templates/settings/index.html:3312
-msgid "Turn a menu"
-msgstr "Basculer un menu"
-
-#: app/templates/settings/index.html:1857
-msgid "Two slots so a complete path goes in at once: the"
-msgstr "Deux emplacements pour que un chemin complet y passe en même temps : le"
 
 #: app/templates/monitoring/analytics.html:251
 msgid "Two thirds"
@@ -12021,10 +11575,6 @@ msgstr "URI / URL JSON-RPC"
 #: app/templates/structure/index.html:169
 msgid "URNs not covered by the registry"
 msgstr "Les URN non couvertes par le registre"
-
-#: app/templates/provisioning/device_index.html:72
-msgid "Unattended without a serial console. Good on a build VLAN that runs DHCP."
-msgstr "Inconnue sans console sérielle. Idéale pour une VLAN de construction qui exécute DHCP."
 
 #: app/templates/settings/index.html:748
 msgid "Uncheck for an internal server with a self-signed certificate (insecure)."
@@ -12257,10 +11807,6 @@ msgstr "Nom d'utilisateur (basique)"
 msgid "Users"
 msgstr "Utilisateurs"
 
-#: app/templates/appliances/index.html:274
-msgid "VDOM (optional)"
-msgstr "DOM virtuel (facultatif)"
-
 #: app/templates/workspace/policies.html:113
 msgid "VIP / IP…"
 msgstr "VIP / IP…"
@@ -12396,10 +11942,6 @@ msgstr "Magasin SoT versionné (local)"
 msgid "Versions"
 msgstr "Versions"
 
-#: app/templates/partials/release_notes_modal.html:73
-msgid "Versions (major.minor)"
-msgstr "Version (principale.mineure)"
-
 #: app/templates/appliances/flash_reports.html:142
 #: app/templates/dns_lookup/index.html:273
 #: app/templates/import_backup/index.html:183 app/templates/logs/index.html:130
@@ -12411,10 +11953,6 @@ msgstr "Version (principale.mineure)"
 #: app/templates/templates/index.html:102
 msgid "View"
 msgstr "Afficher"
-
-#: app/templates/workspace/policies.html:212
-msgid "View / Edit Detail"
-msgstr "Afficher / Modifier les détails"
 
 #: app/templates/adc/signatures.html:102
 msgid "View / edit"
@@ -12538,10 +12076,6 @@ msgstr "Réplication en flux WAL (continue)"
 #: app/templates/settings/index.html:1498
 msgid "WHEN a superseded certificate is revoked at the CA and WHEN old material is deleted off the FortiWebs. Enforced by the"
 msgstr "QUAND un certificat remplacé est révoqué par l'autorité de certification (CA) ET QUAND les anciens fichiers sont supprimés des FortiWeb. Imposé par"
-
-#: app/templates/web_protection/overview.html:249
-msgid "WPP Templates"
-msgstr "Modèles WPP"
 
 #: app/templates/analysis/index.html:256
 msgid "WPP feature coverage"
@@ -12669,10 +12203,6 @@ msgstr "Où il se trouve"
 #: app/templates/high_availability/index.html:144
 msgid "Where the sync actually happens"
 msgstr "Où la synchronisation réellement se produit"
-
-#: app/templates/integrations/index.html:72
-msgid "Which NetBox device each appliance is. Leave blank to fall back to an exact"
-msgstr "Quel appareil NetBox chaque périphérique est-il ? Laissez vide pour retomber sur un exact"
 
 #: app/templates/analysis/index.html:165
 msgid "Which WPP per device (matrix)"
@@ -13073,10 +12603,6 @@ msgstr "Insérer un badge dans la barre supérieure et sur le sélecteur ADOM. R
 msgid "before"
 msgstr "avant"
 
-#: app/templates/appliances/restore.html:12
-msgid "before a live restore. Leave"
-msgstr "Avant une restauration en direct. Quitter"
-
 #: app/templates/settings/index.html:1837
 msgid "believes"
 msgstr "croit"
@@ -13131,10 +12657,6 @@ msgstr "intégré"
 #: app/templates/settings/index.html:2689
 msgid "bulk"
 msgstr "en vrac"
-
-#: app/templates/settings/index.html:2510
-msgid "button. Only"
-msgstr "bouton. Seulement"
 
 #: app/templates/integrations/index.html:88
 msgid "by name"
@@ -13278,10 +12800,6 @@ msgstr "danger"
 msgid "data"
 msgstr "données"
 
-#: app/templates/system_backup/index.html:142
-msgid "data/sot/ (replicated to the standby; blobs pushed to backup-server)"
-msgstr "données/sot/ (réplicées au secondaire ; blobs poussés vers backup-server)"
-
 #: app/templates/system_backup/index.html:7
 msgid "database"
 msgstr "base de données"
@@ -13402,10 +12920,6 @@ msgstr "dvmdb_appareil"
 #: app/templates/settings/index.html:2709
 msgid "e.g. 10"
 msgstr "ex. 10"
-
-#: app/templates/dns_lookup/index.html:304
-msgid "e.g. 192.0.2.41 · MX: '10 mail.host'"
-msgstr "par exemple 192.0.2.41 · MX : '10 mail.host'"
 
 #: app/templates/settings/index.html:2492
 msgid "e.g. 192.0.2.53"
@@ -13649,14 +13163,6 @@ msgstr "premier."
 msgid "first. Leave"
 msgstr "premier. Quitter"
 
-#: app/templates/system_backup/index.html:43
-msgid "backup-server unreachable"
-msgstr "Sauvegarde de fm inaccessible"
-
-#: app/templates/settings/index.html:636
-msgid "backup-server.example.net"
-msgstr "backup-server.example.net"
-
 #: app/templates/settings/index.html:647
 msgid "fmbackup"
 msgstr "fmbackup"
@@ -13697,10 +13203,6 @@ msgstr "congelé"
 msgid "fw001p1"
 msgstr "fw001p1"
 
-#: app/templates/monitoring/_probe_page.html:301
-msgid "fw6 · shop-policy"
-msgstr "fw6 · politique-magasin"
-
 #: app/templates/settings/index.html:1090
 #: app/templates/settings/index.html:1100
 msgid "fweb_users"
@@ -13717,10 +13219,6 @@ msgstr "obtenir l'état du système"
 #: app/templates/system_backup/index.html:22
 msgid "git repo (source)"
 msgstr "dépôt Git (source)"
-
-#: app/templates/settings/index.html:610
-msgid "git repo from the application code — it versions the firmware"
-msgstr "repo Git du code d'application — il versionne le firmware"
 
 #: app/templates/settings/index.html:3312
 msgid "group"
@@ -13759,14 +13257,6 @@ msgstr "Combien d'objets existent, capturés quotidiennement par instantané ?"
 msgid "http-01 — web authentication"
 msgstr "http-01 — authentification web"
 
-#: app/templates/settings/_ai.html:51
-msgid "http://ollama.example:11434 or https://api.openai.com/v1"
-msgstr "http://ollama.example:11434 ou https://api.openai.com/v1"
-
-#: app/templates/monitoring/_probe_page.html:314
-msgid "https://192.0.2.80:443/"
-msgstr "https://192.0.2.80:443/"
-
 #: app/templates/settings/index.html:1275
 msgid "https://acme-v02.api.letsencrypt.org/directory"
 msgstr "https://acme-v02.api.letsencrypt.org/directory"
@@ -13774,14 +13264,6 @@ msgstr "https://acme-v02.api.letsencrypt.org/directory"
 #: app/templates/appids/index.html:133
 msgid "https://catalog.example/appids.csv"
 msgstr "https://catalog.example/appids.csv"
-
-#: app/templates/settings/index.html:614
-msgid "https://git.example.net/satom-dev/fortinet-firmware.git"
-msgstr "https://git.example.net/satom-dev/fortinet-firmware.git"
-
-#: app/templates/settings/index.html:531
-msgid "https://git.example.net/satom-dev/satom.git"
-msgstr "https://git.example.net/satom-dev/satom.git"
 
 #: app/templates/integrations/index.html:27
 msgid "https://netbox.example.com"
@@ -13878,17 +13360,9 @@ msgstr "n'est pas la même réponse : cela désactive ce niveau."
 msgid "is reached only by a confirmed real push (below); dry-run never changes status. The fleet is license-locked, so deploy stays dry-run by default."
 msgstr "n'est accessible qu'après une poussée réelle et confirmée (ci-dessous) ; l'essai sec ne modifie jamais le statut. La flotte est verrouillée par licence, donc le déploiement reste en essai sec par défaut."
 
-#: app/templates/settings/index.html:2511
-msgid "is read-only over its API (no PowerDNS record CRUD). The +DNS Records modal adapts to the provider's capabilities. The secret is stored Fernet-encrypted and never shown again."
-msgstr "L'accès à l'API est en lecture seule (pas de création, de lecture, de mise à jour ou de suppression de enregistrements DNS avec PowerDNS). Le modal +Enregistrements DNS s'adapte aux capacités du fournisseur. Le secret est stocké chiffré avec Fernet et n'est plus jamais affiché."
-
 #: app/templates/settings/index.html:1857
 msgid "is the trust anchor, the"
 msgstr "est l'ancre de confiance, la"
-
-#: app/templates/settings/index.html:1857
-msgid "is usually what actually signed your appliances. Fill either, or both — a chain that stops at an intermediate whose issuer is missing imports cleanly and then fails every handshake with"
-msgstr "est généralement ce qui est effectivement signé sur vos appareils. Remplissez soit, ou les deux — une chaîne qui s'arrête à un intermédiaire dont l'émetteur manque des imports de manière propre et échoue ensuite à chaque mainmise avec"
 
 #: app/templates/cert_manager/renewals.html:30
 msgid "is wrong; this page tells you"
@@ -13987,10 +13461,6 @@ msgstr "maintenance"
 #: app/templates/cert_manager/detail.html:109
 msgid "maintenance window instead."
 msgstr "fenêtre de maintenance au lieu de cela."
-
-#: app/templates/settings/index.html:2510
-msgid "manages DNS records natively;"
-msgstr "Gère les enregistrements DNS nativement ;"
 
 #: app/templates/appliances/detail.html:111
 msgid "manages the config-backup vault (pull over SSH, upload, download); applying a config back to the box is done from the FortiADC GUI/CLI."
@@ -14256,10 +13726,6 @@ msgstr "du registre : uniquement les objets qui pendent à un"
 msgid "off"
 msgstr "off"
 
-#: app/templates/settings/index.html:3312
-msgid "off to hide it and every sub-item under it (cascade); turn an individual"
-msgstr "déplacer pour masquer ainsi que tous les sous-éléments inférieurs (cascade) ; transformer un individuel"
-
 #: app/templates/system_backup/index.html:371
 msgid "off-box"
 msgstr "en dehors de la boîte"
@@ -14398,10 +13864,6 @@ msgstr "supprime la configuration en cours et redémarre l'appareil"
 msgid "p95"
 msgstr "p95"
 
-#: app/templates/settings/index.html:2510
-msgid "page writes to via its"
-msgstr "la page écrit vers via son"
-
 #: app/templates/_encryption_health.html:29
 #: app/templates/high_availability/index.html:91
 #: app/templates/settings/index.html:1698
@@ -14502,10 +13964,6 @@ msgstr "pool-web-prod"
 #: app/templates/appliances/edit.html:98 app/templates/segments/index.html:96
 msgid "port1"
 msgstr "port1"
-
-#: app/templates/appliances/restore.html:12
-msgid "pre-restore backup is taken automatically"
-msgstr "Une sauvegarde pré-restauration est effectuée automatiquement"
 
 #: app/templates/settings/index.html:1836
 msgid "presents"
@@ -15299,10 +14757,6 @@ msgstr "Pourquoi (enregistré et affiché dans la ligne) ?"
 msgid "with the privileges of the SATOM service"
 msgstr "avec les privilèges du service SATOM"
 
-#: app/templates/appliances/upgrade.html:125
-msgid "with the validated image. Unattended flashing is gated for safety (an approved Change Request / explicit operator run); the schedule is created and visible under Scheduled Actions."
-msgstr "avec l'image validée. Le flash non supervisé est bloqué pour des raisons de sécurité (une demande de changement approuvée / exécution explicite d'un opérateur) ; le planning est créé et visible sous les Actions Planifiées."
-
 #: app/templates/cr_types/edit.html:97
 msgid "written by hand"
 msgstr "écrit à la main"
@@ -15346,10 +14800,6 @@ msgstr "· supprimer après expiration"
 #: app/templates/cert_manager/index.html:135
 msgid "· delete revoked material:"
 msgstr "· Supprimer le matériel révoqué :"
-
-#: app/templates/system_backup/index.html:288
-msgid "· manifest SoT:"
-msgstr "· manifeste SoT :"
 
 #: app/templates/cert_manager/index.html:135
 msgid "· scheduled auto-apply:"

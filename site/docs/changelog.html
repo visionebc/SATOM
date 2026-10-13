@@ -112,6 +112,25 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--fortianalyzer-in-the-live-api-library-harvest">Added — FortiAnalyzer in the live API-library harvest</h3>
+<ul>
+<li>A registered FortiAnalyzer can now be harvested live like FortiWeb,
+  FortiADC, FortiAuthenticator and FortiGate: <strong>API Explorer → Harvest this
+  appliance now</strong>, the <code>apilib_harvest</code> scheduled action and the firmware
+  probe (on a build change) all queue it, and <code>apilib_harvest.run(&lt;id&gt;)</code> runs
+  it from <code>flask shell</code>. It no longer answers <code>no live harvester for
+  fortianalyzer</code>.</li>
+<li>The harvest reads the build off the box (<code>get /sys/status</code>), then walks the
+  per-object JSON-RPC syntax (<code>get</code> with <code>option: ["syntax"]</code>) over every
+  <code>/cli/global</code> object the library and the registry name, in one session and
+  with <code>get</code> only — nothing is written to the device. It stores one
+  build-scoped <code>schema</code> evidence row.</li>
+<li>The evidence is healthy only when the walk read at least one object and no
+  more than a quarter of the asked objects were refused. A walk that read
+  nothing, a refused login, a transport failure mid-walk or a build that
+  cannot be read from the box is stored <strong>unhealthy</strong> with its reason, the
+  harvest job fails, and the build still needs a harvest.</li>
+</ul>
 <h3 id="added--the-operator-cli-catches-up-with-3x-naming-signatures-layouts">Added — the operator CLI catches up with 3.x: naming, signatures, layouts</h3>
 <ul>
 <li><strong><code>satom get device naming [&lt;device&gt; [--table &lt;type&gt;]] [--product &lt;p&gt;]</code></strong> —
@@ -203,8 +222,11 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   every device ADOM and has one entry per object type the product's
   configuration sync reads — the FortiWeb/FortiADC catalog plus every other
   table (FortiWeb ~250, FortiADC ~180), including the types no device holds an
-  object of yet. Settings blocks (rows without a name) are left out; a table
-  keyed by number is listed and says so. Next to each input: the pattern Discovery found on the devices
+  object of yet. Settings blocks are left out: rows without a name, and an
+  empty endpoint the API library measured as one settings object on the
+  devices' builds (FortiADC <code>firewall connlimit</code> / <code>connlimit6</code>). An empty
+  type whose shape no build measured stays listed and says <strong>list or settings
+  block not measured</strong>; a table keyed by number is listed and says so. Next to each input: the pattern Discovery found on the devices
   (<strong>all devices agree</strong> / <strong>devices differ</strong>), a <strong>use it</strong> link, and a live
   count of the existing names that follow what you type. A filter box and
   <strong>Only types with objects on a device</strong> keep the list readable.</li>

@@ -1847,6 +1847,45 @@ def _cli_objects(evidence: dict) -> dict:
     return out
 
 
+def object_kind_key(name) -> str:
+    """A registry name, URN or CLI key folded to one comparable form.
+
+    The products key the same object differently on each channel: FortiADC
+    REST ``router_prefix_list`` is CLI ``router/prefix-list``, FortiAnalyzer
+    ``/cli/global/system/mail`` is CLI ``system/mail``. Both fold to
+    ``router_prefix_list`` / ``system_mail``."""
+    k = urn_key(name)
+    if k.startswith("cli/global/"):
+        k = k[len("cli/global/"):]
+    return re.sub(r"[/\-.]+", "_", k).strip("_").lower()
+
+
+def object_kinds(product: str, version) -> dict:
+    """``{object_kind_key: "table" | "singleton"}`` the build's CLI evidence
+    measured (``summary.objects``; no field facts are read).
+
+    A folded key two objects of different kinds share is left out rather than
+    guessed. Empty for a build with no CLI evidence: the caller reads a
+    missing key as "not measured", never as either kind."""
+    v = fv.normalize(version)
+    b = _build_row(product, v) if v else None
+    if b is None:
+        return {}
+    out: dict = {}
+    clash: set = set()
+    for key, meta in _cli_objects(_cli_evidence(b.id)).items():
+        kind = (meta or {}).get("kind")
+        if kind not in ("table", "singleton"):
+            continue
+        k = object_kind_key(key)
+        if out.get(k, kind) != kind:
+            clash.add(k)
+        out[k] = kind
+    for k in clash:
+        out.pop(k, None)
+    return out
+
+
 def _with_object_meta(rec, meta):
     """``rec`` (a point-state record) whose ``attrs`` are completed from the
     evidence summary's object metadata; the fact's own attrs win per key."""

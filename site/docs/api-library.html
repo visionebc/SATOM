@@ -639,7 +639,7 @@ determined) and, per product, how many documents were stored unhealthy.</p>
 </tr>
 <tr>
 <td><strong>Scheduled action <code>apilib_harvest</code></strong></td>
-<td>harvests, one appliance at a time, every FortiWeb, FortiADC, FortiAuthenticator and FortiGate whose running build has no healthy evidence from its live source. Admin action, dry-run capable. <strong>Declared but not scheduled by default</strong>: create a schedule for it (daily is plenty) under <strong>Scheduled Actions</strong> (FortiWeb ADOM → Administrator)</td>
+<td>harvests, one appliance at a time, every FortiWeb, FortiADC, FortiAuthenticator, FortiGate and FortiAnalyzer whose running build has no healthy evidence from its live source. Admin action, dry-run capable. <strong>Declared but not scheduled by default</strong>: create a schedule for it (daily is plenty) under <strong>Scheduled Actions</strong> (FortiWeb ADOM → Administrator)</td>
 </tr>
 <tr>
 <td><code>flask apilib harvest-fac</code></td>
@@ -657,8 +657,17 @@ FortiGate (<code>services.apilib_fgt</code>) reads its build from
 <code>monitor/system/status</code>, then <code>?action=schema</code> of every cmdb table the library
 names for that build and the build below it (the global index is 403 to a
 read-only token), GET only through <code>FortiGateClient</code>, and ingests a <code>schema</code>
-document. FortiAnalyzer has no live <strong>REST</strong> harvester and every entry
-point says so by name (<code>no live harvester for fortianalyzer</code>).</p>
+document. FortiAnalyzer (<code>services.apilib_faz</code>) reads its build from
+<code>get /sys/status</code>, then walks JSON-RPC <code>get</code> with <code>option: ["syntax"]</code> object
+by object over every <code>/cli/global/system|fmupdate</code> object the library and the
+registry name (the per-object walk of §14.10), in ONE session, <code>get</code> only, and
+ingests a <code>schema</code> document. That document is healthy only when the walk read
+at least one object and no more than a quarter of the asked objects were
+refused (<code>-11</code> and other codes are <code>error</code>, never absent); a walk that read
+nothing, a refused login or a transport failure mid-walk is stored
+<strong>unhealthy</strong> with its reason, the job fails, and the build still needs a
+harvest. A kind with no live harvester is answered by name by every entry
+point (<code>no live harvester for &lt;kind&gt;</code>).</p>
 <p>The <strong>CLI channel</strong> has its own harvest — the schema harvest (§14.4), the
 scheduled action <code>schema_harvest</code> and the per-product adapters (§14.10) — and
 its own watch: an appliance on a build with no harvested schema raises one
@@ -1797,7 +1806,7 @@ pack-lane key. Releases no longer use it.</p>
 <tbody>
 <tr>
 <td>A build reads <strong><code>unmeasured</code></strong></td>
-<td>Nothing measured it. For FortiWeb, FortiADC, FortiAuthenticator or a registered FortiGate: <em>Harvest this appliance now</em> in the API Explorer, or run the <code>apilib_harvest</code> scheduled action. For FortiAnalyzer, or a FortiGate build no appliance runs: the build is newer than the imported collection — import a newer one (§8.2)</td>
+<td>Nothing measured it. For FortiWeb, FortiADC, FortiAuthenticator or a registered FortiGate or FortiAnalyzer: <em>Harvest this appliance now</em> in the API Explorer, or run the <code>apilib_harvest</code> scheduled action. For a FortiGate or FortiAnalyzer build no appliance runs: the build is newer than the imported collection — import a newer one (§8.2)</td>
 </tr>
 <tr>
 <td>A build reads <strong><code>vendor_only</code></strong></td>
@@ -1809,7 +1818,11 @@ pack-lane key. Releases no longer use it.</p>
 </tr>
 <tr>
 <td><em>Harvest not queued</em> — <code>no live harvester for …</code></td>
-<td>FortiAnalyzer cannot be harvested live; use §8.2</td>
+<td>That appliance kind cannot be harvested live; use §8.2</td>
+</tr>
+<tr>
+<td>A FortiAnalyzer harvest fails — <code>the syntax walk read no object …</code> or <code>… objects refused</code></td>
+<td>The walk was answered but measured nothing (or mostly <code>-11</code>). Check the admin's <code>rpc-permit</code> and its profile (the harvest itself only sends <code>get</code>), then harvest again. The unhealthy evidence row is kept as the record of the failed read</td>
 </tr>
 <tr>
 <td><em>Harvest not queued</em> — <code>… is in maintenance</code></td>
@@ -2437,7 +2450,7 @@ capabilities and where it was verified; the <strong>Schema builds</strong> page 
 <td>FortiAnalyzer</td>
 <td>JSON-RPC <code>get</code> with <code>option: syntax</code></td>
 <td>the same answer (the <code>/cli/global/...</code> URL is the CLI path)</td>
-<td><strong>no</strong> — no FortiAnalyzer in the lab</td>
+<td><strong>no</strong> — the walk was measured on 7.6.7 build3737 by the harvester; the REST schema also live from a registered FortiAnalyzer, <code>apilib_harvest</code></td>
 </tr>
 </tbody>
 </table>

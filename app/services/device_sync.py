@@ -396,6 +396,32 @@ def sweep_tables(product: str, appliances=()) -> dict[str, str]:
     return out
 
 
+def table_kinds(product: str, appliances, tables) -> dict[str, str]:
+    """``{table: "table" | "singleton"}`` for the *tables* (registry names)
+    whose shape the API library measured on the builds of *appliances*.
+
+    The name is matched by its URN on each build and by itself, both folded
+    (:func:`api_library.object_kind_key`). A table one build measured as a
+    list is a ``table``; ``singleton`` only when every build that measured it
+    says so. A table no build measured is absent -- "not measured", never a
+    guess either way."""
+    from ..registry import loader
+    from . import api_library as lib
+    builds = sorted({v for v in (loader.version_of(a) for a in appliances) if v})
+    seen: dict[str, set] = {}
+    for v in builds:
+        kinds = lib.object_kinds(product, v)
+        if not kinds:
+            continue
+        urns = loader.registry_for(product, v)
+        for t in tables:
+            got = {kinds.get(lib.object_kind_key(c)) for c in (urns.get(t), t) if c}
+            got.discard(None)
+            if got:
+                seen.setdefault(t, set()).update(got)
+    return {t: ("table" if "table" in k else "singleton") for t, k in seen.items()}
+
+
 def snapshot_for(appliance, *, timeout: float = 20.0) -> dict:
     """Product-aware config sweep: dispatch to the FortiADC, FortiAnalyzer,
     FortiAuthenticator, FortiGate or FortiWeb sweep by ``appliance.kind``. All return the same snapshot dict

@@ -16,6 +16,8 @@ Admin-only (USER_MANAGE), mirroring the desktop Settings console.
 """
 from __future__ import annotations
 
+import logging
+
 from flask import Blueprint, render_template, request, flash, redirect, url_for
 from flask_login import login_required
 
@@ -26,6 +28,7 @@ from ..services import settings_store as store
 from ..services.audit import log_action
 
 bp = Blueprint('naming', __name__, url_prefix='/naming')
+log = logging.getLogger(__name__)
 
 #: Discovered table -> catalog element of ``services.naming``, where the
 #: catalog has one: that element IS the table's scheme entry. Any other table
@@ -209,7 +212,12 @@ def _scheme_model(product: str) -> dict:
         sweep = device_sync.sweep_tables(product, fleet)
     except Exception:  # noqa: BLE001 — the trees still list what devices hold
         sweep = {}
-    types = nd.object_types(sweep, trees)
+    try:
+        kinds = device_sync.table_kinds(product, fleet, sweep)
+    except Exception:  # noqa: BLE001 — unmeasured shapes stay listed
+        log.exception("naming: table_kinds(%s) failed", product)
+        kinds = {}
+    types = nd.object_types(sweep, trees, kinds)
     by_table: dict[str, dict] = {}
     for an in analyses:
         for t in an["tables"]:
@@ -232,6 +240,7 @@ def _scheme_model(product: str) -> dict:
             "derives": derives, "note": note, "curated": curated,
             "seen": bool(table and (types.get(table) or {}).get("seen")),
             "numeric": bool(table and (types.get(table) or {}).get("numeric")),
+            "shape": (types.get(table or "") or {}).get("shape") or "",
             "found": found.get(table or ""), "names": names[:NAMES_FOR_LIVE_CHECK],
             "user": len(names), "factory": info.get("factory", 0),
             "check": nd.conformance(pattern, names) if pattern and names else None,

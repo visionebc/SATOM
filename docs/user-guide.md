@@ -2045,9 +2045,13 @@ it to the fleet; for the fleet-wide view, use Fleet → WAF → Artifacts (§13.
 **Administrator → Naming** is in every device ADOM (FortiWeb, FortiADC,
 FortiGate, FortiAuthenticator, FortiAnalyzer). Its two tabs work on **one list
 of object types**: every table the product's configuration sync reads,
-including the ones no device holds an object of yet. Settings blocks (rows
-without a name) are not object types and are left out; a table whose objects
-are keyed by number is listed and marked so.
+including the ones no device holds an object of yet. Settings blocks are not
+object types and are left out: rows without a name, and an empty endpoint the
+API library measured as one settings object on the devices' builds. An empty
+type whose shape no build has measured yet (most FortiAuthenticator REST
+resources, FortiAnalyzer reports and device lists) stays listed and is marked
+**list or settings block not measured**. A table whose objects are keyed by
+number is listed and marked so.
 
 **Scheme** holds the pattern of each object type. Entries marked **builds
 names** (the FortiWeb catalog: server policy, pool, WPP, certificate…) are

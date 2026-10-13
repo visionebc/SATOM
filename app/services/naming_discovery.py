@@ -506,7 +506,8 @@ def analyse_device(product: str, device: str, tree: dict,
             "factory_objects": sum(t["factory"] for t in tables)}
 
 
-def object_types(sweep: dict[str, str], trees: list[dict]) -> dict[str, dict]:
+def object_types(sweep: dict[str, str], trees: list[dict],
+                 kinds: dict[str, str] | None = None) -> dict[str, dict]:
     """Every object type the naming scheme lists for a product.
 
     ``sweep`` is ``{table: section}`` of what the product's configuration
@@ -518,13 +519,20 @@ def object_types(sweep: dict[str, str], trees: list[dict]) -> dict[str, dict]:
       when every name is a number (Discovery says "keyed by number");
     * rows but never a name → a settings block, not an object type → left
       out;
-    * in the sweep but empty on every device → listed (``seen`` False): the
-      object type a device WILL hold once someone creates one.
+    * in the sweep but empty on every device → judged by ``kinds``, the shape
+      the API library measured on the devices' builds
+      (``device_sync.table_kinds``): a ``singleton`` is a settings block →
+      left out; a ``table`` or an unmeasured one is listed (``seen`` False):
+      the object type a device WILL hold once someone creates one.
 
     Every type Discovery shows with team objects is in the result, so the
-    two tabs of the Naming page list the same object types.
+    two tabs of the Naming page list the same object types. ``shape`` is the
+    measured kind (``"table"``/``"singleton"``) or ``""`` when no build
+    measured it.
 
-    Returns ``{table: {"section": str, "seen": bool, "numeric": bool}}``."""
+    Returns ``{table: {"section": str, "seen": bool, "numeric": bool,
+    "shape": str}}``."""
+    kinds = kinds or {}
     named: set[str] = set()
     worded: set[str] = set()
     nameless: set[str] = set()
@@ -548,9 +556,12 @@ def object_types(sweep: dict[str, str], trees: list[dict]) -> dict[str, dict]:
     for table in set(sweep) | named:
         if table in nameless and table not in named:
             continue
+        if table not in named and kinds.get(table) == "singleton":
+            continue
         out[table] = {"section": section.get(table) or sweep.get(table) or "Other",
                       "seen": table in named,
-                      "numeric": table in named and table not in worded}
+                      "numeric": table in named and table not in worded,
+                      "shape": kinds.get(table) or ""}
     return out
 
 

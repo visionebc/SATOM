@@ -1928,6 +1928,18 @@ def channel_memo():
             _CHANNEL_MEMO.reset(token)
 
 
+def _cli_key_alias(product: str, objects: dict) -> dict:
+    """``{CLI evidence key: channel key}`` where a product's CLI evidence keys
+    an object differently from its REST evidence, so both channels of one
+    object meet in one slot. Only FortiAnalyzer, whose CLI paths ARE its
+    JSON-RPC URLs (``schema_adapters.fortianalyzer.tree_channel_keys``); every
+    other product keys both channels by the same REST path already."""
+    if product != "fortianalyzer" or not objects:
+        return {}
+    from .schema_adapters import fortianalyzer as faz
+    return {k: v for k, v in faz.tree_channel_keys(objects).items() if v != k}
+
+
 def _channel_view(product: str, version) -> dict:
     """Both channels of one build, joined on :func:`urn_key`.
 
@@ -1956,6 +1968,7 @@ def _channel_view_read(product: str, version) -> dict:
 
     cli_keys = {name for name, by_src in point.items()
                 if any(s in CLI_SOURCES for s in by_src)}
+    alias = _cli_key_alias(product, objects)
     keys: dict = {}
     unjoined = []
 
@@ -1971,7 +1984,7 @@ def _channel_view_read(product: str, version) -> dict:
             continue
         pool = _pool(by_src)
         urn = next((by_src[s]["urn"] for s in _ordered_sources(by_src) if by_src[s]["urn"]), "")
-        key = urn_key(urn) if urn else (name if name in cli_keys else "")
+        key = urn_key(urn) if urn else (alias.get(name, name) if name in cli_keys else "")
         if not key:
             unjoined.append(name)
             continue
@@ -2016,9 +2029,12 @@ def _channel_view_read(product: str, version) -> dict:
             cur["evidence_ids"] = sorted(set(cur["evidence_ids"]) | set(ev_ids))
     for name in sorted(cli_keys):
         by_src = point.get(name) or {}
-        slot = _slot(name)
-        slot["tree"] = _with_object_meta(by_src.get(SOURCE_CLI_TREE), objects.get(name))
-        slot["full"] = _with_object_meta(by_src.get(SOURCE_CLI_FULL), objects.get(name))
+        slot = _slot(alias.get(name, name))
+        # Two CLI keys for one object (two key rules on one build): the first
+        # record that exists stays, in key order, so the view is deterministic.
+        for src, part in ((SOURCE_CLI_TREE, "tree"), (SOURCE_CLI_FULL, "full")):
+            if slot[part] is None:
+                slot[part] = _with_object_meta(by_src.get(src), objects.get(name))
     return {"build": b, "version": v, "keys": keys, "evidence": evidence,
             "tree_measured": bool(evidence.get(SOURCE_CLI_TREE)),
             # A REST source that measured the WHOLE REST surface of the build

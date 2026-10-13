@@ -2067,7 +2067,13 @@ fact's <code>attrs</code>: <code>cli_id</code>, <code>hidden</code>, <code>range
 (<code>diagnose__tree__</code>, <code>execute__tree__</code>) are skipped. FortiAuthenticator has no
 <code>tree</code> (<code>No such command.</code>); its <code>cli_tree</code> evidence is the <code>set ?</code> help of
 each setup-CLI object (<code>summary.format = "fac_help"</code>). FortiAnalyzer's CLI
-schema is its JSON-RPC syntax answer, stored as <code>schema</code>.</p>
+schema is its JSON-RPC syntax answer, stored as <code>schema</code>. A knowledge pack can
+also carry a FortiAnalyzer <code>cli_tree</code> (the harvester's SSH <code>tree</code>), keyed by
+the FortiWeb rule (<code>system/admin.user/dashboard</code>). The channel view re-keys
+each of its objects to the JSON-RPC URL its CLI path and enclosing tables give
+(<code>cli/global/system/admin/user/{user}/dashboard</code>), so the tree and the syntax
+walk meet on one object (<code>schema_adapters.fortianalyzer.tree_channel_keys</code>);
+an object whose metadata names no CLI path or an unknown parent keeps its key.</p>
 <p><strong>CLI path to REST path</strong> (<code>cli_schema.rest_path</code>):</p>
 <table>
 <thead>
@@ -2203,6 +2209,14 @@ row created in every empty table and read back by both channels):</p>
 <td>0</td>
 <td>316</td>
 <td>0</td>
+</tr>
+<tr>
+<td>FortiAnalyzer 7.6.7</td>
+<td>1,494</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>61 (children of tables with no row, and objects the build lacks)</td>
 </tr>
 </tbody>
 </table>

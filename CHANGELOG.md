@@ -111,6 +111,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   walk had never run against a device), and its evidence no longer lists an
   unverified reason.
 
+### Fixed — FortiAnalyzer fields read "REST only" or "unknown" in the API library
+
+- The CLI tree a knowledge pack brings for FortiAnalyzer names an object
+  `system/admin.user/dashboard`; the syntax walk names the same object
+  `cli/global/system/admin/user/{user}/dashboard`. The two never met, so on
+  7.6.7 no field read *both*: 1,494 read *REST only* and 1,555 *unknown*, over
+  315 entries for 176 objects (Build compatibility and the per-device *Not
+  in GUI, but in CLI* page read these channels). The library now
+  derives each tree object's JSON-RPC URL from its CLI path and enclosing
+  tables, so both meet: 1,494 *both*, 61 *unknown* (children of tables with
+  no row, which the walk cannot ask, and objects the build lacks), 176
+  entries. Stored evidence is unchanged; other products are unaffected.
+
 ### Added — the operator CLI catches up with 3.x: naming, signatures, layouts
 
 - **`satom get device naming [<device> [--table <type>]] [--product <p>]`** —

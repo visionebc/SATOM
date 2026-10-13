@@ -98,6 +98,50 @@ def channel_key(url: str) -> str:
     return (url or "").split("?", 1)[0].strip("/")
 
 
+def tree_channel_keys(objects: dict) -> dict:
+    """``{CLI evidence key: JSON-RPC channel key}`` for a build's CLI objects.
+
+    ``objects`` is the CLI evidence's ``summary.objects`` (``cli_path``,
+    ``kind``, ``parent`` = the parent's key or CLI path). On a FortiAnalyzer
+    the CLI and the API are one channel spelled two ways, but the knowledge
+    pack's ``cli_tree`` keys an object by the FortiWeb rule
+    (``system/admin.user/dashboard``) while the syntax walk keys it by its
+    URL (``cli/global/system/admin/user/{user}/dashboard``): joined on the
+    key, nothing ever met and every field read ``rest_only`` or ``unknown``
+    (faz02 7.6.7, 2026-10-13). The URL follows from the CLI path and the
+    enclosing TABLES (:func:`jsonrpc_url`), so it is computed from the
+    metadata whatever rule wrote the key. An object whose metadata is
+    incomplete (no CLI path, an unknown parent, a section outside
+    :data:`SECTIONS`) is left out: the caller keeps its key as it is.
+    """
+    objs = {k: m for k, m in (objects or {}).items()
+            if isinstance(m, dict) and m.get("cli_path")}
+    by_path = {m["cli_path"]: m for m in objs.values()}
+    out: dict = {}
+    for key, meta in objs.items():
+        path = meta["cli_path"]
+        if path.split()[0] not in SECTIONS:
+            continue
+        tables, cur, seen, whole = [], meta, set(), True
+        while cur.get("parent"):
+            ref = cur["parent"]
+            parent = objs.get(ref) or by_path.get(ref)
+            if parent is None or ref in seen:
+                whole = False
+                break
+            seen.add(ref)
+            if parent.get("kind") == "table":
+                tables.insert(0, parent["cli_path"])
+            cur = parent
+        if not whole:
+            continue
+        try:
+            out[key] = channel_key(jsonrpc_url(path, tables))
+        except ValueError:          # a parent whose path is not a prefix
+            continue
+    return out
+
+
 def canonical_url(url: str) -> str:
     """A ``/cli/global`` URL whose placeholders are named after the table they
     follow (``.../admin/user/{user}/dashboard``), the vendor's own convention."""
@@ -418,6 +462,7 @@ ADAPTER = register(Adapter(
     harvest)
 
 
-__all__ = ["PRODUCT", "UNVERIFIED", "VERIFIED_ON", "SECTIONS", "MAX_REQUESTS", "jsonrpc_url", "cli_path",
-           "channel_key", "canonical_url", "catalog_urls", "syntax_request", "measure",
-           "evidence_from_syntax", "known_urls", "harvest", "ADAPTER"]
+__all__ = ["PRODUCT", "UNVERIFIED", "VERIFIED_ON", "SECTIONS", "MAX_REQUESTS",
+           "jsonrpc_url", "cli_path", "channel_key", "tree_channel_keys", "canonical_url",
+           "catalog_urls", "syntax_request", "measure", "evidence_from_syntax", "known_urls",
+           "harvest", "ADAPTER"]

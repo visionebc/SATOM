@@ -5882,7 +5882,9 @@ The API explorer belongs to the FortiWeb ADOM, so its picker and this button
 only offer FortiWeb appliances. A FortiAnalyzer is harvested on demand from
 **Schema builds** (§30.12): its **Harvest** runs the same read-only syntax walk
 and stores the same evidence. Other products rely on the firmware change and
-the scheduled action above.
+the scheduled action above. On a FortiAnalyzer the CLI tree a knowledge pack
+brings and the syntax walk describe the same objects, and the library reads
+them as one: on 7.6.7, 1,494 fields are *both* and none is *REST only*.
 
 **Harvest CLI schema.** A second button reads the appliance's CLI side: the
 `tree` command (the whole CLI schema of the build: every object, field, type,

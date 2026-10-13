@@ -22,6 +22,7 @@ from . import cmd_fix as f
 from . import cmd_ha as ha
 from . import cmd_knowledge as kn
 from . import cmd_migration as mg
+from . import cmd_release as rl
 from . import cmd_get as g
 from . import cmd_ops as o
 from . import cmd_show as s
@@ -133,6 +134,11 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
         _group("git", "The repository on this node.",
             _n("status", "Branch, drift, unpushed age, parked safety refs.",
                run=o.git_status),
+        ),
+        _group("release", "Signed releases: what root may install from deploy/.",
+            _n("trust", "Release trust anchor, newest signed commit, and whether "
+                        "HEAD's deploy/ matches it (details need sudo).",
+               run=rl.release_trust),
         ),
         _group("user", "Accounts.",
             _n("list", "Who can log in — and whether anyone still can.", run=o.user_list),
@@ -393,6 +399,10 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
            run=e.postflight, needs_root=True),
         _n("promote", "Promote this standby to primary. Requires --yes.",
            run=e.promote, needs_root=True, danger=True),
+        _n("sign-release", "Sign HEAD of main with the root-only release key (one "
+                           "empty signed commit, pushed). Primary only; dry run "
+                           "unless --yes.",
+           run=rl.sign_release, needs_root=True, danger=True, usage=rl.SIGN_USAGE),
     ),
     _group("ha", "HA link: can the standby fetch code from this primary? "
                  "Check it, and repair the primary's login service.",

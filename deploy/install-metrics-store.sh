@@ -33,8 +33,13 @@ APP_DIR="${FM_APP_DIR:-/opt/satom}"
 VM_BIN="/usr/local/bin/victoria-metrics"
 VM_DATA="/var/lib/satom-metrics"
 UNIT="satom-metrics.service"
-UNIT_SRC="${APP_DIR}/deploy/${UNIT}"
-ENV_FILE="${APP_DIR}/deploy/metrics-store.env"
+# [SATOM-RELEASE-TRUST] Where the unit template and metrics-store.env (which is
+# SOURCED, as root, below) are read from. Unset = the app tree's deploy/
+# (historical behaviour); the update runner and the root CLI point it at a
+# root-only staged copy of the newest SIGNED release when an anchor is installed.
+DEPLOY_SRC="${SATOM_DEPLOY_SRC:-${APP_DIR}/deploy}"
+UNIT_SRC="${DEPLOY_SRC}/${UNIT}"
+ENV_FILE="${DEPLOY_SRC}/metrics-store.env"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "install-metrics-store.sh: must run as root (it writes ${VM_BIN})." >&2

@@ -48,12 +48,14 @@ _SHA_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 _FILE_NAME_RE = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9._-]{0,200}$")
 
 # [SATOM-RELEASE-TRUST] A second, OPT-IN safeguard lives further down (see
-# _release_trust / _verify_target_or_refuse / _staged_deploy_dir): when a
-# ROOT-OWNED release-signature anchor is installed, the systemd units root
-# installs and the install-*.sh scripts root runs are taken from a verified,
-# root-only staging copy instead of the service-account-owned deploy/. With no
-# anchor (today's default on every node) the behaviour is byte-for-byte
-# unchanged -- FAIL-SAFE, so a node that never opts in cannot be bricked by it.
+# _release_trust / _resolve_release / _staged_deploy_dir): when a ROOT-OWNED
+# release-signature anchor is installed, the systemd units root installs and
+# the install-*.sh scripts root runs are taken from a root-only staging copy of
+# the newest SIGNED release instead of the service-account-owned deploy/. An
+# unsigned target whose deploy/ differs from that release still updates the app
+# (it runs as the service account anyway) but the root-side refresh is HELD --
+# a warning, not a failure, so HA keeps converging. With no anchor (today's
+# default on every node) the behaviour is byte-for-byte unchanged.
 
 
 def _valid_ref(value):
@@ -303,9 +305,13 @@ def enforce_unit_user(user):
 # ACCOUNT owns, so without a trust anchor that account can commit a malicious
 # unit/script, point an update's target at that commit, and have root run it.
 # Enforcement is OPT-IN and FAIL-SAFE: with no anchor the paths behave exactly
-# as before; installing a root-owned anchor switches it on.
+# as before; installing a root-owned anchor switches it on. The resolution
+# itself (root-only mirror, signature walk, staging) lives in release_trust.py,
+# shared with the root operator CLI -- see its docstring for why root never
+# runs git inside the service account's repository.
 TRUST_ANCHOR = Path("/etc/satom/release-trust.allowed_signers")
 _TRUST_PUB_FALLBACK = Path("/etc/satom/release-trust.pub")
+RELEASE_MIRROR = Path("/var/lib/satom-release/mirror.git")
 
 
 def _release_trust():
@@ -330,62 +336,82 @@ def _release_trust():
 def _root_only_stage(prefix="satom-rel-"):
     """A fresh 0700 directory root owns, under /run (tmpfs) when present else
     /var/lib. The caller removes it once it is done with the staged copy."""
-    base = Path("/run") if os.path.isdir("/run") else Path("/var/lib")
+    base = (Path("/run") if os.path.isdir("/run") and os.access("/run", os.W_OK)
+            else Path(tempfile.gettempdir()) if os.geteuid() != 0
+            else Path("/var/lib"))
     d = Path(tempfile.mkdtemp(prefix=prefix, dir=str(base)))
     os.chmod(d, 0o700)
     return d
 
 
-def _verify_target_or_refuse(sha, trust, st):
-    """True iff commit ``sha`` is signed by a key in the trust anchor.
+def _load_release_trust():
+    """release_trust.py from the ROOT-OWNED place this runner lives in, or None.
 
-    Verification uses git's OWN ssh-signature check with the allowed-signers
-    file passed on the COMMAND LINE (``-c gpg.ssh.allowedSignersFile=...``), so
-    the repo's ``.git/config`` -- which the service account can write -- cannot
-    redirect it. Records the outcome as a step; the caller refuses the whole
-    update (no unit copied, no script run) when this returns False."""
-    if not isinstance(sha, str) or not _SHA_RE.fullmatch(sha):
-        st.step("verify release signature", False,
-                "refusing to verify a non-commit target %r" % (sha,))
-        return False
-    r = subprocess.run(
-        ["git", "-C", str(APP), "-c", "safe.directory=%s" % APP,
-         "-c", "gpg.format=ssh",
-         "-c", "gpg.ssh.allowedSignersFile=%s" % trust,
-         "verify-commit", sha],
-        capture_output=True, text=True, timeout=60)
-    ok = r.returncode == 0
-    st.step("verify release signature", ok,
-            "%s signed by a trusted release key" % sha[:12] if ok
-            else "signature check FAILED for %s: %s"
-                 % (sha[:12], (r.stderr or r.stdout or "").strip()[-300:]))
-    return ok
+    Same discipline as _load_update_package(): a sibling of this file (the
+    root-owned copy install-runner.sh installs), never APP/deploy. The second
+    candidate only exists in a source checkout (the runner run from deploy/,
+    where the module lives in the CLI package) -- i.e. the tests."""
+    import importlib.util
+    here = Path(__file__).resolve().parent
+    for path in (here / "release_trust.py", here / "satom_cli" / "release_trust.py"):
+        if path.is_file():
+            spec = importlib.util.spec_from_file_location("satom_release_trust", path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod
+    return None
+
+
+def _resolve_release(target_sha, trust, st):
+    """Where root-side content comes from for ``target_sha``; records the step.
+
+    Returns ``{"mode": "signed"|"pinned"|"held", "signed": sha|None, ...}``.
+    Never raises and never refuses the update: anything that prevents a trust
+    decision (helper missing, mirror unusable, fetch failed) HOLDS the
+    root-side refresh -- the units and root-owned copies already installed keep
+    running -- because a hardening must not stop HA from converging."""
+    def _held(detail):
+        st.step("root-side refresh held", True, "WARNING: " + detail, warn=True)
+        return {"mode": "held", "signed": None, "detail": detail}
+
+    if not isinstance(target_sha, str) or not _SHA_RE.fullmatch(target_sha) \
+            or len(target_sha) != 40:
+        return _held("cannot resolve the target commit (%r); root-side refresh "
+                     "held" % (target_sha,))
+    rt = _load_release_trust()
+    if rt is None:
+        return _held("release_trust.py is not installed next to the runner "
+                     "(%s); root-side refresh held -- run 'satom execute "
+                     "reinstall runner'" % Path(__file__).resolve().parent)
+    st.begin("verify release signature")
+    try:
+        res = rt.resolve(APP, target_sha, trust, app_user=APP_USER,
+                         mirror=RELEASE_MIRROR)
+    except Exception as exc:  # noqa: BLE001 -- fail safe: hold, never escalate
+        return _held("release signature could not be checked (%s); root-side "
+                     "refresh held" % str(exc)[:300])
+    if res["mode"] == "held":
+        return _held(res["detail"])
+    st.step("verify release signature", True, res["detail"])
+    return res
 
 
 def _staged_deploy_dir(verified_sha):
     """Root-only staging dir holding deploy/ at ``verified_sha``, or None when
     enforcement is OFF (the caller then uses APP/deploy unchanged).
 
-    ``git archive <sha> deploy | tar -x`` into a 0700 dir root owns: the bytes
-    come from the object store at the verified commit, never from the
-    service-account-owned worktree, so an in-place edit after the signature
-    check cannot change the units root installs or the scripts root runs."""
+    ``git archive <sha> deploy | tar -x`` from the ROOT-ONLY release mirror
+    into a 0700 dir root owns: the bytes come from objects whose ids root
+    recomputed, at the verified commit -- never from the service-account-owned
+    worktree or object store, and never through that repository's config."""
     if _release_trust() is None:
         return None
+    rt = _load_release_trust()
+    if rt is None:
+        raise RuntimeError("release_trust.py is not installed next to the runner")
     stage = _root_only_stage()
     try:
-        arch = subprocess.run(
-            ["git", "-C", str(APP), "-c", "safe.directory=%s" % APP,
-             "archive", verified_sha, "deploy"],
-            capture_output=True, timeout=120)
-        if arch.returncode != 0:
-            raise RuntimeError("git archive failed: %s"
-                               % (arch.stderr or b"").decode("utf-8", "replace")[-200:])
-        tar = subprocess.run(["tar", "-x", "-C", str(stage)],
-                             input=arch.stdout, capture_output=True, timeout=120)
-        if tar.returncode != 0:
-            raise RuntimeError("staging tar -x failed: %s"
-                               % (tar.stderr or b"").decode("utf-8", "replace")[-200:])
+        rt.stage_deploy(verified_sha, stage, mirror=RELEASE_MIRROR)
     except BaseException:
         import shutil as _sh
         _sh.rmtree(stage, ignore_errors=True)
@@ -799,10 +825,17 @@ class Status:
         self.d["updated_at"] = now()
         self.flush()
 
-    def step(self, name, ok=True, detail=""):
+    def step(self, name, ok=True, detail="", warn=False):
         self.d.pop("current", None)
-        self.d["steps"].append({"name": name, "ok": bool(ok),
-                                "detail": (detail or "").strip()[-500:], "at": now()})
+        rec = {"name": name, "ok": bool(ok),
+               "detail": (detail or "").strip()[-500:], "at": now()}
+        if warn:
+            # A NON-FATAL condition the operator must see (e.g. the root-side
+            # refresh held by [SATOM-RELEASE-TRUST]). ok stays True so nothing
+            # that reads "ok" treats the update as failed or backs off.
+            rec["warn"] = True
+            self.d.setdefault("warnings", []).append(name)
+        self.d["steps"].append(rec)
         self.d["updated_at"] = now()
         self.flush()
 
@@ -926,12 +959,15 @@ def process(req_path):
 
         # Refresh unit files and re-run the installers. [SATOM-RELEASE-TRUST]
         # By default (no root trust anchor) deploy_dir is APP/deploy and this is
-        # byte-for-byte the historical path. With an anchor present the resolved
-        # target is signature-verified and its deploy/ is STAGED into a
-        # root-only dir first, so the service account cannot swap a unit or an
-        # install-*.sh between the check and root running it.
+        # byte-for-byte the historical path. With an anchor present, deploy/ is
+        # STAGED into a root-only dir from the newest SIGNED release (the target
+        # itself, or its signed ancestor when deploy/ is byte-identical), so the
+        # service account cannot choose a unit or an install-*.sh root runs.
+        # When deploy/ has unsigned changes the app update above stands and
+        # only this root-side refresh is HELD (a warning, not a failure).
         trust = _release_trust()
         stage_root = None
+        hold_root_side = False
         if trust is None:
             st.step("release signature enforcement", True,
                     "OFF (no root trust anchor at %s)" % TRUST_ANCHOR)
@@ -939,23 +975,32 @@ def process(req_path):
             script_env = None
         else:
             target_sha = git("rev-parse", "HEAD").stdout.strip()
-            if not _verify_target_or_refuse(target_sha, trust, st):
-                st.finish("failed", error="refusing update: release signature "
-                          "check failed for %s" % (target_sha[:12] or "target"))
-                return
-            stage_root = _staged_deploy_dir(target_sha)
-            if stage_root is None:
-                st.finish("failed", error="release trust anchor vanished "
-                          "mid-update; refusing to use the app tree")
-                return
-            deploy_dir = stage_root / "deploy"
-            # The install scripts read FM_APP_DIR to aim their systemd drop-ins
-            # at the real app; the STAGED script body must still target it.
-            script_env = dict(os.environ, FM_APP_DIR=str(APP))
-            st.step("stage verified release", True, str(deploy_dir))
+            rel = _resolve_release(target_sha, trust, st)
+            deploy_dir = None
+            script_env = None
+            if rel["mode"] != "held":
+                try:
+                    stage_root = _staged_deploy_dir(rel["signed"])
+                except Exception as exc:  # noqa: BLE001 -- fail safe: hold
+                    stage_root = None
+                    st.step("root-side refresh held", True,
+                            "WARNING: staging signed release %s failed (%s); "
+                            "root-side refresh held"
+                            % (rel["signed"][:12], str(exc)[:200]), warn=True)
+                if stage_root is not None:
+                    deploy_dir = stage_root / "deploy"
+                    # The install scripts read FM_APP_DIR to aim their drop-ins
+                    # at the real app, and SATOM_DEPLOY_SRC to take what they
+                    # install from the STAGED copy, never from APP/deploy.
+                    script_env = dict(os.environ, FM_APP_DIR=str(APP),
+                                      SATOM_DEPLOY_SRC=str(deploy_dir))
+                    st.step("stage verified release", True,
+                            "%s from %s" % (deploy_dir, rel["signed"][:12]))
+            hold_root_side = deploy_dir is None
+            st.d["release_trust"] = rel["mode"] if not hold_root_side else "held"
         try:
             # Refresh unit files (they may have changed in the update).
-            for unit in UNIT_FILES:
+            for unit in (() if hold_root_side else UNIT_FILES):
                 src = deploy_dir / unit
                 if src.exists():
                     subprocess.run(["cp", str(src), "/etc/systemd/system/" + unit])
@@ -981,6 +1026,8 @@ def process(req_path):
                                          "update runner + /usr/local/sbin helpers"),
                                         ("install-metrics-store.sh",
                                          "metrics store")):
+                    if hold_root_side:
+                        break
                     _p = deploy_dir / _script
                     if _p.exists():
                         st.begin("refresh %s" % _label)
@@ -1629,7 +1676,10 @@ def package_change(req_path):
             stage_root = _root_only_stage()
             up.extract_app_tree(app_tar, stage_root)
             deploy_dir = stage_root / "deploy"
-            script_env = dict(os.environ, FM_APP_DIR=str(APP))
+            # SATOM_DEPLOY_SRC: the scripts copy what they install (CLI package,
+            # runner, sbin helpers) from the staged copy too, not APP/deploy.
+            script_env = dict(os.environ, FM_APP_DIR=str(APP),
+                              SATOM_DEPLOY_SRC=str(deploy_dir))
             st.step("stage verified release scripts", True, str(deploy_dir))
         try:
             for unit in UNIT_FILES:

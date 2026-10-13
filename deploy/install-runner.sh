@@ -41,7 +41,16 @@ TRUST_DIR="/etc/satom/update-keys"
 # for the same reason as the runner: it IS the signature verifier.
 # upgrade_feed.py is what 'satom execute update fetch' runs as root to download
 # a package; loading it from the app tree would run service-account code as root.
-FILES="self_update_runner.py update_package.py upgrade_feed.py"
+# satom_cli/release_trust.py ([SATOM-RELEASE-TRUST]) is the signed-release
+# resolver the runner loads as a SIBLING -- installed flat, next to it.
+FILES="self_update_runner.py update_package.py upgrade_feed.py satom_cli/release_trust.py"
+
+# [SATOM-RELEASE-TRUST] Where the payload is read from. Unset = the app tree's
+# deploy/ (historical behaviour). The update runner and the root CLI set it to
+# a root-only staged copy of the newest SIGNED release when a release trust
+# anchor is installed, so root installs the signed bytes, not the service
+# account's working tree.
+DEPLOY_SRC="${SATOM_DEPLOY_SRC:-${APP_DIR}/deploy}"
 
 # [SATOM-SBIN-ROOT-COPY]
 # Helper scripts that the units execute from /usr/local/sbin rather than from
@@ -65,8 +74,8 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 3
 fi
 for f in $FILES; do
-  [ -f "${APP_DIR}/deploy/${f}" ] || {
-    echo "install-runner.sh: missing ${APP_DIR}/deploy/${f}" >&2; exit 1; }
+  [ -f "${DEPLOY_SRC}/${f}" ] || {
+    echo "install-runner.sh: missing ${DEPLOY_SRC}/${f}" >&2; exit 1; }
 done
 
 # Same interpreter policy as install-cli.sh: a SYSTEM python >= 3.10, never the
@@ -100,7 +109,7 @@ STAGE="${LIB_DIR}.new.$$"
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
 for f in $FILES; do
-  cp -a "${APP_DIR}/deploy/${f}" "${STAGE}/${f}"
+  cp -a "${DEPLOY_SRC}/${f}" "${STAGE}/$(basename "$f")"
 done
 chown -R root:root "$STAGE"
 chmod 0755 "$STAGE"
@@ -159,16 +168,17 @@ chown root:root /etc/satom/pack-keys
 chmod 0755 /etc/satom/pack-keys
 
 # ---- release-signature trust anchor (OPTIONAL, opt-in) -------------------
-# [SATOM-RELEASE-TRUST] self_update_runner.py enforces SIGNED releases only
-# when a ROOT-OWNED anchor exists here; with none (the default) updates behave
+# [SATOM-RELEASE-TRUST] self_update_runner.py and the root CLI pin what root
+# installs/runs from deploy/ to the newest SIGNED release only when a
+# ROOT-OWNED anchor exists here; with none (the default) updates behave
 # exactly as before. To turn enforcement ON, place an SSH allowed-signers file
-# (or a single public key) and have the release pipeline sign its commits/tags:
+# (or a single public key) and sign releases with 'satom execute sign-release':
 #     /etc/satom/release-trust.allowed_signers   (preferred; ssh allowed-signers)
 #     /etc/satom/release-trust.pub               (single-key fallback)
-# Both must be root:root and non-empty. This installer deliberately does NOT
-# generate keys and does NOT create the anchor -- enabling enforcement is an
-# explicit operator act, so a mis-signed release can never silently brick every
-# future deploy on a node that never opted in.
+# Both must be root:root and non-empty. An unsigned commit that changes deploy/
+# never blocks an update: the app still updates and only the root-side refresh
+# is held (a warning). This installer deliberately does NOT generate keys and
+# does NOT create the anchor -- enabling enforcement is an explicit operator act.
 
 # ---- root-owned copies of the /usr/local/sbin helpers --------------------
 # [SATOM-SBIN-ROOT-COPY] root:root 0755 for the same reason as ${LIB_DIR}: a
@@ -177,7 +187,7 @@ chmod 0755 /etc/satom/pack-keys
 # than fatal -- satom-ha-rsync-shell only ships on some branches -- but a
 # source that IS present and fails to install is a hard failure below.
 for f in $SBIN_FILES; do
-  src="${APP_DIR}/deploy/${f}"
+  src="${DEPLOY_SRC}/${f}"
   if [ -f "$src" ]; then
     install -o root -g root -m 0755 "$src" "${SBIN_DIR}/${f}"
   fi
@@ -195,11 +205,11 @@ for p in "$LIB_DIR" "$TRUST_DIR"; do
   esac
 done
 for f in $FILES; do
-  owner="$(stat -c %U "${LIB_DIR}/${f}")"
-  [ "$owner" = root ] || { echo "install-runner.sh: ${LIB_DIR}/${f} is ${owner}" >&2; fail=1; }
+  owner="$(stat -c %U "${LIB_DIR}/$(basename "$f")")"
+  [ "$owner" = root ] || { echo "install-runner.sh: ${LIB_DIR}/$(basename "$f") is ${owner}" >&2; fail=1; }
 done
 for f in $SBIN_FILES; do
-  src="${APP_DIR}/deploy/${f}"; dst="${SBIN_DIR}/${f}"
+  src="${DEPLOY_SRC}/${f}"; dst="${SBIN_DIR}/${f}"
   [ -f "$src" ] || continue
   owner="$(stat -c %U "$dst" 2>/dev/null || echo MISSING)"
   mode="$(stat -c %a "$dst" 2>/dev/null || echo -)"
@@ -221,5 +231,5 @@ esac
 echo "SATOM update runner hardened:"
 echo "  code       : ${LIB_DIR} (root:root, system python ${RUN_PY})"
 echo "  trust store: ${TRUST_DIR} ($(ls -1 "$TRUST_DIR"/*.pub 2>/dev/null | wc -l) key(s))"
-echo "  sbin       : ${SBIN_DIR} ($(for f in $SBIN_FILES; do [ -f "${APP_DIR}/deploy/${f}" ] && printf '%s ' "$f"; done))"
+echo "  sbin       : ${SBIN_DIR} ($(for f in $SBIN_FILES; do [ -f "${DEPLOY_SRC}/${f}" ] && printf '%s ' "$f"; done))"
 echo "  verify     : satom diagnose privilege"

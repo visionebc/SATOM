@@ -14,11 +14,23 @@
 Description=SATOM metrics store (VictoriaMetrics single-node)
 After=network.target
 
+#
+# [SATOM-METRICS-AUTHKEYS] The admin endpoints (delete_series, snapshot*,
+# force_merge, force_flush, reload, resetRollupResultCache, config, flags,
+# pprof, ...) take an authKey. The keys come from a ROOT-ONLY env file that
+# deploy/install-metrics-store.sh generates (VM_<flag> variables, dots as
+# underscores) -- never from this unit or the command line, both of which any
+# local account can read. The leading '-' keeps the store starting, unkeyed as
+# before, if the file is ever missing. The app reads only the snapshot key, from
+# /etc/satom/metrics-snapshot.key (root:<service account> 0640).
 [Service]
 Type=simple
 User=satom
 Group=satom
+EnvironmentFile=-/etc/satom/metrics-auth.env
 ExecStart=/usr/local/bin/victoria-metrics \
+  -envflag.enable \
+  -envflag.prefix=VM_ \
   -storageDataPath=/var/lib/satom-metrics \
   -httpListenAddr=127.0.0.1:8428 \
   -retentionPeriod=396d \

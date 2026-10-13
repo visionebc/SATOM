@@ -62,6 +62,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -1139,7 +1140,15 @@ def stores_report() -> list:
 
 def _store_api(path: str, timeout: float = 60.0) -> dict:
     """POST a VictoriaMetrics admin endpoint on the LOOPBACK store. The address
-    comes from ``vm_store.base_url()`` so this module never names it."""
+    comes from ``vm_store.base_url()`` so this module never names it.
+
+    [SATOM-METRICS-AUTHKEYS] The /snapshot* endpoints are keyed
+    (``-snapshotAuthKey``); the key is appended when this node has one."""
+    if path.startswith("/snapshot"):
+        key = vm_store.snapshot_auth_key()
+        if key:
+            path +=("&" if "?" in path else "?") + urllib.parse.urlencode(
+                {"authKey": key})
     req = urllib.request.Request(vm_store.base_url() + path, method="POST")
     with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310
         return json.loads(r.read().decode("utf-8", "replace"))

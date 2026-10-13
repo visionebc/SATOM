@@ -2308,6 +2308,27 @@ def create_app(config_override: object | None = None) -> Flask:
             _ensure_widths()
             _relax_probe_thresholds()
             _ensure_indexes()
+            # [SATOM-CONSOLE-RO-ROLE] Keep the database console's read-only
+            # role in step with the schema just created/extended: SELECT on
+            # every table except the credential ones. Postgres only, no DDL in
+            # steady state, never fatal -- a console that cannot switch roles
+            # refuses queries, it does not block the boot.
+            try:
+                from .services import dbintrospect as _dbi
+                _cr = _dbi.ensure_console_role()
+                if not _cr.get("ok"):
+                    app.logger.warning(
+                        'database console role %s not ready (the console will '
+                        'refuse queries): %s', _dbi.CONSOLE_ROLE,
+                        _cr.get("detail"))
+                elif _cr.get("created") or _cr.get("granted") or _cr.get("revoked"):
+                    app.logger.info(
+                        'database console role %s synced: created=%s granted=%s '
+                        'revoked=%s', _dbi.CONSOLE_ROLE, _cr.get("created"),
+                        _cr.get("granted")[:20], _cr.get("revoked")[:20])
+            except Exception:  # noqa: BLE001 - never block boot on this
+                app.logger.warning('database console role sync skipped',
+                                   exc_info=True)
             _seed_profiles()
             _seed_admin()
             _assign_missing_profiles()

@@ -12,11 +12,14 @@ there is no SQL injection surface), and masks any obviously sensitive column
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from sqlalchemy import inspect, text
 
 from ..models import db
+
+_log = logging.getLogger(__name__)
 
 # Columns whose values are masked in the row preview — the local store never
 # holds appliance secrets in the clear, but password hashes / Fernet ciphertext
@@ -365,9 +368,11 @@ def sensitive_tables_referenced(sql) -> list[str]:
 #: connection. Matched on the RAW statement (string contents included), any
 #: case, bare or as a quoted identifier, so no literal-parsing trick hides them.
 #:
-#: This is a denylist and therefore never complete. The structural fix is to run
-#: the console under a dedicated Postgres role with SELECT on the non-credential
-#: tables only and no EXECUTE on admin functions; until then this stays.
+#: This is a denylist and therefore never complete. The structural control is
+#: CONSOLE_ROLE below: on Postgres every query runs under a dedicated role
+#: with SELECT on the non-credential tables only. The denylist stays as
+#: defense in depth -- notably ``set_config('role', ...)``, which is the one
+#: way a SELECT could switch back to the application role.
 _DANGEROUS_FUNCS = _re.compile(
     r'(?<![A-Za-z0-9_$])('
     r'query_to_xml(?:_and_xmlschema)?|query_to_xmlschema|'
@@ -393,9 +398,201 @@ def dangerous_functions_referenced(sql) -> list[str]:
     return hits
 
 
+# --------------------------------------------------------------------------- #
+#  [SATOM-CONSOLE-RO-ROLE] the console's own Postgres role                     #
+# --------------------------------------------------------------------------- #
+#: Every console / report-widget / plugin-dataset query runs under this role
+#: (``SET LOCAL ROLE`` inside the rolled-back transaction), never under the
+#: application's role. Privileges are checked against the CURRENT role, so a
+#: function that executes SQL from a string -- the class the denylist above
+#: keeps chasing -- runs with this role's rights too: no credential table, no
+#: credential column, no pg_monitor statistics, no pg_authid on an install
+#: whose application role is a superuser (the bundled Docker database).
+#:
+#: Provisioned by ``deploy/install-console-role.sh`` (root, primary only; the
+#: role replicates to the standby) or, when the application role itself may
+#: create roles, by ``ensure_console_role()`` at boot. Table grants are kept in
+#: sync by ``ensure_console_role()`` because the credential list lives here.
+CONSOLE_ROLE = "satom_console_ro"
+
+#: Columns that hold credential material inside an otherwise readable table
+#: (``appliances.password_enc``, ``managed_certificate.private_key_enc``). The
+#: console role is granted every OTHER column of such a table, so an alias
+#: (``SELECT password_enc AS x``) or a whole-row reference cannot surface them
+#: past the name-based masking. Narrower than ``_SENSITIVE_TOKENS`` on purpose:
+#: ``prompt_tokens`` / ``tokens_json`` are counters and theme data, and a
+#: ``SELECT *`` on those tables keeps working.
+_CREDENTIAL_COLUMN_TOKENS = ("password", "secret", "private", "fernet")
+
+
+def is_credential_column(column: str) -> bool:
+    name = (column or "").lower()
+    return name.endswith("_enc") or any(t in name for t in _CREDENTIAL_COLUMN_TOKENS)
+
+
+def _qi(name: str) -> str:
+    """Quote a catalog identifier for DDL (names come from pg_catalog)."""
+    return '"' + str(name).replace('"', '""') + '"'
+
+
+def _is_postgres() -> bool:
+    return db.engine.dialect.name == "postgresql"
+
+
+def _console_role_problem(conn) -> str:
+    """'' when CONSOLE_ROLE exists and is safe to switch to, else why not.
+
+    Refuses a role that was created (or later altered) with any power beyond
+    reading, or that was made a member of another role: switching to it would
+    then give back what the switch exists to take away."""
+    row = conn.execute(text(
+        "SELECT r.rolsuper, r.rolcreaterole, r.rolcreatedb, r.rolreplication, "
+        "r.rolbypassrls, "
+        "(SELECT count(*) FROM pg_auth_members m WHERE m.member = r.oid) "
+        "FROM pg_roles r WHERE r.rolname = :r"), {"r": CONSOLE_ROLE}).first()
+    if row is None:
+        return "the role does not exist on this database"
+    if any(bool(v) for v in row[:5]):
+        return ("the role has privileges beyond reading (superuser, createrole, "
+                "createdb, replication or bypassrls)")
+    if int(row[5] or 0):
+        return "the role is a member of another role"
+    return ""
+
+
+def _console_refusal(why: str) -> str:
+    return ("refused: the read-only database role %s is not usable (%s). The "
+            "database tools never fall back to the application's own role; "
+            "provision it with 'sudo bash deploy/install-console-role.sh' on the "
+            "primary node, then restart the application." % (CONSOLE_ROLE, why))
+
+
+def _enter_console_role(conn) -> str:
+    """Switch the CURRENT transaction to CONSOLE_ROLE. Returns '' on success or
+    an English refusal. FAIL SAFE: on any doubt the caller must not run the
+    query -- there is no fallback to the application role."""
+    try:
+        why = _console_role_problem(conn)
+        if why:
+            return _console_refusal(why)
+        conn.execute(text("SET LOCAL ROLE " + _qi(CONSOLE_ROLE)))
+        cur = conn.execute(text("SELECT current_user")).scalar()
+    except Exception as exc:  # noqa: BLE001 - e.g. app role not a member
+        return _console_refusal(str(exc).splitlines()[0][:200] if str(exc) else
+                                type(exc).__name__)
+    if cur != CONSOLE_ROLE:
+        return _console_refusal("the role switch did not take effect")
+    return ""
+
+
+def ensure_console_role() -> dict:
+    """Idempotent boot hook: create CONSOLE_ROLE when this application role may
+    (superuser / createrole, e.g. the bundled Docker database) and keep its
+    table grants in sync with SENSITIVE_TABLES / credential columns.
+
+    Steady state issues NO DDL (every grant is checked first), so several
+    workers booting at once do not contend. Never raises; returns a summary.
+    Skipped on SQLite and on a standby (grants arrive by replication)."""
+    out = {"ok": False, "created": False, "granted": [], "revoked": [],
+           "skipped": "", "detail": ""}
+    if not _is_postgres():
+        out.update(ok=True, skipped="not postgresql")
+        return out
+    try:
+        with db.engine.connect() as conn:
+            with conn.begin():
+                conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+                if conn.execute(text("SELECT pg_is_in_recovery()")).scalar():
+                    out.update(ok=True, skipped="standby (grants replicate)")
+                    return out
+                exists = conn.execute(text(
+                    "SELECT 1 FROM pg_roles WHERE rolname = :r"),
+                    {"r": CONSOLE_ROLE}).first() is not None
+                if not exists:
+                    me = conn.execute(text(
+                        "SELECT rolsuper, rolcreaterole FROM pg_roles "
+                        "WHERE rolname = current_user")).first()
+                    if not me or not (me[0] or me[1]):
+                        out["detail"] = ("role %s missing and the application "
+                                         "role cannot create roles; run "
+                                         "deploy/install-console-role.sh as root"
+                                         % CONSOLE_ROLE)
+                        return out
+                    conn.execute(text(
+                        "CREATE ROLE %s NOLOGIN NOSUPERUSER NOCREATEDB "
+                        "NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS"
+                        % _qi(CONSOLE_ROLE)))
+                    conn.execute(text("GRANT %s TO CURRENT_USER" % _qi(CONSOLE_ROLE)))
+                    out["created"] = True
+                why = _console_role_problem(conn)
+                if why:
+                    out["detail"] = why
+                    return out
+                _sync_console_grants(conn, out)
+        out["ok"] = True
+    except Exception as exc:  # noqa: BLE001 - a boot hook never blocks boot
+        out["detail"] = str(exc)[:300]
+    return out
+
+
+def _sync_console_grants(conn, out: dict) -> None:
+    """SELECT on every table of the application schema this role owns, except
+    SENSITIVE_TABLES (nothing) and credential columns (column grants instead)."""
+    r = _qi(CONSOLE_ROLE)
+    schema = conn.execute(text("SELECT current_schema()")).scalar()
+    if not conn.execute(text(
+            "SELECT has_schema_privilege(:r, current_schema(), 'USAGE')"),
+            {"r": CONSOLE_ROLE}).scalar():
+        conn.execute(text("GRANT USAGE ON SCHEMA %s TO %s" % (_qi(schema), r)))
+        out["granted"].append("USAGE ON SCHEMA %s" % schema)
+    tables = conn.execute(text(
+        "SELECT c.oid, c.relname, "
+        "       has_table_privilege(:r, c.oid, 'SELECT'), "
+        "       has_any_column_privilege(:r, c.oid, 'SELECT') "
+        "FROM pg_class c "
+        "WHERE c.relnamespace = (SELECT n.oid FROM pg_namespace n "
+        "                        WHERE n.nspname = current_schema()) "
+        "  AND c.relkind IN ('r', 'p', 'v', 'm', 'f') "
+        "  AND pg_has_role(current_user, c.relowner, 'USAGE') "
+        "ORDER BY c.relname"), {"r": CONSOLE_ROLE}).fetchall()
+    for oid, name, tsel, anycol in tables:
+        target = "%s.%s" % (_qi(schema), _qi(name))
+        if name.lower() in SENSITIVE_TABLES:
+            if tsel or anycol:
+                conn.execute(text("REVOKE ALL ON TABLE %s FROM %s" % (target, r)))
+                out["revoked"].append(name)
+            continue
+        cols = conn.execute(text(
+            "SELECT a.attname, has_column_privilege(:r, a.attrelid, a.attnum, 'SELECT') "
+            "FROM pg_attribute a WHERE a.attrelid = :oid AND a.attnum > 0 "
+            "AND NOT a.attisdropped ORDER BY a.attnum"),
+            {"r": CONSOLE_ROLE, "oid": oid}).fetchall()
+        secret = [c for c, _ in cols if is_credential_column(c)]
+        if not secret:
+            if not tsel:
+                conn.execute(text("GRANT SELECT ON TABLE %s TO %s" % (target, r)))
+                out["granted"].append(name)
+            continue
+        if tsel:   # a table-level grant would cover the credential columns
+            conn.execute(text("REVOKE SELECT ON TABLE %s FROM %s" % (target, r)))
+            out["revoked"].append(name)
+            cols = [(c, False) for c, _ in cols]
+        leaked = [c for c, ok in cols if ok and c in secret]
+        if leaked:
+            conn.execute(text("REVOKE SELECT (%s) ON TABLE %s FROM %s" % (
+                ", ".join(_qi(c) for c in leaked), target, r)))
+            out["revoked"].append("%s(%s)" % (name, ",".join(leaked)))
+        missing = [c for c, ok in cols if not ok and c not in secret]
+        if missing:
+            conn.execute(text("GRANT SELECT (%s) ON TABLE %s TO %s" % (
+                ", ".join(_qi(c) for c in missing), target, r)))
+            out["granted"].append("%s(%d columns)" % (name, len(missing)))
+
+
 def run_query(sql, max_rows=_CONSOLE_MAX):
     """Execute a READ-ONLY query in a rolled-back transaction with a statement
-    timeout. Returns {columns, rows, truncated, row_count, error}."""
+    timeout, under CONSOLE_ROLE on Postgres (refused if that role is not
+    usable). Returns {columns, rows, truncated, row_count, error}."""
     ok, why = is_read_only(sql)
     if not ok:
         return {"columns": [], "rows": [], "truncated": False, "error": why}
@@ -427,12 +624,20 @@ def run_query(sql, max_rows=_CONSOLE_MAX):
         with db.engine.connect() as conn:
             trans = conn.begin()
             try:
-                if db.engine.dialect.name == "postgresql":
+                if _is_postgres():
                     # Hard, DB-enforced guarantee: any write (even a sneaky
                     # data-modifying CTE) errors out with "cannot execute ... in a
                     # read-only transaction"; the timeout caps runaway scans.
                     conn.execute(text("SET TRANSACTION READ ONLY"))
                     conn.execute(text("SET LOCAL statement_timeout = '8s'"))
+                    # [SATOM-CONSOLE-RO-ROLE] Run as the console's own role.
+                    # FAIL SAFE: if it cannot be entered the query does not
+                    # run at all -- never under the application's role.
+                    refusal = _enter_console_role(conn)
+                    if refusal:
+                        _log.warning("database console refused: %s", refusal)
+                        return {"columns": [], "rows": [], "truncated": False,
+                                "error": refusal}
                 result = conn.execute(text(q))
                 cols = list(result.keys())
                 fetched = result.fetchmany(max_rows + 1)
@@ -453,5 +658,10 @@ def run_query(sql, max_rows=_CONSOLE_MAX):
         return {"columns": cols, "rows": rows, "truncated": truncated,
                 "row_count": len(rows), "error": ""}
     except Exception as exc:  # noqa: BLE001
-        return {"columns": [], "rows": [], "truncated": False,
-                "error": str(exc)[:500]}
+        msg = str(exc)[:500]
+        if "permission denied" in msg.lower():
+            msg = ("%s -- the database tools run as the read-only role %s, which "
+                   "cannot read credential tables or credential columns; select "
+                   "the columns you need instead of * or a whole row."
+                   % (msg.splitlines()[0][:300], CONSOLE_ROLE))
+        return {"columns": [], "rows": [], "truncated": False, "error": msg}

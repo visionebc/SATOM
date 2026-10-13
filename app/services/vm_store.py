@@ -66,6 +66,30 @@ def _env_url() -> str:
     return os.environ.get("SATOM_METRICS_URL", "").strip()
 
 
+#: [SATOM-METRICS-AUTHKEYS] The store's /snapshot* endpoints take this key
+#: (``-snapshotAuthKey``, set from the root-only env file the unit reads).
+#: deploy/install-metrics-store.sh writes the same value here, root:<service
+#: account> 0640, because the app is the one legitimate caller. The other admin
+#: keys (delete_series, force_merge, reload, ...) are never readable by the app.
+SNAPSHOT_KEY_FILE = "/etc/satom/metrics-snapshot.key"
+_LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
+def snapshot_auth_key() -> str:
+    """The snapshot authKey for the LOOPBACK store, or '' (none provisioned /
+    the configured store is not this node's -- the key is never sent off-box).
+    A store started before the key existed ignores the extra parameter."""
+    host = (urllib.parse.urlsplit(base_url()).hostname or "").lower()
+    if host not in _LOOPBACK_HOSTS:
+        return ""
+    path = os.environ.get("SATOM_METRICS_SNAPSHOT_KEY_FILE") or SNAPSHOT_KEY_FILE
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read().strip()
+    except OSError:
+        return ""
+
+
 def _http(path: str, *, data: bytes | None = None, timeout: float = 10.0,
           method: str | None = None):
     req = urllib.request.Request(base_url() + path, data=data,

@@ -1025,7 +1025,11 @@ def process(req_path):
                                         ("install-runner.sh",
                                          "update runner + /usr/local/sbin helpers"),
                                         ("install-metrics-store.sh",
-                                         "metrics store")):
+                                         "metrics store"),
+                                        # [SATOM-CONSOLE-RO-ROLE] primary only;
+                                        # skips itself on a standby.
+                                        ("install-console-role.sh",
+                                         "database console role")):
                     if hold_root_side:
                         break
                     _p = deploy_dir / _script
@@ -1694,7 +1698,9 @@ def package_change(req_path):
             for script, label in (("install-cli.sh", "operator CLI"),
                                   ("install-runner.sh",
                                    "update runner + /usr/local/sbin helpers"),
-                                  ("install-metrics-store.sh", "metrics store")):
+                                  ("install-metrics-store.sh", "metrics store"),
+                                  ("install-console-role.sh",
+                                   "database console role")):
                 sp = deploy_dir / script
                 if sp.exists():
                     st.begin("refresh %s" % label)

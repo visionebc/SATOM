@@ -376,8 +376,9 @@
       {% if not current_user.can('user_manage') %}
       {% if current_user.is_authenticated and (current_user.can('studio.python_console') or current_user.can('studio.plugin_studio') or current_user.can('studio.lua_studio')) %}
       {% include 'partials/nav_studio.html' %}
-      {% else %}{% include "partials/nav_process_group.html" %}
       {% endif %}
+      {# Not an {% else %}: a Studio holder without user_manage lost Process. #}
+      {% include "partials/nav_process_group.html" %}
       {% endif %}
 
       {% elif product.key == 'fortianalyzer' %}

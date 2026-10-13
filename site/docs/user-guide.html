@@ -253,7 +253,7 @@ current list:</p>
 <tr>
 <td><strong>Global</strong></td>
 <td><code>/</code></td>
-<td>Fleet-wide dashboard and cross-product tools: Monitoring, Search, Service Diagram, Architecture, Analysis, Fleet Objects, Metrics, Fleet → WAF, Jobs, Certificate Manager, DNS Lookup, plus fleet administration (Classification, Database, System Backup, Software Update, High Availability, Bug Reports)</td>
+<td>Fleet-wide dashboard and cross-product tools: Monitoring (with Metrics and Analysis), Search, Service Diagram, Architecture, Fleet Objects, WAF, Jobs, DNS Lookup; <strong>Automation</strong> (with Certificate Manager, Schema builds and Build compatibility); and fleet administration under <strong>Administrator</strong> (Appliances, Classification, Database, System Backup, Software Update, High Availability, Bug Reports, Studio)</td>
 </tr>
 <tr>
 <td><strong>FortiWeb</strong></td>
@@ -263,7 +263,7 @@ current list:</p>
 <tr>
 <td><strong>FortiADC</strong></td>
 <td><code>/adc/</code></td>
-<td>Load-balancer management: the device's own menu when a layout exists for its build (otherwise the curated FortiADC 8.0 menu: Server LB, Link LB, Global LB, WAF, Network…), signatures, and an ADC API console</td>
+<td>Load-balancer management: the device's own menu when a layout exists for its build (otherwise a FortiADC group with Signatures only), and an ADC API console</td>
 </tr>
 <tr>
 <td><strong>FortiAuthenticator</strong></td>
@@ -273,7 +273,7 @@ current list:</p>
 <tr>
 <td><strong>FortiAnalyzer</strong></td>
 <td><code>/faz/</code></td>
-<td>Logging and analytics: Device Manager, FortiView, Log View, Incidents &amp; Events, Reports, and a JSON-RPC API console</td>
+<td>Logging and analytics: the device's own menu when a layout exists for its build (otherwise the curated menu: Device Manager, FortiView, Log View, Incidents &amp; Events, Reports), and a JSON-RPC API console</td>
 </tr>
 <tr>
 <td><strong>FortiGate</strong></td>
@@ -311,7 +311,7 @@ real and the pages ask for it.</p>
 <p>An appliance in maintenance mode is counted only for operators who may see
 maintenance devices, so this can never hand you a device the picker hides.</p>
 <h3 id="32-the-device-menu-drawn-from-the-devices-own-gui">3.2 The device menu: drawn from the device's own GUI</h3>
-<p>In the <strong>FortiWeb</strong>, <strong>FortiGate</strong>, <strong>FortiAuthenticator</strong> and <strong>FortiADC</strong> ADOMs the sidebar
+<p>In the <strong>FortiWeb</strong>, <strong>FortiGate</strong>, <strong>FortiAuthenticator</strong>, <strong>FortiADC</strong> and <strong>FortiAnalyzer</strong> ADOMs the sidebar
 has one device menu, named after the product, and it is the <strong>device's own
 menu</strong>: the groups, sub-menus and pages the Fortinet GUI shows, in the
 device's order. SATOM does not keep a menu of its own for these products. It
@@ -352,8 +352,9 @@ moved and what did not:</p>
   back as their pages are measured and arrive in a knowledge pack. A bookmark to
   such a page still opens it.</li>
 <li><strong>FortiWeb WAF tools</strong> — Search Attack ID, Exceptions &amp; Signature and WAF
-  Artifacts — are now under <strong>Fleet → WAF</strong> in the FortiWeb ADOM (§9). The URLs
-  and permissions are the same.</li>
+  Artifacts — are now under <strong>Fleet → WAF</strong> (§9). They are drawn in every
+  device ADOM, in the same place; outside FortiWeb they are greyed out and say
+  why on hover. The URLs and permissions are the same.</li>
 </ul>
 <p><strong>When there is nothing to draw.</strong> In the FortiWeb ADOM, with no device
 selected or no layout imported for it yet (fresh install, offline node, no
@@ -363,11 +364,21 @@ notice when no layout exists, or the Service Diagram, where you pick
 a device, when none is selected. The FortiGate and FortiAuthenticator ADOMs draw no device group in
 that case. Their dashboards, the page each ADOM opens on, still list SATOM's
 section pages (§17.2, §17.4).</p>
-<p><strong>FortiADC draws its own menu only where a layout exists.</strong> A FortiADC whose
-firmware build has a measured layout in the knowledge packs gets the device's
-menu like the other three; any other FortiADC keeps the curated menu of §17.1,
-so the ADOM never ends up empty. <strong>FortiAnalyzer is unchanged</strong>: no device GUI
-has been measured for it, and it keeps the curated menu of §17.3.</p>
+<p><strong>FortiADC and FortiAnalyzer draw their own menu only where a layout
+exists.</strong> A FortiADC or FortiAnalyzer whose firmware build has a measured layout
+in the knowledge packs gets the device's menu like the other three. Otherwise
+a FortiADC keeps a FortiADC group with <strong>Signatures</strong> only, and a FortiAnalyzer
+keeps the curated menu of §17.3 (the live JSON-RPC section pages), so neither
+ADOM ends up empty.</p>
+<p><strong>Where the shared groups sit (3.1.0).</strong> Every ADOM draws the same SATOM groups
+in the same order around the device menu: Fleet, the device menu, Operations,
+API (where the product has a console), <strong>Automation</strong>, <strong>Administrator</strong>,
+Plugins. <strong>Appliances</strong> is under Administrator; <strong>Schema builds</strong>, <strong>Build
+compatibility</strong> and (Global) <strong>Certificate Manager</strong> are under Automation;
+<strong>Studio</strong> is a sub-menu of Administrator. A profile that cannot see one of
+those groups keeps the entry where it was before — Appliances and the API
+library under Fleet, Studio as a group of its own, and <strong>Process</strong> in a group
+of its own — so the reorder takes no page away from anyone.</p>
 <p><strong>The Global ADOM has no device menu.</strong> It is the fleet-wide console. Its
 Fleet → WAF lists the fleet pages (Overview, Inventory, Profiles, Coverage,
 Artifacts, Exceptions) but not the three FortiWeb tools above. Those are

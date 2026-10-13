@@ -48,8 +48,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   every device ADOM and has one entry per object type the product's
   configuration sync reads — the FortiWeb/FortiADC catalog plus every other
   table (FortiWeb ~250, FortiADC ~180), including the types no device holds an
-  object of yet. Settings blocks (rows without a name) and id-keyed lists are
-  left out. Next to each input: the pattern Discovery found on the devices
+  object of yet. Settings blocks (rows without a name) are left out; a table
+  keyed by number is listed and says so. Next to each input: the pattern Discovery found on the devices
   (**all devices agree** / **devices differ**), a **use it** link, and a live
   count of the existing names that follow what you type. A filter box and
   **Only types with objects on a device** keep the list readable.

@@ -102,6 +102,7 @@
               <span>{{ e.label }}</span>
               {% if e.table %}<code class="text-muted" style="font-size:10.5px;">{{ e.table }}</code>{% endif %}
               {% if e.derives %}<span class="fw-badge fw-badge-info" title="{{ _('SATOM fills this pattern in when it creates objects: only {name} is substituted.') }}">{{ _('builds names') }}</span>{% endif %}
+              {% if e.numeric %}<span class="text-muted" style="font-size:11px;">{{ _('keyed by number on the devices') }}</span>{% endif %}
               {% if not e.seen and e.table %}<span class="text-muted" style="font-size:11px;">{{ _('no objects on any device yet') }}</span>{% endif %}
             </label>
             <div class="input-group input-group-sm">

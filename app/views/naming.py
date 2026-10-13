@@ -231,6 +231,7 @@ def _scheme_model(product: str) -> dict:
             "default": default, "value": value, "pattern": pattern,
             "derives": derives, "note": note, "curated": curated,
             "seen": bool(table and (types.get(table) or {}).get("seen")),
+            "numeric": bool(table and (types.get(table) or {}).get("numeric")),
             "found": found.get(table or ""), "names": names[:NAMES_FOR_LIVE_CHECK],
             "user": len(names), "factory": info.get("factory", 0),
             "check": nd.conformance(pattern, names) if pattern and names else None,

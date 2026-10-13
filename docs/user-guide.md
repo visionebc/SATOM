@@ -2046,7 +2046,8 @@ it to the fleet; for the fleet-wide view, use Fleet → WAF → Artifacts (§13.
 FortiGate, FortiAuthenticator, FortiAnalyzer). Its two tabs work on **one list
 of object types**: every table the product's configuration sync reads,
 including the ones no device holds an object of yet. Settings blocks (rows
-without a name) and id-keyed lists are not naming decisions and are left out.
+without a name) are not object types and are left out; a table whose objects
+are keyed by number is listed and marked so.
 
 **Scheme** holds the pattern of each object type. Entries marked **builds
 names** (the FortiWeb catalog: server policy, pool, WPP, certificate…) are

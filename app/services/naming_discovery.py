@@ -514,14 +514,19 @@ def object_types(sweep: dict[str, str], trees: list[dict]) -> dict[str, dict]:
     trees SATOM holds for its devices. The sweep keeps only tables that
     returned rows, so a table is judged by what the trees show:
 
-    * named rows on some device → an object type (``seen``);
-    * rows but never a name (or only numeric ids) → a settings block or an
-      id-keyed list, not a naming decision → left out;
+    * named rows on some device → an object type (``seen``); ``numeric``
+      when every name is a number (Discovery says "keyed by number");
+    * rows but never a name → a settings block, not an object type → left
+      out;
     * in the sweep but empty on every device → listed (``seen`` False): the
       object type a device WILL hold once someone creates one.
 
-    Returns ``{table: {"section": str, "seen": bool}}``."""
+    Every type Discovery shows with team objects is in the result, so the
+    two tabs of the Naming page list the same object types.
+
+    Returns ``{table: {"section": str, "seen": bool, "numeric": bool}}``."""
     named: set[str] = set()
+    worded: set[str] = set()
     nameless: set[str] = set()
     section: dict[str, str] = {}
     for tree in trees:
@@ -532,8 +537,11 @@ def object_types(sweep: dict[str, str], trees: list[dict]) -> dict[str, dict]:
                 if not isinstance(rows, list) or not rows:
                     continue
                 section.setdefault(table, sec)
-                if any((n := object_name(r)) and not n.isdigit() for r in rows):
+                names = [n for n in (object_name(r) for r in rows) if n]
+                if names:
                     named.add(table)
+                    if any(not n.isdigit() for n in names):
+                        worded.add(table)
                 else:
                     nameless.add(table)
     out: dict[str, dict] = {}
@@ -541,7 +549,8 @@ def object_types(sweep: dict[str, str], trees: list[dict]) -> dict[str, dict]:
         if table in nameless and table not in named:
             continue
         out[table] = {"section": section.get(table) or sweep.get(table) or "Other",
-                      "seen": table in named}
+                      "seen": table in named,
+                      "numeric": table in named and table not in worded}
     return out
 
 

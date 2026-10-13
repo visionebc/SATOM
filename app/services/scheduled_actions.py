@@ -410,10 +410,10 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "field NAMES only, hidden fields marked; and one REST GET per "
                 "tree object the library's REST evidence does not cover, "
                 "classified by response shape. Read-only against the box. "
-                "FortiADC: tree and path rule unverified, no REST probe. "
+                "FortiADC: tree, dump and path rule verified, no REST probe. "
                 "FortiAuthenticator: Tastypie schema (the CLI help walk needs a "
                 "CLI password, run it from the Schema builds page); "
-                "FortiAnalyzer: JSON-RPC syntax read, unverified adapter. "
+                "FortiAnalyzer: JSON-RPC syntax read (verified adapter). "
                 "Weekly, or after an upgrade, is plenty.",
     ),
     ActionSpec(

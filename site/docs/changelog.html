@@ -112,6 +112,41 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="changed--the-fortiadc-schema-adapter-is-verified-on-a-lab-box">Changed — the FortiADC schema adapter is verified on a lab box</h3>
+<p>SATOM's harvest of {device} (FortiADC-VM 7.6.7 build0676) read its CLI <code>tree</code>
+(527 objects, 3,649 fields), its <code>show full-configuration</code> (315 blocks, no
+hidden field) and its REST rediscovery sweep (217 endpoints, 7 absent), all
+read-only. The Schema builds page now lists the FortiADC adapter as verified
+({device}, 7.6.7 build0676), and the CLI -&gt; REST path rule as verified:
+224 of the 225 REST endpoints the box's sweep read land on a <code>tree</code> object
+under it, and so do all 19 child tables (<code>&lt;parent&gt;_child_&lt;table&gt;</code>) of its
+depth capture. Two assumptions were wrong and are corrected in the code and the
+docs: FortiADC's <code>tree</code> prints the FortiWeb format (CLI ids, types, options),
+not the FortiOS one; and its REST does not always spell a field the way the CLI
+does (below). Build compatibility now reads "absent" for a FortiADC object a
+measured <code>tree</code> does not list, as it already did for FortiWeb.</p>
+<h3 id="fixed--fortiadc-fields-read-rest-only-or-unknown-although-both-channels-had-them">Fixed — FortiADC fields read REST only or unknown although both channels had them</h3>
+<p>The FortiADC <code>tree</code> of a knowledge pack keys each object by the FortiWeb rule
+(<code>load-balance/pool</code>), the REST sweep by the FortiADC one (<code>load_balance_pool</code>),
+and the API library joins the two channels on that key: on 7.6.7, 10 fields
+of 5,402 read "both" and 862 entries stood for 527 objects (API Versions,
+Build compatibility, the field map and each appliance's Not-in-GUI page read
+this). The channel view now re-keys the pack's objects from their CLI path, so
+each object is one entry with both channels; SATOM's own harvest, keyed by the
+FortiADC rule already, is the record read when both exist.</p>
+<p>Joining the objects exposed a second difference: FortiADC's REST writes many
+CLI attributes with <code>_</code> for <code>-</code> (<code>direct_route_ip</code> for <code>direct-route-ip</code>, 324
+fields on 7.6.7), names the table key <code>mkey</code>, and renames some fields outright
+(<code>pool</code> for <code>load-balance-pool</code>). Read naively, the virtual server's Not-in-GUI
+section offered <code>load-balance-pool</code>, <code>direct-route-ip</code> and others as CLI-only
+fields to write over SSH, though the GUI and REST edit them. Now a field both
+spellings name is one field, shown under the REST name; <code>_nondeletable</code> and
+<code>_noneditable</code> are REST bookkeeping (<code>meta</code>); and a CLI field REST does not
+name on an object REST read is "unknown" (shown as unverified on this build),
+never "CLI only" — on FortiADC "CLI only" now means REST measured the whole
+object absent (98 objects on 7.6.7, each a 404 at its REST path). FortiADC
+7.6.7 now reads 967 fields both, 233 CLI only, 623 REST only, 2,456 unknown,
+545 entries.</p>
 <h2 id="310---2026-10-13">[3.1.0] - 2026-10-13</h2>
 <h3 id="added--every-screen-in-german-french-italian-and-spanish-again">Added — every screen in German, French, Italian and Spanish again</h3>
 <p>The language catalogues had fallen behind the interface: the screens added since

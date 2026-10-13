@@ -21,8 +21,9 @@ What it does for one appliance (:func:`harvest`):
    ``?mkey=`` that names a configured row is not recorded.
 
 Read-only against the box: GETs and the three read commands; no ``config``.
-FortiWeb is verified end to end; FortiADC's ``tree`` and CLI->REST rule are
-not (no FortiADC in the lab) and its REST probe is not run.
+FortiWeb is verified end to end; FortiADC's ``tree``, dump and CLI->REST rule
+are verified on fortiadc10 7.6.7 (``schema_adapters.fortiadc``) and its REST
+probe is not run (its REST fields come from the rediscovery sweep).
 """
 from __future__ import annotations
 
@@ -35,8 +36,8 @@ from . import firmware_versions as fv
 
 _log = logging.getLogger(__name__)
 
-#: Products the harvester runs on. FortiADC: SSH session verified, ``tree``
-#: and the path rule NOT (``cli_schema.PATH_RULE_STATUS``).
+#: Products the harvester runs on. FortiADC: SSH session, ``tree`` and the
+#: path rule verified on fortiadc10 7.6.7 (``cli_schema.PATH_RULE_STATUS``).
 SUPPORTED = ("fortiweb", "fortiadc")
 #: Products whose REST shape probe is implemented (the FortiWeb parent-fallback
 #: rule is FortiWeb's).

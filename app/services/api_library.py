@@ -1786,7 +1786,19 @@ REST_META = {
         "pattern": re.compile(r"^(?:q_|sz_|can_)|_val$"),
         "ambiguous": frozenset({"id"}),
     },
+    # fortiadc10 7.6.7: every REST row carries the GUI's edit/delete flags
+    # (schema_adapters.fortiadc.REST_META_EXACT); the tree never lists them.
+    "fortiadc": {
+        "exact": frozenset({"_nondeletable", "_noneditable"}),
+        "pattern": re.compile(r"(?!)"),
+        "ambiguous": frozenset(),
+    },
 }
+#: Products whose REST spells fields its own way (``schema_adapters.fortiadc``:
+#: ``direct_route_ip`` / ``direct-route-ip``, ``pool`` / ``load-balance-pool``).
+#: There a CLI field REST does not name is not a REST "no": the spelling twins
+#: are joined (:func:`_field_twins`) and what is left stays ``unknown``.
+REST_RENAMES_FIELDS = frozenset({"fortiadc"})
 
 
 def is_rest_meta(product: str, name: str, *, cli_lists: bool = False,
@@ -1931,13 +1943,29 @@ def channel_memo():
 def _cli_key_alias(product: str, objects: dict) -> dict:
     """``{CLI evidence key: channel key}`` where a product's CLI evidence keys
     an object differently from its REST evidence, so both channels of one
-    object meet in one slot. Only FortiAnalyzer, whose CLI paths ARE its
-    JSON-RPC URLs (``schema_adapters.fortianalyzer.tree_channel_keys``); every
-    other product keys both channels by the same REST path already."""
-    if product != "fortianalyzer" or not objects:
+    object meet in one slot. FortiAnalyzer, whose CLI paths ARE its JSON-RPC
+    URLs (``schema_adapters.fortianalyzer.tree_channel_keys``), and FortiADC,
+    whose knowledge-pack tree is keyed by the FortiWeb rule
+    (``schema_adapters.fortiadc.tree_channel_keys``); every other product keys
+    both channels by the same REST path already."""
+    if not objects:
         return {}
-    from .schema_adapters import fortianalyzer as faz
-    return {k: v for k, v in faz.tree_channel_keys(objects).items() if v != k}
+    if product == "fortianalyzer":
+        from .schema_adapters import fortianalyzer as adapter
+    elif product == "fortiadc":
+        from .schema_adapters import fortiadc as adapter
+    else:
+        return {}
+    return {k: v for k, v in adapter.tree_channel_keys(objects).items() if v != k}
+
+
+def _field_twins(product: str, rest_fields: dict, cli_names, mkey: str) -> dict:
+    """``{REST name: CLI name}`` of one object's fields both channels name,
+    spelled differently (only :data:`REST_RENAMES_FIELDS` products)."""
+    if product not in REST_RENAMES_FIELDS or not rest_fields or not cli_names:
+        return {}
+    from .schema_adapters import fortiadc
+    return fortiadc.field_twins(rest_fields, cli_names, mkey)
 
 
 def _channel_view(product: str, version) -> dict:
@@ -2027,11 +2055,13 @@ def _channel_view_read(product: str, version) -> dict:
             cur["measured"] = cur.get("measured", False) or measured
             cur["sources"] = _ordered_sources(set(cur["sources"]) | set(pool))
             cur["evidence_ids"] = sorted(set(cur["evidence_ids"]) | set(ev_ids))
-    for name in sorted(cli_keys):
+    # Keys already in the product's own rule first (SATOM's harvest), then the
+    # re-keyed ones (a knowledge pack's FortiWeb-rule keys).
+    for name in sorted(cli_keys, key=lambda n: (n in alias, n)):
         by_src = point.get(name) or {}
         slot = _slot(alias.get(name, name))
         # Two CLI keys for one object (two key rules on one build): the first
-        # record that exists stays, in key order, so the view is deterministic.
+        # record that exists stays, in that order, so the view is deterministic.
         for src, part in ((SOURCE_CLI_TREE, "tree"), (SOURCE_CLI_FULL, "full")):
             if slot[part] is None:
                 slot[part] = _with_object_meta(by_src.get(src), objects.get(name))
@@ -2060,7 +2090,11 @@ def _member_channels(tree_spec, rest_kids):
             "rest_only": sorted(rest - cli)}
 
 
-def _rest_status(rest, fname, rest_complete: bool = False) -> str:
+def _rest_status(rest, fname, rest_complete: bool = False,
+                 silence_is_no: bool = True) -> str:
+    """``silence_is_no=False``: the product's REST spells fields its own way
+    (:data:`REST_RENAMES_FIELDS`), so a field it does not name may be served
+    under another name -- unknown, never a "no"."""
     if rest is None:
         return _NO if rest_complete else _UNK
     measured = rest.get("measured", True)
@@ -2074,7 +2108,7 @@ def _rest_status(rest, fname, rest_complete: bool = False) -> str:
     # vendor documentation not naming a field says nothing about the box: on a
     # node whose own sweep saw the table empty (blind), a doc-only field list
     # turned 242 FortiWeb 7.6.8 CLI fields into false "CLI only" (a1, 2026-10-07).
-    return _NO if rest.get("fields_measured", True) else _UNK
+    return _NO if silence_is_no and rest.get("fields_measured", True) else _UNK
 
 
 def _classify(rest_st: str, cli_st: str, hidden: bool) -> str:
@@ -2113,7 +2147,12 @@ def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
 
     * ``both``       — REST revealed it and the CLI has it;
     * ``cli_only``   — the CLI has it (``tree``) and REST, which revealed the
-      endpoint's fields or measured it absent, does not;
+      endpoint's fields or measured it absent, does not; on a product whose REST spells
+      fields its own way (:data:`REST_RENAMES_FIELDS`, FortiADC) only an
+      endpoint REST measured absent makes a field ``cli_only``; a field of an
+      object REST read that it does not name stays ``unknown``, and a spelling
+      twin (``direct_route_ip`` / ``direct-route-ip``) is one field, reported
+      under the REST name with ``attrs.cli_name``;
     * ``hidden``     — like ``cli_only``, but only ``show full-configuration``
       prints it: the build's ``tree`` does not list it;
     * ``rest_only``  — REST revealed it and the build's ``tree`` does not list it;
@@ -2141,6 +2180,7 @@ def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
     only = _resolve_key(endpoint, rest_names) if endpoint else ""
     tree_measured = view["tree_measured"]
     rest_complete = view["rest_complete"]
+    silence_is_no = product not in REST_RENAMES_FIELDS
 
     out_eps: dict = {}
     counts = {c: 0 for c in CHANNELS}
@@ -2154,13 +2194,24 @@ def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
         tree_fields = (tree or {}).get("fields") or {}
         full_fields = (full or {}).get("fields") or {}
         rest_fields = (rest or {}).get("fields") or {}
+        mkey = ((tree or {}).get("attrs") or {}).get("mkey") or ""
+        # One field, two spellings (FortiADC REST ``direct_route_ip`` / CLI
+        # ``direct-route-ip``): reported under the REST name, which is what the
+        # device returns and what SATOM writes; ``attrs.cli_name`` keeps the
+        # CLI's. Copies: the view is shared inside channel_memo.
+        twins = _field_twins(product, rest_fields, set(tree_fields) | set(full_fields), mkey)
+        if twins:
+            tree_fields, full_fields = dict(tree_fields), dict(full_fields)
+            for r_name, c_name in twins.items():
+                for side in (tree_fields, full_fields):
+                    if c_name in side:
+                        side[r_name] = side.pop(c_name)
         names = set(rest_fields) | set(tree_fields) | set(full_fields)
         fields = {}
-        mkey = ((tree or {}).get("attrs") or {}).get("mkey") or ""
         doc_only = rest is not None and set(rest.get("sources") or []) <= {SOURCE_VENDOR}
         for fname in sorted(names):
             in_tree, in_full = fname in tree_fields, fname in full_fields
-            r_st = _rest_status(rest, fname, rest_complete)
+            r_st = _rest_status(rest, fname, rest_complete, silence_is_no)
             r_srcs = sorted(rest_fields.get(fname) or ())
             if in_tree or in_full:
                 c_st = _YES
@@ -2170,6 +2221,8 @@ def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
                 c_st = _UNK
             attrs = dict((tree_fields.get(fname) or {}).get("attrs") or {})
             attrs.update((full_fields.get(fname) or {}).get("attrs") or {})
+            if fname in twins:
+                attrs["cli_name"] = twins[fname]
             hidden = bool(in_full and ((tree_measured and not in_tree) or attrs.get("hidden")))
             if hidden:
                 attrs["hidden"] = True
@@ -2276,10 +2329,14 @@ def _tree_specs_read(product: str, version, only: str = "") -> tuple[bool, dict]
     evidence = _cli_evidence(b.id)
     measured = bool(evidence.get(SOURCE_CLI_TREE))
     objects = _cli_objects(evidence)
+    # Keyed like the channel view: a knowledge pack's FortiWeb-rule keys
+    # (FortiADC / FortiAnalyzer) re-keyed, the product's own keys first.
+    alias = _cli_key_alias(product, objects)
     out: dict = {}
-    for key, by_src in st.items():
+    for key in sorted(st, key=lambda n: (n in alias, n)):
+        by_src = st[key]
         tree = _with_object_meta(by_src.get(SOURCE_CLI_TREE), objects.get(key))
-        if tree is None:
+        if tree is None or alias.get(key, key) in out:
             continue
         fields = {k: dict(s) for k, s in (tree.get("fields") or {}).items()}
         full = by_src.get(SOURCE_CLI_FULL) or {}
@@ -2287,7 +2344,7 @@ def _tree_specs_read(product: str, version, only: str = "") -> tuple[bool, dict]
             if fname in fields and (spec.get("attrs") or {}).get("lab_default") \
                     and spec.get("default") is not None:
                 fields[fname]["default"] = spec["default"]
-        out[key] = {"attrs": tree.get("attrs") or {}, "fields": fields}
+        out[alias.get(key, key)] = {"attrs": tree.get("attrs") or {}, "fields": fields}
     return measured, out
 
 

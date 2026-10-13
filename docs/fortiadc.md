@@ -3,9 +3,11 @@
 > Ground truth for the FortiADC side of the manager. Built 2026-07-07 from the
 > FortiADC **8.0.3** admin guide + CLI reference (docs.fortinet.com, harvested
 > with a crawler outside SATOM) cross-checked against the official `terraform-provider-fortiadc`
-> SDK and the `fortinet-ansible-dev` httpapi plugin. **No lab device existed
-> when this was built — nothing here is live-verified yet.** When the VM
-> lands: probe the registry, verify a write round-trip, then update this file.
+> SDK and the `fortinet-ansible-dev` httpapi plugin. No lab device existed
+> when this was built. Since 2026-10-11 the lab has fortiadc10 (7.6.7) and
+> fortiadc11 (8.0.4): the sections dated after that are measured on them, and
+> the CLI schema adapter (`tree`, `show full-configuration`, the CLI -> REST
+> path rule) is verified on fortiadc10 7.6.7 (API library §14.10).
 
 ## REST conventions
 

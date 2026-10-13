@@ -153,7 +153,7 @@ Recording the field map `token-header` → `jwt-token-name` turns that row into
 - **The target must be harvested.** A build with no `cli_tree` evidence cannot be
   assessed. Harvest a box on it, or import a knowledge pack (API library §14.12).
 - **Products.** FortiWeb (verified schema and path rule), FortiGate (CLI schema
-  verified) and FortiADC (path rule unverified: no lab device). FortiAuthenticator
+  verified) and FortiADC (schema and path rule verified on 7.6.7). FortiAuthenticator
   and FortiAnalyzer have no migration report.
 - **Behaviour, not syntax.** The report proves that a value is accepted, not that
   the feature behaves the same. Read the vendor's upgrade notes (Release Notes →

@@ -139,7 +139,8 @@ def _compute_view(product: str, v: str) -> dict:
             present = "unknown"
         fields = {}
         for name, f in ep["fields"].items():
-            spec = tfields.get(name) or {}
+            # a FortiADC spelling twin is named by REST; its tree spec by the CLI
+            spec = tfields.get(name) or tfields.get((f.get("attrs") or {}).get("cli_name")) or {}
             attrs = {**(spec.get("attrs") or {}), **(f.get("attrs") or {})}
             fields[name] = {"channel": f["channel"], "rest": f["rest"], "cli": f["cli"],
                             "options": list(spec.get("options") or []),

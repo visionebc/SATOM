@@ -2040,6 +2040,37 @@ it to the fleet; for the fleet-wide view, use Fleet → WAF → Artifacts (§13.
 ![WAF Artifacts inventory](img/screens/fleet-artifacts.webp)
 *Fleet → WAF → WAF Artifacts → Inventory for the selected device*
 
+### 13.3 Naming Discovery: the convention your devices already follow
+
+**Administrator → Naming → Discovery** is in every device ADOM (FortiWeb,
+FortiADC, FortiGate, FortiAuthenticator, FortiAnalyzer). The Scheme tab
+(FortiWeb and FortiADC) says how *new* objects are named; Discovery reads the
+names already on a device — from the configuration tree SATOM keeps for it, no
+device call — and shows the convention behind them, per object type:
+
+- **Convention found** — the dominant pattern, e.g. `pol-{adom}-{name}` or
+  `vs-{name}-{proto}`, with any variant prefix, the separator and the case.
+- **Follow it** — how many of the team's objects match it.
+- **Exceptions**, each with its reason. A **stale name** is the one to read
+  first: `name says 'https' but the object's port is '8080'`.
+- **Shares {name} with** — object types that carry the same identifier through
+  a real reference (policy → pool → virtual server).
+- **Vendor** — factory objects, counted apart and never used to infer anything
+  (device flag first, then a factory-name list measured per product, then
+  physical ports).
+
+A part of a name becomes `{port}`, `{proto}`, `{adom}`, `{host}`… only when it
+equals a field of the same object on at least 80 % of the objects; digits that
+match nothing are `{num}`; the free part is `{name}`. One object is "too few".
+
+**Adopt** keeps a pattern as the convention of that object type for the
+product; every device is then checked against it. **Adopt + scheme** also
+writes it into the matching scheme element, when the scheme can carry it
+(literals and `{name}` only). **All devices (fleet view)** shows whether the
+devices agree; **Export CSV** lists every exception. A device without a
+configuration tree offers **Sync device** (read-only) — a FortiGate has one
+from this release on.
+
 ## 14. Monitoring: fleet health, metrics & probes
 
 Monitoring lives in **every** workspace, not only Global. It is scoped by

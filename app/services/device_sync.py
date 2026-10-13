@@ -294,9 +294,76 @@ def snapshot_from_fac(appliance, *, timeout: float = 20.0) -> dict:
     }
 
 
+def snapshot_from_fgt(appliance, *, timeout: float = 20.0) -> dict:
+    """Live, read-only sweep of a FortiGate -> snapshot dict.
+
+    The FortiGate counterpart of :func:`snapshot_from_fac`: every cmdb table
+    the FortiGate ADOM menu reads (``services.fgt_menu``), at the path the
+    endpoint registry resolves for THIS box's build (``views.fgt.resolve_tab``
+    — a table the build does not serve is reported, never read at a guessed
+    path). Rows go through the same secret scrub as the section pages
+    (``views.fgt.scrub``): an ``ENC`` value or a password field never reaches
+    the cache, the JSON backup or the SoT store. Single-instance settings
+    tables are kept as a one-row list so the snapshot shape stays the shared
+    one. Sections come from the menu groups; tables are keyed by their
+    registry name. Before this sweep existed a FortiGate fell through to the
+    FortiWeb sweep, failed every endpoint and never had a JSON backup."""
+    from ..clients.fortigate import FortiGateClient
+    from ..registry import loader
+    from ..views.fgt import resolve_tab, scrub
+    from . import fgt_menu
+
+    client = FortiGateClient(appliance, timeout=timeout)
+    sections: dict = {}
+    total = 0
+    errors: list[dict] = []
+    consecutive = 0
+    seen: set[str] = set()
+    for g in fgt_menu.visible_menu():
+        for item in g.items:
+            for path, _label in item.tabs:
+                if path in seen:
+                    continue
+                seen.add(path)
+                name = loader.fgt_logical(path)
+                read_path, err = resolve_tab(appliance, path)
+                if err:
+                    # the registry said no: the device was never asked, so
+                    # this is not a device-level failure
+                    errors.append({"endpoint": name, "error": str(err)[:160]})
+                    continue
+                results, err = client.cmdb(read_path, with_meta=1)
+                if err:
+                    errors.append({"endpoint": name, "error": str(err)[:160]})
+                    consecutive += 1
+                    if consecutive >= _SWEEP_ABORT_AFTER:
+                        errors.append({"endpoint": "_sweep",
+                                       "error": f"aborted after {consecutive} consecutive "
+                                                "device-level failures"})
+                        break
+                    continue
+                consecutive = 0
+                if isinstance(results, dict):
+                    rows = [scrub(results)]
+                else:
+                    rows = [scrub(r) for r in (results or []) if isinstance(r, dict)]
+                if rows:
+                    sections.setdefault(g.label, {})[name] = rows
+                    total += len(rows)
+            if consecutive >= _SWEEP_ABORT_AFTER:
+                break
+        if consecutive >= _SWEEP_ABORT_AFTER:
+            break
+    return {
+        "device": appliance.name, "appliance_id": appliance.id,
+        "generated_at": datetime.utcnow().isoformat(), "total_objects": total,
+        "section_count": len(sections), "sections": sections, "errors": errors,
+    }
+
+
 def snapshot_for(appliance, *, timeout: float = 20.0) -> dict:
     """Product-aware config sweep: dispatch to the FortiADC, FortiAnalyzer,
-    FortiAuthenticator or FortiWeb sweep by ``appliance.kind``. All return the same snapshot dict
+    FortiAuthenticator, FortiGate or FortiWeb sweep by ``appliance.kind``. All return the same snapshot dict
     shape, so every downstream (cache ingest, JSON backup, git publish) is
     product-agnostic."""
     kind = str(getattr(appliance, "kind", "") or "").lower()
@@ -306,6 +373,8 @@ def snapshot_for(appliance, *, timeout: float = 20.0) -> dict:
         return snapshot_from_faz(appliance, timeout=timeout)
     if kind == "fortiauthenticator":
         return snapshot_from_fac(appliance, timeout=timeout)
+    if kind == "fortigate":
+        return snapshot_from_fgt(appliance, timeout=timeout)
     return snapshot_from_device(appliance, timeout=timeout)
 
 
@@ -389,8 +458,8 @@ def sync_device(appliance, *, publish: bool = False, user_label: str | None = No
                 trigger: str = "manual", session=None):
     """Live sync one device: sweep -> ingest -> JSON -> (git) -> SyncRun.
 
-    Product-aware: FortiWeb and FortiADC appliances both flow through here (the
-    sweep is picked by ``kind`` in :func:`snapshot_for`)."""
+    Product-aware: every device ADOM flows through here (the sweep is
+    picked by ``kind`` in :func:`snapshot_for`)."""
     snapshot = snapshot_for(appliance)
     if not snapshot.get("total_objects"):
         # Device-level failure (license lock -20010, dead host, auth): EVERY

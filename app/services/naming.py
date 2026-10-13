@@ -49,9 +49,18 @@ PRODUCT_FORTIADC = "fortiadc"
 # (key, label) in display order — drives the product selector on the page.
 # Derived LIVE from the ADOM registry (``cap_naming``); a live sequence so the
 # selector reflects Settings → ADOMs edits without a code change.
-from ..branding import naming_products as _naming_products  # noqa: E402
+from ..branding import _LiveSeq, naming_products as _naming_products  # noqa: E402
 
-PRODUCTS = _naming_products()
+# Only products the catalog below has elements for: an ADOM flagged
+# cap_naming with no element (FortiAuthenticator was, on a live install)
+# drew an EMPTY editor. Every device ADOM still gets a Naming entry: there it
+# opens Discovery (views/naming.py), which reads any product's names.
+PRODUCTS = _LiveSeq(lambda: tuple((k, n) for k, n in _naming_products()
+                                  if k in _catalog_products()))
+
+
+def _catalog_products() -> set[str]:
+    return {e.product for e in NAMING_ELEMENTS}
 DEFAULT_PRODUCT = PRODUCT_FORTIWEB
 
 

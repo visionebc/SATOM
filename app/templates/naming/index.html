@@ -28,7 +28,12 @@
   </div>
 </div>
 
-<div class="fw-card">
+<ul class="nav nav-tabs mb-0" style="border-bottom:1px solid var(--fw-border);">
+  <li class="nav-item"><a class="nav-link active" href="{{ url_for('naming.index', product=current_product) }}"><i class="bi bi-pencil-square me-1"></i>{{ _('Scheme') }}</a></li>
+  <li class="nav-item"><a class="nav-link" href="{{ url_for('naming.discovery', product=current_product) }}"><i class="bi bi-search me-1"></i>{{ _('Discovery') }}</a></li>
+</ul>
+
+<div class="fw-card" style="border-top-left-radius:0;">
   <div class="fw-card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
     <span class="fw-card-title"><i class="bi bi-tag me-2 text-accent"></i>Patterns — {{ product_label }}</span>
     <div class="d-flex align-items-center gap-2">

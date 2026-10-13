@@ -6,6 +6,44 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Naming Discovery: the convention your devices already follow
+
+- **Administrator → Naming** is now in every device ADOM. Its new
+  **Discovery** tab reads the configuration tree SATOM already holds for a
+  device (no device call) and shows, per object type: the dominant pattern
+  (`pol-{adom}-{name}`), variants, how many objects follow it, every exception
+  with its reason, and the object types that share the same `{name}` through a
+  real reference. A part of a name becomes a token only when it equals a field
+  of the same object (or the device's ADOM/VDOM) on at least 80 % of the
+  objects, so `{port}`/`{proto}` are read from the object, not guessed from the
+  text — and a name whose port word no longer matches the object's port is
+  reported as a stale name.
+- Vendor objects are counted apart and never shape a pattern: the device's own
+  flag first (FortiWeb `can_view`, FortiADC `_nondeletable`, FortiGate
+  `q_static`/certificate `source`, FortiAnalyzer `protected`), then a
+  factory-name list measured on a real unit of each product
+  (`app/registry/data/naming_factory.json`), then physical port names.
+- **Adopt** keeps a discovered pattern as the convention of an object type;
+  every device of the product is checked against it. **Adopt + scheme** also
+  writes it into the matching Naming scheme element (FortiWeb, FortiADC) — only
+  when the scheme can carry it (literals and `{name}`). Fleet view (all
+  devices: consensus, agree/differ) and CSV export (formula-safe).
+
+### Fixed
+
+- **A FortiGate never had a configuration tree.** `device_sync.snapshot_for`
+  sent `kind=fortigate` to the FortiWeb sweep, which failed every endpoint, so
+  no `_config.json`, SoT version or cache existed for a FortiGate. A FortiGate
+  sweep now reads every table of the FortiGate ADOM menu at the path the
+  registry resolves for the unit's build (`with_meta=1`), drops secrets like
+  the section pages, and the scheduled **Sync device** actions offer
+  FortiGate. Measured on a FortiGate-VM 8.0.1: 344 objects in 9 s, no `ENC`
+  value in the snapshot.
+- The Naming scheme editor drew an **empty** catalog for an ADOM whose naming
+  capability was on but which has no naming catalog (FortiAuthenticator on a
+  live install). The editor now lists only products with a catalog; the others
+  open Discovery.
+
 ### Added — FortiAnalyzer joins the measured-GUI engine
 
 - FortiAnalyzer is the fifth product SATOM draws from measured GUI layouts

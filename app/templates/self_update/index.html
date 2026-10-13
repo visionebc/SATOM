@@ -570,7 +570,9 @@
                 <tr>
                   <td>{{ (knowledge.lane_labels or {}).get(lane, lane) }}</td>
                   {% if row %}
-                  <td class="font-monospace">{{ row.pack }}</td>
+                  <td class="font-monospace">{{ row.pack }}
+                    {% if row.covered_by %}<div class="text-muted small" title="{{ _('Not imported: this pack already holds the same or newer content.') }}">{{ _('covered by') }} {{ row.covered_by }}</div>{% endif %}
+                  </td>
                   <td class="text-nowrap">{{ row.date or '—' }}</td>
                   <td class="text-nowrap">
                     {% if row.age_days is not none %}{{ row.age_days }} {{ _('day(s)') }}{% endif %}

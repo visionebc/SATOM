@@ -488,7 +488,18 @@ def device_inventory(appliance) -> dict:
     * ``fields`` — objects REST serves that carry CLI-only / hidden fields.
 
     Plus the layout-measured pages (FortiWeb Server Policy) and a note for
-    products no lab device measured."""
+    products no lab device measured.
+
+    One channel view for the whole inventory (``api_library.channel_memo``):
+    every object's section reads the same build, and without the memo each
+    re-read it from the database — 80 reads, 60 s, for fgt02 on 2026-10-13.
+    Read-only, so the memo cannot hide a write of its own."""
+    from . import api_library as lib
+    with lib.channel_memo():
+        return _device_inventory(appliance)
+
+
+def _device_inventory(appliance) -> dict:
     from . import api_library as lib
     product, version = _build_of(appliance)
     out = {"title": SECTION_TITLE, "product": product, "version": version,

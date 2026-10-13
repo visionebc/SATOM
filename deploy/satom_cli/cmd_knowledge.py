@@ -63,8 +63,9 @@ def _lane_rows(installed):
             rows.append((lane, "nothing imported"))
             continue
         age = row.get("age_days")
-        rows.append((lane, "%s  (%s, %s day(s) old%s)" % (
+        rows.append((lane, "%s  (%s, %s day(s) old%s%s)" % (
             row.get("pack"), row.get("date") or "?", "?" if age is None else age,
+            ", covered by %s" % row["covered_by"] if row.get("covered_by") else "",
             ", STALE" if row.get("stale") else "")))
     return rows
 

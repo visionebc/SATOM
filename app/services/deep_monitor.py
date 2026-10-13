@@ -772,18 +772,65 @@ def _split_url(url: str) -> tuple[str, str, int]:
     return scheme or "https", host, port
 
 
-def run_https(probe) -> dict:
-    """Execute one HTTPS/HTTP service probe. Never raises."""
+#: Errors raised before a TCP connection existed. The certificate read opens a
+#: second connection to the same host:port, so after one of these it can only
+#: time out again — it used to add 6 s to every dead VIP (16 s per probe, 12 min
+#: per sweep against a 3-minute schedule on 2026-10-13).
+_NEVER_CONNECTED = ("ConnectTimeout", "ConnectError")
+
+#: Concurrent HTTPS probes per sweep. Only the network half runs in the pool.
+HTTPS_WORKERS = 16
+
+
+def https_io(url: str, timeout: float) -> tuple[dict, int | None, int]:
+    """The network half of an HTTPS probe: ``(response, tls_days, took_ms)``.
+
+    Touches no database, no settings and no app context, which is what makes it
+    safe inside a thread (a pool thread has no app context — see
+    ``tests/test_probe_thread_context.py``). Grading stays in :func:`run_https`.
+    """
     from . import service_probe
 
+    started = time.time()
+    res = service_probe.probe_url(url, timeout=timeout)
+    data = res if isinstance(res, dict) else res.__dict__
+    scheme, host, port = _split_url(url)
+    tls = None
+    if scheme == "https" and not str(data.get("error") or "").startswith(_NEVER_CONNECTED):
+        tls = tls_days_left(host, port)
+    return data, tls, int((time.time() - started) * 1000)
+
+
+def prefetch_https(probes: list) -> dict:
+    """Run the network half of every HTTPS probe in ``probes`` concurrently.
+
+    Returns ``{probe_id: https_io(...)}``. Plain values are read from the rows
+    here, on the calling thread; the workers only see strings and floats.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    jobs = {}
+    for p in probes:
+        product = getattr(getattr(p, "appliance", None), "kind", "") or ""
+        url = (p.url or "").strip()
+        if p.kind == "https" and url and supports(p.kind, product):
+            jobs[p.id] = (url, float(p.timeout_s or 10))
+    if len(jobs) < 2:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(HTTPS_WORKERS, len(jobs))) as pool:
+        futs = {pid: pool.submit(https_io, url, t) for pid, (url, t) in jobs.items()}
+        return {pid: f.result() for pid, f in futs.items()}
+
+
+def run_https(probe, io: tuple | None = None) -> dict:
+    """Execute one HTTPS/HTTP service probe. Never raises.
+
+    ``io`` is a result of :func:`https_io` fetched ahead by :func:`sweep`.
+    """
     url = (probe.url or "").strip()
     if not url:
         return {"status": "error", "detail": "probe has no URL", "payload": {}}
-    started = time.time()
-    res = service_probe.probe_url(url, timeout=float(probe.timeout_s or 10))
-    data = res if isinstance(res, dict) else res.__dict__
-    scheme, host, port = _split_url(url)
-    tls = tls_days_left(host, port) if scheme == "https" else None
+    data, tls, took_ms = io or https_io(url, float(probe.timeout_s or 10))
     status, detail = classify_https(
         data, expect_status=int(probe.expect_status or 0),
         warn_ms=int(th.num(probe, "warn_ms")), tls_days=tls,
@@ -799,7 +846,7 @@ def run_https(probe) -> dict:
             "elapsed_ms": data.get("elapsed_ms"),
             "tls_days_left": tls, "headers": data.get("headers") or {},
             "body_len": data.get("body_len"), "error": data.get("error") or "",
-            "took_ms": int((time.time() - started) * 1000),
+            "took_ms": took_ms,
         },
     }
 
@@ -1899,8 +1946,10 @@ def prune(probe_id: int, keep: int = DEFAULT_RETENTION, *, session=None) -> int:
     return len(ids)
 
 
-def run_probe(probe, *, session=None) -> dict:
+def run_probe(probe, *, session=None, https: tuple | None = None) -> dict:
     """Execute one probe, persist a sample, update the probe row.
+
+    ``https`` is the probe's network result when :func:`sweep` fetched it ahead.
 
     Never raises: an exception inside a probe becomes an ``error`` sample, so
     one broken target can never sink a scheduled sweep over the whole fleet.
@@ -1926,7 +1975,7 @@ def run_probe(probe, *, session=None) -> dict:
                                 "/".join(products_for(probe.kind) or ("any",))),
                    "payload": {"kind": probe.kind, "product": product}}
         elif probe.kind == "https":
-            out = run_https(probe)
+            out = run_https(probe, https)
         elif probe.kind == "interface":
             out = run_interface(probe, prev)
         elif probe.kind in BOX_METRICS:
@@ -2028,7 +2077,10 @@ def sweep(*, ids: list[int] | None = None, force: bool = False,
                   .filter(MonitorProbe.id.in_(ids)).all())
     else:
         probes = due_probes(session=session, force=force)
-    results = [run_probe(p, session=session) for p in probes]
+    # HTTPS targets are probed concurrently; everything else (SSH/REST against
+    # the management plane) stays serial, and so does every database write.
+    ahead = prefetch_https(probes)
+    results = [run_probe(p, session=session, https=ahead.get(p.id)) for p in probes]
     counts: dict[str, int] = {}
     for r in results:
         counts[r["status"]] = counts.get(r["status"], 0) + 1

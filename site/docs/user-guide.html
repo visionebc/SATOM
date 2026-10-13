@@ -1264,7 +1264,8 @@ tabs, objects only the CLI serves, read-only users), the section is a table of
 <p><strong>Appliances → <em>device</em> → Not in GUI, but in CLI</strong> (<code>/appliances/&lt;id&gt;/not-in-gui</code>)
 lists everything the device's build has outside the Fortinet GUI, in one
 place. Every section in the views links to it as <em>Everything this device has
-outside the GUI →</em>.</p>
+outside the GUI →</em>. The same inventory is on the console, without the values
+and the editor: <code>sudo satom get device not-in-gui &lt;device&gt; [--endpoint &lt;key&gt;]</code>.</p>
 <p><img alt="Per-device Not in GUI, but in CLI page" src="img/screens/fwb-not-in-gui.webp">
 <em>The per-device page for fwb-01: layout-measured pages, CLI-only objects and CLI-only fields.</em></p>
 <ul>
@@ -2413,7 +2414,7 @@ or read-only CLI over SSH):</p>
 <tbody>
 <tr>
 <td><strong>Service policy (HTTPS)</strong></td>
-<td>A synthetic request to a published front end: status, latency and days of certificate left. One 200 proves interface, policy, proxy daemon and backend at once</td>
+<td>A synthetic request to a published front end: status, latency and days of certificate left. One 200 proves interface, policy, proxy daemon and backend at once. A sweep sends these requests concurrently (up to 16 at a time), and a front end that refuses or times out the connection is not contacted a second time for its certificate</td>
 </tr>
 <tr>
 <td><strong>Interface IP / link</strong></td>
@@ -3727,7 +3728,10 @@ lanes with the same content sections:</p>
 </table>
 <p>The <strong>Knowledge packs</strong> card on Software Update shows, per lane, the pack
 installed on this node, its date and its age (a <strong>stale</strong> badge after 30 days),
-and what the feed offers:</p>
+and what the feed offers. A release's API pack is not imported when a pack
+already imported holds the same or newer content; the API pack row then names
+the release's pack with <strong>covered by <code>&lt;pack&gt;</code></strong> and takes that pack's date, so
+it does not age while the content is current:</p>
 <ul>
 <li><strong>Check now</strong> reads the feed (<code>latest.json</code>) and compares it with the newest
   imported knowledge pack. Nothing is downloaded.</li>
@@ -4762,6 +4766,11 @@ policy (what happens then), and the two are kept apart deliberately.</p>
   scheduler that stops firing produces no failed runs at all and would otherwise
   be invisible — and the <strong>device alert floor</strong>, the severity at which device
   health starts mailing.</li>
+<li>The <strong>Scheduled automation</strong> check also raises a warning when a SATOM process
+  (web, scheduler, reconciler) is running code older than the files on disk
+  for more than 15 minutes — an update that restarted only the web service.
+  A stale scheduler fails or skips work only on the scheduled path, so a manual
+  run of the same action passes. Fix: <code>sudo satom execute restart-all</code>.</li>
 <li><strong>Preview now</strong> evaluates every enabled check and shows what <em>would</em> fire,
   including the resolved recipient list, <strong>without sending anything</strong>. This is the
   right first move when a device is red and no mail arrived.</li>

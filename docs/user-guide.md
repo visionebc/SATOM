@@ -1092,7 +1092,8 @@ tabs, objects only the CLI serves, read-only users), the section is a table of
 **Appliances → *device* → Not in GUI, but in CLI** (`/appliances/<id>/not-in-gui`)
 lists everything the device's build has outside the Fortinet GUI, in one
 place. Every section in the views links to it as *Everything this device has
-outside the GUI →*.
+outside the GUI →*. The same inventory is on the console, without the values
+and the editor: `sudo satom get device not-in-gui <device> [--endpoint <key>]`.
 
 ![Per-device Not in GUI, but in CLI page](img/screens/fwb-not-in-gui.webp)
 *The per-device page for fwb-01: layout-measured pages, CLI-only objects and CLI-only fields.*
@@ -2190,7 +2191,7 @@ or read-only CLI over SSH):
 
 | Kind | What it records |
 |---|---|
-| **Service policy (HTTPS)** | A synthetic request to a published front end: status, latency and days of certificate left. One 200 proves interface, policy, proxy daemon and backend at once |
+| **Service policy (HTTPS)** | A synthetic request to a published front end: status, latency and days of certificate left. One 200 proves interface, policy, proxy daemon and backend at once. A sweep sends these requests concurrently (up to 16 at a time), and a front end that refuses or times out the connection is not contacted a second time for its certificate |
 | **Interface IP / link** | A name → address/state fingerprint per port. The **drift** against the previous sample is the event; an address change grades critical |
 | **Processor load** / **Memory usage** | Read from the appliance's own performance summary |
 | **proxyd process** | Worker count, memory used and free, and the **set of process IDs** — a different PID is a silent restart, which no ordinary health check shows |
@@ -3253,7 +3254,10 @@ lanes with the same content sections:
 
 The **Knowledge packs** card on Software Update shows, per lane, the pack
 installed on this node, its date and its age (a **stale** badge after 30 days),
-and what the feed offers:
+and what the feed offers. A release's API pack is not imported when a pack
+already imported holds the same or newer content; the API pack row then names
+the release's pack with **covered by `<pack>`** and takes that pack's date, so
+it does not age while the content is current:
 
 - **Check now** reads the feed (`latest.json`) and compares it with the newest
   imported knowledge pack. Nothing is downloaded.
@@ -4229,6 +4233,11 @@ policy (what happens then), and the two are kept apart deliberately.
   scheduler that stops firing produces no failed runs at all and would otherwise
   be invisible — and the **device alert floor**, the severity at which device
   health starts mailing.
+- The **Scheduled automation** check also raises a warning when a SATOM process
+  (web, scheduler, reconciler) is running code older than the files on disk
+  for more than 15 minutes — an update that restarted only the web service.
+  A stale scheduler fails or skips work only on the scheduled path, so a manual
+  run of the same action passes. Fix: `sudo satom execute restart-all`.
 - **Preview now** evaluates every enabled check and shows what *would* fire,
   including the resolved recipient list, **without sending anything**. This is the
   right first move when a device is red and no mail arrived.

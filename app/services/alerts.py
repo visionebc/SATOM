@@ -1040,6 +1040,39 @@ def _check_signature_source(sidx) -> list[dict]:
 _CLEARED: set = set()
 
 
+def _check_code() -> list[dict]:
+    """One finding per SATOM process running code older than the disk.
+
+    On 2026-10-13 satom-scheduler had run two-day-old code for 45 hours
+    because deploys restarted only the web service; its ``device_sync`` said
+    "6/6 ok" and silently skipped the FortiGate the new code had added. A stale
+    scheduler fails only on the scheduled path, so a manual test passes — which
+    is why this lives with the scheduled-automation checks (same toggle; a new
+    toggle would default to OFF on every saved settings form).
+
+    Only on a node with systemd units (``runtime.capability``); a delegated
+    container runtime restarts its processes with the image.
+    """
+    from .. import runtime
+    from . import code_freshness as cf
+    if not runtime.capability("unit_health") or runtime.delegated("unit_health"):
+        return []
+    rows = cf.stale()
+    if not rows:
+        return []
+    node = _node()
+    return [{
+        "key": "action.code_stale.%s" % r["alias"],
+        "severity": SEV_WARNING,
+        "title": "%s on %s is running code older than the disk" % (r["unit"], node),
+        "detail": ("%s started %.1f h before the newest source file (%s) was "
+                   "written. Until it restarts it runs the previous release: "
+                   "scheduled actions can fail or skip work while manual runs "
+                   "of the same thing pass.\n\nFix: satom execute restart-all"
+                   % (r["unit"], r["behind_h"], r["newest"]))}
+        for r in rows]
+
+
 def _check_ha_link() -> list[dict]:
     """The standby cannot fetch code from this primary (app/services/ha_link).
 
@@ -1065,6 +1098,7 @@ _CHECKS = [
     (K_CHK_BACKUP, _check_backup),
     (K_CHK_DRIFT, _check_drift),
     (K_CHK_ACTIONS, _check_actions),
+    (K_CHK_ACTIONS, _check_code),
     (K_CHK_HOST, _check_host),
     (K_CHK_CATALOG, _check_catalog),
 ]

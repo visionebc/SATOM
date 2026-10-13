@@ -1627,6 +1627,9 @@ def create_app(config_override: object | None = None) -> Flask:
     # ``flask naming discover`` — Naming Discovery (backend of `satom get device naming`).
     from .cli_naming import naming_cli
     app.cli.add_command(naming_cli)
+    # ``flask not-in-gui inventory`` — backend of `satom get device not-in-gui`.
+    from .cli_not_in_gui import not_in_gui_cli
+    app.cli.add_command(not_in_gui_cli)
 
     @app.cli.command('create-db')
     def create_db_cmd():

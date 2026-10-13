@@ -302,6 +302,10 @@ need root.</p>
 <td>Naming Discovery: the pattern each object type already follows (<code>vs-{name}</code>), how many objects follow it, the exceptions with their reason, the Naming scheme pattern and how many objects match it; without a device, the fleet consensus per product. Read from the stored tree, run as the service account (root)</td>
 </tr>
 <tr>
+<td><code>get device not-in-gui &lt;device&gt; [--endpoint &lt;key\|cli path&gt;]</code></td>
+<td>"Not in GUI, but in CLI" for one device: objects only the CLI serves, CLI-only fields of REST objects, REST fields the Fortinet GUI does not show, and objects the device's GUI does not draw — each with the channel SATOM writes it over. From the API library and the measured layouts; the device is not contacted. Current values and the editor stay on <code>/appliances/&lt;id&gt;/not-in-gui</code> (root)</td>
+</tr>
+<tr>
 <td><code>get signatures status</code></td>
 <td>FortiGuard signature DB version and age per FortiWeb (stale past <code>alerts.signature_max_days</code>, or never updated), the signature source, and what the local signature index holds</td>
 </tr>
@@ -713,7 +717,7 @@ check. <code>tests/test_docs_publication.py</code> fails the suite when this blo
 longer matches the console you are running.</p>
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-<p><em>120 commands in 44 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
+<p><em>121 commands in 44 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
 <h3 id="get"><code>get</code></h3>
 <p>Read state. Every command below works as <strong>any user</strong> — this is the half of the console that has to keep working when everything else does not.</p>
 <table>
@@ -845,6 +849,12 @@ longer matches the console you are running.</p>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td>The naming convention each object type already follows, from the stored tree — exceptions, fleet consensus.</td>
+</tr>
+<tr>
+<td><code>satom get device not-in-gui &lt;device&gt; [--endpoint &lt;key\|cli path&gt;]</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td>Every object and field the device's build has outside the Fortinet GUI, and the channel SATOM writes it over.</td>
 </tr>
 <tr>
 <td><code>satom get signatures status</code></td>

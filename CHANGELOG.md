@@ -6,6 +6,43 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — "Not in GUI, but in CLI" on the console, and an alert for stale processes
+
+- **`satom get device not-in-gui <device> [--endpoint <key|cli path>]`** — the
+  per-device inventory of `/appliances/<id>/not-in-gui` on the console: objects
+  only the CLI serves, CLI-only fields of REST objects, REST fields the Fortinet
+  GUI does not show and objects the device's GUI does not draw, each with the
+  channel SATOM writes it over. Read from the API library and the measured
+  layouts (backend `flask not-in-gui inventory`); the device is not contacted.
+  Field values and the editor stay on the page.
+- **Alert: a process running code older than the disk.** The *Scheduled
+  automation* check now raises a warning (`action.code_stale.<web|scheduler|reconciler>`)
+  when a SATOM process started before the newest source file and has stayed
+  that way for 15 minutes. On 2026-10-13 the scheduler ran two-day-old code for
+  45 hours after updates that restarted only the web service; its device sync
+  reported success while skipping the FortiGate the new code supports. Before
+  this, only `satom diagnose code` and `satom get system health` said so.
+
+### Fixed — deep-monitor sweep, knowledge lane age, per-device page speed
+
+- **The deep-monitor sweep took 12 minutes on a 3-minute schedule**, so every
+  run overlapped the next. 46 HTTPS probes against front ends that did not
+  answer cost 16 s each, one after another: the 10 s request timeout plus a
+  second connection to read the certificate of a host that had just failed to
+  connect. A probe that never got a connection no longer reads the certificate,
+  and the network half of the HTTPS probes runs concurrently (16 at a time).
+  Grading and every database write stay on the sweep's own thread.
+- **Software Update named an old API pack for the release lane.** When the
+  release's API pack was not imported because a newer knowledge pack already
+  held its content, the lane kept showing the last API pack actually imported
+  (2.6.0 on a 3.0.0 node) and would have turned **stale** after 30 days. It now
+  names the release's pack, "covered by" the pack that holds it, dated by that
+  pack. Also in `satom show knowledge`.
+- **The per-device "Not in GUI, but in CLI" page took 60 s on a FortiGate.**
+  Every object's section re-read the build's whole channel view from the
+  database (80 reads of ~23,000 rows for fgt02). The page now reads it once:
+  1.3 s.
+
 ### Added — FortiAnalyzer in the live API-library harvest
 
 - A registered FortiAnalyzer can now be harvested live like FortiWeb,

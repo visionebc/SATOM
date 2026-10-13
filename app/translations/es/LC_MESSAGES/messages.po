@@ -23393,3 +23393,9 @@ msgstr "Aún no se ha importado en este nodo ningún diseño de GUI de FortiWeb 
 
 msgid "No %(p)s GUI layout for this page has been imported on this node (layouts come with the knowledge packs)."
 msgstr "Aún no se ha importado en este nodo ningún diseño de GUI de %(p)s para esta página (los diseños vienen con los paquetes de conocimiento)."
+
+msgid "Deliverability error"
+msgstr "Error de entregabilidad"
+
+msgid "mail leaves this node unsigned, straight to the recipient mail server. It is delivered, but it may land in spam."
+msgstr "el correo sale de este nodo sin firmar, directo al servidor de correo del destinatario. Se entrega, pero puede acabar en spam."

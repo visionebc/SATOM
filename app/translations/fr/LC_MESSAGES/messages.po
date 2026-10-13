@@ -23374,3 +23374,9 @@ msgstr "Aucune disposition d'interface FortiWeb n'a encore été importée sur c
 
 msgid "No %(p)s GUI layout for this page has been imported on this node (layouts come with the knowledge packs)."
 msgstr "Aucune disposition d'interface %(p)s pour cette page n'a été importée sur ce nœud (les dispositions sont fournies avec les packs de connaissances)."
+
+msgid "Deliverability error"
+msgstr "Erreur de délivrabilité"
+
+msgid "mail leaves this node unsigned, straight to the recipient mail server. It is delivered, but it may land in spam."
+msgstr "le courrier quitte ce nœud sans signature, directement vers le serveur de messagerie du destinataire. Il est livré, mais il peut arriver dans les spams."

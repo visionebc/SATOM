@@ -182,6 +182,7 @@ def index():
         theme_defaults=_theme_defaults(),
         adom_caps=Adom.CAPS,
         email_config=email.config(),
+        email_deliverability=(email.deliverability() if _is_admin() else None),
         alerts_config=alerts_svc.config(),
         auth_config=(auth_store.config() if _is_admin() else None),
         auth_backends=auth_store.BACKENDS,

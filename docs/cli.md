@@ -208,7 +208,7 @@ Two rules run through the whole table and are enforced by
 | `get update history` | Recent updates, and whether the runner ever picked them up |
 | `get git status` | Branch, drift, oldest unpushed commit, parked safety refs |
 | `get user list` | Who can log in — and whether anyone still can |
-| `get alerts status` | Whether anyone is actually **told** when something breaks — including the result of the last alert email; **bad** when it was not delivered |
+| `get alerts status` | Whether anyone is actually **told** when something breaks — including the result of the last alert email; **bad** when it was not delivered, or delivered unsigned straight to the recipient's server (**deliverability: ERROR** — may land in spam) |
 | `get log <svc> [lines]` | Journal tail |
 
 Most of this half has no console of its own in the product: the scheduler, the

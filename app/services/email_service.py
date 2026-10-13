@@ -28,11 +28,14 @@ Two deployment shapes the operator chooses between (your "local or third-party")
 """
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import smtplib
 import ssl
+import subprocess
 from email.message import EmailMessage
-from email.utils import formataddr, parseaddr
+from email.utils import formataddr, formatdate, make_msgid, parseaddr
 
 from ..models import AppSetting
 from . import encryption
@@ -231,6 +234,13 @@ def _build_message(cfg: dict, to: list[str], subject: str,
     msg["From"] = formataddr((cfg.get("from_name") or "SATOM", from_addr))
     msg["To"] = ", ".join(to)
     msg["Subject"] = subject
+    # RFC 5322 requires Date; Gmail refuses a message without Message-ID
+    # ("550 5.7.1 Messages missing a valid Message-ID header are not
+    # accepted"). A local Postfix used to add both on our behalf, which hid
+    # the gap; a provider or a direct MX hand-off does not.
+    msg["Date"] = formatdate(localtime=True)
+    domain = from_addr.rpartition("@")[2] if "@" in from_addr else None
+    msg["Message-ID"] = make_msgid(domain=domain or None)
     msg.set_content(body or "")
     if html:
         msg.add_alternative(html, subtype="html")
@@ -297,7 +307,67 @@ def send_email(to, subject: str, body: str, *, html: str | None = None,
 
     return {"ok": True,
             "detail": f"Sent to {', '.join(recipients)} via {host}:{port} ({security}).",
-            "recipients": recipients}
+            "recipients": recipients,
+            "deliverability": deliverability(cfg)}
+
+
+# ---- deliverability -------------------------------------------------------
+# "Sent" only means the next hop took the message. Whether the recipient's
+# filter trusts it is a separate question, and the one an operator cannot see
+# from here: an alert in the spam folder is an alert nobody read. When we can
+# PROVE the hand-off is unsigned, that is reported as an error next to every
+# successful send, so "delivered" never reads as "received".
+
+#: The web worker's PATH under systemd does not always include /usr/sbin.
+_POSTCONF = ("/usr/sbin/postconf", "/usr/bin/postconf")
+
+SPAM_RISK_DIRECT_MX = (
+    "Delivered straight to the recipient's mail server with no DKIM "
+    "signature (local Postfix: no relayhost, no signing milter). The message "
+    "is authenticated by SPF at most, from this node's own address, so "
+    "Gmail, Outlook and others may file it as spam. Fix: Settings -> Email "
+    "-> External SMTP server with a provider account, or a relayhost / DKIM "
+    "milter on this node.")
+
+
+def _postconf(*keys: str) -> dict | None:
+    """``{key: value}`` from the local Postfix, or None if it cannot be read."""
+    exe = (next((p for p in _POSTCONF if os.path.exists(p)), None)
+           or shutil.which("postconf"))
+    if not exe:
+        return None
+    try:
+        out = subprocess.run([exe, "-h", *keys], capture_output=True,
+                             text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    vals = out.stdout.splitlines()
+    if out.returncode != 0 or len(vals) != len(keys):
+        return None
+    return dict(zip(keys, (v.strip() for v in vals)))
+
+
+def deliverability(cfg: dict | None = None) -> dict:
+    """Will the recipient's spam filter trust what this node hands over?
+
+    ``{"ok": True|False|None, "detail": str}``. ``False`` is an ERROR: the
+    path is proven unsigned (local Postfix delivering straight to the MX).
+    ``None`` means the local MTA could not be inspected. An external SMTP
+    provider, or a local MTA that relays or signs, is ``True`` — the signing
+    is then the provider's job, and we do not claim to have checked it."""
+    cfg = cfg or config()
+    if cfg.get("mode") != "local":
+        return {"ok": True, "detail": ""}
+    pc = _postconf("relayhost", "smtpd_milters", "non_smtpd_milters")
+    if pc is None:
+        return {"ok": None, "detail": "The local MTA is not Postfix or cannot "
+                                      "be inspected; deliverability unknown."}
+    if pc["relayhost"]:
+        return {"ok": True, "detail": "Relayed via %s." % pc["relayhost"]}
+    if pc["smtpd_milters"] or pc["non_smtpd_milters"]:
+        return {"ok": True, "detail": "A mail filter (milter) is configured "
+                                      "on the local MTA."}
+    return {"ok": False, "detail": SPAM_RISK_DIRECT_MX}
 
 
 def send_test(to: str = "") -> dict:
@@ -315,5 +385,5 @@ def send_test(to: str = "") -> dict:
 
 __all__ = [
     "config", "is_configured", "save_config", "send_email", "send_test",
-    "parse_recipients", "MODES", "SECURITIES", "DEFAULTS",
+    "deliverability", "parse_recipients", "MODES", "SECURITIES", "DEFAULTS",
 ]

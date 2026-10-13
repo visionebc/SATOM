@@ -743,12 +743,16 @@ def alerts_status(ctx, args):
                                ctx.unit_state("alerts")["result"])),
     ])
     last = _last_email(s.get("alerts.last_email", ""))
+    spam_risk = (last.get("spam_risk") or "").strip() if last.get("ok") else ""
     if last:
-        r.rows("last email", [
+        rows = [
             ("at", last.get("at", "?")),
             ("result", "delivered" if last.get("ok") else
              "REFUSED: %s" % (last.get("detail") or "send failed")),
-        ])
+        ]
+        if spam_risk:
+            rows.append(("deliverability", "ERROR — may land in spam"))
+        r.rows("last email", rows)
     checks = sorted((k.split(".")[-1], v) for k, v in s.items() if k.startswith("alerts.check"))
     if checks:
         r.rows("checks", [(k, "on" if dbq.bool_of(v) else "OFF") for k, v in checks])
@@ -778,6 +782,13 @@ def alerts_status(ctx, args):
                "the in-app bell only until the mail transport is fixed — "
                "Settings → Email & Alerts → Send test email."
                % (last.get("detail") or "send failed"))
+    if enabled and spam_risk:
+        # Delivered is not received. An unsigned direct hand-off is accepted
+        # by the recipient's server and then filed as spam, where nobody
+        # reads the alert -- so it is judged an error, not a footnote.
+        r.status = "bad"
+        r.note("The last alert email was delivered, but it is marked as an "
+               "ERROR: %s" % spam_risk)
     if off:
         r.worst("warn")
         r.note("Disabled checks: %s" % ", ".join(off))

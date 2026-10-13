@@ -32,6 +32,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   status shows it under **last email** and turns **bad** when that attempt was
   not delivered.
 
+### Fixed — alert email: Gmail refused every message without a Message-ID; delivered-but-unsigned is now an error
+
+- SATOM built its messages without `Message-ID` and `Date`. A local Postfix
+  added both on the way out, which hid the gap; any other hand-off is refused
+  by Gmail (`550 5.7.1 Messages missing a valid Message-ID header`). Every
+  message now carries both headers.
+- **Delivered is not received.** When the local mail server hands mail
+  straight to the recipient's server with no DKIM signature (Postfix with no
+  relayhost and no signing milter), the message passes SPF at most and Gmail,
+  Outlook and others may file it as spam. SATOM now reports that as a
+  **deliverability error**: a red box on **Settings → Email**, a second red
+  line under **Send test** after a successful send, and in
+  `satom get alerts status` (**last email → deliverability: ERROR**, status
+  **bad**). An external SMTP provider, a relayhost or a signing milter clears it.
+- The **Send test** result box shows the server's reply as text; it used to
+  insert it as HTML.
+
 ### Fixed — two sidebar groups named "Automation", and a Process entry lost next to Studio
 
 - A profile without user management (operator, read-only) saw the Process

@@ -6,6 +6,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Security — infrastructure hardening (2026-10-13 internal code audit)
+
+- **Node-to-node transport is HTTPS-only and certificate-verified.** The peer
+  probes between the two HA nodes no longer fall back to plain HTTP, so the
+  shared identity key can never cross the wire in cleartext, and the peer's TLS
+  certificate is now validated against the system trust store (the public fleet
+  wildcard) or the internal CA. A genuinely untrusted certificate still
+  connects, but over encrypted TLS and with a logged warning, so the health
+  dashboards never break.
+- **HSTS** (`Strict-Transport-Security`) is now sent on every response, scoped
+  to the node's own host (no `includeSubDomains`/`preload`, so sibling fleet
+  services are unaffected).
+- **The integration-hook sandbox can no longer read the secret files.** The
+  unprivileged hook runner masks `/opt/satom/.env`, the internal-CA key under
+  `pki/` and the HA key under `.ssh/`, and hides other processes, so a hook
+  cannot reach the Fernet key or database URL on disk.
+
 ### Security — second round of the 2026-10-13 internal code audit
 
 **Accounts and sign-in**

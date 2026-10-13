@@ -1232,6 +1232,14 @@ def create_app(config_override: object | None = None) -> Flask:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        # HSTS: the app is only ever served over TLS in production (the session
+        # cookie is already Secure). Browsers ignore this header when it arrives
+        # over plain HTTP, so sending it unconditionally is safe for local runs.
+        # Scoped to THIS host only: no includeSubDomains / preload, because that
+        # would force HTTPS on every other *.visionebc.{com,mx} fleet service,
+        # some of which are reached over plain HTTP.
+        if "Strict-Transport-Security" not in response.headers:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000"
         nonce = getattr(g, "csp_nonce", "")
         # Plugin sandbox routes (views/plugins.py: frame()/preview()) set their
         # own relaxed CSP for author-supplied HTML/CSS/JS inside a sandboxed

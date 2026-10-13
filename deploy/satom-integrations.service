@@ -56,3 +56,12 @@ LockPersonality=true
 # reads as 'already claimed', so the request silently never runs and this
 # unit re-fires until the start limit. Proven on a1 before it was fixed.
 ReadWritePaths=-/opt/satom/data/integrations
+# Mask the on-disk secrets from the untrusted hook. systemd reads
+# EnvironmentFile=/opt/satom/.env as root BEFORE this mount namespace is built,
+# so DATABASE_URL/FERNET_KEY still populate the process environment (and
+# hook_runner scrubs that environment before handing control to the hook) — but
+# the hook can no longer re-read the file, the internal CA private key under
+# pki/, or the HA rsync key under .ssh. "-" prefix so a node missing any of
+# these still starts. ProtectProc hides other processes' /proc/<pid>/environ.
+InaccessiblePaths=-/opt/satom/.env -/opt/satom/pki -/opt/satom/.ssh
+ProtectProc=invisible

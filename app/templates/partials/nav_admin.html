@@ -7,8 +7,8 @@
    in the same order everywhere; the ones that do are named with the ADOMs
    they belong to.
 
-   Python Console is not drawn in the Global ADOM: Global keeps it in its
-   Studio group. Without user_manage the group is replaced by the Process
+   Python Console is not drawn flat in the Global ADOM: Global draws it in
+   the Studio subgroup at the foot of this group (partials/nav_studio.html). Without user_manage the group is replaced by the Process
    entry on its own (partials/nav_process_group.html), as before.
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
@@ -83,6 +83,9 @@
       <i class="bi bi-collection fw-nav-icon"></i><span>{{ _('Template Library') }}</span></a>
     {% else %}{{ nav_off('bi-collection', _('Template Library'), _m.reason) }}{% endif %}
     {% endif %}
+    {# Appliances: moved here from Fleet (2026-10-13); nav_fleet.html keeps it
+       for profiles without user_manage. #}
+    {% include 'partials/nav_appliances.html' %}
     {% if _pk == 'global' %}{# system-wide pages: the Global ADOM only #}
     {% if may_open('appids.index') %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'appids' else '' }}" href="{{ url_for('appids.index') }}">
@@ -116,6 +119,10 @@
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'reports' else '' }}" href="{{ url_for('reports.inbox') }}">
       <i class="bi bi-bug fw-nav-icon"></i><span>{{ _('Bug Reports') }}</span></a>
     {% endif %}
+    {# Studio (Python Console, Plugin Studio, Lua Studio) moved here from its
+       own Global group, 2026-10-13. Device ADOMs keep Python Console above
+       and the studios in their Plugins group. #}
+    {% with studio_as_subgroup = True %}{% include 'partials/nav_studio.html' %}{% endwith %}
     {% endif %}
   </div>
 </div>

@@ -369,37 +369,15 @@
 
       {% include 'partials/nav_admin.html' %}
 
-      {# Studio sits OUTSIDE the user_manage block: each entry follows its own
-         studio.* key, so a custom profile holding one reaches it without
-         Administrator rights. #}
-      {% set _can_pyc = current_user.is_authenticated and current_user.can('studio.python_console') %}
-      {% set _can_plg = current_user.is_authenticated and current_user.can('studio.plugin_studio') %}
-      {% set _can_lua = current_user.is_authenticated and current_user.can('studio.lua_studio') %}
-      {% if _can_pyc or _can_plg or _can_lua %}
-      <div class="fw-nav-group {{ 'open' if request.endpoint == 'database.py_console_page' or request.blueprint in ['plugins','lua_studio'] }}" data-nav-group="Studio">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-code-slash fw-nav-section-icon" style="color:#8b5cf6;"></i><span>{{ _('Studio') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          {% if _can_pyc %}
-          {% if may_open('database.py_console_page') %}
-          <a class="fw-nav-item {{ 'active' if request.endpoint == 'database.py_console_page' else '' }}" href="{{ url_for('database.py_console_page') }}">
-            <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Python Console') }}</span></a>
-          {% endif %}
-          {% endif %}
-          {% if _can_plg %}
-          {% if may_open('plugins.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'plugins' and request.endpoint != 'plugins.gallery' else '' }}" href="{{ url_for('plugins.index') }}">
-            <i class="bi bi-puzzle fw-nav-icon"></i><span>{{ _('Plugin Studio') }}</span></a>
-          {% endif %}
-          {% endif %}
-          {% if _can_lua %}
-          {% if may_open('lua_studio.index') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'lua_studio' else '' }}" href="{{ url_for('lua_studio.index') }}">
-            <i class="bi bi-braces fw-nav-icon"></i><span>{{ _('Lua Studio') }}</span></a>
-          {% endif %}
-          {% endif %}
-        </div>
-      </div>
+      {# Studio lives inside Administrator since 2026-10-13 (nav_admin.html).
+         Its entries follow their own studio.* keys, not user_manage, so a
+         custom profile holding one but no Administrator group keeps the
+         standalone group here (partials/nav_studio.html). #}
+      {% if not current_user.can('user_manage') %}
+      {% if current_user.is_authenticated and (current_user.can('studio.python_console') or current_user.can('studio.plugin_studio') or current_user.can('studio.lua_studio')) %}
+      {% include 'partials/nav_studio.html' %}
       {% else %}{% include "partials/nav_process_group.html" %}
+      {% endif %}
       {% endif %}
 
       {% elif product.key == 'fortianalyzer' %}

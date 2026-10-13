@@ -10,8 +10,14 @@
    with the ADOMs it belongs to, so the exception is written down instead of
    being a line someone forgot to copy.
 
-   Schema builds and Build compatibility live here (they were pinned to the
-   foot of the sidebar, and Schema builds to FortiWeb plus the API groups).
+   Appliances, Schema builds, Build compatibility and Certificate Manager
+   left this group on 2026-10-13 (Administrator / Automation); the first
+   three stay here only as a fallback for profiles that cannot see their
+   new group.
+
+   Order (operator, 2026-10-13): Dashboard (the ADOM home, where there is
+   one), then Jobs, Monitoring, Calendar, Architecture, Service Diagram,
+   Search, DNS Lookup; the rest keeps its previous relative order.
 
    Draws the ITEMS only. The caller supplies the wrapper: a collapsible group
    in a device ADOM, the "Global" context block in the Global ADOM. The
@@ -25,19 +31,20 @@
 <a class="fw-nav-item {{ 'active' if request.endpoint == 'fgt.index' else '' }}" href="{{ url_for('fgt.index') }}">
   <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Dashboard') }}</span></a>
 {% endif %}
-{% if scout_on and may_open('scout.index') %}
-<a class="fw-nav-item {{ 'active' if request.blueprint == 'scout' else '' }}" href="{{ url_for('scout.index') }}">
-  <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span></a>
-{% elif not scout_on %}{# Switched off: shown, disabled, with the reason. An ABSENT entry
-   reads as 'this product has no Scout' and sends the operator looking for an
-   installer instead of for the checkbox. Switched on but not permitted is
-   hidden like every other entry: "switched off" would be false. #}
-<span class="fw-nav-item disabled text-muted" style="cursor:not-allowed;opacity:.55;"
-      title="{{ _('Scout is switched off for this site (Settings → Scout → Availability).') }}">
-  <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span>
-  <i class="bi bi-slash-circle ms-1 small"></i></span>
+{% if may_open('jobs.manager') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'jobs' else '' }}" href="{{ url_for('jobs.manager') }}">
+  <i class="bi bi-list-task fw-nav-icon"></i><span>{{ _('Jobs') }}</span></a>
 {% endif %}
+{% include 'partials/nav_monitoring.html' %}
 {% include 'partials/nav_calendar.html' %}
+{% if may_open('netarch.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'netarch' else '' }}" href="{{ url_for('netarch.index') }}">
+  <i class="bi bi-bounding-box-circles fw-nav-icon"></i><span>{{ _('Architecture') }}</span></a>
+{% endif %}
+{% if may_open('architecture.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
+  <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Service Diagram') }}</span></a>
+{% endif %}
 {% if may_open('search.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
   <i class="bi bi-search fw-nav-icon"></i><span>{{ _('Search') }}</span></a>
@@ -57,38 +64,34 @@
   <i class="bi bi-file-diff fw-nav-icon"></i><span>{{ _('Config Compare') }}</span></a>
 {% endif %}
 {% endif %}
-{% if may_open('netarch.index') %}
-<a class="fw-nav-item {{ 'active' if request.blueprint == 'netarch' else '' }}" href="{{ url_for('netarch.index') }}">
-  <i class="bi bi-bounding-box-circles fw-nav-icon"></i><span>{{ _('Architecture') }}</span></a>
+{% if scout_on and may_open('scout.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'scout' else '' }}" href="{{ url_for('scout.index') }}">
+  <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span></a>
+{% elif not scout_on %}{# Switched off: shown, disabled, with the reason. An ABSENT entry
+   reads as 'this product has no Scout' and sends the operator looking for an
+   installer instead of for the checkbox. Switched on but not permitted is
+   hidden like every other entry: "switched off" would be false. #}
+<span class="fw-nav-item disabled text-muted" style="cursor:not-allowed;opacity:.55;"
+      title="{{ _('Scout is switched off for this site (Settings → Scout → Availability).') }}">
+  <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span>
+  <i class="bi bi-slash-circle ms-1 small"></i></span>
 {% endif %}
-{% if may_open('architecture.index') %}
-<a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
-  <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Service Diagram') }}</span></a>
-{% endif %}
+{# Appliances moved to Administrator (2026-10-13). That group is drawn only
+   for user_manage, and the page asks appliances.view, so an operator keeps
+   the entry here. #}
+{% if not (current_user and current_user.can('user_manage')) %}
 {% include 'partials/nav_appliances.html' %}
+{% endif %}
 {% if may_open('fleet_objects.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'fleet_objects' else '' }}" href="{{ url_for('fleet_objects.index') }}">
   <i class="bi bi-box-seam fw-nav-icon"></i><span>{{ _('Fleet Objects') }}</span></a>
 {% endif %}
 {% include 'partials/nav_advisor.html' %}
-{% include 'partials/nav_monitoring.html' %}
 {# WAF counts FortiWeb objects: live in Global and FortiWeb, disabled with the
    reason in the other device ADOMs (see nav_waf.html). #}
 {% include 'partials/nav_waf.html' %}
-{% if may_open('jobs.manager') %}
-<a class="fw-nav-item {{ 'active' if request.blueprint == 'jobs' else '' }}" href="{{ url_for('jobs.manager') }}">
-  <i class="bi bi-list-task fw-nav-icon"></i><span>{{ _('Jobs') }}</span></a>
-{% endif %}
-{% if may_open('schema_builds.index') %}
-<a class="fw-nav-item {{ 'active' if request.blueprint == 'schema_builds' else '' }}" href="{{ url_for('schema_builds.index') }}">
-  <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Schema builds') }}</span></a>
-{% endif %}
-{# API library: fields per firmware build, both channels (views/build_compat.py). #}
-{% if may_open('build_compat.index') %}
-<a class="fw-nav-item {{ 'active' if request.blueprint == 'build_compat' else '' }}" href="{{ url_for('build_compat.index') }}">
-  <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Build compatibility') }}</span></a>
-{% endif %}
-{% if _pk == 'global' and current_user and current_user.can('user_manage') and may_open('cert_manager.index') %}
-<a class="fw-nav-item {{ 'active' if request.blueprint == 'cert_manager' else '' }}" href="{{ url_for('cert_manager.index') }}">
-  <i class="bi bi-shield-lock fw-nav-icon"></i><span>{{ _('Certificate Manager') }}</span></a>
+{# Schema builds / Build compatibility moved to Automation (2026-10-13); only
+   a profile that cannot see that group keeps them here. #}
+{% if not (current_user and current_user.can('config_write')) %}
+{% include 'partials/nav_api_library.html' %}
 {% endif %}

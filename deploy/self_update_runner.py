@@ -47,6 +47,14 @@ _SHA_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 # A file name the runner itself writes (never a path).
 _FILE_NAME_RE = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9._-]{0,200}$")
 
+# [SATOM-RELEASE-TRUST] A second, OPT-IN safeguard lives further down (see
+# _release_trust / _verify_target_or_refuse / _staged_deploy_dir): when a
+# ROOT-OWNED release-signature anchor is installed, the systemd units root
+# installs and the install-*.sh scripts root runs are taken from a verified,
+# root-only staging copy instead of the service-account-owned deploy/. With no
+# anchor (today's default on every node) the behaviour is byte-for-byte
+# unchanged -- FAIL-SAFE, so a node that never opts in cannot be bricked by it.
+
 
 def _valid_ref(value):
     return (isinstance(value, str) and bool(_REF_RE.fullmatch(value))
@@ -287,6 +295,102 @@ def enforce_unit_user(user):
             (d / "10-app-user.conf").write_text(UNIT_DROPIN % (user, user))
         except OSError:
             pass
+
+
+# ── [SATOM-RELEASE-TRUST] opt-in release-signature enforcement ─────────────
+# The update paths below copy systemd units out of deploy/ and run
+# deploy/install-*.sh AS ROOT. deploy/ lives in the app tree the SERVICE
+# ACCOUNT owns, so without a trust anchor that account can commit a malicious
+# unit/script, point an update's target at that commit, and have root run it.
+# Enforcement is OPT-IN and FAIL-SAFE: with no anchor the paths behave exactly
+# as before; installing a root-owned anchor switches it on.
+TRUST_ANCHOR = Path("/etc/satom/release-trust.allowed_signers")
+_TRUST_PUB_FALLBACK = Path("/etc/satom/release-trust.pub")
+
+
+def _release_trust():
+    """The root-owned release trust anchor, or None when enforcement is OFF.
+
+    None is the DEFAULT on every current node (no anchor installed) and means
+    the update behaves exactly as before. An anchor only counts when it is a
+    regular file, owned by root (st_uid == 0) and non-empty: a half-written or
+    non-root file is ignored rather than allowed to WEAKEN the check into
+    passing. The ``.allowed_signers`` (ssh allowed-signers) form is preferred;
+    ``.pub`` (a single key) is accepted as a fallback -- whichever exists."""
+    for p in (TRUST_ANCHOR, _TRUST_PUB_FALLBACK):
+        try:
+            ss = os.stat(p)
+        except OSError:
+            continue
+        if stat.S_ISREG(ss.st_mode) and ss.st_uid == 0 and ss.st_size > 0:
+            return p
+    return None
+
+
+def _root_only_stage(prefix="satom-rel-"):
+    """A fresh 0700 directory root owns, under /run (tmpfs) when present else
+    /var/lib. The caller removes it once it is done with the staged copy."""
+    base = Path("/run") if os.path.isdir("/run") else Path("/var/lib")
+    d = Path(tempfile.mkdtemp(prefix=prefix, dir=str(base)))
+    os.chmod(d, 0o700)
+    return d
+
+
+def _verify_target_or_refuse(sha, trust, st):
+    """True iff commit ``sha`` is signed by a key in the trust anchor.
+
+    Verification uses git's OWN ssh-signature check with the allowed-signers
+    file passed on the COMMAND LINE (``-c gpg.ssh.allowedSignersFile=...``), so
+    the repo's ``.git/config`` -- which the service account can write -- cannot
+    redirect it. Records the outcome as a step; the caller refuses the whole
+    update (no unit copied, no script run) when this returns False."""
+    if not isinstance(sha, str) or not _SHA_RE.fullmatch(sha):
+        st.step("verify release signature", False,
+                "refusing to verify a non-commit target %r" % (sha,))
+        return False
+    r = subprocess.run(
+        ["git", "-C", str(APP), "-c", "safe.directory=%s" % APP,
+         "-c", "gpg.format=ssh",
+         "-c", "gpg.ssh.allowedSignersFile=%s" % trust,
+         "verify-commit", sha],
+        capture_output=True, text=True, timeout=60)
+    ok = r.returncode == 0
+    st.step("verify release signature", ok,
+            "%s signed by a trusted release key" % sha[:12] if ok
+            else "signature check FAILED for %s: %s"
+                 % (sha[:12], (r.stderr or r.stdout or "").strip()[-300:]))
+    return ok
+
+
+def _staged_deploy_dir(verified_sha):
+    """Root-only staging dir holding deploy/ at ``verified_sha``, or None when
+    enforcement is OFF (the caller then uses APP/deploy unchanged).
+
+    ``git archive <sha> deploy | tar -x`` into a 0700 dir root owns: the bytes
+    come from the object store at the verified commit, never from the
+    service-account-owned worktree, so an in-place edit after the signature
+    check cannot change the units root installs or the scripts root runs."""
+    if _release_trust() is None:
+        return None
+    stage = _root_only_stage()
+    try:
+        arch = subprocess.run(
+            ["git", "-C", str(APP), "-c", "safe.directory=%s" % APP,
+             "archive", verified_sha, "deploy"],
+            capture_output=True, timeout=120)
+        if arch.returncode != 0:
+            raise RuntimeError("git archive failed: %s"
+                               % (arch.stderr or b"").decode("utf-8", "replace")[-200:])
+        tar = subprocess.run(["tar", "-x", "-C", str(stage)],
+                             input=arch.stdout, capture_output=True, timeout=120)
+        if tar.returncode != 0:
+            raise RuntimeError("staging tar -x failed: %s"
+                               % (tar.stderr or b"").decode("utf-8", "replace")[-200:])
+    except BaseException:
+        import shutil as _sh
+        _sh.rmtree(stage, ignore_errors=True)
+        raise
+    return stage
 
 
 def now():
@@ -820,43 +924,77 @@ def process(req_path):
         elif is_standby:
             st.step("flask db upgrade", True, "skipped (standby; schema via replication)")
 
-        # Refresh unit files (they may have changed in the update).
-        for unit in UNIT_FILES:
-            src = APP / "deploy" / unit
-            if src.exists():
-                subprocess.run(["cp", str(src), "/etc/systemd/system/" + unit])
-        # ...and pin the service account AGAIN. The deploy/ templates declare
-        # User=root, so the copy above would downgrade the privilege model on
-        # every update were it not for the drop-in.
-        enforce_unit_user(APP_USER)
-        subprocess.run(["systemctl", "daemon-reload"])
-        # Refresh the ROOT-OWNED copies that live OUTSIDE the app tree: the
-        # operator CLI, the update runner, and the /usr/local/sbin helper
-        # scripts (install-runner.sh installs those last -- see
-        # [SATOM-SBIN-ROOT-COPY]). They are outside on purpose (a sudo/root
-        # target writable by the service account is a root escalation), which
-        # means a code update does NOT reach them -- so they must be
-        # re-installed here or they silently age behind the app. That is not
-        # hypothetical: /usr/local/sbin/satom-ha-datasync.sh sat 11 days and
-        # two bug-fixes behind git because its only installer was a one-shot
-        # migration, and the replicator reported SUCCESS while replicating
-        # nothing.
+        # Refresh unit files and re-run the installers. [SATOM-RELEASE-TRUST]
+        # By default (no root trust anchor) deploy_dir is APP/deploy and this is
+        # byte-for-byte the historical path. With an anchor present the resolved
+        # target is signature-verified and its deploy/ is STAGED into a
+        # root-only dir first, so the service account cannot swap a unit or an
+        # install-*.sh between the check and root running it.
+        trust = _release_trust()
+        stage_root = None
+        if trust is None:
+            st.step("release signature enforcement", True,
+                    "OFF (no root trust anchor at %s)" % TRUST_ANCHOR)
+            deploy_dir = APP / "deploy"
+            script_env = None
+        else:
+            target_sha = git("rev-parse", "HEAD").stdout.strip()
+            if not _verify_target_or_refuse(target_sha, trust, st):
+                st.finish("failed", error="refusing update: release signature "
+                          "check failed for %s" % (target_sha[:12] or "target"))
+                return
+            stage_root = _staged_deploy_dir(target_sha)
+            if stage_root is None:
+                st.finish("failed", error="release trust anchor vanished "
+                          "mid-update; refusing to use the app tree")
+                return
+            deploy_dir = stage_root / "deploy"
+            # The install scripts read FM_APP_DIR to aim their systemd drop-ins
+            # at the real app; the STAGED script body must still target it.
+            script_env = dict(os.environ, FM_APP_DIR=str(APP))
+            st.step("stage verified release", True, str(deploy_dir))
         try:
-            for _script, _label in (("install-cli.sh", "operator CLI"),
-                                    ("install-runner.sh",
-                                     "update runner + /usr/local/sbin helpers"),
-                                    ("install-metrics-store.sh",
-                                     "metrics store")):
-                _p = APP / "deploy" / _script
-                if _p.exists():
-                    st.begin("refresh %s" % _label)
-                    cr = subprocess.run(["bash", str(_p)], capture_output=True,
-                                        text=True, timeout=180)
-                    st.step("refresh %s" % _label, cr.returncode == 0,
-                            (cr.stdout or cr.stderr or "").strip()[:200])
-        except Exception as exc:  # noqa: BLE001
-            # Never fail an update because the console tool did not refresh.
-            st.step("refresh operator CLI", False, str(exc)[:200])
+            # Refresh unit files (they may have changed in the update).
+            for unit in UNIT_FILES:
+                src = deploy_dir / unit
+                if src.exists():
+                    subprocess.run(["cp", str(src), "/etc/systemd/system/" + unit])
+            # ...and pin the service account AGAIN. The deploy/ templates declare
+            # User=root, so the copy above would downgrade the privilege model on
+            # every update were it not for the drop-in.
+            enforce_unit_user(APP_USER)
+            subprocess.run(["systemctl", "daemon-reload"])
+            # Refresh the ROOT-OWNED copies that live OUTSIDE the app tree: the
+            # operator CLI, the update runner, and the /usr/local/sbin helper
+            # scripts (install-runner.sh installs those last -- see
+            # [SATOM-SBIN-ROOT-COPY]). They are outside on purpose (a sudo/root
+            # target writable by the service account is a root escalation), which
+            # means a code update does NOT reach them -- so they must be
+            # re-installed here or they silently age behind the app. That is not
+            # hypothetical: /usr/local/sbin/satom-ha-datasync.sh sat 11 days and
+            # two bug-fixes behind git because its only installer was a one-shot
+            # migration, and the replicator reported SUCCESS while replicating
+            # nothing.
+            try:
+                for _script, _label in (("install-cli.sh", "operator CLI"),
+                                        ("install-runner.sh",
+                                         "update runner + /usr/local/sbin helpers"),
+                                        ("install-metrics-store.sh",
+                                         "metrics store")):
+                    _p = deploy_dir / _script
+                    if _p.exists():
+                        st.begin("refresh %s" % _label)
+                        cr = subprocess.run(["bash", str(_p)], capture_output=True,
+                                            text=True, timeout=180, env=script_env)
+                        st.step("refresh %s" % _label, cr.returncode == 0,
+                                (cr.stdout or cr.stderr or "").strip()[:200])
+            except Exception as exc:  # noqa: BLE001
+                # Never fail an update because the console tool did not refresh.
+                st.step("refresh operator CLI", False, str(exc)[:200])
+        finally:
+            if stage_root is not None:
+                import shutil as _sh
+                _sh.rmtree(stage_root, ignore_errors=True)
         # After the CLI refresh: the verb it runs ships with this release.
         tighten_data_dir(st)
 
@@ -1474,26 +1612,50 @@ def package_change(req_path):
                     "skipped (standby; schema arrives by replication)")
 
         # -- 9. units, CLI and the runner itself -----------------------------
-        for unit in UNIT_FILES:
-            src = APP / "deploy" / unit
-            if src.exists():
-                subprocess.run(["cp", str(src), "/etc/systemd/system/" + unit])
-        enforce_unit_user(APP_USER)
-        subprocess.run(["systemctl", "daemon-reload"])
-        # install-runner.sh also re-installs the /usr/local/sbin helper
-        # scripts ([SATOM-SBIN-ROOT-COPY]); they live outside the tree and no
-        # code update reaches them otherwise.
-        for script, label in (("install-cli.sh", "operator CLI"),
-                              ("install-runner.sh",
-                               "update runner + /usr/local/sbin helpers"),
-                              ("install-metrics-store.sh", "metrics store")):
-            sp = APP / "deploy" / script
-            if sp.exists():
-                st.begin("refresh %s" % label)
-                cr = subprocess.run(["bash", str(sp)], capture_output=True,
-                                    text=True, timeout=180)
-                st.step("refresh %s" % label, cr.returncode == 0,
-                        (cr.stdout or cr.stderr or "").strip()[-200:])
+        # [SATOM-RELEASE-TRUST] With a root trust anchor present, run the units
+        # and install-*.sh from a root-only copy of the ALREADY-VERIFIED package
+        # (its Ed25519 signature and per-file hashes were checked at step 3),
+        # not from the service-account-owned APP/deploy that was just
+        # overwritten -- so a post-verification edit cannot change what root
+        # runs. With no anchor (today's default) this is byte-for-byte unchanged.
+        trust = _release_trust()
+        stage_root = None
+        if trust is None:
+            st.step("release signature enforcement", True,
+                    "OFF (no root trust anchor at %s)" % TRUST_ANCHOR)
+            deploy_dir = APP / "deploy"
+            script_env = None
+        else:
+            stage_root = _root_only_stage()
+            up.extract_app_tree(app_tar, stage_root)
+            deploy_dir = stage_root / "deploy"
+            script_env = dict(os.environ, FM_APP_DIR=str(APP))
+            st.step("stage verified release scripts", True, str(deploy_dir))
+        try:
+            for unit in UNIT_FILES:
+                src = deploy_dir / unit
+                if src.exists():
+                    subprocess.run(["cp", str(src), "/etc/systemd/system/" + unit])
+            enforce_unit_user(APP_USER)
+            subprocess.run(["systemctl", "daemon-reload"])
+            # install-runner.sh also re-installs the /usr/local/sbin helper
+            # scripts ([SATOM-SBIN-ROOT-COPY]); they live outside the tree and no
+            # code update reaches them otherwise.
+            for script, label in (("install-cli.sh", "operator CLI"),
+                                  ("install-runner.sh",
+                                   "update runner + /usr/local/sbin helpers"),
+                                  ("install-metrics-store.sh", "metrics store")):
+                sp = deploy_dir / script
+                if sp.exists():
+                    st.begin("refresh %s" % label)
+                    cr = subprocess.run(["bash", str(sp)], capture_output=True,
+                                        text=True, timeout=180, env=script_env)
+                    st.step("refresh %s" % label, cr.returncode == 0,
+                            (cr.stdout or cr.stderr or "").strip()[-200:])
+        finally:
+            if stage_root is not None:
+                import shutil as _sh
+                _sh.rmtree(stage_root, ignore_errors=True)
         tighten_data_dir(st)
 
         # -- 10. restart and prove it works ----------------------------------

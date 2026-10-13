@@ -6,6 +6,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Security — signed-release enforcement for the privileged update runner (opt-in)
+
+- The root update runner can now require that the revision it deploys is signed
+  by a key the operator trusts. When a root-owned trust anchor is present
+  (`/etc/satom/release-trust.allowed_signers`, or a single key at
+  `…/release-trust.pub`), every update verifies the target commit's signature
+  against it and, on success, copies the unit files and runs the install
+  scripts from a **root-only** staging copy of that verified revision — so the
+  service account can no longer get root by committing a malicious deploy
+  script and pointing an update at it. A mis-signed release is refused, not
+  applied.
+- **Fail-safe and opt-in:** a node with no trust anchor behaves exactly as
+  before (it only logs that enforcement is off). Provision the anchor and have
+  the release pipeline sign its commits/tags to turn enforcement on; see the
+  Security Model page.
+
 ### Security — infrastructure hardening (2026-10-13 internal code audit)
 
 - **Node-to-node transport is HTTPS-only and certificate-verified.** The peer

@@ -158,6 +158,18 @@ mkdir -p /etc/satom/pack-keys
 chown root:root /etc/satom/pack-keys
 chmod 0755 /etc/satom/pack-keys
 
+# ---- release-signature trust anchor (OPTIONAL, opt-in) -------------------
+# [SATOM-RELEASE-TRUST] self_update_runner.py enforces SIGNED releases only
+# when a ROOT-OWNED anchor exists here; with none (the default) updates behave
+# exactly as before. To turn enforcement ON, place an SSH allowed-signers file
+# (or a single public key) and have the release pipeline sign its commits/tags:
+#     /etc/satom/release-trust.allowed_signers   (preferred; ssh allowed-signers)
+#     /etc/satom/release-trust.pub               (single-key fallback)
+# Both must be root:root and non-empty. This installer deliberately does NOT
+# generate keys and does NOT create the anchor -- enabling enforcement is an
+# explicit operator act, so a mis-signed release can never silently brick every
+# future deploy on a node that never opted in.
+
 # ---- root-owned copies of the /usr/local/sbin helpers --------------------
 # [SATOM-SBIN-ROOT-COPY] root:root 0755 for the same reason as ${LIB_DIR}: a
 # script the service account can rewrite is a script the service account can

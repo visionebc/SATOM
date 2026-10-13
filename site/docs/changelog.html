@@ -148,6 +148,10 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   Every object's section re-read the build's whole channel view from the
   database (80 reads of ~23,000 rows for {device}). The page now reads it once:
   1.3 s.</li>
+<li><strong>The same page counted two FortiWeb bookkeeping keys as fields.</strong> Server
+  Policy on 7.6.8 showed 36 REST fields outside the GUI where the policy's own
+  section shows 34: <code>sub_table_id</code> and <code>sub_table_action</code> passed because only
+  the editor applied the FortiWeb noise filter. The page applies it too.</li>
 </ul>
 <h3 id="added--fortianalyzer-in-the-live-api-library-harvest">Added — FortiAnalyzer in the live API-library harvest</h3>
 <ul>

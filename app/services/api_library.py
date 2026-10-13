@@ -1797,7 +1797,8 @@ REST_META = {
 #: Products whose REST spells fields its own way (``schema_adapters.fortiadc``:
 #: ``direct_route_ip`` / ``direct-route-ip``, ``pool`` / ``load-balance-pool``).
 #: There a CLI field REST does not name is not a REST "no": the spelling twins
-#: are joined (:func:`_field_twins`) and what is left stays ``unknown``.
+#: and the renames measured on the build are joined (:func:`_field_twins`) and
+#: what is left stays ``unknown``.
 REST_RENAMES_FIELDS = frozenset({"fortiadc"})
 
 
@@ -1959,13 +1960,17 @@ def _cli_key_alias(product: str, objects: dict) -> dict:
     return {k: v for k, v in adapter.tree_channel_keys(objects).items() if v != k}
 
 
-def _field_twins(product: str, rest_fields: dict, cli_names, mkey: str) -> dict:
+def _field_twins(product: str, rest_fields: dict, cli_names, mkey: str,
+                 version: str = "", key: str = "") -> dict:
     """``{REST name: CLI name}`` of one object's fields both channels name,
-    spelled differently (only :data:`REST_RENAMES_FIELDS` products)."""
+    spelled differently (only :data:`REST_RENAMES_FIELDS` products): spelling
+    twins, plus the renames measured for ``key`` on ``version``
+    (``schema_adapters.fortiadc_renames``; none for a build not measured)."""
     if product not in REST_RENAMES_FIELDS or not rest_fields or not cli_names:
         return {}
-    from .schema_adapters import fortiadc
-    return fortiadc.field_twins(rest_fields, cli_names, mkey)
+    from .schema_adapters import fortiadc, fortiadc_renames
+    return fortiadc.field_twins(rest_fields, cli_names, mkey,
+                                renames=fortiadc_renames.renames_for(version, key))
 
 
 def _channel_view(product: str, version) -> dict:
@@ -2151,7 +2156,8 @@ def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
       fields its own way (:data:`REST_RENAMES_FIELDS`, FortiADC) only an
       endpoint REST measured absent makes a field ``cli_only``; a field of an
       object REST read that it does not name stays ``unknown``, and a spelling
-      twin (``direct_route_ip`` / ``direct-route-ip``) is one field, reported
+      twin (``direct_route_ip`` / ``direct-route-ip``) or a rename measured on
+      the build (``pool`` / ``load-balance-pool``) is one field, reported
       under the REST name with ``attrs.cli_name``;
     * ``hidden``     — like ``cli_only``, but only ``show full-configuration``
       prints it: the build's ``tree`` does not list it;
@@ -2199,7 +2205,8 @@ def channels_at(product: str, version, endpoint=None, exceptions=None) -> dict:
         # ``direct-route-ip``): reported under the REST name, which is what the
         # device returns and what SATOM writes; ``attrs.cli_name`` keeps the
         # CLI's. Copies: the view is shared inside channel_memo.
-        twins = _field_twins(product, rest_fields, set(tree_fields) | set(full_fields), mkey)
+        twins = _field_twins(product, rest_fields, set(tree_fields) | set(full_fields), mkey,
+                             view["version"], key)
         if twins:
             tree_fields, full_fields = dict(tree_fields), dict(full_fields)
             for r_name, c_name in twins.items():

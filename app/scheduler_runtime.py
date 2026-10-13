@@ -65,6 +65,15 @@ def tick(app) -> None:
                           flush=True)
         except Exception:  # noqa: BLE001 - a failed reap must not stop the tick
             db.session.rollback()
+        # A lease whose process is gone (a restart killed the fire) does not
+        # wait for the TTL: the claim marker names the owner.
+        try:
+            for r in scheduled_actions.reap_dead_owner_leases(now):
+                print("released lease of ended pid %s: #%s %s held %s min since %s; "
+                      "next run %s" % (r["pid"], r["id"], r["name"], r["held_minutes"],
+                                       r["held_since"], r["next_run"]), flush=True)
+        except Exception:  # noqa: BLE001 - a failed reap must not stop the tick
+            db.session.rollback()
         for action in scheduled_actions.due_actions(now):
             spec = action.schedule_dict
             if (not action.catch_up

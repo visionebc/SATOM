@@ -139,7 +139,7 @@ on one side only, or by different kinds on the two sides, is reported as
 | Product key | Evidence sources | Where the evidence comes from |
 |---|---|---|
 | `fortiweb` | `sweep`, `schema`, `cli_tree`, `cli_full` | rediscovery sweeps of live appliances; field schemas harvested per firmware line; the CLI `tree` and `show full-configuration` of each build (§14), plus a shape-checked REST probe of every `tree` object |
-| `fortiadc` | `sweep`, `legacy_matrix`, `cli_tree`, `cli_full` | sweeps, and the frozen line-only matrix file from before the build axis; the CLI adapter is **unverified**. No FortiADC is left in the lab fleet, so no new FortiADC evidence arrives until one is registered or a pack brings it |
+| `fortiadc` | `sweep`, `legacy_matrix`, `cli_tree`, `cli_full` | rediscovery sweeps of live appliances (fortiadc10 on 7.6.7 and fortiadc11 on 8.0.4 in the lab), and the frozen line-only matrix file from before the build axis; the CLI `tree` and `show full-configuration` of each build through the **verified** adapter (§14.10) |
 | `fortiauthenticator` | `schema` (and `sweep`), `cli_tree`, `cli_full` | a live, **read-only** harvest of the device's own Tastypie schema (`GET /api/v1/` and `GET /api/v1/<resource>/schema/`); its small setup CLI read by a `set ?` help walk |
 | `fortianalyzer` | `vendor_doc`, `schema` | the vendor's Ansible collection `fortinet.fortianalyzer` (its `v_range` data); the JSON-RPC syntax read (**unverified** adapter) |
 | `fortigate` | `vendor_doc`, `schema`, `cli_tree` | the vendor's Ansible collection `fortinet.fortios` (its `v_range` data); `?action=schema` and the CLI `tree` from a lab box, by pack or file import. Catalog-only |
@@ -817,15 +817,21 @@ registry itself.
   imported.
 - **FortiWeb and FortiADC have no vendor evidence**, because their collections
   carry no version data. A build no appliance has run stays `unmeasured`.
-- **FortiADC has no live evidence source today**: no FortiADC is left in the
-  lab fleet. Its historical builds (including 8.0.3) stay in the library.
+- **FortiADC REST spells fields its own way.** Its rows carry many CLI
+  attributes with `_` for `-` (`direct_route_ip` = CLI `direct-route-ip`),
+  `mkey` for the table key, and outright renames (`pool` = CLI
+  `load-balance-pool`). The channel view joins what the spelling proves and
+  leaves the rest `unknown`, never `cli_only` (§14.3).
 - **The field map is authored, not discovered.** The library proposes rename
   candidates by CLI attribute id (§14.7) but does not apply them: a rename is a
   removal plus an addition until an operator records it.
-- **The FortiADC adapter is unverified.** A harvest through it names the gap
-  (`unverified`), and so does the Schema builds page that lists the adapters.
-  The FortiAnalyzer adapter is verified since 2026-10-13: SATOM's own syntax
-  walk read faz02 (7.6.7 build3737), 139 objects, 11 absent, none refused.
+- **Every adapter is verified against a lab box.** The FortiAnalyzer adapter
+  since 2026-10-13: SATOM's own syntax walk read faz02 (7.6.7 build3737), 139
+  objects, 11 absent, none refused. The FortiADC adapter since the same day:
+  SATOM's harvest of fortiadc10 (7.6.7 build0676) read its `tree` (527
+  objects, FortiWeb format) and `show full-configuration` (315 blocks, no
+  hidden field), and the path rule held for 224 of the 225 REST endpoints the
+  box's own sweep read and for all 19 child tables of its depth capture.
 
 ---
 
@@ -1383,6 +1389,14 @@ each of its objects to the JSON-RPC URL its CLI path and enclosing tables give
 (`cli/global/system/admin/user/{user}/dashboard`), so the tree and the syntax
 walk meet on one object (`schema_adapters.fortianalyzer.tree_channel_keys`);
 an object whose metadata names no CLI path or an unknown parent keeps its key.
+The FortiADC `cli_tree` of a knowledge pack is keyed by the FortiWeb rule too
+(`load-balance/pool`, `firewall/policy/rule`) while the box's REST sweep and
+SATOM's own harvest key by the FortiADC rule (`load_balance_pool`,
+`firewall_policy_child_rule`): the channel view re-keys the pack's objects
+from their CLI path (`schema_adapters.fortiadc.tree_channel_keys`), and when
+both trees of one build name an object, SATOM's own record is the one read.
+Measured on 7.6.7 before the re-key: 10 fields `both` out of 5,402, 862
+entries for 527 objects.
 
 **CLI path to REST path** (`cli_schema.rest_path`):
 
@@ -1392,7 +1406,7 @@ an object whose metadata names no CLI path or an unknown parent keeps its key.
 | FortiGate | `config a b c` -> `a.b/c`; a nested table is a field of its top-level object (`children`) | matches every vendor URN; `tree` verified on 8.0.1 |
 | FortiAuthenticator | no `tree`; the five setup-CLI objects (`router static`, `system dns\|global\|ha\|interface`) are none of the 58 Tastypie resources, so they never join a REST path | verified (8.0.3) |
 | FortiAnalyzer | the JSON-RPC `/cli/global/...` URL is the CLI path | verified (7.6.7 build3737: 139 objects answered their syntax at the URL their CLI path gives) |
-| FortiADC | `config a-b c-d` -> `a_b_c_d`; a table in a table -> `<parent>_child_<table>` | **unverified** (no FortiADC in the lab) |
+| FortiADC | `config a-b c-d` -> `a_b_c_d`; a table in a table -> `<parent>_child_<table>` | verified (7.6.7 build0676, fortiadc10: 224 of the 225 REST endpoints its sweep read `ok` and 19 of 19 child tables of its depth capture are tree objects under the rule; the odd one, `system_certificate_ocsp_stapling`, has no `config` of that name) |
 
 ### 14.2 What never enters the library
 
@@ -1434,6 +1448,7 @@ row created in every empty table and read back by both channels):
 | FortiWeb 8.0.6 | 3,372 | 0 | 0 | 0 | 885 (was 2,545) |
 | FortiAuthenticator 8.0.3 | 0 | 29 | 0 | 316 | 0 |
 | FortiAnalyzer 7.6.7 | 1,494 | 0 | 0 | 0 | 61 (children of tables with no row, and objects the build lacks) |
+| FortiADC 7.6.7 | 967 | 233 | 0 | 623 | 2,456 (+176 `meta`) |
 
 On FortiWeb every field the `tree` lists is served by REST on every object REST
 serves, and `show full-configuration` names nothing the `tree` does not: the
@@ -1452,8 +1467,20 @@ where it had read as 276 `rest_only`): `id` on tables whose tree has no `id`,
 `_id`, `seq`, `<NO.>`/`<No.>`, `sub_table_id`, `sub_table_action`, `q_*`,
 `sz_*`, `can_*`, `*_val`. A name the build's CLI lists for the object is a real
 field (tables whose key is `id`, `<No.>` sequence tables included); without a
-measured `tree`, `id` is not called meta at all. Other products have no rule
-until a REST row is measured next to a tree. Each field
+measured `tree`, `id` is not called meta at all. FortiADC (measured on 7.6.7):
+`_nondeletable`, `_noneditable`. Other products have no rule until a REST row
+is measured next to a tree.
+
+FortiADC's REST does not spell every field the way its CLI does (fortiadc10
+7.6.7: 324 fields of 226 objects). Two spellings the evidence proves are one
+field: `_` for `-` (`direct_route_ip` / `direct-route-ip`) and REST `mkey` for
+the table key the `tree` names (`name`); the field is reported under the REST
+name, with the CLI's in `attrs.cli_name`. A rename no rule derives (`pool` /
+`load-balance-pool`, `domain-name` / `domainname`) is not guessed, so on this
+product a CLI field REST does not name on an object REST read is `unknown`,
+never `cli_only`: `cli_only` there means REST measured the whole object absent
+(233 fields of 98 objects on 7.6.7, each a 404 at its rule path). The FortiADC
+row of the table above reads accordingly. Each field
 carries `rest` / `cli` (`yes|no|unknown`) and the evidence ids. The summary is
 **complete** when both channels were measured and nothing is `unknown`
 outside a named exception — `licence`, `status-object` or `platform`, from
@@ -1637,7 +1664,7 @@ capabilities and where it was verified; the **Schema builds** page shows both.
 | FortiWeb | `tree` (types, options, ranges, ids) | shape probe of every `tree` object (no REST schema endpoint) | **yes** — lab VMs on 7.6.8 and 8.0.6 |
 | FortiAuthenticator | no `tree`: `config <object>` + `set ?` help walk of the setup CLI (5 objects, 29 fields); `show full-configuration` | Tastypie `/api/v1/<res>/schema/` (58 resources, 316 fields), directory complete | **yes** — 8.0.3 build0099 |
 | FortiGate | `tree` (FortiOS format; nested tables folded into fields) | `GET /api/v2/cmdb/<path>?action=schema` | **yes** — 8.0.1 build0245 (`tree` by pack or `flask apilib schema-import`; the REST schema also live from a registered FortiGate, `apilib_harvest`) |
-| FortiADC | `tree` (FortiOS-family format assumed) | none implemented | **no** — no FortiADC in the lab |
+| FortiADC | `tree` (FortiWeb format: types, options, ids); `show full-configuration` | none implemented: the REST fields come from the rediscovery sweep | **yes** — 7.6.7 build0676 (fortiadc10, 2026-10-13): 527 objects, 3,649 fields, 315 dump blocks with no hidden field; path rule above |
 | FortiAnalyzer | JSON-RPC `get` with `option: syntax` | the same answer (the `/cli/global/...` URL is the CLI path) | **yes** — 7.6.7 build3737 (faz02, 2026-10-13): SATOM's own walk, live from a registered FortiAnalyzer through `apilib_harvest` and Schema builds |
 
 Read-only by construction: the FortiWeb, FortiADC and FortiGate harvests send

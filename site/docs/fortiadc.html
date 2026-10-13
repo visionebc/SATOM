@@ -73,9 +73,11 @@
 <p>Ground truth for the FortiADC side of the manager. Built 2026-07-07 from the
 FortiADC <strong>8.0.3</strong> admin guide + CLI reference (docs.fortinet.com, harvested
 with a crawler outside SATOM) cross-checked against the official <code>terraform-provider-fortiadc</code>
-SDK and the <code>fortinet-ansible-dev</code> httpapi plugin. <strong>No lab device existed
-when this was built — nothing here is live-verified yet.</strong> When the VM
-lands: probe the registry, verify a write round-trip, then update this file.</p>
+SDK and the <code>fortinet-ansible-dev</code> httpapi plugin. No lab device existed
+when this was built. Since 2026-10-11 the lab has {device} (7.6.7) and
+{device} (8.0.4): the sections dated after that are measured on them, and
+the CLI schema adapter (<code>tree</code>, <code>show full-configuration</code>, the CLI -&gt; REST
+path rule) is verified on {device} 7.6.7 (API library §14.10).</p>
 </blockquote>
 <h2 id="rest-conventions">REST conventions</h2>
 <ul>

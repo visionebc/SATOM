@@ -38,8 +38,8 @@ the REST URN a sweep carries. :func:`rest_path` derives it per product:
   ``children``.
 * FortiADC: ``config load-balance virtual-server`` ->
   ``load_balance_virtual_server``; a table nested in a table ->
-  ``<parent>_child_<table>``. NOT verified against a live box (no FortiADC in
-  the lab): see :data:`PATH_RULE_STATUS`.
+  ``<parent>_child_<table>``. Verified on fortiadc10 7.6.7 (2026-10-13): see
+  :data:`PATH_RULE_STATUS`. FortiADC's ``tree`` prints the FortiWeb format.
 """
 from __future__ import annotations
 
@@ -63,13 +63,19 @@ PATH_RULE_STATUS = {
     # ?action=schema: 609/618 REST tables join a tree object under the same key
     # (the other 9 are absent from the tree, not mis-keyed)
     "fortigate": "verified",
-    "fortiadc": "unverified",        # documented convention only; no FortiADC in the lab
+    # fortiadc10 7.6.7 build0676 (2026-10-13): 224 of the 225 REST endpoints its
+    # own sweep read ok land on a tree object under the rule (the odd one,
+    # system_certificate_ocsp_stapling, has no config of that name), and the 19
+    # child tables the depth capture read at /api/<parent>_child_<t> are all tree
+    # objects under it
+    "fortiadc": "verified",
     # FortiAuthenticator's CLI objects have NO REST counterpart (its REST is the
     # Tastypie directory, /api/v1/<resource>/): the FortiOS rule only names them.
     "fortiauthenticator": "cli-only",
 }
-#: The FortiADC rule has never been checked against a live FortiADC.
-FORTIADC_RULE_UNVERIFIED = True
+#: The FortiADC rule was checked against a live FortiADC (fortiadc10 7.6.7,
+#: see :data:`PATH_RULE_STATUS`). Kept for callers that read the flag.
+FORTIADC_RULE_UNVERIFIED = False
 
 URN_PREFIX = {"fortiweb": "/api/v2.0/cmdb/", "fortigate": "/api/v2/cmdb/",
               "fortiadc": "/api/"}

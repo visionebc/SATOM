@@ -175,5 +175,7 @@ the service account; the global `--json` flag prints the full document. See the
   build.
 - **A rename is not discovered, it is proposed.** CLI-id candidates held on one
   pair of FortiWeb builds; the field map stays the only authority.
-- **FortiADC and FortiAnalyzer** adapters are unverified (no lab device); their
-  answers are labelled with the adapter's verification status (API library §14.10).
+- **Every schema adapter is verified** against a lab box (FortiADC and
+  FortiAnalyzer since 2026-10-13); each answer still names the adapter's
+  verification (API library §14.10). On FortiADC a field REST spells
+  differently from the CLI and no rule joins reads `unknown`, not `cli_only`.

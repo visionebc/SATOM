@@ -232,7 +232,7 @@ on one side only, or by different kinds on the two sides, is reported as
 <tr>
 <td><code>fortiadc</code></td>
 <td><code>sweep</code>, <code>legacy_matrix</code>, <code>cli_tree</code>, <code>cli_full</code></td>
-<td>sweeps, and the frozen line-only matrix file from before the build axis; the CLI adapter is <strong>unverified</strong>. No FortiADC is left in the lab fleet, so no new FortiADC evidence arrives until one is registered or a pack brings it</td>
+<td>rediscovery sweeps of live appliances ({device} on 7.6.7 and {device} on 8.0.4 in the lab), and the frozen line-only matrix file from before the build axis; the CLI <code>tree</code> and <code>show full-configuration</code> of each build through the <strong>verified</strong> adapter (§14.10)</td>
 </tr>
 <tr>
 <td><code>fortiauthenticator</code></td>
@@ -1099,15 +1099,21 @@ registry itself.</p>
   imported.</li>
 <li><strong>FortiWeb and FortiADC have no vendor evidence</strong>, because their collections
   carry no version data. A build no appliance has run stays <code>unmeasured</code>.</li>
-<li><strong>FortiADC has no live evidence source today</strong>: no FortiADC is left in the
-  lab fleet. Its historical builds (including 8.0.3) stay in the library.</li>
+<li><strong>FortiADC REST spells fields its own way.</strong> Its rows carry many CLI
+  attributes with <code>_</code> for <code>-</code> (<code>direct_route_ip</code> = CLI <code>direct-route-ip</code>),
+  <code>mkey</code> for the table key, and outright renames (<code>pool</code> = CLI
+  <code>load-balance-pool</code>). The channel view joins what the spelling proves and
+  leaves the rest <code>unknown</code>, never <code>cli_only</code> (§14.3).</li>
 <li><strong>The field map is authored, not discovered.</strong> The library proposes rename
   candidates by CLI attribute id (§14.7) but does not apply them: a rename is a
   removal plus an addition until an operator records it.</li>
-<li><strong>The FortiADC adapter is unverified.</strong> A harvest through it names the gap
-  (<code>unverified</code>), and so does the Schema builds page that lists the adapters.
-  The FortiAnalyzer adapter is verified since 2026-10-13: SATOM's own syntax
-  walk read {device} (7.6.7 build3737), 139 objects, 11 absent, none refused.</li>
+<li><strong>Every adapter is verified against a lab box.</strong> The FortiAnalyzer adapter
+  since 2026-10-13: SATOM's own syntax walk read {device} (7.6.7 build3737), 139
+  objects, 11 absent, none refused. The FortiADC adapter since the same day:
+  SATOM's harvest of {device} (7.6.7 build0676) read its <code>tree</code> (527
+  objects, FortiWeb format) and <code>show full-configuration</code> (315 blocks, no
+  hidden field), and the path rule held for 224 of the 225 REST endpoints the
+  box's own sweep read and for all 19 child tables of its depth capture.</li>
 </ul>
 <hr>
 <h2 id="11-api-packs--the-library-for-nodes-that-cannot-measure-it">11. API packs — the library for nodes that cannot measure it</h2>
@@ -2073,7 +2079,15 @@ the FortiWeb rule (<code>system/admin.user/dashboard</code>). The channel view r
 each of its objects to the JSON-RPC URL its CLI path and enclosing tables give
 (<code>cli/global/system/admin/user/{user}/dashboard</code>), so the tree and the syntax
 walk meet on one object (<code>schema_adapters.fortianalyzer.tree_channel_keys</code>);
-an object whose metadata names no CLI path or an unknown parent keeps its key.</p>
+an object whose metadata names no CLI path or an unknown parent keeps its key.
+The FortiADC <code>cli_tree</code> of a knowledge pack is keyed by the FortiWeb rule too
+(<code>load-balance/pool</code>, <code>firewall/policy/rule</code>) while the box's REST sweep and
+SATOM's own harvest key by the FortiADC rule (<code>load_balance_pool</code>,
+<code>firewall_policy_child_rule</code>): the channel view re-keys the pack's objects
+from their CLI path (<code>schema_adapters.fortiadc.tree_channel_keys</code>), and when
+both trees of one build name an object, SATOM's own record is the one read.
+Measured on 7.6.7 before the re-key: 10 fields <code>both</code> out of 5,402, 862
+entries for 527 objects.</p>
 <p><strong>CLI path to REST path</strong> (<code>cli_schema.rest_path</code>):</p>
 <table>
 <thead>
@@ -2107,7 +2121,7 @@ an object whose metadata names no CLI path or an unknown parent keeps its key.</
 <tr>
 <td>FortiADC</td>
 <td><code>config a-b c-d</code> -&gt; <code>a_b_c_d</code>; a table in a table -&gt; <code>&lt;parent&gt;_child_&lt;table&gt;</code></td>
-<td><strong>unverified</strong> (no FortiADC in the lab)</td>
+<td>verified (7.6.7 build0676, {device}: 224 of the 225 REST endpoints its sweep read <code>ok</code> and 19 of 19 child tables of its depth capture are tree objects under the rule; the odd one, <code>system_certificate_ocsp_stapling</code>, has no <code>config</code> of that name)</td>
 </tr>
 </tbody>
 </table>
@@ -2218,6 +2232,14 @@ row created in every empty table and read back by both channels):</p>
 <td>0</td>
 <td>61 (children of tables with no row, and objects the build lacks)</td>
 </tr>
+<tr>
+<td>FortiADC 7.6.7</td>
+<td>967</td>
+<td>233</td>
+<td>0</td>
+<td>623</td>
+<td>2,456 (+176 <code>meta</code>)</td>
+</tr>
 </tbody>
 </table>
 <p>On FortiWeb every field the <code>tree</code> lists is served by REST on every object REST
@@ -2236,8 +2258,19 @@ where it had read as 276 <code>rest_only</code>): <code>id</code> on tables whos
 <code>_id</code>, <code>seq</code>, <code>&lt;NO.&gt;</code>/<code>&lt;No.&gt;</code>, <code>sub_table_id</code>, <code>sub_table_action</code>, <code>q_*</code>,
 <code>sz_*</code>, <code>can_*</code>, <code>*_val</code>. A name the build's CLI lists for the object is a real
 field (tables whose key is <code>id</code>, <code>&lt;No.&gt;</code> sequence tables included); without a
-measured <code>tree</code>, <code>id</code> is not called meta at all. Other products have no rule
-until a REST row is measured next to a tree. Each field
+measured <code>tree</code>, <code>id</code> is not called meta at all. FortiADC (measured on 7.6.7):
+<code>_nondeletable</code>, <code>_noneditable</code>. Other products have no rule until a REST row
+is measured next to a tree.</p>
+<p>FortiADC's REST does not spell every field the way its CLI does ({device}
+7.6.7: 324 fields of 226 objects). Two spellings the evidence proves are one
+field: <code>_</code> for <code>-</code> (<code>direct_route_ip</code> / <code>direct-route-ip</code>) and REST <code>mkey</code> for
+the table key the <code>tree</code> names (<code>name</code>); the field is reported under the REST
+name, with the CLI's in <code>attrs.cli_name</code>. A rename no rule derives (<code>pool</code> /
+<code>load-balance-pool</code>, <code>domain-name</code> / <code>domainname</code>) is not guessed, so on this
+product a CLI field REST does not name on an object REST read is <code>unknown</code>,
+never <code>cli_only</code>: <code>cli_only</code> there means REST measured the whole object absent
+(233 fields of 98 objects on 7.6.7, each a 404 at its rule path). The FortiADC
+row of the table above reads accordingly. Each field
 carries <code>rest</code> / <code>cli</code> (<code>yes|no|unknown</code>) and the evidence ids. The summary is
 <strong>complete</strong> when both channels were measured and nothing is <code>unknown</code>
 outside a named exception — <code>licence</code>, <code>status-object</code> or <code>platform</code>, from
@@ -2461,9 +2494,9 @@ capabilities and where it was verified; the <strong>Schema builds</strong> page 
 </tr>
 <tr>
 <td>FortiADC</td>
-<td><code>tree</code> (FortiOS-family format assumed)</td>
-<td>none implemented</td>
-<td><strong>no</strong> — no FortiADC in the lab</td>
+<td><code>tree</code> (FortiWeb format: types, options, ids); <code>show full-configuration</code></td>
+<td>none implemented: the REST fields come from the rediscovery sweep</td>
+<td><strong>yes</strong> — 7.6.7 build0676 ({device}, 2026-10-13): 527 objects, 3,649 fields, 315 dump blocks with no hidden field; path rule above</td>
 </tr>
 <tr>
 <td>FortiAnalyzer</td>

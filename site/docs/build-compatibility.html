@@ -341,8 +341,10 @@ the service account; the global <code>--json</code> flag prints the full documen
   build.</li>
 <li><strong>A rename is not discovered, it is proposed.</strong> CLI-id candidates held on one
   pair of FortiWeb builds; the field map stays the only authority.</li>
-<li><strong>FortiADC and FortiAnalyzer</strong> adapters are unverified (no lab device); their
-  answers are labelled with the adapter's verification status (API library §14.10).</li>
+<li><strong>Every schema adapter is verified</strong> against a lab box (FortiADC and
+  FortiAnalyzer since 2026-10-13); each answer still names the adapter's
+  verification (API library §14.10). On FortiADC a field REST spells
+  differently from the CLI and no rule joins reads <code>unknown</code>, not <code>cli_only</code>.</li>
 </ul>
     </div>
   </div>

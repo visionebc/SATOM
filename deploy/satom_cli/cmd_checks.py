@@ -201,7 +201,7 @@ def code(ctx, args):
                          % (delta_h, kind)))
             stale[alias] = kind
         else:
-            rows.append((alias, "current (started %.1f h after)" % (-delta_h)))
+            rows.append((alias, "current (started %.1f h after)" % max(0.0, -delta_h)))
     r.rows("", rows)
     r.set(stale=stale)
     if stale:

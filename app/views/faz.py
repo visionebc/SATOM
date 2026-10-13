@@ -145,6 +145,17 @@ def menu_page(item_key):
         abort(404)
     group, item = found
     appliance = _current_faz()
+    # a leaf whose every tab has a measured FortiAnalyzer GUI page of the
+    # device's build moves there (services.gui_classic, as /adc/m/ does);
+    # a leaf with no measured equivalent keeps rendering here
+    try:
+        from ..services import gui_classic
+        moved = gui_classic.redirect_item(appliance, item, request.args.get('tab'),
+                                          request.args)
+    except Exception:  # noqa: BLE001 -- the old page always renders
+        moved = None
+    if moved:
+        return redirect(moved)
     tab = None
     if appliance and item.logicals:
         wanted = (request.args.get('tab') or '').strip()

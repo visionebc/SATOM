@@ -112,6 +112,32 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="fixed--fortiadc-live-state-was-reported-as-configuration-drift">Fixed — FortiADC live state was reported as configuration drift</h3>
+<ul>
+<li>A FortiADC returns the live state of some objects inside their configuration
+  rows: a virtual server's or pool's <strong>availability</strong> (HEALTHY, DEAD …), an
+  interface's availability, and a certificate's <strong>status</strong> (OK, Expired). Each
+  flip minted a configuration version and raised <strong>Config drift … it came from
+  the device side</strong>. On the lab box {device} every version since 2026-10-12
+  — four versions and 20 drift alerts — differed in nothing else, and the
+  device swung back to an earlier version when the virtual server recovered.</li>
+<li>These fields are no longer part of a configuration version. The rule is
+  keyed by table: <code>status</code> stays configuration in every other FortiADC table,
+  and the configured state next to each stripped field (the virtual server's
+  enable/disable/maintain, the certificate's validity dates) still mints a
+  version when it changes. Existing histories are re-keyed in place on the
+  next sync; it creates no version and no alert.</li>
+</ul>
+<h3 id="fixed--satom-get-alerts-status-said-ok-while-every-alert-email-was-refused">Fixed — <code>satom get alerts status</code> said "ok" while every alert email was refused</h3>
+<ul>
+<li>The status judged the settings, not delivery. On a1 the settings were
+  complete and the status said <strong>ok</strong> while the local mail relay answered
+  <code>454 4.7.1 Relay access denied</code> to every alert from 2026-09-23 onward: 186
+  refusals, nothing delivered, alerts reached the in-app bell only.</li>
+<li>The alert engine now keeps the outcome of its last send attempt, and the
+  status shows it under <strong>last email</strong> and turns <strong>bad</strong> when that attempt was
+  not delivered.</li>
+</ul>
 <h3 id="fixed--two-sidebar-groups-named-automation-and-a-process-entry-lost-next-to-studio">Fixed — two sidebar groups named "Automation", and a Process entry lost next to Studio</h3>
 <ul>
 <li>A profile without user management (operator, read-only) saw the Process

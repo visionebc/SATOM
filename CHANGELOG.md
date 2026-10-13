@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-13
+
 ### Added — every screen in German, French, Italian and Spanish again
 
 The language catalogues had fallen behind the interface: the screens added since

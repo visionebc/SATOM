@@ -39,7 +39,7 @@ SCHEME_ELEMENT_OF = {
         "server_policy": "server_policy", "vserver": "virtual_server", "vip": "vip",
         "server_pool": "server_pool", "server_pool_health_check": "health_check",
         "server_pool_persistence": "persistence",
-        "http_content_routing_policy": "content_routing",
+        "http_content_routing": "content_routing",
         "certificate": "certificate",
         "webprotection_profile_inline": "web_protection_profile",
         "http_protocol": "http_constraint", "x_forwarded_for": "x_forward",

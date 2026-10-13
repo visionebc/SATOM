@@ -163,11 +163,42 @@ def disable(ctx, args):
     return _toggle(ctx, args, "disable")
 
 
+def stale_catalogues(app_dir):
+    """Languages whose compiled catalogue (.mo) is missing or older than its .po.
+
+    The .mo files are derived and live in neither git nor an update package, so
+    a deploy by `git pull` replaces the .po and leaves the .mo of the previous
+    revision: every string added since renders in English. The update runner
+    compiles them (`compile_catalogues`); the manual deploy did not, and a1 kept
+    catalogues two days older than its code (2026-10-13).
+    """
+    root = Path(app_dir) / "app" / "translations"
+    out = []
+    for po in sorted(root.glob("*/LC_MESSAGES/messages.po")):
+        mo = po.with_suffix(".mo")
+        if not mo.exists() or mo.stat().st_mtime < po.stat().st_mtime:
+            out.append(po.parent.parent.name)
+    return out
+
+
 def restart_all(ctx, args):
     """Restart the application stack in dependency order and verify."""
     from .cmd_execute import _systemctl
+    from .context import VENV, _app_user
     r = Result("ok", "restart the application stack")
     rows = []
+    stale = stale_catalogues(ctx.app_dir)
+    if stale:
+        # Before the web restarts: Flask-Babel reads the .mo once per process.
+        rc, out, err = run(["runuser", "-u", _app_user(), "--", str(VENV / "pybabel"),
+                            "compile", "-d", str(Path(ctx.app_dir) / "app" / "translations")],
+                           timeout=300)
+        if rc == 0:
+            rows.append(("catalogues", "compiled (%s)" % ", ".join(stale)))
+        else:
+            rows.append(("catalogues", "compile FAILED -- previous catalogues kept"))
+            r.worst("warn")
+            r.lines("pybabel", (err or out).splitlines()[:6])
     for alias in ("web", "scheduler", "reconciler"):
         st = ctx.unit_state(alias)
         if st["enabled"] == "not-found":

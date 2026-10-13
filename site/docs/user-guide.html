@@ -5212,7 +5212,12 @@ a language never claims text exists in it. <strong>Chosen by</strong> counts the
 stored preference is that language — read it before withdrawing one.</p>
 <p>What this gate does not touch is the catalogues. Text keeps being authored and
 translated for every language in the registry, so a language switched back on
-is complete the moment it reappears instead of starting from empty.</p>
+is complete the moment it reappears instead of starting from empty. That promise
+is held by a release guard, not by goodwill: every string the interface can show
+must have a translation in <code>es</code>, <code>de</code>, <code>fr</code> and <code>it</code>, with the same placeholders
+and markup as the English, or the build is red. (Until 3.1.0 nothing checked it,
+and about 2,700 strings added since the previous translation sweep rendered in
+English in every other language.)</p>
 <h3 id="2613-security-and-change-password--self-service-for-every-account">26.13 Security and Change Password — self-service, for every account</h3>
 <p>The two tabs any signed-in user gets.</p>
 <ul>

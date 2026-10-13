@@ -112,6 +112,27 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--every-screen-in-german-french-italian-and-spanish-again">Added — every screen in German, French, Italian and Spanish again</h3>
+<p>The language catalogues had fallen behind the interface: the screens added since
+the last translation sweep (about 2,700 strings: Naming Discovery, ADOM Menus,
+the measured-GUI pages, Software Update, the API library, Settings and most of
+Fleet) rendered in English for an operator who had chosen another language,
+because gettext falls back to the English text without a word.</p>
+<ul>
+<li>All four catalogues now cover every string the interface can show: 6,127 of
+  6,127 in <code>de</code>, <code>fr</code>, <code>it</code> and <code>es</code>. Spanish stays off in Settings → Languages
+  by default; turning it on now gives a complete interface.</li>
+<li>A new guard fails the moment a string ships without a translation in one of
+  the four languages, or when a translation drops or invents a placeholder or
+  markup token (<code>{name}</code>, <code>{{ … }}</code>, HTML) — the case <code>pybabel compile</code> does not
+  check. It reads the strings with the same extraction map as <code>pybabel extract</code>,
+  so a new template is covered without editing the guard.</li>
+<li><code>satom execute restart-all</code> now compiles the language catalogues first when a
+  <code>.po</code> is newer than its <code>.mo</code>. The compiled files travel in neither git nor an
+  update package; the update runner always compiled them, but a deploy by
+  <code>git pull</code> + <code>restart-all</code> kept the previous revision's catalogues — the
+  primary served catalogues two days older than its code.</li>
+</ul>
 <h3 id="security--the-fortianalyzer-configuration-sync-stored-device-secrets">Security — the FortiAnalyzer configuration sync stored device secrets</h3>
 <ul>
 <li>FortiAnalyzer answers every secret as <code>["ENC", "&lt;blob&gt;"]</code> (HA, SQL and

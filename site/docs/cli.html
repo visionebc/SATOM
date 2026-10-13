@@ -550,7 +550,7 @@ challenge.</p>
 </tr>
 <tr>
 <td><code>execute restart-all</code></td>
-<td>The stack in dependency order, then <code>nginx -t</code> + reload, then verify</td>
+<td>Compiles any language catalogue older than its <code>.po</code>, then the stack in dependency order, then <code>nginx -t</code> + reload, then verify</td>
 </tr>
 <tr>
 <td><code>execute enable\|disable &lt;unit&gt;</code></td>
@@ -1196,7 +1196,7 @@ longer matches the console you are running.</p>
 <td><code>satom execute restart-all</code></td>
 <td style="text-align: center;">yes</td>
 <td style="text-align: center;">—</td>
-<td>Restart the whole stack in order, then verify /healthz.</td>
+<td>Compile stale language catalogues, restart the whole stack in order, then verify /healthz.</td>
 </tr>
 <tr>
 <td><code>satom execute start &lt;service&gt;</code></td>

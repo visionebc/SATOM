@@ -6,6 +6,28 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — every screen in German, French, Italian and Spanish again
+
+The language catalogues had fallen behind the interface: the screens added since
+the last translation sweep (about 2,700 strings: Naming Discovery, ADOM Menus,
+the measured-GUI pages, Software Update, the API library, Settings and most of
+Fleet) rendered in English for an operator who had chosen another language,
+because gettext falls back to the English text without a word.
+
+- All four catalogues now cover every string the interface can show: 6,127 of
+  6,127 in `de`, `fr`, `it` and `es`. Spanish stays off in Settings → Languages
+  by default; turning it on now gives a complete interface.
+- A new guard fails the moment a string ships without a translation in one of
+  the four languages, or when a translation drops or invents a placeholder or
+  markup token (`{name}`, `{{ … }}`, HTML) — the case `pybabel compile` does not
+  check. It reads the strings with the same extraction map as `pybabel extract`,
+  so a new template is covered without editing the guard.
+- `satom execute restart-all` now compiles the language catalogues first when a
+  `.po` is newer than its `.mo`. The compiled files travel in neither git nor an
+  update package; the update runner always compiled them, but a deploy by
+  `git pull` + `restart-all` kept the previous revision's catalogues — the
+  primary served catalogues two days older than its code.
+
 ### Security — the FortiAnalyzer configuration sync stored device secrets
 
 - FortiAnalyzer answers every secret as `["ENC", "<blob>"]` (HA, SQL and

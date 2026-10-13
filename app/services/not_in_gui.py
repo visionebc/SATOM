@@ -510,6 +510,15 @@ def _device_inventory(appliance) -> dict:
                        "so SATOM can name the fields it has outside the GUI.")
         return out
     view = lib.channels_at(product, version)
+    # The same bookkeeping filter as the FortiWeb editor (objedit._not_in_gui):
+    # the library calls ``sub_table_id``/``sub_table_action`` "both", and this
+    # page counted 36 Server Policy fields outside the GUI where the policy's
+    # own section counts 34.
+    if product == "fortiweb":
+        from .fortiweb_field_schema import is_noise as noise
+    else:
+        def noise(_k):
+            return False
     summ = view.get("summary") or {}
     out["complete"] = bool(summ.get("complete"))
     out["tree_measured"] = bool(summ.get("tree_measured"))
@@ -535,7 +544,7 @@ def _device_inventory(appliance) -> dict:
             continue  # a page of objects the GUI does not draw: ``absent`` below
         rest = sorted(n for n, f in ((view.get("endpoints") or {}).get(ep_key, {})
                                      .get("fields") or {}).items()
-                      if f.get("channel") in _LIB_REST and n not in keys)
+                      if f.get("channel") in _LIB_REST and n not in keys and not noise(n))
         out["layout_pages"].append({"endpoint": ep_key, "page": page, "layout": info,
                                     "rest_not_in_gui": rest})
     out["absent"] = absent_objects(appliance)

@@ -42,6 +42,10 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   Every object's section re-read the build's whole channel view from the
   database (80 reads of ~23,000 rows for fgt02). The page now reads it once:
   1.3 s.
+- **The same page counted two FortiWeb bookkeeping keys as fields.** Server
+  Policy on 7.6.8 showed 36 REST fields outside the GUI where the policy's own
+  section shows 34: `sub_table_id` and `sub_table_action` passed because only
+  the editor applied the FortiWeb noise filter. The page applies it too.
 
 ### Added — FortiAnalyzer in the live API-library harvest
 

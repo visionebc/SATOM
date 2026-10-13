@@ -157,13 +157,18 @@ replica); `meta.json` is the source of record.
 ## Node-to-node encryption
 
 ### App probes → HTTPS + identity key
-`app/services/node_security.py`. `peer_get()` prefers HTTPS `:8443` (node cert,
-cert verification off — confidentiality from TLS, **authenticity from the identity
-key**) and falls back to `:8000` only if TLS is unreachable. `infra_health` and
-`cluster` peer probes both use it. A shared **identity key** (`secrets.token_urlsafe`,
-Fernet-encrypted in `app_settings` `security.node_identity_key`, replicated via
-Postgres since both nodes share `FERNET_KEY`) is sent as `X-FM-Node-Key`; `/healthz`
-echoes `peer_authenticated`. nftables on 248 opens `:8443` from `192.0.2.249`.
+`app/services/node_security.py`. `peer_get()`/`peer_post()` use HTTPS `:8443` only
+(no plain-HTTP fallback). The peer certificate must verify against the system trust
+store or the internal CA (peers are addressed by IP, so the hostname is not
+checked); an untrusted certificate is refused with a logged reason
+(`SATOM_PEER_TLS_ALLOW_UNVERIFIED=1` in `.env` is an emergency override).
+`infra_health` and `cluster` peer probes both use it. A shared **identity key**
+(`secrets.token_urlsafe`, Fernet-encrypted in `app_settings`
+`security.node_identity_key`, replicated via Postgres since both nodes share
+`FERNET_KEY`) is never transmitted: every peer request is HMAC-SHA256-signed with it
+over method, path+query, timestamp and body hash (`X-SATOM-Node-Ts` +
+`X-SATOM-Node-Sig`), and the receiver refuses signatures outside a ±120 s window, so
+both nodes' clocks must be NTP-synchronised. `/healthz` echoes `peer_authenticated`. nftables on 248 opens `:8443` from `192.0.2.249`.
 
 ### Postgres replication → enforced + mutual CA
 - Primary serves the **internal-CA leaf** as its Postgres server cert

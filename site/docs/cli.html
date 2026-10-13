@@ -717,7 +717,7 @@ check. <code>tests/test_docs_publication.py</code> fails the suite when this blo
 longer matches the console you are running.</p>
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-<p><em>121 commands in 44 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
+<p><em>123 commands in 45 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
 <h3 id="get"><code>get</code></h3>
 <p>Read state. Every command below works as <strong>any user</strong> — this is the half of the console that has to keep working when everything else does not.</p>
 <table>
@@ -885,6 +885,12 @@ longer matches the console you are running.</p>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td>Branch, drift, unpushed age, parked safety refs.</td>
+</tr>
+<tr>
+<td><code>satom get release trust</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td>Release trust anchor, newest signed commit, and whether HEAD's deploy/ matches it (details need sudo).</td>
 </tr>
 <tr>
 <td><code>satom get user list</code></td>
@@ -1479,6 +1485,12 @@ longer matches the console you are running.</p>
 <td style="text-align: center;">yes</td>
 <td style="text-align: center;">!</td>
 <td>Promote this standby to primary. Requires --yes.</td>
+</tr>
+<tr>
+<td><code>satom execute sign-release [--yes]</code></td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: center;">!</td>
+<td>Sign HEAD of main with the root-only release key (one empty signed commit, pushed). Primary only; dry run unless --yes.</td>
 </tr>
 </tbody>
 </table>

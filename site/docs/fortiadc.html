@@ -62,7 +62,7 @@
       <div class="toc-title">On this page</div>
       <a href="#rest-conventions">REST conventions</a>
       <a href="#where-things-live">Where things live</a>
-      <a href="#status--pending-needs-the-lab-vm">Status / pending (needs the lab VM)</a>
+      <a href="#status-lab-device-767-device-804">Status (lab: {device} 7.6.7, {device} 8.0.4)</a>
       <a href="#firmware-and-the-gets-that-are-writes-device-767-2026-10-11">Firmware and the GETs that are writes ({device}, 7.6.7, 2026-10-11)</a>
       <a href="#depth-capture-and-the-virtual-server-tree-device-767-2026-10-12">Depth capture and the virtual-server tree ({device}, 7.6.7, 2026-10-12)</a>
       <a href="#virtual-server-dependency-chain--create-field-seed-verified-live-fadc-803-2026-07-07">Virtual server dependency chain + create-field seed (verified live, fadc 8.0.3, 2026-07-07)</a>
@@ -141,16 +141,18 @@ path rule) is verified on {device} 7.6.7 (API library §14.10).</p>
 </tr>
 </tbody>
 </table>
-<h2 id="status--pending-needs-the-lab-vm">Status / pending (needs the lab VM)</h2>
+<h2 id="status-lab-device-767-device-804">Status (lab: {device} 7.6.7, {device} 8.0.4)</h2>
 <ul>
-<li>Registry URNs are docs/SDK-derived; expect a few phantoms — probe with the
-  device and disable/fix rows from the Registry page (product filter TBD).</li>
-<li>Object lists are <strong>live-only</strong> (no DB-first cache, no device_sync for ADC).</li>
-<li>Writes are a raw-JSON editor (immediate apply, audited, <code>config_write</code>) —
-  no dry-run, no field forms, no waf_specs equivalent yet.</li>
-<li>No curated list columns (columns derive from the live payload).</li>
-<li>Candidate next steps once verified: field-spec catalog, DB-first cache,
-  objedit-style forms, backups/upgrade runbook parity.</li>
+<li>The adapter is <strong>verified</strong> against {device} (7.6.7 build0676,
+  2026-10-13); the API library joins REST and CLI per build, including the
+  REST↔CLI field renames measured on both lab boxes
+  (<code>app/services/schema_adapters/fortiadc_renames.py</code>).</li>
+<li>Configuration pages are the measured GUI pages (<code>gui_products.FORTIADC</code>),
+  with editable child tables; the config sync (<code>device_sync.snapshot_from_adc</code>)
+  feeds the source of truth.</li>
+<li>The schema harvest runs a read-only REST shape probe (top-level objects and
+  child tables by <code>?pkey=</code>).</li>
+<li>The CLI writer's FortiADC dialect is still unverified.</li>
 </ul>
 <h2 id="firmware-and-the-gets-that-are-writes-device-767-2026-10-11">Firmware and the GETs that are writes ({device}, 7.6.7, 2026-10-11)</h2>
 <p>Read off the FortiADC 7.6.7 GUI bundle (System &gt; Settings &gt; Firmware and

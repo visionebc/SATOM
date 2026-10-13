@@ -3836,7 +3836,9 @@ and this is it.
 1. **The receiving node is the security boundary.** The primary does not run
    anything on the peer and does not reach the peer's systemd. It POSTs a unit
    name and an action to the peer's own `/settings/peer/service-action`, behind
-   the shared identity key (`X-FM-Node-Key`, HTTPS `:8443`). That endpoint calls
+   a request HMAC-signed with the shared identity key (`X-SATOM-Node-Ts` +
+   `X-SATOM-Node-Sig`, ±120 s window, HTTPS `:8443`; the key itself never crosses
+   the wire). That endpoint calls
    the same `request_service_action()` the peer's own button calls, so the
    peer re-validates against the peer's OWN `POLICY` and the peer's OWN root
    runner does the work. A peer holding a valid identity key still cannot reach

@@ -67,6 +67,7 @@
       <a href="#4b-the-container-counterpart-the-operations-agent">4b. The container counterpart: the operations agent</a>
       <a href="#5-ha-trust-between-nodes">5. HA trust between nodes</a>
       <a href="#5b-why-user-lives-in-a-drop-in-not-in-the-unit-file">5b. Why User= lives in a drop-in, not in the unit file</a>
+      <a href="#5c-signed-releases-root-side-content">5c. Signed releases (root-side content)</a>
       <a href="#6-migrating-an-existing-node">6. Migrating an existing node</a>
       <a href="#7-checklist-when-adding-a-feature">7. Checklist when adding a feature</a>
     </aside>
@@ -485,6 +486,38 @@ ps -o user= -p $(systemctl show satom.service -p MainPID --value)
 a file that a deploy step regenerates, it is not applied — it is merely
 scheduled for deletion. Put it in a drop-in, a <code>conf.d/</code>, or the generator.</p>
 <hr>
+<h2 id="5c-signed-releases-root-side-content">5c. Signed releases (root-side content)</h2>
+<p>The update runner is the only SATOM unit that runs as root, and it installs
+unit files and runs the <code>install-*.sh</code> scripts from <code>deploy/</code> — content the service account can
+edit. Signed-release enforcement pins that root-side content to a release the
+operator signed.</p>
+<ul>
+<li><strong>Anchor:</strong> <code>/etc/satom/release-trust.allowed_signers</code> (root:root, 0644), one
+  line per trusted key: <code>satom-release namespaces="git" ssh-ed25519 AAAA...</code>.
+  A single key at <code>/etc/satom/release-trust.pub</code> also works. No anchor =
+  enforcement off and behaviour unchanged.</li>
+<li><strong>Verification</strong> happens in a root-only mirror (<code>/var/lib/satom-release/</code>),
+  never inside <code>/opt/satom</code>, so nothing the service account writes in
+  <code>.git/config</code> or attributes is executed by root.</li>
+<li><strong>Three cases on every update:</strong>
+  1. the target commit is signed → root-side content comes from the target;
+  2. the target is unsigned but <code>deploy/</code> is identical to its newest signed
+     ancestor → root-side content comes from that signed commit (same bytes);
+  3. <code>deploy/</code> changed since the last signed release → the application still
+     updates, the root-side refresh is <strong>held</strong> and the update shows a warning.</li>
+<li><strong>Signing:</strong> on the primary, as root, <code>satom execute sign-release</code> (dry run:
+  shows the <code>deploy/</code> diff since the last signed release) then
+  <code>satom execute sign-release --yes</code>. It adds one signed empty commit on top of
+  <code>main</code> with the root-only key <code>/root/.satom-release/release_ed25519</code> and
+  pushes it; the key never becomes readable by the service account.
+  <code>satom get release trust</code> shows the anchor, the newest signed commit and
+  whether <code>HEAD</code>'s <code>deploy/</code> matches it.</li>
+<li>The <code>satom execute reinstall</code> verbs follow the same rule: with an anchor they
+  install from a root-only staged copy of the signed release, otherwise they
+  refuse and ask for <code>sign-release</code>.</li>
+<li><strong>Rollback:</strong> remove the anchor file(s) on both nodes; the next update runs
+  with enforcement off.</li>
+</ul>
 <h2 id="6-migrating-an-existing-node">6. Migrating an existing node</h2>
 <p><code>deploy/migrate-deprivilege.sh</code>, one node at a time, <strong>standby first</strong>. It
 creates the account (or adopts <code>satom</code>), fixes ownership of <code>state/</code> and

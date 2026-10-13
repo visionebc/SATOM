@@ -1,0 +1,38 @@
+{# ============================================================================
+   STUDIO (Global ADOM) — Python Console, Plugin Studio, Lua Studio.
+
+   Since 2026-10-13 (operator's menu order) it is a subgroup at the foot of
+   Administrator (partials/nav_admin.html passes studio_as_subgroup). Each
+   entry follows its own studio.* key, NOT user_manage, so a custom profile
+   holding one of those keys but no Administrator group still gets the
+   standalone group from base.html — moving it must not take it away.
+   ========================================================================= #}
+{% set _can_pyc = current_user.is_authenticated and current_user.can('studio.python_console') %}
+{% set _can_plg = current_user.is_authenticated and current_user.can('studio.plugin_studio') %}
+{% set _can_lua = current_user.is_authenticated and current_user.can('studio.lua_studio') %}
+{% if _can_pyc or _can_plg or _can_lua %}
+{% set _st_open = request.endpoint == 'database.py_console_page' or request.blueprint in ['plugins','lua_studio'] %}
+{% if studio_as_subgroup %}
+<div class="fw-nav-subgroup {{ 'open' if _st_open }}" data-nav-subgroup="Studio">
+  <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-code-slash fw-nav-icon"></i><span>{{ _('Studio') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-subgroup-body">
+{% else %}
+<div class="fw-nav-group {{ 'open' if _st_open }}" data-nav-group="Studio">
+  <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-code-slash fw-nav-section-icon" style="color:#8b5cf6;"></i><span>{{ _('Studio') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-group-body">
+{% endif %}
+    {% if _can_pyc and may_open('database.py_console_page') %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'database.py_console_page' else '' }}" href="{{ url_for('database.py_console_page') }}">
+      <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Python Console') }}</span></a>
+    {% endif %}
+    {% if _can_plg and may_open('plugins.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'plugins' and request.endpoint != 'plugins.gallery' else '' }}" href="{{ url_for('plugins.index') }}">
+      <i class="bi bi-puzzle fw-nav-icon"></i><span>{{ _('Plugin Studio') }}</span></a>
+    {% endif %}
+    {% if _can_lua and may_open('lua_studio.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'lua_studio' else '' }}" href="{{ url_for('lua_studio.index') }}">
+      <i class="bi bi-braces fw-nav-icon"></i><span>{{ _('Lua Studio') }}</span></a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

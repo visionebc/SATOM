@@ -40,7 +40,7 @@
 {% set _m_au = adom_menu('automations', product) %}
 {% set _m_pr = adom_menu('provisioning', product) %}
 {% endif %}
-{% set _auto_bps = ['upgrade_flow','migration_report','automations','scheduled_actions','device_provision','provisioning','change_requests'] %}
+{% set _auto_bps = ['upgrade_flow','migration_report','automations','scheduled_actions','device_provision','provisioning','change_requests','schema_builds','build_compat','cert_manager'] %}
 <div class="fw-nav-group {{ 'open' if request.blueprint in _auto_bps }}" data-nav-group="Automation">
   <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-gear-wide-connected fw-nav-section-icon" style="color:#8b5cf6;"></i><span>{{ _('Automation') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-group-body">
@@ -115,6 +115,14 @@
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'change_requests' else '' }}" href="{{ url_for('change_requests.index', _adom=product.key) }}">
       <i class="bi bi-clipboard2-check fw-nav-icon"></i><span>{{ _('Change Requests') }}</span></a>
     {% endif %}
+    {% endif %}
+    {# Moved here from Fleet (2026-10-13). Certificate Manager stays Global-only:
+       in the device ADOMs its blueprint is outside the allowlists and the
+       link would bounce to the ADOM home. #}
+    {% include 'partials/nav_api_library.html' %}
+    {% if product.key == 'global' and current_user.can('user_manage') and may_open('cert_manager.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'cert_manager' else '' }}" href="{{ url_for('cert_manager.index', _adom=product.key) }}">
+      <i class="bi bi-shield-lock fw-nav-icon"></i><span>{{ _('Certificate Manager') }}</span></a>
     {% endif %}
     {# Device Console needs config_write, but its entry lives in the
        Administrator group, which only user_manage holders see. Operators

@@ -1280,14 +1280,14 @@ def create_app(config_override: object | None = None) -> Flask:
     # without a session. The DETAIL (revision, host stats, DB summary, cert
     # and journal contents, bundle names) is only for the peer node, which
     # always calls through node_security.peer_get and therefore carries the
-    # X-FM-Node-Key identity header. Anyone else -- including a node with no
+    # HMAC request signature (X-SATOM-Node-Ts/-Sig). Anyone else -- including a node with no
     # identity key configured (verify_request() is None: there is no peer to
     # serve) -- gets the status alone.
     def _peer_authenticated():
         try:
             from flask import request as _rq
             from .services import node_security as _nsec
-            return _nsec.verify_request(_rq.headers)
+            return _nsec.verify_request(_rq)
         except Exception:  # noqa: BLE001
             return None
 

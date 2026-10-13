@@ -340,8 +340,7 @@ def peer_states() -> list[dict]:
             continue
         row["secure"] = bool(secure)
         if st is None:
-            row["error"] = "no answer on :%d or :%d" % (nsec.HTTPS_PORT,
-                                                        nsec.HTTP_PORT)
+            row["error"] = nsec.unreachable_detail(n["host"])
             out.append(row)
             continue
         ans = _peer_json(raw)
@@ -409,8 +408,7 @@ def request_service_action_on_peer(node: str, unit: str, action: str,
     row["secure"] = bool(secure)
     if st is None:
         return {**row, "state": "unreachable",
-                "error": "no answer on :%d or :%d" % (nsec.HTTPS_PORT,
-                                                      nsec.HTTP_PORT)}
+                "error": nsec.unreachable_detail(peer["host"])}
     ans = _peer_json(raw)
     if ans is None:
         return {**row, "state": "unreachable",

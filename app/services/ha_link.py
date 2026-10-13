@@ -268,7 +268,7 @@ def probe_standby(node: dict, timeout: float = PROBE_TIMEOUT) -> dict:
         row["error"] = str(exc)
         return row
     if st is None:
-        row["error"] = "no answer on :%d or :%d" % (nsec.HTTPS_PORT, nsec.HTTP_PORT)
+        row["error"] = nsec.unreachable_detail(node.get("host") or "")
         return row
     row["reachable"] = True
     if int(st) == 404:

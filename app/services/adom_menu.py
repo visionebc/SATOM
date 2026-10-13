@@ -75,11 +75,6 @@ def _firmware_kinds() -> Iterable[str]:
     return tuple(_PRODUCTS)
 
 
-def _naming_kinds() -> Iterable[str]:
-    from .naming import PRODUCTS
-    return tuple(k for k, _ in PRODUCTS)
-
-
 def _template_kinds() -> Iterable[str]:
     # Template kinds (web-protection profile, server policy, system profile,
     # structure) exist on FortiWeb and FortiADC only.
@@ -134,8 +129,9 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
           "the capacity catalog counts FortiWeb object types"),
     Entry("firmware", ("firmware",), _firmware_kinds,
           "firmware image management does not apply to this product"),
-    Entry("naming", ("naming",), _naming_kinds,
-          "there is no naming catalog for this product"),
+    # Every device ADOM: Discovery reads any product's names; the scheme
+    # editor tab shows only where the product has a catalog (naming.PRODUCTS).
+    Entry("naming", ("naming",), _every_device, ""),
     Entry("segments", ("segments",), _every_device, ""),
     Entry("signatures", ("signatures",), lambda: ("fortiweb", "fortiadc"),
           "SATOM keeps no signature database for this product",

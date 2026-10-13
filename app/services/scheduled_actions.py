@@ -254,8 +254,9 @@ ADMIN_ACTIONS: list[ActionSpec] = [
     ),
     ActionSpec(
         "device_sync", "Sync device to local source of truth", "admin",
-        needs_targets=True, products=("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator"),
-        summary="Read each target FortiWeb/FortiADC/FortiAnalyzer/FortiAuthenticator's full config "
+        needs_targets=True,
+        products=("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator", "fortigate"),
+        summary="Read each target FortiWeb/FortiADC/FortiAnalyzer/FortiAuthenticator/FortiGate's full config "
                 "(REST or JSON-RPC) and refresh the local Postgres "
                 "source-of-truth cache + per-device JSON backup "
                 "(services.device_sync). DB-first reads serve the UI from this. "
@@ -263,10 +264,11 @@ ADMIN_ACTIONS: list[ActionSpec] = [
     ),
     ActionSpec(
         "device_inspect", "Sync device + push SoT off-box", "admin",
-        needs_targets=True, products=("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator"),
+        needs_targets=True,
+        products=("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator", "fortigate"),
         summary="Like Sync, plus UPLOAD the versioned SoT store's new blobs to "
                 "the external backup server (off-box versioned backup). Covers "
-                "FortiWeb, FortiADC, FortiAnalyzer and FortiAuthenticator. Use for the scheduled "
+                "FortiWeb, FortiADC, FortiAnalyzer, FortiAuthenticator and FortiGate. Use for the scheduled "
                 "off-box source-of-truth copy.",
     ),
     ActionSpec(

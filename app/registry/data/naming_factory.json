@@ -1,0 +1,63 @@
+{
+  "_comment": "Vendor (factory) object names a device does NOT flag itself. Read by app/services/naming_discovery.py; a device flag (can_view / _nondeletable / q_static / source / protected) is checked first. Measured, not recalled: each product block names the unit and build it was read from, and objects the lab created on that unit were left out by name.",
+  "fortigate": {
+    "measured_on": "fgt02, FortiOS 8.0.1 build0245, 2026-10-13 (lab objects satom-*, net-lab-*, wol, grp-satom-mgmt, lab-satom-rw, satom-ro and the 3 firewall policies left out)",
+    "names": {
+      "system_interface": ["default-mesh", "fortilink", "l2t.root", "naf.root", "ssl.root"],
+      "firewall_address": ["EMS_ALL_UNKNOWN_CLIENTS", "EMS_ALL_UNMANAGEABLE_CLIENTS", "FABRIC_DEVICE", "FIREWALL_AUTH_PORTAL_ADDRESS", "SSLVPN_TUNNEL_ADDR1", "all", "gmail.com", "login.microsoft.com", "login.microsoftonline.com", "login.windows.net", "none", "wildcard.dropbox.com", "wildcard.google.com"],
+      "firewall_address6": ["SSLVPN_TUNNEL_IPv6_ADDR1", "all", "none"],
+      "firewall_addrgrp": ["G Suite", "Microsoft Office 365"],
+      "firewall_service_custom": ["AFS3", "AH", "ALL", "ALL_ICMP", "ALL_ICMP6", "ALL_TCP", "ALL_UDP", "AOL", "BGP", "CVSPSERVER", "DCE-RPC", "DHCP", "DHCP6", "DNS", "ESP", "FINGER", "FTP", "FTP_GET", "FTP_PUT", "GOPHER", "GRE", "GTP", "H323", "HTTP", "HTTPS", "IKE", "IMAP", "IMAPS", "INFO_ADDRESS", "INFO_REQUEST", "IRC", "Internet-Locator-Service", "KERBEROS", "L2TP", "LDAP", "LDAP_UDP", "MGCP", "MMS", "MS-SQL", "MYSQL", "NFS", "NNTP", "NONE", "NTP", "NetMeeting", "ONC-RPC", "OSPF", "PC-Anywhere", "PING", "PING6", "POP3", "POP3S", "PPTP", "QUAKE", "RADIUS", "RADIUS-OLD", "RAUDIO", "RDP", "REXEC", "RIP", "RLOGIN", "RSH", "RTSP", "SAMBA", "SCCP", "SIP", "SIP-MSNmessenger", "SMB", "SMTP", "SMTPS", "SNMP", "SOCKS", "SQUID", "SSH", "SYSLOG", "TALK", "TELNET", "TFTP", "TIMESTAMP", "TRACEROUTE", "UUCP", "VDOLIVE", "VNC", "WAIS", "WINFRAME", "WINS", "X-WINDOWS", "webproxy"],
+      "firewall_service_group": ["Email Access", "Exchange Server", "Web Access", "Windows AD"],
+      "firewall_schedule_recurring": ["always", "default-darrp-optimize", "none"],
+      "antivirus_profile": ["default", "sniffer-profile", "wifi-default"],
+      "webfilter_profile": ["default", "monitor-all", "sniffer-profile", "wifi-default"],
+      "dnsfilter_profile": ["default"],
+      "application_list": ["block-high-risk", "default", "sniffer-profile", "wifi-default"],
+      "ips_sensor": ["all_default", "all_default_pass", "default", "high_security", "protect_client", "protect_email_server", "protect_http_server", "sniffer-profile", "wifi-default"],
+      "firewall_ssl_ssh_profile": ["certificate-inspection", "custom-deep-inspection", "deep-inspection", "no-inspection"],
+      "user_local": ["guest"],
+      "user_group": ["Guest-group", "SSO_Guest_Users"]
+    },
+    "patterns": {
+      "firewall_address": ["^port\\d+ address$"],
+      "vpn_certificate_local": ["^Fortinet_"]
+    }
+  },
+  "fortianalyzer": {
+    "measured_on": "faz02, FortiAnalyzer 7.6.7 build3737, 2026-10-13",
+    "names": {
+      "admin_profile": ["Restricted_User", "Standard_User", "Super_User", "No_Permission_User", "Password_Change_User"],
+      "admin_user": ["admin"],
+      "dvmdb_adom": ["FortiAnalyzer", "FortiAuthenticator", "FortiCache", "FortiCarrier", "FortiClient", "FortiDDoS", "FortiDeceptor", "FortiFirewall", "FortiFirewallCarrier", "FortiMail", "FortiManager", "FortiProxy", "FortiSandbox", "FortiWeb", "Syslog", "Unmanaged_Devices", "others", "root", "rootp"],
+      "system_certificate_ca": ["Digicert_CA"]
+    },
+    "patterns": {
+      "dvmdb_group": ["^All_"],
+      "system_certificate_ca": ["^Fortinet_"],
+      "system_certificate_local": ["^Fortinet_"]
+    }
+  },
+  "fortiauthenticator": {
+    "measured_on": "fac01, FortiAuthenticator 8.0.3 build0099, 2026-10-13",
+    "names": {
+      "policy_password": ["Default"],
+      "system_smtp_servers": ["Local Mail Server"]
+    },
+    "patterns": {}
+  },
+  "fortiweb": {
+    "measured_on": "device flag can_view=1 covers the predefined objects; nothing to list yet",
+    "names": {},
+    "patterns": {}
+  },
+  "fortiadc": {
+    "measured_on": "fortiadc10, FortiADC 7.6.7 build0676, 2026-10-13: device flag _nondeletable=1 covers most predefined objects; the DEFAULT_* objects and the ISP address book are served with _nondeletable=0",
+    "names": {},
+    "patterns": {
+      "*": ["^DEFAULT_", "^LB_"],
+      "system_isp_province": [".*"],
+      "system_isp_addr": ["^china-(mobile|telecom|unicom)$"]
+    }
+  }
+}

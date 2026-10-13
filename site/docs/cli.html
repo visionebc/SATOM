@@ -235,7 +235,7 @@ need root.</p>
 </tr>
 <tr>
 <td><code>get system health</code></td>
-<td><strong>Start here.</strong> Units + <code>/healthz</code> + disk, folded into one status</td>
+<td><strong>Start here.</strong> Units + <code>/healthz</code> + code freshness + disk, folded into one status. A process older than the code on disk (the scheduler after a deploy that restarted only the web) is a warning</td>
 </tr>
 <tr>
 <td><code>get system performance</code></td>
@@ -291,7 +291,19 @@ need root.</p>
 </tr>
 <tr>
 <td><code>get device status</code></td>
-<td>Appliances: sync state, maintenance flag, last contact</td>
+<td>Appliances: when the configuration last reached the local store (warns past 26 h or never), the web console's last reachability probe, maintenance flag</td>
+</tr>
+<tr>
+<td><code>get device config [&lt;device&gt; [&lt;section&gt; [&lt;table&gt;]]]</code></td>
+<td>The configuration as SATOM last harvested it — from the local store, never from the box</td>
+</tr>
+<tr>
+<td><code>get device naming [&lt;device&gt; [--table &lt;type&gt;]] [--product &lt;p&gt;]</code></td>
+<td>Naming Discovery: the pattern each object type already follows (<code>vs-{name}</code>), how many objects follow it, the exceptions with their reason, the Naming scheme pattern and how many objects match it; without a device, the fleet consensus per product. Read from the stored tree, run as the service account (root)</td>
+</tr>
+<tr>
+<td><code>get signatures status</code></td>
+<td>FortiGuard signature DB version and age per FortiWeb (stale past <code>alerts.signature_max_days</code>, or never updated), the signature source, and what the local signature index holds</td>
 </tr>
 <tr>
 <td><code>get monitor status</code></td>
@@ -374,6 +386,34 @@ otherwise only see indirectly, through their consequences.</p>
 <tr>
 <td><code>show changelog</code></td>
 <td>The most recent release notes from the tree</td>
+</tr>
+<tr>
+<td><code>show docs [&lt;page&gt;]</code></td>
+<td>The manual, from the tree. Works with no network</td>
+</tr>
+<tr>
+<td><code>show trust</code></td>
+<td>Public keys this node accepts, per purpose (update, api_pack, knowledge)</td>
+</tr>
+<tr>
+<td><code>show package &lt;file&gt;</code></td>
+<td>Inspect an update package without applying it</td>
+</tr>
+<tr>
+<td><code>show apipack</code></td>
+<td>API library packs on this node and what was imported from them</td>
+</tr>
+<tr>
+<td><code>show knowledge</code></td>
+<td>Knowledge packs per lane (age), the feed, the mode and the last fetch</td>
+</tr>
+<tr>
+<td><code>show layouts [&lt;product&gt;]</code></td>
+<td>Measured GUI layouts per product and exact build (config, live-monitor and "Not in GUI, but in CLI" pages, source pack), and whether each device has one for its exact build</td>
+</tr>
+<tr>
+<td><code>show tree</code></td>
+<td>The whole command tree in one view</td>
 </tr>
 <tr>
 <td><code>show version</code></td>
@@ -673,7 +713,7 @@ check. <code>tests/test_docs_publication.py</code> fails the suite when this blo
 longer matches the console you are running.</p>
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-<p><em>117 commands in 43 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
+<p><em>120 commands in 44 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
 <h3 id="get"><code>get</code></h3>
 <p>Read state. Every command below works as <strong>any user</strong> — this is the half of the console that has to keep working when everything else does not.</p>
 <table>
@@ -792,13 +832,25 @@ longer matches the console you are running.</p>
 <td><code>satom get device status</code></td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
-<td>Sync state, maintenance flag, last contact.</td>
+<td>Last sync to the local store, last reachability probe, maintenance flag.</td>
 </tr>
 <tr>
 <td><code>satom get device config [&lt;device&gt; [&lt;section&gt; [&lt;table&gt;]]] [--version &lt;id&gt;]</code></td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td>The device's configuration as SATOM last harvested it — read from the LOCAL store, never from the box.</td>
+</tr>
+<tr>
+<td><code>satom get device naming [&lt;device&gt; [--table &lt;type&gt;]] [--product &lt;p&gt;]</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td>The naming convention each object type already follows, from the stored tree — exceptions, fleet consensus.</td>
+</tr>
+<tr>
+<td><code>satom get signatures status</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td>DB version and age per device, the source, what the index holds.</td>
 </tr>
 <tr>
 <td><code>satom get monitor status</code></td>
@@ -879,6 +931,12 @@ longer matches the console you are running.</p>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td>Knowledge packs per lane (age), the feed, the mode and the last fetch.</td>
+</tr>
+<tr>
+<td><code>satom show layouts [&lt;product&gt;]</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td>Measured GUI layouts per product and build, and which device has one for its exact build.</td>
 </tr>
 <tr>
 <td><code>satom show config</code></td>

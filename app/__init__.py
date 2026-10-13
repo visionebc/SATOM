@@ -1624,6 +1624,9 @@ def create_app(config_override: object | None = None) -> Flask:
     # ``flask knowledge ...`` — knowledge packs from the feed (satom CLI backend).
     from .cli_knowledge import knowledge_cli
     app.cli.add_command(knowledge_cli)
+    # ``flask naming discover`` — Naming Discovery (backend of `satom get device naming`).
+    from .cli_naming import naming_cli
+    app.cli.add_command(naming_cli)
 
     @app.cli.command('create-db')
     def create_db_cmd():

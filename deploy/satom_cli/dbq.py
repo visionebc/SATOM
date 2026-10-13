@@ -85,6 +85,33 @@ SELECT id, name, kind, host, COALESCE(last_status,''),
   FROM appliances ORDER BY kind, name
 """
 
+# When each device's configuration last reached the local store. This, not
+# ``appliances.last_status``, is the sync state: ``last_status`` is the web
+# badge's reachability cache, written only when someone opens the Appliances
+# list, so a device synced every hour read "never synced" here. The age is
+# computed in SQL against the same UTC clock the store writes with.
+SOT_LAST_SEEN = """
+SELECT device, to_char(max(last_seen_at),'YYYY-MM-DD HH24:MI'),
+       EXTRACT(EPOCH FROM ((now() AT TIME ZONE 'UTC') - max(last_seen_at)))::bigint
+  FROM sot_version GROUP BY device
+"""
+
+# The signature freshness state (one JSON document, keyed by appliance id),
+# its age limit and the configured signature source.
+SIGNATURE_SETTINGS = """
+SELECT key, COALESCE(value,'') FROM app_settings
+ WHERE key IN ('signatures.db_state', 'alerts.signature_max_days')
+    OR key LIKE 'signatures.source%' ORDER BY key
+"""
+
+# Newest signature snapshot per product: what the local index holds.
+SIGNATURE_SNAPSHOTS = """
+SELECT DISTINCT ON (product) product, db_version, source_name, sig_count,
+       added, removed, changed, baseline,
+       to_char(taken_at,'YYYY-MM-DD HH24:MI')
+  FROM signature_snapshots ORDER BY product, id DESC
+"""
+
 # The appliance's maintenance flag is joined in on purpose: a probe against a
 # box the operator parked ON PURPOSE must not raise the roll-up. Maintenance
 # already suppresses automatic runs and their alerts; a monitor page that stays

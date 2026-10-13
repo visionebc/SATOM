@@ -246,25 +246,51 @@ def device_status(ctx, args):
         return r
     if not rows:
         return Result("info", "no appliances are registered")
+    synced, sync_err = dbq.query(ctx, dbq.SOT_LAST_SEEN)
+    seen = {}
+    for s in synced or []:
+        dev, when, age = (s + ["", "", ""])[:3]
+        try:
+            seen[dev] = (when, int(age))
+        except ValueError:
+            seen[dev] = (when, None)
+    budget = FRESH["sot"] * 3600
     r = Result("ok", "appliances — %d" % len(rows))
     table = []
     for row in rows:
         (aid, name, kind, host, status, maint, checked, fw, verify) = (row + [""] * 9)[:9]
         parked = dbq.bool_of(maint)
+        when, age = seen.get(name, ("", None))
+        if synced is None:
+            sync = "synced=?"
+        elif not when:
+            sync = "synced=never"
+        else:
+            sync = "synced=%s" % when
         note = ""
         if parked:
             note = "  [maintenance]"
-        elif status in ("error", "unreachable", "fail"):
-            note = "  <- %s" % status
+        elif synced is not None and not when:
+            note = "  <- never synced to the local store"
             r.worst("warn")
-        elif status in ("", "unknown"):
-            note = "  <- never synced"
+        elif age is not None and age > budget:
+            note = "  <- last sync %.0fh ago" % (age / 3600.0)
+            r.worst("warn")
+        if not parked and status in ("error", "unreachable", "fail", "offline"):
+            note += "  <- probe says %s" % status
             r.worst("warn")
             if dbq.bool_of(verify):
                 note += " (verify_ssl=true — self-signed appliances need false)"
-        table.append(("%-3s %-14s %-13s" % (aid, name, kind),
-                      "%-22s %-9s last=%s%s" % (host, status or "-", checked or "never", note)))
+        probe = "%s@%s" % (status, checked) if checked else "not probed"
+        table.append(("%-3s %-14s %-18s" % (aid, name, kind),
+                      "%-24s %-26s probe=%s%s" % (host, sync, probe, note)))
     r.rows("", table)
+    if synced is None:
+        r.worst("warn")
+        r.note("Sync state unknown: the store index did not answer (%s)." % sync_err)
+    r.note("synced = when the configuration last reached the local store "
+           "(device_sync, hourly). probe = the web console's last reachability "
+           "check, cached only when someone opens the Appliances list.")
     r.note("A parked device is skipped by AUTOMATIC runs and by its alerts; a "
            "manual run still reaches it.")
     return r

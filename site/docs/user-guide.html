@@ -2251,6 +2251,49 @@ it to the fleet; for the fleet-wide view, use Fleet → WAF → Artifacts (§13.
 </ul>
 <p><img alt="WAF Artifacts inventory" src="img/screens/fleet-artifacts.webp">
 <em>Fleet → WAF → WAF Artifacts → Inventory for the selected device</em></p>
+<h3 id="133-naming-scheme-and-discovery">13.3 Naming: Scheme and Discovery</h3>
+<p><strong>Administrator → Naming</strong> is in every device ADOM (FortiWeb, FortiADC,
+FortiGate, FortiAuthenticator, FortiAnalyzer). Its two tabs work on <strong>one list
+of object types</strong>: every table the product's configuration sync reads,
+including the ones no device holds an object of yet. Settings blocks (rows
+without a name) are not object types and are left out; a table whose objects
+are keyed by number is listed and marked so.</p>
+<p><strong>Scheme</strong> holds the pattern of each object type. Entries marked <strong>builds
+names</strong> (the FortiWeb catalog: server policy, pool, WPP, certificate…) are
+the ones SATOM fills in when it creates objects from a web address, so they
+take <code>{name}</code> only (Managed Certificate: <code>{class}</code> <code>{cn}</code> <code>{date}</code>
+<code>{serial}</code>). Every other entry documents your convention and may use any
+Discovery token. Next to each input: what Discovery found on the devices
+(<strong>all devices agree</strong> / <strong>devices differ</strong>), <strong>use it</strong> to copy it in, and a
+live count of the existing names that follow the pattern you type. Use the
+filter box or <strong>Only types with objects on a device</strong> to narrow the list.</p>
+<p><strong>Discovery</strong> reads the names already on a device — from the configuration
+tree SATOM keeps for it, no device call — and shows, per object type:</p>
+<ul>
+<li><strong>Convention found</strong> — the dominant pattern, e.g. <code>pol-{adom}-{name}</code> or
+  <code>vs-{name}-{proto}</code>, with any variant prefix, the separator and the case.</li>
+<li><strong>Follow it</strong> — how many of the team's objects match it.</li>
+<li><strong>Naming scheme</strong> — the scheme's pattern for that type and how many objects
+  follow it (<code>(default)</code> when it is the catalog default).</li>
+<li><strong>Exceptions</strong>, each with its reason. A <strong>stale name</strong> is the one to read
+  first: <code>name says 'https' but the object's port is '8080'</code>.</li>
+<li><strong>Shares {name} with</strong> — object types that carry the same identifier through
+  a real reference (policy → pool → virtual server).</li>
+<li><strong>Vendor</strong> — factory objects, counted apart and never used to infer anything
+  (device flag first, then a factory-name list measured per product, then
+  physical ports).</li>
+</ul>
+<p>A part of a name becomes <code>{port}</code>, <code>{proto}</code>, <code>{adom}</code>, <code>{host}</code>… only when it
+equals a field of the same object on at least 80 % of the objects; digits that
+match nothing are <code>{num}</code>; the free part is <code>{name}</code>. One object is "too few".</p>
+<p><strong>Adopt</strong> writes the discovered pattern into the scheme entry of that object
+type. <strong>Adopt &amp; adapt</strong> opens it in an editor under the row: change a part
+(<code>lab-spo-{num}</code> → <code>spo-{name}</code>), watch how many names follow, then <strong>Save to
+scheme</strong>. For a <strong>builds names</strong> entry, Adopt is greyed out when the found
+pattern carries a token SATOM cannot fill in (hover for the reason) — adapt it
+instead. The ✕ clears the entry. <strong>All devices (fleet view)</strong> shows whether the
+devices agree and your scheme pattern; <strong>Export CSV</strong> lists every exception. A
+device without a configuration tree offers <strong>Sync device</strong> (read-only).</p>
 <h2 id="14-monitoring-fleet-health-metrics--probes">14. Monitoring: fleet health, metrics &amp; probes</h2>
 <p>Monitoring lives in <strong>every</strong> workspace, not only Global. It is scoped by
 device kind, so the FortiWeb workspace shows FortiWeb appliances and nothing
@@ -2988,12 +3031,15 @@ credential in every screenshot of the page.)</p>
 </blockquote>
 <p>Full product notes: <a href="fortiauthenticator.html">docs/fortiauthenticator.md</a>.</p>
 <h3 id="173-fortianalyzer">17.3 FortiAnalyzer</h3>
-<p>The <code>/faz/</code> ADOM mirrors the FortiAnalyzer menu: <strong>Device Manager</strong>,
+<p>The <code>/faz/</code> ADOM draws the selected unit's own menu from the GUI layouts
+measured on its build, like the other device ADOMs. Only a unit whose build has
+no measured layout falls back to the curated menu: <strong>Device Manager</strong>,
 <strong>FortiView</strong>, <strong>Log View</strong>, <strong>Fabric View</strong>, <strong>Incidents &amp; Events</strong>,
-<strong>FortiAI</strong>, <strong>Reports</strong> and <strong>System Settings</strong>. This menu is curated, not
-measured, and the 2026-10 menu changes of the FortiWeb, FortiGate and
-FortiAuthenticator ADOMs do not apply to it. An admin can trim it at
-<code>Settings → FAZ Menu</code> (§26.12).</p>
+<strong>FortiAI</strong>, <strong>Reports</strong> and <strong>System Settings</strong>. Of the 139 measured
+FortiAnalyzer 7.6.7 pages, 57 are live monitors (dashboards, FortiView, log and
+event views) and 28 are managed on the device: SATOM links them on the device
+instead of drawing them as configuration, and <code>Settings → ADOM Menus</code> (§26.12)
+can take them out of the menu.</p>
 <ul>
 <li>The unit speaks <strong>JSON-RPC</strong> on a single endpoint, in two dialects, and the
   endpoint registry stores which one each URI needs — an upgrade that moves a
@@ -4074,7 +4120,7 @@ rendered at all, so the menu never offers a section that is not there.</p>
 </tr>
 <tr>
 <td><strong>User Interface</strong></td>
-<td>Appearance · Languages · FAZ Menu</td>
+<td>Appearance · Languages · ADOM Menus</td>
 </tr>
 <tr>
 <td><strong>My Account</strong></td>
@@ -5035,12 +5081,55 @@ workspace offers.</p>
 <p><strong><code>global</code>, <code>fortiweb</code> and <code>fortiadc</code> cannot be deleted</strong>; their keys are wired
 into URL scoping and deleting them would orphan data. Deactivate them instead.
 Everything else is fully deletable.</p>
-<h3 id="2612-faz-menu--trim-the-fortianalyzer-sidebar">26.12 FAZ Menu — trim the FortiAnalyzer sidebar</h3>
-<p>Hide FortiAnalyzer menu groups and leaves. Turning a <strong>group</strong> off cascades to
-everything under it; turning a single <strong>item</strong> off hides just that leaf. Hidden
-entries disappear from the sidebar and dashboard <strong>and are not reachable by URL</strong>.
-It applies to every user of that ADOM, and it changes only the GUI menu — the
-devices and the configuration harvest are unaffected.</p>
+<h3 id="2612-adom-menus--hide-pages-satom-does-not-draw-as-configuration">26.12 ADOM Menus — hide pages SATOM does not draw as configuration</h3>
+<p>Some pages of a device menu are not configuration SATOM can read and change.
+Each kind has its own switch, named after the banner the page shows:</p>
+<table>
+<thead>
+<tr>
+<th>Switch</th>
+<th>The page says</th>
+<th>Pages today (one device per ADOM)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Hide live-monitor pages</strong></td>
+<td><em>Live monitor: … draws this page from live data</em> — dashboards, FortiView, log and event views</td>
+<td>FortiAnalyzer 57 · FortiADC 17</td>
+</tr>
+<tr>
+<td><strong>Hide pages managed on the device</strong></td>
+<td><em>Managed on the device: … edits this page through its own GUI calls</em></td>
+<td>FortiAnalyzer 28</td>
+</tr>
+<tr>
+<td><strong>Hide GUI-only pages (no API)</strong></td>
+<td><em>No API on this build (GUI only)</em></td>
+<td>FortiAuthenticator 64 · FortiADC 17</td>
+</tr>
+</tbody>
+</table>
+<p>The panel shows these counts live, per ADOM, from the first device of each
+product.</p>
+<p>A switch that is on takes its pages out of the device menu and the <strong>All
+pages</strong> list of <strong>every ADOM, for every user</strong>, on the next page render. A page
+leaves only when <strong>every</strong> tab is of a hidden kind: a page with one
+configuration tab always stays (FortiAuthenticator has 8 such mixed pages,
+FortiADC 2). A menu folder left with no page disappears with it. A direct link
+or bookmark still opens a hidden page. "Not in GUI, but in CLI" pages are
+configuration and never hidden. The devices, the knowledge packs and the
+configuration harvest are not affected. All three are off by default.</p>
+<p>The kind is read <strong>per tab</strong>: FortiADC marks its monitors on each view,
+FortiAnalyzer on the page. FortiGate monitor-API tabs (for example <strong>System →
+Certificates</strong>) list live rows SATOM reads, so they count as configuration.</p>
+<blockquote>
+<p><strong>FortiAuthenticator:</strong> 64 of its 93 measured pages are GUI-only on 8.0.3.
+Switching <strong>Hide GUI-only pages</strong> on leaves that menu with about 29 pages.</p>
+</blockquote>
+<p>This panel replaced <strong>FAZ Menu</strong>, which trimmed the curated FortiAnalyzer
+menu. A unit with a measured layout no longer draws that menu, so the list of
+hidden entries was removed with it.</p>
 <h3 id="2612b-languages--which-of-the-five-this-install-offers">26.12b Languages — which of the five this install offers</h3>
 <p>SATOM speaks five languages. English is the <strong>source</strong> language: the action
 profiles, the CLI help and the docs are authored in it, and every translation
@@ -6742,6 +6831,10 @@ the authoritative answer to "what is new since we last updated".</p>
 <tr>
 <td>A probe grades critical naming a port that "doesn't exist"</td>
 <td>Correct behaviour: a watched interface that disappeared from the harvest is reported by name, never dropped from a shorter list.</td>
+</tr>
+<tr>
+<td>A scheduled action leaves out something that works when run by hand (a device type, a new action)</td>
+<td>The scheduler runs its own copy of the application and keeps the code it started with until it is restarted; restarting only the web service after an update leaves it behind. <code>satom get system health</code> warns about it (<code>satom diagnose code</code> has the detail). Fix: <code>sudo satom execute restart scheduler</code>, or <code>sudo satom execute restart-all</code> after any code change.</td>
 </tr>
 <tr>
 <td>Scheduled actions all show <em>skipped (maintenance)</em></td>

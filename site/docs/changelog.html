@@ -112,6 +112,16 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="fixed--two-sidebar-groups-named-automation-and-a-process-entry-lost-next-to-studio">Fixed — two sidebar groups named "Automation", and a Process entry lost next to Studio</h3>
+<ul>
+<li>A profile without user management (operator, read-only) saw the Process
+  page in a group of its own labelled <strong>Automation</strong>, next to the real
+  Automation group: two groups with one name. That group is now labelled
+  <strong>Process</strong>.</li>
+<li>In the Global ADOM a custom profile without user management that holds a
+  Studio permission got the Studio group <strong>instead of</strong> Process, so a page it
+  may open had no menu entry. It now gets both.</li>
+</ul>
 <h2 id="310---2026-10-13">[3.1.0] - 2026-10-13</h2>
 <h3 id="changed--operator-menu-order">Changed — operator menu order</h3>
 <ul>

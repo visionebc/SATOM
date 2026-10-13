@@ -6,6 +6,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — two sidebar groups named "Automation", and a Process entry lost next to Studio
+
+- A profile without user management (operator, read-only) saw the Process
+  page in a group of its own labelled **Automation**, next to the real
+  Automation group: two groups with one name. That group is now labelled
+  **Process**.
+- In the Global ADOM a custom profile without user management that holds a
+  Studio permission got the Studio group **instead of** Process, so a page it
+  may open had no menu entry. It now gets both.
+
 ## [3.1.0] - 2026-10-13
 
 ### Changed — operator menu order

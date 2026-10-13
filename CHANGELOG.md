@@ -32,6 +32,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   its build (partials/nav_fortianalyzer.html), and keeps the curated menu as
   the fallback. "GUI layout not measured" is no longer said once a
   FortiAnalyzer layout is on the node.
+- The engine reads the templates the harvester actually extracts from a
+  FortiAnalyzer 7.6.7 build3737: endpoints are relative
+  (`cli/global/system/admin/user`, `dvmdb/_meta_fields/device`) and are read
+  as their JSON-RPC URL. Views the GUI saves through its own private calls
+  (`endpoint_kind` `django`: `p/alert/...`, `p/report/...`; `gui-api`:
+  `gui/adoms`, `gui/sys/advanced-settings`) are drawn from their measured
+  layout, read-only, with no Create New, and say the page is managed on the
+  device with a link to it: SATOM never replays those calls. A monitor page
+  links `https://<host>:<port>` + its measured `/ui/...` route as-is.
+  "Not in GUI, but in CLI" pages (`gui_absent`) fill the menu's own group.
+  The importer accepts these templates as measured; the GUI's private calls
+  and ADOM data may stand where the GUI writes (recorded), and only a
+  `/cli/global` URL is ever sent.
 
 ### Fixed — FortiAnalyzer schema harvest measured nothing on a real 7.6.7
 

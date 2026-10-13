@@ -217,7 +217,8 @@
   <div class="fwg-titlebar">
     <span>{{ _t or view.key }}</span>
     <span class="fwg-sub">
-      {% if gp and gp.gui_only %}{{ _('No API on this build (GUI only): drawn as %(p)s draws it, read-only. Nothing is sent from this page.', p=_gxl) }}
+      {% if gp and gp.device_managed %}{{ _('Managed on the device: drawn as %(p)s draws it, read-only. Nothing is sent from this page.', p=_gxl) }}
+      {% elif gp and gp.gui_only %}{{ _('No API on this build (GUI only): drawn as %(p)s draws it, read-only. Nothing is sent from this page.', p=_gxl) }}
       {% elif is_new and can_edit and gp %}{{ _('Create New with %(p)s\'s own defaults. Save shows the request first, then creates the object on %(dev)s.', p=_gxl, dev=appliance.name) }}
       {% elif is_new and can_edit %}{{ _('Create New with FortiWeb\'s own defaults. Save shows the request first, then creates the policy on %(dev)s.', dev=appliance.name) }}
       {% elif is_new %}{{ _('Preview of the Create New form with %(p)s\'s own defaults. Nothing is submitted from this page.', p=_gxl) }}
@@ -237,7 +238,8 @@
   {% endif %}
   {% if view.rendered_only %}<div class="fwg-note"><i class="bi bi-info-circle"></i><span>{{ _('%(p)s draws this page with its newer interface: SATOM read the layout from the page as %(p)s drew it on the lab device. Every field is shown; %(p)s may hide some of them for other settings.', p=_gxl) }}</span></div>{% endif %}
   {% if gp and gp.missing %}<div class="fw-alert fw-alert-warning">{{ _('This settings object is not in the SATOM cache of %(dev)s and the device did not answer: the form shows %(p)s\'s layout without values.', dev=appliance.name, p=_gxl) }}</div>{% endif %}
-  {% if gp and gp.gui_only %}<div class="fw-alert fw-alert-info" data-gui-only-page><i class="bi bi-window me-1"></i>{{ _('No API on this build (GUI only): %(p)s serves this page to its own GUI only, so SATOM shows its layout read-only and never saves it.', p=_gxl) }}</div>{% endif %}
+  {% if gp and gp.device_managed %}<div class="fw-alert fw-alert-info" data-fwg-device-managed="{{ gp.device_managed }}"><i class="bi bi-box-arrow-up-right me-1"></i>{{ _('Managed on the device: %(dev)s edits this page through its own GUI calls, which SATOM never replays. SATOM draws its layout read-only; nothing is sent from it.', dev=appliance.name) }}{% if gp.device_href %} <a href="{{ gp.device_href }}" target="_blank" rel="noopener" data-fwg-device-link>{{ _('Open it on the device') }} <i class="bi bi-box-arrow-up-right"></i></a>{% endif %}</div>
+  {% elif gp and gp.gui_only %}<div class="fw-alert fw-alert-info" data-gui-only-page><i class="bi bi-window me-1"></i>{{ _('No API on this build (GUI only): %(p)s serves this page to its own GUI only, so SATOM shows its layout read-only and never saves it.', p=_gxl) }}</div>{% endif %}
   {% if gp and gp.weak %}<div class="fwg-note" data-fwg-weak><i class="bi bi-link-45deg"></i><span>{{ _('Tied by one field: the crawl matched these objects to %(ep)s by %(n)s of its attributes only. Values are the API\'s; check them against the device before saving.', ep=gp.collection, n=(gp.evidence or {}).get('attributes_measured', 1)) }}</span></div>{% endif %}
   {% if gp and gp.cli %}<div class="fwg-note" data-fwg-cli><i class="bi bi-terminal"></i><span>{{ _('Served only by the CLI on this build: read with show full-configuration over a read-only SSH session; Save writes it through the CLI writer (dry run first).') }}</span></div>{% endif %}
   {% if gp and gp.error %}<div class="fw-alert fw-alert-warning" data-fwg-read-error>{{ _('%(dev)s did not answer: %(err)s', dev=appliance.name, err=gp.error) }}</div>{% endif %}

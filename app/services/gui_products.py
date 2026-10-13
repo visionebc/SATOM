@@ -48,7 +48,9 @@ Template endpoints: FortiGate views name the cmdb path after ``/api/v2/cmdb/``
 REST resource after ``/api/v1/`` (``localusers``) or its registry logical
 (``auth_local_users``); FortiADC views name the bare REST entity
 (``load_balance_virtual_server``, which is also its registry logical);
-FortiAnalyzer views name the JSON-RPC URL (``/cli/global/system/admin/user``);
+FortiAnalyzer views name the JSON-RPC URL relative, as the harvester measures
+it (``cli/global/system/admin/user``; :func:`faz_template` gives it its ``/``),
+or one of the GUI's private calls (``p/...``, ``gui/...``: drawn, never sent);
 a page with no REST at all is ``gui:<url-path>``. A field measured
 ``key_from: "gui-only"`` has no API on that build: drawn read-only and marked,
 never saved.
@@ -1321,7 +1323,9 @@ FAZ_CLI_PREFIX = "/cli/global/"
 #: CLI sections under ``/cli/global/`` (the rest of the JSON-RPC tree is ADOM
 #: data or monitors, never configuration a page writes).
 FAZ_SECTIONS = ("system", "fmupdate")
-_FAZ_WORD = re.compile(r"[a-z0-9][a-z0-9_-]{0,79}")
+#: A CLI word; ``+`` inside one is real (7.6.7 ``system locallog
+#: tacacs+accounting``).
+_FAZ_WORD = re.compile(r"[a-z0-9][a-z0-9_+-]{0,79}")
 #: A table nested in a row of another table: the vendor's ``{<parent>}`` row
 #: placeholder (``.../admin/user/{user}/dashboard``), filled with a REAL row.
 _FAZ_PH = re.compile(r"\{[a-z0-9_-]{1,64}\}")
@@ -1382,6 +1386,133 @@ def faz_is_child(ep) -> bool:
 
 def faz_is_monitor(ep) -> bool:
     return isinstance(ep, str) and bool(_FAZ_MONITOR.fullmatch(ep))
+
+
+# -- the templates as the harvester writes them ------------------------------ #
+#: The FortiAnalyzer templates the harvester extracts (``gui_extract_faz``,
+#: 7.6.7 build3737, 2026-10-12) name endpoints RELATIVE, with no leading
+#: slash, and of three kinds (a view's ``endpoint_kind``, else its prefix):
+#:
+#: * ``jsonrpc`` -- ``cli/global/system/admin/user``, ``dvmdb/_meta_fields/
+#:   device``: the JSON-RPC URL without its ``/``; SATOM reads and writes it;
+#: * ``django`` -- ``p/alert/data-selector/create``: the GUI's own ``/p/``
+#:   server calls;
+#: * ``gui-api`` -- ``gui/adoms``, ``gui/sys/advanced-settings``: the GUI's
+#:   private ``/gui/`` API.
+#:
+#: The last two are GUI-private: SATOM never replays them. Their pages are
+#: drawn from the measured layout, read-only, and say they are managed on the
+#: device (``device_managed``, a link to ``gui_href``). :func:`faz_template`
+#: turns a template into the form the engine reads: a JSON-RPC endpoint gets
+#: its ``/``; a GUI-private one becomes ``gui:/<path>`` (no API: never read,
+#: never written).
+FAZ_JSONRPC, FAZ_DJANGO, FAZ_GUI_API = "jsonrpc", "django", "gui-api"
+_FAZ_RPC_ROOTS = ("cli", "dvmdb", "sys", "logview", "fortiview", "eventmgmt", "incidentmgmt",
+                  "report", "fazsys", "ueba", "soarmgmt")
+_FAZ_PRIVATE_ROOTS = {"p": FAZ_DJANGO, "gui": FAZ_GUI_API}
+#: A GUI-private call as SATOM keeps it (``gui:/p/alert/data-selector/create``,
+#: ``gui:/gui/sys/admin/users/{users}/theme``): lower-case words, a
+#: ``{placeholder}`` for a row.
+_FAZ_PRIVATE = re.compile(r"gui:/(p|gui)(/([a-z0-9_][a-z0-9_.-]{0,79}|\{[a-z0-9_-]{1,64}\}))"
+                          r"{1,10}")
+
+
+def faz_endpoint_kind(ep) -> str:
+    """``jsonrpc`` / ``django`` / ``gui-api`` of a template endpoint (either
+    form: as measured or as :func:`faz_endpoint` keeps it); "" for none or an
+    unknown prefix."""
+    if not isinstance(ep, str) or not ep:
+        return ""
+    raw = ep[len(GUI_ONLY):] if ep.startswith(GUI_ONLY) else ep
+    head = raw.lstrip("/").split("/", 1)[0]
+    if ep.startswith(GUI_ONLY):
+        return _FAZ_PRIVATE_ROOTS.get(head, "") if _FAZ_PRIVATE.fullmatch(ep) else ""
+    if head in _FAZ_PRIVATE_ROOTS and not raw.startswith("/"):
+        return _FAZ_PRIVATE_ROOTS[head]
+    return FAZ_JSONRPC if head in _FAZ_RPC_ROOTS else ""
+
+
+def faz_endpoint(ep):
+    """A template endpoint as the engine reads it: ``cli/global/x`` ->
+    ``/cli/global/x`` (the JSON-RPC URL), ``p/x`` / ``gui/x`` -> ``gui:/p/x``
+    / ``gui:/gui/x`` (GUI-private, never sent). Anything else -- already
+    absolute, already ``gui:``, an unknown prefix -- is returned as given, so
+    the grammar judges it."""
+    if not isinstance(ep, str) or not ep or ep.startswith(("/", GUI_ONLY, MONITOR, API)):
+        return ep
+    head = ep.split("/", 1)[0]
+    if head in _FAZ_PRIVATE_ROOTS:
+        return GUI_ONLY + "/" + ep
+    if head in _FAZ_RPC_ROOTS:
+        return "/" + ep
+    return ep
+
+
+def faz_private(ep) -> bool:
+    """A GUI-private call (django / gui-api), in either form."""
+    return faz_endpoint_kind(ep) in (FAZ_DJANGO, FAZ_GUI_API)
+
+
+def faz_template(tpl: dict) -> dict:
+    """A copy of a FortiAnalyzer template with every endpoint in the form the
+    engine reads (:func:`faz_endpoint`) and each view saying what it is:
+
+    * a view whose endpoint is GUI-private (``endpoint_kind`` django /
+      gui-api, or its prefix) -> ``device_managed`` = that kind;
+    * every view of a ``monitor`` page -> ``monitor``, with no endpoint: a
+      dashboard widget's read (Status reads the backup settings) is the
+      device's live page, never something SATOM queries;
+    * a view with no endpoint on any other page the GUI draws (Device
+      Manager, Task Monitor, HA status) -> ``device_managed`` = ``gui``;
+    * either kind carries the page's ``gui_href`` (a ``/ui/...`` route).
+
+    A ``gui_absent`` page ("Not in GUI, but in CLI") has nothing on the
+    device's GUI to link: its views are left as they are. The template given
+    is never changed (the store may cache it)."""
+    t = copy.deepcopy(tpl or {})
+    href = t.get("gui_href") if isinstance(t.get("gui_href"), str) else ""
+    absent = bool(t.get("gui_absent"))
+    t["endpoint"] = faz_endpoint(t.get("endpoint"))
+    for v in t.get("views") or []:
+        if not isinstance(v, dict):
+            continue
+        raw = v.get("endpoint") or ""
+        kind = v.get("endpoint_kind") or faz_endpoint_kind(raw)
+        v["endpoint"] = faz_endpoint(raw)
+        if t.get("monitor") and not absent:
+            v.update(endpoint="", monitor=True)
+        elif kind in (FAZ_DJANGO, FAZ_GUI_API) or faz_private(v["endpoint"]):
+            v["device_managed"] = kind if kind in (FAZ_DJANGO, FAZ_GUI_API) \
+                else faz_endpoint_kind(v["endpoint"])
+            if not faz_private(v["endpoint"]):
+                # measured GUI-private yet named like a JSON-RPC URL: the view
+                # neither reads nor writes anything from here
+                v["endpoint"] = ""
+        elif not raw and not absent:
+            v["device_managed"] = "gui"
+        if href and (v.get("monitor") or v.get("device_managed")):
+            v.setdefault("gui_href", href)
+    for d in (t.get("dialogs") or {}).values():
+        if not isinstance(d, dict):
+            continue
+        d["endpoint"] = faz_endpoint(d.get("endpoint"))
+        if isinstance(d.get("write"), dict):
+            d["write"]["endpoint"] = faz_endpoint(d["write"].get("endpoint"))
+        for w in d.get("writes") or []:
+            if isinstance(w, dict):
+                w["endpoint"] = faz_endpoint(w.get("endpoint"))
+        for b in d.get("blocks") or []:
+            for f in (b.get("fields") or []) if isinstance(b, dict) else []:
+                if not isinstance(f, dict):
+                    continue
+                if f.get("endpoint"):
+                    f["endpoint"] = faz_endpoint(f["endpoint"])
+                if isinstance(f.get("bind"), dict):
+                    f["bind"]["endpoint"] = faz_endpoint(f["bind"].get("endpoint"))
+    rc = t.get("rest_check")
+    if isinstance(rc, dict) and rc.get("endpoint"):
+        rc["endpoint"] = faz_endpoint(rc["endpoint"])
+    return t
 
 
 def _faz_action_body(ep: str) -> str:
@@ -1448,6 +1579,9 @@ class FortiAnalyzerAdapter(Adapter):
             and not faz_is_child(endpoint) and not _ACTION.search(_faz_action_body(endpoint))
 
     def refusal(self, endpoint):
+        if faz_private(endpoint):
+            return ("%s is managed on the device: FortiAnalyzer's GUI edits it through its own "
+                    "calls, which SATOM never replays; nothing is sent" % endpoint)
         if faz_cli_url(endpoint) and _ACTION.search(_faz_action_body(endpoint)):
             return "%s names a device action: nothing is sent" % endpoint
         if faz_is_child(endpoint):
@@ -2159,9 +2293,11 @@ def unsafe_endpoint(product: str, ep, role: str = READ) -> str:
     actions, never configuration: one in a write or a bind is an action
     route). FortiAuthenticator: a REST resource anywhere; ``cli:<object>`` and
     ``gui:<path>`` only where SATOM reads; a crawled form post (``gui_writes``)
-    only as ``gui:<path>``. FortiAnalyzer: a ``/cli/global/<section>/...``
-    JSON-RPC URL anywhere (a ``{row}`` placeholder only after a table word);
-    ``/dvmdb/...``, ``/sys/status``, the JSON-RPC 2.0 monitor trees
+    only as ``gui:<path>``. FortiAnalyzer (relative as measured, or absolute):
+    a ``/cli/global/<section>/...`` JSON-RPC URL anywhere (a ``{row}``
+    placeholder only after a table word); ``/dvmdb/...`` and the GUI's private
+    ``p/...`` / ``gui/...`` calls where SATOM reads and where the GUI writes
+    (recorded, never sent); ``/sys/status``, the JSON-RPC 2.0 monitor trees
     (``/logview``, ``/fortiview``...) and ``gui:<path>`` only where SATOM
     reads; no crawled form post. Never a path naming a device action, whatever
     the method or the role (a GET can act). FortiWeb keeps ``gui_bound.safe_api``."""
@@ -2191,14 +2327,20 @@ def unsafe_endpoint(product: str, ep, role: str = READ) -> str:
                                  else "REST entity or gui: path" if role == READ
                                  else "FortiADC endpoint for %s" % role)
     elif product == FORTIANALYZER:
-        # a /cli/global configuration URL anywhere; ADOM data, status reads,
-        # the monitor trees and ``gui:<path>`` only where SATOM reads; no
-        # crawled form post is ever replayed
+        # judged in the form the engine reads (the harvester writes them
+        # relative: ``cli/global/...``, ``p/...``, ``gui/...``)
+        ep = faz_endpoint(ep)
+        # a /cli/global configuration URL anywhere; status reads, the monitor
+        # trees and ``gui:<path>`` only where SATOM reads. ADOM data
+        # (``/dvmdb/...``) and the GUI's private calls (``gui:/p/...``,
+        # ``gui:/gui/...``) may stand where the GUI writes -- the layout
+        # records them -- but only a /cli/global URL is ever sent
+        # (FortiAnalyzerAdapter.writable). No crawled form post is replayed.
         if role == READ:
             ok = faz_cli_url(ep) or _FAZ_DATA.fullmatch(ep) or ep in _FAZ_SYS \
-                or faz_is_monitor(ep) or _GUI_PATH.fullmatch(ep)
+                or faz_is_monitor(ep) or _GUI_PATH.fullmatch(ep) or _FAZ_PRIVATE.fullmatch(ep)
         elif role == WRITE:
-            ok = faz_cli_url(ep)
+            ok = faz_cli_url(ep) or _FAZ_DATA.fullmatch(ep) or _FAZ_PRIVATE.fullmatch(ep)
         else:
             ok = None
         if not ok:
@@ -2411,6 +2553,7 @@ def clone_body(product: str, src: dict, src_key: str, new_name: str) -> dict:
 
 __all__ = ["PRODUCTS", "LABELS", "FORTIWEB", "FORTIGATE", "FORTIAUTH", "FORTIADC", "ADC_CHILD",
            "FORTIANALYZER", "faz_cli_url", "faz_is_child", "faz_is_monitor", "device_gui_url",
+           "faz_endpoint", "faz_endpoint_kind", "faz_private", "faz_template",
            "product_of", "label",
            "is_gui_only", "is_monitor", "read_only_endpoint", "gui_only_fields",
            "strip_fortiweb_refs", "lib_key", "adapter", "GuiOps", "drift", "Adapter",

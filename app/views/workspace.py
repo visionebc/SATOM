@@ -1845,6 +1845,10 @@ def _gx_render(appl, tpl, match, dev, dview, *, page, vi, coll, name, main, is_n
                            if isinstance(obj, dict) and obj.get(k) not in (None, '')), '')
           if row_ctx is None and name not in (None, '', '~') else '',
           'error': error or '',
+          # FortiAnalyzer: a page its GUI edits through private calls
+          'device_managed': (view or {}).get('device_managed') or '',
+          'device_href': gui_products.device_gui_url(appl, (view or {}).get('gui_href'))
+          if (view or {}).get('device_managed') else '',
           **_gx_view_flags(tpl, view)}
     return render_template('workspace/gui_dialog.html', appliance=appl, tpl=tpl, match=match,
                            dev=dev, view=dview, name=name, main=main, is_new=is_new,
@@ -1921,6 +1925,12 @@ def _gx_list(appl, page, tpl, match, dev, vi, view, tabs):
                            # a live monitor links its page on the device
                            monitor_href=gui_products.device_gui_url(appl, view.get('gui_href'))
                            if view.get('monitor') else '',
+                           # a page the device's GUI edits through its own
+                           # private calls (FortiAnalyzer django / gui-api):
+                           # drawn, never written, linked on the device
+                           device_managed=view.get('device_managed') or '',
+                           device_href=gui_products.device_gui_url(appl, view.get('gui_href'))
+                           if view.get('device_managed') else '',
                            satom=_gx_satom(appl, coll, writer))
 
 

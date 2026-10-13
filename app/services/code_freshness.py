@@ -34,6 +34,13 @@ UNITS = {
 #: far shorter than the 45 hours this check exists for.
 GRACE_S = 15 * 60
 
+#: ``/proc/stat`` gives the boot time in WHOLE seconds, so a start time read
+#: from /proc can be up to 1 s early. ``restart-all`` right after ``git pull``
+#: starts the web service within that second of the last file written, and
+#: without a margin it read "STALE, 0.0 h" after every clean deploy (seen
+#: twice on 2026-10-13) — which this alert would have mailed 15 minutes later.
+CLOCK_SLACK_S = 5.0
+
 
 def app_root() -> Path:
     """The checkout this process was imported from (``/opt/satom``)."""
@@ -103,7 +110,7 @@ def stale(*, root: Path | None = None, now: float | None = None,
     for alias, unit in UNITS.items():
         pid = pid_of(unit)
         started = start_of(pid) if pid else None
-        if started is None or started >= newest_m:
+        if started is None or started >= newest_m - CLOCK_SLACK_S:
             continue
         out.append({"alias": alias, "unit": unit,
                     "behind_h": round((newest_m - started) / 3600.0, 1),
@@ -111,4 +118,4 @@ def stale(*, root: Path | None = None, now: float | None = None,
     return out
 
 
-__all__ = ["UNITS", "GRACE_S", "newest_source", "proc_start_epoch", "main_pid", "stale"]
+__all__ = ["UNITS", "GRACE_S", "CLOCK_SLACK_S", "newest_source", "proc_start_epoch", "main_pid", "stale"]

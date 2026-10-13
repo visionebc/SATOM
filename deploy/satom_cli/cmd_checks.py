@@ -129,6 +129,9 @@ TEMPLATE_SUFFIXES = (".html", ".htm", ".txt", ".j2", ".jinja", ".jinja2", ".xml"
 # a check the operator learns to skip.
 TEMPLATE_CONSUMERS = ("web",)
 
+#: Same margin as app/services/code_freshness.CLOCK_SLACK_S (whole-second btime).
+CLOCK_SLACK_S = 5.0
+
 
 def _newest_template(ctx):
     """(path, mtime) of the newest file a Jinja loader can actually LOAD.
@@ -191,7 +194,9 @@ def code(ctx, args):
         if alias in TEMPLATE_CONSUMERS and tpl_m > watch_m:
             watch_m, kind = tpl_m, "template"
         delta_h = (watch_m - started) / 3600.0
-        if delta_h > 0:
+        # /proc/stat's btime is whole seconds: a start time can read up to 1 s
+        # early, so a restart right after the pull looked "0.0 h" stale.
+        if watch_m - started > CLOCK_SLACK_S:
             rows.append((alias, "STALE — started %.1f h before the newest %s"
                          % (delta_h, kind)))
             stale[alias] = kind

@@ -152,6 +152,11 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   Policy on 7.6.8 showed 36 REST fields outside the GUI where the policy's own
   section shows 34: <code>sub_table_id</code> and <code>sub_table_action</code> passed because only
   the editor applied the FortiWeb noise filter. The page applies it too.</li>
+<li><strong><code>satom diagnose code</code> called a freshly restarted service STALE ("0.0 h").</strong>
+  <code>/proc/stat</code> gives the boot time in whole seconds, so a start time read from
+  /proc can be up to a second early, and <code>restart-all</code> right after <code>git pull</code>
+  starts the web service within that second. Both the console check and the new
+  alert allow 5 s.</li>
 </ul>
 <h3 id="added--fortianalyzer-in-the-live-api-library-harvest">Added — FortiAnalyzer in the live API-library harvest</h3>
 <ul>

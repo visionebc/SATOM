@@ -46,6 +46,11 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   Policy on 7.6.8 showed 36 REST fields outside the GUI where the policy's own
   section shows 34: `sub_table_id` and `sub_table_action` passed because only
   the editor applied the FortiWeb noise filter. The page applies it too.
+- **`satom diagnose code` called a freshly restarted service STALE ("0.0 h").**
+  `/proc/stat` gives the boot time in whole seconds, so a start time read from
+  /proc can be up to a second early, and `restart-all` right after `git pull`
+  starts the web service within that second. Both the console check and the new
+  alert allow 5 s.
 
 ### Added — FortiAnalyzer in the live API-library harvest
 

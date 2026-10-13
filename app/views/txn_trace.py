@@ -97,8 +97,11 @@ def _resolve(mode: str, raw: str, inventory: dict, default_port: int = 443,
             and parsed["port"] not in TLS_PORTS:
         parsed["scheme"] = "http"
     try:
-        dest = net_guard.resolve_target(parsed["host"], parsed["port"], mode=mode,
-                                        inventory_hosts=list(inventory.keys()))
+        # (host, port) pairs: an inventory appliance authorises its management
+        # port, not every port on its address.
+        dest = net_guard.resolve_target(
+            parsed["host"], parsed["port"], mode=mode,
+            inventory_hosts=[(h, int(a.port or 443)) for h, a in inventory.items()])
     except net_guard.TargetError as exc:
         return None, "", "", (jsonify(ok=False, error=str(exc)), 400)
     return dest, parsed["scheme"], parsed["path"], None

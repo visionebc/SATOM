@@ -1266,10 +1266,34 @@ def create_app(config_override: object | None = None) -> Flask:
     register_error_handlers(app)
     register_selftest_routes(app)
 
-    # -- health probe (unauthenticated; used by the self-update runner) --
+    # -- health probes ---------------------------------------------------
+    # Status-only callers (the self-update runner, installers, satom CLI, an
+    # LB) need nothing but the status code, and every probe below answers
+    # without a session. The DETAIL (revision, host stats, DB summary, cert
+    # and journal contents, bundle names) is only for the peer node, which
+    # always calls through node_security.peer_get and therefore carries the
+    # X-FM-Node-Key identity header. Anyone else -- including a node with no
+    # identity key configured (verify_request() is None: there is no peer to
+    # serve) -- gets the status alone.
+    def _peer_authenticated():
+        try:
+            from flask import request as _rq
+            from .services import node_security as _nsec
+            return _nsec.verify_request(_rq.headers)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _peer_only():
+        from flask import jsonify
+        return jsonify({'ok': False, 'error': 'peer authentication required'}), 403
+
     @app.route('/healthz')
     def healthz():
         from flask import jsonify
+        peer_auth = _peer_authenticated()
+        if peer_auth is not True:
+            # preflight reads peer_authenticated from here; keep it.
+            return jsonify({'ok': True, 'peer_authenticated': peer_auth}), 200
         rev = {}
         try:
             from .services import self_update as _su
@@ -1288,13 +1312,6 @@ def create_app(config_override: object | None = None) -> Flask:
             host = _sh.host_stats()
         except Exception:
             pass
-        peer_auth = None
-        try:
-            from flask import request as _rq
-            from .services import node_security as _nsec
-            peer_auth = _nsec.verify_request(_rq.headers)
-        except Exception:
-            peer_auth = None
         return jsonify({'ok': True, 'revision': rev.get('short'),
                         'sha': rev.get('sha'), 'branch': rev.get('branch'),
                         'db': db_state, 'host': host,
@@ -1304,6 +1321,7 @@ def create_app(config_override: object | None = None) -> Flask:
     # Returns 200 ONLY when the local Postgres is the PRIMARY. A standby
     # answers 503 so the LB keeps it out of rotation; after promotion
     # (pg_is_in_recovery() -> false) it flips to 200 and the LB routes to it.
+    # The DB error text (host, user, database) is shown to the peer only.
     @app.route('/healthz/primary')
     def healthz_primary():
         from flask import jsonify
@@ -1313,19 +1331,24 @@ def create_app(config_override: object | None = None) -> Flask:
                 text('SELECT pg_is_in_recovery()')).scalar()
         except Exception as exc:
             db.session.rollback()
-            return jsonify({'ok': False, 'role': 'unknown',
-                            'error': str(exc)}), 503
+            body = {'ok': False, 'role': 'unknown'}
+            if _peer_authenticated() is True:
+                body['error'] = str(exc)
+            return jsonify(body), 503
         if in_recovery:
             return jsonify({'ok': False, 'role': 'standby'}), 503
         return jsonify({'ok': True, 'role': 'primary'}), 200
 
-    # -- off-box backup inventory probe (unauthenticated, like /healthz) ---
+    # -- off-box backup inventory probe (peer only) -----------------------
     # The PEER's System Backup page calls this to render a side-by-side
     # local-vs-backup-server comparison without any SSH between nodes.
     # Exposes only bundle names/sizes/dates + vault entry count — no content.
+    # This node's own page reads system_backup.local_inventory() directly.
     @app.route('/healthz/backups')
     def healthz_backups():
         from flask import jsonify
+        if _peer_authenticated() is not True:
+            return _peer_only()
         try:
             from .services import system_backup as _sb
             inv = _sb.local_inventory()
@@ -1339,11 +1362,12 @@ def create_app(config_override: object | None = None) -> Flask:
     # standby is fetching from it -- the standby's Postgres is read-only and
     # its data/ is overwritten by the datasync, so asking it is the only way
     # to learn its real state. Publishes reconciler.PUBLIC_FIELDS plus short
-    # shas and a redacted one-line error: nothing the peer could not already
-    # infer from /healthz (which publishes the full sha), no paths, no detail.
+    # shas and a redacted one-line error, to the authenticated peer only.
     @app.route('/healthz/reconciler')
     def healthz_reconciler():
         from flask import jsonify
+        if _peer_authenticated() is not True:
+            return _peer_only()
         try:
             from .services import reconciler as _rec
             return jsonify({'ok': True, 'reconciler': _rec.public_status()}), 200
@@ -1355,9 +1379,12 @@ def create_app(config_override: object | None = None) -> Flask:
     # any SSH between them. The journal is node-local on purpose: a standby's
     # Postgres is read-only and data/ is wiped by the rsync --delete datasync,
     # so the node that fails to renew could not otherwise record that failure.
+    # This node's own column is read locally (cert_renew_log.local_view).
     @app.route('/healthz/cert-renewals')
     def healthz_cert_renewals():
         from flask import jsonify, request as _rq
+        if _peer_authenticated() is not True:
+            return _peer_only()
         try:
             from .services import cert_renew_log as _jrn
             from .services import cert_service as _cs

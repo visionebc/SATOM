@@ -56,6 +56,12 @@ DEFAULT_TRUST_DIR = "/etc/satom/update-keys"
 PKG_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.tar\.gz$")
 VERSION_RE = re.compile(r"^[0-9]+(\.[0-9]+)*([A-Za-z0-9.+_-]*)$")
 
+# Ceiling on what one archive may unpack to (sum of the members' sizes).
+# extract_package() runs as root BEFORE the signature is checked -- it has to,
+# the signature is inside -- so an unsigned upload must not be able to fill
+# the disk with a small, highly compressible tarball.
+MAX_UNPACKED_BYTES = 2 * 1024 ** 3
+
 
 class PackageError(Exception):
     """Any refusal to trust or read a package."""
@@ -355,13 +361,54 @@ def archive_root(path) -> str:
     return roots.pop()
 
 
+def _check_unpacked_size(members, what):
+    total = sum(max(m.size, 0) for m in members if m.isfile())
+    if total > MAX_UNPACKED_BYTES:
+        raise PackageError("%s unpacks to %d bytes, over the %d-byte limit"
+                           % (what, total, MAX_UNPACKED_BYTES))
+
+
+def _refuse_links_on_disk(dest: Path, members):
+    """Refuse when any EXISTING path a member lands on (or under) is a link.
+
+    The member checks only look at the archive. Root extracting over a tree
+    another account can write would follow a symlink that account planted
+    there (``app -> /etc``) and write wherever it points. The ``data`` filter
+    catches that on Pythons that have it; this check is what the nodes on
+    3.11.2 (no filter) get, and it runs on every Python.
+    """
+    for m in members:
+        cur = dest
+        for part in Path(m.name).parts:
+            cur = cur / part
+            try:
+                info = os.lstat(cur)
+            except FileNotFoundError:
+                break
+            except OSError as exc:
+                raise PackageError("cannot inspect %s: %s" % (cur, exc))
+            if stat.S_ISLNK(info.st_mode):
+                raise PackageError("refusing to extract %s: %s on disk is a "
+                                   "symlink" % (m.name, cur))
+
+
+def _extractall(tf, dest, members):
+    if hasattr(tarfile, "data_filter"):
+        tf.extractall(dest, members=members, filter="data")
+    else:
+        tf.extractall(dest, members=members)
+
+
 def extract_package(path, dest) -> Path:
     """Extract the package tarball under ``dest``; return the package dir."""
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=True)
     root = archive_root(path)
     with tarfile.open(path, "r:gz") as tf:
-        tf.extractall(dest, members=_safe_members(tf, root))
+        members = list(_safe_members(tf, root))
+        _check_unpacked_size(members, "package")
+        _refuse_links_on_disk(dest, members)
+        _extractall(tf, dest, members)
     return dest / root
 
 
@@ -396,7 +443,9 @@ def extract_app_tree(app_tar, dest) -> list:
             members.append(m)
             if m.isfile():
                 written.append(name)
-        tf.extractall(dest, members=members)
+        _check_unpacked_size(members, "app tree")
+        _refuse_links_on_disk(dest, members)
+        _extractall(tf, dest, members)
     return written
 
 

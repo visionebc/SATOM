@@ -222,6 +222,10 @@ def carry(src_appliance, dst_appliance, collection: str, name: str, *,
     from .cert_import import spec_for
     spec = spec_for(bare(collection))
     key_field = getattr(spec, "key_field", None)
+    # The material is whatever the SOURCE box printed, so it is untrusted
+    # input to the destination's CLI. It is not re-checked here on purpose:
+    # import_into -> cert_ssh._validate_pem rebuilds every PEM from its blocks
+    # and refuses anything else, the one choke point every importer shares.
     try:
         cert_ssh.import_into(dst_appliance, bare(collection), name,
                              got["material"].get("certificate", ""),

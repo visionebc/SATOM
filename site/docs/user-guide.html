@@ -407,7 +407,12 @@ that will not come online.</p>
    account on the unit, and store that key as the appliance password.
    FortiGate likewise takes a <strong>REST API administrator token</strong> (<code>execute
    api-user generate-key &lt;api-user&gt;</code> on the FortiGate) as the password, never
-   a login password; a read-only admin profile is enough (§17.4).
+   a login password; a read-only admin profile is enough (§17.4).</p>
+<p><strong>Editing</strong> an appliance keeps its stored credentials, which nobody can
+   read back. Changing its host, port, username or platform therefore needs
+   the password entered again in the same save (and the SSH password too when
+   the device has a separate one); otherwise the save is refused. The same
+   rule applies to <code>PUT /api/appliances/&lt;id&gt;</code>.
 2. <strong>Test connection</strong> — validates REST reachability and credentials.
 3. <strong>Discovery / Rediscovery</strong> — sweeps every registry endpoint and stores the
    device's full configuration in the local cache (recorded as a harvest with
@@ -4008,9 +4013,12 @@ one reconciler cycle.</p>
   <code>systemd-logind</code> (logins of the service account stuck in <code>opening</code> for more
   than 60 s, or a <code>loginctl</code> that does not answer) and whether <code>sshd</code> answers.
   The standby's state comes from its <code>/healthz/reconciler</code> probe (the same
-  unauthenticated peer-probe pattern as <code>/healthz/backups</code>; it publishes the
-  decision, the commit counts, short shas, the time and a one-line redacted
-  error — nothing else). The lag is computed on the primary against its own
+  peer-probe pattern as <code>/healthz/backups</code>; it publishes the decision, the
+  commit counts, short shas, the time and a one-line redacted error — nothing
+  else). These probes answer only a caller that presents the inter-node
+  identity key; anyone else gets <code>403</code>, and plain <code>/healthz</code> gives them <code>ok</code>
+  and nothing more. A pair without an identity key therefore shows its peer
+  as unreachable on these pages. The lag is computed on the primary against its own
   branch head, because a standby that cannot fetch measures itself against a
   stale <code>origin</code> and would read "0 behind".</li>
 <li>Each node's reconciler status is <strong>node-local</strong> (<code>state/reconciler-status.json</code>,
@@ -4466,6 +4474,12 @@ profile sees a short menu rather than links that answer <em>access denied</em>.<
 <p>An <strong>anti-lockout guard</strong> keeps at least one active account holding both user
 management and profile management, so this page cannot be used to remove the
 last administrator.</p>
+<p><strong>Nobody can grant more than they hold.</strong> A holder of <em>Manage users</em> or
+<em>Manage profiles</em> who is not a full administrator cannot assign or create a
+profile wider than their own, cannot reset the password or clear the 2FA of an
+account that holds more than they do, cannot add a key they do not hold to a
+profile, and cannot edit the profile they are assigned to. You may move
+yourself to a narrower profile, never a wider one.</p>
 <h3 id="264-software-update-repository--where-this-node-downloads-its-own-code-from">26.4 Software Update Repository — where this node downloads its own code from</h3>
 <p>This is the product's <strong>source code</strong>, and the only one of the three
 repositories-or-destinations above that a software update is pulled from. It is
@@ -5290,6 +5304,11 @@ English in every other language.)</p>
 </ul>
 <p>Directory-backed accounts see an explicit note instead of these controls: they
 manage password and MFA at the directory.</p>
+<p>Sign-in protections that apply to every account: after the password, the 2FA
+code must be entered within <strong>5 minutes</strong>; wrong codes count toward the same
+lockout as wrong passwords (10 failures lock the account for 15 minutes) and
+are audited as <code>login.2fa_fail</code>. <em>Remember me</em> keeps a session for <strong>14 days</strong>.
+The page you are sent to after signing in must be a page of this console.</p>
 <h3 id="2614-settings-endpoints-owned-by-other-pages">26.14 Settings endpoints owned by other pages</h3>
 <p>A few settings are <em>stored</em> by this blueprint but <em>edited</em> elsewhere, so looking
 for them among the tabs is a dead end:</p>

@@ -20,7 +20,8 @@ A request is treated as background when it is
 Background requests are still checked against the timeout -- they just do not
 extend it. Page loads, Turbo visits and every POST/PUT/PATCH/DELETE do.
 
-Bearer-token API requests carry no session and are never touched.
+Bearer-token API requests (the ``api_v1`` blueprint) carry no session and are
+never touched; a Bearer header on any other route does not exempt a session.
 """
 from __future__ import annotations
 
@@ -101,7 +102,10 @@ def _wants_json() -> bool:
 def _enforce():
     if not getattr(current_user, "is_authenticated", False):
         return None
-    if (request.headers.get("Authorization") or "").lower().startswith("bearer "):
+    # Only the token-authenticated API carries no session to lock. Keying this
+    # on the mere presence of an ``Authorization: Bearer`` header let any
+    # cookie session dodge the idle lock by adding a junk header.
+    if request.blueprint == "api_v1":
         return None
     if (request.endpoint or "") in EXEMPT_ENDPOINTS:
         return None

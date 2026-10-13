@@ -174,49 +174,44 @@ def _run_decision(node, ctx) -> StepResult:
 # ---------------------------------------------------------------------------
 
 def _run_http_check(node, ctx) -> StepResult:
-    from .net_guard import MODE_FREE, TargetError, resolve_target
-    from .service_probe import probe_url
+    import time
+
+    from .net_guard import TargetError
+    from .service_probe import guarded_get
 
     p = node.get("params", {})
     url = _s(p, "url")
     if not url:
         return StepResult(UNKNOWN, "no URL configured on this step")
-    parts = urlsplit(url if "://" in url else "https://" + url)
-    host = parts.hostname or ""
-    port = parts.port or (80 if parts.scheme == "http" else 443)
+    t0 = time.time()
     try:
-        # The guard is the product's, not this module's: denied ports, loopback
-        # and cloud-metadata answers are refused in ONE place for every tool.
-        resolve_target(host, port, mode=MODE_FREE)
+        # The guard is the product's, not this module's: denied ports, loopback,
+        # this node's services and cloud-metadata answers are refused in ONE
+        # place, and the ONE request below goes to the address that was
+        # checked — the body is read from it too, not refetched by name.
+        res = guarded_get(url, timeout=float(_i(p, "timeout", 10) or 10))
     except TargetError as exc:
         # SATOM refusing to dial is a fact about SATOM, not about the service.
         return StepResult(UNKNOWN, "target refused: %s" % exc)
-    except Exception as exc:  # noqa: BLE001
-        return StepResult(UNKNOWN, "could not resolve target: %s" % exc)
-
-    res = probe_url(url, timeout=float(_i(p, "timeout", 10) or 10))
-    if not res.ok:
-        return StepResult(FAIL, "no HTTP answer: %s" % (res.error or "unreachable"),
-                          "%s\n%s" % (url, res.error))
+    except Exception as exc:  # noqa: BLE001 — any transport/TLS failure
+        err = ("%s: %s" % (type(exc).__name__, exc)).strip()[:200]
+        return StepResult(FAIL, "no HTTP answer: %s" % err, "%s\n%s" % (url, err))
+    elapsed_ms = int((time.time() - t0) * 1000)
     want = _i(p, "expect_status", 200)
     max_ms = _i(p, "max_ms", 0)
     body = _s(p, "contains")
-    bits = ["HTTP %s in %s ms" % (res.status, res.elapsed_ms)]
-    if want and res.status != want:
-        return StepResult(FAIL, "expected HTTP %d, got %s" % (want, res.status),
+    bits = ["HTTP %s in %s ms" % (res.status_code, elapsed_ms)]
+    if want and res.status_code != want:
+        return StepResult(FAIL, "expected HTTP %d, got %s" % (want, res.status_code),
                           "\n".join(bits))
-    if max_ms and (res.elapsed_ms or 0) > max_ms:
+    if max_ms and elapsed_ms > max_ms:
         return StepResult(FAIL, "answered in %s ms, budget is %d ms"
-                          % (res.elapsed_ms, max_ms), "\n".join(bits))
+                          % (elapsed_ms, max_ms), "\n".join(bits))
     if body:
-        # probe_url does not keep the body (only a length and a digest), so a
-        # content assertion is refetched here rather than guessed from the hash.
-        import httpx
         try:
-            text = httpx.get(url, verify=False, timeout=10,
-                             follow_redirects=False).text
+            text = res.text
         except Exception as exc:  # noqa: BLE001
-            return StepResult(UNKNOWN, "could not re-read the body: %s" % exc)
+            return StepResult(UNKNOWN, "could not read the body: %s" % exc)
         if body not in text:
             return StepResult(FAIL, "the answer does not contain %r" % body,
                               "\n".join(bits))
@@ -239,15 +234,23 @@ def _run_tcp_check(node, ctx) -> StepResult:
 
 
 def _run_dns_check(node, ctx) -> StepResult:
-    from .dns_tool import dig_lookup, dns_servers
+    from .dns_tool import (dig_lookup, dns_servers, parse_entry, resolve_wildcard,
+                           valid_dig_name, valid_dig_server)
     p = node.get("params", {})
     entry = _s(p, "entry")
     if not entry:
         return StepResult(UNKNOWN, "no name configured on this step")
+    # Both values reach dig's argv; one starting with '-' is an option there.
+    if not valid_dig_name(resolve_wildcard(parse_entry(entry)[0])):
+        return StepResult(UNKNOWN, "name refused: %r is not a hostname or IP "
+                                   "address" % entry)
     servers = [s for s in dns_servers() if s.get("enabled", True)]
     if not servers:
         return StepResult(UNKNOWN, "no DNS server is configured in Settings")
     srv = _s(p, "server") or servers[0]["server"]
+    if not valid_dig_server(srv):
+        return StepResult(UNKNOWN, "server refused: %r is not a hostname or IP "
+                                   "address" % srv)
     answers = dig_lookup(entry, srv)
     text = ", ".join(answers)
     if answers in ([], ["No result"], ["timeout"]):

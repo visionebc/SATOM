@@ -54,7 +54,9 @@ TOKEN_PREFIX = "fmk"  # Fortinet-Manager-Key
 # ALLOW-LISTS with a permissive empty default so existing tokens keep working:
 #
 #   * capabilities == []  -> no action-type restriction (any non-danger action
-#                            the scope + product already allow).
+#                            the scope + product already allow) -- except an
+#                            action with no capability tag, which needs an
+#                            owner holding ``user_manage``.
 #   * capabilities != []  -> the action's capability tag MUST be in the list.
 #   * app_ids == []       -> no location restriction.
 #   * app_ids != []       -> the action must target a server policy bound to one
@@ -115,7 +117,8 @@ CAPABILITY_PRODUCTS = {
 
 # Every runnable catalog action → the capability tag it belongs to. An action
 # missing here has tag None, so a capability-restricted token can never run it
-# (fail-closed) while an unrestricted token still can.
+# (fail-closed), and an unrestricted token only when its owner holds
+# ``user_manage`` (see ``authorize_capability``).
 ACTION_CAPABILITY = {
     # user-scope object mutations (the AppID-scopable ones)
     "backend_set_status": "backend_edit",
@@ -245,11 +248,21 @@ class ApiToken(db.Model):
     def authorize_capability(self, action_key: str) -> tuple[bool, str, str]:
         """Gate an action by the token's capability allow-list (the "what").
 
-        Returns ``(ok, error_code, message)``. Empty capability list = allow.
+        Returns ``(ok, error_code, message)``. Empty capability list = allow
+        any MAPPED action. An action with no capability tag (git bundles,
+        certificate-manager, feed publishing, NetBox reconcile, ...) is not
+        covered by any grant, so the empty-list default does not reach it: it
+        runs only for a token whose owner holds ``user_manage``.
         An AppID-scoped token additionally may run ONLY AppID-scopable actions.
         """
         tag = ACTION_CAPABILITY.get(action_key)
         caps = self.capability_list
+        if tag is None and not caps:
+            owner = self.owner
+            if owner is None or not owner.can("user_manage"):
+                return (False, "capability_denied",
+                        f"'{action_key}' has no API capability; only a token "
+                        "owned by a user administrator can run it.")
         if caps and tag not in caps:
             return (False, "capability_denied",
                     f"This token is not allowed to run '{action_key}' "

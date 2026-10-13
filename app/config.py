@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import secrets
+from datetime import timedelta
 from pathlib import Path
 
 
@@ -55,6 +56,13 @@ class Config:
     SESSION_COOKIE_SECURE: bool = True
     SESSION_COOKIE_HTTPONLY: bool = True
     SESSION_COOKIE_SAMESITE: str = "Lax"
+    # The login form's "remember me" sets Flask-Login's own cookie, which does
+    # NOT inherit SESSION_COOKIE_*: left alone it is sent over plain HTTP, has
+    # no SameSite and lives 365 days. Keep it as strict as the session cookie.
+    REMEMBER_COOKIE_SECURE: bool = True
+    REMEMBER_COOKIE_HTTPONLY: bool = True
+    REMEMBER_COOKIE_SAMESITE: str = "Lax"
+    REMEMBER_COOKIE_DURATION: timedelta = timedelta(days=14)
     FERNET_KEY: str = _ensure_fernet_key()
     WTF_CSRF_TIME_LIMIT: int = 3600
     # Flask-Limiter 3.x reads RATELIMIT_STORAGE_URI (the old *_URL key is
@@ -82,6 +90,7 @@ class DevelopmentConfig(Config):
         "sqlite:////tmp/fmw/data/dev.db",
     )
     SESSION_COOKIE_SECURE: bool = False
+    REMEMBER_COOKIE_SECURE: bool = False
 
 
 class ProductionConfig(Config):

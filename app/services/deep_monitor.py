@@ -776,7 +776,7 @@ def _split_url(url: str) -> tuple[str, str, int]:
 #: second connection to the same host:port, so after one of these it can only
 #: time out again — it used to add 6 s to every dead VIP (16 s per probe, 12 min
 #: per sweep against a 3-minute schedule on 2026-10-13).
-_NEVER_CONNECTED = ("ConnectTimeout", "ConnectError")
+_NEVER_CONNECTED = ("ConnectTimeout", "ConnectError", "target refused:")
 
 #: Concurrent HTTPS probes per sweep. Only the network half runs in the pool.
 HTTPS_WORKERS = 16

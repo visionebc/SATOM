@@ -14,12 +14,19 @@ rewrites to — against sample requests BEFORE it lands in a rule, instead of
 authoring blind.
 
 Guards: pattern/sample/replacement sizes are capped and the sample count
-limited, so a hostile/costly pattern can't be used to stall a worker (Python
-``re`` has no timeout; the caps keep the worst case tiny).
+limited. The caps do NOT bound backtracking -- ``(a+)+$`` against thirty
+characters runs for minutes -- and Python ``re`` has no timeout, so every
+evaluation runs in a short-lived child interpreter that is killed after
+:data:`EVAL_TIMEOUT` seconds (see :func:`_run_isolated`). A gunicorn sync worker
+therefore never spends more than that on one request.
 """
 from __future__ import annotations
 
+import inspect
+import json
 import re
+import subprocess
+import sys
 
 MAX_PATTERN = 2048
 MAX_SAMPLES = 100
@@ -390,6 +397,85 @@ def _render_rewrite_core(pattern: str, replacement: str, samples: list[str],
             "total": len(results)}
 
 
+# ---------------------------------------------------------------------------
+# Out-of-process evaluation with a hard wall-clock limit
+# ---------------------------------------------------------------------------
+# Python ``re`` cannot be interrupted: it holds the GIL inside one C call, so
+# neither a thread nor a signal-based alarm in THIS process can stop it, and a
+# catastrophic pattern would pin a gunicorn sync worker (there are four) for as
+# long as it backtracks -- any signed-in user could take the console down with
+# four requests. The evaluation is instead run by a fresh ``python -I -S``
+# child fed the very same core functions (their source, so there is one
+# implementation), and the child is killed when the budget runs out.
+# A subprocess rather than multiprocessing/fork: forking a worker that runs
+# job threads is unsafe, and spawn would import the whole app per request.
+
+#: Wall-clock seconds one evaluation may take (child start-up included).
+EVAL_TIMEOUT = 2.0
+
+TIMEOUT_ERROR = (
+    "Pattern evaluation timed out after %g s -- the pattern backtracks "
+    "catastrophically on these samples (nested quantifiers such as (a+)+ are "
+    "the usual cause). The appliance's PCRE engine would also struggle with it.")
+
+_CHILD_MAIN = """
+try:
+    import resource
+    resource.setrlimit(resource.RLIMIT_CPU, (10, 10))  # backstop to the kill
+except Exception:
+    pass
+_req = json.loads(sys.stdin.read())
+_fn = {"test": _test_pattern_core, "rewrite": _render_rewrite_core}[_req["op"]]
+sys.stdout.write(json.dumps(_fn(*_req["args"])))
+"""
+
+_child_src_cache: list[str] = []
+
+
+def _child_source() -> str:
+    if not _child_src_cache:
+        _child_src_cache.append("\n".join([
+            "import json, re, sys",
+            "MAX_PATTERN = %d" % MAX_PATTERN,
+            "MAX_SAMPLES = %d" % MAX_SAMPLES,
+            "MAX_SAMPLE_LEN = %d" % MAX_SAMPLE_LEN,
+            "MAX_REPLACEMENT = %d" % MAX_REPLACEMENT,
+            inspect.getsource(_to_python_repl),
+            inspect.getsource(_test_pattern_core),
+            inspect.getsource(_render_rewrite_core),
+            _CHILD_MAIN,
+        ]))
+    return _child_src_cache[0]
+
+
+def _run_isolated(op: str, args: list) -> dict:
+    """Run ``_test_pattern_core`` / ``_render_rewrite_core`` in a child
+    interpreter killed after :data:`EVAL_TIMEOUT` seconds."""
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-I", "-S", "-c", _child_source()],
+            input=json.dumps({"op": op, "args": args}),
+            capture_output=True, text=True, timeout=EVAL_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": TIMEOUT_ERROR % EVAL_TIMEOUT,
+                "results": [], "timed_out": True}
+    except OSError as exc:
+        return {"ok": False, "error": "pattern evaluation unavailable: %s" % exc,
+                "results": []}
+    try:
+        if proc.returncode != 0:
+            raise ValueError(proc.returncode)
+        return json.loads(proc.stdout)
+    except ValueError:
+        return {"ok": False, "results": [],
+                "error": "pattern evaluation failed (the evaluator exited %s)"
+                         % proc.returncode}
+
+
+def _samples_arg(samples) -> list[str]:
+    return [str(raw)[:MAX_SAMPLE_LEN] for raw in (samples or [])[:MAX_SAMPLES]]
+
+
 __all__ = ["test_pattern", "render_rewrite", "examples_for", "guide_notes",
            "cheatsheet", "PRODUCTS"]
 
@@ -535,13 +621,16 @@ def test_pattern(pattern, samples, case_insensitive=False):
     path by construction - including the invalid-pattern path, which is exactly
     where a PCRE-only construct is the explanation for the error.
     """
-    res = _test_pattern_core(pattern, samples, case_insensitive)
+    res = _run_isolated("test", [(pattern or "")[:MAX_PATTERN],
+                                 _samples_arg(samples), bool(case_insensitive)])
     res.update(engine_report(pattern))
     return res
 
 
 def render_rewrite(pattern, replacement, samples, case_insensitive=False):
     """Public wrapper: rewrite preview PLUS the engine that produced it."""
-    res = _render_rewrite_core(pattern, replacement, samples, case_insensitive)
+    res = _run_isolated("rewrite", [(pattern or "")[:MAX_PATTERN],
+                                    (replacement or "")[:MAX_REPLACEMENT],
+                                    _samples_arg(samples), bool(case_insensitive)])
     res.update(engine_report(pattern))
     return res

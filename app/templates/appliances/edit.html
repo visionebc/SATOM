@@ -25,7 +25,8 @@
     <div class="col-md-8"><label class="form-label">{{ _('Host') }}</label><input type="text" name="host" class="form-control" value="{{ appliance.host }}" required></div>
     <div class="col-md-4"><label class="form-label">{{ _('Port') }}</label><input type="number" name="port" class="form-control" value="{{ appliance.port }}"></div>
     <div class="col-md-6"><label class="form-label">{{ _('Username') }}</label><input type="text" name="username" class="form-control" value="{{ appliance.username }}" required></div>
-    <div class="col-md-6"><label class="form-label">{{ _('New Password (leave blank to keep)') }}</label><input type="password" name="password" class="form-control"></div>
+    <div class="col-md-6"><label class="form-label">{{ _('New Password (leave blank to keep)') }}</label><input type="password" name="password" class="form-control">
+      <div class="form-text">Changing the host, port or username requires re-entering the password.</div></div>
     <div class="col-md-6"><label class="form-label">{{ _('SSH password, if different from the API credential') }}</label><input type="password" name="ssh_password" class="form-control" autocomplete="new-password" placeholder="{{ _('set — leave blank to keep') if appliance.has_ssh_password else _('not set — SSH uses the password above') }}"></div>
     <div class="col-md-6 d-flex align-items-end">{% if appliance.has_ssh_password %}<div class="form-check"><input type="checkbox" name="ssh_password_clear" class="form-check-input" id="ssh_password_clear">
       <label class="form-check-label" for="ssh_password_clear">{{ _('Remove the separate SSH password') }}</label></div>{% else %}<small class="text-muted">{{ _('FortiAuthenticator: its REST takes an API key that SSH refuses — set the admin password here for CLI reads and writes.') }}</small>{% endif %}</div>

@@ -35,6 +35,23 @@ legitimate diagnostic. "Block private ranges" is the standard SSRF advice and it
 would block this product's actual job; the inventory/free split plus the
 metadata denial is what carries the weight instead.
 
+Two limits on that, in EVERY mode:
+
+* **The node's own unauthenticated services.** The metrics store
+  (VictoriaMetrics, no auth, admin endpoints that delete series), the database
+  and the bare application server listen on loopback precisely because nothing
+  but this process may talk to them. :data:`NODE_INTERNAL_PORTS` on a loopback
+  address, and the configured metrics-store endpoint wherever it lives (the
+  container stack runs it as a sibling service), are never dialled.
+* **Probes that run unattended or for read-only users** (monitor probes, the
+  network-architecture live view, process HTTP checks) pass
+  ``allow_loopback=False``: a probe of the node itself has no diagnostic value
+  there and every request it can make is one an operator never sees.
+
+Inventory mode matches ``(host, port)`` pairs when the caller supplies them: a
+managed appliance's address is an authorisation to reach ITS management port,
+not every port on that machine.
+
 **The name is resolved ONCE here and the caller connects to the RESOLVED
 ADDRESS**, carrying the hostname separately as SNI/Host. A guard that resolves a
 name, approves it, and hands the NAME back is checking a different request from
@@ -71,6 +88,12 @@ METADATA_ADDRS = (
 #: "probe" of them is either a protocol-confusion attack against an internal
 #: service or a mistake that produces a meaningless error.
 DENIED_PORTS = (0, 22, 25, 465, 587, 6379, 11211)
+
+#: Ports this node serves on loopback for itself only: PostgreSQL, the
+#: application server behind nginx, and the unauthenticated metrics store
+#: (``deploy/satom.service``, ``deploy/satom-metrics.service``). Refused on any
+#: loopback address in every mode.
+NODE_INTERNAL_PORTS = (5432, 8000, 8428)
 
 _MAX_PORT = 65535
 
@@ -194,6 +217,66 @@ def port_denial_reason(port: int) -> str:
     return ""
 
 
+def _metrics_store_endpoints() -> set[tuple[str, int]]:
+    """``(address, port)`` of the configured metrics store, resolved.
+
+    On a host install this is ``127.0.0.1:8428`` and the loopback rule already
+    covers it; in the container stack it is a sibling service on the bridge
+    network, which the loopback rule cannot see. Best effort: a store that
+    cannot be named or resolved here cannot be reached through it either.
+    """
+    out: set[tuple[str, int]] = set()
+    try:
+        from . import vm_store
+        parts = urlsplit(vm_store.base_url())
+        host = (parts.hostname or "").rstrip(".").lower()
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+    except Exception:  # noqa: BLE001 — no store configured, nothing to protect
+        return out
+    if not host:
+        return out
+    out.add((host, port))
+    try:
+        ipaddress.ip_address(host)
+        return out
+    except ValueError:
+        pass
+    try:
+        for *_rest, sa in socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP):
+            out.add((str(sa[0]).lower(), port))
+    except (OSError, UnicodeError):
+        pass
+    return out
+
+
+def node_denial_reason(ip: str, port: int, *, allow_loopback: bool = True) -> str:
+    """Why this ADDRESS and PORT reach this node's own services, or ``''``.
+
+    Applies in every mode. ``allow_loopback=False`` refuses loopback outright
+    (probe-type callers); otherwise only :data:`NODE_INTERNAL_PORTS` on
+    loopback and the configured metrics-store endpoint are refused.
+    """
+    try:
+        addr = ipaddress.ip_address(str(ip))
+        p = int(port)
+    except (TypeError, ValueError):
+        return "not an IP address"
+    mapped = getattr(addr, "ipv4_mapped", None)
+    if mapped is not None:
+        addr = mapped
+    if addr.is_loopback:
+        if not allow_loopback:
+            return ("loopback address — this probe never dials the SATOM node "
+                    "itself")
+        if p in NODE_INTERNAL_PORTS:
+            return ("port %d on loopback is one of this node's internal "
+                    "services — SATOM never dials it on an operator's behalf" % p)
+    if (str(addr).lower(), p) in _metrics_store_endpoints():
+        return ("this node's metrics store — it has no authentication of its "
+                "own, so SATOM never dials it on an operator's behalf")
+    return ""
+
+
 # --------------------------------------------------------------------------- #
 #  Resolution (the binding step)                                               #
 # --------------------------------------------------------------------------- #
@@ -212,12 +295,35 @@ def _lookup(host: str, port: int) -> list[tuple[int, str]]:
     return out
 
 
+def _inventory_allows(host: str, port: int, inventory_hosts) -> bool:
+    """``inventory_hosts`` holds bare hosts (any port) and/or ``(host, port)``
+    pairs (that port only)."""
+    key = host.lower()
+    for entry in inventory_hosts or ():
+        if isinstance(entry, (tuple, list)):
+            if len(entry) != 2 or not entry[0]:
+                continue
+            try:
+                pair = (str(entry[0]).strip().lower().rstrip("."), int(entry[1]))
+            except (TypeError, ValueError):
+                continue
+            if pair == (key, port):
+                return True
+        elif entry and str(entry).strip().lower().rstrip(".") == key:
+            return True
+    return False
+
+
 def resolve_target(host: str, port: int, *, mode: str = MODE_INVENTORY,
-                   inventory_hosts=()) -> dict:
+                   inventory_hosts=(), allow_loopback: bool = True) -> dict:
     """Resolve and authorise one destination.
 
     Returns ``{host, port, ip, family, mode, addresses}``. ``ip`` is what the
     caller MUST connect to; ``host`` is what it must send as SNI / ``Host``.
+
+    ``inventory_hosts`` entries are bare hosts or ``(host, port)`` pairs; a
+    pair authorises that port only. ``allow_loopback=False`` refuses every
+    loopback answer (see :func:`node_denial_reason`).
 
     Raises :class:`TargetError` — the caller turns it into a 400 with the text
     verbatim, because "why did SATOM refuse this" is a question the operator
@@ -228,19 +334,22 @@ def resolve_target(host: str, port: int, *, mode: str = MODE_INVENTORY,
     host = str(host or "").strip().rstrip(".")
     if not host:
         raise TargetError("empty host")
+    try:
+        port = int(port)
+    except (TypeError, ValueError):
+        raise TargetError("port is not a number") from None
 
-    if mode == MODE_INVENTORY:
-        allowed = {str(h).strip().lower().rstrip(".") for h in inventory_hosts if h}
-        if host.lower() not in allowed:
-            raise TargetError(
-                "%s is not in the inventory for this request. Switch the tool to "
-                "free-target mode to dial a host SATOM does not manage." % host)
+    if mode == MODE_INVENTORY and not _inventory_allows(host, port, inventory_hosts):
+        raise TargetError(
+            "%s:%d is not in the inventory for this request. Switch the tool to "
+            "free-target mode to dial a host or port SATOM does not manage."
+            % (host, port))
 
     perr = port_denial_reason(port)
     if perr:
         raise TargetError(perr)
 
-    addresses = _lookup(host, int(port))
+    addresses = _lookup(host, port)
     if not addresses:
         raise TargetError("cannot resolve %s" % host)
 
@@ -248,17 +357,19 @@ def resolve_target(host: str, port: int, *, mode: str = MODE_INVENTORY,
     # resolves to a metadata address and a real one is a rebinding attempt, and
     # taking the first acceptable answer is exactly the bug the attempt targets.
     for _fam, ip in addresses:
-        why = denial_reason(ip)
+        why = denial_reason(ip) or node_denial_reason(
+            ip, port, allow_loopback=allow_loopback)
         if why:
             raise TargetError("%s resolves to %s — %s" % (host, ip, why))
 
     fam, ip = addresses[0]
-    return {"host": host, "port": int(port), "ip": ip, "family": fam,
+    return {"host": host, "port": port, "ip": ip, "family": fam,
             "mode": mode, "addresses": [a for _f, a in addresses]}
 
 
 __all__ = [
     "MODE_INVENTORY", "MODE_FREE", "MODES", "FREE_PERMISSION",
-    "METADATA_ADDRS", "DENIED_PORTS", "TargetError",
-    "parse_target", "denial_reason", "port_denial_reason", "resolve_target",
+    "METADATA_ADDRS", "DENIED_PORTS", "NODE_INTERNAL_PORTS", "TargetError",
+    "parse_target", "denial_reason", "port_denial_reason", "node_denial_reason",
+    "resolve_target",
 ]

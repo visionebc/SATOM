@@ -26,12 +26,12 @@ directory, so the view layer owns the data-dir resolution.
 from __future__ import annotations
 
 import glob
-import gzip
 import io
 import json
 import os
 import re
 import zipfile
+import zlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -44,6 +44,12 @@ CONFIG_TEXT_NAME = "_config.txt"
 
 # Stamped on every snapshot this module produces.
 SOURCE_IMPORT = "backup-import"
+
+# Ceiling on DECOMPRESSED bytes. The upload itself is capped by
+# MAX_CONTENT_LENGTH, but a few hundred KB of gzip/zip can inflate to many GB
+# and take the gunicorn worker down with it. A FortiWeb CLI backup is a few MB
+# of text; 64 MiB leaves an order of magnitude of headroom.
+MAX_DECOMPRESSED_BYTES = 64 * 1024 * 1024
 
 # A readable FortiWeb CLI config carries one of these markers; used to tell a
 # real config apart from an encrypted/binary blob we cannot read offline.
@@ -69,7 +75,43 @@ def _has_config_markers(text: str) -> bool:
     return bool(_CONFIG_MARKER.search(text))
 
 
-def parse_backup_bytes(data: bytes) -> tuple[str, str]:
+def _gunzip_capped(data: bytes, limit: int | None = None) -> bytes:
+    """``gzip.decompress`` that refuses to inflate past ``limit`` bytes
+    (default :data:`MAX_DECOMPRESSED_BYTES`). Handles concatenated gzip
+    members like the stdlib does."""
+    limit = MAX_DECOMPRESSED_BYTES if limit is None else limit
+    out = bytearray()
+    rest = data
+    while rest:
+        d = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        try:
+            out += d.decompress(rest, limit + 1 - len(out))
+        except zlib.error as exc:
+            raise ValueError(f"could not gunzip the file: {exc}") from exc
+        if len(out) > limit or d.unconsumed_tail:
+            raise ValueError(
+                "the decompressed file is larger than %d MiB -- refusing it."
+                % (limit // (1024 * 1024)))
+        if not d.eof:
+            raise ValueError("could not gunzip the file: truncated gzip stream")
+        rest = d.unused_data.lstrip(b"\x00")
+    return bytes(out)
+
+
+def _zip_member_capped(zf: zipfile.ZipFile, info: zipfile.ZipInfo,
+                       limit: int | None = None) -> bytes | None:
+    """A zip member's bytes, or None when it is (or inflates to) more than
+    ``limit`` bytes. ``file_size`` comes from the archive and can lie, so the
+    read itself is capped too."""
+    limit = MAX_DECOMPRESSED_BYTES if limit is None else limit
+    if info.file_size > limit:
+        return None
+    with zf.open(info) as fh:
+        member = fh.read(limit + 1)
+    return None if len(member) > limit else member
+
+
+def parse_backup_bytes(data: bytes, _depth: int = 0) -> tuple[str, str]:
     """Extract readable FortiWeb CLI config text from a backup file's bytes.
 
     Returns ``(config_text, note)`` where ``note`` records how it was read.
@@ -80,12 +122,13 @@ def parse_backup_bytes(data: bytes) -> tuple[str, str]:
         raise ValueError("the file is empty.")
 
     # gzip -> decompress then re-dispatch (handles .gz and gzip'd configs).
+    # One level only: a gzip inside a gzip is not a FortiWeb backup, and
+    # unbounded recursion multiplies the inflation ratio.
     if data[:2] == b"\x1f\x8b":
-        try:
-            inner = gzip.decompress(data)
-        except OSError as exc:
-            raise ValueError(f"could not gunzip the file: {exc}") from exc
-        text, note = parse_backup_bytes(inner)
+        if _depth >= 1:
+            raise ValueError("nested compression is not supported.")
+        inner = _gunzip_capped(data)
+        text, note = parse_backup_bytes(inner, _depth + 1)
         return text, f"gunzipped -> {note}"
 
     # zip -> pick the largest member that looks like a FortiWeb config.
@@ -95,13 +138,21 @@ def parse_backup_bytes(data: bytes) -> tuple[str, str]:
         except zipfile.BadZipFile as exc:
             raise ValueError(f"not a readable zip: {exc}") from exc
         best: tuple[int, str, str] | None = None  # (size, member, text)
+        # Total inflated across ALL members, so thousands of members each just
+        # under the per-member cap cannot burn the worker's CPU either.
+        inflated = 0
         for info in zf.infolist():
             if info.is_dir():
                 continue
+            if inflated >= 2 * MAX_DECOMPRESSED_BYTES:
+                break
             try:
-                member = zf.read(info.filename)
+                member = _zip_member_capped(zf, info)
             except Exception:  # noqa: BLE001 - a bad member never sinks the rest
                 continue
+            if member is None:
+                continue
+            inflated += len(member)
             text = _decode(member)
             if _has_config_markers(text) and (best is None or len(text) > best[0]):
                 best = (len(text), info.filename, text)
@@ -356,8 +407,11 @@ def build_snapshot(
 #  Persist / read / list (file IO into an explicit root directory)            #
 # --------------------------------------------------------------------------- #
 def _slug(s: Any) -> str:
-    """Filesystem-safe token for a device name."""
-    return "".join(c if c.isalnum() or c in "-_." else "_" for c in str(s)) or "x"
+    """Filesystem-safe token for a device name. Leading/trailing dots are
+    stripped, so the result can never be ``.`` or ``..`` (a device named
+    ``..`` used to write ``_config.json`` one directory above ``root``)."""
+    out = "".join(c if c.isalnum() or c in "-_." else "_" for c in str(s))
+    return out.strip(".") or "x"
 
 
 def _device_dir(root: str, device: str) -> str:

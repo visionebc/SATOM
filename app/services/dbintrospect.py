@@ -255,20 +255,141 @@ SENSITIVE_TABLES = frozenset({
     "provision_runs",      # first-boot administrator passwords
 })
 
-_SQL_STRING = _re.compile(r"'(?:[^']|'')*'")
 _SQL_IDENT = _re.compile(r'"((?:[^"]|"")+)"|([A-Za-z_][A-Za-z0-9_$]*)')
+_DOLLAR_TAG = _re.compile(r"\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$")
+
+
+def _is_ident_char(c: str) -> bool:
+    return c.isalnum() or c in "_$"
+
+
+def _blank_literals(sql: str) -> str:
+    """``sql`` with string literals replaced by ``''`` and comments by a space,
+    tokenised the way Postgres does it.
+
+    A single ``'...'`` regex is not enough: it does not know ``E'\\''`` (a
+    backslash-escaped quote), ``$$...$$`` or that a quote inside a comment is
+    not a quote, so it can be made to "blank" real SQL and hide a table name.
+    Anything unterminated is left as-is, which can only over-detect.
+    """
+    out = []
+    i, n = 0, len(sql)
+    while i < n:
+        c = sql[i]
+        if sql.startswith("--", i):
+            j = sql.find("\n", i)
+            i = n if j < 0 else j
+            out.append(" ")
+            continue
+        if sql.startswith("/*", i):            # Postgres block comments nest
+            depth, j = 1, i + 2
+            while j < n and depth:
+                if sql.startswith("/*", j):
+                    depth, j = depth + 1, j + 2
+                elif sql.startswith("*/", j):
+                    depth, j = depth - 1, j + 2
+                else:
+                    j += 1
+            if depth:
+                out.append(sql[i:])
+                break
+            out.append(" ")
+            i = j
+            continue
+        if c == "'":
+            escapes = (i > 0 and sql[i - 1] in "eE"
+                       and (i < 2 or not _is_ident_char(sql[i - 2])))
+            j = i + 1
+            while j < n:
+                if escapes and sql[j] == "\\":
+                    j += 2
+                    continue
+                if sql[j] == "'":
+                    if j + 1 < n and sql[j + 1] == "'":
+                        j += 2
+                        continue
+                    break
+                j += 1
+            if j >= n:
+                out.append(sql[i:])
+                break
+            out.append("''")
+            i = j + 1
+            continue
+        if c == "$" and (i == 0 or not _is_ident_char(sql[i - 1])):
+            m = _DOLLAR_TAG.match(sql, i)
+            if m:
+                end = sql.find(m.group(0), m.end())
+                if end < 0:
+                    out.append(sql[i:])
+                    break
+                out.append("''")
+                i = end + len(m.group(0))
+                continue
+        if c == '"':                           # identifiers are KEPT
+            j = i + 1
+            while j < n:
+                if sql[j] == '"':
+                    if j + 1 < n and sql[j + 1] == '"':
+                        j += 2
+                        continue
+                    break
+                j += 1
+            out.append(sql[i:j + 1])
+            i = j + 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
 
 
 def sensitive_tables_referenced(sql) -> list[str]:
     """Sensitive tables named anywhere in ``sql`` (quoted or bare, any case,
-    schema-qualified or not). String literals are ignored."""
-    text_ = _SQL_STRING.sub("''", sql or "")
+    schema-qualified or not). String literals and comments are ignored."""
+    text_ = _blank_literals(sql or "")
     hits = []
     for m in _SQL_IDENT.finditer(text_):
         name = (m.group(1).replace('""', '"') if m.group(1) is not None
                 else m.group(2)).lower()
         if name in SENSITIVE_TABLES and name not in hits:
             hits.append(name)
+    return hits
+
+
+#: Server functions the console refuses outright. The SENSITIVE_TABLES check
+#: reads identifiers, and these functions take their target as a STRING
+#: (``query_to_xml('select ... from users', ...)``, ``table_to_xml('users',
+#: ...)``, ``ts_stat('select ...')``, ``dblink(...)``) or act outside the
+#: rolled-back READ ONLY transaction: kill other sessions, read server files,
+#: large objects, change settings that outlive the transaction on a pooled
+#: connection. Matched on the RAW statement (string contents included), any
+#: case, bare or as a quoted identifier, so no literal-parsing trick hides them.
+#:
+#: This is a denylist and therefore never complete. The structural fix is to run
+#: the console under a dedicated Postgres role with SELECT on the non-credential
+#: tables only and no EXECUTE on admin functions; until then this stays.
+_DANGEROUS_FUNCS = _re.compile(
+    r'(?<![A-Za-z0-9_$])('
+    r'query_to_xml(?:_and_xmlschema)?|query_to_xmlschema|'
+    r'table_to_xml\w*|cursor_to_xml\w*|database_to_xml\w*|schema_to_xml\w*|'
+    r'ts_stat|ts_rewrite|'
+    r'pg_terminate_backend|pg_cancel_backend|pg_reload_conf|set_config|'
+    r'pg_read_file|pg_read_binary_file|pg_stat_file|pg_ls_\w+|'
+    r'lo_\w+|loread|lowrite|dblink\w*'
+    r')(?![A-Za-z0-9_$])', _re.IGNORECASE)
+#: ``U&"\0075sers"`` spells an identifier with escapes no name check can see.
+_UNICODE_IDENT = _re.compile(r'(?<![A-Za-z0-9_$])u&"', _re.IGNORECASE)
+
+
+def dangerous_functions_referenced(sql) -> list[str]:
+    """Refused server functions named anywhere in ``sql`` (see above)."""
+    hits = []
+    for m in _DANGEROUS_FUNCS.finditer(sql or ""):
+        name = m.group(1).lower()
+        if name not in hits:
+            hits.append(name)
+    if _UNICODE_IDENT.search(sql or ""):
+        hits.append('U&"..." identifier')
     return hits
 
 
@@ -290,6 +411,17 @@ def run_query(sql, max_rows=_CONSOLE_MAX):
                 "error": "refused: the query references a credential table (%s); "
                          "those tables are not readable from the database tools"
                          % ", ".join(hits)}
+    funcs = dangerous_functions_referenced(sql)
+    if funcs:
+        try:
+            from .audit import log_action
+            log_action("database.query_refused", target=",".join(funcs)[:128],
+                       extra={"reason": "refused function", "sql": (sql or "")[:300]})
+        except Exception:  # noqa: BLE001 - audit is best-effort
+            pass
+        return {"columns": [], "rows": [], "truncated": False,
+                "error": "refused: the query calls %s, which the database tools "
+                         "do not allow" % ", ".join(funcs)}
     q = (sql or "").strip().rstrip(";").strip()
     try:
         with db.engine.connect() as conn:

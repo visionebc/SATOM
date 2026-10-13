@@ -154,6 +154,23 @@ def update_appliance(id):
     appliance = visible_appliance_or_404(id)
     data = request.get_json(force=True) or {}
 
+    # Same rule as the edit form (views.appliances.edit_save): the stored
+    # credentials follow the row, so retargeting it is only accepted together
+    # with the password it would otherwise carry to the new endpoint. This API
+    # cannot set the SSH password, so a row holding one is retargeted in the UI.
+    def _changed(key, current):
+        return key in data and str(data[key]).strip() != str(current or '').strip()
+    host_or_user = _changed('host', appliance.host) or _changed('username', appliance.username)
+    retarget = (host_or_user or _changed('port', appliance.port)
+                or ('kind' in data and str(data['kind']).strip().lower()
+                    != (appliance.kind or '').lower()))
+    if retarget and not data.get('password'):
+        return jsonify({'error': 'changing host, port, username or kind '
+                                 'requires the password'}), 400
+    if host_or_user and appliance.has_ssh_password:
+        return jsonify({'error': 'this appliance has a separate SSH password; '
+                                 'change its host or username in the UI'}), 400
+
     if 'name' in data:
         appliance.name = data['name'].strip()
     if 'kind' in data:

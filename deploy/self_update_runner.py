@@ -18,8 +18,11 @@ import glob
 import json
 import os
 import re
+import secrets
 import socket
+import stat
 import subprocess
+import sys
 import time
 import tempfile
 import urllib.request
@@ -33,6 +36,144 @@ VENV = APP / "venv" / "bin"
 SERVICE = "satom.service"
 SCHED = "satom-scheduler.service"
 RECONCILER = "satom-reconciler.service"
+
+# [SATOM-RUNNER-INPUT] The queue is written by the service account, so every
+# request value that reaches a file name or a git command line is re-checked
+# here, as root. UID_RE is a COPY of app/services/self_update.py's UID_RE
+# ([SATOM-UID-SAFE]) -- copied, not imported: [SATOM-RUNNER-NO-APP-IMPORT].
+UID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$")
+_SHA_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
+# A file name the runner itself writes (never a path).
+_FILE_NAME_RE = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9._-]{0,200}$")
+
+
+def _valid_ref(value):
+    return (isinstance(value, str) and bool(_REF_RE.fullmatch(value))
+            and ".." not in value)
+
+
+def _valid_target(value):
+    return isinstance(value, str) and (bool(_SHA_RE.fullmatch(value))
+                                       or _valid_ref(value))
+
+
+def _log(msg):
+    """One line to the journal (stderr of satom-updater.service)."""
+    print("satom-updater: %s" % msg, file=sys.stderr, flush=True)
+
+
+def _read_request(req_path):
+    """The request JSON, read without following a link planted in the queue."""
+    fd = os.open(str(req_path), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "r", encoding="utf-8") as fh:
+        if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+            raise ValueError("%s is not a regular file" % req_path)
+        return json.loads(fh.read())
+
+
+def _open_dir_nofollow(dirpath):
+    """O_DIRECTORY fd of ``dirpath``, never through a symlink below APP.
+
+    Everything under APP belongs to the service account, so each component
+    below APP is opened relative to its parent with O_NOFOLLOW (created when
+    missing): a planted ``data/update-status -> /etc`` -- or ``data -> /`` --
+    makes this fail instead of steering a root write. APP itself is trusted
+    (its parent is root-owned). A directory outside APP (only in tests) gets
+    the O_NOFOLLOW check on its last component.
+    """
+    dirpath = Path(dirpath)
+    try:
+        rel = dirpath.relative_to(APP)
+        fd = os.open(str(APP), os.O_RDONLY | os.O_DIRECTORY)
+    except ValueError:
+        dirpath.parent.mkdir(parents=True, exist_ok=True)
+        rel = Path(dirpath.name)
+        fd = os.open(str(dirpath.parent), os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in rel.parts:
+            if part in (".", ".."):
+                raise ValueError("refusing a '%s' path component" % part)
+            flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            try:
+                nfd = os.open(part, flags, dir_fd=fd)
+            except FileNotFoundError:
+                os.mkdir(part, 0o755, dir_fd=fd)
+                nfd = os.open(part, flags, dir_fd=fd)
+            os.close(fd)
+            fd = nfd
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _write_nofollow(dirpath, name, text):
+    """[SATOM-RUNNER-NOFOLLOW] Write ``dirpath/name`` as root, safely.
+
+    Every file the runner writes sits in a directory the service account
+    owns. A plain ``write_text`` follows whatever that account left at the
+    name (``x.json -> /etc/profile.d/zz.sh``) -- a root write of content the
+    request influences. Instead: the directory is reached without links, the
+    content goes to a fresh O_EXCL|O_NOFOLLOW temp file, and an atomic rename
+    replaces the NAME (a link at the name is replaced, never followed; a hard
+    link's other names are untouched). The file is handed to the service
+    account, as the in-place write used to leave it.
+    """
+    if not isinstance(name, str) or not _FILE_NAME_RE.fullmatch(name):
+        raise ValueError("refusing to write a file named %r" % (name,))
+    dfd = _open_dir_nofollow(dirpath)
+    tmp = ".%s.%s.tmp" % (name, secrets.token_hex(6))
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o644, dir_fd=dfd)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                os.fchmod(fh.fileno(), 0o644)
+                ids = _app_ids()
+                if ids:
+                    os.fchown(fh.fileno(), ids[0], ids[1])
+                fh.write(text)
+            os.replace(tmp, name, src_dir_fd=dfd, dst_dir_fd=dfd)
+        except BaseException:
+            try:
+                os.unlink(tmp, dir_fd=dfd)
+            except OSError:
+                pass
+            raise
+    finally:
+        os.close(dfd)
+
+
+def _app_ids():
+    """(uid, gid) of the service account when running as root, else None."""
+    if not APP_USER or APP_USER == "root" or os.geteuid() != 0:
+        return None
+    try:
+        import pwd
+        pw = pwd.getpwnam(APP_USER)
+        return pw.pw_uid, pw.pw_gid
+    except KeyError:
+        return None
+
+
+def _link_below(base, rel):
+    """True when ``base/rel`` cannot be used as root: an absolute or ``..``
+    path, or an existing component (below ``base``) that is a symlink."""
+    rel = Path(rel)
+    if rel.is_absolute() or ".." in rel.parts:
+        return True
+    cur = Path(base)
+    for part in rel.parts:
+        cur = cur / part
+        try:
+            if stat.S_ISLNK(os.lstat(cur).st_mode):
+                return True
+        except FileNotFoundError:
+            return False
+        except OSError:
+            return True
+    return False
 
 
 def restart_reconciler():
@@ -525,7 +666,12 @@ def preserve_local_commits(target, snapshot, st):
 
 class Status:
     def __init__(self, uid, req):
-        self.p = STA / (uid + ".json")
+        # The id becomes a file name root writes. Refusing here (ValueError,
+        # main() drops the request) covers every handler, present and future.
+        if not isinstance(uid, str) or not UID_RE.fullmatch(uid):
+            raise ValueError("refusing request id %r" % (uid,))
+        self.name = uid + ".json"
+        self.p = STA / self.name
         self.d = {
             "id": uid, "state": "running", "steps": [],
             "target": req.get("target"), "branch": req.get("branch"),
@@ -564,12 +710,11 @@ class Status:
         self.flush()
 
     def flush(self):
-        STA.mkdir(parents=True, exist_ok=True)
-        self.p.write_text(json.dumps(self.d, indent=2))
+        _write_nofollow(STA, self.name, json.dumps(self.d, indent=2))
 
 
 def process(req_path):
-    req = json.loads(Path(req_path).read_text())
+    req = _read_request(req_path)
     uid = req["id"]
     st = Status(uid, req)
     # Dequeue immediately so the .path unit does not re-trigger us in a loop.
@@ -577,6 +722,15 @@ def process(req_path):
         os.remove(req_path)
     except OSError:
         pass
+
+    # Both reach git as arguments: a leading '-' is an option, '..' a range.
+    branch = req.get("branch", "main")
+    target = req.get("target") or ("origin/%s" % branch)
+    if not _valid_ref(branch) or not _valid_target(target):
+        bad = "refusing branch %r / target %r" % (branch, target)
+        st.step("validate request", False, bad)
+        st.finish("failed", error=bad)
+        return
 
     snapshot = git("rev-parse", "HEAD").stdout.strip()
     st.step("snapshot current commit", True, snapshot[:12])
@@ -598,14 +752,11 @@ def process(req_path):
         st.step("preflight (before)", pok, pdetail)
 
     try:
-        branch = req.get("branch", "main")
         st.begin("git fetch origin %s" % branch)
         f = git("fetch", "origin", branch)
         st.step("git fetch origin %s" % branch, f.returncode == 0, f.stderr)
         if f.returncode != 0:
             raise RuntimeError("git fetch failed")
-
-        target = req.get("target") or ("origin/%s" % branch)
 
         # ── SAFETY GUARD before the reset ────────────────────────────────
         # `reset --hard <target>` rewrites this checkout to the remote tip.
@@ -803,9 +954,9 @@ def _record_lib_version(pkg, previous, current, action, by):
     """Persist the per-node rollback point for pkg so the card can offer a
     'Rollback to <previous>' button. One file per package under
     data/lib-versions/ (per-node, because the venv is per-node)."""
-    d = APP / "data" / "lib-versions"
-    d.mkdir(parents=True, exist_ok=True)
-    (d / (pkg + ".json")).write_text(json.dumps({
+    if not isinstance(pkg, str) or not _PKG_RE.fullmatch(pkg):
+        raise ValueError("refusing package name %r" % (pkg,))
+    _write_nofollow(APP / "data" / "lib-versions", pkg + ".json", json.dumps({
         "package": pkg, "previous": previous, "current": current,
         "action": action, "by": by, "at": now()}, indent=2))
 
@@ -815,9 +966,18 @@ def _bump_requirements(pkg, version):
     update's `pip install -r` does not silently revert this change). Matches
     the package line case-insensitively on the distribution name. Returns
     (changed, detail)."""
-    req = APP / "requirements.txt"
+    if not (isinstance(pkg, str) and _PKG_RE.fullmatch(pkg)
+            and isinstance(version, str) and _VER_RE.fullmatch(version)):
+        return False, "refusing %r==%r" % (pkg, version)
     try:
-        lines = req.read_text().splitlines()
+        # O_NOFOLLOW: a requirements.txt -> /etc/shadow link must not be read
+        # by root and written back as a file the service account owns.
+        fd = os.open(str(APP / "requirements.txt"),
+                     os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "r", encoding="utf-8") as fh:
+            if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+                raise ValueError("not a regular file")
+            lines = fh.read().splitlines()
     except Exception as e:
         return False, "read failed: %s" % e
     name_re = re.compile(r"^\s*%s\s*([<>=!~].*)?$" % re.escape(pkg), re.IGNORECASE)
@@ -830,7 +990,10 @@ def _bump_requirements(pkg, version):
             out.append(ln)
     if not hit:
         out.append("%s==%s" % (pkg, version))
-    req.write_text("\n".join(out) + "\n")
+    try:
+        _write_nofollow(APP, "requirements.txt", "\n".join(out) + "\n")
+    except (OSError, ValueError) as e:
+        return False, "write failed: %s" % e
     return True, ("updated pin" if hit else "added pin")
 
 
@@ -858,7 +1021,7 @@ def pip_change(req_path):
     version for a one-click rollback, auto-reverts on a failed health/import
     check, and (on the primary) bumps requirements.txt so the change survives
     the next code update."""
-    req = json.loads(Path(req_path).read_text())
+    req = _read_request(req_path)
     uid = req.get("id") or Path(req_path).stem
     st = Status(uid, req)
     try:
@@ -1068,12 +1231,20 @@ def _chown_tree():
         return True, "running un-deprivileged; nothing to hand back"
     r = subprocess.run(["chown", "-R", "%s:%s" % (APP_USER, APP_USER), str(APP)],
                        capture_output=True, text=True, timeout=300)
-    env = APP / ".env"
-    if env.exists():
-        subprocess.run(["chown", "root:%s" % APP_USER, str(env)],
-                       capture_output=True, text=True, timeout=30)
-        subprocess.run(["chmod", "640", str(env)],
-                       capture_output=True, text=True, timeout=30)
+    # Through an O_NOFOLLOW fd, not `chown`/`chmod` on the path: those follow
+    # a .env -> /etc/shadow link and would make the target group-readable by
+    # the service account.
+    try:
+        import grp
+        fd = os.open(str(APP / ".env"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            if stat.S_ISREG(os.fstat(fd).st_mode):
+                os.fchown(fd, 0, grp.getgrnam(APP_USER).gr_gid)
+                os.fchmod(fd, 0o640)
+        finally:
+            os.close(fd)
+    except (OSError, KeyError):
+        pass
     return r.returncode == 0, (r.stderr or "tree owned by %s" % APP_USER)[:200]
 
 
@@ -1105,7 +1276,7 @@ def package_change(req_path):
     version rules let a valid-but-wrong package through. Each stage only makes
     sense once the previous one passed.
     """
-    req = json.loads(Path(req_path).read_text())
+    req = _read_request(req_path)
     uid = req.get("id") or Path(req_path).stem
     st = Status(uid, req)
     try:
@@ -1257,6 +1428,10 @@ def package_change(req_path):
         # considered, so data/, pki/ and .env cannot be caught by this.
         stale = sorted(tracked_now - set(written))
         for rel in stale:
+            # The tracked list comes from a .git the service account owns:
+            # never unlink through a planted directory link.
+            if _link_below(APP, Path(rel).parent):
+                continue
             try:
                 (APP / rel).unlink()
             except OSError:
@@ -1362,6 +1537,8 @@ def package_change(req_path):
             stray = _new_untracked(untracked_before)
             for rel in stray:
                 target = APP / rel
+                if _link_below(APP, Path(rel).parent):
+                    continue
                 try:
                     if target.is_file() or target.is_symlink():
                         target.unlink()
@@ -1395,11 +1572,30 @@ def package_change(req_path):
             _sh.rmtree(stage, ignore_errors=True)
 
 
+PROMOTE_SCRIPT = Path("/usr/local/sbin/satom-promote.sh")
+
+
+def _root_owned_script_problem(path):
+    """Why root must not execute ``path``, or None (same rule as the runner's
+    own copy: a regular file, root-owned, not group/world-writable, all the
+    way up the parent chain)."""
+    try:
+        if not stat.S_ISREG(os.lstat(path).st_mode):
+            return "%s is not a regular file" % path
+    except OSError as exc:
+        return "%s is not installed (%s)" % (path, exc.strerror or exc)
+    try:
+        return _load_update_package().root_owned_problem(path)
+    except Exception as exc:  # noqa: BLE001
+        return "cannot check %s: %s" % (path, exc)
+
+
 def promote(req_path):
     """Guarded failover handler (root): promote this node's Postgres standby and
-    bring the app up via deploy/satom-promote.sh. Enqueued by the web UI after a
-    typed-hostname confirmation; never auto-invoked."""
-    req = json.loads(Path(req_path).read_text())
+    bring the app up via the root-owned /usr/local/sbin/satom-promote.sh.
+    Enqueued by the web UI after a typed-hostname confirmation; never
+    auto-invoked."""
+    req = _read_request(req_path)
     uid = req.get("id") or Path(req_path).stem
     st = Status(uid, req)
     try:
@@ -1411,7 +1607,19 @@ def promote(req_path):
                 "local Postgres is NOT a standby (already primary?) — refusing")
         st.finish("failed", error="not a standby")
         return
-    script = APP / "deploy" / "satom-promote.sh"
+    # The ROOT-OWNED copy install-runner.sh installs ([SATOM-SBIN-ROOT-COPY]),
+    # never deploy/satom-promote.sh: the service account can rewrite that one,
+    # and this runs it as root. No fallback to the tree copy.
+    script = PROMOTE_SCRIPT
+    problem = _root_owned_script_problem(script)
+    if problem:
+        st.step("promote script", False,
+                "%s -- refusing to run the copy in the app tree; install the "
+                "root-owned one with 'bash %s/deploy/install-runner.sh' as root"
+                % (problem, APP))
+        st.finish("failed", error="root-owned %s is not usable: %s"
+                  % (script, problem))
+        return
     st.step("promote standby -> primary", True,
             "running satom-promote.sh (pg promote + start app)")
     try:
@@ -1549,7 +1757,7 @@ def service_action(req_path):
     up', and a service that exits three seconds later would otherwise be
     reported as a success.
     """
-    req = json.loads(Path(req_path).read_text())
+    req = _read_request(req_path)
     uid = req.get("id") or Path(req_path).stem
     st = Status(uid, req)
     try:
@@ -1684,7 +1892,7 @@ _PG_CIPHER_RE = re.compile(r"^[A-Za-z0-9:+!_,@=\- ]{1,255}$")
 
 def pg_ssl_apply(req_path):
     """Apply ssl_min_protocol_version / ssl_ciphers on the local Postgres."""
-    req = json.loads(Path(req_path).read_text())
+    req = _read_request(req_path)
     uid = req.get("id") or Path(req_path).stem
     st = Status(uid, req)
     try:
@@ -1728,27 +1936,58 @@ def pg_ssl_apply(req_path):
             pass
 
 
+def _reject(rp, req, reason):
+    """Dequeue a request the runner will not act on, and say why: in the
+    journal always, in its status file when its id is one we can write."""
+    _log("rejected request %s: %s" % (os.path.basename(rp), reason))
+    try:
+        os.remove(rp)
+    except OSError:
+        pass
+    uid = req.get("id") if isinstance(req, dict) else None
+    if isinstance(uid, str) and UID_RE.fullmatch(uid):
+        try:
+            st = Status(uid, req)
+            st.step("validate request", False, reason)
+            st.finish("failed", error=reason)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+# Every kind this runner executes. A request without a kind is a code update
+# (app/services/self_update.request_update() writes none); any OTHER kind is
+# refused -- it used to fall through to the git reset + root scripts path.
+_HANDLERS = {
+    "": "process",
+    "promote": "promote",
+    "pip": "pip_change",
+    "package": "package_change",
+    "service": "service_action",
+    "pg_ssl": "pg_ssl_apply",
+}
+
+
 def main():
     for rp in sorted(glob.glob(str(REQ / "*.json"))):
         try:
-            kind = ""
             try:
-                kind = (json.loads(Path(rp).read_text()) or {}).get("kind", "")
-            except Exception:
+                req = _read_request(rp)
+            except Exception as exc:  # noqa: BLE001
+                _reject(rp, None, "unreadable request: %s" % exc)
+                continue
+            if not isinstance(req, dict):
+                _reject(rp, None, "a request must be a JSON object")
+                continue
+            kind = req.get("kind")
+            if kind is None:
                 kind = ""
-            if kind == "promote":
-                promote(rp)
-            elif kind == "pip":
-                pip_change(rp)
-            elif kind == "package":
-                package_change(rp)
-            elif kind == "service":
-                service_action(rp)
-            elif kind == "pg_ssl":
-                pg_ssl_apply(rp)
-            else:
-                process(rp)
-        except Exception:
+            handler = _HANDLERS.get(kind) if isinstance(kind, str) else None
+            if handler is None:
+                _reject(rp, req, "unknown request kind %r" % (kind,))
+                continue
+            globals()[handler](rp)
+        except Exception as exc:  # noqa: BLE001
+            _log("dropped request %s: %s" % (os.path.basename(rp), exc))
             try:
                 os.remove(rp)  # never crash-loop on a malformed request
             except OSError:

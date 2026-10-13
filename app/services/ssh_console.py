@@ -101,27 +101,49 @@ class ConsoleViolation(Exception):
 #
 # Quoted spans are removed first so ``set comment "never run execute
 # factoryreset"`` is a comment and not a refusal.
+#
+# THE CLI ACCEPTS UNIQUE ABBREVIATIONS, so the words are matched as prefixes:
+# ``exe factoryres`` IS ``execute factoryreset``. The verb matches from two
+# letters (``ex``); a subcommand from ``_MIN_ABBREV`` letters, or whole when
+# its name is shorter (``ha``). A prefix that is ambiguous on the box is
+# refused by the box, so over-matching one costs nothing.
+_MIN_ABBREV = 4
+
+
+def _abbrev(word: str, least: int = _MIN_ABBREV) -> str:
+    """Regex for ``word`` or any prefix of it at least ``least`` long."""
+    least = min(least, len(word))
+    rest = ""
+    for ch in reversed(word[least:]):
+        rest = "(?:%s%s)?" % (re.escape(ch), rest)
+    return re.escape(word[:least]) + rest
+
+
+_EXEC = r"\b%s\s+" % _abbrev("execute", 2)
+
 _FORBIDDEN: tuple[tuple[re.Pattern, str], ...] = (
-    (re.compile(r"\bexecute\s+factoryreset", re.I),
+    (re.compile(_EXEC + r"(?:factoryreset|%s\b)" % _abbrev("factoryreset"), re.I),
      "factory reset — erases the entire configuration and every certificate on the appliance"),
-    (re.compile(r"\bexecute\s+formatlogdisk", re.I),
+    (re.compile(_EXEC + r"(?:formatlogdisk|%s\b)" % _abbrev("formatlogdisk"), re.I),
      "formats the log disk — destroys the local log history this console exists to collect"),
-    (re.compile(r"\bexecute\s+erase-disk", re.I),
+    (re.compile(_EXEC + r"(?:erase-disk|%s\b)" % _abbrev("erase-disk"), re.I),
      "erases a disk"),
-    (re.compile(r"\bexecute\s+(usb-disk\s+|disk\s+)?format\b", re.I),
+    (re.compile(_EXEC + r"(?:%s\s+|%s\s+)?%s\b"
+                % (_abbrev("usb-disk"), _abbrev("disk"), _abbrev("format")), re.I),
      "formats storage"),
 )
 
 _DISRUPTIVE: tuple[tuple[re.Pattern, str], ...] = (
-    (re.compile(r"\bexecute\s+reboot\b", re.I),
+    (re.compile(_EXEC + r"%s\b" % _abbrev("reboot"), re.I),
      "reboots the appliance — every policy it serves goes down until it comes back"),
-    (re.compile(r"\bexecute\s+shutdown\b", re.I),
+    (re.compile(_EXEC + r"%s\b" % _abbrev("shutdown"), re.I),
      "powers the appliance off — SATOM has no way to power it back on"),
-    (re.compile(r"\bexecute\s+restore\b", re.I),
+    (re.compile(_EXEC + r"%s\b" % _abbrev("restore"), re.I),
      "replaces the running configuration or firmware image"),
-    (re.compile(r"\bexecute\s+ha\b", re.I),
+    (re.compile(_EXEC + r"%s\b" % _abbrev("ha"), re.I),
      "changes HA state — this can force a failover"),
-    (re.compile(r"\bexecute\s+(backup|migrate)\s+.*\b(tftp|ftp)\b", re.I),
+    (re.compile(_EXEC + r"(?:%s|%s)\s+.*\b(tftp|ftp)\b"
+                % (_abbrev("backup"), _abbrev("migrate")), re.I),
      "sends configuration off the appliance in the clear"),
     (re.compile(r"\bset\s+(password|passwd)\b", re.I),
      "changes a stored password — if this is the admin SATOM uses, SATOM loses "
@@ -129,6 +151,7 @@ _DISRUPTIVE: tuple[tuple[re.Pattern, str], ...] = (
 )
 
 _QUOTED = re.compile(r"""(["'])(?:\\.|(?!\1).)*\1""")
+_CONTROL_CHARS = ssh_ops._CONTROL_CHARS
 
 
 def _unquoted(line: str) -> str:
@@ -156,6 +179,12 @@ def parse_script(text: str) -> list[str]:
 
 def classify_command(command: str) -> tuple[str, str]:
     """``(tier, reason)`` for one command line. ``reason`` is "" when safe."""
+    # Before the strip, so a trailing tab (a completion) is not trimmed away
+    # unseen. Backspace / Ctrl-U / Ctrl-W rewrite the line AFTER it was
+    # classified, so the shell would run a different command than this one.
+    if _CONTROL_CHARS.search(command or ""):
+        return TIER_FORBIDDEN, ("a control character — the shell reads it as a "
+                                "line-editing key, so what runs is not what was checked")
     line = (command or "").strip()
     if not line:
         return TIER_FORBIDDEN, "empty command"

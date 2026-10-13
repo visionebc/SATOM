@@ -13,7 +13,9 @@ Sign-in resolution (see ``services.auth_store`` / ``directory_auth``):
 3. Local accounts with **TOTP** enabled get a second-factor challenge before the
    session is established (directory accounts do MFA at the directory).
 """
+import time
 from datetime import datetime, timedelta
+from urllib.parse import urlsplit
 
 from flask import (render_template, redirect, url_for, flash, request, session,
                    current_app)
@@ -33,6 +35,14 @@ from ..services import auth_store, twofa, email_service
 LOCKOUT_THRESHOLD = 10
 LOCKOUT_WINDOW = timedelta(minutes=15)
 
+#: How long a password-verified sign-in may wait at the 2FA challenge. Without
+#: a bound, the half-authenticated session cookie could be replayed to keep
+#: guessing codes indefinitely.
+PENDING_2FA_TTL = 300  # seconds
+
+_PENDING_2FA_KEYS = ('pending_2fa_user', 'pending_2fa_remember',
+                     'pending_2fa_next', 'pending_2fa_at')
+
 
 # ---------------------------------------------------------------------------
 # Sign-in
@@ -43,6 +53,36 @@ def _commit_quiet():
         db.session.commit()
     except Exception:  # noqa: BLE001 — replica is read-only; login still proceeds
         db.session.rollback()
+
+
+def _record_failure(user: User, username: str, now: datetime) -> bool:
+    """Count one failed credential (password OR second factor) against the
+    per-account lockout. Returns True when this failure locked the account."""
+    locked = False
+    user.failed_logins = (user.failed_logins or 0) + 1
+    if user.failed_logins >= LOCKOUT_THRESHOLD:
+        user.locked_until = now + LOCKOUT_WINDOW
+        user.failed_logins = 0
+        locked = True
+        current_app.logger.warning(
+            'SECURITY: account LOCKED user=%s ip=%s (%d failures)',
+            username, real_client_ip(), LOCKOUT_THRESHOLD)
+        log_action('login.lockout', target=username)
+    _commit_quiet()
+    return locked
+
+
+def _clear_failures(user: User):
+    """A completed sign-in clears any accumulated failure state."""
+    if user.failed_logins or user.locked_until:
+        user.failed_logins = 0
+        user.locked_until = None
+        _commit_quiet()
+
+
+def _clear_pending_2fa():
+    for key in _PENDING_2FA_KEYS:
+        session.pop(key, None)
 
 
 def _post_login(user: User, remember: bool):
@@ -70,12 +110,37 @@ def _inactive_message(user) -> str:
     return 'This account is disabled.'
 
 
+def _is_safe_next(nxt) -> bool:
+    """True only for a same-site, path-only redirect target.
+
+    ``startswith('/')`` alone is not enough: ``?next=/%09/evil.com`` decodes to
+    slash, TAB, ``/evil.com`` and passes it, and the tab is stripped when the
+    Location header is built (browsers strip it too), leaving the
+    protocol-relative ``//evil.com``. Backslashes are normalised to
+    slashes by browsers for the same effect. So any control character or
+    backslash is refused outright, and what remains must parse with no scheme
+    and no host and a path that starts with exactly one slash.
+    """
+    if not nxt or not isinstance(nxt, str):
+        return False
+    if any(c == '\\' or ord(c) < 0x20 or ord(c) == 0x7f for c in nxt):
+        return False
+    try:
+        parts = urlsplit(nxt)
+    except ValueError:
+        return False
+    if parts.scheme or parts.netloc:
+        return False
+    if not parts.path.startswith('/') or parts.path.startswith('//'):
+        return False
+    denied = {url_for(ep).rstrip('/') for ep in _NEXT_DENY_ENDPOINTS}
+    return parts.path.rstrip('/') not in denied
+
+
 def _safe_next() -> str:
     nxt = request.args.get('next') or request.form.get('next')
-    if nxt and nxt.startswith('/') and not nxt.startswith('//'):
-        denied = {url_for(ep) for ep in _NEXT_DENY_ENDPOINTS}
-        if nxt.split('?', 1)[0].rstrip('/') not in {d.rstrip('/') for d in denied}:
-            return nxt
+    if _is_safe_next(nxt):
+        return nxt
     return url_for('index')
 
 
@@ -141,15 +206,7 @@ def login():
 
         if not authed:
             if user is not None:
-                user.failed_logins = (user.failed_logins or 0) + 1
-                if user.failed_logins >= LOCKOUT_THRESHOLD:
-                    user.locked_until = now + LOCKOUT_WINDOW
-                    user.failed_logins = 0
-                    current_app.logger.warning(
-                        'SECURITY: account LOCKED user=%s ip=%s (%d failures)',
-                        username, real_client_ip(), LOCKOUT_THRESHOLD)
-                    log_action('login.lockout', target=username)
-                _commit_quiet()
+                _record_failure(user, username, now)
             if not failure_logged:
                 # Every failed sign-in leaves a row, not only the one that
                 # trips the lockout: nine guesses against an account (or a
@@ -159,19 +216,19 @@ def login():
             flash('Invalid username or password.', 'danger')
             return render_template('auth/login.html')
 
-        # Success clears any accumulated failure state.
-        if user.failed_logins or user.locked_until:
-            user.failed_logins = 0
-            user.locked_until = None
-            _commit_quiet()
-
-        # 3) Second factor for local accounts that enabled it.
+        # 3) Second factor for local accounts that enabled it. The failure
+        # counter is NOT cleared here: wrong codes count toward the same
+        # lockout, and a correct password must not reset that count, or each
+        # re-login would buy another nine code guesses.
         if user.is_local and user.totp_enabled:
             session['pending_2fa_user'] = user.id
             session['pending_2fa_remember'] = remember
             session['pending_2fa_next'] = _safe_next()
+            session['pending_2fa_at'] = int(time.time())
             return redirect(url_for('auth.two_factor'))
 
+        # Success clears any accumulated failure state.
+        _clear_failures(user)
         _post_login(user, remember)
         return redirect(_safe_next())
 
@@ -184,9 +241,22 @@ def two_factor():
     uid = session.get('pending_2fa_user')
     if not uid:
         return redirect(url_for('auth.login'))
+    started = session.get('pending_2fa_at')
+    if (not isinstance(started, (int, float))
+            or not 0 <= time.time() - started <= PENDING_2FA_TTL):
+        _clear_pending_2fa()
+        flash('The sign-in attempt expired. Please sign in again.', 'warning')
+        return redirect(url_for('auth.login'))
     user = db.session.get(User, uid)
     if user is None or not user.is_active or not user.totp_enabled:
-        session.pop('pending_2fa_user', None)
+        _clear_pending_2fa()
+        return redirect(url_for('auth.login'))
+    now = datetime.utcnow()
+    if user.locked_until and user.locked_until > now:
+        _clear_pending_2fa()
+        log_action('login.locked_attempt', target=user.username)
+        flash('Too many failed attempts — account temporarily locked. '
+              'Try again later.', 'danger')
         return redirect(url_for('auth.login'))
 
     if request.method == 'POST':
@@ -203,9 +273,10 @@ def two_factor():
                 ok = True
                 used_backup = True
         if ok:
-            remember = bool(session.pop('pending_2fa_remember', False))
-            nxt = session.pop('pending_2fa_next', None)
-            session.pop('pending_2fa_user', None)
+            remember = bool(session.get('pending_2fa_remember', False))
+            nxt = session.get('pending_2fa_next')
+            _clear_pending_2fa()
+            _clear_failures(user)
             _post_login(user, remember)
             log_action('login.2fa', target=user.username,
                        extra={'method': 'backup_code' if used_backup else 'totp'})
@@ -213,7 +284,13 @@ def two_factor():
                 flash('Backup code accepted. '
                       f'{twofa.remaining_backup_codes(user.backup_codes)} backup code(s) left.',
                       'warning')
-            return redirect(nxt or url_for('index'))
+            return redirect(nxt if _is_safe_next(nxt) else url_for('index'))
+        log_action('login.2fa_fail', target=user.username)
+        if _record_failure(user, user.username, now):
+            _clear_pending_2fa()
+            flash('Too many failed attempts — account temporarily locked. '
+                  'Try again later.', 'danger')
+            return redirect(url_for('auth.login'))
         flash('Invalid authentication code.', 'danger')
         return redirect(url_for('auth.two_factor'))
 

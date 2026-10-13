@@ -485,18 +485,28 @@ def probe_http(url: str, header: str = "", timeout: float = 4.0) -> dict:
 
     TLS is not verified: a lab or internal back-end with a private certificate
     is the normal case and the question is "does it answer", not "is its
-    certificate public". Redirects are not followed — a 302 is an answer."""
+    certificate public". Redirects are not followed — a 302 is an answer.
+
+    The URL is operator-set and the request fires for anyone who opens the
+    live view, so it goes through :func:`service_probe.guarded_get`: refused by
+    :mod:`net_guard` (loopback, metadata, this node's services) and pinned to
+    the address that was checked."""
     import httpx
+
+    from .net_guard import TargetError
+    from .service_probe import guarded_get
 
     t0 = time.monotonic()
     try:
-        with httpx.Client(verify=False, timeout=timeout, follow_redirects=False) as c:
-            r = c.get(url)
+        r = guarded_get(url, timeout=timeout)
         out = {"ok": r.status_code < 500, "status": r.status_code,
                "ms": int((time.monotonic() - t0) * 1000)}
         if header:
             out["header"] = {header: r.headers.get(header, "")}
         return out
+    except TargetError as exc:
+        return {"ok": False, "status": None, "ms": int((time.monotonic() - t0) * 1000),
+                "error": "target refused: %s" % str(exc)[:200]}
     except httpx.HTTPError as exc:
         return {"ok": False, "status": None, "ms": int((time.monotonic() - t0) * 1000),
                 "error": "%s: %s" % (type(exc).__name__, str(exc)[:200])}

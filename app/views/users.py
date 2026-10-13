@@ -43,6 +43,13 @@ def _assign_profile(user: User, profile: Profile) -> None:
     user.role = profile.role_label
 
 
+def _exceeds_actor(granted: set[str]) -> bool:
+    """True when ``granted`` (an effective permission set) holds anything the
+    signed-in user does not. ``users.manage`` alone must never hand out more
+    than its holder has — otherwise it is full admin one assignment away."""
+    return not set(granted) <= current_user.effective_permissions
+
+
 def _is_last_admin(user: User) -> bool:
     """True when ``user`` is the only currently-enabled admin-capable user."""
     return (
@@ -121,6 +128,12 @@ def create():
             return redirect(url_for('users.index'))
         profile = _system_profile(perm.role_to_profile_name(role))
 
+    granted = (profile.effective if profile is not None else
+               perm.expand(perm.SYSTEM_PROFILES.get(perm.role_to_profile_name(role), set())))
+    if _exceeds_actor(granted):
+        flash('Refused: you cannot grant permissions you do not hold yourself.', 'danger')
+        return redirect(url_for('users.index'))
+
     user = User(username=username)
     if profile is not None:
         _assign_profile(user, profile)
@@ -148,6 +161,12 @@ def set_profile(id):
     profile = db.session.get(Profile, int(profile_id))
     if profile is None:
         flash('Selected profile no longer exists.', 'danger')
+        return redirect(url_for('users.index'))
+    # This also covers re-profiling oneself: only to a profile no wider than
+    # the one already held (a self-downgrade stays possible, see anti-lockout).
+    if _exceeds_actor(profile.effective):
+        flash('Refused: you cannot assign a profile with permissions you do '
+              'not hold yourself.', 'danger')
         return redirect(url_for('users.index'))
 
     old = user.profile.name if user.profile else user.role
@@ -185,6 +204,10 @@ def delete(id):
 def reset_password(id):
     User = _get_user_model()
     user = User.query.get_or_404(id)
+    if _exceeds_actor(user.effective_permissions):
+        flash(f'Refused: {user.username} holds permissions you do not; you '
+              'cannot reset their password.', 'danger')
+        return redirect(url_for('users.index'))
     if not user.is_local:
         flash(f'{user.username} signs in through the directory; its password '
               'is changed there, not in SATOM.', 'danger')
@@ -211,6 +234,10 @@ def clear_2fa(id):
     their password (e.g. lost authenticator). Local accounts only."""
     User = _get_user_model()
     user = User.query.get_or_404(id)
+    if _exceeds_actor(user.effective_permissions):
+        flash(f'Refused: {user.username} holds permissions you do not; you '
+              'cannot clear their two-factor authentication.', 'danger')
+        return redirect(url_for('users.index'))
     user.totp_enabled = False
     user.totp_secret = None
     user.backup_codes = None

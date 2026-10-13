@@ -250,7 +250,7 @@ def _scheme_model(product: str) -> dict:
     for e in _catalog(product):
         entries.append(entry(e.key, e.label, e.section, table_of.get(e.key), e.default,
                              e.derives, e.note, curated=True))
-    curated_tables = set(table_of)
+    curated_tables = set(mapping)        # the TABLE names (table_of is keyed by element)
     rest = []
     for table, meta in types.items():
         if table in curated_tables:

@@ -93,6 +93,22 @@ class ReadOnlyViolation(Exception):
     """A command that is not a pure read was rejected before being sent."""
 
 
+# Control characters are line EDITING keys to the interactive shell the command
+# is typed into: backspace, Ctrl-U/W erase what was validated, Ctrl-A/E move the
+# cursor, tab completes. ``show`` + eight backspaces + ``config system admin``
+# validates as a ``show`` and runs as a write. Newline is not here: each line is
+# validated on its own by the gates that accept more than one.
+_CONTROL_CHARS = re.compile(r"[\x00-\x09\x0b-\x1f\x7f]")
+
+
+def _refuse_control(cmd: str) -> None:
+    m = _CONTROL_CHARS.search(cmd)
+    if m:
+        raise ReadOnlyViolation(
+            "control character %r in the command — refused (the shell would "
+            "read it as a line-editing key)" % m.group(0))
+
+
 def _data_dir() -> Path:
     """``/opt/satom/data`` — beside the app package (parents[2]).
 
@@ -141,9 +157,12 @@ def assert_readonly(command: str) -> str:
 
     Validates EACH non-empty line (so a pasted ``get x\\nset y`` can't sneak a
     write past a read first line). The first token of each line must be one of
-    ``get`` / ``show`` / ``diagnose`` / ``diag``.
+    ``get`` / ``show`` / ``diagnose`` / ``diag``. A CRLF line ending is read as
+    a newline; any other control character is refused.
     """
-    cmd = (command or "").strip()
+    cmd = (command or "").replace("\r\n", "\n")
+    _refuse_control(cmd)
+    cmd = cmd.strip()
     if not cmd:
         raise ReadOnlyViolation("empty command")
     for line in cmd.splitlines():
@@ -173,6 +192,7 @@ def assert_probe_command(command: str) -> str:
     question with a whole-command match, so it cannot be widened by accident the
     way a verb allowlist can.
     """
+    _refuse_control(command or "")
     cmd = (command or "").strip()
     if "\n" in cmd or not _PROBE_COMMAND_RE.match(cmd) or ".." in cmd:
         raise ReadOnlyViolation(
@@ -187,6 +207,7 @@ def assert_schema_command(command: str) -> str:
     A separate gate, like :func:`assert_probe_command`: whole-command match,
     no arguments, no second line, no chaining.
     """
+    _refuse_control(command or "")
     cmd = (command or "").strip()
     if "\n" in cmd or "\r" in cmd or cmd not in _SCHEMA_COMMANDS:
         raise ReadOnlyViolation(

@@ -36,6 +36,12 @@ DIG_TIMEOUT = 6  # subprocess hard kill; dig itself gets +time/+tries below
 # Characters allowed in a lookup entry (hostname / IP / wildcard / "name TYPE").
 _ENTRY_CLEAN_RE = re.compile(r"[^A-Za-z0-9 .:*_\-/]")
 _IP_RE = re.compile(r"^[0-9a-fA-F.:]+$")
+# What may reach dig's argv as a query name or a server. dig reads ANY argument
+# starting with '-' as an option (``-f FILE`` makes it read a local file as a
+# query batch), so the first character is never '-' — nor '+', dig's other
+# option prefix.
+_DIG_NAME_RE = re.compile(r"^[A-Za-z0-9_*][A-Za-z0-9_.*\-]{0,252}$")
+_DIG_SERVER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.\-]{0,127}$")
 
 # App ID convention: the policy/VS *comment* carries "AppID: <token>" (also
 # accepted: app-id=..., app_id ..., or a bracketed [APP-123] tag) — the same
@@ -152,12 +158,29 @@ def _is_ip(value: str) -> bool:
 
 # ---------------------------------------------------------------- dig
 
+def valid_dig_name(value: str) -> bool:
+    """A hostname or IP address that dig cannot read as an option."""
+    return _is_ip(value) or bool(_DIG_NAME_RE.match(value or ""))
+
+
+def valid_dig_server(value: str) -> bool:
+    """A server (IP or hostname) that is safe to pass as ``@server``."""
+    return _is_ip(value) or bool(_DIG_SERVER_RE.match(value or ""))
+
+
 def dig_lookup(entry: str, server: str, *, show_ttl: bool = False) -> list[str]:
     """One ``dig`` against one server; returns answer values (or a marker)."""
     query, rtype = parse_entry(entry)
     target = resolve_wildcard(query)
     if not target:
         return ["No result"]
+    # The last gate before argv: every caller (the lookup page, process steps)
+    # lands here, and an entry like ``-f/opt/satom/.env`` would otherwise be an
+    # option, not a name.
+    if not valid_dig_name(target):
+        return ["invalid name"]
+    if not valid_dig_server(server):
+        return ["invalid server"]
     if _is_ip(target):
         cmd = ["dig", f"@{server}", "-x", target,
                "+noall", "+answer", "+time=2", "+tries=1"]

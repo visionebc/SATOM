@@ -27,6 +27,13 @@ def _posted_perms() -> set[str]:
     return {k for k in raw if perm.is_valid_key(k)}
 
 
+def _beyond_actor(keys: set[str]) -> set[str]:
+    """The keys in ``keys`` the signed-in user does not hold. A
+    ``profiles.manage`` holder composes profiles out of what they have; they
+    cannot mint a key (``users.manage`` above all) they were never given."""
+    return set(keys) - current_user.effective_permissions
+
+
 def _user_count(pid: int) -> int:
     return User.query.filter_by(profile_id=pid).count()
 
@@ -65,8 +72,13 @@ def create():
         flash(f'A profile named “{name}” already exists.', 'danger')
         return redirect(url_for('profiles.index'))
 
+    posted = _posted_perms()
+    if _beyond_actor(posted):
+        flash('Refused: you cannot grant permissions you do not hold yourself '
+              f'({", ".join(sorted(_beyond_actor(posted)))}).', 'danger')
+        return redirect(url_for('profiles.index'))
     p = Profile(name=name, description=description, is_system=False)
-    p.permission_set = _posted_perms()  # may be empty — matrix is filled on the edit page
+    p.permission_set = posted  # may be empty — matrix is filled on the edit page
     db.session.add(p)
     db.session.commit()
     log_action('profile.create', target=name,
@@ -95,6 +107,10 @@ def edit_save(id):
     if p.is_system:
         flash('System profiles are managed automatically and cannot be edited.', 'warning')
         return redirect(url_for('profiles.edit', id=id))
+    if current_user.profile_id == p.id:
+        flash('Refused: you cannot edit the profile you are assigned to. '
+              'Ask another administrator.', 'danger')
+        return redirect(url_for('profiles.edit', id=id))
 
     name = request.form.get('name', p.name).strip() or p.name
     # name uniqueness (excluding self)
@@ -106,6 +122,11 @@ def edit_save(id):
         return redirect(url_for('profiles.edit', id=id))
 
     new_perms = _posted_perms()
+    added_beyond = _beyond_actor(new_perms - p.permission_set)
+    if added_beyond:
+        flash('Refused: you cannot grant permissions you do not hold yourself '
+              f'({", ".join(sorted(added_beyond))}).', 'danger')
+        return redirect(url_for('profiles.edit', id=id))
     p.name = name
     p.description = request.form.get('description', p.description or '').strip()
     p.permission_set = new_perms

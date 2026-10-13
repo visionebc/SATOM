@@ -346,19 +346,51 @@ def edit(id):
 @require_permission(Permission.CONFIG_WRITE)
 def edit_save(id):
     appliance = visible_appliance_or_404(id)
+    # Stored credentials follow the row, not the form: an editor never sees
+    # them, so pointing the row at another host/port/login/platform would hand
+    # them to whatever answers there on the next sync. Such a change is only
+    # accepted together with the password(s) it would otherwise carry along.
+    new_host = request.form.get('host', appliance.host).strip()
+    new_port = int(request.form.get('port', appliance.port) or 443)
+    new_username = request.form.get('username', appliance.username).strip()
+    new_kind = request.form.get('kind', appliance.kind or '').strip().lower()
+    kind_changed = bool(new_kind) and new_kind != (appliance.kind or '').lower()
+    ha_posted = bool(request.form.get('ha_present')) or 'is_cluster' in request.form
+    if not appliance.is_cluster_member and ha_posted:
+        is_cluster, ha_mode, ha_vip = _parse_ha(request.form)
+        if is_cluster and ha_mode == 'vip' and ha_vip:
+            new_host = ha_vip
+    # Moving onto the row's OWN stored VIP is not a retarget: that VIP was
+    # itself only ever set through this guard (or at creation, with the password).
+    own_vip = (appliance.ha_vip or '') if (appliance.is_cluster
+                                          and appliance.ha_mode == 'vip') else ''
+    host_changed = (new_host != (appliance.host or '').strip()
+                    and not (own_vip and new_host == own_vip))
+    user_changed = new_username != (appliance.username or '').strip()
+    password = request.form.get('password', '')
+    ssh_password = request.form.get('ssh_password', '')
+    ssh_clear = request.form.get('ssh_password_clear') == 'on'
+    api_retarget = (host_changed or user_changed or kind_changed
+                    or new_port != appliance.port)
+    ssh_retarget = (host_changed or user_changed) and appliance.has_ssh_password
+    if (api_retarget and not password) or (
+            ssh_retarget and not (ssh_password or ssh_clear)):
+        flash('Changing the host, port or username requires re-entering the '
+              'password.', 'danger')
+        return redirect(url_for('appliances.edit', id=appliance.id))
+
     appliance.name = request.form.get('name', appliance.name).strip()
     # Guard the CHANGE, not the field: an unchanged kind is always allowed,
     # so a legacy row whose kind no ADOM claims stays editable from Global.
-    new_kind = request.form.get('kind', appliance.kind or '').strip().lower()
-    if new_kind and new_kind != (appliance.kind or '').lower():
+    if kind_changed:
         if not product_scope.may_assign_kind(new_kind):
             flash('This ADOM cannot move an appliance to another platform.',
                   'danger')
             return redirect(url_for('appliances.edit', id=appliance.id))
         appliance.kind = new_kind
-    appliance.host = request.form.get('host', appliance.host).strip()
-    appliance.port = int(request.form.get('port', appliance.port) or 443)
-    appliance.username = request.form.get('username', appliance.username).strip()
+    appliance.host = new_host
+    appliance.port = new_port
+    appliance.username = new_username
     appliance.verify_ssl = request.form.get('verify_ssl') == 'on'
     appliance.vdom = request.form.get('vdom', appliance.vdom or '').strip() or None
     appliance.tags = request.form.get('tags', appliance.tags or '').strip() or None
@@ -376,21 +408,17 @@ def edit_save(id):
     # Only a form that RENDERS the HA block may change it: the quick-edit
     # dialog on the list has no HA fields, and reading their absence as
     # "unchecked" dissolved every cluster edited from there.
-    ha_posted = bool(request.form.get('ha_present')) or 'is_cluster' in request.form
+    # (``ha_posted`` and the VIP-as-host rule are resolved above, before the
+    # credential guard, so a VIP change counts as a host change.)
     if not appliance.is_cluster_member and ha_posted:
-        is_cluster, ha_mode, ha_vip = _parse_ha(request.form)
         appliance.is_cluster = is_cluster
         appliance.ha_mode = ha_mode
         appliance.ha_vip = ha_vip
-        if is_cluster and ha_mode == 'vip' and ha_vip:
-            appliance.host = ha_vip
-    password = request.form.get('password', '')
     if password:
         appliance.set_password(password)
-    ssh_password = request.form.get('ssh_password', '')
     if ssh_password:
         appliance.set_ssh_password(ssh_password)
-    elif request.form.get('ssh_password_clear') == 'on':
+    elif ssh_clear:
         appliance.set_ssh_password(None)
 
     # -- datasheet PDF: remove, replace, or keep --------------------------

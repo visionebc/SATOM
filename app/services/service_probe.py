@@ -19,6 +19,10 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+#: Start of :attr:`ProbeResult.error` when :mod:`net_guard` refused the target
+#: (nothing was dialled).
+REFUSED_PREFIX = "target refused:"
+
 # response headers worth capturing/diffing (a small, stable subset)
 _KEY_HEADERS = ("server", "content-type", "location", "content-length")
 
@@ -145,15 +149,56 @@ def resolve_targets_from_client(client) -> list[ServiceTarget]:
     return targets
 
 
+def guarded_get(url: str, timeout: float = 10.0):
+    """GET *url* through :mod:`net_guard` and return the ``httpx.Response``.
+
+    Every caller of this module dials a URL someone configured (a monitor
+    probe, a process step, a policy's published front-end), so the target is
+    authorised here — free mode, loopback refused, the node's internal
+    services refused — and the request goes to the RESOLVED address with the
+    name carried as ``Host`` and SNI. Handing the name to httpx would resolve
+    it a second time and check a different request from the one sent.
+
+    Raises :class:`net_guard.TargetError` when the target is refused.
+    """
+    import httpx
+
+    from . import net_guard
+
+    parsed = net_guard.parse_target(url if "://" in url else "https://" + url)
+    dest = net_guard.resolve_target(parsed["host"], parsed["port"],
+                                    mode=net_guard.MODE_FREE,
+                                    allow_loopback=False)
+    scheme, host, port = parsed["scheme"], dest["host"], dest["port"]
+    ip = dest["ip"]
+    ip_lit = "[%s]" % ip if ":" in ip else ip
+    host_lit = "[%s]" % host if ":" in host else host
+    default = 443 if scheme == "https" else 80
+    headers = {"Host": host_lit if port == default else "%s:%d" % (host_lit, port)}
+    extensions = {}
+    if scheme == "https":
+        try:
+            import ipaddress
+            ipaddress.ip_address(host)
+        except ValueError:
+            extensions["sni_hostname"] = host     # SNI never carries a literal
+    pinned = "%s://%s:%d%s" % (scheme, ip_lit, port, parsed["path"] or "/")
+    # trust_env=False: an environment proxy would resolve the name itself and
+    # the authorised address would no longer be the one dialled.
+    with httpx.Client(verify=False, timeout=timeout, follow_redirects=False,
+                      trust_env=False) as c:
+        return c.get(pinned, headers=headers, extensions=extensions)
+
+
 def probe_url(url: str, timeout: float = 10.0) -> ProbeResult:
     """HTTP GET a URL and capture the response (curl-equivalent, self-signed OK)."""
     if not url:
         return ProbeResult(url=url, ok=False, error="no target URL resolved")
-    import httpx
+    from .net_guard import TargetError
 
     t0 = time.time()
     try:
-        r = httpx.get(url, verify=False, timeout=timeout, follow_redirects=False)
+        r = guarded_get(url, timeout=timeout)
         body = r.content or b""
         return ProbeResult(
             url=url, ok=True, status=r.status_code, reason=r.reason_phrase,
@@ -161,6 +206,10 @@ def probe_url(url: str, timeout: float = 10.0) -> ProbeResult:
             body_len=len(body), body_sha8=hashlib.sha256(body).hexdigest()[:8],
             elapsed_ms=int((time.time() - t0) * 1000),
         )
+    except TargetError as e:
+        return ProbeResult(url=url, ok=False,
+                           error=("%s %s" % (REFUSED_PREFIX, e))[:200],
+                           elapsed_ms=int((time.time() - t0) * 1000))
     except Exception as e:  # noqa: BLE001 — any transport/TLS failure = unreachable
         return ProbeResult(
             url=url, ok=False, error=f"{type(e).__name__}: {e}".strip()[:200],
@@ -269,5 +318,6 @@ def render_status_html(meta: dict, before: list[dict], after: list[dict], diff: 
 
 __all__ = [
     "ServiceTarget", "ProbeResult", "resolve_targets_from_client",
-    "probe_url", "probe_targets", "diff_probes", "render_status_html",
+    "guarded_get", "probe_url", "probe_targets", "diff_probes",
+    "render_status_html", "REFUSED_PREFIX",
 ]

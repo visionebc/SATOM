@@ -35,14 +35,40 @@ from . import service_probe
 # --------------------------------------------------------------------------- #
 #  Paths                                                                       #
 # --------------------------------------------------------------------------- #
+#: The shape ``services.jobs._new_id`` produces: ``YYYYmmdd-HHMMSS-<ms>`` plus,
+#: since the collision fix, ``-<6 hex>``. Both shapes exist on disk. The job id
+#: arrives from the URL, so anything else (``..``, dots, slashes) is refused
+#: before it is joined onto a path.
+JOB_ID_RE = re.compile(r"\d{8}-\d{6}-\d{1,5}(?:-[0-9a-f]{6})?")
+
+
+def valid_job_id(job_id: Any) -> bool:
+    return isinstance(job_id, str) and bool(JOB_ID_RE.fullmatch(job_id))
+
+
+def _reports_root() -> Path:
+    return Path(__file__).resolve().parents[2] / "data" / "jobs" / "reports"
+
+
 def _reports_dir() -> Path:
-    d = Path(__file__).resolve().parents[2] / "data" / "jobs" / "reports"
+    d = _reports_root()
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
+def _job_path(job_id: str) -> Path | None:
+    """Where a job's report lives, WITHOUT creating anything (read paths).
+    None for an id that is not a job id."""
+    if not valid_job_id(job_id):
+        return None
+    return _reports_root() / job_id
+
+
 def _job_dir(job_id: str) -> Path:
-    d = _reports_dir() / str(job_id)
+    """The job's report directory, created (write path only)."""
+    if not valid_job_id(job_id):
+        raise ValueError("invalid job id: %r" % (job_id,))
+    d = _reports_dir() / job_id
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -53,7 +79,10 @@ def report_url(job_id: str) -> str:
 
 def read_report(job_id: str) -> str | None:
     """Return the stored ``status.html`` for a job, or ``None`` if absent."""
-    p = _job_dir(job_id) / "status.html"
+    d = _job_path(job_id)
+    if d is None:
+        return None
+    p = d / "status.html"
     if not p.exists():
         return None
     try:
@@ -308,7 +337,10 @@ def _verdict_of(meta: dict, after_snap: dict | None) -> tuple[str, int]:
 def report_meta(job_id: str) -> dict | None:
     """Read a job's ``service-validation.json`` and return an enriched summary
     dict for the history listing, or ``None`` if absent/unreadable."""
-    p = _job_dir(job_id) / "service-validation.json"
+    d = _job_path(job_id)
+    if d is None:
+        return None
+    p = d / "service-validation.json"
     if not p.exists():
         return None
     try:
@@ -332,7 +364,7 @@ def report_meta(job_id: str) -> dict | None:
         "reachable_after": bool(meta.get("reachable_after")),
         "verdict": verdict,
         "service_changes": changes,
-        "has_report": (_job_dir(job_id) / "status.html").exists(),
+        "has_report": (d / "status.html").exists(),
     }
 
 

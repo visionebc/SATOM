@@ -181,6 +181,17 @@ def firmware_check(id):
 # Scheduled actions (read + gated trigger)
 # ---------------------------------------------------------------------------
 
+def _owner_may_run_scope(row: ScheduledAction) -> bool:
+    """The browser's rule, verbatim: only a catalog ``user`` action is an
+    Automation (``config_write``); everything else is a System Automation,
+    whose surface is gated on ``user_manage``. A token never reaches further
+    than its owner could in the UI."""
+    from ..views.scheduled_actions import SURFACES, USER_SCOPE, effective_scope
+    surface = 'automations' if effective_scope(row) == USER_SCOPE else 'scheduled_actions'
+    owner = _owner() or getattr(getattr(g, "api_token", None), "owner", None)
+    return bool(owner is not None and owner.can(SURFACES[surface]['permission']))
+
+
 def _action_json(row: ScheduledAction) -> dict:
     spec = sa.get_spec(row.action)
     danger = bool(spec and spec.danger)
@@ -190,6 +201,8 @@ def _action_json(row: ScheduledAction) -> dict:
     cap_ok, cap_reason = True, ""
     if tok is not None:
         cap_ok, cap_reason, _msg = tok.authorize_capability(row.action)
+    if cap_ok and tok is not None and not _owner_may_run_scope(row):
+        cap_ok, cap_reason = False, "scope_forbidden"
     runnable = (not danger) and cap_ok and bool(row.enabled)
     out = {
         "id": row.id,
@@ -249,6 +262,15 @@ def run_action(id):
     if not row.enabled:
         return jsonify({"error": "disabled",
                         "message": "This action is disabled."}), 409
+
+    if not _owner_may_run_scope(row):
+        log_action("api.action_run_denied", target=f"action:{row.id}",
+                   extra=audit_extra(action=row.action, reason="scope_forbidden"))
+        return jsonify({
+            "error": "scope_forbidden",
+            "message": "This is a System Automation; the token owner needs "
+                       "user management rights to run it.",
+        }), 403
 
     # ---- Fine-grained authorization (Phase 2): the "what" then the "where" --
     tok = g.api_token

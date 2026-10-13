@@ -56,13 +56,57 @@ def assert_cert_name(name: str) -> str:
     return name
 
 
+# The CLI reads ``\`` as an escape inside a quoted value, so a PEM ending in
+# ``\`` keeps the quote OPEN and every line after it runs as a raw command.
+# A double-quote closes it. Control characters (tab, backspace, Ctrl-U...)
+# edit the line the shell is building. None of them belongs in PEM, and none
+# in a passphrase.
+_PEM_BAD_CHARS = re.compile(r'["\\\x00-\x09\x0b-\x1f\x7f]')
+_PASS_BAD_CHARS = re.compile(r'["\\\x00-\x1f\x7f]')
+
+# One PEM block, strictly: BEGIN line, optional RFC 1421 headers (an encrypted
+# traditional key carries ``Proc-Type`` / ``DEK-Info``), base64 lines, END line
+# with the SAME label. The cryptography library ignores text outside BEGIN/END,
+# so a key that validates as a key can still carry extra lines — which is why
+# the value sent is REBUILT from these captures and never passed through.
+_PEM_BLOCK = re.compile(
+    r"-----BEGIN (?P<label>[A-Z0-9]+(?: [A-Z0-9]+)*)-----\n"
+    r"(?:(?P<headers>(?:[A-Za-z0-9-]+: [A-Za-z0-9,-]+\n)+)\n)?"
+    r"(?P<body>(?:[A-Za-z0-9+/=]+\n)+)"
+    r"-----END (?P=label)-----(?:\n|\Z)")
+
+
 def _validate_pem(pem: str, *, kind: str) -> str:
-    pem = (pem or "").strip()
+    """Return ``pem`` rebuilt from its PEM blocks alone, else raise.
+
+    Every character outside a well-formed block (whitespace between blocks
+    aside) is refused, and the value returned is reassembled from the captured
+    label, headers and base64 lines — so nothing but those can reach the CLI.
+    """
+    pem = (pem or "").replace("\r\n", "\n").strip()
     if "-----BEGIN" not in pem or "-----END" not in pem:
         raise CertWriteViolation(f"{kind} is not PEM (missing BEGIN/END markers)")
-    if '"' in pem:
-        raise CertWriteViolation(f"{kind} contains a double-quote — refusing (CLI injection guard)")
-    return pem
+    if _PEM_BAD_CHARS.search(pem):
+        raise CertWriteViolation(
+            f"{kind} contains a double-quote, backslash or control character — "
+            f"refusing (CLI injection guard)")
+    text = "\n".join(ln.strip() for ln in pem.split("\n")) + "\n"
+    blocks, pos = [], 0
+    while pos < len(text):
+        if text[pos] == "\n":
+            pos += 1
+            continue
+        m = _PEM_BLOCK.match(text, pos)
+        if not m:
+            raise CertWriteViolation(
+                f"{kind} holds text outside a well-formed PEM block — refusing "
+                f"(CLI injection guard)")
+        head = f"-----BEGIN {m['label']}-----\n"
+        if m["headers"]:
+            head += m["headers"] + "\n"
+        blocks.append(f"{head}{m['body']}-----END {m['label']}-----")
+        pos = m.end()
+    return "\n".join(blocks)
 
 
 class FortiWebCertSSH(FortiWebReadonlySSH):  # noqa: D101 - see below
@@ -179,9 +223,10 @@ class FortiWebCertSSH(FortiWebReadonlySSH):  # noqa: D101 - see below
             if not spec.passphrase_field:
                 raise CertWriteViolation(
                     f"{spec.label} takes no key passphrase (collection {spec.collection})")
-            if '"' in passphrase:
+            if _PASS_BAD_CHARS.search(passphrase):
                 raise CertWriteViolation(
-                    "passphrase contains a double-quote — refusing (CLI injection guard)")
+                    "passphrase contains a double-quote, backslash or control "
+                    "character — refusing (CLI injection guard)")
             lines.append(f'set {spec.passphrase_field} "{passphrase}"')
         lines += [f'set certificate "{cert_pem}"', "next", ""]
         self.enter_table(spec.cli_table)

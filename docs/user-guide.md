@@ -291,6 +291,12 @@ the Global ADOM, or the Global dashboard). The entry is shown to anyone holding
    FortiGate likewise takes a **REST API administrator token** (`execute
    api-user generate-key <api-user>` on the FortiGate) as the password, never
    a login password; a read-only admin profile is enough (§17.4).
+
+   **Editing** an appliance keeps its stored credentials, which nobody can
+   read back. Changing its host, port, username or platform therefore needs
+   the password entered again in the same save (and the SSH password too when
+   the device has a separate one); otherwise the save is refused. The same
+   rule applies to `PUT /api/appliances/<id>`.
 2. **Test connection** — validates REST reachability and credentials.
 3. **Discovery / Rediscovery** — sweeps every registry endpoint and stores the
    device's full configuration in the local cache (recorded as a harvest with
@@ -3523,9 +3529,12 @@ one reconciler cycle.
   `systemd-logind` (logins of the service account stuck in `opening` for more
   than 60 s, or a `loginctl` that does not answer) and whether `sshd` answers.
   The standby's state comes from its `/healthz/reconciler` probe (the same
-  unauthenticated peer-probe pattern as `/healthz/backups`; it publishes the
-  decision, the commit counts, short shas, the time and a one-line redacted
-  error — nothing else). The lag is computed on the primary against its own
+  peer-probe pattern as `/healthz/backups`; it publishes the decision, the
+  commit counts, short shas, the time and a one-line redacted error — nothing
+  else). These probes answer only a caller that presents the inter-node
+  identity key; anyone else gets `403`, and plain `/healthz` gives them `ok`
+  and nothing more. A pair without an identity key therefore shows its peer
+  as unreachable on these pages. The lag is computed on the primary against its own
   branch head, because a standby that cannot fetch measures itself against a
   stale `origin` and would read "0 behind".
 - Each node's reconciler status is **node-local** (`state/reconciler-status.json`,
@@ -3931,6 +3940,13 @@ profile sees a short menu rather than links that answer *access denied*.
 An **anti-lockout guard** keeps at least one active account holding both user
 management and profile management, so this page cannot be used to remove the
 last administrator.
+
+**Nobody can grant more than they hold.** A holder of *Manage users* or
+*Manage profiles* who is not a full administrator cannot assign or create a
+profile wider than their own, cannot reset the password or clear the 2FA of an
+account that holds more than they do, cannot add a key they do not hold to a
+profile, and cannot edit the profile they are assigned to. You may move
+yourself to a narrower profile, never a wider one.
 
 ### 26.4 Software Update Repository — where this node downloads its own code from
 
@@ -4669,6 +4685,12 @@ The two tabs any signed-in user gets.
 
 Directory-backed accounts see an explicit note instead of these controls: they
 manage password and MFA at the directory.
+
+Sign-in protections that apply to every account: after the password, the 2FA
+code must be entered within **5 minutes**; wrong codes count toward the same
+lockout as wrong passwords (10 failures lock the account for 15 minutes) and
+are audited as `login.2fa_fail`. *Remember me* keeps a session for **14 days**.
+The page you are sent to after signing in must be a page of this console.
 
 ### 26.14 Settings endpoints owned by other pages
 

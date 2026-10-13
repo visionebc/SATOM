@@ -6,6 +6,87 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Security — fixes from the 2026-10-13 internal code audit
+
+**Appliance command injection**
+- Certificate import (and the certificate carry between appliances) accepted a
+  backslash inside a PEM or passphrase. The device CLI treats `\` as an escape
+  inside a quoted value, so a key ending in `\` kept the quote open and the
+  lines after it ran as raw configuration commands, for example creating an
+  administrator. PEM values are now rebuilt from their BEGIN/base64/END lines
+  only, and `"`, `\` and control characters are refused in PEMs and
+  passphrases. A hostile source appliance can no longer inject into the
+  destination during a carry.
+- The read-only console gates (console, CLI coverage live read, probe and
+  schema gates) passed control characters to the interactive shell, where
+  backspace or Ctrl-U erase the `show` and leave a write. Every gate now
+  refuses control characters. The write console also classifies abbreviated
+  verbs (`exe factoryres`, `exec reboot`) the way the full words are classified.
+
+**Authorization**
+- Changing an appliance's host, port, username or platform kept its stored
+  password, so the next sync sent the device credentials to the new
+  endpoint. The edit form and `PUT /api/appliances/<id>` now require the
+  password to be entered again for such a change, and the SSH password too
+  when the row holds a separate one.
+- A user with **users.manage** or **profiles.manage** could grant themselves
+  any permission: assign themselves (or create) a wider profile, add keys to
+  the profile they are assigned to, or reset the password or 2FA of a more
+  privileged account. Each of these is now refused unless the actor already
+  holds every permission involved.
+- An API token owned by a non-admin could run System Automations and actions
+  with no capability mapping (system backup, git bundle, certificate issuing…).
+  These now need an owner with user management, as in the browser.
+
+**Server-side requests**
+- Network Architecture probes, monitor HTTPS probes and process `http_check`
+  steps could reach the node's own loopback services, including the metrics
+  store, which has no authentication, and cloud metadata addresses. They now
+  go through the target guard, resolve the name once and connect to that
+  address. The node's internal ports (5432, 8000, 8428) are refused in every
+  mode, including the Transaction Tracer, whose inventory mode now checks the
+  port as well as the host.
+- The DNS tool and process DNS checks refused nothing that starts with `-`, so
+  an entry such as `-f<file>` made `dig` read a local file. Names and servers
+  are now validated.
+
+**Sign-in and sessions**
+- The post-login redirect accepted `/<tab>/host`, which browsers follow to
+  another site. It now accepts local paths only.
+- The remember-me cookie is now Secure, HttpOnly, SameSite=Lax and lasts 14
+  days (it was not Secure and lasted 365 days).
+- 2FA: the half-signed-in state expires after 5 minutes, wrong codes count
+  toward the account lockout and are audited (`login.2fa_fail`), and a correct
+  password no longer resets the failure count before the code is checked.
+- Any `Authorization: Bearer` header switched the idle session lock off for a
+  cookie session. Only the API is exempt now.
+
+**Unauthenticated endpoints**
+- `/healthz` without the inter-node identity key now answers only
+  `ok` and `peer_authenticated`. The revision, host statistics and database
+  detail are reserved for the peer node. `/healthz/primary` no longer returns
+  database error text, and `/healthz/backups`, `/healthz/cert-renewals` and
+  `/healthz/reconciler` answer 403 without the key. An HA pair needs the
+  identity key configured for its peer views (it is, on every pair that
+  shows the encrypted channel as configured).
+
+**Other hardening**
+- The self-update runner (root) validates the request id, the branch and the
+  target, rejects unknown request kinds, and writes status, library and
+  requirements files without following symbolic links. Promote runs the
+  root-owned `/usr/local/sbin/satom-promote.sh`, never the copy in the
+  application tree; a node without it refuses promote until
+  `install-runner.sh` is run. Package extraction refuses links already on
+  disk and archives over 2 GiB unpacked.
+- Regex Lab evaluates each pattern in a separate process killed after 2
+  seconds, so a catastrophic pattern can no longer hold a web worker.
+- The read-only SQL console refuses functions that read tables by name inside
+  a string (`query_to_xml` and the other `*_to_xml` functions), file and
+  large-object functions, and backend signalling.
+- Import Backup caps decompressed sizes and no longer writes outside its
+  folder for a device named `..`; the flash report no longer creates a folder
+  for any job id it is asked to read.
+
 ### Fixed — FortiADC live state was reported as configuration drift
 
 - A FortiADC returns the live state of some objects inside their configuration

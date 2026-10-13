@@ -242,7 +242,8 @@ def index():
         lang_configured=(lang_policy.configured() if _is_admin() else False),
         lang_malformed=(lang_policy.malformed() if _is_admin() else False),
         lang_source=lang_registry.DEFAULT,
-        hide_monitor_pages=(gui_pages.hide_monitor_pages() if _is_admin() else False),
+        adom_menu_hidden=(sorted(gui_pages.hidden_kinds()) if _is_admin() else []),
+        adom_menu_counts=(_adom_menu_counts() if _is_admin() else {}),
         vault_config=(secret_backend.config() if _is_admin() else None),
         vault_modes=[(m, secret_backend.MODE_LABELS[m])
                      for m in secret_backend.MODES],
@@ -702,18 +703,31 @@ def save_general():
     return redirect(url_for('settings.index') + '#tab-general')
 
 
+def _adom_menu_counts() -> dict:
+    """{kind: "FortiAnalyzer 57 · FortiADC 17"} for the ADOM Menus panel:
+    what each switch takes out of which ADOM; {} when it cannot be measured
+    (the panel then shows the switches without counts)."""
+    from ..services import gui_products
+    try:
+        per = gui_pages.kind_counts(Appliance.query.order_by(Appliance.id).all())
+    except Exception:  # noqa: BLE001
+        return {}
+    return {k: ' · '.join(f'{gui_products.label(p)} {c[k]}' for p, c in per.items() if c[k])
+            for k in gui_pages.KINDS}
+
+
 @bp.route('/adom-menus', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def save_adom_menus():
-    """Whether live-monitor pages (drawn by the device from live data, only
-    linked from SATOM) stay in the ADOM menus. Stored in the replicated
+    """Which page classes (live monitors, pages managed on the device, GUI-only
+    pages with no API) stay out of every ADOM menu. Stored in the replicated
     app_settings table; every user's menu follows it on the next render."""
     try:
-        on = request.form.get('hide_monitor_pages') == '1'
-        gui_pages.set_hide_monitor_pages(on)
+        on = [k for k in gui_pages.KINDS if request.form.get('hide_' + k) == '1']
+        gui_pages.set_hidden_kinds(on)
         log_action('settings.adom_menus',
-                   detail=f"Live-monitor pages {'hidden from' if on else 'shown in'} the ADOM menus")
+                   detail='Hidden from the ADOM menus: ' + (', '.join(on) or 'nothing'))
         flash('ADOM menu settings saved.', 'success')
     except Exception as exc:  # noqa: BLE001
         flash(f'Failed to save the ADOM menu settings: {exc}', 'danger')

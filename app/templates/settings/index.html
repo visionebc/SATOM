@@ -4708,16 +4708,24 @@
       </div>
       <div class="fw-card-body">
         <p class="text-muted" style="font-size:13px;">
-          {{ _('A live-monitor page is one the device draws from live data (dashboards, FortiView, log and event views). SATOM does not draw it: the page only says "Live monitor" and links it with "Open it on the device". Hiding these pages takes them out of the device menu and the "All pages" list of every ADOM, for every user. A direct link still opens the page, and the devices and the configuration harvest are not affected.') }}
+          {{ _('Some pages of a device menu are not configuration SATOM can read and change. Each switch takes one kind of page out of the device menu and the "All pages" list of every ADOM, for every user. A page with at least one configuration tab always stays. A direct link still opens a hidden page, and the devices and the configuration harvest are not affected.') }}
         </p>
+        {% set _kinds = [
+          ('monitor', _('Hide live-monitor pages'), _('The page says "Live monitor": the device draws it from live data (dashboards, FortiView, log and event views).')),
+          ('device_managed', _('Hide pages managed on the device'), _('The page says "Managed on the device": the device GUI edits it through its own private calls, which SATOM never replays.')),
+          ('gui_only', _('Hide GUI-only pages (no API)'), _('The page says "No API on this build (GUI only)": the build serves it to its own GUI only, so SATOM draws it read-only and cannot list its objects.'))] %}
         <form method="POST" action="{{ url_for('settings.save_adom_menus') }}" data-adom-menus-form>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <div class="form-check form-switch">
-            <input class="form-check-input" type="checkbox" role="switch" id="hide-monitor-pages"
-                   name="hide_monitor_pages" value="1" {{ 'checked' if hide_monitor_pages }}>
-            <label class="form-check-label fw-semibold" for="hide-monitor-pages">{{ _('Hide live-monitor pages from the ADOM menus') }}</label>
+          {% for key, label, help in _kinds %}
+          <div class="form-check form-switch mb-3" data-adom-menu-kind="{{ key }}">
+            <input class="form-check-input" type="checkbox" role="switch" id="hide-{{ key }}"
+                   name="hide_{{ key }}" value="1" {{ 'checked' if key in adom_menu_hidden }}>
+            <label class="form-check-label fw-semibold" for="hide-{{ key }}">{{ label }}</label>
+            <span class="text-muted ms-2" style="font-size:12px;" data-adom-menu-count>{{ (adom_menu_counts or {}).get(key) or _('no page today') }}</span>
+            <div class="text-muted" style="font-size:12px;">{{ help }}</div>
           </div>
-          <button type="submit" class="btn btn-fw-primary btn-sm mt-3"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
+          {% endfor %}
+          <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
         </form>
       </div>
     </div>

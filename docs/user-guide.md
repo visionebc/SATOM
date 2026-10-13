@@ -2694,10 +2694,11 @@ The `/faz/` ADOM draws the selected unit's own menu from the GUI layouts
 measured on its build, like the other device ADOMs. Only a unit whose build has
 no measured layout falls back to the curated menu: **Device Manager**,
 **FortiView**, **Log View**, **Fabric View**, **Incidents & Events**,
-**FortiAI**, **Reports** and **System Settings**. About 57 of the measured
-FortiAnalyzer 7.6.7 pages are live monitors (dashboards, FortiView, log and
-event views): SATOM links them on the device instead of drawing them, and
-`Settings → ADOM Menus` (§26.12) can take them out of the menu.
+**FortiAI**, **Reports** and **System Settings**. Of the 139 measured
+FortiAnalyzer 7.6.7 pages, 57 are live monitors (dashboards, FortiView, log and
+event views) and 28 are managed on the device: SATOM links them on the device
+instead of drawing them as configuration, and `Settings → ADOM Menus` (§26.12)
+can take them out of the menu.
 
 - The unit speaks **JSON-RPC** on a single endpoint, in two dialects, and the
   endpoint registry stores which one each URI needs — an upgrade that moves a
@@ -4469,22 +4470,35 @@ workspace offers.
 into URL scoping and deleting them would orphan data. Deactivate them instead.
 Everything else is fully deletable.
 
-### 26.12 ADOM Menus — hide the live-monitor pages
+### 26.12 ADOM Menus — hide pages SATOM does not draw as configuration
 
-A **live-monitor page** is one the device draws from live data: dashboards,
-FortiView, log and event views. SATOM does not draw it; the page says
-*Live monitor* and links it with **Open it on the device**. The template a page
-comes from marks it (`monitor: true`); a "Not in GUI, but in CLI" page is never
-one.
+Some pages of a device menu are not configuration SATOM can read and change.
+Each kind has its own switch, named after the banner the page shows:
 
-**Hide live-monitor pages from the ADOM menus** takes every such page out of the
-device menu and the **All pages** list of every ADOM, for every user, on the
-next page render. A menu folder left with no page disappears with it. A direct
-link or bookmark still opens the page. The devices, the knowledge packs and the
-configuration harvest are not affected. Off by default.
+| Switch | The page says | Pages today (one device per ADOM) |
+|---|---|---|
+| **Hide live-monitor pages** | *Live monitor: … draws this page from live data* — dashboards, FortiView, log and event views | FortiAnalyzer 57 · FortiADC 17 |
+| **Hide pages managed on the device** | *Managed on the device: … edits this page through its own GUI calls* | FortiAnalyzer 28 |
+| **Hide GUI-only pages (no API)** | *No API on this build (GUI only)* | FortiAuthenticator 64 · FortiADC 17 |
 
-Today only FortiAnalyzer has live-monitor pages (57 of the 139 measured on
-7.6.7); an ADOM whose layouts gain them later follows the same setting.
+The panel shows these counts live, per ADOM, from the first device of each
+product.
+
+A switch that is on takes its pages out of the device menu and the **All
+pages** list of **every ADOM, for every user**, on the next page render. A page
+leaves only when **every** tab is of a hidden kind: a page with one
+configuration tab always stays (FortiAuthenticator has 8 such mixed pages,
+FortiADC 2). A menu folder left with no page disappears with it. A direct link
+or bookmark still opens a hidden page. "Not in GUI, but in CLI" pages are
+configuration and never hidden. The devices, the knowledge packs and the
+configuration harvest are not affected. All three are off by default.
+
+The kind is read **per tab**: FortiADC marks its monitors on each view,
+FortiAnalyzer on the page. FortiGate monitor-API tabs (for example **System →
+Certificates**) list live rows SATOM reads, so they count as configuration.
+
+> **FortiAuthenticator:** 64 of its 93 measured pages are GUI-only on 8.0.3.
+> Switching **Hide GUI-only pages** on leaves that menu with about 29 pages.
 
 This panel replaced **FAZ Menu**, which trimmed the curated FortiAnalyzer
 menu. A unit with a measured layout no longer draws that menu, so the list of

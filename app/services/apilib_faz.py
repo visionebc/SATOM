@@ -99,30 +99,36 @@ def _verdicts(doc: dict) -> dict:
 
 
 def harvest(appliance, client=None, catalog=None, raw: dict | None = None,
-            max_requests: int = adapter.MAX_REQUESTS) -> dict:
+            max_requests: int = adapter.MAX_REQUESTS, now=None) -> dict:
     """Live FortiAnalyzer appliance -> evidence document (``source="schema"``).
 
     ``client`` and ``catalog`` are injectable for tests (``catalog`` replaces
     ``adapter.known_urls()``). Pass a dict as ``raw`` to receive the raw
     capture -- ``api_library.ingest`` stores it gzipped beside the evidence.
     ALWAYS returns a document; ``healthy`` is True only for a walk that read
-    objects (rule 2), and ``skip_reason`` says why when it is not. Never
-    writes to the device; raises only on a programming error.
+    objects (rule 2), and ``skip_reason`` says why when it is not;
+    ``summary.failure`` names the case for callers (``no_client``,
+    ``firmware_unknown``, ``no_catalog``, ``walk_failed``, ``no_objects``,
+    ``refused``). Never writes to the device; raises only on a programming
+    error. This is the ONE FortiAnalyzer harvest: the incremental harvest
+    (``apilib_harvest``) and the adapter's own harvest (Schema builds,
+    ``schema_harvest``) both run it.
     """
     own = client is None
     log: dict = {}
     counter = [0]
-    captured_at = datetime.utcnow().replace(microsecond=0).isoformat()
+    captured_at = (now or datetime.utcnow()).replace(microsecond=0).isoformat()
     device = device_block(appliance)
     origin = "live:%s:%s" % (device.get("name") or "?", adapter.URL_PREFIX)
     version, build, wanted = "", "", []
     answers: dict = {}
     not_probed: dict = {}
 
-    def _sick(reason: str) -> dict:
+    def _sick(failure: str, reason: str) -> dict:
         doc = adapter.evidence_from_syntax(answers, version, build, device, origin,
                                            captured_at=captured_at, not_probed=not_probed)
         doc.update(healthy=False, skip_reason=reason[:300])
+        doc["summary"]["failure"] = failure
         return doc
 
     try:
@@ -142,20 +148,20 @@ def harvest(appliance, client=None, catalog=None, raw: dict | None = None,
             device["firmware_raw"] = str(status.get("Version") or status.get("version"))
         if not version or firmware_versions.is_line_only(version):
             # scope.kind == "build" promises a full version (the FAC rule).
-            doc = _sick("firmware version not readable from %s (%s)"
+            doc = _sick("firmware_unknown", "firmware version not readable from %s (%s)"
                         % (STATUS_URL, err or "line-only %r" % version))
         else:
             wanted = adapter.catalog_urls(adapter.known_urls() if catalog is None
                                           else catalog)
             if not wanted:
-                doc = _sick("SATOM knows no FortiAnalyzer /cli/global object to ask "
+                doc = _sick("no_catalog", "SATOM knows no FortiAnalyzer /cli/global object to ask "
                             "about (import the fortianalyzer API library or registry first)")
             else:
                 try:
                     answers, not_probed = adapter.measure(get, wanted,
                                                           max_requests=max_requests)
                 except Exception as exc:  # noqa: BLE001 -- transport mid-walk
-                    doc = _sick("syntax walk failed after %d request(s): %s: %s"
+                    doc = _sick("walk_failed", "syntax walk failed after %d request(s): %s: %s"
                                 % (counter[0], type(exc).__name__, exc))
                 else:
                     doc = adapter.evidence_from_syntax(
@@ -163,7 +169,7 @@ def harvest(appliance, client=None, catalog=None, raw: dict | None = None,
                         captured_at=captured_at, not_probed=not_probed)
                     doc = _judge(doc, len(wanted))
     except _NoClient as exc:
-        doc = _sick("no FortiAnalyzer client: %s" % exc)
+        doc = _sick("no_client", "no FortiAnalyzer client: %s" % exc)
     finally:
         if own and client is not None:
             try:
@@ -185,12 +191,14 @@ def _judge(doc: dict, asked: int) -> dict:
     v = _verdicts(doc)
     total = sum(v.values())
     if objects == 0:
+        doc["summary"]["failure"] = "no_objects"
         doc.update(healthy=False, skip_reason=(
             "the syntax walk read no object (%d catalog object(s) asked: %d absent, "
             "%d refused, %d not asked)" % (asked, v["absent"], v["error"],
                                            len((doc.get("summary") or {})
                                                .get("not_probed") or {})))[:300])
     elif total and v["error"] / total > ERROR_RATIO_LIMIT:
+        doc["summary"]["failure"] = "refused"
         doc.update(healthy=False, skip_reason=(
             "%d of %d objects refused (> %d%%): check the admin's rpc-permit and "
             "profile" % (v["error"], total, ERROR_RATIO_LIMIT * 100)))

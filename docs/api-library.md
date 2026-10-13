@@ -141,8 +141,8 @@ on one side only, or by different kinds on the two sides, is reported as
 | `fortiweb` | `sweep`, `schema`, `cli_tree`, `cli_full` | rediscovery sweeps of live appliances; field schemas harvested per firmware line; the CLI `tree` and `show full-configuration` of each build (§14), plus a shape-checked REST probe of every `tree` object |
 | `fortiadc` | `sweep`, `legacy_matrix`, `cli_tree`, `cli_full` | rediscovery sweeps of live appliances (fortiadc10 on 7.6.7 and fortiadc11 on 8.0.4 in the lab), and the frozen line-only matrix file from before the build axis; the CLI `tree` and `show full-configuration` of each build through the **verified** adapter (§14.10) |
 | `fortiauthenticator` | `schema` (and `sweep`), `cli_tree`, `cli_full` | a live, **read-only** harvest of the device's own Tastypie schema (`GET /api/v1/` and `GET /api/v1/<resource>/schema/`); its small setup CLI read by a `set ?` help walk |
-| `fortianalyzer` | `vendor_doc`, `schema` | the vendor's Ansible collection `fortinet.fortianalyzer` (its `v_range` data); the JSON-RPC syntax read (**verified** adapter, 7.6.7 build3737) |
-| `fortigate` | `vendor_doc`, `schema`, `cli_tree` | the vendor's Ansible collection `fortinet.fortios` (its `v_range` data); `?action=schema` and the CLI `tree` from a lab box, by pack or file import. Catalog-only |
+| `fortianalyzer` | `vendor_doc`, `schema` | the vendor's Ansible collection `fortinet.fortianalyzer` (its `v_range` data); the per-object JSON-RPC syntax walk, read live and read-only from a registered FortiAnalyzer (`apilib_harvest`, the Schema builds page) or by pack; verified on 7.6.7 build3737 |
+| `fortigate` | `vendor_doc`, `schema`, `cli_tree` | the vendor's Ansible collection `fortinet.fortios` (its `v_range` data); `?action=schema` read live from a registered FortiGate (`apilib_harvest`) or by pack or file import; the CLI `tree` by pack or file import only |
 
 Which adapter reads which channel of which product, and on which device and
 build it was verified, is §14.10.

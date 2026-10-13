@@ -6,6 +6,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+
+- The Schema builds one-click harvest and the `schema_harvest` scheduled
+  action ran a second FortiAnalyzer harvest that took the build from the
+  inventory row and stored nothing when the walk failed. They now run the same
+  harvest as the API-library job: the build is read off the box, and a walk
+  that read nothing, was refused or broke is stored unhealthy with its reason
+  (the action and the page report it as a failure, naming the evidence row).
+- `flask apilib schema-harvest` (and `satom execute apilib harvest`) answered
+  "unsupported" for a FortiAnalyzer or FortiAuthenticator while the
+  `schema_harvest` action ran their adapters; the command now takes the same
+  path. The satom CLI prints a FortiAnalyzer answer as its one `schema` row
+  instead of an empty `cli_tree` line.
+- The API library documentation said FortiGate's REST schema arrives only by
+  pack or import; it is harvested live (only its CLI `tree` arrives by pack or
+  import).
+
 ## [3.3.0] - 2026-10-16
 
 ### Added — Operations › Wiki: articles by ADOM, profile and group, with topics, tags and versions (2026-10-16)

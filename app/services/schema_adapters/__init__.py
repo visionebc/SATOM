@@ -61,9 +61,11 @@ class Adapter:
     verified_on: tuple = ()
     #: per capability that is NOT verified, why (shown in the UI)
     unverified: dict = field(default_factory=dict)
-    #: True when SATOM can run the harvest live (an Appliance of this kind and
-    #: the credentials it needs). FortiGate is catalog-only: evidence arrives by
-    #: pack or by file import.
+    #: True when SATOM can run THIS adapter's harvest live (an Appliance of this
+    #: kind and the credentials it needs). FortiGate's adapter has no live
+    #: harvest: its CLI ``tree`` arrives by pack or by file import, and its REST
+    #: ``?action=schema`` is read live outside the adapter, by
+    #: ``services.apilib_harvest`` (``services.apilib_fgt``).
     live: bool = False
     #: the CLI-channel source this adapter writes (what "schema harvested" means
     #: for the new-build watch).

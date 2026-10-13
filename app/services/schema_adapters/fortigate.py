@@ -445,9 +445,11 @@ ADAPTER = register(Adapter(
                               "14,836 fields; the global index answers 403 to a read-only "
                               "token)"),),
     unverified=UNVERIFIED, live=False,
-    notes="Catalog-only in SATOM: evidence arrives by pack (satom-harvester) or by "
-          "`flask apilib schema-import` (a per-table capture directory is accepted). "
-          "The CLI tree misses REST tables (9 on 8.0.1): both channels are needed."),
+    notes="No live CLI harvest in SATOM: `tree` evidence arrives by pack (satom-harvester) "
+          "or by `flask apilib schema-import` (a per-table capture directory is accepted). "
+          "The REST ?action=schema is also read live from a registered FortiGate by the "
+          "apilib_harvest job (services.apilib_fgt). The CLI tree misses REST tables (9 on "
+          "8.0.1): both channels are needed."),
     None)
 
 

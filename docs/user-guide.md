@@ -2048,9 +2048,10 @@ FortiGate, FortiAuthenticator, FortiAnalyzer). Its two tabs work on **one list
 of object types**: every table the product's configuration sync reads,
 including the ones no device holds an object of yet. Settings blocks are not
 object types and are left out: rows without a name, and an empty endpoint the
-API library measured as one settings object on the devices' builds. An empty
-type whose shape no build has measured yet (most FortiAuthenticator REST
-resources, FortiAnalyzer reports and device lists) stays listed and is marked
+API library measured as one settings object on the devices' builds, or that
+the FortiAnalyzer / FortiAuthenticator sync saw answer as one object (those
+syncs record whether each table answered a list, even an empty one, or one
+object). An empty type nothing has measured yet stays listed and is marked
 **list or settings block not measured**. A table whose objects are keyed by
 number is listed and marked so.
 

@@ -6,6 +6,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — errors the hourly configuration sync logged every hour
+
+- **FortiADC 7.6.x:** the sync asked for every table in the FortiADC
+  registry, including seven that only 8.0 serves (`user_app_group`,
+  `system_sso_admin`, …), and logged seven HTTP 404 errors per unit per hour.
+  It now asks only for what the unit's build serves (the API library had
+  already measured those seven as absent on 7.6.7). The API-library harvest
+  still asks for every table: it is what measures absence.
+- **FortiAnalyzer:** `report_generated` failed on every sync (`-32002 Missing
+  state`: it needs a state and a time range). It is the list of reports the
+  box produced, not configuration, so the sync leaves it out, along with
+  `logview_logfiles` (log-file state), like the other operational endpoints.
+
 ### Added — "Not in GUI, but in CLI" on the console, and an alert for stale processes
 
 - **`satom get device not-in-gui <device> [--endpoint <key|cli path>]`** — the
@@ -172,9 +185,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   table (FortiWeb ~250, FortiADC ~180), including the types no device holds an
   object of yet. Settings blocks are left out: rows without a name, and an
   empty endpoint the API library measured as one settings object on the
-  devices' builds (FortiADC `firewall connlimit` / `connlimit6`). An empty
-  type whose shape no build measured stays listed and says **list or settings
-  block not measured**; a table keyed by number is listed and says so. Next to each input: the pattern Discovery found on the devices
+  devices' builds (FortiADC `firewall connlimit` / `connlimit6`). The
+  FortiAnalyzer and FortiAuthenticator configuration syncs also record what
+  each table answered (a list, even an empty one, or one object), so their
+  empty types are judged too. An empty type nothing measured stays listed and
+  says **list or settings block not measured**; a table keyed by number is
+  listed and says so. Next to each input: the pattern Discovery found on the devices
   (**all devices agree** / **devices differ**), a **use it** link, and a live
   count of the existing names that follow what you type. A filter box and
   **Only types with objects on a device** keep the list readable.

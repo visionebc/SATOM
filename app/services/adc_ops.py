@@ -71,16 +71,23 @@ def firmware_string(client) -> str:
 #  is enforced by tests/test_product_separation.py)                            #
 # --------------------------------------------------------------------------- #
 
-def discovery_plan() -> list[dict]:
+def discovery_plan(version: str = "") -> list[dict]:
     """Every enabled ``product='fortiadc'`` registry endpoint EXCEPT child
     tables (``…_child_…`` needs a ``pkey``; their deep contents are the VS
     Inspector's layer). Sections come from the ADC GUI menu; anything the menu
     doesn't surface lands in "Other". Must run in app context (the registry is
-    DB-first) — the rediscovery worker thread only consumes the resolved plan."""
+    DB-first) — the rediscovery worker thread only consumes the resolved plan.
+
+    With *version*, the map of THAT build (``loader.registry_for``): names the
+    build measured absent are not asked. The hourly config sync passes it -- a
+    7.6.7 unit answered HTTP 404 to seven 8.0-only tables every hour. The
+    rediscovery / API-library harvest keeps the whole registry: it is what
+    measures absence in the first place."""
     from ..registry import loader
     from . import adc_menu
 
-    reg = loader.load_adc_registry()
+    reg = (loader.registry_for("fortiadc", version) if version
+           else loader.load_adc_registry())
     section_of: dict[str, str] = {}
     try:
         for g in adc_menu.menu():

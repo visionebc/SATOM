@@ -112,6 +112,19 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="fixed--errors-the-hourly-configuration-sync-logged-every-hour">Fixed — errors the hourly configuration sync logged every hour</h3>
+<ul>
+<li><strong>FortiADC 7.6.x:</strong> the sync asked for every table in the FortiADC
+  registry, including seven that only 8.0 serves (<code>user_app_group</code>,
+  <code>system_sso_admin</code>, …), and logged seven HTTP 404 errors per unit per hour.
+  It now asks only for what the unit's build serves (the API library had
+  already measured those seven as absent on 7.6.7). The API-library harvest
+  still asks for every table: it is what measures absence.</li>
+<li><strong>FortiAnalyzer:</strong> <code>report_generated</code> failed on every sync (<code>-32002 Missing
+  state</code>: it needs a state and a time range). It is the list of reports the
+  box produced, not configuration, so the sync leaves it out, along with
+  <code>logview_logfiles</code> (log-file state), like the other operational endpoints.</li>
+</ul>
 <h3 id="added--not-in-gui-but-in-cli-on-the-console-and-an-alert-for-stale-processes">Added — "Not in GUI, but in CLI" on the console, and an alert for stale processes</h3>
 <ul>
 <li><strong><code>satom get device not-in-gui &lt;device&gt; [--endpoint &lt;key|cli path&gt;]</code></strong> — the
@@ -278,9 +291,12 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   table (FortiWeb ~250, FortiADC ~180), including the types no device holds an
   object of yet. Settings blocks are left out: rows without a name, and an
   empty endpoint the API library measured as one settings object on the
-  devices' builds (FortiADC <code>firewall connlimit</code> / <code>connlimit6</code>). An empty
-  type whose shape no build measured stays listed and says <strong>list or settings
-  block not measured</strong>; a table keyed by number is listed and says so. Next to each input: the pattern Discovery found on the devices
+  devices' builds (FortiADC <code>firewall connlimit</code> / <code>connlimit6</code>). The
+  FortiAnalyzer and FortiAuthenticator configuration syncs also record what
+  each table answered (a list, even an empty one, or one object), so their
+  empty types are judged too. An empty type nothing measured stays listed and
+  says <strong>list or settings block not measured</strong>; a table keyed by number is
+  listed and says so. Next to each input: the pattern Discovery found on the devices
   (<strong>all devices agree</strong> / <strong>devices differ</strong>), a <strong>use it</strong> link, and a live
   count of the existing names that follow what you type. A filter box and
   <strong>Only types with objects on a device</strong> keep the list readable.</li>

@@ -213,7 +213,7 @@ def _scheme_model(product: str) -> dict:
     except Exception:  # noqa: BLE001 — the trees still list what devices hold
         sweep = {}
     try:
-        kinds = device_sync.table_kinds(product, fleet, sweep)
+        kinds = device_sync.table_kinds(product, fleet, sweep, trees)
     except Exception:  # noqa: BLE001 — unmeasured shapes stay listed
         log.exception("naming: table_kinds(%s) failed", product)
         kinds = {}

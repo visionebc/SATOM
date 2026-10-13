@@ -158,23 +158,40 @@ class FortiAuthenticatorClient(BaseClient):
         harvest, menu, explorer — handles exactly one shape. Device refusals
         surface as ``error`` instead of masquerading as an empty list.
         """
+        rows, err, _shape = self.list_with_shape(logical, **params)
+        return rows, err
+
+    def list_with_shape(self, logical: str, **params):
+        """(rows, error, shape): :meth:`list_with_error` plus what the device
+        answered -- ``"table"`` (a Tastypie collection, even an empty one),
+        ``"singleton"`` (one bare object) or ``""`` (no answer to judge). The
+        configuration sweep records it so an EMPTY list can be told from a
+        settings block (Naming lists the first, not the second)."""
         try:
             path = self._resolve(logical)
         except KeyError as exc:
-            return [], str(exc)
-        return self.list_path_with_error(path, **params)
+            return [], str(exc), ""
+        return self._list_path(path, **params)
 
     def list_path_with_error(self, path: str, **params):
         """Same contract as :meth:`list_with_error` for an already-resolved
         path (the explorer hands us raw paths)."""
+        rows, err, _shape = self._list_path(path, **params)
+        return rows, err
+
+    def _list_path(self, path: str, **params):
         first, err = self._call('GET', path, params={'limit': _PAGE_SIZE, **params})
         if err:
-            return [], err
+            return [], err, ""
         if first is None:
-            return [], None
+            return [], None, ""
         if not self._is_collection(first):
-            return [first], None  # singleton resource
+            return ([first], None, "singleton") if isinstance(first, dict) else ([first], None, "")
 
+        rows, err = self._paginate(first)
+        return rows, err, "table"
+
+    def _paginate(self, first):
         rows = list(first.get('objects') or [])
         meta = first.get('meta') or {}
         total = meta.get('total_count')

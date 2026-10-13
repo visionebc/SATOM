@@ -56,7 +56,10 @@ from pathlib import Path
 from ..extensions import db
 
 # Snapshot keys that change every sweep without the device config changing.
-VOLATILE_KEYS = ("generated_at", "errors")
+# ``shapes`` (what each table answered: list or object) describes the API, not
+# the configuration; hashing it would mint a version of every unchanged
+# FortiAnalyzer/FortiAuthenticator the first sync after it was added.
+VOLATILE_KEYS = ("generated_at", "errors", "shapes")
 
 # --- Nested volatility -----------------------------------------------------
 # VOLATILE_KEYS is top-level only, and that was not enough: the fields that

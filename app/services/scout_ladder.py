@@ -1215,9 +1215,36 @@ def default_ports(*, analyzer=None, faz_adom: str = "root", faz_devid: str = "",
         return out
 
     def _inventory_hosts(appliance, policy):
-        """What this appliance publishes: its own address and every front-end
-        its configuration (or, failing that, its live listing) names."""
-        hosts = {str(getattr(appliance, "host", "") or "")}
+        """What this appliance publishes, as ``(host, port)`` PAIRS: its own
+        management and SSH ports, and every front-end its configuration (or,
+        failing that, its live listing) names, on the port it is served on.
+
+        PAIRS, NOT BARE HOSTS. A bare host authorises every port on it
+        (:func:`net_guard._inventory_allows`), so an operator without
+        ``monitoring.probe_free`` could type the appliance's address with any
+        port and have SATOM dial it — a port scan of an inventoried box, made
+        from this node, by someone the free-target permission exists to stop.
+        A listed service authorises its own port and its scheme's default
+        port (a FortiWeb policy with ``service HTTP`` and SSL on resolves to
+        port 80 but answers on 443 too); nothing else on that host.
+        """
+        pairs: set[tuple[str, int]] = set()
+
+        def _add(host, port):
+            host = str(host or "").strip()
+            try:
+                port = int(port or 0)
+            except (TypeError, ValueError):
+                return
+            if host and 0 < port < 65536:
+                pairs.add((host, port))
+
+        def _default(scheme):
+            return 443 if str(scheme or "").lower() == "https" else 80
+
+        own = str(getattr(appliance, "host", "") or "")
+        _add(own, getattr(appliance, "port", None) or 443)
+        _add(own, getattr(appliance, "ssh_port", None) or 22)
         kind = str(getattr(appliance, "kind", "") or "")
         targets = None
         try:
@@ -1231,11 +1258,24 @@ def default_ports(*, analyzer=None, faz_adom: str = "root", faz_devid: str = "",
         except Exception:                         # noqa: BLE001
             targets = None
         for t in targets or []:
-            hosts.add(str(getattr(t, "host", "") or ""))
+            host = getattr(t, "host", "")
+            port = getattr(t, "port", None)
+            scheme = getattr(t, "scheme", "")
+            if port:
+                _add(host, port)
+                _add(host, _default(scheme))
+            else:
+                # No port resolved: the same defaults ``_front_end`` dials.
+                _add(host, 80)
+                _add(host, 443)
         if kind != "fortiadc":
             for r in (_live_objects(appliance) or []):
-                hosts.add(str(r.get("vserver") or "").strip().split("/")[0].strip())
-        return [h for h in hosts if h]
+                host = str(r.get("vserver") or "").strip().split("/")[0].strip()
+                proto = str(r.get("protocol") or "").strip().upper()
+                scheme = "https" if proto.startswith("HTTPS") else "http"
+                _add(host, str(r.get("httpPort") or "").strip() or _default(scheme))
+                _add(host, _default(scheme))
+        return sorted(pairs)
 
     def _authorise(host, port, *, typed=False, appliance=None, policy=None):
         """Same rule as the certificate inspector: a host the OPERATOR typed is
@@ -1253,10 +1293,10 @@ def default_ports(*, analyzer=None, faz_adom: str = "root", faz_devid: str = "",
         except net_guard.TargetError as exc:
             if "not in the inventory" in str(exc):
                 raise net_guard.TargetError(
-                    "%s is not published by this appliance. Typing an "
-                    "arbitrary host needs the '%s' permission; leave Published "
-                    "host blank to use the object's VIP."
-                    % (host, net_guard.FREE_PERMISSION)) from None
+                    "%s:%s is not published by this appliance. Typing an "
+                    "arbitrary host or port needs the '%s' permission; leave "
+                    "Published host blank to use the object's VIP."
+                    % (host, port, net_guard.FREE_PERMISSION)) from None
             raise
 
     def _live_rows(appliance):

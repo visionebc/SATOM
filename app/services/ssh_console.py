@@ -102,61 +102,111 @@ class ConsoleViolation(Exception):
 # Quoted spans are removed first so ``set comment "never run execute
 # factoryreset"`` is a comment and not a refusal.
 #
-# THE CLI ACCEPTS UNIQUE ABBREVIATIONS, so the words are matched as prefixes:
-# ``exe factoryres`` IS ``execute factoryreset``. The verb matches from two
-# letters (``ex``); a subcommand from ``_MIN_ABBREV`` letters, or whole when
-# its name is shorter (``ha``). A prefix that is ambiguous on the box is
-# refused by the box, so over-matching one costs nothing.
-_MIN_ABBREV = 4
+# THE CLI ACCEPTS UNIQUE ABBREVIATIONS, so every keyword is matched as ANY
+# prefix of itself, from ONE letter: ``exe fa`` is ``execute factoryreset`` on
+# a box where nothing else under ``execute`` starts with ``fa``, and ``exe reb``
+# is a reboot everywhere. This gate cannot know which prefixes are unique on
+# which product and build, so it assumes every prefix is. Over-matching is
+# cheap and one-directional: a prefix the box finds ambiguous is refused by the
+# box anyway, so the only line this gate can wrongly stop is one that would not
+# have run. Under-matching sends a factory reset without the acknowledgement.
+#
+# A MINIMUM OF FOUR letters was the first design. It let ``exe fa``,
+# ``exe reb``, ``exe shu``, ``exe res``, ``exe h``, ``exe mig … ftp`` and
+# ``set passw`` through as SAFE — a forbidden command downgraded to a plain
+# ``config_write`` line.
+#
+# A keyword is a whole TOKEN: the prefix must not continue into a letter, digit
+# or hyphen (``exe hardware`` is not ``exe ha``; ``exe revision`` is not
+# ``exe reboot``). ``factoryreset`` / ``formatlogdisk`` / ``erase-disk`` spelled
+# in full also catch their longer siblings (``factoryreset2``,
+# ``factoryreset-shutdown``).
+_MIN_ABBREV = 1
+
+_TOK_START = r"(?<![\w-])"
+_TOK_END = r"(?![\w-])"
 
 
 def _abbrev(word: str, least: int = _MIN_ABBREV) -> str:
     """Regex for ``word`` or any prefix of it at least ``least`` long."""
-    least = min(least, len(word))
+    least = min(max(least, 1), len(word))
     rest = ""
     for ch in reversed(word[least:]):
         rest = "(?:%s%s)?" % (re.escape(ch), rest)
     return re.escape(word[:least]) + rest
 
 
-_EXEC = r"\b%s\s+" % _abbrev("execute", 2)
+def _kw(*words: str) -> str:
+    """One whole token that is a prefix (from one letter) of any of ``words``."""
+    return "(?:%s)%s" % ("|".join(_abbrev(w) for w in words), _TOK_END)
+
+
+_EXEC = _TOK_START + _abbrev("execute") + r"\s+"
+# ``set`` / ``unset`` followed by a password attribute. ``unset password``
+# blanks it, which loses SATOM the appliance exactly as a new one does.
+_SET = _TOK_START + _kw("set", "unset") + r"\s+"
+# A transport anywhere later on a backup/migrate line, delimited by
+# whitespace so a file name such as ``f.conf`` is not read as ``ftp``.
+_CLEARTEXT = r"(?<!\S)%s(?!\S)" % _kw("tftp", "ftp")
 
 _FORBIDDEN: tuple[tuple[re.Pattern, str], ...] = (
-    (re.compile(_EXEC + r"(?:factoryreset|%s\b)" % _abbrev("factoryreset"), re.I),
+    (re.compile(_EXEC + r"(?:factoryreset|%s)" % _kw("factoryreset"), re.I),
      "factory reset — erases the entire configuration and every certificate on the appliance"),
-    (re.compile(_EXEC + r"(?:formatlogdisk|%s\b)" % _abbrev("formatlogdisk"), re.I),
+    (re.compile(_EXEC + r"(?:formatlogdisk|%s)" % _kw("formatlogdisk"), re.I),
      "formats the log disk — destroys the local log history this console exists to collect"),
-    (re.compile(_EXEC + r"(?:erase-disk|%s\b)" % _abbrev("erase-disk"), re.I),
+    (re.compile(_EXEC + r"(?:erase-disk|%s)" % _kw("erase-disk"), re.I),
      "erases a disk"),
-    (re.compile(_EXEC + r"(?:%s\s+|%s\s+)?%s\b"
-                % (_abbrev("usb-disk"), _abbrev("disk"), _abbrev("format")), re.I),
+    (re.compile(_EXEC + r"(?:%s\s+)?%s" % (_kw("usb-disk", "disk"), _kw("format")), re.I),
      "formats storage"),
 )
 
 _DISRUPTIVE: tuple[tuple[re.Pattern, str], ...] = (
-    (re.compile(_EXEC + r"%s\b" % _abbrev("reboot"), re.I),
+    (re.compile(_EXEC + _kw("reboot"), re.I),
      "reboots the appliance — every policy it serves goes down until it comes back"),
-    (re.compile(_EXEC + r"%s\b" % _abbrev("shutdown"), re.I),
+    (re.compile(_EXEC + _kw("shutdown"), re.I),
      "powers the appliance off — SATOM has no way to power it back on"),
-    (re.compile(_EXEC + r"%s\b" % _abbrev("restore"), re.I),
+    (re.compile(_EXEC + _kw("restore"), re.I),
      "replaces the running configuration or firmware image"),
-    (re.compile(_EXEC + r"%s\b" % _abbrev("ha"), re.I),
+    (re.compile(_EXEC + _kw("ha"), re.I),
      "changes HA state — this can force a failover"),
-    (re.compile(_EXEC + r"(?:%s|%s)\s+.*\b(tftp|ftp)\b"
-                % (_abbrev("backup"), _abbrev("migrate")), re.I),
+    (re.compile(_EXEC + _kw("backup", "migrate") + r".*" + _CLEARTEXT, re.I),
      "sends configuration off the appliance in the clear"),
-    (re.compile(r"\bset\s+(password|passwd)\b", re.I),
+    (re.compile(_SET + _kw("password", "passwd"), re.I),
      "changes a stored password — if this is the admin SATOM uses, SATOM loses "
      "the appliance until the credential is updated in Appliances"),
 )
 
-_QUOTED = re.compile(r"""(["'])(?:\\.|(?!\1).)*\1""")
+_QUOTED = re.compile(r"""(["'])((?:\\.|(?!\1).)*)\1""")
 _CONTROL_CHARS = ssh_ops._CONTROL_CHARS
 
 
 def _unquoted(line: str) -> str:
-    """``line`` with quoted spans blanked out, so values are not read as verbs."""
-    return _QUOTED.sub(" ", line)
+    """``line`` as the scan reads it: values that are not keywords removed.
+
+    A quoted span holding whitespace is a value — FortiOS needs the quotes for
+    exactly that — and is blanked, so ``set comment "never run execute
+    factoryreset"`` stays a comment. A quoted span WITHOUT whitespace is one
+    token the CLI unwraps, and may be a keyword (``execute "reboot"``,
+    ``ex"e" reb``), so its content is kept in place.
+    """
+    def _one(m: re.Match) -> str:
+        inner = m.group(2)
+        return " " if (not inner or re.search(r"\s", inner)) else inner
+    return _QUOTED.sub(_one, line)
+
+
+def _scan_views(line: str) -> tuple[str, ...]:
+    """Every way the box may read ``line``; the gate takes the worst.
+
+    ``?`` is a help key on the FortiOS-family CLIs, even inside quotes (see
+    ``cli_writer.DIALECTS``): it is NOT inserted, so ``exe reb?oot`` runs as
+    ``exe reboot``. FortiWeb inserts it literally. Scanning both readings
+    costs one more regex pass and never needs to know the product.
+    """
+    bare = _unquoted(line)
+    if "?" not in line:
+        return (bare,)
+    return (bare, _unquoted(line.replace("?", "")))
 
 
 def parse_script(text: str) -> list[str]:
@@ -188,12 +238,12 @@ def classify_command(command: str) -> tuple[str, str]:
     line = (command or "").strip()
     if not line:
         return TIER_FORBIDDEN, "empty command"
-    bare = _unquoted(line)
+    views = _scan_views(line)
     for pat, why in _FORBIDDEN:
-        if pat.search(bare):
+        if any(pat.search(v) for v in views):
             return TIER_FORBIDDEN, why
     for pat, why in _DISRUPTIVE:
-        if pat.search(bare):
+        if any(pat.search(v) for v in views):
             return TIER_DISRUPTIVE, why
     return TIER_SAFE, ""
 
@@ -271,11 +321,22 @@ def classify_output(text: str) -> tuple[str, str]:
 # ``$ set password S3cr3t!`` — with an anchor, the redactor matched nothing a
 # real transcript ever contains and every bundle would have carried the
 # password out of the building. Caught by a test, not by a review.
+#
+# THE ATTRIBUTE IS MATCHED THE WAY THE GATE MATCHES KEYWORDS — as any prefix,
+# because the CLI takes ``set passw S3cr3t!`` as ``set password S3cr3t!`` and
+# the transcript records what was TYPED. A whole-word list let every
+# abbreviation, and ``psksecret`` (``psk`` was listed, the real attribute is
+# longer), leave in a TAC bundle in clear text. Compound names carrying a
+# secret word (``auth-pwd``, ``bind-password``, ``psksecret-remote``,
+# ``md5-key``) are matched by that word. Over-redaction costs a value in a
+# transcript; under-redaction costs the secret.
+_SECRET_WORDS = ("password", "passwd", "passphrase", "psksecret", "secret", "key",
+                 "private-key")
+_SECRET_ATTR = r"(?:%s|[\w-]*(?:password|passwd|pwd|secret|passphrase|psk)[\w-]*%s|[\w-]*-keys?\d*%s)" % (
+    _kw(*_SECRET_WORDS), _TOK_END, _TOK_END)
 _SECRET_VALUE = re.compile(
-    r"""^(?P<head>.*?\bset\s+(?:password|passwd|psk|secret|passphrase|key|
-        private-key|auth-pwd|bind-password|admin-password|shared-secret)\s+)
-        (?P<val>\S.*)$""",
-    re.I | re.X | re.M)
+    r"^(?P<head>.*?" + _SET + _SECRET_ATTR + r"\s+)(?P<val>\S.*)$",
+    re.I | re.M)
 _PEM = re.compile(
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
     re.S)

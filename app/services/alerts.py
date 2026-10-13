@@ -724,17 +724,17 @@ def _check_backup() -> list[dict]:
     return []
 
 
-# Keys that change on every harvest (wall-clock, rotating crypto material,
-# device uptime) and are NOT config drift — the device embeds its own live state
-# in the config dump. Stripped at ANY depth before comparing. Operator-tunable
-# via ``alerts.drift_volatile_keys`` (comma list, replaces the default). Matched
-# case-insensitively on the exact key name so a schedule field like
-# ``start-hour`` is NOT stripped (only a bare ``hour``).
 def _drift_exclude_slugs() -> set[str]:
-    # faz01 embeds rotating base64 session/crypto tokens that survive key-name
-    # normalisation; excluded by default until its volatile fields are mapped.
-    raw = AppSetting.get("alerts.drift_exclude")
-    raw = "faz01" if raw is None else raw
+    """Device names the operator listed in ``alerts.drift_exclude``.
+
+    Empty by default. It used to default to ``faz01``: that box's "rotating
+    crypto tokens" were FortiAnalyzer's per-read salted ``["ENC", ...]``
+    secrets, now dropped by the FortiAnalyzer sweep and by the SoT identity
+    (``sot_store.RPC_SECRET_TAG``). A lab hostname baked into the shipped
+    default also silenced drift on ANY customer device that happened to be
+    called faz01. Volatile fields belong in ``sot_store.normalise``, which
+    keeps the version history clean too, not in a per-device mute."""
+    raw = AppSetting.get("alerts.drift_exclude") or ""
     return {s.strip() for s in raw.replace(";", ",").split(",") if s.strip()}
 
 

@@ -314,16 +314,19 @@ def _collect_box(appliance, params, ts) -> list:
             vm_store.line("satom_box_disk_pct", L, f.get("disk_used_pct"), ts),
             vm_store.line("satom_box_sessions", L, f.get("sessions"), ts),
         ]
-    # FortiADC: `get system performance` over read-only SSH — same parser the
-    # deep monitors trust (REST has no equivalent on this product).
+    # FortiADC / FortiAnalyzer: `get system performance` over read-only SSH —
+    # same parser the deep monitors trust (REST has no equivalent on these).
+    # The keys are the parser's own (``cpu_busy`` / ``mem_used_pct``): this
+    # branch used to read ``cpu_used`` / ``mem_used``, which the parser never
+    # produced, so vm_store.line() skipped both and the series stayed empty.
     from . import deep_monitor as dm
     from . import ssh_ops
     raw = ssh_ops.run_command(appliance, dm.PERF_CMD, timeout=12.0)
     perf = dm.parse_performance(raw)
     L = _labels(appliance)
     return [
-        vm_store.line("satom_box_cpu_pct", L, perf.get("cpu_used"), ts),
-        vm_store.line("satom_box_mem_pct", L, perf.get("mem_used"), ts),
+        vm_store.line("satom_box_cpu_pct", L, perf.get("cpu_busy"), ts),
+        vm_store.line("satom_box_mem_pct", L, perf.get("mem_used_pct"), ts),
     ]
 
 

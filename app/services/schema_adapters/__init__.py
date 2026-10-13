@@ -6,8 +6,8 @@ Every Fortinet product describes its configuration schema differently:
 product                CLI schema                   REST schema
 =====================  ===========================  ==============================
 FortiWeb               ``tree`` (types, options)    shape probe of each tree object
-FortiADC               ``tree`` (assumed FortiOS    none implemented (unverified)
-                       family, unverified)
+FortiADC               ``tree`` (FortiWeb format,   shape probe of each tree object
+                       verified on 7.6.7)           (a child table by ``?pkey=``)
 FortiAuthenticator     no ``tree``: ``config X`` +  Tastypie ``/api/v1/<res>/schema/``
                        ``set ?`` help per object    (the directory is complete)
 FortiGate              ``tree`` (FortiOS format)    ``GET /api/v2/cmdb/?action=schema``

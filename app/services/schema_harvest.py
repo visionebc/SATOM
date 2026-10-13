@@ -22,8 +22,9 @@ What it does for one appliance (:func:`harvest`):
 
 Read-only against the box: GETs and the three read commands; no ``config``.
 FortiWeb is verified end to end; FortiADC's ``tree``, dump and CLI->REST rule
-are verified on fortiadc10 7.6.7 (``schema_adapters.fortiadc``) and its REST
-probe is not run (its REST fields come from the rediscovery sweep).
+are verified on fortiadc10 7.6.7 (``schema_adapters.fortiadc``), and its REST
+probe (:func:`_probe_rest_adc`) reads the tree objects the rediscovery sweep
+does not: top-level objects and tables one table deep (``?pkey=``).
 """
 from __future__ import annotations
 
@@ -40,8 +41,10 @@ _log = logging.getLogger(__name__)
 #: path rule verified on fortiadc10 7.6.7 (``cli_schema.PATH_RULE_STATUS``).
 SUPPORTED = ("fortiweb", "fortiadc")
 #: Products whose REST shape probe is implemented (the FortiWeb parent-fallback
-#: rule is FortiWeb's).
-PROBED = ("fortiweb",)
+#: rule is FortiWeb's; FortiADC reads through the sweep's own probe,
+#: :func:`_probe_rest_adc`).
+PROBED = ("fortiweb", "fortiadc")
+PRODUCT_ADC = "fortiadc"
 #: GETs one harvest may send for the shape probe (each probe of a nested path
 #: may cost a second GET for the parent). Reported when reached, never silent.
 DEFAULT_PROBE_BUDGET = 400
@@ -109,9 +112,27 @@ def _rest_candidates(product: str, version: str, tree_doc: dict) -> list:
     return [t[1:] for t in out]
 
 
+def _table_ancestors(objects: dict, parent_key: str) -> list:
+    """The TABLE objects above an object, nearest first (``summary.objects``)."""
+    out, seen = [], set()
+    k = parent_key
+    while k and k not in seen:
+        seen.add(k)
+        meta = objects.get(k) or {}
+        if meta.get("kind") == cli_schema.KIND_TABLE:
+            out.append(k)
+        k = meta.get("parent") or ""
+    return out
+
+
 def _probe_rest(appliance, product: str, candidates: list, tree_doc: dict, *,
                 client=None, budget: int = DEFAULT_PROBE_BUDGET) -> dict:
-    """Shape-probe the candidates. ``{"endpoints", "skipped", "spent"}``."""
+    """Shape-probe the candidates. ``{"endpoints", "skipped", "spent"}``.
+
+    FortiADC goes through :func:`_probe_rest_adc` (``client`` is then a
+    ``probe(entry) -> (rows, verdict, detail)`` callable)."""
+    if product == "fortiadc":
+        return _probe_rest_adc(appliance, candidates, tree_doc, probe=client, budget=budget)
     from urllib.parse import quote
 
     from ..clients.base import DeviceAuthError
@@ -145,23 +166,12 @@ def _probe_rest(appliance, product: str, candidates: list, tree_doc: dict, *,
         first_row[parent_key] = value
         return value
 
-    def _table_ancestors(parent_key: str) -> list:
-        out, seen = [], set()
-        k = parent_key
-        while k and k not in seen:
-            seen.add(k)
-            meta = objects.get(k) or {}
-            if meta.get("kind") == cli_schema.KIND_TABLE:
-                out.append(k)
-            k = meta.get("parent") or ""
-        return out
-
     for key, urn, parent, fields in candidates:
         if spent >= budget:
             _skip(key, "budget")
             continue
         query = ""
-        tables = _table_ancestors(parent)
+        tables = _table_ancestors(objects, parent)
         if len(tables) > 1:
             _skip(key, "nested more than one table deep")
             continue
@@ -183,6 +193,116 @@ def _probe_rest(appliance, product: str, candidates: list, tree_doc: dict, *,
             rows, verdict, detail = [], lib.VERDICT_ERROR, "%s: %s" % (type(exc).__name__, exc)
         endpoints[key] = {
             "urn": urn, "section": key.split("/", 1)[0], "verdict": verdict,
+            "rows": len(rows) if verdict == lib.VERDICT_OK else None,
+            # Names and JSON types only; ``None`` (blind) for an empty table.
+            "fields": lib._fields_from_rows(rows) if verdict == lib.VERDICT_OK else None,
+        }
+    return {"endpoints": endpoints, "spent": spent,
+            "skipped": {k: sorted(v) for k, v in skipped.items()}}
+
+
+def _probe_rest_adc(appliance, candidates: list, tree_doc: dict, *, probe=None,
+                    budget: int = DEFAULT_PROBE_BUDGET) -> dict:
+    """FortiADC's shape probe: one GET per candidate, READ-only.
+
+    The reads and their verdicts are the rediscovery sweep's own
+    (``adc_ops.make_probe``: HTTP 404 = absent, a negative payload = error).
+    Measured on fortiadc10 7.6.7 (2026-10-14, 300 GETs):
+
+    * a top-level object is ``GET /api/<key>``;
+    * a table inside a table is ``GET /api/<parent>_child_<table>?pkey=<the
+      mkey of a parent row>`` (the depth capture's read); the row's key rides
+      in the request only, the evidence keeps the bare URN. A child answer
+      whose field names are exactly the parent row's is the parent echoed:
+      ``error``, never fields;
+    * a table inside a singleton is ``GET /api/<singleton>_child_<table>``
+      (21 of 23 answered; the two with rows carry the tree's fields);
+    * a 404 at a CHILD path is NOT recorded: FortiADC serves some children only
+      inside the parent row (``system_addrgrp_child_member`` answers 404 while
+      the ``system_addrgrp`` row carries ``member-list``), so "absent" there
+      would turn served fields into false "CLI only". Listed in ``skipped``.
+
+    Not probed either (``skipped``): a path :func:`adc_ops.side_effect_path`
+    names (FortiADC reboots and resets through GETs), a key that is not a REST
+    path (the tree's ``(4508) integer`` entries), anything nested more than
+    one table deep or under a singleton inside a table, a child of an empty
+    table.
+    """
+    import re
+
+    from ..clients.base import DeviceAuthError
+    from . import adc_ops
+    if probe is None:
+        from . import rediscovery
+        probe = adc_ops.make_probe(rediscovery._client_snapshot(appliance))
+    objects = (tree_doc.get("summary") or {}).get("objects") or {}
+    spent = 0
+    first_row: dict = {}
+    endpoints: dict = {}
+    skipped: dict = {}
+
+    def _skip(key, why):
+        skipped.setdefault(why, []).append(key)
+
+    def _read(urn: str, params=None):
+        nonlocal spent
+        spent += 1
+        try:
+            rows, verdict, detail = probe({"urn": urn, "params": params})
+        except DeviceAuthError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — one path, not the harvest
+            return [], lib.VERDICT_ERROR, "%s: %s" % (type(exc).__name__, exc)
+        if verdict != lib.VERDICT_OK:
+            return [], verdict, detail
+        return [r for r in rows or [] if isinstance(r, dict)], verdict, detail
+
+    def _parent_row(parent_key: str):
+        """``(mkey, field names)`` of the parent table's first row, or ``(None, ...)``."""
+        if parent_key not in first_row:
+            mk, names = None, frozenset()
+            purn = cli_schema.urn_for(PRODUCT_ADC, parent_key)
+            if not adc_ops.side_effect_path(purn):
+                rows, verdict, _detail = _read(purn)
+                if verdict == lib.VERDICT_OK and rows:
+                    mk, names = rows[0].get("mkey"), frozenset(rows[0])
+            first_row[parent_key] = (None if mk in (None, "") else mk, names)
+        return first_row[parent_key]
+
+    for key, urn, parent, _fields in candidates:
+        if spent >= budget:
+            _skip(key, "budget")
+            continue
+        if not re.fullmatch(r"[A-Za-z0-9_]+", key or ""):
+            _skip(key, "not a REST path")
+            continue
+        urn = urn or cli_schema.urn_for(PRODUCT_ADC, key)
+        if adc_ops.side_effect_path(urn):
+            _skip(key, "a GET with side effects: never read")
+            continue
+        params, parent_names = None, frozenset()
+        if parent:
+            tables = _table_ancestors(objects, parent)
+            if len(tables) > 1:
+                _skip(key, "nested more than one table deep")
+                continue
+            if tables and tables != [parent]:
+                _skip(key, "nested under a singleton inside a table")
+                continue
+            if tables:
+                mk, parent_names = _parent_row(parent)
+                if mk is None:
+                    _skip(key, "parent table empty: needs a row to probe")
+                    continue
+                params = {"pkey": str(mk)}
+        rows, verdict, _detail = _read(urn, params)
+        if parent and verdict == lib.VERDICT_ABSENT:
+            _skip(key, "404 at a child path: maybe served inside the parent row")
+            continue
+        if parent_names and rows and all(frozenset(r) == parent_names for r in rows):
+            rows, verdict = [], lib.VERDICT_ERROR
+        endpoints[key] = {
+            "urn": urn, "section": key.split("_", 1)[0], "verdict": verdict,
             "rows": len(rows) if verdict == lib.VERDICT_OK else None,
             # Names and JSON types only; ``None`` (blind) for an empty table.
             "fields": lib._fields_from_rows(rows) if verdict == lib.VERDICT_OK else None,

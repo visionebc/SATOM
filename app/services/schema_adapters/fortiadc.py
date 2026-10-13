@@ -1,4 +1,4 @@
-"""FortiADC: ``tree`` + ``show full-configuration``; no REST probe.
+"""FortiADC: ``tree`` + ``show full-configuration`` + a REST shape probe.
 
 Same implementation as FortiWeb (``services.schema_harvest``). Measured on
 fortiadc10 (FortiADC-VM 7.6.7 build0676, 2026-10-13), not assumed:
@@ -25,7 +25,10 @@ attribute with ``_`` for ``-`` (REST ``direct_route_ip`` = CLI
 ``direct-route-ip``), ``mkey`` for the table key, and some outright renames
 (REST ``pool`` = CLI ``load-balance-pool``, ``domain-name`` =
 ``domainname``) that no rule derives. So on this product a CLI field REST
-does not name is NOT "CLI only": it may be served under another name.
+does not name is NOT "CLI only": it may be served under another name. The
+renames are joined only where they were MEASURED, per build
+(``fortiadc_renames``: REST rows against ``show full-configuration`` of
+fortiadc10 7.6.7 and fortiadc11 8.0.4, value by value).
 
 The knowledge pack's ``cli_tree`` (satom-harvester) keys FortiADC objects by
 the FortiWeb rule (``load-balance/pool``, ``firewall/policy/rule``); SATOM's
@@ -90,22 +93,28 @@ def _spelling(name: str) -> str:
     return str(name or "").lower().replace("_", "-")
 
 
-def field_twins(rest_names, cli_names, mkey: str = "") -> dict:
+def field_twins(rest_names, cli_names, mkey: str = "", renames=None) -> dict:
     """``{REST field name: CLI field name}`` for the fields of ONE object
     both channels name, spelled differently.
 
-    Only what the spelling proves: the same name with ``_`` for ``-``
+    What the spelling proves: the same name with ``_`` for ``-``
     (REST ``direct_route_ip`` = CLI ``direct-route-ip``), and REST ``mkey``
     = the table key the tree names (``name``). A pair is made only when
     neither name is already on the other side, and one-to-one (two REST
     names that fold to one CLI name make no pair). Renames
-    (``pool`` / ``load-balance-pool``) are never guessed.
+    (``pool`` / ``load-balance-pool``) are never guessed: only ``renames``,
+    the pairs MEASURED on this object's build (``fortiadc_renames``), join
+    them, under the same conditions.
     """
     rest, cli = set(rest_names or ()), set(cli_names or ())
     out: dict = {}
     if mkey and REST_MKEY in rest and REST_MKEY not in cli and mkey in cli and mkey not in rest:
         out[REST_MKEY] = mkey
-    cli_free = {_spelling(c): c for c in sorted(cli - rest)}
+    for r, c in sorted((renames or {}).items()):
+        if r in rest and r not in cli and c in cli and c not in rest \
+                and r not in out and c not in out.values():
+            out[r] = c
+    cli_free = {_spelling(c): c for c in sorted(cli - rest - set(out.values()))}
     seen: dict = {}
     for r in sorted(rest - cli):
         if r in out:
@@ -129,14 +138,17 @@ def _harvest(appliance, **kw):
 
 ADAPTER = register(Adapter(
     product=PRODUCT, label="FortiADC",
-    capabilities=Capabilities(tree=True, show_full=True, rest_schema=False, rest_probe=False),
+    capabilities=Capabilities(tree=True, show_full=True, rest_schema=False, rest_probe=True),
     verified_on=(Verification(VERIFIED_ON["date"], VERIFIED_ON["device"], VERIFIED_ON["build"],
                               "tree, show full-configuration and the CLI -> REST path rule"),),
     unverified=UNVERIFIED, live=True,
     notes="tree prints the FortiWeb format (CLI ids, types, options); REST paths are "
           "underscore paths (/api/load_balance_virtual_server, <parent>_child_<table>). "
           "REST spells some fields differently from the CLI (direct_route_ip / "
-          "direct-route-ip, mkey / name, pool / load-balance-pool), so a CLI field REST "
-          "does not name reads unknown, never CLI only. No REST shape probe: the REST "
-          "fields come from the rediscovery sweep."),
+          "direct-route-ip, mkey / name, pool / load-balance-pool): spelling twins and "
+          "the renames measured on the build are joined, and any other CLI field REST "
+          "does not name reads unknown, never CLI only. The REST shape probe "
+          "(schema_harvest._probe_rest_adc) reads the tree objects the rediscovery sweep "
+          "does not, a child table by ?pkey=; a 404 at a child path is not recorded "
+          "(some children are served only inside the parent row)."),
     _harvest)

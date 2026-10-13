@@ -137,16 +137,27 @@ class FortiAnalyzerClient(BaseClient):
         """(rows, error) for a registry endpoint — device refusals surface as
         ``error`` instead of masquerading as an empty list (the FortiWeb
         license-lock lesson, applied here from day one)."""
+        rows, err, _shape = self.list_with_shape(logical, **params)
+        return rows, err
+
+    def list_with_shape(self, logical: str, **params):
+        """(rows, error, shape): :meth:`list_with_error` plus what the device
+        answered -- ``"table"`` (a list, even ``[]``), ``"singleton"`` (one
+        object) or ``""`` (no data: state endpoints answer nothing). Measured
+        on faz02 7.6.7: an empty ``/cli/global/system/mail`` answers ``[]``,
+        ``/cli/global/system/global`` an object."""
         try:
             url = self._resolve(logical)
         except KeyError as exc:
-            return [], str(exc)
+            return [], str(exc), ""
         data, err = self.call('get', url, **params)
         if err:
-            return [], err
+            return [], err, ""
         if isinstance(data, dict):
-            data = [data]
-        return (data if isinstance(data, list) else []), None
+            return [data], None, "singleton"
+        if isinstance(data, list):
+            return data, None, "table"
+        return [], None, ""
 
     # -- platform inventory -----------------------------------------------------
 

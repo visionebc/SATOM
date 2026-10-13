@@ -108,9 +108,10 @@ def snapshot_from_adc(appliance, *, timeout: float = 20.0) -> dict:
     authenticated ``FortiADCClient`` fetcher, and emits the SAME snapshot shape so
     ``device_store.ingest_snapshot`` and the ``reports/<slug>/_config.json`` writer
     are shared verbatim. Must run in an app context (the registry is DB-first)."""
+    from ..registry import loader
     from . import adc_ops
 
-    plan = adc_ops.discovery_plan()
+    plan = adc_ops.discovery_plan(loader.version_of(appliance))
     fetch = adc_ops.make_fetcher(appliance)
     sections: dict = {}
     total = 0
@@ -158,11 +159,15 @@ def _menu_sections(menu) -> dict[str, str]:
 # FortiAnalyzer registry endpoints that are OPERATIONAL data (live alerts,
 # log rates, clocks, task queues) — excluded from the config SoT harvest so
 # reports/<faz>/_config.json only changes when the CONFIG changes (no hourly
-# git churn from moving timestamps/counters).
+# git churn from moving timestamps/counters). ``report_generated`` (reports
+# the box produced, which also needs ``state`` + ``time-range``: every sync
+# logged "-32002 Missing state") and ``logview_logfiles`` (log-file state)
+# are outputs of the box, not its configuration.
 _FAZ_SOT_EXCLUDE = {
     "sys_status", "sys_ha_status", "task_task",
     "eventmgmt_alerts", "eventmgmt_alertlogs", "incidentmgmt_incidents",
     "logview_logstats", "logview_logfields", "storage_info",
+    "report_generated", "logview_logfiles",
 }
 
 
@@ -189,13 +194,16 @@ def snapshot_from_faz(appliance, *, timeout: float = 20.0) -> dict:
 
     client = FortiAnalyzerClient(appliance, timeout=timeout)
     sections: dict = {}
+    shapes: dict[str, str] = {}   # every answered table, empty ones too (Naming)
     total = 0
     errors: list[dict] = []
     consecutive = 0
     for name in sorted(reg):
         if name in _FAZ_SOT_EXCLUDE:
             continue
-        rows, err = client.list_with_error(name)
+        rows, err, shape = client.list_with_shape(name)
+        if shape:
+            shapes[name] = shape
         if err:
             errors.append({"endpoint": name, "error": str(err)[:160]})
             consecutive += 1
@@ -219,6 +227,7 @@ def snapshot_from_faz(appliance, *, timeout: float = 20.0) -> dict:
         "device": appliance.name, "appliance_id": appliance.id,
         "generated_at": datetime.utcnow().isoformat(), "total_objects": total,
         "section_count": len(sections), "sections": sections, "errors": errors,
+        "shapes": shapes,
     }
 
 
@@ -262,13 +271,16 @@ def snapshot_from_fac(appliance, *, timeout: float = 20.0) -> dict:
 
     client = FortiAuthenticatorClient(appliance, timeout=timeout)
     sections: dict = {}
+    shapes: dict[str, str] = {}   # every answered table, empty ones too (Naming)
     total = 0
     errors: list[dict] = []
     consecutive = 0
     for name in sorted(reg):
         if name in _FAC_SOT_EXCLUDE:
             continue
-        rows, err = client.list_with_error(name)
+        rows, err, shape = client.list_with_shape(name)
+        if shape:
+            shapes[name] = shape
         if err:
             errors.append({"endpoint": name, "error": str(err)[:160]})
             consecutive += 1
@@ -291,6 +303,7 @@ def snapshot_from_fac(appliance, *, timeout: float = 20.0) -> dict:
         "device": appliance.name, "appliance_id": appliance.id,
         "generated_at": datetime.utcnow().isoformat(), "total_objects": total,
         "section_count": len(sections), "sections": sections, "errors": errors,
+        "shapes": shapes,
     }
 
 
@@ -396,15 +409,17 @@ def sweep_tables(product: str, appliances=()) -> dict[str, str]:
     return out
 
 
-def table_kinds(product: str, appliances, tables) -> dict[str, str]:
+def table_kinds(product: str, appliances, tables, trees=()) -> dict[str, str]:
     """``{table: "table" | "singleton"}`` for the *tables* (registry names)
-    whose shape the API library measured on the builds of *appliances*.
+    whose shape was measured: by the API library on the builds of
+    *appliances*, and by the sweep itself -- the FortiAnalyzer and
+    FortiAuthenticator sweeps record what each table answered, empty ones
+    included, in the snapshot's ``shapes`` (*trees*).
 
     The name is matched by its URN on each build and by itself, both folded
-    (:func:`api_library.object_kind_key`). A table one build measured as a
-    list is a ``table``; ``singleton`` only when every build that measured it
-    says so. A table no build measured is absent -- "not measured", never a
-    guess either way."""
+    (:func:`api_library.object_kind_key`). A table any measure saw as a list
+    is a ``table``; ``singleton`` only when every measure says so. A table
+    nothing measured is absent -- "not measured", never a guess either way."""
     from ..registry import loader
     from . import api_library as lib
     builds = sorted({v for v in (loader.version_of(a) for a in appliances) if v})
@@ -419,6 +434,11 @@ def table_kinds(product: str, appliances, tables) -> dict[str, str]:
             got.discard(None)
             if got:
                 seen.setdefault(t, set()).update(got)
+    wanted = set(tables)
+    for tree in trees:
+        for t, kind in ((tree or {}).get("shapes") or {}).items():
+            if t in wanted and kind in ("table", "singleton"):
+                seen.setdefault(t, set()).add(kind)
     return {t: ("table" if "table" in k else "singleton") for t, k in seen.items()}
 
 

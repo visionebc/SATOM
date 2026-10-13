@@ -1898,6 +1898,8 @@ server {
     ssl_certificate     ${PKI}/public/server.crt;
     ssl_certificate_key ${PKI}/public/server.key;
     ssl_protocols TLSv1.2 TLSv1.3;
+    # Don't advertise the nginx version in the Server header or error pages.
+    server_tokens off;
     # Must be >= MAX_UPLOAD_BYTES in update_package_service.py, or a
     # valid update package dies with an nginx 413 that the app never
     # sees and therefore cannot explain.

@@ -2255,9 +2255,13 @@ it to the fleet; for the fleet-wide view, use Fleet → WAF → Artifacts (§13.
 <p><strong>Administrator → Naming</strong> is in every device ADOM (FortiWeb, FortiADC,
 FortiGate, FortiAuthenticator, FortiAnalyzer). Its two tabs work on <strong>one list
 of object types</strong>: every table the product's configuration sync reads,
-including the ones no device holds an object of yet. Settings blocks (rows
-without a name) are not object types and are left out; a table whose objects
-are keyed by number is listed and marked so.</p>
+including the ones no device holds an object of yet. Settings blocks are not
+object types and are left out: rows without a name, and an empty endpoint the
+API library measured as one settings object on the devices' builds. An empty
+type whose shape no build has measured yet (most FortiAuthenticator REST
+resources, FortiAnalyzer reports and device lists) stays listed and is marked
+<strong>list or settings block not measured</strong>. A table whose objects are keyed by
+number is listed and marked so.</p>
 <p><strong>Scheme</strong> holds the pattern of each object type. Entries marked <strong>builds
 names</strong> (the FortiWeb catalog: server policy, pool, WPP, certificate…) are
 the ones SATOM fills in when it creates objects from a web address, so they
@@ -6511,9 +6515,12 @@ build's.</p>
 <p><strong>Harvest this appliance now.</strong> When the build is unmeasured, vendor-only or
 its firmware unknown, the banner offers this button. It queues one background
 harvest of that appliance — a rediscovery sweep for FortiWeb and FortiADC, a
-read-only schema read for FortiAuthenticator — visible in the Job Manager. It
-needs <code>appliances.apply</code>. The answer says so when it cannot: the product has
-no live harvester (FortiAnalyzer, FortiGate), the appliance is in maintenance,
+read-only schema read for FortiAuthenticator and FortiGate, a read-only
+per-object syntax walk for FortiAnalyzer — visible in the Job Manager. It
+needs <code>appliances.apply</code>. A harvest that read nothing (for FortiAnalyzer: no
+object answered its syntax, or most were refused) ends as a failed job with
+the reason, never as evidence. The answer says so when it cannot: the
+appliance kind has no live harvester, the appliance is in maintenance,
 a harvest is already pending, or background harvesting is switched off on this
 installation. SATOM also queues a harvest by itself when it sees an appliance
 change firmware build; the <code>apilib_harvest</code> scheduled action (not scheduled by

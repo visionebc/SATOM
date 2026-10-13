@@ -103,7 +103,8 @@
               {% if e.table %}<code class="text-muted" style="font-size:10.5px;">{{ e.table }}</code>{% endif %}
               {% if e.derives %}<span class="fw-badge fw-badge-info" title="{{ _('SATOM fills this pattern in when it creates objects: only {name} is substituted.') }}">{{ _('builds names') }}</span>{% endif %}
               {% if e.numeric %}<span class="text-muted" style="font-size:11px;">{{ _('keyed by number on the devices') }}</span>{% endif %}
-              {% if not e.seen and e.table %}<span class="text-muted" style="font-size:11px;">{{ _('no objects on any device yet') }}</span>{% endif %}
+              {% if not e.seen and e.table %}<span class="text-muted" style="font-size:11px;">{{ _('no objects on any device yet') }}</span>
+                {%- if not e.shape %} <span class="text-muted nm-unmeasured" style="font-size:11px;" title="{{ _('No build of these devices measured whether this endpoint is a list of objects or one settings block. It stays listed until a device holds an object or the API library measures it.') }}">· {{ _('list or settings block not measured') }}</span>{% endif %}{% endif %}
             </label>
             <div class="input-group input-group-sm">
               <input type="text" class="form-control fw-form-control naming-input"

@@ -6,8 +6,6 @@ makes sense for a multi-user web app:
 * General        — app name, default platform, session lock, status-poll
                    interval, log levels, show-raw-config (persisted in the DB,
                    not per-worker ``current_app.config``).
-* Naming         — the name-pattern editor (ported ``services.naming``), with a
-                   live preview from one sample web address.
 * Classification — the zones / lines / departments catalogs that drive the
                    appliance Zone/Line/Department dropdowns.
 * Network Segments — named back-end networks (CIDR/interface/gateway) scoped to
@@ -29,7 +27,7 @@ from ..auth.decorators import require_permission
 from ..auth.password_policy import password_problem
 from ..extensions import csrf
 from ..models import db, Permission, User, Profile, Appliance
-from ..services import naming, settings_store as store
+from ..services import settings_store as store
 from ..services import lang_policy, langs as lang_registry
 from ..services import email_service as email
 from ..services import auth_store
@@ -129,7 +127,6 @@ def _acme_creds_state() -> dict:
 @login_required
 def index():
     from ..services import product_scope
-    scheme = naming.effective_scheme(store.naming_overrides())
     # Built before the render so the metrics-store health it contains is
     # computed ONCE and handed to all three Sentinel sections. Three
     # independent calls would triple this page's round-trips to the store for
@@ -169,8 +166,6 @@ def index():
         log_levels_all=store.LOG_LEVELS_ALL,
         log_formats_all=store.LOG_FORMATS,
         timezones_all=store.timezones(),
-        naming_sections=naming.elements_by_section(),
-        naming_scheme=scheme,
         classification=store.all_classification(),
         segments=store.segments(),
         ip_whitelist=store.ip_whitelist(),

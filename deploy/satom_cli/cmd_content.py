@@ -219,9 +219,22 @@ def _scan_layouts(root):
     return out
 
 
+def _unreadable(ctx):
+    r = Result("warn", "measured GUI layouts — unreadable as %s" % ctx.user, exit_code=4)
+    r.lines("why", ["data/ is 0750 for the service account by design.",
+                    "Re-run as root: sudo satom show layouts"])
+    return r
+
+
 def show_layouts(ctx, args):
     root = ctx.app_dir / GUI_DIR
-    if not root.is_dir():
+    try:
+        # is_dir() raises, not answers False, when data/ itself is closed to
+        # this account: "none on this node" would then be a lie.
+        present = root.is_dir()
+    except PermissionError:
+        return _unreadable(ctx)
+    if not present:
         r = Result("info", "measured GUI layouts — none on this node")
         r.lines("why", [
             "No knowledge pack with GUI templates has been imported here.",
@@ -232,10 +245,7 @@ def show_layouts(ctx, args):
     try:
         layouts = _scan_layouts(root)
     except PermissionError:
-        r = Result("warn", "measured GUI layouts — unreadable as %s" % ctx.user, exit_code=4)
-        r.lines("why", ["data/ is 0750 for the service account by design.",
-                        "Re-run as root: sudo satom show layouts"])
-        return r
+        return _unreadable(ctx)
     want = args[0] if args and not args[0].startswith("-") else ""
     r = Result("ok", "measured GUI layouts")
     for product, per in sorted(layouts.items()):

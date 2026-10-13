@@ -761,18 +761,18 @@ def _resolve_provider(conv: AdvisorConversation) -> tuple[dict, bool]:
     200 stream that every client would then have to special-case."""
     provider = get_provider(conv.provider_key) or get_provider(default_provider_key())
     if not provider:
-        raise ProviderError("no AI provider configured -- add one in Settings -> AI Advisor")
+        raise ProviderError("no AI provider configured -- add one in Settings -> Scout")
     # Rows saved before the flag existed carry no key and stay usable.
     if provider.get("enabled") is False:
         raise ProviderError(
             "the AI provider \"%s\" is disabled -- review its base URL and model "
-            "in Settings -> AI Advisor and save it to enable it"
+            "in Settings -> Scout and save it to enable it"
             % (provider.get("label") or provider.get("key")))
     is_external = leaves_lan(provider)
     if is_external and not external_allowed():
         raise ProviderError(
             "external providers are disabled -- turn on \"Allow external providers\" "
-            "in Settings -> AI Advisor first")
+            "in Settings -> Scout first")
     return provider, is_external
 
 

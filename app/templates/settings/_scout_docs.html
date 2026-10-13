@@ -14,11 +14,11 @@
 #}
 <div class="fw-card">
   <div class="fw-card-header">
-    <h2 class="fw-card-title">{{ _('Scout — architecture') }}</h2>
+    <h2 class="fw-card-title">{{ _('Fault Isolation — architecture') }}</h2>
   </div>
   <div class="fw-card-body">
     <p class="text-secondary" style="font-size:13px">
-      Scout answers one question — <strong>which layer is broken</strong> — and it answers it by
+      Fault Isolation answers one question — <strong>which layer is broken</strong> — and it answers it by
       walking down until something fails. It owns the ORDER and the VERDICT and nothing else:
       every rung delegates to the module that already owns its question, so there is never a
       second opinion in this product about whether a backend is reachable or a certificate is
@@ -51,7 +51,7 @@
     <p class="text-secondary" style="font-size:13px">
       This node sits on the management network. Its path to a backend is <em>not</em> the
       appliance's path to that backend, so a probe that succeeds from here proves nothing about
-      the service and one that fails accuses the wrong device. Scout therefore keeps the
+      the service and one that fails accuses the wrong device. Fault Isolation therefore keeps the
       vantages apart and labels every result with the one it came from; a rung it could only ask
       from one side says so rather than assuming the other.
     </p>
@@ -82,19 +82,19 @@
         words rather than issuing a clean bill.</li>
       <li><strong>A rung that crashes is UNKNOWN, not FAIL.</strong> A defect in this module is
         not the appliance's fault, and painting it as one sends someone to restart a healthy
-        device. The cost of the rule is that it also hides Scout's own bugs — which is why the
+        device. The cost of the rule is that it also hides Fault Isolation's own bugs — which is why the
         ladder is walked against real hardware and not only against fixtures.</li>
-      <li><strong>Read only.</strong> Only the methods listed under Settings → Scout → Settings
+      <li><strong>Read only.</strong> Only the methods listed under Settings → Fault Isolation → Settings
         are sent, and the check runs at the entrance, before anything is contacted.</li>
     </ol>
 
-    <h6 class="mt-4">{{ _('Where Scout ends and Sentinel begins') }}</h6>
+    <h6 class="mt-4">{{ _('Where Fault Isolation ends and Sentinel begins') }}</h6>
     <p class="text-secondary" style="font-size:13px">
       Not “security versus troubleshooting” — that line breaks the first time Sentinel raises a
       health incident. The line that holds is <strong>who starts it and what it owns</strong>:
       the clock starts Sentinel, it picks its own subject and it produces an <em>incident</em>;
-      an operator starts Scout, hands it the subject and gets back a <em>location</em>. An
-      incident may link into Scout with the object pre-filled. Scout never opens an incident.
+      an operator starts Fault Isolation, hands it the subject and gets back a <em>location</em>. An
+      incident may link into Fault Isolation with the object pre-filled. Fault Isolation never opens an incident.
     </p>
   </div>
 </div>

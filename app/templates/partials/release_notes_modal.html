@@ -138,7 +138,7 @@
               <div class="ms-auto form-check form-switch mb-0">
                 <input class="form-check-input" type="checkbox" id="rnScoutOn"
                        {% if not current_user.can('user_manage') %}disabled{% endif %}>
-                <label class="form-check-label small" for="rnScoutOn">{{ _('Scout advisory') }}</label>
+                <label class="form-check-label small" for="rnScoutOn">{{ _('Fault Isolation (includes the Upgrade Advisory)') }}</label>
               </div>
             </div>
             {# Scout's verdicts sit ABOVE the bug diff on purpose: a blocking

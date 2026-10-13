@@ -23380,3 +23380,63 @@ msgstr "Erreur de délivrabilité"
 
 msgid "mail leaves this node unsigned, straight to the recipient mail server. It is delivered, but it may land in spam."
 msgstr "le courrier quitte ce nœud sans signature, directement vers le serveur de messagerie du destinataire. Il est livré, mais il peut arriver dans les spams."
+
+msgid "Fault Isolation"
+msgstr "Isolation des pannes"
+
+msgid "Fault Isolation — architecture"
+msgstr "Isolation des pannes — architecture"
+
+msgid "Fault Isolation is switched off"
+msgstr "L'isolation des pannes est désactivée"
+
+msgid "Fault Isolation is switched off for this site (Settings → Fault Isolation → Availability)."
+msgstr "L'isolation des pannes est désactivée pour ce site (Paramètres → Isolation des pannes → Disponibilité)."
+
+msgid "Open Fault Isolation settings"
+msgstr "Ouvrir les paramètres d'isolation des pannes"
+
+msgid "Open Fault Isolation"
+msgstr "Ouvrir l'isolation des pannes"
+
+msgid "Save Fault Isolation settings"
+msgstr "Enregistrer les paramètres d'isolation des pannes"
+
+msgid "Enable Scout"
+msgstr "Activer Scout"
+
+msgid "Where Fault Isolation ends and Sentinel begins"
+msgstr "Où s'arrête l'isolation des pannes et où commence Sentinel"
+
+msgid "SATOM no longer reads vendor web sites. Release notes, the Upgrade Advisory, upgrade paths and signature metadata come from signed packs in two lanes: the API pack that ships with each release, and the rolling knowledge pack published whenever the knowledge changes. Every pack is signature-checked on import, and what this node measured itself always wins."
+msgstr "SATOM ne lit plus les sites web des fournisseurs. Les notes de version, le Conseiller de mise à niveau, les chemins de mise à niveau et les métadonnées de signatures proviennent de packs signés dans deux voies : le pack d'API livré avec chaque version, et le pack de connaissances glissant publié à chaque évolution des connaissances. Chaque pack est vérifié par signature à l'import, et ce que ce nœud a mesuré lui-même l'emporte toujours."
+
+msgid "Nothing in the harvested upgrade prose stops this move. Every page the Upgrade Advisory needed was read."
+msgstr "Rien dans le texte de mise à niveau collecté n'empêche ce déplacement. Toutes les pages dont le Conseiller de mise à niveau avait besoin ont été lues."
+
+msgid "The Upgrade Advisory cannot clear this move: part of the vendor prose it needed is not in the corpus. An unread page reads exactly like a page that said nothing — see the coverage below."
+msgstr "Le Conseiller de mise à niveau ne peut pas valider ce déplacement : une partie du texte du constructeur dont il avait besoin n'est pas dans le corpus. Une page non lue ressemble exactement à une page qui ne disait rien — voir la couverture ci-dessous."
+
+msgid "The Upgrade Advisory advises; it does not authorise. Whether a live flash may run is decided by change control above."
+msgstr "Le Conseiller de mise à niveau conseille ; il n'autorise pas. L'exécution d'un flash en direct est décidée par le contrôle des changements ci-dessus."
+
+msgid "Upgrade Advisory — release-notes review"
+msgstr "Conseiller de mise à niveau — revue des notes de version"
+
+msgid "What the Upgrade Advisory could not read"
+msgstr "Ce que le Conseiller de mise à niveau n'a pas pu lire"
+
+msgid "Ask the Upgrade Advisory to review the release notes for this version"
+msgstr "Demander au Conseiller de mise à niveau de revoir les notes de version de cette version"
+
+msgid "Turn on Fault Isolation in Settings → Fault Isolation to see the Upgrade Advisory."
+msgstr "Activez l'isolation des pannes dans Paramètres → Isolation des pannes pour voir le Conseiller de mise à niveau."
+
+msgid "The Upgrade Advisory read the release notes for this move."
+msgstr "Le Conseiller de mise à niveau a lu les notes de version pour ce passage."
+
+msgid "Upgrade Advisory"
+msgstr "Conseiller de mise à niveau"
+
+msgid "Fault Isolation (includes the Upgrade Advisory)"
+msgstr "Isolation des pannes (inclut le Conseiller de mise à niveau)"

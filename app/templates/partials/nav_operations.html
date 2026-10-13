@@ -5,8 +5,9 @@
    the reference menu (operator rule), so every device ADOM now draws the same
    group in the same place: after the device's own menu, before API (this
    partial is included by partials/nav_product_api.html for that reason —
-   FortiADC's device menu is drawn there too). Global has no Operations group:
-   it files Backend Reachability and Config Compare under Fleet.
+   FortiADC's device menu is drawn there too). Backend Reachability and Config
+   Compare left this group on 2026-10-13 for Fleet › Troubleshooting
+   (partials/nav_troubleshooting.html), in every ADOM.
 
    Each entry is live where its page works for this ADOM's devices and drawn
    disabled with the reason elsewhere (services/adom_menu.py). Permissions are
@@ -14,9 +15,7 @@
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
 {% if product.key != 'global' and not product.placeholder %}
-{% set _g_ops = request.blueprint in ['backups','logs','import_backup','reach_batch','config_compare'] %}
-{% set _m_reach = adom_menu('reach_batch', product) %}
-{% set _m_cmp = adom_menu('config_compare', product) %}
+{% set _g_ops = request.blueprint in ['backups','logs','import_backup'] %}
 {% set _m_bak = adom_menu('backups', product) %}
 {% set _m_logs = adom_menu('logs', product) %}
 {% set _m_imp = adom_menu('import_backup', product) %}
@@ -24,27 +23,6 @@
 <div class="fw-nav-group {{ 'open' if _g_ops }}" data-nav-group="Operations">
   <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-tools fw-nav-section-icon" style="color:#94a3b8;"></i><span>{{ _('Operations') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-group-body">
-    {# TROUBLESHOOTING — the two diagnostic pages, moved out of the FortiWeb
-       ADOM's Fleet group on 2026-09-08. Fleet holds pages that DESCRIBE the
-       estate (Search, DNS Lookup, Service Diagram); these two answer "why is
-       this path broken", which is an operational verb. #}
-    <div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['reach_batch','config_compare'] }}" data-nav-subgroup="Troubleshooting">
-      <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-life-preserver fw-nav-icon"></i><span>{{ _('Troubleshooting') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-      <div class="fw-nav-subgroup-body">
-        {% if may_open('reach_batch.index') %}
-        {% if _m_reach.on %}
-        <a class="fw-nav-item {{ 'active' if request.blueprint == 'reach_batch' else '' }}" href="{{ url_for('reach_batch.index') }}">
-          <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Backend Reachability') }}</span></a>
-        {% else %}{{ nav_off('bi-diagram-3', _('Backend Reachability'), _m_reach.reason) }}{% endif %}
-        {% endif %}
-        {% if may_open('config_compare.index') %}
-        {% if _m_cmp.on %}
-        <a class="fw-nav-item {{ 'active' if request.blueprint == 'config_compare' else '' }}" href="{{ url_for('config_compare.index') }}">
-          <i class="bi bi-file-diff fw-nav-icon"></i><span>{{ _('Config Compare') }}</span></a>
-        {% else %}{{ nav_off('bi-file-diff', _('Config Compare'), _m_cmp.reason) }}{% endif %}
-        {% endif %}
-      </div>
-    </div>
     {% if current_user.can('backups.view') and may_open('backups.index') %}
     {% if _m_bak.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'backups' else '' }}" href="{{ url_for('backups.index') }}">

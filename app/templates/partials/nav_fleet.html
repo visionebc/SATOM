@@ -15,9 +15,11 @@
    three stay here only as a fallback for profiles that cannot see their
    new group.
 
-   Order (operator, 2026-10-13): Dashboard (the ADOM home, where there is
-   one), then Jobs, Monitoring, Calendar, Architecture, Service Diagram,
-   Search, DNS Lookup; the rest keeps its previous relative order.
+   Order (operator, 2026-10-13, second pass): Dashboard (the ADOM home, where
+   there is one), Calendar, Architecture, Service Diagram, Monitoring,
+   Search, DNS Lookup, Troubleshooting ▸ (partials/nav_troubleshooting.html:
+   Backend Reachability, Config Compare, Fault Isolation, Scout), Fleet
+   Objects and WAF (FortiWeb and FortiADC ADOMs only) — and Jobs last.
 
    Draws the ITEMS only. The caller supplies the wrapper: a collapsible group
    in a device ADOM, the "Global" context block in the Global ADOM. The
@@ -31,11 +33,6 @@
 <a class="fw-nav-item {{ 'active' if request.endpoint == 'fgt.index' else '' }}" href="{{ url_for('fgt.index') }}">
   <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Dashboard') }}</span></a>
 {% endif %}
-{% if may_open('jobs.manager') %}
-<a class="fw-nav-item {{ 'active' if request.blueprint == 'jobs' else '' }}" href="{{ url_for('jobs.manager') }}">
-  <i class="bi bi-list-task fw-nav-icon"></i><span>{{ _('Jobs') }}</span></a>
-{% endif %}
-{% include 'partials/nav_monitoring.html' %}
 {% include 'partials/nav_calendar.html' %}
 {% if may_open('netarch.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'netarch' else '' }}" href="{{ url_for('netarch.index') }}">
@@ -45,6 +42,7 @@
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
   <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Service Diagram') }}</span></a>
 {% endif %}
+{% include 'partials/nav_monitoring.html' %}
 {% if may_open('search.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
   <i class="bi bi-search fw-nav-icon"></i><span>{{ _('Search') }}</span></a>
@@ -53,45 +51,30 @@
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'dns_tool' else '' }}" href="{{ url_for('dns_tool.index') }}">
   <i class="bi bi-globe fw-nav-icon"></i><span>{{ _('DNS Lookup') }}</span></a>
 {% endif %}
-{% if _pk == 'global' %}{# Global only: the FortiWeb ADOM files these two under
-   Operations › Troubleshooting, and Global has no Operations group. #}
-{% if may_open('reach_batch.index') %}
-<a class="fw-nav-item {{ 'active' if request.blueprint == 'reach_batch' else '' }}" href="{{ url_for('reach_batch.index') }}">
-  <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Backend Reachability') }}</span></a>
-{% endif %}
-{% if may_open('config_compare.index') %}
-<a class="fw-nav-item {{ 'active' if request.blueprint == 'config_compare' else '' }}" href="{{ url_for('config_compare.index') }}">
-  <i class="bi bi-file-diff fw-nav-icon"></i><span>{{ _('Config Compare') }}</span></a>
-{% endif %}
-{% endif %}
-{% if scout_on and may_open('scout.index') %}
-<a class="fw-nav-item {{ 'active' if request.blueprint == 'scout' else '' }}" href="{{ url_for('scout.index') }}">
-  <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span></a>
-{% elif not scout_on %}{# Switched off: shown, disabled, with the reason. An ABSENT entry
-   reads as 'this product has no Scout' and sends the operator looking for an
-   installer instead of for the checkbox. Switched on but not permitted is
-   hidden like every other entry: "switched off" would be false. #}
-<span class="fw-nav-item disabled text-muted" style="cursor:not-allowed;opacity:.55;"
-      title="{{ _('Scout is switched off for this site (Settings → Scout → Availability).') }}">
-  <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span>
-  <i class="bi bi-slash-circle ms-1 small"></i></span>
-{% endif %}
+{% include 'partials/nav_troubleshooting.html' %}
 {# Appliances moved to Administrator (2026-10-13). That group is drawn only
    for user_manage, and the page asks appliances.view, so an operator keeps
    the entry here. #}
 {% if not (current_user and current_user.can('user_manage')) %}
 {% include 'partials/nav_appliances.html' %}
 {% endif %}
+{# Fleet Objects and WAF: the FortiWeb and FortiADC ADOMs only (operator,
+   2026-10-13) — not Global, FortiGate, FortiAnalyzer or FortiAuthenticator.
+   WAF counts FortiWeb objects, so in FortiADC nav_waf.html still draws it
+   disabled with the reason. The pages keep answering by URL. #}
+{% if _pk in ('fortiweb', 'fortiadc') %}
 {% if may_open('fleet_objects.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'fleet_objects' else '' }}" href="{{ url_for('fleet_objects.index') }}">
   <i class="bi bi-box-seam fw-nav-icon"></i><span>{{ _('Fleet Objects') }}</span></a>
 {% endif %}
-{% include 'partials/nav_advisor.html' %}
-{# WAF counts FortiWeb objects: live in Global and FortiWeb, disabled with the
-   reason in the other device ADOMs (see nav_waf.html). #}
 {% include 'partials/nav_waf.html' %}
+{% endif %}
 {# Schema builds / Build compatibility moved to Automation (2026-10-13); only
    a profile that cannot see that group keeps them here. #}
 {% if not (current_user and current_user.can('config_write')) %}
 {% include 'partials/nav_api_library.html' %}
+{% endif %}
+{% if may_open('jobs.manager') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'jobs' else '' }}" href="{{ url_for('jobs.manager') }}">
+  <i class="bi bi-list-task fw-nav-icon"></i><span>{{ _('Jobs') }}</span></a>
 {% endif %}

@@ -35,15 +35,15 @@ from .release_notes import version_tuple
 #: Why there is no advisory. Declared as constants because the template, the
 #: JSON and the guards must all name the same condition — three spellings of
 #: "Scout is off" is how a panel ends up claiming a review that never ran.
-OFF = "Scout is switched off for this site."
-NOT_ASKED = "Scout was not asked to review this move."
+OFF = "Turn on Fault Isolation in Settings → Fault Isolation to see the Upgrade Advisory."
+NOT_ASKED = "The Upgrade Advisory was not asked to review this move."
 NO_CORPUS_FOR_PRODUCT = ("No release notes are harvested for this product, so "
-                         "Scout has nothing to read.")
-NO_CURRENT = ("Scout needs the appliance's current firmware version and could "
+                         "the Upgrade Advisory has nothing to read.")
+NO_CURRENT = ("The Upgrade Advisory needs the appliance's current firmware version and could "
               "not read it. Probe the appliance, then reopen this page.")
-NO_TARGET = "Scout needs the version of the selected image."
+NO_TARGET = "The Upgrade Advisory needs the version of the selected image."
 SAME_VERSION = ("The appliance already runs this version — there is no move for "
-                "Scout to review.")
+                "the Upgrade Advisory to review.")
 
 #: A version as the advisor understands it. Firmware strings arrive decorated
 #: ("FortiWeb-VM 8.0.7,build1234,250101"), and handing that to the analyser
@@ -133,7 +133,7 @@ def review(appliance, target: str, current: str | None = None, *,
         base.counts = _counts(base.advisory)
     except Exception as exc:                                    # noqa: BLE001
         base.advisory = None
-        base.reason = (f"Scout could not read the release-notes corpus "
+        base.reason = (f"The Upgrade Advisory could not read the release-notes corpus "
                        f"({type(exc).__name__}). Nothing was checked.")
     return base
 

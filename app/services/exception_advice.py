@@ -208,7 +208,7 @@ def analyse(exc_type: str, payload: dict, *, wpp: str = "", policy: str = "",
             return out
         if prov.get("enabled") is False:
             out["model_error"] = ("The provider is disabled until it is reviewed "
-                                  "and saved in Settings -> AI Advisor.")
+                                  "and saved in Settings -> Scout.")
             return out
         res = advisor_providers.send(
             prov["kind"], base_url=prov["base_url"],

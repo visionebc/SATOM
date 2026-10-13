@@ -258,13 +258,18 @@ On a <strong>standby</strong>, the redundant <code>app_settings</code> write is 
 replica); <code>meta.json</code> is the source of record.</p>
 <h2 id="node-to-node-encryption">Node-to-node encryption</h2>
 <h3 id="app-probes--https--identity-key">App probes → HTTPS + identity key</h3>
-<p><code>app/services/node_security.py</code>. <code>peer_get()</code> prefers HTTPS <code>:8443</code> (node cert,
-cert verification off — confidentiality from TLS, <strong>authenticity from the identity
-key</strong>) and falls back to <code>:8000</code> only if TLS is unreachable. <code>infra_health</code> and
-<code>cluster</code> peer probes both use it. A shared <strong>identity key</strong> (<code>secrets.token_urlsafe</code>,
-Fernet-encrypted in <code>app_settings</code> <code>security.node_identity_key</code>, replicated via
-Postgres since both nodes share <code>FERNET_KEY</code>) is sent as <code>X-FM-Node-Key</code>; <code>/healthz</code>
-echoes <code>peer_authenticated</code>. nftables on 248 opens <code>:8443</code> from <code>{ip}</code>.</p>
+<p><code>app/services/node_security.py</code>. <code>peer_get()</code>/<code>peer_post()</code> use HTTPS <code>:8443</code> only
+(no plain-HTTP fallback). The peer certificate must verify against the system trust
+store or the internal CA (peers are addressed by IP, so the hostname is not
+checked); an untrusted certificate is refused with a logged reason
+(<code>SATOM_PEER_TLS_ALLOW_UNVERIFIED=1</code> in <code>.env</code> is an emergency override).
+<code>infra_health</code> and <code>cluster</code> peer probes both use it. A shared <strong>identity key</strong>
+(<code>secrets.token_urlsafe</code>, Fernet-encrypted in <code>app_settings</code>
+<code>security.node_identity_key</code>, replicated via Postgres since both nodes share
+<code>FERNET_KEY</code>) is never transmitted: every peer request is HMAC-SHA256-signed with it
+over method, path+query, timestamp and body hash (<code>X-SATOM-Node-Ts</code> +
+<code>X-SATOM-Node-Sig</code>), and the receiver refuses signatures outside a ±120 s window, so
+both nodes' clocks must be NTP-synchronised. <code>/healthz</code> echoes <code>peer_authenticated</code>. nftables on 248 opens <code>:8443</code> from <code>{ip}</code>.</p>
 <h3 id="postgres-replication--enforced--mutual-ca">Postgres replication → enforced + mutual CA</h3>
 <ul>
 <li>Primary serves the <strong>internal-CA leaf</strong> as its Postgres server cert

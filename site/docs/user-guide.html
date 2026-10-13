@@ -1581,7 +1581,7 @@ twenty-two fields, each on its own line. Two icons sit beside every one:</p>
   for a general reading, or type your own question in the box below and press
   <strong>Ctrl+Enter</strong> (⌘+Enter on a Mac); follow-ups continue the same thread, so a
   second question does not mean restating the entry. This icon is drawn only
-  when the AI Advisor is enabled (§33) — a button that could only ever refuse
+  when Scout, the AI assistant, is enabled (§33) — a button that could only ever refuse
   teaches you to distrust the buttons.</li>
 </ul>
 <p>This path explains and <strong>cannot author</strong>: it is told not to draft a carve-out,
@@ -2018,8 +2018,8 @@ against what the devices say.</p>
   read or linked; each product ADOM sees only its own appliances, so a drawing
   that mixes products is fully readable only from the Global ADOM. Binding an element to a
   device you cannot see is refused on save.</li>
-<li><strong>Scout and Sentinel.</strong> A bound device element links to its Device page,
-  to <strong>Scout</strong> with that appliance already selected, and to <strong>Sentinel</strong>.</li>
+<li><strong>Fault Isolation and Sentinel.</strong> A bound device element links to its Device page,
+  to <strong>Fault Isolation</strong> with that appliance already selected, and to <strong>Sentinel</strong>.</li>
 <li><strong>Layers.</strong> <strong>L2</strong> draws ports, MAC, speed, link state (green up, red down)
   and VLAN on the firewall links, and on each host the MAC the FortiGate
   learned for its address. <strong>L3</strong> shows addresses, routes and the policy
@@ -2033,7 +2033,7 @@ against what the devices say.</p>
   each firewall with ingress → egress interface, matched policy and action.
   A firewall that cannot be read is listed with its error, never skipped. A
   public address with no network drawn for it lands on the Internet element.
-  TCP traces through a FortiWeb or FortiADC offer <strong>Validate with Scout</strong>.
+  TCP traces through a FortiWeb or FortiADC offer <strong>Validate with Fault Isolation</strong>.
   A trace stops after six firewalls ("more than 6 firewalls: stopped"), and
   every trace is written to the audit log as <code>netarch.trace</code>.</li>
 <li><strong>Adding elements.</strong> <strong>Elements</strong> opens a palette with every appliance of
@@ -2055,7 +2055,7 @@ against what the devices say.</p>
   management hosts), link them, and SATOM lays the devices' own data on top:
   FortiGate interfaces and policies with hit counters, each policy drawn from
   its source segment to its destination segment, and an HTTP probe of every
-  back-end with a URL. Device elements link to Scout and Sentinel.</p>
+  back-end with a URL. Device elements link to Fault Isolation and Sentinel.</p>
 </li>
 <li><strong>Service Diagram</strong> — an SVG network-design diagram of the whole fleet:
   Internet → published services (VIP:port, TLS lock) → appliance chassis →
@@ -2114,6 +2114,9 @@ against what the devices say.</p>
   (AdGuard/OPNsense/etc., admin-configurable list) and simultaneously match it
   against the fleet's load-balancing config: which policy/virtual server
   publishes it, with a mini policy→pool→backend graph and config deep links.
+- <strong>Where these live:</strong> Backend Reachability, Config Compare, Fault Isolation
+  and Scout sit together under <strong>Fleet › Troubleshooting</strong> in every ADOM
+  (since 2026-10-14; before that they were spread over Operations and Fleet).
 - <strong>Backend Reachability</strong> — paste or upload a list of
   <code>source;policy;destination</code> lines and ask one question per line: <em>do the real
   servers behind this policy answer, on the source box and then on the
@@ -2883,7 +2886,12 @@ boot.</p>
 <li><strong>ER diagram</strong> — a live, professional database diagram (crow's-foot
   notation, domain-colored, searchable, draggable, exportable SVG).</li>
 <li><strong>Tables browser + SQL console</strong> — read-only introspection with sensitive
-  columns masked. A query (console, CSV export or report widget) that names a
+  columns masked. Console queries run as the dedicated read-only role
+  <code>satom_console_ro</code>, which cannot read credential tables or credential
+  columns: list columns explicitly instead of <code>SELECT *</code> on appliances or
+  managed certificates. If the console says the role is not usable, run
+  <code>sudo bash /opt/satom/deploy/install-console-role.sh</code> on the primary and
+  restart. A query (console, CSV export or report widget) that names a
   credential table — <code>users</code>, <code>api_tokens</code>, <code>app_settings</code>,
   <code>hypervisor_targets</code>, <code>dns_backends</code>, <code>provision_runs</code> — is refused before it
   runs and the refusal is audited (<code>database.query_refused</code>): column masking
@@ -3729,7 +3737,7 @@ applied until you press <strong>Apply</strong>. From a shell:
 uploads the file. Details:
 <a href="offline-update-packages.html">offline-update-packages.md §1.1</a>.</p>
 <h3 id="224-knowledge-packs--online-fetch-and-air-gapped-upload">22.4 Knowledge packs — online fetch and air-gapped upload</h3>
-<p>Release notes, the Scout advisory, upgrade paths and the public FortiGuard
+<p>Release notes, the Upgrade Advisory, upgrade paths and the public FortiGuard
 metadata shown next to signature ids all come from <strong>signed packs</strong>, in two
 lanes with the same content sections:</p>
 <table>
@@ -4016,8 +4024,9 @@ one reconciler cycle.</p>
   The standby's state comes from its <code>/healthz/reconciler</code> probe (the same
   peer-probe pattern as <code>/healthz/backups</code>; it publishes the decision, the
   commit counts, short shas, the time and a one-line redacted error — nothing
-  else). These probes answer only a caller that presents the inter-node
-  identity key; anyone else gets <code>403</code>, and plain <code>/healthz</code> gives them <code>ok</code>
+  else). These probes answer only a request signed with the inter-node
+  identity key (HMAC over the request with a ±120 s timestamp window, so both
+  nodes' clocks must be NTP-synchronised; the key itself never crosses the wire); anyone else gets <code>403</code>, and plain <code>/healthz</code> gives them <code>ok</code>
   and nothing more. A pair without an identity key therefore shows its peer
   as unreachable on these pages. The lag is computed on the primary against its own
   branch head, because a standby that cannot fetch measures itself against a
@@ -4134,7 +4143,7 @@ rendered at all, so the menu never offers a section that is not there.</p>
 <tbody>
 <tr>
 <td><strong>System</strong></td>
-<td>General · Software Update Repository · AI Advisor · Integrations</td>
+<td>General · Software Update Repository · Scout · Integrations</td>
 </tr>
 <tr>
 <td><strong>Source of Truth &amp; Backup</strong></td>
@@ -4173,14 +4182,15 @@ rendered at all, so the menu never offers a section that is not there.</p>
 <td>Settings · Context · Response policy · Border blocklist · Architecture · Incidents console</td>
 </tr>
 <tr>
-<td><strong>Scout</strong></td>
+<td><strong>Fault Isolation</strong></td>
 <td>Settings · Architecture</td>
 </tr>
 </tbody>
 </table>
-<p>The <strong>AI Advisor</strong> panel additionally needs <code>advisor.configure</code>; an admin
-without it does not see the entry. <strong>Sentinel</strong> and <strong>Scout</strong> settings are
-admin-only end to end: saving them (including Scout's site-wide on/off switch)
+<p>The <strong>Scout</strong> panel (the AI assistant, §33) additionally needs
+<code>advisor.configure</code>; an admin without it does not see the entry. <strong>Sentinel</strong>
+and <strong>Fault Isolation</strong> settings are admin-only end to end: saving them
+(including Fault Isolation's site-wide on/off switch)
 needs <em>Manage users</em>, the same as seeing the panes. Sentinel's AI reasoning
 ships with an empty model endpoint and stays off until one is set (for example
 <code>http://localhost:11434</code>), even if its switch is on.</p>
@@ -4191,22 +4201,23 @@ tab. It is where SATOM is wired to systems it does not own — NetBox
 — and it is filed under System because that is what it configures. It had no
 menu entry at all until 2026-09-21; the page existed and worked, but the only
 way to reach it was to type <code>/settings/integrations</code>.</p>
-<p><strong>Scout is its own group, below Sentinel.</strong> Its <em>Settings</em> panel holds only
+<p><strong>Fault Isolation is its own group, below Sentinel.</strong> Its <em>Settings</em> panel holds only
 <em>where to look and how long to wait</em> — the default look-back window, the
 FortiAnalyzer ADOM and device selector the border rung queries, the two
 timeouts. What a verdict <strong>means</strong> is on the same panel as a read-only table:
 the dominant-phase share and floor, the signals that count as an appliance
 being unfit to serve, the order conflicting border rows are resolved in, and
-the methods Scout is permitted to send. Those are shown rather than offered on
+the methods Fault Isolation is permitted to send. Those are shown rather than offered on
 purpose — editing a threshold makes whoever changed it a second author of every
 report already filed, and an archived report says nothing about the values in
 force when it was written. Each row names the symbol it is read from, and the
 values are read off the engine when the page renders, so the table cannot drift
 from the code. <em>Architecture</em> renders the ten rungs from the same tuple the
 engine walks.</p>
-<p><strong>A typed Published host follows the free-target rule.</strong> Left blank, Scout
+<p><strong>A typed Published host follows the free-target rule.</strong> Left blank, Fault Isolation
 dials the object's VIP as the device reports it. A host you type is dialled
-only if the appliance publishes it (its own address or one of its VIPs),
+only if the appliance publishes it — its own address on its management or SSH
+port, or one of its published services on that service's own port —
 unless you hold <code>monitoring.probe_free</code> or user management — the same rule as
 the certificate inspector and the transaction tracer.</p>
 <p><strong>Three repositories-or-destinations, three separate entries.</strong> Until
@@ -6819,7 +6830,7 @@ notes for this build in the local corpus — import a newer knowledge pack"</str
 instead of showing an empty list.</p>
 <p>Above the tabs the modal names where its knowledge comes from: <strong>"Knowledge
 from <code>&lt;pack&gt;</code> (<code>&lt;date&gt;</code>)"</strong>, with a <strong>stale</strong> badge when that pack is older
-than 30 days or when no pack has been imported. The Scout advisory (§12, §40)
+than 30 days or when no pack has been imported. The Upgrade Advisory (§12, §40)
 and the Migration Report (§40.3) show the same line.</p>
 <p>Three tabs:</p>
 <table>
@@ -7076,13 +7087,15 @@ the authoritative answer to "what is new since we last updated".</p>
 </tbody>
 </table>
 <h2 id="33-ai-advisor">33. AI Advisor</h2>
-<p>A chat assistant (<code>/advisor</code>, permission <code>advisor.use</code>) for three things:
+<p>Labelled <strong>Scout</strong> in the menu and in Settings since 2026-10-14 (the
+fault-localisation ladder that used to be called Scout is now <strong>Fault
+Isolation</strong>, §12). A chat assistant (<code>/advisor</code>, permission <code>advisor.use</code>) for three things:
 interpreting a WAF false positive and drafting the exception for it, drafting
 a Lua script, and searching the versioned device-configuration source of
 truth. Full design write-up: <code>docs/ai-advisor.md</code>.</p>
 <h3 id="331-turning-it-on">33.1 Turning it on</h3>
-<p><strong>Settings → AI Advisor</strong> (<code>advisor.configure</code>, admin-only) has three
-switches, all off on a fresh install: <strong>Enable AI Advisor</strong>, <strong>Allow
+<p><strong>Settings → Scout</strong> (<code>advisor.configure</code>, admin-only) has three
+switches, all off on a fresh install: <strong>Enable Scout</strong>, <strong>Allow
 read-only tool calls</strong>, and <strong>Allow external providers</strong>. A local Ollama
 provider (<code>ollama-local</code>, base URL <code>http://localhost:11434</code>) is seeded
 <strong>disabled</strong> the first time the page is opened: edit it, point it at your
@@ -7128,8 +7141,8 @@ anywhere.</p>
 </thead>
 <tbody>
 <tr>
-<td>Sending a message returns <em>"AI Advisor is disabled"</em></td>
-<td>The master switch in Settings → AI Advisor is off (33.1).</td>
+<td>Sending a message returns <em>"Scout is disabled"</em></td>
+<td>The master switch in Settings → Scout is off (33.1).</td>
 </tr>
 <tr>
 <td>Sending to a non-local provider returns <em>"external providers are disabled"</em></td>
@@ -7913,7 +7926,7 @@ appliance was <strong>running</strong>; nothing recorded the version it was <str
 <li>Stage 2 created the change with <strong>no executor parameters at all</strong>. The
   <code>upgrade.finished</code> / <code>upgrade.failed</code> webhooks already read those parameters
   to name the image, so they went out naming nothing — permanently.</li>
-<li><strong>Scout</strong> — the offline reviewer that reads harvested vendor release notes —
+<li><strong>Upgrade Advisory</strong> (called Scout until 2026-10-14) — the offline reviewer that reads harvested vendor release notes —
   was wired to the single appliance's page only, because the bulk page had no
   destination to give it. The page that plans sixty upgrades was the one page
   that could not say what the vendor had written about them.</li>
@@ -7971,9 +7984,9 @@ appears here without a code change.</p>
 read off <strong>its own newest run</strong> — never off the select above. Painting the
 select there would show forty boxes as reviewed for a move none of them has
 been pre-flighted for yet.</p>
-<p>Under it sits <strong>Scout's verdict for that move</strong>: <code>blocker</code>, <code>caution</code>, <code>clear</code>,
+<p>Under it sits <strong>the Upgrade Advisory's verdict for that move</strong>: <code>blocker</code>, <code>caution</code>, <code>clear</code>,
 <code>unknown</code>, or <code>unavailable</code>. The last two are not the same thing and are never
-merged — <code>unknown</code> means Scout read the notes and found nothing about this
+merged — <code>unknown</code> means the Upgrade Advisory read the notes and found nothing about this
 move; <code>unavailable</code> means it never got to read them, and it can never spell
 itself <code>clear</code>. Hops with no harvested notes are counted out loud, because a
 verdict computed over a ladder with holes in it is not the same claim as one
@@ -7982,9 +7995,9 @@ computed over a complete one.</p>
 reads <em>no destination recorded</em>. Absent is absent: it is a different statement
 from <code>unknown</code> and from <code>clear</code>.</p>
 <p>The verdict is computed <strong>when the page is drawn</strong>, not frozen onto the run.
-Scout reads vendor prose, so a corpus that gains the 8.0.5 page tonight changes
+The Upgrade Advisory reads vendor prose, so a corpus that gains the 8.0.5 page tonight changes
 this badge tomorrow without anybody re-running a sweep against forty live
-appliances. The pre-flight measures the <strong>box</strong>; Scout reads the <strong>notes</strong>.</p>
+appliances. The pre-flight measures the <strong>box</strong>; the Upgrade Advisory reads the <strong>notes</strong>.</p>
 <h3 id="400c-how-the-destination-reaches-the-change">40.0c How the destination reaches the change</h3>
 <p>It rides on the <strong>evidence</strong>, not on a hidden form field. Each run stores the
 version it was swept towards; the change derives its destination from the runs
@@ -8912,6 +8925,9 @@ the badge.</p>
 to an appliance from a plan rather than from a person at a keyboard. It reuses
 the Device Console's own rules and relaxes none of them:</p>
 <ul>
+<li>abbreviations count as the full command, as on the device CLI: <code>exe reb</code>
+  asks for the same acknowledgement as <code>execute reboot</code>, <code>set passw</code> is a
+  password change, and <code>exe fa</code> is refused like <code>execute factoryreset</code>;</li>
 <li>commands that wipe or reformat are <strong>refused outright</strong> — you cannot save a
   diagram containing one, at any permission level;</li>
 <li>disruptive commands (reboot, shutdown, restore, HA changes, password changes)
@@ -9428,7 +9444,7 @@ knowledge comes from and which key may sign it</strong>:</p>
 </tr>
 <tr>
 <td>No vendor crawler</td>
-<td>release notes, Scout and upgrade paths come only from imported packs (§31.1); the <em>Scan from Fortinet</em> panel is gone</td>
+<td>release notes, the Upgrade Advisory and upgrade paths come only from imported packs (§31.1); the <em>Scan from Fortinet</em> panel is gone</td>
 </tr>
 <tr>
 <td>Knowledge packs outside the update</td>

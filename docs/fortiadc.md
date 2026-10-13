@@ -41,16 +41,18 @@
 | Product gate (fortiadc sessions → adc + shared blueprints) | `app/__init__.py::_product_gate` |
 | Tests | `tests/test_adc.py` |
 
-## Status / pending (needs the lab VM)
+## Status (lab: fortiadc10 7.6.7, fortiadc11 8.0.4)
 
-* Registry URNs are docs/SDK-derived; expect a few phantoms — probe with the
-  device and disable/fix rows from the Registry page (product filter TBD).
-* Object lists are **live-only** (no DB-first cache, no device_sync for ADC).
-* Writes are a raw-JSON editor (immediate apply, audited, `config_write`) —
-  no dry-run, no field forms, no waf_specs equivalent yet.
-* No curated list columns (columns derive from the live payload).
-* Candidate next steps once verified: field-spec catalog, DB-first cache,
-  objedit-style forms, backups/upgrade runbook parity.
+* The adapter is **verified** against fortiadc10 (7.6.7 build0676,
+  2026-10-13); the API library joins REST and CLI per build, including the
+  REST↔CLI field renames measured on both lab boxes
+  (`app/services/schema_adapters/fortiadc_renames.py`).
+* Configuration pages are the measured GUI pages (`gui_products.FORTIADC`),
+  with editable child tables; the config sync (`device_sync.snapshot_from_adc`)
+  feeds the source of truth.
+* The schema harvest runs a read-only REST shape probe (top-level objects and
+  child tables by `?pkey=`).
+* The CLI writer's FortiADC dialect is still unverified.
 
 ## Firmware and the GETs that are writes (fortiadc10, 7.6.7, 2026-10-11)
 

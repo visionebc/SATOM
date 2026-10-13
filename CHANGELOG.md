@@ -6,21 +6,97 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
-### Security — signed-release enforcement for the privileged update runner (opt-in)
+### Security — signed releases, node request signing, console hardening (2026-10-14)
 
-- The root update runner can now require that the revision it deploys is signed
-  by a key the operator trusts. When a root-owned trust anchor is present
-  (`/etc/satom/release-trust.allowed_signers`, or a single key at
-  `…/release-trust.pub`), every update verifies the target commit's signature
-  against it and, on success, copies the unit files and runs the install
-  scripts from a **root-only** staging copy of that verified revision — so the
-  service account can no longer get root by committing a malicious deploy
-  script and pointing an update at it. A mis-signed release is refused, not
-  applied.
-- **Fail-safe and opt-in:** a node with no trust anchor behaves exactly as
-  before (it only logs that enforcement is off). Provision the anchor and have
-  the release pipeline sign its commits/tags to turn enforcement on; see the
-  Security Model page.
+- **Signed-release enforcement is activatable without blocking HA.** With a
+  root-owned trust anchor (`/etc/satom/release-trust.allowed_signers`, or a
+  single key at `…/release-trust.pub`), root-side content — unit files, the
+  `install-*.sh` scripts, the operator CLI and the runner copies — comes from
+  the newest **signed** release: the target itself, or its signed ancestor when
+  `deploy/` is identical. An unsigned change to `deploy/` no longer refuses the
+  update: the application updates and only the root-side refresh is held, shown
+  as a warning, so the standby keeps converging. New `satom execute
+  sign-release` (dry run by default; signs on the primary with a root-only key
+  and pushes) and `satom get release trust`; the `satom execute reinstall`
+  verbs are gated the same way. Root now verifies inside a root-only mirror
+  and never runs git inside the service account's repository (the first
+  version ran that repository's configured programs as root), and the `.pub`
+  single-key anchor now works. With no anchor, behaviour is unchanged.
+- **Node-to-node requests are HMAC-signed.** Every peer request carries
+  `X-SATOM-Node-Ts` + `X-SATOM-Node-Sig` (HMAC-SHA256 over method, path+query,
+  timestamp and body hash, keyed with the node identity key). The raw key never
+  crosses the wire, signatures older than 120 s are refused, and the static
+  `X-FM-Node-Key` header is no longer accepted. The peer certificate must now
+  verify (system trust store or internal CA): an untrusted certificate is
+  refused with a logged reason instead of silently downgrading. Emergency
+  override: `SATOM_PEER_TLS_ALLOW_UNVERIFIED=1`. Both nodes must run this
+  release; expect about a minute of "not authenticated" peer views while the
+  standby catches up, and keep both clocks NTP-synchronised.
+- **The database console runs under a dedicated read-only role.** The console,
+  report widgets and plugin datasets now run every query as
+  `satom_console_ro`: no monitoring privileges, no access to the credential
+  tables or credential columns (list columns explicitly instead of `SELECT *`
+  on appliances or managed certificates), and refused outright when the role
+  is not provisioned — never a fallback to the application role. Provisioned
+  by the installer and on update by `deploy/install-console-role.sh` (primary
+  only; the standby gets it by replication).
+- **The metrics store's admin endpoints require keys** (delete, snapshot,
+  force-merge, reload, flags, pprof…), generated into a root-only
+  `/etc/satom/metrics-auth.env` by `install-metrics-store.sh`; the application
+  only holds the snapshot key it needs.
+- **The Device Console gate reads Fortinet abbreviations the way the CLI
+  does.** Any prefix — `exe fa`, `exe reb`, `set passw`, quoted keywords, `?`
+  help keys — is classified as forbidden or needs acknowledgement (before,
+  `exe fa` sent a factory reset as an ordinary line). Transcripts and TAC
+  bundles redact abbreviated and compound secret attributes.
+- **Scout checks a typed Published host by host and port** against the
+  appliance inventory, not by host alone.
+
+### Fixed — monitoring and source of truth (2026-10-14)
+
+- FortiAnalyzer CPU and memory probes read the 7.6 `get system performance`
+  block layout: faz02 graded "error" on every sample and stayed "degraded".
+  Memory is physical RAM, like FortiWeb/FortiADC.
+- The FortiADC/FortiAnalyzer box-metrics scrape writes its CPU and memory
+  series: it read keys the parser never produced, so both were always empty.
+- The source-of-truth identity drops FortiAnalyzer's per-read salted
+  `["ENC", …]` secrets as a backstop to the sweep scrub, so an unchanged box
+  can never again mint an hourly version and drift alert. The `"ENC …"`
+  strings FortiWeb/FortiADC store are still compared.
+- Config-drift alerting no longer mutes a device named `faz01` by default;
+  `alerts.drift_exclude` is empty unless the operator sets it.
+- The HA datasync no longer copies the integration-hook queue
+  (`data/integrations/queue/`, `claimed/`) to the standby. The hook runner is
+  meant to be enabled on both nodes; with the queue replicated, the standby
+  would have run every pending hook a second time, which is why it had been
+  left disabled there (and hooks would not have run after a failover).
+
+### Changed — FortiADC API library (2026-10-14)
+
+- REST↔CLI field renames measured value by value on fortiadc10 (7.6.7, 115)
+  and fortiadc11 (8.0.4, 85) are now one field under the REST name (e.g.
+  `pool` = `load-balance-pool`), so they no longer read "unverified on this
+  build"; 7.6.7 goes from 967 to 1,082 fields "both". A build that was not
+  measured gets no renames.
+- The schema harvest runs a read-only REST shape probe on FortiADC: top-level
+  objects and child tables by `?pkey=`. A 404 at a child path is not recorded
+  as absent, because FortiADC serves some children only inside the parent row.
+
+### Changed — navigation labels (2026-10-14)
+
+- **Fleet › Troubleshooting** in every ADOM holds Backend Reachability,
+  Config Compare, Fault Isolation and Scout; the separate Troubleshooting
+  entries under Operations and the flat entries in the Global Fleet list are
+  gone. Fleet runs Dashboard (where an ADOM has one), Calendar, Architecture,
+  Service Diagram, Monitoring, Search, DNS Lookup, Troubleshooting, then Fleet
+  Objects and WAF (FortiWeb and FortiADC ADOMs only) and Jobs last.
+- The fault-localisation ladder formerly called "Scout" is labelled **Fault
+  Isolation**; the AI assistant formerly called "AI Advisor" is labelled
+  **Scout**; the firmware release-notes reviewer formerly shown as "Scout" is
+  the **Upgrade Advisory**, and when it is unavailable it says Fault Isolation
+  must be switched on in Settings → Fault Isolation — the switch it actually
+  uses. Menu, page titles, settings panes and messages; URLs and bookmarks are
+  unchanged.
 
 ### Security — infrastructure hardening (2026-10-13 internal code audit)
 

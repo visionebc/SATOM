@@ -350,6 +350,39 @@ scheduled for deletion. Put it in a drop-in, a `conf.d/`, or the generator.
 
 ---
 
+## 5c. Signed releases (root-side content)
+
+The update runner is the only SATOM unit that runs as root, and it installs
+unit files and runs the `install-*.sh` scripts from `deploy/` — content the service account can
+edit. Signed-release enforcement pins that root-side content to a release the
+operator signed.
+
+* **Anchor:** `/etc/satom/release-trust.allowed_signers` (root:root, 0644), one
+  line per trusted key: `satom-release namespaces="git" ssh-ed25519 AAAA...`.
+  A single key at `/etc/satom/release-trust.pub` also works. No anchor =
+  enforcement off and behaviour unchanged.
+* **Verification** happens in a root-only mirror (`/var/lib/satom-release/`),
+  never inside `/opt/satom`, so nothing the service account writes in
+  `.git/config` or attributes is executed by root.
+* **Three cases on every update:**
+  1. the target commit is signed → root-side content comes from the target;
+  2. the target is unsigned but `deploy/` is identical to its newest signed
+     ancestor → root-side content comes from that signed commit (same bytes);
+  3. `deploy/` changed since the last signed release → the application still
+     updates, the root-side refresh is **held** and the update shows a warning.
+* **Signing:** on the primary, as root, `satom execute sign-release` (dry run:
+  shows the `deploy/` diff since the last signed release) then
+  `satom execute sign-release --yes`. It adds one signed empty commit on top of
+  `main` with the root-only key `/root/.satom-release/release_ed25519` and
+  pushes it; the key never becomes readable by the service account.
+  `satom get release trust` shows the anchor, the newest signed commit and
+  whether `HEAD`'s `deploy/` matches it.
+* The `satom execute reinstall` verbs follow the same rule: with an anchor they
+  install from a root-only staged copy of the signed release, otherwise they
+  refuse and ask for `sign-release`.
+* **Rollback:** remove the anchor file(s) on both nodes; the next update runs
+  with enforcement off.
+
 ## 6. Migrating an existing node
 
 `deploy/migrate-deprivilege.sh`, one node at a time, **standby first**. It

@@ -242,7 +242,7 @@ on one side only, or by different kinds on the two sides, is reported as
 <tr>
 <td><code>fortianalyzer</code></td>
 <td><code>vendor_doc</code>, <code>schema</code></td>
-<td>the vendor's Ansible collection <code>fortinet.fortianalyzer</code> (its <code>v_range</code> data); the JSON-RPC syntax read (<strong>unverified</strong> adapter)</td>
+<td>the vendor's Ansible collection <code>fortinet.fortianalyzer</code> (its <code>v_range</code> data); the JSON-RPC syntax read (<strong>verified</strong> adapter, 7.6.7 build3737)</td>
 </tr>
 <tr>
 <td><code>fortigate</code></td>
@@ -1973,7 +1973,7 @@ pack-lane key. Releases no longer use it.</p>
 </tr>
 <tr>
 <td>Schema builds: <em>unverified adapter</em></td>
-<td>The product's adapter was never checked against a device (FortiADC). Its evidence is labelled; treat it as a documented convention (§14.10)</td>
+<td>The product's adapter was never checked against a device. Since 2026-10-13 all five adapters are verified (FortiADC on {device} 7.6.7, FortiAnalyzer on {device} 7.6.7); the badge returns only if an adapter loses its verification (§14.10)</td>
 </tr>
 <tr>
 <td>FortiAuthenticator harvest reads REST but no CLI</td>
@@ -2495,7 +2495,7 @@ capabilities and where it was verified; the <strong>Schema builds</strong> page 
 <tr>
 <td>FortiADC</td>
 <td><code>tree</code> (FortiWeb format: types, options, ids); <code>show full-configuration</code></td>
-<td>none implemented: the REST fields come from the rediscovery sweep</td>
+<td>shape probe of the <code>tree</code> objects the rediscovery sweep lacks (a child table by <code>?pkey=</code>; a child 404 is not recorded)</td>
 <td><strong>yes</strong> — 7.6.7 build0676 ({device}, 2026-10-13): 527 objects, 3,649 fields, 315 dump blocks with no hidden field; path rule above</td>
 </tr>
 <tr>

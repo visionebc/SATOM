@@ -54,7 +54,8 @@ NAME_KEYS = ("name", "mkey", "username", "userid")
 #: Free text an operator types: it repeats the name's words, so a match with
 #: it is an echo, not a convention.
 FREE_TEXT_KEYS = frozenset({"comment", "comments", "description", "desc", "remark",
-                            "remarks", "title", "note", "notes"})
+                            "remarks", "title", "note", "notes", "disp-name",
+                            "display-name", "display_name", "displayname", "label"})
 
 _SPLIT = re.compile(r"([-_.\s]+)")
 _TOKEN_RE = re.compile(r"\{([a-z0-9_-]+)\}")
@@ -520,7 +521,9 @@ def fleet_view(analyses: list[dict]) -> list[dict]:
     for r in rows.values():
         c = Counter(d["main"] for d in r["devices"])
         r["consensus"], n = c.most_common(1)[0]
-        r["agree"] = n == len(r["devices"])
+        # one device cannot agree with anyone: "all agree" would be vacuous
+        r["single"] = len(r["devices"]) == 1
+        r["agree"] = n == len(r["devices"]) and not r["single"]
         out.append(r)
     return sorted(out, key=lambda r: (r["section"], r["label"]))
 

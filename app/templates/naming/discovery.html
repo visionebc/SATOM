@@ -215,7 +215,8 @@
       <tr>
         <td><div>{{ r.label }}</div><div class="text-muted" style="font-size:11px;">{{ r.section }} · <code>{{ r.table }}</code></div></td>
         <td><code>{{ r.consensus }}</code>
-          {% if r.agree %}<span class="fw-badge fw-badge-success ms-1">{{ _('all agree') }}</span>
+          {% if r.single %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('one device only') }}</span>
+          {% elif r.agree %}<span class="fw-badge fw-badge-success ms-1">{{ _('all agree') }}</span>
           {% else %}<span class="fw-badge fw-badge-warning ms-1">{{ _('devices differ') }}</span>{% endif %}</td>
         <td style="font-size:12px;">
           {% for d in r.devices %}<div><a href="{{ url_for('naming.discovery', product=current_product, appliance=(fleet | selectattr('name', 'equalto', d.device) | map(attribute='id') | first)) }}">{{ d.device }}</a>

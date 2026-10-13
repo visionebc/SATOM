@@ -81,7 +81,11 @@ class NamingElement:
     ``label`` — what the editor shows. ``section`` — grouping in the editor.
     ``default`` — the out-of-the-box pattern (must normally contain
     :data:`TOKEN`). ``product`` — which product it belongs to. ``note`` — a
-    hint/caveat.
+    hint/caveat. ``derives`` — a SATOM flow builds new objects' names from
+    this pattern (:func:`render_names`), which fills in ``{name}`` only, so
+    any other token would reach the device as literal text
+    (:func:`pattern_problem` refuses it). False = the pattern documents a
+    convention and is only checked against existing names.
     """
 
     key: str
@@ -90,6 +94,7 @@ class NamingElement:
     default: str
     product: str = PRODUCT_FORTIWEB
     note: str = ""
+    derives: bool = True
 
 
 # ── FortiWeb sections ─────────────────────────────────────────────────────────
@@ -155,29 +160,42 @@ NAMING_ELEMENTS: tuple[NamingElement, ...] = (
     # ─────────────────────────── FortiADC ───────────────────────────────────
     # Server Load Balance objects (FortiADC's SLB model)
     NamingElement("adc_virtual_server", "Virtual Server", SECTION_ADC_SLB,
-                  "vs-{name}", PRODUCT_FORTIADC, "The root SLB object (load-balance/virtual-server)."),
-    NamingElement("adc_real_server", "Real Server", SECTION_ADC_SLB, "rs-{name}", PRODUCT_FORTIADC),
+                  "vs-{name}", PRODUCT_FORTIADC, "The root SLB object (load-balance/virtual-server).",
+                  derives=False),
+    NamingElement("adc_real_server", "Real Server", SECTION_ADC_SLB, "rs-{name}", PRODUCT_FORTIADC,
+                  derives=False),
     NamingElement("adc_real_server_pool", "Real Server Pool", SECTION_ADC_SLB,
-                  "pool-{name}", PRODUCT_FORTIADC),
-    NamingElement("adc_health_check", "Health Check", SECTION_ADC_SLB, "hc-{name}", PRODUCT_FORTIADC),
-    NamingElement("adc_persistence", "Persistence", SECTION_ADC_SLB, "persist-{name}", PRODUCT_FORTIADC),
+                  "pool-{name}", PRODUCT_FORTIADC,
+                  derives=False),
+    NamingElement("adc_health_check", "Health Check", SECTION_ADC_SLB, "hc-{name}", PRODUCT_FORTIADC,
+                  derives=False),
+    NamingElement("adc_persistence", "Persistence", SECTION_ADC_SLB, "persist-{name}", PRODUCT_FORTIADC,
+                  derives=False),
     NamingElement("adc_lb_method", "Load Balance Method", SECTION_ADC_SLB,
-                  "method-{name}", PRODUCT_FORTIADC),
+                  "method-{name}", PRODUCT_FORTIADC,
+                  derives=False),
     NamingElement("adc_content_routing", "Content Routing", SECTION_ADC_SLB,
-                  "cr-{name}", PRODUCT_FORTIADC),
+                  "cr-{name}", PRODUCT_FORTIADC,
+                  derives=False),
     NamingElement("adc_content_rewriting", "Content Rewriting", SECTION_ADC_SLB,
-                  "rw-{name}", PRODUCT_FORTIADC),
+                  "rw-{name}", PRODUCT_FORTIADC,
+                  derives=False),
     NamingElement("adc_schedule_pool", "Schedule Pool", SECTION_ADC_SLB,
-                  "sched-{name}", PRODUCT_FORTIADC),
-    NamingElement("adc_error_page", "Error Page", SECTION_ADC_SLB, "errpage-{name}", PRODUCT_FORTIADC),
+                  "sched-{name}", PRODUCT_FORTIADC,
+                  derives=False),
+    NamingElement("adc_error_page", "Error Page", SECTION_ADC_SLB, "errpage-{name}", PRODUCT_FORTIADC,
+                  derives=False),
     # SSL profiles / certificate
     NamingElement("adc_client_ssl_profile", "Client SSL Profile", SECTION_ADC_SSL,
-                  "csslp-{name}", PRODUCT_FORTIADC),
+                  "csslp-{name}", PRODUCT_FORTIADC,
+                  derives=False),
     NamingElement("adc_server_ssl_profile", "Server SSL Profile", SECTION_ADC_SSL,
-                  "ssslp-{name}", PRODUCT_FORTIADC),
+                  "ssslp-{name}", PRODUCT_FORTIADC,
+                  derives=False),
     NamingElement("adc_certificate", "Local certificate", SECTION_ADC_SSL,
                   "cert-{name}", PRODUCT_FORTIADC,
-                  "Creating/installing the cert is out of band; here just the reference name."),
+                  "Creating/installing the cert is out of band; here just the reference name.",
+                  derives=False),
 )
 
 _BY_KEY = {e.key: e for e in NAMING_ELEMENTS}
@@ -227,6 +245,54 @@ def elements_by_section(product: str = DEFAULT_PRODUCT) -> dict[str, list[Naming
     for e in elements_for_product(product):
         out.setdefault(e.section, []).append(e)
     return out
+
+
+# --------------------------------------------------------------------------- #
+#  Object types beyond the catalog                                            #
+# --------------------------------------------------------------------------- #
+# The catalog above is what SATOM builds names FROM. Every other object type a
+# device of the product holds (the ones Discovery reads) gets a scheme entry
+# too, stored in the same per-product overrides under ``table:<registry
+# name>`` — a prefix no catalog key uses, so :func:`effective_scheme` (and the
+# flows built on it) never see them. They carry a convention to check names
+# against, so any Discovery token is allowed there.
+TABLE_PREFIX = "table:"
+_TOKEN_RE = re.compile(r"\{([a-z0-9_-]+)\}")
+
+
+def table_key(table: str) -> str:
+    return TABLE_PREFIX + table
+
+
+def table_overrides(overrides: dict[str, str] | None) -> dict[str, str]:
+    """``{table: pattern}`` of the object types beyond the catalog."""
+    return {k[len(TABLE_PREFIX):]: v.strip() for k, v in (overrides or {}).items()
+            if k.startswith(TABLE_PREFIX) and isinstance(v, str) and v.strip()}
+
+
+def pattern_problem(key: str, pattern: str) -> str:
+    """Why *pattern* cannot be stored for scheme entry *key* ("" = it can).
+
+    Only an element SATOM derives names from is limited: it fills in
+    ``{name}`` (and the Certificate Manager its cert tokens), so any other
+    token would be written to the device literally."""
+    pattern = (pattern or "").strip()
+    if not pattern:
+        return ""
+    if pattern.count("{") != pattern.count("}") or "{}" in pattern:
+        return "unbalanced braces"
+    e = _BY_KEY.get(key)
+    if e is None or not e.derives:
+        return ""
+    allowed = {"name"}
+    if e.section == SECTION_CERT:
+        allowed |= {t.strip("{}") for t in CERT_TOKENS}
+    extra = sorted(set(_TOKEN_RE.findall(pattern)) - allowed)
+    if extra:
+        return ("SATOM builds new names from this pattern and only fills in "
+                + ", ".join("{" + t + "}" for t in sorted(allowed)) + "; "
+                + ", ".join("{" + t + "}" for t in extra) + " would be written literally")
+    return ""
 
 
 # --------------------------------------------------------------------------- #
@@ -320,6 +386,10 @@ __all__ = [
     "default_scheme",
     "effective_scheme",
     "elements_by_section",
+    "TABLE_PREFIX",
+    "table_key",
+    "table_overrides",
+    "pattern_problem",
     "slugify",
     "render_one",
     "render_names",

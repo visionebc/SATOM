@@ -129,8 +129,8 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
           "the capacity catalog counts FortiWeb object types"),
     Entry("firmware", ("firmware",), _firmware_kinds,
           "firmware image management does not apply to this product"),
-    # Every device ADOM: Discovery reads any product's names; the scheme
-    # editor tab shows only where the product has a catalog (naming.PRODUCTS).
+    # Every device ADOM: Scheme and Discovery list the same object types —
+    # every table the product's configuration sweep reads (views/naming.py).
     Entry("naming", ("naming",), _every_device, ""),
     Entry("segments", ("segments",), _every_device, ""),
     Entry("signatures", ("signatures",), lambda: ("fortiweb", "fortiadc"),

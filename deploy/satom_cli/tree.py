@@ -110,6 +110,9 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
             _n("naming", "The naming convention each object type already follows, "
                          "from the stored tree — exceptions, fleet consensus.",
                run=c.device_naming, usage=c.NAMING_USAGE),
+            _n("not-in-gui", "Every object and field the device's build has outside the "
+                             "Fortinet GUI, and the channel SATOM writes it over.",
+               run=c.device_not_in_gui, usage=c.NIG_USAGE),
         ),
         _group("signatures", "FortiGuard signature databases and the local signature index.",
             _n("status", "DB version and age per device, the source, what the index holds.",

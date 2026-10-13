@@ -320,6 +320,11 @@ def _plain(args):
 
 def _flask_naming(ctx, extra, timeout=300):
     """``flask naming <extra>`` as the service account. (rc, out, err)."""
+    return _flask_group(ctx, "naming", extra, timeout)
+
+
+def _flask_group(ctx, group, extra, timeout=300):
+    """``flask <group> <extra>`` as the service account. (rc, out, err)."""
     flask = ctx.app_dir / "venv" / "bin" / "flask"
     if not flask.exists():
         return 127, "", "venv/bin/flask missing — run 'execute reinstall venv'"
@@ -328,7 +333,7 @@ def _flask_naming(ctx, extra, timeout=300):
         env.setdefault(k, v)
     env["FLASK_APP"] = "wsgi.py"
     env["HOME"] = str(ctx.app_dir)
-    cmd = [str(flask), "naming"] + list(extra)
+    cmd = [str(flask), group] + list(extra)
     if os.geteuid() == 0 and ctx.app_user and ctx.app_user != "root":
         cmd = ["runuser", "-m", "-u", ctx.app_user, "--"] + cmd
     return run(cmd, timeout=timeout, cwd=str(ctx.app_dir), env=env)
@@ -438,5 +443,80 @@ def _render_fleet(doc):
             r.note("%s: no configuration tree yet for %s"
                    % (p["product"], ", ".join(p["missing"])))
     r.note("One device: satom get device naming <device>")
+    r.set(result=doc)
+    return r
+
+
+# -- "Not in GUI, but in CLI" (delegated) ----------------------------------
+NIG_USAGE = "get device not-in-gui <device> [--endpoint <key|cli path>]"
+
+#: Field names listed per object before "... N more"; --endpoint lists them all.
+_NIG_FIELDS = 12
+
+
+def _names(fields, full):
+    keys = [f["key"] if isinstance(f, dict) else f for f in fields]
+    shown = keys if full else keys[:_NIG_FIELDS]
+    more = len(keys) - len(shown)
+    return ", ".join(shown) + (" ... %d more" % more if more else "")
+
+
+def device_not_in_gui(ctx, args):
+    if not ctx.is_root and ctx.user != ctx.app_user:
+        r = Result("warn", "not in GUI — needs the service account's read access", exit_code=4)
+        r.lines("why", ["The API library and the GUI layouts live under data/ (0750, %s)."
+                        % ctx.app_user, "Re-run as root: sudo satom %s" % NIG_USAGE])
+        return r
+    plain = [a for a in args if not a.startswith("--")
+             and a != _opt(args, "--endpoint")]
+    if not plain:
+        return Result("bad", "usage: satom %s" % NIG_USAGE, exit_code=2)
+    endpoint = _opt(args, "--endpoint")
+    extra = ["inventory", plain[0]] + (["--endpoint", endpoint] if endpoint else [])
+    rc, out, err = _flask_group(ctx, "not-in-gui", extra)
+    doc = _json_tail(out)
+    if doc is None:
+        return Result("bad", "not in GUI").lines("", ((err or out) or "no output")
+                                                 .splitlines()[-25:])
+    if doc.get("error"):
+        r = Result("bad", "not in GUI — %s" % doc["error"], exit_code=1)
+        r.lines("known", doc.get("appliances") or doc.get("endpoints") or [])
+        return r
+    full = bool(endpoint)
+    r = Result("ok", "Not in GUI, but in CLI — %s (%s %s)"
+               % (doc["device"], doc["product"], doc.get("version") or "build unknown"))
+    if not doc.get("version"):
+        r.status = "warn"
+    if doc.get("note"):
+        r.note(doc["note"])
+    if doc["objects"]:
+        r.rows("objects only the CLI serves (written over SSH)",
+               [(o["cli_path"] or o["endpoint"], _names(o["fields"], full) or "-")
+                for o in doc["objects"]])
+    if doc["fields"]:
+        r.rows("CLI-only fields of REST objects (written over SSH)",
+               [(o["cli_path"] or o["endpoint"], _names(o["fields"], full))
+                for o in doc["fields"]])
+    pages = [p for p in doc["layout_pages"] if p["rest_not_in_gui"]]
+    if pages:
+        r.rows("REST fields the Fortinet GUI does not show (written over REST)",
+               [(p["endpoint"], "%d: %s" % (len(p["rest_not_in_gui"]),
+                                            _names(p["rest_not_in_gui"], full)))
+                for p in pages])
+    if len(pages) < len(doc["layout_pages"]):
+        r.note("%d measured GUI page(s) show every REST field of their object."
+               % (len(doc["layout_pages"]) - len(pages)))
+    if doc["absent"]:
+        r.rows("objects the device's GUI does not draw",
+               [("%s / %s" % (o["group"], o["label"]) if o["group"] else o["label"],
+                 "%s%s" % (o["endpoint"], "" if o["page"] else "  (no GUI page)"))
+                for o in doc["absent"]])
+    if not (doc["objects"] or doc["fields"] or pages or doc["absent"]):
+        r.lines("", ["nothing outside the GUI is known for this build"])
+    if not full:
+        r.note("All fields of one object: satom get device not-in-gui %s --endpoint <key>"
+               % doc["device"])
+    r.note("From the API library and the measured GUI layouts; the device is not "
+           "contacted. Current values and the editor: %s" % doc["page"])
     r.set(result=doc)
     return r

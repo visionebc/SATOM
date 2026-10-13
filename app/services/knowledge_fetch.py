@@ -289,13 +289,23 @@ def knowledge_date(pack: str, imported_at: str = ""):
     return _parse_at(imported_at)
 
 
-def installed(history: list | None = None, now: datetime | None = None) -> dict:
+def installed(history: list | None = None, now: datetime | None = None,
+              shipped: list | None = None) -> dict:
     """The newest pack this node imported per lane, from the api_pack import
     log: ``{lane: {pack, version, imported_at, date, age_days, stale} | None}``.
-    Only runs with no failed item count."""
+    Only runs with no failed item count.
+
+    A shipped release pack is never imported when a newer pack of either lane
+    already carries its snapshot (``api_pack._covered_by``). The api_pack lane
+    then names that release pack with ``covered_by`` and takes the covering
+    import's date, so a node on 3.0.0 does not report 2.6.0 and go "stale" on
+    content it holds. ``shipped`` defaults to this node's packs on disk when
+    ``history`` is read from disk too."""
     from . import api_pack
     if history is None:
         history = api_pack.import_history(limit=500)
+        if shipped is None:
+            shipped = api_pack.list_packs()
     now = now or datetime.now(timezone.utc)
     best: dict = {lane: None for lane in LANES}
     for rec in history or []:
@@ -308,10 +318,25 @@ def installed(history: list | None = None, now: datetime | None = None) -> dict:
                 (version_key(cur["version"]), cur["imported_at"]):
             best[lane] = {"pack": pack, "version": _version_of(pack),
                           "imported_at": rec.get("at") or "", "lane": lane}
+    full = [r for r in history or []
+            if r.get("pack") and not r.get("errors") and not r.get("partial")]
+    cur = best[LANE_API_PACK]
+    for p in shipped or []:
+        name = p.get("name") or ""
+        if (p.get("source") != api_pack.SOURCE_SHIPPED or p.get("superseded")
+                or not PACK_FILE_RE.match(name) or lane_of(p) != LANE_API_PACK
+                or (cur and version_key(_version_of(name)) <= version_key(cur["version"]))):
+            continue
+        cover = api_pack._covered_by(p, full)
+        rec = next((r for r in full if r["pack"] == cover), None)
+        if rec:
+            cur = best[LANE_API_PACK] = {
+                "pack": name, "version": _version_of(name), "lane": LANE_API_PACK,
+                "imported_at": rec.get("at") or "", "covered_by": cover}
     for lane, row in best.items():
         if row is None:
             continue
-        built = knowledge_date(row["pack"], row["imported_at"])
+        built = knowledge_date(row.get("covered_by") or row["pack"], row["imported_at"])
         row["date"] = built.date().isoformat() if built else ""
         row["age_days"] = (now - built).days if built else None
         row["stale"] = row["age_days"] is None or row["age_days"] > STALE_DAYS

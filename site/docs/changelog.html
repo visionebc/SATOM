@@ -112,6 +112,43 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--not-in-gui-but-in-cli-on-the-console-and-an-alert-for-stale-processes">Added — "Not in GUI, but in CLI" on the console, and an alert for stale processes</h3>
+<ul>
+<li><strong><code>satom get device not-in-gui &lt;device&gt; [--endpoint &lt;key|cli path&gt;]</code></strong> — the
+  per-device inventory of <code>/appliances/&lt;id&gt;/not-in-gui</code> on the console: objects
+  only the CLI serves, CLI-only fields of REST objects, REST fields the Fortinet
+  GUI does not show and objects the device's GUI does not draw, each with the
+  channel SATOM writes it over. Read from the API library and the measured
+  layouts (backend <code>flask not-in-gui inventory</code>); the device is not contacted.
+  Field values and the editor stay on the page.</li>
+<li><strong>Alert: a process running code older than the disk.</strong> The <em>Scheduled
+  automation</em> check now raises a warning (<code>action.code_stale.&lt;web|scheduler|reconciler&gt;</code>)
+  when a SATOM process started before the newest source file and has stayed
+  that way for 15 minutes. On 2026-10-13 the scheduler ran two-day-old code for
+  45 hours after updates that restarted only the web service; its device sync
+  reported success while skipping the FortiGate the new code supports. Before
+  this, only <code>satom diagnose code</code> and <code>satom get system health</code> said so.</li>
+</ul>
+<h3 id="fixed--deep-monitor-sweep-knowledge-lane-age-per-device-page-speed">Fixed — deep-monitor sweep, knowledge lane age, per-device page speed</h3>
+<ul>
+<li><strong>The deep-monitor sweep took 12 minutes on a 3-minute schedule</strong>, so every
+  run overlapped the next. 46 HTTPS probes against front ends that did not
+  answer cost 16 s each, one after another: the 10 s request timeout plus a
+  second connection to read the certificate of a host that had just failed to
+  connect. A probe that never got a connection no longer reads the certificate,
+  and the network half of the HTTPS probes runs concurrently (16 at a time).
+  Grading and every database write stay on the sweep's own thread.</li>
+<li><strong>Software Update named an old API pack for the release lane.</strong> When the
+  release's API pack was not imported because a newer knowledge pack already
+  held its content, the lane kept showing the last API pack actually imported
+  (2.6.0 on a 3.0.0 node) and would have turned <strong>stale</strong> after 30 days. It now
+  names the release's pack, "covered by" the pack that holds it, dated by that
+  pack. Also in <code>satom show knowledge</code>.</li>
+<li><strong>The per-device "Not in GUI, but in CLI" page took 60 s on a FortiGate.</strong>
+  Every object's section re-read the build's whole channel view from the
+  database (80 reads of ~23,000 rows for {device}). The page now reads it once:
+  1.3 s.</li>
+</ul>
 <h3 id="added--fortianalyzer-in-the-live-api-library-harvest">Added — FortiAnalyzer in the live API-library harvest</h3>
 <ul>
 <li>A registered FortiAnalyzer can now be harvested live like FortiWeb,

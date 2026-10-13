@@ -201,6 +201,7 @@ Two rules run through the whole table and are enforced by
 | `get device status` | Appliances: when the configuration last reached the local store (warns past 26 h or never), the web console's last reachability probe, maintenance flag |
 | `get device config [<device> [<section> [<table>]]]` | The configuration as SATOM last harvested it — from the local store, never from the box |
 | `get device naming [<device> [--table <type>]] [--product <p>]` | Naming Discovery: the pattern each object type already follows (`vs-{name}`), how many objects follow it, the exceptions with their reason, the Naming scheme pattern and how many objects match it; without a device, the fleet consensus per product. Read from the stored tree, run as the service account (root) |
+| `get device not-in-gui <device> [--endpoint <key\|cli path>]` | "Not in GUI, but in CLI" for one device: objects only the CLI serves, CLI-only fields of REST objects, REST fields the Fortinet GUI does not show, and objects the device's GUI does not draw — each with the channel SATOM writes it over. From the API library and the measured layouts; the device is not contacted. Current values and the editor stay on `/appliances/<id>/not-in-gui` (root) |
 | `get signatures status` | FortiGuard signature DB version and age per FortiWeb (stale past `alerts.signature_max_days`, or never updated), the signature source, and what the local signature index holds |
 | `get monitor status` | Probe states; parked devices are shown but do not raise the roll-up |
 | `get job list` | The background-job ledger, including ghosts |
@@ -390,7 +391,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*120 commands in 44 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*121 commands in 44 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -418,6 +419,7 @@ Read state. Every command below works as **any user** — this is the half of th
 | `satom get device status` | — | — | Last sync to the local store, last reachability probe, maintenance flag. |
 | `satom get device config [<device> [<section> [<table>]]] [--version <id>]` | — | — | The device's configuration as SATOM last harvested it — read from the LOCAL store, never from the box. |
 | `satom get device naming [<device> [--table <type>]] [--product <p>]` | — | — | The naming convention each object type already follows, from the stored tree — exceptions, fleet consensus. |
+| `satom get device not-in-gui <device> [--endpoint <key\|cli path>]` | — | — | Every object and field the device's build has outside the Fortinet GUI, and the channel SATOM writes it over. |
 | `satom get signatures status` | — | — | DB version and age per device, the source, what the index holds. |
 | `satom get monitor status` | — | — | Probe states, and how much coverage is disabled. |
 | `satom get job list` | — | — | The ledger, including ghosts that keep the dock's toast open. |

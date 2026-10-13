@@ -23,8 +23,11 @@ device.
 """
 from __future__ import annotations
 
+import calendar
 import json
+import os
 import re
+import socket
 import traceback
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -1971,7 +1974,7 @@ def execute_and_record(action_row, *, trigger: str = "schedule"):
     try:
         run = ScheduledActionRun(
             action_id=action_row.id, status="running", trigger=trigger,
-            started_at=now, summary="", log="")
+            started_at=now, summary="", log=claim_marker())
         db.session.add(run)
         db.session.commit()
     except Exception:  # noqa: BLE001 - never strand the lease we just took
@@ -2382,6 +2385,85 @@ def reap_stale_leases(now: datetime | None = None,
             if r["kind"] == "lease":
                 release_lease(r["id"])
     return reaped
+
+
+#: Written into ``run.log`` when a fire opens its row (the final log replaces
+#: it). It names the process holding the lease, so the reaper can tell a run
+#: that is still going from one whose process is gone.
+_CLAIM_RE = re.compile(r"^\[claimed by (\S+) pid (\d+)\]")
+
+
+def claim_marker() -> str:
+    return "[claimed by %s pid %d]" % (socket.gethostname(), os.getpid())
+
+
+def reap_dead_owner_leases(now: datetime | None = None, *, host: str | None = None,
+                           start_of=None) -> list[dict]:
+    """Release at once the leases whose process, on THIS host, has ended.
+
+    ``systemctl restart satom-scheduler`` during a run (every deploy does it)
+    waits 90 s and then SIGKILLs the fire before its ``finally``: the lease
+    stayed taken for the full :data:`LEASE_TTL_MINUTES`. On 2026-10-13 a deploy
+    at 12:3x stopped the deep-monitor sweep until the TTL reaper. A run row's
+    claim marker names host and pid; when that pid is gone, or now belongs to
+    a process younger than the claim, the owner is dead and waiting is pointless.
+
+    Rows of another host (an HA peer), rows without a marker (opened before the
+    marker existed) and owners that are alive are left to the TTL reaper.
+    """
+    from .code_freshness import CLOCK_SLACK_S, proc_start_epoch
+    now = now or datetime.utcnow()
+    host = host or socket.gethostname()
+    start_of = start_of or proc_start_epoch
+    out = []
+    for action in (ScheduledAction.query
+                   .filter(ScheduledAction.running_at.isnot(None)).all()):
+        run_row = (ScheduledActionRun.query
+                   .filter(ScheduledActionRun.action_id == action.id,
+                           ScheduledActionRun.status == "running")
+                   .order_by(ScheduledActionRun.id.desc()).first())
+        m = _CLAIM_RE.match((run_row.log or "") if run_row else "")
+        if not m or m.group(1) != host:
+            continue
+        pid = int(m.group(2))
+        claimed = calendar.timegm(run_row.started_at.utctimetuple())
+        started = start_of(pid)
+        if started is not None and started <= claimed + CLOCK_SLACK_S:
+            continue  # the process that claimed it is still running
+        held = action.running_at
+        run_row.status = "failed"
+        run_row.finished_at = now
+        run_row.summary = (
+            "Interrupted: pid %d on %s, which ran this, ended before the run "
+            "finished (usually a restart during a deploy). The lease was "
+            "released at once instead of after %d min."
+            % (pid, host, _lease_ttl_minutes()))[:_SUMMARY_MAX]
+        try:
+            next_run = (None if action.schedule_kind == "once"
+                        else scheduler.compute_next_run(
+                            action.schedule_kind, action.schedule_dict, now,
+                            tz=_configured_tz()))
+        except Exception:  # noqa: BLE001 - a bad spec must not re-strand the lease
+            next_run = None
+        action.running_at = None
+        action.last_run = held
+        action.last_status = "failed"
+        action.next_run = next_run
+        out.append({"kind": "dead-owner", "id": action.id, "name": action.name,
+                    "action": action.action, "run_id": run_row.id, "pid": pid,
+                    "held_since": held.isoformat(timespec="seconds"),
+                    "held_minutes": int((now - held).total_seconds() // 60),
+                    "next_run": next_run.isoformat(timespec="seconds") if next_run else None,
+                    "closed_runs": 1})
+    if not out:
+        return []
+    try:
+        db.session.commit()
+    except Exception:  # noqa: BLE001
+        db.session.rollback()
+        for r in out:
+            release_lease(r["id"])
+    return out
 
 
 def _close_orphan_runs(now: datetime, cutoff: datetime) -> list[dict]:

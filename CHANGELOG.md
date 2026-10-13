@@ -51,6 +51,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   /proc can be up to a second early, and `restart-all` right after `git pull`
   starts the web service within that second. Both the console check and the new
   alert allow 5 s.
+- **A scheduler restart during a run stopped that action for an hour.**
+  `systemctl restart satom-scheduler` (every deploy) waits 90 s and then kills a
+  run before it can release its lease, and the lease was only reclaimed after
+  the 60-minute TTL — on 2026-10-13 it stopped the deep-monitor sweep that way.
+  A run now records which process holds it (host and pid), and the scheduler
+  releases a lease at once when that process, on the same node, has ended. The
+  run is recorded as failed with "Interrupted: …". Runs of the HA peer and
+  runs opened before this change still wait for the TTL.
 
 ### Added — FortiAnalyzer in the live API-library harvest
 

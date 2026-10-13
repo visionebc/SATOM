@@ -217,6 +217,19 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   walk had never run against a device), and its evidence no longer lists an
   unverified reason.</li>
 </ul>
+<h3 id="fixed--fortianalyzer-fields-read-rest-only-or-unknown-in-the-api-library">Fixed — FortiAnalyzer fields read "REST only" or "unknown" in the API library</h3>
+<ul>
+<li>The CLI tree a knowledge pack brings for FortiAnalyzer names an object
+  <code>system/admin.user/dashboard</code>; the syntax walk names the same object
+  <code>cli/global/system/admin/user/{user}/dashboard</code>. The two never met, so on
+  7.6.7 no field read <em>both</em>: 1,494 read <em>REST only</em> and 1,555 <em>unknown</em>, over
+  315 entries for 176 objects (Build compatibility and the per-device <em>Not
+  in GUI, but in CLI</em> page read these channels). The library now
+  derives each tree object's JSON-RPC URL from its CLI path and enclosing
+  tables, so both meet: 1,494 <em>both</em>, 61 <em>unknown</em> (children of tables with
+  no row, which the walk cannot ask, and objects the build lacks), 176
+  entries. Stored evidence is unchanged; other products are unaffected.</li>
+</ul>
 <h3 id="added--the-operator-cli-catches-up-with-3x-naming-signatures-layouts">Added — the operator CLI catches up with 3.x: naming, signatures, layouts</h3>
 <ul>
 <li><strong><code>satom get device naming [&lt;device&gt; [--table &lt;type&gt;]] [--product &lt;p&gt;]</code></strong> —

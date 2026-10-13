@@ -1376,7 +1376,13 @@ FortiOS (FortiGate) prints `[table]`, `<singleton>`, `--*key` and annotations
 (`diagnose__tree__`, `execute__tree__`) are skipped. FortiAuthenticator has no
 `tree` (`No such command.`); its `cli_tree` evidence is the `set ?` help of
 each setup-CLI object (`summary.format = "fac_help"`). FortiAnalyzer's CLI
-schema is its JSON-RPC syntax answer, stored as `schema`.
+schema is its JSON-RPC syntax answer, stored as `schema`. A knowledge pack can
+also carry a FortiAnalyzer `cli_tree` (the harvester's SSH `tree`), keyed by
+the FortiWeb rule (`system/admin.user/dashboard`). The channel view re-keys
+each of its objects to the JSON-RPC URL its CLI path and enclosing tables give
+(`cli/global/system/admin/user/{user}/dashboard`), so the tree and the syntax
+walk meet on one object (`schema_adapters.fortianalyzer.tree_channel_keys`);
+an object whose metadata names no CLI path or an unknown parent keeps its key.
 
 **CLI path to REST path** (`cli_schema.rest_path`):
 
@@ -1427,6 +1433,7 @@ row created in every empty table and read back by both channels):
 | FortiWeb 7.6.8 | 3,451 | 0 | 0 | 0 | 653 (was 1,744 before the lab rows) |
 | FortiWeb 8.0.6 | 3,372 | 0 | 0 | 0 | 885 (was 2,545) |
 | FortiAuthenticator 8.0.3 | 0 | 29 | 0 | 316 | 0 |
+| FortiAnalyzer 7.6.7 | 1,494 | 0 | 0 | 0 | 61 (children of tables with no row, and objects the build lacks) |
 
 On FortiWeb every field the `tree` lists is served by REST on every object REST
 serves, and `show full-configuration` names nothing the `tree` does not: the

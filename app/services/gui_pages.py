@@ -72,9 +72,8 @@ def entries(firmware, product: str = PRODUCT) -> list:
         out.append({"page": page, "path": list(tpl.get("menu_path") or [page]),
                     "order": tpl.get("menu_order"), "endpoint": tpl.get("endpoint") or "",
                     "special": special.get(page),
-                    # a live monitor: the device draws it from live data and
-                    # SATOM only links it there (Settings -> ADOM Menus hides it)
-                    "monitor": bool(tpl.get("monitor")) and not tpl.get("gui_absent")})
+                    # what each tab of the page is (Settings -> ADOM Menus)
+                    "kinds": page_kinds(product, tpl)})
     # a page without a measured position (the hand-tuned Server Policy) sits
     # just before the first page of its own menu group
     first: dict = {}
@@ -131,24 +130,85 @@ def tree(items: list) -> list:
     return root
 
 
-#: app_settings key of Settings -> ADOM Menus: '1' drops every live-monitor
-#: page from the ADOM menus of every user (the pages still open by URL).
-HIDE_MONITORS_KEY = "gui.hide_monitor_pages"
+# --------------------------------------------------------------------------- #
+# Settings -> ADOM Menus: page classes an administrator can keep out of menus
+# --------------------------------------------------------------------------- #
+#: A tab SATOM does not draw as configuration, by the banner the page shows:
+#: ``monitor`` "Live monitor" (the device draws it from live data),
+#: ``device_managed`` "Managed on the device" (the GUI edits it through its own
+#: private calls), ``gui_only`` "No API on this build (GUI only)". Every other
+#: tab is ``config`` and is never hidden.
+KINDS = ("monitor", "device_managed", "gui_only")
+#: app_settings key of each switch ('1' = the class leaves every ADOM menu)
+KIND_KEYS = {"monitor": "gui.hide_monitor_pages",
+             "device_managed": "gui.hide_device_managed_pages",
+             "gui_only": "gui.hide_gui_only_pages"}
 
 
-def hide_monitor_pages() -> bool:
-    """True when live-monitor pages are kept out of the ADOM menus (False on
-    any error: a menu never loses pages because the setting is unreadable)."""
+def view_kind(view: dict) -> str:
+    """The class of one tab (a view as the page renders it)."""
+    from . import gui_products
+    if view.get("monitor"):
+        return "monitor"
+    if view.get("device_managed"):
+        return "device_managed"
+    if gui_products.is_gui_only(view.get("endpoint")):
+        return "gui_only"
+    return "config"
+
+
+def page_kinds(product: str, tpl: dict) -> tuple:
+    """The sorted classes of a page's tabs. A "Not in GUI, but in CLI" page
+    is configuration whatever its tabs say; a FortiAnalyzer page is read the
+    way it renders (``gui_products.faz_template`` marks its views)."""
+    if tpl.get("gui_absent"):
+        return ("config",)
+    if product == "fortianalyzer":
+        from . import gui_products
+        tpl = gui_products.faz_template(tpl)
+    return tuple(sorted({view_kind(v) for v in views(tpl) if isinstance(v, dict)} or {"config"}))
+
+
+def hidden_kinds() -> frozenset:
+    """The classes kept out of the ADOM menus (empty on any error: a menu
+    never loses pages because the setting is unreadable)."""
     try:
         from ..models import AppSetting
-        return AppSetting.get(HIDE_MONITORS_KEY) == "1"
+        return frozenset(k for k in KINDS if AppSetting.get(KIND_KEYS[k]) == "1")
     except Exception:  # noqa: BLE001
-        return False
+        return frozenset()
 
 
-def set_hide_monitor_pages(on: bool) -> None:
+def set_hidden_kinds(kinds) -> None:
     from ..models import AppSetting
-    AppSetting.set(HIDE_MONITORS_KEY, "1" if on else "0")
+    on = set(kinds or ())
+    for k in KINDS:
+        AppSetting.set(KIND_KEYS[k], "1" if k in on else "0")
+
+
+def is_hidden_entry(entry: dict, hidden) -> bool:
+    """True when every tab of the page is of a hidden class (a page with one
+    configuration tab always stays)."""
+    kinds = set(entry.get("kinds") or ("config",))
+    return bool(hidden) and kinds <= set(hidden)
+
+
+def kind_counts(appliances) -> dict:
+    """{product: {kind: pages}} over the first device of each product (its
+    build's menu): what each switch takes out of that ADOM. A page counts
+    under a class only when every tab is of it."""
+    from . import gui_products
+    out: dict = {}
+    for a in appliances:
+        product = gui_products.product_of(a)
+        if product is None or product in out:
+            continue
+        counts = {k: 0 for k in KINDS}
+        for e in entries(gui_store.firmware_of(a), product):
+            if len(e["kinds"]) == 1 and e["kinds"][0] in counts:
+                counts[e["kinds"][0]] += 1
+        out[product] = counts
+    return out
 
 
 def nav_for(appliance) -> list:
@@ -156,15 +216,15 @@ def nav_for(appliance) -> list:
     FortiADC / FortiAnalyzer) of the pages SATOM can draw for this device,
     from the layouts of its exact build, else the nearest measured one
     (``gui_store.resolve``); ``[]`` when the product has no layout at all.
-    Live-monitor pages are left out while Settings -> ADOM Menus says so
-    (60 s cache per product, firmware and that setting: the sidebar renders
-    on every page)."""
+    Pages whose every tab is of a class Settings -> ADOM Menus hides are
+    left out (60 s cache per product, firmware and those switches: the
+    sidebar renders on every page)."""
     from . import gui_products
     product = gui_products.product_of(appliance)
     if product is None:
         return []
     fw = gui_store.firmware_of(appliance)
-    hide = hide_monitor_pages()
+    hide = hidden_kinds()
     try:
         key = (str(gui_store.root()), product, fw, hide)
     except RuntimeError:
@@ -172,7 +232,7 @@ def nav_for(appliance) -> list:
     hit = _nav_cache.get(key)
     if hit and time.monotonic() - hit[0] < 60:
         return hit[1]
-    t = tree([e for e in entries(fw, product) if not (hide and e["monitor"])])
+    t = tree([e for e in entries(fw, product) if not is_hidden_entry(e, hide)])
     _nav_cache[key] = (time.monotonic(), t)
     return t
 

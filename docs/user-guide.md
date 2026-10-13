@@ -2690,12 +2690,14 @@ Full product notes: [docs/fortiauthenticator.md](fortiauthenticator.md).
 
 ### 17.3 FortiAnalyzer
 
-The `/faz/` ADOM mirrors the FortiAnalyzer menu: **Device Manager**,
+The `/faz/` ADOM draws the selected unit's own menu from the GUI layouts
+measured on its build, like the other device ADOMs. Only a unit whose build has
+no measured layout falls back to the curated menu: **Device Manager**,
 **FortiView**, **Log View**, **Fabric View**, **Incidents & Events**,
-**FortiAI**, **Reports** and **System Settings**. This menu is curated, not
-measured, and the 2026-10 menu changes of the FortiWeb, FortiGate and
-FortiAuthenticator ADOMs do not apply to it. An admin can trim it at
-`Settings → FAZ Menu` (§26.12).
+**FortiAI**, **Reports** and **System Settings**. About 57 of the measured
+FortiAnalyzer 7.6.7 pages are live monitors (dashboards, FortiView, log and
+event views): SATOM links them on the device instead of drawing them, and
+`Settings → ADOM Menus` (§26.12) can take them out of the menu.
 
 - The unit speaks **JSON-RPC** on a single endpoint, in two dialects, and the
   endpoint registry stores which one each URI needs — an upgrade that moves a
@@ -3601,7 +3603,7 @@ rendered at all, so the menu never offers a section that is not there.
 | **Certificates & Trust** | Certificate Manager · Node TLS · Trust store |
 | **Network & DNS** | DNS Lookup · DNS Records |
 | **Fleet & Devices** | Hypervisors · ADOMs · Policy Links · Clone / Migrate |
-| **User Interface** | Appearance · Languages · FAZ Menu |
+| **User Interface** | Appearance · Languages · ADOM Menus |
 | **My Account** | Security · Change Password |
 | **Monitoring & Alerts** | Email & Alerts · Thresholds |
 | **Sentinel** | Settings · Context · Response policy · Border blocklist · Architecture · Incidents console |
@@ -4467,13 +4469,26 @@ workspace offers.
 into URL scoping and deleting them would orphan data. Deactivate them instead.
 Everything else is fully deletable.
 
-### 26.12 FAZ Menu — trim the FortiAnalyzer sidebar
+### 26.12 ADOM Menus — hide the live-monitor pages
 
-Hide FortiAnalyzer menu groups and leaves. Turning a **group** off cascades to
-everything under it; turning a single **item** off hides just that leaf. Hidden
-entries disappear from the sidebar and dashboard **and are not reachable by URL**.
-It applies to every user of that ADOM, and it changes only the GUI menu — the
-devices and the configuration harvest are unaffected.
+A **live-monitor page** is one the device draws from live data: dashboards,
+FortiView, log and event views. SATOM does not draw it; the page says
+*Live monitor* and links it with **Open it on the device**. The template a page
+comes from marks it (`monitor: true`); a "Not in GUI, but in CLI" page is never
+one.
+
+**Hide live-monitor pages from the ADOM menus** takes every such page out of the
+device menu and the **All pages** list of every ADOM, for every user, on the
+next page render. A menu folder left with no page disappears with it. A direct
+link or bookmark still opens the page. The devices, the knowledge packs and the
+configuration harvest are not affected. Off by default.
+
+Today only FortiAnalyzer has live-monitor pages (57 of the 139 measured on
+7.6.7); an ADOM whose layouts gain them later follows the same setting.
+
+This panel replaced **FAZ Menu**, which trimmed the curated FortiAnalyzer
+menu. A unit with a measured layout no longer draws that menu, so the list of
+hidden entries was removed with it.
 
 ### 26.12b Languages — which of the five this install offers
 

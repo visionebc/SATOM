@@ -6,6 +6,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — Settings → ADOM Menus replaces FAZ Menu: hide the live-monitor pages
+
+- A live-monitor page (the device draws it from live data; SATOM only says
+  *Live monitor* and links it with **Open it on the device**) can now be taken
+  out of the menus with **Settings → User Interface → ADOM Menus → Hide
+  live-monitor pages from the ADOM menus**. It applies to every ADOM and every
+  user: the device menu and the **All pages** list drop those pages, and a
+  folder left empty goes with them. A direct link still opens the page. Off by
+  default. Today the pages are FortiAnalyzer's (57 of 139 on 7.6.7); any ADOM
+  whose layouts mark pages `monitor` follows the same switch.
+- **Removed: Settings → FAZ Menu.** It trimmed the curated FortiAnalyzer menu,
+  which a unit with a measured GUI layout no longer draws. Its stored list of
+  hidden entries is gone too, so `/faz/m/<item>` no longer answers 404 for an
+  entry that list had hidden. The curated menu stays as the fallback for a
+  build with no measured layout.
+
 ### Added — Naming Discovery: the convention your devices already follow
 
 - **Administrator → Naming** is now in every device ADOM. Its new

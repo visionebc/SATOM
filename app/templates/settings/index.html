@@ -4700,76 +4700,27 @@
     {% if is_admin %}{% include 'settings/_languages.html' %}{% endif %}
   </div>
 
-  <!-- FAZ MENU VISIBILITY TAB -->
-  <div class="tab-pane fade" id="tab-fazmenu">
+  <!-- ADOM MENUS TAB -->
+  <div class="tab-pane fade" id="tab-adommenus">
     <div class="fw-card">
       <div class="fw-card-header">
-        <span class="fw-card-title"><i class="bi bi-list-check me-2 text-accent"></i>{{ _('FortiAnalyzer menu visibility') }} <span class="text-muted" style="font-size:12px;font-weight:400;">{{ _('(this ADOM only)') }}</span></span>
+        <span class="fw-card-title"><i class="bi bi-eye-slash me-2 text-accent"></i>{{ _('ADOM menus') }} <span class="text-muted" style="font-size:12px;font-weight:400;">{{ _('(every ADOM, every user)') }}</span></span>
       </div>
       <div class="fw-card-body">
         <p class="text-muted" style="font-size:13px;">
-          {{ _('Turn a menu') }} <strong>{{ _('group') }}</strong> {{ _('off to hide it and every sub-item under it (cascade); turn an individual') }} <strong>{{ _('item') }}</strong> off to hide just that leaf. Hidden entries disappear from the
-          FortiAnalyzer sidebar and dashboard and are not reachable by URL. This applies to every user of this
-          ADOM. FortiAnalyzer devices and the config source-of-truth harvest are unaffected &mdash; this only
-          controls the GUI menu.
+          {{ _('A live-monitor page is one the device draws from live data (dashboards, FortiView, log and event views). SATOM does not draw it: the page only says "Live monitor" and links it with "Open it on the device". Hiding these pages takes them out of the device menu and the "All pages" list of every ADOM, for every user. A direct link still opens the page, and the devices and the configuration harvest are not affected.') }}
         </p>
-        <form method="POST" action="{{ url_for('settings.save_faz_menu') }}">
+        <form method="POST" action="{{ url_for('settings.save_adom_menus') }}" data-adom-menus-form>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <div class="row g-3">
-            {% for g in faz_menu_groups %}
-            <div class="col-lg-6">
-              <div class="fw-card" style="height:100%;">
-                <div class="fw-card-body">
-                  <div class="form-check form-switch mb-2">
-                    <input class="form-check-input faz-menu-group" type="checkbox" role="switch"
-                           id="fazm-{{ g.key }}" name="visible" value="{{ g.key }}"
-                           {{ '' if g.key in faz_menu_hidden else 'checked' }}>
-                    <label class="form-check-label fw-semibold" for="fazm-{{ g.key }}">
-                      <i class="bi {{ g.icon }} me-1 text-accent"></i>{{ g.label }}
-                    </label>
-                  </div>
-                  <div class="ms-4">
-                    {% for it in g.items %}
-                    <div class="form-check form-switch mb-1">
-                      <input class="form-check-input faz-menu-item" type="checkbox" role="switch"
-                             id="fazm-{{ g.key }}-{{ it.key }}" name="visible" value="{{ it.key }}"
-                             data-parent="{{ g.key }}"
-                             {{ '' if (it.key in faz_menu_hidden or g.key in faz_menu_hidden) else 'checked' }}>
-                      <label class="form-check-label" for="fazm-{{ g.key }}-{{ it.key }}" style="font-size:13px;">
-                        {{ it.label }}
-                      </label>
-                    </div>
-                    {% endfor %}
-                  </div>
-                </div>
-              </div>
-            </div>
-            {% endfor %}
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" role="switch" id="hide-monitor-pages"
+                   name="hide_monitor_pages" value="1" {{ 'checked' if hide_monitor_pages }}>
+            <label class="form-check-label fw-semibold" for="hide-monitor-pages">{{ _('Hide live-monitor pages from the ADOM menus') }}</label>
           </div>
-          <button type="submit" class="btn btn-fw-primary btn-sm mt-3"><i class="bi bi-save me-1"></i>{{ _('Save menu visibility') }}</button>
+          <button type="submit" class="btn btn-fw-primary btn-sm mt-3"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
         </form>
       </div>
     </div>
-    <script nonce="{{ csp_nonce }}">
-    (function() {
-      var groups = document.querySelectorAll('#tab-fazmenu .faz-menu-group');
-      function sync(g) {
-        var kids = document.querySelectorAll('#tab-fazmenu .faz-menu-item[data-parent="' + g.value + '"]');
-        for (var i = 0; i < kids.length; i++) { kids[i].disabled = !g.checked; }
-      }
-      // Turning a group back ON re-ticks its items: a hidden group renders
-      // (and saves) every item as hidden, so without this the group came back
-      // empty. Untick individual items afterwards to hide just those.
-      function recheck(g) {
-        if (!g.checked) return;
-        var kids = document.querySelectorAll('#tab-fazmenu .faz-menu-item[data-parent="' + g.value + '"]');
-        for (var i = 0; i < kids.length; i++) { kids[i].checked = true; }
-      }
-      for (var i = 0; i < groups.length; i++) {
-        (function(g) { g.addEventListener('change', function() { recheck(g); sync(g); }); sync(g); })(groups[i]);
-      }
-    })();
-    </script>
   </div>
 
   {% endif %}

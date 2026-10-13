@@ -71,7 +71,10 @@ def entries(firmware, product: str = PRODUCT) -> list:
             continue
         out.append({"page": page, "path": list(tpl.get("menu_path") or [page]),
                     "order": tpl.get("menu_order"), "endpoint": tpl.get("endpoint") or "",
-                    "special": special.get(page)})
+                    "special": special.get(page),
+                    # a live monitor: the device draws it from live data and
+                    # SATOM only links it there (Settings -> ADOM Menus hides it)
+                    "monitor": bool(tpl.get("monitor")) and not tpl.get("gui_absent")})
     # a page without a measured position (the hand-tuned Server Policy) sits
     # just before the first page of its own menu group
     first: dict = {}
@@ -128,25 +131,48 @@ def tree(items: list) -> list:
     return root
 
 
+#: app_settings key of Settings -> ADOM Menus: '1' drops every live-monitor
+#: page from the ADOM menus of every user (the pages still open by URL).
+HIDE_MONITORS_KEY = "gui.hide_monitor_pages"
+
+
+def hide_monitor_pages() -> bool:
+    """True when live-monitor pages are kept out of the ADOM menus (False on
+    any error: a menu never loses pages because the setting is unreadable)."""
+    try:
+        from ..models import AppSetting
+        return AppSetting.get(HIDE_MONITORS_KEY) == "1"
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def set_hide_monitor_pages(on: bool) -> None:
+    from ..models import AppSetting
+    AppSetting.set(HIDE_MONITORS_KEY, "1" if on else "0")
+
+
 def nav_for(appliance) -> list:
     """The product menu (FortiWeb / FortiGate / FortiAuthenticator /
-    FortiADC) of the pages SATOM can draw for this device, from the layouts
-    of its exact build, else the nearest measured one (``gui_store.resolve``);
-    ``[]`` when the product has no layout at all (60 s cache per product and
-    firmware: the sidebar renders on every page)."""
+    FortiADC / FortiAnalyzer) of the pages SATOM can draw for this device,
+    from the layouts of its exact build, else the nearest measured one
+    (``gui_store.resolve``); ``[]`` when the product has no layout at all.
+    Live-monitor pages are left out while Settings -> ADOM Menus says so
+    (60 s cache per product, firmware and that setting: the sidebar renders
+    on every page)."""
     from . import gui_products
     product = gui_products.product_of(appliance)
     if product is None:
         return []
     fw = gui_store.firmware_of(appliance)
+    hide = hide_monitor_pages()
     try:
-        key = (str(gui_store.root()), product, fw)
+        key = (str(gui_store.root()), product, fw, hide)
     except RuntimeError:
         return []
     hit = _nav_cache.get(key)
     if hit and time.monotonic() - hit[0] < 60:
         return hit[1]
-    t = tree(entries(fw, product))
+    t = tree([e for e in entries(fw, product) if not (hide and e["monitor"])])
     _nav_cache[key] = (time.monotonic(), t)
     return t
 

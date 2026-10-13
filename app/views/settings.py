@@ -45,7 +45,7 @@ from ..services import policy_links as policy_links_svc
 from ..services import advisor as ai_advisor
 from ..services.advisor_providers import ProviderError as _AiProviderError
 from ..services import clone_rules as clone_rules_svc
-from ..services import faz_menu
+from ..services import gui_pages
 from ..services import alert_routing
 from ..services import alerts as alerts_svc
 from ..services.audit import log_action
@@ -242,8 +242,7 @@ def index():
         lang_configured=(lang_policy.configured() if _is_admin() else False),
         lang_malformed=(lang_policy.malformed() if _is_admin() else False),
         lang_source=lang_registry.DEFAULT,
-        faz_menu_groups=(faz_menu.menu() if _is_admin() else []),
-        faz_menu_hidden=(sorted(faz_menu.hidden_keys()) if _is_admin() else []),
+        hide_monitor_pages=(gui_pages.hide_monitor_pages() if _is_admin() else False),
         vault_config=(secret_backend.config() if _is_admin() else None),
         vault_modes=[(m, secret_backend.MODE_LABELS[m])
                      for m in secret_backend.MODES],
@@ -703,21 +702,22 @@ def save_general():
     return redirect(url_for('settings.index') + '#tab-general')
 
 
-@bp.route('/faz-menu', methods=['POST'])
+@bp.route('/adom-menus', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
-def save_faz_menu():
-    """Hide/show FortiAnalyzer ADOM menu groups & leaves (cascade). Stored in
-    the replicated app_settings table; takes effect on the next page render."""
+def save_adom_menus():
+    """Whether live-monitor pages (drawn by the device from live data, only
+    linked from SATOM) stay in the ADOM menus. Stored in the replicated
+    app_settings table; every user's menu follows it on the next render."""
     try:
-        visible = set(request.form.getlist('visible'))
-        hidden = [k for k in faz_menu.all_keys() if k not in visible]
-        faz_menu.set_hidden_keys(hidden)
-        log_action('settings.faz_menu', detail='Updated FAZ menu visibility')
-        flash('FortiAnalyzer menu visibility saved.', 'success')
+        on = request.form.get('hide_monitor_pages') == '1'
+        gui_pages.set_hide_monitor_pages(on)
+        log_action('settings.adom_menus',
+                   detail=f"Live-monitor pages {'hidden from' if on else 'shown in'} the ADOM menus")
+        flash('ADOM menu settings saved.', 'success')
     except Exception as exc:  # noqa: BLE001
-        flash(f'Failed to save FAZ menu visibility: {exc}', 'danger')
-    return redirect(url_for('settings.index') + '#tab-fazmenu')
+        flash(f'Failed to save the ADOM menu settings: {exc}', 'danger')
+    return redirect(url_for('settings.index') + '#tab-adommenus')
 
 
 @bp.route('/languages', methods=['POST'])

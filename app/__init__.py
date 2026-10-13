@@ -861,12 +861,12 @@ def create_app(config_override: object | None = None) -> Flask:
         except Exception:
             _unread_notif = 0
             _notif_preview = []
-        # FortiAnalyzer sidebar menu (only built for fortianalyzer sessions;
-        # static curated menu — no backend yet, see services.faz_menu).
+        # FortiAnalyzer curated menu (services.faz_menu): drawn only while the
+        # unit has no measured GUI layout (partials/nav_fortianalyzer.html).
         try:
             if prod.get("key") == "fortianalyzer":
                 from .services import faz_menu as _fazm
-                _faz_nav = _fazm.visible_menu()
+                _faz_nav = _fazm.menu()
             else:
                 _faz_nav = ()
         except Exception:

@@ -158,6 +158,12 @@
   const checks = () => Array.from(document.querySelectorAll('.dev-check'));
   let timer = null;
 
+  // HTML-escape before interpolating into innerHTML. Device names, REST error
+  // text and stored log labels/filenames originate from the appliances and
+  // from operator input, so they must never be trusted as markup.
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
   $('selAll')?.addEventListener('click', () => checks().forEach(c => c.checked = true));
   $('selNone')?.addEventListener('click', () => checks().forEach(c => c.checked = false));
 
@@ -180,9 +186,9 @@
       $('progResults').innerHTML = p.results.map(r =>
         r.ok
           ? '<div style="font-size:12px;"><span class="fw-badge fw-badge-success">OK</span> ' +
-            r.device + ' → <span class="mono">' + r.file + '</span></div>'
+            esc(r.device) + ' → <span class="mono">' + esc(r.file) + '</span></div>'
           : '<div style="font-size:12px;"><span class="fw-badge fw-badge-danger">FAIL</span> ' +
-            r.device + ' — ' + (r.error || '') + '</div>'
+            esc(r.device) + ' — ' + esc(r.error || '') + '</div>'
       ).join('');
     }
     if (p.state === 'done') {
@@ -208,9 +214,9 @@
       if (!j.files.length) return;
       body.innerHTML = j.files.map(h =>
         '<tr>' +
-        '<td><span class="fw-badge fw-badge-secondary">' + h.label + '</span></td>' +
-        '<td class="mono" style="font-size:11.5px;word-break:break-all;">' + h.name + '</td>' +
-        '<td class="text-nowrap" style="font-size:11.5px;">' + (h.modified || '').replace('T', ' ') + '</td>' +
+        '<td><span class="fw-badge fw-badge-secondary">' + esc(h.label) + '</span></td>' +
+        '<td class="mono" style="font-size:11.5px;word-break:break-all;">' + esc(h.name) + '</td>' +
+        '<td class="text-nowrap" style="font-size:11.5px;">' + esc((h.modified || '').replace('T', ' ')) + '</td>' +
         '<td>' + fmtSize(h.size) + '</td>' +
         '<td>' +
           '<a class="btn btn-fw-outline btn-sm" target="_blank" href="/logs/file/' + encodeURIComponent(h.name) + '">View</a> ' +

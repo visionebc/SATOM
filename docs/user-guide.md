@@ -293,10 +293,11 @@ the Global ADOM, or the Global dashboard). The entry is shown to anyone holding
    a login password; a read-only admin profile is enough (§17.4).
 
    **Editing** an appliance keeps its stored credentials, which nobody can
-   read back. Changing its host, port, username or platform therefore needs
-   the password entered again in the same save (and the SSH password too when
-   the device has a separate one); otherwise the save is refused. The same
-   rule applies to `PUT /api/appliances/<id>`.
+   read back. Changing its host, port, username or platform — or turning its
+   TLS verification off — therefore needs the password entered again in the
+   same save (and the SSH password too when the device has a separate one);
+   otherwise the save is refused. The same rule applies to
+   `PUT /api/appliances/<id>`.
 2. **Test connection** — validates REST reachability and credentials.
 3. **Discovery / Rediscovery** — sweeps every registry endpoint and stores the
    device's full configuration in the local cache (recorded as a harvest with
@@ -4674,10 +4675,14 @@ The two tabs any signed-in user gets.
 - **Two-factor authentication (TOTP).** Scan the QR with an authenticator app and
   confirm one code to enable it. Enabling generates **backup codes shown exactly
   once** — save them then. *Regenerate backup codes* issues a fresh set and
-  immediately invalidates the old one. Disabling 2FA asks for your current
-  password first.
+  immediately invalidates the old one. **Setting up 2FA, enabling it and
+  regenerating codes all ask for your current password first** (and a current
+  code once 2FA is on), exactly as disabling 2FA does; you cannot set up a new
+  authenticator over one that is already enabled — disable it first.
 - **Recovery email** — used by *Forgot password* on the sign-in page to send a
-  reset link. It needs server email (§26.6) configured to be worth anything.
+  reset link. Changing it also asks for your current password (and a code when
+  2FA is on). It needs server email (§26.6) configured to be worth anything.
+  A reset link is single-use and stops working as soon as the password changes.
 - Your **active session**, with a clean sign-out. (The hard-coded "Security
   status" checklist that sat here was removed: it computed nothing. The live
   checks are on Monitoring → SATOM health.)

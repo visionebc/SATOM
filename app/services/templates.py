@@ -280,6 +280,15 @@ def approve_template(template_id: int, reviewer: str) -> Template:
     row = db.session.get(Template, template_id)
     if row is None:
         raise ValueError(f"Template {template_id} not found")
+    # Four-eyes: the author may not approve their own template. A template-
+    # managed Web Protection Profile deploys fleet-wide the moment it is
+    # approved, so a self-approval would let one person push a change to every
+    # device unchecked. A template with no recorded author (legacy) is not
+    # self-approvable by anyone, so it is left alone.
+    author = (row.author or "").strip()
+    if author and author == (reviewer or "").strip():
+        raise ValueError("You cannot approve your own template — it must be "
+                         "reviewed by someone else.")
     row.status = Template.STATUS_APPROVED
     row.reject_reason = ""
     row.reviewed_by = (reviewer or "").strip()

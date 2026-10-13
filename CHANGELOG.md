@@ -6,6 +6,45 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Security — second round of the 2026-10-13 internal code audit
+
+**Accounts and sign-in**
+- A password-reset link is now single-use: it is tied to the current password
+  and stops working the moment the password changes.
+- A TOTP code can no longer be used twice inside its time window.
+- The sign-in page no longer reveals that an account is disabled or awaiting
+  approval before the password is checked, and an unknown username now takes
+  the same time as a real one.
+- Setting a recovery email, starting 2FA setup, enabling 2FA and regenerating
+  backup codes now require the current password (and, when 2FA is already on,
+  a current code), the same proof disabling 2FA already asked for. Enabling
+  2FA refuses to overwrite an authenticator that is already set up. The
+  Settings → Security forms carry the extra fields.
+
+**Directory sign-in**
+- An account imported from one directory can only be signed into through that
+  same directory. A directory that merely shares the account name can no
+  longer take it over, and login never rewrites an existing account's source.
+- The Active Directory membership check escapes the name and prefers the exact
+  signed-in identity, so a like-named account in another domain cannot pass.
+
+**Authorization**
+- The read-write Device Console now requires the device-apply permission, not
+  any minor edit permission.
+- Turning off an appliance's TLS verification now requires the password again,
+  like changing its host.
+- A template cannot be approved by its own author.
+- CLI-coverage evidence and dumps from a device in maintenance mode are hidden
+  from users who may not see that device.
+- A non-admin can no longer schedule or run an automation against a device
+  hidden from them, and their "all targets" no longer reaches hidden devices.
+
+**Stored markup**
+- Values that come from a managed appliance or from another user (device and
+  host names, log lines, policy and signature names, error text) are escaped
+  before being placed in the page, on the Logs, Settings, Exceptions, Object
+  editor, Server-Policy wizard, FortiAnalyzer and analysis views.
+
 ### Security — fixes from the 2026-10-13 internal code audit
 
 **Appliance command injection**

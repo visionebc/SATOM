@@ -72,6 +72,10 @@ class User(db.Model, UserMixin):
     totp_enabled = db.Column(db.Boolean, nullable=False, default=False)
     recovery_email = db.Column(db.String(256), nullable=True)
     backup_codes = db.Column(db.Text, nullable=True)
+    # Highest TOTP timestep already accepted for this account. A code is only
+    # honoured when its step is strictly newer, so one cannot be replayed
+    # inside its validity window. NULL = no 2FA login has happened yet.
+    totp_last_step = db.Column(db.Integer, nullable=True)
 
     # Per-account brute-force lockout (the IP rate-limit alone can't isolate a
     # targeted account when attempts arrive from many clients).

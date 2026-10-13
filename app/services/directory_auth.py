@@ -84,8 +84,25 @@ def ldap_authenticate(cfg: dict, username: str, password: str) -> tuple[bool, st
             base = (cfg.get("base_dn") or "").strip()
             if base:
                 attr = cfg.get("user_attr") or "sAMAccountName"
-                bare = username.split("@")[0].split("\\")[-1]
-                conn.search(base, f"({attr}={bare})", attributes=[attr])
+                # Confirm the EXACT identity that just bound, not merely a row
+                # that happens to share its short name. When the user signed in
+                # with a full userPrincipalName (user@domain) we match that
+                # attribute precisely, so a same-short-name account in a trusted
+                # domain cannot satisfy this check. The value is escaped the
+                # same way the generic-LDAP path escapes it: an unescaped '*' or
+                # '(' here would turn an existence check into a wildcard match.
+                if "@" in username and "\\" not in username:
+                    flt = f"(userPrincipalName={_ldap_escape(username)})"
+                else:
+                    # [security] Residual concern: a bare or DOMAIN\\user login
+                    # leaves only the short name to match on, and sAMAccountName
+                    # is NOT unique across trusted domains — a same-short-name
+                    # user in a trusted domain could still pass. The value is
+                    # escaped (injection is closed); closing the trusted-domain
+                    # case fully requires UPN sign-in (configure ad_domain).
+                    bare = username.split("@")[0].split("\\")[-1]
+                    flt = f"({attr}={_ldap_escape(bare)})"
+                conn.search(base, flt, attributes=[attr])
                 if not conn.entries:
                     conn.unbind()
                     return False, "User authenticated but not found under the base DN."

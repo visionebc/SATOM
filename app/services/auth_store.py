@@ -523,17 +523,53 @@ def _bind_one(source: str, username: str, password: str):
     return False, f"Unknown backend {source!r}."
 
 
+def _pinned_source(username: str):
+    """The single backend an EXISTING external row is locked to, or ``None`` for
+    a brand-new username (and for a local row, which never reaches here).
+
+    An imported directory user is bound ONLY against the backend that imported
+    it. Without this pin an order of ``[ad, radius]`` lets anyone who controls a
+    RADIUS account named like an AD admin bind over RADIUS and then be served
+    the AD admin's row by username — a cross-backend account takeover. A row is
+    looked up exactly as the JIT provisioner looks it up (by ``username``), and
+    its recorded ``auth_source`` is honoured only when it is an external
+    backend."""
+    from ..models import User
+
+    user = User.query.filter_by(username=username).first()
+    if user is None:
+        return None
+    src = (user.auth_source or "local").strip()
+    return src if src in EXTERNAL_BACKENDS else None
+
+
 def authenticate_external(username: str, password: str) -> dict:
     """Bind *username*/*password* against each enabled source, IN ORDER.
 
     Returns ``{ok, source, detail, tried}``. ``source`` is the source that
-    accepted (so the JIT provisioner can stamp ``auth_source``); on failure it
-    is the first configured one, and ``detail`` carries EVERY source's reason —
-    a chain that fails for three different reasons must not be reported as one."""
+    accepted (so the JIT provisioner can stamp a BRAND-NEW row's ``auth_source``);
+    on failure it is the first source tried, and ``detail`` carries EVERY tried
+    source's reason — a chain that fails for three different reasons must not be
+    reported as one.
+
+    An EXISTING external row is bound ONLY against the backend it was imported
+    from (see :func:`_pinned_source`); a brand-new username still walks the whole
+    enabled chain and the first acceptance provisions it."""
     order = backends()
     if not order:
         return {"ok": False, "source": "local", "tried": [],
                 "detail": "No external backend configured."}
+
+    pinned = _pinned_source(username)
+    if pinned is not None:
+        # The owning backend must still be enabled; if it was removed, this
+        # account has no source to authenticate against — fail closed rather
+        # than let another enabled backend accept it.
+        if pinned not in order:
+            return {"ok": False, "source": pinned, "tried": [],
+                    "detail": f"The {pinned!r} backend that owns this account "
+                              f"is not enabled."}
+        order = [pinned]
 
     details = []
     for idx, source in enumerate(order):
@@ -576,14 +612,12 @@ def provision_external_user(username: str, source: str):
 
     user = User.query.filter_by(username=username).first()
     if user is not None:
-        # Existing account: never auto-externalize a local account; just ensure
-        # the external row is active and its source recorded.
-        if (user.auth_source or "local") == "local":
-            return user  # local account — leave it entirely alone
-        if not user.is_active:
-            return user
-        user.auth_source = source
-        db.session.commit()
+        # Existing account: never auto-externalize a local account, and never
+        # RE-STAMP an external one. The backend an external row was imported
+        # from is the only one allowed to authenticate it (see
+        # authenticate_external / _pinned_source), so rewriting auth_source on
+        # the strength of whichever backend just accepted could only ever
+        # launder a cross-backend takeover. The row is returned unchanged.
         return user
 
     prof = _profile_for(default_profile_name())

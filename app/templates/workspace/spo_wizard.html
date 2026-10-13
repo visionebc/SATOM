@@ -502,6 +502,15 @@
     }).then(function (r) { return r.json(); });
   }
 
+  // HTML-escape a value before it is interpolated into innerHTML markup. The
+  // segment/pool/DNS/IPAM/web-address/step strings below originate from device
+  // and source-of-truth data, so none of them may be trusted as markup.
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
   // Builds the fragment for ONE plan. It deliberately does not touch the
   // page: with several domains the decision "is Apply allowed" belongs to the
   // batch, not to whichever plan happened to render last.
@@ -513,12 +522,12 @@
     if (plan.segment && plan.segment.name) {
       const dl = (plan.segment_departments || []);
       html += '<div class="mb-2" style="font-size:12.5px;">' +
-              '<span class="fw-badge fw-badge-info">' + plan.segment.name + '</span> ' +
-              (plan.segment.cidr || '') +
-              (plan.segment.interface ? ' on ' + plan.segment.interface : '') +
-              (dl.length ? ' &middot; serves ' + dl.join(', ') : ' &middot; no department') +
-              (plan.department ? ' &middot; building for <strong>' + plan.department + '</strong>' : '') +
-              (plan.pool ? ' &middot; pool ' + plan.pool : '') +
+              '<span class="fw-badge fw-badge-info">' + esc(plan.segment.name) + '</span> ' +
+              esc(plan.segment.cidr || '') +
+              (plan.segment.interface ? ' on ' + esc(plan.segment.interface) : '') +
+              (dl.length ? ' &middot; serves ' + esc(dl.join(', ')) : ' &middot; no department') +
+              (plan.department ? ' &middot; building for <strong>' + esc(plan.department) + '</strong>' : '') +
+              (plan.pool ? ' &middot; pool ' + esc(plan.pool) : '') +
               '</div>';
     }
     // Printed for every plan that resolved one, chosen or not: "an address
@@ -529,11 +538,11 @@
       html += '<div class="mb-2" style="font-size:12.5px;">' +
         (plan.ipam_backend
           ? '<span class="fw-badge fw-badge-info">IPAM</span> ' +
-            plan.ipam_backend + (plan.ipam_pick ? ' (chosen)' : ' (auto)') +
+            esc(plan.ipam_backend) + (plan.ipam_pick ? ' (chosen)' : ' (auto)') +
             '&nbsp;&nbsp;' : '') +
         (plan.dns_backend
           ? '<span class="fw-badge fw-badge-info">DNS</span> ' +
-            plan.dns_backend + (plan.dns_pick ? ' (chosen)' : ' (auto)') : '') +
+            esc(plan.dns_backend) + (plan.dns_pick ? ' (chosen)' : ' (auto)') : '') +
         '</div>';
     }
     // Which pool, and whether it is CREATED or BOUND. With several domains
@@ -546,24 +555,24 @@
     if (plan.pool_name) {
       html += '<div class="mb-2" style="font-size:12.5px;">' +
               '<span class="fw-badge fw-badge-info">POOL</span> ' +
-              plan.pool_name + ' &middot; ' +
-              (POOL_WORDS[plan.pool_mode] || plan.pool_mode) +
+              esc(plan.pool_name) + ' &middot; ' +
+              esc(POOL_WORDS[plan.pool_mode] || plan.pool_mode) +
               (plan.pool_from
-                ? ' &middot; members copied from ' + plan.pool_from : '') +
+                ? ' &middot; members copied from ' + esc(plan.pool_from) : '') +
               '</div>';
     }
     if (plan.blockers.length) {
       html += '<div class="mb-2"><strong>Blocked</strong><ul style="font-size:12.5px;">';
       plan.blockers.forEach(function (b) {
         html += '<li class="text-danger"><span class="fw-badge fw-badge-danger">' +
-                b.code + '</span> ' + b.detail + '</li>';
+                esc(b.code) + '</span> ' + esc(b.detail) + '</li>';
       });
       html += '</ul></div>';
     }
     if (plan.warnings.length) {
       html += '<ul style="font-size:12.5px;">';
       plan.warnings.forEach(function (w) {
-        html += '<li class="text-muted">' + w + '</li>';
+        html += '<li class="text-muted">' + esc(w) + '</li>';
       });
       html += '</ul>';
     }
@@ -572,25 +581,25 @@
       result.steps.forEach(function (s) {
         html += '<tr><td><span class="fw-badge ' +
                 (s.ok ? 'fw-badge-success' : 'fw-badge-danger') + '">' +
-                (s.ok ? 'ok' : 'failed') + '</span></td><td>' + s.label +
-                '</td><td class="text-muted">' + (s.detail || '') + '</td></tr>';
+                (s.ok ? 'ok' : 'failed') + '</span></td><td>' + esc(s.label) +
+                '</td><td class="text-muted">' + esc(s.detail || '') + '</td></tr>';
       });
       html += '</tbody></table>';
     }
     if (result && result.objects) {
       html += '<details class="mt-2"><summary style="font-size:12.5px;">Device payloads</summary><pre style="font-size:11.5px;">' +
-              JSON.stringify(result.objects, null, 2) + '</pre></details>';
+              esc(JSON.stringify(result.objects, null, 2)) + '</pre></details>';
     }
     // Compensation and what was deliberately LEFT are separate lists, because
     // "we undid it" and "we did not undo it" are opposite facts.
     (result && result.compensated || []).forEach(function (c) {
-      html += '<div class="text-muted" style="font-size:12.5px;">undone: ' + c + '</div>';
+      html += '<div class="text-muted" style="font-size:12.5px;">undone: ' + esc(c) + '</div>';
     });
     (result && result.stranded || []).forEach(function (s) {
-      html += '<div class="text-danger" style="font-size:12.5px;">left behind: ' + s + '</div>';
+      html += '<div class="text-danger" style="font-size:12.5px;">left behind: ' + esc(s) + '</div>';
     });
     if (result && result.error) {
-      html += '<div class="text-danger mt-2" style="font-size:12.5px;">' + result.error + '</div>';
+      html += '<div class="text-danger mt-2" style="font-size:12.5px;">' + esc(result.error) + '</div>';
     }
     return html;
   }
@@ -607,7 +616,7 @@
       // that only names the domain once there are two is a report you have to
       // count rows in to read.
       html += '<div class="mt-2 mb-1" style="font-size:13px;"><strong>' +
-              (i + 1) + '. ' + (plan.web_address || '(no web address)') +
+              (i + 1) + '. ' + esc(plan.web_address || '(no web address)') +
               '</strong> <span class="fw-badge ' +
               (plan.ok ? 'fw-badge-success' : 'fw-badge-danger') + '">' +
               (plan.ok ? 'buildable' : 'blocked') + '</span></div>';
@@ -615,13 +624,13 @@
     });
     if (batch && batch.error) {
       html += '<div class="text-danger mt-2" style="font-size:12.5px;">' +
-              batch.error + '</div>';
+              esc(batch.error) + '</div>';
     }
     if (batch && (batch.built || []).length) {
       // Which domains are LIVE, named separately from the failure. After a
       // batch stops halfway this is the only fact that matters.
       html += '<div class="mt-2" style="font-size:12.5px;">built: ' +
-              batch.built.join(', ') + '</div>';
+              esc(batch.built.join(', ')) + '</div>';
     }
     box.innerHTML = html || '<span class="text-muted">nothing to show</span>';
     const ok = plans.length > 0 && plans.every(function (p) { return p.ok; });

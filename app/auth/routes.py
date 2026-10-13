@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 from flask import (render_template, redirect, url_for, flash, request, session,
                    current_app)
 from flask_login import login_user, logout_user, login_required, current_user
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from . import bp
 from ..models import User, Permission
@@ -42,6 +43,22 @@ PENDING_2FA_TTL = 300  # seconds
 
 _PENDING_2FA_KEYS = ('pending_2fa_user', 'pending_2fa_remember',
                      'pending_2fa_next', 'pending_2fa_at')
+
+#: A real scrypt hash of a throwaway password. An unknown username has no row
+#: to check a password against, so without this the response returns before any
+#: scrypt work happens and its timing betrays whether the account exists. The
+#: failure path spends the same CPU on this hash instead. Computed once at
+#: import so every miss costs the same.
+_DUMMY_PW_HASH = generate_password_hash('not-a-real-password', method='scrypt')
+
+
+def _spend_dummy_password_check(password: str) -> None:
+    """Burn one scrypt verification so an unknown user is not faster to reject
+    than a real one (a login-timing enumeration oracle)."""
+    try:
+        check_password_hash(_DUMMY_PW_HASH, password or '')
+    except Exception:  # noqa: BLE001 — timing side effect only; never fatal
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -162,10 +179,6 @@ def login():
 
         user = User.query.filter_by(username=username).first()
 
-        if user and not user.is_active:
-            flash(_inactive_message(user), 'warning' if user.is_pending_approval else 'danger')
-            return render_template('auth/login.html')
-
         # Per-account lockout: after LOCKOUT_THRESHOLD consecutive failures the
         # account rejects logins for LOCKOUT_MINUTES, regardless of source IP —
         # the IP rate-limit can't stop a distributed guess against one account.
@@ -179,6 +192,12 @@ def login():
                   'Try again later.', 'danger')
             return render_template('auth/login.html')
 
+        # CREDENTIAL FIRST, status after. The disabled/pending message and the
+        # scrypt check both used to happen before (or instead of) verifying the
+        # password, so an attacker could tell a real-but-disabled account, or
+        # simply a real username, apart from a bogus one — by the message or by
+        # how fast "invalid" came back. Nothing about the account is revealed
+        # here until the password (or directory bind) is proven correct.
         authed = False
         failure_logged = False
         # 1) Local account → local password only (never fall through to directory).
@@ -190,19 +209,16 @@ def login():
             result = auth_store.authenticate_external(username, password)
             if result.get('ok'):
                 user = auth_store.provision_external_user(username, result.get('source', 'ldap'))
-                if user and not user.is_active:
-                    # The bind SUCCEEDED - this is an authorisation stop, so it
-                    # is logged as such and never as a credential failure.
-                    log_action('login.pending_approval' if user.is_pending_approval
-                               else 'login.disabled', target=username)
-                    flash(_inactive_message(user),
-                          'warning' if user.is_pending_approval else 'danger')
-                    return render_template('auth/login.html')
                 authed = bool(user)
             else:
                 log_action('login.external_fail', target=username,
                            extra={'detail': result.get('detail', '')})
                 failure_logged = True
+        else:
+            # No local hash to verify (unknown username, or an external row with
+            # no directory configured): spend the same scrypt time anyway so the
+            # response cannot be used as an account-existence oracle.
+            _spend_dummy_password_check(password)
 
         if not authed:
             if user is not None:
@@ -214,6 +230,18 @@ def login():
                 log_action('login.fail', target=(username or '')[:128],
                            extra={'known_user': user is not None})
             flash('Invalid username or password.', 'danger')
+            return render_template('auth/login.html')
+
+        # Credential proven. NOW it is safe to reveal that the account is
+        # disabled or still awaiting approval — the caller already holds valid
+        # credentials, so the message is no longer an enumeration signal. A
+        # successful directory bind onto an inactive row lands here too, and is
+        # logged as an authorisation stop, never as a credential failure.
+        if not user.is_active:
+            log_action('login.pending_approval' if user.is_pending_approval
+                       else 'login.disabled', target=username)
+            flash(_inactive_message(user),
+                  'warning' if user.is_pending_approval else 'danger')
             return render_template('auth/login.html')
 
         # 3) Second factor for local accounts that enabled it. The failure
@@ -262,7 +290,11 @@ def two_factor():
     if request.method == 'POST':
         code = (request.form.get('code', '') or '').strip()
         secret = twofa.decrypt_secret(user.totp_secret or '')
-        ok = twofa.verify_totp(secret, code)
+        # Replay-aware: only a timestep strictly newer than the last one this
+        # account accepted is honoured, so a code cannot be reused inside its
+        # ~90 s window (a correct code pasted twice logs in only once).
+        step = twofa.verify_totp_step(secret, code, last_step=user.totp_last_step)
+        ok = step is not None
         used_backup = False
         if not ok and code:
             # Try a one-time backup code.
@@ -273,6 +305,10 @@ def two_factor():
                 ok = True
                 used_backup = True
         if ok:
+            if step is not None:
+                # Burn this step so the same code cannot be replayed. Persisted
+                # via _post_login's _commit_quiet (skipped on the RO standby).
+                user.totp_last_step = step
             remember = bool(session.get('pending_2fa_remember', False))
             nxt = session.get('pending_2fa_next')
             _clear_pending_2fa()
@@ -349,7 +385,10 @@ def forgot_password():
         # Only local accounts with a recovery email can self-reset. Directory
         # accounts reset their password at the directory.
         if user and user.is_active and user.is_local and user.recovery_email:
-            token = twofa.make_reset_token(user.id)
+            # Bind the token to the CURRENT password hash so the link dies the
+            # moment it is used (the reset rotates the hash) — it is no longer
+            # a reusable, hour-long bearer credential.
+            token = twofa.make_reset_token(user.id, user.password_hash)
             link = _reset_link(token)
             body = (f"Hello {user.username},\n\n"
                     f"A password reset was requested for your SATOM account.\n"
@@ -375,7 +414,11 @@ def forgot_password():
 def reset_password(token):
     uid = twofa.read_reset_token(token)
     user = db.session.get(User, uid) if uid else None
-    if user is None or not user.is_active or not user.is_local:
+    # reset_token_hash_ok rejects a token whose bound password hash no longer
+    # matches — i.e. one that has already been spent (the reset changed the
+    # hash) or one issued before a later password change. A stale link dies.
+    if (user is None or not user.is_active or not user.is_local
+            or not twofa.reset_token_hash_ok(token, user.password_hash)):
         flash('This password-reset link is invalid or has expired.', 'danger')
         return redirect(url_for('auth.login'))
 

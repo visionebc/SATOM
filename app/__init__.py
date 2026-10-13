@@ -1824,6 +1824,7 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('totp_enabled', 'BOOLEAN DEFAULT FALSE'),
                 ('recovery_email', 'VARCHAR(256)'),
                 ('backup_codes', 'TEXT'),
+                ('totp_last_step', 'INTEGER'),
                 ('failed_logins', 'INTEGER DEFAULT 0'),
                 ('locked_until', 'TIMESTAMP'),
             ],

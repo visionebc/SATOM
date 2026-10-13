@@ -1652,11 +1652,36 @@ def sync_auth():
 
 # ── 2FA self-service (any local user) ───────────────────
 
+def _reauth_problem() -> str | None:
+    """Re-authentication gate for self-service security changes.
+
+    Returns an error string when the caller has not re-proven who they are,
+    else ``None``. The current password is always required — the same
+    ``current_user.check_password`` check ``change_password`` and
+    ``twofa_disable`` already make — and, when the account already has 2FA
+    enabled, a valid current TOTP code as well. Without this a hijacked session
+    could point the recovery email at the attacker, rotate the backup codes or
+    stand up a brand-new authenticator with no second proof at all.
+    """
+    pw = request.form.get('current_password', '')
+    if not current_user.check_password(pw):
+        return 'Current password is incorrect.'
+    if getattr(current_user, 'totp_enabled', False):
+        code = (request.form.get('totp_code', '') or '').strip()
+        secret = twofa.decrypt_secret(current_user.totp_secret or '')
+        if not twofa.verify_totp(secret, code):
+            return 'A valid authentication code is required.'
+    return None
+
+
 @bp.route('/2fa/setup', methods=['POST'])
 @login_required
 def twofa_setup():
     if not current_user.is_local:
         return jsonify({'ok': False, 'error': 'Directory accounts manage MFA at the directory.'}), 400
+    err = _reauth_problem()
+    if err:
+        return jsonify({'ok': False, 'error': err}), 403
     secret = twofa.generate_secret()
     session['twofa_setup_secret'] = secret
     uri = twofa.provisioning_uri(secret, current_user.username)
@@ -1668,6 +1693,17 @@ def twofa_setup():
 def twofa_enable():
     if not current_user.is_local:
         flash('Directory accounts manage MFA at the directory.', 'danger')
+        return redirect(url_for('settings.index') + '#tab-security')
+    # Re-enrolment must go through disable first: silently overwriting a live
+    # secret would let a hijacked session swap the authenticator out from under
+    # the owner, who still holds working codes for the old one.
+    if current_user.totp_enabled:
+        flash('Two-factor authentication is already enabled — disable it first '
+              'to re-enroll.', 'danger')
+        return redirect(url_for('settings.index') + '#tab-security')
+    err = _reauth_problem()
+    if err:
+        flash(err, 'danger')
         return redirect(url_for('settings.index') + '#tab-security')
     secret = session.get('twofa_setup_secret')
     code = (request.form.get('code', '') or '').strip()
@@ -1710,6 +1746,10 @@ def twofa_regen_codes():
     if not (current_user.is_local and current_user.totp_enabled):
         flash('Enable two-factor authentication first.', 'danger')
         return redirect(url_for('settings.index') + '#tab-security')
+    err = _reauth_problem()
+    if err:
+        flash(err, 'danger')
+        return redirect(url_for('settings.index') + '#tab-security')
     codes = twofa.generate_backup_codes()
     current_user.backup_codes = twofa.encode_codes(codes)
     db.session.commit()
@@ -1722,6 +1762,10 @@ def twofa_regen_codes():
 @bp.route('/recovery-email', methods=['POST'])
 @login_required
 def recovery_email():
+    err = _reauth_problem()
+    if err:
+        flash(err, 'danger')
+        return redirect(url_for('settings.index') + '#tab-security')
     addr = (request.form.get('recovery_email', '') or '').strip()
     if addr and ('@' not in addr or '.' not in addr.split('@')[-1]):
         flash('Enter a valid email address.', 'danger')

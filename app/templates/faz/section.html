@@ -600,7 +600,14 @@
       if (!label || th.querySelector('input[type=checkbox]') || label === 'Actions') return;
       var row = document.createElement('label');
       row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:2px 0;cursor:pointer;';
-      row.innerHTML = '<input type="checkbox" checked data-col="' + idx + '"> ' + label;
+      // Build with DOM nodes, not innerHTML: the header label is table text
+      // (which can carry device-derived column names) and must stay inert.
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = true;
+      cb.setAttribute('data-col', idx);
+      row.appendChild(cb);
+      row.appendChild(document.createTextNode(' ' + label));
       colPanel.appendChild(row);
     });
     colPanel.addEventListener('change', function (e) {

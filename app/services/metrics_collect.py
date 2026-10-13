@@ -50,7 +50,7 @@ peer's. Consequences that are deliberate, not incidental:
   last success are journalled and surfaced. Silence here would recreate the bug
   this product keeps hitting, where a probe that cannot answer looks healthy.
 * **The peer write is authenticated, never an open port.** It rides
-  ``node_security.peer_post`` (HTTPS :8443 + ``X-FM-Node-Key``). The store
+  ``node_security.peer_post`` (HTTPS :8443 + HMAC-signed request). The store
   itself has no authentication at all — the loopback bind is the only thing
   protecting the whole fleet's telemetry — so it is never rebound, and nothing
   here names its address.

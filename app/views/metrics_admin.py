@@ -12,8 +12,8 @@ Reads are DB + loopback VM only — a page load never touches an appliance.
 the infra-health card keeps.
 
 The two ``/peer`` routes are the RECEIVING half of the metrics dual-write. They
-carry no session: the caller is the other HA node, identified by the shared
-``X-FM-Node-Key``. They fail CLOSED when no identity key is configured — the
+carry no session: the caller is the other HA node, identified by the HMAC signature
+keyed with the shared node identity key. They fail CLOSED when no identity key is configured — the
 store behind them has no authentication of its own, so an un-keyed node
 accepting writes would be a fleet-wide open write port, which is exactly what
 the loopback bind exists to prevent.
@@ -167,7 +167,7 @@ def _peer_gate():
     is a node that accepts anonymous writes into an unauthenticated TSDB.
     """
     from ..services import node_security as nsec
-    verdict = nsec.verify_request(request.headers)
+    verdict = nsec.verify_request(request)
     if verdict is None:
         return jsonify({"ok": False,
                         "error": "node identity key not configured"}), 503

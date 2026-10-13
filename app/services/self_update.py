@@ -493,7 +493,7 @@ def request_pip_change(package: str, version: str, by: str, *,
 # The venv is NODE-LOCAL — not in git, not in the data rsync — so a library
 # change applied here leaves the other node behind and the pair drifts silently.
 # The fan-out reuses the two things that already exist instead of inventing a
-# third: the authenticated node-to-node channel (node_security, X-FM-Node-Key
+# third: the authenticated node-to-node channel (node_security, HMAC-signed requests
 # over :8443) and the per-node privileged updater. We ask the peer to ENQUEUE
 # the same request on ITSELF. We never ship a package, never run pip from the
 # web worker, and never write into the peer's data/update-requests/ — that
@@ -554,8 +554,7 @@ def request_pip_change_on_peers(package: str, version: str, by: str, *,
         row["secure"] = bool(secure)
         if st is None:
             out.append({**row, "state": "unreachable",
-                        "error": "no answer on :%d or :%d" % (nsec.HTTPS_PORT,
-                                                              nsec.HTTP_PORT)})
+                        "error": nsec.unreachable_detail(n["host"])})
             continue
         ans = _peer_answer(raw)
         if ans is None:
@@ -593,8 +592,7 @@ def peer_lib_report(host: str, timeout: float = _PEER_TIMEOUT) -> dict:
         return {"reachable": False, "error": str(exc), "libraries": {}}
     if st is None:
         return {"reachable": False, "libraries": {},
-                "error": "no answer on :%d or :%d" % (nsec.HTTPS_PORT,
-                                                      nsec.HTTP_PORT)}
+                "error": nsec.unreachable_detail(host)}
     ans = _peer_answer(raw)
     if not (200 <= int(st) < 300) or ans is None:
         return {"reachable": False, "libraries": {}, "error": "HTTP %s" % st}

@@ -540,7 +540,7 @@ def _peer_gate():
     """
     from ..services import node_security as nsec
     try:
-        verdict = nsec.verify_request(request.headers)
+        verdict = nsec.verify_request(request)
     except Exception as exc:  # noqa: BLE001
         return jsonify({'error': 'identity check failed: %s' % exc}), 403
     if verdict is None:

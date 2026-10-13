@@ -107,7 +107,7 @@
           <td><code>:8443</code></td>
           <td>Health/status only &mdash; <code>/healthz</code>, infra &amp; cluster probes. <u>{{ _('No data moves here.') }}</u></td>
           <td class="small">node &#8644; node</td>
-          <td class="small"><span class="text-success">TLS&nbsp;1.3</span> (node cert) + identity key <code>X-FM-Node-Key</code></td>
+          <td class="small"><span class="text-success">TLS&nbsp;1.3</span> (node cert, verified) + HMAC-signed identity key <code>X-SATOM-Node-Sig</code></td>
         </tr>
         <tr>
           <td><strong>{{ _('DB replication') }}</strong> <span class="badge bg-success">{{ _('the data channel') }}</span></td>

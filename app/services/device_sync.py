@@ -181,10 +181,18 @@ def snapshot_from_faz(appliance, *, timeout: float = 20.0) -> dict:
     emitting the SAME snapshot shape so ``device_store.ingest_snapshot`` + the
     ``reports/<slug>/_config.json`` writer + git publish are shared verbatim.
     Sections come from the FAZ menu groups; unmapped endpoints land in
-    "Other". Must run in an app context (the registry is DB-first)."""
+    "Other". Must run in an app context (the registry is DB-first).
+
+    Rows go through the FortiAnalyzer secret scrub of the section pages
+    (``gui_products`` FortiAnalyzerAdapter): JSON-RPC answers every secret as
+    ``["ENC", "<salted blob>"]``. Kept, they put device secrets in
+    ``_config.json`` and every SoT blob, and the salt changes on each read, so
+    an unchanged faz02 minted a new version every hour."""
     from ..clients.fortianalyzer import FortiAnalyzerClient
     from ..registry import loader
     from . import faz_menu
+    from .gui_products import FORTIANALYZER, adapter
+    scrub = adapter(FORTIANALYZER).scrub
 
     # The map of THIS box's build (loader.registry_for): a name its build
     # measured absent is not swept, one it serves after the baseline disabled
@@ -215,7 +223,7 @@ def snapshot_from_faz(appliance, *, timeout: float = 20.0) -> dict:
                 break
             continue
         consecutive = 0
-        rows = [r for r in rows if isinstance(r, dict)]
+        rows = [scrub(r) for r in rows if isinstance(r, dict)]
         if rows:
             sections.setdefault(section_of.get(name, "Other"), {})[name] = rows
             total += len(rows)

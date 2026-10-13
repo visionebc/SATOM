@@ -6,6 +6,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Security — the FortiAnalyzer configuration sync stored device secrets
+
+- FortiAnalyzer answers every secret as `["ENC", "<blob>"]` (HA, SQL and
+  backup passwords, local-certificate passwords, admin-profile data-mask
+  keys). The configuration sync kept them in `_config.json` and in every
+  stored configuration version, while the FortiAnalyzer pages already hid
+  them. The sync now drops them with the same rule as the pages, as the
+  FortiGate sync already did. Because the blob changes on every read, an
+  unchanged FortiAnalyzer also recorded a new configuration version on every
+  sync; that stops too. Configuration versions recorded before this fix
+  still contain those values.
+
 ### Fixed — errors the hourly configuration sync logged every hour
 
 - **FortiADC 7.6.x:** the sync asked for every table in the FortiADC

@@ -112,6 +112,18 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="security--the-fortianalyzer-configuration-sync-stored-device-secrets">Security — the FortiAnalyzer configuration sync stored device secrets</h3>
+<ul>
+<li>FortiAnalyzer answers every secret as <code>["ENC", "&lt;blob&gt;"]</code> (HA, SQL and
+  backup passwords, local-certificate passwords, admin-profile data-mask
+  keys). The configuration sync kept them in <code>_config.json</code> and in every
+  stored configuration version, while the FortiAnalyzer pages already hid
+  them. The sync now drops them with the same rule as the pages, as the
+  FortiGate sync already did. Because the blob changes on every read, an
+  unchanged FortiAnalyzer also recorded a new configuration version on every
+  sync; that stops too. Configuration versions recorded before this fix
+  still contain those values.</li>
+</ul>
 <h3 id="fixed--errors-the-hourly-configuration-sync-logged-every-hour">Fixed — errors the hourly configuration sync logged every hour</h3>
 <ul>
 <li><strong>FortiADC 7.6.x:</strong> the sync asked for every table in the FortiADC

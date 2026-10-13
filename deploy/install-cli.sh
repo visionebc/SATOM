@@ -13,10 +13,16 @@
 set -euo pipefail
 
 APP_DIR="${FM_APP_DIR:-/opt/satom}"
+# [SATOM-RELEASE-TRUST] Where the payload is read from. Unset = the app tree's
+# deploy/ (historical behaviour). The update runner and the root CLI set it to
+# a root-only staged copy of the newest SIGNED release when a release trust
+# anchor is installed, so what lands in ${LIB_DIR} is the signed bytes and not
+# whatever the service account left in ${APP_DIR}/deploy.
+DEPLOY_SRC="${SATOM_DEPLOY_SRC:-${APP_DIR}/deploy}"
 LIB_DIR="/usr/local/lib/satom-cli"
 BIN="/usr/local/sbin/satom"
-SRC="${APP_DIR}/deploy/satom_cli"
-LAUNCHER="${APP_DIR}/deploy/satom-cli-launcher"
+SRC="${DEPLOY_SRC}/satom_cli"
+LAUNCHER="${DEPLOY_SRC}/satom-cli-launcher"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "install-cli.sh: must run as root (it writes ${BIN})." >&2

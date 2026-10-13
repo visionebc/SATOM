@@ -391,7 +391,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*121 commands in 44 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*123 commands in 45 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -425,6 +425,7 @@ Read state. Every command below works as **any user** — this is the half of th
 | `satom get job list` | — | — | The ledger, including ghosts that keep the dock's toast open. |
 | `satom get update history` | — | — | Recent updates and whether the runner ever picked them up. |
 | `satom get git status` | — | — | Branch, drift, unpushed age, parked safety refs. |
+| `satom get release trust` | — | — | Release trust anchor, newest signed commit, and whether HEAD's deploy/ matches it (details need sudo). |
 | `satom get user list` | — | — | Who can log in — and whether anyone still can. |
 | `satom get alerts status` | — | — | Whether anyone is actually told when something breaks. |
 | `satom get log <service> [lines]` | — | — | Tail a unit's journal. |
@@ -538,6 +539,7 @@ Everything that changes state. **Root required.** Without it each command refuse
 | `satom execute preflight [<label>]` | yes | — | Capture a health baseline BEFORE a risky change. |
 | `satom execute postflight` | yes | — | Diff the current health against the last preflight. |
 | `satom execute promote` | yes | ! | Promote this standby to primary. Requires --yes. |
+| `satom execute sign-release [--yes]` | yes | ! | Sign HEAD of main with the root-only release key (one empty signed commit, pushed). Primary only; dry run unless --yes. |
 
 ### `ha`
 

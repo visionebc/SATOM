@@ -340,13 +340,21 @@ def trust_remove_key(ctx, args):
 
 
 def reinstall_runner(ctx, args):
-    """Reinstall the root-owned copy of the privileged update runner."""
-    script = ctx.app_dir / "deploy" / "install-runner.sh"
-    if not script.exists():
-        return Result("bad", "reinstall runner").lines("", ["missing %s" % script])
-    rc, out, err = run(["bash", str(script)], timeout=180)
+    """Reinstall the root-owned copy of the privileged update runner.
+
+    [SATOM-RELEASE-TRUST] Through the signed-release gate: with an anchor the
+    script and the runner it installs come from the newest signed release."""
+    from . import cmd_release
+    refused, rc, out, err, note = cmd_release.run_deploy_script(
+        ctx, "reinstall runner", "install-runner.sh", 180, runner=run)
+    if refused is not None:
+        if refused.title.startswith("missing "):
+            return Result("bad", "reinstall runner").lines("", [refused.title])
+        return refused
     r = Result("ok" if rc == 0 else "bad", "reinstall runner")
     r.lines("", (out or err).splitlines())
+    if note:
+        r.note(note)
     r.note("Verify the privilege boundary afterwards: satom diagnose updates")
     return r
 

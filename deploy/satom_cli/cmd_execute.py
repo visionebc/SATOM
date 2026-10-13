@@ -17,6 +17,7 @@ import shutil
 import time
 from pathlib import Path
 
+from . import cmd_release
 from .context import RESTARTABLE, UNITS, run
 from .render import Result
 
@@ -199,9 +200,14 @@ def update_status(ctx, args):
                "update %s — %s" % (rec.get("id"), rec.get("state")))
     r.rows("", [(k, v) for k, v in rec.items() if not isinstance(v, (list, dict))])
     steps = rec.get("steps") or []
-    r.lines("steps", ["%s %s %s" % ("ok " if s.get("ok") else "FAIL",
+    r.lines("steps", ["%s %s %s" % ("WARN" if s.get("warn") else
+                                    "ok " if s.get("ok") else "FAIL",
                                     s.get("name", ""), s.get("detail", "") or "")
                       for s in steps] or ["(none yet)"])
+    # A non-fatal warning (e.g. the root-side refresh held by the release
+    # trust anchor) leaves the update a success but must not read as clean.
+    if any(s.get("warn") for s in steps):
+        r.worst("warn")
     if rec.get("state") == "queued" and not steps:
         st = ctx.unit_state("updater")
         if st["enabled"] not in ("enabled", "enabled-runtime"):
@@ -312,20 +318,27 @@ def reinstall_units(ctx, args):
     on every code update, so a unit edited in place reverts to User=root. Only
     the drop-in survives.
     """
-    src = ctx.app_dir / "deploy"
     dst = Path("/etc/systemd/system")
     r = Result("ok", "reinstall systemd units")
     copied = []
-    for p in sorted(src.glob("satom*.service")) + sorted(src.glob("satom*.timer")) \
-            + sorted(src.glob("satom*.path")):
-        try:
-            shutil.copy2(str(p), str(dst / p.name))
-            os.chown(str(dst / p.name), 0, 0)
-            os.chmod(str(dst / p.name), 0o644)
-            copied.append(p.name)
-        except Exception as exc:  # noqa: BLE001
-            r.worst("bad")
-            r.note("copy %s: %s" % (p.name, exc))
+    # [SATOM-RELEASE-TRUST] With a release trust anchor the templates come from
+    # the newest SIGNED release (refused when deploy/ has unsigned changes);
+    # with none, from <app>/deploy exactly as before.
+    with cmd_release.DeploySource(ctx, "reinstall systemd units") as source:
+        if source.refusal is not None:
+            return source.refusal
+        src = source.dir
+        for p in sorted(src.glob("satom*.service")) + sorted(src.glob("satom*.timer")) \
+                + sorted(src.glob("satom*.path")):
+            try:
+                shutil.copy2(str(p), str(dst / p.name))
+                os.chown(str(dst / p.name), 0, 0)
+                os.chmod(str(dst / p.name), 0o644)
+                copied.append(p.name)
+            except Exception as exc:  # noqa: BLE001
+                r.worst("bad")
+                r.note("copy %s: %s" % (p.name, exc))
+        source.annotate(r)
     r.lines("installed", copied or ["(none found)"])
 
     pinned = []
@@ -354,13 +367,18 @@ def reinstall_units(ctx, args):
 
 
 def reinstall_cli(ctx, args):
-    """Refresh the root-owned copy of this CLI from the repo."""
-    script = ctx.app_dir / "deploy" / "install-cli.sh"
-    if not script.exists():
-        return Result("bad", "missing %s" % script)
-    rc, out, err = run(["bash", str(script)], timeout=120)
+    """Refresh the root-owned copy of this CLI from the repo.
+
+    [SATOM-RELEASE-TRUST] Through the signed-release gate: with an anchor the
+    script and the package it installs come from the newest signed release."""
+    refused, rc, out, err, note = cmd_release.run_deploy_script(
+        ctx, "reinstall cli", "install-cli.sh", 120, runner=run)
+    if refused is not None:
+        return refused
     r = Result("ok" if rc == 0 else "bad", "reinstall cli")
     r.lines("", (out or err).splitlines())
+    if note:
+        r.note(note)
     r.note("Verify the privilege boundary afterwards: satom diagnose privilege")
     return r
 
@@ -375,12 +393,14 @@ def reinstall_metrics_store(ctx, args):
     it. The update runner now re-asserts it on every code update; this is the
     manual lever for a node that must not wait for one.
     """
-    script = ctx.app_dir / "deploy" / "install-metrics-store.sh"
-    if not script.exists():
-        return Result("bad", "missing %s" % script)
-    rc, out, err = run(["bash", str(script)], timeout=240)
+    refused, rc, out, err, note = cmd_release.run_deploy_script(
+        ctx, "reinstall metrics store", "install-metrics-store.sh", 240, runner=run)
+    if refused is not None:
+        return refused
     r = Result("ok" if rc == 0 else "bad", "reinstall metrics store")
     r.lines("", ((out or "") + (err or "")).splitlines())
+    if note:
+        r.note(note)
     if rc != 0:
         r.note("With no bundle and no route to the internet the binary cannot "
                "be fetched. Copy it from a node that has it, or install from "

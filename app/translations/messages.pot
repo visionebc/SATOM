@@ -151,9 +151,6 @@ msgstr ""
 msgid "(slow)"
 msgstr ""
 
-msgid "(this ADOM only)"
-msgstr ""
-
 #, python-brace-format
 msgid "(uid={username})"
 msgstr ""
@@ -167,12 +164,6 @@ msgid ""
 msgstr ""
 
 msgid "(what the clone will carry)"
-msgstr ""
-
-msgid "(what — all unchecked = no restriction)"
-msgstr ""
-
-msgid "(what — leave all unchecked for no restriction)"
 msgstr ""
 
 msgid "(where — empty = no restriction)"
@@ -225,9 +216,6 @@ msgid ""
 "shell after running a command on it."
 msgstr ""
 
-msgid ", interrupting every service it fronts. A"
-msgstr ""
-
 msgid ", left disabled by default)."
 msgstr ""
 
@@ -270,11 +258,6 @@ msgid ". A cert still bound anywhere is never touched."
 msgstr ""
 
 msgid ". Backup codes remaining:"
-msgstr ""
-
-msgid ""
-". Each appliance is assigned one value per catalog on its Edit page. One "
-"entry per line."
 msgstr ""
 
 msgid ""
@@ -324,21 +307,12 @@ msgid ""
 "single fact is what the modes are about."
 msgstr ""
 
-msgid ". Re-run a sync to pick up new firmware or new signatures."
-msgstr ""
-
 msgid ""
 ". The machine-building modes are therefore not offered below — rather "
 "than shown as buttons that would fail partway through."
 msgstr ""
 
 msgid ". The path for physical appliances and for anything built outside SATOM."
-msgstr ""
-
-msgid ""
-". The write is canary-gated: the first device runs alone and, if it "
-"fails, the rest are skipped. Secrets in sensitive items are applied live "
-"but are never stored in the profile."
 msgstr ""
 
 msgid ". This holds the issuers it"
@@ -436,9 +410,6 @@ msgstr ""
 msgid "30 days"
 msgstr ""
 
-msgid "4. External backup server (backup-server)"
-msgstr ""
-
 msgid "7 days"
 msgstr ""
 
@@ -521,11 +492,6 @@ msgid ""
 msgstr ""
 
 msgid "A deliberate"
-msgstr ""
-
-msgid ""
-"A directory user is created on first sign-in with this profile; an admin "
-"can elevate them later under Users."
 msgstr ""
 
 msgid "A dozen ready-made views — fleet KPIs, a full server-policy table,"
@@ -637,9 +603,6 @@ msgstr ""
 msgid "AI Advisor"
 msgstr ""
 
-msgid "API Browse"
-msgstr ""
-
 msgid "API Call"
 msgstr ""
 
@@ -650,9 +613,6 @@ msgid "API Menu"
 msgstr ""
 
 msgid "API Path / URN"
-msgstr ""
-
-msgid "API Target"
 msgstr ""
 
 msgid "API Tokens"
@@ -777,12 +737,6 @@ msgid "Add IP"
 msgstr ""
 
 msgid "Add User"
-msgstr ""
-
-msgid "Add a FortiWeb appliance to start managing backups."
-msgstr ""
-
-msgid "Add a FortiWeb appliance to sync the signature database."
 msgstr ""
 
 msgid "Add a catalog endpoint"
@@ -981,9 +935,6 @@ msgstr ""
 msgid "All departments"
 msgstr ""
 
-msgid "All discovered (slow)"
-msgstr ""
-
 msgid "All lines"
 msgstr ""
 
@@ -1023,9 +974,6 @@ msgstr ""
 msgid "Allow read-only tool calls (mode C)"
 msgstr ""
 
-msgid "Allowed Requests"
-msgstr ""
-
 msgid "Also apply on the peer node(s)"
 msgstr ""
 
@@ -1044,14 +992,6 @@ msgstr ""
 msgid ""
 "An enabled action whose due time passed this long ago is reported: a "
 "scheduler that stops firing produces no failed runs at all."
-msgstr ""
-
-msgid ""
-"An ordered list of provisioning elements — each maps a configuration "
-"object (any section) to a JSON payload. Add / reorder / remove elements, "
-"then save as a versioned profile and apply to one device or the fleet "
-"(dry-run → canary). Secret fields (passwords, shared secrets) are "
-"stripped on save and re-entered at apply time."
 msgstr ""
 
 msgid ""
@@ -1271,9 +1211,6 @@ msgstr ""
 msgid "At boot"
 msgstr ""
 
-msgid "At least 8 characters"
-msgstr ""
-
 msgid "Attach context"
 msgstr ""
 
@@ -1283,13 +1220,7 @@ msgstr ""
 msgid "Attached"
 msgstr ""
 
-msgid "Attack Events"
-msgstr ""
-
 msgid "Attack ID"
-msgstr ""
-
-msgid "Attack Types"
 msgstr ""
 
 msgid "Attacks"
@@ -1364,16 +1295,7 @@ msgstr ""
 msgid "Auto-apply"
 msgstr ""
 
-msgid "Auto-refresh in"
-msgstr ""
-
 msgid "Auto-refreshing every 3s"
-msgstr ""
-
-msgid ""
-"Automate fleet maintenance — backups, signature syncs and gated changes —"
-" on a schedule. Jobs are fired by the scheduler sidecar, never by the web"
-" workers."
 msgstr ""
 
 msgid "Automation"
@@ -1512,16 +1434,10 @@ msgstr ""
 msgid "Base DN"
 msgstr ""
 
-msgid "Base FortiWeb"
-msgstr ""
-
 msgid "Base URL"
 msgstr ""
 
 msgid "Baselines"
-msgstr ""
-
-msgid "Basic structure ready"
 msgstr ""
 
 msgid "Bearer token"
@@ -1551,9 +1467,6 @@ msgstr ""
 msgid "Blocked"
 msgstr ""
 
-msgid "Blocked Requests"
-msgstr ""
-
 msgid "Body"
 msgstr ""
 
@@ -1568,15 +1481,7 @@ msgid ""
 "downgrade — real in-app push + reboot)"
 msgstr ""
 
-msgid "Bootstrap 5.3 + Custom FortiWeb 7.6 Theme"
-msgstr ""
-
 msgid "Bot Mitigation"
-msgstr ""
-
-msgid ""
-"Both slots are read in a single pass — one dedupe check, one bundle "
-"rebuild. Re-importing a certificate already held updates it in place."
 msgstr ""
 
 msgid "Both times are read in"
@@ -1640,11 +1545,6 @@ msgid "Build any FortiWeb REST call and schedule it."
 msgstr ""
 
 msgid "Builds and boots the machine, then"
-msgstr ""
-
-msgid ""
-"Builds and boots; the appliance takes a lease, SATOM finds it at that "
-"address and carries on."
 msgstr ""
 
 msgid "Builds the whole load-balancing chain on"
@@ -1735,9 +1635,6 @@ msgid "Cache freshness"
 msgstr ""
 
 msgid "Cached"
-msgstr ""
-
-msgid "Cached database"
 msgstr ""
 
 msgid "Calls:"
@@ -1977,9 +1874,6 @@ msgstr ""
 msgid "Clear stored password"
 msgstr ""
 
-msgid "Clear stored secret"
-msgstr ""
-
 msgid "Clear the bell — the notifications stay on the Notifications page"
 msgstr ""
 
@@ -2020,18 +1914,10 @@ msgstr ""
 msgid "Client IP"
 msgstr ""
 
-msgid ""
-"Client-facing draft — sending is out of scope; use \"Mark notified\" once"
-" delivered."
-msgstr ""
-
 msgid "Clone"
 msgstr ""
 
 msgid "Clone (copies the object and its sub-table rows under a new name)"
-msgstr ""
-
-msgid "Clone (same box)…"
 msgstr ""
 
 msgid "Clone / Migrate"
@@ -2049,16 +1935,7 @@ msgstr ""
 msgid "Clone button to get an editable copy."
 msgstr ""
 
-msgid "Clone here"
-msgstr ""
-
 msgid "Clone name"
-msgstr ""
-
-msgid "Clone to another FortiWeb…"
-msgstr ""
-
-msgid "Clone to…"
 msgstr ""
 
 msgid "Close"
@@ -2187,16 +2064,10 @@ msgstr ""
 msgid "Configure"
 msgstr ""
 
-msgid "Configure ADCS first"
-msgstr ""
-
 msgid "Configure Repository"
 msgstr ""
 
 msgid "Configure at least one FortiWeb appliance to manage server policies."
-msgstr ""
-
-msgid "Configure the ADCS connection first in"
 msgstr ""
 
 msgid "Confirm New Password"
@@ -2403,11 +2274,6 @@ msgid ""
 "sync, or a one-shot maintenance task."
 msgstr ""
 
-msgid ""
-"Create your first certificate — generate a CSR, sign it at your ADCS, and"
-" deploy it to a FortiWeb."
-msgstr ""
-
 msgid "Created"
 msgstr ""
 
@@ -2493,9 +2359,6 @@ msgstr ""
 msgid "DB replication"
 msgstr ""
 
-msgid "DB: ≤ 24 h · per-device schedule (fw6: ≤ 24 h)"
-msgstr ""
-
 msgid "DELETE"
 msgstr ""
 
@@ -2506,9 +2369,6 @@ msgid "DNS Lookup — resolver servers"
 msgstr ""
 
 msgid "DNS Records"
-msgstr ""
-
-msgid "DNS Records — IPAM / DDI provider"
 msgstr ""
 
 msgid "DNS provider"
@@ -2641,11 +2501,6 @@ msgstr ""
 msgid "Define exactly what each role can do, then assign profiles to users."
 msgstr ""
 
-msgid ""
-"Defines exactly what the user can do. Manage profiles under Admin → "
-"Profiles."
-msgstr ""
-
 msgid "Definition"
 msgstr ""
 
@@ -2698,9 +2553,6 @@ msgid "Deploy automation"
 msgstr ""
 
 msgid "Deploy for real"
-msgstr ""
-
-msgid "Deploy to the device after signing (upload cert + key over SSH)"
 msgstr ""
 
 msgid "Deploy:"
@@ -3052,9 +2904,6 @@ msgstr ""
 msgid "Edit Template"
 msgstr ""
 
-msgid "Edit User"
-msgstr ""
-
 msgid "Edit catalog endpoint"
 msgstr ""
 
@@ -3077,9 +2926,6 @@ msgid "Edit text"
 msgstr ""
 
 msgid "Edit the selected VIP object"
-msgstr ""
-
-msgid "Edit the selected device (single selection)"
 msgstr ""
 
 msgid "Edit the selected object"
@@ -3264,11 +3110,6 @@ msgstr ""
 msgid "Everything needed to roll this system back: application"
 msgstr ""
 
-msgid ""
-"Everything: address, DNS, machine, boot, walks the first-boot dialog over"
-" the serial console, registers the appliance, applies the profile."
-msgstr ""
-
 msgid "Exact match"
 msgstr ""
 
@@ -3388,9 +3229,6 @@ msgid "Extra columns (kept per AppID)"
 msgstr ""
 
 msgid "FAILED"
-msgstr ""
-
-msgid "FAZ Menu"
 msgstr ""
 
 msgid "Failed objects"
@@ -3518,13 +3356,7 @@ msgstr ""
 msgid "Firmware major"
 msgstr ""
 
-msgid "Firmware path"
-msgstr ""
-
 msgid "Firmware repository"
-msgstr ""
-
-msgid "Firmware source-of-truth repository"
 msgstr ""
 
 msgid "First row is a header"
@@ -3606,9 +3438,6 @@ msgstr ""
 msgid "FortiAnalyzer devices"
 msgstr ""
 
-msgid "FortiAnalyzer menu visibility"
-msgstr ""
-
 msgid "FortiAuthenticator"
 msgstr ""
 
@@ -3628,12 +3457,6 @@ msgid "FortiGate"
 msgstr ""
 
 msgid "FortiWeb"
-msgstr ""
-
-msgid "FortiWeb (Hardware / VM)"
-msgstr ""
-
-msgid "FortiWeb 7.6 REST API"
 msgstr ""
 
 msgid "FortiWeb Configuration"
@@ -3738,11 +3561,6 @@ msgid "General Configuration"
 msgstr ""
 
 msgid "Generate SQL"
-msgstr ""
-
-msgid ""
-"Generate a CSR, sign it at your ADCS, and (optionally) deploy the cert + "
-"key to the device. The new certificate is"
 msgstr ""
 
 msgid "Generate a report now"
@@ -3953,24 +3771,13 @@ msgstr ""
 msgid "Hostnames / IPs — one per line"
 msgstr ""
 
-msgid ""
-"Hourly sync (id5) records a version on every config change; nightly "
-"publish 02:45 (id12) pushes new blobs off-box — FortiWeb, FortiADC"
-msgstr ""
-
 msgid "How / cadence"
-msgstr ""
-
-msgid "How application log lines are written"
 msgstr ""
 
 msgid "How far SATOM can take it — pick a mode"
 msgstr ""
 
 msgid "How it gets there"
-msgstr ""
-
-msgid "How often appliance online/offline status is checked"
 msgstr ""
 
 msgid "How this endpoint is referred to when provisioning."
@@ -4090,9 +3897,6 @@ msgid "In the picker"
 msgstr ""
 
 msgid "In use (fleet max)"
-msgstr ""
-
-msgid "Inactivity before the session expires and re-asks for the password"
 msgstr ""
 
 msgid "Incidents"
@@ -4258,9 +4062,6 @@ msgid "Labels (X)"
 msgstr ""
 
 msgid "Language"
-msgstr ""
-
-msgid "Last 24 hours"
 msgstr ""
 
 msgid "Last Login"
@@ -4553,9 +4354,6 @@ msgstr ""
 msgid "Manage application users and roles"
 msgstr ""
 
-msgid "Manage backups"
-msgstr ""
-
 msgid "Manage in Settings → DNS Lookup"
 msgstr ""
 
@@ -4683,16 +4481,7 @@ msgstr ""
 msgid "Migrate"
 msgstr ""
 
-msgid "Migrate to another FortiWeb…"
-msgstr ""
-
-msgid "Migrate to…"
-msgstr ""
-
 msgid "Min"
-msgstr ""
-
-msgid "Min. 8 characters"
 msgstr ""
 
 msgid "Min/max band"
@@ -4809,11 +4598,6 @@ msgid "Need Attention"
 msgstr ""
 
 msgid "Needs"
-msgstr ""
-
-msgid ""
-"Needs an API serial console. Most moving parts, so the widest surface for"
-" a mid-run failure — which is why rollback exists."
 msgstr ""
 
 msgid "Neither the cache nor the device returned the sub-lists"
@@ -5025,9 +4809,6 @@ msgstr ""
 msgid "No FortiWeb appliances configured"
 msgstr ""
 
-msgid "No REST endpoint on this firmware"
-msgstr ""
-
 msgid "No active ADOM manages this kind"
 msgstr ""
 
@@ -5083,9 +4864,6 @@ msgid ""
 "then approve it in the"
 msgstr ""
 
-msgid "No attack data available"
-msgstr ""
-
 msgid "No audit entries"
 msgstr ""
 
@@ -5135,9 +4913,6 @@ msgstr ""
 msgid "No data moves here."
 msgstr ""
 
-msgid "No data returned."
-msgstr ""
-
 msgid "No devices match your filter."
 msgstr ""
 
@@ -5167,12 +4942,6 @@ msgid ""
 "certificate. These are the certificates SATOM issues for the appliances "
 "(ADCS or ACME), which is a different pipeline from the node's own TLS "
 "certificate above."
-msgstr ""
-
-msgid ""
-"No field template is known for this child table yet — no sibling rows "
-"exist to derive it from. Use the Raw JSON editor below, or create the "
-"first row on a device that already has one."
 msgstr ""
 
 msgid ""
@@ -5357,9 +5126,6 @@ msgid ""
 "search need it. Sync it once in"
 msgstr ""
 
-msgid "No signature database yet"
-msgstr ""
-
 msgid "No signature policies"
 msgstr ""
 
@@ -5376,9 +5142,6 @@ msgid "No templates yet"
 msgstr ""
 
 msgid "No tokens yet."
-msgstr ""
-
-msgid "No traffic data available"
 msgstr ""
 
 msgid "No unsaved changes"
@@ -5426,12 +5189,6 @@ msgstr ""
 msgid "Node name (hostname)"
 msgstr ""
 
-msgid ""
-"Node-local — each HA node serves its own hostname's cert (never "
-"replicated). CA-issued certs auto-renew nightly; imported certs alert on "
-"expiry only."
-msgstr ""
-
 msgid "Node-to-node encryption (Postgres replication)"
 msgstr ""
 
@@ -5454,9 +5211,6 @@ msgid "Not found"
 msgstr ""
 
 msgid "Not found in any source:"
-msgstr ""
-
-msgid "Not runnable"
 msgstr ""
 
 msgid "Not unattended — a run sits waiting until somebody acts on it."
@@ -5768,14 +5522,6 @@ msgstr ""
 msgid "Other endpoints"
 msgstr ""
 
-msgid ""
-"Outbound links to systems SATOM does not own: NetBox for maintenance "
-"windows, and your own Python hooks for everything else (CRM, ticketing, "
-"chat). Every integration here is optional — with all of them off, change "
-"requests and upgrades work exactly as before. Nothing on this page is "
-"contacted while the page renders."
-msgstr ""
-
 msgid "Output (stdout)"
 msgstr ""
 
@@ -5864,11 +5610,6 @@ msgid ""
 "health check, web-protection profile), composed live over REST."
 msgstr ""
 
-msgid ""
-"Per virtual-server tree (listener, real server pool + members, profile "
-"chain), composed live over REST."
-msgstr ""
-
 msgid "Per-device SoT:"
 msgstr ""
 
@@ -5912,9 +5653,6 @@ msgstr ""
 msgid "Pick"
 msgstr ""
 
-msgid "Pick a base FortiWeb below and sync to read the whole signature catalog."
-msgstr ""
-
 msgid "Pick a current and target version, then Show advisory."
 msgstr ""
 
@@ -5947,9 +5685,6 @@ msgstr ""
 msgid "Pick one on the FortiAnalyzer dashboard"
 msgstr ""
 
-msgid "Pick the backend the"
-msgstr ""
-
 msgid "Pick two versions of the SAME device to see what changed between them."
 msgstr ""
 
@@ -5960,9 +5695,6 @@ msgid "Pipeline"
 msgstr ""
 
 msgid "Placeholder (scaffold only)"
-msgstr ""
-
-msgid "Plain text (level — message)"
 msgstr ""
 
 msgid ""
@@ -6117,9 +5849,6 @@ msgstr ""
 msgid "Previous"
 msgstr ""
 
-msgid "Primary 248 (read-write) · standby 249 (streaming replica)"
-msgstr ""
-
 msgid "Primary key"
 msgstr ""
 
@@ -6142,9 +5871,6 @@ msgid "Probes that reported nothing"
 msgstr ""
 
 msgid "Probing channels (DB TLS · node HTTPS · SoT)…"
-msgstr ""
-
-msgid "Probing nodes, Gitea and backup-server…"
 msgstr ""
 
 msgid "Process"
@@ -6216,9 +5942,6 @@ msgstr ""
 msgid ""
 "Public roots stay trusted — this bundle adds to them, it does not replace"
 " them."
-msgstr ""
-
-msgid "Publish to git"
 msgstr ""
 
 msgid "Published service (VIP:port)"
@@ -6392,12 +6115,6 @@ msgstr ""
 msgid "Read-only (predefined)"
 msgstr ""
 
-msgid "Read-only view. Writes go through the"
-msgstr ""
-
-msgid "Reads docs.fortinet.com — no appliance needed. New versions merge in."
-msgstr ""
-
 msgid ""
 "Reads per-signature exceptions live off the box (server policy → WPP → "
 "signature set → filter list) and imports the ones you select, bound to "
@@ -6443,14 +6160,6 @@ msgstr ""
 msgid "Recipient"
 msgstr ""
 
-msgid ""
-"Reconciler has not published a tick yet (the standby's state is probed "
-"live)."
-msgstr ""
-
-msgid "Reconciler last tick:"
-msgstr ""
-
 msgid "Record versions + push off-box now"
 msgstr ""
 
@@ -6479,9 +6188,6 @@ msgid "References (FK → table.col)"
 msgstr ""
 
 msgid "Refresh"
-msgstr ""
-
-msgid "Refresh Now"
 msgstr ""
 
 msgid "Refresh from device"
@@ -6632,9 +6338,6 @@ msgstr ""
 msgid "Repository"
 msgstr ""
 
-msgid "Repository URL"
-msgstr ""
-
 msgid "Request"
 msgstr ""
 
@@ -6648,9 +6351,6 @@ msgid "Requested by"
 msgstr ""
 
 msgid "Requests"
-msgstr ""
-
-msgid "Requests per hour"
 msgstr ""
 
 msgid "Require administrator approval"
@@ -6834,9 +6534,6 @@ msgstr ""
 msgid "Run history"
 msgstr ""
 
-msgid "Run in background"
-msgstr ""
-
 msgid "Run log"
 msgstr ""
 
@@ -6853,9 +6550,6 @@ msgid "Run sweep now"
 msgstr ""
 
 msgid "Run the same pass the nightly timer runs, on this node, now"
-msgstr ""
-
-msgid "Runnable"
 msgstr ""
 
 msgid "Running"
@@ -7043,9 +6737,6 @@ msgstr ""
 msgid "Save mapping"
 msgstr ""
 
-msgid "Save menu visibility"
-msgstr ""
-
 msgid "Save mode"
 msgstr ""
 
@@ -7126,19 +6817,10 @@ msgstr ""
 msgid "Scan devices"
 msgstr ""
 
-msgid "Scan from Fortinet…"
-msgstr ""
-
 msgid "Scan hardware (SSH)"
 msgstr ""
 
 msgid "Schedule"
-msgstr ""
-
-msgid "Schedule for later"
-msgstr ""
-
-msgid "Schedule upgrade"
 msgstr ""
 
 msgid "Scheduled Action"
@@ -7289,9 +6971,6 @@ msgstr ""
 msgid ""
 "Select an appliance to browse its Server Objects — servers, services, "
 "certificates, SSL ciphers, IP groups and more."
-msgstr ""
-
-msgid "Select an appliance to manage its configuration backups"
 msgstr ""
 
 msgid "Select an appliance to view its server policies"
@@ -7447,9 +7126,6 @@ msgstr ""
 msgid "Settings → Change Password"
 msgstr ""
 
-msgid "Settings → Signatures"
-msgstr ""
-
 msgid "Severity"
 msgstr ""
 
@@ -7504,9 +7180,6 @@ msgid "Show advisory"
 msgstr ""
 
 msgid "Show as list"
-msgstr ""
-
-msgid "Show raw JSON config on policy detail pages"
 msgstr ""
 
 msgid "Showing"
@@ -7639,9 +7312,6 @@ msgstr ""
 msgid "Start from an example script"
 msgstr ""
 
-msgid "Start scan"
-msgstr ""
-
 msgid "StartTLS"
 msgstr ""
 
@@ -7657,13 +7327,7 @@ msgstr ""
 msgid "Status"
 msgstr ""
 
-msgid "Status Poll Interval (seconds)"
-msgstr ""
-
 msgid "Status in this policy"
-msgstr ""
-
-msgid "Status poll"
 msgstr ""
 
 msgid "Step"
@@ -7790,9 +7454,6 @@ msgstr ""
 msgid "Sync directory users"
 msgstr ""
 
-msgid "Sync from a base device"
-msgstr ""
-
 msgid "Sync from git"
 msgstr ""
 
@@ -7803,9 +7464,6 @@ msgid "Sync groups / OU DNs"
 msgstr ""
 
 msgid "Sync now"
-msgstr ""
-
-msgid "Synced at"
 msgstr ""
 
 msgid "System"
@@ -7859,9 +7517,6 @@ msgstr ""
 msgid "Target"
 msgstr ""
 
-msgid "Target FortiWeb"
-msgstr ""
-
 msgid "Target device hostname for this deployment."
 msgstr ""
 
@@ -7892,22 +7547,6 @@ msgid "Template name"
 msgstr ""
 
 msgid "Template-managed profile — carve-outs on it are blocked"
-msgstr ""
-
-msgid "Template-managed: edit in Administrator → WPP Templates"
-msgstr ""
-
-msgid ""
-"Template-managed: edit in Administrator → WPP Templates (deploys to ALL "
-"devices)"
-msgstr ""
-
-msgid ""
-"Template-managed: read-only here. Edit in Administrator → WPP Templates —"
-" approving a change there deploys it to ALL devices."
-msgstr ""
-
-msgid "Template-managed: read-only here. Edit in Administrator → WPP Templates."
 msgstr ""
 
 msgid "Templates"
@@ -7956,11 +7595,6 @@ msgid ""
 msgstr ""
 
 msgid "The FortiADC endpoint"
-msgstr ""
-
-msgid ""
-"The FortiADC manager scaffold is in place. Modules (virtual servers, real"
-" servers, load-balancing pools, health checks) will be added here."
 msgstr ""
 
 msgid "The FortiAnalyzer endpoint"
@@ -8049,11 +7683,6 @@ msgid ""
 "and export CSV/PNG."
 msgstr ""
 
-msgid ""
-"The key must match the certificate; nginx is config-tested and rolled "
-"back automatically if the new cert is bad."
-msgstr ""
-
 msgid "The last complete one"
 msgstr ""
 
@@ -8093,9 +7722,6 @@ msgstr ""
 msgid "The profile"
 msgstr ""
 
-msgid "The profile defines exactly what this user can do."
-msgstr ""
-
 msgid "The published services this window takes offline,"
 msgstr ""
 
@@ -8105,11 +7731,6 @@ msgstr ""
 msgid ""
 "The reliable path when device-side backup fails (e.g. FortiWeb returns "
 "-901 with a backup password set)."
-msgstr ""
-
-msgid ""
-"The same FortiGuard signature package is on every box, so any reachable "
-"FortiWeb can serve as the base for the sync. The read is"
 msgstr ""
 
 msgid "The self-signed trust anchor."
@@ -8125,9 +7746,6 @@ msgid ""
 "The structure tree deliberately covers only the Server Policy + Web "
 "Protection Profile dependency subgraph — not the whole registry (System, "
 "Network, Monitor, Log objects hang off no policy)."
-msgstr ""
-
-msgid "The upgrade is recorded as a one-shot"
 msgstr ""
 
 msgid ""
@@ -8177,11 +7795,6 @@ msgid ""
 msgstr ""
 
 msgid "This action is locked to a one-time ("
-msgstr ""
-
-msgid ""
-"This appliance has no server policies configured, or the connection could"
-" not be established."
 msgstr ""
 
 msgid "This appliance holds no attack-log entries at all."
@@ -8321,15 +7934,6 @@ msgstr ""
 msgid "Top"
 msgstr ""
 
-msgid "Top 10"
-msgstr ""
-
-msgid "Top Attacked Policies"
-msgstr ""
-
-msgid "Top Traffic Sources"
-msgstr ""
-
 msgid "Top Users"
 msgstr ""
 
@@ -8351,9 +7955,6 @@ msgstr ""
 msgid "Total Backups"
 msgstr ""
 
-msgid "Total Policies"
-msgstr ""
-
 msgid "Total Reports"
 msgstr ""
 
@@ -8364,9 +7965,6 @@ msgid "Total loss of both nodes"
 msgstr ""
 
 msgid "Total objects"
-msgstr ""
-
-msgid "Traffic Trend"
 msgstr ""
 
 msgid "Traffic log"
@@ -8406,12 +8004,6 @@ msgid "Trust store"
 msgstr ""
 
 msgid "Try in API Explorer"
-msgstr ""
-
-msgid "Turn a menu"
-msgstr ""
-
-msgid "Two slots so a complete path goes in at once: the"
 msgstr ""
 
 msgid "Two thirds"
@@ -8458,9 +8050,6 @@ msgid "URN / JSON-RPC url"
 msgstr ""
 
 msgid "URNs not covered by the registry"
-msgstr ""
-
-msgid "Unattended without a serial console. Good on a build VLAN that runs DHCP."
 msgstr ""
 
 msgid "Uncheck for an internal server with a self-signed certificate (insecure)."
@@ -8623,9 +8212,6 @@ msgstr ""
 msgid "Users"
 msgstr ""
 
-msgid "VDOM (optional)"
-msgstr ""
-
 msgid "VIP / IP…"
 msgstr ""
 
@@ -8712,13 +8298,7 @@ msgstr ""
 msgid "Versions"
 msgstr ""
 
-msgid "Versions (major.minor)"
-msgstr ""
-
 msgid "View"
-msgstr ""
-
-msgid "View / Edit Detail"
 msgstr ""
 
 msgid "View / edit"
@@ -8810,9 +8390,6 @@ msgid ""
 "is deleted off the FortiWebs. Enforced by the"
 msgstr ""
 
-msgid "WPP Templates"
-msgstr ""
-
 msgid "WPP feature coverage"
 msgstr ""
 
@@ -8892,11 +8469,6 @@ msgid "Where it lives"
 msgstr ""
 
 msgid "Where the sync actually happens"
-msgstr ""
-
-msgid ""
-"Which NetBox device each appliance is. Leave blank to fall back to an "
-"exact"
 msgstr ""
 
 msgid "Which WPP per device (matrix)"
@@ -9183,9 +8755,6 @@ msgstr ""
 msgid "before"
 msgstr ""
 
-msgid "before a live restore. Leave"
-msgstr ""
-
 msgid "believes"
 msgstr ""
 
@@ -9222,9 +8791,6 @@ msgid "built-in"
 msgstr ""
 
 msgid "bulk"
-msgstr ""
-
-msgid "button. Only"
 msgstr ""
 
 msgid "by name"
@@ -9339,9 +8905,6 @@ msgstr ""
 msgid "data"
 msgstr ""
 
-msgid "data/sot/ (replicated to the standby; blobs pushed to backup-server)"
-msgstr ""
-
 msgid "database"
 msgstr ""
 
@@ -9430,9 +8993,6 @@ msgid "dvmdb_device"
 msgstr ""
 
 msgid "e.g. 10"
-msgstr ""
-
-msgid "e.g. 192.0.2.41 · MX: '10 mail.host'"
 msgstr ""
 
 msgid "e.g. 192.0.2.53"
@@ -9616,12 +9176,6 @@ msgstr ""
 msgid "first. Leave"
 msgstr ""
 
-msgid "backup-server unreachable"
-msgstr ""
-
-msgid "backup-server.example.net"
-msgstr ""
-
 msgid "fmbackup"
 msgstr ""
 
@@ -9652,9 +9206,6 @@ msgstr ""
 msgid "fw001p1"
 msgstr ""
 
-msgid "fw6 · shop-policy"
-msgstr ""
-
 msgid "fweb_users"
 msgstr ""
 
@@ -9665,9 +9216,6 @@ msgid "get system status"
 msgstr ""
 
 msgid "git repo (source)"
-msgstr ""
-
-msgid "git repo from the application code — it versions the firmware"
 msgstr ""
 
 msgid "group"
@@ -9694,22 +9242,10 @@ msgstr ""
 msgid "http-01 — web authentication"
 msgstr ""
 
-msgid "http://ollama.example:11434 or https://api.openai.com/v1"
-msgstr ""
-
-msgid "https://192.0.2.80:443/"
-msgstr ""
-
 msgid "https://acme-v02.api.letsencrypt.org/directory"
 msgstr ""
 
 msgid "https://catalog.example/appids.csv"
-msgstr ""
-
-msgid "https://git.example.net/satom-dev/fortinet-firmware.git"
-msgstr ""
-
-msgid "https://git.example.net/satom-dev/satom.git"
 msgstr ""
 
 msgid "https://netbox.example.com"
@@ -9790,19 +9326,7 @@ msgid ""
 "status. The fleet is license-locked, so deploy stays dry-run by default."
 msgstr ""
 
-msgid ""
-"is read-only over its API (no PowerDNS record CRUD). The +DNS Records "
-"modal adapts to the provider's capabilities. The secret is stored Fernet-"
-"encrypted and never shown again."
-msgstr ""
-
 msgid "is the trust anchor, the"
-msgstr ""
-
-msgid ""
-"is usually what actually signed your appliances. Fill either, or both — a"
-" chain that stops at an intermediate whose issuer is missing imports "
-"cleanly and then fails every handshake with"
 msgstr ""
 
 msgid "is wrong; this page tells you"
@@ -9872,9 +9396,6 @@ msgid "maintenance"
 msgstr ""
 
 msgid "maintenance window instead."
-msgstr ""
-
-msgid "manages DNS records natively;"
 msgstr ""
 
 msgid ""
@@ -10051,9 +9572,6 @@ msgstr ""
 msgid "off"
 msgstr ""
 
-msgid "off to hide it and every sub-item under it (cascade); turn an individual"
-msgstr ""
-
 msgid "off-box"
 msgstr ""
 
@@ -10157,9 +9675,6 @@ msgstr ""
 msgid "p95"
 msgstr ""
 
-msgid "page writes to via its"
-msgstr ""
-
 msgid "page."
 msgstr ""
 
@@ -10231,9 +9746,6 @@ msgid "pool-web-prod"
 msgstr ""
 
 msgid "port1"
-msgstr ""
-
-msgid "pre-restore backup is taken automatically"
 msgstr ""
 
 msgid "presents"
@@ -10826,12 +10338,6 @@ msgstr ""
 msgid "with the privileges of the SATOM service"
 msgstr ""
 
-msgid ""
-"with the validated image. Unattended flashing is gated for safety (an "
-"approved Change Request / explicit operator run); the schedule is created"
-" and visible under Scheduled Actions."
-msgstr ""
-
 msgid "written by hand"
 msgstr ""
 
@@ -10863,9 +10369,6 @@ msgid "· delete expired after"
 msgstr ""
 
 msgid "· delete revoked material:"
-msgstr ""
-
-msgid "· manifest SoT:"
 msgstr ""
 
 msgid "· scheduled auto-apply:"

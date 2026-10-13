@@ -126,6 +126,11 @@ fi
 
 [ -r "$SSH_KEY" ] || { echo "datasync: key $SSH_KEY is missing" >&2; exit 1; }
 
+# integrations/queue/ and integrations/claimed/ are this node's OWN hook work:
+# satom-integrations.path is enabled on BOTH nodes (installer), so a queue copied
+# from the primary would run every pending hook a second time on the standby.
+# Hook definitions (integrations/hooks/) and their status history still replicate.
+#
 # StrictHostKeyChecking=yes, NOT accept-new: the peer's host key is seeded at
 # install time (ssh-keyscan over the already-authenticated join step), so a
 # first-contact substitution is no longer possible.
@@ -133,5 +138,6 @@ exec rsync -az --delete \
   --exclude 'jobs/' --exclude 'tmp/' \
   --exclude 'update-requests/' --exclude 'update-status/' \
   --exclude 'logs/' --exclude 'diagnostics/' --exclude 'deep_jobs/' \
+  --exclude 'integrations/queue/' --exclude 'integrations/claimed/' \
   -e "ssh -i ${SSH_KEY} -o IdentitiesOnly=yes -o UserKnownHostsFile=${KNOWN_HOSTS} -o StrictHostKeyChecking=yes -o ConnectTimeout=10" \
   "${APP_USER}@${PEER}:${APP}/data/" "${APP}/data/"

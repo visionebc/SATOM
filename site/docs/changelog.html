@@ -194,11 +194,12 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <h3 id="added--fortianalyzer-in-the-live-api-library-harvest">Added — FortiAnalyzer in the live API-library harvest</h3>
 <ul>
 <li>A registered FortiAnalyzer can now be harvested live like FortiWeb,
-  FortiADC, FortiAuthenticator and FortiGate: <strong>API Explorer → Harvest this
-  appliance now</strong>, the <code>apilib_harvest</code> scheduled action and the firmware
-  probe (on a build change) all queue it, and <code>apilib_harvest.run(&lt;id&gt;)</code> runs
-  it from <code>flask shell</code>. It no longer answers <code>no live harvester for
-  fortianalyzer</code>.</li>
+  FortiADC, FortiAuthenticator and FortiGate: the <code>apilib_harvest</code> scheduled
+  action and the firmware probe (on a build change) queue it, and
+  <code>apilib_harvest.run(&lt;id&gt;)</code> runs it from <code>flask shell</code>. It no longer answers
+  <code>no live harvester for fortianalyzer</code>. On demand, use <strong>Schema builds →
+  Harvest</strong>: the API Explorer belongs to the FortiWeb ADOM and only offers
+  FortiWeb appliances.</li>
 <li>The harvest reads the build off the box (<code>get /sys/status</code>), then walks the
   per-object JSON-RPC syntax (<code>get</code> with <code>option: ["syntax"]</code>) over every
   <code>/cli/global</code> object the library and the registry name, in one session and
@@ -209,6 +210,12 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   nothing, a refused login, a transport failure mid-walk or a build that
   cannot be read from the box is stored <strong>unhealthy</strong> with its reason, the
   harvest job fails, and the build still needs a harvest.</li>
+<li>Measured on a FortiAnalyzer-VM64-KVM 7.6.7 build3737 (lab): 165 <code>get</code>
+  requests in 6 s, 139 objects read, 11 absent, none refused, 23 child tables
+  not asked because their parent table has no row; healthy. The FortiAnalyzer
+  adapter is therefore marked <strong>verified</strong> on Schema builds (it said SATOM's
+  walk had never run against a device), and its evidence no longer lists an
+  unverified reason.</li>
 </ul>
 <h3 id="added--the-operator-cli-catches-up-with-3x-naming-signatures-layouts">Added — the operator CLI catches up with 3.x: naming, signatures, layouts</h3>
 <ul>

@@ -458,7 +458,8 @@ determined) and, per product, how many documents were stored unhealthy.
 |---|---|
 | **A rediscovery sweep** (FortiWeb, FortiADC) | ingests its own snapshot right after writing the files. A library failure is logged and recorded as `apilib_error` in the sweep's state; it never fails the sweep |
 | **Firmware change** | when the firmware probe (API v1 `POST /appliances/<id>/firmware-check`, or the discovery run on the API versions page) sees an appliance's normalized version change — or records its first version and the library has no evidence for that build — it queues one background job of type `apilib_harvest` |
-| **API Explorer → Harvest this appliance now** | queues the same job for the selected appliance (needs `appliances.apply`) |
+| **API Explorer → Harvest this appliance now** | queues the same job for the selected appliance (needs `appliances.apply`). The API Explorer belongs to the FortiWeb ADOM, so it offers FortiWeb appliances only |
+| **Schema builds → Harvest** | a synchronous harvest through the product's adapter, for an appliance whose build has no harvested schema (needs `appliances.apply`, §14.11). For FortiAnalyzer it is the same JSON-RPC syntax walk and stores the same `schema` evidence, so it is the on-demand harvest outside the FortiWeb ADOM |
 | **Scheduled action `apilib_harvest`** | harvests, one appliance at a time, every FortiWeb, FortiADC, FortiAuthenticator, FortiGate and FortiAnalyzer whose running build has no healthy evidence from its live source. Admin action, dry-run capable. **Declared but not scheduled by default**: create a schedule for it (daily is plenty) under **Scheduled Actions** (FortiWeb ADOM → Administrator) |
 | `flask apilib harvest-fac` | an immediate FortiAuthenticator harvest from the shell |
 | `apilib_harvest.run(<appliance id>)` | an immediate harvest of one appliance of any live product, synchronous, from `flask shell` |
@@ -821,9 +822,10 @@ registry itself.
 - **The field map is authored, not discovered.** The library proposes rename
   candidates by CLI attribute id (§14.7) but does not apply them: a rename is a
   removal plus an addition until an operator records it.
-- **FortiADC and FortiAnalyzer adapters are unverified** (no lab device). A harvest
-  through them names the gap (`unverified`), and so does the Schema builds page
-  that lists the adapters.
+- **The FortiADC adapter is unverified.** A harvest through it names the gap
+  (`unverified`), and so does the Schema builds page that lists the adapters.
+  The FortiAnalyzer adapter is verified since 2026-10-13: SATOM's own syntax
+  walk read faz02 (7.6.7 build3737), 139 objects, 11 absent, none refused.
 
 ---
 
@@ -1281,7 +1283,7 @@ pack-lane key. Releases no longer use it.
 
 | Symptom | Cause / fix |
 |---|---|
-| A build reads **`unmeasured`** | Nothing measured it. For FortiWeb, FortiADC, FortiAuthenticator or a registered FortiGate or FortiAnalyzer: *Harvest this appliance now* in the API Explorer, or run the `apilib_harvest` scheduled action. For a FortiGate or FortiAnalyzer build no appliance runs: the build is newer than the imported collection — import a newer one (§8.2) |
+| A build reads **`unmeasured`** | Nothing measured it. For a FortiWeb: *Harvest this appliance now* in the API Explorer (FortiWeb ADOM). For a FortiAnalyzer: **Schema builds → Harvest**. For any registered FortiWeb, FortiADC, FortiAuthenticator, FortiGate or FortiAnalyzer: run the `apilib_harvest` scheduled action. For a FortiGate or FortiAnalyzer build no appliance runs: the build is newer than the imported collection — import a newer one (§8.2) |
 | A build reads **`vendor_only`** | Only the vendor's data covers it. Correct for FortiGate and FortiAnalyzer. Treat its answers as claims |
 | The explorer shows **`firmware unknown`** | The appliance's firmware was never read. Run a firmware check first (API v1 `firmware-check`, or the discovery run); the probe then queues a harvest if the build needs one |
 | *Harvest not queued* — `no live harvester for …` | That appliance kind cannot be harvested live; use §8.2 |
@@ -1320,7 +1322,7 @@ pack-lane key. Releases no longer use it.
 | Bell: *New build X on Y: schema not harvested* | An appliance runs a build with no CLI schema in the library. Open **Schema builds** and press **Harvest**, or import a knowledge pack that covers the build (§14.11) |
 | A build reads `unknown` for hundreds of fields after a harvest | Those fields sit in empty tables, or under a parent table with no row: REST had nothing to read. Expected; it is not "absent". A knowledge pack with lab rows narrows it |
 | `rest_only` counts that look like bookkeeping (`id`, `_id`, `seq`) | They are channel `meta` since 2.13 (§14.3). On an older pack, re-import; on this node, harvest the CLI schema so the build has a `tree` |
-| Schema builds: *unverified adapter* | The product's adapter was never checked against a device (FortiADC, FortiAnalyzer). Its evidence is labelled; treat it as a documented convention (§14.10) |
+| Schema builds: *unverified adapter* | The product's adapter was never checked against a device (FortiADC). Its evidence is labelled; treat it as a documented convention (§14.10) |
 | FortiAuthenticator harvest reads REST but no CLI | SATOM stores the REST API key, not a CLI login. Give the CLI password in the Schema builds harvest form (used once, never stored), or `flask apilib adapter-harvest --ssh-secret-env VAR` |
 | Migration report: *cannot assess* | No usable `show full-configuration` dump in the vault, an unknown source build, or a target with no CLI schema. The reason is on the report ([Migration report](migration-report.md) §2.1) |
 
@@ -1383,7 +1385,7 @@ schema is its JSON-RPC syntax answer, stored as `schema`.
 | FortiWeb | `module/` + namespaces and object joined with `.`; an object nested in a table or singleton goes with `/` (`waf/web-protection-profile.inline-protection`, `system/ntp/ntpserver`) | verified (7.6.8, 8.0.6) |
 | FortiGate | `config a b c` -> `a.b/c`; a nested table is a field of its top-level object (`children`) | matches every vendor URN; `tree` verified on 8.0.1 |
 | FortiAuthenticator | no `tree`; the five setup-CLI objects (`router static`, `system dns\|global\|ha\|interface`) are none of the 58 Tastypie resources, so they never join a REST path | verified (8.0.3) |
-| FortiAnalyzer | the JSON-RPC `/cli/global/...` URL is the CLI path | **unverified** (no FortiAnalyzer in the lab) |
+| FortiAnalyzer | the JSON-RPC `/cli/global/...` URL is the CLI path | verified (7.6.7 build3737: 139 objects answered their syntax at the URL their CLI path gives) |
 | FortiADC | `config a-b c-d` -> `a_b_c_d`; a table in a table -> `<parent>_child_<table>` | **unverified** (no FortiADC in the lab) |
 
 ### 14.2 What never enters the library
@@ -1629,7 +1631,7 @@ capabilities and where it was verified; the **Schema builds** page shows both.
 | FortiAuthenticator | no `tree`: `config <object>` + `set ?` help walk of the setup CLI (5 objects, 29 fields); `show full-configuration` | Tastypie `/api/v1/<res>/schema/` (58 resources, 316 fields), directory complete | **yes** — 8.0.3 build0099 |
 | FortiGate | `tree` (FortiOS format; nested tables folded into fields) | `GET /api/v2/cmdb/<path>?action=schema` | **yes** — 8.0.1 build0245 (`tree` by pack or `flask apilib schema-import`; the REST schema also live from a registered FortiGate, `apilib_harvest`) |
 | FortiADC | `tree` (FortiOS-family format assumed) | none implemented | **no** — no FortiADC in the lab |
-| FortiAnalyzer | JSON-RPC `get` with `option: syntax` | the same answer (the `/cli/global/...` URL is the CLI path) | **no** — the walk was measured on 7.6.7 build3737 by the harvester; the REST schema also live from a registered FortiAnalyzer, `apilib_harvest` |
+| FortiAnalyzer | JSON-RPC `get` with `option: syntax` | the same answer (the `/cli/global/...` URL is the CLI path) | **yes** — 7.6.7 build3737 (faz02, 2026-10-13): SATOM's own walk, live from a registered FortiAnalyzer through `apilib_harvest` and Schema builds |
 
 Read-only by construction: the FortiWeb, FortiADC and FortiGate harvests send
 `tree` (behind its own whole-command gate) and `show`; the FortiAuthenticator
@@ -1652,7 +1654,7 @@ scheduled action `schema_watch`.
 - **One bell notification per product and build** to the administrators: *New
   build 8.0.7 on fweb-01: schema not harvested*, linking to Schema builds. It is
   not repeated for the next appliance on the same build.
-- **Schema builds** (`/web/schema-builds/`, sidebar in the FortiWeb ADOM;
+- **Schema builds** (`/schema-builds/`, Fleet group of every ADOM;
   reading needs `registry.view`) lists the adapters with their capabilities and
   verification, the harvested builds per product, and every appliance on a build
   without a harvested schema with a **Harvest** button (`appliances.apply`,

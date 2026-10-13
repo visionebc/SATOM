@@ -5543,7 +5543,8 @@ single measured build there is nothing to say and nothing is shown.
 
 **`unmeasured` is an answer, never a yes.** If SATOM has never seen that build,
 it says so rather than guessing; the fix is to harvest an appliance running it
-(**Harvest this appliance now** in the API explorer, §30.10) or its field
+(**Harvest this appliance now** in the API explorer for a FortiWeb, §30.10;
+**Schema builds → Harvest** for a FortiAnalyzer, §30.12) or its field
 schemas. The page reads the library directly, so the new evidence shows on the
 next load.
 
@@ -5877,6 +5878,12 @@ installation. SATOM also queues a harvest by itself when it sees an appliance
 change firmware build; the `apilib_harvest` scheduled action (not scheduled by
 default) sweeps up any build still missing.
 
+The API explorer belongs to the FortiWeb ADOM, so its picker and this button
+only offer FortiWeb appliances. A FortiAnalyzer is harvested on demand from
+**Schema builds** (§30.12): its **Harvest** runs the same read-only syntax walk
+and stores the same evidence. Other products rely on the firmware change and
+the scheduled action above.
+
 **Harvest CLI schema.** A second button reads the appliance's CLI side: the
 `tree` command (the whole CLI schema of the build: every object, field, type,
 option and range) and `show full-configuration` (field names only, never
@@ -5945,17 +5952,18 @@ From the console: `sudo satom execute apilib compat fortiweb 7.6.8 8.0.6` and
 When an appliance starts running a firmware build whose schema SATOM has never
 harvested, every administrator gets **one** bell notification for that product
 and build: *New build 8.0.7 on fweb-01: schema not harvested*. It links to
-**Schema builds** (bottom of the sidebar in the FortiWeb ADOM, for
-administrators; `/web/schema-builds/`; reading needs `registry.view`).
+**Schema builds** (Fleet group of the sidebar, in every ADOM;
+`/schema-builds/`; reading needs `registry.view`).
 
 The page has three parts:
 
 - **Adapters** — one per product (FortiWeb, FortiADC, FortiAuthenticator,
   FortiGate, FortiAnalyzer), with what it can read (CLI schema, hidden fields,
   REST schema, REST probe) and whether it was **verified** on a real device, on
-  which build. FortiADC and FortiAnalyzer are marked **unverified adapter**: no
-  lab device has been available, so their results are a documented convention,
-  not a measurement.
+  which build. FortiADC is marked **unverified adapter**: its results are a
+  documented convention, not a measurement. FortiAnalyzer is verified on faz02
+  (7.6.7 build3737, 2026-10-13): SATOM's own syntax walk read 139 objects, 11
+  absent, none refused.
 - **Builds without a harvested schema** — each appliance on such a build, with a
   **Harvest** button (needs `appliances.apply`; audited). For a
   FortiAuthenticator, give the **CLI password (optional)**: SATOM stores the REST

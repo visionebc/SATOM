@@ -112,6 +112,23 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="security--infrastructure-hardening-2026-10-13-internal-code-audit">Security — infrastructure hardening (2026-10-13 internal code audit)</h3>
+<ul>
+<li><strong>Node-to-node transport is HTTPS-only and certificate-verified.</strong> The peer
+  probes between the two HA nodes no longer fall back to plain HTTP, so the
+  shared identity key can never cross the wire in cleartext, and the peer's TLS
+  certificate is now validated against the system trust store (the public fleet
+  wildcard) or the internal CA. A genuinely untrusted certificate still
+  connects, but over encrypted TLS and with a logged warning, so the health
+  dashboards never break.</li>
+<li><strong>HSTS</strong> (<code>Strict-Transport-Security</code>) is now sent on every response, scoped
+  to the node's own host (no <code>includeSubDomains</code>/<code>preload</code>, so sibling fleet
+  services are unaffected).</li>
+<li><strong>The integration-hook sandbox can no longer read the secret files.</strong> The
+  unprivileged hook runner masks <code>/opt/satom/.env</code>, the internal-CA key under
+  <code>pki/</code> and the HA key under <code>.ssh/</code>, and hides other processes, so a hook
+  cannot reach the Fernet key or database URL on disk.</li>
+</ul>
 <h3 id="security--second-round-of-the-2026-10-13-internal-code-audit">Security — second round of the 2026-10-13 internal code audit</h3>
 <p><strong>Accounts and sign-in</strong>
 - A password-reset link is now single-use: it is tied to the current password

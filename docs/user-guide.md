@@ -4279,6 +4279,19 @@ policy (what happens then), and the two are kept apart deliberately.
   settings are not delivery. A local relay that refuses the recipient
   (`454 Relay access denied`) shows up there; fix the transport, then use
   **Send test email**.
+- **Delivered is not received.** With **Local mail server**, when that server
+  delivers straight to the recipient's mail server with no DKIM signature
+  (Postfix with no `relayhost` and no signing milter), the mail is delivered
+  but the recipient may file it as spam. SATOM marks that as a
+  **deliverability error**: a red box on the email tab, a second red line
+  after a successful **Send test**, and **deliverability: ERROR** with status
+  **bad** in `satom get alerts status`. Before relying on it:
+  - the sender address (**From**) needs an SPF record that authorises this
+    node's public address, or Gmail refuses the message outright
+    (`550 5.7.26 … sender is unauthenticated`);
+  - check the recipient's spam folder and mark the first alert *Not spam*.
+  The error clears with **External SMTP server** and a provider account, or
+  a `relayhost` / DKIM milter on the node.
 - The **Scheduled automation** check also raises a warning when a SATOM process
   (web, scheduler, reconciler) is running code older than the files on disk
   for more than 15 minutes — an update that restarted only the web service.

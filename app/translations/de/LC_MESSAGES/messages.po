@@ -23372,3 +23372,9 @@ msgstr "Auf diesem Knoten wurde noch kein FortiWeb-GUI-Layout importiert (es kom
 
 msgid "No %(p)s GUI layout for this page has been imported on this node (layouts come with the knowledge packs)."
 msgstr "Für diese Seite wurde auf diesem Knoten kein %(p)s-GUI-Layout importiert (Layouts kommen mit den Wissenspaketen)."
+
+msgid "Deliverability error"
+msgstr "Zustellbarkeitsfehler"
+
+msgid "mail leaves this node unsigned, straight to the recipient mail server. It is delivered, but it may land in spam."
+msgstr "E-Mails verlassen diesen Knoten unsigniert und gehen direkt an den Mailserver des Empfängers. Sie werden zugestellt, können aber im Spam landen."

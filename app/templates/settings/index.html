@@ -1154,6 +1154,13 @@
             <span class="fw-card-title"><i class="bi bi-envelope me-2 text-accent"></i>{{ _('Email (SMTP) Configuration') }}</span>
           </div>
           <div class="fw-card-body">
+            {% if email_config.enabled and email_deliverability and email_deliverability.ok is false %}
+            <div class="alert alert-danger py-2 mb-3" role="alert" id="em-deliverability" style="font-size:13px;">
+              <i class="bi bi-exclamation-octagon me-1"></i><strong>{{ _('Deliverability error') }}</strong> —
+              {{ _('mail leaves this node unsigned, straight to the recipient mail server. It is delivered, but it may land in spam.') }}
+              <div class="mt-1 text-body-secondary">{{ email_deliverability.detail }}</div>
+            </div>
+            {% endif %}
             <form method="POST" action="{{ url_for('settings.save_email') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
@@ -5409,14 +5416,36 @@ function emailTest() {
   })
     .then(function(r){ return r.json(); })
     .then(function(d){
+      // detail carries the remote server's own reply: text, never markup.
+      function box(kind, icon, text) {
+        var el = document.createElement('div');
+        el.className = 'alert alert-' + kind + ' py-2 mb-2';
+        el.style.fontSize = '13px';
+        var i = document.createElement('i');
+        i.className = 'bi ' + icon + ' me-1';
+        el.appendChild(i);
+        el.appendChild(document.createTextNode(text));
+        return el;
+      }
+      msg.textContent = '';
       if (d.ok) {
-        msg.innerHTML = '<div class="alert alert-success py-2 mb-0" style="font-size:13px;"><i class="bi bi-check-circle me-1"></i>' + (d.detail || 'Sent.') + '</div>';
+        msg.appendChild(box('success', 'bi-check-circle', d.detail || 'Sent.'));
+        var dv = d.deliverability || {};
+        if (dv.ok === false) {
+          msg.appendChild(box('danger', 'bi-exclamation-octagon',
+                              'Deliverability ERROR: ' + (dv.detail || 'may land in spam.')));
+        }
       } else {
-        msg.innerHTML = '<div class="alert alert-danger py-2 mb-0" style="font-size:13px;"><i class="bi bi-x-circle me-1"></i>' + (d.detail || 'Failed.') + '</div>';
+        msg.appendChild(box('danger', 'bi-x-circle', d.detail || 'Failed.'));
       }
     })
     .catch(function(e){
-      msg.innerHTML = '<div class="alert alert-danger py-2 mb-0" style="font-size:13px;">Error: ' + e.message + '</div>';
+      msg.textContent = '';
+      var el = document.createElement('div');
+      el.className = 'alert alert-danger py-2 mb-0';
+      el.style.fontSize = '13px';
+      el.textContent = 'Error: ' + e.message;
+      msg.appendChild(el);
     })
     .finally(function(){
       btn.disabled = false;

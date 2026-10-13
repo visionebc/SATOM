@@ -292,11 +292,18 @@ def _save_state(state: dict) -> None:
 
 def _record_email_outcome(res) -> None:
     res = res or {}
+    # A delivered message can still be one nobody reads: an unsigned direct
+    # hand-off lands in spam. Kept with the outcome so the status page marks
+    # it as an error instead of reporting "delivered" and moving on.
+    deliv = res.get("deliverability") or {}
+    spam_risk = (str(deliv.get("detail") or "")[:400]
+                 if res.get("ok") and deliv.get("ok") is False else "")
     try:
         AppSetting.set(K_LAST_EMAIL, json.dumps({
             "at": _now().isoformat(timespec="seconds"),
             "ok": bool(res.get("ok")),
-            "detail": str(res.get("detail") or "")[:300]}))
+            "detail": str(res.get("detail") or "")[:300],
+            "spam_risk": spam_risk}))
     except Exception:  # noqa: BLE001 -- bookkeeping must never sink a run
         pass
 

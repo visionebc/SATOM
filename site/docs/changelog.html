@@ -138,6 +138,23 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   status shows it under <strong>last email</strong> and turns <strong>bad</strong> when that attempt was
   not delivered.</li>
 </ul>
+<h3 id="fixed--alert-email-gmail-refused-every-message-without-a-message-id-delivered-but-unsigned-is-now-an-error">Fixed — alert email: Gmail refused every message without a Message-ID; delivered-but-unsigned is now an error</h3>
+<ul>
+<li>SATOM built its messages without <code>Message-ID</code> and <code>Date</code>. A local Postfix
+  added both on the way out, which hid the gap; any other hand-off is refused
+  by Gmail (<code>550 5.7.1 Messages missing a valid Message-ID header</code>). Every
+  message now carries both headers.</li>
+<li><strong>Delivered is not received.</strong> When the local mail server hands mail
+  straight to the recipient's server with no DKIM signature (Postfix with no
+  relayhost and no signing milter), the message passes SPF at most and Gmail,
+  Outlook and others may file it as spam. SATOM now reports that as a
+  <strong>deliverability error</strong>: a red box on <strong>Settings → Email</strong>, a second red
+  line under <strong>Send test</strong> after a successful send, and in
+  <code>satom get alerts status</code> (<strong>last email → deliverability: ERROR</strong>, status
+  <strong>bad</strong>). An external SMTP provider, a relayhost or a signing milter clears it.</li>
+<li>The <strong>Send test</strong> result box shows the server's reply as text; it used to
+  insert it as HTML.</li>
+</ul>
 <h3 id="fixed--two-sidebar-groups-named-automation-and-a-process-entry-lost-next-to-studio">Fixed — two sidebar groups named "Automation", and a Process entry lost next to Studio</h3>
 <ul>
 <li>A profile without user management (operator, read-only) saw the Process

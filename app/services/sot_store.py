@@ -144,6 +144,29 @@ RUNTIME_ROW_FIELDS = {
 #: the validity it is computed from; a row without it keeps the field hashed.
 RUNTIME_REQUIRES = {"status": "validto"}
 
+#: FortiAnalyzer JSON-RPC answers every secret as ``["ENC", "<blob>"]`` and
+#: RE-SALTS the blob on every read. Measured on a1 (2026-10-13): an unchanged
+#: faz02 minted a version -- and a "Config drift" alert -- every hourly sync,
+#: 15 in a row, until the sweep scrubbed them (``device_sync.snapshot_from_faz``
+#: uses the FortiAnalyzer adapter's ``scrub``). That scrub is the primary
+#: guard; this is the store's own. Any path that hands ``record()`` a body
+#: still carrying the pair -- a ``_config.json`` written before the scrub and
+#: re-published from System Backup, a future JSON-RPC product -- would
+#: otherwise reintroduce the hourly churn. The key is DROPPED, not masked, as
+#: the scrub drops it, so a body whose secrets are all in this form hashes
+#: like the scrubbed sweep and :func:`_reidentify` can move an old pre-scrub
+#: row onto it. Only the two-element list form
+#: is matched: the ``"ENC <ciphertext>"`` STRING FortiWeb and FortiADC store
+#: is stable between reads (measured on a1, 2026-10-13: 0 of 371 changed
+#: between consecutive versions of 16 devices) and so still reports a
+#: password that was really changed.
+RPC_SECRET_TAG = "ENC"
+
+
+def _is_rpc_secret(value) -> bool:
+    return (isinstance(value, list) and len(value) == 2
+            and value[0] == RPC_SECRET_TAG and isinstance(value[1], str))
+
 
 def _strip_runtime(table: str, rows):
     fields = RUNTIME_ROW_FIELDS[table]
@@ -175,7 +198,7 @@ def normalise(value):
             continue
         if key.endswith(HANDLE_SUFFIX) and key[:-len(HANDLE_SUFFIX)] in value:
             continue
-        if key in ROLLING_KEYS or key in EDIT_OP_KEYS:
+        if key in ROLLING_KEYS or key in EDIT_OP_KEYS or _is_rpc_secret(val):
             continue
         if key in RUNTIME_ROW_FIELDS:
             val = _strip_runtime(key, val)

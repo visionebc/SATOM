@@ -101,13 +101,9 @@ KIND_PRODUCTS = {
     # "No such command.", which parses to nothing and would have graded a
     # missing reading rather than erroring. FAC therefore reads REST instead
     # (see :func:`run_box`).
-    # FortiAnalyzer is listed because it was ALREADY in scope before this map
-    # existed: run_box had no product gate at all and ensure_baseline created
-    # cpu/memory rows on every product. Whether that firmware answers
-    # `get system performance` is UNVERIFIED (faz01 has been unreachable since
-    # July), and dropping it here would have removed working coverage on the
-    # strength of an assumption. Narrowing it is a separate decision, with a
-    # live device to test against.
+    # FortiAnalyzer answers `get system performance` too -- VERIFIED live on
+    # faz02 (7.6.7, 2026-10-13) -- in an indented block layout of its own,
+    # which :func:`parse_performance` reads (see ``_PERF_BLOCK``).
     # FortiGate reads REST too (``monitor/system/resource/usage``, see
     # :func:`_run_box_fgt`): its credential is an API token, not a CLI login.
     "cpu":             ("fortiweb", "fortiadc", "fortianalyzer",
@@ -289,6 +285,33 @@ _PERF_CPU = re.compile(r"CPU\s+(?:states|usage)\s*:\s*(?P<used>[\d.]+)\s*%\s*use
 _PERF_MEM = re.compile(r"Memory\s+(?:states|usage)\s*:\s*(?P<used>[\d.]+)\s*%\s*used", re.I)
 _PERF_UP = re.compile(r"Up:\s*(?P<up>.+?)\.?\s*$", re.I | re.M)
 
+# FortiAnalyzer answers the SAME command as indented blocks -- VERIFIED live on
+# faz02 (7.6.7, 2026-10-13):
+#     CPU:
+#         Used:                   11.05%
+#         Used(Excluded NICE):    11.05%
+#         ...per-core table...
+#     Memory:
+#         Total:  10,258,796 KB
+#         Used:   7,181,756 KB    70.0%
+#         Total (Excluding Swap): 8,161,648 KB
+#         Used (Excluding Swap):  6,522,452 KB    79.9%
+#     Hard Disk:
+#         Used:   5,262,104 KB    6.4%
+# Neither wording above matches, so every faz02 CPU and memory sample since it
+# was registered graded "error" and the device sat at "degraded" -- an alert
+# every cooldown window for a parser gap. Each block is read on its own so the
+# disk's ``Used:`` line can never be taken for memory. Memory is the PHYSICAL
+# figure (excluding swap), the same quantity FortiWeb and FortiADC report as
+# "Memory states/usage"; the swap-inclusive ``Used:`` line is the fallback for
+# a build that prints only that one.
+_PERF_BLOCK = re.compile(r"^(?P<head>CPU|Memory):[ \t]*\n(?P<body>(?:[ \t]+[^\n]*(?:\n|$))*)",
+                         re.I | re.M)
+_PERF_BLOCK_CPU = re.compile(r"^\s*Used:\s*(?P<used>[\d.]+)\s*%", re.I | re.M)
+_PERF_BLOCK_MEM_PHYS = re.compile(
+    r"^\s*Used\s*\(Excluding Swap\):\s*[\d,]+\s*KB\s+(?P<used>[\d.]+)\s*%", re.I | re.M)
+_PERF_BLOCK_MEM = re.compile(r"^\s*Used:\s*[\d,]+\s*KB\s+(?P<used>[\d.]+)\s*%", re.I | re.M)
+
 # Default name of the daemon we watch. Kept configurable per probe because a
 # FortiWeb build may name it `proxyd`, and the same machinery is useful for
 # `httpsd` / `updated` without touching code.
@@ -419,6 +442,19 @@ def parse_performance(raw: str) -> dict:
     m = _PERF_UP.search(raw or "")
     if m:
         out["uptime"] = m.group("up").strip()
+    # FortiAnalyzer's block layout (see _PERF_BLOCK). Only consulted for a
+    # reading the one-line wordings did not produce.
+    for blk in _PERF_BLOCK.finditer(raw or ""):
+        head, body = blk.group("head").lower(), blk.group("body")
+        if head == "cpu" and "cpu_busy" not in out:
+            m = _PERF_BLOCK_CPU.search(body)
+            if m:
+                out["cpu_busy"] = _f(m.group("used"))
+                out["cpu_idle"] = round(100.0 - out["cpu_busy"], 2)
+        elif head == "memory" and "mem_used_pct" not in out:
+            m = _PERF_BLOCK_MEM_PHYS.search(body) or _PERF_BLOCK_MEM.search(body)
+            if m:
+                out["mem_used_pct"] = _f(m.group("used"))
     return out
 
 

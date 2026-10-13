@@ -6,6 +6,25 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — FortiAnalyzer in the live API-library harvest
+
+- A registered FortiAnalyzer can now be harvested live like FortiWeb,
+  FortiADC, FortiAuthenticator and FortiGate: **API Explorer → Harvest this
+  appliance now**, the `apilib_harvest` scheduled action and the firmware
+  probe (on a build change) all queue it, and `apilib_harvest.run(<id>)` runs
+  it from `flask shell`. It no longer answers `no live harvester for
+  fortianalyzer`.
+- The harvest reads the build off the box (`get /sys/status`), then walks the
+  per-object JSON-RPC syntax (`get` with `option: ["syntax"]`) over every
+  `/cli/global` object the library and the registry name, in one session and
+  with `get` only — nothing is written to the device. It stores one
+  build-scoped `schema` evidence row.
+- The evidence is healthy only when the walk read at least one object and no
+  more than a quarter of the asked objects were refused. A walk that read
+  nothing, a refused login, a transport failure mid-walk or a build that
+  cannot be read from the box is stored **unhealthy** with its reason, the
+  harvest job fails, and the build still needs a harvest.
+
 ### Added — the operator CLI catches up with 3.x: naming, signatures, layouts
 
 - **`satom get device naming [<device> [--table <type>]] [--product <p>]`** —

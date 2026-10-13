@@ -112,6 +112,16 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="310---2026-10-13">[3.1.0] - 2026-10-13</h2>
+<h3 id="changed--operator-menu-order">Changed — operator menu order</h3>
+<ul>
+<li><strong>Appliances</strong> moves to <strong>Administrator</strong>; <strong>Schema builds</strong>, <strong>Build
+  compatibility</strong> and <strong>Certificate Manager</strong> move to <strong>Automation</strong>; <strong>Global
+  Studio</strong> joins <strong>Administrator</strong>; the <strong>Fleet</strong> group is reordered.</li>
+<li>A profile that cannot see the new group keeps the entry where it was
+  (Appliances and the API library under Fleet, Studio as its own group), so the
+  reorder takes no page away from anyone.</li>
+</ul>
 <h3 id="changed--the-fortiadc-schema-adapter-is-verified-on-a-lab-box">Changed — the FortiADC schema adapter is verified on a lab box</h3>
 <p>SATOM's harvest of {device} (FortiADC-VM 7.6.7 build0676) read its CLI <code>tree</code>
 (527 objects, 3,649 fields), its <code>show full-configuration</code> (315 blocks, no
@@ -147,7 +157,6 @@ never "CLI only" — on FortiADC "CLI only" now means REST measured the whole
 object absent (98 objects on 7.6.7, each a 404 at its REST path). FortiADC
 7.6.7 now reads 967 fields both, 233 CLI only, 623 REST only, 2,456 unknown,
 545 entries.</p>
-<h2 id="310---2026-10-13">[3.1.0] - 2026-10-13</h2>
 <h3 id="added--every-screen-in-german-french-italian-and-spanish-again">Added — every screen in German, French, Italian and Spanish again</h3>
 <p>The language catalogues had fallen behind the interface: the screens added since
 the last translation sweep (about 2,700 strings: Naming Discovery, ADOM Menus,

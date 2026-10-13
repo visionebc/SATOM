@@ -38,19 +38,21 @@ from __future__ import annotations
 
 import re
 
-from . import Adapter, Capabilities, register
+from . import Adapter, Capabilities, Verification, register
 
 PRODUCT = "fortianalyzer"
 URL_PREFIX = "/cli/global/"
 #: CLI sections that live under ``/cli/global/`` (a vendor catalog URL outside
 #: them -- ``/dvmdb``, ``/eventmgmt`` ... -- is ADOM data, not configuration).
 SECTIONS = ("system", "fmupdate")
-#: What is still not checked (the UI shows these reasons).
-UNVERIFIED = {
-    "rest_schema": "the per-object syntax walk is the harvester's, measured on a "
-                   "FortiAnalyzer 7.6.7 build3737 lab unit (2026-10-12); SATOM's port of it "
-                   "has not run against a device yet",
-}
+#: What is still not checked (the UI shows these reasons). Empty since SATOM's
+#: own walk read a real box (:data:`VERIFIED_ON`).
+UNVERIFIED: dict = {}
+#: SATOM's port of the walk against a real FortiAnalyzer: the API-library
+#: harvest of faz02 (apilib_harvest -> apilib_faz -> :func:`measure`) read 139
+#: objects, 11 absent, 0 refused, 23 children of empty tables not asked; the
+#: Schema builds harvest through :func:`harvest` read the same box.
+VERIFIED_ON = {"date": "2026-10-13", "device": "faz02 (lab)", "build": "7.6.7 build3737"}
 #: Hard cap on the requests one walk sends.
 MAX_REQUESTS = 3000
 #: ``syntax`` / ``get`` status of an object this build does not have.
@@ -407,13 +409,15 @@ def harvest(appliance, *, client=None, catalog=None, now=None,
 ADAPTER = register(Adapter(
     product=PRODUCT, label="FortiAnalyzer",
     capabilities=Capabilities(tree=False, show_full=False, rest_schema=True, rest_probe=False),
-    verified_on=(), unverified=UNVERIFIED, live=True, cli_source="schema",
+    verified_on=(Verification(VERIFIED_ON["date"], VERIFIED_ON["device"], VERIFIED_ON["build"],
+                              "JSON-RPC syntax walk, get only: 139 objects read"),),
+    unverified=UNVERIFIED, live=True, cli_source="schema",
     notes="JSON-RPC /cli/global/... URLs are the CLI paths; schema via get + "
           "option=syntax, asked per object (a branch answers -3) and per real row for a "
           "table's children, as measured on FortiAnalyzer 7.6.7 build3737."),
     harvest)
 
 
-__all__ = ["PRODUCT", "UNVERIFIED", "SECTIONS", "MAX_REQUESTS", "jsonrpc_url", "cli_path",
+__all__ = ["PRODUCT", "UNVERIFIED", "VERIFIED_ON", "SECTIONS", "MAX_REQUESTS", "jsonrpc_url", "cli_path",
            "channel_key", "canonical_url", "catalog_urls", "syntax_request", "measure",
            "evidence_from_syntax", "known_urls", "harvest", "ADAPTER"]

@@ -635,7 +635,11 @@ determined) and, per product, how many documents were stored unhealthy.</p>
 </tr>
 <tr>
 <td><strong>API Explorer → Harvest this appliance now</strong></td>
-<td>queues the same job for the selected appliance (needs <code>appliances.apply</code>)</td>
+<td>queues the same job for the selected appliance (needs <code>appliances.apply</code>). The API Explorer belongs to the FortiWeb ADOM, so it offers FortiWeb appliances only</td>
+</tr>
+<tr>
+<td><strong>Schema builds → Harvest</strong></td>
+<td>a synchronous harvest through the product's adapter, for an appliance whose build has no harvested schema (needs <code>appliances.apply</code>, §14.11). For FortiAnalyzer it is the same JSON-RPC syntax walk and stores the same <code>schema</code> evidence, so it is the on-demand harvest outside the FortiWeb ADOM</td>
 </tr>
 <tr>
 <td><strong>Scheduled action <code>apilib_harvest</code></strong></td>
@@ -1100,9 +1104,10 @@ registry itself.</p>
 <li><strong>The field map is authored, not discovered.</strong> The library proposes rename
   candidates by CLI attribute id (§14.7) but does not apply them: a rename is a
   removal plus an addition until an operator records it.</li>
-<li><strong>FortiADC and FortiAnalyzer adapters are unverified</strong> (no lab device). A harvest
-  through them names the gap (<code>unverified</code>), and so does the Schema builds page
-  that lists the adapters.</li>
+<li><strong>The FortiADC adapter is unverified.</strong> A harvest through it names the gap
+  (<code>unverified</code>), and so does the Schema builds page that lists the adapters.
+  The FortiAnalyzer adapter is verified since 2026-10-13: SATOM's own syntax
+  walk read {device} (7.6.7 build3737), 139 objects, 11 absent, none refused.</li>
 </ul>
 <hr>
 <h2 id="11-api-packs--the-library-for-nodes-that-cannot-measure-it">11. API packs — the library for nodes that cannot measure it</h2>
@@ -1806,7 +1811,7 @@ pack-lane key. Releases no longer use it.</p>
 <tbody>
 <tr>
 <td>A build reads <strong><code>unmeasured</code></strong></td>
-<td>Nothing measured it. For FortiWeb, FortiADC, FortiAuthenticator or a registered FortiGate or FortiAnalyzer: <em>Harvest this appliance now</em> in the API Explorer, or run the <code>apilib_harvest</code> scheduled action. For a FortiGate or FortiAnalyzer build no appliance runs: the build is newer than the imported collection — import a newer one (§8.2)</td>
+<td>Nothing measured it. For a FortiWeb: <em>Harvest this appliance now</em> in the API Explorer (FortiWeb ADOM). For a FortiAnalyzer: <strong>Schema builds → Harvest</strong>. For any registered FortiWeb, FortiADC, FortiAuthenticator, FortiGate or FortiAnalyzer: run the <code>apilib_harvest</code> scheduled action. For a FortiGate or FortiAnalyzer build no appliance runs: the build is newer than the imported collection — import a newer one (§8.2)</td>
 </tr>
 <tr>
 <td>A build reads <strong><code>vendor_only</code></strong></td>
@@ -1962,7 +1967,7 @@ pack-lane key. Releases no longer use it.</p>
 </tr>
 <tr>
 <td>Schema builds: <em>unverified adapter</em></td>
-<td>The product's adapter was never checked against a device (FortiADC, FortiAnalyzer). Its evidence is labelled; treat it as a documented convention (§14.10)</td>
+<td>The product's adapter was never checked against a device (FortiADC). Its evidence is labelled; treat it as a documented convention (§14.10)</td>
 </tr>
 <tr>
 <td>FortiAuthenticator harvest reads REST but no CLI</td>
@@ -2091,7 +2096,7 @@ schema is its JSON-RPC syntax answer, stored as <code>schema</code>.</p>
 <tr>
 <td>FortiAnalyzer</td>
 <td>the JSON-RPC <code>/cli/global/...</code> URL is the CLI path</td>
-<td><strong>unverified</strong> (no FortiAnalyzer in the lab)</td>
+<td>verified (7.6.7 build3737: 139 objects answered their syntax at the URL their CLI path gives)</td>
 </tr>
 <tr>
 <td>FortiADC</td>
@@ -2450,7 +2455,7 @@ capabilities and where it was verified; the <strong>Schema builds</strong> page 
 <td>FortiAnalyzer</td>
 <td>JSON-RPC <code>get</code> with <code>option: syntax</code></td>
 <td>the same answer (the <code>/cli/global/...</code> URL is the CLI path)</td>
-<td><strong>no</strong> — the walk was measured on 7.6.7 build3737 by the harvester; the REST schema also live from a registered FortiAnalyzer, <code>apilib_harvest</code></td>
+<td><strong>yes</strong> — 7.6.7 build3737 ({device}, 2026-10-13): SATOM's own walk, live from a registered FortiAnalyzer through <code>apilib_harvest</code> and Schema builds</td>
 </tr>
 </tbody>
 </table>
@@ -2472,7 +2477,7 @@ scheduled action <code>schema_watch</code>.</p>
 <li><strong>One bell notification per product and build</strong> to the administrators: <em>New
   build 8.0.7 on fweb-01: schema not harvested</em>, linking to Schema builds. It is
   not repeated for the next appliance on the same build.</li>
-<li><strong>Schema builds</strong> (<code>/web/schema-builds/</code>, sidebar in the FortiWeb ADOM;
+<li><strong>Schema builds</strong> (<code>/schema-builds/</code>, Fleet group of every ADOM;
   reading needs <code>registry.view</code>) lists the adapters with their capabilities and
   verification, the harvested builds per product, and every appliance on a build
   without a harvested schema with a <strong>Harvest</strong> button (<code>appliances.apply</code>,

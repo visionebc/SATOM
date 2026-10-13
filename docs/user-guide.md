@@ -2040,17 +2040,32 @@ it to the fleet; for the fleet-wide view, use Fleet → WAF → Artifacts (§13.
 ![WAF Artifacts inventory](img/screens/fleet-artifacts.webp)
 *Fleet → WAF → WAF Artifacts → Inventory for the selected device*
 
-### 13.3 Naming Discovery: the convention your devices already follow
+### 13.3 Naming: Scheme and Discovery
 
-**Administrator → Naming → Discovery** is in every device ADOM (FortiWeb,
-FortiADC, FortiGate, FortiAuthenticator, FortiAnalyzer). The Scheme tab
-(FortiWeb and FortiADC) says how *new* objects are named; Discovery reads the
-names already on a device — from the configuration tree SATOM keeps for it, no
-device call — and shows the convention behind them, per object type:
+**Administrator → Naming** is in every device ADOM (FortiWeb, FortiADC,
+FortiGate, FortiAuthenticator, FortiAnalyzer). Its two tabs work on **one list
+of object types**: every table the product's configuration sync reads,
+including the ones no device holds an object of yet. Settings blocks (rows
+without a name) and id-keyed lists are not naming decisions and are left out.
+
+**Scheme** holds the pattern of each object type. Entries marked **builds
+names** (the FortiWeb catalog: server policy, pool, WPP, certificate…) are
+the ones SATOM fills in when it creates objects from a web address, so they
+take `{name}` only (Managed Certificate: `{class}` `{cn}` `{date}`
+`{serial}`). Every other entry documents your convention and may use any
+Discovery token. Next to each input: what Discovery found on the devices
+(**all devices agree** / **devices differ**), **use it** to copy it in, and a
+live count of the existing names that follow the pattern you type. Use the
+filter box or **Only types with objects on a device** to narrow the list.
+
+**Discovery** reads the names already on a device — from the configuration
+tree SATOM keeps for it, no device call — and shows, per object type:
 
 - **Convention found** — the dominant pattern, e.g. `pol-{adom}-{name}` or
   `vs-{name}-{proto}`, with any variant prefix, the separator and the case.
 - **Follow it** — how many of the team's objects match it.
+- **Naming scheme** — the scheme's pattern for that type and how many objects
+  follow it (`(default)` when it is the catalog default).
 - **Exceptions**, each with its reason. A **stale name** is the one to read
   first: `name says 'https' but the object's port is '8080'`.
 - **Shares {name} with** — object types that carry the same identifier through
@@ -2063,13 +2078,14 @@ A part of a name becomes `{port}`, `{proto}`, `{adom}`, `{host}`… only when it
 equals a field of the same object on at least 80 % of the objects; digits that
 match nothing are `{num}`; the free part is `{name}`. One object is "too few".
 
-**Adopt** keeps a pattern as the convention of that object type for the
-product; every device is then checked against it. **Adopt + scheme** also
-writes it into the matching scheme element, when the scheme can carry it
-(literals and `{name}` only). **All devices (fleet view)** shows whether the
-devices agree; **Export CSV** lists every exception. A device without a
-configuration tree offers **Sync device** (read-only) — a FortiGate has one
-from this release on.
+**Adopt** writes the discovered pattern into the scheme entry of that object
+type. **Adopt & adapt** opens it in an editor under the row: change a part
+(`lab-spo-{num}` → `spo-{name}`), watch how many names follow, then **Save to
+scheme**. For a **builds names** entry, Adopt is greyed out when the found
+pattern carries a token SATOM cannot fill in (hover for the reason) — adapt it
+instead. The ✕ clears the entry. **All devices (fleet view)** shows whether the
+devices agree and your scheme pattern; **Export CSV** lists every exception. A
+device without a configuration tree offers **Sync device** (read-only).
 
 ## 14. Monitoring: fleet health, metrics & probes
 

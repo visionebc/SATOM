@@ -506,6 +506,45 @@ def analyse_device(product: str, device: str, tree: dict,
             "factory_objects": sum(t["factory"] for t in tables)}
 
 
+def object_types(sweep: dict[str, str], trees: list[dict]) -> dict[str, dict]:
+    """Every object type the naming scheme lists for a product.
+
+    ``sweep`` is ``{table: section}`` of what the product's configuration
+    sweep reads (``device_sync.sweep_tables``); ``trees`` the configuration
+    trees SATOM holds for its devices. The sweep keeps only tables that
+    returned rows, so a table is judged by what the trees show:
+
+    * named rows on some device → an object type (``seen``);
+    * rows but never a name (or only numeric ids) → a settings block or an
+      id-keyed list, not a naming decision → left out;
+    * in the sweep but empty on every device → listed (``seen`` False): the
+      object type a device WILL hold once someone creates one.
+
+    Returns ``{table: {"section": str, "seen": bool}}``."""
+    named: set[str] = set()
+    nameless: set[str] = set()
+    section: dict[str, str] = {}
+    for tree in trees:
+        for sec, tabs in ((tree or {}).get("sections") or {}).items():
+            if not isinstance(tabs, dict):
+                continue
+            for table, rows in tabs.items():
+                if not isinstance(rows, list) or not rows:
+                    continue
+                section.setdefault(table, sec)
+                if any((n := object_name(r)) and not n.isdigit() for r in rows):
+                    named.add(table)
+                else:
+                    nameless.add(table)
+    out: dict[str, dict] = {}
+    for table in set(sweep) | named:
+        if table in nameless and table not in named:
+            continue
+        out[table] = {"section": section.get(table) or sweep.get(table) or "Other",
+                      "seen": table in named}
+    return out
+
+
 def fleet_view(analyses: list[dict]) -> list[dict]:
     """Per object type across devices: each device's main pattern + consensus."""
     rows: dict[str, dict] = {}

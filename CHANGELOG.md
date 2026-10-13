@@ -44,11 +44,28 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `q_static`/certificate `source`, FortiAnalyzer `protected`), then a
   factory-name list measured on a real unit of each product
   (`app/registry/data/naming_factory.json`), then physical port names.
-- **Adopt** keeps a discovered pattern as the convention of an object type;
-  every device of the product is checked against it. **Adopt + scheme** also
-  writes it into the matching Naming scheme element (FortiWeb, FortiADC) — only
-  when the scheme can carry it (literals and `{name}`). Fleet view (all
-  devices: consensus, agree/differ) and CSV export (formula-safe).
+- **Scheme and Discovery list the same object types.** The Scheme tab is in
+  every device ADOM and has one entry per object type the product's
+  configuration sync reads — the FortiWeb/FortiADC catalog plus every other
+  table (FortiWeb ~250, FortiADC ~180), including the types no device holds an
+  object of yet. Settings blocks (rows without a name) and id-keyed lists are
+  left out. Next to each input: the pattern Discovery found on the devices
+  (**all devices agree** / **devices differ**), a **use it** link, and a live
+  count of the existing names that follow what you type. A filter box and
+  **Only types with objects on a device** keep the list readable.
+- **Adopt** writes the discovered pattern into that object type's scheme
+  entry. **Adopt & adapt** opens it in an editor under the row first: change
+  what you need and the count of names that follow updates as you type, then
+  **Save to scheme**. There is one list of conventions: the separate
+  "adopted" store of the first cut is gone, and anything adopted in it moves
+  into the scheme the first time the page opens.
+- Entries SATOM builds new names from (the FortiWeb catalog, marked **builds
+  names**) take `{name}` only (the Managed Certificate its cert tokens):
+  another token would reach the device as literal text, so Adopt and Save
+  refuse it and say why. Every other entry documents a convention and may use
+  any Discovery token (`{port}`, `{proto}`, `{adom}`, `{num}`, …).
+- Fleet view (all devices: consensus, agree/differ, your scheme pattern) and
+  CSV export (formula-safe).
 
 ### Fixed
 
@@ -62,8 +79,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   value in the snapshot.
 - The Naming scheme editor drew an **empty** catalog for an ADOM whose naming
   capability was on but which has no naming catalog (FortiAuthenticator on a
-  live install). The editor now lists only products with a catalog; the others
-  open Discovery.
+  live install). Every device ADOM's scheme now lists the object types its
+  devices hold.
 
 ### Added — FortiAnalyzer joins the measured-GUI engine
 

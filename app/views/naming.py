@@ -1,8 +1,16 @@
-"""**Naming** scheme — standalone admin page.
+"""**Naming** — standalone admin page, one per device ADOM.
 
-The name-pattern editor (ported ``services.naming``) with a live preview from one
-sample web address. Split by **product** (FortiWeb / FortiADC) via a selector —
-each product has its own object catalog and its own stored overrides.
+Two tabs over ONE list of object types:
+
+* **Scheme** — the pattern each object type is named by. The catalog of
+  ``services.naming`` (what SATOM builds new names from, FortiWeb's creation
+  flows) plus every other object type the product's configuration sweep reads
+  (``device_sync.sweep_tables``), stored per product. Each entry shows what
+  Discovery found on the devices next to the input.
+* **Discovery** — the convention the devices already follow
+  (``services.naming_discovery``). **Adopt** writes the discovered pattern into
+  the scheme entry of that object type; **Adopt & adapt** opens it for a small
+  edit first, with a live check against the existing names.
 
 Admin-only (USER_MANAGE), mirroring the desktop Settings console.
 """
@@ -19,59 +27,9 @@ from ..services.audit import log_action
 
 bp = Blueprint('naming', __name__, url_prefix='/naming')
 
-
-@bp.route('/')
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def index():
-    raw = request.args.get('product')
-    if raw and not _has_scheme(raw) and raw in dict(_device_products()):
-        # no naming catalog for this product: its Naming entry IS Discovery
-        return redirect(url_for('naming.discovery', product=raw))
-    product = naming_svc.valid_product(raw)
-    scheme = naming_svc.effective_scheme(store.naming_overrides(product), product)
-    return render_template(
-        'naming/index.html',
-        naming_sections=naming_svc.elements_by_section(product),
-        naming_scheme=scheme,
-        naming_products=naming_svc.PRODUCTS,  # not `products`: base.html reads that global (the ADOM registry)
-        current_product=product,
-        product_label=dict(naming_svc.PRODUCTS)[product],
-    )
-
-
-@bp.route('/save', methods=['POST'])
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def save():
-    product = naming_svc.valid_product(request.form.get('product'))
-    label = dict(naming_svc.PRODUCTS)[product]
-    if request.form.get('action') == 'reset':
-        store.reset_naming(product)
-        log_action('naming.save', detail=f'Reset {label} naming to defaults')
-        flash(f'{label} naming patterns restored to defaults.', 'success')
-        return redirect(url_for('naming.index', product=product))
-    scheme = {
-        e.key: request.form.get('nm_' + e.key, '')
-        for e in naming_svc.elements_for_product(product)
-    }
-    store.save_naming(scheme, product)
-    log_action('naming.save',
-               detail=f'{label}: {len([v for v in scheme.values() if v.strip()])} patterns')
-    flash(f'{label} naming patterns saved.', 'success')
-    return redirect(url_for('naming.index', product=product))
-
-
-# ── Discovery: the convention the devices already follow ─────────────────────
-#
-# The scheme editor above says how NEW objects are named; Discovery reads the
-# configuration tree SATOM already holds for each device (no device call) and
-# shows the convention behind the names that are there (services.
-# naming_discovery). It lives under Naming in EVERY device ADOM — the scheme
-# editor only where the product has a naming catalog.
-
-#: Discovered table -> Naming scheme element, where the scheme has one. Drives
-#: the "Scheme" column and "Apply to scheme". ``tests/test_naming_discovery.py``
+#: Discovered table -> catalog element of ``services.naming``, where the
+#: catalog has one: that element IS the table's scheme entry. Any other table
+#: is stored as ``naming.table_key(table)``. ``tests/test_naming_discovery.py``
 #: pins every target to an element of the right product.
 SCHEME_ELEMENT_OF = {
     "fortiweb": {
@@ -107,14 +65,20 @@ SCHEME_ELEMENT_OF = {
     },
 }
 
+#: Names sent to the page per object type for the live check (a type with
+#: thousands of objects still checks against a representative sample).
+NAMES_FOR_LIVE_CHECK = 400
+
+
+# ── product / devices ────────────────────────────────────────────────────────
 
 def _device_products() -> list[tuple[str, str]]:
-    """(key, name) of every active device ADOM — Discovery covers them all."""
+    """(key, name) of every active device ADOM — each has a Naming page."""
     from ..branding import PRODUCTS
     return [(k, PRODUCTS[k].get("name", k)) for k in PRODUCTS if k != "global"]
 
 
-def _discovery_product(raw: str | None) -> str:
+def _naming_product(raw: str | None) -> str:
     keys = [k for k, _ in _device_products()]
     if raw in keys:
         return raw
@@ -125,10 +89,15 @@ def _discovery_product(raw: str | None) -> str:
     return keys[0] if keys else naming_svc.DEFAULT_PRODUCT
 
 
-def _has_scheme(product: str) -> bool:
-    """True when the scheme editor has a tab for *product* (a naming catalog
-    AND the ADOM flag) — naming.PRODUCTS already requires both."""
-    return product in {k for k, _ in naming_svc.PRODUCTS}
+def _catalog(product: str) -> list:
+    """The ``services.naming`` elements of *product* (none for most products;
+    never the FortiWeb fallback ``naming.valid_product`` applies)."""
+    return [e for e in naming_svc.NAMING_ELEMENTS if e.product == product]
+
+
+def _fleet(product: str) -> list:
+    from ..models import Appliance, visible_appliances
+    return visible_appliances().filter_by(kind=product).order_by(Appliance.name).all()
 
 
 def _tree_path(appliance):
@@ -159,50 +128,223 @@ def _table_labels(product: str) -> dict[str, str]:
     return out
 
 
-def _adopted(product: str) -> dict:
-    return store.get_json(f"naming.discovered.{product}", {}) or {}
+# Analyses keyed by (tree file, mtime): the Scheme tab reads every device of
+# the product on each render and a tree only changes when a sync rewrites it.
+_ANALYSIS_CACHE: dict[tuple, tuple] = {}
 
 
-def _annotate(analysis: dict, product: str) -> None:
-    """Add the scheme / adopted-pattern checks to each table of an analysis."""
+def _load(appliance, product: str, labels: dict):
+    """(tree, analysis) of one device, or (None, None) when SATOM holds no
+    tree for it. The analysis is a copy the caller may annotate."""
     from ..services import naming_discovery as nd
-    adopted = _adopted(product)
-    scheme = (naming_svc.effective_scheme(store.naming_overrides(product), product)
-              if _has_scheme(product) else {})
-    elements = SCHEME_ELEMENT_OF.get(product, {})
+    path = _tree_path(appliance)
+    try:
+        mtime = path.stat().st_mtime_ns
+    except OSError:
+        return None, None
+    ck = (str(path), mtime, product, appliance.name)
+    hit = _ANALYSIS_CACHE.get(ck)
+    if hit is None:
+        tree = nd.load_tree(path)
+        if tree is None:
+            return None, None
+        if len(_ANALYSIS_CACHE) > 256:
+            _ANALYSIS_CACHE.clear()
+        hit = _ANALYSIS_CACHE[ck] = (tree, nd.analyse_device(product, appliance.name, tree, labels))
+    tree, a = hit
+    a = dict(a, tables=[dict(t) for t in a["tables"]], appliance_id=appliance.id)
+    return tree, a
+
+
+# ── the scheme: one entry per object type ───────────────────────────────────
+
+def _scheme_key(product: str, table: str) -> str:
+    return SCHEME_ELEMENT_OF.get(product, {}).get(table) or naming_svc.table_key(table)
+
+
+def _migrate_adopted(product: str) -> None:
+    """Fold the retired per-product "adopted convention" store into the scheme.
+
+    Discovery's first version kept adopted patterns apart from the scheme
+    (``naming.discovered.<product>``) — two lists of conventions that could
+    disagree. Each entry moves to its scheme entry unless that entry already
+    has a pattern of its own or cannot carry it; the old key is then emptied."""
+    legacy_key = f"naming.discovered.{product}"
+    legacy = store.get_json(legacy_key, {}) or {}
+    if not legacy:
+        return
+    overrides = dict(store.naming_overrides(product))
+    moved, dropped = [], []
+    for table, entry in legacy.items():
+        pattern = ((entry or {}).get("pattern") or "").strip()
+        key = _scheme_key(product, table)
+        if not pattern or overrides.get(key):
+            continue
+        if naming_svc.pattern_problem(key, pattern):
+            dropped.append(f"{table}={pattern}")
+            continue
+        overrides[key] = pattern
+        moved.append(f"{table}={pattern}")
+    store.save_naming(overrides, product)
+    store.set_json(legacy_key, {})
+    log_action('naming.save', detail=f'{product}: adopted conventions moved into the scheme '
+               f'({", ".join(moved) or "none"}; not movable: {", ".join(dropped) or "none"})')
+
+
+def _scheme_model(product: str) -> dict:
+    """Everything both tabs draw from: the entries (catalog + every object
+    type of the sweep), what each device holds, and the per-table fleet view."""
+    from ..services import device_sync
+    from ..services import naming_discovery as nd
+    _migrate_adopted(product)
+    fleet = _fleet(product)
+    labels = _table_labels(product)
+    trees, analyses = [], []
+    for a in fleet:
+        tree, an = _load(a, product, labels)
+        if tree is not None:
+            trees.append(tree)
+            analyses.append(an)
+    try:
+        sweep = device_sync.sweep_tables(product, fleet)
+    except Exception:  # noqa: BLE001 — the trees still list what devices hold
+        sweep = {}
+    types = nd.object_types(sweep, trees)
+    by_table: dict[str, dict] = {}
+    for an in analyses:
+        for t in an["tables"]:
+            b = by_table.setdefault(t["table"], {"names": [], "factory": 0})
+            b["names"].extend(t.get("names") or ())
+            b["factory"] += t.get("factory") or 0
+    found = {r["table"]: r for r in nd.fleet_view(analyses)}
+    overrides = store.naming_overrides(product)
+    mapping = SCHEME_ELEMENT_OF.get(product, {})
+    table_of = {v: k for k, v in mapping.items()}
+
+    def entry(key, label, section, table, default="", derives=False, note="", curated=False):
+        info = by_table.get(table or "", {})
+        names = sorted(set(info.get("names") or ()))
+        value = (overrides.get(key) or "").strip()
+        pattern = value or default
+        return {
+            "key": key, "label": label, "section": section, "table": table,
+            "default": default, "value": value, "pattern": pattern,
+            "derives": derives, "note": note, "curated": curated,
+            "seen": bool(table and (types.get(table) or {}).get("seen")),
+            "found": found.get(table or ""), "names": names[:NAMES_FOR_LIVE_CHECK],
+            "user": len(names), "factory": info.get("factory", 0),
+            "check": nd.conformance(pattern, names) if pattern and names else None,
+        }
+
+    entries = []
+    for e in _catalog(product):
+        entries.append(entry(e.key, e.label, e.section, table_of.get(e.key), e.default,
+                             e.derives, e.note, curated=True))
+    curated_tables = set(table_of)
+    rest = []
+    for table, meta in types.items():
+        if table in curated_tables:
+            continue
+        rest.append(entry(naming_svc.table_key(table),
+                          labels.get(table) or nd.humanize(table), meta["section"], table))
+    rest.sort(key=lambda x: (x["section"].lower(), x["label"].lower()))
+    entries += rest
+    sections: dict[str, list] = {}
+    for x in entries:
+        sections.setdefault(x["section"], []).append(x)
+    return {"entries": entries, "sections": sections, "fleet": fleet,
+            "analyses": analyses, "overrides": overrides,
+            "by_key": {x["key"]: x for x in entries}, "by_table":
+            {x["table"]: x for x in entries if x["table"]}}
+
+
+def _proto_words() -> list[str]:
+    from ..services import naming_discovery as nd
+    return sorted(nd.PROTO_WORDS, key=len, reverse=True)
+
+
+@bp.route('/')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def index():
+    product = _naming_product(request.args.get('product'))
+    model = _scheme_model(product)
+    entries = model["entries"]
+    return render_template(
+        'naming/index.html',
+        naming_sections=model["sections"],
+        naming_products=_device_products(),  # not `products`: base.html reads that global (the ADOM registry)
+        current_product=product,
+        product_label=dict(_device_products()).get(product, product),
+        catalog_sections={e.section for e in _catalog(product)},
+        n_entries=len(entries),
+        n_seen=sum(1 for x in entries if x["seen"]),
+        n_set=sum(1 for x in entries if x["value"]),
+        has_devices=bool(model["fleet"]),
+        proto_words=_proto_words(),
+    )
+
+
+@bp.route('/save', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save():
+    product = _naming_product(request.form.get('product'))
+    label = dict(_device_products()).get(product, product)
+    if request.form.get('action') == 'reset':
+        store.reset_naming(product)
+        log_action('naming.save', detail=f'Reset {label} naming to defaults')
+        flash(f'{label} naming patterns restored to defaults.', 'success')
+        return redirect(url_for('naming.index', product=product))
+    model = _scheme_model(product)
+    # Start from what is stored: an entry whose object type left the sweep
+    # (another build, a device removed) keeps its pattern.
+    scheme = dict(model["overrides"])
+    refused = []
+    for key in model["by_key"]:
+        if ('nm_' + key) not in request.form:
+            continue
+        value = (request.form.get('nm_' + key) or '').strip()
+        problem = naming_svc.pattern_problem(key, value)
+        if problem:
+            refused.append(f'{model["by_key"][key]["label"]}: {problem}')
+            continue
+        if value:
+            scheme[key] = value
+        else:
+            scheme.pop(key, None)
+    store.save_naming(scheme, product)
+    log_action('naming.save',
+               detail=f'{label}: {len([v for v in scheme.values() if v.strip()])} patterns'
+               + (f'; refused {len(refused)}' if refused else ''))
+    if refused:
+        flash('Not saved (kept the previous pattern): ' + ' · '.join(refused), 'warning')
+    flash(f'{label} naming patterns saved.', 'success')
+    return redirect(url_for('naming.index', product=product))
+
+
+# ── Discovery: the convention the devices already follow ─────────────────────
+
+def _annotate(analysis: dict, product: str, model: dict) -> None:
+    """Add each table's scheme entry and the Adopt checks."""
+    from ..services import naming_discovery as nd
     for t in analysis["tables"]:
         names = t.get("names") or []
-        key = elements.get(t["table"])
+        key = _scheme_key(product, t["table"])
+        e = model["by_key"].get(key)
+        pattern = e["pattern"] if e else (model["overrides"].get(key) or "")
         t["scheme_key"] = key
-        t["scheme"] = nd.conformance(scheme[key], names) if key and key in scheme else None
-        ad = adopted.get(t["table"])
-        t["adopted"] = nd.conformance(ad["pattern"], names) if ad else None
-        if ad:
-            t["adopted"]["by"] = ad.get("by", "")
-            t["adopted"]["at"] = ad.get("at", "")
-        ok, why = nd.scheme_compatible(t.get("main") or "")
-        t["can_apply"] = bool(key and ok)
-        t["apply_why"] = "" if t["can_apply"] else (
-            why if key else "the naming scheme has no element for this object type")
+        t["scheme_set"] = bool(model["overrides"].get(key))
+        t["scheme"] = nd.conformance(pattern, names) if pattern else None
+        t["derives"] = bool(e and e["derives"])
+        problem = naming_svc.pattern_problem(key, t["main"]) if t.get("main") else ""
+        t["can_adopt"] = bool(t.get("main")) and not problem and t["main"] != pattern
+        t["adopt_why"] = problem
+        t["adapt_seed"] = t.get("main") or pattern or ""
 
 
-def _analyse(appliance, product: str, labels: dict) -> dict:
-    from ..services import naming_discovery as nd
-    tree = nd.load_tree(_tree_path(appliance))
-    if tree is None:
-        return {"device": appliance.name, "appliance_id": appliance.id, "missing": True,
-                "tables": [], "user_objects": 0, "factory_objects": 0}
-    a = nd.analyse_device(product, appliance.name, tree, labels)
-    a["appliance_id"] = appliance.id
-    _annotate(a, product)
-    return a
-
-
-def _discovery_context():
-    from ..models import Appliance, visible_appliances
-    product = _discovery_product(request.args.get("product") or request.form.get("product"))
-    fleet = (visible_appliances().filter_by(kind=product)
-             .order_by(Appliance.name).all())
+def _discovery_context(model: dict):
+    fleet = model["fleet"]
     raw = request.args.get("appliance") or request.form.get("appliance") or ""
     selected = None
     if raw != "all":
@@ -211,7 +353,15 @@ def _discovery_context():
             from ..services import device_context
             cur = device_context.current_appliance()
             selected = cur if cur is not None and cur in fleet else fleet[0]
-    return product, fleet, selected
+    return fleet, selected
+
+
+def _analysis_of(model: dict, appliance) -> dict:
+    a = next((x for x in model["analyses"] if x["appliance_id"] == appliance.id), None)
+    if a is None:
+        return {"device": appliance.name, "appliance_id": appliance.id, "missing": True,
+                "tables": [], "user_objects": 0, "factory_objects": 0}
+    return a
 
 
 @bp.route('/discovery')
@@ -219,26 +369,28 @@ def _discovery_context():
 @require_permission(Permission.USER_MANAGE)
 def discovery():
     from ..services import naming_discovery as nd
-    product, fleet, selected = _discovery_context()
-    labels = _table_labels(product)
+    product = _naming_product(request.args.get("product"))
+    model = _scheme_model(product)
+    fleet, selected = _discovery_context(model)
     analysis, fleet_rows, missing = None, None, []
     show_factory = request.args.get("factory") == "1"
     if selected is not None:
-        analysis = _analyse(selected, product, labels)
+        analysis = _analysis_of(model, selected)
+        _annotate(analysis, product, model)
     elif fleet:
-        analyses = [_analyse(a, product, labels) for a in fleet]
-        missing = [a["device"] for a in analyses if a.get("missing")]
-        fleet_rows = nd.fleet_view([a for a in analyses if not a.get("missing")])
-        adopted = _adopted(product)
+        have = {a["appliance_id"] for a in model["analyses"]}
+        missing = [a.name for a in fleet if a.id not in have]
+        fleet_rows = nd.fleet_view(model["analyses"])
         for r in fleet_rows:
-            r["adopted"] = (adopted.get(r["table"]) or {}).get("pattern")
-    plabel = dict(_device_products()).get(product, product)
+            e = model["by_table"].get(r["table"])
+            r["scheme"] = e["pattern"] if e else ""
     return render_template(
         'naming/discovery.html',
-        current_product=product, product_label=plabel,
-        has_scheme=_has_scheme(product), fleet=fleet, selected=selected,
+        current_product=product,
+        product_label=dict(_device_products()).get(product, product),
+        fleet=fleet, selected=selected,
         analysis=analysis, fleet_rows=fleet_rows, missing=missing,
-        show_factory=show_factory,
+        show_factory=show_factory, proto_words=_proto_words(),
         factory_source=(nd.factory_catalog().get(product) or {}).get("measured_on", ""),
     )
 
@@ -252,14 +404,15 @@ def discovery_csv():
     from flask import Response
     from ..services import naming_discovery as nd
     from ..services.csv_safe import spreadsheet_safe
-    product, fleet, selected = _discovery_context()
-    labels = _table_labels(product)
+    product = _naming_product(request.args.get("product"))
+    model = _scheme_model(product)
+    fleet, selected = _discovery_context(model)
     targets = [selected] if selected is not None else fleet
     buf = io.StringIO()
     w = csv.writer(buf)
     header_done = False
     for appl in targets:
-        a = _analyse(appl, product, labels)
+        a = _analysis_of(model, appl)
         if a.get("missing"):
             continue
         rows = nd.to_csv_rows(a)
@@ -275,49 +428,45 @@ def discovery_csv():
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def discovery_adopt():
-    """Keep a discovered pattern as THE convention for one object type.
+    """Write a pattern into the scheme entry of one object type.
 
-    Stored per product (``naming.discovered.<product>``); every device of the
-    product is then checked against it. With ``apply=1`` it is also written
-    into the Naming scheme — only when the scheme can carry it (``{name}``
-    and literals) and the object type has a scheme element."""
-    from datetime import datetime
-    from flask_login import current_user
+    **Adopt** posts the discovered pattern as it is; **Adopt & adapt** posts
+    the operator's edit of it. ``action=forget`` clears the entry (a catalog
+    element falls back to its default). Refused when the entry is one SATOM
+    builds names from and the pattern carries a token it cannot fill in."""
     from ..services import naming_discovery as nd
-    product = _discovery_product(request.form.get("product"))
+    product = _naming_product(request.form.get("product"))
     table = (request.form.get("table") or "").strip()
-    pattern = (request.form.get("pattern") or "").strip()
+    pattern = (request.form.get("pattern") or "").strip()[:200]
     back = url_for('naming.discovery', product=product,
                    appliance=request.form.get("appliance") or None)
+    if not table:
+        flash('No object type given.', 'warning')
+        return redirect(back)
+    key = _scheme_key(product, table)
+    overrides = dict(store.naming_overrides(product))
     if request.form.get("action") == "forget":
-        adopted = _adopted(product)
-        if adopted.pop(table, None) is not None:
-            store.set_json(f"naming.discovered.{product}", adopted)
-            log_action('naming.discovery', detail=f'{product}: forgot the convention of {table}')
-            flash(f'Convention for {table} removed.', 'success')
-        return redirect(back)
-    if not table or not pattern or nd.pattern_regex(pattern) is None:
-        flash('Nothing to adopt: the object type has no discovered pattern.', 'warning')
-        return redirect(back)
-    adopted = _adopted(product)
-    adopted[table] = {"pattern": pattern[:200],
-                      "by": getattr(current_user, "username", "") or "",
-                      "at": datetime.utcnow().strftime("%Y-%m-%d %H:%M")}
-    store.set_json(f"naming.discovered.{product}", adopted)
-    msg = f'{table}: {pattern} adopted as the convention.'
-    if request.form.get("apply") == "1":
-        key = SCHEME_ELEMENT_OF.get(product, {}).get(table)
-        ok, why = nd.scheme_compatible(pattern)
-        if key and ok and _has_scheme(product):
-            overrides = dict(store.naming_overrides(product))
-            overrides[key] = pattern
+        if overrides.pop(key, None) is not None:
             store.save_naming(overrides, product)
-            msg += f' Naming scheme "{key}" set to {pattern}.'
-        else:
-            flash(f'Not written to the naming scheme: '
-                  f'{why or "the naming scheme has no element for this object type"}.', 'warning')
-    log_action('naming.discovery', detail=f'{product}: {msg}')
-    flash(msg, 'success')
+            log_action('naming.save', detail=f'{product}: cleared the scheme pattern of {table}')
+            flash(f'{table}: scheme pattern cleared.', 'success')
+        return redirect(back)
+    if not pattern or nd.pattern_regex(pattern) is None:
+        flash('Nothing to adopt: the pattern is empty.', 'warning')
+        return redirect(back)
+    problem = naming_svc.pattern_problem(key, pattern)
+    if problem:
+        flash(f'{table}: {pattern} not adopted — {problem}. Use “Adopt & adapt” to change it.',
+              'warning')
+        return redirect(back)
+    adapted = request.form.get("adapted") == "1"
+    overrides[key] = pattern
+    store.save_naming(overrides, product)
+    msg = f'{table}: {pattern} is now the naming scheme’s pattern'
+    if key != naming_svc.table_key(table):
+        msg += f' (element “{key}”)'
+    log_action('naming.save', detail=f'{product}: {msg}' + (' (adapted)' if adapted else ''))
+    flash(msg + '.', 'success')
     return redirect(back)
 
 
@@ -330,7 +479,9 @@ def discovery_sync():
     from flask_login import current_user
     from ..errors import ServiceError, service_call
     from ..services import device_sync
-    product, fleet, selected = _discovery_context()
+    product = _naming_product(request.form.get("product"))
+    fleet = _fleet(product)
+    selected = next((a for a in fleet if str(a.id) == (request.form.get("appliance") or "")), None)
     if selected is None:
         flash('Pick one device to sync.', 'warning')
         return redirect(url_for('naming.discovery', product=product))

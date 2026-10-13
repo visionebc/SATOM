@@ -141,6 +141,20 @@ def snapshot_from_adc(appliance, *, timeout: float = 20.0) -> dict:
     }
 
 
+def _menu_sections(menu) -> dict[str, str]:
+    """``{registry name: menu group}`` of a FAZ/FAC menu — the sections a
+    sweep files its tables under (unmapped ones land in "Other")."""
+    section_of: dict[str, str] = {}
+    try:
+        for g in menu():
+            for item in g.items:
+                for logical, _label in item.logicals:
+                    section_of.setdefault(logical, g.label)
+    except Exception:  # noqa: BLE001 — the menu is cosmetic for the sweep
+        pass
+    return section_of
+
+
 # FortiAnalyzer registry endpoints that are OPERATIONAL data (live alerts,
 # log rates, clocks, task queues) — excluded from the config SoT harvest so
 # reports/<faz>/_config.json only changes when the CONFIG changes (no hourly
@@ -171,14 +185,7 @@ def snapshot_from_faz(appliance, *, timeout: float = 20.0) -> dict:
     # measured absent is not swept, one it serves after the baseline disabled
     # it still is.
     reg = loader.registry_for("fortianalyzer", loader.version_of(appliance))
-    section_of: dict[str, str] = {}
-    try:
-        for g in faz_menu.menu():
-            for item in g.items:
-                for logical, _label in item.logicals:
-                    section_of.setdefault(logical, g.label)
-    except Exception:  # noqa: BLE001 — the menu is cosmetic for the sweep
-        pass
+    section_of = _menu_sections(faz_menu.menu)
 
     client = FortiAnalyzerClient(appliance, timeout=timeout)
     sections: dict = {}
@@ -251,14 +258,7 @@ def snapshot_from_fac(appliance, *, timeout: float = 20.0) -> dict:
 
     # Per build, as for FortiAnalyzer above.
     reg = loader.registry_for("fortiauthenticator", loader.version_of(appliance))
-    section_of: dict[str, str] = {}
-    try:
-        for g in fac_menu.visible_menu():
-            for item in g.items:
-                for logical, _label in item.logicals:
-                    section_of.setdefault(logical, g.label)
-    except Exception:  # noqa: BLE001 — the menu is cosmetic for the sweep
-        pass
+    section_of = _menu_sections(fac_menu.visible_menu)
 
     client = FortiAuthenticatorClient(appliance, timeout=timeout)
     sections: dict = {}
@@ -359,6 +359,41 @@ def snapshot_from_fgt(appliance, *, timeout: float = 20.0) -> dict:
         "generated_at": datetime.utcnow().isoformat(), "total_objects": total,
         "section_count": len(sections), "sections": sections, "errors": errors,
     }
+
+
+def sweep_tables(product: str, appliances=()) -> dict[str, str]:
+    """``{table: section}`` the configuration sweep of *product* reads — the
+    object types a device's tree can hold (Naming lists them all, including
+    the ones no device has an object of yet). Mirrors the ``snapshot_from_*``
+    plans; FortiAnalyzer and FortiAuthenticator sweep per build, so their
+    tables are the union over *appliances*. Must run in an app context."""
+    out: dict[str, str] = {}
+    if product == "fortiweb":
+        from .rediscovery import sweep_plan
+        for ep in sweep_plan():
+            out.setdefault(ep["name"], ep["section"])
+    elif product == "fortiadc":
+        from . import adc_ops
+        for ep in adc_ops.discovery_plan():
+            out.setdefault(ep["name"], ep["section"])
+    elif product == "fortigate":
+        from ..registry import loader
+        from . import fgt_menu
+        for g in fgt_menu.visible_menu():
+            for item in g.items:
+                for path, _label in item.tabs:
+                    out.setdefault(loader.fgt_logical(path), g.label)
+    elif product in ("fortianalyzer", "fortiauthenticator"):
+        from ..registry import loader
+        from . import fac_menu, faz_menu
+        faz = product == "fortianalyzer"
+        section_of = _menu_sections(faz_menu.menu if faz else fac_menu.visible_menu)
+        exclude = _FAZ_SOT_EXCLUDE if faz else _FAC_SOT_EXCLUDE
+        for a in appliances:
+            for name in loader.registry_for(product, loader.version_of(a)):
+                if name not in exclude:
+                    out.setdefault(name, section_of.get(name, "Other"))
+    return out
 
 
 def snapshot_for(appliance, *, timeout: float = 20.0) -> dict:

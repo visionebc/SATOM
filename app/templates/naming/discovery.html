@@ -33,9 +33,7 @@
 </div>
 
 <ul class="nav nav-tabs mb-0" style="border-bottom:1px solid var(--fw-border);">
-  {% if has_scheme %}
   <li class="nav-item"><a class="nav-link" href="{{ url_for('naming.index', product=current_product) }}"><i class="bi bi-pencil-square me-1"></i>{{ _('Scheme') }}</a></li>
-  {% endif %}
   <li class="nav-item"><a class="nav-link active" href="{{ url_for('naming.discovery', product=current_product) }}"><i class="bi bi-search me-1"></i>{{ _('Discovery') }}</a></li>
 </ul>
 
@@ -101,7 +99,7 @@
         <th>{{ _('Object type') }}</th>
         <th>{{ _('Convention found') }}</th>
         <th>{{ _('Follow it') }}</th>
-        <th>{{ _('Against your convention') }}</th>
+        <th>{{ _('Naming scheme') }}</th>
         <th>{{ _('Shares {name} with') }}</th>
         <th class="text-end">{{ _('Vendor') }}</th>
         <th></th>
@@ -127,13 +125,10 @@
         </td>
         <td>{% if t.main %}{{ follow_badge(t.conform, t.user) }}{% elif t.user %}<span class="text-muted">—</span>{% endif %}</td>
         <td style="font-size:12px;">
-          {% if t.adopted %}
-            <div title="{{ _('adopted by') }} {{ t.adopted.by }} {{ t.adopted.at }}">{{ _('Adopted') }} <code>{{ t.adopted.pattern }}</code> {{ follow_badge(t.adopted.conform, t.adopted.total) }}</div>
-          {% endif %}
           {% if t.scheme %}
-            <div>{{ _('Scheme') }} <code>{{ t.scheme.pattern }}</code> {{ follow_badge(t.scheme.conform, t.scheme.total) }}</div>
-          {% endif %}
-          {% if not t.adopted and not t.scheme %}<span class="text-muted">{{ _('none set') }}</span>{% endif %}
+            <div><code>{{ t.scheme.pattern }}</code> {{ follow_badge(t.scheme.conform, t.scheme.total) }}
+              {% if not t.scheme_set %}<span class="text-muted">({{ _('default') }})</span>{% endif %}</div>
+          {% else %}<span class="text-muted">{{ _('none set') }}</span>{% endif %}
         </td>
         <td style="font-size:12px;">
           {% for l in t.linked or [] %}<div><code>{{ l.table }}</code> {{ l.matched }}/{{ l.total }}</div>{% else %}<span class="text-muted">—</span>{% endfor %}
@@ -147,30 +142,60 @@
             <input type="hidden" name="appliance" value="{{ selected.id }}">
             <input type="hidden" name="table" value="{{ t.table }}">
             <input type="hidden" name="pattern" value="{{ t.main }}">
-            <button type="submit" class="btn btn-sm btn-outline-secondary" title="{{ _('Keep this pattern as the convention for this object type; every device of the product is checked against it.') }}">{{ _('Adopt') }}</button>
-            {% if t.can_apply %}
-            <button type="submit" name="apply" value="1" class="btn btn-sm btn-outline-secondary" title="{{ _('Adopt and write it into the naming scheme element') }} “{{ t.scheme_key }}”">{{ _('Adopt + scheme') }}</button>
+            {% if t.can_adopt %}
+            <button type="submit" class="btn btn-sm btn-outline-secondary" title="{{ _('Write this pattern into the naming scheme entry of this object type; every device of the product is checked against it.') }}">{{ _('Adopt') }}</button>
+            {% elif t.adopt_why %}
+            <button type="button" class="btn btn-sm btn-outline-secondary" disabled title="{{ t.adopt_why }}">{{ _('Adopt') }}</button>
+            {% else %}
+            <span class="fw-badge fw-badge-success me-1" title="{{ _('The naming scheme already has this pattern.') }}">{{ _('in scheme') }}</span>
             {% endif %}
           </form>
           {% endif %}
-          {% if t.adopted %}
+          {% if t.user %}
+          <button type="button" class="btn btn-sm btn-outline-secondary nd-adapt-toggle" data-target="nd-adapt-{{ loop.index }}" title="{{ _('Start from this pattern, change what you need, check it live against the names, then save it to the naming scheme.') }}">{{ _('Adopt & adapt') }}</button>
+          {% endif %}
+          {% if t.scheme_set %}
           <form method="POST" action="{{ url_for('naming.discovery_adopt') }}" class="d-inline mb-0">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="product" value="{{ current_product }}">
             <input type="hidden" name="appliance" value="{{ selected.id }}">
             <input type="hidden" name="table" value="{{ t.table }}">
-            <button type="submit" name="action" value="forget" class="btn btn-sm btn-link text-muted p-0 ms-1" title="{{ _('Remove the adopted convention') }}"><i class="bi bi-x-circle"></i></button>
+            <button type="submit" name="action" value="forget" class="btn btn-sm btn-link text-muted p-0 ms-1" title="{{ _('Clear the naming scheme pattern of this object type') }}"><i class="bi bi-x-circle"></i></button>
           </form>
           {% endif %}
         </td>
       </tr>
+      {% if t.user %}
+      <tr class="nd-adapt d-none" id="nd-adapt-{{ loop.index }}">
+        <td colspan="7" style="border-top:0; background:var(--fw-content-bg);">
+          <form method="POST" action="{{ url_for('naming.discovery_adopt') }}" class="mb-0 d-flex align-items-center gap-2 flex-wrap">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="product" value="{{ current_product }}">
+            <input type="hidden" name="appliance" value="{{ selected.id }}">
+            <input type="hidden" name="table" value="{{ t.table }}">
+            <input type="hidden" name="adapted" value="1">
+            <label class="fw-form-label mb-0" style="font-size:12px;">{{ t.label }} — {{ _('pattern') }}</label>
+            <input type="text" name="pattern" class="form-control form-control-sm fw-form-control nd-adapt-input" style="max-width:340px;"
+                   value="{{ t.adapt_seed }}" data-derives="{{ '1' if t.derives else '0' }}"
+                   data-names="{{ t.names | tojson | forceescape }}">
+            <span class="nd-adapt-check" style="font-size:12px;"></span>
+            <button type="submit" class="btn btn-sm btn-fw-primary ms-auto"><i class="bi bi-check-lg me-1"></i>{{ _('Save to scheme') }}</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary nd-adapt-toggle" data-target="nd-adapt-{{ loop.index }}">{{ _('Cancel') }}</button>
+            <div class="w-100 text-muted" style="font-size:11.5px;">
+              {{ _('Tokens:') }} <code>{name}</code> {{ _('free part') }} · <code>{num}</code>/<code>{port}</code> {{ _('digits') }} · <code>{proto}</code> {{ _('protocol word') }} · {{ _('any other') }} <code>{x}</code> {{ _('one part without a separator') }}.
+              {% if t.derives %}<strong>{{ _('SATOM builds names from this entry: only {name} is filled in.') }}</strong>{% endif %}
+            </div>
+          </form>
+        </td>
+      </tr>
+      {% endif %}
       {% if t.exceptions or t.names %}
       <tr class="nd-detail">
         <td colspan="7" style="border-top:0; padding-top:0;">
           <details>
             <summary class="text-muted" style="font-size:12px; cursor:pointer;">
               {% if t.exceptions %}{{ t.exceptions|length }} {{ _('exception(s)') }} · {% endif %}{{ t.user }} {{ _('names') }}
-              {% if t.adopted and t.adopted.misses %} · {{ t.adopted.misses|length }} {{ _('break the adopted convention') }}{% endif %}
+              {% if t.scheme and t.scheme.misses %} · {{ t.scheme.misses|length }} {{ _('break the naming scheme') }}{% endif %}
             </summary>
             {% if t.exceptions %}
             <table class="table table-sm mb-2 mt-1" style="font-size:12px; max-width:900px;">
@@ -179,11 +204,11 @@
               </tbody>
             </table>
             {% endif %}
-            {% if t.adopted and t.adopted.misses %}
-            <div style="font-size:12px;" class="mb-1"><strong>{{ _('Break the adopted convention:') }}</strong>
-              {% for n in t.adopted.misses %}<code class="me-2">{{ n }}</code>{% endfor %}</div>
+            {% if t.scheme and t.scheme.misses %}
+            <div style="font-size:12px;" class="mb-1"><strong>{{ _('Break the naming scheme:') }}</strong>
+              {% for n in t.scheme.misses %}<code class="me-2">{{ n }}</code>{% endfor %}</div>
             {% endif %}
-            {% if t.apply_why and t.main %}<div class="text-muted mb-1" style="font-size:11.5px;">{{ _('Not offered for the naming scheme:') }} {{ t.apply_why }}</div>{% endif %}
+            {% if t.adopt_why %}<div class="text-muted mb-1" style="font-size:11.5px;">{{ _('Adopt as found is not possible:') }} {{ t.adopt_why }}. {{ _('Use “Adopt & adapt”.') }}</div>{% endif %}
             <div class="text-muted" style="font-size:11.5px;">{% for n in t.names %}<code class="me-2">{{ n }}</code>{% endfor %}</div>
           </details>
         </td>
@@ -208,7 +233,7 @@
         <th>{{ _('Object type') }}</th>
         <th>{{ _('Most devices use') }}</th>
         <th>{{ _('Per device') }}</th>
-        <th>{{ _('Adopted') }}</th>
+        <th>{{ _('Naming scheme') }}</th>
       </tr></thead>
       <tbody>
       {% for r in fleet_rows %}
@@ -222,7 +247,7 @@
           {% for d in r.devices %}<div><a href="{{ url_for('naming.discovery', product=current_product, appliance=(fleet | selectattr('name', 'equalto', d.device) | map(attribute='id') | first)) }}">{{ d.device }}</a>
             <code class="{{ '' if d.main == r.consensus else 'text-danger' }}">{{ d.main }}</code> · {{ d.conform }}/{{ d.user }}</div>{% endfor %}
         </td>
-        <td>{% if r.adopted %}<code>{{ r.adopted }}</code>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        <td>{% if r.scheme %}<code class="{{ '' if r.scheme == r.consensus else 'text-danger' }}">{{ r.scheme }}</code>{% else %}<span class="text-muted">—</span>{% endif %}</td>
       </tr>
       {% else %}
       <tr><td colspan="4" class="text-muted">{{ _('No object type with a convention on any device yet.') }}</td></tr>
@@ -236,12 +261,40 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/naming_pattern.js') }}" nonce="{{ csp_nonce }}"></script>
 <script nonce="{{ csp_nonce }}">
 (function () {
   var form = document.getElementById('nd-pick');
-  if (!form) return;
-  form.querySelectorAll('select, input[type=checkbox]').forEach(function (el) {
-    el.addEventListener('change', function (event) { form.submit(); });
+  if (form) {
+    form.querySelectorAll('select, input[type=checkbox]').forEach(function (el) {
+      el.addEventListener('change', function (event) { form.submit(); });
+    });
+  }
+  var NP = window.NamingPattern, PROTO = {{ proto_words | tojson }};
+  function check(inp) {
+    var out = inp.parentNode.querySelector('.nd-adapt-check');
+    var pat = inp.value.trim();
+    var warn = (pat && inp.getAttribute('data-derives') === '1') ? NP.derivesProblem(pat, false) : '';
+    var r = pat ? NP.check(pat, JSON.parse(inp.getAttribute('data-names') || '[]'), PROTO) : null;
+    var save = inp.form.querySelector('button[type=submit]');
+    save.disabled = !!warn || !r;
+    inp.classList.toggle('is-invalid', !!warn || (pat && !r));
+    if (warn) { out.textContent = warn; out.className = 'nd-adapt-check text-danger'; return; }
+    if (!r) { out.textContent = pat ? 'invalid pattern' : 'type a pattern'; out.className = 'nd-adapt-check text-muted'; return; }
+    out.textContent = r.conform + '/' + r.total + ' names follow'
+      + (r.misses.length ? ' — not: ' + r.misses.slice(0, 4).join(', ') + (r.misses.length > 4 ? ' …' : '') : '');
+    out.className = 'nd-adapt-check ' + (r.conform === r.total ? 'text-success' : 'text-muted');
+  }
+  document.querySelectorAll('.nd-adapt-input').forEach(function (inp) {
+    inp.addEventListener('input', function (event) { check(inp); });
+  });
+  document.querySelectorAll('.nd-adapt-toggle').forEach(function (btn) {
+    btn.addEventListener('click', function (event) {
+      var row = document.getElementById(btn.getAttribute('data-target'));
+      row.classList.toggle('d-none');
+      var inp = row.querySelector('.nd-adapt-input');
+      if (!row.classList.contains('d-none')) { check(inp); inp.focus(); }
+    });
   });
 })();
 </script>

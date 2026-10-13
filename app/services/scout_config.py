@@ -57,8 +57,8 @@ GROUPS = (
 SPEC: list[dict] = [
     # ── switch ──────────────────────────────────────────────────────────────
     {"key": "enabled", "kind": "bool", "group": "switch", "default": True,
-     "label": "Scout is available",
-     "help": "Off closes the ladder and the upgrade advisory for everyone. The "
+     "label": "Fault Isolation is available",
+     "help": "Off closes the ladder and the Upgrade Advisory for everyone. The "
              "menu entry stays, disabled, saying why.",
      "hint": "The whole feature, on or off, site-wide. Off is enforced on the "
              "BLUEPRINT, not on the menu: a hidden nav entry switches nothing "
@@ -78,7 +78,7 @@ SPEC: list[dict] = [
      "hint": "The window the walk form is pre-filled with, and therefore the "
              "one an operator in a hurry actually uses. Too short and the "
              "border rung finds no flows for an event that happened eleven "
-             "minutes ago — which Scout reports as UNKNOWN, never as 'the path "
+             "minutes ago — which Fault Isolation reports as UNKNOWN, never as 'the path "
              "was clean', but the operator still has to notice and widen it. "
              "Too long and every walk drags a large log query across the "
              "analyzer. The ceiling is the engine's own MAX_WINDOW_MIN and is "
@@ -91,7 +91,7 @@ SPEC: list[dict] = [
      "hint": "Ceiling on ONE request from this node to the published front "
              "door. It is a diagnostic, so the number is a judgement about "
              "patience, not about correctness: set it under a slow backend's "
-             "real response time and Scout reports a timeout for a service "
+             "real response time and Fault Isolation reports a timeout for a service "
              "that was merely slow — a wrong layer, not a wrong number. The "
              "engine clamps it to 1–30 s in Options.clamped() whatever is "
              "stored here."},
@@ -113,7 +113,7 @@ SPEC: list[dict] = [
     {"key": "faz_adom", "kind": "str", "group": "border", "default": "root",
      "label": "Default FortiAnalyzer ADOM",
      "help": "Pre-filled ADOM for the border query. A wrong ADOM returns zero "
-             "rows, which Scout reports as UNKNOWN — never as a clean path.",
+             "rows, which Fault Isolation reports as UNKNOWN — never as a clean path.",
      "hint": "The ADOM the border rung searches. Getting it wrong does not "
              "produce an error: it produces ZERO ROWS, and zero rows from the "
              "wrong ADOM look identical to zero rows because nothing happened. "
@@ -295,7 +295,7 @@ _CRITERIA: tuple = (
     ("timing", "Dominant-phase share",
      "scout_ladder.DOMINANT_SHARE", lambda: sl.DOMINANT_SHARE, False,
      "A phase is named as the slow one only when it is at least this much of "
-     "the total. Lower it and Scout starts blaming phases that were not "
+     "the total. Lower it and Fault Isolation starts blaming phases that were not "
      "dominant; raise it and a genuinely slow handshake goes unnamed."),
     ("timing", "Dominant-phase floor (ms)",
      "scout_ladder.DOMINANT_FLOOR_MS", lambda: sl.DOMINANT_FLOOR_MS, False,
@@ -324,9 +324,9 @@ _CRITERIA: tuple = (
      "Hard ceiling on the editable rows-per-query above. Truncation can change "
      "which verdict wins, so the cap is part of the judgement and not of the "
      "display."),
-    ("safety", "Methods Scout will send",
+    ("safety", "Methods Fault Isolation will send",
      "scout_ladder.SAFE_METHODS", lambda: sl.SAFE_METHODS, False,
-     "Scout is READ ONLY. assert_safe_method rejects anything else at the "
+     "Fault Isolation is READ ONLY. assert_safe_method rejects anything else at the "
      "entrance, so a walk can never mutate the service it is diagnosing."),
     ("safety", "Verdict precedence (worst first)",
      "scout_ladder.SEVERITY", lambda: sl.SEVERITY, True,
@@ -388,7 +388,7 @@ WALK_HELP: dict[str, dict] = {
     "appliance_id": {
         "label": "Appliance",
         "text": "The FortiWeb or FortiADC that publishes the service. Only "
-                "devices this workspace's ADOM can see are listed, and Scout "
+                "devices this workspace's ADOM can see are listed, and Fault Isolation "
                 "never borrows the workspace's currently selected device: a "
                 "walk against the wrong box reads exactly like a walk against "
                 "the right one. Rungs 0, 1, 5, 6 and 9 all ask THIS device.",
@@ -414,7 +414,7 @@ WALK_HELP: dict[str, dict] = {
                 "one it came from: they disagree in practice -- measured on "
                 "this fleet, a policy built minutes earlier was live on the "
                 "device and absent from a six-day-old harvest -- and the row "
-                "they disagree about is usually the one you opened Scout for. "
+                "they disagree about is usually the one you opened Fault Isolation for. "
                 "It never decides what exists; rung 1 does, and a name this "
                 "list does not hold can still be typed.",
     },
@@ -424,7 +424,7 @@ WALK_HELP: dict[str, dict] = {
         "text": "How far back rung 7 asks the border for flows and rung 9 "
                 "reads attack log. Minutes, 1 to %(max)s -- a larger number is "
                 "clamped, not obeyed. Too short and an event from eleven "
-                "minutes ago falls outside it: Scout reports UNKNOWN, never "
+                "minutes ago falls outside it: Fault Isolation reports UNKNOWN, never "
                 "'the path was clean', but you still have to notice and widen "
                 "it.",
     },
@@ -441,7 +441,7 @@ WALK_HELP: dict[str, dict] = {
     "hostname": {
         "label": "Published host",
         "text": "The name or address of the front door to dial. Leave it "
-                "blank and Scout derives it from the object's VIP on the "
+                "blank and Fault Isolation derives it from the object's VIP on the "
                 "device, which is the normal case. Type one when the ticket "
                 "names a host the device's own configuration does not. A typed "
                 "value wins over the derived one for every rung below it. "
@@ -470,7 +470,7 @@ WALK_HELP: dict[str, dict] = {
         "label": "Path",
         "text": "The path requested on rung 3 and again on rung 8, for "
                 "example / or /healthz. Unlike host, port and scheme this is "
-                "always used, derived front door or not. Scout reads the phase "
+                "always used, derived front door or not. Fault Isolation reads the phase "
                 "timings of this exact request, so a path that is expensive to "
                 "render measures the page rather than the service.",
     },
@@ -515,7 +515,7 @@ WALK_HELP: dict[str, dict] = {
 
 #: Appended to any entry that names a ``default_from``. One sentence, one
 #: place: five copies of it is five things to keep true.
-DEFAULT_SENTENCE = (" Pre-filled from Settings %s Scout, where the site's "
+DEFAULT_SENTENCE = (" Pre-filled from Settings %s Fault Isolation, where the site's "
                     "default for this lives." % "\u2192")
 
 

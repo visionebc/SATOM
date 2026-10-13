@@ -229,8 +229,8 @@
                                     'unknown': 'fw-badge-info',
                                     'unavailable': 'fw-badge-secondary'} %}
                     <span class="fw-badge {{ badge.get(sc.verdict, 'fw-badge-secondary') }}"
-                          title="{{ sc.reason or _('Scout read the release notes for this move.') }}">
-                      {{ _('Scout') }}: {{ sc.verdict }}</span>
+                          title="{{ sc.reason or _('The Upgrade Advisory read the release notes for this move.') }}">
+                      {{ _('Upgrade Advisory') }}: {{ sc.verdict }}</span>
                     {% if sc.counts and (sc.counts.blocker or sc.counts.caution) %}
                     <span class="text-muted small ms-1">
                       {{ sc.counts.blocker or 0 }} {{ _('blocking') }} ·

@@ -147,8 +147,8 @@ PAGES: tuple[dict, ...] = (
        "days-since-last-push grade, the configuration history split local vs "
        "off-box, firmware, and the identity — serial and every earlier name — "
        "of each device, including the ones that were de-registered."),
-    _p("scout.index", "Scout — Fault Isolation", "monitoring",
-       "scout troubleshoot fault isolation which layer is broken localise "
+    _p("scout.index", "Fault Isolation", "monitoring",
+       "formerly scout troubleshoot fault isolation which layer is broken localise "
        "diagnose service down slow backend firewall drop reset routing "
        "timeout ttfb connect tls handshake pool members vip virtual server "
        "server policy why is this broken where is the problem ladder",
@@ -522,9 +522,9 @@ PAGES: tuple[dict, ...] = (
     _p("reports.inbox", "Report Inbox", "platform",
        "report inbox generated document output delivered archive",
        "Generated reports waiting to be read."),
-    _p("advisor.index", "Advisor", "platform",
-       "advisor ai assistant llm suggestion analysis chat help",
-       "The AI advisor over your own fleet data."),
+    _p("advisor.index", "Scout", "platform",
+       "scout advisor ai advisor ai assistant llm suggestion analysis chat help",
+       "Scout, the AI assistant over your own fleet data."),
     _p("monitoring.infra", "Infrastructure Health", "platform",
        "infrastructure gitea peer off-box external dependency health",
        "Cross-node and off-box dependencies."),
@@ -687,7 +687,7 @@ EXCLUDED: dict[str, str] = {
     "release_notes.advise": "json feed", "release_notes.data": "json feed",
     "release_notes.issues": "json feed", "release_notes.notes": "json feed",
     "release_notes.advisory":
-        "json feed — Scout's verdicts for ONE move, fetched by the Advisor tab "
+        "json feed — the Upgrade Advisory's verdicts for ONE move, fetched by the Advisor tab "
         "of the release-notes modal (behind #rnAdvShow). It is meaningless "
         "without ?current= and ?target=: opened bare it answers 400, so it is "
         "not a destination a person navigates to. release_notes.index is the "

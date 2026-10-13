@@ -133,7 +133,7 @@
     }
     return '<span class="text-muted" style="font-size:12px;">' +
       '<i class="bi ' + esc(opts.icon || 'bi-stars') + ' me-1"></i>' +
-      esc(opts.who || 'AI Advisor') + ' · ' + esc(bits.join(' · ')) + '</span>';
+      esc(opts.who || 'Scout') + ' · ' + esc(bits.join(' · ')) + '</span>';
   }
 
   // A wait with no clock is indistinguishable from a hang, and a local model
@@ -341,7 +341,7 @@
       // feature; a disabled subsystem is a setting someone can change.
       ai = '<span class="text-muted" style="font-size:13px;">' +
            '<i class="bi bi-info-circle me-1"></i>' +
-           'The AI Advisor is switched off (Settings → AI). You can still build ' +
+           'Scout, the AI assistant, is switched off (Settings → Scout). You can still build ' +
            'an exception by hand below.</span>';
     }
     return '' +
@@ -505,16 +505,16 @@
           'padding:.55rem;margin:.35rem 0 .25rem;">' + esc(it.answer || '') + '</pre>';
       // Cost is printed for a FAILED exchange too. A provider that burned 40
       // seconds and then errored spent those 40 seconds.
-      h += '<div>' + costChip(it.cost || {}, {icon: 'bi-stars', who: 'AI Advisor'}) +
+      h += '<div>' + costChip(it.cost || {}, {icon: 'bi-stars', who: 'Scout'}) +
         '</div></div>';
     });
     if (st.busy) {
       h += '<div class="mb-2"><span class="spinner-border spinner-border-sm me-2">' +
-        '</span><span class="atk-ask-clock">Asking the Advisor…</span></div>';
+        '</span><span class="atk-ask-clock">Asking Scout…</span></div>';
     }
     h += '<textarea class="form-control atk-ask-input" rows="2" ' +
       'placeholder="' + (replying
-        ? 'Reply to the Advisor about this field — Ctrl+Enter sends.'
+        ? 'Reply to Scout about this field — Ctrl+Enter sends.'
         : 'Ask anything about this field — Ctrl+Enter sends.') + '"' +
       (st.busy ? ' disabled' : '') + '></textarea>' +
       '<div class="d-flex gap-2 align-items-center mt-2">' +
@@ -524,7 +524,7 @@
           '</button>' +
         '<span class="text-muted" style="font-size:11.5px;">' +
           '<i class="bi bi-shield-lock me-1"></i>SATOM re-reads this entry from ' +
-          esc(PAGE.appliance_name) + ' and sends it to the Advisor. It answers — ' +
+          esc(PAGE.appliance_name) + ' and sends it to Scout. It answers — ' +
           'it cannot author an exception from here.</span>' +
       '</div></div>';
     return h;
@@ -569,7 +569,7 @@
     var t0 = Date.now();
     st.busy = true;
     renderCell(cell, key);
-    var clockId = startClock(cell, '.atk-ask-clock', 'Asking the Advisor…', t0);
+    var clockId = startClock(cell, '.atk-ask-clock', 'Asking Scout…', t0);
 
     function settle(item) {
       stopClock(clockId);
@@ -586,7 +586,7 @@
     }).then(function (d) {
       if (!d.ok) {
         settle({q: q || '(general explanation)', cost: {duration_ms: Date.now() - t0},
-                error: d.error || 'The Advisor could not answer.'});
+                error: d.error || 'Scout could not answer.'});
         return;
       }
       // Follow-ups continue the same thread, so the operator does not have to
@@ -707,7 +707,7 @@
     // Through the shared chip, not a second hand-rolled copy: this line and
     // the per-field thread must never end up disagreeing about what a missing
     // token count means.
-    h += costChip(d, {icon: 'bi-stars', who: 'AI Advisor'});
+    h += costChip(d, {icon: 'bi-stars', who: 'Scout'});
     return h;
   }
 
@@ -719,10 +719,10 @@
       // free to author one themselves.
       var why = d.proposal_error
         ? alertBox('warning', '<i class="bi bi-exclamation-triangle me-1"></i>' +
-            'The Advisor drafted an exception, but SATOM would not accept it: ' +
+            'Scout drafted an exception, but SATOM would not accept it: ' +
             esc(d.proposal_error) + '.')
         : alertBox('secondary', '<i class="bi bi-slash-circle me-1"></i>' +
-            'The Advisor drafted no exception. It only drafts one when it judges ' +
+            'Scout drafted no exception. It only drafts one when it judges ' +
             'the block a false positive at low or medium risk — read its ' +
             'reasoning above.');
       return why + '<div class="text-muted mt-2" style="font-size:12.5px;">' +
@@ -734,7 +734,7 @@
     var h = '';
     if (contra) {
       h += alertBox('danger', '<i class="bi bi-exclamation-octagon me-1"></i>' +
-        '<strong>The Advisor drafted an exception that contradicts its own ' +
+        '<strong>Scout drafted an exception that contradicts its own ' +
         'judgement</strong> (' + esc(d.verdict || 'no verdict') + ' / risk ' +
         esc(d.risk || 'unstated') + '). Treat it as unsafe until you have ' +
         'justified it yourself.');
@@ -1021,7 +1021,7 @@
                   judged.risk === 'unacceptable');
     if (contra) {
       h += alertBox('warning',
-        '<i class="bi bi-pencil me-1"></i>The Advisor judged this <strong>' +
+        '<i class="bi bi-pencil me-1"></i>Scout judged this <strong>' +
         esc(judged.verdict || 'unresolved') + '</strong> at <strong>' +
         esc(judged.risk || 'unstated') + '</strong> risk. Authoring an exception ' +
         'anyway may well be right — write down why. It is stored with the rule ' +
@@ -1413,8 +1413,8 @@
         ai.disabled = true;
         var t0 = Date.now();
         aiOut.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>' +
-          '<span class="atk-clock">Asking the Advisor…</span>';
-        var clockId = startClock(aiOut, '.atk-clock', 'Asking the Advisor…', t0);
+          '<span class="atk-clock">Asking Scout…</span>';
+        var clockId = startClock(aiOut, '.atk-clock', 'Asking Scout…', t0);
         post(PAGE.analyze_url, {appliance_id: PAGE.appliance_id, msg_id: row.msg_id})
           .then(function (d) {
             stopClock(clockId);

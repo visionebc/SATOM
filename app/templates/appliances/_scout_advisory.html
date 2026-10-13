@@ -18,7 +18,7 @@
               'unavailable': 'dash-circle'} %}
 <div class="card shadow-sm mb-3" id="scout-panel">
   <div class="card-header fw-card-header d-flex align-items-center justify-content-between">
-    <span><i class="bi bi-binoculars me-1"></i>{{ _('Scout — release-notes review') }}</span>
+    <span><i class="bi bi-binoculars me-1"></i>{{ _('Upgrade Advisory — release-notes review') }}</span>
     <span class="fw-badge fw-badge-{{ _vb.get(scout.verdict, 'secondary') }} fw-badge-nowrap">
       <i class="bi bi-{{ _vi.get(scout.verdict, 'dash-circle') }} me-1"></i>{{ scout.verdict }}
     </span>
@@ -40,12 +40,12 @@
       {% if adv.verdict == 'clear' %}
         <div class="fw-alert fw-alert-success small mb-2">
           <i class="bi bi-check2-circle me-1"></i>
-          {{ _('Nothing in the harvested upgrade prose stops this move. Every page Scout needed was read.') }}
+          {{ _('Nothing in the harvested upgrade prose stops this move. Every page the Upgrade Advisory needed was read.') }}
         </div>
       {% elif adv.verdict == 'unknown' %}
         <div class="fw-alert fw-alert-warning small mb-2">
           <i class="bi bi-question-circle me-1"></i>
-          {{ _('Scout cannot clear this move: part of the vendor prose it needed is not in the corpus. An unread page reads exactly like a page that said nothing — see the coverage below.') }}
+          {{ _('The Upgrade Advisory cannot clear this move: part of the vendor prose it needed is not in the corpus. An unread page reads exactly like a page that said nothing — see the coverage below.') }}
         </div>
       {% endif %}
 
@@ -102,7 +102,7 @@
       </p>
       {% if adv.gaps %}
       <details class="small mb-1">
-        <summary class="text-muted">{{ _('What Scout could not read') }}</summary>
+        <summary class="text-muted">{{ _('What the Upgrade Advisory could not read') }}</summary>
         <ul class="mb-0 mt-1">
           {% for g in adv.gaps %}<li>{{ g.version }} — {{ g.section }} <span class="text-muted">({{ g.reason }})</span></li>{% endfor %}
         </ul>
@@ -116,7 +116,7 @@
 
     <p class="small text-muted mt-2 mb-0">
       <i class="bi bi-info-circle me-1"></i>
-      {{ _('Scout advises; it does not authorise. Whether a live flash may run is decided by change control above.') }}
+      {{ _('The Upgrade Advisory advises; it does not authorise. Whether a live flash may run is decided by change control above.') }}
     </p>
   </div>
 </div>

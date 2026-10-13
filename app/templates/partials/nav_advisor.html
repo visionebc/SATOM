@@ -1,7 +1,7 @@
 {# ============================================================================
-   AI Advisor — ONE definition, five call sites (Global + the four product
-   ADOMs), same pattern as nav_monitoring.html/nav_collection.html: an entry
-   added here appears everywhere in the same commit, never in Global only.
+   Scout (the AI assistant; labelled "AI Advisor" until 2026-10-13, blueprint
+   still ``advisor``) — ONE definition, drawn by Fleet › Troubleshooting
+   (partials/nav_troubleshooting.html) in every ADOM.
 
    Gated on the ``advisor.use`` permission (not just login) — a readonly user with
    no AI access should not see a dead link. Scoping of what the page can SEE
@@ -12,6 +12,6 @@
 {% if current_user.is_authenticated and current_user.can('advisor.use') %}
 {% if may_open('advisor.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'advisor' else '' }}" href="{{ url_for('advisor.index', _adom=product.key) }}">
-  <i class="bi bi-stars fw-nav-icon"></i><span>{{ _('AI Advisor') }}</span></a>
+  <i class="bi bi-stars fw-nav-icon"></i><span>{{ _('Scout') }}</span></a>
 {% endif %}
 {% endif %}

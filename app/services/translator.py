@@ -94,18 +94,18 @@ def _resolve(provider_key: str = "") -> tuple[dict, bool]:
         or advisor.get_provider(advisor.default_provider_key())
     if not provider:
         raise TranslationError(
-            "no AI provider configured — add one in Settings → AI Advisor")
+            "no AI provider configured — add one in Settings → Scout")
     if provider.get("enabled") is False:
         raise TranslationError(
             "the AI provider is disabled — review and save it in Settings → "
-            "AI Advisor to enable it")
+            "Scout to enable it")
     # The base URL decides, not the kind: an Ollama on a public host leaves
     # the LAN like any hosted API (same rule as the advisor).
     external = advisor.leaves_lan(provider)
     if external and not advisor.external_allowed():
         raise TranslationError(
             'external providers are disabled — turn on "Allow external '
-            'providers" in Settings → AI Advisor first')
+            'providers" in Settings → Scout first')
     return provider, external
 
 

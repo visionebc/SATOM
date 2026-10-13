@@ -453,7 +453,7 @@
     if (d) {
       h += '<h6>Device</h6><div class="small mb-1">' + esc(d.name) + ' · ' + esc(d.host) + '</div><div class="d-flex flex-wrap gap-1 mb-1">';
       if (d.links.detail) h += '<a class="btn btn-sm btn-outline-secondary" href="' + esc(d.links.detail) + '">Device</a>';
-      if (d.links.scout) h += '<a class="btn btn-sm btn-outline-secondary" href="' + esc(d.links.scout) + '"><i class="bi bi-search"></i> Scout</a>';
+      if (d.links.scout) h += '<a class="btn btn-sm btn-outline-secondary" href="' + esc(d.links.scout) + '"><i class="bi bi-search"></i> Fault Isolation</a>';
       if (d.links.sentinel) h += '<a class="btn btn-sm btn-outline-secondary" href="' + esc(d.links.sentinel) + '"><i class="bi bi-shield-check"></i> Sentinel</a>';
       h += '</div>';
       if (d.fortigate) h += fgtSection(n, d.fortigate);
@@ -523,7 +523,7 @@
         (hp.gateway && hp.gateway !== '0.0.0.0' ? ' via ' + esc(hp.gateway) : '') + '<div>' + (hp.match ? 'policy <b>#' + esc(hp.policy_id) + '</b>' + (pol ? ' ' + esc(pol.name) : '') : 'no policy matches') + ' · <b>' + esc(hp.action) + '</b></div>' +
         (hp.route ? '<div class="text-muted">route ' + esc(hp.route) + '</div>' : '') + '</div>';
     });
-    if (r.scout) h += '<a class="btn btn-sm btn-outline-primary mt-2" href="' + esc(r.scout) + '"><i class="bi bi-search"></i> Validate with Scout</a>';
+    if (r.scout) h += '<a class="btn btn-sm btn-outline-primary mt-2" href="' + esc(r.scout) + '"><i class="bi bi-search"></i> Validate with Fault Isolation</a>';
     h += '<div class="small text-muted mt-2">Each FortiGate answers with its own routing and policy lookup; SATOM does not evaluate rules itself.</div>';
     return h;
   }

@@ -186,11 +186,11 @@
 
   function scoutOffHtml(msg, canFix) {
     return `<div class="fw-card p-3">`
-      + `<div class="fw-badge fw-badge-secondary mb-2">Scout advisory off</div>`
+      + `<div class="fw-badge fw-badge-secondary mb-2">Upgrade Advisory off</div>`
       + `<p class="small mb-${canFix ? '2' : '0'}">${esc(msg)}</p>`
       + (canFix
         ? `<button type="button" class="btn btn-sm btn-primary" id="rnScoutEnable">`
-          + `Turn Scout on</button>` : '')
+          + `Turn Fault Isolation on</button>` : '')
       + `</div>`;
   }
 
@@ -229,7 +229,7 @@
     const rest = a.findings.filter((f) => f.severity !== 'blocker');
     let h = `<div class="fw-card p-3">`
       + `<div class="d-flex align-items-center gap-2 mb-2">`
-      + `<i class="bi bi-binoculars"></i><b>Scout advisory</b>`
+      + `<i class="bi bi-binoculars"></i><b>Upgrade Advisory</b>`
       + `<span class="fw-badge ${cls}">${esc(label)}</span></div>`;
     if (a.knowledge) h += `<div class="small mb-2">${knowledgeHtml(a.knowledge)}</div>`;
     if (a.path && a.path.length) {
@@ -268,18 +268,18 @@
   async function loadScoutAdvisory(cur, tgt) {
     const view = $('rnScoutView');
     if (!view) return;
-    view.innerHTML = '<span class="small text-muted">Scout is reading the upgrade notes…</span>';
+    view.innerHTML = '<span class="small text-muted">The Upgrade Advisory is reading the upgrade notes…</span>';
     try {
       const a = await get(`${BASE}/advisory?${new URLSearchParams({ current: cur, target: tgt })}`);
       view.innerHTML = renderScout(a);
     } catch (e) {
       let body = {}; try { body = JSON.parse(e.message); } catch (_) {}
       if (body.disabled) {
-        view.innerHTML = scoutOffHtml(body.error || 'Scout is switched off.', IS_ADMIN);
+        view.innerHTML = scoutOffHtml(body.error || 'Turn on Fault Isolation in Settings → Fault Isolation to see the Upgrade Advisory.', IS_ADMIN);
         const b = $('rnScoutEnable');
         if (b) b.addEventListener('click', () => setScout(true));
       } else {
-        view.innerHTML = `<p class="small text-warning">Scout advisory: `
+        view.innerHTML = `<p class="small text-warning">Upgrade Advisory: `
           + `${esc(body.error || e.message)}</p>`;
       }
     }
@@ -292,10 +292,10 @@
       if (sw) sw.checked = !!r.enabled;
       const cur = $('rnAdvCurrent').value, tgt = $('rnAdvTarget').value;
       if (cur && tgt && cur !== tgt) loadScoutAdvisory(cur, tgt);
-      else $('rnScoutView').innerHTML = r.enabled ? '' : scoutOffHtml('Scout is switched off.', IS_ADMIN);
-      window.FW?.toast?.(r.enabled ? 'Scout advisory on.' : 'Scout advisory off.', 'info');
+      else $('rnScoutView').innerHTML = r.enabled ? '' : scoutOffHtml('Turn on Fault Isolation in Settings → Fault Isolation to see the Upgrade Advisory.', IS_ADMIN);
+      window.FW?.toast?.(r.enabled ? 'Fault Isolation on: the Upgrade Advisory is available.' : 'Fault Isolation off: the Upgrade Advisory is unavailable.', 'info');
     } catch (e) {
-      window.FW?.toast?.('Could not change the Scout switch: ' + e.message, 'warning');
+      window.FW?.toast?.('Could not change the Fault Isolation switch: ' + e.message, 'warning');
     }
   }
 

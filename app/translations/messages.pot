@@ -10621,3 +10621,63 @@ msgstr ""
 
 msgid "Service Diagram"
 msgstr ""
+
+msgid "Fault Isolation"
+msgstr ""
+
+msgid "Fault Isolation — architecture"
+msgstr ""
+
+msgid "Fault Isolation is switched off"
+msgstr ""
+
+msgid "Fault Isolation is switched off for this site (Settings → Fault Isolation → Availability)."
+msgstr ""
+
+msgid "Open Fault Isolation settings"
+msgstr ""
+
+msgid "Open Fault Isolation"
+msgstr ""
+
+msgid "Save Fault Isolation settings"
+msgstr ""
+
+msgid "Enable Scout"
+msgstr ""
+
+msgid "Where Fault Isolation ends and Sentinel begins"
+msgstr ""
+
+msgid "SATOM no longer reads vendor web sites. Release notes, the Upgrade Advisory, upgrade paths and signature metadata come from signed packs in two lanes: the API pack that ships with each release, and the rolling knowledge pack published whenever the knowledge changes. Every pack is signature-checked on import, and what this node measured itself always wins."
+msgstr ""
+
+msgid "Nothing in the harvested upgrade prose stops this move. Every page the Upgrade Advisory needed was read."
+msgstr ""
+
+msgid "The Upgrade Advisory cannot clear this move: part of the vendor prose it needed is not in the corpus. An unread page reads exactly like a page that said nothing — see the coverage below."
+msgstr ""
+
+msgid "The Upgrade Advisory advises; it does not authorise. Whether a live flash may run is decided by change control above."
+msgstr ""
+
+msgid "Upgrade Advisory — release-notes review"
+msgstr ""
+
+msgid "What the Upgrade Advisory could not read"
+msgstr ""
+
+msgid "Ask the Upgrade Advisory to review the release notes for this version"
+msgstr ""
+
+msgid "Turn on Fault Isolation in Settings → Fault Isolation to see the Upgrade Advisory."
+msgstr ""
+
+msgid "The Upgrade Advisory read the release notes for this move."
+msgstr ""
+
+msgid "Upgrade Advisory"
+msgstr ""
+
+msgid "Fault Isolation (includes the Upgrade Advisory)"
+msgstr ""

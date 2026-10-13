@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}AI Advisor{% endblock %}
+{% block title %}{{ _('Scout') }}{% endblock %}
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-stars me-2 text-accent"></i>{{ _('AI Advisor') }}</h1>
+    <h1 class="fw-page-title"><i class="bi bi-stars me-2 text-accent"></i>{{ _('Scout') }}</h1>
     <p class="fw-page-sub">{{ _('A read-only chat assistant for WAF false-positive triage, Lua drafting, and searching device configuration reports. It never changes SATOM or an appliance directly — a proposed change becomes a draft you review and apply yourself.') }} <a href="{{ docs_url('ai-advisor') }}" target="_blank" rel="noopener">{{ _('How this works') }}</a>.</p>
   </div>
   <div class="d-flex gap-2">
@@ -16,7 +16,7 @@
 {% if not enabled %}
 <div class="fw-card"><div class="fw-card-body">
   <span class="fw-badge fw-badge-warning">{{ _('Disabled') }}</span>
-  AI Advisor is turned off. {% if current_user.can('advisor.configure') %}<a href="{{ url_for('settings.index') }}#tab-ai">{{ _('Enable it in Settings') }}</a>{% else %}Ask an administrator to enable it in Settings &rarr; AI Advisor.{% endif %}
+  Scout is turned off. {% if current_user.can('advisor.configure') %}<a href="{{ url_for('settings.index') }}#tab-ai">{{ _('Enable it in Settings') }}</a>{% else %}Ask an administrator to enable it in Settings &rarr; Scout.{% endif %}
 </div></div>
 {% elif not providers %}
 <div class="fw-card"><div class="fw-card-body">
@@ -137,7 +137,7 @@
   }
 
   function msgMeta(m){
-    var bits = [m.role === 'user' ? 'You' : 'Advisor'];
+    var bits = [m.role === 'user' ? 'You' : 'Scout'];
     if (m.stopped) bits.push('stopped by you');
     if (m.redacted) bits.push('redacted before sending');
     if (m.role === 'assistant'){
@@ -230,7 +230,7 @@
 
   function tickPending(){
     if (!pending) return;
-    pending.meta.textContent = 'Advisor · ' + fmtMs(Date.now() - pending.started) +
+    pending.meta.textContent = 'Scout · ' + fmtMs(Date.now() - pending.started) +
                                ' · press Stop to cancel';
   }
 
@@ -282,7 +282,7 @@
     pending.timer = null;
     pending.bubble.className = 'bubble is-error';
     pending.bubble.textContent = message;
-    pending.meta.textContent = 'Advisor · failed after ' + fmtMs(Date.now() - pending.started);
+    pending.meta.textContent = 'Scout · failed after ' + fmtMs(Date.now() - pending.started);
     pending = null;                      // leave it on screen as the record
     elThread.scrollTop = elThread.scrollHeight;
   }

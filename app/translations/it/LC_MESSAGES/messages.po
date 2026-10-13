@@ -23415,3 +23415,63 @@ msgstr "Errore di recapitabilità"
 
 msgid "mail leaves this node unsigned, straight to the recipient mail server. It is delivered, but it may land in spam."
 msgstr "la posta lascia questo nodo senza firma, direttamente verso il server di posta del destinatario. Viene consegnata, ma può finire nello spam."
+
+msgid "Fault Isolation"
+msgstr "Isolamento dei guasti"
+
+msgid "Fault Isolation — architecture"
+msgstr "Isolamento dei guasti — architettura"
+
+msgid "Fault Isolation is switched off"
+msgstr "L'isolamento dei guasti è disattivato"
+
+msgid "Fault Isolation is switched off for this site (Settings → Fault Isolation → Availability)."
+msgstr "L'isolamento dei guasti è disattivato per questo sito (Impostazioni → Isolamento dei guasti → Disponibilità)."
+
+msgid "Open Fault Isolation settings"
+msgstr "Apri le impostazioni dell'isolamento dei guasti"
+
+msgid "Open Fault Isolation"
+msgstr "Apri l'isolamento dei guasti"
+
+msgid "Save Fault Isolation settings"
+msgstr "Salva le impostazioni dell'isolamento dei guasti"
+
+msgid "Enable Scout"
+msgstr "Abilita Scout"
+
+msgid "Where Fault Isolation ends and Sentinel begins"
+msgstr "Dove finisce l'isolamento dei guasti e inizia Sentinel"
+
+msgid "SATOM no longer reads vendor web sites. Release notes, the Upgrade Advisory, upgrade paths and signature metadata come from signed packs in two lanes: the API pack that ships with each release, and the rolling knowledge pack published whenever the knowledge changes. Every pack is signature-checked on import, and what this node measured itself always wins."
+msgstr "SATOM non legge più i siti web dei vendor. Le note di rilascio, il Consulente aggiornamenti, i percorsi di aggiornamento e i metadati delle firme provengono da pacchetti firmati in due corsie: il pacchetto API fornito con ogni release e il pacchetto di conoscenza continuo pubblicato a ogni cambiamento della conoscenza. Ogni pacchetto viene verificato nella firma all'importazione e ciò che questo nodo ha misurato da sé prevale sempre."
+
+msgid "Nothing in the harvested upgrade prose stops this move. Every page the Upgrade Advisory needed was read."
+msgstr "Nulla nella prosa di aggiornamento raccolta impedisce questo passaggio. Ogni pagina necessaria al Consulente aggiornamenti è stata letta."
+
+msgid "The Upgrade Advisory cannot clear this move: part of the vendor prose it needed is not in the corpus. An unread page reads exactly like a page that said nothing — see the coverage below."
+msgstr "Il Consulente aggiornamenti non può autorizzare questo passaggio: parte della prosa del vendor di cui aveva bisogno non è nel corpus. Una pagina non letta equivale a una pagina che non diceva nulla: vedi la copertura qui sotto."
+
+msgid "The Upgrade Advisory advises; it does not authorise. Whether a live flash may run is decided by change control above."
+msgstr "Il Consulente aggiornamenti consiglia, non autorizza. Se un flash dal vivo possa essere eseguito lo decide il controllo delle modifiche qui sopra."
+
+msgid "Upgrade Advisory — release-notes review"
+msgstr "Consulente aggiornamenti — revisione delle note di rilascio"
+
+msgid "What the Upgrade Advisory could not read"
+msgstr "Cosa il Consulente aggiornamenti non ha potuto leggere"
+
+msgid "Ask the Upgrade Advisory to review the release notes for this version"
+msgstr "Chiedi al Consulente aggiornamenti di rivedere le note di rilascio per questa versione"
+
+msgid "Turn on Fault Isolation in Settings → Fault Isolation to see the Upgrade Advisory."
+msgstr "Attiva l'isolamento dei guasti in Impostazioni → Isolamento dei guasti per vedere il Consulente aggiornamenti."
+
+msgid "The Upgrade Advisory read the release notes for this move."
+msgstr "Il Consulente aggiornamenti ha letto le note di rilascio per questo passaggio."
+
+msgid "Upgrade Advisory"
+msgstr "Consulente aggiornamenti"
+
+msgid "Fault Isolation (includes the Upgrade Advisory)"
+msgstr "Isolamento dei guasti (include il Consulente aggiornamenti)"

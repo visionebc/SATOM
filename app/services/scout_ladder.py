@@ -245,7 +245,7 @@ def assert_safe_method(method: str) -> str:
     m = str(method or "GET").strip().upper()
     if m not in SAFE_METHODS:
         raise ScoutRefused(
-            "Scout will not issue %s. A diagnosis that mutates the application "
+            "Fault Isolation will not issue %s. A diagnosis that mutates the application "
             "it is diagnosing creates the ticket it was opened to close — use "
             "the Transaction Tracer, which takes an explicit per-call opt-in "
             "and audits it." % m)
@@ -406,7 +406,7 @@ def summarise(results) -> dict:
                 % (len(blind), len(rows)))
     else:
         text = ("No layer failed across %d probed rungs. The fault is not on "
-                "this path as Scout can observe it." % len(probed))
+                "this path as Fault Isolation can observe it." % len(probed))
     return {"localised": False, "layer": "", "title": "", "vantage": "",
             "headline": "", "text": text,
             "blind_spots": [r.key for r in blind],
@@ -450,7 +450,7 @@ def _unavailable(capability: str) -> dict:
     return _r(UNKNOWN, "this rung could not be walked",
               [("missing", capability)],
               "The capability %r is not wired in this deployment. That is a "
-              "statement about Scout, not about the service." % capability)
+              "statement about Fault Isolation, not about the service." % capability)
 
 
 # --- 0. the appliance itself ------------------------------------------------ #
@@ -663,7 +663,7 @@ def layer_dns(ctx: Ctx) -> dict:
     if endpoint is None:
         return _r(UNKNOWN, "no published front-end could be resolved for this "
                            "%s" % ctx.target.noun, [],
-                  "Scout could not derive the VIP and none was typed. Set the "
+                  "Fault Isolation could not derive the VIP and none was typed. Set the "
                   "host and port on the form to walk the rungs below.")
     host = endpoint["host"]
     if is_ip_literal(host):
@@ -1099,15 +1099,15 @@ def run(target: Target, opts: Options | None = None, ports: dict | None = None,
     refusal that degrades into a rung silently changes what was measured.
     """
     if target.appliance is None:
-        raise ScoutRefused("Scout needs an appliance to diagnose.")
+        raise ScoutRefused("Fault Isolation needs an appliance to diagnose.")
     if target.kind not in SUPPORTED_KINDS:
         raise ScoutRefused(
-            "Scout walks a %s. %r is not one of them — the ladder's rungs read "
+            "Fault Isolation walks a %s. %r is not one of them — the ladder's rungs read "
             "objects this product does not have, and a partial walk that said "
             "'pass' would be worse than no walk."
             % (" or a ".join(OBJECT_NOUN.values()), target.kind or "unknown"))
     if not str(target.policy or "").strip():
-        raise ScoutRefused("Scout needs the name of the %s to diagnose."
+        raise ScoutRefused("Fault Isolation needs the name of the %s to diagnose."
                            % target.noun)
     target.method = assert_safe_method(target.method)
 
@@ -1132,7 +1132,7 @@ def run(target: Target, opts: Options | None = None, ports: dict | None = None,
             # Our bug is not their outage.
             out = _r(UNKNOWN, "this rung raised while being walked",
                      [("error", "%s: %s" % (type(exc).__name__, exc))],
-                     "Reported as 'could not look'. Rendering a Scout defect "
+                     "Reported as 'could not look'. Rendering a Fault Isolation defect "
                      "as a customer fault sends someone to reboot a healthy "
                      "appliance.")
         base.verdict = str(out.get("verdict") or UNKNOWN)

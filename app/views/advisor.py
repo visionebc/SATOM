@@ -95,8 +95,8 @@ def preview(cid):
 @require_permission('advisor.use')
 def send(cid):
     if not svc.enabled():
-        return jsonify(ok=False, error="AI Advisor is disabled — enable it in "
-                        "Settings → AI Advisor"), 409
+        return jsonify(ok=False, error="Scout is disabled — enable it in "
+                        "Settings → Scout"), 409
     conv = _conv_or_404(cid)
     body = request.get_json(silent=True) or {}
     text = (body.get("text") or "").strip()
@@ -137,8 +137,8 @@ def send_stream(cid):
     handle. Failing here makes it an ordinary HTTP error.
     """
     if not svc.enabled():
-        return jsonify(ok=False, error="AI Advisor is disabled — enable it in "
-                        "Settings → AI Advisor"), 409
+        return jsonify(ok=False, error="Scout is disabled — enable it in "
+                        "Settings → Scout"), 409
     conv = _conv_or_404(cid)
     body = request.get_json(silent=True) or {}
     text = (body.get("text") or "").strip()

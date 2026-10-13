@@ -39,7 +39,7 @@ AREAS: list[dict] = [
      "desc": "Manage application users"},
     {"key": "profiles", "label": "Profiles", "icon": "bi-person-badge",
      "desc": "Define permission profiles (administrative)"},
-    {"key": "advisor", "label": "AI Advisor", "icon": "bi-stars",
+    {"key": "advisor", "label": "Scout (AI assistant)", "icon": "bi-stars",
      "desc": "Chat assistant for WAF/Lua help and report search; provider/API-key configuration"},
 ]
 
@@ -113,9 +113,9 @@ GRANULAR_PERMISSIONS: list[dict] = [
     _p("profiles.manage", "Manage profiles",
        "Create, edit, clone and delete permission profiles", admin_only=True),
 
-    _p("advisor.use", "Use AI Advisor",
-       "Chat with the AI Advisor: WAF false-positive triage, Lua drafting, report search"),
-    _p("advisor.configure", "Configure AI Advisor",
+    _p("advisor.use", "Use Scout",
+       "Chat with Scout, the AI assistant: WAF false-positive triage, Lua drafting, report search"),
+    _p("advisor.configure", "Configure Scout",
        "Manage AI providers, models and API keys; enable/disable external providers and tools",
        admin_only=True),
 ]

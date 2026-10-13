@@ -3428,9 +3428,9 @@ def save_scout():
     audit.log_action('scout.settings', target='settings',
                      detail=', '.join(changed) or 'no change')
     if changed:
-        flash('Scout settings saved: %d changed.' % len(changed), 'success')
+        flash('Fault Isolation settings saved: %d changed.' % len(changed), 'success')
     else:
-        flash('Scout settings unchanged.', 'info')
+        flash('Fault Isolation settings unchanged.', 'info')
     if clamped:
         flash('Clamped to their allowed range: ' + ', '.join(clamped),
               'warning')

@@ -439,8 +439,8 @@ def analyze():
         return jsonify(ok=False, error='a numeric MSG ID is required'), 400
 
     if not advisor.enabled():
-        return jsonify(ok=False, error='The AI Advisor is switched off '
-                                       '(Settings → AI).'), 409
+        return jsonify(ok=False, error='Scout, the AI assistant, is switched off '
+                                       '(Settings → Scout).'), 409
 
     try:
         rows = attack_log.search_by_msg_id(appliance, msg_id)
@@ -776,8 +776,8 @@ def ask_field():
     body = request.get_json(silent=True) or {}
     appliance = visible_appliance_or_404(int(body.get('appliance_id') or 0))
     if not advisor.enabled():
-        return jsonify(ok=False, error='The AI Advisor is switched off '
-                                       '(Settings → AI).'), 409
+        return jsonify(ok=False, error='Scout, the AI assistant, is switched off '
+                                       '(Settings → Scout).'), 409
     msg_id = str(body.get('msg_id') or '').strip()
     row, err = _read_entry(appliance, msg_id)
     if err is not None:
@@ -931,7 +931,7 @@ def save_carveout():
     contradicts = verdict == 'true-attack' or risk in ('high', 'unacceptable')
     if contradicts and len(justification) < 20:
         return jsonify(ok=False, needs_justification=True, error=(
-            'The Advisor judged this %s at %s risk. Authoring an exception '
+            'Scout judged this %s at %s risk. Authoring an exception '
             'anyway may well be right — but write down why, in a sentence. It '
             'goes into the audit trail with the rule.'
             % (verdict or 'unresolved', risk or 'unstated'))), 400

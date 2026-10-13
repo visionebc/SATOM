@@ -10,7 +10,8 @@ So the CLI channel and the API channel of FAZ are one channel spelled two
 ways, and the schema comes from the API itself.
 
 Measured on a FortiAnalyzer-VM64-KVM 7.6.7 build3737 (the harvester,
-``satom_harvester/faz.py``, 2026-10-12) -- NOT the documented FortiManager
+``satom_harvester/faz.py``, 2026-10-12; SATOM's own walk against faz02 on
+2026-10-13, see :data:`VERIFIED_ON`) -- NOT the documented FortiManager
 format the first version of this adapter assumed:
 
 * ``syntax`` answers one OBJECT, never a branch: ``/cli/global/system`` is
@@ -33,6 +34,8 @@ The documented multi-node shape (``{"system admin user": {...}, ...}``) is
 still read, for answers saved before this was measured.
 
 Read-only: every request is ``get`` (with or without the syntax option).
+The live harvest itself (session, build from the box, health) is
+``services.apilib_faz``; :func:`harvest` here only reports it.
 """
 from __future__ import annotations
 
@@ -381,61 +384,32 @@ def known_urls() -> list:
 
 def harvest(appliance, *, client=None, catalog=None, now=None,
             max_requests: int = MAX_REQUESTS, **_ignored) -> dict:
-    """Live syntax walk of a FortiAnalyzer (JSON-RPC ``get`` only). NEVER raises.
+    """Live syntax walk of a FortiAnalyzer into the library (JSON-RPC ``get``
+    only). NEVER raises.
 
-    ``catalog``: the URLs to start from (default :func:`known_urls`). An empty
-    catalog sends nothing. The result names what is still unverified."""
-    from datetime import datetime
+    The SAME harvest the incremental API-library harvest runs
+    (``services.apilib_faz``), so the Schema builds one-click, the
+    ``schema_harvest`` action and ``apilib_harvest`` cannot disagree: the
+    build is read off the box (``get /sys/status``), never the inventory row,
+    and the document is stored EITHER WAY -- a walk that read nothing, was
+    refused or broke is kept unhealthy with its reason (the record of a
+    failed read is evidence too) and the answer is not ``ok``.
 
+    ``catalog``: the URLs to start from (default :func:`known_urls`); an
+    empty one asks nothing past ``/sys/status``. ``reason`` on failure is
+    ``summary.failure`` of the document (``firmware_unknown``,
+    ``no_catalog``, ``walk_failed``, ``no_objects``, ``refused``,
+    ``no_client``) or ``error`` when the library refused the document."""
     from .. import api_library as lib
-    from .. import firmware_versions as fv
+    from .. import apilib_faz
     name = getattr(appliance, "name", "") or "?"
     out = {"ok": False, "appliance": name, "product": PRODUCT, "version": "",
            "unverified": sorted(UNVERIFIED), "schema": None}
-    own = client is None
     try:
-        raw_fw = getattr(appliance, "fw_version", "") or getattr(appliance, "firmware", "") or ""
-        version = fv.normalize(raw_fw)
-        if not version or fv.is_line_only(version):
-            return dict(out, reason="firmware_unknown",
-                        msg="the running build of %s is unknown" % name)
-        out["version"] = version
-        catalog = catalog_urls(known_urls() if catalog is None else catalog)
-        if not catalog:
-            return dict(out, reason="no_catalog",
-                        msg="SATOM knows no FortiAnalyzer /cli/global object to ask about "
-                            "(import the fortianalyzer API library or registry first)")
-        client = client or appliance.build_client()
-
-        def get(url, syntax):
-            return client.rpc("get", url, **({"option": ["syntax"]} if syntax else {}))
-        try:
-            responses, not_probed = measure(get, catalog, max_requests=max_requests)
-        finally:
-            if own:
-                try:
-                    client.logout()
-                except Exception:  # noqa: BLE001
-                    pass
-        now = now or datetime.utcnow()
-        device = {"appliance_id": getattr(appliance, "id", None), "name": name,
-                  "model": str(getattr(appliance, "model", "") or ""),
-                  "hw_type": str(getattr(appliance, "hw_type", "") or ""),
-                  "firmware_raw": str(getattr(appliance, "firmware", "") or "")}
-        doc = evidence_from_syntax(responses, version, lib._build_token(
-            getattr(appliance, "firmware", "") or raw_fw), device,
-            "schema_adapter:%s@%s" % (getattr(appliance, "id", ""), version),
-            captured_at=now.isoformat(timespec="seconds"), not_probed=not_probed)
-        if not doc["healthy"]:
-            return dict(out, reason="unhealthy",
-                        msg="FAZ %s answered no syntax for %d catalog objects" % (
-                            version, len(catalog)))
-        res = lib.ingest(doc, raw={"doc": doc, "catalog": catalog})
-        verdicts = [e["verdict"] for e in doc["endpoints"].values()]
-        out["schema"] = {"evidence_id": res["evidence_id"], "healthy": doc["healthy"],
-                         "endpoints": len(doc["endpoints"]), "measured": verdicts.count("ok"),
-                         "absent": verdicts.count("absent"), "error": verdicts.count("error"),
-                         "not_probed": len(not_probed)}
+        raw: dict = {}
+        doc = apilib_faz.harvest(appliance, client=client, catalog=catalog, raw=raw,
+                                 max_requests=max_requests, now=now)
+        res = lib.ingest(doc, raw=raw or None)
     except Exception as exc:  # noqa: BLE001
         try:
             from ...extensions import db
@@ -443,11 +417,25 @@ def harvest(appliance, *, client=None, catalog=None, now=None,
         except Exception:  # noqa: BLE001
             pass
         return dict(out, reason="error", msg=("%s: %s" % (type(exc).__name__, exc))[:300])
-    s = out["schema"]
+    summary = doc.get("summary") or {}
+    verdicts = [e.get("verdict") for e in (doc.get("endpoints") or {}).values()]
+    version = (doc.get("scope") or {}).get("version") or ""
+    s = {"evidence_id": res.get("evidence_id"), "created": bool(res.get("created")),
+         "healthy": bool(doc.get("healthy")), "endpoints": len(verdicts),
+         "measured": verdicts.count("ok"), "absent": verdicts.count("absent"),
+         "error": verdicts.count("error"), "not_probed": len(summary.get("not_probed") or {}),
+         "requests": summary.get("requests")}
+    out.update(version=version, schema=s)
+    if not s["healthy"]:
+        return dict(out, reason=summary.get("failure") or "unhealthy",
+                    msg="FAZ %s syntax walk stored as unhealthy (evidence #%s): %s" % (
+                        version or "?", s["evidence_id"], doc.get("skip_reason") or "unknown"))
     return dict(out, ok=True, reason="",
                 msg="FAZ %s syntax walk: %d objects measured, %d absent, %d error, %d not "
-                    "asked (catalog %d)" % (out["version"], s["measured"], s["absent"],
-                                            s["error"], s["not_probed"], len(catalog)))
+                    "asked (catalog %d, evidence #%s %s)" % (
+                        version, s["measured"], s["absent"], s["error"], s["not_probed"],
+                        len(raw.get("catalog") or ()), s["evidence_id"],
+                        "created" if s["created"] else "confirmed"))
 
 
 ADAPTER = register(Adapter(

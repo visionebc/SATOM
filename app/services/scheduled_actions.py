@@ -842,13 +842,17 @@ def _do_schema_harvest(appliance, params: dict, dry_run: bool = False) -> dict:
         res = sh.harvest(appliance, probe=bool(params.get("probe", True)))
     else:
         # FortiAuthenticator (REST schema, plus the CLI walk when the appliance
-        # has a separate SSH password) and FortiAnalyzer (unverified syntax
-        # read) go through their schema adapters.
+        # has a separate SSH password) and FortiAnalyzer (the per-object
+        # JSON-RPC syntax walk of services.apilib_faz, verified on faz02
+        # 7.6.7; a failed walk is stored unhealthy and answers not ok) go
+        # through their schema adapters.
         from . import schema_adapters
         res = schema_adapters.harvest(appliance)
     import json as _json
+    # FortiAnalyzer's adapter reports its one evidence row under "schema".
+    keys = ("tree", "full", "probe", "channels") + (("schema",) if "schema" in res else ())
     return {"ok": bool(res.get("ok")), "summary": res.get("msg") or "",
-            "log": _json.dumps({k: res.get(k) for k in ("tree", "full", "probe", "channels")},
+            "log": _json.dumps({k: res.get(k) for k in keys},
                                indent=1, default=str)[:_LOG_MAX]}
 
 

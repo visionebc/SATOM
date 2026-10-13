@@ -116,9 +116,13 @@ def harvest_fac_cmd(name):
               help="Skip the REST shape probe of the tree objects the library lacks.")
 def schema_harvest_cmd(appliance, lab, no_probe):
     """Harvest one appliance's CLI schema (tree + show full-configuration) and
-    probe the REST paths the library lacks. APPLIANCE is an id or a name."""
+    probe the REST paths the library lacks. APPLIANCE is an id or a name.
+
+    FortiAuthenticator and FortiAnalyzer have no ``tree``: they run through
+    their schema adapters, exactly as the ``schema_harvest`` scheduled action
+    does (FAZ: the per-object syntax walk, ``services.apilib_faz``)."""
     from .models import Appliance
-    from .services import schema_harvest
+    from .services import schema_adapters, schema_harvest
     ap = None
     if str(appliance).isdigit():
         ap = db.session.get(Appliance, int(appliance))
@@ -126,7 +130,10 @@ def schema_harvest_cmd(appliance, lab, no_probe):
         ap = Appliance.query.filter_by(name=appliance).first()
     if ap is None:
         raise click.ClickException("no appliance %r" % appliance)
-    res = schema_harvest.harvest(ap, lab=lab, probe=not no_probe)
+    if ap.kind in schema_harvest.SUPPORTED:
+        res = schema_harvest.harvest(ap, lab=lab, probe=not no_probe)
+    else:
+        res = schema_adapters.harvest(ap, lab=lab)
     _print(res)
     if not res.get("ok"):
         raise SystemExit(1)

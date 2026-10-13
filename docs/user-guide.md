@@ -6628,7 +6628,9 @@ The page has three parts:
   REST API answered 404 for the whole object; a CLI field REST does not name
   reads **unknown**. FortiAnalyzer was verified on a FortiAnalyzer 7.6.7
   (build3737, 2026-10-13): SATOM's own syntax walk read 139 objects, 11 absent,
-  none refused.
+  none refused. Its harvest reads the build off the box, and a
+  walk that read nothing is kept as an unhealthy record and reported as a
+  failure.
 - **Builds without a harvested schema** — each appliance on such a build, with a
   **Harvest** button (needs `appliances.apply`; audited). For a
   FortiAuthenticator, give the **CLI password (optional)**: SATOM stores the REST

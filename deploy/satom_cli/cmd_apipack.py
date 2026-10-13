@@ -455,6 +455,18 @@ def harvest_schema(ctx, args):
     full = res.get("full") or {}
     probe = res.get("probe") or {}
     ch = res.get("channels") or {}
+    sch = res.get("schema")
+    if isinstance(sch, dict) and not tree and not full:
+        # FortiAnalyzer: one schema row (the per-object syntax walk), no tree.
+        r.rows("evidence", [
+            ("schema", "#%s %s" % (sch.get("evidence_id"),
+                                   "healthy" if sch.get("healthy") else "UNHEALTHY")),
+            ("objects", "%s measured, %s absent, %s error, %s not asked"
+             % (sch.get("measured", 0), sch.get("absent", 0), sch.get("error", 0),
+                sch.get("not_probed", 0)))])
+        r.note(res.get("msg") or "")
+        r.set(result=res)
+        return r
     r.rows("evidence", [
         ("cli_tree", "#%s %s" % (tree.get("evidence_id"),
                                   "healthy" if tree.get("healthy") else

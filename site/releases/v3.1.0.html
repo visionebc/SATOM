@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Version 3.1.0 — SATOM</title>
-<meta name="description" content="Released on 2026-10-13 — Fixed · Changed · 337 entries.">
+<meta name="description" content="Released on 2026-10-13 — Fixed · Changed · 339 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Version 3.1.0 <span class="rel-badge rel-now">current release</span></h1>
-  <p class="sub">Released on 2026-10-13 — Fixed · Changed · 337 entries.</p>
+  <p class="sub">Released on 2026-10-13 — Fixed · Changed · 339 entries.</p>
 </header>
 
 <section class="wrap">
@@ -64,8 +64,8 @@
       </a>
       <a class="rel-nav-item is-active" href="v3.1.0.html" data-rel-version="3.1.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.1.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
-        <span class="rel-nav-meta">2026-10-13 · Fixed · Changed · 337 entries</span>
-        <ul class="rel-leads"><li>FortiADC 7.6.x:</li><li>FortiAnalyzer:</li><li>satom get device not-in-gui &lt;device&gt; [--endpoint &lt;key|cli path&gt;]</li><li class="rel-more">… and 334 more</li></ul>
+        <span class="rel-nav-meta">2026-10-13 · Fixed · Changed · 339 entries</span>
+        <ul class="rel-leads"><li>Appliances</li><li>FortiADC 7.6.x:</li><li>FortiAnalyzer:</li><li class="rel-more">… and 336 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.0.0.html" data-rel-version="3.0.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.0.0</span></span>
@@ -365,6 +365,50 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="changed--operator-menu-order">Changed — operator menu order</h3>
+<ul>
+<li><strong>Appliances</strong> moves to <strong>Administrator</strong>; <strong>Schema builds</strong>, <strong>Build
+  compatibility</strong> and <strong>Certificate Manager</strong> move to <strong>Automation</strong>; <strong>Global
+  Studio</strong> joins <strong>Administrator</strong>; the <strong>Fleet</strong> group is reordered.</li>
+<li>A profile that cannot see the new group keeps the entry where it was
+  (Appliances and the API library under Fleet, Studio as its own group), so the
+  reorder takes no page away from anyone.</li>
+</ul>
+<h3 id="changed--the-fortiadc-schema-adapter-is-verified-on-a-lab-box">Changed — the FortiADC schema adapter is verified on a lab box</h3>
+<p>SATOM's harvest of {device} (FortiADC-VM 7.6.7 build0676) read its CLI <code>tree</code>
+(527 objects, 3,649 fields), its <code>show full-configuration</code> (315 blocks, no
+hidden field) and its REST rediscovery sweep (217 endpoints, 7 absent), all
+read-only. The Schema builds page now lists the FortiADC adapter as verified
+({device}, 7.6.7 build0676), and the CLI -&gt; REST path rule as verified:
+224 of the 225 REST endpoints the box's sweep read land on a <code>tree</code> object
+under it, and so do all 19 child tables (<code>&lt;parent&gt;_child_&lt;table&gt;</code>) of its
+depth capture. Two assumptions were wrong and are corrected in the code and the
+docs: FortiADC's <code>tree</code> prints the FortiWeb format (CLI ids, types, options),
+not the FortiOS one; and its REST does not always spell a field the way the CLI
+does (below). Build compatibility now reads "absent" for a FortiADC object a
+measured <code>tree</code> does not list, as it already did for FortiWeb.</p>
+<h3 id="fixed--fortiadc-fields-read-rest-only-or-unknown-although-both-channels-had-them">Fixed — FortiADC fields read REST only or unknown although both channels had them</h3>
+<p>The FortiADC <code>tree</code> of a knowledge pack keys each object by the FortiWeb rule
+(<code>load-balance/pool</code>), the REST sweep by the FortiADC one (<code>load_balance_pool</code>),
+and the API library joins the two channels on that key: on 7.6.7, 10 fields
+of 5,402 read "both" and 862 entries stood for 527 objects (API Versions,
+Build compatibility, the field map and each appliance's Not-in-GUI page read
+this). The channel view now re-keys the pack's objects from their CLI path, so
+each object is one entry with both channels; SATOM's own harvest, keyed by the
+FortiADC rule already, is the record read when both exist.</p>
+<p>Joining the objects exposed a second difference: FortiADC's REST writes many
+CLI attributes with <code>_</code> for <code>-</code> (<code>direct_route_ip</code> for <code>direct-route-ip</code>, 324
+fields on 7.6.7), names the table key <code>mkey</code>, and renames some fields outright
+(<code>pool</code> for <code>load-balance-pool</code>). Read naively, the virtual server's Not-in-GUI
+section offered <code>load-balance-pool</code>, <code>direct-route-ip</code> and others as CLI-only
+fields to write over SSH, though the GUI and REST edit them. Now a field both
+spellings name is one field, shown under the REST name; <code>_nondeletable</code> and
+<code>_noneditable</code> are REST bookkeeping (<code>meta</code>); and a CLI field REST does not
+name on an object REST read is "unknown" (shown as unverified on this build),
+never "CLI only" — on FortiADC "CLI only" now means REST measured the whole
+object absent (98 objects on 7.6.7, each a 404 at its REST path). FortiADC
+7.6.7 now reads 967 fields both, 233 CLI only, 623 REST only, 2,456 unknown,
+545 entries.</p>
 <h3 id="added--every-screen-in-german-french-italian-and-spanish-again">Added — every screen in German, French, Italian and Spanish again</h3>
 <p>The language catalogues had fallen behind the interface: the screens added since
 the last translation sweep (about 2,700 strings: Naming Discovery, ADOM Menus,

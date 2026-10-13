@@ -6,6 +6,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-13
+
+### Changed — operator menu order
+
+- **Appliances** moves to **Administrator**; **Schema builds**, **Build
+  compatibility** and **Certificate Manager** move to **Automation**; **Global
+  Studio** joins **Administrator**; the **Fleet** group is reordered.
+- A profile that cannot see the new group keeps the entry where it was
+  (Appliances and the API library under Fleet, Studio as its own group), so the
+  reorder takes no page away from anyone.
+
 ### Changed — the FortiADC schema adapter is verified on a lab box
 
 SATOM's harvest of fortiadc10 (FortiADC-VM 7.6.7 build0676) read its CLI `tree`
@@ -45,8 +56,6 @@ never "CLI only" — on FortiADC "CLI only" now means REST measured the whole
 object absent (98 objects on 7.6.7, each a 404 at its REST path). FortiADC
 7.6.7 now reads 967 fields both, 233 CLI only, 623 REST only, 2,456 unknown,
 545 entries.
-
-## [3.1.0] - 2026-10-13
 
 ### Added — every screen in German, French, Italian and Spanish again
 

@@ -1659,6 +1659,20 @@ PYADM
     unset SATOM_ADMIN_PASS
 fi
 
+# [SATOM-CONSOLE-RO-ROLE] The database console / report builder / plugin
+# datasets run under a dedicated read-only Postgres role and REFUSE to run
+# without it. Creating a role needs the postgres superuser, so it happens here
+# (primary/standalone; a secondary gets it by replication). The application
+# syncs the table grants itself when it starts below, so this runs BEFORE
+# the units are started.
+if [ -f "$APP_DIR/deploy/install-console-role.sh" ]; then
+    if FM_APP_DIR="$APP_DIR" bash "$APP_DIR/deploy/install-console-role.sh" >>"$INSTALL_LOG" 2>&1; then
+        ok "Database console role ready (satom_console_ro)"
+    else
+        warn "Could not provision the database console role - the SQL console will refuse queries; re-run: sudo bash $APP_DIR/deploy/install-console-role.sh"
+    fi
+fi
+
 # systemd units
 # Pins the service account via a DROP-IN, not by editing the unit: the deploy/
 # templates declare User=root and the self-update runner copies them again on
@@ -1809,6 +1823,15 @@ satom_enforce_unit_user
 # The store is enabled AFTER the drop-in: the template declares User=satom and
 # an install that adopted another account would start with the wrong user.
 if [ -x /usr/local/bin/victoria-metrics ] && [ -f /etc/systemd/system/satom-metrics.service ]; then
+    # [SATOM-METRICS-AUTHKEYS] The re-assert script owns the root-only
+    # authKey file the unit reads; run it once here so a fresh node starts
+    # keyed (the binary is already in place, so it downloads nothing, and the
+    # unit already exists, so it does not arm it -- that stays below).
+    if [ -f "$APP_DIR/deploy/install-metrics-store.sh" ]; then
+        FM_APP_DIR="$APP_DIR" BUNDLE_DIR="${BUNDLE_DIR:-}" \
+            bash "$APP_DIR/deploy/install-metrics-store.sh" >>"$INSTALL_LOG" 2>&1 \
+            || warn "metrics store authKeys not written - check $INSTALL_LOG"
+    fi
     systemctl daemon-reload >>"$INSTALL_LOG" 2>&1 || true
     if systemctl enable --now satom-metrics.service >>"$INSTALL_LOG" 2>&1; then
         ok "satom-metrics.service active (local store on 127.0.0.1:8428)"

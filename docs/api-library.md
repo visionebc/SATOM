@@ -459,7 +459,7 @@ determined) and, per product, how many documents were stored unhealthy.
 | **A rediscovery sweep** (FortiWeb, FortiADC) | ingests its own snapshot right after writing the files. A library failure is logged and recorded as `apilib_error` in the sweep's state; it never fails the sweep |
 | **Firmware change** | when the firmware probe (API v1 `POST /appliances/<id>/firmware-check`, or the discovery run on the API versions page) sees an appliance's normalized version change — or records its first version and the library has no evidence for that build — it queues one background job of type `apilib_harvest` |
 | **API Explorer → Harvest this appliance now** | queues the same job for the selected appliance (needs `appliances.apply`) |
-| **Scheduled action `apilib_harvest`** | harvests, one appliance at a time, every FortiWeb, FortiADC, FortiAuthenticator and FortiGate whose running build has no healthy evidence from its live source. Admin action, dry-run capable. **Declared but not scheduled by default**: create a schedule for it (daily is plenty) under **Scheduled Actions** (FortiWeb ADOM → Administrator) |
+| **Scheduled action `apilib_harvest`** | harvests, one appliance at a time, every FortiWeb, FortiADC, FortiAuthenticator, FortiGate and FortiAnalyzer whose running build has no healthy evidence from its live source. Admin action, dry-run capable. **Declared but not scheduled by default**: create a schedule for it (daily is plenty) under **Scheduled Actions** (FortiWeb ADOM → Administrator) |
 | `flask apilib harvest-fac` | an immediate FortiAuthenticator harvest from the shell |
 | `apilib_harvest.run(<appliance id>)` | an immediate harvest of one appliance of any live product, synchronous, from `flask shell` |
 
@@ -469,8 +469,17 @@ FortiGate (`services.apilib_fgt`) reads its build from
 `monitor/system/status`, then `?action=schema` of every cmdb table the library
 names for that build and the build below it (the global index is 403 to a
 read-only token), GET only through `FortiGateClient`, and ingests a `schema`
-document. FortiAnalyzer has no live **REST** harvester and every entry
-point says so by name (`no live harvester for fortianalyzer`).
+document. FortiAnalyzer (`services.apilib_faz`) reads its build from
+`get /sys/status`, then walks JSON-RPC `get` with `option: ["syntax"]` object
+by object over every `/cli/global/system|fmupdate` object the library and the
+registry name (the per-object walk of §14.10), in ONE session, `get` only, and
+ingests a `schema` document. That document is healthy only when the walk read
+at least one object and no more than a quarter of the asked objects were
+refused (`-11` and other codes are `error`, never absent); a walk that read
+nothing, a refused login or a transport failure mid-walk is stored
+**unhealthy** with its reason, the job fails, and the build still needs a
+harvest. A kind with no live harvester is answered by name by every entry
+point (`no live harvester for <kind>`).
 
 The **CLI channel** has its own harvest — the schema harvest (§14.4), the
 scheduled action `schema_harvest` and the per-product adapters (§14.10) — and
@@ -1272,10 +1281,11 @@ pack-lane key. Releases no longer use it.
 
 | Symptom | Cause / fix |
 |---|---|
-| A build reads **`unmeasured`** | Nothing measured it. For FortiWeb, FortiADC, FortiAuthenticator or a registered FortiGate: *Harvest this appliance now* in the API Explorer, or run the `apilib_harvest` scheduled action. For FortiAnalyzer, or a FortiGate build no appliance runs: the build is newer than the imported collection — import a newer one (§8.2) |
+| A build reads **`unmeasured`** | Nothing measured it. For FortiWeb, FortiADC, FortiAuthenticator or a registered FortiGate or FortiAnalyzer: *Harvest this appliance now* in the API Explorer, or run the `apilib_harvest` scheduled action. For a FortiGate or FortiAnalyzer build no appliance runs: the build is newer than the imported collection — import a newer one (§8.2) |
 | A build reads **`vendor_only`** | Only the vendor's data covers it. Correct for FortiGate and FortiAnalyzer. Treat its answers as claims |
 | The explorer shows **`firmware unknown`** | The appliance's firmware was never read. Run a firmware check first (API v1 `firmware-check`, or the discovery run); the probe then queues a harvest if the build needs one |
-| *Harvest not queued* — `no live harvester for …` | FortiAnalyzer cannot be harvested live; use §8.2 |
+| *Harvest not queued* — `no live harvester for …` | That appliance kind cannot be harvested live; use §8.2 |
+| A FortiAnalyzer harvest fails — `the syntax walk read no object …` or `… objects refused` | The walk was answered but measured nothing (or mostly `-11`). Check the admin's `rpc-permit` and its profile (the harvest itself only sends `get`), then harvest again. The unhealthy evidence row is kept as the record of the failed read |
 | *Harvest not queued* — `… is in maintenance` | Take the appliance out of maintenance, or wait for the scheduled action |
 | *Harvest not queued* — `background harvest is disabled (APILIB_HARVEST_DISPATCH)` | The switch is off on this installation. Use the scheduled action or `flask apilib harvest-fac` |
 | *a harvest of … is already pending* | One is queued or running; watch it in the Job Manager |
@@ -1619,7 +1629,7 @@ capabilities and where it was verified; the **Schema builds** page shows both.
 | FortiAuthenticator | no `tree`: `config <object>` + `set ?` help walk of the setup CLI (5 objects, 29 fields); `show full-configuration` | Tastypie `/api/v1/<res>/schema/` (58 resources, 316 fields), directory complete | **yes** — 8.0.3 build0099 |
 | FortiGate | `tree` (FortiOS format; nested tables folded into fields) | `GET /api/v2/cmdb/<path>?action=schema` | **yes** — 8.0.1 build0245 (`tree` by pack or `flask apilib schema-import`; the REST schema also live from a registered FortiGate, `apilib_harvest`) |
 | FortiADC | `tree` (FortiOS-family format assumed) | none implemented | **no** — no FortiADC in the lab |
-| FortiAnalyzer | JSON-RPC `get` with `option: syntax` | the same answer (the `/cli/global/...` URL is the CLI path) | **no** — no FortiAnalyzer in the lab |
+| FortiAnalyzer | JSON-RPC `get` with `option: syntax` | the same answer (the `/cli/global/...` URL is the CLI path) | **no** — the walk was measured on 7.6.7 build3737 by the harvester; the REST schema also live from a registered FortiAnalyzer, `apilib_harvest` |
 
 Read-only by construction: the FortiWeb, FortiADC and FortiGate harvests send
 `tree` (behind its own whole-command gate) and `show`; the FortiAuthenticator

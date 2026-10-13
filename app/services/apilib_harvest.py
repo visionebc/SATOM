@@ -18,7 +18,7 @@ On demand, for one appliance, from ``flask shell`` (or any app context)::
 
 WHY A JOB, NOT A THREAD. A harvest is a full read of the box (a rediscovery
 sweep, every FortiAuthenticator schema, ~780 FortiGate per-table schema
-reads), far too long for the request that
+reads, a few hundred FortiAnalyzer syntax reads), far too long for the request that
 noticed the version change. :mod:`app.services.jobs` already owns the
 worker-proof state file, the Job Manager page, the failure bell and the
 boot-time orphan sweep; a private thread would be a second, invisible answer
@@ -27,10 +27,17 @@ to "is a harvest running?".
 WHICH PRODUCTS. Only products SATOM can read live: FortiWeb and FortiADC via
 the rediscovery sweep, FortiAuthenticator via its Tastypie schema, FortiGate
 via its per-table ``?action=schema`` (``services.apilib_fgt``, GET only through
-``FortiGateClient``, vdom-aware). FortiAnalyzer has vendor evidence only, and
-every entry point says so BY NAME ("no live harvester for fortianalyzer") — a
-harvest that silently succeeds without reading anything would read as
-"measured" on the next page.
+``FortiGateClient``, vdom-aware), FortiAnalyzer via its per-object JSON-RPC
+syntax walk (``services.apilib_faz``, ``get`` only, one session). Every
+product of the library now has a live harvester; a kind without one is still
+answered BY NAME ("no live harvester for <kind>") by every entry point.
+
+NEVER PRETEND MEASURED. A harvest that silently succeeds without reading
+anything would read as "measured" on the next page. So a run is ``ok`` only
+when it stored HEALTHY evidence, and each harvester decides health from what
+it actually read: a FortiAnalyzer walk that read no object (or was refused,
+or broke mid-walk) is stored unhealthy with its reason, and the build keeps
+needing a harvest.
 """
 from __future__ import annotations
 
@@ -49,7 +56,8 @@ JOB_TYPE = "apilib_harvest"
 #: asks for evidence FROM THIS SOURCE: vendor or legacy data for a build is a
 #: claim, and it must not stop the build from being measured.
 LIVE_SOURCE = {"fortiweb": "sweep", "fortiadc": "sweep",
-               "fortiauthenticator": "schema", "fortigate": "schema"}
+               "fortiauthenticator": "schema", "fortigate": "schema",
+               "fortianalyzer": "schema"}
 
 #: A sweep whose progress file says ``running`` blocks a harvest only while it
 #: is this young — the same 15-minute rule ``rediscovery.start`` uses, so a
@@ -284,6 +292,34 @@ def _run_fgt(ap) -> dict:
                                     "skip_reason": doc.get("skip_reason") or ""})
 
 
+def _run_faz(ap) -> dict:
+    """FortiAnalyzer: the live per-object JSON-RPC syntax walk (``get`` only,
+    one session) + ingest.
+
+    The build is read from the box (``get /sys/status``), as for FortiGate.
+    The document is healthy only when the walk read objects
+    (``services.apilib_faz``); an unhealthy one is stored and reported as
+    such, never as a harvest.
+    """
+    from . import api_library, apilib_faz
+    raw: dict = {}
+    doc = apilib_faz.harvest(ap, raw=raw)
+    res = api_library.ingest(doc, raw=raw or None)
+    summary = doc.get("summary") or {}
+    counts = {"ok": 0, "absent": 0, "error": 0}
+    for ep in (doc.get("endpoints") or {}).values():
+        if (ep or {}).get("verdict") in counts:
+            counts[ep["verdict"]] += 1
+    base = {"product": ap.kind, "harvester": "schema", "appliance": ap.name,
+            "version": (doc.get("scope") or {}).get("version") or "",
+            "objects": len(summary.get("objects") or {}),
+            "not_probed": len(summary.get("not_probed") or {}), "counts": counts}
+    return _outcome(base, ap.name, {"evidence_id": res.get("evidence_id"),
+                                    "created": bool(res.get("created")),
+                                    "healthy": bool(doc.get("healthy")),
+                                    "skip_reason": doc.get("skip_reason") or ""})
+
+
 def _outcome(base: dict, name: str, lib: dict) -> dict:
     """``ok`` only for HEALTHY stored evidence. An unhealthy harvest is kept
     (the record of a failed read is evidence too) but it measured nothing, so
@@ -304,7 +340,8 @@ def _outcome(base: dict, name: str, lib: dict) -> dict:
 
 
 _HARVESTERS = {"fortiweb": _run_sweep, "fortiadc": _run_sweep,
-               "fortiauthenticator": _run_fac, "fortigate": _run_fgt}
+               "fortiauthenticator": _run_fac, "fortigate": _run_fgt,
+               "fortianalyzer": _run_faz}
 
 
 def run(appliance_id: int) -> dict:

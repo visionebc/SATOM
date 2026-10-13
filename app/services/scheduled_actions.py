@@ -379,18 +379,20 @@ ADMIN_ACTIONS: list[ActionSpec] = [
         "apilib_harvest",
         "API library — harvest appliances whose build has no evidence", "admin",
         needs_targets=False,
-        products=("fortiweb", "fortiadc", "fortiauthenticator", "fortigate"),
-        summary="Find every FortiWeb, FortiADC, FortiAuthenticator and FortiGate "
-                "whose running build has no healthy evidence from its live "
-                "source in the API library, and harvest it now, one box at a "
-                "time: a rediscovery sweep (FortiWeb/FortiADC), the Tastypie "
-                "schema read (FortiAuthenticator) or the per-table "
-                "?action=schema read (FortiGate) (services.apilib_harvest). The "
+        products=("fortiweb", "fortiadc", "fortiauthenticator", "fortigate",
+                  "fortianalyzer"),
+        summary="Find every FortiWeb, FortiADC, FortiAuthenticator, FortiGate "
+                "and FortiAnalyzer whose running build has no healthy evidence "
+                "from its live source in the API library, and harvest it now, "
+                "one box at a time: a rediscovery sweep (FortiWeb/FortiADC), "
+                "the Tastypie schema read (FortiAuthenticator), the per-table "
+                "?action=schema read (FortiGate) or the per-object JSON-RPC "
+                "syntax walk (FortiAnalyzer) (services.apilib_harvest). The "
                 "safety net behind the firmware probe, which queues a harvest "
                 "the moment it sees a build change. Read-only against the "
                 "boxes; appliances in maintenance or with a harvest already "
-                "queued are skipped and named. FortiAnalyzer has no live "
-                "harvester (vendor evidence only). Daily is plenty.",
+                "queued are skipped and named. A harvest that read nothing is "
+                "a named failure, never evidence. Daily is plenty.",
     ),
     ActionSpec(
         "schema_harvest",

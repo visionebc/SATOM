@@ -5852,9 +5852,12 @@ The write permission (`registry.execute_write`) is checked first, as before.
 **Harvest this appliance now.** When the build is unmeasured, vendor-only or
 its firmware unknown, the banner offers this button. It queues one background
 harvest of that appliance — a rediscovery sweep for FortiWeb and FortiADC, a
-read-only schema read for FortiAuthenticator — visible in the Job Manager. It
-needs `appliances.apply`. The answer says so when it cannot: the product has
-no live harvester (FortiAnalyzer, FortiGate), the appliance is in maintenance,
+read-only schema read for FortiAuthenticator and FortiGate, a read-only
+per-object syntax walk for FortiAnalyzer — visible in the Job Manager. It
+needs `appliances.apply`. A harvest that read nothing (for FortiAnalyzer: no
+object answered its syntax, or most were refused) ends as a failed job with
+the reason, never as evidence. The answer says so when it cannot: the
+appliance kind has no live harvester, the appliance is in maintenance,
 a harvest is already pending, or background harvesting is switched off on this
 installation. SATOM also queues a harvest by itself when it sees an appliance
 change firmware build; the `apilib_harvest` scheduled action (not scheduled by

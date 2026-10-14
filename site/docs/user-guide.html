@@ -375,8 +375,9 @@ in the same order around the device menu: <strong>Operations</strong> first, the
 menu, <strong>Automation</strong>, <strong>Administrator</strong>, Plugins. Operations opens with the
 fleet pages (Dashboard where the ADOM has one, Calendar, Architecture, Service
 Diagram, Monitoring, Search, DNS Lookup, Troubleshooting, Fleet Objects and WAF
-in FortiWeb and FortiADC, Jobs) and then holds Device Backups, Diagnose Log Collection
-and Import Backup; there is no separate <strong>Fleet</strong> group. The <strong>API</strong> console
+in FortiWeb and FortiADC, Jobs) and then holds Device Backups and Import Backup;
+<strong>Diagnose Log Collection</strong> is in Operations › Troubleshooting (§27). There is
+no separate <strong>Fleet</strong> group. The <strong>API</strong> console
 (Registry &amp; console) is a sub-menu of Automation. <strong>Appliances</strong> is under
 Administrator; <strong>Schema builds</strong>, <strong>Build compatibility</strong> and (Global)
 <strong>Certificate Manager</strong> are under Automation; <strong>Studio</strong> is a sub-menu of
@@ -421,7 +422,18 @@ that will not come online.</p>
    TLS verification off — therefore needs the password entered again in the
    same save (and the SSH password too when the device has a separate one);
    otherwise the save is refused. The same rule applies to
-   <code>PUT /api/appliances/&lt;id&gt;</code>.
+   <code>PUT /api/appliances/&lt;id&gt;</code>.</p>
+<p><strong>SSH credentials, when they differ from the API ones.</strong> The Edit page
+   has two optional fields for the CLI login. Use <strong>SSH user, if different
+   from the API user</strong> when the API user cannot open SSH. A FortiGate
+   registered with a REST api-user is the usual case. Use <strong>SSH password, if
+   different from the API credential</strong> when the stored password is an API key,
+   as on FortiAuthenticator. Left empty, SSH logs in with the API username and
+   password. Diagnose Log Collection and Diagnostic Battery discovery (§27)
+   log in with this SSH user and SSH password, and the other read-only SSH
+   sessions also log in as the SSH user. If you change the
+   SSH user while a separate SSH password is stored, enter that password again
+   in the same save (or remove it), as for a username change.
 2. <strong>Test connection</strong> — validates REST reachability and credentials.
 3. <strong>Discovery / Rediscovery</strong> — sweeps every registry endpoint and stores the
    device's full configuration in the local cache (recorded as a harvest with
@@ -453,7 +465,10 @@ that will not come online.</p>
   references.</li>
 <li><strong>SSH Console</strong> — read-only troubleshooting presets (<code>get system status</code>,
   HA status, routing table, sniffer…) plus a command box. Destructive CLI is
-  not offered. Running a command (even a read-only one) needs <strong>Run appliance
+  not offered. Only <code>get</code>, <code>show</code> and <code>diagnose</code> are accepted. A <code>diagnose</code>
+  command whose name changes the device (kill, clear, reset, delete,
+  failover, sysrq/crash, set, enable/disable, format…) is refused, including
+  abbreviations such as <code>diag sys kil</code>. Running a command (even a read-only one) needs <strong>Run appliance
   actions</strong> (<code>appliances.apply</code>); without it the console link is not shown and
   the page lists the presets with a read-only notice.</li>
 <li><strong>Backups / Restore / Upgrade / Boot partition</strong> — see §11–§12.</li>
@@ -1925,8 +1940,8 @@ nothing else, can rebuild the installation from any copy.</p>
   <code>satom diagnose recovery</code>, which reports an absent, stale, unreadable or
   <strong>unreachable</strong> envelope. A node with no envelope is noisy on purpose.</li>
 </ul>
-<p>Its two nav siblings under <strong>Operations</strong> — Diagnose Log Collection and Import Backup —
-are §27. Neither is a backup: one collects read-only diagnostics over SSH, the
+<p>Diagnose Log Collection (under Operations › Troubleshooting) and Import Backup
+(next to Device Backups under <strong>Operations</strong>) are covered in §27. Neither is a backup: one collects read-only diagnostics over SSH, the
 other parses a config file entirely offline.</p>
 <h2 id="12-firmware-upgrades">12. Firmware upgrades</h2>
 <p>Appliance detail → <strong>Upgrade</strong> (FortiWeb and FortiADC):</p>
@@ -2125,8 +2140,10 @@ against what the devices say.</p>
 - <strong>Where these live:</strong> Backend Reachability, Config Compare, Path Diagnostics
   and Scout sit together under <strong>Operations › Troubleshooting</strong> in every ADOM
   (since 2026-10-14; before that they were spread over Operations and Fleet).
-  The FortiGate, FortiAnalyzer and FortiAuthenticator ADOMs list Scout only
-  there: the other three work on FortiWeb and FortiADC objects.
+  The FortiGate, FortiAnalyzer and FortiAuthenticator ADOMs list only Scout
+  from this set, because the other three work on FortiWeb and FortiADC
+  objects. <strong>Diagnose Log Collection</strong> is also in Troubleshooting, in all five
+  device ADOMs (§27.1).
 - <strong>Backend Reachability</strong> — paste or upload a list of
   <code>source;policy;destination</code> lines and ask one question per line: <em>do the real
   servers behind this policy answer, on the source box and then on the
@@ -3038,8 +3055,9 @@ the whole menu as a grid.</p>
 <li><strong>Analysis</strong> — entitlement, identity inventory and posture (see §13).</li>
 </ul>
 <p><strong>What does <em>not</em> apply to FortiAuthenticator.</strong> In the FAC ADOM's Operations
-group Device Backups, Diagnose Log Collection and Import Backup are greyed out (the
-reason is on hover), and that is not an oversight:</p>
+group Device Backups and Import Backup are greyed out (the reason is on hover),
+and that is not an oversight. (Diagnose Log Collection, under Operations ›
+Troubleshooting, does apply: it runs the FortiAuthenticator battery, §27.1.)</p>
 <table>
 <thead>
 <tr>
@@ -5410,38 +5428,114 @@ git repository — never SATOM's own source repo, which is published publicly by
 the release tooling; a blocklist committed there would disclose which
 addresses attacked which customer.</p>
 <h2 id="27-operations-log-collection-and-importing-a-backup">27. Operations: log collection and importing a backup</h2>
-<p>The FortiWeb ADOM's <strong>Operations</strong> group has three entries. §11 documents the
-third one (Device Backups). These are the other two — they look adjacent and they
-do completely different things.</p>
+<p>Two entries under <strong>Operations</strong> look alike but do different things. <strong>Diagnose
+Log Collection</strong> (Operations › Troubleshooting, in every device ADOM) runs a
+read-only diagnostic battery on live devices over SSH. <strong>Import Backup</strong>
+(Operations, FortiWeb ADOM) parses a configuration file offline. An
+administrator chooses each ADOM's battery under Administrator → <strong>Diagnostic
+Battery</strong> (27.2). §11 covers Device Backups.</p>
 <h3 id="271-diagnose-log-collection--a-read-only-diagnostic-battery-over-ssh">27.1 Diagnose Log Collection — a read-only diagnostic battery over SSH</h3>
-<p>FortiWeb ADOM → Operations → <strong>Diagnose Log Collection</strong> (<code>config_write</code>).</p>
+<p>Any device ADOM → Operations › Troubleshooting → <strong>Diagnose Log Collection</strong>
+(<code>config_write</code>). It is in the FortiWeb, FortiADC, FortiGate, FortiAnalyzer and
+FortiAuthenticator ADOMs. The Global ADOM does not show it. Before 2026-10-14
+it was a FortiWeb-only entry directly under Operations.</p>
 <p><strong>What it is not:</strong> it is <em>not</em> a viewer of the appliance's on-box log database.
 It does not page attack or event logs.</p>
-<p><strong>What it is:</strong> tick one or more FortiWeb appliances, give the run a label, and
-it opens one SSH session per box and runs a curated battery of read-only
-<code>get</code> / <code>diagnose</code> commands — system status and performance, HA (nodes, status,
-sync state), hardware (CPU, NIC, interrupts, disks and their SMART
-health), routing, ARP, memory, proxy debug — writing each device's output to its
-own labelled <code>.txt</code>.</p>
+<p><strong>What it is:</strong> tick one or more devices of the active ADOM and give the run a
+label. SATOM opens one SSH session per device, runs <strong>that ADOM's diagnostic
+battery</strong> and writes each device's output to its own labelled <code>.txt</code>. The page
+shows the battery read-only, with its source (<strong>Product default</strong>, or
+<strong>Chosen</strong> by an administrator on a date). Administrators also get a link to
+Administrator → Diagnostic Battery.</p>
 <ul>
-<li><strong>Read-only by construction.</strong> Every command in the run — the battery <em>and</em>
-  anything you type into the custom-commands box — is asserted read-only before
-  the session opens. One command that could mutate configuration refuses <strong>the
-  whole run</strong>, not just that line.</li>
+<li><strong>Read-only by construction.</strong> Every command, from the battery or the
+  custom-commands box, is checked before the session opens. Only <code>get</code>, <code>show</code>
+  and <code>diagnose</code> are accepted. A <code>diagnose</code> command whose name shows that it
+  changes the device, never returns, floods the session or sends traffic is
+  refused by the battery rule (27.2). In the custom box, a refused line
+  rejects <strong>the whole run</strong> (<code>Refused: '&lt;command&gt;': &lt;reason&gt;</code>), not just that
+  line.</li>
+<li><strong>One battery, many builds.</strong> For each device, SATOM checks every command
+  against the discovery catalog of that device's firmware build (27.2). If the
+  build does not have the command, it is not sent and the report says
+  <code>SKIPPED: not present in &lt;build&gt;: …</code>. A command the battery rule refuses on
+  that device is shown as <code>SKIPPED (blocked): …</code>. This includes a command that
+  the build's discovery describes, directly or through a parent, as changing
+  something. If a build has not been discovered yet,
+  every command is sent. When the device answers with its own "no such command"
+  text ("Command fail", "Parsing error", "you must specify", "The number of
+  parameters is incorrect"…), the report adds <code>[not available on this
+  build]</code>. Each report ends with the number of commands that ran and the
+  number skipped. The progress list shows the same counts per device.</li>
+<li><strong>SSH login.</strong> The session logs in with the appliance's SSH user and SSH
+  password when they are set (§4), and otherwise with the API credentials.
+  Before 2026-10-14 the page always sent the API password, which a
+  FortiAuthenticator's SSH refuses.</li>
 <li>Long fleet runs happen in the background and report progress through a file, so
   the status keeps updating no matter which worker serves the poll.</li>
 <li><strong>History</strong> lists every previous run; open any file in the browser or download
   it. That is what makes this useful for a support case: the artefact is a plain
   text file with a label and a timestamp.</li>
-<li>FortiWeb only. It is <code>config_write</code>-gated even though it writes nothing to the
-  device, because it opens an administrative SSH session with the stored
-  credentials.</li>
-<li>The battery is the same on FortiWeb 7.6.8 and 8.0.6 (measured). A few entries
-  print nothing on a VM without HA (DB sync status, HA device info, netstat
-  log, proxy debug log); that is expected, and they answer on HA or hardware
-  units.</li>
+<li>The page needs <code>config_write</code> even though it writes nothing to the device,
+  because it opens an administrative SSH session with the stored credentials.</li>
+<li>The <strong>FortiWeb default battery</strong> has 28 commands and is the same on FortiWeb
+  7.6.8 and 8.0.6 (measured). A few entries print nothing on a VM without HA
+  (DB sync status, HA device info, netstat log); that is expected, and they
+  answer on HA or hardware units. <code>diagnose debug proxy log 3</code> was removed on
+  2026-10-14: it printed nothing on either build, and the device describes
+  <code>diagnose debug proxy</code> as set/get, so the number sets a debug level. The
+  FortiADC, FortiGate, FortiAnalyzer and FortiAuthenticator defaults are short
+  lists of commands that answered on lab units of those products.</li>
 </ul>
-<h3 id="272-import-backup--parse-a-config-file-with-no-appliance-at-all">27.2 Import Backup — parse a config file with no appliance at all</h3>
+<h3 id="272-diagnostic-battery--choosing-the-commands-per-adom">27.2 Diagnostic Battery — choosing the commands per ADOM</h3>
+<p>Any device ADOM → Administrator → <strong>Diagnostic Battery</strong> (<code>user_manage</code>). The
+page edits the battery of the <strong>active</strong> ADOM. In the Global ADOM it is a
+read-only summary of the five batteries (commands, source, last update,
+discovered builds), and batteries are changed from inside each device ADOM.</p>
+<ul>
+<li><strong>Current battery</strong> lists the commands Diagnose Log Collection runs. Choose
+  commands from the discovered tree (<strong>Choose commands</strong>, filterable, one group
+  per top-level <code>diagnose</code> branch). Use <strong>Add commands by hand</strong> for anything
+  that cannot be ticked: <code>get</code>/<code>show</code> commands, commands with arguments, or
+  commands a build does not list. <strong>Save</strong> keeps the order of commands already
+  in the battery and appends new ones. <strong>Reset to default</strong> returns to the
+  product default. Saves, resets and discoveries are recorded in the Audit Log.</li>
+<li><strong>The battery rule.</strong> Each command is checked when it is saved and again
+  before each run. A battery saved before a rule became stricter therefore
+  cannot send what the rule now refuses. The rule refuses a <code>diagnose</code> command:</li>
+<li>by <strong>name</strong>, when a word changes the device: kill, clear, reset, delete,
+    failover, sysrq/crash, enable/disable, set, format, fsck, rmmod and
+    similar. Abbreviations count, because the CLI completes them: <code>diag sys
+    kil</code> reads as kill.</li>
+<li>by the device's <strong>own description</strong> of the command or of any parent, for
+    example "Kill a process.", "set/get debug level…" or "Generate one system
+    info log file every 2 minutes.".</li>
+<li>in a battery only, when the command never returns, floods the session or
+    sends traffic: top, sniffer, debug flow, ping, traceroute, test.</li>
+</ul>
+<p>The name rule also applies to the SSH Console and to every other read-only
+  SSH caller (§4). Before 2026-10-14 they accepted any <code>diagnose</code> command,
+  including <code>diagnose debug kernel sysrq command crash</code>.
+- <strong>Discovery</strong> (section <strong>Discovery</strong>: choose an appliance of the ADOM, then
+  <strong>Discover commands</strong>). SATOM types <code>&lt;path&gt; ?</code> on the device CLI over SSH and
+  walks the <code>diagnose</code> tree. The result is stored per product and firmware
+  build and appears in the build table (Build, Firmware, Device, Discovered,
+  Duration, Probed, Runnable, Blocked, Truncated). Each node is classified by
+  name and description <strong>before</strong> it is asked, and a refused node is never
+  asked. Only one discovery runs at a time across the fleet. Each discovery
+  uses three SSH sessions and stops after one hour or 8,000 nodes. Measured in
+  the lab: FortiGate 8.0.1, 3,015 nodes in about ten minutes; FortiAnalyzer
+  7.6.7, 612 nodes; FortiADC 8.0.4, 598 nodes.
+  - FortiWeb and FortiADC close the SSH session when <code>?</code> follows a node with
+    exactly one child (<code>diagnose hardware cpu</code>). SATOM reads such a node by
+    TAB completion on a new session.
+  - FortiAuthenticator sometimes gives no answer to <code>?</code>. The node is asked
+    again on a new session with a longer wait, then by TAB completion.
+  - On FortiWeb, <code>?</code> after some leaves <strong>runs</strong> the command. Blocked commands
+    are never asked, so only read-only commands can run this way. Even so, run
+    discovery on a lab unit or in a maintenance window, as the page
+    recommends.</p>
+<h3 id="273-import-backup--parse-a-config-file-with-no-appliance-at-all">27.3 Import Backup — parse a config file with no appliance at all</h3>
 <p>FortiWeb ADOM → Operations → <strong>Import Backup</strong> (<code>backups.restore</code>; operator
 and admin hold it).</p>
 <p>Upload a FortiWeb configuration backup — <code>.conf</code>, <code>.txt</code>, <code>.cfg</code>, <code>.zip</code> or
@@ -7077,7 +7171,11 @@ the authoritative answer to "what is new since we last updated".</p>
 </tr>
 <tr>
 <td>Diagnose Log Collection returns 403, or refuses the whole run</td>
-<td>The page is <code>config_write</code>-gated even though it writes nothing to the device (27.1). A run refused with a read-only violation means one command — battery or custom — could mutate configuration; the whole run is refused rather than the offending line skipped.</td>
+<td>The page is <code>config_write</code>-gated even though it writes nothing to the device (27.1). A run refused with <code>Refused: '&lt;command&gt;': &lt;reason&gt;</code> means one line of the custom box fails the battery rule (27.2): not a <code>get</code>/<code>show</code>/<code>diagnose</code> command, or a <code>diagnose</code> command that changes the device, never returns or sends traffic. The whole run is refused rather than the offending line skipped. A battery command the device's build does not have is not a refusal: it is skipped and reported as <code>SKIPPED</code> in that device's file.</td>
+</tr>
+<tr>
+<td>Diagnostic Battery discovery stops, or lists few commands</td>
+<td>Only one discovery runs at a time across the fleet, and each stops after one hour or 8,000 nodes (the build table then shows <strong>Truncated</strong>). FortiWeb and FortiADC close the SSH session on some nodes; SATOM reopens it and reads those nodes by TAB completion, but stops after many failed sessions. Check the appliance's SSH user and password (§4) and the device's administrator session limit (27.2).</td>
 </tr>
 <tr>
 <td>A template is stuck in <strong>pending</strong> and will not roll out to the fleet</td>
@@ -7905,8 +8003,8 @@ the page instead of on a manual.</p>
 discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
-   the console is either <strong>on the map</strong> (119 today) or <strong>excluded with a written
-   reason</strong> (147 today — JSON feeds, downloads, redirects and fragments that
+   the console is either <strong>on the map</strong> (120 today) or <strong>excluded with a written
+   reason</strong> (148 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>
 <li><strong>Nothing here is a second source of truth.</strong> Paths are generated from the

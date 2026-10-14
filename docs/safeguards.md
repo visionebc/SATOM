@@ -231,7 +231,16 @@ This is the part that can take a customer offline, so it has the most gates.
 * **Read-only means read-only.** `ssh_ops.assert_readonly()` validates **every
   line** of a command, not just the first — a pasted `get x` / `set y` cannot
   sneak a write past a legitimate first line. Allowed verbs: `get`, `show`,
-  `diagnose`/`diag`.
+  `diagnose`/`diag`. `diagnose` is not a read verb by itself: the `diagnose`
+  trees include kill, clear, failover and `sysrq … crash`. Since 2026-10-14
+  every `diagnose` statement also goes through `diag_policy.blocked_reason()`,
+  which refuses any statement containing a state-changing word, abbreviations
+  included (`diag sys kil` reads as kill). Before that, any `diagnose` line was
+  accepted. A diagnostic battery (Diagnose Log Collection, Administrator →
+  Diagnostic Battery) applies a stricter version of this rule. It also refuses
+  commands that never return or send traffic (top, sniffer, debug flow, ping,
+  test) and commands that the device's own help text, for the command or any
+  parent, describes as changing something.
 * **Dry-run → approval → apply.** Writes are computed as a minimal diff and shown
   before anything is sent; see [`source-of-truth-spec.md`](source-of-truth-spec.md).
 * **Lease locks.** `lock_service` gives one operator a lease per (appliance,

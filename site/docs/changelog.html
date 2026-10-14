@@ -112,6 +112,61 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--diagnostic-battery-per-adom-diagnose-log-collection-in-every-device-adom-2026-10-14">Added — Diagnostic Battery per ADOM; Diagnose Log Collection in every device ADOM (2026-10-14)</h3>
+<ul>
+<li><strong>Security: the console accepted any <code>diagnose</code> command.</strong> The read-only gate
+  (<code>ssh_ops.assert_readonly</code>) allowed every line starting with <code>diagnose</code> or
+  <code>diag</code>, so the appliance SSH Console and the Log Collection custom-commands
+  box would send <code>diagnose debug kernel sysrq command crash</code>, <code>diagnose ha
+  failover …</code> or <code>diagnose sys kill …</code>. Every <code>diagnose</code> statement is now
+  checked by name and refused when a word changes the device: kill, clear,
+  reset, delete, failover, sysrq/crash, enable/disable, set, format, fsck,
+  rmmod and similar. Abbreviations count, because the CLI completes them:
+  <code>diag sys kil 11 1</code> reads as kill. <code>get</code> and <code>show</code> are unchanged.</li>
+<li><strong>New page: Administrator → Diagnostic Battery</strong> (<code>user_manage</code>), in each
+  device ADOM (FortiWeb, FortiADC, FortiGate, FortiAnalyzer,
+  FortiAuthenticator). An administrator chooses the commands that make up the
+  ADOM's battery. Commands can be ticked from a tree discovered on a real
+  device of the ADOM or typed by hand. <strong>Save</strong> keeps the order of the commands
+  already in the battery, and <strong>Reset to default</strong> returns to the product
+  default. The Global ADOM shows a read-only summary of the five batteries.</li>
+<li><strong>Discovery reads the device's own <code>diagnose</code> tree.</strong> It types <code>&lt;path&gt; ?</code> on
+  the device CLI over SSH, walks the tree and stores the result per product and
+  firmware build. Each node is classified by its name and by the device's
+  description of it <em>before</em> it is asked, and a refused node is never asked.
+  Measured in the lab: FortiGate 8.0.1, 3,015 nodes in about ten minutes;
+  FortiAnalyzer 7.6.7, 612; FortiADC 8.0.4, 598. FortiWeb and FortiADC close the
+  SSH session when <code>?</code> follows a node with exactly one child (<code>diagnose
+  hardware cpu</code>), so such a node is read by TAB completion on a new session.
+  When FortiAuthenticator does not answer a <code>?</code>, the node is asked again. On
+  FortiWeb, <code>?</code> after some leaves runs the (read-only) command, so the page
+  recommends running discovery on a lab unit or in a maintenance window.</li>
+<li><strong>The battery rule.</strong> A battery refuses state-changing commands by name, by
+  the device's description of the command or of any parent ("Kill a process.",
+  "set/get debug level…", "Generate one system info log file every 2
+  minutes."), and, because a battery runs unattended, commands that never
+  return, flood the session or send traffic (top, sniffer, debug flow, ping,
+  traceroute, test). The rule is checked when the battery is saved and again
+  before each run.</li>
+<li><strong>Diagnose Log Collection moves to Operations › Troubleshooting</strong> in all five
+  device ADOMs; until now it was a FortiWeb-only entry under Operations. It
+  runs the active ADOM's battery, which is listed read-only on the page, with a
+  link to the editor for administrators. If a device's build does not have a
+  command (according to that build's discovery), the command is skipped and the
+  report says <code>SKIPPED: not present in &lt;build&gt;</code>. Output such as "Command fail"
+  or "Parsing error" is tagged <code>[not available on this build]</code>. The custom box
+  follows the battery rule. The FortiWeb default battery has 28 commands:
+  <code>diagnose debug proxy log 3</code> is gone. It printed nothing on 7.6.8 or 8.0.6,
+  and its parent is described as set/get, meaning the trailing number sets a
+  debug level. The other four products start from small measured defaults.</li>
+<li><strong>Appliances: "SSH user, if different from the API user".</strong> A FortiGate
+  registered with a REST api-user cannot open SSH with that user. Log
+  collection now logs in with the separate SSH user and the separate SSH
+  password. Before this it sent the API password, which failed on
+  FortiAuthenticator, whose REST key SSH refuses.</li>
+<li>Migration <code>diagbat01</code>: tables <code>diag_catalogs</code> and <code>diag_batteries</code>, and the
+  column <code>appliances.ssh_username</code>.</li>
+</ul>
 <h3 id="security--the-operator-cli-no-longer-runs-the-app-tree-as-root-2026-10-14">Security — the operator CLI no longer runs the app tree as root (2026-10-14)</h3>
 <ul>
 <li><strong><code>satom</code> under sudo drops to the service account before executing anything

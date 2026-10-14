@@ -403,7 +403,9 @@ def start(targets: Iterable[SimpleNamespace], *, label: str = "manual",
     cur = status()
     if cur and cur.get("state") == "running":
         try:
-            age = time.time() - datetime.fromisoformat(cur["started"]).timestamp()
+            # ``started`` is naive UTC; .timestamp() would read it as LOCAL
+            # time and skew the age by the node's UTC offset.
+            age = (datetime.utcnow() - datetime.fromisoformat(cur["started"])).total_seconds()
         except Exception:  # noqa: BLE001
             age = 0
         if age < 900:

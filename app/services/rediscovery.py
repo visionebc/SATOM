@@ -2099,7 +2099,9 @@ def reconcile_stale_runs(*, no_pid_stale_after_s: int = 900) -> list[dict]:
         else:
             stamp = st.get("heartbeat") or st.get("started")
             try:
-                age = time.time() - datetime.fromisoformat(stamp).timestamp()
+                # Stamps are naive UTC (utcnow); .timestamp() would read them
+                # as LOCAL time and skew the age by the node's UTC offset.
+                age = (datetime.utcnow() - datetime.fromisoformat(stamp)).total_seconds()
             except Exception:  # noqa: BLE001 — unreadable stamp is not evidence of life
                 age = no_pid_stale_after_s + 1
             if age <= no_pid_stale_after_s:

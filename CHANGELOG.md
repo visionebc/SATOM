@@ -58,6 +58,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   collection now logs in with the separate SSH user and the separate SSH
   password. Before this it sent the API password, which failed on
   FortiAuthenticator, whose REST key SSH refuses.
+- **Processes: the "Collect diagnostic logs" step runs the device's own
+  battery.** It ran FortiWeb's battery on every product. It now runs the
+  battery of the device's ADOM, planned against its build exactly like
+  Diagnose Log Collection, and its result says how many commands ran and how
+  many were skipped.
+- **Fixed: the one-at-a-time guards of log collection and rediscovery read
+  their start time in local time.** The stamp is UTC, so on a node whose clock
+  is not UTC a running collection looked hours older (UTC+N) or younger
+  (UTC−N) than it was, and a second run could start beside it. Nodes on UTC,
+  such as the reference pair, were not affected.
 - Migration `diagbat01`: tables `diag_catalogs` and `diag_batteries`, and the
   column `appliances.ssh_username`.
 

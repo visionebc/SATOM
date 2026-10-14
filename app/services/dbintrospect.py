@@ -177,7 +177,50 @@ def relations() -> dict[str, Any]:
             "pk": sorted(pk_cols),
             "rows": nrows,
         })
+    edges.extend(inferred_edges(tables))
     return {"tables": tables, "edges": edges}
+
+
+_INT_TYPES = frozenset({"integer", "bigint", "smallint", "int", "int4", "int8"})
+
+
+def _inferred_target(stem: str, pk_by_table: dict[str, list[str]]) -> str:
+    """The table a ``<stem>_id`` column names, by the schema's own naming
+    (``appliance`` -> ``appliances``, ``policy`` -> ``policies``), or ''."""
+    cands = [stem, stem + "s", stem + "es"]
+    if stem.endswith("y"):
+        cands.append(stem[:-1] + "ies")
+    for cand in cands:
+        if pk_by_table.get(cand) == ["id"]:
+            return cand
+    return ""
+
+
+def inferred_edges(tables: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Relationships the schema implies but does not declare.
+
+    Many history tables keep ``appliance_id`` WITHOUT a foreign key on purpose
+    (their rows outlive the appliance), so the diagram and the query builder
+    showed them unconnected. An integer ``<stem>_id`` column with no declared
+    FK is linked to the table whose name is that stem (singular or plural) and
+    whose primary key is exactly ``id``. Only an exact name match counts —
+    never a guess between candidates. Marked ``inferred`` so every consumer can
+    tell it apart from a constraint the database enforces."""
+    pk_by_table = {t["name"]: list(t.get("pk") or []) for t in tables}
+    out: list[dict[str, Any]] = []
+    for t in tables:
+        for c in t.get("cols", []):
+            name = c["name"]
+            if (not name.endswith("_id") or c.get("fk") or c.get("pk")
+                    or c.get("type") not in _INT_TYPES):
+                continue
+            target = _inferred_target(name[:-3], pk_by_table)
+            if not target:
+                continue
+            c["fk_inferred"] = f"{target}.id"
+            out.append({"from_table": t["name"], "from_col": name,
+                        "to_table": target, "to_col": "id", "inferred": True})
+    return out
 
 
 # --------------------------------------------------------------------------- #

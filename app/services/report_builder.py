@@ -157,11 +157,12 @@ def _edges() -> list[dict[str, str]]:
     return out
 
 
-def _edge_phrase(edge: dict[str, str]) -> str:
+def _edge_phrase(edge: dict[str, Any]) -> str:
     frm = table_label(edge["from_table"])
     to = table_label(edge["to_table"])
     return (f"each {frm} row belongs to one {to} "
-            f"({edge['from_col']} → {edge['to_col']})")
+            f"({edge['from_col']} → {edge['to_col']}"
+            f"{', inferred from the column name' if edge.get('inferred') else ''})")
 
 
 def catalog() -> dict[str, Any]:
@@ -179,7 +180,7 @@ def catalog() -> dict[str, Any]:
     edges = [{
         "from_table": e["from_table"], "from_col": e["from_col"],
         "to_table": e["to_table"], "to_col": e["to_col"],
-        "phrase": _edge_phrase(e),
+        "phrase": _edge_phrase(e), "inferred": bool(e.get("inferred")),
     } for e in _edges()]
     domains = [{"key": k, "label": v} for k, v in DOMAINS.items()]
     return {"tables": tables, "edges": edges, "domains": domains}
@@ -195,13 +196,14 @@ def join_graph() -> dict[str, list[dict[str, str]]]:
     graph: dict[str, list[dict[str, str]]] = {}
     for e in _edges():
         a, b = e["from_table"], e["to_table"]
+        inferred = bool(e.get("inferred"))
         graph.setdefault(a, []).append({
             "to": b, "from_table": a, "from_col": e["from_col"],
-            "to_table": b, "to_col": e["to_col"],
+            "to_table": b, "to_col": e["to_col"], "inferred": inferred,
         })
         graph.setdefault(b, []).append({
             "to": a, "from_table": b, "from_col": e["to_col"],
-            "to_table": a, "to_col": e["from_col"],
+            "to_table": a, "to_col": e["from_col"], "inferred": inferred,
         })
     return graph
 
@@ -231,7 +233,8 @@ def related_tables(base: str, max_hops: int = 2) -> list[dict[str, Any]]:
                 "path": new_path, "hops": len(new_path),
                 "phrase": _edge_phrase({
                     "from_table": step["from_table"], "from_col": step["from_col"],
-                    "to_table": step["to_table"], "to_col": step["to_col"]}),
+                    "to_table": step["to_table"], "to_col": step["to_col"],
+                    "inferred": step.get("inferred")}),
             })
             queue.append((nxt, new_path))
     return out

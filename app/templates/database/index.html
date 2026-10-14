@@ -22,7 +22,7 @@
   <div class="tab-pane fade show active" id="tab-model">
     <div class="card"><div class="card-body">
       <div class="d-flex align-items-center mb-2">
-        <p class="text-muted small mb-0">{{ tables|length }} tables · {{ edges|length }} foreign-key relationships.
+        <p class="text-muted small mb-0">{% set _inferred = edges|selectattr('inferred')|list|length %}{{ tables|length }} tables · {{ edges|length - _inferred }} foreign-key relationships{% if _inferred %} · {{ _inferred }} inferred from column names{% endif %}.
           <span class="text-muted">{{ _('Layered schema layout — parents left, dependents right; crow\'s-foot = many side. Drag a table, scroll to zoom, drag the canvas to pan; click a table to pin its relationships.') }}</span></p>
         <button class="btn btn-outline-secondary btn-sm ms-auto" type="button" data-bs-toggle="collapse" data-bs-target="#er-list">
           <i class="bi bi-list-ul me-1"></i>{{ _('Show as list') }}</button>
@@ -43,7 +43,7 @@
                 <td><code>{{ t.pk|join(', ') }}</code></td>
                 <td class="small">
                   {% for e in edges if e.from_table == t.name %}
-                    <span class="badge bg-dark border me-1">{{ e.from_col }} → {{ e.to_table }}.{{ e.to_col }}</span>
+                    <span class="badge bg-dark border me-1"{% if e.inferred %} title="{{ _('Inferred from the column name: no FK constraint in the database') }}"{% endif %}>{{ e.from_col }} → {{ e.to_table }}.{{ e.to_col }}{% if e.inferred %} ({{ _('inferred') }}){% endif %}</span>
                   {% endfor %}
                 </td>
               </tr>

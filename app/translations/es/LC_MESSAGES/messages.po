@@ -23946,3 +23946,15 @@ msgstr "La tarea «%(name)s» se ha actualizado en Automatizaciones y está en e
 #, python-format
 msgid "Rollout plan saved on this change: %(total)d round(s) of at most %(size)d appliance(s), %(gap)d minute(s) apart. Nothing is in Automations or on the calendar yet — the rounds are created the moment this change is approved."
 msgstr "Plan de despliegue guardado en este cambio: %(total)d ronda(s) de como máximo %(size)d dispositivo(s), con %(gap)d minuto(s) de separación. Todavía no hay nada en Automatizaciones ni en el calendario: las rondas se crean en el momento en que se aprueba este cambio."
+
+#: app/templates/firmware/index.html
+msgid "(detected from the file name)"
+msgstr "(detectado por el nombre del archivo)"
+
+#: app/templates/database/index.html
+msgid "inferred"
+msgstr "inferida"
+
+#: app/templates/database/index.html
+msgid "Inferred from the column name: no FK constraint in the database"
+msgstr "Inferida del nombre de la columna: no hay restricción FK en la base de datos"

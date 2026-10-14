@@ -282,6 +282,14 @@ def upload():
     # chance to get them wrong. Typed values win; an unparseable name leaves
     # them empty and the required-version check below still fires.
     version, build = _derive_meta(file.filename if file else "", version, build)
+    # Hardware vs VM comes from Fortinet's own file name (FWB_KVM-… / FWB_1000E-…);
+    # a platform the operator picked is a decision and is never overruled.
+    from ..services.backup_server import parse_fw_platform
+    _plat, _hyp = parse_fw_platform(file.filename if file else "")
+    if not platform:
+        platform = _plat
+    if image_kind == "install" and not hypervisor and _hyp in INSTALL_HYPERVISORS:
+        hypervisor = _hyp
 
     # Validate — return JSON to the AJAX path, flash+redirect to the classic one.
     err = None
@@ -436,5 +444,9 @@ def parse_name():
     pre-filled in the form is exactly the value the server would have stored on
     its own. A JS-side regex would be a second author and would drift.
     """
-    v, b = _derive_meta(request.args.get("filename") or "", "", "")
-    return jsonify({"version": v, "build": b})
+    from ..services.backup_server import parse_fw_platform
+    name = request.args.get("filename") or ""
+    v, b = _derive_meta(name, "", "")
+    platform, hypervisor = parse_fw_platform(name)
+    return jsonify({"version": v, "build": b,
+                    "platform": platform, "hypervisor": hypervisor})

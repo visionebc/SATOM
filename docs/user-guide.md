@@ -1839,6 +1839,15 @@ device.
   VM / any), size, uploader, notes and a **sha256** recorded at upload. The binary
   lives on disk; the database row keeps the metadata and the hash, so integrity is
   checkable later.
+- **Platform is detected from the file name.** Fortinet's naming carries it:
+  `FWB_KVM-…`, `FGT_VM64_KVM-…` or `FAD_VM-…` is a VM image, `FWB_1000E-…` or
+  `FGT_60F-…` a hardware one. Choosing the file fills Platform (and the
+  hypervisor of an install image) and marks it "detected from the file name";
+  uploads and backup-server pulls apply the same rule on the server. A
+  platform you pick yourself is kept, and a name that does not say stays
+  **Any**. When an image is offered to an appliance, the appliance's probed
+  hardware type decides the match (its model string only when it was never
+  probed).
 - **Uploads keep running while you navigate.** A firmware image is hundreds of
   megabytes; it goes up as one request that the Jobs dock tracks across page
   changes, and the sha256 is computed by a background job once the file has
@@ -2691,7 +2700,14 @@ Global → Administrator → **Database** (admin only):
   read-only; **Clone** one to customize. Direct SQL is available too, but
   strictly read-only and validated.
 - **ER diagram** — a live, professional database diagram (crow's-foot
-  notation, domain-colored, searchable, draggable, exportable SVG).
+  notation, domain-colored, searchable, draggable, exportable SVG). Every
+  table of the database is in it. Relationships declared as foreign keys are
+  solid lines; **dashed** lines are relationships inferred from the column
+  name: an integer `<name>_id` column with no foreign key links to the table
+  of that name (singular or plural) whose primary key is `id`. History tables
+  keep `appliance_id` without a foreign key on purpose, because their rows
+  outlive the appliance. The header counts both kinds apart; the list view
+  marks inferred ones, and the Query Builder joins on both.
 - **Tables browser + SQL console** — read-only introspection with sensitive
   columns masked. Console queries run as the dedicated read-only role
   `satom_console_ro`, which cannot read credential tables or credential

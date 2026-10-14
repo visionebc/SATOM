@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Change Types — Administration{% endblock %}
 {% block content %}
+<style nonce="{{ csp_nonce }}">
+  .ct-table { table-layout: fixed; }
+  .ct-table th, .ct-table td { overflow-wrap: anywhere; }
+  .ct-table th { vertical-align: bottom; }
+</style>
 <div class="fw-page-header">
   <h4 class="mb-1"><i class="bi bi-ui-checks-grid me-2"></i>{{ _('Change types') }}</h4>
   <p class="text-muted mb-0" style="font-size:13px;">
@@ -11,7 +16,8 @@
 <div class="card mb-3">
   <div class="card-header"><strong><i class="bi bi-box-seam me-1"></i>{{ _('Built in — reword only') }}</strong></div>
   <div class="table-responsive">
-    <table class="table table-sm mb-0 align-middle">
+    <table class="table table-sm mb-0 align-middle ct-table">
+      <colgroup><col style="width:17%"><col style="width:25%"><col style="width:24%"><col style="width:10%"><col style="width:9%"><col style="width:8%"><col style="width:7%"></colgroup>
       <thead><tr>
         <th>{{ _('Key') }}</th><th>{{ _('Name in the picker') }}</th><th>{{ _('Runs against') }}</th>
         <th>{{ _('Overridden fields') }}</th><th>{{ _('Unreviewed') }}</th><th>{{ _('In the picker') }}</th><th></th>
@@ -39,7 +45,8 @@
 <div class="card mb-3">
   <div class="card-header"><strong><i class="bi bi-plus-square me-1"></i>{{ _('Your change types — documentary') }}</strong></div>
   <div class="table-responsive">
-    <table class="table table-sm mb-0 align-middle">
+    <table class="table table-sm mb-0 align-middle ct-table">
+      <colgroup><col style="width:17%"><col style="width:25%"><col style="width:17%"><col style="width:7%"><col style="width:10%"><col style="width:9%"><col style="width:8%"><col style="width:7%"></colgroup>
       <thead><tr>
         <th>{{ _('Key') }}</th><th>{{ _('Name in the picker') }}</th><th>{{ _('Offered for') }}</th><th>{{ _('Authored in') }}</th>
         <th>{{ _('Fields written') }}</th><th>{{ _('Unreviewed') }}</th><th>{{ _('In the picker') }}</th><th></th>
@@ -69,34 +76,35 @@
 <div class="card mb-3">
   <div class="card-header"><strong><i class="bi bi-plus-lg me-1"></i>{{ _('Add a change type') }}</strong></div>
   <div class="card-body">
-    <form method="post" action="{{ url_for('cr_types.create', _adom=product.key) }}" class="row g-2 align-items-end">
+    <form method="post" action="{{ url_for('cr_types.create', _adom=product.key) }}" class="row g-3 align-items-start">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="col-md-3">
-        <label class="form-label small mb-1">{{ _('Key') }}</label>
-        <input class="form-control form-control-sm" name="key" required
+      <div class="col-md-4">
+        <label class="form-label small mb-1" for="ct-key">{{ _('Key') }}</label>
+        <input class="form-control form-control-sm" id="ct-key" name="key" required
                placeholder="{{ _('cabling_work') }}" pattern="[A-Za-z0-9 _-]{2,64}">
         <div class="form-text" style="font-size:11px;">{{ _('Stored on every change request that uses it — it does not change afterwards.') }}</div>
       </div>
-      <div class="col-md-4">
-        <label class="form-label small mb-1">{{ _('Name in the picker') }}</label>
-        <input class="form-control form-control-sm" name="label" required
+      <div class="col-md-5">
+        <label class="form-label small mb-1" for="ct-label">{{ _('Name in the picker') }}</label>
+        <input class="form-control form-control-sm" id="ct-label" name="label" required
                placeholder="{{ _('Structured cabling work') }}">
       </div>
-      <div class="col-md-2">
-        <label class="form-label small mb-1">{{ _('Written in') }}</label>
-        <select class="form-select form-select-sm" name="source_lang">
+      <div class="col-md-3">
+        <label class="form-label small mb-1" for="ct-lang">{{ _('Written in') }}</label>
+        <select class="form-select form-select-sm" id="ct-lang" name="source_lang">
           {% for code, name in langs %}<option value="{{ code }}">{{ name }}</option>{% endfor %}
         </select>
       </div>
-      <div class="col-md-2">
-        <label class="form-label small mb-1">{{ _('Offered for') }}</label>
-        <select class="form-select form-select-sm" name="products" multiple size="3">
-          {% for k in kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
-        </select>
-        <div class="form-text" style="font-size:11px;">{{ _('None selected = every product.') }}</div>
-      </div>
-      <div class="col-md-1 text-end">
-        <button class="btn btn-fw-primary btn-sm w-100">{{ _('Create') }}</button>
+      <div class="col-12 d-flex align-items-center flex-wrap" style="gap:4px 16px;">
+        <span class="form-label small mb-0">{{ _('Offered for') }}</span>
+        {% for k in kinds %}
+        <div class="form-check form-check-inline mb-0 me-0">
+          <input class="form-check-input" type="checkbox" name="products" value="{{ k }}" id="ct-prod-{{ k }}">
+          <label class="form-check-label small" for="ct-prod-{{ k }}">{{ k }}</label>
+        </div>
+        {% endfor %}
+        <span class="form-text mt-0" style="font-size:11px;">{{ _('None selected = every product.') }}</span>
+        <button class="btn btn-fw-primary btn-sm ms-auto px-4">{{ _('Create') }}</button>
       </div>
     </form>
   </div>

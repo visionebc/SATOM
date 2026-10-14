@@ -23962,3 +23962,15 @@ msgstr "L'attività “%(name)s” è stata aggiornata nelle Automazioni ed è n
 #, python-format
 msgid "Rollout plan saved on this change: %(total)d round(s) of at most %(size)d appliance(s), %(gap)d minute(s) apart. Nothing is in Automations or on the calendar yet — the rounds are created the moment this change is approved."
 msgstr "Piano di rollout salvato su questa modifica: %(total)d turno/i di al massimo %(size)d dispositivo/i, a %(gap)d minuto/i di distanza. Nulla è ancora nelle Automazioni o nel calendario — i turni vengono creati nel momento in cui questa modifica viene approvata."
+
+#: app/templates/firmware/index.html
+msgid "(detected from the file name)"
+msgstr "(rilevato dal nome del file)"
+
+#: app/templates/database/index.html
+msgid "inferred"
+msgstr "dedotta"
+
+#: app/templates/database/index.html
+msgid "Inferred from the column name: no FK constraint in the database"
+msgstr "Dedotta dal nome della colonna: nessun vincolo FK nel database"

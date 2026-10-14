@@ -23925,3 +23925,15 @@ msgstr "Die Aufgabe „%(name)s“ wurde in den Automatisierungen aktualisiert u
 #, python-format
 msgid "Rollout plan saved on this change: %(total)d round(s) of at most %(size)d appliance(s), %(gap)d minute(s) apart. Nothing is in Automations or on the calendar yet — the rounds are created the moment this change is approved."
 msgstr "Rollout-Plan an dieser Änderung gespeichert: %(total)d Runde(n) mit höchstens %(size)d Gerät(en), %(gap)d Minute(n) Abstand. In den Automatisierungen und im Kalender steht noch nichts — die Runden werden angelegt, sobald diese Änderung genehmigt ist."
+
+#: app/templates/firmware/index.html
+msgid "(detected from the file name)"
+msgstr "(aus dem Dateinamen erkannt)"
+
+#: app/templates/database/index.html
+msgid "inferred"
+msgstr "abgeleitet"
+
+#: app/templates/database/index.html
+msgid "Inferred from the column name: no FK constraint in the database"
+msgstr "Aus dem Spaltennamen abgeleitet: kein FK-Constraint in der Datenbank"

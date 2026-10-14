@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Fixed — the manual deploy migrates the database schema (2026-10-14) · 78 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Fixed — adding a device no longer leaves it unmonitored or buried in false alerts (2026-10-14) · 82 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Fixed — the manual deploy migrates the database schema (2026-10-14) · 78 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Fixed — adding a device no longer leaves it unmonitored or buried in false alerts (2026-10-14) · 82 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Fixed — the manual deploy migrates the database schema (2026-10-14) · 78 entries</span>
-        <ul class="rel-leads"><li>satom execute restart-all runs flask db upgrade on a primary</li><li>satom get system health shows the schema version</li><li>Security: the console accepted any diagnose command</li><li class="rel-more">… and 75 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Fixed — adding a device no longer leaves it unmonitored or buried in false alerts (2026-10-14) · 82 entries</span>
+        <ul class="rel-leads"><li>Discover no longer creates probes that can only fail</li><li>Every way of adding a device now creates its baseline probes</li><li>Device health says when it cuts the list of failing probes</li><li class="rel-more">… and 79 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.1.0.html" data-rel-version="3.1.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.1.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -365,6 +365,32 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="fixed--adding-a-device-no-longer-leaves-it-unmonitored-or-buried-in-false-alerts-2026-10-14">Fixed — adding a device no longer leaves it unmonitored or buried in false alerts (2026-10-14)</h3>
+<ul>
+<li><strong>Discover no longer creates probes that can only fail.</strong> <em>Published
+  policies</em> now dials each new front end once before creating its probe. A VIP
+  that SATOM cannot connect to (connect timeout, refused, TLS failure before a
+  session, or a target the network guard refuses) gets its probe <strong>disabled</strong>,
+  with the reason in its last result. The discovery message counts these
+  probes. Before this change they were created enabled and stayed critical
+  forever: on a lab FortiWeb, 49 of 55 deep monitors were red against
+  <code>172.0.0.x</code> VIPs that nothing routed to, while CPU, memory and proxyd were
+  healthy, and Device health showed the device as critical. A front end that
+  connects but answers badly is still created enabled. Disabled policies are
+  not dialled.</li>
+<li><strong>Every way of adding a device now creates its baseline probes.</strong> Devices
+  added through the REST API (<code>POST /api/appliances</code>) or onboarded by a
+  provisioning run got scrape targets but no thresholds, so Device health
+  showed "no deep monitors configured" until someone pressed Discover. Both
+  paths now use the same provisioning step as the web form. The 3-minute
+  Collection sweep also gives the baseline to any device that has no probe at
+  all, which covers rows inserted by imports or scripts. It does not re-create
+  a probe that was deleted on a provisioned device. A test fails if any
+  function that creates an appliance skips provisioning.</li>
+<li><strong>Device health says when it cuts the list of failing probes</strong>:
+  "49/55 probes alerting: a, b, c, d (+45 more)" instead of four names that
+  read as the whole list.</li>
+</ul>
 <h3 id="fixed--the-manual-deploy-migrates-the-database-schema-2026-10-14">Fixed — the manual deploy migrates the database schema (2026-10-14)</h3>
 <ul>
 <li><strong><code>satom execute restart-all</code> runs <code>flask db upgrade</code> on a primary</strong> when the
@@ -599,6 +625,10 @@
   Troubleshooting holds Scout only: Backend Reachability, Config Compare and
   Path Diagnostics work on FortiWeb and FortiADC objects and are no longer
   listed there. The pages still open by URL.</li>
+<li><strong>The Fleet health sub-menu is gone.</strong> Device health is a direct entry of
+  Monitoring in every ADOM (in a device ADOM the sub-menu held nothing else);
+  in Global, SATOM health follows it as a direct entry. Pages, URLs and
+  permissions are unchanged.</li>
 </ul>
 <h3 id="changed--adom-search-searches-each-adoms-own-configuration-2026-10-14">Changed — ADOM Search searches each ADOM's own configuration (2026-10-14)</h3>
 <ul>

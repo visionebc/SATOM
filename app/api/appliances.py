@@ -138,6 +138,10 @@ def create_appliance():
     db.session.add(appliance)
     db.session.commit()
     log_action('api.appliance.create', appliance_id=appliance.id, detail=f'Created appliance {name}')
+    # Same seam as the web form: without it a device added over the API had
+    # metrics (the Collection sweep backfills targets) and no thresholds.
+    from ..services.monitoring_provision import provision_monitoring
+    provision_monitoring(appliance)
     return jsonify({
         'id': appliance.id,
         'name': appliance.name,

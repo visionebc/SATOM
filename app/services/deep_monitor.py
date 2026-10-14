@@ -2374,11 +2374,60 @@ def _discover_fac_probes(appliance, *, session=None) -> dict:
                       if absent else ""}
 
 
+def never_connected(error: str) -> bool:
+    """True when an HTTPS probe error means no TCP/TLS session ever existed.
+
+    ``ReadTimeout``, a reset after connect or an HTTP 5xx are NOT this: the VIP
+    answered, so a failure there is a finding about the service.
+    """
+    return str(error or "").startswith(_NEVER_CONNECTED)
+
+
+def check_reachability(urls: list[str], *, timeout: float = 10.0) -> dict:
+    """``{url: error}`` for every URL SATOM could not connect to; reachable
+    URLs are absent. Runs in the same thread pool shape as :func:`prefetch_https`
+    and, like :func:`https_io`, touches no app context.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    from . import service_probe
+
+    def _one(url):
+        res = service_probe.probe_url(url, timeout=timeout)
+        data = res if isinstance(res, dict) else res.__dict__
+        return str(data.get("error") or "")
+
+    urls = [u for u in dict.fromkeys(urls) if u]
+    if not urls:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(HTTPS_WORKERS, len(urls))) as pool:
+        errors = dict(zip(urls, pool.map(_one, urls)))
+    return {u: e for u, e in errors.items() if never_connected(e)}
+
+
+def unreachable_detail(url: str, error: str) -> str:
+    """The reason a discovered probe was created disabled, shown on its row."""
+    _, host, port = _split_url(url)
+    return ("Created disabled: SATOM could not connect to %s:%d when this probe "
+            "was discovered (%s). The VIP is not routable from SATOM, so the "
+            "probe could only ever report the route, not the service. Enable it "
+            "once SATOM can reach the VIP." % (host, port, error))[:1000]
+
+
 def discover_https_probes(appliance, *, session=None) -> dict:
     """Create one HTTP(S) probe per resolvable server policy on ``appliance``.
 
     Idempotent: an existing probe with the same URL is left alone, so re-running
     after adding a policy only adds the new one.
+
+    Every NEW target of an enabled policy is dialled once before its row is
+    written. A VIP SATOM cannot connect to (a lab address nothing routes, a
+    front-end only reachable from the client side of the WAF) is created
+    DISABLED with the reason in ``last_detail``. Created enabled it was a
+    permanent crit that buried the device's real signal -- fortiweb17,
+    2026-10-14: 49 of 55 probes red against ``172.0.0.x`` VIPs, while CPU,
+    memory and proxyd were fine. Suppression is not the answer: it expires by
+    design, so the noise would come back on its own.
     """
     from ..models import MonitorProbe, db
 
@@ -2390,23 +2439,32 @@ def discover_https_probes(appliance, *, session=None) -> dict:
     have = {(p.url or "").strip() for p in
             session.query(MonitorProbe)
             .filter(MonitorProbe.appliance_id == appliance.id).all()}
-    created, skipped = 0, 0
-    for t in targets:
+    new = [t for t in targets if t["url"] and t["url"] not in have]
+    # A disabled policy is not dialled: its probe is created disabled anyway.
+    dead = check_reachability([t["url"] for t in new if t["enabled"]])
+    created, unreachable = 0, 0
+    now = datetime.utcnow()
+    for t in new:
         url = t["url"]
-        if not url or url in have:
-            skipped += 1
+        if url in have:                    # two policies on one front-end
             continue
-        session.add(MonitorProbe(
+        probe = MonitorProbe(
             appliance_id=appliance.id, kind="https",
             name=f"{appliance.name} · {t['policy']}"[:120],
             target=t["policy"], url=url, enabled=t["enabled"],
             interval_min=DEFAULT_PROBE_INTERVAL_MIN,
-            note=t["note"][:250]))
+            note=t["note"][:250])
+        if url in dead:
+            probe.enabled = False
+            probe.last_run_at = now
+            probe.last_detail = unreachable_detail(url, dead[url])
+            unreachable += 1
+        session.add(probe)
         have.add(url)
         created += 1
     session.commit()
-    return {"created": created, "skipped": skipped,
-            "total_targets": len(targets)}
+    return {"created": created, "skipped": len(targets) - created,
+            "total_targets": len(targets), "unreachable": unreachable}
 
 
 def discover_interface_probes(appliance, *, session=None) -> dict:

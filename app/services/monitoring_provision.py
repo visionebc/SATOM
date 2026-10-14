@@ -75,3 +75,41 @@ def provision_monitoring(appliance, *, session=None) -> dict:
         out["errors"].append("threshold probes: %s" % str(exc)[:120])
 
     return out
+
+
+def backfill_baselines(*, session=None) -> dict:
+    """Give the baseline to every provisionable device that has NO probe at all.
+
+    The scheduled Collection sweep already self-heals scrape targets for every
+    appliance; the threshold half had no such net, so any creation path that
+    skipped the seam left a device with metrics and no alerting, forever.
+    Measured 2026-10-14: fortiweb18 and fgt02 had 7 and 1 scrape targets and
+    zero probes -- one was inserted in bulk with fortiweb17, the other came in
+    through a path that never called :func:`provision_monitoring`.
+
+    ZERO probes, not "a baseline kind is missing": an operator who deleted a
+    device's CPU probe made a choice, and a sweep that re-creates it every
+    three minutes would overrule it. A device with no probe at all is never a
+    choice anyone can see -- Fleet health shows it as "no deep monitors
+    configured" -- and to silence one, its probes are disabled, not deleted.
+    """
+    from ..models import Appliance, MonitorProbe, db
+    from . import deep_monitor as dm
+    from . import metrics_collect as mc
+
+    session = session or db.session
+    covered = {aid for (aid,) in session.query(MonitorProbe.appliance_id).distinct()}
+    out = {"devices": [], "errors": []}
+    for a in session.query(Appliance).order_by(Appliance.id).all():
+        if a.id in covered or not mc.provisionable(a):
+            continue
+        try:
+            made = (dm.ensure_baseline(a, session=session) or {}).get("created", [])
+        except Exception as exc:                 # noqa: BLE001
+            session.rollback()
+            log_exception(exc, context="monitoring.backfill_baselines")
+            out["errors"].append("%s: %s" % (a.name, str(exc)[:120]))
+            continue
+        if made:
+            out["devices"].append(a.name)
+    return out

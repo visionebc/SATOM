@@ -426,7 +426,8 @@ PAGES: tuple[dict, ...] = (
        "SATOM's own housekeeping, on a schedule."),
     _p("automations.index", "Automations", "automation",
        "schedule automation cutover planned change policy backend "
-       "certificate swap maintenance window operator",
+       "certificate swap maintenance window operator reboot upgrade "
+       "firmware ha failover certificate renewal lifecycle custom rest",
        "Fleet work you schedule for a chosen time."),
     _p("calendar_plan.index", "Change Calendar", "automation",
        "calendar change window schedule day grid planned upcoming "

@@ -577,8 +577,8 @@
 
 {# ---------------------------------------------------------------- stage 4 #}
 {#
-  The rollout, saved as REAL scheduled task(s) — the same rows /scheduled-actions
-  lists and the calendar draws, created through the ONE call the change's own
+  The rollout, saved as REAL scheduled task(s) — the same rows /automations
+  lists (operator automations since 2026-10-14) and the calendar draws, created through the ONE call the change's own
   Schedule button makes (services.change_requests.schedule_change_request).
   A second, page-local scheduler would be work nobody could see from the pages
   that list the work.
@@ -706,8 +706,8 @@
         {% if rollout.ok %}{{ _('Save as scheduled task') }}
         {% else %}{{ _('Save rollout plan') }}{% endif %}</button>
       {% if rollout.task %}
-        <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('scheduled_actions.index') }}">
-          <i class="bi bi-list-check me-1"></i>{{ _('Scheduled actions') }}</a>
+        <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('automations.index') }}">
+          <i class="bi bi-list-check me-1"></i>{{ _('Automations') }}</a>
         {% if rollout.calendar_on %}
         <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('calendar_plan.index') }}">
           <i class="bi bi-calendar3 me-1"></i>{{ _('Calendar') }}</a>

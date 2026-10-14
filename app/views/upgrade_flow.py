@@ -1210,7 +1210,7 @@ def schedule():
                           f"{cr.status})")
         flash(gettext('Rollout plan saved on this change: %(total)d round(s) '
                       'of at most %(size)d appliance(s), %(gap)d minute(s) '
-                      'apart. Nothing is in Scheduled Actions or on the '
+                      'apart. Nothing is in Automations or on the '
                       'calendar yet — the rounds are created the moment this '
                       'change is approved.',
                       total=plan.get('total') or 1, size=plan.get('size') or 1,
@@ -1235,14 +1235,15 @@ def schedule():
                detail=f'action={action_id} rounds={total} '
                       f'per_round={per_round} gap={gap}m')
 
-    # The SAME sentence the other scheduling card in this product prints, from
-    # the same message. Two spellings of "it is saved and on the calendar" is
-    # how one of them comes to claim it over a row that is switched off.
+    # The other scheduling card (integrations) prints the same sentence about
+    # ITS page; this one names Automations, where rollout rows live since the
+    # 2026-10-14 regroup (an upgrade is operator work). Pointing at the System
+    # Automations page sent the operator to a page they cannot open.
     if existed:
-        flash(gettext('The task “%(name)s” was updated in Scheduled Actions and '
+        flash(gettext('The task “%(name)s” was updated in Automations and '
                       'is on the calendar.', name=name), 'success')
     else:
-        flash(gettext('The task “%(name)s” has been added to Scheduled Actions '
+        flash(gettext('The task “%(name)s” has been added to Automations '
                       'and is on the calendar.', name=name), 'success')
     if total > 1:
         flash(gettext('It runs in %(total)d rounds of at most %(size)d '

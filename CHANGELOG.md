@@ -6,6 +6,50 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — Automations regrouped: operator work in Automation, SATOM's own in Administrator; schema pages under API (2026-10-14)
+
+- **System Automations moved to Administrator → System**, in every ADOM.
+  These are SATOM's own automations: syncs, backups, probe and metrics
+  sweeps, Sentinel, and feed refreshes. **Automation keeps Automations**, the
+  work on the fleet's services that operators schedule (operator request:
+  "System Automations are SATOM's own, so they move to Administrator;
+  Automations are what keeps the services on the Forti devices working").
+- **Operator actions moved from System Automations to Automations:** upgrade
+  preparation, firmware upgrade, reboot, HA failover, the three certificate
+  renewals, the certificate lifecycle sweep and custom REST. Existing rows
+  moved with their action. Operators (`config_write`) can now schedule them.
+  The dangerous ones still run only bound to an approved Change Request
+  inside its window, and approving a change is an administrator's step.
+  **Certificate lifecycle and custom REST now also require an approved
+  Change Request.** The form says so when one of these actions is picked.
+  Automations is now live in the FortiADC, FortiAnalyzer and
+  FortiAuthenticator ADOMs too. The certificate renewals are now also
+  offered as Change Request types.
+- **System automations create themselves.** When a node gets its first
+  device, SATOM creates the default set (the same plan as `satom execute seed
+  actions`), and the "Appliance created" message counts them. This happens
+  only while the node has no system automation at all. A node that has one
+  keeps exactly what its administrator left.
+- **Schema builds and Build compatibility moved to the API sub-menu** of
+  Automation (operator request: "put Schema builds and Build compatibility
+  into API"). Global now has an API sub-menu holding those two pages. A
+  profile without `config_write` finds the API menu as its own group in a
+  device ADOM, and inside the Global block in Global.
+- **Security: a scheduled row runs only under its own Change Request.** The
+  executor now checks that the bound change covers the row: same action, and
+  only devices the change names. Before, any row carrying an approved change's
+  id ran inside that change's window. Since operators can now edit these rows,
+  that would have let one reboot every device under someone else's approved
+  upgrade. The form can no longer set or remove a binding. Only the change's
+  Schedule button writes it.
+- **Fixed: a change naming no device can no longer be scheduled.** Its row
+  carried an empty target list, which the executor reads as the whole fleet.
+  An approved reboot naming nothing would have rebooted every appliance. Such
+  a change can still be saved and read.
+- Links that sent operators to the page they cannot open now go to the page
+  that owns the row: the upgrade flow's rollout button and the "automation
+  failing" alert.
+
 ### Changed — Global draws Automation like the device ADOMs; Administrator in alphabetical sections (2026-10-14)
 
 - **Automation in the Global ADOM is a sub-menu of the Global block**, above

@@ -143,7 +143,7 @@ current list:
 
 | ADOM | URL | Purpose |
 |---|---|---|
-| **Global** | `/` | Fleet-wide dashboard and cross-product tools: Monitoring (with Metrics and Analysis), Search, Service Diagram, Architecture, Fleet Objects, WAF, Jobs, DNS Lookup, and an **Automation** sub-menu (with Certificate Manager, Schema builds and Build compatibility); and fleet administration under **Administrator**, in sections (Access, Change Management, Devices, Objects, Studio, System) |
+| **Global** | `/` | Fleet-wide dashboard and cross-product tools: Monitoring (with Metrics and Analysis), Search, Service Diagram, Architecture, Fleet Objects, WAF, Jobs, DNS Lookup, and an **Automation** sub-menu (with Certificate Manager, and an **API** sub-menu holding Schema builds and Build compatibility); and fleet administration under **Administrator**, in sections (Access, Change Management, Devices, Objects, Studio, System) |
 | **FortiWeb** | `/web/` | Everything WAF: FortiWeb's own menu for the selected device (Policy, Server Objects, Web Protection, System, …), the device-scoped WAF tools under Operations → WAF (Search Attack ID, Exceptions & Signature, WAF Artifacts), Operations, FortiWeb administration |
 | **FortiADC** | `/adc/` | Load-balancer management: the device's own menu when a layout exists for its build (otherwise a FortiADC group with Signatures only), and an ADC API console |
 | **FortiAuthenticator** | `/fac/` | Identity and access: the unit's own menu (users and groups, RADIUS and TACACS+ clients, Fortinet SSO, certificates…) drawn from its measured GUI, and a FAC API console |
@@ -261,10 +261,12 @@ and ends with the **Automation** sub-menu;
 **Diagnose Log Collection** is in Operations › Troubleshooting (§27). There is
 no separate **Fleet** group, and no separate Automation group in a device ADOM
 (the Global ADOM draws Automation as a sub-menu of its Global block, above
-Jobs). The **API** console
-(Registry & console) is a sub-menu of Automation. **Appliances** is under
-Administrator; **Schema builds**, **Build compatibility** and
-**Certificate Manager** are under Automation (Certificate Manager in every
+Jobs). The **API** sub-menu of Automation holds the console (Registry &
+console, device ADOMs) and **Schema builds** and **Build compatibility** (every
+ADOM, Global included). **System Automations** is under Administrator →
+System; Automation keeps **Automations**, the work operators schedule (§15).
+**Appliances** is under
+Administrator; **Certificate Manager** is under Automation (Certificate Manager in every
 ADOM: live in Global, FortiWeb and FortiADC, drawn disabled with the reason in
 FortiGate, FortiAnalyzer and FortiAuthenticator). **Administrator** is split
 into sections — Access, Change Management, Devices, Objects, Studio and System
@@ -272,9 +274,10 @@ into sections — Access, Change Management, Devices, Objects, Studio and System
 language; a section with no entry you may open is not drawn. **Studio** holds
 Python Console in every ADOM, and also Plugin Studio and Lua Studio in Global. The Global ADOM keeps its **Global** block for the fleet pages
 and has no Operations group. A profile that cannot see one of those groups
-keeps the entry where it was before — Appliances and the API library under
-Operations, the API console as a group of its own (`registry.view` without
-`config_write`), Studio as a group of its own, and **Process** in a group of
+keeps the entry where it was before — Appliances under
+Operations, the API menu (console, Schema builds, Build compatibility) as a
+group of its own in a device ADOM and inside the Global block in Global
+(`registry.view` without `config_write`), Studio as a group of its own, and **Process** in a group of
 its own — so the reorder takes no page away from anyone. Each entry keeps its
 own permission; moving it changed where it is drawn, not who sees it.
 
@@ -2588,21 +2591,32 @@ are kept apart on purpose.
 
 ## 15. Automation
 
-**Scheduled Actions** (FortiWeb ADOM → Administrator, plus the ⏰ button on
-Server Policy for operators):
+Scheduled work lives on two pages, split by **who the work is for**:
 
-- **Admin catalog**, by what it is for:
+- **System Automations** — SATOM keeping its *own* data current. Administrator
+  → System → **System Automations** (`/scheduled-actions/`, administrators
+  only). Every ADOM; the list shows that ADOM's rows.
+- **Automations** — work on the fleet's services that an operator plans for a
+  chosen time. Operations → Automation → **Automations** (`/automations/`,
+  needs `config_write`, which operators hold). It is live in the FortiWeb,
+  FortiADC, FortiAnalyzer and FortiAuthenticator ADOMs (and Global), and
+  drawn disabled with the reason in FortiGate, where no automation applies yet.
+
+An action belongs to one page, decided by the catalog, not by the row: when
+an action moves between the two catalogs, its existing rows move with it.
+This last happened on 2026-10-14, when the operator actions below moved from
+System Automations to Automations.
+
+- **System catalog**, by what it is for:
 
   | Group | Actions |
   |---|---|
   | Source of truth | `device_sync` (refresh the local cache from a device), `device_inspect` (sync **and** push the SoT off-box), `deep_capture`, `signature_sync` |
   | Backups | `backup` (on-device config backup), `system_backup` (the manager's own `pg_dump` bundle, optionally pushed to the backup server) |
   | Monitoring — all four are the ones §14 asks you to schedule | `metrics_scrape` (the Collection sweep, §14.7 — **every 3 minutes**), `deep_monitor` (the deep-monitor probe sweep, §14.3 — **every 3 minutes**, the seed plan's cadence), `monitor_report` (the period summary, §14.9 — *after* the period closes), `inventory_snapshot` (daily inventory counts for §14.2) |
-  | Certificates | `cert_scan`, the three `cert_manager_*` renewals (server / client+server / client), `cert_lifecycle` (the revoke-and-cleanup sweep) |
-  | Health | `health_check`, `ha_check`, `stats` |
+  | Reads that feed pages | `cert_scan` (the Certificate Manager table), `health_check`, `ha_check`, `stats` |
   | Catalog | `appid_import` (the nightly AppID feed, §25), `knowledge_fetch` (knowledge packs from the feed, daily, by mode — §22.4), `signature_check` (FortiGuard DB versions per FortiWeb + collection from the signature source, daily — §8.1) |
-  | Firmware | `upgrade_prep` (backup + health, flashes nothing) and `upgrade` — fixed date/time, only inside an approved Change Request window; the scheduled executor does **not** flash yet (it reports each target *not executed*), so flash live from the Upgrade page (§36.6) |
-  | Escape hatch | `custom_rest` — any FortiWeb REST request you define; GET is a live read, writes go through the snapshot + audit + dry-run path |
+  | Sentinel and inventory | `sentinel_sweep`, `sentinel_baseline`, `sentinel_vuln_sync`, `sentinel_feed_publish`, `artifact_refs`, `netbox_reconcile` |
 
   Two notes on reading that list. **There is no separate `service_monitor`
   action** — Deep monitors (§14.3) and Service monitor (§14.4) share one storage,
@@ -2612,9 +2626,34 @@ Server Policy for operators):
   truth, so new installs do not seed it, though the handler still works for a
   manual run of the code repository.
 
-- **User catalog** (single-target, date-driven): enable/disable a server policy,
-  enable/disable a backend (pool member), **change a backend's IP or port**, and
-  swap a server-policy certificate.
+  **They arm themselves.** When a node gets its first device, SATOM creates
+  its default set of system automations (hourly fleet sync, nightly SoT
+  snapshot and system backup, the 3-minute probe, metrics and Sentinel sweeps,
+  the period reports, the feed refreshes) and says so in the "Appliance
+  created" message. This happens only while the node has **no** system
+  automation at all: if one exists, SATOM leaves the set as the administrator
+  left it, and a deleted row is not re-created. `sudo satom execute seed
+  actions` fills individual gaps on demand.
+
+- **Operator catalog** (Automations):
+
+  | Group | Actions |
+  |---|---|
+  | Server-policy objects (one device each) | enable/disable a server policy, enable/disable a backend (pool member), **change a backend's IP or port**, swap a server-policy certificate |
+  | Firmware | `upgrade_prep` (backup + health, flashes nothing) and `upgrade` — fixed date/time, only inside an approved Change Request window; the scheduled executor does **not** flash yet (it reports each target *not executed*), so flash live from the Upgrade page (§36.6) |
+  | Device operations | `reboot`, `ha_failover` — fixed date/time, approved Change Request only |
+  | Certificates | the three `cert_manager_*` renewals (server / client+server / client), `cert_lifecycle` (the revoke-and-cleanup sweep, approved Change Request only) |
+  | Escape hatch | `custom_rest` — any FortiWeb REST request you define; GET is a live read, writes go through the snapshot + audit + dry-run path; approved Change Request only |
+
+  **Who authorizes what.** An operator can *schedule* a reboot, an upgrade,
+  an HA failover, a certificate lifecycle sweep or a custom REST call; it
+  *runs* only bound to an approved Change Request, inside its window — and
+  approving a change is an administrator's step. The form says so when you
+  pick one of these. The binding is written by the change's own **Schedule**
+  button, never by the form: a row runs under a change only if it is that
+  change's action against devices the change names. Anything else (another
+  action, an extra device, the whole fleet) is skipped with the reason and
+  leaves the change untouched.
 - Schedules: interval / daily / weekly / monthly / once, with catch-up
   semantics and a run history per action. A dedicated scheduler sidecar fires
   them; **Run now** is always available. Every wall-clock field — including the
@@ -2630,8 +2669,10 @@ Server Policy for operators):
   firmware image), risk/rollback notes, and an approval trail.
 - Workflow: draft → notify (rendered client notice) → **approve** → schedule
   → in-progress → completed/failed, each step time-stamped in a timeline.
-- The scheduled upgrade bound to a CR **refuses to run** outside its approved
-  window.
+- The scheduled action bound to a CR **refuses to run** outside its approved
+  window, and refuses any row the change does not cover.
+- A change that names no device can be saved and read, but not scheduled:
+  its automated run would have no device list to stay inside.
 
 **Jobs** (Global → Jobs): every background job with owner, host/PID, progress
 and duration; Pause / Resume / Stop (cooperative — jobs park at safe
@@ -6152,7 +6193,7 @@ what fills the CLI columns of the Build compatibility page (§30.11).
 ### 30.11 Build compatibility: which fields exist on which build
 
 The same REST API version carries different fields on different firmware
-builds. **Build compatibility** (bottom of the sidebar, beside API;
+builds. **Build compatibility** (Automation → API in the sidebar;
 `/web/registry/build-compat/`; needs the registry edit permission) shows, per product, every object and field
 against the builds you pick, by channel. The full reference is
 [Build compatibility](build-compatibility.md).
@@ -6210,7 +6251,7 @@ From the console: `sudo satom execute apilib compat fortiweb 7.6.8 8.0.6` and
 When an appliance starts running a firmware build whose schema SATOM has never
 harvested, every administrator gets **one** bell notification for that product
 and build: *New build 8.0.7 on fweb-01: schema not harvested*. It links to
-**Schema builds** (Automation in the sidebar — under Operations in a device ADOM, its own group in Global;
+**Schema builds** (Automation → API in the sidebar — under Operations in a device ADOM, in the Global block in Global;
 `/schema-builds/`; reading needs `registry.view`).
 
 The page has three parts:

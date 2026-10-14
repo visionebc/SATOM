@@ -11152,3 +11152,22 @@ msgstr ""
 #: app/templates/partials/nav_admin.html
 msgid "Change Management"
 msgstr ""
+
+#: app/templates/scheduled_actions/form.html
+msgid "Runs only bound to an approved Change Request, inside its maintenance window."
+msgstr ""
+
+#: app/views/upgrade_flow.py
+#, python-format
+msgid "The task “%(name)s” has been added to Automations and is on the calendar."
+msgstr ""
+
+#: app/views/upgrade_flow.py
+#, python-format
+msgid "The task “%(name)s” was updated in Automations and is on the calendar."
+msgstr ""
+
+#: app/views/upgrade_flow.py
+#, python-format
+msgid "Rollout plan saved on this change: %(total)d round(s) of at most %(size)d appliance(s), %(gap)d minute(s) apart. Nothing is in Automations or on the calendar yet — the rounds are created the moment this change is approved."
+msgstr ""

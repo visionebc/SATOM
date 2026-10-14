@@ -76,10 +76,13 @@ SURFACES: dict[str, dict] = {
         'scope': USER_SCOPE,
         'title': 'Automations',
         'icon': 'bi-calendar2-check',
-        'blurb': ('Schedule work on the fleet — a cutover, a drained backend, '
-                  'a certificate swap — to happen at a chosen time. Each one '
-                  'changes ONE appliance through the same snapshot + audit + '
-                  'change-history path as a manual edit.'),
+        'blurb': ('Schedule work on the fleet\'s services to happen at a chosen '
+                  'time — a cutover, a drained backend, a certificate swap or '
+                  'renewal, an upgrade, a reboot, an HA failover. Object changes '
+                  'go through the same snapshot + audit + change-history path as '
+                  'a manual edit; reboot, upgrade, failover, certificate '
+                  'lifecycle and custom REST run only bound to an approved '
+                  'Change Request inside its window.'),
         #: The permission this surface's routes are gated on. It lives
         #: HERE so the page that offers the cross-scope facet and the
         #: factory that binds the gate read ONE value: two copies drift
@@ -93,7 +96,9 @@ SURFACES: dict[str, dict] = {
         'icon': 'bi-clock-history',
         'blurb': ('SATOM maintaining itself — backups, source-of-truth syncs, '
                   'probe sweeps, signature and CVE refreshes. These keep the '
-                  'product\'s own data current; they are not fleet changes.'),
+                  'product\'s own data current; they are not fleet changes. '
+                  'A node arms the default set by itself when its first device '
+                  'is added.'),
         'permission': Permission.USER_MANAGE,
         'other': ('automations', 'Automations'),
     },
@@ -220,6 +225,27 @@ def _parse_params() -> dict:
     except (ValueError, TypeError):
         flash('Advanced params were not valid JSON and were ignored.', 'warning')
         return {}
+
+
+#: Params only Change Request scheduling writes (change_requests.
+#: schedule_change_request). The executor reads ``change_request_id`` as the
+#: authorization of a CR-gated action, so a form that could set it would let
+#: whoever edits a row pick the approval it runs under.
+BINDING_KEYS = ('change_request_id', 'round_index', 'round_total',
+                'round_size', 'round_gap_minutes')
+
+
+def _keep_binding(action: ScheduledAction, params: dict) -> dict:
+    """``params`` with the binding keys taken from the STORED row, never the form.
+
+    A new row is never bound from here; an edited row keeps exactly the binding
+    it had (the textarea round-trips it, and deleting it there must not unbind
+    a round from its change any more than adding one may bind it).
+    """
+    out = {k: v for k, v in params.items() if k not in BINDING_KEYS}
+    stored = action.params_dict if action.id is not None else {}
+    out.update({k: stored[k] for k in BINDING_KEYS if k in stored})
+    return out
 
 
 def _custom_rest_params() -> dict:
@@ -424,9 +450,10 @@ def _apply_form(action: ScheduledAction) -> bool:
         if not custom.get('endpoint'):
             flash('Custom REST: an endpoint (registry key or /api/... path) is required.', 'danger')
             return False
-        action.params = json.dumps(custom)
+        params = custom
     else:
-        action.params = json.dumps(_parse_params())
+        params = _parse_params()
+    action.params = json.dumps(_keep_binding(action, params))
     action.schedule_kind = kind
     action.schedule = json.dumps(schedule)
     action.enabled = bool(request.form.get('enabled'))

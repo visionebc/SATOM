@@ -38,7 +38,9 @@ from ..errors import log_exception
 def provision_monitoring(appliance, *, session=None) -> dict:
     """Give a saved appliance everything it needs to be monitored.
 
-    Returns ``{"targets": int, "probes": [kind, ...], "errors": [str, ...]}``.
+    Returns ``{"targets": int, "probes": [kind, ...], "errors": [str, ...],
+    "system_automations": [name, ...]}`` — the last one non-empty only for the
+    node's first device (services/system_automations).
 
     Never raises. Monitoring is downstream of device inventory: a hiccup in
     either subsystem must not cost the operator the device row they just saved.
@@ -52,6 +54,15 @@ def provision_monitoring(appliance, *, session=None) -> dict:
 
     session = session or db.session
     out = {"targets": 0, "probes": [], "errors": []}
+
+    # The node's own housekeeping (System Automations) arms itself with its
+    # first device (operator, 2026-10-14) — BEFORE the parked/retired check:
+    # a node whose first device is parked still needs its nightly backup.
+    # Only from zero; see services/system_automations.
+    from . import system_automations as sysauto
+    seeded = sysauto.ensure_seeded(session=session)
+    out["system_automations"] = seeded.get("created", [])
+    out["errors"].extend(seeded.get("errors", []))
 
     if not mc.provisionable(appliance):
         # Parked or retired: the same guard the sweep applies. Not an error —

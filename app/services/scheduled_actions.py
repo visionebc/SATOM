@@ -248,7 +248,10 @@ def _live_ha_role(appliance, transport) -> tuple[str, str]:
     return ha_svc.member_role(appliance), "role read over REST (client.ha_status)"
 
 
-# Admin maintenance automations (read-/file-writers + the gated firmware flow).
+# System automations: SATOM keeping its OWN data current (syncs, backups,
+# probes, signature/CVE/knowledge refreshes, the reads that feed its pages).
+# Administrator > System > System Automations, user_manage. Work that changes
+# the fleet is NOT here since 2026-10-14 (operator): it is in USER_ACTIONS.
 ADMIN_ACTIONS: list[ActionSpec] = [
     ActionSpec(
         "backup", "Config backup", "admin", needs_targets=True,
@@ -518,64 +521,6 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "page can compare totals across dates.",
     ),
     ActionSpec(
-        "upgrade_prep", "Upgrade preparation (backup + health)", "admin",
-        needs_targets=True, danger=True, products=("fortiweb", "fortiadc"),
-        summary="Pre-upgrade snapshot: a config backup AND a health read per "
-                "device, so a maintenance window starts from a known-good "
-                "baseline. Does NOT flash firmware.",
-    ),
-    ActionSpec(
-        "upgrade", "Firmware upgrade (FULL - flashes + reboots)", "admin",
-        needs_targets=True, danger=True, forced_schedule_kind="once",
-        # The summary below has always CLAIMED this authorization, and
-        # _do_upgrade's docstring says it is "enforced upstream in
-        # execute_and_record". It was not: the unbound refusal in (3a) reads
-        # spec.requires_change_request, and this spec never declared it - so an
-        # upgrade action with no bound CR sailed through the gate. Harmless
-        # only because the executor is still a stub; the day the flash runbook
-        # lands, the missing flag would have been a destructive action running
-        # unapproved while three separate pieces of prose swore it could not.
-        # This is the same shape as upgrade_prep shipping destructive-and-
-        # ungated while the gate watched only 'upgrade'.
-        requires_change_request=True,
-        summary="Change-request bound firmware upgrade at a FIXED date/time, "
-                "authorized by an approved Change Request inside its "
-                "maintenance window (change_requests.cr_runnable). The "
-                "scheduled executor does NOT flash yet: each target is "
-                "reported 'not executed' and the change closes as failed. "
-                "Flash live from the appliance's firmware page inside the "
-                "window; that run closes the change.",
-    ),
-    ActionSpec(
-        "reboot", "Reboot the appliance (DESTRUCTIVE)", "admin",
-        needs_targets=True, danger=True, forced_schedule_kind="once",
-        products=("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator"),
-        requires_change_request=True,
-        summary="Reboot each target appliance at a FIXED date/time. DESTRUCTIVE: "
-                "the box stops serving until it comes back. Runs ONLY bound to an "
-                "approved Change Request inside its maintenance window - it "
-                "refuses to fire unbound. The reboot URN is per product and is "
-                "sent only where it has been verified against that product's own "
-                "device; an unverified product is refused by name, never guessed.",
-    ),
-    ActionSpec(
-        "ha_failover", "HA failover - hand the primary role over (DISRUPTIVE)",
-        "admin", needs_targets=True, single_target=True, danger=True,
-        forced_schedule_kind="once",
-        products=("fortiweb", "fortiadc"),
-        requires_change_request=True,
-        summary="Make ONE HA cluster hand the primary role to its peer at a FIXED "
-                "date/time (params.direction='set'), or give it back "
-                "(direction='unset'). DISRUPTIVE: every session on the outgoing "
-                "primary breaks. There is NO REST call for this on either product "
-                "- verified against FortiWeb's own GUI bundle - so it drives the "
-                "product's CLI over SSH, and only where that command has been "
-                "verified to exist on the firmware the box is RUNNING: a FortiWeb "
-                "below 8.0.0 is refused BY NAME with nothing sent. Runs ONLY bound "
-                "to an approved Change Request inside its window, and refuses to "
-                "fail over anything that is not reporting HA primary right now.",
-    ),
-    ActionSpec(
         "health_check", "Health check (system status)", "admin",
         needs_targets=True,
         summary="Read each target FortiWeb's system status over REST "
@@ -595,51 +540,19 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "Read-only against the box; powers the Certificate Manager table. "
                 "Schedule DAILY.",
     ),
-    ActionSpec(
-        "cert_manager_server", "Cert Manager — renew Server certs", "admin",
-        needs_targets=True,
-        summary="Renew expiring SERVER-authentication certificates on each target: "
-                "generate a new CSR, sign it via the configured ADCS command, and "
-                "deploy the new cert (new {date}-stamped name, old one kept). Does "
-                "NOT swap the binding — that happens in a maintenance window.",
-    ),
-    ActionSpec(
-        "cert_manager_clientserver", "Cert Manager — renew Client+Server certs",
-        "admin", needs_targets=True,
-        summary="Renew expiring CLIENT+SERVER (both EKU) certificates on each "
-                "target (generate → sign via ADCS → deploy under a new name). No "
-                "binding swap.",
-    ),
-    ActionSpec(
-        "cert_manager_client", "Cert Manager — renew Client certs", "admin",
-        needs_targets=True,
-        summary="Renew expiring CLIENT-authentication certificates on each target "
-                "(generate → sign via ADCS → deploy under a new name). No binding "
-                "swap.",
-    ),
-    ActionSpec(
-        "cert_lifecycle", "Cert Manager — lifecycle sweep (revoke + cleanup)",
-        "admin", needs_targets=True, danger=True,
-        summary="Enforce the certificate lifecycle policy (Settings → Certificate "
-                "Manager): revoke superseded certs past the grace window at the CA "
-                "and DELETE revoked/superseded/expired unbound certificate material "
-                "off each target FortiWeb. Bindings are re-verified live and "
-                "fail-closed before any delete. Reports-only unless the policy's "
-                "'auto apply' is enabled.",
-    ),
-    ActionSpec(
-        "custom_rest", "Custom REST call", "admin", needs_targets=True,
-        danger=True,
-        summary="Run ANY FortiWeb REST request you define (method + endpoint + "
-                "mkey + JSON body) against the targets. GET is a live read; "
-                "POST/PUT/DELETE go through the snapshot+audit+dry-run write "
-                "path. Build it in the Custom REST card on the form.",
-    ),
 ]
 
-# User-scope Server-Policy automations scheduled for a specific time. These MUTATE
-# the box, so they go through FortiWebOps (snapshot + audit + change history) and
-# each acts on exactly ONE device (single_target).
+# Operator automations: work on the fleet's services, scheduled for a chosen time
+# (Operations > Automation > Automations, config_write). The four Server-Policy
+# object ops MUTATE the box through FortiWebOps (snapshot + audit + change
+# history) and act on exactly ONE device (single_target).
+#
+# Since 2026-10-14 (operator) the device-level work an operator plans moved here
+# from the system catalog: upgrade prep, firmware upgrade, reboot, HA failover,
+# certificate renewal and lifecycle, custom REST. The dangerous ones declare
+# requires_change_request, so an operator SCHEDULES them and an administrator's
+# approved Change Request AUTHORIZES the fire (execute_and_record step 3, which
+# also checks the row is the change's own: change_requests.binding_ok).
 USER_ACTIONS: list[ActionSpec] = [
     ActionSpec(
         "policy_set_status", "Enable / disable a server policy", "user",
@@ -664,6 +577,106 @@ USER_ACTIONS: list[ActionSpec] = [
         needs_targets=True, single_target=True,
         summary="Change the local certificate bound to a server policy at a "
                 "scheduled time (e.g. a certificate rotation).",
+    ),
+    ActionSpec(
+        "upgrade_prep", "Upgrade preparation (backup + health)", "user",
+        needs_targets=True, danger=True, products=("fortiweb", "fortiadc"),
+        summary="Pre-upgrade snapshot: a config backup AND a health read per "
+                "device, so a maintenance window starts from a known-good "
+                "baseline. Does NOT flash firmware.",
+    ),
+    ActionSpec(
+        "upgrade", "Firmware upgrade (FULL - flashes + reboots)", "user",
+        needs_targets=True, danger=True, forced_schedule_kind="once",
+        # The summary below has always CLAIMED this authorization, and
+        # _do_upgrade's docstring says it is "enforced upstream in
+        # execute_and_record". It was not: the unbound refusal in (3a) reads
+        # spec.requires_change_request, and this spec never declared it - so an
+        # upgrade action with no bound CR sailed through the gate. Harmless
+        # only because the executor is still a stub; the day the flash runbook
+        # lands, the missing flag would have been a destructive action running
+        # unapproved while three separate pieces of prose swore it could not.
+        # This is the same shape as upgrade_prep shipping destructive-and-
+        # ungated while the gate watched only 'upgrade'.
+        requires_change_request=True,
+        summary="Change-request bound firmware upgrade at a FIXED date/time, "
+                "authorized by an approved Change Request inside its "
+                "maintenance window (change_requests.cr_runnable). The "
+                "scheduled executor does NOT flash yet: each target is "
+                "reported 'not executed' and the change closes as failed. "
+                "Flash live from the appliance's firmware page inside the "
+                "window; that run closes the change.",
+    ),
+    ActionSpec(
+        "reboot", "Reboot the appliance (DESTRUCTIVE)", "user",
+        needs_targets=True, danger=True, forced_schedule_kind="once",
+        products=("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator"),
+        requires_change_request=True,
+        summary="Reboot each target appliance at a FIXED date/time. DESTRUCTIVE: "
+                "the box stops serving until it comes back. Runs ONLY bound to an "
+                "approved Change Request inside its maintenance window - it "
+                "refuses to fire unbound. The reboot URN is per product and is "
+                "sent only where it has been verified against that product's own "
+                "device; an unverified product is refused by name, never guessed.",
+    ),
+    ActionSpec(
+        "ha_failover", "HA failover - hand the primary role over (DISRUPTIVE)",
+        "user", needs_targets=True, single_target=True, danger=True,
+        forced_schedule_kind="once",
+        products=("fortiweb", "fortiadc"),
+        requires_change_request=True,
+        summary="Make ONE HA cluster hand the primary role to its peer at a FIXED "
+                "date/time (params.direction='set'), or give it back "
+                "(direction='unset'). DISRUPTIVE: every session on the outgoing "
+                "primary breaks. There is NO REST call for this on either product "
+                "- verified against FortiWeb's own GUI bundle - so it drives the "
+                "product's CLI over SSH, and only where that command has been "
+                "verified to exist on the firmware the box is RUNNING: a FortiWeb "
+                "below 8.0.0 is refused BY NAME with nothing sent. Runs ONLY bound "
+                "to an approved Change Request inside its window, and refuses to "
+                "fail over anything that is not reporting HA primary right now.",
+    ),
+    ActionSpec(
+        "cert_manager_server", "Cert Manager — renew Server certs", "user",
+        needs_targets=True,
+        summary="Renew expiring SERVER-authentication certificates on each target: "
+                "generate a new CSR, sign it via the configured ADCS command, and "
+                "deploy the new cert (new {date}-stamped name, old one kept). Does "
+                "NOT swap the binding — that happens in a maintenance window.",
+    ),
+    ActionSpec(
+        "cert_manager_clientserver", "Cert Manager — renew Client+Server certs",
+        "user", needs_targets=True,
+        summary="Renew expiring CLIENT+SERVER (both EKU) certificates on each "
+                "target (generate → sign via ADCS → deploy under a new name). No "
+                "binding swap.",
+    ),
+    ActionSpec(
+        "cert_manager_client", "Cert Manager — renew Client certs", "user",
+        needs_targets=True,
+        summary="Renew expiring CLIENT-authentication certificates on each target "
+                "(generate → sign via ADCS → deploy under a new name). No binding "
+                "swap.",
+    ),
+    ActionSpec(
+        "cert_lifecycle", "Cert Manager — lifecycle sweep (revoke + cleanup)",
+        "user", needs_targets=True, danger=True,
+        requires_change_request=True,
+        summary="Enforce the certificate lifecycle policy (Settings → Certificate "
+                "Manager): revoke superseded certs past the grace window at the CA "
+                "and DELETE revoked/superseded/expired unbound certificate material "
+                "off each target FortiWeb. Bindings are re-verified live and "
+                "fail-closed before any delete. Reports-only unless the policy's "
+                "'auto apply' is enabled.",
+    ),
+    ActionSpec(
+        "custom_rest", "Custom REST call", "user", needs_targets=True,
+        danger=True,
+        requires_change_request=True,
+        summary="Run ANY FortiWeb REST request you define (method + endpoint + "
+                "mkey + JSON body) against the targets. GET is a live read; "
+                "POST/PUT/DELETE go through the snapshot+audit+dry-run write "
+                "path. Build it in the Custom REST card on the form.",
     ),
 ]
 
@@ -2033,6 +2046,12 @@ def execute_and_record(action_row, *, trigger: str = "schedule",
                 from . import change_requests  # local import: avoid any import cycle
                 cr = db.session.get(ChangeRequest, cr_bound_id)
                 ok, reason = change_requests.cr_runnable(cr)
+                if ok:
+                    # (3b) ...and the change authorizes THIS row. The binding is
+                    # a params key, and the operator surface edits params: a
+                    # reboot of every box, bound to someone else's approved
+                    # change, must not fire because that change is in its window.
+                    ok, reason = change_requests.binding_ok(cr, action_row)
                 if not ok:
                     status = "skipped"
                     summary = f"change request: {reason}"

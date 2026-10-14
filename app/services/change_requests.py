@@ -269,6 +269,15 @@ def schedulable(cr) -> tuple[bool, str]:
             f"'{cr.action}' is a documentary change type: it has no automated "
             f"executor. Carry the work out during the window, then close "
             f"this change request with Mark completed / Mark failed.")
+    # A change may NAME no device (it stays readable from every console, a
+    # documented decision), but it cannot be AUTOMATED that way: its scheduled
+    # row would carry targets=[], which the executor reads as "the whole
+    # fleet" - an approved reboot naming nothing would reboot everything.
+    # binding_ok refuses that row at fire time; refuse here while somebody is
+    # still looking (2026-10-14).
+    if not cr.device_ids_list:
+        return False, ("name at least one appliance before scheduling: an "
+                       "automated change runs only against the devices it names")
     return True, ""
 
 
@@ -525,7 +534,11 @@ def schedule_change_request(cr_id: int, by: str, per_round=None,
         # a blind truncation cuts.
         suffix = f" - round {index}/{total}" if total > 1 else ""
         row.name = f"CR #{cr.id}: {cr.title}"[:120 - len(suffix)] + suffix
-        row.scope = "admin"
+        # The catalog decides the surface (views.scheduled_actions.
+        # effective_scope); the column is kept honest with it.
+        from . import scheduled_actions as _sa
+        _spec = _sa.get_spec(cr.action)
+        row.scope = _spec.scope if _spec is not None else "admin"
         row.action = cr.action
         row.targets = json.dumps(members)
         row.params = json.dumps(params)
@@ -730,6 +743,34 @@ def cr_runnable(cr, now: datetime | None = None) -> tuple[bool, str]:
     if cr.window_end is not None and now > cr.window_end:
         return False, "after the maintenance window"
     return True, "inside the maintenance window"
+
+
+def binding_ok(cr, row) -> tuple[bool, str]:
+    """``(ok, reason)`` - does ``cr`` authorize THIS scheduled row?
+
+    :func:`cr_runnable` says the change may run now; it says nothing about the
+    row that names it. The binding is ``params['change_request_id']``, and since
+    2026-10-14 the operator surface (config_write) schedules the CR-gated
+    actions, so a row bound to an approved change it does not belong to would
+    fire inside that change's window. A change authorizes its own action
+    against its own devices: the rows :func:`schedule_change_request` writes,
+    whose targets are slices of ``device_ids``. Anything else is refused.
+    """
+    if cr is None:
+        return False, "no change request"
+    if (row.action or "") != (cr.action or ""):
+        return False, (f"change request #{cr.id} authorizes {cr.action!r}, "
+                       f"not {row.action!r}")
+    allowed = {_as_int(d) for d in cr.device_ids_list} - {None}
+    targets = {_as_int(t) for t in row.targets_list}
+    if not targets:
+        return False, (f"change request #{cr.id} authorizes named devices; "
+                       "this action targets the whole fleet")
+    extra = sorted(t for t in targets if t not in allowed)
+    if extra:
+        return False, (f"change request #{cr.id} does not cover device id(s) "
+                       + ", ".join(str(t) for t in extra))
+    return True, "bound to its own change request"
 
 
 # --------------------------------------------------------------------------- #
@@ -1025,6 +1066,7 @@ __all__ = [
     "start",
     "finish",
     "cr_runnable",
+    "binding_ok",
     "maintenance_notice",
     "outcome_notice",
     "recipients_for",

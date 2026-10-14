@@ -314,7 +314,7 @@ def _collect(view: str, anchor: date, flt) -> dict:
         if total > len(runs):
             notes.append(
                 f"{total} runs happened in this range; the {len(runs)} most "
-                f"recent are drawn. Open Scheduled Actions → History for the rest.")
+                f"recent are drawn. Open the automation's History (Automations or System Automations) for the rest.")
         rows_by_id = {a.id: a for a in every}
         # The owner of a run is the owner of the action that produced it, so
         # filtering to one band does not leave that band's history behind in

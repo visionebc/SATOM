@@ -23943,3 +23943,22 @@ msgstr "Accesso"
 #: app/templates/partials/nav_admin.html
 msgid "Change Management"
 msgstr "Gestione delle modifiche"
+
+#: app/templates/scheduled_actions/form.html
+msgid "Runs only bound to an approved Change Request, inside its maintenance window."
+msgstr "Viene eseguita solo se collegata a una richiesta di modifica approvata, entro la sua finestra di manutenzione."
+
+#: app/views/upgrade_flow.py
+#, python-format
+msgid "The task “%(name)s” has been added to Automations and is on the calendar."
+msgstr "L'attività “%(name)s” è stata aggiunta alle Automazioni ed è nel calendario."
+
+#: app/views/upgrade_flow.py
+#, python-format
+msgid "The task “%(name)s” was updated in Automations and is on the calendar."
+msgstr "L'attività “%(name)s” è stata aggiornata nelle Automazioni ed è nel calendario."
+
+#: app/views/upgrade_flow.py
+#, python-format
+msgid "Rollout plan saved on this change: %(total)d round(s) of at most %(size)d appliance(s), %(gap)d minute(s) apart. Nothing is in Automations or on the calendar yet — the rounds are created the moment this change is approved."
+msgstr "Piano di rollout salvato su questa modifica: %(total)d turno/i di al massimo %(size)d dispositivo/i, a %(gap)d minuto/i di distanza. Nulla è ancora nelle Automazioni o nel calendario — i turni vengono creati nel momento in cui questa modifica viene approvata."

@@ -46,7 +46,7 @@
 {% set _m_pr = adom_menu('provisioning', product) %}
 {% set _m_cm = adom_menu('cert_manager', product) %}
 {% endif %}
-{% set _auto_bps = ['upgrade_flow','migration_report','automations','scheduled_actions','device_provision','provisioning','change_requests','schema_builds','build_compat','cert_manager'] %}
+{% set _auto_bps = ['upgrade_flow','migration_report','automations','device_provision','provisioning','change_requests','cert_manager'] %}
 {# Device ADOMs: a subgroup of Operations since 2026-10-14 (operator), included
    by partials/nav_operations.html — base.html no longer draws it as a group
    there. Global and placeholder ADOMs have no Operations group and keep the
@@ -84,34 +84,30 @@
     {% else %}{{ nav_off('bi-signpost-split', _('Migration Report'), _m_mr.reason) }}{% endif %}
     {% endif %}
     {% endif %}
-    {# TWO ENTRIES, NOT ONE RENAMED. 'Automations' is fleet work an operator
-       plans (a cutover, a drained backend, a certificate swap); 'System
-       Automations' is SATOM maintaining its own data. They were one list until
-       2026-09-09, which is how a scheduled cutover came to sit between the
-       nightly backup and the Sentinel sweep.
+    {# 'Automations' is fleet work an operator plans (a cutover, a drained
+       backend, a certificate swap or renewal, an upgrade, a reboot, a
+       failover). 'System Automations', SATOM maintaining its own data, left
+       this group on 2026-10-14 (operator) for Administrator > System
+       (partials/nav_admin.html). They were one list until 2026-09-09, which is
+       how a scheduled cutover came to sit between the nightly backup and the
+       Sentinel sweep.
 
-       The permissions differ ON PURPOSE and these gates MIRROR the ones the
-       pages enforce: config_write is what the operator role holds, user_manage
-       is admin-only. A link that leads to a 403 is a bug report waiting to be
-       filed — the rule this partial already applies to Upgrade Flow.
+       The gate MIRRORS the one the page enforces: config_write, what the
+       operator role holds. A link that leads to a 403 is a bug report waiting
+       to be filed — the rule this partial already applies to Upgrade Flow.
 
        'Automations' is LIVE only where its catalog is non-empty (the
-       products of USER_ACTIONS, today FortiWeb). In the other device ADOMs the
-       page could only offer an empty picker, which reads as "this fleet has
-       nothing to schedule", so the entry is drawn disabled with the reason —
-       and it needs no entry in their blueprint allowlists. #}
+       products of USER_ACTIONS: FortiWeb, FortiADC, FortiAnalyzer and
+       FortiAuthenticator since the 2026-10-14 move). In the other device ADOMs
+       the page could only offer an empty picker, which reads as "this fleet
+       has nothing to schedule", so the entry is drawn disabled with the reason
+       (services/adom_menu.py). #}
     {% if (product.key == 'global' or _dev) and current_user.can('config_write') %}
     {% if may_open('automations.index') %}
     {% if product.key == 'global' or _m_au.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'automations' else '' }}" href="{{ url_for('automations.index', _adom=product.key) }}">
       <i class="bi bi-calendar2-check fw-nav-icon"></i><span>{{ _('Automations') }}</span></a>
     {% else %}{{ nav_off('bi-calendar2-check', _('Automations'), _m_au.reason) }}{% endif %}
-    {% endif %}
-    {% endif %}
-    {% if current_user.can('user_manage') %}
-    {% if may_open('scheduled_actions.index') %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint == 'scheduled_actions' else '' }}" href="{{ url_for('scheduled_actions.index', _adom=product.key) }}">
-      <i class="bi bi-clock-history fw-nav-icon"></i><span>{{ _('System Automations') }}</span></a>
     {% endif %}
     {% endif %}
     {% if may_open('device_provision.index') %}
@@ -136,12 +132,13 @@
        here since (operator). Device ADOMs only; registry.view still gates it
        (partials/_nav_api.html). #}
     {{ api_menu(true) }}
-    {# Moved here from Fleet (2026-10-13). Global-only until 2026-10-14; since
+    {# Schema builds / Build compatibility left this group on 2026-10-14 for the
+       API subgroup (partials/_nav_api.html), where the API pages are.
+       Certificate Manager: moved here from Fleet (2026-10-13). Global-only until 2026-10-14; since
        then every device ADOM draws it too (operator): live where SATOM manages
        that kind's certificates (cert_manager.CERT_KINDS, read through
        services/adom_menu.py, which also opens the product gate), disabled
        with the reason elsewhere. The page lists only the ADOM's own devices. #}
-    {% include 'partials/nav_api_library.html' %}
     {% if (product.key == 'global' or _dev) and current_user.can('user_manage') and may_open('cert_manager.index') %}
     {% if product.key == 'global' or _m_cm.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'cert_manager' else '' }}" href="{{ url_for('cert_manager.index', _adom=product.key) }}">

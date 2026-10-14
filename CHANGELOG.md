@@ -15,7 +15,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   failover …` or `diagnose sys kill …`. Every `diagnose` statement is now
   checked by name and refused when a word changes the device: kill, clear,
   reset, delete, failover, sysrq/crash, enable/disable, set, format, fsck,
-  rmmod and similar. Abbreviations count, because the CLI completes them:
+  rmmod and similar, plus `level` on its own (FortiGate `diagnose ip router
+  ospf level error` sets a debug level). Abbreviations count, because the CLI completes them:
   `diag sys kil 11 1` reads as kill. `get` and `show` are unchanged.
 - **New page: Administrator → Diagnostic Battery** (`user_manage`), in each
   device ADOM (FortiWeb, FortiADC, FortiGate, FortiAnalyzer,
@@ -56,7 +57,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `diagnose debug proxy log 3` is gone. It printed nothing on 7.6.8 or 8.0.6,
   and its parent is described as set/get, meaning the trailing number sets a
   debug level. The other four products start from defaults that ran on the lab
-  devices: FortiAnalyzer 7.6.7 has no `diagnose debug crashlog read`, and
+  devices: neither FortiGate 8.0.1 nor FortiAnalyzer 7.6.7 has `diagnose
+  debug crashlog read` (FortiGate uses `diagnose debug crashlog get`), and
   FortiADC uses the `sysinfo`/`deviceinfo` leaves (`cpu`, `memory`,
   `nic`).
 - **Appliances: "SSH user, if different from the API user".** A FortiGate

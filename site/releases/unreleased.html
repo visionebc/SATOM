@@ -374,7 +374,8 @@
   failover …</code> or <code>diagnose sys kill …</code>. Every <code>diagnose</code> statement is now
   checked by name and refused when a word changes the device: kill, clear,
   reset, delete, failover, sysrq/crash, enable/disable, set, format, fsck,
-  rmmod and similar. Abbreviations count, because the CLI completes them:
+  rmmod and similar, plus <code>level</code> on its own (FortiGate <code>diagnose ip router
+  ospf level error</code> sets a debug level). Abbreviations count, because the CLI completes them:
   <code>diag sys kil 11 1</code> reads as kill. <code>get</code> and <code>show</code> are unchanged.</li>
 <li><strong>New page: Administrator → Diagnostic Battery</strong> (<code>user_manage</code>), in each
   device ADOM (FortiWeb, FortiADC, FortiGate, FortiAnalyzer,
@@ -415,8 +416,9 @@
   <code>diagnose debug proxy log 3</code> is gone. It printed nothing on 7.6.8 or 8.0.6,
   and its parent is described as set/get, meaning the trailing number sets a
   debug level. The other four products start from defaults that ran on the lab
-  devices: FortiAnalyzer 7.6.7 has no <code>diagnose debug crashlog read</code>, and
-  FortiADC uses the <code>sysinfo</code>/<code>deviceinfo</code> leaves (<code>cpu</code>, <code>memory</code>, <code>df</code>,
+  devices: neither FortiGate 8.0.1 nor FortiAnalyzer 7.6.7 has <code>diagnose
+  debug crashlog read</code> (FortiGate uses <code>diagnose debug crashlog get</code>), and
+  FortiADC uses the <code>sysinfo</code>/<code>deviceinfo</code> leaves (<code>cpu</code>, <code>memory</code>,
   <code>nic</code>).</li>
 <li><strong>Appliances: "SSH user, if different from the API user".</strong> A FortiGate
   registered with a REST api-user cannot open SSH with that user. Log

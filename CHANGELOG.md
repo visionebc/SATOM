@@ -6,6 +6,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — proxyd no longer reported as "NOT running" when it is at 100 % CPU (2026-10-14)
+
+- **The proxyd deep monitor read a daemon at full CPU as a dead one.** In
+  `diagnose system top` the CPU-core and %CPU columns run together when a
+  process reaches 100 % (`0100.0`). That row did not match the parser, proxyd
+  disappeared from the process list and the probe went critical with
+  "proxyd is NOT running" — four times on a lab FortiWeb 7.6.8 while the same
+  PID kept running. The parser now reads the run-together form. As a second
+  guard, a proxyd row that is present but cannot be read grades as an error
+  (a parser gap), never as an absent daemon.
+
 ### Fixed — adding a device no longer leaves it unmonitored or buried in false alerts (2026-10-14)
 
 - **Discover no longer creates probes that can only fail.** *Published

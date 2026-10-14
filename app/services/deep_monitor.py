@@ -243,11 +243,27 @@ DEFAULT_RETENTION = 500
 # COMMAND is a full path with arguments, so the process name is the basename of
 # its first token. Note "100% idle" has no decimal — the percent patterns must
 # not require one.
+#
+# CPU and %CPU are fixed-width columns with no separator of their own. When a
+# process reaches 100.0 % the two run together — measured on fortiweb17
+# (7.6.8, 2026-10-13/14), four times on the same PID:
+#
+#      3458     1 root     S    3555m 95.1   0100.0 /bin/proxyd
+#
+# The row used to fail to match, proxyd vanished from the list and the probe
+# paged "proxyd is NOT running" while the daemon was the busiest thing on the
+# box. The second branch reads the glued form: %CPU is the trailing
+# ``ddd.d`` (three integer digits — a run-together only happens at 100 % or
+# more) and the CPU core is whatever precedes it.
 _TOP_ROW = re.compile(
     r"^\s*(?P<pid>\d+)\s+(?P<ppid>\d+)\s+(?P<user>\S+)\s+(?P<state>\S+)\s+"
-    r"(?P<vsz>[\d.]+[kmgKMG]?)\s+(?P<mem>[\d.]+)\s+(?P<core>\d+)\s+"
-    r"(?P<cpu>[\d.]+)\s+(?P<cmd>\S.*?)\s*$"
+    r"(?P<vsz>[\d.]+[kmgKMG]?)\s+(?P<mem>[\d.]+)\s+"
+    r"(?:(?P<core>\d+)\s+(?P<cpu>[\d.]+)|(?P<core_glued>\d+?)(?P<cpu_glued>\d{3}\.\d+))"
+    r"\s+(?P<cmd>\S.*?)\s*$"
 )
+# A line shaped like a process row (PID, PPID, ...) that _TOP_ROW still does
+# not read. Kept so a daemon whose row is unreadable is never graded as absent.
+_TOP_ROWISH = re.compile(r"^\s*\d+\s+\d+\s+\S+\s+\S+\s+\S")
 _TOP_MEM = re.compile(r"^\s*Mem:\s*(?P<used>\d+)K\s+used,\s*(?P<free>\d+)K\s+free", re.I)
 _TOP_CPU = re.compile(r"^\s*CPU:.*?(?P<idle>[\d.]+)\s*%\s*idle", re.I)
 _TOP_LOAD = re.compile(r"^\s*Load average:\s*(?P<load>[\d.]+\s+[\d.]+\s+[\d.]+)", re.I)
@@ -368,6 +384,7 @@ def parse_top(raw: str) -> dict:
     box-level ``CPU: … idle`` line is, and is what the grader thresholds on.
     """
     procs: list[dict] = []
+    unread: list[str] = []
     summary: dict = {}
     load = ""
     legacy = False
@@ -380,7 +397,7 @@ def parse_top(raw: str) -> dict:
                 "pid": int(m.group("pid")),
                 "ppid": int(m.group("ppid")),
                 "state": m.group("state"),
-                "cpu": _f(m.group("cpu")),
+                "cpu": _f(m.group("cpu") or m.group("cpu_glued")),
                 "mem": _f(m.group("mem")),
                 "vsz_mb": _vsz_mb(m.group("vsz")),
                 "cmd": m.group("cmd").strip()[:160],
@@ -403,6 +420,9 @@ def parse_top(raw: str) -> dict:
         ml = _TOP_LOAD.match(line)
         if ml:
             load = ml.group("load")
+            continue
+        if _TOP_ROWISH.match(line):
+            unread.append(line.strip()[:160])
 
     if not procs:
         # Fall back to the FortiOS-style layout before declaring defeat.
@@ -426,6 +446,7 @@ def parse_top(raw: str) -> dict:
                                            if total else None}
 
     return {"processes": procs, "summary": summary, "load": load,
+            "unread_rows": [] if legacy else unread[:20],
             "parsed": bool(procs), "cpu_per_process_reliable": legacy}
 
 
@@ -692,6 +713,14 @@ def classify_proxyd(agg: dict, parsed: dict, prev_fingerprint: str,
         return "error", (f"could not parse `{TOP_CMD}` output — raw response "
                          "captured in the sample payload")
     if agg["count"] == 0:
+        # The daemon's row is there but its layout was not read: that is a
+        # parser gap, and grading it "absent" pages an outage that is not one.
+        name = re.compile(r"(?:^|[\s/])" + re.escape(agg["process"]) + r"(?:\s|$)",
+                          re.I)
+        if any(name.search(line) for line in parsed.get("unread_rows") or []):
+            return "error", (f"a {agg['process']} row is present in `{TOP_CMD}` "
+                             "but its layout could not be read — not graded as "
+                             "absent; raw response captured in the sample payload")
         st, sfx = apply_fact("ok", "proxyd_absent", sev)
         return st, f"{agg['process']} is NOT running{sfx}"
 

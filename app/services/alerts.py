@@ -1009,7 +1009,10 @@ def _check_signatures() -> list[dict]:
     never contacts a device for it. A FortiWeb whose signature DB is older than
     ``alerts.signature_max_days`` (default 7), that reports it never updated,
     or whose version could not be read, is a WARNING in the ``device`` family:
-    a WAF on stale signatures is a box protecting against last month."""
+    a WAF on stale signatures is a box protecting against last month.
+
+    The key carries the appliance id, like ``device.health.<name>``: with one
+    key for every FortiWeb, one device's cooldown silenced another's alert."""
     from . import signature_freshness as sf
     from . import signature_index as sidx
     findings: list[dict] = []
@@ -1020,7 +1023,8 @@ def _check_signatures() -> list[dict]:
         name = row.get("name") or ("appliance %s" % row.get("appliance_id"))
         if row["status"] == "unreadable":
             findings.append({
-                "key": "device.signature_unreadable", "severity": SEV_WARNING,
+                "key": f"device.signature_unreadable.{row.get('appliance_id')}",
+                "severity": SEV_WARNING,
                 "product": row.get("product") or "fortiweb",
                 "title": f"Signature DB version unreadable on {name}",
                 "detail": (f"{name}: {row.get('reason')}. The last known version "
@@ -1029,7 +1033,8 @@ def _check_signatures() -> list[dict]:
                            f"over SSH is the fallback).")})
         else:
             findings.append({
-                "key": "device.signature_stale", "severity": SEV_WARNING,
+                "key": f"device.signature_stale.{row.get('appliance_id')}",
+                "severity": SEV_WARNING,
                 "product": row.get("product") or "fortiweb",
                 "title": f"Signature DB on {name} is stale",
                 "detail": (f"{name}: {row.get('reason')}. Check the device's "

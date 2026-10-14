@@ -112,6 +112,35 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="fixed--a-release-that-adds-a-table-no-longer-takes-the-web-down-at-boot-one-fortiwebs-signature-alert-no-longer-silences-anothers-2026-10-15">Fixed — a release that adds a table no longer takes the web down at boot; one FortiWeb's signature alert no longer silences another's (2026-10-15)</h3>
+<ul>
+<li><strong>Workers no longer race on a new table.</strong> The four web workers each ran
+  the schema bootstrap at the same time. When a release added a table, two of
+  them sent the same <code>CREATE TABLE</code>, and the one that lost exited. Gunicorn
+  then stopped the whole web service until systemd restarted it (a1,
+  2026-10-14 10:14, table <code>diag_catalogs</code>). The bootstrap now runs one worker
+  at a time behind a Postgres advisory lock. The wait is bounded at 120 s;
+  after that the worker boots unlocked, as before, and logs that it did.</li>
+<li><strong>Each FortiWeb has its own signature alert key.</strong> Every "Signature DB
+  stale" and "version unreadable" finding used the same key. So one device's
+  cooldown silenced the alert for a different device for six hours. The key
+  now carries the appliance id, as the device-health findings already did.</li>
+</ul>
+<h3 id="changed--every-device-can-be-named-on-a-change-request-fortigate-included-2026-10-15">Changed — every device can be named on a change request, FortiGate included (2026-10-15)</h3>
+<ul>
+<li><strong>A change request can name a device of any product.</strong> The device list
+  used to hold only the products some automated action runs on. No automated
+  action runs on FortiGate, so a FortiGate could not be named on any change,
+  not even a documentary one done by hand (cabling, a PSU swap), and Change
+  types could not offer a type for it. The list now holds every product with
+  an active ADOM (operator request: "make every device able to enter the
+  change request").</li>
+<li><strong>Automated types still run only on their own products.</strong> Choosing one now
+  greys out and unticks the devices it does not run on (e.g. FortiGate for a
+  reboot). The server keeps refusing the mismatch, as before. Documentary
+  types with no product declared keep every device.</li>
+<li><strong>Change types → Add a change type</strong> offers FortiGate under "Offered for".</li>
+</ul>
 <h3 id="added--certificate-manager-signs-with-a-ca-held-in-an-opnsense-firewall-2026-10-15">Added — Certificate Manager signs with a CA held in an OPNsense firewall (2026-10-15)</h3>
 <ul>
 <li><strong>New signer <code>scripts/opnsense_ca_signer.py</code></strong> for the ADCS command

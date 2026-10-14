@@ -262,9 +262,9 @@
             <div class="form-text">
               {% if appliances %}
                 Hold Ctrl/Cmd to select several. These define the clients to warn, and their names
-                are written into the proposed text above. The selected change type must support
-                each device's product — the form rejects a mismatch rather than saving a change
-                that would resolve to no targets.
+                are written into the proposed text above. Every product is listed; a device the
+                selected change type does not run on is greyed out, and the server rejects a
+                mismatch rather than saving a change that would resolve to no targets.
               {% else %}
                 No appliances yet — add devices to populate this list.
               {% endif %}
@@ -342,6 +342,7 @@
   var PROMPT = {{ action_prompt|tojson }};
   var DEFAULTS = {{ defaults|tojson }};
   var EXECUTABLE = {{ action_executable|tojson }};
+  var PRODUCTS = {{ action_products|tojson }};
 
   var form = document.getElementById('cr-form');
   if (!form) { return; }
@@ -525,8 +526,25 @@
     r.addEventListener('click', answerLang);
   });
 
+  // Every device product is listed, but an automated type runs only on its
+  // own products: grey out (and untick) the devices the chosen type does not
+  // support, so the mismatch the server refuses cannot be picked at all. A
+  // documentary type with no product declared keeps every device.
+  function fitDevices() {
+    if (!devices || !actionSel) { return; }
+    var want = PRODUCTS[actionSel.value];
+    Array.prototype.forEach.call(devices.options, function (o) {
+      var off = !!(actionSel.value && want && want.indexOf(o.getAttribute('data-kind')) < 0);
+      o.disabled = off;
+      if (off && o.selected) { o.selected = false; }
+      o.title = off ? 'This change type does not run on ' + o.getAttribute('data-kind') : '';
+    });
+  }
+  fitDevices();
+
   if (actionSel) {
     actionSel.addEventListener('change', function () {
+      fitDevices();
       // Derived from the value, never set to a literal: going back to the
       // opening entry un-answers the question, and step 3 must not stay open
       // over a proposal that describes no change at all.

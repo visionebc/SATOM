@@ -166,6 +166,41 @@ def upsert(key: str, *, source_lang: str = "", products=None,
     return row
 
 
+# --------------------------------------------------------------------------- #
+#  Shipped documentary types                                                    #
+# --------------------------------------------------------------------------- #
+#: Documentary types the product ships. Each is seeded ONCE as an ordinary
+#: row: from then on it is the administrator's to reword, hide or delete, and
+#: a deleted one stays deleted (the seed mark remembers it). Without one, a
+#: device no automation runs on (FortiGate) could be listed on a change
+#: request but there was no type to raise it with.
+SEEDED_TYPES: tuple = (
+    {"key": cr_document.MANUAL_CHANGE, "products": [], "sort_order": 110},
+)
+SEED_MARK = "cr_types.seeded"
+
+
+def seed_defaults() -> int:
+    """Create the shipped documentary types never seeded before. Returns the
+    number of rows created."""
+    from . import settings_store as store
+    done = set(store.get_json(SEED_MARK, []) or [])
+    created = 0
+    for spec in SEEDED_TYPES:
+        key = spec["key"]
+        if key in done:
+            continue
+        if get(key) is None:
+            upsert(key, source_lang=langs.DEFAULT, products=spec["products"],
+                   enabled=True, sort_order=spec["sort_order"],
+                   username="system:seed")
+            created += 1
+        done.add(key)
+    store.set_json(SEED_MARK, sorted(done))
+    db.session.commit()
+    return created
+
+
 def delete(row) -> None:
     """Drop a change type and its whole text catalogue.
 

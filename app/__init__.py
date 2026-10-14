@@ -2413,6 +2413,7 @@ def create_app(config_override: object | None = None) -> Flask:
             _seed_capacity()
             if not app.config.get("TESTING"):
                 _seed_reports()
+                _seed_cr_types()
             # Settings -> General -> Log Levels / Log Format, applied to the
             # application log file at boot (and again on every save).
             from .errors import apply_log_settings
@@ -2689,6 +2690,20 @@ def _seed_reports() -> None:
         if created:
             logging.getLogger(__name__).info(
                 "Report seed: %d builtin reports imported", created)
+    except Exception:  # noqa: BLE001 — never block boot on seeding
+        db.session.rollback()
+
+
+def _seed_cr_types() -> None:
+    """Seed the documentary change types the product ships, once each (an
+    administrator who deletes one keeps it deleted). Never blocks boot."""
+    import logging
+    try:
+        from .services import cr_types
+        created = cr_types.seed_defaults()
+        if created:
+            logging.getLogger(__name__).info(
+                "Change types seed: %d documentary type(s) created", created)
     except Exception:  # noqa: BLE001 — never block boot on seeding
         db.session.rollback()
 

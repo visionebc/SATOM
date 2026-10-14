@@ -10837,3 +10837,270 @@ msgstr ""
 #, python-format
 msgid "configuration synced %(at)s UTC"
 msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Diagnostic Battery"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "The commands Diagnose Log Collection runs on the devices of this ADOM. Candidates come from a discovery walk of a real device; every command is checked against the read-only battery rules when it is saved and again when it runs."
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Batteries are chosen inside each device ADOM. Switch to a device ADOM to change its battery or to discover the commands its devices offer."
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Batteries per ADOM"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Discovered builds"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Product default"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Not saved."
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Current battery"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+#, python-format
+msgid "by %(who)s at %(when)s"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "No commands."
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Reset to default"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+#, python-format
+msgid "Save keeps the order of the commands already in the battery and appends new ones. The product default has %(n)d commands."
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Add commands by hand"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "One per line, get/show/diagnose"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Merged with the ticked commands on save. Battery commands that cannot be ticked in the tree (get/show, commands with arguments, commands this build does not list) are kept here so saving does not drop them."
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Choose commands"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "All discovered builds"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Filter commands…"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+#, python-format
+msgid "%(n)d nodes. Blocked commands are shown disabled with the reason; commands that need arguments are not tickable — add them by hand with their arguments."
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+#, python-format
+msgid "%(a)d / %(b)d selected"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+#, python-format
+msgid "%(n)d blocked"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "blocked:"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "takes arguments:"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "optional arguments:"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+#, python-format
+msgid "No commands discovered for %(p)s yet"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Run Discovery below on a device of this ADOM: SATOM walks its diagnose tree and lists here every command its build offers. Until then the battery can be edited by hand."
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+#, python-format
+msgid "Reset the %(p)s battery to the product default?"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Discovery types \"?\" after every allowed command to read the CLI help, and on FortiWeb that runs some read-only leaves. It never sends a blocked command. Prefer a lab device or a maintenance window."
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Discover commands"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+#, python-format
+msgid "No %(p)s appliance is visible in this ADOM."
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "probed"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "runnable"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Discovered"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Probed"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Runnable"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Truncated"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "No build of this product has been discovered yet."
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Discovery did not start."
+msgstr ""
+
+#: app/views/diag_battery.py
+msgid "Batteries are chosen inside each device ADOM."
+msgstr ""
+
+#: app/views/diag_battery.py
+#, python-format
+msgid "Diagnostic battery saved: %(n)d commands."
+msgstr ""
+
+#: app/views/diag_battery.py
+msgid "Diagnostic battery reset to the product default."
+msgstr ""
+
+#: app/views/diag_battery.py
+msgid "Discovery runs inside a device ADOM."
+msgstr ""
+
+#: app/views/diag_battery.py
+msgid "Choose an appliance."
+msgstr ""
+
+#: app/views/diag_battery.py
+msgid "No such appliance in this ADOM."
+msgstr ""
+
+#: app/templates/logs/index.html
+#, python-format
+msgid "Collect the %(adom)s diagnostic battery from one or more %(adom)s devices over SSH. It modifies nothing: every command is a read-only get, show or diagnose, and a command the device build does not have is skipped and reported."
+msgstr ""
+
+#: app/templates/logs/index.html
+#, python-format
+msgid "Devices (%(adom)s)"
+msgstr ""
+
+#: app/templates/logs/index.html
+#, python-format
+msgid "No %(adom)s devices configured"
+msgstr ""
+
+#: app/templates/logs/index.html
+msgid "Diagnostic battery"
+msgstr ""
+
+#: app/templates/logs/index.html
+#, python-format
+msgid "%(n)s commands"
+msgstr ""
+
+#: app/templates/logs/index.html
+msgid "Chosen"
+msgstr ""
+
+#: app/templates/logs/index.html
+#, python-format
+msgid "Chosen by %(user)s on %(date)s"
+msgstr ""
+
+#: app/templates/logs/index.html
+msgid "an administrator"
+msgstr ""
+
+#: app/templates/logs/index.html
+msgid "Edit in Administrator → Diagnostic Battery"
+msgstr ""
+
+#: app/templates/logs/index.html
+msgid "This ADOM has no diagnostic battery."
+msgstr ""
+
+#: app/templates/logs/index.html
+#, python-format
+msgid "One command per line: get, show or diagnose — state-changing diagnose commands are refused. Blank lines and lines starting with # are ignored. Leave empty to run the %(n)s-command battery above."
+msgstr ""
+
+#: app/templates/logs/index.html
+msgid "ran"
+msgstr ""
+
+#: app/templates/logs/index.html
+msgid "not available"
+msgstr ""
+
+#: app/templates/logs/index.html
+msgid "Select at least one device."
+msgstr ""
+
+#: app/templates/logs/index.html
+msgid "Could not start collection."
+msgstr ""
+
+#: app/templates/logs/index.html
+msgid "Request failed:"
+msgstr ""
+
+#: app/templates/appliances/edit.html
+msgid "SSH user, if different from the API user"
+msgstr ""
+
+#: app/templates/appliances/edit.html
+msgid "not set — SSH logs in as the username above"
+msgstr ""
+
+#: app/templates/appliances/edit.html
+msgid "Changing the SSH user requires re-entering the separate SSH password, when one is set."
+msgstr ""

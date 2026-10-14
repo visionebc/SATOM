@@ -144,7 +144,7 @@ current list:
 | ADOM | URL | Purpose |
 |---|---|---|
 | **Global** | `/` | Fleet-wide dashboard and cross-product tools: Monitoring (with Metrics and Analysis), Search, Service Diagram, Architecture, Fleet Objects, WAF, Jobs, DNS Lookup; **Automation** (with Certificate Manager, Schema builds and Build compatibility); and fleet administration under **Administrator** (Appliances, Classification, Database, System Backup, Software Update, High Availability, Bug Reports, Studio) |
-| **FortiWeb** | `/web/` | Everything WAF: FortiWeb's own menu for the selected device (Policy, Server Objects, Web Protection, System, …), the device-scoped WAF tools under Fleet → WAF (Search Attack ID, Exceptions & Signature, WAF Artifacts), Operations, FortiWeb administration |
+| **FortiWeb** | `/web/` | Everything WAF: FortiWeb's own menu for the selected device (Policy, Server Objects, Web Protection, System, …), the device-scoped WAF tools under Operations → WAF (Search Attack ID, Exceptions & Signature, WAF Artifacts), Operations, FortiWeb administration |
 | **FortiADC** | `/adc/` | Load-balancer management: the device's own menu when a layout exists for its build (otherwise a FortiADC group with Signatures only), and an ADC API console |
 | **FortiAuthenticator** | `/fac/` | Identity and access: the unit's own menu (users and groups, RADIUS and TACACS+ clients, Fortinet SSO, certificates…) drawn from its measured GUI, and a FAC API console |
 | **FortiAnalyzer** | `/faz/` | Logging and analytics: the device's own menu when a layout exists for its build (otherwise the curated menu: Device Manager, FortiView, Log View, Incidents & Events, Reports), and a JSON-RPC API console |
@@ -231,7 +231,7 @@ moved and what did not:
   back as their pages are measured and arrive in a knowledge pack. A bookmark to
   such a page still opens it.
 - **FortiWeb WAF tools** — Search Attack ID, Exceptions & Signature and WAF
-  Artifacts — are now under **Fleet → WAF** (§9). They are drawn in every
+  Artifacts — are now under **Operations → WAF** (§9). They are drawn in every
   device ADOM, in the same place; outside FortiWeb they are greyed out and say
   why on hover. The URLs and permissions are the same.
 
@@ -251,25 +251,33 @@ a FortiADC keeps a FortiADC group with **Signatures** only, and a FortiAnalyzer
 keeps the curated menu of §17.3 (the live JSON-RPC section pages), so neither
 ADOM ends up empty.
 
-**Where the shared groups sit (3.1.0).** Every ADOM draws the same SATOM groups
-in the same order around the device menu: Fleet, the device menu, Operations,
-API (where the product has a console), **Automation**, **Administrator**,
-Plugins. **Appliances** is under Administrator; **Schema builds**, **Build
-compatibility** and (Global) **Certificate Manager** are under Automation;
-**Studio** is a sub-menu of Administrator. A profile that cannot see one of
-those groups keeps the entry where it was before — Appliances and the API
-library under Fleet, Studio as a group of its own, and **Process** in a group
-of its own — so the reorder takes no page away from anyone.
+**Where the shared groups sit.** Every device ADOM draws the same SATOM groups
+in the same order around the device menu: **Operations** first, the device
+menu, **Automation**, **Administrator**, Plugins. Operations opens with the
+fleet pages (Dashboard where the ADOM has one, Calendar, Architecture, Service
+Diagram, Monitoring, Search, DNS Lookup, Troubleshooting, Fleet Objects and WAF
+in FortiWeb and FortiADC, Jobs) and then holds Device Backups, Log Collection
+and Import Backup; there is no separate **Fleet** group. The **API** console
+(Registry & console) is a sub-menu of Automation. **Appliances** is under
+Administrator; **Schema builds**, **Build compatibility** and (Global)
+**Certificate Manager** are under Automation; **Studio** is a sub-menu of
+Administrator. The Global ADOM keeps its **Global** block for the fleet pages
+and has no Operations group. A profile that cannot see one of those groups
+keeps the entry where it was before — Appliances and the API library under
+Operations, the API console as a group of its own (`registry.view` without
+`config_write`), Studio as a group of its own, and **Process** in a group of
+its own — so the reorder takes no page away from anyone. Each entry keeps its
+own permission; moving it changed where it is drawn, not who sees it.
 
 **The Global ADOM has no device menu.** It is the fleet-wide console. Its
-Fleet → WAF lists the fleet pages (Overview, Inventory, Profiles, Coverage,
+Operations → WAF lists the fleet pages (Overview, Inventory, Profiles, Coverage,
 Artifacts, Exceptions) but not the three FortiWeb tools above. Those are
 FortiWeb-ADOM pages, and a link from Global would switch the tab's ADOM
 without saying so.
 
 ## 4. Registering and operating devices
 
-**Appliances** (sidebar → Fleet → Appliances in each ADOM, Global → Appliances in
+**Appliances** (sidebar → Operations → Appliances in each ADOM, Global → Appliances in
 the Global ADOM, or the Global dashboard). The entry is shown to anyone holding
 `appliances.view`; adding or editing a device still needs `config_write`:
 
@@ -1161,7 +1169,7 @@ device selected, or no measured layout for it yet, the FortiWeb group shows
 only **Server Policy**. A collection that no measured page draws yet has no
 menu entry until its page is crawled. The fleet-wide WAF pages and the
 device-scoped WAF tools (Search Attack ID, Exceptions & Signature, WAF
-Artifacts) are under **Fleet → WAF** (§13.1, §13.2).
+Artifacts) are under **Operations → WAF** (§13.1, §13.2).
 
 ### 8.1 Web Protection Profiles and signatures in the device menu
 
@@ -1289,7 +1297,7 @@ details add a **FortiGuard** row. Ids with no metadata show as before.
 
 **Exceptions & Signature** is the single place to author every policy-bound
 carve-out (WAF exceptions *and* signature customizations) for one FortiWeb.
-It is in the **Fleet → WAF** submenu of the FortiWeb ADOM, next to Search
+It is in the **Operations → WAF** submenu of the FortiWeb ADOM, next to Search
 Attack ID and WAF Artifacts. It is not on the Global console's WAF menu,
 because it is a FortiWeb-ADOM page and a link from Global would switch the
 tab's ADOM. The URL is `/web/exceptions/<device id>`.
@@ -1303,10 +1311,10 @@ The page title names the device: **Exceptions & Signature Carve-outs —
 <device>**. The carve-outs it lists are *desired state* recorded in SATOM.
 Authoring writes nothing to the box: pushing is a separate step. To see who
 across the estate holds a given carve-out, use **Fleet inventory** at the top
-of the page. It opens Fleet → WAF → Exceptions (§13.1).
+of the page. It opens Operations → WAF → Exceptions (§13.1).
 
 ![Exceptions & Signature Carve-outs for fwb-01](img/screens/fleet-exceptions.webp)
-*Fleet → WAF → Exceptions & Signature: the carve-outs authored for fwb-01*
+*Operations → WAF → Exceptions & Signature: the carve-outs authored for fwb-01*
 
 The team rules the app enforces:
 
@@ -1375,7 +1383,7 @@ attack-log entry it refers to. The whole triage is then on one page: what was
 blocked, why, whether it should have been, and the exception that would let it
 through if it should not.
 
-Search Attack ID is in the **Fleet → WAF** submenu of the FortiWeb ADOM
+Search Attack ID is in the **Operations → WAF** submenu of the FortiWeb ADOM
 (`/waf/attack-search/`). It does not depend on the device selected in the
 sidebar: the reference chooses the appliance.
 
@@ -1394,7 +1402,7 @@ need `advisor.use`. Saving a carve-out, accepting or rejecting a drafted one,
 and inserting it need `config_write`.
 
 ![Search Attack ID](img/screens/fleet-attack-search.webp)
-*Fleet → WAF → Search Attack ID in the FortiWeb ADOM*
+*Operations → WAF → Search Attack ID in the FortiWeb ADOM*
 
 Everything on this page **reads**. Nothing is pushed to an appliance until you
 explicitly ask for it in §9.6, and no draft leaves the page approved.
@@ -1791,7 +1799,7 @@ API console and scheduled custom REST calls refuse the paths that change the
 box even on a GET (reboot, shutdown, factory reset, partition swap, restore,
 image upload): use these pages instead.
 
-**The Firmware library** (Fleet → **Firmware**, admin) is the store the upgrade
+**The Firmware library** (Administrator → **Firmware**, admin) is the store the upgrade
 step 1 picks from, and it is worth using rather than re-uploading an image per
 device.
 
@@ -1819,11 +1827,11 @@ device.
 
 ## 13. Fleet tools
 
-All in the Global ADOM (also linked from product Fleet groups):
+All in the Global ADOM (also linked from the product Operations groups):
 
 ### 13.0 Architecture: drawing the path, reading the devices
 
-**Fleet → Architecture** (`/net-architecture/`) is the drawn counterpart of the
+**Operations → Architecture** (`/net-architecture/`) is the drawn counterpart of the
 Service Diagram. The Service Diagram is derived from the FortiWeb cache; an
 Architecture drawing is what you say the network is, and SATOM checks it
 against what the devices say.
@@ -1911,7 +1919,7 @@ against what the devices say.
   any-field search over the entire cache.
 - **WAF:** the fleet-wide FortiWeb picture, in six read-only pages (Overview,
   Inventory, Profiles, Coverage, Artifacts, Exceptions; §13.1). It is a
-  submenu of the Global menu and of the FortiWeb ADOM's **Fleet** group. In
+  submenu of the Global menu and of the FortiWeb ADOM's **Operations** group. In
   the FortiWeb ADOM it also holds the device-scoped WAF tools (§13.2). The
   other ADOMs have no WAF submenu, because they have no FortiWeb objects to
   count.
@@ -1936,7 +1944,7 @@ against what the devices say.
   against the fleet's load-balancing config: which policy/virtual server
   publishes it, with a mini policy→pool→backend graph and config deep links.
 - **Where these live:** Backend Reachability, Config Compare, Path Diagnostics
-  and Scout sit together under **Fleet › Troubleshooting** in every ADOM
+  and Scout sit together under **Operations › Troubleshooting** in every ADOM
   (since 2026-10-14; before that they were spread over Operations and Fleet).
   The FortiGate, FortiAnalyzer and FortiAuthenticator ADOMs list Scout only
   there: the other three work on FortiWeb and FortiADC objects.
@@ -2002,9 +2010,9 @@ against what the devices say.
 - **Monitoring / Metrics** — see §14.
 
 
-### 13.1 Fleet → WAF: the fleet-wide pages
+### 13.1 Operations → WAF: the fleet-wide pages
 
-**Fleet → WAF** shows every FortiWeb this console can see on one set of pages.
+**Operations → WAF** shows every FortiWeb this console can see on one set of pages.
 In the Global console that is every FortiWeb; in the FortiWeb ADOM, that ADOM's
 own boxes. Every page needs `protection.view` and **writes nothing**. The pages
 read the source-of-truth snapshots the hourly harvest already took, so opening
@@ -2028,8 +2036,8 @@ last harvest, and freshness is shown on every page:
 On Artifacts and Exceptions, the filters narrow the table only. The tiles and
 charts above it always describe the whole visible fleet.
 
-![Fleet → WAF overview](img/screens/fleet-waf.webp)
-*Fleet → WAF → Overview: KPIs and "What this fleet would want fixed"; the
+![Operations → WAF overview](img/screens/fleet-waf.webp)
+*Operations → WAF → Overview: KPIs and "What this fleet would want fixed"; the
 sidebar shows the WAF submenu of the FortiWeb ADOM*
 
 **Export.** Every WAF page has an export panel. Tick the datasets you want
@@ -2042,7 +2050,7 @@ charts). You get one ZIP.
 - If nothing is ticked, the page warns you and produces no file.
 - Each export is recorded in the audit log as `waf.export`.
 
-### 13.2 Fleet → WAF in the FortiWeb ADOM: the device tools
+### 13.2 Operations → WAF in the FortiWeb ADOM: the device tools
 
 In the FortiWeb ADOM, the WAF submenu also holds the three device-scoped WAF
 tools. They used to sit in the ADOM's own WAF group, which no longer exists.
@@ -2058,7 +2066,7 @@ would switch the tab's ADOM.
 
 **WAF Artifacts** is a collapsible entry with three pages. Each page shows one
 device and ADOM: the device selected in the sidebar (§3.1). No control widens
-it to the fleet; for the fleet-wide view, use Fleet → WAF → Artifacts (§13.1).
+it to the fleet; for the fleet-wide view, use Operations → WAF → Artifacts (§13.1).
 
 - **Object types:** statistics for the selected device and ADOM, per object
   type, with the reference for each type.
@@ -2072,7 +2080,7 @@ it to the fleet; for the fleet-wide view, use Fleet → WAF → Artifacts (§13.
   itself warns that a policy created since the last sweep is missing from it.
 
 ![WAF Artifacts inventory](img/screens/fleet-artifacts.webp)
-*Fleet → WAF → WAF Artifacts → Inventory for the selected device*
+*Operations → WAF → WAF Artifacts → Inventory for the selected device*
 
 ### 13.3 Naming: Scheme and Discovery
 
@@ -2651,7 +2659,7 @@ audits it; secrets are never echoed back.
 - **Signatures** (Web Application Firewall group, `protection.view`) — WAF
   signature category/severity overview with per-severity actions; deep editing
   through the object detail.
-- **API console** (sidebar → API → Registry & console, `registry.view`) — the
+- **API console** (sidebar → Automation → API → Registry & console, `registry.view`) — the
   registry-driven explorer: browse the ADC endpoint catalog as the GUI menu, run
   live GETs and gated writes against a chosen device, with history and
   syntax-highlighted responses. Writes are **dry-run by default**: without
@@ -2720,15 +2728,16 @@ the whole menu as a grid.
   that page instead. The others render the old read-only section page, capped
   at 500 rows with the truncation stated, with an explicit **"No endpoint
   bound."** state where no REST resource is behind the pane.
-- **API console** (sidebar → API → Registry & console, `registry.view`) — the
+- **API console** (sidebar → Automation → API → Registry & console, `registry.view`) — the
   registry-driven explorer over the FAC catalogue, with live GETs and gated
   writes against a chosen device (§30 covers the registry model behind all four
   consoles). Catalog rows can be disabled and restored on the page; re-pointing
   a disabled row keeps it disabled.
 - **Analysis** — entitlement, identity inventory and posture (see §13).
 
-**What does *not* apply to FortiAuthenticator.** The FAC ADOM's sidebar carries
-no Operations group, and that is not an oversight:
+**What does *not* apply to FortiAuthenticator.** In the FAC ADOM's Operations
+group Device Backups, Log Collection and Import Backup are greyed out (the
+reason is on hover), and that is not an oversight:
 
 | Feature | In the FAC ADOM? |
 |---|---|
@@ -2768,7 +2777,7 @@ can take them out of the menu.
   the rest of the page.
 - **Device Manager** — Authorize / Delete run in the FortiAnalyzer ADOM you
   type in the dialog (default `root`); the device list spans every FAZ ADOM.
-- **API console** (sidebar → API → Registry & console, `registry.view`) — same
+- **API console** (sidebar → Automation → API → Registry & console, `registry.view`) — same
   registry-driven explorer, JSON-RPC aware, with permission-gated writes that
   are **dry-run by default** (tick **Apply** to send). The status badge shows the
   device's JSON-RPC status code, not the transport's HTTP 200.
@@ -2782,7 +2791,7 @@ The `/fgt/` ADOM (since 3.0) reads a FortiGate live over the FortiOS REST API.
 SATOM keeps no FortiGate configuration cache. Since the FortiGate GUI layouts
 arrived, the pages a measured layout draws can also write, dry-run first.
 
-- **Dashboard** (Fleet → Dashboard, and the page the ADOM opens on) — the
+- **Dashboard** (Operations → Dashboard, and the page the ADOM opens on) — the
   FortiGate device picker (*Select*), the live **Unit status** of the selected
   unit (hostname, firmware, build, serial, model, log disk) and a map of
   SATOM's section pages.
@@ -2808,7 +2817,7 @@ arrived, the pages a measured layout draws can also write, dry-run first.
 - **Not in GUI, but in CLI** is on every object, edit and Create New form
   (§7.3). A page or field measured as having no API is drawn read-only and
   marked **"No API on this build (GUI only)"**.
-- **API console** (sidebar → API → Registry & console, `registry.view`) — the
+- **API console** (sidebar → Automation → API → Registry & console, `registry.view`) — the
   FortiGate registry browsed as the FortiGate menu, and a live console. `GET`
   reads the `cmdb`, `monitor` and `log` trees. `POST`, `PUT` and `DELETE` are
   **dry-run by default** (tick **Apply** to send; `registry.execute_write`),
@@ -6057,7 +6066,7 @@ From the console: `sudo satom execute apilib compat fortiweb 7.6.8 8.0.6` and
 When an appliance starts running a firmware build whose schema SATOM has never
 harvested, every administrator gets **one** bell notification for that product
 and build: *New build 8.0.7 on fweb-01: schema not harvested*. It links to
-**Schema builds** (Fleet group of the sidebar, in every ADOM;
+**Schema builds** (Automation group of the sidebar, in every ADOM;
 `/schema-builds/`; reading needs `registry.view`).
 
 The page has three parts:
@@ -6823,7 +6832,7 @@ Three things the panel says out loud:
 entry *as the device reported it*, never from values a browser sent back — a
 page that lets a client supply the evidence lets a client author the exception.
 To save, open the same entry in **Search Attack ID** (FortiWeb ADOM →
-**Fleet → WAF**) → the entry → **Carve-out**: the
+**Operations → WAF**) → the entry → **Carve-out**: the
 recommendation is identical and the evidence is device-read.
 
 Two optional fields: **Web Protection Profile** names that profile in the

@@ -25,7 +25,7 @@ configuration cache.
   the save as **drift**. A save is accepted only for a collection the page
   itself edits. Monitor views, GUI-only pages and fields measured with no API
   are drawn read-only and never saved;
-- the **API console** (sidebar → API, `registry.view`): the FortiGate registry
+- the **API console** (sidebar → Automation → API, `registry.view`): the FortiGate registry
   browsed as the FortiGate menu, and a live console. `GET` reads the `cmdb`,
   `monitor` and `log` trees. `POST`, `PUT` and `DELETE` are **dry-run by
   default**; sending one needs `registry.execute_write` and is audited and

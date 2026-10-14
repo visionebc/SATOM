@@ -3,15 +3,20 @@
 
    It was drawn inline in the FortiWeb branch of base.html only. FortiWeb is
    the reference menu (operator rule), so every device ADOM now draws the same
-   group in the same place: after the device's own menu, before API (this
-   partial is included by partials/nav_product_api.html for that reason —
-   FortiADC's device menu is drawn there too). Backend Reachability and Config
+   group in the same place (until 2026-10-14 after the device's own menu;
+   now first, see below). Backend Reachability and Config
    Compare left this group on 2026-10-13 for Fleet › Troubleshooting
    (partials/nav_troubleshooting.html), in every ADOM.
 
    Each entry is live where its page works for this ADOM's devices and drawn
    disabled with the reason elsewhere (services/adom_menu.py). Permissions are
    asked first, so a profile that may not open a page sees neither.
+
+   Since 2026-10-14 (operator) Operations is the FIRST group of every device
+   ADOM and the Fleet group is gone: its entries (partials/nav_fleet.html,
+   each with its own permission, unchanged) lead this group, above Device
+   Backups. base.html includes this partial where the Fleet group stood; the
+   Global ADOM keeps its "Global" block and has no Operations group.
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
 {% if product.key != 'global' and not product.placeholder %}
@@ -20,9 +25,10 @@
 {% set _m_logs = adom_menu('logs', product) %}
 {% set _m_imp = adom_menu('import_backup', product) %}
 {% set _m_tpl = adom_menu('templates', product) %}
-<div class="fw-nav-group {{ 'open' if _g_ops }}" data-nav-group="Operations">
+<div class="fw-nav-group{{ ' open' if _g_ops }}" data-nav-group="Operations">
   <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-tools fw-nav-section-icon" style="color:#94a3b8;"></i><span>{{ _('Operations') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-group-body">
+    {% include 'partials/nav_fleet.html' %}
     {% if current_user.can('backups.view') and may_open('backups.index') %}
     {% if _m_bak.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'backups' else '' }}" href="{{ url_for('backups.index') }}">

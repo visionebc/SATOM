@@ -9,9 +9,9 @@
 {% macro cap_picker(prefix, selected, groups, desc, explicit) %}
 <div class="dropdown tok-picker" data-empty="{{ _('None ticked: every catalog action that needs no explicit grant') }}"
      data-some="{{ _('selected') }}">
-  <button class="btn btn-outline-secondary w-100 text-start d-flex align-items-center dropdown-toggle"
-          type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
-    <span class="tok-picker-summary text-truncate me-2"></span>
+  <button class="form-select text-start text-truncate" type="button"
+          data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+    <span class="tok-picker-summary"></span>
   </button>
   <div class="dropdown-menu w-100 p-2 tok-picker-menu">
     {% for title, keys in groups %}
@@ -36,9 +36,9 @@
 {% macro appid_picker(prefix, selected, catalog) %}
 <div class="dropdown tok-picker" data-empty="{{ _('None ticked: no AppID restriction') }}"
      data-some="{{ _('selected') }}">
-  <button class="btn btn-outline-secondary w-100 text-start d-flex align-items-center dropdown-toggle"
-          type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
-    <span class="tok-picker-summary text-truncate me-2"></span>
+  <button class="form-select text-start text-truncate" type="button"
+          data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+    <span class="tok-picker-summary"></span>
   </button>
   <div class="dropdown-menu w-100 p-2 tok-picker-menu">
     {% if catalog %}

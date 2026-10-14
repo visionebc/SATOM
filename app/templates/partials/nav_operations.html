@@ -26,10 +26,12 @@
    Automation became the last entry of this group on 2026-10-14 (operator):
    a subgroup (partials/nav_automation.html, its API subgroup inside), drawn
    for config_write as before. The Global ADOM keeps Automation as a group.
+   Plugins follows it as the last subgroup (partials/nav_plugins.html), same
+   day (operator).
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
 {% if product.key != 'global' and not product.placeholder %}
-{% set _g_ops = request.blueprint in ['backups','import_backup'] %}
+{% set _g_ops = request.blueprint in ['backups','import_backup','plugins','lua_studio'] %}
 {% set _m_bak = adom_menu('backups', product) %}
 {% set _m_imp = adom_menu('import_backup', product) %}
 {% set _m_tpl = adom_menu('templates', product) %}
@@ -60,6 +62,8 @@
     {# Automation ▸ (with its API ▸ subgroup) — the last entry of Operations
        since 2026-10-14 (operator). Still config_write-gated inside the partial. #}
     {% include 'partials/nav_automation.html' %}
+    {# Plugins ▸ — after Automation since 2026-10-14 (operator). #}
+    {% include 'partials/nav_plugins.html' %}
   </div>
 </div>
 {% endif %}

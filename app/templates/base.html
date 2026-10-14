@@ -333,9 +333,7 @@
       {# FortiADC device menu + the API fallback (API lives in Operations › Automation) #}
       {% include 'partials/nav_product_api.html' %}
 
-      {# Automation is a subgroup of Operations since 2026-10-14 (partials/nav_operations.html). #}
-
-      {% include 'partials/nav_admin.html' %}
+      {# Automation and Plugins are subgroups of Operations since 2026-10-14 (partials/nav_operations.html). #}
 
       {% elif product.key == 'global' %}
       <!-- ===== GLOBAL ADOM — fleet-wide, spans FortiWeb + FortiADC ===== -->
@@ -363,19 +361,6 @@
 
       {% include 'partials/nav_automation.html' %}
 
-      {% include 'partials/nav_admin.html' %}
-
-      {# Studio lives inside Administrator since 2026-10-13 (nav_admin.html).
-         Its entries follow their own studio.* keys, not user_manage, so a
-         custom profile holding one but no Administrator group keeps the
-         standalone group here (partials/nav_studio.html). #}
-      {% if not current_user.can('user_manage') %}
-      {% if current_user.is_authenticated and (current_user.can('studio.python_console') or current_user.can('studio.plugin_studio') or current_user.can('studio.lua_studio')) %}
-      {% include 'partials/nav_studio.html' %}
-      {% endif %}
-      {# Not an {% else %}: a Studio holder without user_manage lost Process. #}
-      {% include "partials/nav_process_group.html" %}
-      {% endif %}
 
       {% elif product.key == 'fortianalyzer' %}
       <!-- ===== FortiAnalyzer — the FAZ ADOM left menu: its measured GUI pages,
@@ -404,9 +389,7 @@
       {# FortiADC device menu + the API fallback (API lives in Operations › Automation) #}
       {% include 'partials/nav_product_api.html' %}
 
-      {# Automation is a subgroup of Operations since 2026-10-14 (partials/nav_operations.html). #}
-
-      {% include 'partials/nav_admin.html' %}
+      {# Automation and Plugins are subgroups of Operations since 2026-10-14 (partials/nav_operations.html). #}
 
 
 
@@ -436,9 +419,7 @@
       {# FortiADC device menu + the API fallback (API lives in Operations › Automation) #}
       {% include 'partials/nav_product_api.html' %}
 
-      {# Automation is a subgroup of Operations since 2026-10-14 (partials/nav_operations.html). #}
-
-      {% include 'partials/nav_admin.html' %}
+      {# Automation and Plugins are subgroups of Operations since 2026-10-14 (partials/nav_operations.html). #}
 
 
       {% elif product.key == 'fortigate' %}
@@ -467,9 +448,7 @@
       {# FortiADC device menu + the API fallback (API lives in Operations › Automation) #}
       {% include 'partials/nav_product_api.html' %}
 
-      {# Automation is a subgroup of Operations since 2026-10-14 (partials/nav_operations.html). #}
-
-      {% include 'partials/nav_admin.html' %}
+      {# Automation and Plugins are subgroups of Operations since 2026-10-14 (partials/nav_operations.html). #}
 
 
       {% elif product.placeholder %}
@@ -531,7 +510,7 @@
           </details>
         {% endif %}
       {% endmacro %}
-      <div class="fw-nav-group {{ 'open' if _fwg_page }}" data-nav-group="FortiWeb">
+      <div class="fw-nav-group fw-nav-device{{ ' open' if _fwg_page or nav_device_open('FortiWeb') }}" data-nav-group="FortiWeb">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-layout-sidebar fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('FortiWeb') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'workspace.fwgui_index' }}" href="{{ url_for('workspace.fwgui_index', appliance_id=current_appliance.id) }}"><i class="bi bi-grid-3x3-gap fw-nav-icon"></i><span>{{ _('All pages') }}</span></a>
@@ -543,7 +522,7 @@
          imported): Server Policy, the hand-tuned view, stays reachable -- the
          device's layout view, else the device picker. #}
       {% set _sp_gui = request.endpoint in ['workspace.gui_list', 'workspace.gui_policy', 'workspace.gui_new'] %}
-      <div class="fw-nav-group {{ 'open' if _sp_gui }}" data-nav-group="FortiWeb">
+      <div class="fw-nav-group fw-nav-device{{ ' open' if _sp_gui or nav_device_open('FortiWeb') }}" data-nav-group="FortiWeb">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-layout-sidebar fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('FortiWeb') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           <a class="fw-nav-item fw-so-nav-flat {{ 'active' if _sp_gui }}" href="{{ url_for('workspace.gui_list', appliance_id=current_appliance.id) if current_appliance and current_appliance.kind == 'fortiweb' else url_for('workspace.index') }}"><span>{{ _('Server Policy') }}</span></a>
@@ -558,18 +537,34 @@
       {# API fallback — the same partial, in the same place, as the other device ADOMs #}
       {% include 'partials/nav_product_api.html' %}
 
-      {# Automation is a subgroup of Operations since 2026-10-14 (partials/nav_operations.html). #}
-
-      {% include 'partials/nav_admin.html' %}
+      {# Automation and Plugins are subgroups of Operations since 2026-10-14 (partials/nav_operations.html). #}
 
       {% endif %}
-
-      {# PLUGINS — every device ADOM (partials/nav_plugins.html). #}
-      {% include 'partials/nav_plugins.html' %}
 
       </div><!-- /.fw-nav-top -->
 
       <div class="fw-nav-spacer"></div>
+
+      {# ADMINISTRATOR — the last group of the main menu, in every ADOM, below
+         the spacer so it sits at the foot of the sidebar, just above the
+         Settings block but not inside it (operator, 2026-10-14). The
+         placeholder ADOM never had it. #}
+      {% if not product.placeholder %}
+      {% include 'partials/nav_admin.html' %}
+      {% if product.key == 'global' %}
+      {# Studio lives inside Administrator since 2026-10-13 (nav_admin.html).
+         Its entries follow their own studio.* keys, not user_manage, so a
+         custom profile holding one but no Administrator group keeps the
+         standalone group here (partials/nav_studio.html). #}
+      {% if not current_user.can('user_manage') %}
+      {% if current_user.is_authenticated and (current_user.can('studio.python_console') or current_user.can('studio.plugin_studio') or current_user.can('studio.lua_studio')) %}
+      {% include 'partials/nav_studio.html' %}
+      {% endif %}
+      {# Not an {% else %}: a Studio holder without user_manage lost Process. #}
+      {% include "partials/nav_process_group.html" %}
+      {% endif %}
+      {% endif %}
+      {% endif %}
 
       <!-- PROJECT SETTINGS — pinned to the bottom of the sidebar -->
       <div class="fw-nav-bottom">

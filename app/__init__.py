@@ -944,6 +944,16 @@ def create_app(config_override: object | None = None) -> Flask:
         from .nav_state import autoopen
         return autoopen(str(html))
 
+    # -- sidebar: the device's own menu (FortiWeb, FortiGate, ...) is open
+    # unless the operator closed it. main.js keeps the closed names in the
+    # fw_nav_dev_closed cookie (not localStorage) so the server paints the
+    # right state with no fold-then-unfold on every page load (2026-10-14).
+    def _nav_device_open(name):  # noqa: ANN001
+        from urllib.parse import unquote
+        raw = unquote(request.cookies.get('fw_nav_dev_closed', '') or '')
+        return str(name) not in raw.split('|')
+    app.jinja_env.globals['nav_device_open'] = _nav_device_open
+
     # -- timezone-aware timestamp filter ---------------------------------
     @app.template_filter('localtime')
     def _localtime(dt, fmt='%Y-%m-%d %H:%M:%S'):

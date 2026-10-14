@@ -11,7 +11,7 @@
 {% if gx_nav and gx_appliance and gx_appliance.kind == 'fortiadc' %}
 {% include 'partials/nav_gx.html' %}
 {% elif current_user and current_user.can('protection.view') and may_open('adc.signatures') %}
-<div class="fw-nav-group {{ 'open' if request.endpoint == 'adc.signatures' }}" data-nav-group="FortiADC">
+<div class="fw-nav-group fw-nav-device{{ ' open' if request.endpoint == 'adc.signatures' or nav_device_open('FortiADC') }}" data-nav-group="FortiADC">
   <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-layout-sidebar fw-nav-section-icon" style="color:#10b981;"></i><span>FortiADC</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-group-body">
     <a class="fw-nav-item {{ 'active' if request.endpoint == 'adc.signatures' }}" href="{{ url_for('adc.signatures') }}"><i class="bi bi-fingerprint fw-nav-icon"></i><span>{{ _('Signatures') }}</span></a>

@@ -86,6 +86,11 @@ def _lua_kinds() -> Iterable[str]:
     return LuaScript.TARGETS
 
 
+def _diag_battery_kinds() -> Iterable[str]:
+    from .diag_battery import PRODUCTS
+    return PRODUCTS
+
+
 def _every_device() -> Iterable[str] | None:
     return None  # None = every device ADOM
 
@@ -129,6 +134,8 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
           "the capacity catalog counts FortiWeb object types"),
     Entry("firmware", ("firmware",), _firmware_kinds,
           "firmware image management does not apply to this product"),
+    Entry("diag_battery", ("diag_battery",), _diag_battery_kinds,
+          "SATOM keeps no diagnostic battery for this product"),
     # Every device ADOM: Scheme and Discovery list the same object types —
     # every table the product's configuration sweep reads (views/naming.py).
     Entry("naming", ("naming",), _every_device, ""),

@@ -15,19 +15,17 @@
   <div>
     <h1 class="fw-page-title"><i class="bi bi-journal-text me-2 text-accent"></i>{{ _('Diagnose Log Collection') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      Collect a read-only diagnostic battery (<code>get</code>/<code>diagnose</code>:
-      status, HA, hardware, disk, network…) from one or more FortiWeb appliances
-      over SSH. It modifies nothing — every command is asserted read-only.
+      {{ _('Collect the %(adom)s diagnostic battery from one or more %(adom)s devices over SSH. It modifies nothing: every command is a read-only get, show or diagnose, and a command the device build does not have is skipped and reported.', adom=adom_name) }}
     </p>
   </div>
 </div>
 
 <div class="row g-3">
-  <!-- Left: device picker + options -->
+  <!-- Left: device picker + battery + options -->
   <div class="col-lg-5">
     <div class="fw-card mb-3">
       <div class="fw-card-header d-flex align-items-center justify-content-between">
-        <span><i class="bi bi-server me-2 text-accent"></i>{{ _('Devices (FortiWeb)') }}</span>
+        <span><i class="bi bi-server me-2 text-accent"></i>{{ _('Devices (%(adom)s)', adom=adom_name) }}</span>
         <div class="d-flex gap-2">
           <button type="button" class="btn btn-fw-outline btn-sm" id="selAll">{{ _('Select all') }}</button>
           <button type="button" class="btn btn-secondary btn-sm" id="selNone">{{ _('None') }}</button>
@@ -41,15 +39,44 @@
             <input type="checkbox" class="form-check-input mt-0 dev-check" value="{{ a.id }}">
             <span class="fw-appliance-name" style="font-size:13px;">{{ a.name }}</span>
             <span class="text-muted" style="font-size:12px;">{{ a.host }}</span>
+            {% if a.firmware %}<span class="text-muted ms-auto mono" style="font-size:11px;">{{ a.firmware }}</span>{% endif %}
           </label>
           {% endfor %}
         </div>
         {% else %}
         <div class="fw-empty-state py-4">
           <div class="fw-empty-state-icon"><i class="bi bi-server"></i></div>
-          <div class="fw-empty-state-title">{{ _('No FortiWeb appliances configured') }}</div>
+          <div class="fw-empty-state-title">{{ _('No %(adom)s devices configured', adom=adom_name) }}</div>
           <a href="{{ url_for('appliances.index') }}" class="btn btn-fw-primary mt-2">{{ _('Add Appliance') }}</a>
         </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="fw-card mb-3" id="batteryCard">
+      <div class="fw-card-header d-flex align-items-center justify-content-between">
+        <span><i class="bi bi-list-check me-2 text-accent"></i>{{ _('Diagnostic battery') }}</span>
+        <span class="fw-badge fw-badge-secondary">{{ _('%(n)s commands', n=battery|length) }}</span>
+      </div>
+      <div class="fw-card-body">
+        <div class="mb-2" style="font-size:12px;" id="batterySource">
+          {% if battery_meta.source == 'saved' %}
+          <span class="fw-badge fw-badge-info">{{ _('Chosen') }}</span>
+          <span class="text-muted">{{ _('Chosen by %(user)s on %(date)s', user=battery_meta.updated_by or _('an administrator'), date=battery_when) }}</span>
+          {% else %}
+          <span class="fw-badge fw-badge-secondary">{{ _('Default') }}</span>
+          <span class="text-muted">{{ _('Product default') }}</span>
+          {% endif %}
+          {% if battery_admin_link %}
+          · <a href="{{ url_for('diag_battery.index') }}">{{ _('Edit in Administrator → Diagnostic Battery') }}</a>
+          {% endif %}
+        </div>
+        {% if battery %}
+        <ol class="mono mb-0 ps-4" style="font-size:11.5px;max-height:260px;overflow:auto;color:var(--fw-text-secondary, inherit);">
+          {% for c in battery %}<li>{{ c }}</li>{% endfor %}
+        </ol>
+        {% else %}
+        <div class="text-muted" style="font-size:12px;">{{ _('This ADOM has no diagnostic battery.') }}</div>
         {% endif %}
       </div>
     </div>
@@ -65,14 +92,10 @@
             <i class="bi bi-terminal me-1"></i>{{ _('Custom commands (optional)') }}
           </summary>
           <p class="text-muted mt-2 mb-1" style="font-size:12px;">
-            One command per line. Only read-only commands are allowed
-            (<code>get</code> / <code>show</code> / <code>diagnose</code>) — anything
-            else is rejected. Blank lines and lines starting with <code>#</code> are
-            ignored. Leave empty to run the standard
-            {{ battery|length }}-command battery.
+            {{ _('One command per line: get, show or diagnose — state-changing diagnose commands are refused. Blank lines and lines starting with # are ignored. Leave empty to run the %(n)s-command battery above.', n=battery|length) }}
           </p>
           <textarea class="form-control form-control-sm mono" id="commandsInput" rows="5"
-                    placeholder="get system status&#10;diagnose hardware cpu&#10;diagnose network arp list"></textarea>
+                    placeholder="get system status&#10;diagnose hardware cpu list&#10;diagnose network arp list"></textarea>
         </details>
 
         <button type="button" class="btn btn-fw-primary w-100" id="collectBtn"
@@ -127,9 +150,9 @@
                   <td>{{ (h.size / 1024)|round(1) }} KB</td>
                   <td>
                     <a class="btn btn-fw-outline btn-sm" target="_blank"
-                       href="{{ url_for('logs.view_file', name=h.name) }}">{{ _('View') }}</a>
+                       href="{{ url_for('logs.view_file', name=h.name, _adom=adom_key) }}">{{ _('View') }}</a>
                     <a class="btn btn-secondary btn-sm"
-                       href="{{ url_for('logs.view_file', name=h.name) }}?download=1">↓</a>
+                       href="{{ url_for('logs.view_file', name=h.name, _adom=adom_key, download=1) }}">↓</a>
                   </td>
                 </tr>
                 {% endfor %}
@@ -157,6 +180,16 @@
   const $ = (id) => document.getElementById(id);
   const checks = () => Array.from(document.querySelectorAll('.dev-check'));
   let timer = null;
+  const T = {
+    ran: {{ _('ran')|tojson }}, skipped: {{ _('skipped')|tojson }},
+    unavailable: {{ _('not available')|tojson }},
+    running: {{ _('Running')|tojson }}, done: {{ _('Done')|tojson }},
+    pick: {{ _('Select at least one device.')|tojson }},
+    noStart: {{ _('Could not start collection.')|tojson }},
+    failed: {{ _('Request failed:')|tojson }},
+    view: {{ _('View')|tojson }},
+  };
+  const Q = '?_adom={{ adom_key }}';
 
   // HTML-escape before interpolating into innerHTML. Device names, REST error
   // text and stored log labels/filenames originate from the appliances and
@@ -177,16 +210,19 @@
     $('progBar').style.width = pct + '%';
     const customN = p.command_count ? (' · ' + p.command_count + ' cmd') : '';
     $('progLabel').textContent =
-      (p.state === 'running' ? 'Running' : 'Done') +
+      (p.state === 'running' ? T.running : T.done) +
       ' — label "' + (p.label || 'manual') + '"' + customN +
       ' (' + (p.done || 0) + '/' + (p.total || 0) + ')' +
       (p.current ? ' · ' + p.current : '');
     $('progLog').textContent = (p.log || []).join('\n');
     if (p.results && p.results.length) {
+      const counts = (r) => ' <span class="text-muted">(' + T.ran + ' ' + (r.ran || 0) +
+        ', ' + T.skipped + ' ' + (r.skipped || 0) +
+        (r.unavailable ? ', ' + T.unavailable + ' ' + r.unavailable : '') + ')</span>';
       $('progResults').innerHTML = p.results.map(r =>
         r.ok
           ? '<div style="font-size:12px;"><span class="fw-badge fw-badge-success">OK</span> ' +
-            esc(r.device) + ' → <span class="mono">' + esc(r.file) + '</span></div>'
+            esc(r.device) + ' → <span class="mono">' + esc(r.file) + '</span>' + counts(r) + '</div>'
           : '<div style="font-size:12px;"><span class="fw-badge fw-badge-danger">FAIL</span> ' +
             esc(r.device) + ' — ' + esc(r.error || '') + '</div>'
       ).join('');
@@ -200,14 +236,14 @@
 
   async function poll() {
     try {
-      const r = await fetch('{{ url_for("logs.status") }}');
+      const r = await fetch('{{ url_for("logs.status") }}' + Q);
       paint(await r.json());
     } catch (e) { /* keep polling */ }
   }
 
   async function loadHistory() {
     try {
-      const r = await fetch('{{ url_for("logs.history") }}');
+      const r = await fetch('{{ url_for("logs.history") }}' + Q);
       const j = await r.json();
       if (!j.ok) return;
       const body = $('histBody');
@@ -219,8 +255,8 @@
         '<td class="text-nowrap" style="font-size:11.5px;">' + esc((h.modified || '').replace('T', ' ')) + '</td>' +
         '<td>' + fmtSize(h.size) + '</td>' +
         '<td>' +
-          '<a class="btn btn-fw-outline btn-sm" target="_blank" href="/logs/file/' + encodeURIComponent(h.name) + '">View</a> ' +
-          '<a class="btn btn-secondary btn-sm" href="/logs/file/' + encodeURIComponent(h.name) + '?download=1">↓</a>' +
+          '<a class="btn btn-fw-outline btn-sm" target="_blank" href="/logs/file/' + encodeURIComponent(h.name) + Q + '">' + esc(T.view) + '</a> ' +
+          '<a class="btn btn-secondary btn-sm" href="/logs/file/' + encodeURIComponent(h.name) + Q + '&download=1">↓</a>' +
         '</td></tr>'
       ).join('');
     } catch (e) { /* ignore */ }
@@ -232,7 +268,7 @@
     const ids = checks().filter(c => c.checked).map(c => c.value);
     const err = $('collectErr');
     err.classList.add('d-none');
-    if (!ids.length) { err.textContent = 'Select at least one FortiWeb.'; err.classList.remove('d-none'); return; }
+    if (!ids.length) { err.textContent = T.pick; err.classList.remove('d-none'); return; }
 
     const fd = new FormData();
     ids.forEach(id => fd.append('appliance_ids', id));
@@ -241,12 +277,12 @@
 
     $('collectBtn').disabled = true;
     try {
-      const r = await fetch('{{ url_for("logs.collect") }}', {
+      const r = await fetch('{{ url_for("logs.collect") }}' + Q, {
         method: 'POST', headers: { 'X-CSRFToken': token }, body: fd
       });
       const j = await r.json();
       if (!j.ok) {
-        err.textContent = j.error || 'Could not start collection.';
+        err.textContent = j.error || T.noStart;
         err.classList.remove('d-none');
         $('collectBtn').disabled = false;
         return;
@@ -254,7 +290,7 @@
       paint(j.progress);
       if (!timer) timer = setInterval(poll, 1500);
     } catch (e) {
-      err.textContent = 'Request failed: ' + e.message;
+      err.textContent = T.failed + ' ' + e.message;
       err.classList.remove('d-none');
       $('collectBtn').disabled = false;
     }

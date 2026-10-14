@@ -349,23 +349,33 @@ def _run_device_health(node, ctx) -> StepResult:
 
 
 def _run_logs_collect(node, ctx) -> StepResult:
-    """Run the read-only diagnostic battery and save it.
+    """Run the device ADOM's diagnostic battery and save it.
 
-    Writes a file on THIS node; it does not write to the appliance. The battery
-    is FortiWeb syntax (``logcollect.DIAGNOSTIC_COMMANDS``), so pointing it at
-    another product yields a log full of syntax errors rather than a lie — the
-    step still passes, because the collection succeeded, and the operator reads
-    the file.
+    Writes a file on THIS node; it does not write to the appliance. Since
+    2026-10-14 the battery is the one the administrator chose for the device's
+    product (Administrator → Diagnostic Battery, ``diag_battery.get_battery``),
+    planned against the device's build exactly as Diagnose Log Collection plans
+    it: a command the build does not have, or one the battery rule refuses, is
+    written to the report as skipped instead of sent. Before, every product got
+    FortiWeb's battery.
     """
     from .logcollect import collect
+    from . import diag_battery
     if ctx.appliance is None:
         return StepResult(UNKNOWN, "this step needs an appliance and none was chosen")
     label = _s(node.get("params", {}), "label") or "process"
+    kind = getattr(ctx.appliance, "kind", None) or "fortiweb"
     try:
-        path = collect(ctx.appliance, label=label)
+        commands, _meta = diag_battery.get_battery(kind)
+        steps = diag_battery.plan(kind, getattr(ctx.appliance, "firmware", None), commands)
+        stats: dict = {}
+        path = collect(ctx.appliance, label=label, commands=commands, plan=steps,
+                       stats=stats)
     except Exception as exc:  # noqa: BLE001
         return StepResult(UNKNOWN, "the battery did not run: %s" % exc)
-    return StepResult(PASS, "diagnostics saved as %s" % path.name, str(path))
+    return StepResult(PASS, "diagnostics saved as %s (%s ran, %s skipped)"
+                      % (path.name, stats.get("ran", "?"), stats.get("skipped", 0)),
+                      str(path))
 
 
 # ---------------------------------------------------------------------------

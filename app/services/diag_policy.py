@@ -117,6 +117,10 @@ def _word_hit(tok: str, words: frozenset[str]) -> str | None:
     for p in parts:
         if p in words:
             return p
+        # "traceall", "resetall", "clearall": a verb with "all" glued on
+        # (fac01 lists ``diagnose debug application <daemon> traceall``).
+        if p.endswith("all") and p[:-3] in words:
+            return p[:-3]
     if tok in SAFE_WORDS or tok.isdigit() or len(tok) < 2:
         return None
     for w in sorted(words, key=lambda x: (len(x), x)):

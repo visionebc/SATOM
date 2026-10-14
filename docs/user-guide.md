@@ -4864,13 +4864,15 @@ Administrator → Diagnostic Battery.
 - **One battery, many builds.** For each device, SATOM checks every command
   against the discovery catalog of that device's firmware build (27.2). If the
   build does not have the command, it is not sent and the report says
-  `SKIPPED: not present in <build>: …`. A command the battery rule refuses on
+  `SKIPPED: not present in <build>: …` — also when the build lists the
+  command as a branch without `<Enter>`, which needs a subcommand there
+  (FortiADC `diagnose hardware get sysinfo`). A command the battery rule refuses on
   that device is shown as `SKIPPED (blocked): …`. This includes a command that
   the build's discovery describes, directly or through a parent, as changing
   something. If a build has not been discovered yet,
   every command is sent. When the device answers with its own "no such command"
   text ("Command fail", "Parsing error", "you must specify", "The number of
-  parameters is incorrect"…), the report adds `[not available on this
+  parameters is incorrect", "Incorrect number of parameters"…), the report adds `[not available on this
   build]`. Each report ends with the number of commands that ran and the
   number skipped. The progress list shows the same counts per device.
 - **SSH login.** The session logs in with the appliance's SSH user and SSH

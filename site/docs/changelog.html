@@ -153,12 +153,18 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   runs the active ADOM's battery, which is listed read-only on the page, with a
   link to the editor for administrators. If a device's build does not have a
   command (according to that build's discovery), the command is skipped and the
-  report says <code>SKIPPED: not present in &lt;build&gt;</code>. Output such as "Command fail"
-  or "Parsing error" is tagged <code>[not available on this build]</code>. The custom box
+  report says <code>SKIPPED: not present in &lt;build&gt;</code>. The same happens when the
+  build lists the command as a branch without <code>&lt;Enter&gt;</code>, which needs a
+  subcommand there: FortiADC 7.6.7 and 8.0.4 answer <code>diagnose hardware get
+  sysinfo</code> on its own with "Incorrect number of parameters". Output such as
+  "Command fail" or "Parsing error" is tagged <code>[not available on this build]</code>. The custom box
   follows the battery rule. The FortiWeb default battery has 28 commands:
   <code>diagnose debug proxy log 3</code> is gone. It printed nothing on 7.6.8 or 8.0.6,
   and its parent is described as set/get, meaning the trailing number sets a
-  debug level. The other four products start from small measured defaults.</li>
+  debug level. The other four products start from defaults that ran on the lab
+  devices: FortiAnalyzer 7.6.7 has no <code>diagnose debug crashlog read</code>, and
+  FortiADC uses the <code>sysinfo</code>/<code>deviceinfo</code> leaves (<code>cpu</code>, <code>memory</code>, <code>df</code>,
+  <code>nic</code>).</li>
 <li><strong>Appliances: "SSH user, if different from the API user".</strong> A FortiGate
   registered with a REST api-user cannot open SSH with that user. Log
   collection now logs in with the separate SSH user and the separate SSH

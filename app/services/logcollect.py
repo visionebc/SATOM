@@ -105,6 +105,7 @@ NOT_AVAILABLE_MARKERS: tuple[str, ...] = (
     "command parse error",
     "you must specify",
     "the number of parameters is incorrect",
+    "incorrect number of parameters",  # FortiADC 7.6.7 / 8.0.4
     "incomplete command",
 )
 NOT_AVAILABLE_NOTE = "[not available on this build]"

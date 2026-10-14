@@ -258,6 +258,9 @@ class Walker:
                 node.runnable = True
                 node.note = "ran when asked for help"
             else:
+                # A leaf counts as runnable even when it lists only argument
+                # placeholders: FortiADC lists ``arg`` for ``diagnose system
+                # df`` and it runs bare (2026-10-14).
                 node.runnable = h.runnable or not h.children
                 node.takes_args = h.takes_args
                 node.arg_hint = h.arg_hint
@@ -322,6 +325,18 @@ def presence(command: str, nodes: dict[str, dict]) -> tuple[str, str]:
         if n is None:
             continue
         if i == len(toks):
+            # The walk asked it and the build listed neither ``<Enter>`` nor
+            # a bare leaf: it needs a subcommand or arguments here. FortiADC
+            # answers ``diagnose hardware get sysinfo`` bare with "Incorrect
+            # number of parameters" (7.6.7 and 8.0.4, 2026-10-14).
+            if n.get("probed") and not n.get("runnable"):
+                note = n.get("note") or ""
+                if "TAB" in note:
+                    return UNKNOWN, "read by TAB completion; whether it runs bare is unknown"
+                if note and _ERROR.search(note):
+                    return ABSENT, f"the build refused '{path}': {note}"
+                if n.get("branch"):
+                    return ABSENT, f"'{path}' needs a subcommand on this build"
             return PRESENT, ""
         if n.get("takes_args"):
             return PRESENT, "arguments to " + path

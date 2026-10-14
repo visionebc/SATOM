@@ -47,12 +47,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   runs the active ADOM's battery, which is listed read-only on the page, with a
   link to the editor for administrators. If a device's build does not have a
   command (according to that build's discovery), the command is skipped and the
-  report says `SKIPPED: not present in <build>`. Output such as "Command fail"
-  or "Parsing error" is tagged `[not available on this build]`. The custom box
+  report says `SKIPPED: not present in <build>`. The same happens when the
+  build lists the command as a branch without `<Enter>`, which needs a
+  subcommand there: FortiADC 7.6.7 and 8.0.4 answer `diagnose hardware get
+  sysinfo` on its own with "Incorrect number of parameters". Output such as
+  "Command fail" or "Parsing error" is tagged `[not available on this build]`. The custom box
   follows the battery rule. The FortiWeb default battery has 28 commands:
   `diagnose debug proxy log 3` is gone. It printed nothing on 7.6.8 or 8.0.6,
   and its parent is described as set/get, meaning the trailing number sets a
-  debug level. The other four products start from small measured defaults.
+  debug level. The other four products start from defaults that ran on the lab
+  devices: FortiAnalyzer 7.6.7 has no `diagnose debug crashlog read`, and
+  FortiADC uses the `sysinfo`/`deviceinfo` leaves (`cpu`, `memory`, `df`,
+  `nic`).
 - **Appliances: "SSH user, if different from the API user".** A FortiGate
   registered with a REST api-user cannot open SSH with that user. Log
   collection now logs in with the separate SSH user and the separate SSH

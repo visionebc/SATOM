@@ -112,6 +112,19 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="fixed--the-manual-deploy-migrates-the-database-schema-2026-10-14">Fixed — the manual deploy migrates the database schema (2026-10-14)</h3>
+<ul>
+<li><strong><code>satom execute restart-all</code> runs <code>flask db upgrade</code> on a primary</strong> when the
+  schema is behind the newest migration, before the stack restarts. Only the
+  update runner and the container image migrated; the deploy by <code>git pull</code> +
+  <code>restart-all</code> never did. Boot-time table creation added the new tables and
+  columns, so nothing failed, but a1's recorded schema version stayed at
+  <code>sigidx01</code> under four newer revisions (<code>sshpw01</code>, <code>tplbind01</code>, <code>netarch01</code>,
+  <code>diagbat01</code>). A migration that transforms data would have been skipped in
+  silence. A standby is skipped: it follows the primary by replication.</li>
+<li><strong><code>satom get system health</code> shows the schema version</strong> and warns when it is
+  behind head, with the command that fixes it.</li>
+</ul>
 <h3 id="added--diagnostic-battery-per-adom-diagnose-log-collection-in-every-device-adom-2026-10-14">Added — Diagnostic Battery per ADOM; Diagnose Log Collection in every device ADOM (2026-10-14)</h3>
 <ul>
 <li><strong>Security: the console accepted any <code>diagnose</code> command.</strong> The read-only gate

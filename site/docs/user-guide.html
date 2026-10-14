@@ -7072,6 +7072,10 @@ the authoritative answer to "what is new since we last updated".</p>
 <td>The scheduler runs its own copy of the application and keeps the code it started with until it is restarted; restarting only the web service after an update leaves it behind. <code>satom get system health</code> warns about it (<code>satom diagnose code</code> has the detail). Fix: <code>sudo satom execute restart scheduler</code>, or <code>sudo satom execute restart-all</code> after any code change.</td>
 </tr>
 <tr>
+<td><code>satom get system health</code> says the schema is behind head</td>
+<td>The code on disk carries database migrations the database has not recorded. Fix: <code>sudo satom execute restart-all</code> on the primary: it runs <code>flask db upgrade</code> before restarting (the standby follows by replication).</td>
+</tr>
+<tr>
 <td>Scheduled actions all show <em>skipped (maintenance)</em></td>
 <td>Every target of that action is parked. Skipped does not count as a failure; unpark a device or retarget the action.</td>
 </tr>

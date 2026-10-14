@@ -6,6 +6,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — the manual deploy migrates the database schema (2026-10-14)
+
+- **`satom execute restart-all` runs `flask db upgrade` on a primary** when the
+  schema is behind the newest migration, before the stack restarts. Only the
+  update runner and the container image migrated; the deploy by `git pull` +
+  `restart-all` never did. Boot-time table creation added the new tables and
+  columns, so nothing failed, but a1's recorded schema version stayed at
+  `sigidx01` under four newer revisions (`sshpw01`, `tplbind01`, `netarch01`,
+  `diagbat01`). A migration that transforms data would have been skipped in
+  silence. A standby is skipped: it follows the primary by replication.
+- **`satom get system health` shows the schema version** and warns when it is
+  behind head, with the command that fixes it.
+
 ### Added — Diagnostic Battery per ADOM; Diagnose Log Collection in every device ADOM (2026-10-14)
 
 - **Security: the console accepted any `diagnose` command.** The read-only gate

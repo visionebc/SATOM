@@ -44,9 +44,12 @@ from .ssh_ops import FortiWebReadonlySSH, assert_readonly
 # ``diagnose system ha export-eventlog`` answers "The number of parameters is
 # incorrect." ``diagnose hardware cpu`` printed nothing; ``... cpu list`` (the
 # form Device Health already used) answers on both, so the battery uses it.
-# Four more print nothing on those KVM units without HA (dbsync status, ha
-# dev-info, debug netstatlog show, debug proxy log 3) and stay: they are
-# expected to answer on hardware or HA units.
+# Three more print nothing on those KVM units without HA (dbsync status, ha
+# dev-info, debug netstatlog show) and stay: they are expected to answer on
+# hardware or HA units. ``diagnose debug proxy log 3`` left later the same day:
+# it printed nothing on either build and the device describes ``diagnose debug
+# proxy`` as "set/get debug for proxyd" -- the trailing 3 SETS a debug level,
+# which the battery rule (services/diag_policy.py) refuses.
 DIAGNOSTIC_COMMANDS: list[str] = [
     "get system status",
     "get system performance",
@@ -73,7 +76,6 @@ DIAGNOSTIC_COMMANDS: list[str] = [
     "diagnose network info routing-table all",
     "diagnose network route list",
     "diagnose debug netstatlog show",
-    "diagnose debug proxy log 3",
     "diagnose network arp list",
     "diagnose hardware mem list",
     "diagnose debug memory",

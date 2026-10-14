@@ -258,6 +258,10 @@ class Appliance(db.Model):
     # REST takes an API key that its SSH refuses (fac01, 2026-10-09), so one
     # secret per row cannot serve both. NULL = SSH uses ``password``.
     ssh_password_enc = db.Column(db.Text, nullable=True)  # Fernet-encrypted
+    # The CLI USER, when it is not ``username``. A FortiGate registered with a
+    # REST api-user (fgt02's ``lab-satom-rw``, 2026-10-14) cannot open SSH with
+    # it at all. NULL = SSH logs in as ``username``.
+    ssh_username = db.Column(db.String(64), nullable=True)
     # --- Maintenance mode (visibility gate) -----------------------------
     # True => the appliance is HIDDEN from anyone lacking the
     # 'appliances.view_maintenance' permission (operators / read-only).
@@ -420,6 +424,12 @@ class Appliance(db.Model):
     def has_ssh_password(self) -> bool:
         """A separate CLI login is configured (vault or local column)."""
         return bool(self.ssh_password_enc)
+
+    @property
+    def ssh_login(self) -> str:
+        """The user an SSH session logs in as: the separate CLI user when one
+        is set, otherwise the API user."""
+        return (self.ssh_username or "").strip() or self.username
 
     @property
     def ssh_secret(self) -> str:

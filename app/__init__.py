@@ -1878,6 +1878,11 @@ def create_app(config_override: object | None = None) -> Flask:
                 # NULL = SSH uses the API credential, which is what every row
                 # predating the column did.
                 ('ssh_password_enc', 'TEXT'),
+                # --- separate CLI user (2026-10-14) ---
+                # NULL = SSH logs in as ``username``, which is what every row
+                # predating the column did. A FortiGate registered with a REST
+                # api-user needs an admin login here to open SSH at all.
+                ('ssh_username', 'VARCHAR(64)'),
             ],
             # Interface PURPOSE (2026-08-17). Additive with a default of
             # 'unspecified' so every port documented before the field reads as
@@ -2248,6 +2253,11 @@ def create_app(config_override: object | None = None) -> Flask:
             # Without this import create_all() never makes the tables and
             # the first render of the side panel 500s.
             from . import models_bookmarks  # noqa: F401
+            # Diagnostic batteries (per-ADOM pick) + per-build discovery
+            # catalogs. Without this import create_all() never makes the
+            # tables and the first open of Administrator → Diagnostic
+            # Battery 500s.
+            from . import models_diag  # noqa: F401
             # WAF artifact store index (the bytes FortiWeb will not give
             # back). Without this import create_all() never makes the
             # table and the first clone of a file-backed object 500s.

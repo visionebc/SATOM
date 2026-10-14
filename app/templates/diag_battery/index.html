@@ -1,0 +1,409 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Diagnostic Battery') }}{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Administrator') }}</span>
+  <span class="separator">/</span>
+  <span>{{ _('Diagnostic Battery') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<style nonce="{{ csp_nonce }}">
+  .db-cmds { margin:0; padding-left:1.4rem; font-size:12.5px; }
+  .db-cmds li { padding:1px 0; }
+  .db-group { border:1px solid var(--fw-border); border-radius:var(--fw-radius); margin-bottom:6px; background:var(--fw-surface); }
+  .db-group > summary { cursor:pointer; padding:6px 10px; font-size:13px; display:flex; align-items:center; gap:8px; list-style:none; }
+  .db-group > summary::-webkit-details-marker { display:none; }
+  .db-group > summary .bi-chevron-right { transition:transform .15s; color:var(--fw-text-muted); }
+  .db-group[open] > summary .bi-chevron-right { transform:rotate(90deg); }
+  .db-group[open] > summary { border-bottom:1px solid var(--fw-border-light); }
+  .db-rows { padding:4px 10px 8px; max-height:420px; overflow:auto; }
+  .db-row { display:flex; align-items:baseline; gap:6px; padding:2px 0; font-size:12.5px; }
+  .db-row .db-path { font-family:var(--fw-mono, ui-monospace, SFMono-Regular, Menlo, monospace); color:var(--fw-text-primary); }
+  .db-row .db-desc { color:var(--fw-text-secondary); font-size:12px; }
+  .db-row .db-why { color:var(--fw-text-muted); font-size:11.5px; }
+  .db-row.db-off .db-path { color:var(--fw-text-muted); }
+  .db-row input[type=checkbox] { margin-top:0; flex:none; }
+  .db-row .db-spacer { display:inline-block; width:13px; flex:none; }
+  .db-hidden { display:none !important; }
+  .db-summary-path { font-family:var(--fw-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-weight:600; }
+</style>
+
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-list-check me-2 text-accent"></i>{{ _('Diagnostic Battery') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('The commands Diagnose Log Collection runs on the devices of this ADOM. Candidates come from a discovery walk of a real device; every command is checked against the read-only battery rules when it is saved and again when it runs.') }}
+    </p>
+  </div>
+</div>
+
+{% if adom_summary is defined %}
+{# ---------------------------------------------------------------- Global #}
+<div class="fw-alert fw-alert-info mb-3" style="font-size:13px;">
+  <i class="bi bi-info-circle me-1"></i>{{ _('Batteries are chosen inside each device ADOM. Switch to a device ADOM to change its battery or to discover the commands its devices offer.') }}
+</div>
+<div class="fw-card">
+  <div class="fw-card-header"><i class="bi bi-list-check me-2 text-accent"></i>{{ _('Batteries per ADOM') }}</div>
+  <div class="fw-card-body p-0">
+    <div class="fw-table-wrapper">
+      <table class="fw-table" style="font-size:12.5px;margin:0;">
+        <thead><tr>
+          <th>{{ _('ADOM') }}</th><th>{{ _('Commands') }}</th><th>{{ _('Source') }}</th>
+          <th>{{ _('Updated') }}</th><th>{{ _('Discovered builds') }}</th>
+        </tr></thead>
+        <tbody>
+          {% for s in adom_summary %}
+          <tr data-adom="{{ s.key }}">
+            <td><b>{{ s.name }}</b></td>
+            <td>{{ s.count }}</td>
+            <td>
+              {% if s.meta.source == 'saved' %}<span class="fw-badge fw-badge-primary">{{ _('Saved') }}</span>
+              {% else %}<span class="fw-badge fw-badge-secondary">{{ _('Product default') }}</span>{% endif %}
+            </td>
+            <td class="text-muted">
+              {% if s.meta.source == 'saved' %}{{ s.meta.updated_by or '' }}
+              {{ s.meta.updated_at.strftime('%Y-%m-%d %H:%M') if s.meta.updated_at else '' }}{% else %}—{% endif %}
+            </td>
+            <td>{{ s.builds }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% else %}
+{# ----------------------------------------------------------- device ADOM #}
+{% if error %}
+<div class="fw-alert fw-alert-danger mb-3" id="dbError" style="font-size:13px;">
+  <i class="bi bi-x-octagon me-1"></i><b>{{ _('Not saved.') }}</b> {{ error }}
+</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('diag_battery.save') }}" id="dbForm">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="_adom" value="{{ adom }}">
+<input type="hidden" name="build" value="{{ build }}">
+
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="fw-card mb-3">
+      <div class="fw-card-header d-flex align-items-center justify-content-between">
+        <span><i class="bi bi-list-ol me-2 text-accent"></i>{{ _('Current battery') }} · {{ adom_name }}</span>
+        <span class="fw-badge fw-badge-secondary">{{ commands|length }}</span>
+      </div>
+      <div class="fw-card-body">
+        <div class="mb-2" style="font-size:12.5px;" id="dbSource">
+          {% if meta.source == 'saved' %}
+          <span class="fw-badge fw-badge-primary">{{ _('Saved') }}</span>
+          <span class="text-muted">{{ _('by %(who)s at %(when)s', who=meta.updated_by or '?', when=meta.updated_at.strftime('%Y-%m-%d %H:%M') if meta.updated_at else '?') }}</span>
+          {% else %}
+          <span class="fw-badge fw-badge-secondary">{{ _('Product default') }}</span>
+          {% endif %}
+        </div>
+        <ol class="db-cmds mono mb-3">
+          {% for c in commands %}<li>{{ c }}</li>{% else %}<li class="text-muted">{{ _('No commands.') }}</li>{% endfor %}
+        </ol>
+        <div class="d-flex gap-2 flex-wrap">
+          <button type="submit" class="btn btn-fw-primary btn-sm" id="dbSave">
+            <i class="bi bi-save me-1"></i>{{ _('Save') }} <span class="fw-badge fw-badge-secondary ms-1" id="dbTickCount">0</span>
+          </button>
+          {% if meta.source == 'saved' %}
+          <button type="submit" class="btn btn-fw-outline btn-sm" form="dbReset">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Reset to default') }}
+          </button>
+          {% endif %}
+        </div>
+        <div class="text-muted mt-2" style="font-size:11.5px;">
+          {{ _('Save keeps the order of the commands already in the battery and appends new ones. The product default has %(n)d commands.', n=default_count) }}
+        </div>
+      </div>
+    </div>
+
+    <div class="fw-card mb-3">
+      <div class="fw-card-header"><i class="bi bi-keyboard me-2 text-accent"></i>{{ _('Add commands by hand') }}</div>
+      <div class="fw-card-body">
+        <label class="fw-form-label" for="dbExtra" style="font-size:12px;">{{ _('One per line, get/show/diagnose') }}</label>
+        <textarea class="form-control form-control-sm mono" id="dbExtra" name="extra" rows="8"
+                  placeholder="get system status&#10;diagnose hardware cpu list">{{ extra }}</textarea>
+        <div class="text-muted mt-1" style="font-size:11.5px;">
+          {{ _('Merged with the ticked commands on save. Battery commands that cannot be ticked in the tree (get/show, commands with arguments, commands this build does not list) are kept here so saving does not drop them.') }}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-8">
+    <div class="fw-card mb-3">
+      <div class="fw-card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <span><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('Choose commands') }}</span>
+        {% if builds %}
+        <div class="d-flex align-items-center gap-2">
+          <label for="dbBuild" class="text-muted mb-0" style="font-size:12px;">{{ _('Build') }}</label>
+          <select id="dbBuild" class="form-select form-select-sm" style="width:auto;">
+            <option value="all" {{ 'selected' if build == 'all' }}>{{ _('All discovered builds') }}</option>
+            {% for b, fw in builds %}<option value="{{ b }}" {{ 'selected' if build == b }}>{{ b }}</option>{% endfor %}
+          </select>
+        </div>
+        {% endif %}
+      </div>
+      <div class="fw-card-body">
+        {% if groups %}
+        <div class="d-flex gap-2 align-items-center mb-2">
+          <input type="search" id="dbFilter" class="form-control form-control-sm" placeholder="{{ _('Filter commands…') }}" autocomplete="off">
+          <span class="text-muted text-nowrap" style="font-size:12px;" id="dbFilterCount"></span>
+        </div>
+        <div class="text-muted mb-2" style="font-size:11.5px;">
+          {{ _('%(n)d nodes. Blocked commands are shown disabled with the reason; commands that need arguments are not tickable — add them by hand with their arguments.', n=node_count) }}
+        </div>
+        <div id="dbTree">
+          {% for g in groups %}
+          <details class="db-group" {{ 'open' if g.picked }} data-group="{{ g.path }}">
+            <summary>
+              <i class="bi bi-chevron-right"></i>
+              <span class="db-summary-path">{{ g.path }}</span>
+              {% if g.desc %}<span class="text-muted" style="font-size:12px;">{{ g.desc }}</span>{% endif %}
+              <span class="ms-auto d-flex gap-1">
+                {% if g.pickable %}<span class="fw-badge fw-badge-info">{{ _('%(a)d / %(b)d selected', a=g.picked, b=g.pickable) }}</span>{% endif %}
+                {% if g.blocked %}<span class="fw-badge fw-badge-warning">{{ _('%(n)d blocked', n=g.blocked) }}</span>{% endif %}
+              </span>
+            </summary>
+            <div class="db-rows">
+              {% for r in g.rows %}
+              <div class="db-row {{ '' if r.state == 'pick' else 'db-off' }}" data-search="{{ (r.path ~ ' ' ~ r.desc)|lower }}" style="padding-left:{{ r.depth * 14 }}px;">
+                {% if r.state == 'pick' %}
+                <label class="d-flex align-items-baseline gap-2 mb-0" style="cursor:pointer;">
+                  <input type="checkbox" class="form-check-input db-pick" name="pick" value="{{ r.path }}" {{ 'checked' if r.checked }}>
+                  <span class="db-path">{{ r.path }}</span>
+                </label>
+                {% elif r.state == 'blocked' %}
+                <input type="checkbox" class="form-check-input" disabled title="{{ _('Blocked') }}">
+                <span class="db-path">{{ r.path }}</span>
+                {% else %}
+                <span class="db-spacer"></span>
+                <span class="db-path">{{ r.path }}</span>
+                {% endif %}
+                {% if r.desc %}<span class="db-desc">{{ r.desc }}</span>{% endif %}
+                {% if r.state == 'blocked' %}<span class="db-why">— {{ _('blocked:') }} {{ r.blocked }}</span>
+                {% elif r.state == 'args' %}<span class="db-why">— {{ _('takes arguments:') }} <code>{{ r.arg_hint or '…' }}</code></span>
+                {% elif r.state == 'pick' and r.arg_hint %}<span class="db-why">— {{ _('optional arguments:') }} <code>{{ r.arg_hint }}</code></span>
+                {% elif r.note %}<span class="db-why">— {{ r.note }}</span>{% endif %}
+              </div>
+              {% endfor %}
+            </div>
+          </details>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="fw-empty-state py-4" id="dbEmpty">
+          <div class="fw-empty-state-icon"><i class="bi bi-diagram-3"></i></div>
+          <div class="fw-empty-state-title">{{ _('No commands discovered for %(p)s yet', p=adom_name) }}</div>
+          <div class="text-muted" style="font-size:12.5px;">
+            {{ _('Run Discovery below on a device of this ADOM: SATOM walks its diagnose tree and lists here every command its build offers. Until then the battery can be edited by hand.') }}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+</form>
+<form method="post" action="{{ url_for('diag_battery.reset') }}" id="dbReset"
+      data-db-confirm="{{ _('Reset the %(p)s battery to the product default?', p=adom_name) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="_adom" value="{{ adom }}">
+</form>
+
+<div class="fw-card mb-3" id="dbDiscovery">
+  <div class="fw-card-header"><i class="bi bi-search me-2 text-accent"></i>{{ _('Discovery') }}</div>
+  <div class="fw-card-body">
+    <div class="fw-alert fw-alert-warning mb-3" style="font-size:12.5px;">
+      <i class="bi bi-exclamation-triangle me-1"></i>{{ _('Discovery types "?" after every allowed command to read the CLI help, and on FortiWeb that runs some read-only leaves. It never sends a blocked command. Prefer a lab device or a maintenance window.') }}
+    </div>
+    {% if appliances %}
+    <div class="d-flex flex-wrap gap-2 align-items-end mb-2">
+      <div>
+        <label class="fw-form-label mb-1" for="dbAppliance" style="font-size:12px;">{{ _('Appliance') }}</label>
+        <select id="dbAppliance" class="form-select form-select-sm" style="min-width:260px;">
+          {% for a in appliances %}
+          <option value="{{ a.id }}">{{ a.name }} — {{ a.host }}{% if a.firmware %} · {{ a.firmware }}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="button" class="btn btn-fw-primary btn-sm" id="dbDiscover"
+              data-url="{{ url_for('diag_battery.discover') }}" data-adom="{{ adom }}">
+        <i class="bi bi-play-fill me-1"></i>{{ _('Discover commands') }}
+      </button>
+    </div>
+    {% else %}
+    <div class="text-muted mb-2" style="font-size:12.5px;">{{ _('No %(p)s appliance is visible in this ADOM.', p=adom_name) }}</div>
+    {% endif %}
+    <div id="dbProgress" class="mb-3" style="font-size:12.5px;{{ '' if progress else 'display:none;' }}"
+         data-status-url="{{ status_url }}" data-running="{{ '1' if progress and progress.state == 'running' else '0' }}">
+      {% if progress %}
+      <span class="fw-badge {{ {'running': 'fw-badge-info', 'done': 'fw-badge-success', 'error': 'fw-badge-danger'}.get(progress.state, 'fw-badge-secondary') }}" id="dbProgState">{{ progress.state }}</span>
+      <span id="dbProgText">{{ progress.appliance or '' }} · {{ progress.product or '' }} {{ progress.build or '' }} · {{ _('probed') }} {{ progress.probed or 0 }}{% if progress.error %} · {{ progress.error }}{% endif %}</span>
+      {% else %}
+      <span class="fw-badge fw-badge-secondary" id="dbProgState"></span> <span id="dbProgText"></span>
+      {% endif %}
+      <div class="text-muted mono" id="dbProgCurrent" style="font-size:11.5px;">{{ progress.current if progress and progress.current else '' }}</div>
+    </div>
+    <div id="dbDiscoverErr" class="fw-alert fw-alert-warning mb-2 d-none" style="font-size:12.5px;"></div>
+
+    <div class="fw-table-wrapper">
+      <table class="fw-table" style="font-size:12.5px;margin:0;">
+        <thead><tr>
+          <th>{{ _('Build') }}</th><th>{{ _('Firmware') }}</th><th>{{ _('Device') }}</th>
+          <th>{{ _('Discovered') }}</th><th>{{ _('Duration') }}</th><th>{{ _('Probed') }}</th>
+          <th>{{ _('Runnable') }}</th><th>{{ _('Blocked') }}</th><th>{{ _('Truncated') }}</th>
+        </tr></thead>
+        <tbody>
+          {% for c, n in catalogs %}
+          <tr>
+            <td><b>{{ c.build }}</b></td>
+            <td class="text-muted">{{ c.firmware or '' }}</td>
+            <td>{{ c.appliance_name or '' }}</td>
+            <td class="text-nowrap">{{ c.discovered_by or '' }} {{ c.discovered_at.strftime('%Y-%m-%d %H:%M') if c.discovered_at else '' }}</td>
+            <td>{{ (c.duration_s ~ ' s') if c.duration_s is not none else '—' }}</td>
+            <td>{{ c.probed }}</td>
+            <td><span class="fw-badge fw-badge-success">{{ n.runnable }}</span></td>
+            <td><span class="fw-badge fw-badge-warning">{{ n.blocked }}</span></td>
+            <td class="text-muted" style="font-size:11.5px;">{{ c.truncated or '' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="9" class="text-muted">{{ _('No build of this product has been discovered yet.') }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if adom_summary is not defined %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var form = document.getElementById('dbForm');
+  if (!form) return;
+  var $ = function (id) { return document.getElementById(id); };
+
+  // Ticked counter on the Save button.
+  function recount() {
+    var n = form.querySelectorAll('input.db-pick:checked').length;
+    var extra = ($('dbExtra').value || '').split('\n').filter(function (l) {
+      l = l.trim(); return l && l.charAt(0) !== '#';
+    }).length;
+    $('dbTickCount').textContent = String(n + extra);
+  }
+  form.addEventListener('change', recount);
+  $('dbExtra').addEventListener('input', recount);
+  recount();
+
+  // Build selector: reload the page for that build.
+  var sel = $('dbBuild');
+  if (sel) sel.addEventListener('change', function () {
+    var u = new URL(window.location.href);
+    u.searchParams.set('build', sel.value);
+    if (window.Turbo) window.Turbo.visit(u.toString()); else window.location.href = u.toString();
+  });
+
+  // Client-side filter over the tree.
+  var filter = $('dbFilter');
+  if (filter) filter.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') ev.preventDefault();  // never submits the battery
+  });
+  if (filter) filter.addEventListener('input', function () {
+    var q = filter.value.trim().toLowerCase();
+    var shown = 0;
+    document.querySelectorAll('#dbTree details.db-group').forEach(function (g) {
+      var any = false;
+      g.querySelectorAll('.db-row').forEach(function (r) {
+        var hit = !q || r.getAttribute('data-search').indexOf(q) >= 0;
+        r.classList.toggle('db-hidden', !hit);
+        if (hit) { any = true; shown++; }
+      });
+      g.classList.toggle('db-hidden', !any);
+      if (q && any) g.open = true;
+    });
+    $('dbFilterCount').textContent = q ? String(shown) : '';
+  });
+
+  // Reset asks first.
+  var reset = $('dbReset');
+  if (reset) reset.addEventListener('submit', function (ev) {
+    if (!window.confirm(reset.getAttribute('data-db-confirm'))) ev.preventDefault();
+  });
+
+  // Discovery: start + poll.
+  var prog = $('dbProgress');
+  var timer = null;
+  var startedHere = false;
+  function paint(s) {
+    if (!s || s.state === 'idle') return;
+    prog.style.display = '';
+    var st = $('dbProgState');
+    st.textContent = s.state;
+    st.className = 'fw-badge ' + ({running: 'fw-badge-info', done: 'fw-badge-success', error: 'fw-badge-danger'}[s.state] || 'fw-badge-secondary');
+    var t = (s.appliance || '') + ' · ' + (s.product || '') + ' ' + (s.build || '') + ' · ' + {{ _("probed")|tojson }} + ' ' + (s.probed || 0);
+    if (s.counts) t += ' · ' + {{ _("runnable")|tojson }} + ' ' + s.counts.runnable + ' · ' + {{ _("blocked")|tojson }} + ' ' + s.counts.blocked;
+    if (s.error) t += ' · ' + s.error;
+    $('dbProgText').textContent = t;
+    $('dbProgCurrent').textContent = s.current || '';
+  }
+  function poll() {
+    if (!document.body.contains(prog)) { timer = null; return; }  // navigated away
+    fetch(prog.getAttribute('data-status-url'), {headers: {'Accept': 'application/json'}})
+      .then(function (r) { return r.json(); })
+      .then(function (s) {
+        paint(s);
+        if (s && s.state === 'running') { timer = setTimeout(poll, 3000); return; }
+        timer = null;
+        if (startedHere && s && s.state === 'done') {
+          if (window.Turbo) window.Turbo.visit(window.location.href); else window.location.reload();
+        }
+      })
+      .catch(function () { timer = setTimeout(poll, 6000); });
+  }
+  if (prog && prog.getAttribute('data-running') === '1') { startedHere = true; poll(); }
+
+  var btn = $('dbDiscover');
+  if (btn) btn.addEventListener('click', function () {
+    var err = $('dbDiscoverErr');
+    err.classList.add('d-none');
+    var fd = new FormData();
+    fd.append('appliance_id', $('dbAppliance').value);
+    fd.append('_adom', btn.getAttribute('data-adom'));
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    btn.disabled = true;
+    fetch(btn.getAttribute('data-url'), {
+      method: 'POST', body: fd,
+      headers: {'X-CSRFToken': meta ? meta.content : '', 'X-ADOM': btn.getAttribute('data-adom')}
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      btn.disabled = false;
+      if (j.progress) paint(j.progress);
+      if (!j.started) {
+        err.textContent = j.reason || {{ _("Discovery did not start.")|tojson }};
+        err.classList.remove('d-none');
+      }
+      if (j.started || (j.progress && j.progress.state === 'running')) {
+        startedHere = true;
+        if (!timer) timer = setTimeout(poll, 2000);
+      }
+    }).catch(function (e) {
+      btn.disabled = false;
+      err.textContent = String(e);
+      err.classList.remove('d-none');
+    });
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

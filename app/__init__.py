@@ -2528,6 +2528,9 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.metrics_admin", "bp"),
         ("app.views.cr_types", "bp"),
         ("app.views.capacity", "bp"),
+        # Administrator → Diagnostic Battery. NOT /web-prefixed: it works on
+        # the active ADOM (every device ADOM, plus a summary in Global).
+        ("app.views.diag_battery", "bp"),
         ("app.views.audit", "bp"),
         ("app.views.registry", "bp"),
         ("app.views.apilib_fieldmap", "bp"),

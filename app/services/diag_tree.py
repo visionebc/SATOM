@@ -166,12 +166,18 @@ class Walker:
         self.on_progress = on_progress or (lambda _n, _p: None)
         self.nodes: dict[str, Node] = {}
         self.truncated = ""
-        #: Set when the device closed the session while answering ``?`` for a
-        #: node: that node is recorded as blocked and the walk stops with the
-        #: rest of its queue in :attr:`pending`, for a new session to resume.
+        #: Set when the device closed the session while answering for a node.
+        #: The walk stops with the rest of its queue in :attr:`pending`, for a
+        #: new session to resume. The node itself is NOT blocked: on FortiWeb
+        #: and FortiADC ``?`` crashes the CLI on nodes that have exactly one
+        #: child (``diagnose hardware cpu`` → ``list``, measured 2026-10-14),
+        #: which says nothing about running the command. It goes back to the
+        #: head of :attr:`pending` and is asked again by TAB completion.
         self.lost_at = ""
         self.pending: list[tuple[str, str]] = []
         self.probed = 0
+        self._tab: set[str] = set()      # ask these by TAB on the next pass
+        self._tab_done: set[str] = set()  # TAB was tried (never twice)
 
     def walk(self, roots: list[tuple[str, str]] | None = None) -> list[Node]:
         queue: list[tuple[str, str]] = list(roots or [(ROOT, "")])
@@ -193,16 +199,42 @@ class Walker:
             if time.monotonic() > self.deadline:
                 self.truncated = "time limit reached"
                 break
+            if path in self._tab:
+                self._tab.discard(path)
+                self._tab_done.add(path)
+                try:
+                    child = self._ask_tab(path)
+                except (OSError, EOFError) as exc:
+                    node.note += "; TAB completion closed it too"
+                    self.lost_at = path
+                    self.pending = queue
+                    self.on_progress(self.probed, path)
+                    break
+                self.probed += 1
+                if child:
+                    node.branch = True
+                    node.probed = True
+                    node.note = ("its only child was read by TAB completion: '?' "
+                                 "on it closes the session on this build")
+                    cpath = f"{path} {child}"
+                    if cpath not in self.nodes:
+                        self.nodes[cpath] = Node(path=cpath, desc="")
+                        queue.append((cpath, ""))
+                self.on_progress(self.probed, path)
+                continue
             try:
                 raw, returned = self.session.ask_help(path, timeout=self.node_timeout)
             except (OSError, EOFError) as exc:
-                # The device dropped the session on this node (seen on
-                # FortiWeb and FortiADC, 2026-10-14). Never ask it again.
-                node.probed = True
-                node.blocked = ("the device closed the SSH session when asked "
-                                "for help on it (%s)" % (str(exc)[:60] or "closed"))
+                # The device dropped the session on this node (FortiWeb and
+                # FortiADC, 2026-10-14). '?' is never sent to it again; the
+                # next session asks it by TAB completion instead.
+                node.note = ("the device closed the SSH session when asked for "
+                             "help on it (%s)" % (str(exc)[:60] or "closed"))
                 self.lost_at = path
                 self.pending = queue
+                if path not in self._tab_done:
+                    self._tab.add(path)
+                    self.pending = [(path, desc)] + queue
                 self.on_progress(self.probed, path)
                 break
             self.probed += 1
@@ -231,6 +263,31 @@ class Walker:
                         queue.append((child, cdesc))
             self.on_progress(self.probed, path)
         return list(self.nodes.values())
+
+    def _ask_tab(self, path: str) -> str:
+        ask = getattr(self.session, "ask_complete", None)
+        if ask is None:
+            return ""
+        return parse_completion(ask(path), path)
+
+
+_COMPLETED = re.compile(r"^([A-Za-z0-9][A-Za-z0-9_.\-]*) $")
+
+
+def parse_completion(raw: str, path: str) -> str:
+    """The single child TAB completed after ``<path> ``, or ''.
+
+    The shells complete a node with ONE child to ``<path> <child> `` (trailing
+    space); with several children they type the first one with no space
+    (``diagnose hardware`` → ``diagnose hardware cpu``), which says nothing
+    about the others.
+    """
+    text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", clean(raw)).split("\n")[-1]
+    i = text.find(path + " ")
+    if i < 0:
+        return ""
+    m = _COMPLETED.match(text[i + len(path) + 1:])
+    return m.group(1) if m else ""
 
 
 # ── presence of a battery command on a discovered build ───────────────────
@@ -268,5 +325,5 @@ def presence(command: str, nodes: dict[str, dict]) -> tuple[str, str]:
     return UNKNOWN, ""
 
 
-__all__ = ["ROOT", "clean", "Help", "parse_help", "Node", "Walker",
+__all__ = ["ROOT", "clean", "Help", "parse_help", "parse_completion", "Node", "Walker",
            "presence", "PRESENT", "ABSENT", "UNKNOWN"]

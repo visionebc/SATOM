@@ -242,7 +242,7 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
         ),
         _n("restart", "Restart a service and VERIFY it actually came back.",
            run=e.restart, needs_root=True, usage="execute restart <service>"),
-        _n("restart-all", "Compile stale language catalogues, restart the whole stack in order, then verify /healthz.",
+        _n("restart-all", "Migrate the schema on a primary (flask db upgrade), compile stale language catalogues, restart the whole stack in order, then verify /healthz.",
            run=f.restart_all, needs_root=True),
         _n("start", "Start a service.", run=e.start, needs_root=True,
            usage="execute start <service>"),

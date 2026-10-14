@@ -178,12 +178,49 @@ def stale_catalogues(app_dir):
     return out
 
 
+def migrate_schema(ctx, rows, r):
+    """``flask db upgrade`` on a primary, as the app user, before the restart.
+
+    The manual deploy (git pull + restart-all) never migrated: a1 sat at
+    ``sigidx01`` under four newer revisions (2026-10-14, see
+    ``schema_state``). A standby takes its schema from streaming replication
+    and its database is read-only, so it is skipped there, as the update
+    runner does. A failure is reported as bad; the restart still runs, because
+    the new code is already on disk and leaving the old processes up does not
+    make the schema any less behind.
+    """
+    from . import schema_state
+    role = ctx.role
+    if role == "standby":
+        rows.append(("schema", "standby — follows the primary by replication"))
+        return
+    cur, err = schema_state.current(ctx)
+    gap = schema_state.behind(ctx.app_dir, cur) if not err else None
+    if gap == 0:
+        rows.append(("schema", "at head (%s)" % cur))
+        return
+    flask = Path(ctx.app_dir) / "venv" / "bin" / "flask"
+    env = app_env(ctx, dotenv=True)
+    env["FLASK_APP"] = "wsgi.py"
+    env["FORTINET_SKIP_DB_BOOTSTRAP"] = "1"  # alembic owns the schema here
+    rc, out, err2 = run(app_cmd(ctx, [str(flask), "db", "upgrade"]), timeout=600,
+                        cwd=str(ctx.app_dir), env=env)
+    new, _ = schema_state.current(ctx)
+    if rc == 0:
+        rows.append(("schema", "migrated %s -> %s" % (cur or "(none)", new or "?")))
+    else:
+        rows.append(("schema", "flask db upgrade FAILED (still at %s)" % (cur or "?")))
+        r.worst("bad")
+        r.lines("flask db upgrade", (err2 or out).splitlines()[-8:])
+
+
 def restart_all(ctx, args):
     """Restart the application stack in dependency order and verify."""
     from .cmd_execute import _systemctl
     from .context import VENV, _app_user
     r = Result("ok", "restart the application stack")
     rows = []
+    migrate_schema(ctx, rows, r)
     stale = stale_catalogues(ctx.app_dir)
     if stale:
         # Before the web restarts: Flask-Babel reads the .mo once per process.

@@ -322,7 +322,7 @@ challenge.
 | Command | Notes |
 |---|---|
 | `execute restart\|start\|stop <svc>` | Restart **verifies** `/healthz` afterwards; `systemctl` returning 0 has lied before |
-| `execute restart-all` | Compiles any language catalogue older than its `.po`, then the stack in dependency order, then `nginx -t` + reload, then verify |
+| `execute restart-all` | On a primary, runs `flask db upgrade` when the schema is behind the newest migration (a standby follows by replication); compiles any language catalogue older than its `.po`; restarts the stack in dependency order; then `nginx -t` + reload, then verify |
 | `execute enable\|disable <unit>` | Timers and `.path` units. `disable updater` is refused — see below |
 | `execute reload nginx` | Runs `nginx -t` first and refuses on invalid config |
 | `execute seed actions [--yes]` | **Creates the protections a fresh install does not.** Prints the plan; `--yes` applies |
@@ -508,7 +508,7 @@ Everything that changes state. **Root required.** Without it each command refuse
 | `satom execute unseal recovery [--yes]` | yes | ! | Print FERNET_KEY + internal CA from the sealed envelope. |
 | `satom execute export recovery-key [--out PATH] [--yes]` | yes | ! | Print FERNET_KEY + the internal CA key so a rebuild is possible. |
 | `satom execute restart <service>` | yes | — | Restart a service and VERIFY it actually came back. |
-| `satom execute restart-all` | yes | — | Compile stale language catalogues, restart the whole stack in order, then verify /healthz. |
+| `satom execute restart-all` | yes | — | Migrate the schema on a primary (flask db upgrade), compile stale language catalogues, restart the whole stack in order, then verify /healthz. |
 | `satom execute start <service>` | yes | — | Start a service. |
 | `satom execute stop <service>` | yes | — | Stop a service. |
 | `satom execute enable <unit>` | yes | — | Enable a timer or .path unit (--now). |

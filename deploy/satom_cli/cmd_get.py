@@ -112,6 +112,26 @@ def system_health(ctx, args):
     else:
         r.rows("code", [("running processes", "none older than the code on disk")])
 
+    # The schema against the migrations on disk (schema_state): the manual
+    # deploy did not migrate, and nothing said so for four revisions.
+    from . import schema_state
+    cur, err = schema_state.current(ctx)
+    if err:
+        r.rows("schema", [("alembic_version", "unreadable: %s" % err)])
+        r.worst("warn")
+    else:
+        gap = schema_state.behind(ctx.app_dir, cur)
+        hs = schema_state.heads(ctx.app_dir)
+        if gap == 0:
+            r.rows("schema", [("alembic_version", "%s (head)" % cur)])
+        else:
+            what = ("%d revision(s) behind head %s" % (gap, hs[0]) if gap is not None
+                    else "not on the single head (%s)" % ", ".join(hs))
+            r.rows("schema", [("alembic_version", "%s — %s" % (cur or "(none)", what))])
+            r.worst("warn")
+            r.note("Migrate: sudo satom execute restart-all (runs flask db upgrade "
+                   "on the primary; a standby follows by replication)")
+
     rc, out, _ = run(["df", "-h", str(ctx.app_dir)])
     disk = out.splitlines()[-1].split() if rc == 0 and len(out.splitlines()) > 1 else []
     if disk:

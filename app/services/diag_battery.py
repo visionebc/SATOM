@@ -324,7 +324,7 @@ def _walk(snap, roots, budget, deadline_s, tick) -> diag_tree.Walker:
         w.lost_at = ""
         if not w.pending or w.truncated or len(w.dropped) > MAX_RECONNECTS:
             if w.pending and not w.truncated:
-                w.truncated = (f"the device closed the session {len(w.dropped)} "
+                w.truncated = (f"the session failed {len(w.dropped)} "
                                f"times; walk stopped")
             break
         todo = w.pending

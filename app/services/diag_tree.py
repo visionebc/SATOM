@@ -166,18 +166,27 @@ class Walker:
         self.on_progress = on_progress or (lambda _n, _p: None)
         self.nodes: dict[str, Node] = {}
         self.truncated = ""
-        #: Set when the device closed the session while answering for a node.
-        #: The walk stops with the rest of its queue in :attr:`pending`, for a
-        #: new session to resume. The node itself is NOT blocked: on FortiWeb
-        #: and FortiADC ``?`` crashes the CLI on nodes that have exactly one
-        #: child (``diagnose hardware cpu`` → ``list``, measured 2026-10-14),
-        #: which says nothing about running the command. It goes back to the
-        #: head of :attr:`pending` and is asked again by TAB completion.
+        #: Set when a node left the session unusable: the device closed it
+        #: (FortiWeb and FortiADC crash the CLI on ``?`` after a node with
+        #: exactly one child, ``diagnose hardware cpu`` → ``list``) or ``?`` got
+        #: no answer in time (fac01 ``diagnose netlink``, 2026-10-14; after the
+        #: Ctrl-C FortiAuthenticator echoes the next ``?`` literally, so every
+        #: later node would fail on that session). The walk stops with the node
+        #: back at the head of :attr:`pending` for a NEW session. Neither case
+        #: blocks the node: neither says anything about running the command.
         self.lost_at = ""
         self.pending: list[tuple[str, str]] = []
         self.probed = 0
-        self._tab: set[str] = set()      # ask these by TAB on the next pass
-        self._tab_done: set[str] = set()  # TAB was tried (never twice)
+        #: Per-path retry stage: 1 = ask '?' again with a longer wait,
+        #: 2 = read it by TAB completion, 3 = everything was tried.
+        self._stage: dict[str, int] = {}
+
+    def _lose(self, path: str, desc: str, queue, next_stage: int | None) -> None:
+        self.lost_at = path
+        self.pending = list(queue)
+        if next_stage is not None:
+            self._stage[path] = next_stage
+            self.pending = [(path, desc)] + self.pending
 
     def walk(self, roots: list[tuple[str, str]] | None = None) -> list[Node]:
         queue: list[tuple[str, str]] = list(roots or [(ROOT, "")])
@@ -199,15 +208,16 @@ class Walker:
             if time.monotonic() > self.deadline:
                 self.truncated = "time limit reached"
                 break
-            if path in self._tab:
-                self._tab.discard(path)
-                self._tab_done.add(path)
+            stage = self._stage.get(path, 0)
+            if stage >= 3:
+                continue
+            if stage == 2:
+                self._stage[path] = 3
                 try:
                     child = self._ask_tab(path)
-                except (OSError, EOFError) as exc:
+                except (OSError, EOFError):
                     node.note += "; TAB completion closed it too"
-                    self.lost_at = path
-                    self.pending = queue
+                    self._lose(path, desc, queue, None)
                     self.on_progress(self.probed, path)
                     break
                 self.probed += 1
@@ -215,35 +225,31 @@ class Walker:
                     node.branch = True
                     node.probed = True
                     node.note = ("its only child was read by TAB completion: '?' "
-                                 "on it closes the session on this build")
+                                 "on it fails on this build")
                     cpath = f"{path} {child}"
                     if cpath not in self.nodes:
                         self.nodes[cpath] = Node(path=cpath, desc="")
                         queue.append((cpath, ""))
                 self.on_progress(self.probed, path)
                 continue
+            wait = self.node_timeout * (3 if stage == 1 else 1)
             try:
-                raw, returned = self.session.ask_help(path, timeout=self.node_timeout)
+                raw, returned = self.session.ask_help(path, timeout=wait)
             except (OSError, EOFError) as exc:
-                # The device dropped the session on this node (FortiWeb and
-                # FortiADC, 2026-10-14). '?' is never sent to it again; the
-                # next session asks it by TAB completion instead.
                 node.note = ("the device closed the SSH session when asked for "
                              "help on it (%s)" % (str(exc)[:60] or "closed"))
-                self.lost_at = path
-                self.pending = queue
-                if path not in self._tab_done:
-                    self._tab.add(path)
-                    self.pending = [(path, desc)] + queue
+                self._lose(path, desc, queue, 2)
                 self.on_progress(self.probed, path)
                 break
             self.probed += 1
-            node.probed = True
             if not returned:
-                node.blocked = ("did not return to the prompt after '?': it runs "
-                                "until interrupted")
+                node.note = f"no answer to '?' within {int(wait)} s"
+                self._lose(path, desc, queue, 1 if stage == 0 else 2)
                 self.on_progress(self.probed, path)
-                continue
+                break
+            node.probed = True
+            if stage:
+                node.note = ""
             h = parse_help(raw, path)
             if h.error:
                 node.note = h.error

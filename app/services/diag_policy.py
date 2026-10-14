@@ -82,17 +82,23 @@ SAFE_WORDS: frozenset[str] = frozenset({
 # Help-text openings that mean "this changes something". Matched against the
 # description the device prints in ``?`` output, case-insensitively.
 _DESC_RE = re.compile(
+    # A verb opening the description, as a whole word: "load-balance.virtual-
+    # server" (FortiADC) is not "load", hence the (?![-.]\w) after the group.
+    # "switch", "update" and a bare "dump … to" are not here: FortiGate says
+    # "Switch information.", "Update object versions." and "Dump Global CA used
+    # to build cert chain." about read-only commands (2026-10-14 walks).
     r"^\s*(kill|killall|reset|clear|delete|remove|restart|reboot|shut ?down|"
     r"set(?!/get)|unset|enable|disable|start|stop|force|format|erase|flush|"
     r"purge|generate|backup|upload|export|import|repair|check and repair|"
     r"recalculate|rebuild|reload|trigger|install|uninstall|load|unload|"
     r"crash(?!\s*log)|"
-    r"failover|take ?over|sync now|switch|renew|revoke|block|unblock|"
+    r"failover|take ?over|sync now|renew|revoke|block|unblock|"
     r"deregister|register|unregister|authori[sz]e|approve|reject|add|"
     r"capture|sniff|trace|ping|traceroute|run|execute|exec|test|simulate|"
-    r"inject|send|wipe|truncate|rotate|write|update|break|drop|insert|"
-    r"dump\b.*\bto\b|activate|deactivate|toggle)\b"
-    r"|replacing|every \d+ (?:second|minute|hour)s?|to (?:disk|ftp|tftp|usb)\b"
+    r"inject|send|wipe|truncate|rotate|write|break|drop|insert|"
+    r"activate|deactivate|toggle)\b(?![-.]\w)"
+    r"|replacing|every \d+ (?:second|minute|hour)s?"
+    r"|\bto (?:disk|file|ftp|tftp|usb)\b"
     r"|set/get|set or get|get/set",
     re.I)
 

@@ -476,7 +476,16 @@ git --no-optional-locks ls-files | \
 <li><strong>Read-only means read-only.</strong> <code>ssh_ops.assert_readonly()</code> validates <strong>every
   line</strong> of a command, not just the first — a pasted <code>get x</code> / <code>set y</code> cannot
   sneak a write past a legitimate first line. Allowed verbs: <code>get</code>, <code>show</code>,
-  <code>diagnose</code>/<code>diag</code>.</li>
+  <code>diagnose</code>/<code>diag</code>. <code>diagnose</code> is not a read verb by itself: the <code>diagnose</code>
+  trees include kill, clear, failover and <code>sysrq … crash</code>. Since 2026-10-14
+  every <code>diagnose</code> statement also goes through <code>diag_policy.blocked_reason()</code>,
+  which refuses any statement containing a state-changing word, abbreviations
+  included (<code>diag sys kil</code> reads as kill). Before that, any <code>diagnose</code> line was
+  accepted. A diagnostic battery (Diagnose Log Collection, Administrator →
+  Diagnostic Battery) applies a stricter version of this rule. It also refuses
+  commands that never return or send traffic (top, sniffer, debug flow, ping,
+  test) and commands that the device's own help text, for the command or any
+  parent, describes as changing something.</li>
 <li><strong>Dry-run → approval → apply.</strong> Writes are computed as a minimal diff and shown
   before anything is sent; see <a href="source-of-truth.html"><code>source-of-truth-spec.md</code></a>.</li>
 <li><strong>Lease locks.</strong> <code>lock_service</code> gives one operator a lease per (appliance,

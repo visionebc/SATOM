@@ -6,6 +6,32 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — API tokens: every non-destructive action has a capability; grouped checkbox pickers (2026-10-15)
+
+- **Six new capabilities cover the rest of the non-destructive catalog:**
+  `cert_renew` (the three Cert Manager renewals), `monitoring` (deep-monitor
+  sweep, metrics scrape, monitoring report), `sentinel` (correlate, baselines,
+  CVE mirror, blocklist feed publish), `feeds` (signature freshness, knowledge
+  packs, WAF artifact index), `api_library` (endpoint evidence, CLI schema,
+  schema watch) and `netbox` (NetBox reconcile). Before, these 16 actions had
+  no capability: only a token owned by a user administrator, with no
+  capability ticked, could run them, so no token could be limited to
+  "monitoring only" (operator request: "add more actions"). They are
+  explicit: a token with no capability ticked keeps the old rule for them, so
+  no token issued earlier gained anything. A test now fails when a
+  non-destructive catalog action has no capability. Destructive actions stay
+  unreachable through the API.
+- **Capabilities and AppID scope are dropdowns with checkboxes**, in the
+  create form and in every Edit dialog (operator request: "put them in a
+  select where the user picks with checkboxes"). Capabilities are grouped
+  (server policies, certificates, maintenance & reports, monitoring &
+  security, feeds & integrations, and the always-explicit object writes), each
+  with its description and an "explicit" badge where an empty list does not
+  grant it. The AppID picker has a filter box. The button lists what is
+  ticked. The Ctrl-click lists are gone. Descriptions and groups now live in
+  the model, next to the capabilities, instead of in the template.
+- `docs/api_v1.md` gains the capability → action table.
+
 ### Fixed — a release that adds a table no longer takes the web down at boot; one FortiWeb's signature alert no longer silences another's (2026-10-15)
 
 - **Workers no longer race on a new table.** The four web workers each ran

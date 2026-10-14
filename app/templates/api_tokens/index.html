@@ -11,26 +11,13 @@
 {% endblock %}
 
 {% block content %}
-{% set CAP_DESC = {
-  'backend_edit': 'enable/disable pool backends',
-  'backend_config': 'change a backend IP / port',
-  'policy_status': 'enable/disable server policies',
-  'cert_swap': "swap a policy's certificate",
-  'maintenance': 'backups / sync / signatures (fleet)',
-  'reports': 'stats / inventory / health (read-only, fleet)',
-  'waf_exception_draft': 'FILE a FortiWeb WAF carve-out (desired state only — never touches a device)',
-  'waf_exception_apply': 'PUSH a filed FortiWeb carve-out onto the appliance',
-  'adc_rule_draft': 'PREVIEW a FortiADC carve-out (never touches a device)',
-  'adc_rule_apply': 'CREATE a FortiADC carve-out on the appliance',
-  'inventory': 'ASK a device its running firmware, live (reads the device, writes only this inventory)',
-} %}
+{% from "api_tokens/_pickers.html" import cap_picker, appid_picker %}
 {# Object-write capabilities are EXPLICIT-only: an empty capability list grants
    every non-danger catalog action but NO object write. Printing "all" for an
    empty list — which this page did until the object writers existed — would
    tell the operator a token can author WAF carve-outs when it cannot. #}
-{% set EXPLICIT_ONLY = ['waf_exception_draft', 'waf_exception_apply',
-                        'adc_rule_draft', 'adc_rule_apply', 'inventory'] %}
-{% set NO_CAPS_LABEL = _('all actions · no object writes') %}
+{% set EXPLICIT_ONLY = cap_explicit %}
+{% set NO_CAPS_LABEL = _('every action that needs no explicit grant') %}
 {% set SCOPE_DESC = {'read': '(GET)', 'write': '(run actions / config_write)', 'admin': '(admin)'} %}
 <div class="d-flex align-items-center mb-3">
   <h4 class="mb-0"><i class="bi bi-key me-2"></i>{{ _('API Tokens') }}</h4>
@@ -97,27 +84,12 @@
       </div>
 
       <div class="col-md-6">
-        <label class="form-label d-block">{{ _('Capabilities') }} <span class="text-muted small">{{ _('(what — unchecked = every catalog action; object writes are always explicit)') }}</span></label>
-        {% for c in capabilities %}
-        <div class="form-check">
-          <input class="form-check-input" type="checkbox" name="capabilities" value="{{ c }}"
-                 id="cap-{{ c }}">
-          <label class="form-check-label" for="cap-{{ c }}">
-            {{ c }}
-            <span class="text-muted small">
-              {%- if CAP_DESC.get(c) %} — {{ CAP_DESC.get(c) }}{% endif -%}
-            </span>
-          </label>
-        </div>
-        {% endfor %}
+        <label class="form-label d-block">{{ _('Capabilities') }} <span class="text-muted small">{{ _('(what — none ticked = every catalog action that needs no explicit grant)') }}</span></label>
+        {{ cap_picker('cap', [], cap_groups, cap_desc, cap_explicit) }}
       </div>
       <div class="col-md-6">
         <label class="form-label d-block">{{ _('AppID scope') }} <span class="text-muted small">{{ _('(where — leave empty for no restriction)') }}</span></label>
-        <select class="form-select" name="app_ids" multiple size="6">
-          {% for a in appid_catalog %}
-          <option value="{{ a.app_id }}">{{ a.app_id }}{% if a.customer %} — {{ a.customer }}{% endif %} ({{ a.product }})</option>
-          {% endfor %}
-        </select>
+        {{ appid_picker('appid', [], appid_catalog) }}
         <div class="form-text">
           {{ _('A token pinned to AppIDs may run only backend/policy/cert actions whose target server policy is bound to one of these AppIDs — and no fleet-wide action at all. Assign policies under') }} <a href="/web/appids">{{ _('AppIDs') }}</a>{{ _('. Only AppIDs of the token\'s ADOM resolve.') }}
         </div>
@@ -235,29 +207,13 @@
 
             <div class="col-md-6">
               <label class="form-label d-block">{{ _('Capabilities') }}
-                <span class="text-muted small">{{ _('(what — unchecked = every catalog action; object writes are always explicit)') }}</span></label>
-              {% for c in capabilities %}
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="capabilities" value="{{ c }}"
-                       id="ecap-{{ t.id }}-{{ c }}" {{ 'checked' if c in t.capability_list else '' }}>
-                <label class="form-check-label" for="ecap-{{ t.id }}-{{ c }}">
-                  {{ c }}
-                  <span class="text-muted small">
-                    {%- if CAP_DESC.get(c) %} — {{ CAP_DESC.get(c) }}{% endif -%}
-                  </span>
-                </label>
-              </div>
-              {% endfor %}
+                <span class="text-muted small">{{ _('(what — none ticked = every catalog action that needs no explicit grant)') }}</span></label>
+              {{ cap_picker('ecap-' ~ t.id, t.capability_list, cap_groups, cap_desc, cap_explicit) }}
             </div>
             <div class="col-md-6">
               <label class="form-label d-block">{{ _('AppID scope') }}
                 <span class="text-muted small">{{ _('(where — empty = no restriction)') }}</span></label>
-              <select class="form-select" name="app_ids" multiple size="6">
-                {% for a in appid_catalog %}
-                <option value="{{ a.app_id }}" {{ 'selected' if a.app_id in t.app_id_list else '' }}>
-                  {{ a.app_id }}{% if a.customer %} — {{ a.customer }}{% endif %} ({{ a.product }})</option>
-                {% endfor %}
-              </select>
+              {{ appid_picker('eappid-' ~ t.id, t.app_id_list, appid_catalog) }}
               {% if t.app_id_list %}
               <div class="form-text">Currently: {{ t.app_id_list|join(', ') }}</div>
               {% endif %}
@@ -273,4 +229,38 @@
   </div>
 </div>
 {% endfor %}
+<style nonce="{{ csp_nonce }}">
+  .tok-picker-menu { max-height: 360px; overflow-y: auto; }
+  .tok-picker-menu .form-check { padding-top: 2px; padding-bottom: 2px; }
+  .tok-picker-menu .form-check-label { width: 100%; }
+</style>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  // Each picker's button says what is ticked; the AppID one filters as you type.
+  function summarize(p) {
+    var on = Array.prototype.filter.call(p.querySelectorAll('input[type=checkbox]'),
+                                         function (c) { return c.checked; });
+    var out = p.querySelector('.tok-picker-summary');
+    if (!out) { return; }
+    if (!on.length) { out.textContent = p.getAttribute('data-empty'); out.classList.add('text-muted'); return; }
+    out.classList.remove('text-muted');
+    var names = on.map(function (c) { return c.value; });
+    out.textContent = names.length <= 3 ? names.join(', ')
+      : names.length + ' ' + p.getAttribute('data-some') + ': ' + names.slice(0, 3).join(', ') + '…';
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.tok-picker'), function (p) {
+    summarize(p);
+    p.addEventListener('change', function () { summarize(p); });
+    var q = p.querySelector('.tok-picker-search');
+    if (q) {
+      q.addEventListener('input', function () {
+        var v = q.value.trim().toLowerCase();
+        Array.prototype.forEach.call(p.querySelectorAll('.tok-picker-item'), function (it) {
+          it.classList.toggle('d-none', !!v && (it.getAttribute('data-text') || '').indexOf(v) < 0);
+        });
+      });
+    }
+  });
+})();
+</script>
 {% endblock %}

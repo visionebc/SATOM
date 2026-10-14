@@ -5,11 +5,16 @@
    require (views/registry.py, adc_api.py, faz_api.py, fac_api.py, fgt_api.py).
 
    Since 2026-10-14 (operator) it is a subgroup of Automation
-   (partials/nav_automation.html, ``api_menu(nested=True)``). Automation is
-   drawn for config_write only, so a profile holding registry.view without
+   (partials/nav_automation.html, ``api_menu(nested=True)``), itself a
+   subgroup of Operations in the device ADOMs since later the same day.
+   Automation is drawn for config_write only, so a profile holding registry.view without
    config_write keeps the standalone "API" group instead
    (partials/nav_product_api.html) — a reorder must not take a page away from
    a profile that may open it, nor draw it twice.
+
+   ``_adom=product.key`` pins the ADOM on a HARD navigation, like every other
+   Automation entry (tests/test_automation_adom_nav.py); the link lacked it
+   from the move into Automation until 2026-10-14.
    ========================================================================= #}
 {% macro api_menu(nested) %}
 {% set _api_ep = {'fortiweb': 'registry.index', 'fortiadc': 'adc_api.index',
@@ -23,7 +28,7 @@
 <div class="fw-nav-subgroup {{ 'open' if request.blueprint in _api_bps }}" data-nav-subgroup="API">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-braces fw-nav-icon" style="color:#0891b2;"></i><span>API</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
-    <a class="fw-nav-item {{ 'active' if request.blueprint in _api_bps else '' }}" href="{{ url_for(_api_ep) }}">
+    <a class="fw-nav-item {{ 'active' if request.blueprint in _api_bps else '' }}" href="{{ url_for(_api_ep, _adom=product.key) }}">
       <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Registry & console') }}</span></a>
   </div>
 </div>
@@ -31,7 +36,7 @@
 <div class="fw-nav-group" data-nav-group="API">
   <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-braces fw-nav-section-icon" style="color:#0891b2;"></i><span>API</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-group-body">
-    <a class="fw-nav-item {{ 'active' if request.blueprint in _api_bps else '' }}" href="{{ url_for(_api_ep) }}">
+    <a class="fw-nav-item {{ 'active' if request.blueprint in _api_bps else '' }}" href="{{ url_for(_api_ep, _adom=product.key) }}">
       <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Registry & console') }}</span></a>
   </div>
 </div>

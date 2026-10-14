@@ -253,12 +253,14 @@ ADOM ends up empty.
 
 **Where the shared groups sit.** Every device ADOM draws the same SATOM groups
 in the same order around the device menu: **Operations** first, the device
-menu, **Automation**, **Administrator**, Plugins. Operations opens with the
+menu, **Administrator**, Plugins. Operations opens with the
 fleet pages (Dashboard where the ADOM has one, Calendar, Architecture, Service
 Diagram, Monitoring, Search, DNS Lookup, Troubleshooting, Fleet Objects and WAF
-in FortiWeb and FortiADC, Jobs) and then holds Device Backups and Import Backup;
+in FortiWeb and FortiADC, Jobs), then holds Device Backups and Import Backup,
+and ends with the **Automation** sub-menu;
 **Diagnose Log Collection** is in Operations › Troubleshooting (§27). There is
-no separate **Fleet** group. The **API** console
+no separate **Fleet** group, and no separate Automation group in a device ADOM
+(the Global ADOM keeps Automation as a group). The **API** console
 (Registry & console) is a sub-menu of Automation. **Appliances** is under
 Administrator; **Schema builds**, **Build compatibility** and (Global)
 **Certificate Manager** are under Automation; **Studio** is a sub-menu of
@@ -2677,7 +2679,7 @@ audits it; secrets are never echoed back.
 - **Signatures** (Web Application Firewall group, `protection.view`) — WAF
   signature category/severity overview with per-severity actions; deep editing
   through the object detail.
-- **API console** (sidebar → Automation → API → Registry & console, `registry.view`) — the
+- **API console** (sidebar → Operations → Automation → API → Registry & console, `registry.view`) — the
   registry-driven explorer: browse the ADC endpoint catalog as the GUI menu, run
   live GETs and gated writes against a chosen device, with history and
   syntax-highlighted responses. Writes are **dry-run by default**: without
@@ -2746,7 +2748,7 @@ the whole menu as a grid.
   that page instead. The others render the old read-only section page, capped
   at 500 rows with the truncation stated, with an explicit **"No endpoint
   bound."** state where no REST resource is behind the pane.
-- **API console** (sidebar → Automation → API → Registry & console, `registry.view`) — the
+- **API console** (sidebar → Operations → Automation → API → Registry & console, `registry.view`) — the
   registry-driven explorer over the FAC catalogue, with live GETs and gated
   writes against a chosen device (§30 covers the registry model behind all four
   consoles). Catalog rows can be disabled and restored on the page; re-pointing
@@ -2796,7 +2798,7 @@ can take them out of the menu.
   the rest of the page.
 - **Device Manager** — Authorize / Delete run in the FortiAnalyzer ADOM you
   type in the dialog (default `root`); the device list spans every FAZ ADOM.
-- **API console** (sidebar → Automation → API → Registry & console, `registry.view`) — same
+- **API console** (sidebar → Operations → Automation → API → Registry & console, `registry.view`) — same
   registry-driven explorer, JSON-RPC aware, with permission-gated writes that
   are **dry-run by default** (tick **Apply** to send). The status badge shows the
   device's JSON-RPC status code, not the transport's HTTP 200.
@@ -2836,7 +2838,7 @@ arrived, the pages a measured layout draws can also write, dry-run first.
 - **Not in GUI, but in CLI** is on every object, edit and Create New form
   (§7.3). A page or field measured as having no API is drawn read-only and
   marked **"No API on this build (GUI only)"**.
-- **API console** (sidebar → Automation → API → Registry & console, `registry.view`) — the
+- **API console** (sidebar → Operations → Automation → API → Registry & console, `registry.view`) — the
   FortiGate registry browsed as the FortiGate menu, and a live console. `GET`
   reads the `cmdb`, `monitor` and `log` trees. `POST`, `PUT` and `DELETE` are
   **dry-run by default** (tick **Apply** to send; `registry.execute_write`),
@@ -4963,7 +4965,7 @@ a half-parsed snapshot that looks real is worse than no snapshot.
 
 ## 28. System provisioning: profiles and baselines
 
-FortiWeb ADOM → Automation → **System Provisioning** — the second of the two
+FortiWeb ADOM → Operations → Automation → **System Provisioning** — the second of the two
 entries named in §21. Device Provisioning builds an appliance that does not
 exist; this one applies *system* configuration to appliances that already do.
 The entry appears in the FortiWeb ADOM only.
@@ -6169,7 +6171,7 @@ From the console: `sudo satom execute apilib compat fortiweb 7.6.8 8.0.6` and
 When an appliance starts running a firmware build whose schema SATOM has never
 harvested, every administrator gets **one** bell notification for that product
 and build: *New build 8.0.7 on fweb-01: schema not harvested*. It links to
-**Schema builds** (Automation group of the sidebar, in every ADOM;
+**Schema builds** (Automation in the sidebar — under Operations in a device ADOM, its own group in Global;
 `/schema-builds/`; reading needs `registry.view`).
 
 The page has three parts:
@@ -7495,7 +7497,7 @@ field the appliance holds today (from its newest `show full-configuration`
 backup), checked against what SATOM knows about the target build. Full
 reference: [Migration report](migration-report.md).
 
-**Where:** **Automation → Migration Report** (beside Upgrade Flow), the
+**Where:** **Operations → Automation → Migration Report** (beside Upgrade Flow), the
 **Migration Report** button on a FortiWeb, FortiADC or FortiGate appliance
 page, and stage 1 of this flow. Same permission as the Upgrade Flow.
 
@@ -7865,7 +7867,7 @@ describe, so putting it away would hide the premise of every count below it.
 
 **Administrator → Process**, in every ADOM. Users without the user-manage
 permission (read-only, operator) find the same entry under its own
-**Automation** group in the sidebar.
+**Process** group in the sidebar.
 
 A recovery plan that lives in a document is a plan nobody has run. Process is
 where you draw one as a diagram and let SATOM walk it: each step asks a

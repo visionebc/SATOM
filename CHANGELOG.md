@@ -216,6 +216,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   keeps the standalone API group, so no profile loses the page and none sees
   it twice. Every entry keeps its own permission: the menu moved, access did
   not change.
+- **Automation is the last entry of Operations** in every device ADOM: a
+  sub-menu (Operations › Automation, with Automation › API inside it) instead
+  of a group of its own. The Global ADOM, which has no Operations group, keeps
+  Automation as a group. Entries and permissions are unchanged. The API
+  console link now carries its ADOM (`?_adom=`) like the other Automation
+  entries, so a link opened in a new tab lands in the right ADOM.
 - **Troubleshooting** (under Operations in the device ADOMs, in the Global
   block in Global) holds Backend Reachability,
   Config Compare, Path Diagnostics and Scout; the separate Troubleshooting

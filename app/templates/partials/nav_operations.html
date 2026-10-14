@@ -22,6 +22,10 @@
    (operator request) for Operations › Troubleshooting
    (partials/nav_troubleshooting.html), in all five device ADOMs, next to the
    per-ADOM diagnostic battery it runs.
+
+   Automation became the last entry of this group on 2026-10-14 (operator):
+   a subgroup (partials/nav_automation.html, its API subgroup inside), drawn
+   for config_write as before. The Global ADOM keeps Automation as a group.
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
 {% if product.key != 'global' and not product.placeholder %}
@@ -53,6 +57,9 @@
       <i class="bi bi-collection fw-nav-icon"></i><span>{{ _('Template Library') }}</span></a>
     {% else %}{{ nav_off('bi-collection', _('Template Library'), _m_tpl.reason) }}{% endif %}
     {% endif %}
+    {# Automation ▸ (with its API ▸ subgroup) — the last entry of Operations
+       since 2026-10-14 (operator). Still config_write-gated inside the partial. #}
+    {% include 'partials/nav_automation.html' %}
   </div>
 </div>
 {% endif %}

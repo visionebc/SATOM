@@ -72,13 +72,18 @@ DEFAULTS: dict[str, list[str]] = {
         "get system status",
         "get system performance",
         "diagnose system route list",
-        "diagnose debug crashlog read",
+        "diagnose system print loadavg",
+        "diagnose system print partitions",
+        "diagnose system ntp status",
         "diagnose fortilogd lograte",
         "diagnose debug sysinfo",
     ],
     "fortiauthenticator": [
         "get system status",
         "diagnose system ntp status",
+        "diagnose netlink interface list",
+        "diagnose netlink arp list",
+        "diagnose debug info",
     ],
 }
 

@@ -49,6 +49,9 @@ STATE_WORDS: frozenset[str] = frozenset({
     "reject", "filter", "update-now", "upgrade", "downgrade",
     "shut", "renew", "revoke", "block", "unblock", "quarantine", "add",
     "drop-cache", "fips",
+    # FortiAuthenticator lists debug LEVELS as children of each daemon under
+    # ``diagnose debug application <daemon>``: debugall/traceall set them.
+    "debugall",
 })
 
 # Only refused in a battery: harmless one at a time at a console, but in an
@@ -77,6 +80,9 @@ BATTERY_WORDS: frozenset[str] = frozenset({
 # stood for ``application`` — or for ``approve``.
 SAFE_WORDS: frozenset[str] = frozenset({
     "ha", "sys", "perf", "tcp", "auth", "update",
+    # ``debug`` is the branch every product has; it is a prefix of
+    # ``debugall`` (a FortiAuthenticator debug level) only by accident.
+    "debug",
 })
 
 # Help-text openings that mean "this changes something". Matched against the
@@ -118,6 +124,9 @@ def _tokens(command: str) -> list[str]:
 # health". That keeps ``rebuild-status`` refused too -- the price of not
 # guessing which of the two a name is.
 _READ_HEADS = frozenset({"show", "get", "list", "display", "print"})
+# Refused when spelled, never the target of an abbreviation: every prefix of
+# ``debugall`` is also a prefix of ``debug``, the branch all five products have.
+_NO_ABBREV = frozenset({"debugall"})
 _READ_TAILS = frozenset({"status", "info", "list", "stats", "stat", "show"})
 
 
@@ -144,6 +153,8 @@ def _word_hit(tok: str, words: frozenset[str]) -> tuple[str, str] | None:
     if tok in SAFE_WORDS or tok.isdigit() or len(tok) < 2:
         return None
     for w in sorted(words, key=lambda x: (len(x), x)):
+        if w in _NO_ABBREV:
+            continue
         if w.startswith(tok) and w != tok:
             return w, "abbrev"
     return None

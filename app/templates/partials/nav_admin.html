@@ -28,6 +28,14 @@
       <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Capacity Limits') }}</span></a>
     {% else %}{{ nav_off('bi-speedometer2', _('Capacity Limits'), _m.reason) }}{% endif %}
     {% endif %}
+    {# Diagnostic Battery: the commands Diagnose Log Collection runs, chosen
+       per device ADOM (views/diag_battery.py). Global has no battery. #}
+    {% if _dev and may_open('diag_battery.index') %}{% set _m = adom_menu('diag_battery', product) %}
+    {% if _m.on %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'diag_battery' else '' }}" href="{{ url_for('diag_battery.index', _adom=_pk) }}">
+      <i class="bi bi-list-check fw-nav-icon"></i><span>{{ _('Diagnostic Battery') }}</span></a>
+    {% else %}{{ nav_off('bi-list-check', _('Diagnostic Battery'), _m.reason) }}{% endif %}
+    {% endif %}
     {% include "partials/nav_collection.html" %}
     {% include "partials/nav_cr_types.html" %}
     {% include "partials/nav_adom_assets.html" %}

@@ -359,7 +359,8 @@
         </div>
       </div>
 
-      {% include 'partials/nav_automation.html' %}
+      {# Automation is a subgroup of the Global block since 2026-10-14
+         (partials/nav_fleet.html), as it is of Operations in a device ADOM. #}
 
 
       {% elif product.key == 'fortianalyzer' %}

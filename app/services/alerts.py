@@ -648,8 +648,20 @@ def _check_actions() -> list[dict]:
             "product": product,
             "detail": ("\n".join(lines) +
                        f"\n\nAction '{a.action}', schedule {a.schedule_kind}, "
-                       f"evaluated on {_node()}. Details: /scheduled-actions/")})
+                       f"evaluated on {_node()}. Details: {_action_page(a)}")})
     return findings
+
+def _action_page(action) -> str:
+    """The list that owns ``action``: /automations/ for operator work,
+    /scheduled-actions/ (System Automations) for SATOM's own. Since the
+    2026-10-14 regroup an upgrade or reboot row lives on the first; pointing
+    every alert at the second sent the operator to a page that cannot open it."""
+    try:
+        from ..views.scheduled_actions import endpoint_for
+        return "/automations/" if endpoint_for(action) == "automations" else "/scheduled-actions/"
+    except Exception:  # noqa: BLE001 - a link must never cost the alert
+        return "/scheduled-actions/"
+
 
 def _bundle_stamp(entry: dict):
     """When a bundle was taken, as an aware UTC datetime, or None.

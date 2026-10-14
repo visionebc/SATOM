@@ -873,7 +873,7 @@
             <div class="col-sm-8">
               <div class="form-text">
                 {% if system_backup_schedule.other_kind %}
-                  <span class="text-warning">{{ _('This node\'s bundle runs on a') }} <code>{{ system_backup_schedule.other_kind }}</code> {{ _('schedule, which a single hour cannot express — edit it in') }} <a href="{{ url_for('scheduled_actions.index') }}">{{ _('Automation') }}</a>. {{ _('Nothing here will add a second nightly bundle.') }}</span>
+                  <span class="text-warning">{{ _('This node\'s bundle runs on a') }} <code>{{ system_backup_schedule.other_kind }}</code> {{ _('schedule, which a single hour cannot express — edit it in') }} <a href="{{ url_for('scheduled_actions.index') }}">{{ _('System Automations') }}</a>. {{ _('Nothing here will add a second nightly bundle.') }}</span>
                 {% elif system_backup_schedule.configured %}
                   {{ _('Driven by the scheduled action') }} <a href="{{ url_for('scheduled_actions.index') }}"><code>system_backup</code> #{{ system_backup_schedule.action_id }}</a>{% if not system_backup_schedule.enabled %} — <span class="text-danger">{{ _('DISABLED, so this node is writing no bundles at all right now') }}</span>{% endif %}.
                   {% if system_backup_schedule.last_run %} {{ _('Last run') }}: {{ system_backup_schedule.last_run.strftime('%Y-%m-%d %H:%M') }} UTC{% if system_backup_schedule.last_status %} ({{ system_backup_schedule.last_status }}){% endif %}.{% endif %}

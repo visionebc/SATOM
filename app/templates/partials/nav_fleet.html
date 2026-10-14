@@ -11,7 +11,8 @@
    being a line someone forgot to copy.
 
    Appliances, Schema builds, Build compatibility and Certificate Manager
-   left this group on 2026-10-13 (Administrator / Automation); the first
+   left this group on 2026-10-13 (Administrator / Automation; the two schema
+   pages went on to Automation's API subgroup on 2026-10-14); the first
    three stay here only as a fallback for profiles that cannot see their
    new group.
 
@@ -84,10 +85,15 @@
 {% if not product.placeholder %}
 {% include 'partials/nav_automation.html' %}
 {% endif %}
-{# Schema builds / Build compatibility moved to Automation (2026-10-13); only
-   a profile that cannot see that group keeps them here. #}
-{% if not (current_user and current_user.can('config_write')) %}
-{% include 'partials/nav_api_library.html' %}
+{# Schema builds / Build compatibility live in the API subgroup of Automation
+   (2026-10-14, partials/_nav_api.html). A profile that cannot see Automation
+   gets that API subgroup here in the Global block (and in a placeholder ADOM);
+   a device ADOM draws it as the standalone API group instead
+   (partials/nav_product_api.html), so it is never drawn twice. #}
+{% if not (current_user and current_user.can('config_write'))
+      and (_pk == 'global' or product.placeholder) %}
+{% from 'partials/_nav_api.html' import api_menu with context %}
+{{ api_menu(true) }}
 {% endif %}
 {# Jobs: last of the Global block here; in a device ADOM it closes the
    Operations group instead (partials/nav_operations.html, operator 2026-10-14). #}

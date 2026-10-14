@@ -1,9 +1,10 @@
 {# API library pages: Schema builds and Build compatibility (fields per
-   firmware build, both channels — views/build_compat.py). Filed under
-   Automation since 2026-10-13 (operator's menu order). The Automation group
-   is drawn only for config_write, and these pages ask registry.view /
-   registry.edit instead, so partials/nav_fleet.html keeps them in Fleet for
-   a profile without config_write: a reorder must not take a page away. #}
+   firmware build, both channels — views/build_compat.py). Drawn ONLY from
+   the API menu (partials/_nav_api.html, operator 2026-10-14), which places
+   it as a subgroup of Automation for config_write, and as the standalone
+   API group (device ADOMs, partials/nav_product_api.html) or a subgroup of
+   the Global block (partials/nav_fleet.html) for a profile without
+   config_write: a reorder must not take a page away. #}
 {% if may_open('schema_builds.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'schema_builds' else '' }}" href="{{ url_for('schema_builds.index', _adom=product.key) }}">
   <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Schema builds') }}</span></a>

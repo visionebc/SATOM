@@ -59,6 +59,7 @@
                 <option value="{{ spec.key }}"
                         data-scope="{{ spec.scope }}"
                         data-danger="{{ '1' if spec.danger else '0' }}"
+                        data-cr="{{ '1' if spec.requires_change_request else '0' }}"
                         data-forced="{{ spec.forced_schedule_kind }}"
                         {{ 'selected' if action and action.action == spec.key else '' }}>
                   {{ spec.label }}
@@ -70,6 +71,9 @@
               {{ _('Scope:') }} <strong id="scopeLabel" class="text-uppercase">—</strong>
               <span id="dangerNote" class="text-danger ms-2" style="display:none;">
                 <i class="bi bi-exclamation-triangle-fill"></i> {{ _('Destructive — handle with care.') }}
+              </span>
+              <span id="crNote" class="ms-2" style="display:none;">
+                <i class="bi bi-clipboard2-check"></i> {{ _('Runs only bound to an approved Change Request, inside its maintenance window.') }}
               </span>
             </div>
           </div>
@@ -324,6 +328,8 @@ function onActionChange() {
 
   document.getElementById('scopeLabel').textContent = scope;
   document.getElementById('dangerNote').style.display = danger ? '' : 'none';
+  var crNote = document.getElementById('crNote');
+  if (crNote) { crNote.style.display = (opt.getAttribute('data-cr') === '1') ? '' : 'none'; }
 
   var isCustom = (sel.value === 'custom_rest');
   var cc = document.getElementById('customCard');

@@ -323,6 +323,9 @@ def create():
         bits.append(f"{prov['targets']} metrics collector(s)")
     if prov.get('probes'):
         bits.append(f"{len(prov['probes'])} threshold probe(s)")
+    if prov.get('system_automations'):
+        # The node's first device: SATOM armed its own housekeeping.
+        bits.append(f"{len(prov['system_automations'])} system automation(s)")
     flash(f'Appliance {name} created.'
           + (' ' + ' and '.join(bits) + ' provisioned.' if bits else '')
           + (' Monitoring warning: ' + '; '.join(prov['errors'])

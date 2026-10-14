@@ -30,8 +30,9 @@ from pathlib import Path
 from typing import Any
 
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
-# FortiWeb prompt: "FortiWeb # ", "FortiWeb (global) # ", "host (vdom) # "
-_PROMPT_LINE = re.compile(r"^[\w.\-]+ (?:\(\S+\) )?# ?$")
+# FortiWeb prompt: "FortiWeb # ", "FortiWeb (global) # ", "host (vdom) # ";
+# FortiAuthenticator prints a bare "> ".
+_PROMPT_LINE = re.compile(r"^(?:[\w.\-]+ (?:\(\S+\) )?# ?|> ?)$")
 
 # Only these CLI verbs are ever sent from the web console — everything else is
 # a write/exec and is refused. ``diag`` is FortiWeb's accepted abbreviation of
@@ -180,6 +181,12 @@ def assert_readonly(command: str) -> str:
                     f"'{verb}' is not a read-only command — only "
                     f"{', '.join(sorted(_READ_VERBS))} are allowed in the console"
                 )
+            # ``diagnose`` is not a read verb on its own: the trees carry
+            # kill, clear, failover, sysrq crash… (services/diag_policy.py).
+            from .diag_policy import blocked_reason
+            why = blocked_reason(stmt)
+            if why:
+                raise ReadOnlyViolation(f"refused {stmt[:80]!r}: {why}")
     return cmd
 
 
@@ -216,6 +223,32 @@ def assert_schema_command(command: str) -> str:
     return cmd
 
 
+# ── The help question, and why it is not a verb either ────────────────────
+#
+# Discovery (services/diag_tree.py) types ``<path> ?`` with NO newline: the
+# shell lists the children of ``<path>`` and re-types the line. On FortiWeb a
+# leaf can RUN when ``?`` follows it, so the path is held to the same battery
+# rule as a command (services/diag_policy.py, strict) before anything is sent,
+# and it may only be a ``diagnose`` path of plain words — no arguments with
+# spaces inside, no second line, no chaining.
+_HELP_PATH_RE = re.compile(r"^diagnose(?: [A-Za-z0-9][A-Za-z0-9_.\-]*){0,12}$")
+
+
+def assert_help_path(path: str) -> str:
+    """Return ``path`` if ``<path> ?`` may be typed for discovery, else raise."""
+    _refuse_control(path or "")
+    p = (path or "").strip()
+    if "\n" in p or not _HELP_PATH_RE.match(p):
+        raise ReadOnlyViolation(
+            "only a 'diagnose …' path of plain words may be asked for help; "
+            "refused %r" % ((path or "")[:80],))
+    from .diag_policy import blocked_reason
+    why = blocked_reason(p, strict=True)
+    if why:
+        raise ReadOnlyViolation(f"refused to ask for help on {p!r}: {why}")
+    return p
+
+
 # Curated read-only troubleshooting presets (label -> CLI command).
 TROUBLESHOOT: dict[str, str] = {
     "System status": "get system status",
@@ -223,7 +256,7 @@ TROUBLESHOOT: dict[str, str] = {
     "HA status": "diagnose system ha status",
     "Update info": "diagnose system update info",
     "Hardware (VM)": "diagnose hardware sysinfo vm",
-    "CPU": "diagnose hardware cpu",
+    "CPU": "diagnose hardware cpu list",
     "Memory": "diagnose hardware mem list",
     "Disk health": "diagnose hardware harddisk health",
     "NIC list": "diagnose hardware nic list",
@@ -275,7 +308,7 @@ class FortiWebReadonlySSH:
             cli.connect(
                 self.appliance.host,
                 port=int(self.appliance.ssh_port or 22),
-                username=self.appliance.username,
+                username=getattr(self.appliance, "ssh_login", None) or self.appliance.username,
                 password=self._secret,
                 timeout=self._timeout,
                 look_for_keys=False,
@@ -442,6 +475,46 @@ class FortiWebReadonlySSH:
         complete = bool(_PROMPT_LINE.match(tail.strip()))
         return clean_output(raw, command), complete
 
+    def _read_echo(self, path: str, maxt: float) -> tuple[str, bool]:
+        """Read until the shell re-types ``path`` after its prompt.
+
+        ``#`` ends the prompt on FortiWeb/FortiADC/FortiGate/FortiAnalyzer,
+        ``>`` on FortiAuthenticator. Returns ``(raw, returned)``; ``returned``
+        is False when the wall clock ran out first (the node is running).
+        """
+        done = re.compile(r"[#>] ?" + re.escape(path) + r" ?$")
+        buf = ""
+        start = time.time()
+        sh = self._shell
+        while time.time() - start < maxt:
+            if sh.recv_ready():
+                buf += sh.recv(16384).decode("utf-8", "replace")
+                tail = _ANSI.sub("", buf).replace("\r", "").replace("\x00", "")
+                if done.search(tail.rstrip("\n").split("\n")[-1]):
+                    return buf, True
+            else:
+                time.sleep(0.05)
+        return buf, False
+
+    def ask_help(self, path: str, *, timeout: float = 10.0) -> tuple[str, bool]:
+        """Type ``<path> ?`` and return ``(raw answer, returned_to_prompt)``.
+
+        Validated by :func:`assert_help_path`. Afterwards the re-typed line is
+        erased with Ctrl-U; when the prompt did not come back (``?`` started
+        something that keeps running) Ctrl-C is sent first.
+        """
+        path = assert_help_path(path)
+        if not self._shell:
+            raise FortiSSHError("SSH session is not connected")
+        self._shell.send(path + " ?")
+        raw, returned = self._read_echo(path, timeout)
+        if not returned:
+            self._shell.send("\x03")
+            self._read(quiet=0.6, maxt=4)
+        self._shell.send("\x15")
+        self._read(quiet=0.25, maxt=2)
+        return raw, returned
+
     def run_battery(self, commands: list[str]) -> dict[str, str]:
         """Run a list of read commands → {command: output} (each validated)."""
         return {c: self.run_readonly(c) for c in commands}
@@ -480,6 +553,7 @@ def health_text(appliance) -> str:
 __all__ = [
     "FortiWebReadonlySSH", "FortiSSHError", "ReadOnlyViolation",
     "clean_output", "assert_readonly", "assert_probe_command", "assert_schema_command",
+    "assert_help_path",
     "TROUBLESHOOT", "flash_battery",
     "run_command", "run_tree", "capture_health", "health_text",
 ]

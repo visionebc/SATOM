@@ -6,6 +6,25 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Certificate Manager signs with a CA held in an OPNsense firewall (2026-10-15)
+
+- **New signer `scripts/opnsense_ca_signer.py`** for the ADCS command
+  template. It sends the CSR to OPNsense's *Sign CSR* action (System › Trust)
+  and writes the signed certificate back (operator request: "create a trust
+  with the firewall's CA and configure it, I want to see how the whole process
+  works"). The private key never leaves SATOM. The API key only needs the
+  *System: Certificate Manager* privilege. The firewall is identified by a
+  public-key pin, which is checked before any credential is sent. `pin` prints
+  the value to compare.
+- **OPNsense drops the CSR's subjectAltName when it signs**, so the signer
+  sends the SANs separately, one per line, because OPNsense rejects a
+  comma-separated list. Without them, browsers and curl reject the
+  certificate.
+- **The CA secret now also reaches the signer as `$SATOM_CA_SECRET`** (ADCS
+  submit and revoke). A template can leave out `{password}` and keep the
+  secret out of `/proc/<pid>/cmdline`. The OPNsense signer refuses a secret on
+  its command line.
+
 ### Fixed — pages that only worked after a refresh; Database relationships; Change types; firmware platform (2026-10-15)
 
 - **Pages opened from the menu now work without a refresh.** Turbo Drive

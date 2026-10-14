@@ -1643,6 +1643,27 @@ unreachable. Administrator role (`user_manage`) required.
 - **Issuance:** create a CSR and sign it through the configured protocol —
   **Microsoft ADCS** or **ACME** (Let's Encrypt-style, http-01/dns-01) — the
   protocol is a Settings dropdown, not a code change.
+- **A CA in an OPNsense firewall** (System › Trust) signs through the ADCS
+  command template with the bundled signer `scripts/opnsense_ca_signer.py`.
+  Set **CA** to `https://<firewall>:<port>`, **CA name** to the issuing CA's
+  refid, **User** to an API key whose user has only the *System: Certificate
+  Manager* privilege, and the API secret in the password box. The class
+  **template** is the OPNsense certificate type (`server_cert`, `usr_cert`,
+  `combined_server_client`). Submit command:
+  `/opt/satom/venv/bin/python /opt/satom/scripts/opnsense_ca_signer.py sign
+  --url {ca} --ca-ref {ca_name} --key {user} --cert-type {template}
+  --csr {csr} --out {out} --pin-sha256 <pin>`. Get the pin with
+  `… opnsense_ca_signer.py pin --url https://<firewall>:<port>` and compare it
+  with the firewall's certificate before saving it. The signer checks the pin
+  before it sends any credential.
+  The private key stays in SATOM: OPNsense receives only the CSR. OPNsense's
+  CSR signing drops the request's subjectAltName, so the signer sends the SANs
+  separately. The signed certificate stays in the firewall's Trust store as
+  the CA's issuance record.
+- **The CA secret is also passed to the signer as `$SATOM_CA_SECRET`**, so a
+  submit or revoke command can leave out `{password}` and keep the secret off
+  the command line. `{password}` still works for signers that only take it
+  there (certipy).
 - **Deploy:** FortiWeb receives cert+key over SSH (the only transport the
   appliance supports for key material); FortiADC over REST. The Admin GUI
   certificate can be swapped with a dry-run preview.

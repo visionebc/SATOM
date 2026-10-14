@@ -340,6 +340,17 @@ def _acme_common() -> tuple[dict, dict, dict, list[str]]:
     return acme, mapping, env, secrets
 
 
+# The CA secret is ALSO exported to the signer as $SATOM_CA_SECRET, so a
+# command template can drop {password} and keep the secret out of argv (and so
+# out of /proc/<pid>/cmdline). {password} keeps working for signers that only
+# take it on the command line (certipy).
+CA_SECRET_ENV = "SATOM_CA_SECRET"
+
+
+def _ca_secret_env(secret: str) -> dict:
+    return {CA_SECRET_ENV: secret} if secret else {}
+
+
 def _signing_context(cert_class: str) -> tuple[str, str, dict, dict, list[str]]:
     """(protocol, submit template, token mapping, child env, secrets) for the
     ACTIVE issuance protocol. ``{csr}``/``{out}`` are added at run time."""
@@ -361,8 +372,8 @@ def _signing_context(cert_class: str) -> tuple[str, str, dict, dict, list[str]]:
         "ca_name": adcs.get("ca_name", ""),
         "template": ccfg.get("template", ""),
     }
-    return ("adcs", (ccfg.get("submit_cmd") or "").strip(), mapping, {},
-            [secret] if secret else [])
+    return ("adcs", (ccfg.get("submit_cmd") or "").strip(), mapping,
+            _ca_secret_env(secret), [secret] if secret else [])
 
 
 def _revoke_context(cert: ManagedCertificate) -> tuple[str, str, dict, dict, list[str]]:
@@ -385,8 +396,8 @@ def _revoke_context(cert: ManagedCertificate) -> tuple[str, str, dict, dict, lis
         "ca": adcs.get("ca", ""), "ca_name": adcs.get("ca_name", ""),
         "serial": cert.serial or "", "request_id": cert.ca_request_id or "",
     }
-    return ("adcs", (ccfg.get("revoke_cmd") or "").strip(), mapping, {},
-            [secret] if secret else [])
+    return ("adcs", (ccfg.get("revoke_cmd") or "").strip(), mapping,
+            _ca_secret_env(secret), [secret] if secret else [])
 
 
 def _extract_cert_pem(out_path: str, stdout: str, stderr: str) -> str:

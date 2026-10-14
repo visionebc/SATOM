@@ -1810,6 +1810,27 @@ unreachable. Administrator role (<code>user_manage</code>) required.</p>
 <li><strong>Issuance:</strong> create a CSR and sign it through the configured protocol —
   <strong>Microsoft ADCS</strong> or <strong>ACME</strong> (Let's Encrypt-style, http-01/dns-01) — the
   protocol is a Settings dropdown, not a code change.</li>
+<li><strong>A CA in an OPNsense firewall</strong> (System › Trust) signs through the ADCS
+  command template with the bundled signer <code>scripts/opnsense_ca_signer.py</code>.
+  Set <strong>CA</strong> to <code>https://&lt;firewall&gt;:&lt;port&gt;</code>, <strong>CA name</strong> to the issuing CA's
+  refid, <strong>User</strong> to an API key whose user has only the <em>System: Certificate
+  Manager</em> privilege, and the API secret in the password box. The class
+  <strong>template</strong> is the OPNsense certificate type (<code>server_cert</code>, <code>usr_cert</code>,
+  <code>combined_server_client</code>). Submit command:
+  <code>/opt/satom/venv/bin/python /opt/satom/scripts/opnsense_ca_signer.py sign
+  --url {ca} --ca-ref {ca_name} --key {user} --cert-type {template}
+  --csr {csr} --out {out} --pin-sha256 &lt;pin&gt;</code>. Get the pin with
+  <code>… opnsense_ca_signer.py pin --url https://&lt;firewall&gt;:&lt;port&gt;</code> and compare it
+  with the firewall's certificate before saving it. The signer checks the pin
+  before it sends any credential.
+  The private key stays in SATOM: OPNsense receives only the CSR. OPNsense's
+  CSR signing drops the request's subjectAltName, so the signer sends the SANs
+  separately. The signed certificate stays in the firewall's Trust store as
+  the CA's issuance record.</li>
+<li><strong>The CA secret is also passed to the signer as <code>$SATOM_CA_SECRET</code></strong>, so a
+  submit or revoke command can leave out <code>{password}</code> and keep the secret off
+  the command line. <code>{password}</code> still works for signers that only take it
+  there (certipy).</li>
 <li><strong>Deploy:</strong> FortiWeb receives cert+key over SSH (the only transport the
   appliance supports for key material); FortiADC over REST. The Admin GUI
   certificate can be swapped with a dry-run preview.</li>
@@ -1999,6 +2020,15 @@ device.</p>
   VM / any), size, uploader, notes and a <strong>sha256</strong> recorded at upload. The binary
   lives on disk; the database row keeps the metadata and the hash, so integrity is
   checkable later.</li>
+<li><strong>Platform is detected from the file name.</strong> Fortinet's naming carries it:
+  <code>FWB_KVM-…</code>, <code>FGT_VM64_KVM-…</code> or <code>FAD_VM-…</code> is a VM image, <code>FWB_1000E-…</code> or
+  <code>FGT_60F-…</code> a hardware one. Choosing the file fills Platform (and the
+  hypervisor of an install image) and marks it "detected from the file name";
+  uploads and backup-server pulls apply the same rule on the server. A
+  platform you pick yourself is kept, and a name that does not say stays
+  <strong>Any</strong>. When an image is offered to an appliance, the appliance's probed
+  hardware type decides the match (its model string only when it was never
+  probed).</li>
 <li><strong>Uploads keep running while you navigate.</strong> A firmware image is hundreds of
   megabytes; it goes up as one request that the Jobs dock tracks across page
   changes, and the sha256 is computed by a background job once the file has
@@ -3015,7 +3045,14 @@ boot.</p>
   read-only; <strong>Clone</strong> one to customize. Direct SQL is available too, but
   strictly read-only and validated.</li>
 <li><strong>ER diagram</strong> — a live, professional database diagram (crow's-foot
-  notation, domain-colored, searchable, draggable, exportable SVG).</li>
+  notation, domain-colored, searchable, draggable, exportable SVG). Every
+  table of the database is in it. Relationships declared as foreign keys are
+  solid lines; <strong>dashed</strong> lines are relationships inferred from the column
+  name: an integer <code>&lt;name&gt;_id</code> column with no foreign key links to the table
+  of that name (singular or plural) whose primary key is <code>id</code>. History tables
+  keep <code>appliance_id</code> without a foreign key on purpose, because their rows
+  outlive the appliance. The header counts both kinds apart; the list view
+  marks inferred ones, and the Query Builder joins on both.</li>
 <li><strong>Tables browser + SQL console</strong> — read-only introspection with sensitive
   columns masked. Console queries run as the dedicated read-only role
   <code>satom_console_ro</code>, which cannot read credential tables or credential

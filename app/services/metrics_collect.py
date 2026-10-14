@@ -134,6 +134,16 @@ def collectors_for(kind: str) -> list:
     return [k for k, spec in COLLECTORS.items() if kind in spec["products"]]
 
 
+def applies(key: str, appliance) -> bool:
+    """Whether collector ``key`` should own a target on THIS device: the
+    product supports it AND its precondition (``requires``), if any, holds."""
+    spec = COLLECTORS.get(key) or {}
+    if appliance.kind not in spec.get("products", ()):
+        return False
+    req = spec.get("requires")
+    return bool(req(appliance)) if req else True
+
+
 def provisionable(appliance) -> bool:
     """Whether this device should own scrape targets at all.
 
@@ -166,7 +176,7 @@ def ensure_targets(appliance) -> int:
                 ScrapeTarget.query.filter_by(appliance_id=appliance.id).all()}
     created = 0
     for key, spec in COLLECTORS.items():
-        if appliance.kind not in spec["products"] or key in existing:
+        if key in existing or not applies(key, appliance):
             continue
         t = ScrapeTarget(appliance_id=appliance.id, collector=key,
                          interval_min=spec["interval"])

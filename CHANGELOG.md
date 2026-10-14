@@ -28,6 +28,15 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   all, which covers rows inserted by imports or scripts. It does not re-create
   a probe that was deleted on a provisioned device. A test fails if any
   function that creates an appliance skips provisioning.
+- **The `infra` collector works on a mapped device and no longer fails on an
+  unmapped one.** It built the hypervisor VM reference without two required
+  fields, so it raised an error on every device mapped to its VM. Nobody had
+  noticed because no device had been mapped until now. It also gave every
+  FortiWeb and FortiADC an `infra` target that failed every 3 minutes until
+  the device was mapped, and a hardware appliance can never be mapped. The
+  target is now created only once the topology mapping is complete, and the
+  Collection sweep adds it on the next pass after the mapping is saved. A
+  read-only Proxmox API token (role `PVEAuditor`) is enough for this collector.
 - **Device health says when it cuts the list of failing probes**:
   "49/55 probes alerting: a, b, c, d (+45 more)" instead of four names that
   read as the whole list.

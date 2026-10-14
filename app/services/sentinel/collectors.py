@@ -216,7 +216,12 @@ def collect_infra(appliance, params, ts) -> list:
         raise RuntimeError(f"hypervisor target {topo.hypervisor_target_id} is gone")
 
     client = hypervisors.build_client(target, timeout=15)
-    ref = hypervisors.VmRef(identifier=str(topo.vm_id), node=topo.node)
+    # VmRef's backend and name are required fields. This line used to pass
+    # neither, so the collector raised TypeError on EVERY mapped device; it went
+    # unseen because no device had ever been mapped (found 2026-10-14 mapping
+    # the lab VMs on hypervisor03).
+    ref = hypervisors.VmRef(backend=target.backend, identifier=str(topo.vm_id),
+                            name=appliance.name, node=topo.node)
 
     lines: list = []
     vm_labels = _labels(appliance, node=topo.node, vmid=str(topo.vm_id))
@@ -268,8 +273,21 @@ SPECS = {
         "products": ("fortiweb", "fortiadc"),
         "interval": 3, "params": {},
         "runner": collect_infra,
+        # Only once the device is mapped to its VM. Created on every FortiWeb
+        # and FortiADC, the target errored every 3 minutes, forever, on any
+        # device nobody had mapped -- and a HARDWARE appliance can never be
+        # mapped. The Collection sweep re-runs ensure_targets, so a device
+        # mapped later gets the target on the next pass.
+        "requires": lambda appliance: _mapped(appliance),
     },
 }
+
+
+def _mapped(appliance) -> bool:
+    """True when the appliance has a complete Sentinel topology row."""
+    from ...models_sentinel import SentinelTopology
+    topo = SentinelTopology.query.filter_by(appliance_id=appliance.id).first()
+    return bool(topo is not None and topo.complete)
 
 
 def register() -> int:
@@ -288,7 +306,8 @@ def register() -> int:
         mc.COLLECTORS[key] = {"label": spec["label"],
                               "products": spec["products"],
                               "interval": spec["interval"],
-                              "params": spec["params"]}
+                              "params": spec["params"],
+                              "requires": spec.get("requires")}
         mc._RUNNERS[key] = spec["runner"]
         added += 1
     assert set(mc._RUNNERS) == set(mc.COLLECTORS), (

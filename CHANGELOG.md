@@ -34,6 +34,15 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   reboot). The server keeps refusing the mismatch, as before. Documentary
   types with no product declared keep every device.
 - **Change types → Add a change type** offers FortiGate under "Offered for".
+- **New documentary type "Manual change (performed by hand)"**, offered for
+  every product. Production had no documentary type, so a FortiGate could be
+  listed on a change request with no type to raise it with (operator
+  confirmed the recommendation). SATOM executes nothing for it: the change
+  request records scope, window, approval and outcome, and its document has
+  its own text in English and German, not the generic "Action without a
+  profile". It is created once at start-up as an ordinary change type, so an
+  administrator can reword, hide or delete it, and a deleted one is not
+  recreated.
 
 ### Added — Certificate Manager signs with a CA held in an OPNsense firewall (2026-10-15)
 

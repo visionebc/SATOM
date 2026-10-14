@@ -6808,7 +6808,11 @@ any ADOM; the device list shows the appliances that ADOM can see (the Global
 console sees every product), and each device is labelled with its product.
 Choosing an automated type greys out and unticks the devices it does not run
 on (no automated action runs on FortiGate); a documentary type keeps every
-device, or only the products it is offered for.
+device, or only the products it is offered for. SATOM ships one documentary
+type, **Manual change (performed by hand)**, offered for every product: use
+it for work done by hand on any device, FortiGate included. It is an ordinary
+change type under **Administrator → Change Types → Your change types**, so you
+can reword, hide or delete it; once deleted it is not recreated.
 
 **Choosing the action.** The Action dropdown lists every automation that
 touches a device and is either destructive or object-mutating — firmware

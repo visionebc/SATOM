@@ -145,6 +145,8 @@ REQUIRED_PROFILE_KEYS: tuple = (
 
 #: Key of the fallback profile used for any action not profiled below.
 GENERIC_ACTION = "_generic"
+#: The documentary change type SATOM ships (seeded by ``cr_types.seed_defaults``).
+MANUAL_CHANGE = "manual_change"
 
 
 def normalize_lang(value) -> str:
@@ -1618,6 +1620,106 @@ ACTION_PROFILES: dict = {
         "client-authentication", "Clientauthentifizierung",
         "Cert Manager — renew Client certs",
         "Cert Manager — Client-Zertifikate erneuern"),
+    # ---------------------------------------------------------- manual_change
+    #: Not an automation action: the documentary type SATOM ships, seeded once
+    #: as an ordinary change type (``cr_types.SEEDED_TYPES``). Its text is
+    #: compiled here so its document is complete in every language from day one.
+    MANUAL_CHANGE: {
+        "de": {
+            "label": "Manuelle Änderung (von Hand ausgeführt)",
+            "purpose": (
+                "Eine Änderung an den unten aufgeführten Geräten, die von Hand "
+                "ausgeführt wird; SATOM führt dabei nichts aus. Der Change "
+                "Request hält Umfang, Wartungsfenster, Freigabe und Ergebnis "
+                "fest. Die konkrete Tätigkeit beschreibt der Antragsteller "
+                "in Abschnitt 1."),
+            "justification": (
+                "Auch eine Änderung ohne Automatisierung betrifft den "
+                "Datenpfad der genannten Geräte. Über einen Change Request ist "
+                "sie an ein Wartungsfenster gebunden, freigabepflichtig und "
+                "nachvollziehbar dokumentiert."),
+            "impact": (
+                "Die Auswirkung hängt von der Tätigkeit ab und wird nicht "
+                "geraten (— nicht erfasst). Sie ist vor der Freigabe vom "
+                "Antragsteller zu ergänzen; die betroffenen veröffentlichten "
+                "Dienste sind in Abschnitt 10 aufgeführt."),
+            "downtime": (
+                "nicht erfasst — vom Antragsteller vor der Freigabe zu "
+                "ergänzen"),
+            "risk": (
+                "Für eine Tätigkeit von Hand liegt keine Risikobetrachtung vor "
+                "(— nicht erfasst). Es gilt die im Change Request eingetragene "
+                "Einstufung; die konkreten Fehlerbilder sind vor der Freigabe "
+                "zu beschreiben."),
+            "rollback": (
+                "Vor Beginn ein Konfigurations-Backup der betroffenen Geräte "
+                "erstellen.",
+                "Im Fehlerfall den Ausgangszustand von Hand bzw. aus dem "
+                "Backup wiederherstellen.",
+                "Veröffentlichte Dienste erneut prüfen, bevor das Fenster "
+                "geschlossen wird.",
+            ),
+            "work": (
+                "Ausgangszustand der betroffenen Geräte und Dienste festhalten.",
+                "Konfigurations-Backup der betroffenen Geräte erstellen.",
+                "Die beschriebene Tätigkeit im Wartungsfenster von Hand "
+                "ausführen.",
+                "Ergebnis prüfen und im Change Request dokumentieren.",
+            ),
+            "validation": (
+                "Die Geräte sind über ihre Management-Schnittstelle "
+                "erreichbar.",
+                "Alle unten gelisteten veröffentlichten Dienste antworten wie "
+                "vor dem Change.",
+                "Das Ergebnis ist im Change Request festgehalten.",
+            ),
+        },
+        "en": {
+            "label": "Manual change (performed by hand)",
+            "purpose": (
+                "A change to the devices listed below that is performed by "
+                "hand; SATOM executes nothing. The change request records "
+                "scope, maintenance window, approval and outcome. The "
+                "requester describes the actual work in section 1."),
+            "justification": (
+                "A change without automation still touches the data path of "
+                "the devices it names. Through a change request it is bound to "
+                "a maintenance window, subject to approval and documented."),
+            "impact": (
+                "The impact depends on the work and is not guessed (— not "
+                "recorded). The requester must add it before approval; the "
+                "affected published services are listed in section 10."),
+            "downtime": (
+                "not recorded - to be supplied by the requester before "
+                "approval"),
+            "risk": (
+                "No risk assessment is recorded for work done by hand (— not "
+                "recorded). The rating entered on the change request applies; "
+                "the concrete failure modes must be described before "
+                "approval."),
+            "rollback": (
+                "Take a configuration backup of the affected devices before "
+                "starting.",
+                "If something goes wrong, restore the starting state by hand "
+                "or from the backup.",
+                "Re-probe the published services before closing the window.",
+            ),
+            "work": (
+                "Record the starting state of the affected devices and "
+                "services.",
+                "Take a configuration backup of the affected devices.",
+                "Perform the described work by hand inside the maintenance "
+                "window.",
+                "Check the result and record it on the change request.",
+            ),
+            "validation": (
+                "The devices are reachable on their management interface.",
+                "Every published service listed below answers as before the "
+                "change.",
+                "The outcome is recorded on the change request.",
+            ),
+        },
+    },
     # ---------------------------------------------------------------- generic
     GENERIC_ACTION: {
         "de": {

@@ -240,6 +240,10 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   Troubleshooting holds Scout only: Backend Reachability, Config Compare and
   Path Diagnostics work on FortiWeb and FortiADC objects and are no longer
   listed there. The pages still open by URL.
+- **The Fleet health sub-menu is gone.** Device health is a direct entry of
+  Monitoring in every ADOM (in a device ADOM the sub-menu held nothing else);
+  in Global, SATOM health follows it as a direct entry. Pages, URLs and
+  permissions are unchanged.
 
 ### Changed — ADOM Search searches each ADOM's own configuration (2026-10-14)
 

@@ -17,6 +17,9 @@
    2026-08-05: "Fleet health" became a nested submenu holding SATOM health (this
    installation) and Device health (the appliances). SATOM health is Global-only
    and the route enforces it — the entry is simply not offered elsewhere.
+   2026-10-14: the "Fleet health" submenu is gone. Device health is a direct
+   Monitoring entry in every ADOM (in a device ADOM the submenu held only it);
+   SATOM health follows it as a direct entry in Global.
    Collection moved OUT of here into Administrator (partials/nav_collection.html):
    it sets collection policy, it does not display a measurement.
    2026-10-03: a config_write holder WITHOUT user_manage (no Administrator group)
@@ -27,21 +30,16 @@
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-activity fw-nav-icon"></i><span>{{ _('Monitoring') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
 
-    <div class="fw-nav-subgroup {{ 'open' if request.blueprint == 'monitoring' }}" data-nav-subgroup="Fleet health">
-      <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-heart-pulse fw-nav-icon"></i><span>{{ _('Fleet health') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-      <div class="fw-nav-subgroup-body">
-        {% if product.key == 'global' %}
-        {% if may_open('monitoring.satom') %}
-        <a class="fw-nav-item {{ 'active' if request.endpoint == 'monitoring.satom' else '' }}" href="{{ url_for('monitoring.satom', _adom=product.key) }}">
-          <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('SATOM health') }}</span></a>
-        {% endif %}
-        {% endif %}
-        {% if may_open('monitoring.index') %}
-        <a class="fw-nav-item {{ 'active' if request.endpoint == 'monitoring.index' else '' }}" href="{{ url_for('monitoring.index', _adom=product.key) }}">
-          <i class="bi bi-hdd-rack fw-nav-icon"></i><span>{{ _('Device health') }}</span></a>
-        {% endif %}
-      </div>
-    </div>
+    {% if may_open('monitoring.index') %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'monitoring.index' else '' }}" href="{{ url_for('monitoring.index', _adom=product.key) }}">
+      <i class="bi bi-hdd-rack fw-nav-icon"></i><span>{{ _('Device health') }}</span></a>
+    {% endif %}
+    {% if product.key == 'global' %}
+    {% if may_open('monitoring.satom') %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'monitoring.satom' else '' }}" href="{{ url_for('monitoring.satom', _adom=product.key) }}">
+      <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('SATOM health') }}</span></a>
+    {% endif %}
+    {% endif %}
 
     {# Sentinel sits at the TOP of Monitoring on purpose: it is the only
        entry here that answers "what is happening right now" rather than

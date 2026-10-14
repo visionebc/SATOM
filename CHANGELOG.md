@@ -6,6 +6,61 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Diagnostic Battery per ADOM; Diagnose Log Collection in every device ADOM (2026-10-14)
+
+- **Security: the console accepted any `diagnose` command.** The read-only gate
+  (`ssh_ops.assert_readonly`) allowed every line starting with `diagnose` or
+  `diag`, so the appliance SSH Console and the Log Collection custom-commands
+  box would send `diagnose debug kernel sysrq command crash`, `diagnose ha
+  failover …` or `diagnose sys kill …`. Every `diagnose` statement is now
+  checked by name and refused when a word changes the device: kill, clear,
+  reset, delete, failover, sysrq/crash, enable/disable, set, format, fsck,
+  rmmod and similar. Abbreviations count, because the CLI completes them:
+  `diag sys kil 11 1` reads as kill. `get` and `show` are unchanged.
+- **New page: Administrator → Diagnostic Battery** (`user_manage`), in each
+  device ADOM (FortiWeb, FortiADC, FortiGate, FortiAnalyzer,
+  FortiAuthenticator). An administrator chooses the commands that make up the
+  ADOM's battery. Commands can be ticked from a tree discovered on a real
+  device of the ADOM or typed by hand. **Save** keeps the order of the commands
+  already in the battery, and **Reset to default** returns to the product
+  default. The Global ADOM shows a read-only summary of the five batteries.
+- **Discovery reads the device's own `diagnose` tree.** It types `<path> ?` on
+  the device CLI over SSH, walks the tree and stores the result per product and
+  firmware build. Each node is classified by its name and by the device's
+  description of it *before* it is asked, and a refused node is never asked.
+  Measured in the lab: FortiGate 8.0.1, 3,015 nodes in about ten minutes;
+  FortiAnalyzer 7.6.7, 612; FortiADC 8.0.4, 598. FortiWeb and FortiADC close the
+  SSH session when `?` follows a node with exactly one child (`diagnose
+  hardware cpu`), so such a node is read by TAB completion on a new session.
+  When FortiAuthenticator does not answer a `?`, the node is asked again. On
+  FortiWeb, `?` after some leaves runs the (read-only) command, so the page
+  recommends running discovery on a lab unit or in a maintenance window.
+- **The battery rule.** A battery refuses state-changing commands by name, by
+  the device's description of the command or of any parent ("Kill a process.",
+  "set/get debug level…", "Generate one system info log file every 2
+  minutes."), and, because a battery runs unattended, commands that never
+  return, flood the session or send traffic (top, sniffer, debug flow, ping,
+  traceroute, test). The rule is checked when the battery is saved and again
+  before each run.
+- **Diagnose Log Collection moves to Operations › Troubleshooting** in all five
+  device ADOMs; until now it was a FortiWeb-only entry under Operations. It
+  runs the active ADOM's battery, which is listed read-only on the page, with a
+  link to the editor for administrators. If a device's build does not have a
+  command (according to that build's discovery), the command is skipped and the
+  report says `SKIPPED: not present in <build>`. Output such as "Command fail"
+  or "Parsing error" is tagged `[not available on this build]`. The custom box
+  follows the battery rule. The FortiWeb default battery has 28 commands:
+  `diagnose debug proxy log 3` is gone. It printed nothing on 7.6.8 or 8.0.6,
+  and its parent is described as set/get, meaning the trailing number sets a
+  debug level. The other four products start from small measured defaults.
+- **Appliances: "SSH user, if different from the API user".** A FortiGate
+  registered with a REST api-user cannot open SSH with that user. Log
+  collection now logs in with the separate SSH user and the separate SSH
+  password. Before this it sent the API password, which failed on
+  FortiAuthenticator, whose REST key SSH refuses.
+- Migration `diagbat01`: tables `diag_catalogs` and `diag_batteries`, and the
+  column `appliances.ssh_username`.
+
 ### Security — the operator CLI no longer runs the app tree as root (2026-10-14)
 
 - **`satom` under sudo drops to the service account before executing anything

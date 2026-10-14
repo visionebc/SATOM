@@ -7659,10 +7659,13 @@ closes carrying the failure, and the customer notice says the change did not
 happen. Nothing external — NetBox down, a hook erroring, SMTP refusing — can
 change the recorded outcome of the change itself.</p>
 <h2 id="36-putting-any-appliance-under-change-control">36. Putting any appliance under change control</h2>
-<p>A Change Request now covers <strong>FortiWeb, FortiADC, FortiAnalyzer and
-FortiAuthenticator</strong>. Open <strong>Change Requests</strong> from any ADOM; the device list
-shows the appliances that ADOM can see (the Global console sees all four
-products), and each device is labelled with its product.</p>
+<p>A Change Request covers <strong>every product</strong>: FortiWeb, FortiADC,
+FortiAnalyzer, FortiAuthenticator and FortiGate. Open <strong>Change Requests</strong> from
+any ADOM; the device list shows the appliances that ADOM can see (the Global
+console sees every product), and each device is labelled with its product.
+Choosing an automated type greys out and unticks the devices it does not run
+on (no automated action runs on FortiGate); a documentary type keeps every
+device, or only the products it is offered for.</p>
 <p><strong>Choosing the action.</strong> The Action dropdown lists every automation that
 touches a device and is either destructive or object-mutating — firmware
 upgrade and its preparation, the new <strong>Reboot</strong>, enabling/disabling a server

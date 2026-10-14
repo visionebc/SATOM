@@ -2328,6 +2328,18 @@ def create_app(config_override: object | None = None) -> Flask:
             except Exception:  # noqa: BLE001 — never block app start on this
                 logging.getLogger(__name__).warning(
                     "Sentinel collectors could not be registered", exc_info=True)
+            # One worker at a time from here to the log settings: the four
+            # gunicorn workers boot in parallel and raced each other on a new
+            # table's CREATE TABLE (see app/boot_lock.py).
+            from . import boot_lock as _boot_lock
+            # End any transaction an earlier boot step left open: a worker
+            # WAITING here must not hold table locks the lock holder's
+            # ALTER TABLE needs.
+            try:
+                db.session.commit()
+            except Exception:  # noqa: BLE001
+                db.session.rollback()
+            _boot_held = _boot_lock.acquire(db.engine)
             db.create_all()
             _ensure_columns()
             # After the additive pass: a column that already existed may be
@@ -2405,6 +2417,7 @@ def create_app(config_override: object | None = None) -> Flask:
             # application log file at boot (and again on every save).
             from .errors import apply_log_settings
             apply_log_settings()
+            _boot_lock.release(_boot_held)
 
     # -- orphaned background jobs ------------------------------------------
     # A restart kills job worker threads without touching their state files,

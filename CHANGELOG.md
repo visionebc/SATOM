@@ -6,6 +6,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — a release that adds a table no longer takes the web down at boot; one FortiWeb's signature alert no longer silences another's (2026-10-15)
+
+- **Workers no longer race on a new table.** The four web workers each ran
+  the schema bootstrap at the same time. When a release added a table, two of
+  them sent the same `CREATE TABLE`, and the one that lost exited. Gunicorn
+  then stopped the whole web service until systemd restarted it (a1,
+  2026-10-14 10:14, table `diag_catalogs`). The bootstrap now runs one worker
+  at a time behind a Postgres advisory lock. The wait is bounded at 120 s;
+  after that the worker boots unlocked, as before, and logs that it did.
+- **Each FortiWeb has its own signature alert key.** Every "Signature DB
+  stale" and "version unreadable" finding used the same key. So one device's
+  cooldown silenced the alert for a different device for six hours. The key
+  now carries the appliance id, as the device-health findings already did.
+
 ### Changed — every device can be named on a change request, FortiGate included (2026-10-15)
 
 - **A change request can name a device of any product.** The device list

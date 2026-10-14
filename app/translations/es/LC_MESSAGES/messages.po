@@ -20734,7 +20734,7 @@ msgid "Incidents console"
 msgstr "Consola de incidentes"
 
 msgid "Scout — fault isolation"
-msgstr "Scout — aislamiento de fallos"
+msgstr "Scout — diagnóstico de ruta"
 
 msgid "Open Scout"
 msgstr "Abrir Scout"
@@ -23400,32 +23400,32 @@ msgstr "Error de entregabilidad"
 msgid "mail leaves this node unsigned, straight to the recipient mail server. It is delivered, but it may land in spam."
 msgstr "el correo sale de este nodo sin firmar, directo al servidor de correo del destinatario. Se entrega, pero puede acabar en spam."
 
-msgid "Fault Isolation"
-msgstr "Aislamiento de fallos"
+msgid "Path Diagnostics"
+msgstr "Diagnóstico de ruta"
 
-msgid "Fault Isolation — architecture"
-msgstr "Aislamiento de fallos — arquitectura"
+msgid "Path Diagnostics — architecture"
+msgstr "Diagnóstico de ruta — arquitectura"
 
-msgid "Fault Isolation is switched off"
-msgstr "El aislamiento de fallos está desactivado"
+msgid "Path Diagnostics is switched off"
+msgstr "El diagnóstico de ruta está desactivado"
 
-msgid "Fault Isolation is switched off for this site (Settings → Fault Isolation → Availability)."
-msgstr "El aislamiento de fallos está desactivado para este sitio (Configuración → Aislamiento de fallos → Disponibilidad)."
+msgid "Path Diagnostics is switched off for this site (Settings → Path Diagnostics → Availability)."
+msgstr "El diagnóstico de ruta está desactivado para este sitio (Configuración → Diagnóstico de ruta → Disponibilidad)."
 
-msgid "Open Fault Isolation settings"
-msgstr "Abrir la configuración de aislamiento de fallos"
+msgid "Open Path Diagnostics settings"
+msgstr "Abrir la configuración de diagnóstico de ruta"
 
-msgid "Open Fault Isolation"
-msgstr "Abrir aislamiento de fallos"
+msgid "Open Path Diagnostics"
+msgstr "Abrir diagnóstico de ruta"
 
-msgid "Save Fault Isolation settings"
-msgstr "Guardar la configuración de aislamiento de fallos"
+msgid "Save Path Diagnostics settings"
+msgstr "Guardar la configuración de diagnóstico de ruta"
 
 msgid "Enable Scout"
 msgstr "Habilitar Scout"
 
-msgid "Where Fault Isolation ends and Sentinel begins"
-msgstr "Dónde termina el aislamiento de fallos y empieza Sentinel"
+msgid "Where Path Diagnostics ends and Sentinel begins"
+msgstr "Dónde termina el diagnóstico de ruta y empieza Sentinel"
 
 msgid "SATOM no longer reads vendor web sites. Release notes, the Upgrade Advisory, upgrade paths and signature metadata come from signed packs in two lanes: the API pack that ships with each release, and the rolling knowledge pack published whenever the knowledge changes. Every pack is signature-checked on import, and what this node measured itself always wins."
 msgstr "SATOM ya no lee sitios web de fabricantes. Las notas de versión, el Asesor de actualizaciones, las rutas de actualización y los metadatos de firmas provienen de paquetes firmados en dos carriles: el paquete de API que se incluye con cada versión y el paquete de conocimiento continuo publicado cada vez que cambia el conocimiento. Cada paquete se verifica por firma al importarse, y lo que este nodo midió por sí mismo siempre prevalece."
@@ -23448,8 +23448,8 @@ msgstr "Lo que el Asesor de actualizaciones no pudo leer"
 msgid "Ask the Upgrade Advisory to review the release notes for this version"
 msgstr "Pedir al Asesor de actualizaciones que revise las notas de versión de esta versión"
 
-msgid "Turn on Fault Isolation in Settings → Fault Isolation to see the Upgrade Advisory."
-msgstr "Active el aislamiento de fallos en Configuración → Aislamiento de fallos para ver el Asesor de actualizaciones."
+msgid "Turn on Path Diagnostics in Settings → Path Diagnostics to see the Upgrade Advisory."
+msgstr "Active el diagnóstico de ruta en Configuración → Diagnóstico de ruta para ver el Asesor de actualizaciones."
 
 msgid "The Upgrade Advisory read the release notes for this move."
 msgstr "El Asesor de actualizaciones leyó las notas de la versión para este movimiento."
@@ -23457,8 +23457,8 @@ msgstr "El Asesor de actualizaciones leyó las notas de la versión para este mo
 msgid "Upgrade Advisory"
 msgstr "Asesor de actualizaciones"
 
-msgid "Fault Isolation (includes the Upgrade Advisory)"
-msgstr "Aislamiento de fallos (incluye el Asesor de actualizaciones)"
+msgid "Path Diagnostics (includes the Upgrade Advisory)"
+msgstr "Diagnóstico de ruta (incluye el Asesor de actualizaciones)"
 
 #: app/templates/search/results.html
 msgid "Not searched (this search reads FortiWeb and FortiADC only):"

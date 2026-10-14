@@ -2,7 +2,7 @@
    FLEET › TROUBLESHOOTING — ONE definition, EVERY ADOM (operator, 2026-10-13).
 
    Backend Reachability and Config Compare left Operations › Troubleshooting
-   (device ADOMs) and the flat Global Fleet list; Fault Isolation (the page
+   (device ADOMs) and the flat Global Fleet list; Path Diagnostics (the page
    formerly called Scout, blueprint ``scout``) and Scout (formerly AI Advisor,
    blueprint ``advisor``, partials/nav_advisor.html) joined them. Labels
    changed, URLs and blueprints did not.
@@ -10,13 +10,20 @@
    Device ADOMs keep each entry live where its page works for their devices
    and disabled with the reason elsewhere (services/adom_menu.py), exactly as
    Operations drew them. Global draws them live, as its Fleet list did.
+
+   FortiGate, FortiAnalyzer and FortiAuthenticator draw Scout only (operator,
+   2026-10-14): Backend Reachability, Config Compare and Path Diagnostics read
+   FortiWeb/FortiADC objects, so there they were three permanently disabled
+   rows. The pages keep answering by URL.
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
 {% set _ts_dev = product.key != 'global' and not product.placeholder %}
 {% set _ts_two = product.key == 'global' or _ts_dev %}
+{% set _ts_lb = product.key not in ('fortigate', 'fortianalyzer', 'fortiauthenticator') %}
 <div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['reach_batch','config_compare','scout','advisor'] }}" data-nav-subgroup="Troubleshooting">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-life-preserver fw-nav-icon"></i><span>{{ _('Troubleshooting') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
+    {% if _ts_lb %}
     {% if _ts_two and may_open('reach_batch.index') %}
     {% set _m = adom_menu('reach_batch', product) if _ts_dev else none %}
     {% if not _ts_dev or _m.on %}
@@ -33,15 +40,16 @@
     {% endif %}
     {% if scout_on and may_open('scout.index') %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'scout' else '' }}" href="{{ url_for('scout.index') }}">
-      <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Fault Isolation') }}</span></a>
+      <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Path Diagnostics') }}</span></a>
     {% elif not scout_on %}{# Switched off: shown, disabled, with the reason. An ABSENT entry
-       reads as 'this product has no Fault Isolation' and sends the operator
+       reads as 'this product has no Path Diagnostics' and sends the operator
        looking for an installer instead of for the checkbox. Switched on but not
        permitted is hidden like every other entry: "switched off" would be false. #}
     <span class="fw-nav-item disabled text-muted" style="cursor:not-allowed;opacity:.55;"
-          title="{{ _('Fault Isolation is switched off for this site (Settings → Fault Isolation → Availability).') }}">
-      <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Fault Isolation') }}</span>
+          title="{{ _('Path Diagnostics is switched off for this site (Settings → Path Diagnostics → Availability).') }}">
+      <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Path Diagnostics') }}</span>
       <i class="bi bi-slash-circle ms-1 small"></i></span>
+    {% endif %}
     {% endif %}
     {% include 'partials/nav_advisor.html' %}
   </div>

@@ -10622,31 +10622,31 @@ msgstr ""
 msgid "Service Diagram"
 msgstr ""
 
-msgid "Fault Isolation"
+msgid "Path Diagnostics"
 msgstr ""
 
-msgid "Fault Isolation — architecture"
+msgid "Path Diagnostics — architecture"
 msgstr ""
 
-msgid "Fault Isolation is switched off"
+msgid "Path Diagnostics is switched off"
 msgstr ""
 
-msgid "Fault Isolation is switched off for this site (Settings → Fault Isolation → Availability)."
+msgid "Path Diagnostics is switched off for this site (Settings → Path Diagnostics → Availability)."
 msgstr ""
 
-msgid "Open Fault Isolation settings"
+msgid "Open Path Diagnostics settings"
 msgstr ""
 
-msgid "Open Fault Isolation"
+msgid "Open Path Diagnostics"
 msgstr ""
 
-msgid "Save Fault Isolation settings"
+msgid "Save Path Diagnostics settings"
 msgstr ""
 
 msgid "Enable Scout"
 msgstr ""
 
-msgid "Where Fault Isolation ends and Sentinel begins"
+msgid "Where Path Diagnostics ends and Sentinel begins"
 msgstr ""
 
 msgid "SATOM no longer reads vendor web sites. Release notes, the Upgrade Advisory, upgrade paths and signature metadata come from signed packs in two lanes: the API pack that ships with each release, and the rolling knowledge pack published whenever the knowledge changes. Every pack is signature-checked on import, and what this node measured itself always wins."
@@ -10670,7 +10670,7 @@ msgstr ""
 msgid "Ask the Upgrade Advisory to review the release notes for this version"
 msgstr ""
 
-msgid "Turn on Fault Isolation in Settings → Fault Isolation to see the Upgrade Advisory."
+msgid "Turn on Path Diagnostics in Settings → Path Diagnostics to see the Upgrade Advisory."
 msgstr ""
 
 msgid "The Upgrade Advisory read the release notes for this move."
@@ -10679,7 +10679,7 @@ msgstr ""
 msgid "Upgrade Advisory"
 msgstr ""
 
-msgid "Fault Isolation (includes the Upgrade Advisory)"
+msgid "Path Diagnostics (includes the Upgrade Advisory)"
 msgstr ""
 
 #: app/templates/search/results.html

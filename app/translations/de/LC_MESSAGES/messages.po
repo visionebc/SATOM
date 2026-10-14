@@ -20698,7 +20698,7 @@ msgid "Incidents console"
 msgstr "Vorfallskonsole"
 
 msgid "Scout — fault isolation"
-msgstr "Scout — Fehlereingrenzung"
+msgstr "Scout — Pfaddiagnose"
 
 msgid "Open Scout"
 msgstr "Scout öffnen"
@@ -23379,32 +23379,32 @@ msgstr "Zustellbarkeitsfehler"
 msgid "mail leaves this node unsigned, straight to the recipient mail server. It is delivered, but it may land in spam."
 msgstr "E-Mails verlassen diesen Knoten unsigniert und gehen direkt an den Mailserver des Empfängers. Sie werden zugestellt, können aber im Spam landen."
 
-msgid "Fault Isolation"
-msgstr "Fehlereingrenzung"
+msgid "Path Diagnostics"
+msgstr "Pfaddiagnose"
 
-msgid "Fault Isolation — architecture"
-msgstr "Fehlereingrenzung — Architektur"
+msgid "Path Diagnostics — architecture"
+msgstr "Pfaddiagnose — Architektur"
 
-msgid "Fault Isolation is switched off"
-msgstr "Fehlereingrenzung ist ausgeschaltet"
+msgid "Path Diagnostics is switched off"
+msgstr "Pfaddiagnose ist ausgeschaltet"
 
-msgid "Fault Isolation is switched off for this site (Settings → Fault Isolation → Availability)."
-msgstr "Fehlereingrenzung ist für diese Site ausgeschaltet (Einstellungen → Fehlereingrenzung → Verfügbarkeit)."
+msgid "Path Diagnostics is switched off for this site (Settings → Path Diagnostics → Availability)."
+msgstr "Pfaddiagnose ist für diese Site ausgeschaltet (Einstellungen → Pfaddiagnose → Verfügbarkeit)."
 
-msgid "Open Fault Isolation settings"
-msgstr "Einstellungen der Fehlereingrenzung öffnen"
+msgid "Open Path Diagnostics settings"
+msgstr "Einstellungen der Pfaddiagnose öffnen"
 
-msgid "Open Fault Isolation"
-msgstr "Fehlereingrenzung öffnen"
+msgid "Open Path Diagnostics"
+msgstr "Pfaddiagnose öffnen"
 
-msgid "Save Fault Isolation settings"
-msgstr "Einstellungen der Fehlereingrenzung speichern"
+msgid "Save Path Diagnostics settings"
+msgstr "Einstellungen der Pfaddiagnose speichern"
 
 msgid "Enable Scout"
 msgstr "Scout aktivieren"
 
-msgid "Where Fault Isolation ends and Sentinel begins"
-msgstr "Wo die Fehlereingrenzung endet und Sentinel beginnt"
+msgid "Where Path Diagnostics ends and Sentinel begins"
+msgstr "Wo die Pfaddiagnose endet und Sentinel beginnt"
 
 msgid "SATOM no longer reads vendor web sites. Release notes, the Upgrade Advisory, upgrade paths and signature metadata come from signed packs in two lanes: the API pack that ships with each release, and the rolling knowledge pack published whenever the knowledge changes. Every pack is signature-checked on import, and what this node measured itself always wins."
 msgstr "SATOM liest keine Hersteller-Websites mehr. Release Notes, der Upgrade-Berater, Upgrade-Pfade und Signatur-Metadaten stammen aus signierten Paketen in zwei Lanes: dem API-Paket, das mit jedem Release ausgeliefert wird, und dem rollenden Wissenspaket, das veröffentlicht wird, wenn sich das Wissen ändert. Jedes Paket wird beim Import auf seine Signatur geprüft, und was dieser Knoten selbst gemessen hat, hat immer Vorrang."
@@ -23427,8 +23427,8 @@ msgstr "Was der Upgrade-Berater nicht lesen konnte"
 msgid "Ask the Upgrade Advisory to review the release notes for this version"
 msgstr "Den Upgrade-Berater bitten, die Release Notes dieser Version zu prüfen"
 
-msgid "Turn on Fault Isolation in Settings → Fault Isolation to see the Upgrade Advisory."
-msgstr "Schalten Sie die Fehlereingrenzung unter Einstellungen → Fehlereingrenzung ein, um den Upgrade-Berater zu sehen."
+msgid "Turn on Path Diagnostics in Settings → Path Diagnostics to see the Upgrade Advisory."
+msgstr "Schalten Sie die Pfaddiagnose unter Einstellungen → Pfaddiagnose ein, um den Upgrade-Berater zu sehen."
 
 msgid "The Upgrade Advisory read the release notes for this move."
 msgstr "Der Upgrade-Berater hat die Release Notes für diesen Wechsel gelesen."
@@ -23436,8 +23436,8 @@ msgstr "Der Upgrade-Berater hat die Release Notes für diesen Wechsel gelesen."
 msgid "Upgrade Advisory"
 msgstr "Upgrade-Berater"
 
-msgid "Fault Isolation (includes the Upgrade Advisory)"
-msgstr "Fehlereingrenzung (inkl. Upgrade-Berater)"
+msgid "Path Diagnostics (includes the Upgrade Advisory)"
+msgstr "Pfaddiagnose (inkl. Upgrade-Berater)"
 
 #: app/templates/search/results.html
 msgid "Not searched (this search reads FortiWeb and FortiADC only):"

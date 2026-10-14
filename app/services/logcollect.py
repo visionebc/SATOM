@@ -42,9 +42,11 @@ from .ssh_ops import FortiWebReadonlySSH, assert_readonly
 # dropped -- ``diagnose hardware harddisk`` alone answers "you must specify
 # cmd" (its list/info/health/errors/attributes children stay), and
 # ``diagnose system ha export-eventlog`` answers "The number of parameters is
-# incorrect." Five more print nothing on those KVM units without HA (dbsync
-# status, ha dev-info, hardware cpu, debug netstatlog show, debug proxy log 3)
-# and stay: they are expected to answer on hardware or HA units.
+# incorrect." ``diagnose hardware cpu`` printed nothing; ``... cpu list`` (the
+# form Device Health already used) answers on both, so the battery uses it.
+# Four more print nothing on those KVM units without HA (dbsync status, ha
+# dev-info, debug netstatlog show, debug proxy log 3) and stay: they are
+# expected to answer on hardware or HA units.
 DIAGNOSTIC_COMMANDS: list[str] = [
     "get system status",
     "get system performance",
@@ -59,7 +61,7 @@ DIAGNOSTIC_COMMANDS: list[str] = [
     "diagnose system ha sync-stat",
     "diagnose system securitylevel",
     "diagnose hardware sysinfo vm",
-    "diagnose hardware cpu",
+    "diagnose hardware cpu list",
     "diagnose hardware harddisk list",
     "diagnose hardware harddisk info",
     "diagnose hardware harddisk health",

@@ -515,6 +515,23 @@ class FortiWebReadonlySSH:
         self._read(quiet=0.25, maxt=2)
         return raw, returned
 
+    def ask_complete(self, path: str, *, quiet: float = 0.8, maxt: float = 5.0) -> str:
+        """Type ``<path> `` + TAB and return what the shell typed back.
+
+        The fallback for nodes whose ``?`` closes the session (FortiWeb and
+        FortiADC crash on single-child nodes, 2026-10-14). TAB only completes
+        the line — nothing runs — and the line is erased with Ctrl-U after.
+        Same gate as :meth:`ask_help`.
+        """
+        path = assert_help_path(path)
+        if not self._shell:
+            raise FortiSSHError("SSH session is not connected")
+        self._shell.send(path + " \t")
+        raw = self._read(quiet=quiet, maxt=maxt)
+        self._shell.send("\x15")
+        self._read(quiet=0.25, maxt=2)
+        return raw
+
     def run_battery(self, commands: list[str]) -> dict[str, str]:
         """Run a list of read commands → {command: output} (each validated)."""
         return {c: self.run_readonly(c) for c in commands}

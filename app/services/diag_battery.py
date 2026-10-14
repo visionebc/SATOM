@@ -301,10 +301,11 @@ DEADLINE_S = 3600.0
 BUDGET = 8000
 
 
-#: A node that drops the session is recorded and skipped; the walk resumes
-#: on a new session. More drops than this in one shard means something else is
-#: wrong (session limit, the box going away) and the shard stops.
-MAX_RECONNECTS = 25
+#: A node that drops the session is asked again by TAB on a new session. A
+#: FortiWeb 7.6.8 walk drops on every single-child node (dozens), so the limit
+#: is generous; past it something else is wrong (session limit, the box going
+#: away) and the shard stops.
+MAX_RECONNECTS = 150
 
 
 def _walk(snap, roots, budget, deadline_s, tick) -> diag_tree.Walker:

@@ -20,6 +20,10 @@
    Search, DNS Lookup, Troubleshooting ▸ (partials/nav_troubleshooting.html:
    Backend Reachability, Config Compare, Path Diagnostics, Scout), Fleet
    Objects and WAF (FortiWeb and FortiADC ADOMs only) — and Jobs last.
+   Third pass (operator, 2026-10-14): Fleet Objects right below Search;
+   in a device ADOM Automation ▸ follows WAF (follows Troubleshooting where
+   there is no WAF) and Jobs closes the Operations group
+   (partials/nav_operations.html). Global keeps Jobs last here.
 
    Draws the ITEMS only. The caller supplies the wrapper: the Operations group
    in a device ADOM (partials/nav_operations.html — these items lead it; the
@@ -49,6 +53,13 @@
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
   <i class="bi bi-search fw-nav-icon"></i><span>{{ _('Search') }}</span></a>
 {% endif %}
+{# Fleet Objects: the FortiWeb and FortiADC ADOMs only (operator, 2026-10-13)
+   — not Global, FortiGate, FortiAnalyzer or FortiAuthenticator. Right below
+   Search since 2026-10-14 (operator). The page keeps answering by URL. #}
+{% if _pk in ('fortiweb', 'fortiadc') and may_open('fleet_objects.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'fleet_objects' else '' }}" href="{{ url_for('fleet_objects.index') }}">
+  <i class="bi bi-box-seam fw-nav-icon"></i><span>{{ _('Fleet Objects') }}</span></a>
+{% endif %}
 {% if may_open('dns_tool.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'dns_tool' else '' }}" href="{{ url_for('dns_tool.index') }}">
   <i class="bi bi-globe fw-nav-icon"></i><span>{{ _('DNS Lookup') }}</span></a>
@@ -60,23 +71,26 @@
 {% if not (current_user and current_user.can('user_manage')) %}
 {% include 'partials/nav_appliances.html' %}
 {% endif %}
-{# Fleet Objects and WAF: the FortiWeb and FortiADC ADOMs only (operator,
-   2026-10-13) — not Global, FortiGate, FortiAnalyzer or FortiAuthenticator.
-   WAF counts FortiWeb objects, so in FortiADC nav_waf.html still draws it
-   disabled with the reason. The pages keep answering by URL. #}
+{# WAF: the FortiWeb and FortiADC ADOMs only, like Fleet Objects. WAF counts
+   FortiWeb objects, so in FortiADC nav_waf.html still draws it disabled with
+   the reason. #}
 {% if _pk in ('fortiweb', 'fortiadc') %}
-{% if may_open('fleet_objects.index') %}
-<a class="fw-nav-item {{ 'active' if request.blueprint == 'fleet_objects' else '' }}" href="{{ url_for('fleet_objects.index') }}">
-  <i class="bi bi-box-seam fw-nav-icon"></i><span>{{ _('Fleet Objects') }}</span></a>
-{% endif %}
 {% include 'partials/nav_waf.html' %}
+{% endif %}
+{# Automation ▸ (its API ▸ subgroup inside) right below WAF in a device ADOM
+   (operator, 2026-10-14); config_write-gated inside the partial. Global
+   draws Automation as its own group from base.html. #}
+{% if _pk != 'global' %}
+{% include 'partials/nav_automation.html' %}
 {% endif %}
 {# Schema builds / Build compatibility moved to Automation (2026-10-13); only
    a profile that cannot see that group keeps them here. #}
 {% if not (current_user and current_user.can('config_write')) %}
 {% include 'partials/nav_api_library.html' %}
 {% endif %}
-{% if may_open('jobs.manager') %}
+{# Jobs: last of the Global block here; in a device ADOM it closes the
+   Operations group instead (partials/nav_operations.html, operator 2026-10-14). #}
+{% if _pk == 'global' and may_open('jobs.manager') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'jobs' else '' }}" href="{{ url_for('jobs.manager') }}">
   <i class="bi bi-list-task fw-nav-icon"></i><span>{{ _('Jobs') }}</span></a>
 {% endif %}

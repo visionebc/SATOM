@@ -190,7 +190,7 @@
       + `<p class="small mb-${canFix ? '2' : '0'}">${esc(msg)}</p>`
       + (canFix
         ? `<button type="button" class="btn btn-sm btn-primary" id="rnScoutEnable">`
-          + `Turn Fault Isolation on</button>` : '')
+          + `Turn Path Diagnostics on</button>` : '')
       + `</div>`;
   }
 
@@ -275,7 +275,7 @@
     } catch (e) {
       let body = {}; try { body = JSON.parse(e.message); } catch (_) {}
       if (body.disabled) {
-        view.innerHTML = scoutOffHtml(body.error || 'Turn on Fault Isolation in Settings → Fault Isolation to see the Upgrade Advisory.', IS_ADMIN);
+        view.innerHTML = scoutOffHtml(body.error || 'Turn on Path Diagnostics in Settings → Path Diagnostics to see the Upgrade Advisory.', IS_ADMIN);
         const b = $('rnScoutEnable');
         if (b) b.addEventListener('click', () => setScout(true));
       } else {
@@ -292,10 +292,10 @@
       if (sw) sw.checked = !!r.enabled;
       const cur = $('rnAdvCurrent').value, tgt = $('rnAdvTarget').value;
       if (cur && tgt && cur !== tgt) loadScoutAdvisory(cur, tgt);
-      else $('rnScoutView').innerHTML = r.enabled ? '' : scoutOffHtml('Turn on Fault Isolation in Settings → Fault Isolation to see the Upgrade Advisory.', IS_ADMIN);
-      window.FW?.toast?.(r.enabled ? 'Fault Isolation on: the Upgrade Advisory is available.' : 'Fault Isolation off: the Upgrade Advisory is unavailable.', 'info');
+      else $('rnScoutView').innerHTML = r.enabled ? '' : scoutOffHtml('Turn on Path Diagnostics in Settings → Path Diagnostics to see the Upgrade Advisory.', IS_ADMIN);
+      window.FW?.toast?.(r.enabled ? 'Path Diagnostics on: the Upgrade Advisory is available.' : 'Path Diagnostics off: the Upgrade Advisory is unavailable.', 'info');
     } catch (e) {
-      window.FW?.toast?.('Could not change the Fault Isolation switch: ' + e.message, 'warning');
+      window.FW?.toast?.('Could not change the Path Diagnostics switch: ' + e.message, 'warning');
     }
   }
 

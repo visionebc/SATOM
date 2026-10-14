@@ -3428,9 +3428,9 @@ def save_scout():
     audit.log_action('scout.settings', target='settings',
                      detail=', '.join(changed) or 'no change')
     if changed:
-        flash('Fault Isolation settings saved: %d changed.' % len(changed), 'success')
+        flash('Path Diagnostics settings saved: %d changed.' % len(changed), 'success')
     else:
-        flash('Fault Isolation settings unchanged.', 'info')
+        flash('Path Diagnostics settings unchanged.', 'info')
     if clamped:
         flash('Clamped to their allowed range: ' + ', '.join(clamped),
               'warning')

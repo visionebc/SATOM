@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Security — the operator CLI no longer runs the app tree as root (2026-10-14) · 59 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Security — the operator CLI no longer runs the app tree as root (2026-10-14) · 60 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Security — the operator CLI no longer runs the app tree as root (2026-10-14) · 59 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Security — the operator CLI no longer runs the app tree as root (2026-10-14) · 60 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Security — the operator CLI no longer runs the app tree as root (2026-10-14) · 59 entries</span>
-        <ul class="rel-leads"><li>satom under sudo drops to the service account before executing anything from /opt/satom</li><li>Root no longer writes or chowns through the service account&#x27;s directories</li><li>Signed-release enforcement is activatable without blocking HA</li><li class="rel-more">… and 56 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Security — the operator CLI no longer runs the app tree as root (2026-10-14) · 60 entries</span>
+        <ul class="rel-leads"><li>satom under sudo drops to the service account before executing anything from /opt/satom</li><li>Root no longer writes or chowns through the service account&#x27;s directories</li><li>Signed-release enforcement is activatable without blocking HA</li><li class="rel-more">… and 57 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.1.0.html" data-rel-version="3.1.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.1.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -467,18 +467,22 @@
 <h3 id="changed--navigation-labels-2026-10-14">Changed — navigation labels (2026-10-14)</h3>
 <ul>
 <li><strong>Fleet › Troubleshooting</strong> in every ADOM holds Backend Reachability,
-  Config Compare, Fault Isolation and Scout; the separate Troubleshooting
+  Config Compare, Path Diagnostics and Scout; the separate Troubleshooting
   entries under Operations and the flat entries in the Global Fleet list are
   gone. Fleet runs Dashboard (where an ADOM has one), Calendar, Architecture,
   Service Diagram, Monitoring, Search, DNS Lookup, Troubleshooting, then Fleet
   Objects and WAF (FortiWeb and FortiADC ADOMs only) and Jobs last.</li>
-<li>The fault-localisation ladder formerly called "Scout" is labelled <strong>Fault
-  Isolation</strong>; the AI assistant formerly called "AI Advisor" is labelled
+<li>The fault-localisation ladder formerly called "Scout" is labelled <strong>Path
+  Diagnostics</strong>; the AI assistant formerly called "AI Advisor" is labelled
   <strong>Scout</strong>; the firmware release-notes reviewer formerly shown as "Scout" is
-  the <strong>Upgrade Advisory</strong>, and when it is unavailable it says Fault Isolation
-  must be switched on in Settings → Fault Isolation — the switch it actually
+  the <strong>Upgrade Advisory</strong>, and when it is unavailable it says Path Diagnostics
+  must be switched on in Settings → Path Diagnostics — the switch it actually
   uses. Menu, page titles, settings panes and messages; URLs and bookmarks are
   unchanged.</li>
+<li>In the FortiGate, FortiAnalyzer and FortiAuthenticator ADOMs, Fleet ›
+  Troubleshooting holds Scout only: Backend Reachability, Config Compare and
+  Path Diagnostics work on FortiWeb and FortiADC objects and are no longer
+  listed there. The pages still open by URL.</li>
 </ul>
 <h3 id="changed--search-is-titled-adom-search-2026-10-14">Changed — Search is titled ADOM Search (2026-10-14)</h3>
 <ul>

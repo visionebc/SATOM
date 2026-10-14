@@ -108,18 +108,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ### Changed — navigation labels (2026-10-14)
 
 - **Fleet › Troubleshooting** in every ADOM holds Backend Reachability,
-  Config Compare, Fault Isolation and Scout; the separate Troubleshooting
+  Config Compare, Path Diagnostics and Scout; the separate Troubleshooting
   entries under Operations and the flat entries in the Global Fleet list are
   gone. Fleet runs Dashboard (where an ADOM has one), Calendar, Architecture,
   Service Diagram, Monitoring, Search, DNS Lookup, Troubleshooting, then Fleet
   Objects and WAF (FortiWeb and FortiADC ADOMs only) and Jobs last.
-- The fault-localisation ladder formerly called "Scout" is labelled **Fault
-  Isolation**; the AI assistant formerly called "AI Advisor" is labelled
+- The fault-localisation ladder formerly called "Scout" is labelled **Path
+  Diagnostics**; the AI assistant formerly called "AI Advisor" is labelled
   **Scout**; the firmware release-notes reviewer formerly shown as "Scout" is
-  the **Upgrade Advisory**, and when it is unavailable it says Fault Isolation
-  must be switched on in Settings → Fault Isolation — the switch it actually
+  the **Upgrade Advisory**, and when it is unavailable it says Path Diagnostics
+  must be switched on in Settings → Path Diagnostics — the switch it actually
   uses. Menu, page titles, settings panes and messages; URLs and bookmarks are
   unchanged.
+- In the FortiGate, FortiAnalyzer and FortiAuthenticator ADOMs, Fleet ›
+  Troubleshooting holds Scout only: Backend Reachability, Config Compare and
+  Path Diagnostics work on FortiWeb and FortiADC objects and are no longer
+  listed there. The pages still open by URL.
 
 ### Changed — Search is titled ADOM Search (2026-10-14)
 

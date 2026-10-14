@@ -1860,8 +1860,8 @@ against what the devices say.
   read or linked; each product ADOM sees only its own appliances, so a drawing
   that mixes products is fully readable only from the Global ADOM. Binding an element to a
   device you cannot see is refused on save.
-- **Fault Isolation and Sentinel.** A bound device element links to its Device page,
-  to **Fault Isolation** with that appliance already selected, and to **Sentinel**.
+- **Path Diagnostics and Sentinel.** A bound device element links to its Device page,
+  to **Path Diagnostics** with that appliance already selected, and to **Sentinel**.
 - **Layers.** **L2** draws ports, MAC, speed, link state (green up, red down)
   and VLAN on the firewall links, and on each host the MAC the FortiGate
   learned for its address. **L3** shows addresses, routes and the policy
@@ -1875,7 +1875,7 @@ against what the devices say.
   each firewall with ingress → egress interface, matched policy and action.
   A firewall that cannot be read is listed with its error, never skipped. A
   public address with no network drawn for it lands on the Internet element.
-  TCP traces through a FortiWeb or FortiADC offer **Validate with Fault Isolation**.
+  TCP traces through a FortiWeb or FortiADC offer **Validate with Path Diagnostics**.
   A trace stops after six firewalls ("more than 6 firewalls: stopped"), and
   every trace is written to the audit log as `netarch.trace`.
 - **Adding elements.** **Elements** opens a palette with every appliance of
@@ -1896,7 +1896,7 @@ against what the devices say.
   management hosts), link them, and SATOM lays the devices' own data on top:
   FortiGate interfaces and policies with hit counters, each policy drawn from
   its source segment to its destination segment, and an HTTP probe of every
-  back-end with a URL. Device elements link to Fault Isolation and Sentinel.
+  back-end with a URL. Device elements link to Path Diagnostics and Sentinel.
 - **Service Diagram** — an SVG network-design diagram of the whole fleet:
   Internet → published services (VIP:port, TLS lock) → appliance chassis →
   pools → backend stacks, grouped in zones. Hover lights up a service's full
@@ -1935,9 +1935,11 @@ against what the devices say.
   (AdGuard/OPNsense/etc., admin-configurable list) and simultaneously match it
   against the fleet's load-balancing config: which policy/virtual server
   publishes it, with a mini policy→pool→backend graph and config deep links.
-- **Where these live:** Backend Reachability, Config Compare, Fault Isolation
+- **Where these live:** Backend Reachability, Config Compare, Path Diagnostics
   and Scout sit together under **Fleet › Troubleshooting** in every ADOM
   (since 2026-10-14; before that they were spread over Operations and Fleet).
+  The FortiGate, FortiAnalyzer and FortiAuthenticator ADOMs list Scout only
+  there: the other three work on FortiWeb and FortiADC objects.
 - **Backend Reachability** — paste or upload a list of
   `source;policy;destination` lines and ask one question per line: *do the real
   servers behind this policy answer, on the source box and then on the
@@ -3674,12 +3676,12 @@ rendered at all, so the menu never offers a section that is not there.
 | **My Account** | Security · Change Password |
 | **Monitoring & Alerts** | Email & Alerts · Thresholds |
 | **Sentinel** | Settings · Context · Response policy · Border blocklist · Architecture · Incidents console |
-| **Fault Isolation** | Settings · Architecture |
+| **Path Diagnostics** | Settings · Architecture |
 
 The **Scout** panel (the AI assistant, §33) additionally needs
 `advisor.configure`; an admin without it does not see the entry. **Sentinel**
-and **Fault Isolation** settings are admin-only end to end: saving them
-(including Fault Isolation's site-wide on/off switch)
+and **Path Diagnostics** settings are admin-only end to end: saving them
+(including Path Diagnostics's site-wide on/off switch)
 needs *Manage users*, the same as seeing the panes. Sentinel's AI reasoning
 ships with an empty model endpoint and stays off until one is set (for example
 `http://localhost:11434`), even if its switch is on.
@@ -3692,13 +3694,13 @@ tab. It is where SATOM is wired to systems it does not own — NetBox
 menu entry at all until 2026-09-21; the page existed and worked, but the only
 way to reach it was to type `/settings/integrations`.
 
-**Fault Isolation is its own group, below Sentinel.** Its *Settings* panel holds only
+**Path Diagnostics is its own group, below Sentinel.** Its *Settings* panel holds only
 *where to look and how long to wait* — the default look-back window, the
 FortiAnalyzer ADOM and device selector the border rung queries, the two
 timeouts. What a verdict **means** is on the same panel as a read-only table:
 the dominant-phase share and floor, the signals that count as an appliance
 being unfit to serve, the order conflicting border rows are resolved in, and
-the methods Fault Isolation is permitted to send. Those are shown rather than offered on
+the methods Path Diagnostics is permitted to send. Those are shown rather than offered on
 purpose — editing a threshold makes whoever changed it a second author of every
 report already filed, and an archived report says nothing about the values in
 force when it was written. Each row names the symbol it is read from, and the
@@ -3706,7 +3708,7 @@ values are read off the engine when the page renders, so the table cannot drift
 from the code. *Architecture* renders the ten rungs from the same tuple the
 engine walks.
 
-**A typed Published host follows the free-target rule.** Left blank, Fault Isolation
+**A typed Published host follows the free-target rule.** Left blank, Path Diagnostics
 dials the object's VIP as the device reports it. A host you type is dialled
 only if the appliance publishes it — its own address on its management or SSH
 port, or one of its published services on that service's own port —

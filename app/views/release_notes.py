@@ -237,7 +237,7 @@ def advisory():
     set, a seal, and a coverage statement, and it can be switched off."""
     if not scout_config.enabled():
         return jsonify({"disabled": True,
-                        "error": "Turn on Fault Isolation in Settings → Fault Isolation to see the Upgrade Advisory."}), 503
+                        "error": "Turn on Path Diagnostics in Settings → Path Diagnostics to see the Upgrade Advisory."}), 503
     current = (request.args.get("current") or "").strip()
     target = (request.args.get("target") or "").strip()
     if not current or not target:

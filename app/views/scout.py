@@ -34,8 +34,8 @@ bp = Blueprint("scout", __name__, url_prefix="/scout")
 
 #: Said once, so the page, the JSON endpoint and the disabled menu entry cannot
 #: drift into three different explanations of the same switch.
-OFF_MESSAGE = ("Fault Isolation is switched off for this site. An administrator can turn "
-               "it back on under Settings → Fault Isolation → Availability.")
+OFF_MESSAGE = ("Path Diagnostics is switched off for this site. An administrator can turn "
+               "it back on under Settings → Path Diagnostics → Availability.")
 
 
 @bp.before_request

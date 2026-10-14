@@ -35,7 +35,7 @@ from .release_notes import version_tuple
 #: Why there is no advisory. Declared as constants because the template, the
 #: JSON and the guards must all name the same condition — three spellings of
 #: "Scout is off" is how a panel ends up claiming a review that never ran.
-OFF = "Turn on Fault Isolation in Settings → Fault Isolation to see the Upgrade Advisory."
+OFF = "Turn on Path Diagnostics in Settings → Path Diagnostics to see the Upgrade Advisory."
 NOT_ASKED = "The Upgrade Advisory was not asked to review this move."
 NO_CORPUS_FOR_PRODUCT = ("No release notes are harvested for this product, so "
                          "the Upgrade Advisory has nothing to read.")

@@ -112,7 +112,9 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   FortiWeb 7.6.8 or 8.0.6: `diagnose hardware harddisk` on its own (it only
   prints "you must specify cmd"; its list, info, health, errors and attributes
   sub-commands stay) and `diagnose system ha export-eventlog` (it needs
-  parameters). The firmware-flash before/after battery reuses the same list.
+  parameters). `diagnose hardware cpu` printed nothing on both builds and is
+  now `diagnose hardware cpu list`, which answers. The firmware-flash
+  before/after battery reuses the same list.
 - **The Fleet group is gone; Operations is the first group of every device
   ADOM.** It opens with the fleet pages and then holds Device Backups, Log
   Collection and Import Backup (and Template Library for profiles outside

@@ -4842,9 +4842,9 @@ own labelled `.txt`.
   device, because it opens an administrative SSH session with the stored
   credentials.
 - The battery is the same on FortiWeb 7.6.8 and 8.0.6 (measured). A few entries
-  print nothing on a VM without HA (DB sync status, HA device info, hardware
-  CPU, netstat log, proxy debug log); that is expected, and they answer on HA or
-  hardware units.
+  print nothing on a VM without HA (DB sync status, HA device info, netstat
+  log, proxy debug log); that is expected, and they answer on HA or hardware
+  units.
 
 ### 27.2 Import Backup — parse a config file with no appliance at all
 

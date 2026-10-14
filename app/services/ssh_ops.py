@@ -272,9 +272,9 @@ def flash_battery() -> list[str]:
     """Full read-only diagnostic battery captured before/after a firmware flash.
 
     Reuses the COMPLETE ``logcollect.DIAGNOSTIC_COMMANDS`` set (parity with the
-    desktop upgrade runbook — 29 commands since 2026-10-14) plus ``diagnose policy total-list``,
+    desktop upgrade runbook — 28 commands since 2026-10-14) plus ``diagnose policy total-list``,
     the one health signal the web flash report wants that the shared battery
-    omits (→ 30 total). Imported lazily because ``logcollect`` imports from
+    omits (→ 29 total). Imported lazily because ``logcollect`` imports from
     this module, so a top-level import would create a circular import.
     """
     from .logcollect import DIAGNOSTIC_COMMANDS  # lazy: breaks the import cycle

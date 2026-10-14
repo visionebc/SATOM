@@ -49,11 +49,12 @@ DEFAULTS: dict[str, list[str]] = {
     "fortiadc": [
         # ``diagnose hardware get sysinfo`` / ``deviceinfo`` bare answer
         # "Incorrect number of parameters" on 7.6.7 and 8.0.4: their leaves.
+        # (``sysinfo df`` fails on 8.0.4 -- "Command fail ... Error opening
+        # file" -- and ``diagnose system df`` below answers the same question.)
         "get system status",
         "get system performance",
         "diagnose hardware get sysinfo cpu",
         "diagnose hardware get sysinfo memory",
-        "diagnose hardware get sysinfo df",
         "diagnose hardware get deviceinfo nic",
         "diagnose system df",
         "diagnose system memory",

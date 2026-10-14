@@ -57,7 +57,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   and its parent is described as set/get, meaning the trailing number sets a
   debug level. The other four products start from defaults that ran on the lab
   devices: FortiAnalyzer 7.6.7 has no `diagnose debug crashlog read`, and
-  FortiADC uses the `sysinfo`/`deviceinfo` leaves (`cpu`, `memory`, `df`,
+  FortiADC uses the `sysinfo`/`deviceinfo` leaves (`cpu`, `memory`,
   `nic`).
 - **Appliances: "SSH user, if different from the API user".** A FortiGate
   registered with a REST api-user cannot open SSH with that user. Log

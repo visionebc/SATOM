@@ -127,6 +127,10 @@ _READ_HEADS = frozenset({"show", "get", "list", "display", "print"})
 # Refused when spelled, never the target of an abbreviation: every prefix of
 # ``debugall`` is also a prefix of ``debug``, the branch all five products have.
 _NO_ABBREV = frozenset({"debugall"})
+# Refused only as a whole token: ``diagnose ip router ospf level error`` and
+# ``diagnose debug kernel level 7`` SET a debug level (fgt02 8.0.1), while
+# ``securitylevel`` / ``log-level-info`` names are reads.
+EXACT_STATE_WORDS: frozenset[str] = frozenset({"level"})
 _READ_TAILS = frozenset({"status", "info", "list", "stats", "stat", "show"})
 
 
@@ -138,7 +142,7 @@ def _word_hit(tok: str, words: frozenset[str]) -> tuple[str, str] | None:
     application <daemon> traceall``); ``abbrev`` (the CLI completes a unique
     prefix: ``kil`` runs ``kill``).
     """
-    if tok in words:
+    if tok in words or (words is STATE_WORDS and tok in EXACT_STATE_WORDS):
         return tok, "exact"
     if tok.endswith("all") and tok[:-3] in words:
         return tok[:-3], "part"

@@ -47,6 +47,20 @@ from .fortiweb_ops import FortiWebOps
 
 logger = logging.getLogger(__name__)
 
+#: Device kinds whose certificate stores SATOM reads and deploys to: FortiWeb
+#: (REST cmdb + SSH X.509 detail) and FortiADC (REST, services/cert_adc.py).
+#: Every per-kind dispatcher below sends anything that is not FortiADC down the
+#: FortiWeb path, so a FortiGate reached that path with FortiWeb calls and was
+#: reported "Unreachable". The device lists, the scans and the sidebar
+#: (services/adom_menu.py) all read this one tuple.
+CERT_KINDS = ("fortiweb", "fortiadc")
+
+
+def supports_kind(appliance) -> bool:
+    """Whether SATOM manages certificates on *appliance*'s kind (None = FortiWeb)."""
+    return (getattr(appliance, "kind", None) or "fortiweb") in CERT_KINDS
+
+
 SERVER_POLICY_EP = "/api/v2.0/cmdb/server-policy/policy"
 # The policy fields that can bind a Local certificate (checked for "in use").
 _CERT_BIND_FIELDS = ("certificate", "sni-certificate", "ssl-client-verify")
@@ -1289,10 +1303,13 @@ def list_device_certificates(appliances, *, timeout: float = 6.0) -> list[dict]:
     entry shape). Best-effort — an unreachable box is marked ``online=False``
     (its first store GET failed) and the sweep moves on; a store missing on a
     given firmware just contributes nothing. No SSH, no ADCS, never raises.
+    Kinds outside :data:`CERT_KINDS` are skipped, not swept with FortiWeb calls.
     """
     from . import cert_adc
     out: list[dict] = []
     for a in appliances:
+        if not supports_kind(a):
+            continue
         if getattr(a, "kind", "fortiweb") == "fortiadc":
             entry = cert_adc.sweep_certificates(a, timeout=timeout)
             for c in entry["certs"]:
@@ -1496,6 +1513,11 @@ def scan_device_certificates(appliance, *, with_bindings: bool = True,
 
     Returns ``{ok, online, appliance, scanned, detailed, error}``.
     """
+    if not supports_kind(appliance):
+        return {"ok": False, "online": False, "appliance": appliance.name,
+                "scanned": 0, "detailed": 0,
+                "error": (f"certificate management is not available for "
+                          f"{appliance.kind} (FortiWeb and FortiADC only)")}
     if getattr(appliance, "kind", "fortiweb") == "fortiadc":
         return _scan_adc_certificates(appliance, with_bindings=with_bindings,
                                       timeout=timeout)
@@ -1690,7 +1712,8 @@ def stored_device_certificates(appliances) -> dict:
 
 
 __all__ = [
-    "CertManagerError", "generate_csr", "sign_csr", "parse_certificate",
+    "CERT_KINDS", "supports_kind",
+    "CertManagerError","generate_csr", "sign_csr", "parse_certificate",
     "cert_name_for", "create_certificate", "renew_certificate",
     "read_bindings", "read_bindings_for", "swap_binding", "confirm_swap",
     "cert_usage", "device_cert_detail_via_ssh",

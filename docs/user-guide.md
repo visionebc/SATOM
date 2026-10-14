@@ -262,8 +262,10 @@ and ends with the **Automation** sub-menu;
 no separate **Fleet** group, and no separate Automation group in a device ADOM
 (the Global ADOM keeps Automation as a group). The **API** console
 (Registry & console) is a sub-menu of Automation. **Appliances** is under
-Administrator; **Schema builds**, **Build compatibility** and (Global)
-**Certificate Manager** are under Automation; **Studio** is a sub-menu of
+Administrator; **Schema builds**, **Build compatibility** and
+**Certificate Manager** are under Automation (Certificate Manager in every
+ADOM: live in Global, FortiWeb and FortiADC, drawn disabled with the reason in
+FortiGate, FortiAnalyzer and FortiAuthenticator); **Studio** is a sub-menu of
 Administrator. The Global ADOM keeps its **Global** block for the fleet pages
 and has no Operations group. A profile that cannot see one of those groups
 keeps the entry where it was before — Appliances and the API library under
@@ -1618,8 +1620,13 @@ builds its approval covers.
 
 ## 10. Certificate Manager
 
-Global ADOM → **Certificate Manager** (product-scoped: in the FortiWeb ADOM
-you see FortiWeb material, in ADC the ADC material).
+Automation → **Certificate Manager** — in the Global ADOM, and in every device
+ADOM under Operations › Automation (product-scoped: in the FortiWeb ADOM you
+see FortiWeb material, in ADC the ADC material, in Global both). SATOM manages
+certificates on FortiWeb and FortiADC only, so the FortiGate, FortiAnalyzer
+and FortiAuthenticator ADOMs show the entry disabled with that reason, and
+Global's **Scan devices** skips those kinds instead of listing them as
+unreachable. Administrator role (`user_manage`) required.
 
 - **Inventory & scan:** sweeps each device's certificate stores (FortiWeb via
   REST/SSH, FortiADC via REST), parses X.509 (CN, SANs, issuer, validity) and

@@ -381,8 +381,10 @@ and ends with the <strong>Automation</strong> sub-menu;
 no separate <strong>Fleet</strong> group, and no separate Automation group in a device ADOM
 (the Global ADOM keeps Automation as a group). The <strong>API</strong> console
 (Registry &amp; console) is a sub-menu of Automation. <strong>Appliances</strong> is under
-Administrator; <strong>Schema builds</strong>, <strong>Build compatibility</strong> and (Global)
-<strong>Certificate Manager</strong> are under Automation; <strong>Studio</strong> is a sub-menu of
+Administrator; <strong>Schema builds</strong>, <strong>Build compatibility</strong> and
+<strong>Certificate Manager</strong> are under Automation (Certificate Manager in every
+ADOM: live in Global, FortiWeb and FortiADC, drawn disabled with the reason in
+FortiGate, FortiAnalyzer and FortiAuthenticator); <strong>Studio</strong> is a sub-menu of
 Administrator. The Global ADOM keeps its <strong>Global</strong> block for the fleet pages
 and has no Operations group. A profile that cannot see one of those groups
 keeps the entry where it was before — Appliances and the API library under
@@ -1785,8 +1787,13 @@ the gate starts to bite on its own once a sweep or a knowledge pack records
 those fields. Line Profiles show the build of each line's WPP template and the
 builds its approval covers.</p>
 <h2 id="10-certificate-manager">10. Certificate Manager</h2>
-<p>Global ADOM → <strong>Certificate Manager</strong> (product-scoped: in the FortiWeb ADOM
-you see FortiWeb material, in ADC the ADC material).</p>
+<p>Automation → <strong>Certificate Manager</strong> — in the Global ADOM, and in every device
+ADOM under Operations › Automation (product-scoped: in the FortiWeb ADOM you
+see FortiWeb material, in ADC the ADC material, in Global both). SATOM manages
+certificates on FortiWeb and FortiADC only, so the FortiGate, FortiAnalyzer
+and FortiAuthenticator ADOMs show the entry disabled with that reason, and
+Global's <strong>Scan devices</strong> skips those kinds instead of listing them as
+unreachable. Administrator role (<code>user_manage</code>) required.</p>
 <ul>
 <li><strong>Inventory &amp; scan:</strong> sweeps each device's certificate stores (FortiWeb via
   REST/SSH, FortiADC via REST), parses X.509 (CN, SANs, issuer, validity) and

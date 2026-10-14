@@ -40,6 +40,7 @@
 {% set _m_mr = adom_menu('migration_report', product) %}
 {% set _m_au = adom_menu('automations', product) %}
 {% set _m_pr = adom_menu('provisioning', product) %}
+{% set _m_cm = adom_menu('cert_manager', product) %}
 {% endif %}
 {% set _auto_bps = ['upgrade_flow','migration_report','automations','scheduled_actions','device_provision','provisioning','change_requests','schema_builds','build_compat','cert_manager'] %}
 {# Device ADOMs: a subgroup of Operations since 2026-10-14 (operator), included
@@ -131,13 +132,17 @@
        here since (operator). Device ADOMs only; registry.view still gates it
        (partials/_nav_api.html). #}
     {{ api_menu(true) }}
-    {# Moved here from Fleet (2026-10-13). Certificate Manager stays Global-only:
-       in the device ADOMs its blueprint is outside the allowlists and the
-       link would bounce to the ADOM home. #}
+    {# Moved here from Fleet (2026-10-13). Global-only until 2026-10-14; since
+       then every device ADOM draws it too (operator): live where SATOM manages
+       that kind's certificates (cert_manager.CERT_KINDS, read through
+       services/adom_menu.py, which also opens the product gate), disabled
+       with the reason elsewhere. The page lists only the ADOM's own devices. #}
     {% include 'partials/nav_api_library.html' %}
-    {% if product.key == 'global' and current_user.can('user_manage') and may_open('cert_manager.index') %}
+    {% if (product.key == 'global' or _dev) and current_user.can('user_manage') and may_open('cert_manager.index') %}
+    {% if product.key == 'global' or _m_cm.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'cert_manager' else '' }}" href="{{ url_for('cert_manager.index', _adom=product.key) }}">
       <i class="bi bi-shield-lock fw-nav-icon"></i><span>{{ _('Certificate Manager') }}</span></a>
+    {% else %}{{ nav_off('bi-shield-lock', _('Certificate Manager'), _m_cm.reason) }}{% endif %}
     {% endif %}
     {# Device Console needs config_write, but its entry lives in the
        Administrator group, which only user_manage holders see. Operators

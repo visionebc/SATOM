@@ -6,6 +6,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — Certificate Manager in every ADOM (2026-10-14)
+
+- **Certificate Manager is now in every device ADOM**, in Operations ›
+  Automation, as it already was in the Global ADOM's Automation group (operator
+  request: "put Certificate Manager in every ADOM inside Operations, as it
+  is"). It is live in FortiWeb and FortiADC and lists only that ADOM's
+  devices. In FortiGate, FortiAnalyzer and FortiAuthenticator it is drawn
+  disabled with the reason: SATOM reads and deploys certificates on FortiWeb
+  and FortiADC only. It still requires the administrator role.
+- **Fixed: Global's Scan devices no longer sends FortiWeb calls to other
+  products.** The Global device list included FortiGate, FortiAnalyzer and
+  FortiAuthenticator. The scan sent them FortiWeb REST and SSH calls, then
+  reported them as unreachable. The device lists, the scans and the sidebar
+  now read one list of supported kinds.
+
 ### Fixed — proxyd no longer reported as "NOT running" when it is at 100 % CPU (2026-10-14)
 
 - **The proxyd deep monitor read a daemon at full CPU as a dead one.** In

@@ -46,9 +46,15 @@ def _product_kind() -> str:
 
 
 def _kind_scoped(query):
-    """Apply the active ADOM's kind filter; Global passes everything."""
+    """Apply the active ADOM's kind filter, then keep only the kinds SATOM
+    manages certificates on (``cm.CERT_KINDS``). Global used to pass every
+    kind, so Scan devices aimed FortiWeb calls at FortiGate, FortiAnalyzer and
+    FortiAuthenticator and listed them as unreachable."""
     kind = _product_kind()
-    return query.filter(Appliance.kind == kind) if kind else query
+    if kind:
+        query = query.filter(Appliance.kind == kind)
+    return query.filter(db.or_(Appliance.kind.in_(cm.CERT_KINDS),
+                               Appliance.kind.is_(None)))
 
 
 def _fortiweb_appliances():

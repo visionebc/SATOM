@@ -17,7 +17,7 @@ A Flask application that administers a fleet of FortiWeb appliances:
 - **Exceptions & signature carve-outs** authored as desired-state and injected to
   the box on demand.
 - **Service Diagram** (network-design diagram), **Analysis**
-  (FortiView + packet capture), **Backups**, **Log Collection**, **Rediscovery**,
+  (FortiView + packet capture), **Backups**, **Diagnose Log Collection**, **Rediscovery**,
   **Policy Inspector**, **Firmware upgrade** runbooks, **Change Requests**, and
   **Scheduled Actions**.
 - **Registry**: a versioned catalog of REST endpoints (Postgres-backed) that

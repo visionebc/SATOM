@@ -1,4 +1,4 @@
-"""Log Collection — run the read-only get/diagnose battery over SSH per device.
+"""Diagnose Log Collection — run the read-only get/diagnose battery over SSH per device.
 
 Web counterpart of the desktop Logs page (``app/ui/pages/logs_page.py``). Tick
 FortiWeb appliances, give the run a label, collect the read-only diagnostic

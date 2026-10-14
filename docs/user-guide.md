@@ -256,7 +256,7 @@ in the same order around the device menu: **Operations** first, the device
 menu, **Automation**, **Administrator**, Plugins. Operations opens with the
 fleet pages (Dashboard where the ADOM has one, Calendar, Architecture, Service
 Diagram, Monitoring, Search, DNS Lookup, Troubleshooting, Fleet Objects and WAF
-in FortiWeb and FortiADC, Jobs) and then holds Device Backups, Log Collection
+in FortiWeb and FortiADC, Jobs) and then holds Device Backups, Diagnose Log Collection
 and Import Backup; there is no separate **Fleet** group. The **API** console
 (Registry & console) is a sub-menu of Automation. **Appliances** is under
 Administrator; **Schema builds**, **Build compatibility** and (Global)
@@ -1761,7 +1761,7 @@ nothing else, can rebuild the installation from any copy.
   **unreachable** envelope. A node with no envelope is noisy on purpose.
 
 
-Its two nav siblings under **Operations** — Log Collection and Import Backup —
+Its two nav siblings under **Operations** — Diagnose Log Collection and Import Backup —
 are §27. Neither is a backup: one collects read-only diagnostics over SSH, the
 other parses a config file entirely offline.
 
@@ -2736,7 +2736,7 @@ the whole menu as a grid.
 - **Analysis** — entitlement, identity inventory and posture (see §13).
 
 **What does *not* apply to FortiAuthenticator.** In the FAC ADOM's Operations
-group Device Backups, Log Collection and Import Backup are greyed out (the
+group Device Backups, Diagnose Log Collection and Import Backup are greyed out (the
 reason is on hover), and that is not an oversight:
 
 | Feature | In the FAC ADOM? |
@@ -4815,9 +4815,9 @@ The FortiWeb ADOM's **Operations** group has three entries. §11 documents the
 third one (Device Backups). These are the other two — they look adjacent and they
 do completely different things.
 
-### 27.1 Log Collection — a read-only diagnostic battery over SSH
+### 27.1 Diagnose Log Collection — a read-only diagnostic battery over SSH
 
-FortiWeb ADOM → Operations → **Log Collection** (`config_write`).
+FortiWeb ADOM → Operations → **Diagnose Log Collection** (`config_write`).
 
 **What it is not:** it is *not* a viewer of the appliance's on-box log database.
 It does not page attack or event logs.
@@ -4825,7 +4825,7 @@ It does not page attack or event logs.
 **What it is:** tick one or more FortiWeb appliances, give the run a label, and
 it opens one SSH session per box and runs a curated battery of read-only
 `get` / `diagnose` commands — system status and performance, HA (nodes, status,
-sync state, event log), hardware (CPU, NIC, interrupts, disks and their SMART
+sync state), hardware (CPU, NIC, interrupts, disks and their SMART
 health), routing, ARP, memory, proxy debug — writing each device's output to its
 own labelled `.txt`.
 
@@ -4841,6 +4841,10 @@ own labelled `.txt`.
 - FortiWeb only. It is `config_write`-gated even though it writes nothing to the
   device, because it opens an administrative SSH session with the stored
   credentials.
+- The battery is the same on FortiWeb 7.6.8 and 8.0.6 (measured). A few entries
+  print nothing on a VM without HA (DB sync status, HA device info, hardware
+  CPU, netstat log, proxy debug log); that is expected, and they answer on HA or
+  hardware units.
 
 ### 27.2 Import Backup — parse a config file with no appliance at all
 
@@ -6273,7 +6277,7 @@ Where to read it:
 | An AppID went **stale** after the nightly | It stopped appearing in the feed. That is a flag for review, not a deletion: the row, its billing and its policy bindings are all intact by design (§25). |
 | LDAP/RADIUS sign-in fails, or a directory sync imports nothing | Use `Settings → Authentication → Test`, which runs against the values **in the form**, then check the sync group/OU. Remember that synced users are created **disabled** — they exist, pending your approval, and until you enable them their sign-in will fail (§26.7). |
 | The node certificate expired although autopull is on | Autopull only applies to an **imported** certificate and only in `autopull` renew mode; in `alert` mode SATOM warns and renews nothing. Check the source connection with the one-off pull button on `Settings → Node TLS`, and confirm the mode (§26.8). |
-| Log Collection returns 403, or refuses the whole run | The page is `config_write`-gated even though it writes nothing to the device (27.1). A run refused with a read-only violation means one command — battery or custom — could mutate configuration; the whole run is refused rather than the offending line skipped. |
+| Diagnose Log Collection returns 403, or refuses the whole run | The page is `config_write`-gated even though it writes nothing to the device (27.1). A run refused with a read-only violation means one command — battery or custom — could mutate configuration; the whole run is refused rather than the offending line skipped. |
 | A template is stuck in **pending** and will not roll out to the fleet | Single-device apply works at any status; a **multi-device** rollout needs the template **approved** *and* the Run-operations permission. Approving is a separate permission (`operations.template_approve`) from authoring (29.1). |
 | A registry-driven page 404s on the device after a firmware upgrade | The firmware moved that URI. Fix it as a **registry edit** on that product's API console — the catalog is DB-first, the edit is audited, and it converges across workers within a minute. No code change or release is involved (30.1). |
 | `diagnose recovery` says the sealed envelope is **unreachable** | The envelope is on disk but not owned by the account that carries it, so the HA datasync skips it and the bundle writer records it absent. Re-run `satom execute seal recovery` on the primary — sealing hands the file to the tree owner. This is reported as **critical**, deliberately worse than an honest "not sealed": an unreadable envelope looks like durability and is not (11). |

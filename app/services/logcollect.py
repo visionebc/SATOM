@@ -36,6 +36,15 @@ from .ssh_ops import FortiWebReadonlySSH, assert_readonly
 # disk, network…). Ported verbatim from the desktop logcollect battery; the
 # union of the field scripts' ``rec_logs`` with the originals' stray double
 # spaces normalised and the trailing ``exit`` dropped.
+#
+# Measured on fortiweb17 (7.6.8) and fortiweb18 (8.0.6), 2026-10-14: two
+# entries of the desktop battery never produced data on either build and were
+# dropped -- ``diagnose hardware harddisk`` alone answers "you must specify
+# cmd" (its list/info/health/errors/attributes children stay), and
+# ``diagnose system ha export-eventlog`` answers "The number of parameters is
+# incorrect." Five more print nothing on those KVM units without HA (dbsync
+# status, ha dev-info, hardware cpu, debug netstatlog show, debug proxy log 3)
+# and stay: they are expected to answer on hardware or HA units.
 DIAGNOSTIC_COMMANDS: list[str] = [
     "get system status",
     "get system performance",
@@ -44,7 +53,6 @@ DIAGNOSTIC_COMMANDS: list[str] = [
     "diagnose system dbsync status",
     "diagnose system ha confd_status",
     "diagnose system ha dev-info",
-    "diagnose system ha export-eventlog",
     "diagnose system ha interface-macinfo",
     "diagnose system ha nodes",
     "diagnose system ha status",
@@ -52,7 +60,6 @@ DIAGNOSTIC_COMMANDS: list[str] = [
     "diagnose system securitylevel",
     "diagnose hardware sysinfo vm",
     "diagnose hardware cpu",
-    "diagnose hardware harddisk",
     "diagnose hardware harddisk list",
     "diagnose hardware harddisk info",
     "diagnose hardware harddisk health",

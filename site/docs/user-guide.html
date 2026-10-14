@@ -375,7 +375,7 @@ in the same order around the device menu: <strong>Operations</strong> first, the
 menu, <strong>Automation</strong>, <strong>Administrator</strong>, Plugins. Operations opens with the
 fleet pages (Dashboard where the ADOM has one, Calendar, Architecture, Service
 Diagram, Monitoring, Search, DNS Lookup, Troubleshooting, Fleet Objects and WAF
-in FortiWeb and FortiADC, Jobs) and then holds Device Backups, Log Collection
+in FortiWeb and FortiADC, Jobs) and then holds Device Backups, Diagnose Log Collection
 and Import Backup; there is no separate <strong>Fleet</strong> group. The <strong>API</strong> console
 (Registry &amp; console) is a sub-menu of Automation. <strong>Appliances</strong> is under
 Administrator; <strong>Schema builds</strong>, <strong>Build compatibility</strong> and (Global)
@@ -1925,7 +1925,7 @@ nothing else, can rebuild the installation from any copy.</p>
   <code>satom diagnose recovery</code>, which reports an absent, stale, unreadable or
   <strong>unreachable</strong> envelope. A node with no envelope is noisy on purpose.</li>
 </ul>
-<p>Its two nav siblings under <strong>Operations</strong> — Log Collection and Import Backup —
+<p>Its two nav siblings under <strong>Operations</strong> — Diagnose Log Collection and Import Backup —
 are §27. Neither is a backup: one collects read-only diagnostics over SSH, the
 other parses a config file entirely offline.</p>
 <h2 id="12-firmware-upgrades">12. Firmware upgrades</h2>
@@ -3038,7 +3038,7 @@ the whole menu as a grid.</p>
 <li><strong>Analysis</strong> — entitlement, identity inventory and posture (see §13).</li>
 </ul>
 <p><strong>What does <em>not</em> apply to FortiAuthenticator.</strong> In the FAC ADOM's Operations
-group Device Backups, Log Collection and Import Backup are greyed out (the
+group Device Backups, Diagnose Log Collection and Import Backup are greyed out (the
 reason is on hover), and that is not an oversight:</p>
 <table>
 <thead>
@@ -5413,14 +5413,14 @@ addresses attacked which customer.</p>
 <p>The FortiWeb ADOM's <strong>Operations</strong> group has three entries. §11 documents the
 third one (Device Backups). These are the other two — they look adjacent and they
 do completely different things.</p>
-<h3 id="271-log-collection--a-read-only-diagnostic-battery-over-ssh">27.1 Log Collection — a read-only diagnostic battery over SSH</h3>
-<p>FortiWeb ADOM → Operations → <strong>Log Collection</strong> (<code>config_write</code>).</p>
+<h3 id="271-diagnose-log-collection--a-read-only-diagnostic-battery-over-ssh">27.1 Diagnose Log Collection — a read-only diagnostic battery over SSH</h3>
+<p>FortiWeb ADOM → Operations → <strong>Diagnose Log Collection</strong> (<code>config_write</code>).</p>
 <p><strong>What it is not:</strong> it is <em>not</em> a viewer of the appliance's on-box log database.
 It does not page attack or event logs.</p>
 <p><strong>What it is:</strong> tick one or more FortiWeb appliances, give the run a label, and
 it opens one SSH session per box and runs a curated battery of read-only
 <code>get</code> / <code>diagnose</code> commands — system status and performance, HA (nodes, status,
-sync state, event log), hardware (CPU, NIC, interrupts, disks and their SMART
+sync state), hardware (CPU, NIC, interrupts, disks and their SMART
 health), routing, ARP, memory, proxy debug — writing each device's output to its
 own labelled <code>.txt</code>.</p>
 <ul>
@@ -5436,6 +5436,10 @@ own labelled <code>.txt</code>.</p>
 <li>FortiWeb only. It is <code>config_write</code>-gated even though it writes nothing to the
   device, because it opens an administrative SSH session with the stored
   credentials.</li>
+<li>The battery is the same on FortiWeb 7.6.8 and 8.0.6 (measured). A few entries
+  print nothing on a VM without HA (DB sync status, HA device info, hardware
+  CPU, netstat log, proxy debug log); that is expected, and they answer on HA or
+  hardware units.</li>
 </ul>
 <h3 id="272-import-backup--parse-a-config-file-with-no-appliance-at-all">27.2 Import Backup — parse a config file with no appliance at all</h3>
 <p>FortiWeb ADOM → Operations → <strong>Import Backup</strong> (<code>backups.restore</code>; operator
@@ -7072,7 +7076,7 @@ the authoritative answer to "what is new since we last updated".</p>
 <td>Autopull only applies to an <strong>imported</strong> certificate and only in <code>autopull</code> renew mode; in <code>alert</code> mode SATOM warns and renews nothing. Check the source connection with the one-off pull button on <code>Settings → Node TLS</code>, and confirm the mode (§26.8).</td>
 </tr>
 <tr>
-<td>Log Collection returns 403, or refuses the whole run</td>
+<td>Diagnose Log Collection returns 403, or refuses the whole run</td>
 <td>The page is <code>config_write</code>-gated even though it writes nothing to the device (27.1). A run refused with a read-only violation means one command — battery or custom — could mutate configuration; the whole run is refused rather than the offending line skipped.</td>
 </tr>
 <tr>

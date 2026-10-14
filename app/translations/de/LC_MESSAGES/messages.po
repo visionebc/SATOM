@@ -6185,8 +6185,8 @@ msgstr "Protokoll"
 
 #: app/templates/base.html:847 app/templates/logs/index.html:9
 #: app/templates/logs/index.html:16
-msgid "Log Collection"
-msgstr "Protokollierung der Protokolle"
+msgid "Diagnose Log Collection"
+msgstr "Diagnose-Protokollerfassung"
 
 #: app/templates/settings/index.html:210
 msgid "Log Format"

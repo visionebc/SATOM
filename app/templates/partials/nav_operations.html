@@ -38,8 +38,8 @@
     {% if current_user.can('config_write') and may_open('logs.index') %}
     {% if _m_logs.on %}
     <a class="fw-nav-item" href="{{ url_for('logs.index') }}">
-      <i class="bi bi-journal-text fw-nav-icon"></i><span>{{ _('Log Collection') }}</span></a>
-    {% else %}{{ nav_off('bi-journal-text', _('Log Collection'), _m_logs.reason) }}{% endif %}
+      <i class="bi bi-journal-text fw-nav-icon"></i><span>{{ _('Diagnose Log Collection') }}</span></a>
+    {% else %}{{ nav_off('bi-journal-text', _('Diagnose Log Collection'), _m_logs.reason) }}{% endif %}
     {% endif %}
     {% if current_user.can('backups.restore') and may_open('import_backup.index') %}
     {% if _m_imp.on %}

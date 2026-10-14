@@ -160,7 +160,7 @@ async function getAttackTypes(applianceId) {
 }
 
 // ============================================================
-// Log Collection API
+// Diagnose Log Collection API
 // ============================================================
 async function getLogs(applianceId, params = {}) {
   const qs = new URLSearchParams(params).toString();

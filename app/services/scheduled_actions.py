@@ -779,7 +779,10 @@ def _do_metrics_scrape(params: dict, dry_run: bool = False) -> dict:
             "summary": ("%(ok)d/%(targets)d target(s) ok, %(errors)d error(s), "
                         "%(series)d series, %(ms)d ms"
                         % res) + (", %d auto-provisioned" % res["created"]
-                                  if res.get("created") else ""),
+                                  if res.get("created") else "")
+                       + (", baseline probes created for %s"
+                          % ", ".join(res["baselines"])
+                          if res.get("baselines") else ""),
             "log": ""}
 
 

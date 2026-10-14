@@ -3602,7 +3602,7 @@ msgstr ""
 msgid "Global ADOM"
 msgstr ""
 
-msgid "Global Search"
+msgid "ADOM Search"
 msgstr ""
 
 msgid "Global sections"
@@ -10680,4 +10680,8 @@ msgid "Upgrade Advisory"
 msgstr ""
 
 msgid "Fault Isolation (includes the Upgrade Advisory)"
+msgstr ""
+
+#: app/templates/search/results.html
+msgid "Not searched (this search reads FortiWeb and FortiADC only):"
 msgstr ""

@@ -227,6 +227,16 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   uses. Menu, page titles, settings panes and messages; URLs and bookmarks are
   unchanged.</li>
 </ul>
+<h3 id="changed--search-is-titled-adom-search-2026-10-14">Changed — Search is titled ADOM Search (2026-10-14)</h3>
+<ul>
+<li>The Search page is titled <strong>ADOM Search</strong> (it was "Global Search"): it has
+  always searched only the appliances of the active ADOM, and in the Global
+  ADOM only its FortiWeb and FortiADC devices. The subtitle says so. Menu
+  entry, URL and bookmarks are unchanged.</li>
+<li><strong>Fixed:</strong> FortiGate, FortiAuthenticator and FortiAnalyzer devices were sent
+  FortiWeb REST paths, failed quietly and showed up as "No results found".
+  They are now skipped and named on the results page as not searched.</li>
+</ul>
 <h3 id="security--infrastructure-hardening-2026-10-13-internal-code-audit">Security — infrastructure hardening (2026-10-13 internal code audit)</h3>
 <ul>
 <li><strong>Node-to-node transport is HTTPS-only and certificate-verified.</strong> The peer

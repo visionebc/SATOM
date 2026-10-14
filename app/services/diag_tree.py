@@ -54,6 +54,7 @@ _ERROR = re.compile(
 # Argument placeholders: ``<signal>``, ``<Enter>``, ADC's ``arg``, and FortiGate's
 # "[Take 0-11 arg(s)]" suffix in a description.
 _PLACEHOLDER = re.compile(r"^<[^>]+>$")
+_PLACEHOLDER_ENTRY = re.compile(r"^\s*(<[^>]+>)(?:\s{2,}(.*?))?\s*$")
 _TAKES_ARGS = re.compile(r"\[take \d+(?:-\d+)? arg", re.I)
 # Names a CLI can have. Anything else in a help listing is noise (a stray
 # banner line, a wrapped description) and is never walked.
@@ -75,6 +76,12 @@ class Help:
     error: str = ""              # the shell refused the path on this build
     executed: bool = False       # no listing at all: ``?`` ran the command
     sample: str = ""             # first lines of what it printed when it ran
+    #: Values the shell lists under an argument placeholder: FortiWeb answers
+    #: ``diagnose policy disc-stats list ?`` with ``<policy name>`` followed
+    #: by every policy, one per line and without a description. They are
+    #: arguments, never subcommands, and are not walked (on fortiweb17 they
+    #: multiplied the tree by the number of policies, 2026-10-14).
+    arg_values: list = field(default_factory=list)
 
 
 def _strip_frame(lines: list[str], path: str) -> list[str]:
@@ -104,8 +111,10 @@ def parse_help(raw: str, path: str) -> Help:
             h.error = ln.strip()[:160]
             return h
     parsed: list[tuple[str, str]] = []
+    after_placeholder = False
     for ln in body:
-        m = _ENTRY.match(ln)
+        # ``<policy name>`` (FortiWeb) holds a space; read placeholders whole.
+        m = _PLACEHOLDER_ENTRY.match(ln) or _ENTRY.match(ln)
         if not m:
             continue
         name, desc = m.group(1), (m.group(2) or "").strip()
@@ -115,6 +124,11 @@ def parse_help(raw: str, path: str) -> Help:
         if _PLACEHOLDER.match(name) or (name == "arg" and "argument" in desc.lower()):
             h.takes_args = True
             h.arg_hint = h.arg_hint or f"{name} {desc}".strip()
+            after_placeholder = True
+            continue
+        if after_placeholder and not desc:
+            if len(h.arg_values) < 20:
+                h.arg_values.append(name)
             continue
         if not _NAME.match(name):
             continue
@@ -264,6 +278,9 @@ class Walker:
                 node.runnable = h.runnable or not h.children
                 node.takes_args = h.takes_args
                 node.arg_hint = h.arg_hint
+                if h.arg_values:
+                    node.arg_hint = (node.arg_hint + " — e.g. "
+                                     + ", ".join(h.arg_values[:3]))[:160]
                 node.branch = bool(h.children)
                 for name, cdesc in h.children:
                     child = f"{path} {name}"

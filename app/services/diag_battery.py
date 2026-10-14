@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -303,13 +304,32 @@ def _write(obj) -> None:
 
 
 def discovery_status() -> dict | None:
+    """The current/last discovery, or None.
+
+    A walk runs in a thread of whichever process started it; a restart (every
+    deploy runs ``restart-all``) kills the thread and leaves the file saying
+    ``running``, which blocked every new discovery for 70 minutes. A running
+    state whose process is gone on THIS host is retired here, once, with the
+    reason -- the rule :func:`app.services.rediscovery._pid_alive` already
+    applies to sweeps.
+    """
     p = _progress_path()
     if not p.exists():
         return None
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        st = json.loads(p.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
         return None
+    if (st.get("state") == "running" and st.get("pid")
+            and st.get("host") == socket.gethostname()):
+        from .rediscovery import _pid_alive
+        if not _pid_alive(st["pid"]):
+            st.update(state="error", current="",
+                      finished=datetime.utcnow().isoformat(),
+                      error="interrupted: the process running this discovery "
+                            "is gone (a restart?); nothing was stored")
+            _write(st)
+    return st
 
 
 def snapshot(appliance) -> SimpleNamespace:
@@ -461,6 +481,7 @@ def start_discovery(appliance, by: str, *, sessions: int = SESSIONS) -> dict:
                           "(Appliances) before discovering its commands"}
     snap = snapshot(appliance)
     init = {"state": "running", "appliance": snap.name, "product": kind,
+            "pid": os.getpid(), "host": socket.gethostname(),
             "build": build_of(snap.firmware), "by": by, "probed": 0,
             "current": "", "started": datetime.utcnow().isoformat(),
             "finished": None}

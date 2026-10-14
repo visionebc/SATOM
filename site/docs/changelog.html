@@ -139,7 +139,11 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   FortiAnalyzer 7.6.7, 612; FortiADC 8.0.4, 598. FortiWeb and FortiADC close the
   SSH session when <code>?</code> follows a node with exactly one child (<code>diagnose
   hardware cpu</code>), so such a node is read by TAB completion on a new session.
-  When FortiAuthenticator does not answer a <code>?</code>, the node is asked again. On
+  When FortiAuthenticator does not answer a <code>?</code>, the node is asked again.
+  Values the CLI lists under an argument (FortiWeb lists every policy under
+  <code>&lt;policy name&gt;</code>) are kept as examples of the argument, not walked. A
+  discovery whose process died (a restart) is shown as interrupted instead of
+  blocking new discoveries for 70 minutes. On
   FortiWeb, <code>?</code> after some leaves runs the (read-only) command, so the page
   recommends running discovery on a lab unit or in a maintenance window.</li>
 <li><strong>The battery rule.</strong> A battery refuses state-changing commands by name, by

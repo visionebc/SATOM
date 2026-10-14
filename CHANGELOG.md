@@ -33,7 +33,11 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   FortiAnalyzer 7.6.7, 612; FortiADC 8.0.4, 598. FortiWeb and FortiADC close the
   SSH session when `?` follows a node with exactly one child (`diagnose
   hardware cpu`), so such a node is read by TAB completion on a new session.
-  When FortiAuthenticator does not answer a `?`, the node is asked again. On
+  When FortiAuthenticator does not answer a `?`, the node is asked again.
+  Values the CLI lists under an argument (FortiWeb lists every policy under
+  `<policy name>`) are kept as examples of the argument, not walked. A
+  discovery whose process died (a restart) is shown as interrupted instead of
+  blocking new discoveries for 70 minutes. On
   FortiWeb, `?` after some leaves runs the (read-only) command, so the page
   recommends running discovery on a lab unit or in a maintenance window.
 - **The battery rule.** A battery refuses state-changing commands by name, by

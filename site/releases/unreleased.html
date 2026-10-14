@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Fixed — adding a device no longer leaves it unmonitored or buried in false alerts (2026-10-14) · 82 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Fixed — adding a device no longer leaves it unmonitored or buried in false alerts (2026-10-14) · 83 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Fixed — adding a device no longer leaves it unmonitored or buried in false alerts (2026-10-14) · 82 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Fixed — adding a device no longer leaves it unmonitored or buried in false alerts (2026-10-14) · 83 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Fixed — adding a device no longer leaves it unmonitored or buried in false alerts (2026-10-14) · 82 entries</span>
-        <ul class="rel-leads"><li>Discover no longer creates probes that can only fail</li><li>Every way of adding a device now creates its baseline probes</li><li>Device health says when it cuts the list of failing probes</li><li class="rel-more">… and 79 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Fixed — adding a device no longer leaves it unmonitored or buried in false alerts (2026-10-14) · 83 entries</span>
+        <ul class="rel-leads"><li>Discover no longer creates probes that can only fail</li><li>Every way of adding a device now creates its baseline probes</li><li>The infra collector works on a mapped device and no longer fails on an unmapped one</li><li class="rel-more">… and 80 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.1.0.html" data-rel-version="3.1.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.1.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -387,6 +387,15 @@
   all, which covers rows inserted by imports or scripts. It does not re-create
   a probe that was deleted on a provisioned device. A test fails if any
   function that creates an appliance skips provisioning.</li>
+<li><strong>The <code>infra</code> collector works on a mapped device and no longer fails on an
+  unmapped one.</strong> It built the hypervisor VM reference without two required
+  fields, so it raised an error on every device mapped to its VM. Nobody had
+  noticed because no device had been mapped until now. It also gave every
+  FortiWeb and FortiADC an <code>infra</code> target that failed every 3 minutes until
+  the device was mapped, and a hardware appliance can never be mapped. The
+  target is now created only once the topology mapping is complete, and the
+  Collection sweep adds it on the next pass after the mapping is saved. A
+  read-only Proxmox API token (role <code>PVEAuditor</code>) is enough for this collector.</li>
 <li><strong>Device health says when it cuts the list of failing probes</strong>:
   "49/55 probes alerting: a, b, c, d (+45 more)" instead of four names that
   read as the whole list.</li>

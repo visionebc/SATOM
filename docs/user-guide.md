@@ -2382,6 +2382,8 @@ many policies the fleet grows.
 | `vservers` — virtual servers: sessions / RTT / pool health, every VS | FortiADC | 3 min |
 | `identity` — accounts, groups, tokens, certificates, RADIUS/TACACS+ clients | FortiAuthenticator | 15 min |
 | `faz` — log volume, storage, alerts, incidents, devices, task queue | FortiAnalyzer | 15 min |
+| `http_status` — HTTP response classes counted from the traffic log | FortiWeb | 5 min |
+| `infra` — the VM and its hypervisor host (CPU, memory, disk, network, load) | FortiWeb, FortiADC — **only when mapped** | 3 min |
 
 Each row is editable in place: **interval** (1–1440 minutes), **enabled**, and
 **top-N** (1–200) on the two collectors that have one. The expensive collectors
@@ -2403,6 +2405,14 @@ obvious from the name:
   not ingest.
 - `faz` never fetches a log body. Every series is a counter or a state summary,
   which is the point of monitoring a log collector rather than mirroring it.
+- `infra` reads the **hypervisor**, not the appliance: the VM's own counters
+  (`/nodes/<node>/qemu/<vmid>/status/current` on Proxmox) and the host's
+  (`/nodes/<node>/status`). It needs the device mapped to its VM (hypervisor,
+  VM id and node, in the Sentinel topology map) and a registered hypervisor
+  (§21.1). A read-only Proxmox API token with the **PVEAuditor** role is
+  enough. The target is created only once the mapping is complete, on the next
+  sweep after it is saved. An unmapped device, and every hardware appliance,
+  has no `infra` row rather than a row that fails every 3 minutes.
 
 - **Run sweep now** runs inside the request and reports targets, errors and
   series written, in the flash message.

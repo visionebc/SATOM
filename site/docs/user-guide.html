@@ -2679,6 +2679,16 @@ many policies the fleet grows.</p>
 <td>FortiAnalyzer</td>
 <td>15 min</td>
 </tr>
+<tr>
+<td><code>http_status</code> — HTTP response classes counted from the traffic log</td>
+<td>FortiWeb</td>
+<td>5 min</td>
+</tr>
+<tr>
+<td><code>infra</code> — the VM and its hypervisor host (CPU, memory, disk, network, load)</td>
+<td>FortiWeb, FortiADC — <strong>only when mapped</strong></td>
+<td>3 min</td>
+</tr>
 </tbody>
 </table>
 <p>Each row is editable in place: <strong>interval</strong> (1–1440 minutes), <strong>enabled</strong>, and
@@ -2698,9 +2708,17 @@ obvious from the name:</p>
   authentication is succeeding: no FortiAuthenticator resource reports an
   auth-rate counter, and that signal only exists in syslog, which SATOM does
   not ingest.</li>
+<li><code>faz</code> never fetches a log body. Every series is a counter or a state summary,
+  which is the point of monitoring a log collector rather than mirroring it.</li>
 <li>
-<p><code>faz</code> never fetches a log body. Every series is a counter or a state summary,
-  which is the point of monitoring a log collector rather than mirroring it.</p>
+<p><code>infra</code> reads the <strong>hypervisor</strong>, not the appliance: the VM's own counters
+  (<code>/nodes/&lt;node&gt;/qemu/&lt;vmid&gt;/status/current</code> on Proxmox) and the host's
+  (<code>/nodes/&lt;node&gt;/status</code>). It needs the device mapped to its VM (hypervisor,
+  VM id and node, in the Sentinel topology map) and a registered hypervisor
+  (§21.1). A read-only Proxmox API token with the <strong>PVEAuditor</strong> role is
+  enough. The target is created only once the mapping is complete, on the next
+  sweep after it is saved. An unmapped device, and every hardware appliance,
+  has no <code>infra</code> row rather than a row that fails every 3 minutes.</p>
 </li>
 <li>
 <p><strong>Run sweep now</strong> runs inside the request and reports targets, errors and

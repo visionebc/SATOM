@@ -76,9 +76,9 @@
       </div>
       <div class="col-md-3">
         <label class="fw-form-label" style="font-size:12px;">
-          {{ _('Platform') }}
+          {{ _('Platform') }} <span class="text-muted d-none" id="fwPlatformAuto">{{ _('(detected from the file name)') }}</span>
         </label>
-        <select name="platform" class="form-select">
+        <select name="platform" id="fwPlatform" class="form-select">
           <option value="" selected>{{ _('Any (universal)') }}</option>
           <option value="hw">{{ _('Hardware appliance') }}</option>
           <option value="vm">{{ _('Virtual Machine (KVM/VMware/cloud)') }}</option>
@@ -257,6 +257,9 @@
   var file = document.getElementById('fwFile');
   var ver = document.getElementById('fwVersion');
   var bld = document.getElementById('fwBuild');
+  var plat = document.getElementById('fwPlatform');
+  var hyp = document.getElementById('fwHyp');
+  var platNote = document.getElementById('fwPlatformAuto');
   if (!file || (!ver && !bld)) { return; }
   // Only ever overwrite a value THIS code wrote: a version the operator typed
   // survives, and picking a second file replaces the first guess instead of
@@ -270,6 +273,12 @@
   [ver, bld].forEach(function (el) {
     if (el) { el.addEventListener('input', function () { delete el.dataset.fwAuto; }); }
   });
+  [plat, hyp].forEach(function (el) {
+    if (el) { el.addEventListener('change', function () {
+      delete el.dataset.fwAuto;
+      if (el === plat && platNote) { platNote.classList.add('d-none'); }
+    }); }
+  });
   file.addEventListener('change', function () {
     if (!file.files || !file.files.length) { return; }
     var name = file.files[0].name || '';
@@ -277,7 +286,13 @@
           { credentials: 'same-origin',
             headers: { 'X-Requested-With': 'XMLHttpRequest' } })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) { if (!d) { return; } put(ver, d.version); put(bld, d.build); })
+      .then(function (d) {
+        if (!d) { return; }
+        put(ver, d.version); put(bld, d.build);
+        // Hardware vs VM: Fortinet's file name says it (FWB_KVM-… / FWB_1000E-…).
+        put(plat, d.platform); put(hyp, d.hypervisor);
+        if (platNote) { platNote.classList.toggle('d-none', !(d.platform && plat && plat.dataset.fwAuto === '1')); }
+      })
       .catch(function () { /* autofill is a convenience - never block an upload */ });
   });
 })();

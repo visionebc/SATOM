@@ -239,4 +239,78 @@
       nodes[i].setAttribute('nonce', nonce);
     }
   });
+
+  // ── Keep body <script> ORDER on Turbo visits ─────────────────────────────────
+  // On a full load the parser runs an external <script src> to completion
+  // before the inline <script> that follows it. Turbo re-inserts body scripts
+  // programmatically: the inline copy runs AT ONCE, the external copy only
+  // after its fetch. So an inline init that calls the external file's global
+  // (initERDiagram, ExampleBrowser, ReportBuilder…) threw "is not defined"
+  // after every Turbo visit and the page only worked after a refresh — and a
+  // throw at the top of an inline IIFE also left every later handler in it
+  // (Python Console's Run button) unwired.
+  // Fix, once for every page: before the swap, park each executable inline
+  // script that FOLLOWS an external one (type → text/x-fm-deferred, so
+  // Turbo's copy does not run); after the swap, walk the body scripts in
+  // document order and run a parked one only when every external script
+  // before it has loaded (or failed). Same order as a full load.
+  var DEFERRED = 'text/x-fm-deferred';
+  var JS_TYPES = { '': 1, 'text/javascript': 1, 'application/javascript': 1, 'module': 1 };
+  var settled = (typeof WeakSet === 'function') ? new WeakSet() : null;
+  var walk = null;
+  function blocking(s) {
+    return s.hasAttribute('src') && !s.hasAttribute('async')
+      && s.getAttribute('data-turbo-eval') !== 'false';
+  }
+  function pump() {
+    var w = walk;
+    if (!w) return;
+    while (w.i < w.items.length) {
+      var s = w.items[w.i];
+      if (blocking(s)) {
+        if (s.isConnected && settled && !settled.has(s)) return;  // wait for it
+      } else if (s.getAttribute('type') === DEFERRED && s.isConnected) {
+        var n = document.createElement('script');
+        var meta = document.querySelector('meta[name=csp-nonce]');
+        var nonce = s.nonce || s.getAttribute('nonce') || (meta && (meta.nonce || meta.content)) || '';
+        if (nonce) n.nonce = nonce;
+        var t = s.getAttribute('data-fm-type');
+        if (t) n.type = t;
+        n.textContent = s.textContent;
+        s.parentNode.replaceChild(n, s);   // inline script: runs synchronously
+      }
+      w.i++;
+    }
+    if (walk === w) walk = null;
+  }
+  function onSettle(e) {
+    var s = e && e.target;
+    if (!s || s.tagName !== 'SCRIPT') return;
+    if (settled) settled.add(s);
+    pump();
+  }
+  // load/error do not bubble; capture on document sees every <script>.
+  origAdd('load', onSettle, true);
+  origAdd('error', onSettle, true);
+  origAdd('turbo:before-render', function (e) {
+    var body = e && e.detail && e.detail.newBody;
+    if (!body || !settled) return;
+    walk = null;   // a new visit cancels the previous page's pending walk
+    var afterExternal = false;
+    var nodes = body.querySelectorAll('script');
+    for (var i = 0; i < nodes.length; i++) {
+      var s = nodes[i];
+      if (blocking(s)) { afterExternal = true; continue; }
+      if (s.hasAttribute('src') || s.getAttribute('data-turbo-eval') === 'false') continue;
+      var t = (s.getAttribute('type') || '').trim().toLowerCase();
+      if (!afterExternal || !JS_TYPES.hasOwnProperty(t)) continue;  // JSON islands stay as they are
+      if (t) s.setAttribute('data-fm-type', t);
+      s.setAttribute('type', DEFERRED);
+    }
+  });
+  origAdd('turbo:render', function () {
+    if (!settled) return;
+    walk = { items: Array.prototype.slice.call(document.body.querySelectorAll('script')), i: 0 };
+    pump();
+  });
 })();

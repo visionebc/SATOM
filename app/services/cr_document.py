@@ -487,6 +487,90 @@ _T: dict = {
 }
 
 
+def _cert_renew_profile(eku_en: str, eku_de: str, label_en: str, label_de: str) -> dict:
+    """The three Cert Manager renewals differ only in the certificate purpose
+    (EKU) they select; one text, three labels."""
+    return {
+        "de": {
+            "label": label_de,
+            "purpose": (
+                f"Erneuerung der ablaufenden Zertifikate mit Verwendungszweck "
+                f"{eku_de} auf den Ziel-Appliances: neuer Schlüssel und CSR, "
+                f"Signatur über den konfigurierten ADCS-Befehl, Ablage des "
+                f"neuen Zertifikats unter einem neuen, datierten Namen. Das "
+                f"bisherige Zertifikat bleibt erhalten."),
+            "justification": (
+                "Ein abgelaufenes Zertifikat unterbricht TLS für jeden Dienst, "
+                "der es verwendet. Die Erneuerung vor Ablauf hält den Betrieb "
+                "aufrecht; über SATOM ist sie protokolliert und nachvollziehbar."),
+            "impact": (
+                "Kein Eingriff in den Datenpfad: die Bindung an Server-Policies "
+                "bzw. Profile wird NICHT umgestellt. Das neue Zertifikat liegt "
+                "bereit, bis es in einem eigenen Wartungsfenster getauscht wird."),
+            "downtime": "keine (die Bindung wird nicht umgestellt)",
+            "risk": (
+                "Wesentliche Risiken: die CA lehnt die Anfrage ab oder signiert "
+                "mit einer anderen Vorlage; das neue Zertifikat trägt nicht den "
+                "erwarteten Verwendungszweck. Beides verhindert nur die "
+                "Bereitstellung — das laufende Zertifikat bleibt unverändert."),
+            "rollback": (
+                "Das neue, nicht gebundene Zertifikat von der Appliance löschen.",
+                "Bei Bedarf das Zertifikat bei der CA widerrufen.",
+            ),
+            "work": (
+                "Ablaufende Zertifikate mit dem gewählten Verwendungszweck "
+                "ermitteln.",
+                "Neuen Schlüssel und CSR erzeugen.",
+                "CSR über den konfigurierten ADCS-Befehl signieren lassen.",
+                "Neues Zertifikat unter datiertem Namen auf die Appliance "
+                "laden.",
+            ),
+            "validation": (
+                "Das neue Zertifikat ist auf der Appliance vorhanden und gültig.",
+                "Verwendungszweck und Ablaufdatum entsprechen der Anforderung.",
+                "Die bestehenden Bindungen sind unverändert.",
+            ),
+        },
+        "en": {
+            "label": label_en,
+            "purpose": (
+                f"Renew the expiring {eku_en} certificates on the target "
+                f"appliances: new key and CSR, signed through the configured "
+                f"ADCS command, deployed under a new date-stamped name. The "
+                f"current certificate is kept."),
+            "justification": (
+                "An expired certificate breaks TLS for every service that uses "
+                "it. Renewing before expiry keeps those services running; "
+                "through SATOM the renewal is logged and traceable."),
+            "impact": (
+                "No change to the data path: the binding on server policies or "
+                "profiles is NOT swapped. The new certificate waits on the "
+                "appliance until it is swapped in its own maintenance window."),
+            "downtime": "none (the binding is not swapped)",
+            "risk": (
+                "Main risks: the CA refuses the request or signs with a "
+                "different template; the new certificate does not carry the "
+                "expected purpose. Either only stops the deployment - the "
+                "certificate in use is untouched."),
+            "rollback": (
+                "Delete the new, unbound certificate from the appliance.",
+                "Revoke it at the CA if required.",
+            ),
+            "work": (
+                "Find the expiring certificates with the selected purpose.",
+                "Generate a new key and CSR.",
+                "Have the CSR signed through the configured ADCS command.",
+                "Upload the new certificate under a date-stamped name.",
+            ),
+            "validation": (
+                "The new certificate is on the appliance and valid.",
+                "Purpose and expiry date match the request.",
+                "The existing bindings are unchanged.",
+            ),
+        },
+    }
+
+
 # --------------------------------------------------------------------------- #
 #  Per-action profiles                                                          #
 #                                                                               #
@@ -1267,7 +1351,7 @@ ACTION_PROFILES: dict = {
             ),
         },
         "en": {
-            "label": "Cert Manager - lifecycle sweep (revoke + cleanup)",
+            "label": "Cert Manager — lifecycle sweep (revoke + cleanup)",
             "purpose": (
                 "Enforce the configured certificate lifecycle policy: revoke "
                 "superseded certificates at the CA once past the grace "
@@ -1438,6 +1522,102 @@ ACTION_PROFILES: dict = {
             ),
         },
     },
+    # ------------------------------------------------------------ ha_failover
+    "ha_failover": {
+        "de": {
+            "label": "HA-Failover - Primärrolle übergeben (unterbrechend)",
+            "purpose": (
+                "Ein HA-Cluster übergibt die Primärrolle an seinen Partner "
+                "(bzw. erhält sie zurück). Es gibt dafür keinen REST-Aufruf; "
+                "SATOM steuert den CLI-Befehl des Produkts über SSH und nur auf "
+                "Firmware, auf der dieser Befehl verifiziert ist."),
+            "justification": (
+                "Ein Failover beendet die Sitzungen auf dem bisherigen Primary "
+                "und wird deshalb ausschließlich gebunden an einen "
+                "freigegebenen Change Request im Wartungsfenster ausgeführt."),
+            "impact": (
+                "Alle Sitzungen auf dem bisherigen Primary brechen ab. Die "
+                "veröffentlichten Dienste sind bis zur Übernahme durch den "
+                "Partner kurz nicht erreichbar."),
+            "downtime": "ca. 10–60 Sekunden je Cluster (Rollenwechsel)",
+            "risk": (
+                "Wesentliche Risiken: der Partner übernimmt nicht sauber; die "
+                "Konfiguration der beiden Knoten ist nicht synchron; der "
+                "Cluster kehrt ungewollt zurück. SATOM verweigert den Failover, "
+                "wenn das Ziel gerade nicht als HA-Primary meldet."),
+            "rollback": (
+                "Die Primärrolle mit derselben Aktion (Richtung 'unset') "
+                "zurückgeben.",
+                "Übernimmt kein Knoten: Zugang über Konsole bzw. Out-of-Band "
+                "aufnehmen.",
+            ),
+            "work": (
+                "Ausgangszustand aufnehmen: HA-Rollen, Synchronisation, "
+                "veröffentlichte Dienste.",
+                "Prüfen, dass das Ziel aktuell HA-Primary ist.",
+                "Failover-Befehl über SSH auslösen.",
+                "Übernahme durch den Partner abwarten.",
+                "Veröffentlichte Dienste erneut prüfen.",
+            ),
+            "validation": (
+                "Der Partner meldet sich als HA-Primary.",
+                "Der Cluster ist synchron.",
+                "Alle unten gelisteten veröffentlichten Dienste antworten "
+                "wieder.",
+            ),
+        },
+        "en": {
+            "label": "HA failover - hand the primary role over (DISRUPTIVE)",
+            "purpose": (
+                "Make one HA cluster hand the primary role to its peer (or "
+                "take it back). There is no REST call for this; SATOM drives "
+                "the product's CLI command over SSH, and only on firmware "
+                "where that command is verified."),
+            "justification": (
+                "A failover drops the sessions on the outgoing primary, so it "
+                "only runs bound to an approved change request inside its "
+                "maintenance window."),
+            "impact": (
+                "Every session on the outgoing primary breaks. Published "
+                "services are briefly unreachable until the peer takes over."),
+            "downtime": "approx. 10-60 seconds per cluster (role change)",
+            "risk": (
+                "Main risks: the peer does not take over cleanly; the two "
+                "nodes are out of sync; the cluster flips back unintentionally. "
+                "SATOM refuses to fail over a target that is not reporting HA "
+                "primary right now."),
+            "rollback": (
+                "Give the primary role back with the same action (direction "
+                "'unset').",
+                "If no node takes over: take console / out-of-band access.",
+            ),
+            "work": (
+                "Record the baseline: HA roles, sync state, published services.",
+                "Check that the target is the HA primary right now.",
+                "Issue the failover command over SSH.",
+                "Wait for the peer to take over.",
+                "Re-probe the published services.",
+            ),
+            "validation": (
+                "The peer reports HA primary.",
+                "The cluster is in sync.",
+                "Every published service listed below answers again.",
+            ),
+        },
+    },
+    # -------------------------------------------------- cert manager renewals
+    "cert_manager_server": _cert_renew_profile(
+        "server-authentication", "Serverauthentifizierung",
+        "Cert Manager — renew Server certs",
+        "Cert Manager — Server-Zertifikate erneuern"),
+    "cert_manager_clientserver": _cert_renew_profile(
+        "client+server (both EKU)", "Client- und Serverauthentifizierung",
+        "Cert Manager — renew Client+Server certs",
+        "Cert Manager — Client+Server-Zertifikate erneuern"),
+    "cert_manager_client": _cert_renew_profile(
+        "client-authentication", "Clientauthentifizierung",
+        "Cert Manager — renew Client certs",
+        "Cert Manager — Client-Zertifikate erneuern"),
     # ---------------------------------------------------------------- generic
     GENERIC_ACTION: {
         "de": {

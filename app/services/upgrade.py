@@ -480,7 +480,12 @@ def _platform_matches(image_platform: str, appliance) -> bool:
     ip = (image_platform or "").strip().lower()
     if ip not in ("hw", "vm"):
         return True                              # universal / unset image
-    ap = _platform_of(getattr(appliance, "model", "") or "")
+    # The probed hw_type ('hardware' / 'vm') is measured; the model string is
+    # only a fallback for an appliance that was never probed.
+    ap = {"hardware": "hw", "vm": "vm"}.get(
+        (getattr(appliance, "hw_type", "") or "").strip().lower(), "")
+    if not ap:
+        ap = _platform_of(getattr(appliance, "model", "") or "")
     if ap not in ("hw", "vm"):
         return True                              # appliance platform unknown
     return ip == ap

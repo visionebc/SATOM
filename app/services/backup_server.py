@@ -434,6 +434,40 @@ def parse_fw_version(filename: str) -> tuple[str, str]:
     return ver, build
 
 
+#: ``FWB_KVM-v7.6.8…``, ``FGT_VM64_KVM-v7.4.4…``, ``FAD_1000F-v7.4.2…``: the
+#: token between the product prefix and ``-v<version>`` names the platform.
+_FW_PLATFORM_RE = re.compile(r"^(?:FWB|FAD|FGT|FAZ|FAC|FMG|FPX|FML)[_-]([A-Z0-9_]+?)-V\d",
+                             re.IGNORECASE)
+_FW_VM_TOKENS = frozenset({"VM", "VM64", "KVM", "VMWARE", "ESX", "ESXI", "HV",
+                           "HYPERV", "XEN", "XENSERVER", "AWS", "AZURE", "GCP",
+                           "OCI", "OPENSTACK", "ALI", "ALIYUN", "IBM", "DOCKER"})
+#: A hardware model: 60F, 400F, 1000E, 3000F, 2KE, 200G…
+_FW_HW_MODEL_RE = re.compile(r"^\d{2,4}[A-Z]{1,2}\d?$|^\dK[A-Z]$")
+_FW_HYPERVISORS = {"KVM": "kvm", "VMWARE": "vmware", "ESX": "vmware", "ESXI": "vmware"}
+
+
+def parse_fw_platform(filename: str) -> tuple[str, str]:
+    """``(platform, hypervisor)`` from a Fortinet firmware filename.
+
+    ``platform`` is ``"vm"``, ``"hw"`` or ``""`` (the name does not say);
+    ``hypervisor`` is ``"kvm"`` / ``"vmware"`` when the name names one.
+    ``FWB_KVM-v7.6.8.M-build1128-FORTINET.out`` -> ``("vm", "kvm")``;
+    ``FWB_1000E-v7.6.8-build1128-FORTINET.out`` -> ``("hw", "")``.
+    Only Fortinet's own naming is read; anything else stays unknown rather
+    than guessed, so a renamed file never lands under the wrong platform."""
+    name = posixpath.basename(filename or "")
+    m = _FW_PLATFORM_RE.match(name)
+    if not m:
+        return "", ""
+    tokens = [t for t in m.group(1).upper().split("_") if t]
+    if any(t in _FW_VM_TOKENS for t in tokens):
+        hyp = next((_FW_HYPERVISORS[t] for t in tokens if t in _FW_HYPERVISORS), "")
+        return "vm", hyp
+    if len(tokens) == 1 and _FW_HW_MODEL_RE.match(tokens[0]):
+        return "hw", ""
+    return "", ""
+
+
 def _manifest_path() -> str:
     return os.path.join(_firmware_root(), "manifest.json")
 
@@ -507,8 +541,9 @@ def pull_firmware(filename: str, by: str = "") -> dict:
     try:
         remote = posixpath.join(cfg["firmware_path"], safe)
         ver, build = parse_fw_version(safe)
+        platform, _hyp = parse_fw_platform(safe)
         fw = FirmwareImage(product=_guess_product(safe), version=ver or "?",
-                           build=build or None,
+                           build=build or None, platform=platform,
                            filename=safe, stored_path="", size_bytes=0,
                            sha256="", uploaded_by=by or "backup-server",
                            notes=f"pulled from backup server {cfg['host']}:{remote}")

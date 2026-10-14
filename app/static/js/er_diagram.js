@@ -158,7 +158,9 @@
     tb.appendChild(g3);
 
     var meta = htm("span", "small text-muted ms-auto");
-    meta.textContent = this.tables.length + " tables · " + this.edges.length + " foreign keys";
+    var nInferred = this.edges.filter(function (e) { return e.inferred; }).length;
+    meta.textContent = this.tables.length + " tables · " + (this.edges.length - nInferred) +
+      " foreign keys" + (nInferred ? " · " + nInferred + " inferred" : "");
     tb.appendChild(meta);
     this.host.appendChild(tb);
 
@@ -193,6 +195,7 @@
     var hint = htm("span", "ms-auto");
     hint.innerHTML = "<span style=\"color:" + T.pk + "\">⚷</span> primary key · " +
       "<span style=\"color:" + T.edgeHi + "\">◆</span> foreign key · " +
+      "dashed = inferred from the column name (no FK constraint) · " +
       "crow's foot = many · <b>bold</b> = NOT NULL · 🔒 masked";
     lg.appendChild(hint);
     this.host.appendChild(lg);
@@ -566,6 +569,7 @@
 
       var path = el("path", { d: d, fill: "none", stroke: T.edge, "stroke-width": 1.5 });
       path.setAttribute("data-role", "wire");
+      if (e.inferred) { path.setAttribute("stroke-dasharray", "5 4"); }
       g.appendChild(path);
 
       var foot = "M" + P1.x + "," + P1.y + " L" + x1 + "," + (y1 - 5.5) +
@@ -586,7 +590,8 @@
       g.appendChild(hit);
 
       hit.addEventListener("mousemove", function (ev) {
-        self.showTip(ev, e.from_table + "." + e.from_col + " → " + e.to_table + "." + e.to_col);
+        self.showTip(ev, e.from_table + "." + e.from_col + " → " + e.to_table + "." + e.to_col +
+          (e.inferred ? "  (inferred, no FK constraint)" : ""));
         self.setEdgeHot(g, true);
       });
       hit.addEventListener("mouseleave", function () {

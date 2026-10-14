@@ -6,6 +6,52 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — pages that only worked after a refresh; Database relationships; Change types; firmware platform (2026-10-15)
+
+- **Pages opened from the menu now work without a refresh.** Turbo Drive
+  re-inserts a page's scripts on every link visit, and the inline code ran
+  before the external file it calls had loaded. After a click, the Database
+  diagram stayed empty ("initERDiagram is not a function"), the Python Console
+  "Browse examples" button did nothing and its Run button was never wired, the
+  Query builder opened with no tables ("Related tables" empty), and Lua
+  Studio → New, Plugin Studio → New and Naming threw the same error. Every
+  page worked after a full reload. `turbo-boot.js` now runs an inline script
+  only after the external scripts above it have loaded, the order a full load
+  uses. Measured in Chromium on 43 pages: 5 broken before, 0 after, no new
+  errors (operator request: "for the diagram to show I have to refresh the
+  page"; "the examples button does not work"; "in the Query builder Related
+  tables comes up empty").
+- **Database: relationships the schema implies are drawn.** All 123 tables
+  were already in the diagram, but 48 showed as unconnected because history
+  tables keep `appliance_id` and similar columns without a foreign key, on
+  purpose: their rows outlive the appliance. An integer `<name>_id` column now
+  links to the table with that name (singular or plural) whose primary key is
+  `id`, exact match only (24 relationships). They are drawn dashed, counted
+  apart ("78 foreign keys · 24 inferred"), labelled in the list view, and the
+  Query builder can join on them.
+- **The SQL console was already read-only; checked live.** DELETE, UPDATE, a
+  data-modifying CTE, two statements, `SELECT … FOR UPDATE` and `set_config`
+  are all refused before they run, and the query runs in a read-only,
+  rolled-back transaction under a role that can only SELECT.
+- **Change types: aligned form and tables, and real names for four types.**
+  The "Add a change type" form had each field at a different height. It now
+  has one row (Key, Name, Written in) and one row of checkboxes for "Offered
+  for", which replace the Ctrl-click list. Both tables share one column grid.
+  HA failover and the three Cert Manager renewals showed "Action without a
+  profile" as their name and printed the generic change document: they now
+  have their own profile in English and German. A test pins every operator
+  action to a profile and to its catalogue label. It also caught the
+  lifecycle sweep's label drifting from the catalogue.
+- **Firmware: Hardware or VM is detected from the file name.** Fortinet's
+  naming carries it (`FWB_KVM-…`, `FGT_VM64_KVM-…` = VM; `FWB_1000E-…`,
+  `FGT_60F-…` = hardware). The upload form fills the Platform field, and the
+  hypervisor for install images, when you choose the file and says it was
+  detected. The server applies the same rule to uploads and backup-server
+  pulls. A platform the operator picked is never overruled, and a name that
+  does not say stays "Any". Matching an image to an appliance now reads the
+  appliance's probed hardware type; before, it guessed from the model string
+  (operator request: "firmware should detect directly whether it is HW or VM").
+
 ### Changed — Automations regrouped: operator work in Automation, SATOM's own in Administrator; schema pages under API (2026-10-14)
 
 - **System Automations moved to Administrator → System**, in every ADOM.

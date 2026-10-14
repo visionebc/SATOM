@@ -26,7 +26,7 @@ from pathlib import Path
 
 from . import cmd_checks, cmd_ops, dbq
 from .cmd_checks import NGINX_VHOST_DIRS, satom_vhosts
-from .context import UNITS, run
+from .context import UNITS, app_cmd, app_env, run
 from .cmd_execute import _app_call
 from .render import Result
 
@@ -115,11 +115,8 @@ def _app_stdin(ctx, code, payload, timeout=120):
     venv = ctx.app_dir / "venv" / "bin" / "python3"
     if not venv.exists():
         return 127, "", "venv missing at %s" % venv
-    env = dict(os.environ)
-    for k, v in ctx.env.items():
-        env.setdefault(k, v)
-    return run([str(venv), "-c", code], timeout=timeout, cwd=str(ctx.app_dir),
-               env=env, input_=payload)
+    return run(app_cmd(ctx, [str(venv), "-c", code]), timeout=timeout,
+               cwd=str(ctx.app_dir), env=app_env(ctx, dotenv=True), input_=payload)
 
 
 # -- unit switches ---------------------------------------------------------
@@ -1126,10 +1123,14 @@ def support_bundle(ctx, args):
                 (["uname", "-a"], "uname.txt")):
             rc, out, err = run(cmd, timeout=60)
             (tmp / out_name).write_text(out or err or "")
-        rc, out, _ = run([str(ctx.app_dir / "venv" / "bin" / "pip"), "freeze"], timeout=120)
+        rc, out, _ = run(app_cmd(ctx, [str(ctx.app_dir / "venv" / "bin" / "pip"), "freeze"]),
+                         timeout=120, cwd=str(ctx.app_dir), env=app_env(ctx))
         (tmp / "pip-freeze.txt").write_text(out)
-        rc, out, _ = run(["git", "-c", "safe.directory=%s" % ctx.app_dir,
-                          "-C", str(ctx.app_dir), "log", "-30", "--format=%h %ci %s"])
+        rc, out, _ = run(app_cmd(ctx, ["git", "--no-optional-locks",
+                                       "-c", "safe.directory=%s" % ctx.app_dir,
+                                       "-C", str(ctx.app_dir), "log", "-30",
+                                       "--format=%h %ci %s"]),
+                         cwd=str(ctx.app_dir), env=app_env(ctx, git=True))
         (tmp / "git-log.txt").write_text(out)
         units_dir = tmp / "units"
         units_dir.mkdir()

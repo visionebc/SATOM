@@ -16,7 +16,8 @@ import stat
 from pathlib import Path
 
 from . import dbq
-from .context import UNITS, run
+from .context import UNITS, app_cmd, app_env, run
+from .context import run as _run
 from .render import Result
 
 # satom-git-publish.timer left this list 2026-08-05: the reports/ SoT moved
@@ -851,8 +852,19 @@ def git(ctx, args):
     # See cmd_ops.git_status: without --no-optional-locks a root `git status`
     # rewrites .git/index and takes it away from the service account — the very
     # drift this check reports.
-    g = ["git", "--no-optional-locks", "-c", "safe.directory=%s" % ctx.app_dir,
-         "-C", str(ctx.app_dir)]
+    # As the service account (context.app_cmd): run as root, git executes what
+    # .git/config says -- core.fsmonitor, filters, diff drivers -- and that file
+    # is the service account's to write.
+    g = app_cmd(ctx, ["git", "--no-optional-locks", "-c", "safe.directory=%s" % ctx.app_dir,
+                      "-C", str(ctx.app_dir)])
+    genv = app_env(ctx, git=True)
+
+    def run(cmd, timeout=60):
+        # `find` goes through here too: harmless as the service account,
+        # and it only reads.
+        if cmd[:len(g)] != g:
+            return _run(cmd, timeout=timeout)
+        return _run(cmd, timeout=timeout, env=genv, cwd=str(ctx.app_dir))
     r = Result("ok", "git integrity")
     # SATOM-GIT-PKG: until 1.3.3 no offline bundle carried git, so an air-gapped
     # node reported "repository unusable" — true, and it sends the operator to
@@ -1211,11 +1223,8 @@ def _app_json(ctx, code, timeout=60):
     venv = ctx.app_dir / "venv" / "bin" / "python3"
     if not venv.exists():
         return None, "venv missing at %s" % venv
-    env = dict(os.environ)
-    for k, v in ctx.env.items():
-        env.setdefault(k, v)
-    rc, out, err = run([str(venv), "-c", code], timeout=timeout,
-                       cwd=str(ctx.app_dir), env=env)
+    rc, out, err = run(app_cmd(ctx, [str(venv), "-c", code]), timeout=timeout,
+                       cwd=str(ctx.app_dir), env=app_env(ctx, dotenv=True))
     if rc != 0:
         return None, (err or out or "exit %d" % rc).strip().splitlines()[-1:][0]
     try:

@@ -112,6 +112,29 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="security--the-operator-cli-no-longer-runs-the-app-tree-as-root-2026-10-14">Security — the operator CLI no longer runs the app tree as root (2026-10-14)</h3>
+<ul>
+<li><strong><code>satom</code> under sudo drops to the service account before executing anything
+  from <code>/opt/satom</code>.</strong> Diagnostics ran <code>git status</code> as root inside the
+  repository, which executes what the service account's <code>.git/config</code> names
+  (<code>core.fsmonitor</code>, measured); every venv snippet (<code>_app_call</code>: update/promote
+  enqueue, backups, scheduler and device actions, the automatic <code>backup db</code> of
+  <code>execute update package</code>), <code>flask</code> one-shots, <code>diagnose python</code> and the
+  support bundle ran the venv python or pip as root; <code>execute reinstall venv</code>
+  ran <code>pip install -r requirements.txt</code> as root and then chowned the result
+  recursively, following symlinks. All of these now run as the service account
+  (<code>runuser -m -u</code>, or <code>setpriv</code> to the tree's uid when it has no name); the
+  venv is built as that account and nothing is chowned afterwards. A test fails
+  on any git/venv/flask/pip command the CLI builds without the drop.</li>
+<li><strong>Root no longer writes or chowns through the service account's
+  directories.</strong> <code>execute repair permissions</code> chowned whatever a symlink in
+  <code>data/</code> pointed to (e.g. <code>/etc/shadow</code>) to the service account; it now walks
+  by directory fd, never follows a link and skips hard-linked files. Update
+  packages and API packs are staged in <code>data/</code> by a child that already dropped
+  privileges (<code>execute update fetch</code> downloads into a root-private directory
+  first), queue files are created exclusively and without following links, and
+  every remaining chown is <code>follow_symlinks=False</code>.</li>
+</ul>
 <h3 id="security--signed-releases-node-request-signing-console-hardening-2026-10-14">Security — signed releases, node request signing, console hardening (2026-10-14)</h3>
 <ul>
 <li><strong>Signed-release enforcement is activatable without blocking HA.</strong> With a

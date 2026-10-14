@@ -7,18 +7,23 @@ Two rules hold this file together:
    ``self_update.request_update`` through the venv, not hand-writing the
    request JSON — a second writer of that schema is a schema that drifts.
 
-2. Anything privileged that the app deliberately cannot do (rebuild a venv,
-   write unit files) is done here, in the root process, and NEVER by widening
-   the service account's sudoers.
+2. Anything privileged that the app deliberately cannot do (move a venv
+   aside, write unit files) is done here, in the root process, and NEVER by
+   widening the service account's sudoers.
+
+3. Root never EXECUTES the app tree (venv python, flask, pip, a git that reads
+   .git/config): the service account can write all of it. Those calls go
+   through ``context.app_cmd`` and run as that account.
 """
 import json
 import os
 import shutil
+import stat as _stat
 import time
 from pathlib import Path
 
 from . import cmd_release
-from .context import RESTARTABLE, UNITS, run
+from .context import RESTARTABLE, UNITS, app_cmd, app_env, app_ids, run
 from .render import Result
 
 # Units whose templates live in deploy/ and are therefore re-copied by the
@@ -33,10 +38,8 @@ def _app_call(ctx, code, timeout=120):
     venv = ctx.app_dir / "venv" / "bin" / "python3"
     if not venv.exists():
         return 127, "", "venv missing at %s" % venv
-    env = dict(os.environ)
-    for k, v in ctx.env.items():
-        env.setdefault(k, v)
-    return run([str(venv), "-c", code], timeout=timeout, cwd=str(ctx.app_dir), env=env)
+    return run(app_cmd(ctx, [str(venv), "-c", code]), timeout=timeout,
+               cwd=str(ctx.app_dir), env=app_env(ctx, dotenv=True))
 
 
 def _svc_arg(args, verb):
@@ -266,7 +269,8 @@ def reinstall_venv(ctx, args):
         r.lines("what happens", [
             "1. save a pip freeze of the current venv under /root",
             "2. move the current venv aside (venv.old-<timestamp>)",
-            "3. python3 -m venv + pip install -r requirements.txt",
+            "3. python3 -m venv + pip install -r requirements.txt, both as %s"
+            % ctx.app_user,
             "",
             "This needs to reach the package index. On an isolated management",
             "network it will fail AFTER the old venv has been moved aside, and",
@@ -279,7 +283,9 @@ def reinstall_venv(ctx, args):
     r = Result("ok", "reinstall venv")
     backup = None
     if venv.exists():
-        rc, out, _ = run([str(venv / "bin" / "python3"), "-m", "pip", "freeze"], timeout=120)
+        rc, out, _ = run(app_cmd(ctx, [str(venv / "bin" / "python3"), "-m", "pip",
+                                       "freeze"]),
+                         timeout=120, cwd=str(ctx.app_dir), env=app_env(ctx))
         if rc == 0 and out:
             backup = Path("/root/satom-venv-freeze-%s.txt" % time.strftime("%Y%m%d-%H%M%S"))
             backup.write_text(out)
@@ -287,26 +293,27 @@ def reinstall_venv(ctx, args):
         moved = venv.with_name("venv.old-%s" % time.strftime("%Y%m%d-%H%M%S"))
         venv.rename(moved)
         r.rows("previous venv", [("moved to", str(moved))])
-    rc, out, err = run(["python3", "-m", "venv", str(venv)], timeout=300)
+    # Built AS the service account: requirements.txt is that account's file, and
+    # pip runs code from every package it names (setup.py, build backends).
+    # Built as root and chowned afterwards, that was root code execution for
+    # anyone who can edit requirements.txt -- and the recursive chown followed
+    # symlinks the build had just written.
+    rc, out, err = run(app_cmd(ctx, ["python3", "-m", "venv", str(venv)]),
+                       timeout=300, cwd=str(ctx.app_dir), env=app_env(ctx))
     if rc != 0:
         r.status = "bad"
         r.lines("venv creation failed", (err or out).splitlines())
         return r
-    rc, out, err = run([str(venv / "bin" / "pip"), "install", "-r", str(req)],
-                       timeout=1800)
+    rc, out, err = run(app_cmd(ctx, [str(venv / "bin" / "pip"), "install", "-r",
+                                     str(req)]),
+                       timeout=1800, cwd=str(ctx.app_dir), env=app_env(ctx))
     r.lines("pip install -r requirements.txt", (out or err).splitlines()[-12:])
     if rc != 0:
         r.status = "bad"
         r.note("Install failed. The previous venv is still on disk (see above) — "
                "rename it back to recover, then investigate.")
         return r
-    shutil.chown(str(venv), ctx.app_user, ctx.app_user)
-    for p in venv.rglob("*"):
-        try:
-            shutil.chown(str(p), ctx.app_user, ctx.app_user)
-        except Exception:  # noqa: BLE001
-            pass
-    r.rows("ownership", [("venv", "%s:%s" % (ctx.app_user, ctx.app_user))])
+    r.rows("ownership", [("venv", "built as %s" % ctx.app_user)])
     r.note("Now restart the app:  satom execute restart web")
     return r
 
@@ -409,6 +416,39 @@ def reinstall_metrics_store(ctx, args):
     return r
 
 
+def _chown_tree(base, uid, gid):
+    """Root-owned entries under ``base`` -> uid:gid. (scanned, fixed).
+
+    The tree belongs to the account we are handing files TO, so it can plant a
+    symlink anywhere in it (``data/x -> /etc/shadow``, or ``data`` itself ->
+    /etc). ``Path.stat()`` + ``shutil.chown`` followed those and gave root's
+    files away. Here every step is relative to a directory fd opened without
+    following links (``os.fwalk``), every stat/chown is ``follow_symlinks=False``,
+    and a regular file with more than one link is left alone: it may be a hard
+    link to a file outside the tree."""
+    scanned = fixed = 0
+
+    def fix(name, dir_fd=None):
+        nonlocal scanned, fixed
+        scanned += 1
+        try:
+            st = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+            if st.st_uid != 0:
+                return
+            if _stat.S_ISREG(st.st_mode) and st.st_nlink > 1:
+                return
+            os.chown(name, uid, gid, dir_fd=dir_fd, follow_symlinks=False)
+            fixed += 1
+        except OSError:
+            pass
+
+    fix(str(base))
+    for _top, dirs, files, top_fd in os.fwalk(str(base), follow_symlinks=False):
+        for name in dirs + files:
+            fix(name, top_fd)
+    return scanned, fixed
+
+
 def repair_permissions(ctx, args):
     """Give the app tree back to the service account.
 
@@ -417,7 +457,8 @@ def repair_permissions(ctx, args):
     symptoms are indirect and slow: git publish keeps working because git
     renames refs, while some other write silently fails.
     """
-    if ctx.app_user == "root":
+    ids = app_ids(ctx)
+    if ctx.app_user == "root" or not ids:
         return Result("info", "app tree is root-owned; nothing to repair")
     r = Result("ok", "repair permissions")
     fixed = 0
@@ -430,18 +471,15 @@ def repair_permissions(ctx, args):
     for sub in (".git", "data", "reports", "state", "app", "deploy", "pki", "site",
                 "docs", "tests", "installers"):
         base = ctx.app_dir / sub
-        if not base.exists():
+        if not os.path.lexists(base):
             continue
-        for p in [base] + list(base.rglob("*")):
-            scanned += 1
-            try:
-                if p.stat().st_uid == 0:
-                    shutil.chown(str(p), ctx.app_user, ctx.app_user)
-                    fixed += 1
-            except Exception:  # noqa: BLE001
-                pass
+        n_scanned, n_fixed = _chown_tree(base, *ids)
+        scanned += n_scanned
+        fixed += n_fixed
     pyc = 0
     for p in ctx.app_dir.rglob("__pycache__"):
+        if p.is_symlink():
+            continue
         # Checking only the DIRECTORY's owner missed the common case: the cache
         # directory already existed (service-owned) and root merely dropped a
         # new .pyc inside it. Sweep when the directory OR anything in it is
@@ -467,11 +505,9 @@ def _flask(ctx, sub, extra=None, timeout=900):
     if not venv.exists():
         return Result("bad", "venv/bin/flask missing — run 'execute reinstall venv'",
                       exit_code=4)
-    env = dict(os.environ)
-    for k, v in ctx.env.items():
-        env.setdefault(k, v)
-    cmd = [str(venv), sub] + list(extra or [])
-    rc, out, err = run(cmd, timeout=timeout, cwd=str(ctx.app_dir), env=env)
+    cmd = app_cmd(ctx, [str(venv), sub] + list(extra or []))
+    rc, out, err = run(cmd, timeout=timeout, cwd=str(ctx.app_dir),
+                       env=app_env(ctx, dotenv=True))
     r = Result("ok" if rc == 0 else "bad", "flask %s" % sub)
     r.lines("", (out or err).splitlines()[-40:])
     return r

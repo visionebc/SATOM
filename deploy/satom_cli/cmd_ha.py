@@ -18,7 +18,7 @@ import json
 import os
 import time
 
-from .context import run
+from .context import app_cmd, app_env, run
 from .render import EXIT_FAIL, EXIT_USAGE, Result
 
 # One snippet per call, arguments on STDIN, never in argv (argv is world-
@@ -85,13 +85,8 @@ def _app_json(ctx, code, payload=None, timeout=90):
     venv = ctx.app_dir / "venv" / "bin" / "python3"
     if not venv.exists():
         return None, "venv missing at %s" % venv
-    env = dict(os.environ)
-    for k, v in ctx.env.items():
-        env.setdefault(k, v)
-    env["HOME"] = str(ctx.app_dir)
-    cmd = [str(venv), "-c", code]
-    if os.geteuid() == 0 and ctx.app_user and ctx.app_user != "root":
-        cmd = ["runuser", "-m", "-u", ctx.app_user, "--"] + cmd
+    env = app_env(ctx, dotenv=True)
+    cmd = app_cmd(ctx, [str(venv), "-c", code])
     rc, out, err = run(cmd, timeout=timeout, cwd=str(ctx.app_dir), env=env,
                        input_=payload)
     if rc != 0:

@@ -79,6 +79,166 @@ def _app_user():
         return "root"
 
 
+# ---------------------------------------------------------------------------
+# The satom -> root boundary
+#
+# Everything under the app tree is writable by the service account: venv/,
+# .git/config, requirements.txt, app/. Executing any of it as root -- a venv
+# python, `flask`, `pip`, or a `git` that reads .git/config (core.fsmonitor,
+# filters, diff drivers...) -- hands root to whoever already runs as the
+# service account. So the CLI never executes the tree as root: every such call
+# goes through app_cmd(), and tests/test_cli_privdrop.py fails on a run() of a
+# venv/git/pip command that does not.
+# ---------------------------------------------------------------------------
+def app_cmd(ctx, cmd):
+    """``cmd`` prefixed so it runs as the owner of the app tree when we are root.
+
+    ``runuser -m`` keeps the environment the caller built (app_env); without it
+    HOME would reset to /root, which the service account cannot read. A tree
+    owned by a uid with no passwd entry still drops (numerically, via setpriv)
+    instead of falling back to root."""
+    cmd = list(cmd)
+    if os.geteuid() != 0:
+        return cmd
+    user = getattr(ctx, "app_user", None) or "root"
+    if user != "root":
+        return ["runuser", "-m", "-u", user, "--"] + cmd
+    try:
+        st = Path(ctx.app_dir).stat()
+    except OSError:
+        return cmd
+    if st.st_uid == 0:
+        return cmd  # a root-owned install: there is no lower account to drop to
+    return ["setpriv", "--reuid=%d" % st.st_uid, "--regid=%d" % st.st_gid,
+            "--clear-groups", "--"] + cmd
+
+
+def _app_home(ctx):
+    try:
+        return pwd.getpwnam(ctx.app_user).pw_dir
+    except (KeyError, TypeError):
+        return str(ctx.app_dir)
+
+
+def app_env(ctx, dotenv=False, git=False, home=None):
+    """Environment for a command run through app_cmd().
+
+    ``dotenv`` merges the app's .env (the venv snippets need the database URI).
+    ``git`` drops GIT_* from the caller and uses the service account's HOME, so
+    its own git configuration applies to its own process."""
+    env = dict(os.environ)
+    if git:
+        env = {k: v for k, v in env.items() if not k.startswith("GIT_")}
+    if dotenv:
+        for k, v in ctx.env.items():
+            env.setdefault(k, v)
+    if home:
+        env["HOME"] = home
+    elif not git:
+        env["HOME"] = str(ctx.app_dir)
+    elif os.geteuid() == 0:
+        env["HOME"] = _app_home(ctx)
+    return env
+
+
+def app_ids(ctx):
+    """(uid, gid) of the service account, or None when that is root."""
+    if getattr(ctx, "app_user", "root") != "root":
+        try:
+            e = pwd.getpwnam(ctx.app_user)
+            return e.pw_uid, e.pw_gid
+        except KeyError:
+            pass
+    try:
+        st = Path(ctx.app_dir).stat()
+    except OSError:
+        return None
+    return None if st.st_uid == 0 else (st.st_uid, st.st_gid)
+
+
+def chown_app(ctx, path):
+    """Hand a path root just created to the service account -- never through a
+    symlink. The directories it lives in are the account's, so the name can be
+    swapped for a link to /etc/shadow between our write and this chown."""
+    ids = app_ids(ctx) if os.geteuid() == 0 else None
+    if not ids:
+        return False
+    try:
+        os.chown(path, ids[0], ids[1], follow_symlinks=False)
+        return True
+    except OSError:
+        return False
+
+
+def app_copy(ctx, src, dest):
+    """Copy ``src`` to ``dest`` inside the app tree. (ok, error).
+
+    As root the WRITE happens in a child that has already dropped to the service
+    account: ``dest`` and every directory above it are that account's, so any
+    path check done as root is a race it can win (swap a directory for a symlink
+    and root writes wherever it points). Root only opens ``src`` -- an
+    operator's file the account may not be able to read -- and hands the fd
+    over."""
+    src, dest = Path(src), Path(dest)
+    ids = app_ids(ctx) if os.geteuid() == 0 else None
+    if not ids:
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
+            return True, ""
+        except OSError as exc:
+            return False, str(exc)
+    try:
+        src_fd = os.open(src, os.O_RDONLY | os.O_CLOEXEC)
+    except OSError as exc:
+        return False, str(exc)
+    rd, wr = os.pipe()
+    pid = os.fork()
+    if pid == 0:  # child: drop, then write
+        code = 1
+        try:
+            os.close(rd)
+            os.setgroups([])
+            os.setgid(ids[1])
+            os.setuid(ids[0])
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            tmp = dest.parent / (".%s.%d.tmp" % (dest.name, os.getpid()))
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                         0o640)
+            try:
+                while True:
+                    chunk = os.read(src_fd, 1 << 20)
+                    if not chunk:
+                        break
+                    view = memoryview(chunk)
+                    while view:
+                        view = view[os.write(fd, view):]
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            os.replace(tmp, dest)
+            code = 0
+        except BaseException as exc:  # noqa: BLE001
+            try:
+                os.write(wr, ("%s: %s" % (type(exc).__name__, exc)).encode()[:500])
+            except Exception:  # noqa: BLE001
+                pass
+        finally:
+            os._exit(code)
+    os.close(wr)
+    os.close(src_fd)
+    msg = b""
+    while True:
+        b = os.read(rd, 4096)
+        if not b:
+            break
+        msg += b
+    os.close(rd)
+    _, status = os.waitpid(pid, 0)
+    ok = os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0
+    return ok, ("" if ok else (msg.decode("utf-8", "replace") or "copy failed"))
+
+
 class Ctx:
     """Everything a command handler needs, resolved once and cached."""
 
@@ -248,7 +408,9 @@ class Ctx:
             return "unknown"
 
     def git_head(self):
-        rc, out, _ = run(["git", "-C", str(self.app_dir), "rev-parse", "--short", "HEAD"])
+        rc, out, _ = run(app_cmd(self, ["git", "-C", str(self.app_dir), "rev-parse",
+                                        "--short", "HEAD"]),
+                         env=app_env(self, git=True), cwd="/")
         return out if rc == 0 else "unknown"
 
     def in_service_group(self):

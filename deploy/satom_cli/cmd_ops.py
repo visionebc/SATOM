@@ -14,7 +14,8 @@ import time
 from pathlib import Path
 
 from . import dbq
-from .context import UNITS, run
+from .context import UNITS, app_cmd, app_env, run
+from .context import run as _run
 from .render import Result
 
 # Freshness budgets, in hours. Deliberately generous: the point is to catch
@@ -620,8 +621,15 @@ def git_status(ctx, args):
     # .git/index; run as root in a tree owned by the service account that hands
     # the index to root and breaks every later write by the app. A read command
     # with a destructive side effect is worse than no command.
-    g = ["git", "--no-optional-locks", "-c", "safe.directory=%s" % ctx.app_dir,
-         "-C", str(ctx.app_dir)]
+    # As the service account (context.app_cmd): run as root, git executes what
+    # .git/config says -- core.fsmonitor, filters, diff drivers -- and that file
+    # is the service account's to write.
+    g = app_cmd(ctx, ["git", "--no-optional-locks", "-c", "safe.directory=%s" % ctx.app_dir,
+                      "-C", str(ctx.app_dir)])
+    genv = app_env(ctx, git=True)
+
+    def run(cmd, timeout=60):
+        return _run(cmd, timeout=timeout, env=genv, cwd=str(ctx.app_dir))
     r = Result("ok", "git — %s" % ctx.app_dir)
 
     rc, branch, _ = run(g + ["rev-parse", "--abbrev-ref", "HEAD"])

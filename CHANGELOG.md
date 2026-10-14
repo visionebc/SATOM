@@ -6,6 +6,29 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Security — the operator CLI no longer runs the app tree as root (2026-10-14)
+
+- **`satom` under sudo drops to the service account before executing anything
+  from `/opt/satom`.** Diagnostics ran `git status` as root inside the
+  repository, which executes what the service account's `.git/config` names
+  (`core.fsmonitor`, measured); every venv snippet (`_app_call`: update/promote
+  enqueue, backups, scheduler and device actions, the automatic `backup db` of
+  `execute update package`), `flask` one-shots, `diagnose python` and the
+  support bundle ran the venv python or pip as root; `execute reinstall venv`
+  ran `pip install -r requirements.txt` as root and then chowned the result
+  recursively, following symlinks. All of these now run as the service account
+  (`runuser -m -u`, or `setpriv` to the tree's uid when it has no name); the
+  venv is built as that account and nothing is chowned afterwards. A test fails
+  on any git/venv/flask/pip command the CLI builds without the drop.
+- **Root no longer writes or chowns through the service account's
+  directories.** `execute repair permissions` chowned whatever a symlink in
+  `data/` pointed to (e.g. `/etc/shadow`) to the service account; it now walks
+  by directory fd, never follows a link and skips hard-linked files. Update
+  packages and API packs are staged in `data/` by a child that already dropped
+  privileges (`execute update fetch` downloads into a root-private directory
+  first), queue files are created exclusively and without following links, and
+  every remaining chown is `follow_symlinks=False`.
+
 ### Security — signed releases, node request signing, console hardening (2026-10-14)
 
 - **Signed-release enforcement is activatable without blocking HA.** With a

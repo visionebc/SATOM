@@ -9,7 +9,7 @@ import os
 import stat
 from pathlib import Path
 
-from .context import UNITS, run
+from .context import UNITS, app_cmd, app_env, run
 from .render import Result
 
 # Modules the app imports INSIDE functions. Nothing imports them at collection
@@ -108,9 +108,13 @@ def python(ctx, args):
     if not venv.exists():
         return _fail(Result("bad", "venv missing at %s" % venv),
                      "Rebuild it: sudo satom execute reinstall venv")
-    rc, out, _ = run([str(venv), "-V"])
+    # Every call below executes the venv, which the service account can write:
+    # as that account, never as root (context.app_cmd).
+    aenv = app_env(ctx)
+    rc, out, _ = run(app_cmd(ctx, [str(venv), "-V"]), cwd=str(ctx.app_dir), env=aenv)
     r.rows("interpreter", [("venv python", out or "?"), ("path", str(venv))])
-    rc, out, err = run([str(venv), "-m", "pip", "check"], timeout=120)
+    rc, out, err = run(app_cmd(ctx, [str(venv), "-m", "pip", "check"]), timeout=120,
+                       cwd=str(ctx.app_dir), env=aenv)
     r.lines("pip check", (out or err or "clean").splitlines()[:15])
     if rc != 0:
         r.worst("warn")
@@ -134,9 +138,9 @@ def python(ctx, args):
         "            bad.append('%s: %s: %s' % (f, type(exc).__name__, exc))\n"
         "print('COMPILE_OK' if not bad else 'COMPILE_BAD')\n"
         "[print(' ', b) for b in bad]\n")
-    rc, out, err = run([str(venv), "-c", checker,
-                        str(ctx.app_dir / "app"), str(ctx.app_dir / "deploy")],
-                       timeout=180)
+    rc, out, err = run(app_cmd(ctx, [str(venv), "-c", checker,
+                                     str(ctx.app_dir / "app"), str(ctx.app_dir / "deploy")]),
+                       timeout=180, cwd=str(ctx.app_dir), env=aenv)
     if rc != 0 or "COMPILE_BAD" in out:
         _fail(r, "A module does not COMPILE. This is the class of failure that "
                  "hides behind a healthy /healthz — fix before anything else.")
@@ -154,12 +158,10 @@ def python(ctx, args):
             "        except Exception as e: bad.append('%%s: %%s: %%s'%%(m,type(e).__name__,e))\n"
             "print('LAZY_OK' if not bad else 'LAZY_BAD')\n"
             "[print(' ',b) for b in bad]\n" % (list(LAZY_MODULES),))
-    env = dict(os.environ)
-    for k, v in ctx.env.items():
-        env.setdefault(k, v)
+    env = app_env(ctx, dotenv=True)
     # Importing writes bytecode too. Same reason as above.
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    rc, out, err = run([str(venv), "-c", code], timeout=180,
+    rc, out, err = run(app_cmd(ctx, [str(venv), "-c", code]), timeout=180,
                        cwd=str(ctx.app_dir), env=env)
     if "LAZY_OK" in out:
         r.rows("lazy-import smoke", [("%d modules" % len(LAZY_MODULES), "import cleanly")])

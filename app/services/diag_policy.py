@@ -110,22 +110,42 @@ def _tokens(command: str) -> list[str]:
     return [t for t in (command or "").strip().lower().split() if t]
 
 
-def _word_hit(tok: str, words: frozenset[str]) -> str | None:
-    """The blocked word ``tok`` spells (exactly, by a hyphen part, or as an
-    abbreviation), or None."""
-    parts = [tok] + [p for p in _SPLIT.split(tok) if p and p != tok]
-    for p in parts:
-        if p in words:
-            return p
-        # "traceall", "resetall", "clearall": a verb with "all" glued on
-        # (fac01 lists ``diagnose debug application <daemon> traceall``).
-        if p.endswith("all") and p[:-3] in words:
-            return p[:-3]
+# A hyphenated name that opens with a read verb, or closes with a read noun
+# while its verb sits in the middle, reports on the thing it names:
+# ``hcache-auto-rebuild-status`` and ``show-dev-upgrade-path`` (faz02 7.6.7)
+# are reads. A name that OPENS with a state verb is always judged a write,
+# whatever it ends with: ``reset-health-status`` is FortiGate's "Reset HA
+# health". That keeps ``rebuild-status`` refused too -- the price of not
+# guessing which of the two a name is.
+_READ_HEADS = frozenset({"show", "get", "list", "display", "print"})
+_READ_TAILS = frozenset({"status", "info", "list", "stats", "stat", "show"})
+
+
+def _word_hit(tok: str, words: frozenset[str]) -> tuple[str, str] | None:
+    """``(word, how)`` when ``tok`` spells a blocked word, else None.
+
+    ``how``: ``exact``; ``part`` (a hyphenated part, or the verb with "all"
+    glued on: ``reset-uptime``, ``traceall`` -- fac01 lists ``diagnose debug
+    application <daemon> traceall``); ``abbrev`` (the CLI completes a unique
+    prefix: ``kil`` runs ``kill``).
+    """
+    if tok in words:
+        return tok, "exact"
+    if tok.endswith("all") and tok[:-3] in words:
+        return tok[:-3], "part"
+    parts = [p for p in _SPLIT.split(tok) if p]
+    if len(parts) > 1 and (parts[0] in words or (
+            parts[0] not in _READ_HEADS and parts[-1] not in _READ_TAILS)):
+        for p in parts:
+            if p in words:
+                return p, "part"
+            if p.endswith("all") and p[:-3] in words:
+                return p[:-3], "part"
     if tok in SAFE_WORDS or tok.isdigit() or len(tok) < 2:
         return None
     for w in sorted(words, key=lambda x: (len(x), x)):
         if w.startswith(tok) and w != tok:
-            return w
+            return w, "abbrev"
     return None
 
 
@@ -144,9 +164,12 @@ def blocked_reason(command: str, *, strict: bool = False) -> str | None:
     for tok in toks[1:]:
         hit = _word_hit(tok, STATE_WORDS)
         if hit:
-            if hit == tok:
+            word, how = hit
+            if how == "exact":
                 return f"'{tok}' changes the device state"
-            return f"'{tok}' reads as '{hit}', which changes the device state"
+            if how == "part":
+                return f"'{tok}' contains '{word}', which changes the device state"
+            return f"'{tok}' reads as '{word}', which changes the device state"
         if strict:
             hit = _word_hit(tok, BATTERY_WORDS)
             if hit:

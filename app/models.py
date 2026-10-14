@@ -592,6 +592,7 @@ class Appliance(db.Model):
             "ha_role_hint": self.ha_role_hint,
             "ha_vip": self.ha_vip,
             "ssh_port": self.ssh_port,
+            "ssh_username": self.ssh_username,
             "hw_type": self.hw_type or "unknown",
             "model": self.model,
             "datasheet_filename": self.datasheet_filename,

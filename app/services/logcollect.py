@@ -1,14 +1,15 @@
 """Diagnostic log collection over SSH — the read-only ``get``/``diagnose`` battery.
 
 Web port of the desktop ``app/services/logcollect.py`` (the Logs / Log Collection
-page). Tick one or more FortiWeb appliances, open ONE read-only SSH session per
+page). Tick one or more appliances of the active ADOM, open ONE read-only SSH session per
 box and run a curated battery of read-only commands, writing each run to a
 labelled ``.txt`` under ``data/diagnostics/``.
 
 Read-only by construction: every command — battery or custom — is asserted
 read-only via :func:`app.services.ssh_ops.assert_readonly` (``get``/``show``/
 ``diagnose`` only), so a log run can never mutate configuration. Credentials are
-the appliance's single Fernet-decrypted admin secret; host keys are
+the appliance's SSH login (``ssh_login``/``ssh_secret``: the separate CLI user
+and password when set, else the API ones); host keys are
 trust-on-first-use (handled by :class:`FortiWebReadonlySSH`).
 
 Long fleet runs happen in a background thread; progress is reported through a
@@ -16,8 +17,19 @@ FILE (``data/diagnostics/_progress.json``) so it survives across gunicorn
 workers — the same worker-proof pattern as :mod:`app.services.rediscovery` (an
 in-memory dict would be invisible to the worker that handles the poll).
 
-Pure helpers (``parse_commands``/``report_filename``/``_parse_meta``) are
-network-free and unit-tested; ``collect``/``start`` need a live appliance.
+Since 2026-10-14 the page runs the active ADOM's battery
+(:mod:`app.services.diag_battery`, chosen in Administrator → Diagnostic
+Battery) on that ADOM's devices. Each target carries a PLAN computed in the
+request context (:func:`app.services.diag_battery.plan`): commands the
+device's build does not have, or the battery rule now refuses, are not sent
+and the report says why (``SKIPPED: …`` / ``SKIPPED (blocked): …``). A command
+that is sent and answered with the CLI's "no such command" errors is marked
+``[not available on this build]``. :data:`DIAGNOSTIC_COMMANDS` stays the
+FortiWeb default.
+
+Pure helpers (``parse_commands``/``report_filename``/``_parse_meta``/
+``not_available``) are network-free and unit-tested; ``collect``/``start``
+need a live appliance (or a fake SSH class).
 """
 from __future__ import annotations
 
@@ -80,6 +92,43 @@ DIAGNOSTIC_COMMANDS: list[str] = [
     "diagnose hardware mem list",
     "diagnose debug memory",
 ]
+
+
+#: What a build answers for a command it does not have (measured on FortiWeb,
+#: FortiADC, FortiGate, FortiAnalyzer and FortiAuthenticator CLIs). Matched
+#: case-insensitively against the first lines of the answer only, so a log
+#: that merely QUOTES one of these phrases further down is not mislabelled.
+NOT_AVAILABLE_MARKERS: tuple[str, ...] = (
+    "command fail",
+    "unknown action",
+    "parsing error",
+    "command parse error",
+    "you must specify",
+    "the number of parameters is incorrect",
+    "incomplete command",
+)
+NOT_AVAILABLE_NOTE = "[not available on this build]"
+_HEAD_LINES = 5
+
+
+def not_available(output: str | None) -> bool:
+    """True when ``output`` is the CLI saying this build lacks the command."""
+    head = [ln.strip() for ln in (output or "").splitlines() if ln.strip()]
+    text = "\n".join(head[:_HEAD_LINES]).lower()
+    return any(m in text for m in NOT_AVAILABLE_MARKERS)
+
+
+def skipped_line(step: dict) -> str:
+    """The report line for a command the plan does not send."""
+    detail = step.get("detail") or ""
+    if step.get("state") == "blocked":
+        return f"SKIPPED (blocked): {detail}"
+    return f"SKIPPED: {detail}"
+
+
+def _default_plan(commands: list[str] | None) -> list[dict]:
+    cmds = list(commands) if commands else list(DIAGNOSTIC_COMMANDS)
+    return [{"command": c, "action": "run", "state": "", "detail": ""} for c in cmds]
 
 
 def _diag_dir() -> Path:
@@ -150,24 +199,34 @@ def collect(
     *,
     label: str = "manual",
     commands: list[str] | None = None,
+    plan: list[dict] | None = None,
     on_log: Callable[[str], None] | None = None,
+    stats: dict | None = None,
 ) -> Path:
-    """Run the read-only diagnostic battery over SSH into a labelled log file.
+    """Run a read-only diagnostic battery over SSH into a labelled log file.
+
+    ``plan`` (from :func:`app.services.diag_battery.plan`) decides per command
+    whether it is sent; without one every command of ``commands`` (default:
+    :data:`DIAGNOSTIC_COMMANDS`) is sent. Skipped commands are written to the
+    report with their reason. ``stats``, when given, receives ``ran``,
+    ``skipped`` and ``unavailable`` counts.
 
     Returns the local log path. A single failing command is recorded inline and
     the battery continues; connect/auth failures propagate from
     :class:`FortiWebReadonlySSH`.
     """
     log = on_log or (lambda _m: None)
-    cmds = list(commands) if commands else list(DIAGNOSTIC_COMMANDS)
-    for c in cmds:  # security gate — refuse the whole run if anything can mutate
-        assert_readonly(c)
+    steps = [dict(p) for p in plan] if plan is not None else _default_plan(commands)
+    for st in steps:  # security gate — refuse the whole run if anything can mutate
+        if st.get("action") == "run":
+            assert_readonly(st["command"])
 
     out = _diag_dir()
     path = out / report_filename(appliance.id, label)
-    total = len(cmds)
+    total = len(steps)
     name = getattr(appliance, "name", str(appliance.id))
     port = getattr(appliance, "ssh_port", 22) or 22
+    counts = {"ran": 0, "skipped": 0, "unavailable": 0}
 
     log(f"[{name}] connecting via SSH (port {port})…")
     with FortiWebReadonlySSH(appliance, secret) as ssh, \
@@ -175,15 +234,31 @@ def collect(
         f.write(
             f"=== {name} ({appliance.host}) — logs '{label}' — {datetime.now()} ===\n"
         )
-        for i, cmd in enumerate(cmds, 1):
+        for i, st in enumerate(steps, 1):
+            cmd = st["command"]
             f.write(f"\n{'=' * 60}\nCOMMAND: {cmd}\n{'=' * 60}\n")
+            if st.get("action") != "run":
+                counts["skipped"] += 1
+                f.write(skipped_line(st) + "\n")
+                log(f"[{name}] {i}/{total}  skipped  {cmd}")
+                continue
+            counts["ran"] += 1
             try:
-                f.write(ssh.run_readonly(cmd) + "\n")
+                text = ssh.run_readonly(cmd)
+                f.write(text + "\n")
+                if not_available(text):
+                    counts["unavailable"] += 1
+                    f.write(NOT_AVAILABLE_NOTE + "\n")
             except Exception as e:  # noqa: BLE001 — record and keep going
                 f.write(f"[error: {e}]\n")
             log(f"[{name}] {i}/{total}  {cmd}")
-        f.write(f"\n=== end — {datetime.now()} ===\n")
-    log(f"[{name}] saved: {path.name}")
+        f.write(
+            f"\n=== end — ran {counts['ran']}, skipped {counts['skipped']}"
+            f" — {datetime.now()} ===\n"
+        )
+    if stats is not None:
+        stats.update(counts)
+    log(f"[{name}] saved: {path.name} (ran {counts['ran']}, skipped {counts['skipped']})")
     return path
 
 
@@ -256,13 +331,18 @@ def status() -> dict | None:
         return None
 
 
+def _plan_of(tgt, commands: list[str] | None) -> list[dict]:
+    plan = getattr(tgt, "plan", None)
+    return list(plan) if plan is not None else _default_plan(commands)
+
+
 def _run(targets: list[SimpleNamespace], label: str,
-         commands: list[str] | None, by: str) -> None:
+         commands: list[str] | None, by: str, custom: bool = False) -> None:
     prog = _progress_path()
     total = len(targets)
     state = {
         "state": "running", "total": total, "done": 0, "percent": 0,
-        "label": label, "by": by, "custom": bool(commands),
+        "label": label, "by": by, "custom": custom,
         "command_count": len(commands) if commands else len(DIAGNOSTIC_COMMANDS),
         "current": "", "results": [], "errors": [], "log": [],
         "started": datetime.utcnow().isoformat(), "finished": None,
@@ -279,12 +359,21 @@ def _run(targets: list[SimpleNamespace], label: str,
     for i, tgt in enumerate(targets, 1):
         state["current"] = tgt.name
         _write_json(prog, state)
+        plan = _plan_of(tgt, commands)
+        planned_skips = sum(1 for p in plan if p.get("action") != "run")
+        stats: dict = {}
         try:
-            path = collect(tgt, tgt.password, label=label, commands=commands, on_log=on_log)
+            path = collect(tgt, tgt.password, label=label, plan=plan,
+                           on_log=on_log, stats=stats)
             ok += 1
-            state["results"].append({"device": tgt.name, "ok": True, "file": path.name})
+            state["results"].append({
+                "device": tgt.name, "ok": True, "file": path.name,
+                "ran": stats.get("ran", 0), "skipped": stats.get("skipped", 0),
+                "unavailable": stats.get("unavailable", 0)})
         except Exception as e:  # noqa: BLE001 — one box failing never sinks the run
-            state["results"].append({"device": tgt.name, "ok": False, "error": str(e)[:200]})
+            state["results"].append({"device": tgt.name, "ok": False,
+                                     "error": str(e)[:200], "ran": 0,
+                                     "skipped": planned_skips, "unavailable": 0})
             state["errors"].append({"device": tgt.name, "error": str(e)[:200]})
             on_log(f"[{tgt.name}] error: {e}")
         state.update(done=i, percent=int(i * 100 / total) if total else 100)
@@ -296,14 +385,18 @@ def _run(targets: list[SimpleNamespace], label: str,
 
 
 def start(targets: Iterable[SimpleNamespace], *, label: str = "manual",
-          commands: list[str] | None = None, by: str = "") -> dict:
+          commands: list[str] | None = None, by: str = "",
+          custom: bool | None = None) -> dict:
     """Kick off a fleet collection in a background thread.
 
     ``targets`` are credential SNAPSHOTS (``SimpleNamespace`` with
-    id/name/host/username/password/ssh_port) captured in the request context —
-    the worker thread never touches the ORM. Refuses to start a second run while
-    one looks live (<15 min). Returns the initial progress dict.
+    id/name/host/username/ssh_login/password/ssh_port, and optionally the
+    ``plan`` for that device) captured in the request context — the worker
+    thread never touches the ORM. ``password`` is the SSH secret. Refuses to
+    start a second run while one looks live (<15 min). Returns the initial
+    progress dict.
     """
+    custom = bool(commands) if custom is None else bool(custom)
     targets = list(targets)
     if not targets:
         return {"started": False, "reason": "no devices selected"}
@@ -316,20 +409,24 @@ def start(targets: Iterable[SimpleNamespace], *, label: str = "manual",
         if age < 900:
             return {"started": False, "reason": "a collection is already running",
                     "progress": cur}
-    if commands is not None:
-        for c in commands:  # fail fast before spawning the thread
-            assert_readonly(c)
+    for tgt in targets:  # fail fast before spawning the thread
+        for st in _plan_of(tgt, commands):
+            if st.get("action") == "run":
+                assert_readonly(st["command"])
 
     init = {"state": "running", "total": len(targets), "done": 0, "percent": 0,
-            "label": label, "by": by, "custom": bool(commands), "results": [],
+            "label": label, "by": by, "custom": custom, "results": [],
+            "command_count": len(commands) if commands else len(DIAGNOSTIC_COMMANDS),
             "errors": [], "log": [], "current": "",
             "started": datetime.utcnow().isoformat(), "finished": None}
     _write_json(_progress_path(), init)
-    threading.Thread(target=_run, args=(targets, label, commands, by), daemon=True).start()
+    threading.Thread(target=_run, args=(targets, label, commands, by, custom),
+                     daemon=True).start()
     return {"started": True, "progress": init}
 
 
 __all__ = [
-    "DIAGNOSTIC_COMMANDS", "default_log_dir", "parse_commands", "report_filename",
+    "DIAGNOSTIC_COMMANDS", "NOT_AVAILABLE_MARKERS", "default_log_dir",
+    "parse_commands", "report_filename", "not_available", "skipped_line",
     "collect", "history", "read_log", "status", "start",
 ]

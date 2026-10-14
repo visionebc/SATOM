@@ -23858,3 +23858,43 @@ msgstr "nicht gesetzt – SSH meldet sich mit dem obigen Benutzernamen an"
 #: app/templates/appliances/edit.html
 msgid "Changing the SSH user requires re-entering the separate SSH password, when one is set."
 msgstr "Wenn ein separates SSH-Passwort gesetzt ist, muss es nach einer Änderung des SSH-Benutzers erneut eingegeben werden."
+
+#: app/templates/diag_battery/index.html
+msgid "Save keeps the order of the commands already in the battery and appends new ones."
+msgstr "Beim Speichern bleibt die Reihenfolge der Befehle erhalten, die bereits in der Batterie sind; neue werden angehängt."
+
+#: app/templates/diag_battery/index.html
+msgid "Blocked commands are shown disabled with the reason; commands that need arguments are not tickable — add them by hand with their arguments."
+msgstr "Gesperrte Befehle werden deaktiviert mit dem Grund angezeigt; Befehle, die Argumente benötigen, lassen sich nicht ankreuzen – fügen Sie sie von Hand mit ihren Argumenten hinzu."
+
+#: app/templates/logs/index.html
+msgid "One command per line: get, show or diagnose — state-changing diagnose commands are refused. Blank lines and lines starting with # are ignored. Leave empty to run the battery above."
+msgstr "Ein Befehl pro Zeile: get, show oder diagnose – diagnose-Befehle, die den Zustand ändern, werden abgelehnt. Leere Zeilen und Zeilen, die mit # beginnen, werden ignoriert. Leer lassen, um die Batterie oben auszuführen."
+
+#: app/views/diag_battery.py
+msgid "done"
+msgstr "fertig"
+
+#: app/templates/diag_battery/index.html
+msgid "The product default has %(num)d command."
+msgid_plural "The product default has %(num)d commands."
+msgstr[0] "Die Produktvorgabe enthält %(num)d Befehl."
+msgstr[1] "Die Produktvorgabe enthält %(num)d Befehle."
+
+#: app/templates/diag_battery/index.html
+msgid "%(num)d node."
+msgid_plural "%(num)d nodes."
+msgstr[0] "%(num)d Knoten."
+msgstr[1] "%(num)d Knoten."
+
+#: app/templates/logs/index.html
+msgid "%(num)d command"
+msgid_plural "%(num)d commands"
+msgstr[0] "%(num)d Befehl"
+msgstr[1] "%(num)d Befehle"
+
+#: app/views/diag_battery.py
+msgid "Diagnostic battery saved: %(num)d command."
+msgid_plural "Diagnostic battery saved: %(num)d commands."
+msgstr[0] "Diagnosebatterie gespeichert: %(num)d Befehl."
+msgstr[1] "Diagnosebatterie gespeichert: %(num)d Befehle."

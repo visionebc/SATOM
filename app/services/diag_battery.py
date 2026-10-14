@@ -426,6 +426,10 @@ def start_discovery(appliance, by: str, *, sessions: int = SESSIONS) -> dict:
     kind = appliance.kind or "fortiweb"
     if kind not in PRODUCTS:
         return {"started": False, "reason": f"no discovery for {kind!r}"}
+    if not build_of(appliance.firmware):
+        return {"started": False,
+                "reason": "the firmware of this device is unknown; refresh it "
+                          "(Appliances) before discovering its commands"}
     snap = snapshot(appliance)
     init = {"state": "running", "appliance": snap.name, "product": kind,
             "build": build_of(snap.firmware), "by": by, "probed": 0,

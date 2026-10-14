@@ -11104,3 +11104,43 @@ msgstr ""
 #: app/templates/appliances/edit.html
 msgid "Changing the SSH user requires re-entering the separate SSH password, when one is set."
 msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Save keeps the order of the commands already in the battery and appends new ones."
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "Blocked commands are shown disabled with the reason; commands that need arguments are not tickable — add them by hand with their arguments."
+msgstr ""
+
+#: app/templates/logs/index.html
+msgid "One command per line: get, show or diagnose — state-changing diagnose commands are refused. Blank lines and lines starting with # are ignored. Leave empty to run the battery above."
+msgstr ""
+
+#: app/views/diag_battery.py
+msgid "done"
+msgstr ""
+
+#: app/templates/diag_battery/index.html
+msgid "The product default has %(num)d command."
+msgid_plural "The product default has %(num)d commands."
+msgstr[0] ""
+msgstr[1] ""
+
+#: app/templates/diag_battery/index.html
+msgid "%(num)d node."
+msgid_plural "%(num)d nodes."
+msgstr[0] ""
+msgstr[1] ""
+
+#: app/templates/logs/index.html
+msgid "%(num)d command"
+msgid_plural "%(num)d commands"
+msgstr[0] ""
+msgstr[1] ""
+
+#: app/views/diag_battery.py
+msgid "Diagnostic battery saved: %(num)d command."
+msgid_plural "Diagnostic battery saved: %(num)d commands."
+msgstr[0] ""
+msgstr[1] ""

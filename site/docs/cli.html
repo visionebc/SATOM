@@ -130,6 +130,23 @@ and its code is a <strong>copy</strong> at <code>/usr/local/lib/satom-cli/</code
 Both are verified — ownership, mode, and <em>not a symlink</em> — by the installer
 and again by <code>satom diagnose privilege</code>.</p>
 </blockquote>
+<p>The same rule covers what the CLI <strong>runs</strong>, not only where its own code lives:</p>
+<blockquote>
+<p><strong>Root never executes the app tree.</strong> The venv python, <code>flask</code>, <code>pip</code> and
+<code>git</code> against <code>/opt/satom</code> (which reads the service account's <code>.git/config</code>:
+<code>git status</code> runs its <code>core.fsmonitor</code>) all run <strong>as the service account</strong>
+(<code>runuser -m -u &lt;owner&gt;</code>, or <code>setpriv</code> to the tree's uid when that uid has no
+name). That includes <code>execute reinstall venv</code>: the venv is built and
+<code>requirements.txt</code> installed as the service account, so a package's build
+code never runs as root. Root keeps only what the account cannot do itself:
+moving the old venv aside, the <code>pip freeze</code> copy under <code>/root</code>, unit files.
+And root never writes or chowns <em>through</em> the tree: files the CLI stages in
+<code>data/</code> (update packages, API packs) are written by a child that already
+dropped to the service account, and <code>execute repair permissions</code> walks by
+directory fd without following a symlink or touching a hard-linked file.
+<code>tests/test_cli_privdrop.py</code> fails on any git/venv/flask/pip argv that does
+not go through <code>context.app_cmd</code>.</p>
+</blockquote>
 <hr>
 <h3 id="14-the-console-announces-what-it-is-who-made-it-and-under-what-licence">1.4 The console announces what it is, who made it and under what licence</h3>
 <p><code>satom</code> with no arguments opens the interactive prompt, and before the first
@@ -578,7 +595,7 @@ challenge.</p>
 </tr>
 <tr>
 <td><code>execute reinstall venv --yes</code></td>
-<td>Rebuilds <code>venv/</code>, saving a <code>pip freeze</code> and moving the old one aside</td>
+<td>Rebuilds <code>venv/</code> as the service account, saving a <code>pip freeze</code> and moving the old one aside</td>
 </tr>
 <tr>
 <td><code>execute reinstall units</code></td>

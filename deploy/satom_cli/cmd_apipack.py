@@ -18,7 +18,7 @@ import shutil
 import tarfile
 from pathlib import Path
 
-from .context import run
+from .context import app_cmd, app_copy, app_env, chown_app, run
 from .render import Result
 
 PACK_RE = re.compile(r"^satom-apipack-[A-Za-z0-9._-]{1,64}\.tar\.gz$")
@@ -167,13 +167,7 @@ def pending_packs(ctx):
 
 
 def _chown_app(ctx, path):
-    if ctx.app_user and ctx.app_user != "root":
-        try:
-            import pwd
-            e = pwd.getpwnam(ctx.app_user)
-            os.chown(path, e.pw_uid, e.pw_gid)
-        except (KeyError, OSError):
-            pass
+    chown_app(ctx, path)
 
 
 def _opt_list(args, flag):
@@ -196,16 +190,9 @@ def _flask_apilib(ctx, extra, timeout=1800):
     flask = ctx.app_dir / "venv" / "bin" / "flask"
     if not flask.exists():
         return 127, "", "venv/bin/flask missing — run 'execute reinstall venv'"
-    env = dict(os.environ)
-    for k, v in ctx.env.items():
-        env.setdefault(k, v)
+    env = app_env(ctx, dotenv=True)
     env["FLASK_APP"] = "wsgi.py"
-    env["HOME"] = str(ctx.app_dir)
-    cmd = [str(flask), "apilib"] + list(extra)
-    if os.geteuid() == 0 and ctx.app_user and ctx.app_user != "root":
-        # -m keeps the environment built above (.env, FLASK_APP, HOME); without
-        # it runuser resets HOME to /root, which the service account cannot read.
-        cmd = ["runuser", "-m", "-u", ctx.app_user, "--"] + cmd
+    cmd = app_cmd(ctx, [str(flask), "apilib"] + list(extra))
     return run(cmd, timeout=timeout, cwd=str(ctx.app_dir), env=env)
 
 
@@ -370,12 +357,14 @@ def _import_file(ctx, src, products, sections, dry):
     except (AttributeError, OSError):
         inside = str(src.resolve()).startswith(str(ctx.app_dir.resolve()) + os.sep)
     if not inside:
-        dest_dir = _upload_dir(ctx)
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        _chown_app(ctx, dest_dir)
-        path = dest_dir / src.name
-        shutil.copy2(src, path)
-        _chown_app(ctx, path)
+        # Written AS the service account (context.app_copy): the upload
+        # directory is that account's, so a root copy into it follows whatever
+        # symlink the account planted there.
+        path = _upload_dir(ctx) / src.name
+        ok, err = app_copy(ctx, src, path)
+        if not ok:
+            return Result("bad", "apipack import").lines("", [
+                "could not stage %s: %s" % (src.name, err)])
 
     extra = ["import", str(path)]
     for p in products:

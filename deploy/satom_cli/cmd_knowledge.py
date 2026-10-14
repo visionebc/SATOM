@@ -14,7 +14,7 @@ lane's keys. This module only parses arguments and renders the JSON answer.
 import json
 import os
 
-from .context import run
+from .context import app_cmd, app_env, run
 from .render import Result
 
 FETCH_USAGE = "execute knowledge fetch [--feed <https-url>] [--import] [--yes]"
@@ -25,14 +25,9 @@ def _flask_knowledge(ctx, extra, timeout=1800):
     flask = ctx.app_dir / "venv" / "bin" / "flask"
     if not flask.exists():
         return 127, "", "venv/bin/flask missing — run 'execute reinstall venv'"
-    env = dict(os.environ)
-    for k, v in ctx.env.items():
-        env.setdefault(k, v)
+    env = app_env(ctx, dotenv=True)
     env["FLASK_APP"] = "wsgi.py"
-    env["HOME"] = str(ctx.app_dir)
-    cmd = [str(flask), "knowledge"] + list(extra)
-    if os.geteuid() == 0 and ctx.app_user and ctx.app_user != "root":
-        cmd = ["runuser", "-m", "-u", ctx.app_user, "--"] + cmd
+    cmd = app_cmd(ctx, [str(flask), "knowledge"] + list(extra))
     return run(cmd, timeout=timeout, cwd=str(ctx.app_dir), env=env)
 
 

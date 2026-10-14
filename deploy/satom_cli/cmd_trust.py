@@ -12,10 +12,11 @@ import importlib.util
 import json
 import os
 import shutil
+import tempfile
 import time
 from pathlib import Path
 
-from .context import run
+from .context import app_copy, chown_app, run
 from .render import Result
 
 TRUST_DIR = Path(os.environ.get("SATOM_TRUST_DIR", "/etc/satom/update-keys"))
@@ -428,16 +429,19 @@ def update_package(ctx, args):
 
     # Stage where the runner looks, with the ownership the app expects.
     uploads = ctx.app_dir / "data" / "update-uploads"
-    uploads.mkdir(parents=True, exist_ok=True)
     name = src.name
     if not up.PKG_NAME_RE.match(name):
         return Result("bad", "update package").lines("", [
             "%r is not an acceptable package name" % name])
     dest = uploads / name
     if dest.resolve() != src.resolve():
-        shutil.copy2(src, dest)
-    _chown_app(ctx, uploads)
-    _chown_app(ctx, dest)
+        # Written AS the service account (context.app_copy): uploads/ is that
+        # account's directory, and a root copy2 into it followed whatever
+        # symlink was waiting under the package's name.
+        ok, err = app_copy(ctx, src, dest)
+        if not ok:
+            return Result("bad", "update package").lines("", [
+                "could not stage %s in %s: %s" % (name, uploads, err)])
 
     uid = _enqueue(ctx, name, allow_downgrade=is_downgrade,
                    do_backup="--no-backup" not in args)
@@ -510,8 +514,10 @@ def update_fetch(ctx, args):
         return r
 
     uploads = ctx.app_dir / "data" / "update-uploads"
-    uploads.mkdir(parents=True, exist_ok=True)
-    _chown_app(ctx, uploads)
+    # Downloaded into a root-private directory, then staged as the service
+    # account: download_package opens its .part by name, and uploads/ belongs
+    # to the account that could have planted a symlink under that name.
+    private = Path(tempfile.mkdtemp(prefix="satom-fetch-"))
     start = time.monotonic()
 
     def progress(done, total):
@@ -520,10 +526,17 @@ def update_fetch(ctx, args):
               flush=True)
 
     try:
-        path = fd.download_package(doc, uploads, progress=progress)
-    except fd.FeedError as exc:
-        return Result("bad", "update fetch").lines("", ["download refused: %s" % exc])
-    _chown_app(ctx, path)
+        try:
+            got = fd.download_package(doc, private, progress=progress)
+        except fd.FeedError as exc:
+            return Result("bad", "update fetch").lines("", ["download refused: %s" % exc])
+        path = uploads / Path(got).name
+        ok, err = app_copy(ctx, got, path)
+        if not ok:
+            return Result("bad", "update fetch").lines("", [
+                "could not stage %s in %s: %s" % (Path(got).name, uploads, err)])
+    finally:
+        shutil.rmtree(private, ignore_errors=True)
 
     if "--download-only" in args:
         r = Result("ok", "update fetch")
@@ -543,13 +556,15 @@ def _version(ctx):
 
 
 def _chown_app(ctx, path):
-    if ctx.app_user and ctx.app_user != "root":
-        try:
-            import pwd
-            e = pwd.getpwnam(ctx.app_user)
-            os.chown(path, e.pw_uid, e.pw_gid)
-        except (KeyError, OSError):
-            pass
+    chown_app(ctx, path)
+
+
+def _write_new(path, text):
+    """Create ``path`` (never through a symlink, never over an existing name):
+    the queue directories are the service account's."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o640)
+    with os.fdopen(fd, "w") as fh:
+        fh.write(text)
 
 
 def _runner_problem(ctx):
@@ -576,14 +591,14 @@ def _enqueue(ctx, name, *, allow_downgrade, do_backup):
            "requested_by": "%s (cli)" % ctx.user,
            "requested_at": datetime.utcnow().isoformat() + "Z",
            "node": socket.gethostname(), "role": ctx.role, "origin": "cli"}
-    (sta_dir / (uid + ".json")).write_text(json.dumps({
+    _write_new(sta_dir / (uid + ".json"), json.dumps({
         "id": uid, "state": "queued", "steps": [], "kind": "package",
         "package": name, "requested_by": req["requested_by"],
         "node": req["node"], "role": req["role"], "origin": "cli",
         "updated_at": req["requested_at"]}))
     _chown_app(ctx, sta_dir / (uid + ".json"))
     tmp = req_dir / ("." + uid + ".tmp")
-    tmp.write_text(json.dumps(req))
+    _write_new(tmp, json.dumps(req))
     _chown_app(ctx, tmp)
     tmp.rename(req_dir / (uid + ".json"))
     return uid

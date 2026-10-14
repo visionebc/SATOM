@@ -72,6 +72,23 @@ And the corollary that dictates where the code lives:
 > Both are verified — ownership, mode, and *not a symlink* — by the installer
 > and again by `satom diagnose privilege`.
 
+The same rule covers what the CLI **runs**, not only where its own code lives:
+
+> **Root never executes the app tree.** The venv python, `flask`, `pip` and
+> `git` against `/opt/satom` (which reads the service account's `.git/config`:
+> `git status` runs its `core.fsmonitor`) all run **as the service account**
+> (`runuser -m -u <owner>`, or `setpriv` to the tree's uid when that uid has no
+> name). That includes `execute reinstall venv`: the venv is built and
+> `requirements.txt` installed as the service account, so a package's build
+> code never runs as root. Root keeps only what the account cannot do itself:
+> moving the old venv aside, the `pip freeze` copy under `/root`, unit files.
+> And root never writes or chowns *through* the tree: files the CLI stages in
+> `data/` (update packages, API packs) are written by a child that already
+> dropped to the service account, and `execute repair permissions` walks by
+> directory fd without following a symlink or touching a hard-linked file.
+> `tests/test_cli_privdrop.py` fails on any git/venv/flask/pip argv that does
+> not go through `context.app_cmd`.
+
 ---
 
 ### 1.4 The console announces what it is, who made it and under what licence
@@ -312,7 +329,7 @@ challenge.
 | `execute update code [<target>]` | **Queues** a git update (or a rollback, by commit) for the privileged runner |
 | `execute update pip <pkg> <ver>` | Curated allowlist only. Node-local: the venv is not replicated |
 | `execute update status [<id>]` | The runner's `steps[]` log (any user) |
-| `execute reinstall venv --yes` | Rebuilds `venv/`, saving a `pip freeze` and moving the old one aside |
+| `execute reinstall venv --yes` | Rebuilds `venv/` as the service account, saving a `pip freeze` and moving the old one aside |
 | `execute reinstall units` | Re-copies the units **and re-pins `User=` via drop-in** |
 | `execute reinstall cli` | Refreshes the root-owned copy of this CLI |
 | `execute repair permissions` | Gives root-owned files in the app tree back to the service account |

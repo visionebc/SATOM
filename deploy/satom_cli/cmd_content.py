@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import dbq
-from .context import run
+from .context import app_cmd, app_env, run
 from .render import Result
 
 DEFAULT_SIG_MAX_DAYS = 7
@@ -328,14 +328,9 @@ def _flask_group(ctx, group, extra, timeout=300):
     flask = ctx.app_dir / "venv" / "bin" / "flask"
     if not flask.exists():
         return 127, "", "venv/bin/flask missing — run 'execute reinstall venv'"
-    env = dict(os.environ)
-    for k, v in ctx.env.items():
-        env.setdefault(k, v)
+    env = app_env(ctx, dotenv=True)
     env["FLASK_APP"] = "wsgi.py"
-    env["HOME"] = str(ctx.app_dir)
-    cmd = [str(flask), group] + list(extra)
-    if os.geteuid() == 0 and ctx.app_user and ctx.app_user != "root":
-        cmd = ["runuser", "-m", "-u", ctx.app_user, "--"] + cmd
+    cmd = app_cmd(ctx, [str(flask), group] + list(extra))
     return run(cmd, timeout=timeout, cwd=str(ctx.app_dir), env=env)
 
 

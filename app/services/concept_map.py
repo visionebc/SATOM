@@ -255,8 +255,10 @@ PAGES: tuple[dict, ...] = (
        "Every authored WAF/signature carve-out across the estate, which scopes "
        "hold each one, and whether it can be rolled back."),
     _p("search.index", "Search", "fleet",
-       "find search free text lookup where is object policy pool certificate",
-       "Free-text sweep across live device configuration."),
+       "find search free text lookup where is object policy pool certificate "
+       "adom search radius client address user ip host",
+       "Free-text search over the synced configuration of the active ADOM's "
+       "appliances."),
     _p("dns_tool.index", "DNS Lookup", "fleet",
        "dns resolve record a cname lookup nslookup dig zone",
        "Resolve names and inspect DNS records from the console."),

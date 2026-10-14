@@ -231,15 +231,26 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   Path Diagnostics work on FortiWeb and FortiADC objects and are no longer
   listed there. The pages still open by URL.</li>
 </ul>
-<h3 id="changed--search-is-titled-adom-search-2026-10-14">Changed — Search is titled ADOM Search (2026-10-14)</h3>
+<h3 id="changed--adom-search-searches-each-adoms-own-configuration-2026-10-14">Changed — ADOM Search searches each ADOM's own configuration (2026-10-14)</h3>
 <ul>
-<li>The Search page is titled <strong>ADOM Search</strong> (it was "Global Search"): it has
-  always searched only the appliances of the active ADOM, and in the Global
-  ADOM only its FortiWeb and FortiADC devices. The subtitle says so. Menu
+<li>The Search page is titled <strong>ADOM Search</strong> (it was "Global Search") and
+  searches the configuration SATOM last synced from the appliances of the
+  active ADOM — FortiWeb, FortiADC, FortiGate, FortiAuthenticator or
+  FortiAnalyzer, or all of them in the Global ADOM. It used to query five
+  FortiWeb REST paths live and send them to every device that was not a
+  FortiADC, so a FortiAuthenticator RADIUS client, a FortiGate address or a
+  FortiAnalyzer managed device was never found.</li>
+<li>Every synced collection is searched, not a fixed list. Each match shows the
+  section, type, object (with its parent object for sub-table rows), field and
+  value, and each appliance shows when its configuration was last synced. An
+  appliance with no synced configuration is named as not searched.</li>
+<li>The <strong>Object Type</strong> filter is replaced by <strong>Section</strong>, listing the sections
+  the ADOM's appliances actually have. The subtitle, placeholder and tips are
+  specific to each ADOM.</li>
+<li>Passwords, keys, pre-shared secrets and <code>ENC</code> values are never matched or
+  shown, so the search cannot be used to guess a secret.</li>
+<li>The top-bar search button is also shown in the FortiAnalyzer ADOM. Menu
   entry, URL and bookmarks are unchanged.</li>
-<li><strong>Fixed:</strong> FortiGate, FortiAuthenticator and FortiAnalyzer devices were sent
-  FortiWeb REST paths, failed quietly and showed up as "No results found".
-  They are now skipped and named on the results page as not searched.</li>
 </ul>
 <h3 id="security--infrastructure-hardening-2026-10-13-internal-code-audit">Security — infrastructure hardening (2026-10-13 internal code audit)</h3>
 <ul>

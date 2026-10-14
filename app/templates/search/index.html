@@ -1,6 +1,7 @@
 {% extends "base.html" %}
+{% import 'search/_adom.html' as adom with context %}
 
-{% block title %}Search — SATOM{% endblock %}
+{% block title %}{{ _('ADOM Search') }} — SATOM{% endblock %}
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
@@ -14,11 +15,11 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-search me-2 text-accent"></i>{{ _('ADOM Search') }}</h1>
-    <p class="text-muted mb-0" style="font-size:13px;">{{ _("Search this ADOM's FortiWeb and FortiADC appliances for policies, virtual servers, pools and protection profiles") }}</p>
+    <p class="text-muted mb-0" style="font-size:13px;" id="searchSubtitle">{{ adom.subtitle }}
+      {% if sections %}{{ _('Sections: %(sections)s.', sections=sections|join(', ')) }}{% endif %}</p>
   </div>
 </div>
 
-<!-- Search Form -->
 <div class="fw-card mb-4">
   <div class="fw-card-body">
     <form method="GET" action="{{ url_for('search.results') }}" id="searchForm">
@@ -28,37 +29,29 @@
           <div class="fw-input-group">
             <i class="bi bi-search fw-input-icon"></i>
             <input type="text" name="q" class="form-control fw-form-control"
-                   id="queryInput"
-                   placeholder="{{ _('Policy name, IP address, hostname, pool name…') }}"
+                   id="queryInput" placeholder="{{ adom.placeholder }}"
                    value="{{ request.args.get('q','') if request else '' }}"
-                   autofocus
-                   autocomplete="off">
+                   autofocus autocomplete="off">
           </div>
         </div>
         <div class="col-lg-3">
           <label class="fw-form-label">{{ _('Appliance') }}</label>
           <select name="appliance_id" class="form-select fw-form-control">
-            <option value="">{{ _('All Appliances') }}</option>
+            <option value="">{{ _('All appliances in this ADOM') }}</option>
             {% for a in appliances %}
-              <option value="{{ a.id }}" {{ 'selected' if request and request.args.get('appliance_id') == a.id|string else '' }}>
-                {{ a.name }} ({{ a.host }})
-              </option>
+              <option value="{{ a.id }}">{{ a.name }} ({{ a.host }})</option>
             {% endfor %}
           </select>
         </div>
         <div class="col-lg-2">
-          <label class="fw-form-label">{{ _('Object Type') }}</label>
-          <select name="obj_type" class="form-select fw-form-control">
-            <option value="">{{ _('All Types') }}</option>
-            <option value="policy">{{ _('Server Policy') }}</option>
-            <option value="vserver">{{ _('Virtual Server') }}</option>
-            <option value="pool">{{ _('Server Pool') }}</option>
-            <option value="wpp">{{ _('Protection Profile') }}</option>
-            <option value="exception">{{ _('Exception') }}</option>
+          <label class="fw-form-label">{{ _('Section') }}</label>
+          <select name="section" class="form-select fw-form-control">
+            <option value="">{{ _('All sections') }}</option>
+            {% for s in sections %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
           </select>
         </div>
         <div class="col-lg-1 d-flex align-items-end">
-          <button type="submit" class="btn btn-fw-primary w-100">
+          <button type="submit" class="btn btn-fw-primary w-100" title="{{ _('Search') }}">
             <i class="bi bi-search"></i>
           </button>
         </div>
@@ -67,144 +60,47 @@
   </div>
 </div>
 
-<!-- Quick filters -->
-{% if request and request.args.get('q') %}
-<div class="mb-3 d-flex align-items-center gap-2 flex-wrap">
-  <span class="text-muted" style="font-size:13px;">{{ _('Filter by type:') }}</span>
-  {% for t in [('', 'All'), ('policy', 'Policy'), ('vserver', 'VServer'), ('pool', 'Pool'), ('wpp', 'Profile'), ('exception', 'Exception')] %}
-    <a href="?q={{ request.args.get('q','') }}&obj_type={{ t[0] }}&appliance_id={{ request.args.get('appliance_id','') }}"
-       class="fw-badge {{ 'fw-badge-primary' if request.args.get('obj_type','') == t[0] else 'fw-badge-secondary' }}"
-       style="font-size:12px;padding:4px 10px;cursor:pointer;text-decoration:none;">
-      {{ t[1] }}
-    </a>
-  {% endfor %}
-</div>
-{% endif %}
-
-<!-- Results -->
-{% if results is defined %}
-  {% if results %}
-    <div class="d-flex align-items-center justify-content-between mb-2">
-      <span class="text-muted" style="font-size:13px;">
-        <strong>{{ results|length }}</strong> result{{ 's' if results|length != 1 else '' }} for
-        "<strong>{{ request.args.get('q','') if request else '' }}</strong>"
-      </span>
-    </div>
-
-    <div class="fw-table-wrapper">
-      <table class="fw-table">
-        <thead>
-          <tr>
-            <th>{{ _('Appliance') }}</th>
-            <th>{{ _('Object Type') }}</th>
-            <th>{{ _('Name') }}</th>
-            <th>{{ _('Match Context') }}</th>
-            <th class="actions-col">{{ _('Actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in results %}
-          <tr>
-            <td>
-              <span class="fw-badge fw-badge-secondary">{{ r.appliance_name }}</span>
-            </td>
-            <td>
-              {% if r.object_type == 'policy' %}
-                <span class="fw-badge fw-badge-primary">{{ _('Policy') }}</span>
-              {% elif r.object_type == 'vserver' %}
-                <span class="fw-badge fw-badge-info">{{ _('VServer') }}</span>
-              {% elif r.object_type == 'pool' %}
-                <span class="fw-badge fw-badge-success">{{ _('Pool') }}</span>
-              {% elif r.object_type == 'wpp' %}
-                <span class="fw-badge fw-badge-danger">{{ _('Profile') }}</span>
-              {% else %}
-                <span class="fw-badge fw-badge-secondary">{{ r.object_type }}</span>
-              {% endif %}
-            </td>
-            <td><strong>{{ r.name }}</strong></td>
-            <td>
-              <code style="font-size:11.5px; background:#F4F5F7; padding:2px 6px; border-radius:3px;">
-                {{ r.match[:100] if r.match else '—' }}
-              </code>
-            </td>
-            <td class="actions-col">
-              {% if r.object_type == 'policy' %}
-                <a href="{{ url_for('workspace.policy_detail', appliance_id=r.appliance_id, name=r.name) }}"
-                   class="btn btn-sm btn-outline-primary btn-sm-icon" title="{{ _('View Policy') }}">
-                  <i class="bi bi-eye"></i>
-                </a>
-              {% else %}
-                <a href="{{ url_for('api_explorer.index') }}?id={{ r.appliance_id }}&path={{ r.api_path if r.api_path else '' }}"
-                   class="btn btn-sm btn-outline-primary btn-sm-icon" title="{{ _('View in API Explorer') }}">
-                  <i class="bi bi-code-square"></i>
-                </a>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-
-  {% elif request and request.args.get('q') %}
+<div class="row g-3">
+  <div class="col-md-6">
     <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-lightbulb me-2 text-accent"></i>{{ _('Search Tips') }}</span>
+      </div>
       <div class="fw-card-body">
-        <div class="fw-empty-state">
-          <div class="fw-empty-state-icon"><i class="bi bi-search"></i></div>
-          <div class="fw-empty-state-title">{{ _('No results found') }}</div>
-          <div class="fw-empty-state-text">
-            {{ _('No objects match "') }}<strong>{{ request.args.get('q','') }}</strong>{{ _('". Try a broader query or check the spelling.') }}
-          </div>
-        </div>
-      </div>
-    </div>
-  {% endif %}
-{% else %}
-  <!-- No search yet — show recent + tips -->
-  <div class="row g-3">
-    <div class="col-md-6">
-      <div class="fw-card">
-        <div class="fw-card-header">
-          <span class="fw-card-title"><i class="bi bi-lightbulb me-2 text-accent"></i>{{ _('Search Tips') }}</span>
-        </div>
-        <div class="fw-card-body">
-          <ul style="font-size:13px; padding-left:20px; margin:0; line-height:2;">
-            <li>Search by exact policy name: <code>web-policy-01</code></li>
-            <li>Search by IP address: <code>192.168.1.100</code></li>
-            <li>Use partial names: <code>prod</code> matches all prod objects</li>
-            <li>{{ _('Filter by type using the "Object Type" dropdown') }}</li>
-            <li>{{ _('Narrow to a specific appliance to speed up results') }}</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-6">
-      <div class="fw-card">
-        <div class="fw-card-header">
-          <span class="fw-card-title"><i class="bi bi-server me-2 text-accent"></i>{{ _('Connected Appliances') }}</span>
-        </div>
-        <div class="fw-card-body">
-          {% if appliances %}
-            {% for a in appliances %}
-              <div class="d-flex align-items-center gap-2 py-1" style="border-bottom:1px solid #F0F2F5;">
-                <span class="fw-status fw-status-unknown" data-status-id="{{ a.id }}" style="font-size:12px;">
-                  <span class="fw-status-dot"></span>
-                </span>
-                <span style="font-size:13px;"><strong>{{ a.name }}</strong></span>
-                <span class="mono text-muted" style="font-size:11.5px;">{{ a.host }}</span>
-              </div>
-            {% endfor %}
-          {% else %}
-            <div class="fw-empty-state py-3">
-              <div class="fw-empty-state-icon" style="font-size:28px;"><i class="bi bi-server"></i></div>
-              <div class="fw-empty-state-title" style="font-size:14px;">{{ _('No appliances') }}</div>
-            </div>
-          {% endif %}
-        </div>
+        <ul style="font-size:13px; padding-left:20px; margin:0; line-height:2;" id="searchTips">
+          {% for text, example in adom.tips %}<li>{{ text }}: <code>{{ example }}</code></li>{% endfor %}
+          <li>{{ _('Part of a name matches every object that contains it.') }}</li>
+          <li>{{ _('Results come from the last configuration sync, not a live query. Passwords and keys are never searched.') }}</li>
+        </ul>
       </div>
     </div>
   </div>
-{% endif %}
+  <div class="col-md-6">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-server me-2 text-accent"></i>{{ _('Appliances in this ADOM') }}</span>
+      </div>
+      <div class="fw-card-body">
+        {% if appliances %}
+          {% for a in appliances %}
+            <div class="d-flex align-items-center gap-2 py-1" style="border-bottom:1px solid #F0F2F5;">
+              <span class="fw-status fw-status-unknown" data-status-id="{{ a.id }}" style="font-size:12px;">
+                <span class="fw-status-dot"></span>
+              </span>
+              <span style="font-size:13px;"><strong>{{ a.name }}</strong></span>
+              <span class="mono text-muted" style="font-size:11.5px;">{{ a.host }}</span>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="fw-empty-state py-3">
+            <div class="fw-empty-state-icon" style="font-size:28px;"><i class="bi bi-server"></i></div>
+            <div class="fw-empty-state-title" style="font-size:14px;">{{ _('No appliances') }}</div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}

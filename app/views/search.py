@@ -1,80 +1,14 @@
-from flask import current_app, Blueprint, render_template, request, jsonify, flash, redirect, url_for, abort
-from flask_login import login_required, current_user
+"""ADOM Search — free-text search over the synced configuration of the active
+ADOM's appliances (see :mod:`app.services.adom_search`). Read-only and
+DB-first: no device is called on a search."""
+from flask import Blueprint, render_template, request, flash, redirect, url_for
+from flask_login import login_required
 from ..auth.decorators import require_permission
-from ..models import Appliance, db, Permission
-from ..models import visible_appliances, visible_appliance_or_404
-from ..clients import client_for
-from ..clients.fortiweb import FortiWebClient
-from ..services.audit import log_action
+from ..models import Appliance, Permission
+from ..models import visible_appliances
+from ..services import adom_search
 
 bp = Blueprint('search', __name__, url_prefix='/search')
-
-SEARCH_ENDPOINTS = [
-    '/ServerObjects/Server/ServerPolicy',
-    '/ServerObjects/Server/VirtualServer',
-    '/ServerObjects/Server/ServerPool',
-    '/WebProtection/Profile/InlineProtection',
-    '/WebProtection/Exception/ExceptionURL',
-]
-
-# FortiADC — registry LOGICAL collections swept by the free-text search
-# (the ADC client resolves each against the fortiadc registry).
-ADC_SEARCH_LOGICALS = [
-    'load_balance_virtual_server',
-    'load_balance_pool',
-    'load_balance_real_server',
-    'security_waf_profile',
-    'system_certificate_local',
-]
-
-# Object Type filter (the search form's ``obj_type``) → the subset of each
-# product's collections it narrows the sweep to. Empty / unknown = everything.
-OBJ_TYPE_ENDPOINTS = {
-    'policy': ['/ServerObjects/Server/ServerPolicy'],
-    'vserver': ['/ServerObjects/Server/VirtualServer'],
-    'pool': ['/ServerObjects/Server/ServerPool'],
-    'wpp': ['/WebProtection/Profile/InlineProtection'],
-    'exception': ['/WebProtection/Exception/ExceptionURL'],
-}
-OBJ_TYPE_ADC_LOGICALS = {
-    'policy': ['load_balance_virtual_server'],
-    'vserver': ['load_balance_virtual_server'],
-    'pool': ['load_balance_pool', 'load_balance_real_server'],
-    'wpp': ['security_waf_profile'],
-    'exception': [],
-}
-
-# Kinds this sweep knows how to read. Everything else (FortiGate,
-# FortiAuthenticator, FortiAnalyzer) used to be sent FortiWeb REST paths, fail
-# quietly and show up as "No results found" — a search that never ran is
-# reported as not searched, not as an empty answer.
-FORTIWEB_KINDS = (None, '', 'fortiweb')
-SEARCHABLE_KINDS = FORTIWEB_KINDS + ('fortiadc',)
-
-
-def _adc_hits(appliance, term: str, logicals=None) -> list[dict]:
-    """Free-text hits across the ADC search collections (live, read-only)."""
-    hits: list[dict] = []
-    if logicals is None:
-        logicals = ADC_SEARCH_LOGICALS
-    if not logicals:
-        return hits
-    client = client_for(appliance)
-    low = term.lower()
-    for logical in logicals:
-        try:
-            rows, err = client.list_with_error(logical)
-            if err:
-                current_app.logger.info(
-                    'search: %s %s device error: %s', appliance.name, logical, err)
-                continue
-            for item in rows or []:
-                if low in str(item).lower():
-                    hits.append({'endpoint': logical, 'item': item})
-        except Exception as _exc:  # noqa: BLE001 — one dead collection never sinks the sweep
-            current_app.logger.info(
-                'search: %s %s failed: %s', appliance.name, logical, _exc)
-    return hits
 
 
 @bp.route('/')
@@ -82,7 +16,9 @@ def _adc_hits(appliance, term: str, logicals=None) -> list[dict]:
 @require_permission(Permission.VIEW)
 def index():
     appliances = visible_appliances().order_by(Appliance.name).all()
-    return render_template('search/index.html', appliances=appliances)
+    return render_template(
+        'search/index.html', appliances=appliances,
+        sections=adom_search.sections_for([a.id for a in appliances]))
 
 
 @bp.route('/results')
@@ -94,66 +30,25 @@ def results():
     # is still honoured for bookmarked links.
     appliance_ids = (request.args.getlist('appliance_id', type=int)
                      + request.args.getlist('appliances', type=int))
-    obj_type = request.args.get('obj_type', '').strip()
-    endpoints = OBJ_TYPE_ENDPOINTS.get(obj_type, SEARCH_ENDPOINTS)
-    adc_logicals = OBJ_TYPE_ADC_LOGICALS.get(obj_type, ADC_SEARCH_LOGICALS)
+    section = request.args.get('section', '').strip()
 
     if not term:
         flash('Please enter a search term.', 'warning')
         return redirect(url_for('search.index'))
 
-    if appliance_ids:
-        appliances = visible_appliances().filter(Appliance.id.in_(appliance_ids)).all()
-    else:
-        appliances = visible_appliances().order_by(Appliance.name).all()
-
-    not_searched = [a for a in appliances
-                    if getattr(a, 'kind', None) not in SEARCHABLE_KINDS]
-    appliances = [a for a in appliances
-                  if getattr(a, 'kind', None) in SEARCHABLE_KINDS]
-
-    search_results = []
-    for appliance in appliances:
-        appliance_hits = []
-        if getattr(appliance, 'kind', '') == 'fortiadc':
-            try:
-                appliance_hits = _adc_hits(appliance, term, adc_logicals)
-            except Exception as exc:  # noqa: BLE001 — surface, don't 500
-                appliance_hits = [{'error': str(exc)}]
-            if appliance_hits:
-                search_results.append({'appliance': appliance,
-                                       'hits': appliance_hits})
-            continue
-        try:
-            client = FortiWebClient(appliance)
-            for endpoint in endpoints:
-                try:
-                    resp = client.api_call('GET', endpoint)
-                    items = resp.json().get('data', [])
-                    for item in items:
-                        item_str = str(item).lower()
-                        if term.lower() in item_str:
-                            appliance_hits.append({
-                                'endpoint': endpoint,
-                                'item': item,
-                            })
-                except Exception as _exc:
-                    current_app.logger.info(
-                        'search: %s %s failed: %s', appliance.name, endpoint, _exc)
-        except Exception as exc:
-            appliance_hits = [{'error': str(exc)}]
-        if appliance_hits:
-            search_results.append({
-                'appliance': appliance,
-                'hits': appliance_hits,
-            })
+    in_adom = visible_appliances().order_by(Appliance.name).all()
+    appliances = ([a for a in in_adom if a.id in appliance_ids]
+                  if appliance_ids else in_adom)
+    sections = adom_search.sections_for([a.id for a in in_adom])
+    if section not in sections:
+        section = ''
 
     return render_template(
         'search/results.html',
         term=term,
-        search_results=search_results,
-        appliances=appliances,
-        not_searched=not_searched,
-        obj_type=obj_type if obj_type in OBJ_TYPE_ENDPOINTS else '',
+        result=adom_search.search(term, appliances, section=section or None),
+        appliances=in_adom,
         appliance_ids=appliance_ids,
+        sections=sections,
+        section=section,
     )

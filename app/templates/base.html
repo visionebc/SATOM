@@ -202,8 +202,8 @@
       </ul>
     </div>
 
-    {% if product.key in ('fortiweb', 'fortiadc', 'fortiauthenticator', 'fortigate', 'global') and may_open('search.index') %}
-    <!-- Global search shortcut (sits just left of the bell) -->
+    {% if product.key in ('fortiweb', 'fortiadc', 'fortiauthenticator', 'fortigate', 'fortianalyzer', 'global') and may_open('search.index') %}
+    <!-- ADOM search shortcut (sits just left of the bell) -->
     <a href="{{ url_for('search.index') }}" id="fwTopbarSearch"
        class="fw-topbar-btn" title="{{ _('Search (/)') }}">
       <i class="bi bi-search"></i>

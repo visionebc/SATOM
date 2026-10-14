@@ -23591,3 +23591,270 @@ msgstr "Treffer"
 #, python-format
 msgid "configuration synced %(at)s UTC"
 msgstr "Konfiguration synchronisiert %(at)s UTC"
+
+#: app/templates/diag_battery/index.html
+msgid "Diagnostic Battery"
+msgstr "Diagnosebatterie"
+
+#: app/templates/diag_battery/index.html
+msgid "The commands Diagnose Log Collection runs on the devices of this ADOM. Candidates come from a discovery walk of a real device; every command is checked against the read-only battery rules when it is saved and again when it runs."
+msgstr "Die Befehle, die die Diagnose-Protokollerfassung auf den Geräten dieses ADOM ausführt. Die Kandidaten stammen aus einem Discovery-Durchlauf auf einem echten Gerät; jeder Befehl wird beim Speichern und erneut bei der Ausführung gegen die Nur-Lese-Regeln der Batterie geprüft."
+
+#: app/templates/diag_battery/index.html
+msgid "Batteries are chosen inside each device ADOM. Switch to a device ADOM to change its battery or to discover the commands its devices offer."
+msgstr "Batterien werden innerhalb jedes Geräte-ADOM ausgewählt. Wechseln Sie in ein Geräte-ADOM, um dessen Batterie zu ändern oder die Befehle zu ermitteln, die seine Geräte anbieten."
+
+#: app/templates/diag_battery/index.html
+msgid "Batteries per ADOM"
+msgstr "Batterien pro ADOM"
+
+#: app/templates/diag_battery/index.html
+msgid "Discovered builds"
+msgstr "Ermittelte Builds"
+
+#: app/templates/diag_battery/index.html
+msgid "Product default"
+msgstr "Produktstandard"
+
+#: app/templates/diag_battery/index.html
+msgid "Not saved."
+msgstr "Nicht gespeichert."
+
+#: app/templates/diag_battery/index.html
+msgid "Current battery"
+msgstr "Aktuelle Batterie"
+
+#: app/templates/diag_battery/index.html
+#, python-format
+msgid "by %(who)s at %(when)s"
+msgstr "von %(who)s am %(when)s"
+
+#: app/templates/diag_battery/index.html
+msgid "No commands."
+msgstr "Keine Befehle."
+
+#: app/templates/diag_battery/index.html
+msgid "Reset to default"
+msgstr "Auf Standard zurücksetzen"
+
+#: app/templates/diag_battery/index.html
+#, python-format
+msgid "Save keeps the order of the commands already in the battery and appends new ones. The product default has %(n)d commands."
+msgstr "Beim Speichern bleibt die Reihenfolge der Befehle, die bereits in der Batterie sind, erhalten; neue werden angehängt. Der Produktstandard umfasst %(n)d Befehle."
+
+#: app/templates/diag_battery/index.html
+msgid "Add commands by hand"
+msgstr "Befehle manuell hinzufügen"
+
+#: app/templates/diag_battery/index.html
+msgid "One per line, get/show/diagnose"
+msgstr "Einer pro Zeile, get/show/diagnose"
+
+#: app/templates/diag_battery/index.html
+msgid "Merged with the ticked commands on save. Battery commands that cannot be ticked in the tree (get/show, commands with arguments, commands this build does not list) are kept here so saving does not drop them."
+msgstr "Wird beim Speichern mit den angehakten Befehlen zusammengeführt. Batteriebefehle, die im Baum nicht angehakt werden können (get/show, Befehle mit Argumenten, Befehle, die dieser Build nicht auflistet), bleiben hier stehen, damit sie beim Speichern nicht verloren gehen."
+
+#: app/templates/diag_battery/index.html
+msgid "Choose commands"
+msgstr "Befehle auswählen"
+
+#: app/templates/diag_battery/index.html
+msgid "All discovered builds"
+msgstr "Alle ermittelten Builds"
+
+#: app/templates/diag_battery/index.html
+msgid "Filter commands…"
+msgstr "Befehle filtern…"
+
+#: app/templates/diag_battery/index.html
+#, python-format
+msgid "%(n)d nodes. Blocked commands are shown disabled with the reason; commands that need arguments are not tickable — add them by hand with their arguments."
+msgstr "%(n)d Knoten. Blockierte Befehle werden deaktiviert und mit Begründung angezeigt; Befehle, die Argumente benötigen, können nicht angehakt werden – fügen Sie sie manuell mit ihren Argumenten hinzu."
+
+#: app/templates/diag_battery/index.html
+#, python-format
+msgid "%(a)d / %(b)d selected"
+msgstr "%(a)d / %(b)d ausgewählt"
+
+#: app/templates/diag_battery/index.html
+#, python-format
+msgid "%(n)d blocked"
+msgstr "%(n)d blockiert"
+
+#: app/templates/diag_battery/index.html
+msgid "blocked:"
+msgstr "blockiert:"
+
+#: app/templates/diag_battery/index.html
+msgid "takes arguments:"
+msgstr "erwartet Argumente:"
+
+#: app/templates/diag_battery/index.html
+msgid "optional arguments:"
+msgstr "optionale Argumente:"
+
+#: app/templates/diag_battery/index.html
+#, python-format
+msgid "No commands discovered for %(p)s yet"
+msgstr "Noch keine Befehle für %(p)s ermittelt"
+
+#: app/templates/diag_battery/index.html
+msgid "Run Discovery below on a device of this ADOM: SATOM walks its diagnose tree and lists here every command its build offers. Until then the battery can be edited by hand."
+msgstr "Führen Sie unten die Discovery auf einem Gerät dieses ADOM aus: SATOM durchläuft dessen diagnose-Baum und listet hier jeden Befehl auf, den sein Build anbietet. Bis dahin kann die Batterie manuell bearbeitet werden."
+
+#: app/templates/diag_battery/index.html
+#, python-format
+msgid "Reset the %(p)s battery to the product default?"
+msgstr "Die %(p)s-Batterie auf den Produktstandard zurücksetzen?"
+
+#: app/templates/diag_battery/index.html
+msgid "Discovery types \"?\" after every allowed command to read the CLI help, and on FortiWeb that runs some read-only leaves. It never sends a blocked command. Prefer a lab device or a maintenance window."
+msgstr "Die Discovery tippt nach jedem erlaubten Befehl \"?\", um die CLI-Hilfe zu lesen; auf FortiWeb führt das einige schreibgeschützte Endbefehle aus. Ein blockierter Befehl wird nie gesendet. Verwenden Sie vorzugsweise ein Laborgerät oder ein Wartungsfenster."
+
+#: app/templates/diag_battery/index.html
+msgid "Discover commands"
+msgstr "Befehle ermitteln"
+
+#: app/templates/diag_battery/index.html
+#, python-format
+msgid "No %(p)s appliance is visible in this ADOM."
+msgstr "In diesem ADOM ist kein %(p)s-Gerät sichtbar."
+
+#: app/templates/diag_battery/index.html
+msgid "probed"
+msgstr "abgefragt"
+
+#: app/templates/diag_battery/index.html
+msgid "runnable"
+msgstr "ausführbar"
+
+#: app/templates/diag_battery/index.html
+msgid "Discovered"
+msgstr "Ermittelt"
+
+#: app/templates/diag_battery/index.html
+msgid "Probed"
+msgstr "Abgefragt"
+
+#: app/templates/diag_battery/index.html
+msgid "Runnable"
+msgstr "Ausführbar"
+
+#: app/templates/diag_battery/index.html
+msgid "Truncated"
+msgstr "Gekürzt"
+
+#: app/templates/diag_battery/index.html
+msgid "No build of this product has been discovered yet."
+msgstr "Für dieses Produkt wurde noch kein Build ermittelt."
+
+#: app/templates/diag_battery/index.html
+msgid "Discovery did not start."
+msgstr "Die Discovery wurde nicht gestartet."
+
+#: app/views/diag_battery.py
+msgid "Batteries are chosen inside each device ADOM."
+msgstr "Batterien werden innerhalb jedes Geräte-ADOM ausgewählt."
+
+#: app/views/diag_battery.py
+#, python-format
+msgid "Diagnostic battery saved: %(n)d commands."
+msgstr "Diagnosebatterie gespeichert: %(n)d Befehle."
+
+#: app/views/diag_battery.py
+msgid "Diagnostic battery reset to the product default."
+msgstr "Diagnosebatterie auf den Produktstandard zurückgesetzt."
+
+#: app/views/diag_battery.py
+msgid "Discovery runs inside a device ADOM."
+msgstr "Die Discovery läuft innerhalb eines Geräte-ADOM."
+
+#: app/views/diag_battery.py
+msgid "Choose an appliance."
+msgstr "Wählen Sie ein Gerät aus."
+
+#: app/views/diag_battery.py
+msgid "No such appliance in this ADOM."
+msgstr "Dieses Gerät gibt es in diesem ADOM nicht."
+
+#: app/templates/logs/index.html
+#, python-format
+msgid "Collect the %(adom)s diagnostic battery from one or more %(adom)s devices over SSH. It modifies nothing: every command is a read-only get, show or diagnose, and a command the device build does not have is skipped and reported."
+msgstr "Erfasst die %(adom)s-Diagnosebatterie von einem oder mehreren %(adom)s-Geräten per SSH. Es wird nichts geändert: Jeder Befehl ist ein schreibgeschütztes get, show oder diagnose, und ein Befehl, den der Build des Geräts nicht kennt, wird übersprungen und gemeldet."
+
+#: app/templates/logs/index.html
+#, python-format
+msgid "Devices (%(adom)s)"
+msgstr "Geräte (%(adom)s)"
+
+#: app/templates/logs/index.html
+#, python-format
+msgid "No %(adom)s devices configured"
+msgstr "Keine %(adom)s-Geräte konfiguriert"
+
+#: app/templates/logs/index.html
+msgid "Diagnostic battery"
+msgstr "Diagnosebatterie"
+
+#: app/templates/logs/index.html
+#, python-format
+msgid "%(n)s commands"
+msgstr "%(n)s Befehle"
+
+#: app/templates/logs/index.html
+msgid "Chosen"
+msgstr "Ausgewählt"
+
+#: app/templates/logs/index.html
+#, python-format
+msgid "Chosen by %(user)s on %(date)s"
+msgstr "Ausgewählt von %(user)s am %(date)s"
+
+#: app/templates/logs/index.html
+msgid "an administrator"
+msgstr "einem Administrator"
+
+#: app/templates/logs/index.html
+msgid "Edit in Administrator → Diagnostic Battery"
+msgstr "In Administrator → Diagnosebatterie bearbeiten"
+
+#: app/templates/logs/index.html
+msgid "This ADOM has no diagnostic battery."
+msgstr "Dieses ADOM hat keine Diagnosebatterie."
+
+#: app/templates/logs/index.html
+#, python-format
+msgid "One command per line: get, show or diagnose — state-changing diagnose commands are refused. Blank lines and lines starting with # are ignored. Leave empty to run the %(n)s-command battery above."
+msgstr "Ein Befehl pro Zeile: get, show oder diagnose – zustandsändernde diagnose-Befehle werden abgelehnt. Leerzeilen und Zeilen, die mit # beginnen, werden ignoriert. Leer lassen, um die obige Batterie mit %(n)s Befehlen auszuführen."
+
+#: app/templates/logs/index.html
+msgid "ran"
+msgstr "ausgeführt"
+
+#: app/templates/logs/index.html
+msgid "not available"
+msgstr "nicht verfügbar"
+
+#: app/templates/logs/index.html
+msgid "Select at least one device."
+msgstr "Wählen Sie mindestens ein Gerät aus."
+
+#: app/templates/logs/index.html
+msgid "Could not start collection."
+msgstr "Die Erfassung konnte nicht gestartet werden."
+
+#: app/templates/logs/index.html
+msgid "Request failed:"
+msgstr "Anfrage fehlgeschlagen:"
+
+#: app/templates/appliances/edit.html
+msgid "SSH user, if different from the API user"
+msgstr "SSH-Benutzer, falls abweichend vom API-Benutzer"
+
+#: app/templates/appliances/edit.html
+msgid "not set — SSH logs in as the username above"
+msgstr "nicht gesetzt – SSH meldet sich mit dem obigen Benutzernamen an"
+
+#: app/templates/appliances/edit.html
+msgid "Changing the SSH user requires re-entering the separate SSH password, when one is set."
+msgstr "Wenn ein separates SSH-Passwort gesetzt ist, muss es nach einer Änderung des SSH-Benutzers erneut eingegeben werden."

@@ -71,7 +71,10 @@ CAPABILITIES = ("backend_edit", "backend_config", "policy_status", "cert_swap",
                 "waf_exception_draft", "waf_exception_apply",
                 "adc_rule_draft", "adc_rule_apply",
                 # --- live inventory (see EXPLICIT_ONLY below) -----------------
-                "inventory")
+                "inventory",
+                # --- catalog groups added 2026-10-15 (CATALOG_EXPLICIT below) -
+                "cert_renew", "monitoring", "sentinel", "feeds",
+                "api_library", "netbox")
 
 # ---------------------------------------------------------------------------
 # EXPLICIT-ONLY capabilities — the empty-list default does NOT grant these.
@@ -97,6 +100,54 @@ EXPLICIT_ONLY_CAPABILITIES = frozenset({
     # the day the feature ships.
     "inventory",
 })
+
+# ---------------------------------------------------------------------------
+# CATALOG capabilities that the empty-list default does NOT grant either.
+#
+# Until 2026-10-15 these actions had no tag at all, so only a token whose
+# owner holds ``user_manage`` could run them, and only with an EMPTY
+# capability list -- a token could never be restricted to, say, "monitoring
+# sweeps only". Tagging them lets an administrator mint exactly that. Granting
+# them through the empty default would widen every token already issued, so
+# an empty list keeps the old rule for them (owner with ``user_manage``).
+# ---------------------------------------------------------------------------
+CATALOG_EXPLICIT_CAPABILITIES = frozenset({
+    "cert_renew", "monitoring", "sentinel", "feeds", "api_library", "netbox",
+})
+
+# What each capability lets a token do, and how the token form groups them.
+# One table for the page, the docs and the tests; the template used to keep
+# its own copy of the descriptions.
+CAPABILITY_DESC = {
+    "backend_edit": "enable/disable pool backends",
+    "backend_config": "change a backend IP / port",
+    "policy_status": "enable/disable server policies",
+    "cert_swap": "swap a policy's certificate",
+    "cert_renew": "renew Server / Client / Client+Server certificates (Cert Manager)",
+    "maintenance": "backups / sync / deep capture / signature collect (fleet)",
+    "reports": "stats / inventory / health / HA checks (read-only, fleet)",
+    "monitoring": "deep-monitor sweep, metrics scrape, monitoring report",
+    "sentinel": "Sentinel correlate, baselines, CVE mirror refresh, blocklist feed publish",
+    "feeds": "signature freshness, knowledge packs, WAF artifact index",
+    "api_library": "API library harvests (endpoint evidence, CLI schema, watch)",
+    "netbox": "NetBox inventory reconcile",
+    "waf_exception_draft": "FILE a FortiWeb WAF carve-out (desired state only — never touches a device)",
+    "waf_exception_apply": "PUSH a filed FortiWeb carve-out onto the appliance",
+    "adc_rule_draft": "PREVIEW a FortiADC carve-out (never touches a device)",
+    "adc_rule_apply": "CREATE a FortiADC carve-out on the appliance",
+    "inventory": "ASK a device its running firmware, live (reads the device, writes only this inventory)",
+}
+CAPABILITY_GROUPS = (
+    ("Server policies (AppID-scopable)",
+     ("backend_edit", "backend_config", "policy_status", "cert_swap")),
+    ("Certificates", ("cert_renew",)),
+    ("Fleet maintenance & reports", ("maintenance", "reports")),
+    ("Monitoring & security", ("monitoring", "sentinel")),
+    ("Feeds & integrations", ("feeds", "api_library", "netbox")),
+    ("FortiWeb objects (always explicit)", ("waf_exception_draft", "waf_exception_apply")),
+    ("FortiADC objects (always explicit)", ("adc_rule_draft", "adc_rule_apply")),
+    ("Live inventory (always explicit)", ("inventory",)),
+)
 
 # An object capability is only meaningful on a token bound to the matching
 # ADOM (or to ``global``). A FortiWeb-only token can never write ADC rules.
@@ -142,6 +193,24 @@ ACTION_CAPABILITY = {
     "inventory_snapshot": "reports",
     "health_check": "reports",
     "ha_check": "reports",
+    # catalog groups added 2026-10-15 -- explicit (CATALOG_EXPLICIT_CAPABILITIES)
+    "cert_manager_server": "cert_renew",
+    "cert_manager_clientserver": "cert_renew",
+    "cert_manager_client": "cert_renew",
+    "deep_monitor": "monitoring",
+    "metrics_scrape": "monitoring",
+    "monitor_report": "monitoring",
+    "sentinel_sweep": "sentinel",
+    "sentinel_baseline": "sentinel",
+    "sentinel_vuln_sync": "sentinel",
+    "sentinel_feed_publish": "sentinel",
+    "signature_check": "feeds",
+    "knowledge_fetch": "feeds",
+    "artifact_refs": "feeds",
+    "apilib_harvest": "api_library",
+    "schema_harvest": "api_library",
+    "schema_watch": "api_library",
+    "netbox_reconcile": "netbox",
 }
 
 # Capabilities that act on ONE concrete server policy, so an AppID scope can be
@@ -257,9 +326,14 @@ class ApiToken(db.Model):
         """
         tag = ACTION_CAPABILITY.get(action_key)
         caps = self.capability_list
-        if tag is None and not caps:
+        if (tag is None or tag in CATALOG_EXPLICIT_CAPABILITIES) and not caps:
             owner = self.owner
             if owner is None or not owner.can("user_manage"):
+                if tag:
+                    return (False, "capability_denied",
+                            f"'{action_key}' needs the '{tag}' capability "
+                            "granted explicitly, or a token owned by a user "
+                            "administrator.")
                 return (False, "capability_denied",
                         f"'{action_key}' has no API capability; only a token "
                         "owned by a user administrator can run it.")

@@ -23974,3 +23974,36 @@ msgstr "dedotta"
 #: app/templates/database/index.html
 msgid "Inferred from the column name: no FK constraint in the database"
 msgstr "Dedotta dal nome della colonna: nessun vincolo FK nel database"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "(what — none ticked = every catalog action that needs no explicit grant)"
+msgstr "(cosa — nessuna spunta = ogni azione del catalogo senza concessione esplicita)"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "every action that needs no explicit grant"
+msgstr "ogni azione senza concessione esplicita"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "None ticked: every catalog action that needs no explicit grant"
+msgstr "Nessuna spunta: ogni azione del catalogo senza concessione esplicita"
+
+
+#: app/templates/api_tokens/_pickers.html
+msgid "explicit"
+msgstr "esplicito"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "None ticked: no AppID restriction"
+msgstr "Nessuna spunta: nessuna restrizione AppID"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "Filter AppIDs…"
+msgstr "Filtra AppID…"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "Filter AppIDs"
+msgstr "Filtra AppID"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "No AppIDs yet — create them under AppIDs."
+msgstr "Nessun AppID — creali in AppIDs."

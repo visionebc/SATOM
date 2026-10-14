@@ -16,8 +16,10 @@ from ..auth.decorators import require_permission
 from ..extensions import db
 from ..models import Permission, User
 from ..models import AppId
-from ..models_api_token import (CAPABILITIES, SCOPES, VALID_PRODUCTS, ApiToken,
-                                SCOPE_REQUIRED_PERMISSION, mint_token)
+from ..models_api_token import (CAPABILITIES, CAPABILITY_DESC, CAPABILITY_GROUPS,
+                                CATALOG_EXPLICIT_CAPABILITIES,
+                                EXPLICIT_ONLY_CAPABILITIES, SCOPES, VALID_PRODUCTS,
+                                ApiToken, SCOPE_REQUIRED_PERMISSION, mint_token)
 from ..services.audit import log_action
 
 bp = Blueprint("api_tokens", __name__, url_prefix="/api-tokens",
@@ -33,6 +35,8 @@ def _render_index(**extra):
                      .order_by(AppId.product, AppId.app_id).all())
     ctx = dict(tokens=tokens, users=users, scopes=SCOPES, products=VALID_PRODUCTS,
                capabilities=CAPABILITIES, appid_catalog=appid_catalog,
+               cap_groups=CAPABILITY_GROUPS, cap_desc=CAPABILITY_DESC,
+               cap_explicit=sorted(EXPLICIT_ONLY_CAPABILITIES | CATALOG_EXPLICIT_CAPABILITIES),
                new_token=None)
     ctx.update(extra)
     return render_template("api_tokens/index.html", **ctx)

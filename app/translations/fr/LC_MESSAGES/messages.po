@@ -23939,3 +23939,36 @@ msgstr "déduite"
 #: app/templates/database/index.html
 msgid "Inferred from the column name: no FK constraint in the database"
 msgstr "Déduite du nom de la colonne : aucune contrainte FK dans la base de données"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "(what — none ticked = every catalog action that needs no explicit grant)"
+msgstr "(quoi — rien de coché = toute action du catalogue sans autorisation explicite)"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "every action that needs no explicit grant"
+msgstr "toute action sans autorisation explicite"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "None ticked: every catalog action that needs no explicit grant"
+msgstr "Rien de coché : toute action du catalogue sans autorisation explicite"
+
+
+#: app/templates/api_tokens/_pickers.html
+msgid "explicit"
+msgstr "explicite"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "None ticked: no AppID restriction"
+msgstr "Rien de coché : aucune restriction d’AppID"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "Filter AppIDs…"
+msgstr "Filtrer les AppID…"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "Filter AppIDs"
+msgstr "Filtrer les AppID"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "No AppIDs yet — create them under AppIDs."
+msgstr "Pas encore d’AppID — créez-les sous AppIDs."

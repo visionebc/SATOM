@@ -23958,3 +23958,36 @@ msgstr "inferida"
 #: app/templates/database/index.html
 msgid "Inferred from the column name: no FK constraint in the database"
 msgstr "Inferida del nombre de la columna: no hay restricción FK en la base de datos"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "(what — none ticked = every catalog action that needs no explicit grant)"
+msgstr "(qué — sin marcar = toda acción del catálogo que no exige permiso explícito)"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "every action that needs no explicit grant"
+msgstr "toda acción que no exige permiso explícito"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "None ticked: every catalog action that needs no explicit grant"
+msgstr "Nada marcado: toda acción del catálogo que no exige permiso explícito"
+
+
+#: app/templates/api_tokens/_pickers.html
+msgid "explicit"
+msgstr "explícito"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "None ticked: no AppID restriction"
+msgstr "Nada marcado: sin restricción de AppID"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "Filter AppIDs…"
+msgstr "Filtrar AppIDs…"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "Filter AppIDs"
+msgstr "Filtrar AppIDs"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "No AppIDs yet — create them under AppIDs."
+msgstr "Aún no hay AppIDs: créalos en AppIDs."

@@ -23937,3 +23937,36 @@ msgstr "abgeleitet"
 #: app/templates/database/index.html
 msgid "Inferred from the column name: no FK constraint in the database"
 msgstr "Aus dem Spaltennamen abgeleitet: kein FK-Constraint in der Datenbank"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "(what — none ticked = every catalog action that needs no explicit grant)"
+msgstr "(was — nichts angehakt = jede Katalogaktion ohne explizite Freigabe)"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "every action that needs no explicit grant"
+msgstr "jede Aktion ohne explizite Freigabe"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "None ticked: every catalog action that needs no explicit grant"
+msgstr "Nichts angehakt: jede Katalogaktion ohne explizite Freigabe"
+
+
+#: app/templates/api_tokens/_pickers.html
+msgid "explicit"
+msgstr "explizit"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "None ticked: no AppID restriction"
+msgstr "Nichts angehakt: keine AppID-Einschränkung"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "Filter AppIDs…"
+msgstr "AppIDs filtern…"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "Filter AppIDs"
+msgstr "AppIDs filtern"
+
+#: app/templates/api_tokens/_pickers.html
+msgid "No AppIDs yet — create them under AppIDs."
+msgstr "Noch keine AppIDs — unter AppIDs anlegen."

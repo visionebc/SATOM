@@ -1,0 +1,62 @@
+{# Checkbox dropdowns for the API token forms (create + every edit modal).
+
+   A <select multiple> needs Ctrl-click and hides what is ticked once the list
+   scrolls; seventeen loose checkboxes pushed the AppID picker off the screen.
+   Each picker is a Bootstrap dropdown whose button says what is ticked, and
+   whose menu holds the checkboxes -- grouped for capabilities, searchable for
+   AppIDs. The inputs keep their names, so the POST is unchanged. #}
+
+{% macro cap_picker(prefix, selected, groups, desc, explicit) %}
+<div class="dropdown tok-picker" data-empty="{{ _('None ticked: every catalog action that needs no explicit grant') }}"
+     data-some="{{ _('selected') }}">
+  <button class="btn btn-outline-secondary w-100 text-start d-flex align-items-center dropdown-toggle"
+          type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+    <span class="tok-picker-summary text-truncate me-2"></span>
+  </button>
+  <div class="dropdown-menu w-100 p-2 tok-picker-menu">
+    {% for title, keys in groups %}
+    <div class="tok-picker-group">
+      <div class="small fw-semibold text-muted text-uppercase mt-1 mb-1">{{ _(title) }}</div>
+      {% for c in keys %}
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="capabilities" value="{{ c }}"
+               id="{{ prefix }}-{{ c }}" {{ 'checked' if c in selected else '' }}>
+        <label class="form-check-label" for="{{ prefix }}-{{ c }}">
+          <code>{{ c }}</code>{% if c in explicit %} <span class="fw-badge fw-badge-warning">{{ _('explicit') }}</span>{% endif %}
+          <span class="text-muted small d-block">{{ _(desc.get(c, '')) }}</span>
+        </label>
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro appid_picker(prefix, selected, catalog) %}
+<div class="dropdown tok-picker" data-empty="{{ _('None ticked: no AppID restriction') }}"
+     data-some="{{ _('selected') }}">
+  <button class="btn btn-outline-secondary w-100 text-start d-flex align-items-center dropdown-toggle"
+          type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+    <span class="tok-picker-summary text-truncate me-2"></span>
+  </button>
+  <div class="dropdown-menu w-100 p-2 tok-picker-menu">
+    {% if catalog %}
+    <input type="search" class="form-control form-control-sm mb-2 tok-picker-search"
+           placeholder="{{ _('Filter AppIDs…') }}" aria-label="{{ _('Filter AppIDs') }}">
+    {% for a in catalog %}
+    <div class="form-check tok-picker-item" data-text="{{ (a.app_id ~ ' ' ~ (a.customer or '') ~ ' ' ~ a.product)|lower }}">
+      <input class="form-check-input" type="checkbox" name="app_ids" value="{{ a.app_id }}"
+             id="{{ prefix }}-{{ loop.index }}" {{ 'checked' if a.app_id in selected else '' }}>
+      <label class="form-check-label" for="{{ prefix }}-{{ loop.index }}">
+        <code>{{ a.app_id }}</code>{% if a.customer %} — {{ a.customer }}{% endif %}
+        <span class="text-muted small">({{ a.product }})</span>
+      </label>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="small text-muted px-1">{{ _('No AppIDs yet — create them under AppIDs.') }}</div>
+    {% endif %}
+  </div>
+</div>
+{% endmacro %}

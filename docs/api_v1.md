@@ -49,9 +49,10 @@ on it. All four are evaluated on every call; the first that says no wins:
 | **Product (ADOM)** | The token is bound to `fortiweb`, `fortiadc` or `global` and acts only on that product. |
 | **Capability** | Object authoring (§6, §7) is refused unless the token *carries* the matching capability — `waf_exception_draft` / `waf_exception_apply` / `adc_rule_draft` / `adc_rule_apply`. An **empty capability list means no object writes at all**; it is never read as "everything". Ask the administrator for the one you need, by name. |
 
-> A `write` token is **not** scoped to a single action or a single device — it
-> can run *any* non-destructive action enabled in its ADOM. Treat it as a
-> credential for all non-destructive automation of that product.
+> A `write` token with an **empty capability list** is not scoped to a single
+> action or device: it can run every non-destructive catalog action enabled in
+> its ADOM that needs no explicit grant. Treat it as a credential for all of
+> that automation, or ask for a token restricted to named capabilities (below).
 
 > **Draft and apply are different credentials, not a flag you choose.** A token
 > holding only `*_draft` that sends `"apply": true` is refused with
@@ -223,6 +224,31 @@ through the API.
 ### `POST /actions/<id>/run`
 Triggers the action **with the parameters it was saved with**. Rate-limited to
 **30/min**. Returns the run id so you can poll it.
+
+Which actions a token may trigger is decided by its **capabilities** (the
+administrator ticks them when minting the token). Each catalog action belongs to
+one capability:
+
+| capability | actions | empty list grants it? |
+|---|---|---|
+| `backend_edit` / `backend_config` / `policy_status` / `cert_swap` | `backend_set_status` / `backend_set_config` / `policy_set_status` / `swap_certificate` (AppID-scopable) | yes |
+| `maintenance` | `backup`, `device_sync`, `device_inspect`, `deep_capture`, `signature_sync`, `system_backup`, `cert_scan`, `appid_import` | yes |
+| `reports` | `stats`, `inventory_snapshot`, `health_check`, `ha_check` | yes |
+| `cert_renew` | `cert_manager_server`, `cert_manager_clientserver`, `cert_manager_client` | **no** |
+| `monitoring` | `deep_monitor`, `metrics_scrape`, `monitor_report` | **no** |
+| `sentinel` | `sentinel_sweep`, `sentinel_baseline`, `sentinel_vuln_sync`, `sentinel_feed_publish` | **no** |
+| `feeds` | `signature_check`, `knowledge_fetch`, `artifact_refs` | **no** |
+| `api_library` | `apilib_harvest`, `schema_harvest`, `schema_watch` | **no** |
+| `netbox` | `netbox_reconcile` | **no** |
+
+A token with a non-empty list runs only the actions of the capabilities it
+lists. The capabilities marked **no** were added on 2026-10-15: before that
+those actions had no capability, and only a token owned by a user administrator
+could run them. An empty list keeps that rule for them, so no token issued
+earlier gained anything. Destructive actions (`upgrade`, `upgrade_prep`,
+`reboot`, `ha_failover`, `cert_lifecycle`, `custom_rest`) are never runnable
+through the API, whatever the token holds. System Automations also need an
+owner with user management rights.
 
 ```json
 {

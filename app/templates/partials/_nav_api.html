@@ -1,0 +1,40 @@
+{# ============================================================================
+   API — registry catalog + live console of the CURRENT device ADOM.
+
+   Gated on ``registry.view``, the permission the console pages themselves
+   require (views/registry.py, adc_api.py, faz_api.py, fac_api.py, fgt_api.py).
+
+   Since 2026-10-14 (operator) it is a subgroup of Automation
+   (partials/nav_automation.html, ``api_menu(nested=True)``). Automation is
+   drawn for config_write only, so a profile holding registry.view without
+   config_write keeps the standalone "API" group instead
+   (partials/nav_product_api.html) — a reorder must not take a page away from
+   a profile that may open it, nor draw it twice.
+   ========================================================================= #}
+{% macro api_menu(nested) %}
+{% set _api_ep = {'fortiweb': 'registry.index', 'fortiadc': 'adc_api.index',
+                  'fortianalyzer': 'faz_api.index',
+                  'fortiauthenticator': 'fac_api.index',
+                  'fortigate': 'fgt_api.index'}.get(product.key) %}
+{% set _api_bps = ['registry', 'api_explorer', 'structure'] if product.key == 'fortiweb'
+                  else [(_api_ep or '').split('.')[0]] %}
+{% if _api_ep and current_user and current_user.can('registry.view') and may_open(_api_ep) %}
+{% if nested %}
+<div class="fw-nav-subgroup {{ 'open' if request.blueprint in _api_bps }}" data-nav-subgroup="API">
+  <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-braces fw-nav-icon" style="color:#0891b2;"></i><span>API</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-subgroup-body">
+    <a class="fw-nav-item {{ 'active' if request.blueprint in _api_bps else '' }}" href="{{ url_for(_api_ep) }}">
+      <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Registry & console') }}</span></a>
+  </div>
+</div>
+{% else %}
+<div class="fw-nav-group" data-nav-group="API">
+  <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-braces fw-nav-section-icon" style="color:#0891b2;"></i><span>API</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-group-body">
+    <a class="fw-nav-item {{ 'active' if request.blueprint in _api_bps else '' }}" href="{{ url_for(_api_ep) }}">
+      <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Registry & console') }}</span></a>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+{% endmacro %}

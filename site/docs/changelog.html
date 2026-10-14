@@ -213,10 +213,22 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="changed--navigation-labels-2026-10-14">Changed — navigation labels (2026-10-14)</h3>
 <ul>
-<li><strong>Fleet › Troubleshooting</strong> in every ADOM holds Backend Reachability,
+<li><strong>The Fleet group is gone; Operations is the first group of every device
+  ADOM.</strong> It opens with the fleet pages and then holds Device Backups, Log
+  Collection and Import Backup (and Template Library for profiles outside
+  Administrator). The device's own menu now follows Operations. The Global
+  ADOM keeps its Global block and has no Operations group.</li>
+<li><strong>The API console is a sub-menu of Automation</strong> (Automation › API ›
+  Registry &amp; console) instead of a group of its own. A profile that may open
+  the console (<code>registry.view</code>) but cannot see Automation (no <code>config_write</code>)
+  keeps the standalone API group, so no profile loses the page and none sees
+  it twice. Every entry keeps its own permission: the menu moved, access did
+  not change.</li>
+<li><strong>Troubleshooting</strong> (under Operations in the device ADOMs, in the Global
+  block in Global) holds Backend Reachability,
   Config Compare, Path Diagnostics and Scout; the separate Troubleshooting
-  entries under Operations and the flat entries in the Global Fleet list are
-  gone. Fleet runs Dashboard (where an ADOM has one), Calendar, Architecture,
+  entries under Operations and the flat entries in the Global list are
+  gone. The fleet pages run Dashboard (where an ADOM has one), Calendar, Architecture,
   Service Diagram, Monitoring, Search, DNS Lookup, Troubleshooting, then Fleet
   Objects and WAF (FortiWeb and FortiADC ADOMs only) and Jobs last.</li>
 <li>The fault-localisation ladder formerly called "Scout" is labelled <strong>Path
@@ -226,7 +238,7 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   must be switched on in Settings → Path Diagnostics — the switch it actually
   uses. Menu, page titles, settings panes and messages; URLs and bookmarks are
   unchanged.</li>
-<li>In the FortiGate, FortiAnalyzer and FortiAuthenticator ADOMs, Fleet ›
+<li>In the FortiGate, FortiAnalyzer and FortiAuthenticator ADOMs, Operations ›
   Troubleshooting holds Scout only: Backend Reachability, Config Compare and
   Path Diagnostics work on FortiWeb and FortiADC objects and are no longer
   listed there. The pages still open by URL.</li>

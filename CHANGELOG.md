@@ -107,10 +107,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Changed — navigation labels (2026-10-14)
 
-- **Fleet › Troubleshooting** in every ADOM holds Backend Reachability,
+- **The Fleet group is gone; Operations is the first group of every device
+  ADOM.** It opens with the fleet pages and then holds Device Backups, Log
+  Collection and Import Backup (and Template Library for profiles outside
+  Administrator). The device's own menu now follows Operations. The Global
+  ADOM keeps its Global block and has no Operations group.
+- **The API console is a sub-menu of Automation** (Automation › API ›
+  Registry & console) instead of a group of its own. A profile that may open
+  the console (`registry.view`) but cannot see Automation (no `config_write`)
+  keeps the standalone API group, so no profile loses the page and none sees
+  it twice. Every entry keeps its own permission: the menu moved, access did
+  not change.
+- **Troubleshooting** (under Operations in the device ADOMs, in the Global
+  block in Global) holds Backend Reachability,
   Config Compare, Path Diagnostics and Scout; the separate Troubleshooting
-  entries under Operations and the flat entries in the Global Fleet list are
-  gone. Fleet runs Dashboard (where an ADOM has one), Calendar, Architecture,
+  entries under Operations and the flat entries in the Global list are
+  gone. The fleet pages run Dashboard (where an ADOM has one), Calendar, Architecture,
   Service Diagram, Monitoring, Search, DNS Lookup, Troubleshooting, then Fleet
   Objects and WAF (FortiWeb and FortiADC ADOMs only) and Jobs last.
 - The fault-localisation ladder formerly called "Scout" is labelled **Path
@@ -120,7 +132,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   must be switched on in Settings → Path Diagnostics — the switch it actually
   uses. Menu, page titles, settings panes and messages; URLs and bookmarks are
   unchanged.
-- In the FortiGate, FortiAnalyzer and FortiAuthenticator ADOMs, Fleet ›
+- In the FortiGate, FortiAnalyzer and FortiAuthenticator ADOMs, Operations ›
   Troubleshooting holds Scout only: Backend Reachability, Config Compare and
   Path Diagnostics work on FortiWeb and FortiADC objects and are no longer
   listed there. The pages still open by URL.

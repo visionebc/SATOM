@@ -1688,7 +1688,7 @@ scheduled action `schema_watch`.
 - **One bell notification per product and build** to the administrators: *New
   build 8.0.7 on fweb-01: schema not harvested*, linking to Schema builds. It is
   not repeated for the next appliance on the same build.
-- **Schema builds** (`/schema-builds/`, Fleet group of every ADOM;
+- **Schema builds** (`/schema-builds/`, Automation group of every ADOM;
   reading needs `registry.view`) lists the adapters with their capabilities and
   verification, the harvested builds per product, and every appliance on a build
   without a harvested schema with a **Harvest** button (`appliances.apply`,

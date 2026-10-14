@@ -21,9 +21,11 @@
    Backend Reachability, Config Compare, Path Diagnostics, Scout), Fleet
    Objects and WAF (FortiWeb and FortiADC ADOMs only) — and Jobs last.
 
-   Draws the ITEMS only. The caller supplies the wrapper: a collapsible group
-   in a device ADOM, the "Global" context block in the Global ADOM. The
-   section holding the active item is opened by the nav_autoopen filter.
+   Draws the ITEMS only. The caller supplies the wrapper: the Operations group
+   in a device ADOM (partials/nav_operations.html — these items lead it; the
+   "Fleet" group title is gone since 2026-10-14, operator), the "Global"
+   context block in the Global ADOM. The section holding the active item is
+   opened by the nav_autoopen filter.
    ========================================================================= #}
 {% set _pk = product.key %}
 {% if _pk == 'global' and may_open('index') %}

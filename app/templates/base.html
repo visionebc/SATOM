@@ -326,15 +326,11 @@
 
       {% include 'partials/nav_device_context.html' %}
 
-      <!-- FLEET — one definition for every ADOM (partials/nav_fleet.html) -->
-      <div class="fw-nav-group" data-nav-group="Fleet">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Fleet') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          {% include 'partials/nav_fleet.html' %}
-        </div>
-      </div>
+      {# OPERATIONS — first group of every device ADOM since 2026-10-14: the old
+         Fleet entries (partials/nav_fleet.html) lead it (partials/nav_operations.html). #}
+      {% include 'partials/nav_operations.html' %}
 
-      {# API — registry catalog + live console (registry.view) #}
+      {# FortiADC device menu + the API fallback (API lives in Automation) #}
       {% include 'partials/nav_product_api.html' %}
 
       {% include 'partials/nav_automation.html' %}
@@ -397,19 +393,15 @@
 
       {% include 'partials/nav_device_context.html' %}
 
-      <!-- FLEET — one definition for every ADOM (partials/nav_fleet.html) -->
-      <div class="fw-nav-group" data-nav-group="Fleet">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Fleet') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          {% include 'partials/nav_fleet.html' %}
-        </div>
-      </div>
+      {# OPERATIONS — first group of every device ADOM since 2026-10-14: the old
+         Fleet entries (partials/nav_fleet.html) lead it (partials/nav_operations.html). #}
+      {% include 'partials/nav_operations.html' %}
 
       {# The unit's own menu from its measured GUI layouts; the curated
          faz_menu groups while no layout exists for its build. #}
       {% include 'partials/nav_fortianalyzer.html' %}
 
-      {# API — registry catalog + live console (registry.view) #}
+      {# FortiADC device menu + the API fallback (API lives in Automation) #}
       {% include 'partials/nav_product_api.html' %}
 
       {% include 'partials/nav_automation.html' %}
@@ -433,19 +425,15 @@
 
       {% include 'partials/nav_device_context.html' %}
 
-      <!-- FLEET — one definition for every ADOM (partials/nav_fleet.html) -->
-      <div class="fw-nav-group" data-nav-group="Fleet">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Fleet') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          {% include 'partials/nav_fleet.html' %}
-        </div>
-      </div>
+      {# OPERATIONS — first group of every device ADOM since 2026-10-14: the old
+         Fleet entries (partials/nav_fleet.html) lead it (partials/nav_operations.html). #}
+      {% include 'partials/nav_operations.html' %}
 
       {# The unit's own menu, drawn from its measured GUI layouts; the old
          fac_menu groups are gone (operator request 2026-10-11). #}
       {% include 'partials/nav_gx.html' %}
 
-      {# API — registry catalog + live console (registry.view) #}
+      {# FortiADC device menu + the API fallback (API lives in Automation) #}
       {% include 'partials/nav_product_api.html' %}
 
       {% include 'partials/nav_automation.html' %}
@@ -468,19 +456,15 @@
 
       {% include 'partials/nav_device_context.html' %}
 
-      <!-- FLEET — one definition for every ADOM (partials/nav_fleet.html) -->
-      <div class="fw-nav-group" data-nav-group="Fleet">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Fleet') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          {% include 'partials/nav_fleet.html' %}
-        </div>
-      </div>
+      {# OPERATIONS — first group of every device ADOM since 2026-10-14: the old
+         Fleet entries (partials/nav_fleet.html) lead it (partials/nav_operations.html). #}
+      {% include 'partials/nav_operations.html' %}
 
       {# The unit's own menu, drawn from its measured GUI layouts; the old
          fgt_menu groups are gone (operator request 2026-10-11). #}
       {% include 'partials/nav_gx.html' %}
 
-      {# API — registry catalog + live console (registry.view) #}
+      {# FortiADC device menu + the API fallback (API lives in Automation) #}
       {% include 'partials/nav_product_api.html' %}
 
       {% include 'partials/nav_automation.html' %}
@@ -525,13 +509,9 @@
 
       {% include 'partials/nav_device_context.html' %}
 
-      <!-- FLEET — one definition for every ADOM (partials/nav_fleet.html) -->
-      <div class="fw-nav-group" data-nav-group="Fleet">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Fleet') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          {% include 'partials/nav_fleet.html' %}
-        </div>
-      </div>
+      {# OPERATIONS — first group of every device ADOM since 2026-10-14: the old
+         Fleet entries (partials/nav_fleet.html) lead it (partials/nav_operations.html). #}
+      {% include 'partials/nav_operations.html' %}
 
       {# FORTIWEB MENU — FortiWeb's own menu tree, every page SATOM has a measured
          GUI layout for (services.gui_pages; layouts come with the knowledge packs).
@@ -575,10 +555,7 @@
          2026-10-11). Their pages stay reachable by address (?classic=1), but
          nothing in the sidebar links to them. #}
 
-      {# Operations is drawn by partials/nav_product_api.html (partials/nav_operations.html),
-         the same group in the same place as every other device ADOM. #}
-
-      {# API — the same group, in the same place, as the other device ADOMs #}
+      {# API fallback — the same partial, in the same place, as the other device ADOMs #}
       {% include 'partials/nav_product_api.html' %}
 
       {% include 'partials/nav_automation.html' %}

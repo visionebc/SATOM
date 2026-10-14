@@ -26,7 +26,7 @@ carve-out was authored for**. The team's rule:
    on the device's Web Protection Profile list copies the profile and the
    objects it references.
 3. Author the exceptions on the **Exceptions & Signature** page (FortiWeb ADOM
-   sidebar → **Fleet → WAF**). They are stored as **desired-state** in the app DB — never written
+   sidebar → **Operations → WAF**). They are stored as **desired-state** in the app DB — never written
    to the box from here; injection to FortiWeb is a separate step.
 
 The page also produces the **alignment report**: FortiWeb → Server Policy → WPP →

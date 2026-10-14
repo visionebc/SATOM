@@ -1,34 +1,18 @@
 {# ============================================================================
-   API — registry catalog + live console of the CURRENT device ADOM. ONE
-   definition for every device sidebar (2026-10-03; FortiWeb joined it
-   2026-10-11 — its hub used to be pinned to the foot of the sidebar behind
-   user_manage, so the API sat in a different place and under a different
-   rule in FortiWeb than in the other ADOMs).
+   DEVICE MENU TAIL — drawn right after the device's own menu in every device
+   sidebar.
 
-   Gated on ``registry.view``, the permission the console pages themselves
-   require (views/registry.py, adc_api.py, faz_api.py, fac_api.py, fgt_api.py).
+   * FortiADC: the device's measured menu (partials/nav_fortiadc.html; draws
+     nothing elsewhere).
+   * API: since 2026-10-14 a subgroup of Automation (partials/_nav_api.html).
+     Only a profile that cannot see Automation (no config_write) but may open
+     the console (registry.view) keeps the standalone "API" group here.
 
-   FortiGate joined 2026-10-11 (views/fgt_api.py), so every device ADOM draws
-   the group. Schema builds moved to the Fleet group (partials/nav_fleet.html).
+   Operations left this partial on 2026-10-14: it is the first group of every
+   device ADOM now, where the Fleet group stood (partials/nav_operations.html).
    ========================================================================= #}
-{# FortiADC: the device's measured menu sits just above API, right after the
-   Fleet group (partials/nav_fortiadc.html; draws nothing elsewhere). #}
+{% from 'partials/_nav_api.html' import api_menu with context %}
 {% include 'partials/nav_fortiadc.html' %}
-{# Operations — after the device menu, before API, in every device ADOM
-   (partials/nav_operations.html; FortiWeb is the reference menu). #}
-{% include 'partials/nav_operations.html' %}
-{% set _api_ep = {'fortiweb': 'registry.index', 'fortiadc': 'adc_api.index',
-                  'fortianalyzer': 'faz_api.index',
-                  'fortiauthenticator': 'fac_api.index',
-                  'fortigate': 'fgt_api.index'}.get(product.key) %}
-{% set _api_bps = ['registry', 'api_explorer', 'structure'] if product.key == 'fortiweb'
-                  else [(_api_ep or '').split('.')[0]] %}
-{% if _api_ep and current_user and current_user.can('registry.view') and may_open(_api_ep) %}
-<div class="fw-nav-group" data-nav-group="API">
-  <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-braces fw-nav-section-icon" style="color:#0891b2;"></i><span>API</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-  <div class="fw-nav-group-body">
-    <a class="fw-nav-item {{ 'active' if request.blueprint in _api_bps else '' }}" href="{{ url_for(_api_ep) }}">
-      <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Registry & console') }}</span></a>
-  </div>
-</div>
+{% if not (current_user and current_user.can('config_write')) %}
+{{ api_menu(false) }}
 {% endif %}

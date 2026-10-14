@@ -29,6 +29,7 @@
    reason on hover) — still never a live link to FortiWeb configuration.
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
+{% from 'partials/_nav_api.html' import api_menu with context %}
 {# Device ADOMs draw the FortiWeb entries too (FortiWeb is the reference menu,
    2026-10-11): live where the page works for this ADOM's devices, disabled
    with the reason elsewhere (services/adom_menu.py). Global is unchanged. #}
@@ -116,6 +117,10 @@
       <i class="bi bi-clipboard2-check fw-nav-icon"></i><span>{{ _('Change Requests') }}</span></a>
     {% endif %}
     {% endif %}
+    {# API (registry & console) — its own group until 2026-10-14, a subgroup
+       here since (operator). Device ADOMs only; registry.view still gates it
+       (partials/_nav_api.html). #}
+    {{ api_menu(true) }}
     {# Moved here from Fleet (2026-10-13). Certificate Manager stays Global-only:
        in the device ADOMs its blueprint is outside the allowlists and the
        link would bounce to the ADOM home. #}

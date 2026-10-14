@@ -69,7 +69,8 @@ DEFAULTS: dict[str, list[str]] = {
         "diagnose sys ha status",
         "diagnose hardware deviceinfo disk",
         "diagnose sys session stat",
-        "diagnose debug crashlog read",
+        # 8.0.1 has no ``crashlog read``: get / history (fgt02 walk).
+        "diagnose debug crashlog get",
         "diagnose autoupdate versions",
         "get router info routing-table all",
     ],
@@ -227,6 +228,24 @@ def catalog_for(product: str, build: str):
     if not build:
         return None
     return DiagCatalog.query.filter_by(product=product, build=build).first()
+
+
+def current_verdicts(nodes: dict[str, dict]) -> dict[str, dict]:
+    """``nodes`` with ``blocked`` re-derived from TODAY's battery rule.
+
+    A catalog stores the verdicts of the rule as it stood when the walk ran;
+    the rule only tightens (2026-10-14: ``level``, ``debugall``, "Change …"),
+    so a node a later rule refuses must not stay tickable. Copies; the stored
+    catalog is not touched.
+    """
+    out: dict[str, dict] = {}
+    for path, n in nodes.items():
+        if not n.get("blocked"):
+            why = battery_reason(path, n.get("desc") or "") or _ancestor_reason(path, nodes)
+            if why:
+                n = dict(n, blocked=why)
+        out[path] = n
+    return out
 
 
 def merged_nodes(product: str) -> dict[str, dict]:

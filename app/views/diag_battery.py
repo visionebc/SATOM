@@ -63,8 +63,8 @@ def _nodes_for(adom: str, build: str):
     if build and build != ALL_BUILDS:
         cat = svc.catalog_for(adom, build)
         if cat is not None:
-            return cat.node_map(), build, cat
-    return svc.merged_nodes(adom), ALL_BUILDS, None
+            return svc.current_verdicts(cat.node_map()), build, cat
+    return svc.current_verdicts(svc.merged_nodes(adom)), ALL_BUILDS, None
 
 
 def _row_state(n: dict) -> str:

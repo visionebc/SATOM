@@ -90,9 +90,10 @@ SAFE_WORDS: frozenset[str] = frozenset({
 _DESC_RE = re.compile(
     # A verb opening the description, as a whole word: "load-balance.virtual-
     # server" (FortiADC) is not "load", hence the (?![-.]\w) after the group.
-    # "switch", "update" and a bare "dump … to" are not here: FortiGate says
-    # "Switch information.", "Update object versions." and "Dump Global CA used
-    # to build cert chain." about read-only commands (2026-10-14 walks).
+    # "switch", "update", "configure" and a bare "dump … to" are not here:
+    # FortiGate says "Switch information.", "Update object versions.",
+    # "Configure error log info." and "Dump Global CA used to build cert
+    # chain." about read-only commands (2026-10-14 walks).
     r"^\s*(kill|killall|reset|clear|delete|remove|restart|reboot|shut ?down|"
     r"set(?!/get)|unset|enable|disable|start|stop|force|format|erase|flush|"
     r"purge|generate|backup|upload|export|import|repair|check and repair|"
@@ -102,7 +103,7 @@ _DESC_RE = re.compile(
     r"deregister|register|unregister|authori[sz]e|approve|reject|add|"
     r"capture|sniff|trace|ping|traceroute|run|execute|exec|test|simulate|"
     r"inject|send|wipe|truncate|rotate|write|break|drop|insert|"
-    r"activate|deactivate|toggle)\b(?![-.]\w)"
+    r"activate|deactivate|toggle|change|modify|adjust|edit)\b(?![-.]\w)"
     r"|replacing|every \d+ (?:second|minute|hour)s?"
     r"|\bto (?:disk|file|ftp|tftp|usb)\b"
     r"|set/get|set or get|get/set",

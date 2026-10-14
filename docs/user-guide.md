@@ -2186,7 +2186,8 @@ Appliances in **maintenance** are marked as such and are skipped by automatic
 runs and by their alerts. That is the correct way to silence a box you know is
 down — not lowering the alert floor.
 
-Fleet health is **two pages**, because a number is read as a claim about the
+Fleet health is **two pages**, each a direct entry of the Monitoring menu (there
+is no "Fleet health" sub-menu), because a number is read as a claim about the
 page it sits on:
 
 - **Device health** (`/monitoring/`) — the appliance cards above. Present in

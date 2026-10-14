@@ -79,8 +79,9 @@
 {% endif %}
 {# Automation ▸ (its API ▸ subgroup inside) right below WAF in a device ADOM
    (operator, 2026-10-14); config_write-gated inside the partial. Global
-   draws Automation as its own group from base.html. #}
-{% if _pk != 'global' %}
+   draws it here too, as a subgroup above Jobs (operator, later that day:
+   "as in the other ADOMs"); only placeholder ADOMs keep a standalone group. #}
+{% if not product.placeholder %}
 {% include 'partials/nav_automation.html' %}
 {% endif %}
 {# Schema builds / Build compatibility moved to Automation (2026-10-13); only

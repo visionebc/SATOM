@@ -11144,3 +11144,11 @@ msgid "Diagnostic battery saved: %(num)d command."
 msgid_plural "Diagnostic battery saved: %(num)d commands."
 msgstr[0] ""
 msgstr[1] ""
+
+#: app/templates/partials/nav_admin.html
+msgid "Access"
+msgstr ""
+
+#: app/templates/partials/nav_admin.html
+msgid "Change Management"
+msgstr ""

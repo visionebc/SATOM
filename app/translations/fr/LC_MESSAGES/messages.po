@@ -23900,3 +23900,11 @@ msgid "Diagnostic battery saved: %(num)d command."
 msgid_plural "Diagnostic battery saved: %(num)d commands."
 msgstr[0] "Batterie de diagnostics enregistrée : %(num)d commande."
 msgstr[1] "Batterie de diagnostics enregistrée : %(num)d commandes."
+
+#: app/templates/partials/nav_admin.html
+msgid "Access"
+msgstr "Accès"
+
+#: app/templates/partials/nav_admin.html
+msgid "Change Management"
+msgstr "Gestion des changements"

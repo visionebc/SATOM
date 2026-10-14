@@ -23935,3 +23935,11 @@ msgid "Diagnostic battery saved: %(num)d command."
 msgid_plural "Diagnostic battery saved: %(num)d commands."
 msgstr[0] "Batteria diagnostica salvata: %(num)d comando."
 msgstr[1] "Batteria diagnostica salvata: %(num)d comandi."
+
+#: app/templates/partials/nav_admin.html
+msgid "Access"
+msgstr "Accesso"
+
+#: app/templates/partials/nav_admin.html
+msgid "Change Management"
+msgstr "Gestione delle modifiche"

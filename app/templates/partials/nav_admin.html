@@ -3,31 +3,57 @@
 
    Same reason as partials/nav_fleet.html: six hand-copied blocks had six
    different orders, and Database / Users / Python Console showed up in the
-   FortiADC ADOM only. Entries that do not depend on the product come first,
-   in the same order everywhere; the ones that do are named with the ADOMs
-   they belong to.
+   FortiADC ADOM only. The ones that depend on the product are named with the
+   ADOMs they belong to.
 
-   Python Console is not drawn flat in the Global ADOM: Global draws it in
-   the Studio subgroup at the foot of this group (partials/nav_studio.html). Without user_manage the group is replaced by the Process
-   entry on its own (partials/nav_process_group.html), as before.
+   SECTIONS (operator, 2026-10-14): the group is split into Access, Change
+   Management, Devices, Objects, Studio and System, and both the sections and
+   the entries inside each one are ALPHABETICAL in the console's language.
+   Each section below is captured as one chunk with the entries' own
+   permission and ADOM conditions; nav_sections() (app/nav_sections.py) sorts
+   them by their rendered labels and drops sections that end up empty. So an
+   entry added to a chunk lands in its alphabetical place by itself, and a
+   profile never sees an empty toggle.
+
+   Studio holds Python Console, Plugin Studio and Lua Studio in the Global
+   ADOM (partials/nav_studio.html); in a device ADOM it holds Python Console,
+   because the two studios live in that ADOM's Plugins group. Without
+   user_manage the group is replaced by the Process entry on its own
+   (partials/nav_process_group.html), as before.
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
 {% set _pk = product.key %}
 {# Device ADOMs draw every FortiWeb entry (FortiWeb is the reference menu,
    2026-10-11): live where the page works for this ADOM's devices, disabled
-   with the reason elsewhere (services/adom_menu.py). Global is unchanged. #}
+   with the reason elsewhere (services/adom_menu.py). #}
 {% set _dev = _pk != 'global' and not product.placeholder %}
 {% if current_user and current_user.can('user_manage') %}
-<div class="fw-nav-group" data-nav-group="Administrator">
-  <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('Administrator') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-  <div class="fw-nav-group-body">
+
+{% set _s_access %}
     {% include "partials/nav_audit.html" %}
+    {% include "partials/nav_api_tokens.html" %}
+    {% if may_open('users.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'users' else '' }}" href="{{ url_for('users.index') }}">
+      <i class="bi bi-people fw-nav-icon"></i><span>{{ _('Users') }}</span></a>
+    {% endif %}
+{% endset %}
+
+{% set _s_change %}
+    {% include "partials/nav_cr_types.html" %}
+    {% include "partials/nav_process.html" %}
+{% endset %}
+
+{% set _s_devices %}
+    {# Appliances: moved here from Fleet (2026-10-13); nav_fleet.html keeps it
+       for profiles without user_manage. #}
+    {% include 'partials/nav_appliances.html' %}
     {% if _dev and may_open('capacity.index') %}{% set _m = adom_menu('capacity', product) %}
     {% if _m.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'capacity' else '' }}" href="{{ url_for('capacity.index') }}">
       <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Capacity Limits') }}</span></a>
     {% else %}{{ nav_off('bi-speedometer2', _('Capacity Limits'), _m.reason) }}{% endif %}
     {% endif %}
+    {% include "partials/nav_console.html" %}
     {# Diagnostic Battery: the commands Diagnose Log Collection runs, chosen
        per device ADOM (views/diag_battery.py). Global has no battery. #}
     {% if _dev and may_open('diag_battery.index') %}{% set _m = adom_menu('diag_battery', product) %}
@@ -36,24 +62,6 @@
       <i class="bi bi-list-check fw-nav-icon"></i><span>{{ _('Diagnostic Battery') }}</span></a>
     {% else %}{{ nav_off('bi-list-check', _('Diagnostic Battery'), _m.reason) }}{% endif %}
     {% endif %}
-    {% include "partials/nav_collection.html" %}
-    {% include "partials/nav_cr_types.html" %}
-    {% include "partials/nav_adom_assets.html" %}
-    {% include "partials/nav_console.html" %}
-    {% include "partials/nav_process.html" %}
-    {% include "partials/nav_api_tokens.html" %}
-    {% if may_open('users.index') %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint == 'users' else '' }}" href="{{ url_for('users.index') }}">
-      <i class="bi bi-people fw-nav-icon"></i><span>{{ _('Users') }}</span></a>
-    {% endif %}
-    {% if may_open('database.index') %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint == 'database' and request.endpoint != 'database.py_console_page' else '' }}" href="{{ url_for('database.index') }}">
-      <i class="bi bi-hdd fw-nav-icon"></i><span>{{ _('Database') }}</span></a>
-    {% endif %}
-    {% if _pk != 'global' and current_user.can('studio.python_console') and may_open('database.py_console_page') %}
-    <a class="fw-nav-item {{ 'active' if request.endpoint == 'database.py_console_page' else '' }}" href="{{ url_for('database.py_console_page') }}">
-      <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Python Console') }}</span></a>
-    {% endif %}
     {% if _dev and may_open('firmware.index') %}{% set _m = adom_menu('firmware', product) %}
     {% if _m.on %}
     <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('firmware.') else '' }}"
@@ -61,6 +69,20 @@
       <i class="bi bi-hdd-stack fw-nav-icon"></i><span>{{ _('Firmware') }}</span></a>
     {% else %}{{ nav_off('bi-hdd-stack', _('Firmware'), _m.reason) }}{% endif %}
     {% endif %}
+    {# Signatures: FortiWeb's page in FortiWeb, the ADC signature page in
+       FortiADC (adom_menu gives the endpoint), disabled elsewhere. #}
+    {% if _dev %}{% set _m = adom_menu('signatures', product) %}
+    {% if may_open(_m.endpoint or 'signatures.index') %}
+    {% if _m.on %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint == _m.endpoint or (request.blueprint == 'signatures' and _pk == 'fortiweb') else '' }}" href="{{ url_for(_m.endpoint) }}">
+      <i class="bi bi-fingerprint fw-nav-icon"></i><span>{{ _('Signatures') }}</span></a>
+    {% else %}{{ nav_off('bi-fingerprint', _('Signatures'), _m.reason) }}{% endif %}
+    {% endif %}
+    {% endif %}
+{% endset %}
+
+{% set _s_objects %}
+    {% include "partials/nav_adom_assets.html" %}
     {% if _dev and may_open('naming.index') %}{% set _m = adom_menu('naming', product) %}
     {% if _m.on %}
     <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('naming.') else '' }}"
@@ -75,26 +97,13 @@
       <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Network Segments') }}</span></a>
     {% else %}{{ nav_off('bi-hdd-network', _('Network Segments'), _m.reason) }}{% endif %}
     {% endif %}
-    {# Signatures: FortiWeb's page in FortiWeb, the ADC signature page in
-       FortiADC (adom_menu gives the endpoint), disabled elsewhere. #}
-    {% if _dev %}{% set _m = adom_menu('signatures', product) %}
-    {% if may_open(_m.endpoint or 'signatures.index') %}
-    {% if _m.on %}
-    <a class="fw-nav-item {{ 'active' if request.endpoint == _m.endpoint or (request.blueprint == 'signatures' and _pk == 'fortiweb') else '' }}" href="{{ url_for(_m.endpoint) }}">
-      <i class="bi bi-fingerprint fw-nav-icon"></i><span>{{ _('Signatures') }}</span></a>
-    {% else %}{{ nav_off('bi-fingerprint', _('Signatures'), _m.reason) }}{% endif %}
-    {% endif %}
-    {% endif %}
     {% if _dev and may_open('templates.index') %}{% set _m = adom_menu('templates', product) %}
     {% if _m.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'templates' else '' }}" href="{{ url_for('templates.index') }}">
       <i class="bi bi-collection fw-nav-icon"></i><span>{{ _('Template Library') }}</span></a>
     {% else %}{{ nav_off('bi-collection', _('Template Library'), _m.reason) }}{% endif %}
     {% endif %}
-    {# Appliances: moved here from Fleet (2026-10-13); nav_fleet.html keeps it
-       for profiles without user_manage. #}
-    {% include 'partials/nav_appliances.html' %}
-    {% if _pk == 'global' %}{# system-wide pages: the Global ADOM only #}
+    {% if _pk == 'global' %}{# system-wide catalogs: the Global ADOM only #}
     {% if may_open('appids.index') %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'appids' else '' }}" href="{{ url_for('appids.index') }}">
       <i class="bi bi-tags fw-nav-icon"></i><span>{{ _('AppIDs') }}</span></a>
@@ -107,6 +116,25 @@
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'line_profiles' else '' }}" href="{{ url_for('line_profiles.index') }}">
       <i class="bi bi-signpost-split fw-nav-icon"></i><span>{{ _('Line Profiles') }}</span></a>
     {% endif %}
+    {% endif %}
+{% endset %}
+
+{% set _s_studio %}
+    {% if _pk == 'global' %}
+    {% with studio_entries_only = True %}{% include 'partials/nav_studio.html' %}{% endwith %}
+    {% elif current_user.can('studio.python_console') and may_open('database.py_console_page') %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'database.py_console_page' else '' }}" href="{{ url_for('database.py_console_page') }}">
+      <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Python Console') }}</span></a>
+    {% endif %}
+{% endset %}
+
+{% set _s_system %}
+    {% include "partials/nav_collection.html" %}
+    {% if may_open('database.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'database' and request.endpoint != 'database.py_console_page' else '' }}" href="{{ url_for('database.index') }}">
+      <i class="bi bi-hdd fw-nav-icon"></i><span>{{ _('Database') }}</span></a>
+    {% endif %}
+    {% if _pk == 'global' %}{# system-wide pages: the Global ADOM only #}
     {% if may_open('system_backup.index') %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'system_backup' else '' }}" href="{{ url_for('system_backup.index') }}">
       <i class="bi bi-safe fw-nav-icon"></i><span>System Backup &amp; Restore</span></a>
@@ -127,11 +155,28 @@
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'reports' else '' }}" href="{{ url_for('reports.inbox') }}">
       <i class="bi bi-bug fw-nav-icon"></i><span>{{ _('Bug Reports') }}</span></a>
     {% endif %}
-    {# Studio (Python Console, Plugin Studio, Lua Studio) moved here from its
-       own Global group, 2026-10-13. Device ADOMs keep Python Console above
-       and the studios in their Plugins group. #}
-    {% with studio_as_subgroup = True %}{% include 'partials/nav_studio.html' %}{% endwith %}
     {% endif %}
+{% endset %}
+
+<div class="fw-nav-group" data-nav-group="Administrator">
+  <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('Administrator') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-group-body">
+    {% for s in nav_sections([
+         (_('Access'), 'bi-person-lock', 'Access', _s_access),
+         (_('Change Management'), 'bi-clipboard2-check', 'Change Management', _s_change),
+         (_('Devices'), 'bi-hdd-rack', 'Devices', _s_devices),
+         (_('Objects'), 'bi-tags', 'Objects', _s_objects),
+         (_('Studio'), 'bi-code-slash', 'Studio', _s_studio),
+         (_('System'), 'bi-gear', 'System', _s_system),
+       ]) %}
+    <div class="fw-nav-subgroup" data-nav-subgroup="{{ s.key }}">
+      <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi {{ s.icon }} fw-nav-icon"></i><span>{{ s.title }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+      <div class="fw-nav-subgroup-body">
+        {% for it in s['items'] %}{{ it }}
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
   </div>
 </div>
 {% elif _pk != 'global' %}{# Global draws this fallback under its Studio block #}

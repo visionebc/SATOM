@@ -143,7 +143,7 @@ current list:
 
 | ADOM | URL | Purpose |
 |---|---|---|
-| **Global** | `/` | Fleet-wide dashboard and cross-product tools: Monitoring (with Metrics and Analysis), Search, Service Diagram, Architecture, Fleet Objects, WAF, Jobs, DNS Lookup; **Automation** (with Certificate Manager, Schema builds and Build compatibility); and fleet administration under **Administrator** (Appliances, Classification, Database, System Backup, Software Update, High Availability, Bug Reports, Studio) |
+| **Global** | `/` | Fleet-wide dashboard and cross-product tools: Monitoring (with Metrics and Analysis), Search, Service Diagram, Architecture, Fleet Objects, WAF, Jobs, DNS Lookup, and an **Automation** sub-menu (with Certificate Manager, Schema builds and Build compatibility); and fleet administration under **Administrator**, in sections (Access, Change Management, Devices, Objects, Studio, System) |
 | **FortiWeb** | `/web/` | Everything WAF: FortiWeb's own menu for the selected device (Policy, Server Objects, Web Protection, System, …), the device-scoped WAF tools under Operations → WAF (Search Attack ID, Exceptions & Signature, WAF Artifacts), Operations, FortiWeb administration |
 | **FortiADC** | `/adc/` | Load-balancer management: the device's own menu when a layout exists for its build (otherwise a FortiADC group with Signatures only), and an ADC API console |
 | **FortiAuthenticator** | `/fac/` | Identity and access: the unit's own menu (users and groups, RADIUS and TACACS+ clients, Fortinet SSO, certificates…) drawn from its measured GUI, and a FAC API console |
@@ -260,13 +260,17 @@ in FortiWeb and FortiADC, Jobs), then holds Device Backups and Import Backup,
 and ends with the **Automation** sub-menu;
 **Diagnose Log Collection** is in Operations › Troubleshooting (§27). There is
 no separate **Fleet** group, and no separate Automation group in a device ADOM
-(the Global ADOM keeps Automation as a group). The **API** console
+(the Global ADOM draws Automation as a sub-menu of its Global block, above
+Jobs). The **API** console
 (Registry & console) is a sub-menu of Automation. **Appliances** is under
 Administrator; **Schema builds**, **Build compatibility** and
 **Certificate Manager** are under Automation (Certificate Manager in every
 ADOM: live in Global, FortiWeb and FortiADC, drawn disabled with the reason in
-FortiGate, FortiAnalyzer and FortiAuthenticator); **Studio** is a sub-menu of
-Administrator. The Global ADOM keeps its **Global** block for the fleet pages
+FortiGate, FortiAnalyzer and FortiAuthenticator). **Administrator** is split
+into sections — Access, Change Management, Devices, Objects, Studio and System
+— and both the sections and their entries are alphabetical in the console's
+language; a section with no entry you may open is not drawn. **Studio** holds
+Python Console in every ADOM, and also Plugin Studio and Lua Studio in Global. The Global ADOM keeps its **Global** block for the fleet pages
 and has no Operations group. A profile that cannot see one of those groups
 keeps the entry where it was before — Appliances and the API library under
 Operations, the API console as a group of its own (`registry.view` without

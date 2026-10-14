@@ -1254,6 +1254,16 @@ def sweep() -> dict:
     created = 0
     for a in Appliance.query.all():
         created += ensure_targets(a)   # self-guarding: see provisionable()
+    # The threshold half gets the same net: a device that reached the table
+    # without passing the provisioning seam still gets its baseline probes.
+    baselines: list = []
+    try:
+        from .monitoring_provision import backfill_baselines
+        baselines = backfill_baselines()["devices"]
+    except Exception as exc:  # noqa: BLE001 — never costs the scrape pass
+        db.session.rollback()
+        from ..errors import log_exception
+        log_exception(exc, context="metrics.sweep.backfill_baselines")
     due = due_targets()
     results = []
     if due:
@@ -1282,6 +1292,7 @@ def sweep() -> dict:
     # "%(ok)d/%(targets)d" summary formatting.
     return {"targets": len(due), "ok": n_ok,
             "errors": len(results) - n_ok, "created": created,
+            "baselines": baselines,
             "series": sum(r.get("series", 0) for r in results),
             "ms": sum(r.get("ms", 0) for r in results),
             "peer": peer_health()}

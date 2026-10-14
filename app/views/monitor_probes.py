@@ -759,8 +759,12 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
                         parts.append(res["error"])
                         continue
                     total += res["created"]
-                    parts.append(f"{res['created']} {label} "
-                                 f"({res['skipped']} already present)")
+                    part = (f"{res['created']} {label} "
+                            f"({res['skipped']} already present)")
+                    if res.get("unreachable"):
+                        part += (f", {res['unreachable']} created disabled: "
+                                 f"VIP not reachable from SATOM")
+                    parts.append(part)
                 if 'baseline' in what:
                     base = dm.ensure_baseline(appliance)
                     total += len(base["created"])

@@ -2309,6 +2309,23 @@ per-policy detail view, both served from stored samples.
   set on FortiWeb; a baseline plus the entitlement set on FortiAuthenticator.
   Ports and policy names are picked from the cached configuration, so the
   dialog opens with the appliance switched off.
+- **Published policies are dialled once before their probe is created.** A
+  front end SATOM cannot connect to (a VIP that nothing routes from SATOM's
+  network, such as a lab address or a front end only reachable from the
+  client side) gets its probe **disabled**. The reason is shown in its *Last
+  result*, and the discovery message counts these probes as "created
+  disabled: VIP not reachable from SATOM". A disabled probe does not count in
+  Device health. Enable it once SATOM can reach the VIP. A front end that
+  connects but answers badly (timeout after connecting, HTTP 5xx) is created
+  enabled, because that is a finding about the service. Policies that are
+  disabled on the device are not dialled.
+- **Every device gets the baseline (interfaces, CPU, memory, and proxyd on
+  FortiWeb) without anyone pressing Discover.** It is created when the device
+  is added, whether from the form, the REST API (`POST /api/appliances`) or a
+  provisioning run. The 3-minute Collection sweep also gives it to any device
+  that still has no probe at all. Deleting one probe of a provisioned device
+  is respected and the sweep does not put it back. To stop monitoring a device
+  completely, disable its probes rather than deleting them all.
 - **Interval must be a multiple of the sweep** (3 minutes). A probe only fires
   when its own interval has elapsed *and* a sweep tick happens, so a 5-minute
   probe under a 3-minute sweep would really run every 6 minutes.

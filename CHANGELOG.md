@@ -6,6 +6,32 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — adding a device no longer leaves it unmonitored or buried in false alerts (2026-10-14)
+
+- **Discover no longer creates probes that can only fail.** *Published
+  policies* now dials each new front end once before creating its probe. A VIP
+  that SATOM cannot connect to (connect timeout, refused, TLS failure before a
+  session, or a target the network guard refuses) gets its probe **disabled**,
+  with the reason in its last result. The discovery message counts these
+  probes. Before this change they were created enabled and stayed critical
+  forever: on a lab FortiWeb, 49 of 55 deep monitors were red against
+  `172.0.0.x` VIPs that nothing routed to, while CPU, memory and proxyd were
+  healthy, and Device health showed the device as critical. A front end that
+  connects but answers badly is still created enabled. Disabled policies are
+  not dialled.
+- **Every way of adding a device now creates its baseline probes.** Devices
+  added through the REST API (`POST /api/appliances`) or onboarded by a
+  provisioning run got scrape targets but no thresholds, so Device health
+  showed "no deep monitors configured" until someone pressed Discover. Both
+  paths now use the same provisioning step as the web form. The 3-minute
+  Collection sweep also gives the baseline to any device that has no probe at
+  all, which covers rows inserted by imports or scripts. It does not re-create
+  a probe that was deleted on a provisioned device. A test fails if any
+  function that creates an appliance skips provisioning.
+- **Device health says when it cuts the list of failing probes**:
+  "49/55 probes alerting: a, b, c, d (+45 more)" instead of four names that
+  read as the whole list.
+
 ### Fixed — the manual deploy migrates the database schema (2026-10-14)
 
 - **`satom execute restart-all` runs `flask db upgrade` on a primary** when the

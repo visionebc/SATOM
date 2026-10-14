@@ -218,9 +218,12 @@ def probe_signal(appliance_id: int) -> dict:
     st = worst_of(mapped)
     if st in ("warn", "crit"):
         bad = [p.name or p.kind for p, m in zip(live, mapped) if m in ("warn", "crit")]
+        # Say how many names were cut: "49/55 alerting: a, b, c, d" read as if
+        # four probes were failing.
+        more = f" (+{len(bad) - 4} more)" if len(bad) > 4 else ""
         return {"status": st, "suppressed": len(sup),
                 "text": f"{len(bad)}/{len(live)} probes alerting: "
-                        + ", ".join(bad[:4]) + tail}
+                        + ", ".join(bad[:4]) + more + tail}
     if st == "ok":
         return {"status": "ok", "suppressed": len(sup),
                 "text": f"{len(live)} probes ok" + tail}

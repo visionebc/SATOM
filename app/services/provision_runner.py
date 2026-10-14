@@ -369,7 +369,12 @@ def _step_onboarded(run: ProvisionRun) -> StepResult:
     db.session.add(ap)
     db.session.flush()
     run.appliance_id = ap.id
-    return StepResult(True, f"registered appliance #{ap.id} ({kind})")
+    # The same seam as every other creation path: a device onboarded here used
+    # to get scrape targets from the Collection sweep and never a threshold.
+    from .monitoring_provision import provision_monitoring
+    prov = provision_monitoring(ap)
+    tail = ("; monitoring: " + "; ".join(prov["errors"])) if prov.get("errors") else ""
+    return StepResult(True, f"registered appliance #{ap.id} ({kind}){tail}")
 
 
 def _step_cert_installed(run: ProvisionRun) -> StepResult:

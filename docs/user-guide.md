@@ -6802,10 +6802,13 @@ change the recorded outcome of the change itself.
 
 ## 36. Putting any appliance under change control
 
-A Change Request now covers **FortiWeb, FortiADC, FortiAnalyzer and
-FortiAuthenticator**. Open **Change Requests** from any ADOM; the device list
-shows the appliances that ADOM can see (the Global console sees all four
-products), and each device is labelled with its product.
+A Change Request covers **every product**: FortiWeb, FortiADC,
+FortiAnalyzer, FortiAuthenticator and FortiGate. Open **Change Requests** from
+any ADOM; the device list shows the appliances that ADOM can see (the Global
+console sees every product), and each device is labelled with its product.
+Choosing an automated type greys out and unticks the devices it does not run
+on (no automated action runs on FortiGate); a documentary type keeps every
+device, or only the products it is offered for.
 
 **Choosing the action.** The Action dropdown lists every automation that
 touches a device and is either destructive or object-mutating — firmware

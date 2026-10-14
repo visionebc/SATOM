@@ -6,6 +6,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — every device can be named on a change request, FortiGate included (2026-10-15)
+
+- **A change request can name a device of any product.** The device list
+  used to hold only the products some automated action runs on. No automated
+  action runs on FortiGate, so a FortiGate could not be named on any change,
+  not even a documentary one done by hand (cabling, a PSU swap), and Change
+  types could not offer a type for it. The list now holds every product with
+  an active ADOM (operator request: "make every device able to enter the
+  change request").
+- **Automated types still run only on their own products.** Choosing one now
+  greys out and unticks the devices it does not run on (e.g. FortiGate for a
+  reboot). The server keeps refusing the mismatch, as before. Documentary
+  types with no product declared keep every device.
+- **Change types → Add a change type** offers FortiGate under "Offered for".
+
 ### Added — Certificate Manager signs with a CA held in an OPNsense firewall (2026-10-15)
 
 - **New signer `scripts/opnsense_ca_signer.py`** for the ADCS command

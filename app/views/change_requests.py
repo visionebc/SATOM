@@ -109,12 +109,21 @@ def cr_action_keys() -> set[str]:
 
 
 def cr_kinds() -> tuple[str, ...]:
-    """Appliance kinds a CR may target: the union of the eligible actions'
-    products. A maintenance window is a property of the DEVICE, not of one
-    product - FortiWeb, FortiADC, FortiAnalyzer and FortiAuthenticator are all
-    first-class here, and this form used to show only FortiWeb.
+    """Appliance kinds a CR may name: every device product with an active
+    ADOM, plus any product an action declares.
+
+    A maintenance window is a property of the DEVICE, not of one product.
+    Until 2026-10-15 this was only the union of the automated actions'
+    products, so a FortiGate (no automated action runs on it) could not be
+    named on any change at all, not even a documentary one ("cabling",
+    "replace a PSU") whose work is done by hand. Automated actions still
+    narrow to their OWN products: ``entry['products']``, enforced by
+    ``create_change_request`` (an edit cannot change action or devices) and
+    mirrored by the form, which disables the
+    devices the chosen type does not run on.
     """
-    kinds: list[str] = []
+    from ..services.product_scope import device_products
+    kinds: list[str] = [key for key, _name in device_products()]
     for spec in _cr_specs():
         for kind in spec.products:
             if kind not in kinds:

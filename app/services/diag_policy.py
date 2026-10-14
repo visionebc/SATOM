@@ -69,8 +69,14 @@ BATTERY_WORDS: frozenset[str] = frozenset({
 # abbreviation of something dangerous (``sn`` -> sniffer, ``exp`` -> export,
 # ``reg`` -> register, ``im``/``in`` -> import/install, ``to`` -> top) stay
 # out: spelling the full word is the price of not running the other one.
+# Where each one is a real word: ``ha`` and ``sys`` (fgt02 ``diagnose sys ha
+# status``), ``perf`` (FortiWeb ``diagnose system perf``), ``tcp`` (FortiWeb
+# ``diagnose network tcp``), ``update`` (FortiWeb ``diagnose system update
+# info``), ``auth`` (fgt02 ``diagnose firewall auth list``). ``app`` was listed
+# too, but neither tree nor any help capture has it as a word; it only ever
+# stood for ``application`` — or for ``approve``.
 SAFE_WORDS: frozenset[str] = frozenset({
-    "ha", "sys", "perf", "tcp", "app", "auth", "update",
+    "ha", "sys", "perf", "tcp", "auth", "update",
 })
 
 # Help-text openings that mean "this changes something". Matched against the
@@ -79,7 +85,8 @@ _DESC_RE = re.compile(
     r"^\s*(kill|killall|reset|clear|delete|remove|restart|reboot|shut ?down|"
     r"set(?!/get)|unset|enable|disable|start|stop|force|format|erase|flush|"
     r"purge|generate|backup|upload|export|import|repair|check and repair|"
-    r"recalculate|rebuild|reload|trigger|install|uninstall|load|unload|crash|"
+    r"recalculate|rebuild|reload|trigger|install|uninstall|load|unload|"
+    r"crash(?!\s*log)|"
     r"failover|take ?over|sync now|switch|renew|revoke|block|unblock|"
     r"deregister|register|unregister|authori[sz]e|approve|reject|add|"
     r"capture|sniff|trace|ping|traceroute|run|execute|exec|test|simulate|"
@@ -150,8 +157,23 @@ def blocked_by_description(description: str) -> str | None:
 
 
 def battery_reason(command: str, description: str = "") -> str | None:
-    """The full battery verdict: name (strict) first, then help text."""
-    return blocked_reason(command, strict=True) or blocked_by_description(description)
+    """The full battery verdict: name (strict) first, then help text.
+
+    A description that only repeats a SAFE word's own name (FortiWeb lists
+    ``update    update``) says nothing the name rule has not already judged, so
+    it is not read as a verb: without this, FortiWeb's ``diagnose system
+    update`` — parent of the battery's ``diagnose system update info`` — was
+    refused because the shell echoed its name. Any other echoed name is still
+    read (a node called ``send`` described as "send" stays refused).
+    """
+    why = blocked_reason(command, strict=True)
+    if why:
+        return why
+    toks = _tokens(command)
+    if (toks and toks[-1] in SAFE_WORDS
+            and (description or "").strip().rstrip(".").strip().lower() == toks[-1]):
+        return None
+    return blocked_by_description(description)
 
 
 __all__ = ["STATE_WORDS", "BATTERY_WORDS", "SAFE_WORDS", "blocked_reason",

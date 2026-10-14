@@ -411,7 +411,12 @@ def start_discovery(appliance, by: str, *, sessions: int = SESSIONS) -> dict:
     cur = discovery_status()
     if cur and cur.get("state") == "running":
         try:
-            age = time.time() - datetime.fromisoformat(cur["started"]).timestamp()
+            # ``started`` is a naive UTC stamp (utcnow): compare it with
+            # utcnow. ``.timestamp()`` would read it as LOCAL time, so on a
+            # UTC+2 host every run looked two hours old and the guard never
+            # refused.
+            age = (datetime.utcnow()
+                   - datetime.fromisoformat(cur["started"])).total_seconds()
         except Exception:  # noqa: BLE001
             age = 0
         if age < DEADLINE_S + 600:

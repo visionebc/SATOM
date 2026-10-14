@@ -12,7 +12,10 @@
 {% set _can_lua = current_user.is_authenticated and current_user.can('studio.lua_studio') %}
 {% if _can_pyc or _can_plg or _can_lua %}
 {% set _st_open = request.endpoint == 'database.py_console_page' or request.blueprint in ['plugins','lua_studio'] %}
-{% if studio_as_subgroup %}
+{# studio_entries_only: the bare entries, for the Studio section of
+   Administrator (partials/nav_admin.html sorts and wraps them, 2026-10-14). #}
+{% if studio_entries_only %}
+{% elif studio_as_subgroup %}
 <div class="fw-nav-subgroup {{ 'open' if _st_open }}" data-nav-subgroup="Studio">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-code-slash fw-nav-icon"></i><span>{{ _('Studio') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
@@ -33,6 +36,8 @@
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'lua_studio' else '' }}" href="{{ url_for('lua_studio.index') }}">
       <i class="bi bi-braces fw-nav-icon"></i><span>{{ _('Lua Studio') }}</span></a>
     {% endif %}
+{% if not studio_entries_only %}
   </div>
 </div>
+{% endif %}
 {% endif %}

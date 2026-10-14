@@ -112,6 +112,23 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="changed--global-draws-automation-like-the-device-adoms-administrator-in-alphabetical-sections-2026-10-14">Changed — Global draws Automation like the device ADOMs; Administrator in alphabetical sections (2026-10-14)</h3>
+<ul>
+<li><strong>Automation in the Global ADOM is a sub-menu of the Global block</strong>, above
+  Jobs. This is the same place it has inside Operations in the device ADOMs
+  (operator request: "in Global also put Automation the way it is in the other
+  ADOMs"). Entries and permissions are unchanged.</li>
+<li><strong>Administrator is grouped into sections:</strong> Access, Change Management,
+  Devices, Objects, Studio and System. Sections and the entries inside each
+  one are sorted alphabetically (operator request: "group the Administrator
+  section and sort the groups and the entries of each group alphabetically").
+  The sort uses the labels in the console's language, so the order is
+  alphabetical in German, Spanish, French and Italian too, ignoring case and
+  accents. A section with no entry the profile may open is not drawn. In the
+  device ADOMs, Python Console moved into Administrator → Studio. No entry
+  changed its permission. A profile without the administrator role still sees
+  the Process entry on its own.</li>
+</ul>
 <h3 id="changed--certificate-manager-in-every-adom-2026-10-14">Changed — Certificate Manager in every ADOM (2026-10-14)</h3>
 <ul>
 <li><strong>Certificate Manager is now in every device ADOM</strong>, in Operations ›

@@ -253,7 +253,7 @@ current list:</p>
 <tr>
 <td><strong>Global</strong></td>
 <td><code>/</code></td>
-<td>Fleet-wide dashboard and cross-product tools: Monitoring (with Metrics and Analysis), Search, Service Diagram, Architecture, Fleet Objects, WAF, Jobs, DNS Lookup; <strong>Automation</strong> (with Certificate Manager, Schema builds and Build compatibility); and fleet administration under <strong>Administrator</strong> (Appliances, Classification, Database, System Backup, Software Update, High Availability, Bug Reports, Studio)</td>
+<td>Fleet-wide dashboard and cross-product tools: Monitoring (with Metrics and Analysis), Search, Service Diagram, Architecture, Fleet Objects, WAF, Jobs, DNS Lookup, and an <strong>Automation</strong> sub-menu (with Certificate Manager, Schema builds and Build compatibility); and fleet administration under <strong>Administrator</strong>, in sections (Access, Change Management, Devices, Objects, Studio, System)</td>
 </tr>
 <tr>
 <td><strong>FortiWeb</strong></td>
@@ -379,13 +379,17 @@ in FortiWeb and FortiADC, Jobs), then holds Device Backups and Import Backup,
 and ends with the <strong>Automation</strong> sub-menu;
 <strong>Diagnose Log Collection</strong> is in Operations › Troubleshooting (§27). There is
 no separate <strong>Fleet</strong> group, and no separate Automation group in a device ADOM
-(the Global ADOM keeps Automation as a group). The <strong>API</strong> console
+(the Global ADOM draws Automation as a sub-menu of its Global block, above
+Jobs). The <strong>API</strong> console
 (Registry &amp; console) is a sub-menu of Automation. <strong>Appliances</strong> is under
 Administrator; <strong>Schema builds</strong>, <strong>Build compatibility</strong> and
 <strong>Certificate Manager</strong> are under Automation (Certificate Manager in every
 ADOM: live in Global, FortiWeb and FortiADC, drawn disabled with the reason in
-FortiGate, FortiAnalyzer and FortiAuthenticator); <strong>Studio</strong> is a sub-menu of
-Administrator. The Global ADOM keeps its <strong>Global</strong> block for the fleet pages
+FortiGate, FortiAnalyzer and FortiAuthenticator). <strong>Administrator</strong> is split
+into sections — Access, Change Management, Devices, Objects, Studio and System
+— and both the sections and their entries are alphabetical in the console's
+language; a section with no entry you may open is not drawn. <strong>Studio</strong> holds
+Python Console in every ADOM, and also Plugin Studio and Lua Studio in Global. The Global ADOM keeps its <strong>Global</strong> block for the fleet pages
 and has no Operations group. A profile that cannot see one of those groups
 keeps the entry where it was before — Appliances and the API library under
 Operations, the API console as a group of its own (<code>registry.view</code> without

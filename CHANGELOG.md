@@ -6,6 +6,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — Global draws Automation like the device ADOMs; Administrator in alphabetical sections (2026-10-14)
+
+- **Automation in the Global ADOM is a sub-menu of the Global block**, above
+  Jobs. This is the same place it has inside Operations in the device ADOMs
+  (operator request: "in Global also put Automation the way it is in the other
+  ADOMs"). Entries and permissions are unchanged.
+- **Administrator is grouped into sections:** Access, Change Management,
+  Devices, Objects, Studio and System. Sections and the entries inside each
+  one are sorted alphabetically (operator request: "group the Administrator
+  section and sort the groups and the entries of each group alphabetically").
+  The sort uses the labels in the console's language, so the order is
+  alphabetical in German, Spanish, French and Italian too, ignoring case and
+  accents. A section with no entry the profile may open is not drawn. In the
+  device ADOMs, Python Console moved into Administrator → Studio. No entry
+  changed its permission. A profile without the administrator role still sees
+  the Process entry on its own.
+
 ### Changed — Certificate Manager in every ADOM (2026-10-14)
 
 - **Certificate Manager is now in every device ADOM**, in Operations ›

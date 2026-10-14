@@ -944,6 +944,13 @@ def create_app(config_override: object | None = None) -> Flask:
         from .nav_state import autoopen
         return autoopen(str(html))
 
+    # -- sidebar: Administrator sections, sorted by their RENDERED labels so
+    # the order is alphabetical in every console language (app/nav_sections.py).
+    @app.template_global('nav_sections')
+    def _nav_sections(specs):  # noqa: ANN001
+        from .nav_sections import sections
+        return sections(specs)
+
     # -- sidebar: the device's own menu (FortiWeb, FortiGate, ...) is open
     # unless the operator closed it. main.js keeps the closed names in the
     # fw_nav_dev_closed cookie (not localStorage) so the server paints the

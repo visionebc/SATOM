@@ -121,7 +121,7 @@
           {% endif %}
         </div>
         <div class="text-muted mt-2" style="font-size:11.5px;">
-          {{ _('Save keeps the order of the commands already in the battery and appends new ones. The product default has %(n)d commands.', n=default_count) }}
+          {{ _('Save keeps the order of the commands already in the battery and appends new ones.') }} {{ ngettext('The product default has %(num)d command.', 'The product default has %(num)d commands.', default_count) }}
         </div>
       </div>
     </div>
@@ -160,7 +160,7 @@
           <span class="text-muted text-nowrap" style="font-size:12px;" id="dbFilterCount"></span>
         </div>
         <div class="text-muted mb-2" style="font-size:11.5px;">
-          {{ _('%(n)d nodes. Blocked commands are shown disabled with the reason; commands that need arguments are not tickable — add them by hand with their arguments.', n=node_count) }}
+          {{ ngettext('%(num)d node.', '%(num)d nodes.', node_count) }} {{ _('Blocked commands are shown disabled with the reason; commands that need arguments are not tickable — add them by hand with their arguments.') }}
         </div>
         <div id="dbTree">
           {% for g in groups %}
@@ -247,7 +247,7 @@
     <div id="dbProgress" class="mb-3" style="font-size:12.5px;{{ '' if progress else 'display:none;' }}"
          data-status-url="{{ status_url }}" data-running="{{ '1' if progress and progress.state == 'running' else '0' }}">
       {% if progress %}
-      <span class="fw-badge {{ {'running': 'fw-badge-info', 'done': 'fw-badge-success', 'error': 'fw-badge-danger'}.get(progress.state, 'fw-badge-secondary') }}" id="dbProgState">{{ progress.state }}</span>
+      <span class="fw-badge {{ {'running': 'fw-badge-info', 'done': 'fw-badge-success', 'error': 'fw-badge-danger'}.get(progress.state, 'fw-badge-secondary') }}" id="dbProgState">{{ state_labels.get(progress.state, progress.state) }}</span>
       <span id="dbProgText">{{ progress.appliance or '' }} · {{ progress.product or '' }} {{ progress.build or '' }} · {{ _('probed') }} {{ progress.probed or 0 }}{% if progress.error %} · {{ progress.error }}{% endif %}</span>
       {% else %}
       <span class="fw-badge fw-badge-secondary" id="dbProgState"></span> <span id="dbProgText"></span>
@@ -343,6 +343,7 @@
   });
 
   // Discovery: start + poll.
+  var STATE_LABELS = {{ state_labels|tojson }};
   var prog = $('dbProgress');
   var timer = null;
   var startedHere = false;
@@ -350,7 +351,7 @@
     if (!s || s.state === 'idle') return;
     prog.style.display = '';
     var st = $('dbProgState');
-    st.textContent = s.state;
+    st.textContent = STATE_LABELS[s.state] || s.state;
     st.className = 'fw-badge ' + ({running: 'fw-badge-info', done: 'fw-badge-success', error: 'fw-badge-danger'}[s.state] || 'fw-badge-secondary');
     var t = (s.appliance || '') + ' · ' + (s.product || '') + ' ' + (s.build || '') + ' · ' + {{ _("probed")|tojson }} + ' ' + (s.probed || 0);
     if (s.counts) t += ' · ' + {{ _("runnable")|tojson }} + ' ' + s.counts.runnable + ' · ' + {{ _("blocked")|tojson }} + ' ' + s.counts.blocked;

@@ -17,7 +17,7 @@ from collections import OrderedDict
 
 from flask import (Blueprint, flash, jsonify, redirect, render_template,
                    request, url_for)
-from flask_babel import gettext as _
+from flask_babel import gettext as _, ngettext
 from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
@@ -120,6 +120,11 @@ def _pickable(nodes: dict[str, dict]) -> set[str]:
             if len(p.split()) >= 2 and _row_state(n) == "pick"}
 
 
+def _own_progress(adom: str):
+    p = svc.discovery_status()
+    return p if p and p.get("product") == adom else None
+
+
 def _summary() -> list[dict]:
     out = []
     for p in svc.PRODUCTS:
@@ -132,7 +137,9 @@ def _summary() -> list[dict]:
 def _render(adom: str, *, error: str | None = None, picks: list[str] | None = None,
             extra: str | None = None, status: int = 200):
     ctx = {"adom": adom, "adom_name": _product_name(adom), "error": error,
-           "status_url": url_for("diag_battery.discover_status")}
+           "status_url": url_for("diag_battery.discover_status"),
+           "state_labels": {"running": _("running"), "done": _("done"),
+                            "error": _("error")}}
     if adom not in svc.PRODUCTS:
         ctx["adom_summary"] = _summary()
         return render_template("diag_battery/index.html", **ctx), status
@@ -158,7 +165,9 @@ def _render(adom: str, *, error: str | None = None, picks: list[str] | None = No
         node_count=len(nodes),
         extra=extra,
         appliances=_appliances(adom),
-        progress=svc.discovery_status(),
+        # Discovery is one at a time fleet-wide; another ADOM's walk is not
+        # this page's business (its device names stay in their ADOM).
+        progress=_own_progress(adom),
     )
     return render_template("diag_battery/index.html", **ctx), status
 
@@ -206,7 +215,8 @@ def save():
         return _render(adom, error=str(e), picks=picks, extra=extra, status=422)
     log_action("diag_battery.save", target=adom,
                extra={"commands": len(saved), "list": saved})
-    flash(_("Diagnostic battery saved: %(n)d commands.", n=len(saved)), "success")
+    flash(ngettext("Diagnostic battery saved: %(num)d command.",
+                   "Diagnostic battery saved: %(num)d commands.", len(saved)), "success")
     return redirect(url_for("diag_battery.index", build=build))
 
 
@@ -255,4 +265,4 @@ def discover():
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def discover_status():
-    return jsonify(svc.discovery_status() or {"state": "idle"})
+    return jsonify(_own_progress(_adom()) or {"state": "idle"})

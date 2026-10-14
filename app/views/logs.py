@@ -79,11 +79,15 @@ def _when(value) -> str:
     return str(value)
 
 
-def _custom_commands(text: str) -> list[str]:
+def _custom_commands(text: str, key: str | None = None) -> list[str]:
     """The custom box, one command per line, held to the battery rule
-    (:func:`app.services.diag_battery.command_reason`). Raises
-    :class:`diag_battery.BatteryError` naming the first refused line."""
-    return diag_battery.clean_commands(text.splitlines())
+    (:func:`app.services.diag_battery.command_reason`) -- including the help
+    text every discovered build of this ADOM's product gave for the command
+    and its ancestors, so a line the Diagnostic Battery page would refuse is
+    refused here too. Raises :class:`diag_battery.BatteryError` naming the
+    first refused line."""
+    nodes = diag_battery.merged_nodes(key) if key in diag_battery.PRODUCTS else None
+    return diag_battery.clean_commands(text.splitlines(), nodes)
 
 
 @bp.route('/')
@@ -126,7 +130,7 @@ def collect():
     custom = bool(custom_text)
     if custom:
         try:
-            commands = _custom_commands(custom_text)
+            commands = _custom_commands(custom_text, key)
         except diag_battery.BatteryError as e:
             return jsonify({'ok': False, 'error': f'Refused: {e}'}), 400
         if not commands:

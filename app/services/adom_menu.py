@@ -111,8 +111,9 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
           "it compares FortiWeb server policies"),
     Entry("backups", ("backups",), _backup_kinds,
           "SATOM has no configuration-backup transport for this product yet"),
-    Entry("logs", ("logs",), _fortiweb,
-          "log collection reads FortiWeb logs only"),
+    # Troubleshooting since 2026-10-14: Diagnose Log Collection runs each
+    # ADOM's own battery (services/diag_battery.py) on that ADOM's devices.
+    Entry("logs", ("logs",), _every_device, ""),
     Entry("import_backup", ("import_backup",), _fortiweb,
           "the offline parser reads FortiWeb configuration files"),
     # Automation

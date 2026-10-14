@@ -15,12 +15,19 @@
    2026-10-14): Backend Reachability, Config Compare and Path Diagnostics read
    FortiWeb/FortiADC objects, so there they were three permanently disabled
    rows. The pages keep answering by URL.
+
+   Diagnose Log Collection joined this subgroup on 2026-10-14 (operator
+   request), moved from Operations' own entries, in ALL FIVE device ADOMs —
+   FortiGate, FortiAnalyzer and FortiAuthenticator included: it runs the
+   ADOM's own curated battery (Administrator → Diagnostic Battery) on that
+   ADOM's devices. Same permission gate as before (config_write + may_open).
+   The Global ADOM does not draw it.
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
 {% set _ts_dev = product.key != 'global' and not product.placeholder %}
 {% set _ts_two = product.key == 'global' or _ts_dev %}
 {% set _ts_lb = product.key not in ('fortigate', 'fortianalyzer', 'fortiauthenticator') %}
-<div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['reach_batch','config_compare','scout','advisor'] }}" data-nav-subgroup="Troubleshooting">
+<div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['reach_batch','config_compare','scout','advisor','logs'] }}" data-nav-subgroup="Troubleshooting">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-life-preserver fw-nav-icon"></i><span>{{ _('Troubleshooting') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
     {% if _ts_lb %}
@@ -52,5 +59,12 @@
     {% endif %}
     {% endif %}
     {% include 'partials/nav_advisor.html' %}
+    {% if _ts_dev and current_user.can('config_write') and may_open('logs.index') %}
+    {% set _m = adom_menu('logs', product) %}
+    {% if _m.on %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'logs' else '' }}" href="{{ url_for('logs.index', _adom=product.key) }}">
+      <i class="bi bi-journal-text fw-nav-icon"></i><span>{{ _('Diagnose Log Collection') }}</span></a>
+    {% else %}{{ nav_off('bi-journal-text', _('Diagnose Log Collection'), _m.reason) }}{% endif %}
+    {% endif %}
   </div>
 </div>

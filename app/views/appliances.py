@@ -379,7 +379,20 @@ def edit_save(id):
     verify_ssl_relaxed = bool(appliance.verify_ssl) and not new_verify_ssl
     api_retarget = (host_changed or user_changed or kind_changed
                     or new_port != appliance.port or verify_ssl_relaxed)
-    ssh_retarget = (host_changed or user_changed) and appliance.has_ssh_password
+    # The separate SSH user (``ssh_username``; empty = the API user). Only a
+    # form that renders the field may change it — the quick-edit dialog on the
+    # list does not, and its absence must not read as "cleared". A different
+    # effective SSH login while a separate SSH password is stored is a user
+    # change: that password belonged to the old login, so it must be
+    # re-entered (or removed) like on a host or username change.
+    ssh_user_posted = 'ssh_username' in request.form
+    new_ssh_username = ((request.form.get('ssh_username') or '').strip() or None
+                        if ssh_user_posted else appliance.ssh_username)
+    old_ssh_login = (appliance.ssh_username or '').strip() or (appliance.username or '').strip()
+    new_ssh_login = (new_ssh_username or '').strip() or new_username
+    ssh_user_changed = new_ssh_login != old_ssh_login
+    ssh_retarget = ((host_changed or user_changed or ssh_user_changed)
+                    and appliance.has_ssh_password)
     if (api_retarget and not password) or (
             ssh_retarget and not (ssh_password or ssh_clear)):
         flash('Changing the host, port or username — or turning off SSL '
@@ -399,6 +412,7 @@ def edit_save(id):
     appliance.host = new_host
     appliance.port = new_port
     appliance.username = new_username
+    appliance.ssh_username = new_ssh_username
     appliance.verify_ssl = new_verify_ssl
     appliance.vdom = request.form.get('vdom', appliance.vdom or '').strip() or None
     appliance.tags = request.form.get('tags', appliance.tags or '').strip() or None

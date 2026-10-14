@@ -112,6 +112,32 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="changed--certificate-manager-in-every-adom-2026-10-14">Changed — Certificate Manager in every ADOM (2026-10-14)</h3>
+<ul>
+<li><strong>Certificate Manager is now in every device ADOM</strong>, in Operations ›
+  Automation, as it already was in the Global ADOM's Automation group (operator
+  request: "put Certificate Manager in every ADOM inside Operations, as it
+  is"). It is live in FortiWeb and FortiADC and lists only that ADOM's
+  devices. In FortiGate, FortiAnalyzer and FortiAuthenticator it is drawn
+  disabled with the reason: SATOM reads and deploys certificates on FortiWeb
+  and FortiADC only. It still requires the administrator role.</li>
+<li><strong>Fixed: Global's Scan devices no longer sends FortiWeb calls to other
+  products.</strong> The Global device list included FortiGate, FortiAnalyzer and
+  FortiAuthenticator. The scan sent them FortiWeb REST and SSH calls, then
+  reported them as unreachable. The device lists, the scans and the sidebar
+  now read one list of supported kinds.</li>
+</ul>
+<h3 id="fixed--proxyd-no-longer-reported-as-not-running-when-it-is-at-100--cpu-2026-10-14">Fixed — proxyd no longer reported as "NOT running" when it is at 100 % CPU (2026-10-14)</h3>
+<ul>
+<li><strong>The proxyd deep monitor read a daemon at full CPU as a dead one.</strong> In
+  <code>diagnose system top</code> the CPU-core and %CPU columns run together when a
+  process reaches 100 % (<code>0100.0</code>). That row did not match the parser, proxyd
+  disappeared from the process list and the probe went critical with
+  "proxyd is NOT running" — four times on a lab FortiWeb 7.6.8 while the same
+  PID kept running. The parser now reads the run-together form. As a second
+  guard, a proxyd row that is present but cannot be read grades as an error
+  (a parser gap), never as an absent daemon.</li>
+</ul>
 <h3 id="fixed--adding-a-device-no-longer-leaves-it-unmonitored-or-buried-in-false-alerts-2026-10-14">Fixed — adding a device no longer leaves it unmonitored or buried in false alerts (2026-10-14)</h3>
 <ul>
 <li><strong>Discover no longer creates probes that can only fail.</strong> <em>Published

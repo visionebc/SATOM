@@ -91,6 +91,11 @@ def _diag_battery_kinds() -> Iterable[str]:
     return PRODUCTS
 
 
+def _cert_kinds() -> Iterable[str]:
+    from .cert_manager import CERT_KINDS
+    return CERT_KINDS
+
+
 def _every_device() -> Iterable[str] | None:
     return None  # None = every device ADOM
 
@@ -130,6 +135,9 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
           "no operator automation in the catalog targets this product"),
     Entry("provisioning", ("provisioning",), _fortiweb,
           "it composes FortiWeb configuration objects"),
+    # Every device ADOM since 2026-10-14 (operator); Global-only before.
+    Entry("cert_manager", ("cert_manager",), _cert_kinds,
+          "SATOM reads and deploys certificates on FortiWeb and FortiADC only"),
     # Administrator
     Entry("capacity", ("capacity",), _capacity_kinds,
           "the capacity catalog counts FortiWeb object types"),

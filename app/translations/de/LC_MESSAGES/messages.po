@@ -9892,9 +9892,6 @@ msgstr "Suchanfrage"
 msgid "Search Tips"
 msgstr "Suchtipps"
 
-#: app/templates/search/index.html:17
-msgid "Search this ADOM's FortiWeb and FortiADC appliances for policies, virtual servers, pools and protection profiles"
-msgstr "Durchsucht die FortiWeb- und FortiADC-Geräte dieser ADOM nach Richtlinien, virtuellen Servern, Pools und Schutzprofilen"
 
 #: app/templates/search/results.html:18
 msgid "Search across appliances..."
@@ -23439,6 +23436,158 @@ msgstr "Upgrade-Berater"
 msgid "Path Diagnostics (includes the Upgrade Advisory)"
 msgstr "Pfaddiagnose (inkl. Upgrade-Berater)"
 
-#: app/templates/search/results.html
-msgid "Not searched (this search reads FortiWeb and FortiADC only):"
-msgstr "Nicht durchsucht (diese Suche liest nur FortiWeb und FortiADC):"
+#: app/templates/search
+msgid "Object name, IP address, host name, user…"
+msgstr "Objektname, IP-Adresse, Hostname, Benutzer…"
+
+#: app/templates/search
+msgid "Server policy, IP address, host name, server pool, protection profile…"
+msgstr "Serverrichtlinie, IP-Adresse, Hostname, Server-Pool, Schutzprofil…"
+
+#: app/templates/search
+msgid "Virtual server, real server IP, pool, certificate, WAF profile…"
+msgstr "Virtueller Server, Real-Server-IP, Pool, Zertifikat, WAF-Profil…"
+
+#: app/templates/search
+msgid "RADIUS client, user, user group, IP address…"
+msgstr "RADIUS-Client, Benutzer, Benutzergruppe, IP-Adresse…"
+
+#: app/templates/search
+msgid "Address, firewall policy, interface, VIP, IP address…"
+msgstr "Adresse, Firewall-Richtlinie, Schnittstelle, VIP, IP-Adresse…"
+
+#: app/templates/search
+msgid "Managed device, ADOM, administrator, IP address…"
+msgstr "Verwaltetes Gerät, ADOM, Administrator, IP-Adresse…"
+
+#: app/templates/search
+msgid "An IP address on any product"
+msgstr "Eine IP-Adresse auf jedem Produkt"
+
+#: app/templates/search
+msgid "A host or object name"
+msgstr "Ein Host- oder Objektname"
+
+#: app/templates/search
+msgid "A user name"
+msgstr "Ein Benutzername"
+
+#: app/templates/search
+msgid "A server policy"
+msgstr "Eine Serverrichtlinie"
+
+#: app/templates/search
+msgid "A back-end IP in a server pool"
+msgstr "Eine Back-End-IP in einem Server-Pool"
+
+#: app/templates/search
+msgid "A protection profile"
+msgstr "Ein Schutzprofil"
+
+#: app/templates/search
+msgid "A virtual server"
+msgstr "Ein virtueller Server"
+
+#: app/templates/search
+msgid "A real server IP"
+msgstr "Eine Real-Server-IP"
+
+#: app/templates/search
+msgid "A certificate"
+msgstr "Ein Zertifikat"
+
+#: app/templates/search
+msgid "A RADIUS client by name or IP"
+msgstr "Ein RADIUS-Client nach Name oder IP"
+
+#: app/templates/search
+msgid "A local user"
+msgstr "Ein lokaler Benutzer"
+
+#: app/templates/search
+msgid "A user group"
+msgstr "Eine Benutzergruppe"
+
+#: app/templates/search
+msgid "An address object or subnet"
+msgstr "Ein Adressobjekt oder Subnetz"
+
+#: app/templates/search
+msgid "A firewall policy name"
+msgstr "Ein Firewall-Richtlinienname"
+
+#: app/templates/search
+msgid "An interface"
+msgstr "Eine Schnittstelle"
+
+#: app/templates/search
+msgid "A managed device"
+msgstr "Ein verwaltetes Gerät"
+
+#: app/templates/search
+msgid "An ADOM"
+msgstr "Eine ADOM"
+
+#: app/templates/search
+msgid "An administrator"
+msgstr "Ein Administrator"
+
+#: app/templates/search
+msgid "Searches the configuration SATOM last synced from every appliance in the Global ADOM."
+msgstr "Durchsucht die Konfiguration, die SATOM zuletzt von allen Geräten der Global-ADOM synchronisiert hat."
+
+#: app/templates/search
+#, python-format
+msgid "Searches the configuration SATOM last synced from this ADOM's %(product)s appliances."
+msgstr "Durchsucht die Konfiguration, die SATOM zuletzt von den %(product)s-Geräten dieser ADOM synchronisiert hat."
+
+#: app/templates/search
+#, python-format
+msgid "Sections: %(sections)s."
+msgstr "Bereiche: %(sections)s."
+
+#: app/templates/search
+msgid "All appliances in this ADOM"
+msgstr "Alle Geräte dieser ADOM"
+
+#: app/templates/search
+msgid "Part of a name matches every object that contains it."
+msgstr "Ein Teil eines Namens findet jedes Objekt, das ihn enthält."
+
+#: app/templates/search
+msgid "Results come from the last configuration sync, not a live query. Passwords and keys are never searched."
+msgstr "Die Ergebnisse stammen aus der letzten Konfigurationssynchronisierung, nicht aus einer Live-Abfrage. Passwörter und Schlüssel werden nie durchsucht."
+
+#: app/templates/search
+msgid "Appliances in this ADOM"
+msgstr "Geräte dieser ADOM"
+
+#: app/templates/search
+msgid "No synced configuration yet, so not searched:"
+msgstr "Noch keine synchronisierte Konfiguration, daher nicht durchsucht:"
+
+#: app/templates/search
+msgid "Run the \"Sync device to local source of truth\" action under Automation to include them."
+msgstr "Führen Sie unter Automation die Aktion \"Sync device to local source of truth\" aus, um sie einzubeziehen."
+
+#: app/templates/search
+msgid "Only the first matches are shown. Pick an appliance or a section, or type more of the name."
+msgstr "Nur die ersten Treffer werden angezeigt. Wählen Sie ein Gerät oder einen Bereich, oder geben Sie mehr vom Namen ein."
+
+#: app/templates/search
+msgid "Nothing in the synced configuration of this ADOM contains this text."
+msgstr "Nichts in der synchronisierten Konfiguration dieser ADOM enthält diesen Text."
+
+#: app/templates/search
+#, python-format
+msgid "%(n)s match(es) on %(d)s appliance(s)."
+msgstr "%(n)s Treffer auf %(d)s Gerät(en)."
+
+#: app/templates/search
+msgid "match(es)"
+msgstr "Treffer"
+
+#: app/templates/search
+#, python-format
+msgid "configuration synced %(at)s UTC"
+msgstr "Konfiguration synchronisiert %(at)s UTC"

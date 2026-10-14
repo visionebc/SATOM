@@ -125,15 +125,26 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   Path Diagnostics work on FortiWeb and FortiADC objects and are no longer
   listed there. The pages still open by URL.
 
-### Changed — Search is titled ADOM Search (2026-10-14)
+### Changed — ADOM Search searches each ADOM's own configuration (2026-10-14)
 
-- The Search page is titled **ADOM Search** (it was "Global Search"): it has
-  always searched only the appliances of the active ADOM, and in the Global
-  ADOM only its FortiWeb and FortiADC devices. The subtitle says so. Menu
+- The Search page is titled **ADOM Search** (it was "Global Search") and
+  searches the configuration SATOM last synced from the appliances of the
+  active ADOM — FortiWeb, FortiADC, FortiGate, FortiAuthenticator or
+  FortiAnalyzer, or all of them in the Global ADOM. It used to query five
+  FortiWeb REST paths live and send them to every device that was not a
+  FortiADC, so a FortiAuthenticator RADIUS client, a FortiGate address or a
+  FortiAnalyzer managed device was never found.
+- Every synced collection is searched, not a fixed list. Each match shows the
+  section, type, object (with its parent object for sub-table rows), field and
+  value, and each appliance shows when its configuration was last synced. An
+  appliance with no synced configuration is named as not searched.
+- The **Object Type** filter is replaced by **Section**, listing the sections
+  the ADOM's appliances actually have. The subtitle, placeholder and tips are
+  specific to each ADOM.
+- Passwords, keys, pre-shared secrets and `ENC` values are never matched or
+  shown, so the search cannot be used to guess a secret.
+- The top-bar search button is also shown in the FortiAnalyzer ADOM. Menu
   entry, URL and bookmarks are unchanged.
-- **Fixed:** FortiGate, FortiAuthenticator and FortiAnalyzer devices were sent
-  FortiWeb REST paths, failed quietly and showed up as "No results found".
-  They are now skipped and named on the results page as not searched.
 
 ### Security — infrastructure hardening (2026-10-13 internal code audit)
 

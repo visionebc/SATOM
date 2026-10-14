@@ -18,7 +18,7 @@
     </details>
   {% endif %}
 {% endmacro %}
-<div class="fw-nav-group {{ 'open' if _gx_page or request.endpoint == 'workspace.fwgui_index' }}" data-nav-group="{{ _gx_label }}">
+<div class="fw-nav-group fw-nav-device{{ ' open' if _gx_page or request.endpoint == 'workspace.fwgui_index' or nav_device_open(_gx_label) }}" data-nav-group="{{ _gx_label }}">
   <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-layout-sidebar fw-nav-section-icon" style="color:{{ _gx_color }};"></i><span>{{ _gx_label }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-group-body">
     <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'workspace.fwgui_index' }}" href="{{ url_for('workspace.fwgui_index', appliance_id=gx_appliance.id) }}"><i class="bi bi-grid-3x3-gap fw-nav-icon"></i><span>{{ _('All pages') }}</span></a>

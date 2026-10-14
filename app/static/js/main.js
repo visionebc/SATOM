@@ -451,7 +451,23 @@ window.fwSync = fwSync;
       var sb = sidebarEl();
       if (!g || !sb || !sb.contains(g)) return;
       var willOpen = !g.classList.contains('open');
-      var groups = sb.querySelectorAll('.fw-nav-group');
+      // The device's own menu (.fw-nav-device: FortiWeb, FortiGate, ...) is
+      // outside the accordion: open by default, it toggles only itself and
+      // the server reads the closed names back from this cookie (2026-10-14).
+      if (g.classList.contains('fw-nav-device')) {
+        g.classList.toggle('open', willOpen);
+        var closed = [];
+        try {
+          var m = document.cookie.match(/(?:^|;\s*)fw_nav_dev_closed=([^;]*)/);
+          closed = m && m[1] ? decodeURIComponent(m[1]).split('|') : [];
+        } catch (x) {}
+        closed = closed.filter(function (n) { return n && n !== nameOf(g); });
+        if (!willOpen) closed.push(nameOf(g));
+        document.cookie = 'fw_nav_dev_closed=' + encodeURIComponent(closed.join('|')) +
+          '; path=/; max-age=31536000; SameSite=Lax' + (location.protocol === 'https:' ? '; Secure' : '');
+        return;
+      }
+      var groups = sb.querySelectorAll('.fw-nav-group:not(.fw-nav-device)');
       for (var i = 0; i < groups.length; i++) groups[i].classList.remove('open');
       if (willOpen) {
         g.classList.add('open');
@@ -476,18 +492,18 @@ window.fwSync = fwSync;
 
   // If the server didn't open a section (page outside the accordion), reopen
   // the last one the user had open.
-  if (!sb.querySelector('.fw-nav-group.open')) {
+  if (!sb.querySelector('.fw-nav-group.open:not(.fw-nav-device)')) {
     var saved = null;
     try { saved = localStorage.getItem(OPEN_KEY); } catch (x) {}
     if (saved) {
-      var gs = sb.querySelectorAll('.fw-nav-group');
+      var gs = sb.querySelectorAll('.fw-nav-group:not(.fw-nav-device)');
       for (var j = 0; j < gs.length; j++) {
         if (nameOf(gs[j]) === saved) { gs[j].classList.add('open'); break; }
       }
     }
   }
 
-  var openNow = sb.querySelector('.fw-nav-group.open');
+  var openNow = sb.querySelector('.fw-nav-group.open:not(.fw-nav-device)');
   if (openNow) { try { localStorage.setItem(OPEN_KEY, nameOf(openNow)); } catch (x) {} }
 
   var sc = null;

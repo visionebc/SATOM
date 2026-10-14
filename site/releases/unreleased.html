@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Security — the operator CLI no longer runs the app tree as root (2026-10-14) · 65 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Security — the operator CLI no longer runs the app tree as root (2026-10-14) · 66 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Security — the operator CLI no longer runs the app tree as root (2026-10-14) · 65 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Security — the operator CLI no longer runs the app tree as root (2026-10-14) · 66 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Security — the operator CLI no longer runs the app tree as root (2026-10-14) · 65 entries</span>
-        <ul class="rel-leads"><li>satom under sudo drops to the service account before executing anything from /opt/satom</li><li>Root no longer writes or chowns through the service account&#x27;s directories</li><li>Signed-release enforcement is activatable without blocking HA</li><li class="rel-more">… and 62 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Security — the operator CLI no longer runs the app tree as root (2026-10-14) · 66 entries</span>
+        <ul class="rel-leads"><li>satom under sudo drops to the service account before executing anything from /opt/satom</li><li>Root no longer writes or chowns through the service account&#x27;s directories</li><li>Signed-release enforcement is activatable without blocking HA</li><li class="rel-more">… and 63 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.1.0.html" data-rel-version="3.1.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.1.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -466,6 +466,12 @@
 </ul>
 <h3 id="changed--navigation-labels-2026-10-14">Changed — navigation labels (2026-10-14)</h3>
 <ul>
+<li><strong>Log Collection is now Diagnose Log Collection</strong> (menu, page title,
+  translations). Its battery lost two commands that never returned data on
+  FortiWeb 7.6.8 or 8.0.6: <code>diagnose hardware harddisk</code> on its own (it only
+  prints "you must specify cmd"; its list, info, health, errors and attributes
+  sub-commands stay) and <code>diagnose system ha export-eventlog</code> (it needs
+  parameters). The firmware-flash before/after battery reuses the same list.</li>
 <li><strong>The Fleet group is gone; Operations is the first group of every device
   ADOM.</strong> It opens with the fleet pages and then holds Device Backups, Log
   Collection and Import Backup (and Template Library for profiles outside

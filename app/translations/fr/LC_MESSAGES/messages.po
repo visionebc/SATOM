@@ -6187,8 +6187,8 @@ msgstr "Journal"
 
 #: app/templates/base.html:847 app/templates/logs/index.html:9
 #: app/templates/logs/index.html:16
-msgid "Log Collection"
-msgstr "Collecte de journaux"
+msgid "Diagnose Log Collection"
+msgstr "Collecte des journaux de diagnostic"
 
 #: app/templates/settings/index.html:210
 msgid "Log Format"

@@ -22,6 +22,12 @@
   </div>
 </form>
 
+{% if not_searched %}
+<div class="alert alert-secondary py-2" id="searchNotSearched" style="font-size:13px;">
+  {{ _('Not searched (this search reads FortiWeb and FortiADC only):') }}
+  {% for a in not_searched %}<strong>{{ a.name }}</strong> ({{ a.kind }}){{ ', ' if not loop.last }}{% endfor %}
+</div>
+{% endif %}
 {% if not search_results %}
 <div class="text-muted">{{ _('No results found.') }}</div>
 {% else %}

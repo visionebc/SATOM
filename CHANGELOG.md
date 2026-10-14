@@ -121,6 +121,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   uses. Menu, page titles, settings panes and messages; URLs and bookmarks are
   unchanged.
 
+### Changed — Search is titled ADOM Search (2026-10-14)
+
+- The Search page is titled **ADOM Search** (it was "Global Search"): it has
+  always searched only the appliances of the active ADOM, and in the Global
+  ADOM only its FortiWeb and FortiADC devices. The subtitle says so. Menu
+  entry, URL and bookmarks are unchanged.
+- **Fixed:** FortiGate, FortiAuthenticator and FortiAnalyzer devices were sent
+  FortiWeb REST paths, failed quietly and showed up as "No results found".
+  They are now skipped and named on the results page as not searched.
+
 ### Security — infrastructure hardening (2026-10-13 internal code audit)
 
 - **Node-to-node transport is HTTPS-only and certificate-verified.** The peer

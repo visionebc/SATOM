@@ -5198,8 +5198,8 @@ msgid "Global ADOM"
 msgstr "Administración Global de ADOM"
 
 #: app/templates/search/index.html:16
-msgid "Global Search"
-msgstr "Búsqueda Global"
+msgid "ADOM Search"
+msgstr "Búsqueda en ADOM"
 
 #: app/templates/global_home/index.html:64
 msgid "Global sections"
@@ -9895,8 +9895,8 @@ msgid "Search Tips"
 msgstr "Consejos de búsqueda"
 
 #: app/templates/search/index.html:17
-msgid "Search across all appliances for policies, VIPs, pools, and protection profiles"
-msgstr "Búsqueda en todos los dispositivos para políticas, VIPs, grupos y perfiles de protección"
+msgid "Search this ADOM's FortiWeb and FortiADC appliances for policies, virtual servers, pools and protection profiles"
+msgstr "Busca en los dispositivos FortiWeb y FortiADC de este ADOM políticas, servidores virtuales, grupos y perfiles de protección"
 
 #: app/templates/search/results.html:18
 msgid "Search across appliances..."
@@ -23459,3 +23459,7 @@ msgstr "Asesor de actualizaciones"
 
 msgid "Fault Isolation (includes the Upgrade Advisory)"
 msgstr "Aislamiento de fallos (incluye el Asesor de actualizaciones)"
+
+#: app/templates/search/results.html
+msgid "Not searched (this search reads FortiWeb and FortiADC only):"
+msgstr "No se buscó (esta búsqueda solo lee FortiWeb y FortiADC):"

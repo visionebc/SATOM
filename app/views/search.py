@@ -44,6 +44,13 @@ OBJ_TYPE_ADC_LOGICALS = {
     'exception': [],
 }
 
+# Kinds this sweep knows how to read. Everything else (FortiGate,
+# FortiAuthenticator, FortiAnalyzer) used to be sent FortiWeb REST paths, fail
+# quietly and show up as "No results found" — a search that never ran is
+# reported as not searched, not as an empty answer.
+FORTIWEB_KINDS = (None, '', 'fortiweb')
+SEARCHABLE_KINDS = FORTIWEB_KINDS + ('fortiadc',)
+
 
 def _adc_hits(appliance, term: str, logicals=None) -> list[dict]:
     """Free-text hits across the ADC search collections (live, read-only)."""
@@ -100,6 +107,11 @@ def results():
     else:
         appliances = visible_appliances().order_by(Appliance.name).all()
 
+    not_searched = [a for a in appliances
+                    if getattr(a, 'kind', None) not in SEARCHABLE_KINDS]
+    appliances = [a for a in appliances
+                  if getattr(a, 'kind', None) in SEARCHABLE_KINDS]
+
     search_results = []
     for appliance in appliances:
         appliance_hits = []
@@ -141,6 +153,7 @@ def results():
         term=term,
         search_results=search_results,
         appliances=appliances,
+        not_searched=not_searched,
         obj_type=obj_type if obj_type in OBJ_TYPE_ENDPOINTS else '',
         appliance_ids=appliance_ids,
     )

@@ -227,9 +227,11 @@ server {
     # Must stay >= MAX_UPLOAD_BYTES in update_package_service.py, or a valid
     # update package dies with an nginx 413 the application never sees.
     client_max_body_size 400M;
+    add_header Strict-Transport-Security "max-age=31536000" always;
 
     location / {
 $PASS
+        proxy_hide_header Strict-Transport-Security;
         # \$host DISCARDS the port; \$http_host passes the header through. Flask-WTF
         # builds the expected CSRF origin from the host the app believes it has and
         # compares it against the browser's Referer INCLUDING the port: behind a NAT

@@ -1927,8 +1927,10 @@ server {
     # valid update package dies with an nginx 413 that the app never
     # sees and therefore cannot explain.
     client_max_body_size 400M;
+    add_header Strict-Transport-Security "max-age=31536000" always;
     location / {
         proxy_pass http://127.0.0.1:8000;
+        proxy_hide_header Strict-Transport-Security;
         # [SATOM-VHOST-HOST] \$host DROPS the port; \$http_host passes the
         # header through as is. Flask-WTF builds the expected CSRF origin from
         # the host the app thinks it has and compares it with the browser's

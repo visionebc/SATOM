@@ -36,6 +36,11 @@ DESIGN NOTES
       outcome. stdout is a log, and only a log.
     * stdlib only. ``urllib`` instead of ``requests`` so the SDK works in any
       venv and so no library's own "no timeout by default" becomes our problem.
+    * The jail has a private network namespace. HTTP(S) goes out through the
+      sandbox proxy (``HTTPS_PROXY`` is set, urllib honours it); anything else
+      -- SSH to an appliance -- uses ``tcp(host, port)``, a socket tunnelled
+      through the same proxy: ``paramiko.SSHClient().connect(host,
+      sock=tcp(host, 22), ...)``. Addresses of this node are refused.
 
 This module is import-safe with no environment at all (that is how the repo's
 import test exercises it): you get an inert context whose ``result()`` is a
@@ -45,6 +50,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import sys
 import time
 import urllib.error
@@ -52,7 +58,7 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-__all__ = ["ctx", "Context", "HookHttpError", "HttpResponse"]
+__all__ = ["ctx", "Context", "HookHttpError", "HttpResponse", "tcp"]
 
 # The ``requests``-style API keeps a keyword called ``json``, which shadows the
 # module inside those methods. Alias it once so the shadowing stays harmless.
@@ -69,6 +75,43 @@ ALLOWED_SCHEMES = ("http", "https")
 class HookHttpError(RuntimeError):
     """Transport-level failure (DNS, connect, TLS, timeout). An HTTP *status*
     is not an error — it comes back on the response, like ``requests``."""
+
+
+def tcp(host: str, port: int, timeout: float = DEFAULT_HTTP_TIMEOUT) -> socket.socket:
+    """A connected TCP socket to ``host:port``, through the sandbox proxy.
+
+    Raises ``HookHttpError`` when the proxy refuses (an address of this node,
+    DNS failure, connect failure) -- the reason is in the message.
+    """
+    proxy = os.environ.get("SATOM_EGRESS_PROXY", "")
+    if not proxy:
+        raise HookHttpError("this run has no network access")
+    phost, _, pport = proxy.rpartition(":")
+    target = "[%s]:%d" % (host, int(port)) if ":" in host else "%s:%d" % (host, int(port))
+    sock = socket.create_connection((phost, int(pport)), timeout=timeout)
+    try:
+        sock.sendall(("CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n"
+                      % (target, target)).encode("ascii"))
+        head = b""
+        while b"\r\n\r\n" not in head:
+            chunk = sock.recv(4096)
+            if not chunk:
+                raise HookHttpError("proxy closed the connection to %s" % target)
+            head += chunk
+            if len(head) > 16384:
+                raise HookHttpError("proxy reply too large")
+        line, _, rest = head.partition(b"\r\n\r\n")
+        status = line.split(b"\r\n", 1)[0].split(b" ", 2)
+        if len(status) < 2 or status[1] != b"200":
+            raise HookHttpError("tcp %s refused: %s" % (
+                target, rest.decode("utf-8", "replace").strip() or line.decode("latin-1")))
+        if rest:  # a CONNECT reply never carries a body; bytes here are a bug
+            raise HookHttpError("unexpected bytes after the proxy reply")
+        sock.settimeout(None)
+        return sock
+    except BaseException:
+        sock.close()
+        raise
 
 
 class HttpResponse:

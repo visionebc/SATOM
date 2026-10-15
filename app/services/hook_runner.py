@@ -19,6 +19,25 @@ WHAT THE CHILD GETS
                 SQLALCHEMY_DATABASE_URI and every other credential this process
                 holds are simply not there to be read.
     fd          one inherited descriptor for the result line.
+    sandbox     the bubblewrap jail of ``app.services.sandbox``: private user,
+                pid, ipc, uts AND network namespaces. Only /usr, the
+                interpreter's venv (read-only), the resolver/CA files and the
+                hook's own workdir are mounted. Hooks call CRMs, so they get
+                egress -- through the sandbox proxy, which refuses anything
+                that lands on this node (Redis, VictoriaMetrics, gunicorn).
+
+WHY THE JAIL AND NOT JUST THE ENVIRONMENT (measured on a1, 2026-10-15)
+    The hook runs as ``satom`` -- the uid of the web app, the scheduler and
+    this runner. Without its own namespaces that uid alone was enough to
+    (1) open the SATOM database read-write over the Postgres unix socket
+    (``local all all peer``) and (2) read ``FERNET_KEY`` from
+    ``/proc/<this runner>/environ`` or any gunicorn worker's: ``ProtectProc=
+    invisible`` only hides processes of OTHER uids. Together that decrypts
+    every stored credential. Inside the jail the hook sees only its own pids,
+    the socket directory and /opt/satom are not mounted, and there is no
+    fallback: a node without bwrap refuses to run the hook. Sharing the host
+    network (the first version of the jail) still left loopback open: Redis
+    without a password, VictoriaMetrics without auth, gunicorn without nginx.
 
 AND HOW IT ENDS
     A timeout kills the process GROUP (``start_new_session=True`` +
@@ -31,8 +50,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import signal
-import subprocess
 import sys
 import tempfile
 import time
@@ -40,6 +57,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from . import sandbox
 from .integration_hooks import (APP_DIR, EVENTS, HOOKS_DIR, MIN_SECRET_LEN,
                                 REQ_DIR, STATUS_DIR, STDOUT_CAP, clamp_timeout,
                                 secret_value, validate_slug)
@@ -54,9 +72,15 @@ PYTHON = APP_DIR / "venv" / "bin" / "python"
 SDK_SRC = Path(__file__).resolve().parent / "integration_sdk.py"
 
 MAX_DRAIN = 50          # requests per invocation; the .path unit re-fires
-KILL_GRACE = 3.0        # seconds between SIGTERM and SIGKILL of the group
-REAP_TIMEOUT = 5.0      # seconds to drain pipes after killing the group
+KILL_GRACE = sandbox.KILL_GRACE      # SIGTERM -> SIGKILL of the jail's group
+REAP_TIMEOUT = sandbox.REAP_TIMEOUT  # draining the pipes after the kill
 STALE_CLAIM_AFTER = 15 * 60  # a claim older than this = the runner died
+
+SANDBOX_MISSING = sandbox.SANDBOX_MISSING
+BWRAP = sandbox.BWRAP
+# The egress rule. Module-level so a test with a receiver on 127.0.0.1 can
+# open exactly that; production never rebinds it.
+EGRESS_VERDICT = sandbox.egress_verdict
 
 
 # ---------------------------------------------------------------------------
@@ -204,33 +228,6 @@ def build_env(*, slug: str, event: str, request_id: str, timeout: int,
 # ---------------------------------------------------------------------------
 #  process control
 # ---------------------------------------------------------------------------
-def kill_process_group(proc: subprocess.Popen, grace: float = KILL_GRACE) -> None:
-    """SIGTERM then SIGKILL the child's whole process GROUP.
-
-    ``start_new_session=True`` made the child a session+group leader, so its
-    pgid IS its pid — no ``getpgid`` race with an already-reaped child. Killing
-    the group is what reaches the ``curl`` / ``ssh`` / ``python`` a hook spawned:
-    killing only ``proc`` leaves those alive, still holding the CRM connection
-    the timeout was supposed to end.
-    """
-    pgid = proc.pid
-    try:
-        os.killpg(pgid, signal.SIGTERM)
-    except (ProcessLookupError, PermissionError, OSError):
-        pass
-    deadline = time.monotonic() + max(0.0, grace)
-    while time.monotonic() < deadline:
-        if proc.poll() is not None:
-            break
-        time.sleep(0.05)
-    # Unconditional SIGKILL of the GROUP even when the direct child is gone:
-    # the grandchildren are the reason this function exists.
-    try:
-        os.killpg(pgid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError, OSError):
-        pass
-
-
 # ---------------------------------------------------------------------------
 #  CRQ write-back
 # ---------------------------------------------------------------------------
@@ -362,35 +359,17 @@ def run_request(req: dict[str, Any], *,
                         timeout=timeout, workdir=workdir, ctx_path=ctx_path,
                         result_fd=resfd, secrets=secrets)
 
-        # -E ignores PYTHONPATH (nothing the parent env could smuggle in),
-        # -s drops the user site-dir, -B writes no .pyc into the temp tree.
-        # NOT -I: that implies -P, which would remove the script's directory
-        # from sys.path and make `import satom_sdk` fail.
-        argv = [str(PYTHON), "-E", "-s", "-B", "hook.py"]
-
+        outcome = sandbox.execute(str(PYTHON), "hook.py", workdir, env=env,
+                                  timeout=timeout, network="egress",
+                                  pass_fds=(resfd,), verdict=EGRESS_VERDICT)
+        if outcome.error:
+            return _fail(outcome.error)
+        out = outcome.output
+        exit_code = outcome.exit_code
+        egress = [redact(line, secrets) for line in outcome.egress]
         status = "ok"
         error = ""
-        try:
-            proc = subprocess.Popen(
-                argv, cwd=workdir, env=env,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                start_new_session=True, pass_fds=(resfd,), close_fds=True,
-                text=True, errors="replace",
-            )
-        except OSError as exc:
-            return _fail("could not start the hook interpreter %s: %s" % (PYTHON, exc))
-
-        try:
-            out, _ = proc.communicate(timeout=timeout)
-            exit_code = proc.returncode
-        except subprocess.TimeoutExpired:
-            kill_process_group(proc)
-            try:
-                out, _ = proc.communicate(timeout=REAP_TIMEOUT)
-            except subprocess.TimeoutExpired:
-                out = ""
-            exit_code = proc.returncode
+        if outcome.timed_out:
             status = "timeout"
             error = "hook exceeded its %ds timeout; process group killed" % timeout
 
@@ -445,7 +424,7 @@ def run_request(req: dict[str, Any], *,
             exit_code=exit_code, stdout=out_txt,
             data=clean_data, error=error,
             result_reported=ok_flag is not None, secrets_missing=missing,
-            crq_writeback=crq_note)
+            crq_writeback=crq_note, egress=egress)
     finally:
         if resfd >= 0:
             try:

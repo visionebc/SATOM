@@ -112,6 +112,34 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="security--integration-hooks-run-in-a-jail-with-a-filtered-network-2026-10-15">Security — integration hooks run in a jail with a filtered network (2026-10-15)</h3>
+<ul>
+<li>A hook ran as the same system user as the web application, contained only
+  by systemd. That was enough to open the SATOM database over its local
+  socket and to read the application's encryption key from another process
+  of the same user, which together decrypt every stored credential. No hook
+  was configured on the nodes checked, so nothing was exploited.</li>
+<li>Hooks now run inside bubblewrap with private process, user, IPC and
+  network namespaces. Only the system libraries, the Python environment
+  (read-only), the resolver and CA files and the hook's own work directory
+  are visible. There is no fallback: without <code>bubblewrap</code> a hook is refused,
+  not run unconfined.</li>
+<li>Outbound traffic goes through a proxy that refuses this node (loopback and
+  every address it owns) and link-local addresses. It checks the connected
+  socket, not the name, so a name that resolves to 127.0.0.1 changes nothing.
+  HTTP(S) clients use it unchanged; <code>satom_sdk.tcp(host, port)</code> opens raw TCP
+  (SSH to an appliance) through it. Each run records every attempt.</li>
+</ul>
+<h3 id="fixed--the-libraries-card-no-longer-reports-status-poll-failed-while-its-own-upgrade-restarts-the-web-2026-10-15">Fixed — the Libraries card no longer reports "status poll failed" while its own upgrade restarts the web (2026-10-15)</h3>
+<ul>
+<li>Upgrading a package from Settings → Libraries restarts <code>satom.service</code>,
+  so the browser's status poll got a 502 for a few seconds. The card gave up
+  on the first failed poll and printed "(status poll failed)", although the
+  upgrade went on to succeed (seen on SQLAlchemy 2.0.52 → 2.1.4). It now
+  shows "service restarting as part of the update — reconnecting…" and keeps
+  polling for up to 3 minutes, like the Software Update page; after that it
+  points to Software Update → Recent updates.</li>
+</ul>
 <h3 id="added--certificate-manager-a-csr-for-another-ca-importing-certificates-staged-rotation-and-a-revocation-register-2026-10-15">Added — Certificate Manager: a CSR for another CA, importing certificates, staged rotation and a revocation register (2026-10-15)</h3>
 <ul>
 <li><strong>A CSR for another CA.</strong> "Generate CSR" makes the key and the CSR in

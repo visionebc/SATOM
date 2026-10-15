@@ -6800,6 +6800,19 @@ What that buys you, and what it costs:
   truncated before it is stored.
 - The result comes back through `ctx.result(ok, data)`, not from what the script
   prints — so a hook cannot fake its own verdict by printing JSON.
+- **A hook runs in a jail** (bubblewrap): its own process, user and network
+  namespaces, with nothing of SATOM mounted — no application directory, no
+  database socket, no other process to read. A node without `bubblewrap`
+  refuses to run hooks at all; install it from **Settings → General → System
+  packages**.
+- **Network goes through a filter.** HTTP(S) works as usual (`ctx.http`,
+  `urllib`, `requests` and `httpx` all pick up the proxy on their own). For
+  anything else, such as SSH to an appliance, open the connection with
+  `satom_sdk.tcp(host, port)` and hand it over, e.g.
+  `paramiko.SSHClient().connect(host, sock=tcp(host, 22), …)`. Connections to
+  this node itself (loopback or any of its addresses) and to link-local
+  addresses are refused. Every attempt, allowed or refused, is listed in the
+  run's record.
 - **Dry run** queues the hook against the event's sample payload through the
   same runner. It reports *queued*, not *ran*, because that is what happened;
   the outcome appears in the runs table a moment later. A dry run will queue a

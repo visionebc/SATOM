@@ -403,10 +403,18 @@
       var cols = (cat.by[t] || {}).columns || [];
       h += '<div class="mb-1"><span class="small fw-semibold">' + esc((cat.by[t] || {}).label || t) + '</span>'
         + (ti > 0 ? ' <button type="button" class="btn btn-link btn-sm p-0 text-danger" data-qb="unjoin" data-t="' + esc(t) + '">remove</button>' : '')
-        + '<div class="d-flex flex-wrap gap-2">' + cols.map(function (c) {
-          var n = t + '.' + c.name;
-          return '<label class="small"><input type="checkbox" class="form-check-input me-1" data-qb="col" data-n="' + esc(n) + '"' + (colSet[n] ? ' checked' : '') + '>' + esc(c.name) + '</label>';
-        }).join('') + '</div></div>';
+        // A wide table (baselines, appliances…) is dozens of columns: a
+        // checkbox dropdown whose button says what is ticked, not a wall of
+        // loose checkboxes. Same pattern as the API token pickers.
+        + '<div class="dropdown sl-colpick" data-t="' + esc(t) + '">'
+        + '<button class="form-select form-select-sm text-start text-truncate" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false"><span class="sl-colpick-sum"></span></button>'
+        + '<div class="dropdown-menu w-100 p-2" style="max-height:320px;overflow-y:auto;">'
+        + (cols.length > 8 ? '<input type="search" class="form-control form-control-sm mb-2 sl-colpick-search" placeholder="Filter columns…" aria-label="Filter columns">' : '')
+        + '<div class="d-flex gap-3 mb-1 small"><button type="button" class="btn btn-link btn-sm p-0" data-qb="colall">All</button><button type="button" class="btn btn-link btn-sm p-0" data-qb="colnone">None</button></div>'
+        + cols.map(function (c, ci) {
+          var n = t + '.' + c.name, id = 'slqb' + i + '-' + ti + '-' + ci;
+          return '<div class="form-check sl-colpick-item" data-text="' + esc(c.name.toLowerCase()) + '"><input type="checkbox" class="form-check-input" id="' + id + '" data-qb="col" data-n="' + esc(n) + '"' + (colSet[n] ? ' checked' : '') + '><label class="form-check-label small w-100" for="' + id + '">' + esc(c.name) + '</label></div>';
+        }).join('') + '</div></div></div>';
     });
     h += '<div class="mt-2"><span class="small fw-semibold">Filters</span>';
     (q.filters || []).forEach(function (fl, k) {
@@ -463,14 +471,44 @@
         syncPick(); redraw();
       });
     });
+    // Ticking a column must NOT redraw: that would close the open dropdown on
+    // every click. Update the spec, the summaries and the value/label lists in place.
+    function setCol(cb) {
+      var n = cb.getAttribute('data-n'), dot = n.indexOf('.'), t = n.slice(0, dot), c = n.slice(dot + 1);
+      q.columns = q.columns.filter(function (x) { return !((x.table || q.base) === t && x.col === c); });
+      if (cb.checked) q.columns.push({ table: t, col: c });
+    }
+    function refreshCols(changed) {
+      box.querySelectorAll('.sl-colpick').forEach(function (p) {
+        var all = p.querySelectorAll('[data-qb="col"]'), on = p.querySelectorAll('[data-qb="col"]:checked');
+        var sum = p.querySelector('.sl-colpick-sum'), names = Array.prototype.map.call(on, function (x) { return x.parentNode.textContent; });
+        sum.textContent = on.length ? on.length + ' of ' + all.length + ': ' + names.join(', ') : 'No columns (' + all.length + ' available)';
+        sum.classList.toggle('text-muted', !on.length);
+      });
+      syncPick();
+      var names = qColNames(q);
+      [[box.querySelector('[data-qb="vcol"]'), f.value_col], [box.querySelector('[data-qb="lcol"]'), f.label_col || f.value_col]].forEach(function (pair) {
+        if (pair[0]) pair[0].innerHTML = names.map(function (c) { return opt(c, pair[1]); }).join('');
+      });
+      if (changed !== false) qbChanged(i);
+    }
     box.querySelectorAll('[data-qb="col"]').forEach(function (cb) {
-      cb.addEventListener('change', function () {
-        var n = cb.getAttribute('data-n'), dot = n.indexOf('.'), t = n.slice(0, dot), c = n.slice(dot + 1);
-        q.columns = q.columns.filter(function (x) { return !((x.table || q.base) === t && x.col === c); });
-        if (cb.checked) q.columns.push({ table: t, col: c });
-        syncPick(); redraw();
+      cb.addEventListener('change', function () { setCol(cb); refreshCols(); });
+    });
+    box.querySelectorAll('.sl-colpick').forEach(function (p) {
+      function bulk(on) {
+        p.querySelectorAll('.sl-colpick-item:not(.d-none) [data-qb="col"]').forEach(function (cb) { if (cb.checked !== on) { cb.checked = on; setCol(cb); } });
+        refreshCols();
+      }
+      p.querySelector('[data-qb="colall"]').addEventListener('click', function () { bulk(true); });
+      p.querySelector('[data-qb="colnone"]').addEventListener('click', function () { bulk(false); });
+      var s = p.querySelector('.sl-colpick-search');
+      if (s) s.addEventListener('input', function () {
+        var v = s.value.trim().toLowerCase();
+        p.querySelectorAll('.sl-colpick-item').forEach(function (it) { it.classList.toggle('d-none', !!v && it.getAttribute('data-text').indexOf(v) < 0); });
       });
     });
+    refreshCols(false);
     function split(n) { var d = n.indexOf('.'); return { table: n.slice(0, d), col: n.slice(d + 1) }; }
     box.querySelector('[data-qb="fadd"]').addEventListener('click', function () {
       var c = split(allCols[0] || (q.base + '.id'));

@@ -1913,6 +1913,23 @@ def create_app(config_override: object | None = None) -> Flask:
             'managed_certificate': [
                 ('superseded_at', 'TIMESTAMP'),
                 ('revoked_at', 'TIMESTAMP'),
+                # --- origin + per-cert rotation windows (certrot01) ---
+                # Every row that predates these was signed by the configured
+                # CA with a SATOM-made key, so those two defaults are true.
+                # The windows stay NULL = "the class / policy default", which
+                # is what those rows always followed.
+                ('origin', "VARCHAR(16) DEFAULT 'signer' NOT NULL"),
+                ('key_origin', "VARCHAR(16) DEFAULT 'satom' NOT NULL"),
+                ('auto_renew', 'BOOLEAN DEFAULT TRUE NOT NULL'),
+                ('renew_before_days', 'INTEGER'),
+                ('swap_after_days', 'INTEGER'),
+                ('remove_after_days', 'INTEGER'),
+                ('retain_days', 'INTEGER'),
+                ('revoke_superseded', 'BOOLEAN'),
+                ('swap_due_at', 'TIMESTAMP'),
+                ('swapped_at', 'TIMESTAMP'),
+                ('removed_at', 'TIMESTAMP'),
+                ('archived_at', 'TIMESTAMP'),
             ],
             'wpp_exceptions': [
                 ('stale', 'BOOLEAN DEFAULT FALSE'),

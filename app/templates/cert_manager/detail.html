@@ -16,17 +16,93 @@
   <div>
     <h1 class="fw-page-title"><i class="bi bi-shield-lock me-2 text-accent"></i>{{ cert.name }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      {{ class_label }} · {{ appliance.name if appliance else 'no device' }} ·
-      {% if cert.status == 'revoked' %}<span class="fw-badge fw-badge-danger">{{ _('revoked') }}</span>
-      {% elif cert.status == 'active' %}<span class="fw-badge fw-badge-success">{{ _('active') }}</span>
-      {% elif cert.status == 'superseded' %}<span class="fw-badge fw-badge-secondary">{{ _('superseded') }}</span>
-      {% else %}<span class="fw-badge fw-badge-info">{{ cert.status }}</span>{% endif %}
+      {{ class_label }} · {{ appliance.name if appliance else _('no device') }} · {{ origin_label }} ·
+      <span class="fw-badge fw-badge-{{ tones.get(cert.status, 'info') }}">{{ cert.status | replace('_', ' ') }}</span>
+      {% if cert.archived_at %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('archived') }}</span>{% endif %}
+      {% if cert.key_origin == 'external' %}<span class="fw-badge fw-badge-warning ms-1" title="{{ _('The private key was generated outside SATOM') }}">{{ _('key from outside') }}</span>{% endif %}
     </p>
   </div>
 </div>
 
+{# --- External CA: the CSR round trip, first thing on the page ------------- #}
+{% if cert.status == 'awaiting_signature' and not cert.archived_at %}
+<div class="fw-card mb-3" id="import" style="border-left:3px solid #EF5424;">
+  <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-file-earmark-text me-2 text-accent"></i>{{ _('Waiting for the signature of another CA') }}</span></div>
+  <div class="fw-card-body" style="font-size:13px;">
+    <div class="row g-4">
+      <div class="col-lg-6">
+        <h6 class="mb-2">1. {{ _('Download the CSR and have it signed') }}</h6>
+        <p class="text-muted" style="font-size:12.5px;">{{ _('The private key stays in SATOM, encrypted. Take this CSR to the CA that will sign it.') }}</p>
+        <a class="btn btn-sm btn-fw-primary mb-2" href="{{ url_for('cert_manager.csr_download', id=cert.id) }}" data-turbo="false">
+          <i class="bi bi-download me-1"></i>{{ _('Download CSR') }} ({{ cert.name }}.csr)</a>
+        <button type="button" class="btn btn-sm btn-outline-secondary mb-2" id="csr-copy"><i class="bi bi-clipboard me-1"></i>{{ _('Copy') }}</button>
+        <pre id="csr-pem" style="font-size:11px;white-space:pre-wrap;word-break:break-all;max-height:220px;overflow:auto;background:#F3F6FC;padding:8px;border-radius:6px;">{{ cert.csr_pem }}</pre>
+      </div>
+      <div class="col-lg-6">
+        <h6 class="mb-2">2. {{ _('Import the signed certificate') }}</h6>
+        <p class="text-muted" style="font-size:12.5px;">{{ _('Paste or upload the PEM the CA returned (the chain may follow the leaf). SATOM checks that it matches the stored key and the requested names before it is accepted. A PKCS#12 is refused here: it would bring a different key.') }}</p>
+        <form method="POST" action="{{ url_for('cert_manager.import_signed', id=cert.id) }}" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <textarea class="form-control fw-form-control mb-2" name="signed_pem" rows="6" style="font-family:monospace;font-size:11.5px;" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
+          <input class="form-control fw-form-control mb-2" type="file" name="signed_file" accept=".pem,.crt,.cer">
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="deploy" id="imp-dep" value="1" {{ 'checked' if appliance }}>
+            <label class="form-check-label" for="imp-dep">{{ _('Deploy to the device after the import') }}{% if predecessor %} — {{ _('it takes over the bindings of') }} {{ predecessor.name }} {{ _('on its swap date') }}{% endif %}</label>
+          </div>
+          <button class="btn btn-sm btn-fw-primary"><i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Import certificate') }}</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var b = document.getElementById('csr-copy'), p = document.getElementById('csr-pem');
+  if (!b || !p) return;
+  b.addEventListener('click', function () {
+    navigator.clipboard.writeText(p.textContent.trim()).then(function () {
+      b.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied';
+    });
+  });
+})();
+</script>
+{% endif %}
+
 <div class="row g-3">
   <div class="col-lg-7">
+    {# --- Rotation: where this certificate is in its life ------------------- #}
+    <div class="fw-card mb-3">
+      <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-calendar2-range me-2"></i>{{ _('Rotation') }}</span></div>
+      <div class="fw-card-body" style="font-size:13px;">
+        <dl class="row mb-2">
+          <dt class="col-4 text-muted">{{ _('Next step') }}</dt>
+          <dd class="col-8">{{ next.label or '—' }}{% if next.at %} · {{ next.at.strftime('%Y-%m-%d %H:%M') }} UTC{% endif %}</dd>
+          {% if predecessor %}<dt class="col-4 text-muted">{{ _('Replaces') }}</dt>
+          <dd class="col-8"><a href="{{ url_for('cert_manager.detail', id=predecessor.id) }}">{{ predecessor.name }}</a> ({{ predecessor.status }})</dd>{% endif %}
+          {% if successor %}<dt class="col-4 text-muted">{{ _('Replaced by') }}</dt>
+          <dd class="col-8"><a href="{{ url_for('cert_manager.detail', id=successor.id) }}">{{ successor.name }}</a> ({{ successor.status | replace('_', ' ') }})</dd>{% endif %}
+          {% if cert.swap_due_at and cert.status == 'staged' %}<dt class="col-4 text-muted">{{ _('Swap due') }}</dt>
+          <dd class="col-8">{{ cert.swap_due_at.strftime('%Y-%m-%d %H:%M') }} UTC</dd>{% endif %}
+          {% if cert.swapped_at %}<dt class="col-4 text-muted">{{ _('Took the bindings') }}</dt><dd class="col-8">{{ cert.swapped_at.strftime('%Y-%m-%d %H:%M') }}</dd>{% endif %}
+          {% if cert.removed_at %}<dt class="col-4 text-muted">{{ _('Left the device') }}</dt><dd class="col-8">{{ cert.removed_at.strftime('%Y-%m-%d %H:%M') }}</dd>{% endif %}
+          <dt class="col-4 text-muted">{{ _('Windows') }}</dt>
+          <dd class="col-8">{{ _('renew') }} {{ policy.renew_before_days }} d {{ _('before expiry') }} · {{ _('swap') }} +{{ policy.swap_after_days }} d · {{ _('off the device') }} +{{ policy.remove_after_days }} d · {{ _('kept') }} +{{ policy.retain_days }} d
+            {% if not policy.auto_renew %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('auto-renew off') }}</span>{% endif %}</dd>
+        </dl>
+        {% if not cert.archived_at %}
+        <details>
+          <summary style="cursor:pointer;">{{ _('Change the windows of this certificate (empty = default)') }}</summary>
+          <form method="POST" action="{{ url_for('cert_manager.windows', id=cert.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% set d = defaults %}
+            {% include "cert_manager/_windows_fields.html" %}
+            <button class="btn btn-sm btn-fw-primary mt-2"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
+          </form>
+        </details>
+        {% endif %}
+      </div>
+    </div>
+
     <div class="fw-card mb-3">
       <div class="fw-card-header"><span class="fw-card-title">{{ _('Details') }}</span></div>
       <div class="fw-card-body">
@@ -39,9 +115,14 @@
             {{ cert.expires_at.strftime('%Y-%m-%d %H:%M') if cert.expires_at else '—' }}
             {% if cert.days_left is not none %}<span class="fw-badge fw-badge-{{ 'danger' if cert.days_left < 0 else 'warning' if cert.days_left <= 30 else 'success' }} ms-1">{{ cert.days_left }}d</span>{% endif %}
           </dd>
-          <dt class="col-4 text-muted">{{ _('Private key') }}</dt><dd class="col-8">{{ 'stored (encrypted)' if cert.has_private_key else 'not stored' }}</dd>
+          <dt class="col-4 text-muted">{{ _('Private key') }}</dt><dd class="col-8">
+            {% if cert.has_private_key %}{{ _('stored (encrypted)') }}{% if cert.key_origin == 'external' %} — {{ _('generated outside SATOM') }}{% endif %}
+            {% elif cert.archived_at %}{{ _('purged') }}{% else %}{{ _('not stored') }}{% endif %}</dd>
           <dt class="col-4 text-muted">{{ _('Live bindings') }}</dt><dd class="col-8">{{ live_bindings | join(', ') if live_bindings else '—' }}</dd>
         </dl>
+        {% if cert.csr_pem and cert.status != 'awaiting_signature' %}
+        <a class="btn btn-sm btn-outline-secondary mt-2" href="{{ url_for('cert_manager.csr_download', id=cert.id) }}" data-turbo="false"><i class="bi bi-download me-1"></i>{{ _('Download CSR') }}</a>
+        {% endif %}
       </div>
     </div>
 
@@ -72,66 +153,163 @@
 
     <div class="fw-card mb-3">
       <div class="fw-card-header"><span class="fw-card-title">{{ _('Actions') }}</span></div>
-      <div class="fw-card-body">
+      <div class="fw-card-body" style="font-size:13px;">
         <div class="d-flex flex-wrap gap-2 mb-3">
+          {% if acts.renew %}
           <form method="POST" action="{{ url_for('cert_manager.renew', id=cert.id) }}"
-                data-fw-confirm-form="Generate a fresh certificate for the same CN/class/device? It will be deployed under a new dated name (the current one stays).">
+                data-fw-confirm-form="{{ _('Renew this certificate now? A new one is signed and deployed under a new name; it takes over the bindings on its swap date.') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Renew now') }}</button>
           </form>
-          <form method="POST" action="{{ url_for('cert_manager.delete', id=cert.id) }}"
-                data-fw-confirm-form="Remove this certificate RECORD from the manager? The device copy is untouched.">
+          {% endif %}
+          {% if acts.new_csr %}
+          <form method="POST" action="{{ url_for('cert_manager.renew', id=cert.id) }}"
+                data-fw-confirm-form="{{ _('Generate a new key and CSR for this certificate now? The current certificate keeps serving until the signed one is imported and swapped in.') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash me-1"></i>{{ _('Delete record') }}</button>
+            <button class="btn btn-sm btn-outline-primary"><i class="bi bi-file-earmark-plus me-1"></i>{{ _('Generate a new CSR now') }}</button>
           </form>
+          {% endif %}
+          {% if acts.deploy %}
+          <form method="POST" action="{{ url_for('cert_manager.deploy', id=cert.id) }}"
+                data-fw-confirm-form="{{ _('Upload this certificate and its key to the device now?') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-primary"><i class="bi bi-cloud-upload me-1"></i>{{ _('Deploy to the device') }}</button>
+          </form>
+          {% endif %}
+          {% if acts.swap %}
+          <form method="POST" action="{{ url_for('cert_manager.swap_now', id=cert.id) }}"
+                data-fw-confirm-form="{{ _('Swap now? Every binding of the certificate it replaces moves onto this one immediately, instead of on its swap date.') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-warning"><i class="bi bi-arrow-left-right me-1"></i>{{ _('Swap now') }}</button>
+          </form>
+          {% endif %}
+          {% if acts.rollback %}
+          <form method="POST" action="{{ url_for('cert_manager.rollback', id=cert.id) }}"
+                data-fw-confirm-form="{{ _('Roll back? Every binding of this certificate goes back to the one it replaced.') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-warning"><i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Roll back to') }} {{ predecessor.name }}</button>
+          </form>
+          {% endif %}
         </div>
 
+        {% if acts.replace %}
+        <details class="mb-3">
+          <summary style="cursor:pointer;"><i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Replace with a certificate + key made outside SATOM') }}</summary>
+          <p class="text-muted mt-2" style="font-size:12px;">{{ _('For a renewal whose CSR was generated elsewhere. It is deployed and takes over the bindings of this certificate on its swap date, like any renewal.') }}</p>
+          <form method="POST" action="{{ url_for('cert_manager.replace', id=cert.id) }}" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <textarea class="form-control fw-form-control mb-2" name="bundle_pem" rows="4" style="font-family:monospace;font-size:11.5px;" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
+            <textarea class="form-control fw-form-control mb-2" name="key_pem" rows="3" style="font-family:monospace;font-size:11.5px;" placeholder="-----BEGIN PRIVATE KEY-----" autocomplete="off"></textarea>
+            <div class="row g-2 mb-2">
+              <div class="col-md-7"><input class="form-control fw-form-control" type="file" name="bundle_file" accept=".pem,.crt,.cer,.p12,.pfx"></div>
+              <div class="col-md-5"><input class="form-control fw-form-control" type="password" name="bundle_password" placeholder="{{ _('PKCS#12 / key password') }}" autocomplete="new-password"></div>
+            </div>
+            <button class="btn btn-sm btn-outline-primary">{{ _('Import as replacement') }}</button>
+          </form>
+        </details>
+        {% endif %}
+
+        {% if policies and not cert.archived_at and cert.status != 'awaiting_signature' %}
         <hr>
-        <h6 class="text-muted text-uppercase" style="font-size:12px;">{{ _('Swap binding (immediate)') }}</h6>
-        <form method="POST" action="{{ url_for('cert_manager.swap', id=cert.id) }}" class="row g-2 align-items-end mb-3"
-              data-fw-confirm-form="Point the selected server policy at this certificate now?">
+        <h6 class="text-muted text-uppercase" style="font-size:12px;">{{ _('Bind one server policy now') }}</h6>
+        <form method="POST" action="{{ url_for('cert_manager.swap', id=cert.id) }}" class="row g-2 align-items-end mb-2"
+              data-fw-confirm-form="{{ _('Point the selected server policy at this certificate now?') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="col-auto">
-            <label class="fw-form-label mb-1" style="font-size:12px;">{{ _('Server policy') }}</label>
             <select class="form-select fw-form-control form-select-sm" name="policy" style="min-width:220px;">
               <option value="">{{ _('— select policy —') }}</option>
               {% for p in policies %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
             </select>
           </div>
           <div class="col-auto">
-            <button class="btn btn-sm btn-fw-primary" {{ 'disabled' if not policies or not cert.has_private_key }}>
-              <i class="bi bi-arrow-left-right me-1"></i>{{ _('Swap now') }}
-            </button>
+            <button class="btn btn-sm btn-fw-primary" {{ 'disabled' if not cert.has_private_key }}>
+              <i class="bi bi-arrow-left-right me-1"></i>{{ _('Bind') }}</button>
           </div>
         </form>
-        <p class="text-muted" style="font-size:12px;">
-          {{ _('For a planned change, schedule the swap via a') }}
-          <a href="{{ url_for('change_requests.index') }}">{{ _('Change Request') }}</a> {{ _('maintenance window instead.') }}
-        </p>
+        {% endif %}
 
+        {% if acts.revoke %}
         <hr>
         <h6 class="text-muted text-uppercase" style="font-size:12px;">{{ _('Revoke') }}</h6>
+        <p class="text-muted" style="font-size:12px;">
+          {% if revoke_route == 'ca' %}{{ _('Revoked at the configured CA and recorded in the revocation register.') }}
+          {% else %}{{ _('SATOM cannot revoke it itself:') }} {{ revoke_route_why }}. {{ _('It is marked revoked and stays pending in the register until you confirm it was revoked at the CA.') }}{% endif %}
+        </p>
         <form method="POST" action="{{ url_for('cert_manager.revoke', id=cert.id) }}"
-              data-fw-confirm-form="Revoke this certificate at the CA? If 'remove from device' is ticked it is deleted only when not bound to any policy.">
+              data-fw-confirm-form="{{ _('Are you sure you want to revoke this certificate? This cannot be undone.') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <div class="form-check mb-2">
-            <input class="form-check-input" type="checkbox" name="delete_from_box" id="delbox">
-            <label class="form-check-label" for="delbox" style="font-size:13px;">
-              {{ _('Also remove from the device (refused if still bound to a policy)') }}
-            </label>
+          <div class="row g-2 align-items-center mb-2">
+            <div class="col-auto"><label class="fw-form-label mb-0" for="rv-reason">{{ _('Reason') }}</label></div>
+            <div class="col-auto">
+              <select class="form-select fw-form-control form-select-sm" name="reason" id="rv-reason">
+                {% for r in reasons %}<option value="{{ r }}" {{ 'selected' if r == 'cessationOfOperation' }}>{{ r }}</option>{% endfor %}
+              </select>
+            </div>
           </div>
-          <button class="btn btn-sm btn-outline-danger" {{ 'disabled' if cert.status == 'revoked' }}>
-            <i class="bi bi-x-octagon me-1"></i>{{ _('Revoke') }}
-          </button>
+          <div class="form-check mb-1">
+            <input class="form-check-input" type="checkbox" name="delete_from_box" id="delbox" value="1">
+            <label class="form-check-label" for="delbox">{{ _('Also remove it from the device (refused while it is bound)') }}</label>
+          </div>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="allow_bound" id="allowbound" value="1">
+            <label class="form-check-label" for="allowbound">{{ _('Revoke even though it is in use (e.g. a compromised key) — clients will reject it') }}</label>
+          </div>
+          <button class="btn btn-sm btn-outline-danger"><i class="bi bi-x-octagon me-1"></i>{{ _('Revoke') }}</button>
+        </form>
+        {% endif %}
+
+        <hr>
+        <h6 class="text-muted text-uppercase" style="font-size:12px;">{{ _('Delete') }}</h6>
+        <form method="POST" action="{{ url_for('cert_manager.delete', id=cert.id) }}"
+              data-fw-confirm-form="{{ _('Are you sure you want to delete this certificate record? A certificate that is still bound cannot be deleted. Its revocations stay in the register.') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% if acts.revoke %}
+          <div class="form-check mb-1">
+            <input class="form-check-input" type="checkbox" name="revoke_first" id="del-rev" value="1">
+            <label class="form-check-label" for="del-rev">{{ _('Revoke it first (reason: cessationOfOperation)') }}</label>
+          </div>
+          {% endif %}
+          {% if appliance and not cert.removed_at and cert.status != 'awaiting_signature' %}
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="remove_from_box" id="del-box" value="1">
+            <label class="form-check-label" for="del-box">{{ _('Remove it from the device too') }}</label>
+          </div>
+          {% endif %}
+          <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash me-1"></i>{{ _('Delete record') }}</button>
         </form>
       </div>
     </div>
+
+    {% if revocations %}
+    <div class="fw-card mb-3">
+      <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-journal-x me-2"></i>{{ _('Revocations') }}</span></div>
+      <div class="fw-card-body" style="font-size:13px;">
+        <ul class="list-unstyled mb-0">
+          {% for r in revocations %}
+          <li class="mb-2">
+            {{ r.requested_at.strftime('%Y-%m-%d %H:%M') }} · {{ r.reason }} · {{ r.requested_by }} ·
+            {% if r.result in ('revoked', 'manual_done') %}<span class="fw-badge fw-badge-success">{{ r.result | replace('_', ' ') }}</span>
+            {% elif r.result == 'failed' %}<span class="fw-badge fw-badge-danger">{{ _('CA refused') }}</span>
+            {% else %}<span class="fw-badge fw-badge-warning">{{ _('pending at the CA') }}</span>
+            <form method="post" action="{{ url_for('cert_manager.revocation_confirm', rid=r.id) }}" class="d-inline"
+                  data-fw-confirm-form="{{ _('Confirm that this certificate has been revoked at its CA?') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="next" value="{{ url_for('cert_manager.detail', id=cert.id) }}">
+              <button class="btn btn-sm btn-outline-success ms-1">{{ _('Mark revoked at the CA') }}</button>
+            </form>{% endif %}
+            {% if r.detail %}<div class="text-muted" style="font-size:11.5px;white-space:pre-wrap;">{{ r.detail }}</div>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% endif %}
   </div>
 
   <div class="col-lg-5">
     <div class="fw-card">
       <div class="fw-card-header"><span class="fw-card-title">{{ _('Timeline') }}</span></div>
-      <div class="fw-card-body" style="max-height:520px;overflow:auto;">
+      <div class="fw-card-body" style="max-height:620px;overflow:auto;">
         {% if events %}
         <ul class="list-unstyled mb-0" style="font-size:12.5px;">
           {% for e in events %}

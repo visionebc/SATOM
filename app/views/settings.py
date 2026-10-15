@@ -820,12 +820,13 @@ def save_cert_manager():
         'eab_hmac': f.get('acme_eab_hmac', ''),
         'clear_eab_hmac': bool(f.get('acme_clear_eab_hmac')),
     })
-    # Lifecycle policy — when superseded certs get revoked and when material
-    # is deleted off the devices.
+    # Lifecycle policy — the DEFAULT rotation windows (each certificate can
+    # override them) and when revoked / expired material leaves the devices.
     store.save_cert_lifecycle_policy({
         'revoke_on_supersede': f.get('lc_revoke_on_supersede') == 'on',
-        'revoke_grace_days': f.get('lc_revoke_grace_days', 7),
+        'swap_after_days': f.get('lc_swap_after_days', 3),
         'delete_superseded_after_days': f.get('lc_delete_superseded_after_days', 14),
+        'retain_after_removal_days': f.get('lc_retain_after_removal_days', 30),
         'delete_expired_after_days': f.get('lc_delete_expired_after_days', 30),
         'delete_revoked_from_device': f.get('lc_delete_revoked_from_device') == 'on',
         'auto_apply': f.get('lc_auto_apply') == 'on',

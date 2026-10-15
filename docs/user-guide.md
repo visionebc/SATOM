@@ -1640,9 +1640,51 @@ unreachable. Administrator role (`user_manage`) required.
   maps **bindings** — which policies / SSL profiles / admin GUI actually use
   each certificate. Removal is fail-closed: a bound or unverifiable
   certificate is refused.
-- **Issuance:** create a CSR and sign it through the configured protocol —
-  **Microsoft ADCS** or **ACME** (Let's Encrypt-style, http-01/dns-01) — the
-  protocol is a Settings dropdown, not a code change.
+- **Issuance — three origins** (New certificate, one tab each; the inventory
+  also has **Generate CSR** and **Import** buttons that open the right tab):
+  - **Signed by the configured CA:** SATOM creates the CSR and signs it
+    through the configured protocol — **Microsoft ADCS** or **ACME**
+    (Let's Encrypt-style, http-01/dns-01) — the protocol is a Settings
+    dropdown, not a code change.
+  - **CSR for another CA:** SATOM generates the key and the CSR. The key
+    stays in SATOM, encrypted; the row waits as *awaiting signature*. Its
+    page shows **1. Download the CSR** (file or copy) and **2. Import the
+    signed certificate** (paste or upload the PEM; a chain after the leaf
+    is fine). The import is refused unless the certificate's public key is
+    the stored key and every requested SAN is present. A pasted private key
+    or a PKCS#12 is refused there too: the request's key was made in SATOM
+    and a PKCS#12 would bring another one.
+  - **Import certificate + key:** for a certificate whose CSR was made
+    outside SATOM — a PEM certificate and its key, or a PKCS#12 with its
+    password. The key is stored encrypted and marked *key from outside*.
+- **Rotation (renew → swap → off the device → out of SATOM).** A renewal
+  never replaces the certificate in place: it is issued and deployed under a
+  new name **N days before expiry**, and takes over every binding of the old
+  one **N days later** (its swap date). The old certificate stays on the
+  device so **Roll back** can return the bindings in one click; it leaves the
+  device **N days after the swap**, and its key leaves SATOM **N days after
+  that** (serial, dates and timeline stay as the record). The four numbers
+  are defaults in Settings → Certificate Manager → Lifecycle policy and can
+  be set per certificate on its page; the swap delay has to be shorter than
+  the renew window, so the swap lands before the old certificate expires.
+  With **Renew automatically** on, the sweep does the renewal itself for the
+  configured CA. For another CA it generates the new CSR and notifies you, and
+  the swap is scheduled when you import the signed certificate. Imported
+  certificates are only notified: renew them outside and use **Replace**.
+  **Swap now** skips the wait.
+- **Revoke** works with whichever CA is configured: SATOM runs that CA's
+  revoke command. When it cannot (no revoke command, or a certificate signed
+  by another CA), the certificate is marked revoked and the **revocation
+  register** keeps it *pending at the CA* until someone confirms it there.
+  Every revocation is in the register (serial, fingerprint, reason, who,
+  result), and the register outlives a deleted record. A certificate still in
+  use is refused unless you tick "revoke even though it is in use" (a
+  compromised key). With the rotation's "revoke the old certificate", the
+  old one is revoked (reason `superseded`) as it leaves the device, never
+  while it still serves.
+- **Delete** asks for confirmation and is refused while the certificate is
+  bound, or when its bindings cannot be read. It can revoke first and take it
+  off the device first; either failing stops the delete.
 - **A CA in an OPNsense firewall** (System › Trust) signs through the ADCS
   command template with the bundled signer `scripts/opnsense_ca_signer.py`.
   Set **CA** to `https://<firewall>:<port>`, **CA name** to the issuing CA's
@@ -1667,10 +1709,11 @@ unreachable. Administrator role (`user_manage`) required.
 - **Deploy:** FortiWeb receives cert+key over SSH (the only transport the
   appliance supports for key material); FortiADC over REST. The Admin GUI
   certificate can be swapped with a dry-run preview.
-- **Lifecycle policy:** configurable rules — revoke superseded certs after a
-  grace period, clean up expired/revoked material from devices, auto-apply or
-  report-only. A **Run sweep now** button and a nightly scheduled action keep
-  it moving; the page lists everything currently due.
+- **Lifecycle policy:** the default rotation windows above, plus clean-up
+  of expired and revoked material from devices, auto-apply or report-only. A
+  **Run sweep now** button and a nightly scheduled action keep it moving; the
+  page lists everything currently due, and each row shows its **next step**
+  and when.
 
 **The ACME DNS-provider registry** lives on the same settings tab
 (`Settings → Certificate Manager`), and it is a *registry*, not a fixed list.
@@ -5005,8 +5048,8 @@ Administrator → Diagnostic Battery.
   text file with a label and a timestamp.
 - The page needs `config_write` even though it writes nothing to the device,
   because it opens an administrative SSH session with the stored credentials.
-- The **FortiWeb default battery** has 28 commands and is the same on FortiWeb
-  7.6.8 and 8.0.6 (measured). A few entries print nothing on a VM without HA
+- The **FortiWeb default battery** is the same on FortiWeb 7.6.8 and 8.0.6
+  (measured; the page lists every command it runs). A few entries print nothing on a VM without HA
   (DB sync status, HA device info, netstat log); that is expected, and they
   answer on HA or hardware units. `diagnose debug proxy log 3` was removed on
   2026-10-14: it printed nothing on either build, and the device describes

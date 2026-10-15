@@ -35,7 +35,7 @@ import re
 import shlex
 import subprocess
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import quote as _url_quote
 
 from ..models import (DeviceCertificate, ManagedCertificate,
@@ -528,12 +528,298 @@ def _cn_of(cert: ManagedCertificate) -> str:
 
 
 # --------------------------------------------------------------------------- #
+#  Per-certificate policy: the windows a certificate rotates by                 #
+# --------------------------------------------------------------------------- #
+#: Windows a certificate can override (NULL column = class / policy default).
+WINDOW_FIELDS = ("renew_before_days", "swap_after_days", "remove_after_days",
+                 "retain_days")
+
+
+def _int_or(value, default: int) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def default_policy(cert_class: str = "server") -> dict:
+    """The windows a certificate WITHOUT overrides follows."""
+    pol = store.cert_lifecycle_policy()
+    ccfg = store.cert_class_config(cert_class)
+    return {
+        "renew_before_days": _int_or(ccfg.get("renew_before_days"), 30) or 30,
+        "swap_after_days": pol["swap_after_days"],
+        "remove_after_days": pol["delete_superseded_after_days"],
+        "retain_days": pol["retain_after_removal_days"],
+        "revoke_superseded": bool(pol["revoke_on_supersede"]),
+    }
+
+
+def cert_policy(cert: ManagedCertificate) -> dict:
+    """The EFFECTIVE windows of *cert*: its own value where set, else the
+    default. ``source`` says which, so the page can show "default"."""
+    base = default_policy(cert.cert_class)
+    out = dict(base, auto_renew=bool(cert.auto_renew), source={})
+    for k in WINDOW_FIELDS:
+        v = getattr(cert, k, None)
+        if v is not None:
+            out[k] = max(0, int(v))
+        out["source"][k] = "cert" if v is not None else "default"
+    if cert.revoke_superseded is not None:
+        out["revoke_superseded"] = bool(cert.revoke_superseded)
+    out["source"]["revoke_superseded"] = (
+        "cert" if cert.revoke_superseded is not None else "default")
+    return out
+
+
+def window_error(renew_before: int, swap_after: int) -> str:
+    """Why a (renew, swap) pair cannot work, or "". The swap has to land
+    before the certificate it replaces expires."""
+    if renew_before <= 0:
+        return "renew-before must be at least 1 day."
+    if swap_after >= renew_before:
+        return (f"the swap ({swap_after} d after the renewal) would land on or "
+                f"after the expiry (the renewal runs {renew_before} d before it) "
+                "— make the swap delay shorter than the renew window.")
+    return ""
+
+
+def apply_windows(cert: ManagedCertificate, values: dict) -> str:
+    """Store per-cert overrides from a form-ish dict. Blank = default.
+    Returns an error string (nothing saved) or ""."""
+    parsed = {}
+    for k in WINDOW_FIELDS:
+        raw = values.get(k)
+        if raw is None or str(raw).strip() == "":
+            parsed[k] = None
+            continue
+        try:
+            n = int(str(raw).strip())
+        except ValueError:
+            return f"{k.replace('_', ' ')} must be a whole number of days."
+        if n < 0 or n > 3650:
+            return f"{k.replace('_', ' ')} must be between 0 and 3650."
+        parsed[k] = n
+    base = default_policy(cert.cert_class)
+    renew = parsed["renew_before_days"] if parsed["renew_before_days"] is not None \
+        else base["renew_before_days"]
+    swap = parsed["swap_after_days"] if parsed["swap_after_days"] is not None \
+        else base["swap_after_days"]
+    err = window_error(renew, swap)
+    if err:
+        return err
+    rv = str(values.get("revoke_superseded") or "").strip().lower()
+    for k, v in parsed.items():
+        setattr(cert, k, v)
+    cert.revoke_superseded = (True if rv in ("1", "yes", "on", "true") else
+                              False if rv in ("0", "no", "off", "false") else None)
+    if "auto_renew" in values:
+        cert.auto_renew = str(values.get("auto_renew") or "").strip().lower() in (
+            "1", "yes", "on", "true")
+    return ""
+
+
+def _copy_windows(src: ManagedCertificate, dst: ManagedCertificate) -> None:
+    """A renewal keeps the rotation settings of the certificate it replaces."""
+    for k in WINDOW_FIELDS + ("revoke_superseded", "auto_renew"):
+        setattr(dst, k, getattr(src, k))
+
+
+def successor_of(cert: ManagedCertificate):
+    """The live renewal of *cert* (staged / awaiting signature / active), or None."""
+    return (ManagedCertificate.query
+            .filter(ManagedCertificate.supersedes_id == cert.id,
+                    ManagedCertificate.archived_at.is_(None),
+                    ManagedCertificate.status != "revoked")
+            .order_by(ManagedCertificate.id.desc()).first())
+
+
+def predecessor_of(cert: ManagedCertificate):
+    return (db.session.get(ManagedCertificate, cert.supersedes_id)
+            if cert.supersedes_id else None)
+
+
+def _unique_name(base: str) -> str:
+    """A device name no other managed certificate uses. Two issuances on the
+    same day share the {date} stamp, and a renewal deployed under its
+    predecessor's name would overwrite the certificate it is meant to replace."""
+    taken = {n for (n,) in db.session.query(ManagedCertificate.name).all()}
+    if base not in taken:
+        return base
+    for i in range(2, 1000):
+        sfx = f"-{i}"
+        cand = base[:naming.MAX_NAME_LEN - len(sfx)] + sfx
+        if cand not in taken:
+            return cand
+    raise CertManagerError(f"no free certificate name derived from {base!r}")
+
+
+def next_step(cert: ManagedCertificate) -> dict:
+    """What happens to *cert* next and when — ``{label, at}`` for the table."""
+    now = datetime.utcnow()
+    pol = cert_policy(cert)
+    if cert.archived_at:
+        return {"label": "archived", "at": cert.archived_at}
+    if cert.status == "awaiting_signature":
+        return {"label": "waiting for the CA's signature", "at": None}
+    if cert.status == "staged":
+        return {"label": "swap", "at": cert.swap_due_at}
+    if cert.status in ("superseded", "revoked"):
+        if cert.removed_at or not cert.appliance_id:
+            since = cert.removed_at or cert.superseded_at or cert.revoked_at or now
+            return {"label": "leaves SATOM",
+                    "at": since + timedelta(days=pol["retain_days"])}
+        if cert.status == "superseded":
+            since = cert.superseded_at or cert.updated_at or now
+            return {"label": "leaves the device",
+                    "at": since + timedelta(days=pol["remove_after_days"])}
+        return {"label": "leaves the device (once unbound)", "at": None}
+    succ = successor_of(cert)
+    if succ is not None:
+        return {"label": f"replaced by {succ.name}", "at": succ.swap_due_at}
+    if cert.expires_at:
+        if cert.origin == "imported":
+            return {"label": "renew outside SATOM, then import",
+                    "at": cert.expires_at - timedelta(days=pol["renew_before_days"])}
+        if not cert.auto_renew:
+            return {"label": "auto-renew off", "at": None}
+        return {"label": "renewal" if cert.origin == "signer" else "new CSR",
+                "at": cert.expires_at - timedelta(days=pol["renew_before_days"])}
+    return {"label": "", "at": None}
+
+
+# --------------------------------------------------------------------------- #
 #  Orchestration: create / renew                                               #
 # --------------------------------------------------------------------------- #
+def _subject_and_sans(cn: str, cert_class: str, extra_sans=None):
+    ccfg = store.cert_class_config(cert_class)
+    subject = _interpolate(ccfg.get("subject_format", "CN={cn}"), {"cn": cn})
+    san_spec = _interpolate(ccfg.get("san_format", "DNS:{cn}"), {"cn": cn})
+    if extra_sans:
+        san_spec = (san_spec + "," + ",".join(
+            s if ":" in s else "DNS:" + s for s in extra_sans)).strip(",")
+    return ccfg, subject, san_spec
+
+
+def _open_row(appliance, cn: str, cert_class: str, *, extra_sans=None,
+              supersedes: int | None = None, origin: str = "signer",
+              actor: str = "") -> ManagedCertificate:
+    """Generate CSR + key and store a row for them (key encrypted). Raises
+    :class:`CertManagerError`."""
+    ccfg, subject, san_spec = _subject_and_sans(cn, cert_class, extra_sans)
+    try:
+        csr_pem, key_pem = generate_csr(
+            subject, san_spec, cert_class,
+            key_type=ccfg.get("key_type", "rsa"),
+            key_size=ccfg.get("key_size", "2048"))
+    except Exception as exc:  # noqa: BLE001
+        raise CertManagerError(f"CSR generation failed: {exc}") from exc
+    name = _unique_name(cert_name_for(cn, cert_class))
+    row = ManagedCertificate(
+        name=name, appliance_id=getattr(appliance, "id", None),
+        cert_class=cert_class, subject=subject,
+        status="awaiting_signature" if origin == "external" else "pending",
+        origin=origin, key_origin="satom",
+        created_by=actor or _actor(), supersedes_id=supersedes)
+    row.sans = [s.split(":", 1)[-1] for s in re.split(r"[,\s]+", san_spec) if s]
+    row.csr_pem = csr_pem
+    row.private_key = key_pem
+    old = db.session.get(ManagedCertificate, supersedes) if supersedes else None
+    if old is not None:
+        _copy_windows(old, row)
+    db.session.add(row)
+    db.session.commit()
+    _event(row, "generate", True, f"CSR generated for {subject}", by=actor)
+    return row
+
+
+def _store_signed(row: ManagedCertificate, cert_pem: str) -> None:
+    meta = parse_certificate(cert_pem)
+    row.cert_pem = cert_pem
+    row.serial = meta["serial"]
+    row.issued_at = meta["issued_at"]
+    row.expires_at = meta["expires_at"]
+    if meta["sans"]:
+        row.sans = meta["sans"]
+    db.session.commit()
+
+
+def _appliance_of(cert: ManagedCertificate):
+    if not cert.appliance_id:
+        return None
+    from ..models import Appliance
+    return db.session.get(Appliance, cert.appliance_id)
+
+
+def _deploy(row: ManagedCertificate, appliance, *, actor: str = "") -> str:
+    """Upload cert + key to the device. Returns "" or the error text."""
+    if appliance is None:
+        _event(row, "deploy", False, "no target appliance for deploy", by=actor)
+        return "signed but not deployed (no appliance)."
+    try:
+        # FortiADC takes key material over a REST multipart upload; FortiWeb
+        # over the SSH CLI. Same call shape, dispatched on the device kind.
+        deployer = (cert_adc if getattr(appliance, "kind", "fortiweb") == "fortiadc"
+                    else cert_ssh)
+        deployer.deploy_certificate(appliance, row.name, row.cert_pem,
+                                    row.private_key, secret=appliance.ssh_secret)
+    except Exception as exc:  # noqa: BLE001
+        _event(row, "deploy", False, f"upload to {appliance.name} failed: {exc}",
+               by=actor)
+        return f"deploy failed: {exc}"
+    _event(row, "deploy", True, f"uploaded to {appliance.name}", by=actor)
+    return ""
+
+
+def _schedule_swap(new: ManagedCertificate, old: ManagedCertificate | None) -> None:
+    """A deployed renewal waits for its swap date: N days after it was issued,
+    but never later than the day before the certificate it replaces expires."""
+    now = datetime.utcnow()
+    if old is None or old.status in ("revoked", "superseded") or old.archived_at:
+        new.status = "pending"
+        new.swap_due_at = None
+        db.session.commit()
+        return
+    due = now + timedelta(days=cert_policy(new)["swap_after_days"])
+    if old.expires_at:
+        latest = old.expires_at - timedelta(days=1)
+        if due > latest:
+            due = max(now, latest)
+    new.status = "staged"
+    new.swap_due_at = due
+    db.session.commit()
+    _event(new, "schedule", True,
+           f"swap onto the bindings of {old.name} scheduled for "
+           f"{due:%Y-%m-%d %H:%M} UTC")
+
+
+def _after_issue(row: ManagedCertificate, appliance, *, deploy: bool,
+                 actor: str = "") -> dict:
+    """Deploy a freshly signed/imported row and, if it is a renewal, schedule
+    its swap. Returns the create_* result dict."""
+    if deploy:
+        err = _deploy(row, appliance, actor=actor)
+        if err:
+            return {"ok": False, "error": err, "cert_id": row.id, "name": row.name}
+        _schedule_swap(row, predecessor_of(row))
+    else:
+        row.status = "pending"
+        db.session.commit()
+    where = (f"deployed to {appliance.name}" if deploy and appliance else "stored")
+    tail = (f"It replaces {predecessor_of(row).name} on "
+            f"{row.swap_due_at:%Y-%m-%d %H:%M} UTC." if row.status == "staged" else
+            "It is NOT yet bound to a policy — swap it in during a maintenance window.")
+    _notify(row, subject="Certificate ready",
+            body=(f"Certificate {row.name} ({row.cert_class}) for {_cn_of(row)} is "
+                  f"{where}. Expires {row.expires_at}. {tail}"))
+    return {"ok": True, "cert_id": row.id, "name": row.name, "error": ""}
+
+
 def create_certificate(appliance, cn: str, cert_class: str, *, extra_sans=None,
                        deploy: bool = True, supersedes: int | None = None,
                        actor: str = "") -> dict:
-    """Full cycle for one certificate. Returns ``{ok, cert_id, name, error}``.
+    """Full cycle for one certificate signed by the CONFIGURED CA. Returns
+    ``{ok, cert_id, name, error}``.
 
     Never raises — every failure is captured on the row's timeline and returned.
     """
@@ -549,105 +835,278 @@ def create_certificate(appliance, cn: str, cert_class: str, *, extra_sans=None,
         return {"ok": False,
                 "error": f"class {cert_class!r} has no ADCS template configured "
                          "(Settings → Certificate Manager).", "cert_id": None}
-
-    subject = _interpolate(ccfg.get("subject_format", "CN={cn}"), {"cn": cn})
-    san_spec = _interpolate(ccfg.get("san_format", "DNS:{cn}"), {"cn": cn})
-    if extra_sans:
-        san_spec = (san_spec + "," + ",".join(
-            s if ":" in s else "DNS:" + s for s in extra_sans)).strip(",")
-
-    # --- generate CSR + key; open a 'pending' row (key encrypted) ---------
     try:
-        csr_pem, key_pem = generate_csr(
-            subject, san_spec, cert_class,
-            key_type=ccfg.get("key_type", "rsa"),
-            key_size=ccfg.get("key_size", "2048"))
-    except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "error": f"CSR generation failed: {exc}", "cert_id": None}
+        row = _open_row(appliance, cn, cert_class, extra_sans=extra_sans,
+                        supersedes=supersedes, origin="signer", actor=actor)
+    except CertManagerError as exc:
+        return {"ok": False, "error": str(exc), "cert_id": None}
 
-    name = cert_name_for(cn, cert_class)
-    row = ManagedCertificate(
-        name=name, appliance_id=getattr(appliance, "id", None),
-        cert_class=cert_class, subject=subject, status="pending",
-        created_by=actor or _actor(), supersedes_id=supersedes)
-    row.sans = [s.split(":", 1)[-1] for s in re.split(r"[,\s]+", san_spec) if s]
-    row.csr_pem = csr_pem
-    row.private_key = key_pem
-    db.session.add(row)
-    db.session.commit()
-    _event(row, "generate", True, f"CSR generated for {subject}", by=actor)
-
-    # --- sign ------------------------------------------------------------
     try:
-        cert_pem, sign_log = sign_csr(cert_class, csr_pem)
+        cert_pem, sign_log = sign_csr(cert_class, row.csr_pem)
     except CertManagerError as exc:
         _event(row, "error", False, f"sign failed: {exc}", by=actor)
-        return {"ok": False, "error": str(exc), "cert_id": row.id, "name": name}
-
-    meta = parse_certificate(cert_pem)
-    row.cert_pem = cert_pem
-    row.serial = meta["serial"]
-    row.issued_at = meta["issued_at"]
-    row.expires_at = meta["expires_at"]
-    if meta["sans"]:
-        row.sans = meta["sans"]
+        return {"ok": False, "error": str(exc), "cert_id": row.id, "name": row.name}
+    _store_signed(row, cert_pem)
     # The ADCS request id, for a revoke command that references {request_id}.
-    # certipy / certreq print it ("Request ID is 42", "RequestId: 42"); a
-    # signer that does not leaves the column empty, as before.
     rid = ca_request_id_from_log(sign_log)
     if rid:
         row.ca_request_id = rid
-    db.session.commit()
+        db.session.commit()
     _event(row, "sign", True,
            f"signed serial={row.serial} expires={row.expires_at}", by=actor)
+    return _after_issue(row, appliance, deploy=deploy, actor=actor)
 
-    # --- deploy (cert + key over the cert-only SSH write path) -----------
-    if deploy:
-        if getattr(appliance, "id", None) is None:
-            _event(row, "deploy", False, "no target appliance for deploy", by=actor)
-            return {"ok": False, "error": "signed but not deployed (no appliance).",
-                    "cert_id": row.id, "name": name}
-        try:
-            # FortiADC takes key material over a REST multipart upload; FortiWeb
-            # over the SSH CLI. Same call shape, dispatched on the device kind.
-            deployer = (cert_adc if getattr(appliance, "kind", "fortiweb") == "fortiadc"
-                        else cert_ssh)
-            out = deployer.deploy_certificate(
-                appliance, name, cert_pem, row.private_key,
-                secret=appliance.ssh_secret)
-            _event(row, "deploy", True, f"uploaded to {appliance.name}", by=actor)
-            row.status = "pending"
-            db.session.commit()
-        except Exception as exc:  # noqa: BLE001
-            _event(row, "deploy", False, f"upload to {appliance.name} failed: {exc}",
-                   by=actor)
-            return {"ok": False, "error": f"signed but deploy failed: {exc}",
-                    "cert_id": row.id, "name": name}
 
-    _notify(row, subject="Certificate ready",
-            body=(f"Certificate {name} ({cert_class}) for {cn} is signed and "
-                  f"{'deployed to ' + appliance.name if deploy and appliance else 'stored'}. "
-                  f"Expires {row.expires_at}. It is NOT yet bound to a policy — "
-                  "swap it in during a maintenance window."))
-    return {"ok": True, "cert_id": row.id, "name": name, "error": ""}
+def create_external_csr(appliance, cn: str, cert_class: str, *, extra_sans=None,
+                        supersedes: int | None = None, actor: str = "") -> dict:
+    """CSR for ANOTHER CA: the key is generated and kept (encrypted) here; the
+    CSR is downloaded, signed elsewhere, and the result imported with
+    :func:`import_signed`. Returns ``{ok, cert_id, name, error}``."""
+    cn = (cn or "").strip()
+    if cn == "":
+        return {"ok": False, "error": "a certificate CN/hostname is required.", "cert_id": None}
+    if cert_class not in store.CERT_CLASSES:
+        return {"ok": False, "error": f"unknown certificate class {cert_class!r}.", "cert_id": None}
+    try:
+        row = _open_row(appliance, cn, cert_class, extra_sans=extra_sans,
+                        supersedes=supersedes, origin="external", actor=actor)
+    except CertManagerError as exc:
+        return {"ok": False, "error": str(exc), "cert_id": None}
+    _notify(row, subject="CSR ready for signature",
+            body=(f"A CSR for {cn} ({cert_class}) is ready: {row.name}. Download it "
+                  "from the Certificate Manager, have your CA sign it, and import "
+                  "the signed certificate on the same row."))
+    return {"ok": True, "cert_id": row.id, "name": row.name, "error": ""}
 
 
 def renew_certificate(cert: ManagedCertificate, *, deploy: bool = True,
                       actor: str = "") -> dict:
-    """Generate a fresh certificate for the same CN/class/device, with a new
-    {date}-stamped name so it coexists with the current one. Does NOT swap the
-    binding (decision: leave it ready for a maintenance-window swap)."""
-    appliance = None
-    if cert.appliance_id:
-        from ..models import Appliance
-        appliance = db.session.get(Appliance, cert.appliance_id)
-    res = create_certificate(appliance, _cn_of(cert), cert.cert_class,
-                             extra_sans=None, deploy=deploy,
-                             supersedes=cert.id, actor=actor)
+    """Start the replacement of *cert*: signed by the configured CA → staged
+    for its swap date; external origin → a new CSR awaiting signature;
+    imported → refused (SATOM cannot reissue a certificate it never held the
+    request for). The current certificate keeps serving until the swap."""
+    if cert.origin == "imported":
+        return {"ok": False, "cert_id": None,
+                "error": "imported certificates are renewed outside SATOM — "
+                         "import the replacement with Replace."}
+    succ = successor_of(cert)
+    if succ is not None:
+        return {"ok": False, "cert_id": succ.id, "name": succ.name,
+                "error": f"a replacement is already in progress ({succ.name}, "
+                         f"{succ.status})."}
+    appliance = _appliance_of(cert)
+    if cert.origin == "external":
+        res = create_external_csr(appliance, _cn_of(cert), cert.cert_class,
+                                  supersedes=cert.id, actor=actor)
+        kind = "new CSR"
+    else:
+        res = create_certificate(appliance, _cn_of(cert), cert.cert_class,
+                                 extra_sans=None, deploy=deploy,
+                                 supersedes=cert.id, actor=actor)
+        kind = "renewed"
     if res.get("ok"):
         _event(cert, "renew", True,
-               f"renewed → {res.get('name')} (cert #{res.get('cert_id')})", by=actor)
+               f"{kind} → {res.get('name')} (cert #{res.get('cert_id')})", by=actor)
     return res
+
+
+# --------------------------------------------------------------------------- #
+#  Import: a signed certificate for OUR CSR, or a certificate + key from outside #
+# --------------------------------------------------------------------------- #
+_PEM_CERT_RE = re.compile(r"-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----", re.S)
+_PEM_KEY_RE = re.compile(
+    r"-----BEGIN (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----.+?"
+    r"-----END (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----", re.S)
+
+
+def _spki(public_key) -> bytes:
+    from cryptography.hazmat.primitives import serialization
+    return public_key.public_bytes(serialization.Encoding.DER,
+                                   serialization.PublicFormat.SubjectPublicKeyInfo)
+
+
+def _certs_from_pem(text: str) -> list:
+    from cryptography import x509
+    out = []
+    for blob in _PEM_CERT_RE.findall(text or ""):
+        try:
+            out.append(x509.load_pem_x509_certificate(blob.encode()))
+        except Exception:  # noqa: BLE001 — a broken block is skipped, not fatal
+            continue
+    return out
+
+
+def _pem_of(cert) -> str:
+    from cryptography.hazmat.primitives import serialization
+    return cert.public_bytes(serialization.Encoding.PEM).decode()
+
+
+def _key_pem(key) -> str:
+    from cryptography.hazmat.primitives import serialization
+    return key.private_bytes(serialization.Encoding.PEM,
+                             serialization.PrivateFormat.PKCS8,
+                             serialization.NoEncryption()).decode()
+
+
+def _leaf_for_key(certs: list, key_spki: bytes):
+    return next((c for c in certs if _spki(c.public_key()) == key_spki), None)
+
+
+def _sans_of(cert) -> set[str]:
+    from cryptography import x509
+    try:
+        ext = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+        return {str(g.value).lower() for g in ext.value}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def _not_after(cert):
+    na = getattr(cert, "not_valid_after_utc", None) or cert.not_valid_after
+    return na.replace(tzinfo=None)
+
+
+def import_signed(cert: ManagedCertificate, pem_text: str, *, deploy: bool = True,
+                  actor: str = "") -> dict:
+    """Attach the certificate another CA signed for the CSR SATOM generated.
+
+    Only a PEM certificate (a chain is fine: the leaf is the one whose public
+    key is the stored key). Never a key: the key of this request was made here
+    and never left, which is the whole point of the CSR path — so a PKCS#12
+    or a key is refused for an ``awaiting_signature`` row. Rejected unless the
+    public key matches the stored key, every requested SAN is present and the
+    certificate has not expired."""
+    from cryptography.hazmat.primitives import serialization
+    if cert.status != "awaiting_signature":
+        return {"ok": False, "cert_id": cert.id,
+                "error": f"{cert.name} is not waiting for a signature ({cert.status})."}
+    if _PEM_KEY_RE.search(pem_text or ""):
+        return {"ok": False, "cert_id": cert.id,
+                "error": "a private key was pasted: the key of this request was "
+                         "generated in SATOM and never leaves it — paste only the "
+                         "signed certificate (and its chain)."}
+    certs = _certs_from_pem(pem_text)
+    if not certs:
+        return {"ok": False, "cert_id": cert.id,
+                "error": "no PEM certificate found in what was pasted."}
+    try:
+        key = serialization.load_pem_private_key(cert.private_key.encode(), None)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "cert_id": cert.id,
+                "error": f"the stored key of this request is unreadable: {exc}"}
+    leaf = _leaf_for_key(certs, _spki(key.public_key()))
+    if leaf is None:
+        _event(cert, "import", False, "rejected: no certificate matches the stored key",
+               by=actor)
+        return {"ok": False, "cert_id": cert.id,
+                "error": "none of the certificates matches the key of this CSR — "
+                         "it was signed for a different request."}
+    wanted = {s.lower() for s in cert.sans}
+    missing = sorted(wanted - _sans_of(leaf))
+    if missing:
+        _event(cert, "import", False, f"rejected: SANs missing {missing}", by=actor)
+        return {"ok": False, "cert_id": cert.id,
+                "error": "the signed certificate lacks requested SANs: "
+                         + ", ".join(missing)}
+    if _not_after(leaf) <= datetime.utcnow():
+        return {"ok": False, "cert_id": cert.id,
+                "error": f"the signed certificate already expired ({_not_after(leaf)})."}
+    _store_signed(cert, _pem_of(leaf))
+    _event(cert, "import", True,
+           f"signed certificate imported: serial={cert.serial} expires={cert.expires_at}",
+           by=actor)
+    return _after_issue(cert, _appliance_of(cert), deploy=deploy, actor=actor)
+
+
+def _load_external(data: bytes, key_pem: str, password: str):
+    """``(leaf, key, chain_count)`` from a PKCS#12 blob or PEM cert(s) + key.
+    Raises :class:`CertManagerError` with an operator-facing reason."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.serialization import pkcs12
+    pw = password.encode() if password else None
+    text = ""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        text = ""
+    if "-----BEGIN" not in text:
+        try:
+            key, leaf, extra = pkcs12.load_key_and_certificates(data, pw)
+        except Exception as exc:  # noqa: BLE001
+            raise CertManagerError(
+                f"not a readable PKCS#12 file (wrong password?): {exc}") from exc
+        if key is None or leaf is None:
+            raise CertManagerError("the PKCS#12 file holds no key or no certificate.")
+        return leaf, key, len(extra or [])
+    certs = _certs_from_pem(text)
+    if not certs:
+        raise CertManagerError("no PEM certificate found.")
+    key_text = key_pem or ""
+    if not _PEM_KEY_RE.search(key_text):
+        m = _PEM_KEY_RE.search(text)
+        key_text = m.group(0) if m else ""
+    if not key_text:
+        raise CertManagerError("the private key is missing (paste it or use a PKCS#12).")
+    try:
+        key = serialization.load_pem_private_key(key_text.encode(), pw)
+    except TypeError as exc:
+        raise CertManagerError("the private key is encrypted: enter its password.") from exc
+    except Exception as exc:  # noqa: BLE001
+        raise CertManagerError(f"the private key is unreadable: {exc}") from exc
+    leaf = _leaf_for_key(certs, _spki(key.public_key()))
+    if leaf is None:
+        raise CertManagerError("the private key does not belong to any of the certificates.")
+    return leaf, key, len(certs) - 1
+
+
+def import_certificate(appliance, cert_class: str, data: bytes, *, key_pem: str = "",
+                       password: str = "", supersedes: int | None = None,
+                       deploy: bool = True, actor: str = "") -> dict:
+    """Bring in a certificate AND key made outside SATOM (PEM pair or
+    PKCS#12). The key is stored encrypted and marked ``key_origin=external``:
+    SATOM did not generate it and cannot vouch for where else it lives.
+    With *supersedes* it is the replacement of that certificate and follows
+    the same staged swap as a renewal."""
+    if cert_class not in store.CERT_CLASSES:
+        return {"ok": False, "error": f"unknown certificate class {cert_class!r}.",
+                "cert_id": None}
+    old = db.session.get(ManagedCertificate, supersedes) if supersedes else None
+    if old is not None and old.status == "awaiting_signature":
+        return {"ok": False, "cert_id": old.id,
+                "error": "that row is a CSR generated in SATOM — import only its "
+                         "signed certificate there (a key from outside would "
+                         "replace the key of the request)."}
+    try:
+        leaf, key, _chain = _load_external(data, key_pem, password)
+    except CertManagerError as exc:
+        return {"ok": False, "error": str(exc), "cert_id": None}
+    if _not_after(leaf) <= datetime.utcnow():
+        return {"ok": False, "cert_id": None,
+                "error": f"the certificate already expired ({_not_after(leaf)})."}
+    from cryptography.x509.oid import NameOID
+    try:
+        cn = leaf.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+    except (IndexError, ValueError):
+        cn = next(iter(sorted(_sans_of(leaf))), "imported")
+    row = ManagedCertificate(
+        name=_unique_name(cert_name_for(cn, cert_class)),
+        appliance_id=getattr(appliance, "id", None) or (old.appliance_id if old else None),
+        cert_class=cert_class, subject=leaf.subject.rfc4514_string(),
+        status="pending", origin="imported", key_origin="external",
+        created_by=actor or _actor(), supersedes_id=supersedes)
+    if old is not None:
+        _copy_windows(old, row)
+    row.private_key = _key_pem(key)
+    db.session.add(row)
+    db.session.commit()
+    _store_signed(row, _pem_of(leaf))
+    _event(row, "import", True,
+           f"certificate + key imported (key generated outside SATOM): "
+           f"serial={row.serial} expires={row.expires_at}", by=actor)
+    if old is not None:
+        _event(old, "renew", True, f"replacement imported → {row.name}", by=actor)
+    return _after_issue(row, appliance if appliance is not None else _appliance_of(row),
+                        deploy=deploy, actor=actor)
 
 
 # --------------------------------------------------------------------------- #
@@ -1005,10 +1464,10 @@ def _store_ep(store_label):
 
 
 def confirm_swap(cert: ManagedCertificate, policy: str, *, actor: str = "") -> dict:
-    """Real swap of *policy* onto *cert*, then reconcile inventory state: the new
-    cert becomes active/bound, the one it supersedes becomes 'superseded'."""
-    from ..models import Appliance
-    appliance = db.session.get(Appliance, cert.appliance_id) if cert.appliance_id else None
+    """Real swap of ONE server *policy* onto *cert*, then reconcile inventory
+    state: the new cert becomes active/bound, the one it supersedes becomes
+    'superseded'. (The rotation moves EVERY binding: :func:`perform_swap`.)"""
+    appliance = _appliance_of(cert)
     if appliance is None:
         return {"ok": False, "error": "certificate has no target appliance."}
     res = swap_binding(appliance, policy, cert.name, dry_run=False, actor=actor)
@@ -1017,16 +1476,18 @@ def confirm_swap(cert: ManagedCertificate, policy: str, *, actor: str = "") -> d
         bound.add(policy)
         cert.bound_policies = sorted(bound)
         cert.status = "active"
+        cert.swap_due_at = None
+        cert.swapped_at = cert.swapped_at or datetime.utcnow()
         db.session.commit()
         _event(cert, "swap", True, f"policy {policy} → {cert.name}", by=actor)
-        if cert.supersedes_id:
-            old = db.session.get(ManagedCertificate, cert.supersedes_id)
-            if old and old.status not in ("revoked",):
-                old.status = "superseded"
-                old.superseded_at = old.superseded_at or datetime.utcnow()
-                db.session.commit()
-                _event(old, "swap", True,
-                       f"superseded by {cert.name} on policy {policy}", by=actor)
+        old = predecessor_of(cert)
+        if old and old.status not in ("revoked",):
+            old.status = "superseded"
+            old.superseded_at = old.superseded_at or datetime.utcnow()
+            old.bound_policies = [p for p in old.bound_policies if p != policy]
+            db.session.commit()
+            _event(old, "swap", True,
+                   f"superseded by {cert.name} on policy {policy}", by=actor)
     else:
         _event(cert, "error", False, f"swap onto {policy} failed: {res.get('error')}",
                by=actor)
@@ -1034,31 +1495,301 @@ def confirm_swap(cert: ManagedCertificate, policy: str, *, actor: str = "") -> d
 
 
 # --------------------------------------------------------------------------- #
-#  Revoke                                                                        #
+#  Swap EVERY reference of one certificate onto another (rotation + rollback)  #
 # --------------------------------------------------------------------------- #
-def revoke_certificate(cert: ManagedCertificate, *, delete_from_box: bool = False,
-                       dry_run: bool = False, actor: str = "") -> dict:
-    """Revoke at the CA (via the ACTIVE protocol's ``revoke_cmd``) and mark the
-    row revoked. Deleting the cert off the FortiWeb is refused while it is bound
-    to any server policy."""
+def _swap_fortiweb_refs(appliance, old_name: str, new_name: str) -> dict:
+    """FortiWeb: server-policy cert fields, SNI members, the GUI cert."""
+    out = {"complete": True, "done": [], "failed": []}
+    try:
+        client = appliance.build_client(timeout=8.0)
+    except Exception as exc:  # noqa: BLE001
+        return {"complete": False, "done": [], "failed": [("device", str(exc))]}
+    complete, usage = _enumerate_usage(client, appliance, old_name)
+    out["complete"] = complete
+    if not complete:
+        out["failed"].append(("bindings", "a binding read failed — nothing swapped"))
+        return out
+    for u in usage:
+        if u["kind"] == "server-policy":
+            r = swap_server_policy_cert(appliance, u["target"], u["field"], new_name,
+                                        dry_run=False)
+        elif u["kind"] == "sni":
+            r = swap_sni_member(appliance, u["target"], u["sub_mkey"], new_name,
+                                dry_run=False)
+        elif u["kind"] == "gui":
+            r = swap_gui_cert(appliance, new_name, dry_run=False)
+        else:
+            r = {"ok": False, "error": f"unknown binding kind {u['kind']!r}"}
+        if r.get("ok"):
+            out["done"].append(u["label"])
+        else:
+            out["failed"].append((u["label"], r.get("error") or "write refused"))
+    return out
+
+
+def swap_references(appliance, old_name: str, new_name: str) -> dict:
+    """Move every binding of *old_name* on *appliance* onto *new_name*.
+    ``{complete, done, failed}`` — see the per-kind helpers."""
+    if getattr(appliance, "kind", "fortiweb") == "fortiadc":
+        try:
+            return cert_adc.swap_references(appliance, old_name, new_name)
+        except Exception as exc:  # noqa: BLE001
+            return {"complete": False, "done": [], "failed": [("device", str(exc))]}
+    return _swap_fortiweb_refs(appliance, old_name, new_name)
+
+
+def perform_swap(new: ManagedCertificate, *, actor: str = "",
+                 dry_run: bool = False) -> dict:
+    """The swap day of a renewal: every binding of the certificate it replaces
+    moves onto *new*. The old one stays ON the device (that is what makes
+    :func:`rollback` a single click) until its removal window passes.
+
+    Fail-closed: if the bindings cannot all be READ, nothing is written and
+    the swap is retried on the next run. A partial swap is reported as an
+    error and the old certificate keeps the bindings that did not move — it
+    can then never be removed while they remain."""
+    old = predecessor_of(new)
+    appliance = _appliance_of(new)
+    if appliance is None:
+        return {"ok": False, "error": f"{new.name} has no target appliance."}
+    if old is None or old.status in ("revoked",) or old.archived_at:
+        if not dry_run:
+            new.status = "pending"
+            new.swap_due_at = None
+            db.session.commit()
+            _event(new, "swap", True, "nothing to take over — left unbound", by=actor)
+        return {"ok": True, "done": [], "failed": [], "note": "no predecessor"}
+    if dry_run:
+        return {"ok": True, "dry_run": True, "done": [], "failed": [],
+                "note": f"would move every binding of {old.name} onto {new.name}"}
+    res = swap_references(appliance, old.name, new.name)
+    now = datetime.utcnow()
+    if not res["complete"] and not res["done"]:
+        detail = "; ".join(f"{l}: {e}" for l, e in res["failed"])
+        _event(new, "swap", False, f"swap postponed (fail-closed): {detail}", by=actor)
+        return {"ok": False, "error": detail, "done": [], "failed": res["failed"]}
+    if res["failed"] and not res["done"]:
+        detail = "; ".join(f"{l}: {e}" for l, e in res["failed"])
+        _event(new, "swap", False, f"swap failed: {detail}", by=actor)
+        return {"ok": False, "error": detail, "done": [], "failed": res["failed"]}
+    new.status = "active" if res["done"] else "pending"
+    new.swap_due_at = None
+    new.swapped_at = now
+    new.bound_policies = res["done"]
+    old.status = "superseded"
+    old.superseded_at = now
+    old.bound_policies = [l for l, _e in res["failed"]]
+    db.session.commit()
+    moved = ", ".join(res["done"]) or "nothing (it was bound nowhere)"
+    _event(new, "swap", not res["failed"],
+           f"took over from {old.name}: {moved}"
+           + ("" if not res["failed"] else " — NOT moved: "
+              + "; ".join(f"{l}: {e}" for l, e in res["failed"])), by=actor)
+    _event(old, "swap", True, f"superseded by {new.name} ({moved})", by=actor)
+    _notify(new, subject="Certificate swapped",
+            body=(f"{new.name} replaced {old.name} on {appliance.name}: {moved}. "
+                  f"{old.name} stays on the device until "
+                  f"{(now + timedelta(days=cert_policy(old)['remove_after_days'])):%Y-%m-%d}"
+                  " — Roll back is available until then."))
+    return {"ok": not res["failed"], "done": res["done"], "failed": res["failed"],
+            "error": "" if not res["failed"] else "partial swap"}
+
+
+def can_rollback(new: ManagedCertificate) -> str:
+    """"" when *new* can hand its bindings back to the certificate it
+    replaced, else why not."""
+    old = predecessor_of(new)
+    if new.status != "active" or old is None:
+        return "only an active renewal can be rolled back."
+    if old.status != "superseded":
+        return f"{old.name} is {old.status}."
+    if old.removed_at or old.archived_at:
+        return f"{old.name} is no longer on the device."
+    if old.expires_at and old.expires_at <= datetime.utcnow():
+        return f"{old.name} has expired."
+    return ""
+
+
+def rollback(new: ManagedCertificate, *, actor: str = "") -> dict:
+    """Give every binding of *new* back to the certificate it replaced. The
+    renewal stays on the device as ``pending`` (no new swap is scheduled —
+    swap it again by hand once the problem is understood)."""
+    why = can_rollback(new)
+    if why:
+        return {"ok": False, "error": why}
+    old = predecessor_of(new)
+    appliance = _appliance_of(new)
+    res = swap_references(appliance, new.name, old.name)
+    if not res["done"]:
+        detail = "; ".join(f"{l}: {e}" for l, e in res["failed"]) or "nothing to move"
+        _event(new, "rollback", False, f"rollback failed: {detail}", by=actor)
+        return {"ok": False, "error": detail}
+    old.status = "active"
+    old.superseded_at = None
+    old.bound_policies = res["done"]
+    new.status = "pending"
+    new.bound_policies = [l for l, _e in res["failed"]]
+    db.session.commit()
+    _event(old, "rollback", True, f"bindings returned from {new.name}: "
+           + ", ".join(res["done"]), by=actor)
+    _event(new, "rollback", not res["failed"],
+           f"rolled back to {old.name}"
+           + ("" if not res["failed"] else " — NOT moved: "
+              + "; ".join(f"{l}: {e}" for l, e in res["failed"])), by=actor)
+    return {"ok": not res["failed"], "done": res["done"], "failed": res["failed"],
+            "error": "" if not res["failed"] else "partial rollback"}
+
+
+# --------------------------------------------------------------------------- #
+#  Bindings, fail-closed, for one managed certificate                           #
+# --------------------------------------------------------------------------- #
+def binding_check(cert: ManagedCertificate) -> tuple[bool, list[str]]:
+    """``(complete, labels)`` — where *cert* is in use right now.
+
+    A certificate that is not on a device (no appliance, already removed, or
+    a CSR still waiting for its signature) is bound nowhere by construction.
+    Otherwise the device is read; ``complete=False`` means it could not be
+    read fully and the caller must refuse anything that needs "unbound"."""
+    if (not cert.appliance_id or cert.removed_at or cert.archived_at
+            or cert.status == "awaiting_signature"):
+        return True, list(cert.bound_policies)
+    appliance = _appliance_of(cert)
+    if appliance is None:
+        return True, list(cert.bound_policies)
+    try:
+        client = appliance.build_client(timeout=6.0)
+    except Exception:  # noqa: BLE001
+        return False, list(cert.bound_policies)
+    if getattr(appliance, "kind", "fortiweb") == "fortiadc":
+        complete, usage = cert_adc.enumerate_usage(client, cert.name)
+    else:
+        complete, usage = _enumerate_usage(client, appliance, cert.name)
+    return complete, [u["label"] for u in usage]
+
+
+# --------------------------------------------------------------------------- #
+#  Revoke — generic: whatever CA is configured, plus the revocation register    #
+# --------------------------------------------------------------------------- #
+def ca_label() -> str:
+    """Which CA SATOM would ask — for the register, not for logic."""
+    if store.cert_manager_protocol() == "acme":
+        a = store.cert_manager_acme()
+        return f"acme {a.get('directory_url') or '?'}"
+    a = store.cert_manager_adcs()
+    return f"adcs {a.get('ca') or '?'} / {a.get('ca_name') or '?'}"
+
+
+def revoke_route(cert: ManagedCertificate) -> tuple[str, str]:
+    """``("ca", "")`` when the configured CA's revoke command will be run;
+    ``("manual", why)`` when somebody has to revoke it at the CA by hand."""
+    if cert.origin != "signer":
+        return ("manual", "it was not signed by the CA configured in SATOM — "
+                          "revoke it at the CA that signed it")
+    _proto, cmd_tmpl, _m, _e, _s = _revoke_context(cert)
+    if not cmd_tmpl:
+        return ("manual", "the configured CA has no revoke command "
+                          "(Settings → Certificate Manager)")
+    return ("ca", "")
+
+
+def _fingerprint(cert: ManagedCertificate) -> str:
+    if not cert.cert_pem:
+        return ""
+    try:
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes
+        c = x509.load_pem_x509_certificate(cert.cert_pem.encode())
+        return c.fingerprint(hashes.SHA256()).hex()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _issuer(cert: ManagedCertificate) -> str:
+    if not cert.cert_pem:
+        return ""
+    try:
+        from cryptography import x509
+        return x509.load_pem_x509_certificate(cert.cert_pem.encode()).issuer.rfc4514_string()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def register_revocation(cert: ManagedCertificate, *, reason: str, result: str,
+                        detail: str = "", by: str = "", ca: str = ""):
+    from ..models import CertRevocation
+    row = CertRevocation(
+        cert_id=cert.id, cert_name=cert.name, serial=cert.serial or "",
+        fingerprint_sha256=_fingerprint(cert), subject=cert.subject or "",
+        issuer=_issuer(cert), ca_label=(ca or "")[:256], reason=reason,
+        result=result, detail=(detail or "")[:4000], requested_by=by or _actor(),
+        requested_at=datetime.utcnow())
+    db.session.add(row)
+    db.session.commit()
+    return row
+
+
+def confirm_manual_revocation(rev, *, actor: str = "") -> dict:
+    """An operator states the certificate WAS revoked at its CA."""
+    if rev.result != "manual_pending":
+        return {"ok": False, "error": f"this entry is {rev.result}, not pending."}
+    rev.result = "manual_done"
+    rev.confirmed_by = actor or _actor()
+    rev.confirmed_at = datetime.utcnow()
+    db.session.commit()
+    log_action("certmgr.revoke_confirmed", target=rev.cert_name,
+               detail=f"serial={rev.serial} reason={rev.reason}")
+    return {"ok": True}
+
+
+def revoke_certificate(cert: ManagedCertificate, *, reason: str = "unspecified",
+                       delete_from_box: bool = False, dry_run: bool = False,
+                       allow_bound: bool = False, actor: str = "") -> dict:
+    """Revoke *cert* — at the configured CA when SATOM can (its ``revoke_cmd``,
+    with ``{serial}``/``{request_id}``/``{cert}``/``{reason}``/``{fingerprint}``),
+    otherwise as a ``manual_pending`` entry of the register. Either way the
+    register gets a row and the certificate is marked revoked.
+
+    A certificate still IN USE is refused unless *allow_bound* (the operator
+    confirmed it — a compromised key cannot wait for a maintenance window);
+    bindings that cannot be read count as in use. Deleting it off the device
+    stays refused while bound, whatever *allow_bound* says."""
+    from ..models import CertRevocation
+    reason = reason if reason in CertRevocation.REASONS else "unspecified"
+    if cert.status == "awaiting_signature":
+        return {"ok": False, "revoked": False, "bindings": [],
+                "error": "a CSR that was never signed has nothing to revoke — "
+                         "delete the record instead."}
+    if cert.status == "revoked":
+        return {"ok": False, "revoked": True, "bindings": [],
+                "error": f"{cert.name} is already revoked."}
+    route, why = revoke_route(cert)
     protocol, cmd_tmpl, mapping, env, secrets = _revoke_context(cert)
+    complete, bound = binding_check(cert)
 
     if dry_run:
-        preview = _redact_all(_interpolate(cmd_tmpl, dict(mapping, cert="<cert.pem>")),
-                              secrets)
-        return {"ok": True, "dry_run": True,
+        preview = (_redact_all(_interpolate(cmd_tmpl, dict(
+            mapping, cert="<cert.pem>", reason=reason,
+            fingerprint=_fingerprint(cert))), secrets)
+            if route == "ca" else f"manual: {why}")
+        return {"ok": True, "dry_run": True, "route": route,
                 "summary": f"[dry-run] revoke ({protocol}): {preview}",
-                "bindings": read_bindings_for(cert)}
+                "bindings": bound, "complete": complete}
 
-    # 1) CA revoke (best-effort but reported).
-    ca_ok, ca_log = True, ""
-    if cmd_tmpl:
+    if (bound or not complete) and not allow_bound:
+        return {"ok": False, "revoked": False, "bindings": bound, "in_use": True,
+                "error": ("still in use: " + ", ".join(bound)) if bound else
+                         "its bindings could not be read — treated as in use"}
+
+    ca_ok, ca_log, result = True, "", "manual_pending"
+    if route == "ca":
         with tempfile.TemporaryDirectory(prefix="certmgr-rev-") as d:
             cert_path = os.path.join(d, "cert.pem")
             with open(cert_path, "w") as fh:
                 fh.write(cert.cert_pem or "")
             try:
-                argv = _argv_from_template(cmd_tmpl, dict(mapping, cert=cert_path))
+                argv = _argv_from_template(cmd_tmpl, dict(
+                    mapping, cert=cert_path, reason=reason,
+                    fingerprint=_fingerprint(cert)))
                 proc = subprocess.run(argv, capture_output=True,
                                       text=True, timeout=_SIGN_TIMEOUT, cwd=d,
                                       env=_build_env(env, home=mapping.get("acme_path") or d))
@@ -1066,50 +1797,113 @@ def revoke_certificate(cert: ManagedCertificate, *, delete_from_box: bool = Fals
                 ca_log = _redact_all(f"[{protocol}] [rc={proc.returncode}] "
                                      f"{proc.stdout}\n{proc.stderr}", secrets)[:2000]
             except Exception as exc:  # noqa: BLE001
-                ca_ok, ca_log = False, f"revoke command error: {exc}"
+                ca_ok, ca_log = False, _redact_all(f"revoke command error: {exc}", secrets)
+        result = "revoked" if ca_ok else "failed"
     else:
-        ca_log = (f"no revoke_cmd configured for protocol {protocol!r} — "
-                  "marked revoked locally only.")
+        ca_log = f"not revoked at a CA by SATOM: {why}. Marked revoked here; " \
+                 "confirm in the revocation register once the CA has done it."
+
+    if result == "failed":
+        # The CA said no: the certificate is NOT revoked. Register the attempt,
+        # leave the status alone so it can be retried.
+        register_revocation(cert, reason=reason, result="failed", detail=ca_log,
+                            by=actor, ca=ca_label())
+        _event(cert, "revoke", False, ca_log, by=actor)
+        return {"ok": False, "revoked": False, "bindings": bound,
+                "error": "the CA's revoke command failed", "log": ca_log}
 
     cert.status = "revoked"
     cert.revoked_at = cert.revoked_at or datetime.utcnow()
+    cert.swap_due_at = None
     db.session.commit()
-    _event(cert, "revoke", ca_ok, ca_log, by=actor)
+    register_revocation(cert, reason=reason, result=result, detail=ca_log,
+                        by=actor, ca=ca_label() if route == "ca" else why)
+    _event(cert, "revoke", True,
+           f"reason={reason} ({'at the CA' if route == 'ca' else 'manual at the CA'})"
+           f"{' WHILE IN USE: ' + ', '.join(bound) if bound else ''}\n{ca_log}", by=actor)
 
-    # 2) Optionally remove from the box — ONLY if not bound anywhere.
     box_detail = ""
-    if delete_from_box and cert.appliance_id:
-        from ..models import Appliance
-        appliance = db.session.get(Appliance, cert.appliance_id)
-        # Fail-closed: delegate to the strict remover, which verifies ALL THREE
-        # binders (server-policy / SNI / GUI) via _enumerate_usage and refuses on
-        # any unverifiable read. Managed certs live in the Local store (key
-        # material -> SSH config-delete), matching revoke's previous SSH delete.
-        res = remove_device_certificate(appliance, "Local", cert.name,
-                                        dry_run=False, actor=actor)
-        if res.get("removed"):
-            box_detail = f"deleted {cert.name} from {appliance.name}"
-            _event(cert, "revoke", True, box_detail, by=actor)
-        else:
+    if delete_from_box and cert.appliance_id and not cert.removed_at:
+        res = remove_from_device(cert, actor=actor)
+        if not res.get("removed"):
             box_detail = res.get("error") or "device delete refused"
-            _event(cert, "revoke", False, box_detail, by=actor)
-            return {"ok": ca_ok, "revoked": True, "deleted": False,
+            _notify(cert, subject="Certificate revoked",
+                    body=f"Certificate {cert.name} was revoked ({reason}). "
+                         f"NOT removed from the device: {box_detail}")
+            return {"ok": True, "revoked": True, "deleted": False, "route": route,
                     "bindings": res.get("bindings", []), "error": box_detail,
                     "log": ca_log}
-
+        box_detail = "removed from the device"
     _notify(cert, subject="Certificate revoked",
-            body=f"Certificate {cert.name} ({cert.cert_class}) was revoked. {box_detail}")
-    return {"ok": ca_ok, "revoked": True, "deleted": delete_from_box,
-            "bindings": [], "error": "" if ca_ok else "CA revoke reported an error",
-            "log": ca_log}
+            body=f"Certificate {cert.name} ({cert.cert_class}) was revoked ({reason}, "
+                 f"{'at the CA' if route == 'ca' else 'pending at the CA: ' + why}). "
+                 f"{box_detail}")
+    return {"ok": True, "revoked": True, "deleted": bool(box_detail), "route": route,
+            "bindings": bound, "error": "", "log": ca_log,
+            "manual": route != "ca", "manual_reason": why}
+
+
+def remove_from_device(cert: ManagedCertificate, *, actor: str = "") -> dict:
+    """Take a managed certificate off its device (fail-closed on bindings, via
+    :func:`remove_device_certificate`) and record WHEN."""
+    appliance = _appliance_of(cert)
+    if appliance is None:
+        return {"ok": False, "removed": False, "bindings": [],
+                "error": "certificate has no target appliance."}
+    res = remove_device_certificate(appliance, "Local", cert.name, dry_run=False,
+                                    actor=actor)
+    if res.get("removed"):
+        cert.removed_at = datetime.utcnow()
+        cert.bound_policies = []
+        db.session.commit()
+        _event(cert, "remove", True, f"removed from {appliance.name}", by=actor)
+    else:
+        _event(cert, "remove", False, res.get("error") or "device delete refused",
+               by=actor)
+    return res
+
+
+def delete_record(cert: ManagedCertificate, *, revoke_first: bool = False,
+                  reason: str = "cessationOfOperation",
+                  remove_from_box: bool = False, actor: str = "") -> dict:
+    """Delete a certificate RECORD. Refused while the certificate is in use
+    (or its bindings cannot be read): SATOM must not forget a certificate a
+    device is serving. Optionally revoke first and/or take it off the device
+    first; either failing aborts the delete. The revocation register keeps
+    its rows (``cert_id`` → NULL)."""
+    from ..models import CertRevocation
+    complete, bound = binding_check(cert)
+    if bound or not complete:
+        return {"ok": False, "bindings": bound,
+                "error": ("in use: " + ", ".join(bound) + " — swap it out first")
+                         if bound else "its bindings could not be read — "
+                                       "refusing to forget it"}
+    if revoke_first and cert.status not in ("revoked", "awaiting_signature"):
+        r = revoke_certificate(cert, reason=reason, actor=actor)
+        if not r.get("revoked"):
+            return {"ok": False, "bindings": [], "error": f"revoke failed: {r.get('error')}"}
+    if remove_from_box and cert.appliance_id and not cert.removed_at \
+            and cert.status != "awaiting_signature":
+        r = remove_from_device(cert, actor=actor)
+        if not r.get("removed"):
+            return {"ok": False, "bindings": r.get("bindings", []),
+                    "error": f"not removed from the device: {r.get('error')}"}
+    name, cid = cert.name, cert.id
+    on_device = bool(cert.appliance_id and not cert.removed_at
+                     and cert.status != "awaiting_signature")
+    CertRevocation.query.filter_by(cert_id=cid).update({"cert_id": None})
+    ManagedCertificate.query.filter_by(supersedes_id=cid).update({"supersedes_id": None})
+    ManagedCertificateEvent.query.filter_by(cert_id=cid).delete()
+    db.session.delete(cert)
+    db.session.commit()
+    log_action("certmgr.delete", target=name,
+               detail=f"revoke_first={revoke_first} remove_from_box={remove_from_box}")
+    return {"ok": True, "name": name, "left_on_device": on_device}
 
 
 def read_bindings_for(cert: ManagedCertificate) -> list[str]:
     """Bindings for a stored cert (resolves its appliance). [] if none/unknown."""
-    if not cert.appliance_id:
-        return []
-    from ..models import Appliance
-    appliance = db.session.get(Appliance, cert.appliance_id)
+    appliance = _appliance_of(cert)
     if appliance is None:
         return []
     return read_bindings(appliance, cert.name)
@@ -1125,6 +1919,7 @@ def expiring_certificates(appliance_id: int | None, cert_class: str,
     or revoked — the renewal candidates."""
     q = ManagedCertificate.query.filter(
         ManagedCertificate.cert_class == cert_class,
+        ManagedCertificate.archived_at.is_(None),
         ManagedCertificate.status.in_(("active", "pending")))
     if appliance_id is not None:
         q = q.filter(ManagedCertificate.appliance_id == appliance_id)
@@ -1137,10 +1932,133 @@ def expiring_certificates(appliance_id: int | None, cert_class: str,
 
 
 # --------------------------------------------------------------------------- #
-#  Lifecycle policy — WHEN a cert gets revoked at the CA and WHEN its material  #
-#  leaves the devices. Driven ENTIRELY by the admin-console policy              #
-#  (Settings → Certificate Manager → Lifecycle policy); consumed by the         #
-#  ``cert_lifecycle`` scheduled action and the manual sweep button.             #
+#  Rotation — renew → staged → swap → off the device → out of SATOM            #
+# --------------------------------------------------------------------------- #
+def _scope(appliance_id, cert_class):
+    q = ManagedCertificate.query.filter(ManagedCertificate.archived_at.is_(None))
+    if appliance_id is not None:
+        q = q.filter(ManagedCertificate.appliance_id == appliance_id)
+    if cert_class:
+        q = q.filter(ManagedCertificate.cert_class == cert_class)
+    return q.order_by(ManagedCertificate.id).all()
+
+
+def rotation_plan(appliance_id: int | None = None, cert_class: str = "") -> dict:
+    """What the rotation would do RIGHT NOW, per stage. Pure read.
+
+    * ``renew`` — auto-renew on, inside its renew window, no replacement yet;
+    * ``notice`` — inside the window but SATOM cannot start the replacement
+      (imported, or auto-renew off): someone has to act;
+    * ``swap`` — staged renewals whose swap date has come;
+    * ``remove`` — superseded certificates past their removal window;
+    * ``archive`` — certificates off the device past their retention window.
+    """
+    now = datetime.utcnow()
+    plan = {"renew": [], "notice": [], "swap": [], "remove": [], "archive": []}
+    for c in _scope(appliance_id, cert_class):
+        pol = cert_policy(c)
+        if c.status in ("active", "pending") and c.days_left is not None \
+                and c.days_left <= pol["renew_before_days"] \
+                and successor_of(c) is None:
+            if c.origin != "imported" and c.auto_renew:
+                plan["renew"].append(c)
+            else:
+                plan["notice"].append(c)
+        elif c.status == "staged" and c.swap_due_at and c.swap_due_at <= now:
+            plan["swap"].append(c)
+        elif c.status == "superseded" and c.appliance_id and not c.removed_at:
+            since = c.superseded_at or c.updated_at or now
+            if since + timedelta(days=pol["remove_after_days"]) <= now:
+                plan["remove"].append(c)
+        if c.status in ("superseded", "revoked") and not c.archived_at:
+            gone = c.removed_at or (None if c.appliance_id else
+                                    (c.superseded_at or c.revoked_at))
+            if gone and gone + timedelta(days=pol["retain_days"]) <= now:
+                plan["archive"].append(c)
+    return plan
+
+
+def archive_certificate(cert: ManagedCertificate, *, actor: str = "") -> None:
+    """The key leaves SATOM: private key and CSR are purged, the row is
+    hidden from the inventory. Serial, dates, PEM and the timeline stay —
+    that is the record."""
+    cert.private_key_enc = ""
+    cert.csr_pem = ""
+    cert.archived_at = datetime.utcnow()
+    db.session.commit()
+    _event(cert, "archive", True, "private key purged; kept as a record only", by=actor)
+
+
+def run_rotation(*, dry_run: bool = False, appliance_id: int | None = None,
+                 cert_class: str = "", actor: str = "") -> dict:
+    """Apply :func:`rotation_plan`. Every destructive step is fail-closed (a
+    certificate that cannot be PROVEN unbound is never removed); every step
+    writes the certificate's timeline. Never raises."""
+    who = actor or "rotation"
+    plan = rotation_plan(appliance_id, cert_class)
+    out = {"dry_run": dry_run, "renewed": [], "swapped": [], "removed": [],
+           "revoked": [], "archived": [], "notices": [], "skipped": []}
+    for c in plan["notice"]:
+        why = ("imported — renew it outside SATOM and import the replacement"
+               if c.origin == "imported" else "auto-renew is off")
+        out["notices"].append(f"{c.name}: {c.days_left} d left, {why}")
+    for c in plan["renew"]:
+        if dry_run:
+            out["renewed"].append(f"[dry-run] would {'renew' if c.origin == 'signer' else 'generate a CSR for'} {c.name}")
+            continue
+        try:
+            res = renew_certificate(c, deploy=True, actor=who)
+        except Exception as exc:  # noqa: BLE001
+            db.session.rollback()
+            res = {"ok": False, "error": str(exc)}
+        if res.get("ok"):
+            out["renewed"].append(f"{c.name} → {res.get('name')}")
+        else:
+            out["skipped"].append(f"{c.name}: renewal failed — {res.get('error')}")
+    for c in plan["swap"]:
+        if dry_run:
+            out["swapped"].append(f"[dry-run] would swap {c.name} in")
+            continue
+        try:
+            res = perform_swap(c, actor=who)
+        except Exception as exc:  # noqa: BLE001
+            db.session.rollback()
+            res = {"ok": False, "error": str(exc)}
+        (out["swapped"] if res.get("ok") else out["skipped"]).append(
+            f"{c.name}: " + (", ".join(res.get("done") or []) or res.get("note") or "")
+            if res.get("ok") else f"{c.name}: swap — {res.get('error')}")
+    for c in plan["remove"]:
+        if dry_run:
+            out["removed"].append(f"[dry-run] would remove {c.name} from its device")
+            if cert_policy(c)["revoke_superseded"] and c.status != "revoked":
+                out["revoked"].append(f"[dry-run] would revoke {c.name} (superseded) "
+                                      "as it leaves the device")
+            continue
+        res = remove_from_device(c, actor=who)
+        if not res.get("removed"):
+            out["skipped"].append(f"{c.name}: device removal refused — {res.get('error')}")
+            continue
+        out["removed"].append(f"{c.name}: off the device")
+        if cert_policy(c)["revoke_superseded"] and c.status != "revoked":
+            r = revoke_certificate(c, reason="superseded", actor=who)
+            if r.get("revoked"):
+                out["revoked"].append(
+                    f"{c.name}: {'revoked at the CA' if r.get('route') == 'ca' else 'revocation pending at the CA'}")
+            else:
+                out["skipped"].append(f"{c.name}: revoke failed — {r.get('error')}")
+    for c in plan["archive"]:
+        if dry_run:
+            out["archived"].append(f"[dry-run] would purge the key of {c.name}")
+            continue
+        archive_certificate(c, actor=who)
+        out["archived"].append(f"{c.name}: key purged, kept as a record")
+    return out
+
+
+# --------------------------------------------------------------------------- #
+#  Lifecycle policy — material that must leave the devices regardless of a     #
+#  rotation: revoked certificates and expired ones. Driven by Settings →        #
+#  Certificate Manager → Lifecycle policy; the superseded side is the rotation. #
 # --------------------------------------------------------------------------- #
 def _days_since(ts) -> int | None:
     if not ts:
@@ -1149,48 +2067,42 @@ def _days_since(ts) -> int | None:
 
 
 def lifecycle_candidates(appliance_id: int | None = None) -> dict:
-    """What the lifecycle policy says is DUE right now.
+    """What is DUE right now, for the page and the sweep.
 
-    * ``revoke_due`` — superseded certs past the revoke grace window
-      (``revoke_on_supersede``). Revocation happens at the CA; the material
-      stays on the box until the delete rule below picks it up.
-    * ``delete_due`` — certs whose material must leave the FortiWeb:
-      revoked certs (``delete_revoked_from_device``), superseded certs past
-      the retention window (when revocation-on-supersede is off), and expired
-      certs past the expiry retention window.
+    * ``revoke_due`` — superseded certificates whose removal window passed and
+      whose policy revokes them (they are revoked as they leave the device);
+    * ``delete_due`` — material that must leave the device: superseded past
+      the removal window, revoked (``delete_revoked_from_device``), expired
+      past the expiry retention window.
 
-    Candidates carrying bound policies in the DB are listed as ``blocked``
-    instead — and the apply path re-verifies bindings LIVE and fail-closed
-    (:func:`remove_device_certificate`), so a bound cert can never be removed."""
+    Candidates bound in the DB are listed as ``blocked`` instead — and the
+    apply path re-verifies bindings LIVE and fail-closed, so a bound
+    certificate can never be removed."""
     pol = store.cert_lifecycle_policy()
-    q = ManagedCertificate.query
+    revoke_due, delete_due, blocked = [], [], []
+    plan = rotation_plan(appliance_id)
+    for c in plan["remove"]:
+        item = {"cert": c, "action": "delete",
+                "reason": (f"superseded {_days_since(c.superseded_at or c.updated_at)}d ago "
+                           f"(removal after {cert_policy(c)['remove_after_days']}d)")}
+        (blocked if c.is_bound else delete_due).append(item)
+        if cert_policy(c)["revoke_superseded"]:
+            ritem = {"cert": c, "action": "revoke",
+                     "reason": "superseded — revoked as it leaves the device"}
+            (blocked if c.is_bound else revoke_due).append(ritem)
+    q = ManagedCertificate.query.filter(ManagedCertificate.archived_at.is_(None),
+                                        ManagedCertificate.removed_at.is_(None))
     if appliance_id is not None:
         q = q.filter(ManagedCertificate.appliance_id == appliance_id)
-    revoke_due, delete_due, blocked = [], [], []
     for c in q.all():
-        sup_days = _days_since(c.superseded_at or
-                               (c.updated_at if c.status == "superseded" else None))
-        if (pol["revoke_on_supersede"] and c.status == "superseded"
-                and sup_days is not None and sup_days >= pol["revoke_grace_days"]):
-            item = {"cert": c, "action": "revoke",
-                    "reason": (f"superseded {sup_days}d ago "
-                               f"(grace {pol['revoke_grace_days']}d)")}
-            (blocked if c.is_bound else revoke_due).append(item)
-
-        if not c.appliance_id:
+        if not c.appliance_id or c.status in ("superseded", "awaiting_signature"):
             continue
         reason = ""
         if c.status == "revoked" and pol["delete_revoked_from_device"]:
             reason = "revoked — material must leave the device"
-        elif (c.status == "superseded" and not pol["revoke_on_supersede"]
-                and sup_days is not None
-                and sup_days >= pol["delete_superseded_after_days"]):
-            reason = (f"superseded {sup_days}d ago (retention "
-                      f"{pol['delete_superseded_after_days']}d)")
-        else:
+        elif c.status != "revoked" and c.expires_at:
             exp_days = _days_since(c.expires_at)
-            if (exp_days is not None and exp_days >= pol["delete_expired_after_days"]
-                    and c.status != "revoked" and c.expires_at):
+            if exp_days is not None and exp_days >= pol["delete_expired_after_days"]:
                 reason = (f"expired {exp_days}d ago (retention "
                           f"{pol['delete_expired_after_days']}d)")
         if reason:
@@ -1202,76 +2114,52 @@ def lifecycle_candidates(appliance_id: int | None = None) -> dict:
 
 def run_lifecycle_sweep(*, dry_run: bool = True, appliance_id: int | None = None,
                         actor: str = "") -> dict:
-    """Apply the lifecycle policy: revoke what is due, then delete due material
-    off the devices. Every destructive step re-verifies bindings LIVE and
-    fail-closed — an unverifiable or bound cert is skipped and reported, never
-    forced. ``dry_run=True`` only reports what WOULD happen."""
-    from ..models import Appliance
+    """The rotation (renew / swap / remove / revoke / archive) plus the policy
+    deletes (revoked and expired material). Every destructive step re-verifies
+    bindings LIVE and fail-closed — an unverifiable or bound cert is skipped
+    and reported, never forced. ``dry_run=True`` only reports."""
+    rot = run_rotation(dry_run=dry_run, appliance_id=appliance_id,
+                       actor=actor or "lifecycle")
+    out = {"dry_run": dry_run, "revoked": list(rot["revoked"]),
+           "deleted": list(rot["removed"]), "skipped": list(rot["skipped"]),
+           "renewed": rot["renewed"], "swapped": rot["swapped"],
+           "archived": rot["archived"], "notices": rot["notices"],
+           "policy": store.cert_lifecycle_policy()}
     cand = lifecycle_candidates(appliance_id)
-    out = {"dry_run": dry_run, "revoked": [], "deleted": [], "skipped": [],
-           "policy": cand["policy"]}
-    for item in cand["blocked"]:
-        out["skipped"].append(f"{item['cert'].name}: {item['action']} due "
-                              f"({item['reason']}) but still bound in DB — skipped")
-
-    for item in cand["revoke_due"]:
-        c = item["cert"]
-        # Live, fail-closed binding check: a cert we cannot PROVE unbound is skipped.
-        try:
-            bindings = read_bindings_for(c)
-        except Exception as exc:  # noqa: BLE001
-            out["skipped"].append(f"{c.name}: revoke due but bindings unreadable "
-                                  f"({exc}) — skipped (fail-closed)")
-            continue
-        if bindings:
-            out["skipped"].append(f"{c.name}: revoke due but LIVE-bound to "
-                                  f"{', '.join(bindings)} — skipped")
-            continue
-        if dry_run:
-            out["revoked"].append(f"[dry-run] would revoke {c.name} — {item['reason']}")
-            continue
-        res = revoke_certificate(c, delete_from_box=False, actor=actor or "lifecycle")
-        if res.get("revoked"):
-            _event(c, "lifecycle", True, f"auto-revoked: {item['reason']}", by=actor)
-            out["revoked"].append(f"revoked {c.name} — {item['reason']}")
-        else:
-            out["skipped"].append(f"{c.name}: revoke failed — {res.get('error')}")
-
     for item in cand["delete_due"]:
         c = item["cert"]
-        appliance = db.session.get(Appliance, c.appliance_id)
-        if appliance is None:
-            out["skipped"].append(f"{c.name}: target appliance missing — skipped")
-            continue
+        if c.status == "superseded":
+            continue  # the rotation above owns superseded certificates
         if dry_run:
-            out["deleted"].append(f"[dry-run] would delete {c.name} from "
-                                  f"{appliance.name} — {item['reason']}")
+            out["deleted"].append(f"[dry-run] would delete {c.name} — {item['reason']}")
             continue
-        # remove_device_certificate re-verifies ALL binders live, fail-closed.
-        res = remove_device_certificate(appliance, "Local", c.name,
-                                        dry_run=False, actor=actor or "lifecycle")
+        res = remove_from_device(c, actor=actor or "lifecycle")
         if res.get("removed"):
-            _event(c, "lifecycle", True,
-                   f"deleted from {appliance.name}: {item['reason']}", by=actor)
-            out["deleted"].append(f"deleted {c.name} from {appliance.name} — "
-                                  f"{item['reason']}")
+            out["deleted"].append(f"deleted {c.name} — {item['reason']}")
         else:
-            out["skipped"].append(f"{c.name}: device delete refused — "
-                                  f"{res.get('error')}")
+            out["skipped"].append(f"{c.name}: device delete refused — {res.get('error')}")
+    for item in cand["blocked"]:
+        if item["cert"].status != "superseded":
+            out["skipped"].append(f"{item['cert'].name}: {item['action']} due "
+                                  f"({item['reason']}) but still bound in DB — skipped")
 
-    if not dry_run and (out["revoked"] or out["deleted"]):
+    changed = [x for k in ("renewed", "swapped", "revoked", "deleted", "archived")
+               for x in out[k]]
+    if not dry_run and changed:
         to = store.cert_manager_adcs().get("notify_to", "")
         if to:
             try:
                 from . import email_service
-                body = "\n".join(["Lifecycle sweep results:"] + out["revoked"]
-                                 + out["deleted"] + out["skipped"])
+                body = "\n".join(["Lifecycle sweep results:"] + changed
+                                 + out["notices"] + out["skipped"])
                 email_service.send_email(to, "[Cert Manager] Lifecycle sweep", body)
             except Exception:  # noqa: BLE001
                 logger.debug("lifecycle email skipped", exc_info=True)
     log_action("certmgr.lifecycle_sweep",
-               detail=(f"dry_run={dry_run} revoked={len(out['revoked'])} "
-                       f"deleted={len(out['deleted'])} skipped={len(out['skipped'])}"))
+               detail=(f"dry_run={dry_run} renewed={len(out['renewed'])} "
+                       f"swapped={len(out['swapped'])} revoked={len(out['revoked'])} "
+                       f"deleted={len(out['deleted'])} archived={len(out['archived'])} "
+                       f"skipped={len(out['skipped'])}"))
     return out
 
 

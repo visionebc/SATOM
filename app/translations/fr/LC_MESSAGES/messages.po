@@ -23972,3 +23972,467 @@ msgstr "Filtrer les AppID"
 #: app/templates/api_tokens/_pickers.html
 msgid "No AppIDs yet — create them under AppIDs."
 msgstr "Pas encore d’AppID — créez-les sous AppIDs."
+
+#: app/templates/cert_manager
+msgid "Also remove it from the device (refused while it is bound)"
+msgstr "Le retirer aussi de l'équipement (refusé tant qu'il est lié)"
+
+#: app/templates/cert_manager
+msgid "Archived"
+msgstr "Archivé"
+
+#: app/templates/cert_manager
+msgid "Archived certificates"
+msgstr "Certificats archivés"
+
+#: app/templates/cert_manager
+msgid "Are you sure you want to delete this certificate record? A certificate still in use cannot be deleted; the device copy is not touched."
+msgstr "Voulez-vous vraiment supprimer cet enregistrement de certificat ? Un certificat en cours d'utilisation ne peut pas être supprimé ; la copie sur l'équipement n'est pas touchée."
+
+#: app/templates/cert_manager
+msgid "Are you sure you want to delete this certificate record? A certificate that is still bound cannot be deleted. Its revocations stay in the register."
+msgstr "Voulez-vous vraiment supprimer cet enregistrement de certificat ? Un certificat encore lié ne peut pas être supprimé. Ses révocations restent dans le registre."
+
+#: app/templates/cert_manager
+msgid "Are you sure you want to revoke this certificate? This cannot be undone."
+msgstr "Voulez-vous vraiment révoquer ce certificat ? Cette action est irréversible."
+
+#: app/templates/cert_manager
+msgid "Are you sure you want to revoke this certificate? This cannot be undone. A certificate still in use is refused here — revoke it from its page."
+msgstr "Voulez-vous vraiment révoquer ce certificat ? Cette action est irréversible. Un certificat en cours d'utilisation est refusé ici — révoquez-le depuis sa page."
+
+#: app/templates/cert_manager
+msgid "Bind one server policy now"
+msgstr "Lier une server policy maintenant"
+
+#: app/templates/cert_manager
+msgid "CA"
+msgstr "AC"
+
+#: app/templates/cert_manager
+msgid "CA refused"
+msgstr "Refusé par l'AC"
+
+#: app/templates/cert_manager
+msgid "CSR for another CA"
+msgstr "CSR pour une autre AC"
+
+#: app/templates/cert_manager
+msgid "Certificate (PEM, chain allowed)"
+msgstr "Certificat (PEM, chaîne autorisée)"
+
+#: app/templates/cert_manager
+msgid "Certificate lifecycle for FortiWeb and FortiADC: signed by the configured CA, by another CA from a CSR generated here, or imported with its key. A renewal is deployed first and takes over the bindings on its swap date; the old certificate stays on the device for a roll back, then leaves the device and later SATOM, each after the number of days you set. Private keys are stored encrypted."
+msgstr "Cycle de vie des certificats pour FortiWeb et FortiADC : signés par l'AC configurée, par une autre AC à partir d'un CSR généré ici, ou importés avec leur clé. Un renouvellement est d'abord déployé et reprend les liaisons à sa date d'échange ; l'ancien certificat reste sur l'équipement pour un retour arrière, puis quitte l'équipement et plus tard SATOM, chacun après le nombre de jours que vous fixez. Les clés privées sont stockées chiffrées."
+
+#: app/templates/cert_manager
+msgid "Change the windows of this certificate (empty = default)"
+msgstr "Modifier les délais de ce certificat (vide = valeur par défaut)"
+
+#: app/templates/cert_manager
+msgid "Choose where the certificate comes from. A new certificate is not bound to any policy until you swap it in; a renewal takes over the bindings of the certificate it replaces on its swap date."
+msgstr "Choisissez la provenance du certificat. Un nouveau certificat n'est lié à aucune policy tant que vous ne l'échangez pas ; un renouvellement reprend les liaisons du certificat qu'il remplace à sa date d'échange."
+
+#: app/templates/cert_manager
+msgid "Configured CA"
+msgstr "AC configurée"
+
+#: app/templates/cert_manager
+msgid "Confirm that this certificate has been revoked at its CA?"
+msgstr "Confirmer que ce certificat a été révoqué auprès de son AC ?"
+
+#: app/templates/cert_manager
+msgid "Create a certificate signed by the configured CA, generate a CSR for another CA, or import a certificate and its key."
+msgstr "Créez un certificat signé par l'AC configurée, générez un CSR pour une autre AC ou importez un certificat et sa clé."
+
+#: app/templates/cert_manager
+msgid "Defaults (each certificate can override them): swap"
+msgstr "Valeurs par défaut (chaque certificat peut les remplacer) : échange"
+
+#: app/templates/cert_manager
+msgid "Deploy to the device"
+msgstr "Déployer sur l'équipement"
+
+#: app/templates/cert_manager
+msgid "Deploy to the device after the import"
+msgstr "Déployer sur l'équipement après l'import"
+
+#: app/templates/cert_manager
+msgid "Download CSR"
+msgstr "Télécharger le CSR"
+
+#: app/templates/cert_manager
+msgid "Download the CSR"
+msgstr "Télécharger le CSR"
+
+#: app/templates/cert_manager
+msgid "Download the CSR and have it signed"
+msgstr "Téléchargez le CSR et faites-le signer"
+
+#: app/templates/cert_manager
+msgid "For a certificate whose CSR was made outside SATOM: paste the PEM certificate and its key, or upload a PKCS#12 (.p12/.pfx) with its password. The key is stored encrypted and marked as generated outside SATOM."
+msgstr "Pour un certificat dont le CSR a été créé hors de SATOM : collez le certificat PEM et sa clé, ou téléversez un PKCS#12 (.p12/.pfx) avec son mot de passe. La clé est stockée chiffrée et marquée comme générée hors de SATOM."
+
+#: app/templates/cert_manager
+msgid "For a renewal whose CSR was generated elsewhere. It is deployed and takes over the bindings of this certificate on its swap date, like any renewal."
+msgstr "Pour un renouvellement dont le CSR a été généré ailleurs. Il est déployé et reprend les liaisons de ce certificat à sa date d'échange, comme tout renouvellement."
+
+#: app/templates/cert_manager
+msgid "Generate a key + CSR here, have another CA sign it, then import the certificate"
+msgstr "Générez ici clé + CSR, faites-le signer par une autre AC, puis importez le certificat"
+
+#: app/templates/cert_manager
+msgid "Generate a new CSR for this certificate now?"
+msgstr "Générer maintenant un nouveau CSR pour ce certificat ?"
+
+#: app/templates/cert_manager
+msgid "Generate a new CSR now"
+msgstr "Générer un nouveau CSR maintenant"
+
+#: app/templates/cert_manager
+msgid "Generate a new key and CSR for this certificate now? The current certificate keeps serving until the signed one is imported and swapped in."
+msgstr "Générer maintenant une nouvelle clé et un nouveau CSR pour ce certificat ? Le certificat actuel reste en service jusqu'à ce que le certificat signé soit importé et échangé."
+
+#: app/templates/cert_manager
+msgid "Generate key + CSR"
+msgstr "Générer clé + CSR"
+
+#: app/templates/cert_manager
+msgid "Generate, sign and deploy"
+msgstr "Générer, signer et déployer"
+
+#: app/templates/cert_manager
+msgid "Import as replacement"
+msgstr "Importer comme remplaçant"
+
+#: app/templates/cert_manager
+msgid "Import certificate"
+msgstr "Importer le certificat"
+
+#: app/templates/cert_manager
+msgid "Import certificate + key"
+msgstr "Importer certificat + clé"
+
+#: app/templates/cert_manager
+msgid "Import the signed certificate"
+msgstr "Importer le certificat signé"
+
+#: app/templates/cert_manager
+msgid "Imported"
+msgstr "Importé"
+
+#: app/templates/cert_manager
+msgid "It is marked revoked and stays pending in the register until you confirm it was revoked at the CA."
+msgstr "Il est marqué révoqué et reste en attente dans le registre jusqu'à ce que vous confirmiez sa révocation auprès de l'AC."
+
+#: app/templates/cert_manager
+msgid "Kept in SATOM (days after it left the device)"
+msgstr "Conservé dans SATOM (jours après le retrait de l'équipement)"
+
+#: app/templates/cert_manager
+msgid "Kept in SATOM (days after)"
+msgstr "Conservé dans SATOM (jours après)"
+
+#: app/templates/cert_manager
+msgid "Left the device"
+msgstr "Retiré de l'équipement"
+
+#: app/templates/cert_manager
+msgid "Lifecycle policy — rotation windows & device cleanup"
+msgstr "Politique de cycle de vie — délais de rotation & nettoyage des équipements"
+
+#: app/templates/cert_manager
+msgid "Mark revoked at the CA"
+msgstr "Marquer révoqué auprès de l'AC"
+
+#: app/templates/cert_manager
+msgid "Must be shorter than the renew window of the class."
+msgstr "Doit être inférieur au délai de renouvellement de la classe."
+
+#: app/templates/cert_manager
+msgid "Next step"
+msgstr "Étape suivante"
+
+#: app/templates/cert_manager
+msgid "No revocations yet."
+msgstr "Aucune révocation pour l'instant."
+
+#: app/templates/cert_manager
+msgid "Off the device (days after swap)"
+msgstr "Retiré de l'équipement (jours après l'échange)"
+
+#: app/templates/cert_manager
+msgid "Off the device and past their retention window: the private key was purged; serial, dates and timeline are kept as the record."
+msgstr "Retirés de l'équipement et au-delà de leur délai de conservation : la clé privée a été purgée ; numéro de série, dates et historique sont conservés comme trace."
+
+#: app/templates/cert_manager
+msgid "Old cert off the device (days after the swap)"
+msgstr "Ancien certificat retiré de l'équipement (jours après l'échange)"
+
+#: app/templates/cert_manager
+msgid "PKCS#12 / key password"
+msgstr "Mot de passe PKCS#12 / de la clé"
+
+#: app/templates/cert_manager
+msgid "Password (PKCS#12 or encrypted key)"
+msgstr "Mot de passe (PKCS#12 ou clé chiffrée)"
+
+#: app/templates/cert_manager
+msgid "Paste or upload the PEM the CA returned (the chain may follow the leaf). SATOM checks that it matches the stored key and the requested names before it is accepted. A PKCS#12 is refused here: it would bring a different key."
+msgstr "Collez ou téléversez le PEM renvoyé par l'AC (la chaîne peut suivre le certificat final). SATOM vérifie qu'il correspond à la clé stockée et aux noms demandés avant de l'accepter. Un PKCS#12 est refusé ici : il apporterait une autre clé."
+
+#: app/templates/cert_manager
+msgid "Point the selected server policy at this certificate now?"
+msgstr "Pointer maintenant la server policy sélectionnée vers ce certificat ?"
+
+#: app/templates/cert_manager
+msgid "Remove it from the device too"
+msgstr "Le retirer aussi de l'équipement"
+
+#: app/templates/cert_manager
+msgid "Renew (days before expiry)"
+msgstr "Renouveler (jours avant expiration)"
+
+#: app/templates/cert_manager
+msgid "Renew automatically (configured CA: signed and deployed; another CA: a new CSR is generated and you are notified)"
+msgstr "Renouveler automatiquement (AC configurée : signé et déployé ; autre AC : un nouveau CSR est généré et vous êtes averti)"
+
+#: app/templates/cert_manager
+msgid "Renew this certificate now? A new one is signed and deployed under a new name; it takes over the bindings on its swap date."
+msgstr "Renouveler ce certificat maintenant ? Un nouveau est signé et déployé sous un nouveau nom ; il reprend les liaisons à sa date d'échange."
+
+#: app/templates/cert_manager
+msgid "Renewal & rotation (leave empty for the defaults)"
+msgstr "Renouvellement & rotation (laisser vide pour les valeurs par défaut)"
+
+#: app/templates/cert_manager
+msgid "Replace with a certificate + key made outside SATOM"
+msgstr "Remplacer par un certificat + clé créés hors de SATOM"
+
+#: app/templates/cert_manager
+msgid "Replaced by"
+msgstr "Remplacé par"
+
+#: app/templates/cert_manager
+msgid "Replaces"
+msgstr "Remplace"
+
+#: app/templates/cert_manager
+msgid "Revocation register"
+msgstr "Registre des révocations"
+
+#: app/templates/cert_manager
+msgid "Revocations"
+msgstr "Révocations"
+
+#: app/templates/cert_manager
+msgid "Revoke even though it is in use (e.g. a compromised key) — clients will reject it"
+msgstr "Révoquer même s'il est utilisé (p. ex. clé compromise) — les clients le rejetteront"
+
+#: app/templates/cert_manager
+msgid "Revoke it first (reason: cessationOfOperation)"
+msgstr "Le révoquer d'abord (motif : cessationOfOperation)"
+
+#: app/templates/cert_manager
+msgid "Revoke the old cert when it leaves the device"
+msgstr "Révoquer l'ancien certificat lorsqu'il quitte l'équipement"
+
+#: app/templates/cert_manager
+msgid "Revoke the old certificate when it leaves the device"
+msgstr "Révoquer l'ancien certificat lorsqu'il quitte l'équipement"
+
+#: app/templates/cert_manager
+msgid "Revoked at the configured CA and recorded in the revocation register."
+msgstr "Révoqué auprès de l'AC configurée et inscrit au registre des révocations."
+
+#: app/templates/cert_manager
+msgid "Roll back to"
+msgstr "Revenir à"
+
+#: app/templates/cert_manager
+msgid "Roll back to the previous certificate"
+msgstr "Revenir au certificat précédent"
+
+#: app/templates/cert_manager
+msgid "Roll back? Every binding of this certificate goes back to the one it replaced."
+msgstr "Revenir en arrière ? Toutes les liaisons de ce certificat reviennent à celui qu'il a remplacé."
+
+#: app/templates/cert_manager
+msgid "Rotation"
+msgstr "Rotation"
+
+#: app/templates/cert_manager
+msgid "Run the rotation and the lifecycle sweep now? Due renewals are issued, due swaps are made, and unbound superseded, revoked or expired material is removed from the devices (bindings re-verified live, fail-closed)."
+msgstr "Lancer maintenant la rotation et le nettoyage du cycle de vie ? Les renouvellements dus sont émis, les échanges dus effectués, et le matériel remplacé, révoqué ou expiré non lié est retiré des équipements (liaisons revérifiées en direct, fail-closed)."
+
+#: app/templates/cert_manager
+msgid "SATOM cannot revoke it itself:"
+msgstr "SATOM ne peut pas le révoquer lui-même :"
+
+#: app/templates/cert_manager
+msgid "SATOM generates the key and the CSR. The key never leaves SATOM (stored encrypted); you download the CSR, have another CA sign it, and import the signed certificate on the certificate page. A PKCS#12 is not accepted for it — it would bring a different key."
+msgstr "SATOM génère la clé et le CSR. La clé ne quitte jamais SATOM (stockée chiffrée) ; vous téléchargez le CSR, le faites signer par une autre AC et importez le certificat signé sur la page du certificat. Un PKCS#12 n'est pas accepté dans ce cas — il apporterait une autre clé."
+
+#: app/templates/cert_manager
+msgid "Signed by the configured CA"
+msgstr "Signé par l'AC configurée"
+
+#: app/templates/cert_manager
+msgid "Swap (days after renewal)"
+msgstr "Échange (jours après le renouvellement)"
+
+#: app/templates/cert_manager
+msgid "Swap (days after the renewal)"
+msgstr "Échange (jours après le renouvellement)"
+
+#: app/templates/cert_manager
+msgid "Swap due"
+msgstr "Échange prévu"
+
+#: app/templates/cert_manager
+msgid "Swap now? Every binding of the certificate it replaces moves onto this one immediately, instead of on its swap date."
+msgstr "Échanger maintenant ? Toutes les liaisons du certificat qu'il remplace passent immédiatement sur celui-ci, au lieu de sa date d'échange."
+
+#: app/templates/cert_manager
+msgid "The DEFAULT windows of a renewal; each certificate can override them on its page. A renewal is deployed first and takes over the bindings N days later; the old certificate stays on the device for a roll back, then leaves the device and, later, SATOM. Enforced by the"
+msgstr "Les délais PAR DÉFAUT d'un renouvellement ; chaque certificat peut les remplacer sur sa page. Un renouvellement est d'abord déployé et reprend les liaisons N jours plus tard ; l'ancien certificat reste sur l'équipement pour un retour arrière, puis quitte l'équipement et, plus tard, SATOM. Appliqué par"
+
+#: app/templates/cert_manager
+msgid "The private key stays in SATOM, encrypted. Take this CSR to the CA that will sign it."
+msgstr "La clé privée reste dans SATOM, chiffrée. Portez ce CSR à l'AC qui le signera."
+
+#: app/templates/cert_manager
+msgid "The private key was generated outside SATOM"
+msgstr "La clé privée a été générée hors de SATOM"
+
+#: app/templates/cert_manager
+msgid "The swap has to land before the old certificate expires, so the swap delay must be shorter than the renew window. The swap only moves the bindings; the old certificate stays on the device for a roll back until it is taken off."
+msgstr "L'échange doit avoir lieu avant l'expiration de l'ancien certificat : le délai d'échange doit donc être inférieur au délai de renouvellement. L'échange ne déplace que les liaisons ; l'ancien certificat reste sur l'équipement pour un retour arrière jusqu'à son retrait."
+
+#: app/templates/cert_manager
+msgid "Took the bindings"
+msgstr "A repris les liaisons"
+
+#: app/templates/cert_manager
+msgid "Upload this certificate and its key to the device now?"
+msgstr "Téléverser maintenant ce certificat et sa clé sur l'équipement ?"
+
+#: app/templates/cert_manager
+msgid "Waiting for the signature of another CA"
+msgstr "En attente de la signature d'une autre AC"
+
+#: app/templates/cert_manager
+msgid "Windows"
+msgstr "Délais"
+
+#: app/templates/cert_manager
+msgid "Yes (reason: superseded)"
+msgstr "Oui (motif : superseded)"
+
+#: app/templates/cert_manager
+msgid "after that · revoke when it leaves the device:"
+msgstr "ensuite · révoquer lorsqu'il quitte l'équipement :"
+
+#: app/templates/cert_manager
+msgid "after the renewal · off the device"
+msgstr "après le renouvellement · retrait de l'équipement"
+
+#: app/templates/cert_manager
+msgid "after the swap · out of SATOM"
+msgstr "après l'échange · sortie de SATOM"
+
+#: app/templates/cert_manager
+msgid "and (optionally) deploy the cert + key to the appliance."
+msgstr "et (facultativement) déployez le certificat + la clé sur l'équipement."
+
+#: app/templates/cert_manager
+msgid "archived"
+msgstr "archivé"
+
+#: app/templates/cert_manager
+msgid "auto-renew off"
+msgstr "renouvellement auto désactivé"
+
+#: app/templates/cert_manager
+msgid "awaiting signature"
+msgstr "en attente de signature"
+
+#: app/templates/cert_manager
+msgid "before expiry"
+msgstr "avant expiration"
+
+#: app/templates/cert_manager
+msgid "confirmed at the CA"
+msgstr "confirmé auprès de l'AC"
+
+#: app/templates/cert_manager
+msgid "generated outside SATOM"
+msgstr "générée hors de SATOM"
+
+#: app/templates/cert_manager
+msgid "it takes over the bindings of"
+msgstr "il reprend les liaisons de"
+
+#: app/templates/cert_manager
+msgid "kept"
+msgstr "conservé"
+
+#: app/templates/cert_manager
+msgid "key from outside"
+msgstr "clé externe"
+
+#: app/templates/cert_manager
+msgid "no device"
+msgstr "aucun équipement"
+
+#: app/templates/cert_manager
+msgid "not stored"
+msgstr "non stockée"
+
+#: app/templates/cert_manager
+msgid "off the device"
+msgstr "retrait de l'équipement"
+
+#: app/templates/cert_manager
+msgid "on its swap date"
+msgstr "à sa date d'échange"
+
+#: app/templates/cert_manager
+msgid "pending at the CA"
+msgstr "en attente auprès de l'AC"
+
+#: app/templates/cert_manager
+msgid "purged"
+msgstr "purgée"
+
+#: app/templates/cert_manager
+msgid "record deleted"
+msgstr "enregistrement supprimé"
+
+#: app/templates/cert_manager
+msgid "removed — bindings are re-verified live, fail-closed, before every destructive step."
+msgstr "retiré — les liaisons sont revérifiées en direct, fail-closed, avant chaque étape destructive."
+
+#: app/templates/cert_manager
+msgid "renew"
+msgstr "renouveler"
+
+#: app/templates/cert_manager
+msgid "revoked at the CA"
+msgstr "révoqué auprès de l'AC"
+
+#: app/templates/cert_manager
+msgid "staged"
+msgstr "préparé"
+
+#: app/templates/cert_manager
+msgid "stored (encrypted)"
+msgstr "stockée (chiffrée)"
+
+#: app/templates/cert_manager
+msgid "swap"
+msgstr "échange"
+
+#: app/templates/cert_manager
+msgid "…or a file (PEM or PKCS#12)"
+msgstr "…ou un fichier (PEM ou PKCS#12)"

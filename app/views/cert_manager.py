@@ -15,8 +15,8 @@ Box-affecting steps go through the service layer
 """
 from __future__ import annotations
 
-from flask import (Blueprint, flash, jsonify, redirect, render_template, request,
-                   url_for)
+from flask import (Blueprint, Response, flash, jsonify, redirect, render_template,
+                   request, url_for)
 from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
@@ -82,25 +82,20 @@ def index():
     _prod_ids = set(appliances)
     # Managed certs scoped to the active product: certs on THIS product's
     # appliances (unassigned certs - no appliance yet - show in either).
-    certs = [c for c in (ManagedCertificate.query
-                         .order_by(ManagedCertificate.expires_at.asc().nullslast(),
-                                   ManagedCertificate.name.asc())
-                         .all())
-             if c.appliance_id in _prod_ids or c.appliance_id is None]
-    rows = []
-    for c in certs:
-        d = c.days_left
-        tone = "muted"
-        if d is not None:
-            tone = "danger" if d < 0 else "warning" if d <= 14 else (
-                "warning" if d <= 30 else "success")
-        rows.append({
-            "c": c,
-            "device": appliances.get(c.appliance_id).name if c.appliance_id in appliances else "—",
-            "days_left": d,
-            "tone": tone,
-            "class_label": store.CERT_CLASS_LABELS.get(c.cert_class, c.cert_class),
-        })
+    all_certs = [c for c in (ManagedCertificate.query
+                             .order_by(ManagedCertificate.expires_at.asc().nullslast(),
+                                       ManagedCertificate.name.asc())
+                             .all())
+                 if c.appliance_id in _prod_ids or c.appliance_id is None]
+    certs = [c for c in all_certs if not c.archived_at]
+    archived = [c for c in all_certs if c.archived_at]
+    rows = [_row(c, appliances) for c in certs]
+    from ..models import CertRevocation
+    _ids = {c.id for c in all_certs}
+    revocations = [r for r in (CertRevocation.query
+                               .order_by(CertRevocation.requested_at.desc())
+                               .limit(200).all())
+                   if r.cert_id is None or r.cert_id in _ids]
     # On-device certificates: read the CACHED inventory from the DB (populated by
     # the "Scan devices" button or the daily cert_scan scheduled action), so the
     # table shows expiry / days-left / SANs / bindings WITHOUT a slow fleet sweep
@@ -128,6 +123,9 @@ def index():
     return render_template(
         "cert_manager/index.html",
         rows=rows,
+        archived=archived,
+        revocations=revocations,
+        revocations_pending=sum(1 for r in revocations if r.result == "manual_pending"),
         lifecycle=_lifecycle,
         configured=store.cert_manager_configured(),
         protocol=store.cert_manager_protocol(),
@@ -141,6 +139,56 @@ def index():
     )
 
 
+STATUS_TONES = {"active": "success", "staged": "info", "pending": "info",
+                "awaiting_signature": "warning", "superseded": "secondary",
+                "revoked": "danger"}
+ORIGIN_LABELS = {"signer": "Configured CA", "external": "CSR for another CA",
+                 "imported": "Imported (key from outside)"}
+
+
+def is_deployed(cert) -> bool:
+    """Did a deploy of *cert* succeed (its timeline says so)?"""
+    return any(e.kind == "deploy" and e.ok for e in cert.events)
+
+
+def _row(c, appliances) -> dict:
+    d = c.days_left
+    tone = "muted"
+    if d is not None:
+        tone = "danger" if d < 0 else "warning" if d <= 30 else "success"
+    return {
+        "c": c,
+        "device": appliances.get(c.appliance_id).name if c.appliance_id in appliances else "—",
+        "days_left": d,
+        "tone": tone,
+        "class_label": store.CERT_CLASS_LABELS.get(c.cert_class, c.cert_class),
+        "next": cm.next_step(c),
+        "acts": actions_for(c),
+    }
+
+
+def actions_for(c) -> dict:
+    """Which row/detail buttons apply to *c* — one rule for both pages."""
+    live = not c.archived_at
+    succ = cm.successor_of(c) if live else None
+    return {
+        "renew": live and c.origin == "signer" and c.status in ("active", "pending")
+                 and succ is None,
+        "new_csr": live and c.origin == "external"
+                   and c.status in ("active", "pending") and succ is None,
+        "replace": live and c.status in ("active", "pending") and succ is None,
+        "csr": live and bool(c.csr_pem) and c.status == "awaiting_signature",
+        "import_signed": live and c.status == "awaiting_signature",
+        "deploy": live and c.status == "pending" and bool(c.cert_pem)
+                  and bool(c.appliance_id) and not is_deployed(c),
+        "swap": live and c.status in ("staged", "pending") and bool(c.supersedes_id)
+                and is_deployed(c),
+        "rollback": live and cm.can_rollback(c) == "",
+        "revoke": live and c.status not in ("revoked", "awaiting_signature"),
+        "delete": True,
+    }
+
+
 @bp.route("/lifecycle/run", methods=["POST"])
 @login_required
 @require_permission(Permission.USER_MANAGE)
@@ -149,11 +197,14 @@ def lifecycle_run():
     certs at the CA and delete due unbound material off the devices. Every
     destructive step re-verifies bindings live and fail-closed."""
     res = cm.run_lifecycle_sweep(dry_run=False, actor=current_user.username)
-    done = res["revoked"] + res["deleted"]
+    done = (res["renewed"] + res["swapped"] + res["revoked"] + res["deleted"]
+            + res["archived"])
     if done:
         flash("Lifecycle sweep: " + "; ".join(done), "success")
     else:
         flash("Lifecycle sweep: nothing applied.", "info")
+    if res["notices"]:
+        flash("Needs attention: " + "; ".join(res["notices"]), "warning")
     if res["skipped"]:
         flash("Skipped: " + "; ".join(res["skipped"]), "warning")
     return redirect(url_for("cert_manager.index"))
@@ -338,34 +389,85 @@ def settings():
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def new():
+    """One form, three origins: signed by the configured CA, a CSR for another
+    CA, or a certificate + key imported from outside."""
     if request.method == "POST":
+        mode = (request.form.get("mode") or "signer").strip()
         appliance = db.session.get(Appliance, _int(request.form.get("appliance_id")))
-        cn = (request.form.get("cn") or "").strip()
         cert_class = (request.form.get("cert_class") or "server").strip()
-        extra = [s.strip() for s in (request.form.get("extra_sans") or "").replace("\n", ",").split(",") if s.strip()]
         deploy = bool(request.form.get("deploy"))
-        if appliance is None:
-            flash("Select a target FortiWeb.", "danger")
-            return redirect(url_for("cert_manager.new"))
-        res = cm.create_certificate(appliance, cn, cert_class, extra_sans=extra,
-                                    deploy=deploy, actor=current_user.username)
+        if appliance is None or not cm.supports_kind(appliance) or \
+                appliance not in _deploy_targets():
+            flash("Select a target FortiWeb or FortiADC.", "danger")
+            return redirect(url_for("cert_manager.new", mode=mode))
+        if mode == "import":
+            data = _upload_bytes("bundle_file", "bundle_pem")
+            if not data:
+                flash("Paste the PEM certificate or upload a PEM / PKCS#12 file.", "danger")
+                return redirect(url_for("cert_manager.new", mode=mode))
+            res = cm.import_certificate(
+                appliance, cert_class, data,
+                key_pem=request.form.get("key_pem") or "",
+                password=request.form.get("bundle_password") or "",
+                deploy=deploy, actor=current_user.username)
+            verb = "imported"
+        else:
+            cn = (request.form.get("cn") or "").strip()
+            extra = [x.strip() for x in (request.form.get("extra_sans") or "")
+                     .replace("\n", ",").split(",") if x.strip()]
+            if mode == "external":
+                res = cm.create_external_csr(appliance, cn, cert_class,
+                                             extra_sans=extra,
+                                             actor=current_user.username)
+                verb = "CSR generated — download it, have it signed, then import the certificate"
+            else:
+                res = cm.create_certificate(appliance, cn, cert_class, extra_sans=extra,
+                                            deploy=deploy, actor=current_user.username)
+                verb = "created" + (" and deployed" if deploy else " (not deployed)")
+        row = db.session.get(ManagedCertificate, res["cert_id"]) if res.get("cert_id") else None
+        if row is not None:
+            err = cm.apply_windows(row, _window_form())
+            if err:
+                flash(f"Rotation windows not saved: {err}", "warning")
+            else:
+                db.session.commit()
         if res.get("ok"):
-            flash(f"Certificate {res.get('name')} created"
-                  + (" and deployed." if deploy else " (not deployed)."), "success")
+            flash(f"Certificate {res.get('name')}: {verb}.", "success")
             return redirect(url_for("cert_manager.detail", id=res["cert_id"]))
-        # Partial failure still leaves a row we can inspect.
-        flash(f"Certificate creation failed: {res.get('error')}", "danger")
+        flash(f"Certificate not created: {res.get('error')}", "danger")
         if res.get("cert_id"):
             return redirect(url_for("cert_manager.detail", id=res["cert_id"]))
-        return redirect(url_for("cert_manager.new"))
+        return redirect(url_for("cert_manager.new", mode=mode))
 
+    mode = request.args.get("mode") or "signer"
     return render_template(
         "cert_manager/new.html",
+        mode=mode if mode in ("signer", "external", "import") else "signer",
         appliances=_deploy_targets(),
         classes=[(c, store.CERT_CLASS_LABELS[c]) for c in store.CERT_CLASSES],
         configured=store.cert_manager_configured(),
         protocol=store.cert_manager_protocol(),
+        defaults={c: cm.default_policy(c) for c in store.CERT_CLASSES},
     )
+
+
+def _window_form() -> dict:
+    f = request.form
+    out = {k: f.get(k, "") for k in cm.WINDOW_FIELDS}
+    out["revoke_superseded"] = f.get("revoke_superseded", "")
+    out["auto_renew"] = "1" if f.get("auto_renew") else "0"
+    return out
+
+
+def _upload_bytes(file_field: str, text_field: str) -> bytes:
+    """A pasted PEM wins over nothing; an uploaded file wins over a paste."""
+    fs = request.files.get(file_field)
+    if fs is not None and fs.filename:
+        data = fs.read(256 * 1024 + 1)
+        if len(data) > 256 * 1024:
+            return b""
+        return data
+    return (request.form.get(text_field) or "").encode()
 
 
 # --------------------------------------------------------------------------- #
@@ -378,29 +480,102 @@ def detail(id):
     cert = ManagedCertificate.query.get_or_404(id)
     appliance = db.session.get(Appliance, cert.appliance_id) if cert.appliance_id else None
     # Live bindings (best-effort) so swap targets are real.
-    live_bindings = cm.read_bindings_for(cert) if appliance else []
+    live_bindings = []
     policies = []
-    if appliance:
-        try:
-            resp = appliance.build_client().api_call("GET", cm.SERVER_POLICY_EP)
-            body = resp.json() if resp is not None else {}
-            rows = body.get("results") if isinstance(body, dict) else []
-            policies = sorted(str(p.get("name", "")) for p in rows
-                              if isinstance(p, dict) and p.get("name"))
-        except Exception:  # noqa: BLE001 — offline box → no swap targets, page still works
-            policies = []
+    if appliance and not cert.archived_at and cert.status != "awaiting_signature":
+        live_bindings = cm.read_bindings_for(cert)
+        if getattr(appliance, "kind", "fortiweb") != "fortiadc":
+            try:
+                resp = appliance.build_client().api_call("GET", cm.SERVER_POLICY_EP)
+                body = resp.json() if resp is not None else {}
+                rows = body.get("results") if isinstance(body, dict) else []
+                policies = sorted(str(p.get("name", "")) for p in rows
+                                  if isinstance(p, dict) and p.get("name"))
+            except Exception:  # noqa: BLE001 — offline box → no swap targets, page still works
+                policies = []
     events = (ManagedCertificateEvent.query
               .filter_by(cert_id=cert.id)
               .order_by(ManagedCertificateEvent.ts.desc())
               .all())
+    from ..models import CertRevocation
     cert_detail = cert_probe.detail_from_pem(cert.cert_pem) if cert.cert_pem else None
+    route, route_why = cm.revoke_route(cert)
     return render_template(
         "cert_manager/detail.html",
         cert=cert, appliance=appliance, events=events,
         live_bindings=live_bindings, policies=policies,
         class_label=store.CERT_CLASS_LABELS.get(cert.cert_class, cert.cert_class),
+        origin_label=ORIGIN_LABELS.get(cert.origin, cert.origin),
         cert_detail=cert_detail, cert_pem=cert.cert_pem or "",
+        policy=cm.cert_policy(cert), defaults=cm.default_policy(cert.cert_class),
+        next=cm.next_step(cert), acts=actions_for(cert),
+        predecessor=cm.predecessor_of(cert), successor=cm.successor_of(cert),
+        rollback_why=cm.can_rollback(cert),
+        revoke_route=route, revoke_route_why=route_why,
+        reasons=CertRevocation.REASONS,
+        revocations=(CertRevocation.query.filter_by(cert_id=cert.id)
+                     .order_by(CertRevocation.requested_at.desc()).all()),
+        tones=STATUS_TONES,
     )
+
+
+@bp.route("/<int:id>/csr.pem")
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def csr_download(id):
+    cert = ManagedCertificate.query.get_or_404(id)
+    if not cert.csr_pem:
+        flash("This certificate has no CSR stored.", "warning")
+        return redirect(url_for("cert_manager.detail", id=id))
+    log_action("certmgr.csr_download", target=cert.name)
+    return Response(cert.csr_pem, mimetype="application/pkcs10",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="{cert.name}.csr"'})
+
+
+@bp.route("/<int:id>/import-signed", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def import_signed(id):
+    cert = ManagedCertificate.query.get_or_404(id)
+    data = _upload_bytes("signed_file", "signed_pem")
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        flash("Import refused: only a PEM certificate is accepted here. The key of "
+              "this request was generated in SATOM — a PKCS#12 would replace it.",
+              "danger")
+        return redirect(url_for("cert_manager.detail", id=id))
+    res = cm.import_signed(cert, text, deploy=bool(request.form.get("deploy")),
+                           actor=current_user.username)
+    flash(f"Signed certificate imported into {cert.name}." if res.get("ok")
+          else f"Import refused: {res.get('error')}",
+          "success" if res.get("ok") else "danger")
+    return redirect(url_for("cert_manager.detail", id=id))
+
+
+@bp.route("/<int:id>/replace", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def replace(id):
+    """Import a certificate + key made outside SATOM as the replacement of
+    *id* (same staged swap as a renewal)."""
+    cert = ManagedCertificate.query.get_or_404(id)
+    data = _upload_bytes("bundle_file", "bundle_pem")
+    if not data:
+        flash("Paste the PEM certificate or upload a PEM / PKCS#12 file.", "danger")
+        return redirect(url_for("cert_manager.detail", id=id))
+    res = cm.import_certificate(
+        db.session.get(Appliance, cert.appliance_id) if cert.appliance_id else None,
+        cert.cert_class, data, key_pem=request.form.get("key_pem") or "",
+        password=request.form.get("bundle_password") or "", supersedes=cert.id,
+        deploy=True, actor=current_user.username)
+    if res.get("ok"):
+        flash(f"Replacement {res.get('name')} imported — it takes over on its swap date.",
+              "success")
+        return redirect(url_for("cert_manager.detail", id=res["cert_id"]))
+    flash(f"Import refused: {res.get('error')}", "danger")
+    return redirect(url_for("cert_manager.detail", id=id))
 
 
 @bp.route("/<int:id>/renew", methods=["POST"])
@@ -410,9 +585,83 @@ def renew(id):
     cert = ManagedCertificate.query.get_or_404(id)
     res = cm.renew_certificate(cert, deploy=True, actor=current_user.username)
     if res.get("ok"):
-        flash(f"Renewed → {res.get('name')} (ready for a maintenance-window swap).", "success")
+        new = db.session.get(ManagedCertificate, res["cert_id"])
+        if new is not None and new.status == "awaiting_signature":
+            flash(f"New CSR {res.get('name')} generated — download it, have it signed "
+                  "and import the certificate.", "success")
+        elif new is not None and new.status == "staged":
+            flash(f"Renewed → {res.get('name')}; it takes over the bindings of "
+                  f"{cert.name} on {new.swap_due_at:%Y-%m-%d %H:%M} UTC.", "success")
+        else:
+            flash(f"Renewed → {res.get('name')}.", "success")
         return redirect(url_for("cert_manager.detail", id=res["cert_id"]))
     flash(f"Renew failed: {res.get('error')}", "danger")
+    return redirect(url_for("cert_manager.detail", id=res.get("cert_id") or id))
+
+
+@bp.route("/<int:id>/deploy", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def deploy(id):
+    cert = ManagedCertificate.query.get_or_404(id)
+    if not actions_for(cert)["deploy"]:
+        flash("Nothing to deploy for this certificate.", "warning")
+        return redirect(url_for("cert_manager.detail", id=id))
+    err = cm._deploy(cert, cm._appliance_of(cert), actor=current_user.username)
+    if not err:
+        cm._schedule_swap(cert, cm.predecessor_of(cert))
+    flash(err or f"{cert.name} deployed.", "danger" if err else "success")
+    return redirect(url_for("cert_manager.detail", id=id))
+
+
+@bp.route("/<int:id>/swap-now", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def swap_now(id):
+    """Swap a renewal in NOW instead of on its date: every binding of the
+    certificate it replaces moves onto it."""
+    cert = ManagedCertificate.query.get_or_404(id)
+    if not actions_for(cert)["swap"]:
+        flash("This certificate has no deployed predecessor to take over from.", "warning")
+        return redirect(url_for("cert_manager.detail", id=id))
+    res = cm.perform_swap(cert, actor=current_user.username)
+    if res.get("ok"):
+        flash(f"{cert.name} took over: " + (", ".join(res.get("done") or [])
+                                            or res.get("note") or "nothing was bound"),
+              "success")
+    else:
+        flash(f"Swap not completed: {res.get('error')}", "danger")
+    return redirect(url_for("cert_manager.detail", id=id))
+
+
+@bp.route("/<int:id>/rollback", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def rollback(id):
+    cert = ManagedCertificate.query.get_or_404(id)
+    res = cm.rollback(cert, actor=current_user.username)
+    flash((f"Rolled back: {cm.predecessor_of(cert).name} serves "
+           + ", ".join(res.get("done") or []) + " again.") if res.get("ok")
+          else f"Rollback not completed: {res.get('error')}",
+          "success" if res.get("ok") else "danger")
+    return redirect(url_for("cert_manager.detail", id=id))
+
+
+@bp.route("/<int:id>/windows", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def windows(id):
+    cert = ManagedCertificate.query.get_or_404(id)
+    err = cm.apply_windows(cert, _window_form())
+    if err:
+        db.session.rollback()
+        flash(f"Not saved: {err}", "danger")
+    else:
+        db.session.commit()
+        log_action("certmgr.windows", target=cert.name,
+                   detail=" ".join(f"{k}={getattr(cert, k)}" for k in
+                                   cm.WINDOW_FIELDS + ("revoke_superseded", "auto_renew")))
+        flash("Rotation settings saved.", "success")
     return redirect(url_for("cert_manager.detail", id=id))
 
 
@@ -439,16 +688,25 @@ def swap(id):
 def revoke(id):
     cert = ManagedCertificate.query.get_or_404(id)
     delete_from_box = bool(request.form.get("delete_from_box"))
-    res = cm.revoke_certificate(cert, delete_from_box=delete_from_box,
+    res = cm.revoke_certificate(cert, reason=(request.form.get("reason") or "unspecified"),
+                                delete_from_box=delete_from_box,
+                                allow_bound=bool(request.form.get("allow_bound")),
                                 actor=current_user.username)
-    if res.get("bindings"):
-        flash("Revoked at the CA, but NOT deleted from the device — still bound to: "
-              + ", ".join(res["bindings"]), "warning")
-    elif res.get("ok"):
-        flash(f"Certificate {cert.name} revoked"
-              + (" and removed from the device." if delete_from_box else "."), "success")
+    if res.get("in_use"):
+        flash(f"Not revoked — {res.get('error')}. To revoke a certificate in use "
+              "(e.g. a compromised key), tick \u201crevoke even though it is in use\u201d "
+              "on its page.", "warning")
+        return redirect(url_for("cert_manager.detail", id=id))
+    if not res.get("revoked"):
+        flash(f"Not revoked: {res.get('error')}", "danger")
+    elif res.get("error"):
+        flash(f"Revoked, but NOT removed from the device: {res['error']}", "warning")
+    elif res.get("manual"):
+        flash(f"{cert.name} marked revoked — {res.get('manual_reason')}. It is in the "
+              "revocation register as pending until you confirm it.", "warning")
     else:
-        flash(f"Revoke reported an issue: {res.get('error')}", "warning")
+        flash(f"Certificate {cert.name} revoked at the CA"
+              + (" and removed from the device." if delete_from_box else "."), "success")
     return redirect(url_for("cert_manager.detail", id=id))
 
 
@@ -457,14 +715,32 @@ def revoke(id):
 @require_permission(Permission.USER_MANAGE)
 def delete(id):
     cert = ManagedCertificate.query.get_or_404(id)
-    name = cert.name
-    ManagedCertificateEvent.query.filter_by(cert_id=cert.id).delete()
-    db.session.delete(cert)
-    db.session.commit()
-    log_action("certmgr.delete", target=name)
-    flash(f"Removed certificate record {name} (the device copy, if any, is untouched).",
+    res = cm.delete_record(cert, revoke_first=bool(request.form.get("revoke_first")),
+                           reason=(request.form.get("reason") or "cessationOfOperation"),
+                           remove_from_box=bool(request.form.get("remove_from_box")),
+                           actor=current_user.username)
+    if not res.get("ok"):
+        flash(f"Not deleted: {res.get('error')}", "danger")
+        return redirect(url_for("cert_manager.detail", id=id))
+    flash(f"Removed certificate record {res['name']}"
+          + (" (the device copy is untouched)." if res.get("left_on_device") else "."),
           "success")
     return redirect(url_for("cert_manager.index"))
+
+
+@bp.route("/revocations/<int:rid>/confirm", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def revocation_confirm(rid):
+    from ..models import CertRevocation
+    rev = CertRevocation.query.get_or_404(rid)
+    res = cm.confirm_manual_revocation(rev, actor=current_user.username)
+    flash(f"Revocation of {rev.cert_name} confirmed at the CA." if res.get("ok")
+          else res.get("error"), "success" if res.get("ok") else "warning")
+    nxt = request.form.get("next") or ""
+    if nxt.startswith("/") and not nxt.startswith("//"):
+        return redirect(nxt)
+    return redirect(url_for("cert_manager.index") + "#revocations")
 
 
 def _int(v):

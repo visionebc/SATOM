@@ -1999,13 +1999,22 @@ class WppExceptionPolicy(db.Model):
 class ManagedCertificate(db.Model):
     __tablename__ = "managed_certificate"
 
+    # awaiting_signature -> CSR generated here, waiting for another CA to sign it
     # pending  -> generated + signed + deployed, not yet bound to any policy
+    # staged   -> a renewal: on the device, waiting for its swap date
     # active   -> currently the bound/live cert
     # superseded -> a newer cert replaced it (old one kept for the window)
     # revoked  -> revoked at the CA
-    # (Nearness to expiry is not a status: the list shows days left, coloured.)
-    STATUSES = ("pending", "active", "superseded", "revoked")
+    # (Nearness to expiry is not a status: the list shows days left, coloured.
+    # Leaving SATOM is not a status either: ``archived_at`` hides the row and
+    # purges the key, the status it had stays for the record.)
+    STATUSES = ("awaiting_signature", "pending", "staged", "active",
+                "superseded", "revoked")
     CLASSES = ("server", "clientserver", "client")
+    # signer   -> signed by the CA configured in Settings (SATOM can renew/revoke)
+    # external -> CSR generated here, signed by another CA instance by hand
+    # imported -> certificate AND key were made outside SATOM
+    ORIGINS = ("signer", "external", "imported")
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(128), nullable=False, default="")   # name on the FortiWeb
@@ -2019,7 +2028,7 @@ class ManagedCertificate(db.Model):
     ca_request_id = db.Column(db.String(128), nullable=True, default="")  # ADCS request id (for revoke)
     issued_at = db.Column(db.DateTime, nullable=True)
     expires_at = db.Column(db.DateTime, nullable=True, index=True)
-    status = db.Column(db.String(16), nullable=False, default="pending", index=True)
+    status = db.Column(db.String(32), nullable=False, default="pending", index=True)
     cert_pem = db.Column(db.Text, nullable=True, default="")         # public cert (safe)
     csr_pem = db.Column(db.Text, nullable=True, default="")          # the CSR (safe)
     private_key_enc = db.Column(db.Text, nullable=True, default="")  # Fernet-encrypted PEM
@@ -2027,6 +2036,21 @@ class ManagedCertificate(db.Model):
     supersedes_id = db.Column(db.Integer, nullable=True)             # old cert this one replaces
     superseded_at = db.Column(db.DateTime, nullable=True)  # when THIS cert became superseded
     revoked_at = db.Column(db.DateTime, nullable=True)     # when THIS cert was revoked
+    # --- where it came from + its own rotation windows (2026-10-15) --------
+    # Windows are NULLABLE: NULL = "use the class / lifecycle-policy default",
+    # which is what every row created before these columns truly is.
+    origin = db.Column(db.String(16), nullable=False, default="signer")
+    key_origin = db.Column(db.String(16), nullable=False, default="satom")  # satom|external
+    auto_renew = db.Column(db.Boolean, nullable=False, default=True)
+    renew_before_days = db.Column(db.Integer, nullable=True)  # renew N days before expiry
+    swap_after_days = db.Column(db.Integer, nullable=True)    # swap N days after the renewal
+    remove_after_days = db.Column(db.Integer, nullable=True)  # off the device N days after the swap
+    retain_days = db.Column(db.Integer, nullable=True)        # kept in SATOM N days after removal
+    revoke_superseded = db.Column(db.Boolean, nullable=True)  # revoke when it leaves the device
+    swap_due_at = db.Column(db.DateTime, nullable=True)       # staged: when the swap runs
+    swapped_at = db.Column(db.DateTime, nullable=True)        # when THIS cert took the bindings
+    removed_at = db.Column(db.DateTime, nullable=True)        # when it left the device
+    archived_at = db.Column(db.DateTime, nullable=True)       # when the key left SATOM
     created_by = db.Column(db.String(64), nullable=True, default="")
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
@@ -2108,10 +2132,60 @@ class ManagedCertificate(db.Model):
             "has_private_key": self.has_private_key,
             "superseded_at": self.superseded_at.isoformat() if self.superseded_at else None,
             "revoked_at": self.revoked_at.isoformat() if self.revoked_at else None,
+            "origin": self.origin,
+            "key_origin": self.key_origin,
+            "auto_renew": self.auto_renew,
+            "swap_due_at": self.swap_due_at.isoformat() if self.swap_due_at else None,
+            "removed_at": self.removed_at.isoformat() if self.removed_at else None,
+            "archived_at": self.archived_at.isoformat() if self.archived_at else None,
         }
 
     def __repr__(self) -> str:
         return f"<ManagedCertificate {self.name!r} {self.cert_class} {self.status}>"
+
+
+class CertRevocation(db.Model):
+    """The revocation register: one row per revocation SATOM asked for or was
+    told about, whatever CA is behind it.
+
+    It outlives the certificate record on purpose (``cert_id`` goes NULL when
+    the record is deleted) and copies the identity it needs — serial,
+    fingerprint, subject, issuer — so "what did we revoke, when, why and did
+    the CA confirm it" stays answerable after the key and the row are gone.
+
+    ``result``: ``revoked`` (the CA's revoke command succeeded), ``failed``
+    (it ran and failed), ``manual_pending`` (no revoke command for that CA, or
+    the CA is not the configured one — someone must revoke it there) and
+    ``manual_done`` (an operator confirmed it was revoked at the CA)."""
+
+    __tablename__ = "cert_revocation"
+
+    RESULTS = ("revoked", "failed", "manual_pending", "manual_done")
+    # RFC 5280 CRLReason names the register accepts.
+    REASONS = ("unspecified", "keyCompromise", "cACompromise",
+               "affiliationChanged", "superseded", "cessationOfOperation",
+               "certificateHold", "privilegeWithdrawn")
+
+    id = db.Column(db.Integer, primary_key=True)
+    cert_id = db.Column(
+        db.Integer, db.ForeignKey("managed_certificate.id", ondelete="SET NULL"),
+        nullable=True, index=True)
+    cert_name = db.Column(db.String(128), nullable=False, default="")
+    serial = db.Column(db.String(128), nullable=True, default="")
+    fingerprint_sha256 = db.Column(db.String(128), nullable=True, default="")
+    subject = db.Column(db.String(512), nullable=True, default="")
+    issuer = db.Column(db.String(512), nullable=True, default="")
+    ca_label = db.Column(db.String(256), nullable=True, default="")  # which CA was asked
+    reason = db.Column(db.String(32), nullable=False, default="unspecified")
+    result = db.Column(db.String(16), nullable=False, default="manual_pending", index=True)
+    detail = db.Column(db.Text, nullable=True, default="")
+    requested_by = db.Column(db.String(64), nullable=True, default="")
+    requested_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    confirmed_by = db.Column(db.String(64), nullable=True, default="")
+    confirmed_at = db.Column(db.DateTime, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<CertRevocation {self.cert_name!r} {self.reason} {self.result}>"
 
 
 class ManagedCertificateEvent(db.Model):

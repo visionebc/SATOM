@@ -646,6 +646,7 @@ CERT_CLASS_LABELS = {
 CERT_CMD_TOKENS = (
     "{bin}", "{user}", "{domain}", "{password}", "{ca}", "{ca_name}",
     "{template}", "{csr}", "{out}", "{serial}", "{request_id}",
+    "{cert}", "{reason}", "{fingerprint}",
 )
 
 # Sensible, EDITABLE defaults. The submit_cmd mirrors the operator's
@@ -741,6 +742,12 @@ def cert_class_config(cls: str) -> dict[str, str]:
         for k in _CERT_CLASS_FIELDS:
             if raw.get(k) is not None and str(raw.get(k)).strip():
                 cfg[k] = str(raw.get(k)).strip()
+        # A SAVED empty revoke command means "this CA has no revoke command",
+        # not "use the certipy default": the form shows the effective value,
+        # so an empty one was cleared on purpose. Falling back ran certipy
+        # (a Microsoft ADCS client) against whatever CA the class signs with.
+        if "revoke_cmd" in raw and not str(raw.get("revoke_cmd") or "").strip():
+            cfg["revoke_cmd"] = ""
     return cfg
 
 
@@ -943,9 +950,14 @@ def save_acme_provider_creds(slug: str, fields, values: dict[str, Any]) -> None:
 K_CERTMGR_LIFECYCLE = "certmgr.lifecycle"
 
 _CERTMGR_LIFECYCLE_DEFAULTS = {
-    "revoke_on_supersede": True,        # revoke the OLD cert after a swap…
-    "revoke_grace_days": 7,             # …once it has been superseded N days
-    "delete_superseded_after_days": 14, # remove superseded+unbound certs from the box after N days
+    # Rotation of a renewed certificate: renew (class renew_before_days) →
+    # swap N days later → take the old one off the device N days after the
+    # swap → keep it in SATOM N days after that. Each certificate can
+    # override every window; these are the defaults it falls back to.
+    "swap_after_days": 3,               # swap the renewal in N days after it was issued
+    "delete_superseded_after_days": 14, # old cert leaves the device N days after the swap
+    "retain_after_removal_days": 30,    # …and its key leaves SATOM N days after that
+    "revoke_on_supersede": True,        # revoke the old cert when it leaves the device
     "delete_expired_after_days": 30,    # remove expired+unbound certs after N days past expiry
     "delete_revoked_from_device": True, # revoked+unbound certs never stay on a box
     "auto_apply": False,                # scheduled sweep applies (True) or reports-only (False)

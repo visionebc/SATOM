@@ -112,6 +112,28 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--waf-artifacts-fetch-a-wsdl-or-xml-schema-from-the-application-2026-10-15">Added — WAF Artifacts: fetch a WSDL or XML Schema from the application (2026-10-15)</h3>
+<ul>
+<li><strong>Fetch from the application</strong> (WAF Artifacts → Inventory) brings in the
+  WSDL and XML Schema files of a FortiWeb already in production. The device
+  won't return those two types, but the SOAP service it protects usually
+  publishes them (often at its address followed by <code>?wsdl</code>). SATOM downloads
+  the document, follows the XML Schema and WSDL <code>import</code>, <code>include</code> and
+  <code>redefine</code> references on the same host, and stores each document as a new
+  version with the origin <strong>fetched</strong> and the URL in its note. The first
+  document takes the object name you give (use the one the policy already
+  references); imported schemas are named after their file. Touches no
+  appliance. Requested by the operator: "we need a way to integrate FortiWebs
+  that are already in use".</li>
+<li>Safe by construction: http/https only, no credentials in the URL, redirects
+  reported instead of followed, references to another host listed and not
+  fetched, documents with a DTD or entity declarations refused, and at most
+  25 documents, 5 levels and 60 seconds. Loopback, link-local and the node's
+  own addresses are refused before connecting and again on the connected
+  socket, so a host name that changes what it resolves to between the two
+  checks is still caught.</li>
+<li>The <strong>Origin</strong> filter on the inventory has a <strong>fetched</strong> option.</li>
+</ul>
 <h3 id="fixed--waf-artifacts-what-a-fortiweb-backup-holds-and-the-grpc-idl-error-on-806-2026-10-15">Fixed — WAF Artifacts: what a FortiWeb backup holds, and the gRPC IDL error on 8.0.6 (2026-10-15)</h3>
 <ul>
 <li>The WAF Artifacts pages said XML Schema, WSDL and gRPC IDL are absent from

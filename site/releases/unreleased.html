@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Fixed — WAF Artifacts: what a FortiWeb backup holds, and the gRPC IDL error on 8.0.6 (2026-10-15) · 151 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added — WAF Artifacts: fetch a WSDL or XML Schema from the application (2026-10-15) · 154 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Fixed — WAF Artifacts: what a FortiWeb backup holds, and the gRPC IDL error on 8.0.6 (2026-10-15) · 151 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added — WAF Artifacts: fetch a WSDL or XML Schema from the application (2026-10-15) · 154 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Fixed — WAF Artifacts: what a FortiWeb backup holds, and the gRPC IDL error on 8.0.6 (2026-10-15) · 151 entries</span>
-        <ul class="rel-leads"><li>Every edit is a new version</li><li>Compare versions</li><li>Library page in the SATOM list layout</li><li class="rel-more">… and 148 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Added — WAF Artifacts: fetch a WSDL or XML Schema from the application (2026-10-15) · 154 entries</span>
+        <ul class="rel-leads"><li>Fetch from the application</li><li>Every edit is a new version</li><li>Compare versions</li><li class="rel-more">… and 151 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.1.0.html" data-rel-version="3.1.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.1.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -365,6 +365,28 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="added--waf-artifacts-fetch-a-wsdl-or-xml-schema-from-the-application-2026-10-15">Added — WAF Artifacts: fetch a WSDL or XML Schema from the application (2026-10-15)</h3>
+<ul>
+<li><strong>Fetch from the application</strong> (WAF Artifacts → Inventory) brings in the
+  WSDL and XML Schema files of a FortiWeb already in production. The device
+  won't return those two types, but the SOAP service it protects usually
+  publishes them (often at its address followed by <code>?wsdl</code>). SATOM downloads
+  the document, follows the XML Schema and WSDL <code>import</code>, <code>include</code> and
+  <code>redefine</code> references on the same host, and stores each document as a new
+  version with the origin <strong>fetched</strong> and the URL in its note. The first
+  document takes the object name you give (use the one the policy already
+  references); imported schemas are named after their file. Touches no
+  appliance. Requested by the operator: "we need a way to integrate FortiWebs
+  that are already in use".</li>
+<li>Safe by construction: http/https only, no credentials in the URL, redirects
+  reported instead of followed, references to another host listed and not
+  fetched, documents with a DTD or entity declarations refused, and at most
+  25 documents, 5 levels and 60 seconds. Loopback, link-local and the node's
+  own addresses are refused before connecting and again on the connected
+  socket, so a host name that changes what it resolves to between the two
+  checks is still caught.</li>
+<li>The <strong>Origin</strong> filter on the inventory has a <strong>fetched</strong> option.</li>
+</ul>
 <h3 id="fixed--waf-artifacts-what-a-fortiweb-backup-holds-and-the-grpc-idl-error-on-806-2026-10-15">Fixed — WAF Artifacts: what a FortiWeb backup holds, and the gRPC IDL error on 8.0.6 (2026-10-15)</h3>
 <ul>
 <li>The WAF Artifacts pages said XML Schema, WSDL and gRPC IDL are absent from

@@ -16667,8 +16667,8 @@ msgstr "Quatre des sept types peuvent être relus via un endpoint privé. Les tr
 msgid "to every shape of read that was tried — they are write-only from the API's point of view."
 msgstr "à toutes les formes de lecture essayées — ils sont en écriture seule du point de vue de l'API."
 
-msgid "The device's Entire configuration backup does carry them, inside a block the firmware encrypts with its own key. FortiWeb can restore that backup as a whole onto another appliance, but nothing can take one object out of it. For those three types, an uploaded copy in SATOM is the ONLY way to move one object from one appliance to another."
-msgstr "La sauvegarde de configuration complète (Entire) de l'appareil les contient bien, dans un bloc que le firmware chiffre avec sa propre clé. FortiWeb peut restaurer cette sauvegarde en entier sur un autre appareil, mais rien ne permet d'en extraire un seul objet. Pour ces trois types, une copie téléversée dans SATOM est le SEUL moyen de déplacer un objet d'un appareil à un autre."
+msgid "The device's Entire configuration backup does carry them, inside a block the firmware encrypts with its own key. FortiWeb can restore that backup as a whole onto another appliance, but nothing can take one object out of it. For those three types, a copy held in SATOM — uploaded, or fetched from the application for XML Schema and WSDL — is the ONLY way to move one object from one appliance to another."
+msgstr "La sauvegarde de configuration complète (Entire) de l'appareil les contient bien, dans un bloc que le firmware chiffre avec sa propre clé. FortiWeb peut restaurer cette sauvegarde en entier sur un autre appareil, mais rien ne permet d'en extraire un seul objet. Pour ces trois types, une copie détenue par SATOM — téléversée, ou récupérée depuis l'application pour XML Schema et WSDL — est le SEUL moyen de déplacer un objet d'un appareil à un autre."
 
 msgid "One name is validated by the firmware:"
 msgstr "Un nom est validé par le firmware :"
@@ -16706,8 +16706,8 @@ msgstr "Ce que SATOM détient, où vit chaque copie, et QUELLES POLITIQUES DE SE
 msgid "days is shown as stale, not as truth."
 msgstr "jours est affiché comme obsolète, et non comme une vérité."
 
-msgid "Store a file you supply. Touches no appliance — and it is the ONLY way XML Schema, WSDL and gRPC IDL can ever enter the store."
-msgstr "Stocker un fichier que vous fournissez. Ne touche aucun appareil — et c'est le SEUL moyen pour XML Schema, WSDL et gRPC IDL d'entrer dans le magasin."
+msgid "Store a file you supply. Touches no appliance. The only way a gRPC IDL can enter the store; an XML Schema or WSDL can also be fetched from the application."
+msgstr "Stocke un fichier que vous fournissez. Ne touche aucun appareil. Le seul moyen pour qu'un gRPC IDL entre dans le dépôt ; un XML Schema ou un WSDL peut aussi être récupéré depuis l'application."
 
 msgid "Upload a file"
 msgstr "Téléverser un fichier"
@@ -16724,8 +16724,8 @@ msgstr "Lire l'objet depuis cet équipement et en garder une copie. Lecture seul
 msgid "Capture from device"
 msgstr "Capturer depuis l'équipement"
 
-msgid "The only way XML Schema, WSDL and gRPC IDL can ever enter the store. Touches no appliance."
-msgstr "Le seul moyen pour XML Schema, WSDL et gRPC IDL d'entrer dans le magasin. Ne touche aucun appareil."
+msgid "The only way a gRPC IDL can enter the store; an XML Schema or WSDL can also be fetched from the application. Touches no appliance."
+msgstr "Le seul moyen pour qu'un gRPC IDL entre dans le dépôt ; un XML Schema ou un WSDL peut aussi être récupéré depuis l'application. Ne touche aucun appareil."
 
 msgid "Which of the seven file-backed object types this content is"
 msgstr "Lequel des sept types d'objets adossés à un fichier est ce contenu"
@@ -24734,3 +24734,45 @@ msgstr "La dernière version n'est pas publiée"
 
 msgid "Versions and runs"
 msgstr "Versions et exécutions"
+
+msgid "Download a WSDL or XML Schema from the application it describes, with the schemas it imports. Touches no appliance."
+msgstr "Télécharge un WSDL ou un XML Schema depuis l'application qu'il décrit, avec les schémas qu'il importe. Ne touche aucun appareil."
+
+msgid "Fetch from the application"
+msgstr "Récupérer depuis l'application"
+
+msgid "For a FortiWeb already in production: the device will not hand back a WSDL or an XML Schema, but the SOAP service it protects usually publishes them. SATOM downloads the document, follows the schemas it imports from the same host, and stores each one. Touches no appliance."
+msgstr "Pour un FortiWeb déjà en production : l'appareil ne restitue ni WSDL ni XML Schema, mais le service SOAP qu'il protège les publie généralement. SATOM télécharge le document, suit les schémas qu'il importe depuis le même hôte et stocke chacun d'eux. Ne touche aucun appareil."
+
+msgid "Where the service publishes its WSDL or XML Schema. Often the service address followed by ?wsdl."
+msgstr "Où le service publie son WSDL ou son XML Schema. Souvent l'adresse du service suivie de ?wsdl."
+
+msgid "http or https only. Imports on another host, redirects, and this node's own or loopback addresses are not followed."
+msgstr "http ou https uniquement. Les imports sur un autre hôte, les redirections et les adresses propres ou de loopback de ce nœud ne sont pas suivis."
+
+msgid "Object name of the first document (mkey on the device)"
+msgstr "Nom d'objet du premier document (mkey sur l'appareil)"
+
+msgid "Use the name the FortiWeb policy already references, so the copy matches it. Left empty, the name comes from the URL. Imported schemas are named after their file."
+msgstr "Utilisez le nom que la politique FortiWeb référence déjà, pour que la copie lui corresponde. Laissé vide, le nom vient de l'URL. Les schémas importés prennent le nom de leur fichier."
+
+msgid "Use the name the policy already references. Left empty, the name comes from the URL; imported schemas are named after their file."
+msgstr "Utilisez le nom que la politique référence déjà. Laissé vide, le nom vient de l'URL ; les schémas importés prennent le nom de leur fichier."
+
+msgid "Untick only for an internal service with a self-signed certificate you trust."
+msgstr "Décochez uniquement pour un service interne avec un certificat auto-signé auquel vous faites confiance."
+
+msgid "Verify the TLS certificate"
+msgstr "Vérifier le certificat TLS"
+
+msgid "Recorded on every version, after the URL it was fetched from."
+msgstr "Enregistrée sur chaque version, après l'URL d'où elle a été récupérée."
+
+msgid "Download the document and its same-host imports and store each one as a new version"
+msgstr "Télécharge le document et ses imports du même hôte et stocke chacun comme une nouvelle version"
+
+msgid "Fetch and store"
+msgstr "Récupérer et stocker"
+
+msgid "fetched"
+msgstr "récupéré"

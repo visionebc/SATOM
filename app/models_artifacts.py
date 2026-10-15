@@ -40,9 +40,11 @@ class WafArtifact(db.Model):
     __tablename__ = "waf_artifact"
 
     #: How the bytes reached us. ``captured`` = read live off a device;
-    #: ``uploaded`` = an operator handed them to SATOM (the ONLY way the three
-    #: unreadable kinds can ever enter the store).
-    SOURCES = ("captured", "uploaded")
+    #: ``uploaded`` = an operator handed them to SATOM; ``fetched`` = SATOM
+    #: downloaded them from the application they describe (WSDL / XSD only,
+    #: :mod:`services.artifact_fetch`). The three unreadable kinds can only
+    #: ever enter the store uploaded or fetched.
+    SOURCES = ("captured", "uploaded", "fetched")
 
     id = db.Column(db.Integer, primary_key=True)
     #: Key into :data:`services.waf_artifacts.KINDS`.

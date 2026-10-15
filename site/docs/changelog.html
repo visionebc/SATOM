@@ -163,6 +163,77 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   retrieve schema</em>) instead of a bare <code>HTTP 500</code>: FortiWeb sends it in
   <code>errmsg</code>, without an error code.</li>
 </ul>
+<h3 id="added--script-library-form-fields-fed-from-the-satom-database-2026-10-15">Added — Script Library: form fields fed from the SATOM database (2026-10-15)</h3>
+<ul>
+<li>Three new field types: <strong>lookup</strong> (pick one row), <strong>lookup_multi</strong> (pick
+  several) and <strong>dataset</strong> (the whole result goes to the script). Each one has
+  a query built in the form designer: a table, other tables combined with it
+  (only the related ones are offered, with the join explained, up to two joins
+  away), columns, filters, order and a row limit, plus which column is the
+  value and which the label. <strong>Preview rows</strong> runs it at once.</li>
+<li>The script never touches the database: SATOM runs the query (read-only, from
+  the Report Builder catalogue; credential columns and tables are refused) and
+  passes the rows on standard input — <code>inputs["device"]["row"]["appliances.host"]</code>.</li>
+<li>The rows are read with the ADOMs of whoever the run is for, and when the run
+  is queued: a saved run reads them with its owner's ADOMs every time it fires,
+  and a value that is no longer there fails the run instead of running on a
+  stale copy.</li>
+</ul>
+<h3 id="added--profiles-can-be-confined-to-some-adoms-2026-10-15">Added — Profiles can be confined to some ADOMs (2026-10-15)</h3>
+<ul>
+<li>Requested as: "if a user only has permission for one ADOM it must be only
+  that one; if they have global permissions they can have everything". Until
+  now an ADOM was only a view: any user could switch to Global and see the
+  whole fleet.</li>
+<li>A profile's new <strong>ADOMs</strong> card lists the ADOMs it may work in (none ticked =
+  every ADOM, as before). A confined profile sees only those ADOMs in the
+  switcher; opening another is refused; its Global console is the union of its
+  ADOMs (devices, records, jobs, change requests, Sentinel, certificates,
+  reports, metrics, dashboard tiles). Raw SQL (database browser, SQL console,
+  DB reports) and Global ADOM Assets are refused to it, because they cannot be
+  narrowed to an ADOM.</li>
+<li>A confined administrator cannot create, widen or assign an unconfined
+  profile, nor reset the password or clear the 2FA of an account wider than
+  itself.</li>
+</ul>
+<h3 id="fixed--pages-that-loaded-another-adoms-record-by-its-id-2026-10-15">Fixed — pages that loaded another ADOM's record by its id (2026-10-15)</h3>
+<ul>
+<li>Found while building the ADOM confinement: several pages filtered their list
+  by ADOM but loaded a record by id without checking it, so a record the list
+  hid was one URL away. Now 404, like the list: Certificate Manager (detail,
+  CSR, deploy, swap, renew, revoke, delete, revocation confirm, on-device
+  certificate swap/remove), Sentinel (incident actions, border maps, topology,
+  blocklist release), configuration templates and provisioning baselines
+  (every by-id route), attaching a member to an HA cluster, and ADOM Assets
+  file listing.</li>
+<li>Sentinel showed every incident in the fleet to a session that could see no
+  FortiWeb at all, and a sweep with no device picked read the whole fleet; it
+  now sweeps the devices the session can see.</li>
+<li>Template details listed bindings on other ADOMs' devices; WAF Artifacts
+  named other ADOMs' devices in its labels and divergence report; System
+  Backup's coverage matrix, the firmware page's device banner and the Global
+  dashboard's job and certificate counts read the whole fleet.</li>
+</ul>
+<h3 id="changed--the-alert-webhook-secret-follows-the-vault-mode-2026-10-15">Changed — the alert webhook secret follows the vault mode (2026-10-15)</h3>
+<ul>
+<li>The HMAC secret of the alert webhook was the last credential kept only in
+  the SATOM database. With the vault as the only store it now lives at
+  <code>&lt;mount&gt;/alerts/webhook</code>; in mirror mode both copies; without a vault,
+  encrypted locally as before. <strong>Settings → Vault</strong> migrate and scrub cover it.</li>
+</ul>
+<h3 id="fixed--libraries-a-driver-that-imports-but-cannot-connect-is-rolled-back-2026-10-15">Fixed — Libraries: a driver that imports but cannot connect is rolled back (2026-10-15)</h3>
+<ul>
+<li>After installing a library, the runner now opens one database connection
+  (<code>SELECT 1</code>) through the new code before restarting anything. The import
+  check alone passed psycopg 3.3.6 with psycopg-binary 3.3.4, which failed on
+  every connection and took both nodes down.</li>
+</ul>
+<h3 id="fixed--the-bookmarks-tab-covered-buttons-at-the-top-right-2026-10-15">Fixed — the bookmarks tab covered buttons at the top right (2026-10-15)</h3>
+<ul>
+<li>The closed bookmarks rail keeps a 34 px tab on the right edge, which sat on
+  top of page-header buttons (Script Library's <strong>Publish</strong> was the reported
+  case). The page now reserves that strip.</li>
+</ul>
 <h3 id="fixed--waf-artifacts-what-a-fortiweb-backup-holds-and-the-grpc-idl-error-on-806-2026-10-15">Fixed — WAF Artifacts: what a FortiWeb backup holds, and the gRPC IDL error on 8.0.6 (2026-10-15)</h3>
 <ul>
 <li>The WAF Artifacts pages said XML Schema, WSDL and gRPC IDL are absent from

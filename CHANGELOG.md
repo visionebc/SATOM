@@ -57,6 +57,77 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   retrieve schema*) instead of a bare `HTTP 500`: FortiWeb sends it in
   `errmsg`, without an error code.
 
+### Added — Script Library: form fields fed from the SATOM database (2026-10-15)
+
+- Three new field types: **lookup** (pick one row), **lookup_multi** (pick
+  several) and **dataset** (the whole result goes to the script). Each one has
+  a query built in the form designer: a table, other tables combined with it
+  (only the related ones are offered, with the join explained, up to two joins
+  away), columns, filters, order and a row limit, plus which column is the
+  value and which the label. **Preview rows** runs it at once.
+- The script never touches the database: SATOM runs the query (read-only, from
+  the Report Builder catalogue; credential columns and tables are refused) and
+  passes the rows on standard input — `inputs["device"]["row"]["appliances.host"]`.
+- The rows are read with the ADOMs of whoever the run is for, and when the run
+  is queued: a saved run reads them with its owner's ADOMs every time it fires,
+  and a value that is no longer there fails the run instead of running on a
+  stale copy.
+
+### Added — Profiles can be confined to some ADOMs (2026-10-15)
+
+- Requested as: "if a user only has permission for one ADOM it must be only
+  that one; if they have global permissions they can have everything". Until
+  now an ADOM was only a view: any user could switch to Global and see the
+  whole fleet.
+- A profile's new **ADOMs** card lists the ADOMs it may work in (none ticked =
+  every ADOM, as before). A confined profile sees only those ADOMs in the
+  switcher; opening another is refused; its Global console is the union of its
+  ADOMs (devices, records, jobs, change requests, Sentinel, certificates,
+  reports, metrics, dashboard tiles). Raw SQL (database browser, SQL console,
+  DB reports) and Global ADOM Assets are refused to it, because they cannot be
+  narrowed to an ADOM.
+- A confined administrator cannot create, widen or assign an unconfined
+  profile, nor reset the password or clear the 2FA of an account wider than
+  itself.
+
+### Fixed — pages that loaded another ADOM's record by its id (2026-10-15)
+
+- Found while building the ADOM confinement: several pages filtered their list
+  by ADOM but loaded a record by id without checking it, so a record the list
+  hid was one URL away. Now 404, like the list: Certificate Manager (detail,
+  CSR, deploy, swap, renew, revoke, delete, revocation confirm, on-device
+  certificate swap/remove), Sentinel (incident actions, border maps, topology,
+  blocklist release), configuration templates and provisioning baselines
+  (every by-id route), attaching a member to an HA cluster, and ADOM Assets
+  file listing.
+- Sentinel showed every incident in the fleet to a session that could see no
+  FortiWeb at all, and a sweep with no device picked read the whole fleet; it
+  now sweeps the devices the session can see.
+- Template details listed bindings on other ADOMs' devices; WAF Artifacts
+  named other ADOMs' devices in its labels and divergence report; System
+  Backup's coverage matrix, the firmware page's device banner and the Global
+  dashboard's job and certificate counts read the whole fleet.
+
+### Changed — the alert webhook secret follows the vault mode (2026-10-15)
+
+- The HMAC secret of the alert webhook was the last credential kept only in
+  the SATOM database. With the vault as the only store it now lives at
+  `<mount>/alerts/webhook`; in mirror mode both copies; without a vault,
+  encrypted locally as before. **Settings → Vault** migrate and scrub cover it.
+
+### Fixed — Libraries: a driver that imports but cannot connect is rolled back (2026-10-15)
+
+- After installing a library, the runner now opens one database connection
+  (`SELECT 1`) through the new code before restarting anything. The import
+  check alone passed psycopg 3.3.6 with psycopg-binary 3.3.4, which failed on
+  every connection and took both nodes down.
+
+### Fixed — the bookmarks tab covered buttons at the top right (2026-10-15)
+
+- The closed bookmarks rail keeps a 34 px tab on the right edge, which sat on
+  top of page-header buttons (Script Library's **Publish** was the reported
+  case). The page now reserves that strip.
+
 ### Fixed — WAF Artifacts: what a FortiWeb backup holds, and the gRPC IDL error on 8.0.6 (2026-10-15)
 
 - The WAF Artifacts pages said XML Schema, WSDL and gRPC IDL are absent from

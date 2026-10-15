@@ -24811,3 +24811,15 @@ msgstr "Scarica e archivia"
 
 msgid "fetched"
 msgstr "scaricato"
+
+#: 2026-10-15 adom confinement / script library db fields
+msgid "in the vault"
+msgstr "nel vault"
+
+#: 2026-10-15 adom confinement / script library db fields
+msgid "Tick the ADOMs this profile may work in. With none ticked it may work in every ADOM. A confined profile sees only its ADOMs in the switcher, and its Global console shows only their devices and records."
+msgstr "Seleziona gli ADOM in cui questo profilo può lavorare. Senza alcuna selezione può lavorare in tutti gli ADOM. Un profilo limitato vede solo i suoi ADOM nel selettore e la sua console Global mostra solo i loro dispositivi e record."
+
+#: 2026-10-15 adom confinement / script library db fields
+msgid "Rows from the SATOM database are read when the run starts and passed to the script."
+msgstr "Le righe del database di SATOM vengono lette all'avvio dell'esecuzione e passate allo script."

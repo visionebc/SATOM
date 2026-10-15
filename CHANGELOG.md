@@ -103,6 +103,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Changed — Libraries card changes run as a job on the server; the peer step no longer needs an open browser (2026-10-15)
 
+- **System packages too.** Installing an OS package with "all nodes" used to
+  ask the peer at the same moment as this node, so a package that broke the
+  service could take both nodes down together, as psycopg did. It is now the
+  same kind of job: the peer is asked only after the install succeeded here,
+  and both nodes' steps are in the job log (operator request: "yes, do it and
+  test it").
+
 - An upgrade or rollback from Settings → Libraries is now a job in the global
   job dock and the Job Manager, with every step of both nodes in its log
   (operator request: "this process should run in the background and create a

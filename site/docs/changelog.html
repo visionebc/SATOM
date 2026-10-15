@@ -209,13 +209,23 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="changed--libraries-card-changes-run-as-a-job-on-the-server-the-peer-step-no-longer-needs-an-open-browser-2026-10-15">Changed — Libraries card changes run as a job on the server; the peer step no longer needs an open browser (2026-10-15)</h3>
 <ul>
-<li>An upgrade or rollback from Settings → Libraries is now a job in the global
+<li>
+<p><strong>System packages too.</strong> Installing an OS package with "all nodes" used to
+  ask the peer at the same moment as this node, so a package that broke the
+  service could take both nodes down together, as psycopg did. It is now the
+  same kind of job: the peer is asked only after the install succeeded here,
+  and both nodes' steps are in the job log (operator request: "yes, do it and
+  test it").</p>
+</li>
+<li>
+<p>An upgrade or rollback from Settings → Libraries is now a job in the global
   job dock and the Job Manager, with every step of both nodes in its log
   (operator request: "this process should run in the background and create a
   job to show its status; we cannot depend on the browser for processes to
   run"). Before, with "also the peer" ticked, the card's JavaScript waited for
   this node to succeed and then asked the server to contact the peer. Closing
-  the page left the peer untouched, and nothing reported it.</li>
+  the page left the peer untouched, and nothing reported it.</p>
+</li>
 <li><code>satom-scheduler</code> drives the job every 3 seconds. The job does not run as a
   thread in the web, because the change itself restarts the web and the
   scheduler. All of its state is in the job file, so it continues where it

@@ -4180,7 +4180,9 @@ unconfined.
 - **Install** appears while any node is not *ok*. It asks whether to install on
   every node or only this one. The privileged updater on each node picks the
   distribution's package manager, installs the package and runs the same sandbox
-  check before it reports success.
+  check before it reports success. Like a Libraries change, it is a **job on the
+  server**: the peer is asked only after this node succeeded, the two nodes never
+  change at the same moment, and closing the page does not stop it.
 - The list is curated and install-only. The web worker sends a package *key*,
   never a package name or a command, and nothing here removes a package.
 - New installs bring `bubblewrap` with them (online and offline bundles). This

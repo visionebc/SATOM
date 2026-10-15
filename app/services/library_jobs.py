@@ -25,6 +25,11 @@ Phases, in ``meta.phase``:
 
 Every terminal state is a verdict about BOTH nodes: a peer that refused, could
 not be reached or failed is an error, never a quiet success.
+
+Two kinds ride the same machinery, both from Settings → General: a curated pip
+change (``library_pip``) and a curated OS package install (``system_package``,
+``services/system_packages``). The OS install used to ask the peer at the same
+moment as this node -- the simultaneity that took the pair down with psycopg.
 """
 from __future__ import annotations
 
@@ -36,6 +41,10 @@ from pathlib import Path
 from . import jobs
 
 JOB_TYPE = "library_pip"
+SYSPKG_TYPE = "system_package"
+JOB_TYPES = (JOB_TYPE, SYSPKG_TYPE)
+#: Steps a run of each kind writes, for a progress bar that never ends early.
+_EXPECTED_STEPS = {JOB_TYPE: 9, SYSPKG_TYPE: 4}
 #: How often the scheduler sidecar drives active jobs.
 TICK_S = 3
 #: The updater normally picks a request up within a second or two.
@@ -91,15 +100,29 @@ def start(package: str, version: str, *, action: str, also_peer: bool,
     """
     from . import self_update as su
     uid = su.request_pip_change(package, version, by=by, action=action)
-    node = su.this_node_name()
     verb = "Roll back" if action == "rollback" else "Upgrade"
+    return _open(JOB_TYPE, "%s %s → %s" % (verb, package, version), uid, by,
+                 also_peer, {"package": package, "version": version,
+                             "action": action})
+
+
+def start_install(key: str, *, also_peer: bool, by: str) -> dict:
+    """Same as :func:`start` for a curated OS package (System packages card)."""
+    from . import system_packages as sp
+    uid = sp.request_install(key, by=by)
+    return _open(SYSPKG_TYPE, "Install %s" % key, uid, by, also_peer,
+                 {"package": key, "action": "install"})
+
+
+def _open(type_: str, what: str, uid: str, by: str, also_peer: bool,
+          extra: dict) -> dict:
+    from . import self_update as su
+    node = su.this_node_name()
     scope = "%s + peer" % node if also_peer else node
     job = jobs.create_job(
-        JOB_TYPE, "%s %s → %s (%s)" % (verb, package, version, scope), by=by,
-        meta={"package": package, "version": version, "action": action,
-              "also_peer": bool(also_peer), "node": node, "local_uid": uid,
-              "phase": "local", "peers": [], "steps": [],
-              "phase_since": _iso()},
+        type_, "%s (%s)" % (what, scope), by=by,
+        meta=dict(extra, also_peer=bool(also_peer), node=node, local_uid=uid,
+                  phase="local", peers=[], steps=[], phase_since=_iso()),
         cancelable=False, durable=True)
     jobs.update_job(job["id"], status=jobs.RUNNING,
                     message="queued on %s — waiting for its updater" % node)
@@ -142,7 +165,7 @@ def advance(job_id: str) -> dict | None:
         except OSError:
             return None
         st = jobs.get_job(job_id)
-        if not st or st.get("type") != JOB_TYPE or st.get("status") not in jobs._ACTIVE \
+        if not st or st.get("type") not in JOB_TYPES or st.get("status") not in jobs._ACTIVE \
                 or (st.get("host") or jobs._HOST) != jobs._HOST:
             _retire(job_id)
             return st
@@ -178,10 +201,10 @@ def _run_steps(node: str, run: dict | None) -> list[dict]:
     return out
 
 
-def _percent(run: dict | None, lo: int, hi: int) -> int:
-    # A pip change writes about nine steps; the bar never claims the end early.
+def _percent(run: dict | None, lo: int, hi: int, expected: int) -> int:
+    # The bar follows the steps written so far and never claims the end early.
     n = len((run or {}).get("steps") or [])
-    return lo + min(hi - lo - 1, int((hi - lo) * n / 9))
+    return lo + min(hi - lo - 1, int((hi - lo) * n / expected))
 
 
 def _advance_local(job_id: str, meta: dict) -> None:
@@ -194,7 +217,7 @@ def _advance_local(job_id: str, meta: dict) -> None:
     def _mirror(s):
         s["meta"]["local_state"] = state
         s["meta"]["steps"] = _run_steps(node, run)
-        s["percent"] = _percent(run, 0, hi)
+        s["percent"] = _percent(run, 0, hi, _EXPECTED_STEPS.get(s.get("type"), 9))
     jobs.mutate_job(job_id, _mirror)
 
     if state in ("queued", "running"):
@@ -239,10 +262,16 @@ def _dispatch(job_id: str, meta: dict) -> None:
     # Persist the intent FIRST: a driver that dies inside the request leaves
     # 'dispatching' behind, and the next pass refuses to ask a second time.
     jobs.mutate_job(job_id, lambda s: s["meta"].update(phase="dispatching"))
+    st = jobs.get_job(job_id) or {}
+    syspkg = st.get("type") == SYSPKG_TYPE
     try:
-        peers = su.request_pip_change_on_peers(
-            meta["package"], meta["version"],
-            by=_by(job_id), action=meta.get("action") or "upgrade")
+        if syspkg:
+            from . import system_packages as sp
+            peers = sp.request_install_on_peers(meta["package"], by=_by(job_id))
+        else:
+            peers = su.request_pip_change_on_peers(
+                meta["package"], meta["version"],
+                by=_by(job_id), action=meta.get("action") or "upgrade")
     except Exception as exc:  # noqa: BLE001
         peers = [{"node": "?", "host": "", "uid": None,
                   "state": "unreachable", "error": str(exc)}]
@@ -251,9 +280,10 @@ def _dispatch(job_id: str, meta: dict) -> None:
         p.update(asked_at=now, last_seen=now if p.get("state") == "queued" else None,
                  run_state=None)
     try:
-        log_action("settings.library_pip",
-                   detail="%s %s==%s on peers after %s succeeded (job %s): %s" % (
-                       meta.get("action"), meta["package"], meta["version"],
+        log_action("settings.system_package" if syspkg else "settings.library_pip",
+                   detail="%s %s%s on peers after %s succeeded (job %s): %s" % (
+                       meta.get("action"), meta["package"],
+                       "" if syspkg else "==%s" % meta["version"],
                        meta.get("node"), job_id,
                        ", ".join("%s=%s" % (p.get("node"), p.get("state")) for p in peers)
                        or "none registered"))
@@ -308,7 +338,7 @@ def _advance_peer(job_id: str, meta: dict) -> None:
                          steps=own + [x for p in peers
                                       for x in peer_steps.get(p.get("node"), [])])
         n = max([int(p.get("steps_done") or 0) for p in peers] or [0])
-        s["percent"] = 50 + min(49, int(50 * n / 9))
+        s["percent"] = 50 + min(49, int(50 * n / _EXPECTED_STEPS.get(s.get("type"), 9)))
     jobs.mutate_job(job_id, _apply)
 
     failed = [p for p in peers if p.get("run_state") == "failed"]

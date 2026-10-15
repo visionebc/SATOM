@@ -607,35 +607,29 @@ def system_packages_state():
 @require_permission(Permission.USER_MANAGE)
 def system_packages_install():
     """Enqueue the install of ONE curated OS package for the privileged runner
-    on this node, and optionally on the peers. The web worker installs nothing;
-    the runner re-checks the key against its own table."""
+    on this node, as a job. The web worker installs nothing; the runner
+    re-checks the key against its own table. With ``also_peer`` the job asks
+    the peers only after this node succeeded (``services/library_jobs``), so
+    the two nodes never change at the same moment and no browser has to stay
+    open for the peer half."""
+    from ..services import library_jobs
     from ..services import self_update as su
-    from ..services import system_packages as sp
     payload = request.get_json(silent=True) or {}
     key = (payload.get('package') or '').strip()
     also_peer = bool(payload.get('also_peer'))
     who = getattr(current_user, 'username', '?')
     try:
-        uid = sp.request_install(key, by=who)
+        job = library_jobs.start_install(key, also_peer=also_peer, by=who)
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     except Exception as exc:  # noqa: BLE001
         return jsonify({'error': 'could not queue: %s' % exc}), 500
-    peers = []
-    if also_peer:
-        try:
-            peers = sp.request_install_on_peers(key, by=who)
-        except Exception as exc:  # noqa: BLE001
-            peers = [{'node': '?', 'host': '', 'uid': None,
-                      'state': 'unreachable', 'error': str(exc)}]
     log_action('settings.system_package',
-               detail='install %s on %s%s' % (key, su.this_node_name(),
-                      (' (+peers: %s)' % (', '.join('%s=%s' % (p.get('node'), p.get('state'))
-                                                    for p in peers) or 'none registered'))
-                      if also_peer else ''))
-    return jsonify({'uid': uid, 'node': su.this_node_name(), 'peers': peers,
-                    'partial': bool(also_peer and any(p.get('state') != 'queued'
-                                                      for p in peers))})
+               detail='install %s on %s%s (job %s)' % (
+                   key, su.this_node_name(),
+                   ' (peer after local success)' if also_peer else '', job['id']))
+    return jsonify({'job_id': job['id'], 'uid': job['meta']['local_uid'],
+                    'node': su.this_node_name(), 'also_peer': also_peer})
 
 
 @bp.route('/peer/system-packages')

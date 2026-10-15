@@ -2727,13 +2727,23 @@ System Automations to Automations.
   change's action against devices the change names. Anything else (another
   action, an extra device, the whole fleet) is skipped with the reason and
   leaves the change untouched.
-- Schedules: interval / daily / weekly / monthly / once, with catch-up
-  semantics and a run history per action. A dedicated scheduler sidecar fires
+- Schedules: interval / daily / weekly / monthly / once / **cron**, with
+  catch-up semantics and a run history per action. **Cron** takes a standard
+  five-field expression (minute hour day-of-month month day-of-week: `*`,
+  lists, ranges, `/step`, month and weekday names, Sunday as 0 or 7, and a day
+  matching either day field when both are restricted) in the console
+  timezone; one that can never fire (30 February) is refused. A dedicated scheduler sidecar fires
   them; **Run now** is always available. Every wall-clock field — including the
   one-time **Run at** — is in the console timezone (Settings → General), and
   the list shows **Next run** in that timezone with its zone. A run the
   scheduler was not up for, on an action without catch-up, shows as
   **missed**.
+
+**Scripts** (Operations → Automation → **Scripts**, Global ADOM, needs
+`operations.scripts_run`, which operators hold): the Script Library scripts
+an administrator published for operators (§23.4). Pick one, fill in its form
+and **Run now**, or save the values with a cron expression as a **saved run**.
+See §23.4 for how saved runs behave.
 
 **Change Requests** (maintenance windows):
 
@@ -3714,6 +3724,27 @@ Operators always run a published version, so editing the draft never changes
 what they run. **Versions & runs** lists the versions (zip, *restore to
 draft*) and the run history. The last 50 versions are kept, and the live one
 always is.
+
+**Who runs it.** Under Settings, *Who can run it* is **Administrators only**
+or **Operators**. A published script with the second audience appears to
+every user holding `operations.scripts_run` under **Operations → Automation →
+Scripts** (Global ADOM): the form of the published version, **Run now**, the
+result, and their own run history. Administrators see every script and every
+user's runs and saved runs there too.
+
+**Saved runs.** On the same page, a set of values can be saved with a cron
+expression (§15; the next five fire times are previewed as you type). A saved
+run is **pinned to the version it was created against**: publishing a new
+version changes nothing for it, and the row offers *move to vN*, which checks
+the saved values against the new form first. Password values of a saved run
+are kept in the vault (`<mount>/scripts-saved/<script>/<id>`), never in the
+saved-run file, and each fire hands the runner a single-use wrapped copy;
+without a vault, a saved run cannot keep one. The scheduler fires saved runs
+on the primary. A fire missed by more than five minutes (scheduler not
+running) is skipped, not replayed. A saved run whose owner is deactivated,
+loses `operations.scripts_run` or loses access to the script is **paused**
+with the reason instead of running on their behalf. Each user keeps at most
+50 saved runs.
 
 **How a run is contained.** Runs are executed by `satom-scripts.service`, not by
 the web application. That runner has no database connection and no access to
@@ -7424,8 +7455,8 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (121 today) or **excluded with a written
-   reason** (150 today — JSON feeds, downloads, redirects and fragments that
+   the console is either **on the map** (122 today) or **excluded with a written
+   reason** (151 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the

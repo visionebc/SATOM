@@ -113,6 +113,52 @@ def forget(slug: str, names: list[str]) -> None:
             pass
 
 
+def _vault_info(cfg: dict) -> dict:
+    ca = (cfg.get("ca_cert") or "").strip()
+    if ca and not ca.startswith("-----BEGIN"):
+        # A path (often under pki/, which the runner's unit cannot read):
+        # hand over the PEM itself. A CA certificate is public.
+        try:
+            with open(ca, encoding="utf-8") as fh:
+                ca = fh.read()
+        except OSError:
+            ca = ""
+    return {"addr": cfg["addr"], "namespace": cfg.get("namespace") or "",
+            "verify_tls": bool(cfg.get("verify_tls", True)), "ca_cert": ca,
+            "timeout": float(cfg.get("timeout") or 10)}
+
+
+def _wrapped_read(cfg: dict, tok: str, kv_path: str) -> str | None:
+    """Single-use wrapping token for one KV v2 path, or None if absent."""
+    url = "%s/v1/%s/data/%s" % (cfg["addr"], cfg["mount"], kv_path)
+    req = urllib.request.Request(url, method="GET")
+    req.add_header("X-Vault-Token", tok)
+    req.add_header("X-Vault-Wrap-TTL", str(WRAP_TTL))
+    if cfg.get("namespace"):
+        req.add_header("X-Vault-Namespace", cfg["namespace"])
+    try:
+        with urllib.request.urlopen(req, context=sb._ssl_context(cfg),
+                                    timeout=cfg["timeout"]) as resp:
+            res = json.loads(resp.read() or b"{}")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise ScriptError("vault refused %s: HTTP %s" % (kv_path, exc.code))
+    except Exception as exc:  # noqa: BLE001
+        raise ScriptError("vault unreachable for %s: %s" % (kv_path, exc))
+    return (res.get("wrap_info") or {}).get("token") or None
+
+
+def wrap_path(kv_path: str) -> tuple[str | None, dict]:
+    """(single-use token, vault info) for an arbitrary script-owned path --
+    the password values of a saved run."""
+    if not kv_path.startswith(("scripts/", "scripts-saved/")):
+        raise ScriptError("refusing to wrap %r" % kv_path)
+    _require()
+    cfg = sb.config(reveal=False)
+    return _wrapped_read(cfg, sb._token(cfg), kv_path), _vault_info(cfg)
+
+
 def wrap_for_run(slug: str, credentials: list[dict]) -> tuple[dict, list[str], dict]:
     """({NAME: wrapping token}, [missing names], vault connection info).
 
@@ -127,38 +173,10 @@ def wrap_for_run(slug: str, credentials: list[dict]) -> tuple[dict, list[str], d
     tok = sb._token(cfg)
     wrapped, missing = {}, []
     for n in names:
-        url = "%s/v1/%s/data/%s" % (cfg["addr"], cfg["mount"], path(slug, n))
-        req = urllib.request.Request(url, method="GET")
-        req.add_header("X-Vault-Token", tok)
-        req.add_header("X-Vault-Wrap-TTL", str(WRAP_TTL))
-        if cfg.get("namespace"):
-            req.add_header("X-Vault-Namespace", cfg["namespace"])
-        try:
-            with urllib.request.urlopen(req, context=sb._ssl_context(cfg),
-                                        timeout=cfg["timeout"]) as resp:
-                res = json.loads(resp.read() or b"{}")
-        except urllib.error.HTTPError as exc:
-            if exc.code == 404:
-                missing.append(n)
-                continue
-            raise ScriptError("vault refused credential %s: HTTP %s" % (n, exc.code))
-        except Exception as exc:  # noqa: BLE001
-            raise ScriptError("vault unreachable for credential %s: %s" % (n, exc))
-        wt = (res.get("wrap_info") or {}).get("token")
-        if not wt:
+        wt = _wrapped_read(cfg, tok, path(slug, n))
+        if wt is None:
             missing.append(n)
-            continue
-        wrapped[n] = wt
-    ca = (cfg.get("ca_cert") or "").strip()
-    if ca and not ca.startswith("-----BEGIN"):
-        # A path (often under pki/, which the runner's unit cannot read):
-        # hand over the PEM itself. A CA certificate is public.
-        try:
-            with open(ca, encoding="utf-8") as fh:
-                ca = fh.read()
-        except OSError:
-            ca = ""
-    info = {"addr": cfg["addr"], "namespace": cfg.get("namespace") or "",
-            "verify_tls": bool(cfg.get("verify_tls", True)), "ca_cert": ca,
-            "timeout": float(cfg.get("timeout") or 10)}
+        else:
+            wrapped[n] = wt
+    info = _vault_info(cfg)
     return wrapped, missing, info

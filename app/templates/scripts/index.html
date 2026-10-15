@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Scripts — Automation{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex align-items-start">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-file-earmark-play me-2 text-accent"></i>{{ _('Scripts') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('Scripts your administrators published for you. Fill in the form and run one now, or save the values with a schedule.') }}</p>
+  </div>
+  {% if current_user.can('studio.script_library') %}
+  <a class="btn btn-outline-secondary btn-sm ms-auto" href="{{ url_for('script_library.index') }}"><i class="bi bi-file-earmark-code me-1"></i>{{ _('Script Library') }}</a>
+  {% endif %}
+</div>
+
+{% if not sandbox_ok %}
+<div class="alert alert-danger" style="font-size:13px;"><strong>{{ _('Sandbox unavailable on this node.') }}</strong>
+  {{ _('bubblewrap is not installed, so no script can run here. Install it from Settings > General > System packages.') }}</div>
+{% endif %}
+
+<div class="row g-3">
+  {% for s in scripts %}
+  <div class="col-md-6 col-xl-4">
+    <a class="fw-card d-block h-100 text-decoration-none" style="color:inherit;" href="{{ url_for('scripts.run_page', slug=s.slug) }}">
+      <div class="fw-card-body">
+        <div class="d-flex justify-content-between align-items-start">
+          <strong>{{ s.name }}</strong>
+          <span class="fw-badge fw-badge-success">v{{ s.version }}</span>
+        </div>
+        <div class="text-muted mt-1" style="font-size:12px;min-height:2.4em;">{{ s.description|truncate(160) if s.description else '' }}</div>
+        <div class="mt-2" style="font-size:11px;">
+          <span class="fw-badge fw-badge-secondary">{{ s.fields|length }} {{ _('fields') }}</span>
+          {% if s.network == 'egress' %}<span class="fw-badge fw-badge-info">{{ _('outbound') }}</span>{% endif %}
+          {% if s.credentials %}<span class="fw-badge fw-badge-secondary"><i class="bi bi-key"></i> {{ s.credentials|length }}</span>{% endif %}
+        </div>
+      </div>
+    </a>
+  </div>
+  {% else %}
+  <div class="col-12"><div class="fw-card"><div class="fw-card-body text-muted">{{ _('No script has been published for you yet.') }}</div></div></div>
+  {% endfor %}
+</div>
+
+<div class="fw-card mt-3">
+  <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-calendar2-week me-2 text-accent"></i>{{ _('Saved runs') }}</span></div>
+  <div class="fw-card-body p-0">
+    <table class="table table-sm mb-0" style="font-size:12px;">
+      <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Script') }}</th><th>{{ _('Version') }}</th><th>{{ _('Cron') }}</th><th>{{ _('Next run') }}</th><th>{{ _('Owner') }}</th><th>{{ _('State') }}</th></tr></thead>
+      <tbody>
+      {% for s in schedules %}
+        <tr>
+          <td><a href="{{ url_for('scripts.run_page', slug=s.slug) }}">{{ s.name }}</a></td>
+          <td><code>{{ s.slug }}</code></td><td>v{{ s.version }}</td><td><code>{{ s.cron }}</code></td>
+          <td class="text-muted">{{ (s.next_run or '')[:16]|replace('T', ' ') }} UTC</td><td>{{ s.owner }}</td>
+          <td>{% if s.enabled %}<span class="fw-badge fw-badge-success">{{ _('on') }}</span>{% else %}<span class="fw-badge fw-badge-secondary" title="{{ s.paused_reason }}">{{ _('paused') }}</span>{% endif %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="text-muted p-3">{{ _('No saved runs.') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="fw-card mt-3">
+  <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Recent runs') }}</span></div>
+  <div class="fw-card-body p-0">{% include "script_library/_runs.html" %}</div>
+</div>
+<script type="application/json" id="sl-config">{{ {'urls': {'run': url_for('scripts.run_status', rid='RID')}}|tojson }}</script>
+<script src="{{ asset('js/script_library.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

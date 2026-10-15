@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% from "scripts/_form_fields.html" import form_fields %}
+{% block title %}{{ meta.name }} — Scripts{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex align-items-start">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-file-earmark-play me-2 text-accent"></i>{{ meta.name }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;"><code>{{ slug }}</code> · <span class="fw-badge fw-badge-success">v{{ v.n }}</span>
+      {% if v.network == 'egress' %}<span class="fw-badge fw-badge-info">{{ _('outbound') }}</span>{% endif %}
+      · {{ _('timeout') }} {{ v.timeout }} s</p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm ms-auto" href="{{ url_for('scripts.index') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Scripts') }}</a>
+</div>
+
+{% if meta.description %}<div class="fw-card mb-3"><div class="fw-card-body" style="font-size:13px;white-space:pre-wrap;">{{ meta.description }}</div></div>{% endif %}
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="fw-card">
+      <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-input-cursor-text me-2 text-accent"></i>{{ _('Values') }}</span></div>
+      <div class="fw-card-body">
+        <form id="sc-form">{{ form_fields(v.fields, 'sc') }}</form>
+        <div class="d-flex gap-2 mt-2">
+          <button type="button" class="btn btn-primary btn-sm" id="sc-run" {% if not sandbox_ok %}disabled{% endif %}><i class="bi bi-play-fill me-1"></i>{{ _('Run now') }}</button>
+        </div>
+        <hr>
+        <div class="small fw-bold mb-1">{{ _('Save these values with a schedule') }}</div>
+        <div class="row g-2">
+          <div class="col-7"><input class="form-control form-control-sm" id="sc-sname" placeholder="{{ _('Name') }}" maxlength="120"></div>
+          <div class="col-5"><input class="form-control form-control-sm font-monospace" id="sc-cron" placeholder="0 6 * * 1-5"></div>
+        </div>
+        <div class="form-text" id="sc-cron-help">{{ _('Cron: minute hour day-of-month month day-of-week, in %(tz)s.', tz=tz_name) }}</div>
+        <div class="small text-muted" id="sc-cron-next"></div>
+        {% if not vault_ok and v.fields|selectattr('type', 'equalto', 'password')|list %}
+        <div class="small text-warning">{{ _('Password values can be kept in a saved run only when a vault is configured (Settings > Vault).') }}</div>
+        {% endif %}
+        <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="sc-save"><i class="bi bi-calendar-plus me-1"></i>{{ _('Save schedule') }}</button>
+        <span class="small ms-2" id="sc-save-msg"></span>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-7">
+    <div class="fw-card">
+      <div class="fw-card-header d-flex justify-content-between"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-terminal me-2 text-accent"></i>{{ _('Result') }}</span><span id="sc-status"></span></div>
+      <div class="fw-card-body">
+        <pre id="sc-out" class="p-2 mb-2" style="min-height:120px;max-height:45vh;overflow:auto;font-size:11px;background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:8px;white-space:pre-wrap;"></pre>
+        <pre id="sc-result" class="p-2 mb-0" style="max-height:30vh;overflow:auto;font-size:11px;background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:8px;white-space:pre-wrap;"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="fw-card mt-3">
+  <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-calendar2-week me-2 text-accent"></i>{{ _('Saved runs') }}</span></div>
+  <div class="fw-card-body p-0">
+    <table class="table table-sm mb-0 align-middle" style="font-size:12px;">
+      <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Version') }}</th><th>{{ _('Cron') }}</th><th>{{ _('Next run') }}</th><th>{{ _('Last run') }}</th><th>{{ _('Owner') }}</th><th></th></tr></thead>
+      <tbody>
+      {% for s in schedules %}
+        <tr data-sid="{{ s.id }}">
+          <td>{{ s.name }}{% if s.secret_fields %} <i class="bi bi-key text-muted" title="{{ _('password values kept in the vault') }}"></i>{% endif %}</td>
+          <td>v{{ s.version }}{% if s.version < v.n %} <span class="fw-badge fw-badge-warning">{{ _('v%(n)s available', n=v.n) }}</span>{% endif %}</td>
+          <td><code>{{ s.cron }}</code></td>
+          <td class="text-muted">{% if s.enabled %}{{ (s.next_run or '')[:16]|replace('T', ' ') }} UTC{% else %}<span class="fw-badge fw-badge-secondary" title="{{ s.paused_reason }}">{{ _('paused') }}</span>{% if s.paused_reason %} <span class="small">{{ s.paused_reason }}</span>{% endif %}{% endif %}</td>
+          <td class="text-muted">{{ (s.last_run or '')[:16]|replace('T', ' ') }} {{ s.last_run_status or s.last_status }}</td>
+          <td>{{ s.owner }}</td>
+          <td class="text-end text-nowrap">
+            {% if s.version < v.n %}<button type="button" class="btn btn-link btn-sm p-0 me-2 sc-upgrade">{{ _('move to v%(n)s', n=v.n) }}</button>{% endif %}
+            <button type="button" class="btn btn-link btn-sm p-0 me-2 sc-toggle">{{ _('pause') if s.enabled else _('resume') }}</button>
+            <button type="button" class="btn btn-link btn-sm p-0 text-danger sc-delete">{{ _('delete') }}</button>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="text-muted p-3">{{ _('No saved runs.') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="fw-card mt-3">
+  <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Recent runs') }}</span></div>
+  <div class="fw-card-body p-0">{% include "script_library/_runs.html" %}</div>
+</div>
+
+<script type="application/json" id="sl-config">{{ {'urls': {'run': url_for('scripts.run_status', rid='RID')}}|tojson }}</script>
+<script type="application/json" id="sc-config">{{ {
+  'fields': v.fields,
+  'urls': {
+    'run': url_for('scripts.run_now', slug=slug),
+    'status': url_for('scripts.run_status', rid='RID'),
+    'preview': url_for('scripts.cron_preview'),
+    'schedules': url_for('scripts.schedule_create', slug=slug),
+    'toggle': url_for('scripts.schedule_toggle', sid='SID'),
+    'upgrade': url_for('scripts.schedule_upgrade', sid='SID'),
+    'delete': url_for('scripts.schedule_delete', sid='SID')
+  }
+}|tojson }}</script>
+<script src="{{ asset('js/script_library.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/scripts_run.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

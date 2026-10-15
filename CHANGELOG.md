@@ -34,8 +34,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   unwraps them with no vault login of its own, and a token someone else used
   first fails the run visibly. Without a vault, credentials are unavailable
   (operator request: "there may be passwords, so they must be stored, not in
-  the same database as SATOM"). The operator page and scheduled runs follow in
-  the next stage.
+  the same database as SATOM").
+- **Operations > Automation > Scripts** (operators, `operations.scripts_run`):
+  the published scripts offered to operators, with their form, **Run now**
+  and the result. **Saved runs** keep a set of values on a cron schedule,
+  pinned to the version they were created against ("move to vN" re-checks the
+  values first). Password values of a saved run are kept in the vault and
+  delivered wrapped. A saved run whose owner is deactivated or loses access
+  is paused, and a missed fire is skipped rather than replayed (operator
+  request: "the operator sees the administrator's fields and can set a cron").
+
+### Added — cron schedules for every automation (2026-10-15)
+
+- Automations (and Script Library saved runs) accept a **cron** expression
+  besides once / interval / daily / weekly / monthly: five fields, ranges,
+  lists, steps and names, evaluated in the console timezone. An expression
+  that can never fire is refused when the form is saved.
 
 ### Fixed — a systemd unit added by an update is installed and armed by that update (2026-10-15)
 

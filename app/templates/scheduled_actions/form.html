@@ -279,6 +279,14 @@
             </div>
           </div>
 
+          <!-- CRON -->
+          <div class="sched-group" data-kind="cron">
+            <label class="fw-form-label">{{ _('Cron expression') }} <span class="text-muted">({{ tz_name }})</span></label>
+            <input type="text" class="form-control font-monospace" name="cron_expr" style="max-width:260px;"
+                   placeholder="*/15 * * * *" value="{{ schedule.get('expr', '') }}">
+            <div class="form-text">{{ _('minute hour day-of-month month day-of-week, e.g. "30 2 * * 1-5" = 02:30 on weekdays.') }}</div>
+          </div>
+
           <hr>
 
           <div class="form-check mb-2">

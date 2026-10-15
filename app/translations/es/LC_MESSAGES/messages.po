@@ -24627,3 +24627,66 @@ msgstr "No hay ningún vault configurado. Las credenciales de los scripts solo s
 
 msgid "The script reads them with satom_script.secret(\"NAME\"). Values are kept in the vault, never in the SATOM database; this page can replace a value but never shows it. Each run receives single-use wrapped copies."
 msgstr "El script las lee con satom_script.secret(\"NOMBRE\"). Los valores se guardan en el vault, nunca en la base de datos de SATOM; esta página puede reemplazar un valor pero nunca lo muestra. Cada ejecución recibe copias envueltas de un solo uso."
+
+msgid "timeout"
+msgstr "tiempo límite"
+
+msgid "Save these values with a schedule"
+msgstr "Guardar estos valores con una programación"
+
+#, python-format
+msgid "Cron: minute hour day-of-month month day-of-week, in %(tz)s."
+msgstr "Cron: minuto hora día-del-mes mes día-de-la-semana, en %(tz)s."
+
+msgid "Password values can be kept in a saved run only when a vault is configured (Settings > Vault)."
+msgstr "Las contraseñas solo se pueden guardar en una ejecución programada si hay un vault configurado (Settings > Vault)."
+
+msgid "Save schedule"
+msgstr "Guardar programación"
+
+msgid "Saved runs"
+msgstr "Ejecuciones guardadas"
+
+msgid "Cron"
+msgstr "Cron"
+
+msgid "password values kept in the vault"
+msgstr "contraseñas guardadas en el vault"
+
+#, python-format
+msgid "v%(n)s available"
+msgstr "v%(n)s disponible"
+
+msgid "paused"
+msgstr "en pausa"
+
+#, python-format
+msgid "move to v%(n)s"
+msgstr "pasar a v%(n)s"
+
+msgid "pause"
+msgstr "pausar"
+
+msgid "resume"
+msgstr "reanudar"
+
+msgid "delete"
+msgstr "borrar"
+
+msgid "No saved runs."
+msgstr "No hay ejecuciones guardadas."
+
+msgid "This script takes no input."
+msgstr "Este script no necesita datos."
+
+msgid "Scripts your administrators published for you. Fill in the form and run one now, or save the values with a schedule."
+msgstr "Scripts que tus administradores publicaron para ti. Rellena el formulario y ejecútalo ahora, o guarda los valores con una programación."
+
+msgid "No script has been published for you yet."
+msgstr "Todavía no se ha publicado ningún script para ti."
+
+msgid "Cron expression"
+msgstr "Expresión cron"
+
+msgid "minute hour day-of-month month day-of-week, e.g. \"30 2 * * 1-5\" = 02:30 on weekdays."
+msgstr "minuto hora día-del-mes mes día-de-la-semana, p. ej. \"30 2 * * 1-5\" = 02:30 los días laborables."

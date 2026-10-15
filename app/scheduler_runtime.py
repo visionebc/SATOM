@@ -88,6 +88,14 @@ def tick(app) -> None:
                 scheduled_actions.execute_and_record(action, trigger="schedule")
             except Exception:  # noqa: BLE001 — one bad action must not kill the loop
                 db.session.rollback()
+        # Script Library saved runs (cron): they live on disk next to the
+        # scripts, so they are fired here rather than through scheduled_action.
+        try:
+            from app.services import script_schedules
+            for sid in script_schedules.fire_due(now):
+                print("script schedule %s queued" % sid, flush=True)
+        except Exception as exc:  # noqa: BLE001 - never stop the loop over this
+            print("script schedules: %s" % exc, flush=True)
 
 
 def main() -> None:

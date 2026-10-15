@@ -2037,6 +2037,10 @@ body.fw-entering-page {
 }
 body.bm-open .bm-panel { width: 300px; }
 body.bm-open .fw-main { margin-right: 300px; }
+/* Closed, the rail still keeps its 34px tab on the right edge. Without this
+   gutter the tab covered whatever a page put top-right (Script Library's
+   Publish button was the reported case): reserve the strip instead. */
+body:has(#fw-bookmarks):not(.bm-open) .fw-main { margin-right: 34px; }
 .fw-main { transition: margin-right var(--fw-transition, .2s ease); }
 
 .bm-loading { padding: 24px; text-align: center; color: var(--fw-text-secondary); }

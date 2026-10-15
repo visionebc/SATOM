@@ -113,26 +113,82 @@ def _int(key: str, default: int, lo: int, hi: int) -> int:
 
 
 # ---- secret ---------------------------------------------------------------
+#: Where the secret lives in the vault (Settings > Vault), field ``secret``.
+#: Listed in ``secret_backend.SETTING_SECRETS`` so migrate/scrub cover it.
+VAULT_PATH = "alerts/webhook"
+VAULT_FIELD = "secret"
+
+
 def secret() -> str:
     """The shared HMAC secret, decrypted, or ``""`` if unset.
 
-    A vault that cannot be read is treated as no secret rather than raising:
-    the alternative is that a rotated Fernet key stops alert delivery
-    entirely, which trades a signature for the alerts themselves.
+    Follows the vault mode like every other credential: the vault copy first,
+    then the local Fernet copy (``vault`` mode keeps only the sentinel there).
+
+    A store that cannot be read is treated as no secret rather than raising:
+    the alternative is that a rotated Fernet key or a sealed vault stops alert
+    delivery entirely, which trades a signature for the alerts themselves.
     """
     raw = _get(K_SECRET)
     if not raw:
         return ""
+    from . import secret_backend as sb
+    try:
+        vaulted = sb.get_field(VAULT_PATH, VAULT_FIELD)
+    except Exception:  # noqa: BLE001 — vault-only and unreadable
+        vaulted = ""
+    if vaulted:
+        return vaulted
     try:
         from .encryption import decrypt
-        return decrypt(raw) or ""
+        local = decrypt(raw) or ""
     except Exception:  # noqa: BLE001 — an unreadable vault is not a secret
         return ""
+    return "" if local == sb.VAULT_SENTINEL else local
+
+
+def secret_location() -> str:
+    """``vault`` / ``vault+local`` / ``local`` / ``""`` (unset) — for the page."""
+    raw = _get(K_SECRET)
+    if not raw:
+        return ""
+    from . import secret_backend as sb
+    try:
+        from .encryption import decrypt
+        local = decrypt(raw) or ""
+    except Exception:  # noqa: BLE001
+        local = ""
+    if local == sb.VAULT_SENTINEL:
+        return "vault"
+    return "vault+local" if sb.active() else "local"
 
 
 def set_secret(value: str) -> None:
+    """Store (or clear, with ``""``) the HMAC secret where the vault mode says:
+    ``vault`` → only the vault, the local row keeps the sentinel; ``mirror``
+    → both; no vault → Fernet in ``app_settings`` as before. Raises
+    ``ValueError`` when the vault is the only store and refuses the write."""
     from .encryption import encrypt
-    AppSetting.set(K_SECRET, encrypt(value) if value else "")
+    from . import secret_backend as sb
+    if not value:
+        AppSetting.set(K_SECRET, "")
+        try:
+            if sb.active():
+                sb.delete(VAULT_PATH)
+        except Exception:  # noqa: BLE001 — the local copy is gone already
+            pass
+        return
+    stored = False
+    try:
+        stored = sb.put_field(VAULT_PATH, VAULT_FIELD, value)
+    except Exception:  # noqa: BLE001
+        if sb.authoritative():
+            raise ValueError("the vault is the only secret store and refused the "
+                             "write; the webhook secret was not saved")
+    if stored and sb.authoritative():
+        AppSetting.set(K_SECRET, encrypt(sb.VAULT_SENTINEL))
+    else:
+        AppSetting.set(K_SECRET, encrypt(value))
 
 
 # ---- config ---------------------------------------------------------------
@@ -166,6 +222,7 @@ def config() -> dict:
         "timeout": _int(K_TIMEOUT, TIMEOUT_DEFAULT, TIMEOUT_MIN, TIMEOUT_MAX),
         "retries": _int(K_RETRIES, RETRIES_DEFAULT, RETRIES_MIN, RETRIES_MAX),
         "secret_set": bool(secret()),
+        "secret_location": secret_location(),
         "signature_header": SIG_HEADER,
         "timestamp_header": TS_HEADER,
     }

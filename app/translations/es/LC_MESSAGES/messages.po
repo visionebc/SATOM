@@ -24690,3 +24690,15 @@ msgstr "Expresión cron"
 
 msgid "minute hour day-of-month month day-of-week, e.g. \"30 2 * * 1-5\" = 02:30 on weekdays."
 msgstr "minuto hora día-del-mes mes día-de-la-semana, p. ej. \"30 2 * * 1-5\" = 02:30 los días laborables."
+
+msgid "Write-only: a value is never shown again. Saving a name that already has a value replaces it."
+msgstr "Solo escritura: un valor nunca se vuelve a mostrar. Guardar un nombre que ya tiene valor lo reemplaza."
+
+msgid "Values are stored in the vault only (Settings > Vault), not in the SATOM database."
+msgstr "Los valores se guardan solo en el vault (Settings > Vault), no en la base de datos de SATOM."
+
+msgid "Values are stored in the vault and, as the fallback the vault mode asks for, encrypted in the SATOM database."
+msgstr "Los valores se guardan en el vault y, como respaldo que pide el modo del vault, cifrados en la base de datos de SATOM."
+
+msgid "No vault is configured: values are stored encrypted in the SATOM database. Configure a vault under Settings > Vault to move them out."
+msgstr "No hay vault configurado: los valores se guardan cifrados en la base de datos de SATOM. Configura un vault en Settings > Vault para sacarlos de ahí."

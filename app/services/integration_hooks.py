@@ -579,8 +579,32 @@ def list_secret_names() -> list[str]:
         return sorted(k[len(prefix):] for k in os.environ if k.startswith(prefix))
 
 
+def secret_vault_path(name: str) -> str:
+    return "hooks/%s" % validate_secret_name(name)
+
+
+def secret_storage() -> str:
+    """Where a hook secret is written now: ``vault`` (vault only), ``mirror``
+    (vault + encrypted local copy) or ``local`` (encrypted in app_settings)."""
+    try:
+        from . import secret_backend as sb
+        if sb.authoritative():
+            return "vault"
+        if sb.active():
+            return "mirror"
+    except Exception:  # noqa: BLE001 -- no app context: the local store
+        pass
+    return "local"
+
+
 def set_secret(name: str, value: str, by: str = "system") -> str:
-    """Store a credential Fernet-encrypted in ``app_settings``.
+    """Store a credential where the vault mode says (Settings > Vault).
+
+    Same contract as the directory secrets (``auth_store._store_secret``):
+    with the vault as the only store the value goes to ``<mount>/hooks/<NAME>``
+    and ``app_settings`` keeps only the sentinel (it is the name registry the
+    page lists); in ``mirror`` both copies are written; with no vault the value
+    is Fernet-encrypted in ``app_settings`` as before.
 
     Values shorter than :data:`MIN_SECRET_LEN` are REFUSED: the runner redacts
     a secret from captured output by literal substring replacement, and a
@@ -595,8 +619,21 @@ def set_secret(name: str, value: str, by: str = "system") -> str:
             "cannot be redacted from hook output)" % MIN_SECRET_LEN)
     from .encryption import encrypt
     from ..models import AppSetting
-    AppSetting.set(K_SECRET_PREFIX + name, encrypt(value))
-    _audit("integration.secret.set", target=name, extra={})
+    from . import secret_backend as sb
+    stored = False
+    try:
+        stored = sb.put_field(secret_vault_path(name), "value", value)
+    except Exception:  # noqa: BLE001
+        if sb.authoritative():
+            raise ValueError("the vault is the only secret store and refused the "
+                             "write; nothing was saved")
+    if stored and sb.authoritative():
+        AppSetting.set(K_SECRET_PREFIX + name, encrypt(sb.VAULT_SENTINEL))
+    else:
+        AppSetting.set(K_SECRET_PREFIX + name, encrypt(value))
+    _audit("integration.secret.set", target=name,
+           extra={"stored_in": "vault" if stored and sb.authoritative()
+                  else ("vault+local" if stored else "local")})
     return name
 
 
@@ -611,29 +648,52 @@ def delete_secret(name: str, by: str = "system") -> bool:
         db.session.commit()
     except Exception:  # noqa: BLE001
         return False
+    try:
+        from . import secret_backend as sb
+        if sb.active():
+            sb.delete(secret_vault_path(name))
+    except Exception:  # noqa: BLE001 -- the local registry entry is gone already
+        pass
     _audit("integration.secret.delete", target=name, extra={})
     return True
 
 
 def secret_value(name: str) -> str | None:
-    """Decrypt one credential. RUNNER-SIDE ONLY — never call this from a view;
-    the web worker has no business materialising a plaintext token it is not
-    going to use. Falls back to ``SATOM_HOOK_SECRET_<NAME>`` in the process
-    environment so a node can be driven without the DB (and so the tests can run
-    without one)."""
+    """One credential's plaintext. RUNNER-SIDE ONLY — never call this from a
+    view; the web worker has no business materialising a plaintext token it is
+    not going to use.
+
+    Vault first when the vault is on the path, then the local encrypted copy.
+    In vault-only mode a failed vault read RAISES (the runner reports "could
+    not be read from the vault"), never falls back: the local row holds only
+    the sentinel. Falls back to ``SATOM_HOOK_SECRET_<NAME>`` in the process
+    environment when there is no app context at all (CLI, tests)."""
     try:
         name = validate_secret_name(name)
     except ValueError:
         return None
     try:
+        from flask import has_app_context
+        ctx = has_app_context()
+    except Exception:  # noqa: BLE001
+        ctx = False
+    if not ctx:
+        return os.environ.get("SATOM_HOOK_SECRET_" + name)
+    from . import secret_backend as sb
+    vaulted = sb.get_field(secret_vault_path(name), "value")   # raises in vault-only
+    if vaulted:
+        return vaulted
+    try:
         from ..models import AppSetting
         from .encryption import decrypt
         raw = AppSetting.get(K_SECRET_PREFIX + name)
-        if raw:
-            return decrypt(raw)
-    except Exception:  # noqa: BLE001 — no app context / no DB / bad key
-        pass
-    return os.environ.get("SATOM_HOOK_SECRET_" + name)
+        local = decrypt(raw) if raw else ""
+    except Exception:  # noqa: BLE001 — no DB / bad key
+        local = ""
+    if local == sb.VAULT_SENTINEL:
+        raise RuntimeError("secret %s is owned by the vault, which this process "
+                           "could not read" % name)
+    return local or os.environ.get("SATOM_HOOK_SECRET_" + name)
 
 
 # ---------------------------------------------------------------------------

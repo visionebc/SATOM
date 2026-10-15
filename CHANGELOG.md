@@ -6,6 +6,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — integration hook secrets follow the vault mode (2026-10-15)
+
+- Hook secrets were always stored encrypted in the SATOM database, even with a
+  vault configured. They now follow Settings > Vault like appliance passwords
+  and directory secrets: vault only (`<mount>/hooks/<NAME>`, the database keeps
+  only a marker), both (vault plus an encrypted local fallback), or local when
+  no vault is configured. The hook page says where values live.
+- **Migrate existing credentials** and **Remove local copies** include hook
+  secrets; a local copy is removed only after the vault copy is read back and
+  matches. Deleting a secret deletes its vault copy.
+- A run whose secret cannot be read from the vault now says so, instead of
+  reporting the secret as not configured (operator request: "move the
+  secrets").
+
 ### Added — Studio > Script Library: Python scripts with a form, tested and published by administrators (2026-10-15)
 
 - Administrators keep Python scripts as small projects (`main.py` plus modules

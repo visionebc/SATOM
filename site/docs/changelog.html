@@ -112,6 +112,20 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="changed--integration-hook-secrets-follow-the-vault-mode-2026-10-15">Changed — integration hook secrets follow the vault mode (2026-10-15)</h3>
+<ul>
+<li>Hook secrets were always stored encrypted in the SATOM database, even with a
+  vault configured. They now follow Settings &gt; Vault like appliance passwords
+  and directory secrets: vault only (<code>&lt;mount&gt;/hooks/&lt;NAME&gt;</code>, the database keeps
+  only a marker), both (vault plus an encrypted local fallback), or local when
+  no vault is configured. The hook page says where values live.</li>
+<li><strong>Migrate existing credentials</strong> and <strong>Remove local copies</strong> include hook
+  secrets; a local copy is removed only after the vault copy is read back and
+  matches. Deleting a secret deletes its vault copy.</li>
+<li>A run whose secret cannot be read from the vault now says so, instead of
+  reporting the secret as not configured (operator request: "move the
+  secrets").</li>
+</ul>
 <h3 id="added--studio--script-library-python-scripts-with-a-form-tested-and-published-by-administrators-2026-10-15">Added — Studio &gt; Script Library: Python scripts with a form, tested and published by administrators (2026-10-15)</h3>
 <ul>
 <li>Administrators keep Python scripts as small projects (<code>main.py</code> plus modules

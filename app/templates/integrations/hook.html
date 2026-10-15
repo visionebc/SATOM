@@ -106,7 +106,10 @@
   <div class="card-header"><strong>{{ _('Secret values') }}</strong></div>
   <div class="card-body">
     <div class="form-text mb-2">
-      {{ _('Write-only: a value is stored encrypted and never shown again. Saving a name that already has a value replaces it.') }}
+      {{ _('Write-only: a value is never shown again. Saving a name that already has a value replaces it.') }}
+      {% if secret_storage == 'vault' %}{{ _('Values are stored in the vault only (Settings > Vault), not in the SATOM database.') }}
+      {% elif secret_storage == 'mirror' %}{{ _('Values are stored in the vault and, as the fallback the vault mode asks for, encrypted in the SATOM database.') }}
+      {% else %}{{ _('No vault is configured: values are stored encrypted in the SATOM database. Configure a vault under Settings > Vault to move them out.') }}{% endif %}
     </div>
     <ul class="list-unstyled small mb-2">
       {% for name in hook.secrets %}

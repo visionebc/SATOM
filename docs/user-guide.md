@@ -6938,9 +6938,17 @@ What that buys you, and what it costs:
 - A hook receives only the secrets it declares, by name, through
   `ctx.secret("NAME")`. One it did not declare is not in its environment to
   leak. Never paste a token into the script itself. Once the hook is saved,
-  its **Secret values** card stores each declared value encrypted
-  (Administrators only, audited, write-only: the page shows *stored* or
-  *not set*, never the value).
+  its **Secret values** card stores each declared value (Administrators
+  only, audited, write-only: the page shows *stored* or *not set*, never the
+  value). Where it goes follows the mode under **Settings → Vault**, like every
+  other secret: *vault only* keeps it only in the vault
+  (`<mount>/hooks/<NAME>`), *both* keeps an encrypted local copy as the
+  fallback, and with no vault it is encrypted in the SATOM database. The card
+  says which. **Migrate existing credentials** and **Remove local copies**
+  on the Vault tab cover hook secrets too, and a local copy is only removed
+  after the vault copy has been read back and matched. If the vault cannot be
+  read when a hook runs, the run record says so instead of reporting the
+  secret as not configured.
 - Captured output is redacted (declared secret values are masked) and then
   truncated before it is stored.
 - The result comes back through `ctx.result(ok, data)`, not from what the script

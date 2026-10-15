@@ -24669,3 +24669,15 @@ msgstr "Cron-Ausdruck"
 
 msgid "minute hour day-of-month month day-of-week, e.g. \"30 2 * * 1-5\" = 02:30 on weekdays."
 msgstr "Minute Stunde Monatstag Monat Wochentag, z. B. \"30 2 * * 1-5\" = 02:30 an Werktagen."
+
+msgid "Write-only: a value is never shown again. Saving a name that already has a value replaces it."
+msgstr "Nur schreibbar: Ein Wert wird nie wieder angezeigt. Wird ein Name gespeichert, der schon einen Wert hat, wird dieser ersetzt."
+
+msgid "Values are stored in the vault only (Settings > Vault), not in the SATOM database."
+msgstr "Die Werte liegen nur im Vault (Settings > Vault), nicht in der SATOM-Datenbank."
+
+msgid "Values are stored in the vault and, as the fallback the vault mode asks for, encrypted in the SATOM database."
+msgstr "Die Werte liegen im Vault und, als vom Vault-Modus verlangte Rückfallebene, verschlüsselt in der SATOM-Datenbank."
+
+msgid "No vault is configured: values are stored encrypted in the SATOM database. Configure a vault under Settings > Vault to move them out."
+msgstr "Kein Vault konfiguriert: Die Werte liegen verschlüsselt in der SATOM-Datenbank. Richten Sie unter Settings > Vault einen Vault ein, um sie auszulagern."

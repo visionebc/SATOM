@@ -474,28 +474,56 @@ def library_pip():
         return jsonify({'error': str(exc)}), 400
     except Exception as exc:  # noqa: BLE001
         return jsonify({'error': 'could not queue: %s' % exc}), 500
-    # The local change is queued at this point. A peer that refuses or cannot
-    # be reached is REPORTED, not rolled back into the local result: undoing a
-    # good local change because the other node is down is worse than the drift
-    # it would be trying to prevent. The operator sees the partial state.
-    peers = []
-    if also_peer:
-        try:
-            peers = su.request_pip_change_on_peers(package, version, by=who,
-                                                   action=action)
-        except Exception as exc:  # noqa: BLE001
-            peers = [{'node': '?', 'host': '', 'uid': None,
-                      'state': 'unreachable', 'error': str(exc)}]
-    partial = bool(also_peer and any(p.get('state') != 'queued' for p in peers))
-    peer_note = ''
-    if also_peer:
-        peer_note = ' (+peers: %s)' % (', '.join(
-            '%s=%s' % (p.get('node'), p.get('state')) for p in peers) or 'none registered')
+    # The peer is NOT asked now. Both runners restarting the web at the same
+    # moment is a full outage when the change is bad: psycopg 3.3.6 took a1
+    # AND a2 down together for ~100 s on 2026-10-15. The card asks the peer
+    # through /library-pip/peers only after this node reports success.
     log_action('settings.library_pip',
                detail='%s %s==%s on %s%s' % (action, package, version,
-                                             su.this_node_name(), peer_note))
+                                             su.this_node_name(),
+                                             ' (peer after local success)' if also_peer else ''))
     return jsonify({'uid': uid, 'node': su.this_node_name(),
-                    'also_peer': also_peer, 'peers': peers, 'partial': partial})
+                    'also_peer': also_peer, 'peer_deferred': also_peer,
+                    'peers': [], 'partial': False})
+
+
+@bp.route('/library-pip/peers', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def library_pip_peers():
+    """Second half of an "also the peer" change: enqueue it on the peer(s)
+    once THIS node applied it successfully. Refused unless the local status
+    file shows that exact package and version finished with success, so a
+    change that failed or rolled back here never reaches the other node."""
+    from ..services import self_update as su
+    payload = request.get_json(silent=True) or {}
+    package = (payload.get('package') or '').strip()
+    version = (payload.get('version') or '').strip()
+    action = (payload.get('action') or 'upgrade').strip()
+    local_uid = (payload.get('local_uid') or '').strip()
+    st = su.update_status(local_uid) if local_uid else None
+    if not st or st.get('package') != package or st.get('new_version') != version:
+        return jsonify({'error': 'no matching change on this node'}), 400
+    if st.get('state') != 'success':
+        return jsonify({'error': 'the change did not succeed on this node (%s); '
+                                 'the peer was left untouched' % st.get('state')}), 409
+    who = getattr(current_user, 'username', '?')
+    # A peer that refuses or cannot be reached is REPORTED, not rolled back
+    # into the local result: undoing a good local change because the other
+    # node is down is worse than the drift it would be trying to prevent.
+    try:
+        peers = su.request_pip_change_on_peers(package, version, by=who,
+                                               action=action)
+    except Exception as exc:  # noqa: BLE001
+        peers = [{'node': '?', 'host': '', 'uid': None,
+                  'state': 'unreachable', 'error': str(exc)}]
+    partial = any(p.get('state') != 'queued' for p in peers)
+    log_action('settings.library_pip',
+               detail='%s %s==%s on peers after %s succeeded: %s' % (
+                   action, package, version, su.this_node_name(),
+                   ', '.join('%s=%s' % (p.get('node'), p.get('state')) for p in peers)
+                   or 'none registered'))
+    return jsonify({'peers': peers, 'partial': partial})
 
 
 @bp.route('/library-pip/status/<uid>')

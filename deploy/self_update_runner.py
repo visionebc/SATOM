@@ -1150,6 +1150,46 @@ def _record_lib_version(pkg, previous, current, action, by):
         "action": action, "by": by, "at": now()}, indent=2))
 
 
+_EXTRAS_RE = r"(\[\s*[A-Za-z0-9][A-Za-z0-9._,\s-]*\])?"
+
+
+def _read_requirements():
+    """requirements.txt lines, read without following a planted link."""
+    # O_NOFOLLOW: a requirements.txt -> /etc/shadow link must not be read
+    # by root and written back as a file the service account owns.
+    fd = os.open(str(APP / "requirements.txt"),
+                 os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "r", encoding="utf-8") as fh:
+        if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+            raise ValueError("not a regular file")
+        return fh.read().splitlines()
+
+
+def _req_line_re(pkg):
+    return re.compile(r"^\s*%s\s*%s\s*([<>=!~].*)?$" % (re.escape(pkg), _EXTRAS_RE),
+                      re.IGNORECASE)
+
+
+def _req_extras(pkg):
+    """The extras requirements.txt pins pkg with ("[binary]" for psycopg), or ''.
+
+    Installing the bare name drops them: upgrading psycopg alone to 3.3.6 left
+    psycopg-binary at 3.3.4, whose C wait_c() rejects the new timeout= keyword,
+    and every worker died on its first connection (2026-10-15)."""
+    try:
+        lines = _read_requirements()
+    except Exception:
+        return ""
+    name_re = _req_line_re(pkg)
+    for ln in lines:
+        if ln.lstrip().startswith("#"):
+            continue
+        m = name_re.match(ln)
+        if m and m.group(1):
+            return re.sub(r"\s+", "", m.group(1))
+    return ""
+
+
 def _bump_requirements(pkg, version):
     """Rewrite pkg's pin in requirements.txt to ==version (so the next code
     update's `pip install -r` does not silently revert this change). Matches
@@ -1159,21 +1199,16 @@ def _bump_requirements(pkg, version):
             and isinstance(version, str) and _VER_RE.fullmatch(version)):
         return False, "refusing %r==%r" % (pkg, version)
     try:
-        # O_NOFOLLOW: a requirements.txt -> /etc/shadow link must not be read
-        # by root and written back as a file the service account owns.
-        fd = os.open(str(APP / "requirements.txt"),
-                     os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        with os.fdopen(fd, "r", encoding="utf-8") as fh:
-            if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
-                raise ValueError("not a regular file")
-            lines = fh.read().splitlines()
+        lines = _read_requirements()
     except Exception as e:
         return False, "read failed: %s" % e
-    name_re = re.compile(r"^\s*%s\s*([<>=!~].*)?$" % re.escape(pkg), re.IGNORECASE)
+    name_re = _req_line_re(pkg)
     out, hit = [], False
     for ln in lines:
-        if name_re.match(ln) and not ln.lstrip().startswith("#"):
-            out.append("%s==%s" % (pkg, version))
+        m = name_re.match(ln)
+        if m and not ln.lstrip().startswith("#"):
+            # keep the extras: "psycopg[binary]==x" must not become "psycopg==x"
+            out.append("%s%s==%s" % (pkg, re.sub(r"\s+", "", m.group(1) or ""), version))
             hit = True
         else:
             out.append(ln)
@@ -1250,9 +1285,11 @@ def pip_change(req_path):
                   new_version=version, rolled_back=False)
         return
 
+    extras = _req_extras(pkg)
     try:
-        p = _pip_install("%s==%s" % (pkg, version))
-        st.step("pip install %s==%s" % (pkg, version), p.returncode == 0, p.stderr or p.stdout)
+        p = _pip_install("%s%s==%s" % (pkg, extras, version))
+        st.step("pip install %s%s==%s" % (pkg, extras, version), p.returncode == 0,
+                p.stderr or p.stdout)
         if p.returncode != 0:
             raise RuntimeError("pip install failed")
 
@@ -1287,7 +1324,7 @@ def pip_change(req_path):
         # ---- auto-rollback to the previously-installed version ----
         try:
             if previous:
-                rb = _pip_install("%s==%s" % (pkg, previous))
+                rb = _pip_install("%s%s==%s" % (pkg, extras, previous))
                 subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
                 subprocess.run(["systemctl", "restart", SCHED], timeout=60)
                 ok = health_ok()

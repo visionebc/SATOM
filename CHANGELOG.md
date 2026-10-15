@@ -24,6 +24,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   HTTP(S) clients use it unchanged; `satom_sdk.tcp(host, port)` opens raw TCP
   (SSH to an appliance) through it. Each run records every attempt.
 
+### Fixed — a psycopg upgrade from the Libraries card took both HA nodes down; the peer now waits for local success (2026-10-15)
+
+- **Extras were dropped.** The card upgraded the bare package name, so
+  `psycopg` moved to 3.3.6 while `psycopg-binary` stayed at 3.3.4. Its C
+  `wait_c()` rejects the new `timeout=` keyword, so every worker died on its
+  first database connection (the import smoke test passed because importing
+  does not connect). The install, the auto-rollback and the `requirements.txt`
+  bump now keep the extras pinned there (`psycopg[binary]`). The bump also no
+  longer appends a second, extras-less line beside an existing
+  `name[extra]==` pin.
+- **Both nodes restarted together.** With "also the peer" ticked, the peer
+  was asked at the same moment, so the bad upgrade took a1 and a2 down
+  together for ~100 s until each runner rolled back. The peer is now asked
+  only after this node reports success for that exact package and version.
+  A failed or rolled-back change never reaches it, and the server refuses the
+  peer step otherwise.
+
 ### Fixed — the Libraries card no longer reports "status poll failed" while its own upgrade restarts the web (2026-10-15)
 
 - Upgrading a package from Settings → Libraries restarts `satom.service`,

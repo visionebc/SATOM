@@ -4039,9 +4039,17 @@ deliberately not merged. Practical notes:
 - **The web worker never runs `pip`.** It writes a request that the privileged
   updater applies, and the allowlist is enforced in both places. A package that
   is not on the list is refused before it reaches the queue.
-- **It is node-local.** The virtual environment does not replicate. The card
-  prints which node you are on, and you repeat the change on the other one (§22.2).
-- A queued change is polled live and its steps are written by the runner.
+- **It is node-local by default.** The virtual environment does not replicate.
+  The card prints which node you are on. Ticking **also the peer** sends the
+  same change to the other node, but only **after it succeeded on this one**:
+  the two nodes never restart together, so a bad version takes down one node
+  for the length of its auto-rollback, not the pair. If the change fails or
+  rolls back here, the peer is left untouched and the card says so.
+- **Extras are kept.** A package pinned with extras in `requirements.txt`
+  (`psycopg[binary]`) is installed, rolled back and re-pinned with them, so its
+  companion package moves in lockstep.
+- A queued change is polled live and its steps are written by the runner. The
+  restart it triggers shows as "reconnecting…" rather than a failure.
 
 ### 26.1b Services — starting, stopping and restarting this node's units
 

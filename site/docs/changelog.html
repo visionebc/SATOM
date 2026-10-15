@@ -130,6 +130,23 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   HTTP(S) clients use it unchanged; <code>satom_sdk.tcp(host, port)</code> opens raw TCP
   (SSH to an appliance) through it. Each run records every attempt.</li>
 </ul>
+<h3 id="fixed--a-psycopg-upgrade-from-the-libraries-card-took-both-ha-nodes-down-the-peer-now-waits-for-local-success-2026-10-15">Fixed — a psycopg upgrade from the Libraries card took both HA nodes down; the peer now waits for local success (2026-10-15)</h3>
+<ul>
+<li><strong>Extras were dropped.</strong> The card upgraded the bare package name, so
+  <code>psycopg</code> moved to 3.3.6 while <code>psycopg-binary</code> stayed at 3.3.4. Its C
+  <code>wait_c()</code> rejects the new <code>timeout=</code> keyword, so every worker died on its
+  first database connection (the import smoke test passed because importing
+  does not connect). The install, the auto-rollback and the <code>requirements.txt</code>
+  bump now keep the extras pinned there (<code>psycopg[binary]</code>). The bump also no
+  longer appends a second, extras-less line beside an existing
+  <code>name[extra]==</code> pin.</li>
+<li><strong>Both nodes restarted together.</strong> With "also the peer" ticked, the peer
+  was asked at the same moment, so the bad upgrade took a1 and a2 down
+  together for ~100 s until each runner rolled back. The peer is now asked
+  only after this node reports success for that exact package and version.
+  A failed or rolled-back change never reaches it, and the server refuses the
+  peer step otherwise.</li>
+</ul>
 <h3 id="fixed--the-libraries-card-no-longer-reports-status-poll-failed-while-its-own-upgrade-restarts-the-web-2026-10-15">Fixed — the Libraries card no longer reports "status poll failed" while its own upgrade restarts the web (2026-10-15)</h3>
 <ul>
 <li>Upgrading a package from Settings → Libraries restarts <code>satom.service</code>,

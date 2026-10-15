@@ -6,6 +6,50 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Certificate Manager: a CSR for another CA, importing certificates, staged rotation and a revocation register (2026-10-15)
+
+- **A CSR for another CA.** "Generate CSR" makes the key and the CSR in
+  SATOM. The key never leaves it. The certificate waits as *awaiting
+  signature* until the signed certificate is imported. Its page shows the
+  round trip: download (or copy) the CSR, then paste or upload what the CA
+  returned. The import is refused unless the public key is the stored key and
+  every requested SAN is present. A PKCS#12 or a pasted key is refused for
+  such a request, because it would bring a different key (operator request:
+  "create a CSR so that another instance signs it, import it, store it with
+  its key and use it in the Cert Manager").
+- **Import a certificate + key made outside SATOM**, as PEM or PKCS#12. The
+  key is stored encrypted and marked as generated outside SATOM. Per the
+  operator, PKCS#12 is accepted only when the CSR was made outside SATOM.
+- **Staged rotation instead of an in-place replacement.** A renewal is
+  issued and deployed N days before expiry and takes over the bindings N days
+  later, so issuing and switching do not happen at the same moment and cut
+  connections (operator request: "it should not be swapped the moment it is
+  renewed"). The old certificate stays on the device for a one-click **Roll
+  back**, leaves the device N days after the swap, and leaves SATOM N days
+  after that; the record (serial, dates, timeline) stays. The four windows
+  are defaults in Settings and can be set per certificate. A swap delay that
+  would land after the old certificate expires is refused. With auto-renew,
+  certificates from the configured CA renew themselves. For another CA a new
+  CSR is generated and the operator is notified. Imported certificates are
+  notified only.
+- **Row buttons**: renew or generate a new CSR now, download the CSR, import
+  the signed certificate, deploy, swap now, roll back, revoke and delete,
+  each with a confirmation. Each row also shows its next step and when.
+- **Generic revocation and a revocation register.** Revoking runs the revoke
+  command of whichever CA is configured. When SATOM cannot revoke (no
+  command, or a certificate from another CA), the certificate is marked
+  revoked and the register keeps it *pending at the CA* until someone
+  confirms it. The register keeps serial, fingerprint, reason, who and
+  result, and outlives a deleted record. A certificate in use is not revoked
+  unless the operator says so (a compromised key). A superseded certificate
+  is revoked as it leaves the device, never while it still serves.
+- **Delete** is refused while the certificate is bound or its bindings
+  cannot be read. It can revoke first and take the certificate off the device
+  first.
+- Settings → Certificate Manager → Lifecycle policy now holds the default
+  windows. The old "revoke grace" is gone: revocation follows removal from the
+  device. The sweep's dry run now also lists the revocations it would make.
+
 ### Changed — API tokens: every non-destructive action has a capability; grouped checkbox pickers (2026-10-15)
 
 - **Six new capabilities cover the rest of the non-destructive catalog:**

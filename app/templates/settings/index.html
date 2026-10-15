@@ -2250,29 +2250,34 @@
       {% endfor %}
 
       <div class="fw-card mb-3">
-        <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-recycle me-2 text-accent"></i>Lifecycle policy — revocation &amp; device cleanup</span></div>
+        <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-recycle me-2 text-accent"></i>{{ _('Lifecycle policy — rotation windows & device cleanup') }}</span></div>
         <div class="fw-card-body">
           <p class="text-muted mb-2" style="font-size:12px;">
-            {{ _('WHEN a superseded certificate is revoked at the CA and WHEN old material is deleted off the FortiWebs. Enforced by the') }} <em>{{ _('Cert Manager — lifecycle sweep') }}</em> {{ _('scheduled action and the manual sweep on the Certificate Manager page. A certificate still bound to any server policy / SNI member / GUI is') }} <strong>{{ _('never') }}</strong> {{ _('revoked or deleted — bindings are re-verified live, fail-closed, before every destructive step.') }}
+            {{ _('The DEFAULT windows of a renewal; each certificate can override them on its page. A renewal is deployed first and takes over the bindings N days later; the old certificate stays on the device for a roll back, then leaves the device and, later, SATOM. Enforced by the') }} <em>{{ _('Cert Manager — lifecycle sweep') }}</em> {{ _('scheduled action and the manual sweep on the Certificate Manager page. A certificate still bound to any server policy / SNI member / GUI is') }} <strong>{{ _('never') }}</strong> {{ _('removed — bindings are re-verified live, fail-closed, before every destructive step.') }}
           </p>
           <div class="row g-3">
+            <div class="col-md-3">
+              <label class="fw-form-label">{{ _('Swap (days after the renewal)') }}</label>
+              <input class="form-control fw-form-control" type="number" min="0" name="lc_swap_after_days"
+                     value="{{ cert_lifecycle.swap_after_days }}">
+              <div class="text-muted" style="font-size:11px;">{{ _('Must be shorter than the renew window of the class.') }}</div>
+            </div>
+            <div class="col-md-3">
+              <label class="fw-form-label">{{ _('Old cert off the device (days after the swap)') }}</label>
+              <input class="form-control fw-form-control" type="number" min="0" name="lc_delete_superseded_after_days"
+                     value="{{ cert_lifecycle.delete_superseded_after_days }}">
+            </div>
+            <div class="col-md-3">
+              <label class="fw-form-label">{{ _('Kept in SATOM (days after it left the device)') }}</label>
+              <input class="form-control fw-form-control" type="number" min="0" name="lc_retain_after_removal_days"
+                     value="{{ cert_lifecycle.retain_after_removal_days }}">
+            </div>
             <div class="col-md-3">
               <div class="form-check form-switch mt-4">
                 <input class="form-check-input" type="checkbox" name="lc_revoke_on_supersede" id="lc-ros"
                        {{ 'checked' if cert_lifecycle.revoke_on_supersede }}>
-                <label class="form-check-label" for="lc-ros" style="font-size:13px;">{{ _('Revoke superseded certs at the CA') }}</label>
+                <label class="form-check-label" for="lc-ros" style="font-size:13px;">{{ _('Revoke the old cert when it leaves the device') }}</label>
               </div>
-            </div>
-            <div class="col-md-3">
-              <label class="fw-form-label">{{ _('Revoke grace (days after supersede)') }}</label>
-              <input class="form-control fw-form-control" type="number" min="0" name="lc_revoke_grace_days"
-                     value="{{ cert_lifecycle.revoke_grace_days }}">
-            </div>
-            <div class="col-md-3">
-              <label class="fw-form-label">{{ _('Delete superseded from device after (days)') }}</label>
-              <input class="form-control fw-form-control" type="number" min="0" name="lc_delete_superseded_after_days"
-                     value="{{ cert_lifecycle.delete_superseded_after_days }}">
-              <div class="text-muted" style="font-size:11px;">{{ _('Used when revoke-on-supersede is OFF.') }}</div>
             </div>
             <div class="col-md-3">
               <label class="fw-form-label">{{ _('Delete expired from device after (days)') }}</label>

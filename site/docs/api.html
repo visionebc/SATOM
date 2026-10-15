@@ -131,9 +131,10 @@ on it. All four are evaluated on every call; the first that says no wins:</p>
 </tbody>
 </table>
 <blockquote>
-<p>A <code>write</code> token is <strong>not</strong> scoped to a single action or a single device — it
-can run <em>any</em> non-destructive action enabled in its ADOM. Treat it as a
-credential for all non-destructive automation of that product.</p>
+<p>A <code>write</code> token with an <strong>empty capability list</strong> is not scoped to a single
+action or device: it can run every non-destructive catalog action enabled in
+its ADOM that needs no explicit grant. Treat it as a credential for all of
+that automation, or ask for a token restricted to named capabilities (below).</p>
 <p><strong>Draft and apply are different credentials, not a flag you choose.</strong> A token
 holding only <code>*_draft</code> that sends <code>"apply": true</code> is refused with
 <code>403 capability_denied</code> and <strong>nothing is written</strong> — it is never quietly
@@ -379,6 +380,73 @@ through the API.</p>
 <h3 id="post-actionsidrun"><code>POST /actions/&lt;id&gt;/run</code></h3>
 <p>Triggers the action <strong>with the parameters it was saved with</strong>. Rate-limited to
 <strong>30/min</strong>. Returns the run id so you can poll it.</p>
+<p>Which actions a token may trigger is decided by its <strong>capabilities</strong> (the
+administrator ticks them when minting the token). Each catalog action belongs to
+one capability:</p>
+<table>
+<thead>
+<tr>
+<th>capability</th>
+<th>actions</th>
+<th>empty list grants it?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>backend_edit</code> / <code>backend_config</code> / <code>policy_status</code> / <code>cert_swap</code></td>
+<td><code>backend_set_status</code> / <code>backend_set_config</code> / <code>policy_set_status</code> / <code>swap_certificate</code> (AppID-scopable)</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>maintenance</code></td>
+<td><code>backup</code>, <code>device_sync</code>, <code>device_inspect</code>, <code>deep_capture</code>, <code>signature_sync</code>, <code>system_backup</code>, <code>cert_scan</code>, <code>appid_import</code></td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>reports</code></td>
+<td><code>stats</code>, <code>inventory_snapshot</code>, <code>health_check</code>, <code>ha_check</code></td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>cert_renew</code></td>
+<td><code>cert_manager_server</code>, <code>cert_manager_clientserver</code>, <code>cert_manager_client</code></td>
+<td><strong>no</strong></td>
+</tr>
+<tr>
+<td><code>monitoring</code></td>
+<td><code>deep_monitor</code>, <code>metrics_scrape</code>, <code>monitor_report</code></td>
+<td><strong>no</strong></td>
+</tr>
+<tr>
+<td><code>sentinel</code></td>
+<td><code>sentinel_sweep</code>, <code>sentinel_baseline</code>, <code>sentinel_vuln_sync</code>, <code>sentinel_feed_publish</code></td>
+<td><strong>no</strong></td>
+</tr>
+<tr>
+<td><code>feeds</code></td>
+<td><code>signature_check</code>, <code>knowledge_fetch</code>, <code>artifact_refs</code></td>
+<td><strong>no</strong></td>
+</tr>
+<tr>
+<td><code>api_library</code></td>
+<td><code>apilib_harvest</code>, <code>schema_harvest</code>, <code>schema_watch</code></td>
+<td><strong>no</strong></td>
+</tr>
+<tr>
+<td><code>netbox</code></td>
+<td><code>netbox_reconcile</code></td>
+<td><strong>no</strong></td>
+</tr>
+</tbody>
+</table>
+<p>A token with a non-empty list runs only the actions of the capabilities it
+lists. The capabilities marked <strong>no</strong> were added on 2026-10-15: before that
+those actions had no capability, and only a token owned by a user administrator
+could run them. An empty list keeps that rule for them, so no token issued
+earlier gained anything. Destructive actions (<code>upgrade</code>, <code>upgrade_prep</code>,
+<code>reboot</code>, <code>ha_failover</code>, <code>cert_lifecycle</code>, <code>custom_rest</code>) are never runnable
+through the API, whatever the token holds. System Automations also need an
+owner with user management rights.</p>
 <pre><code class="language-json">{
   &quot;ok&quot;: true,
   &quot;run_id&quot;: 99,

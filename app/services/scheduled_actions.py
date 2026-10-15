@@ -637,26 +637,28 @@ USER_ACTIONS: list[ActionSpec] = [
                 "fail over anything that is not reporting HA primary right now.",
     ),
     ActionSpec(
-        "cert_manager_server", "Cert Manager — renew Server certs", "user",
+        "cert_manager_server", "Cert Manager — rotate Server certs", "user",
         needs_targets=True,
-        summary="Renew expiring SERVER-authentication certificates on each target: "
-                "generate a new CSR, sign it via the configured ADCS command, and "
-                "deploy the new cert (new {date}-stamped name, old one kept). Does "
-                "NOT swap the binding — that happens in a maintenance window.",
+        summary="Rotate SERVER-authentication certificates on each target: renew "
+                "those inside their renew window (signed by the configured CA and "
+                "deployed under a new name, or a CSR when another CA signs them), "
+                "swap renewals in on their swap date, take superseded ones off the "
+                "device after their removal window and purge their keys after the "
+                "retention window. This row's schedule is the swap window.",
     ),
     ActionSpec(
-        "cert_manager_clientserver", "Cert Manager — renew Client+Server certs",
+        "cert_manager_clientserver", "Cert Manager — rotate Client+Server certs",
         "user", needs_targets=True,
-        summary="Renew expiring CLIENT+SERVER (both EKU) certificates on each "
-                "target (generate → sign via ADCS → deploy under a new name). No "
-                "binding swap.",
+        summary="Rotate CLIENT+SERVER (both EKU) certificates on each target: "
+                "renew → swap on the swap date → off the device → key purged, by "
+                "each certificate's windows. This row's schedule is the swap window.",
     ),
     ActionSpec(
-        "cert_manager_client", "Cert Manager — renew Client certs", "user",
+        "cert_manager_client", "Cert Manager — rotate Client certs", "user",
         needs_targets=True,
-        summary="Renew expiring CLIENT-authentication certificates on each target "
-                "(generate → sign via ADCS → deploy under a new name). No binding "
-                "swap.",
+        summary="Rotate CLIENT-authentication certificates on each target: "
+                "renew → swap on the swap date → off the device → key purged, by "
+                "each certificate's windows. This row's schedule is the swap window.",
     ),
     ActionSpec(
         "cert_lifecycle", "Cert Manager — lifecycle sweep (revoke + cleanup)",
@@ -1713,13 +1715,15 @@ def _do_cert_lifecycle(appliance, dry_run: bool) -> dict:
 
 
 def _do_cert_manager(key: str, appliance, params: dict, dry_run: bool) -> dict:
-    """Renew expiring certificates of ONE class on ONE target device.
+    """Rotate the certificates of ONE class on ONE target device.
 
-    Class is taken from the action key (cert_manager_<class>). For each managed
-    certificate of that class on the device whose expiry is within the class's
-    ``renew_before_days``, run the full generate→sign→deploy cycle under a new
-    {date}-stamped name (the old cert is kept for the maintenance-window swap).
-    Never swaps a binding. NEVER raises (run_action wraps it too)."""
+    Class is taken from the action key (cert_manager_<class>). One pass runs
+    every stage that is due (services.cert_manager.run_rotation): renew the
+    certificates inside their renew window (a CSR for those another CA signs),
+    swap in the renewals whose swap date has come, take superseded ones off
+    the device after their removal window (revoking them if their policy says
+    so) and purge the keys past their retention window. The schedule of this
+    row IS the maintenance window the swaps land in. NEVER raises."""
     from . import cert_manager
     from . import settings_store as _store
     cls = key[len("cert_manager_"):]
@@ -1727,37 +1731,19 @@ def _do_cert_manager(key: str, appliance, params: dict, dry_run: bool) -> dict:
         return {"ok": False, "summary": f"unknown certificate class {cls!r}.", "log": ""}
     if appliance is None:
         return {"ok": False, "summary": "cert manager needs a target device.", "log": ""}
-    if not _store.cert_class_config(cls).get("template"):
-        return {"ok": False,
-                "summary": f"class {cls!r} has no ADCS template configured.", "log": ""}
-
-    within = _to_int(_store.cert_class_config(cls).get("renew_before_days"), 30)
-    if within <= 0:
-        within = 30
-    candidates = cert_manager.expiring_certificates(appliance.id, cls, within)
-    if not candidates:
-        return {"ok": True,
-                "summary": f"{appliance.name}: no {cls} certs within {within} days.",
-                "log": ""}
-    if dry_run:
-        names = ", ".join(c.name for c in candidates)
-        return {"ok": True,
-                "summary": (f"[dry-run] would renew {len(candidates)} {cls} cert(s) "
-                            f"on {appliance.name}: {names}"),
-                "log": ""}
-
-    ok_n = 0
-    lines: list[str] = []
-    for c in candidates:
-        res = cert_manager.renew_certificate(c, deploy=True, actor="scheduler")
-        if res.get("ok"):
-            ok_n += 1
-            lines.append(f"[ok] {c.name} → {res.get('name')}")
-        else:
-            lines.append(f"[FAIL] {c.name}: {res.get('error')}")
-    ok = ok_n == len(candidates)
-    return {"ok": ok,
-            "summary": f"{appliance.name}: renewed {ok_n}/{len(candidates)} {cls} cert(s).",
+    res = cert_manager.run_rotation(dry_run=dry_run, appliance_id=appliance.id,
+                                    cert_class=cls, actor="scheduler")
+    stages = ("renewed", "swapped", "removed", "revoked", "archived")
+    lines = [f"[{k}] {x}" for k in stages for x in res[k]]
+    lines += [f"[notice] {x}" for x in res["notices"]]
+    lines += [f"[FAIL] {x}" for x in res["skipped"]]
+    counts = ", ".join(f"{len(res[k])} {k}" for k in stages if res[k]) or "nothing due"
+    prefix = "[dry-run] " if dry_run else ""
+    return {"ok": not res["skipped"],
+            "summary": f"{prefix}{appliance.name}: {cls} certs — {counts}"
+                       + (f", {len(res['skipped'])} failed" if res["skipped"] else "")
+                       + (f", {len(res['notices'])} need attention" if res["notices"] else "")
+                       + ".",
             "log": "\n".join(lines)[:_LOG_MAX]}
 
 

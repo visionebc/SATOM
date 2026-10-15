@@ -1,0 +1,51 @@
+{# Rotation windows of ONE certificate. Needs ``d`` (the defaults dict from
+   cm.default_policy); ``cert`` is optional (absent on the New form). Blank =
+   follow the default, shown as the placeholder. #}
+{% set _c = cert if cert is defined else none %}
+<div class="row g-3 mt-1" style="font-size:13px;">
+  <div class="col-md-3">
+    <label class="fw-form-label" for="w-renew">{{ _('Renew (days before expiry)') }}</label>
+    <input class="form-control fw-form-control" type="number" min="1" max="3650" id="w-renew"
+           name="renew_before_days" placeholder="{{ d.renew_before_days }}"
+           value="{{ _c.renew_before_days if _c and _c.renew_before_days is not none else '' }}">
+  </div>
+  <div class="col-md-3">
+    <label class="fw-form-label" for="w-swap">{{ _('Swap (days after renewal)') }}</label>
+    <input class="form-control fw-form-control" type="number" min="0" max="3650" id="w-swap"
+           name="swap_after_days" placeholder="{{ d.swap_after_days }}"
+           value="{{ _c.swap_after_days if _c and _c.swap_after_days is not none else '' }}">
+  </div>
+  <div class="col-md-3">
+    <label class="fw-form-label" for="w-remove">{{ _('Off the device (days after swap)') }}</label>
+    <input class="form-control fw-form-control" type="number" min="0" max="3650" id="w-remove"
+           name="remove_after_days" placeholder="{{ d.remove_after_days }}"
+           value="{{ _c.remove_after_days if _c and _c.remove_after_days is not none else '' }}">
+  </div>
+  <div class="col-md-3">
+    <label class="fw-form-label" for="w-retain">{{ _('Kept in SATOM (days after)') }}</label>
+    <input class="form-control fw-form-control" type="number" min="0" max="3650" id="w-retain"
+           name="retain_days" placeholder="{{ d.retain_days }}"
+           value="{{ _c.retain_days if _c and _c.retain_days is not none else '' }}">
+  </div>
+  <div class="col-md-6">
+    <label class="fw-form-label" for="w-revoke">{{ _('Revoke the old certificate when it leaves the device') }}</label>
+    {% set _rv = _c.revoke_superseded if _c else none %}
+    <select class="form-select fw-form-control" id="w-revoke" name="revoke_superseded">
+      <option value="" {{ 'selected' if _rv is none }}>{{ _('Default') }} ({{ _('yes') if d.revoke_superseded else _('no') }})</option>
+      <option value="1" {{ 'selected' if _rv is sameas true }}>{{ _('Yes (reason: superseded)') }}</option>
+      <option value="0" {{ 'selected' if _rv is sameas false }}>{{ _('No') }}</option>
+    </select>
+  </div>
+  <div class="col-md-6 d-flex align-items-end">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" name="auto_renew" id="w-auto" value="1"
+             {{ 'checked' if (not _c) or _c.auto_renew }}>
+      <label class="form-check-label" for="w-auto">
+        {{ _('Renew automatically (configured CA: signed and deployed; another CA: a new CSR is generated and you are notified)') }}
+      </label>
+    </div>
+  </div>
+  <div class="col-12 text-muted" style="font-size:12px;">
+    {{ _('The swap has to land before the old certificate expires, so the swap delay must be shorter than the renew window. The swap only moves the bindings; the old certificate stays on the device for a roll back until it is taken off.') }}
+  </div>
+</div>

@@ -298,3 +298,76 @@ def _bindings(client) -> tuple[dict, bool]:
     except Exception:  # noqa: BLE001
         complete = False
     return idx, complete
+
+
+# --------------------------------------------------------------------------- #
+#  Swap: move every reference of one Local cert onto another                   #
+# --------------------------------------------------------------------------- #
+GROUP_TABLE = "system_certificate_local_cert_group"
+MEMBER_TABLE = "system_certificate_local_cert_group_child_group_member"
+
+
+def swap_references(appliance, old_name: str, new_name: str) -> dict:
+    """Point every place that names *old_name* at *new_name*.
+
+    On a FortiADC a certificate is referenced in exactly two places: as a
+    member of a local cert group (an SSL profile binds the group, a virtual
+    server binds the profile — so changing the member is the whole swap) and
+    as the admin GUI cert. Each member is rewritten with a PUT on the child
+    table and RE-READ: a member still naming the old cert is a failure.
+
+    Returns ``{complete, done: [labels], failed: [(label, error)]}``.
+    ``complete`` is False when the group walk could not be read — the caller
+    must not treat "nothing found" as "nothing bound" then."""
+    assert_cert_name(old_name)
+    assert_cert_name(new_name)
+    client = FortiADCClient(appliance)
+    out = {"complete": True, "done": [], "failed": []}
+    try:
+        groups, err = client.list_with_error(GROUP_TABLE)
+        if err:
+            raise CertAdcError(err)
+    except Exception as exc:  # noqa: BLE001
+        out["complete"] = False
+        out["failed"].append(("cert groups", str(exc)))
+        groups = []
+    for g in groups or []:
+        gname = str(g.get("mkey", "")).strip() if isinstance(g, dict) else ""
+        if not gname:
+            continue
+        members, merr = client.list_with_error(MEMBER_TABLE, pkey=gname)
+        if merr:
+            out["complete"] = False
+            out["failed"].append((f"Cert group {gname}", merr))
+            continue
+        for m in members or []:
+            if not (isinstance(m, dict) and str(m.get("local_cert", "")).strip() == old_name):
+                continue
+            label = f"Cert group {gname} (member {m.get('mkey')})"
+            try:
+                client.update(MEMBER_TABLE, str(m.get("mkey")),
+                              dict(m, local_cert=new_name), pkey=gname)
+                again, _e = client.list_with_error(MEMBER_TABLE, pkey=gname)
+                now = next((x for x in again or [] if isinstance(x, dict)
+                            and str(x.get("mkey")) == str(m.get("mkey"))), {})
+                if str(now.get("local_cert", "")).strip() != new_name:
+                    raise CertAdcError("the member still names "
+                                       f"{now.get('local_cert')!r} after the write")
+                out["done"].append(label)
+            except Exception as exc:  # noqa: BLE001
+                out["failed"].append((label, str(exc)))
+    try:
+        g, gerr = client.list_with_error("system_global")
+        if gerr:
+            raise CertAdcError(gerr)
+        if g and isinstance(g[0], dict) and \
+                str(g[0].get("https-server-cert", "")).strip() == old_name:
+            try:
+                client.bind_https_admin_cert(new_name)
+                out["done"].append("Admin GUI (system_global)")
+            except Exception as exc:  # noqa: BLE001
+                out["failed"].append(("Admin GUI (system_global)", str(exc)))
+    except Exception as exc:  # noqa: BLE001
+        out["complete"] = False
+        out["failed"].append(("system_global", str(exc)))
+    return out

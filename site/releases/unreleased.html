@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changed — Automations regrouped: operator work in Automation, SATOM&#x27;s own in Administrator; schema pages under API (2026-10-14) · 95 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added — Certificate Manager: a CSR for another CA, importing certificates, staged rotation and a revocation register (2026-10-15) · 119 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changed — Automations regrouped: operator work in Automation, SATOM&#x27;s own in Administrator; schema pages under API (2026-10-14) · 95 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added — Certificate Manager: a CSR for another CA, importing certificates, staged rotation and a revocation register (2026-10-15) · 119 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changed — Automations regrouped: operator work in Automation, SATOM&#x27;s own in Administrator; schema pages under API (2026-10-14) · 95 entries</span>
-        <ul class="rel-leads"><li>System Automations moved to Administrator → System</li><li>Operator actions moved from System Automations to Automations:</li><li>System automations create themselves</li><li class="rel-more">… and 92 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Added — Certificate Manager: a CSR for another CA, importing certificates, staged rotation and a revocation register (2026-10-15) · 119 entries</span>
+        <ul class="rel-leads"><li>A CSR for another CA</li><li>Import a certificate + key made outside SATOM</li><li>Staged rotation instead of an in-place replacement</li><li class="rel-more">… and 116 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.1.0.html" data-rel-version="3.1.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.1.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -365,6 +365,179 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="added--certificate-manager-a-csr-for-another-ca-importing-certificates-staged-rotation-and-a-revocation-register-2026-10-15">Added — Certificate Manager: a CSR for another CA, importing certificates, staged rotation and a revocation register (2026-10-15)</h3>
+<ul>
+<li><strong>A CSR for another CA.</strong> "Generate CSR" makes the key and the CSR in
+  SATOM. The key never leaves it. The certificate waits as <em>awaiting
+  signature</em> until the signed certificate is imported. Its page shows the
+  round trip: download (or copy) the CSR, then paste or upload what the CA
+  returned. The import is refused unless the public key is the stored key and
+  every requested SAN is present. A PKCS#12 or a pasted key is refused for
+  such a request, because it would bring a different key (operator request:
+  "create a CSR so that another instance signs it, import it, store it with
+  its key and use it in the Cert Manager").</li>
+<li><strong>Import a certificate + key made outside SATOM</strong>, as PEM or PKCS#12. The
+  key is stored encrypted and marked as generated outside SATOM. Per the
+  operator, PKCS#12 is accepted only when the CSR was made outside SATOM.</li>
+<li><strong>Staged rotation instead of an in-place replacement.</strong> A renewal is
+  issued and deployed N days before expiry and takes over the bindings N days
+  later, so issuing and switching do not happen at the same moment and cut
+  connections (operator request: "it should not be swapped the moment it is
+  renewed"). The old certificate stays on the device for a one-click <strong>Roll
+  back</strong>, leaves the device N days after the swap, and leaves SATOM N days
+  after that; the record (serial, dates, timeline) stays. The four windows
+  are defaults in Settings and can be set per certificate. A swap delay that
+  would land after the old certificate expires is refused. With auto-renew,
+  certificates from the configured CA renew themselves. For another CA a new
+  CSR is generated and the operator is notified. Imported certificates are
+  notified only.</li>
+<li><strong>Row buttons</strong>: renew or generate a new CSR now, download the CSR, import
+  the signed certificate, deploy, swap now, roll back, revoke and delete,
+  each with a confirmation. Each row also shows its next step and when.</li>
+<li><strong>Generic revocation and a revocation register.</strong> Revoking runs the revoke
+  command of whichever CA is configured. When SATOM cannot revoke (no
+  command, or a certificate from another CA), the certificate is marked
+  revoked and the register keeps it <em>pending at the CA</em> until someone
+  confirms it. The register keeps serial, fingerprint, reason, who and
+  result, and outlives a deleted record. A certificate in use is not revoked
+  unless the operator says so (a compromised key). A superseded certificate
+  is revoked as it leaves the device, never while it still serves.</li>
+<li><strong>Delete</strong> is refused while the certificate is bound or its bindings
+  cannot be read. It can revoke first and take the certificate off the device
+  first.</li>
+<li>Settings → Certificate Manager → Lifecycle policy now holds the default
+  windows. The old "revoke grace" is gone: revocation follows removal from the
+  device. The sweep's dry run now also lists the revocations it would make.</li>
+</ul>
+<h3 id="changed--api-tokens-every-non-destructive-action-has-a-capability-grouped-checkbox-pickers-2026-10-15">Changed — API tokens: every non-destructive action has a capability; grouped checkbox pickers (2026-10-15)</h3>
+<ul>
+<li><strong>Six new capabilities cover the rest of the non-destructive catalog:</strong>
+  <code>cert_renew</code> (the three Cert Manager renewals), <code>monitoring</code> (deep-monitor
+  sweep, metrics scrape, monitoring report), <code>sentinel</code> (correlate, baselines,
+  CVE mirror, blocklist feed publish), <code>feeds</code> (signature freshness, knowledge
+  packs, WAF artifact index), <code>api_library</code> (endpoint evidence, CLI schema,
+  schema watch) and <code>netbox</code> (NetBox reconcile). Before, these 16 actions had
+  no capability: only a token owned by a user administrator, with no
+  capability ticked, could run them, so no token could be limited to
+  "monitoring only" (operator request: "add more actions"). They are
+  explicit: a token with no capability ticked keeps the old rule for them, so
+  no token issued earlier gained anything. A test now fails when a
+  non-destructive catalog action has no capability. Destructive actions stay
+  unreachable through the API.</li>
+<li><strong>Capabilities and AppID scope are dropdowns with checkboxes</strong>, in the
+  create form and in every Edit dialog (operator request: "put them in a
+  select where the user picks with checkboxes"). Capabilities are grouped
+  (server policies, certificates, maintenance &amp; reports, monitoring &amp;
+  security, feeds &amp; integrations, and the always-explicit object writes), each
+  with its description and an "explicit" badge where an empty list does not
+  grant it. The AppID picker has a filter box. The button lists what is
+  ticked. The Ctrl-click lists are gone. Descriptions and groups now live in
+  the model, next to the capabilities, instead of in the template.</li>
+<li><code>docs/api_v1.md</code> gains the capability → action table.</li>
+</ul>
+<h3 id="fixed--a-release-that-adds-a-table-no-longer-takes-the-web-down-at-boot-one-fortiwebs-signature-alert-no-longer-silences-anothers-2026-10-15">Fixed — a release that adds a table no longer takes the web down at boot; one FortiWeb's signature alert no longer silences another's (2026-10-15)</h3>
+<ul>
+<li><strong>Workers no longer race on a new table.</strong> The four web workers each ran
+  the schema bootstrap at the same time. When a release added a table, two of
+  them sent the same <code>CREATE TABLE</code>, and the one that lost exited. Gunicorn
+  then stopped the whole web service until systemd restarted it (a1,
+  2026-10-14 10:14, table <code>diag_catalogs</code>). The bootstrap now runs one worker
+  at a time behind a Postgres advisory lock. The wait is bounded at 120 s;
+  after that the worker boots unlocked, as before, and logs that it did.</li>
+<li><strong>Each FortiWeb has its own signature alert key.</strong> Every "Signature DB
+  stale" and "version unreadable" finding used the same key. So one device's
+  cooldown silenced the alert for a different device for six hours. The key
+  now carries the appliance id, as the device-health findings already did.</li>
+</ul>
+<h3 id="changed--every-device-can-be-named-on-a-change-request-fortigate-included-2026-10-15">Changed — every device can be named on a change request, FortiGate included (2026-10-15)</h3>
+<ul>
+<li><strong>A change request can name a device of any product.</strong> The device list
+  used to hold only the products some automated action runs on. No automated
+  action runs on FortiGate, so a FortiGate could not be named on any change,
+  not even a documentary one done by hand (cabling, a PSU swap), and Change
+  types could not offer a type for it. The list now holds every product with
+  an active ADOM (operator request: "make every device able to enter the
+  change request").</li>
+<li><strong>Automated types still run only on their own products.</strong> Choosing one now
+  greys out and unticks the devices it does not run on (e.g. FortiGate for a
+  reboot). The server keeps refusing the mismatch, as before. Documentary
+  types with no product declared keep every device.</li>
+<li><strong>Change types → Add a change type</strong> offers FortiGate under "Offered for".</li>
+<li><strong>New documentary type "Manual change (performed by hand)"</strong>, offered for
+  every product. Production had no documentary type, so a FortiGate could be
+  listed on a change request with no type to raise it with (operator
+  confirmed the recommendation). SATOM executes nothing for it: the change
+  request records scope, window, approval and outcome, and its document has
+  its own text in English and German, not the generic "Action without a
+  profile". It is created once at start-up as an ordinary change type, so an
+  administrator can reword, hide or delete it, and a deleted one is not
+  recreated.</li>
+</ul>
+<h3 id="added--certificate-manager-signs-with-a-ca-held-in-an-opnsense-firewall-2026-10-15">Added — Certificate Manager signs with a CA held in an OPNsense firewall (2026-10-15)</h3>
+<ul>
+<li><strong>New signer <code>scripts/opnsense_ca_signer.py</code></strong> for the ADCS command
+  template. It sends the CSR to OPNsense's <em>Sign CSR</em> action (System › Trust)
+  and writes the signed certificate back (operator request: "create a trust
+  with the firewall's CA and configure it, I want to see how the whole process
+  works"). The private key never leaves SATOM. The API key only needs the
+  <em>System: Certificate Manager</em> privilege. The firewall is identified by a
+  public-key pin, which is checked before any credential is sent. <code>pin</code> prints
+  the value to compare.</li>
+<li><strong>OPNsense drops the CSR's subjectAltName when it signs</strong>, so the signer
+  sends the SANs separately, one per line, because OPNsense rejects a
+  comma-separated list. Without them, browsers and curl reject the
+  certificate.</li>
+<li><strong>The CA secret now also reaches the signer as <code>$SATOM_CA_SECRET</code></strong> (ADCS
+  submit and revoke). A template can leave out <code>{password}</code> and keep the
+  secret out of <code>/proc/&lt;pid&gt;/cmdline</code>. The OPNsense signer refuses a secret on
+  its command line.</li>
+</ul>
+<h3 id="fixed--pages-that-only-worked-after-a-refresh-database-relationships-change-types-firmware-platform-2026-10-15">Fixed — pages that only worked after a refresh; Database relationships; Change types; firmware platform (2026-10-15)</h3>
+<ul>
+<li><strong>Pages opened from the menu now work without a refresh.</strong> Turbo Drive
+  re-inserts a page's scripts on every link visit, and the inline code ran
+  before the external file it calls had loaded. After a click, the Database
+  diagram stayed empty ("initERDiagram is not a function"), the Python Console
+  "Browse examples" button did nothing and its Run button was never wired, the
+  Query builder opened with no tables ("Related tables" empty), and Lua
+  Studio → New, Plugin Studio → New and Naming threw the same error. Every
+  page worked after a full reload. <code>turbo-boot.js</code> now runs an inline script
+  only after the external scripts above it have loaded, the order a full load
+  uses. Measured in Chromium on 43 pages: 5 broken before, 0 after, no new
+  errors (operator request: "for the diagram to show I have to refresh the
+  page"; "the examples button does not work"; "in the Query builder Related
+  tables comes up empty").</li>
+<li><strong>Database: relationships the schema implies are drawn.</strong> All 123 tables
+  were already in the diagram, but 48 showed as unconnected because history
+  tables keep <code>appliance_id</code> and similar columns without a foreign key, on
+  purpose: their rows outlive the appliance. An integer <code>&lt;name&gt;_id</code> column now
+  links to the table with that name (singular or plural) whose primary key is
+  <code>id</code>, exact match only (24 relationships). They are drawn dashed, counted
+  apart ("78 foreign keys · 24 inferred"), labelled in the list view, and the
+  Query builder can join on them.</li>
+<li><strong>The SQL console was already read-only; checked live.</strong> DELETE, UPDATE, a
+  data-modifying CTE, two statements, <code>SELECT … FOR UPDATE</code> and <code>set_config</code>
+  are all refused before they run, and the query runs in a read-only,
+  rolled-back transaction under a role that can only SELECT.</li>
+<li><strong>Change types: aligned form and tables, and real names for four types.</strong>
+  The "Add a change type" form had each field at a different height. It now
+  has one row (Key, Name, Written in) and one row of checkboxes for "Offered
+  for", which replace the Ctrl-click list. Both tables share one column grid.
+  HA failover and the three Cert Manager renewals showed "Action without a
+  profile" as their name and printed the generic change document: they now
+  have their own profile in English and German. A test pins every operator
+  action to a profile and to its catalogue label. It also caught the
+  lifecycle sweep's label drifting from the catalogue.</li>
+<li><strong>Firmware: Hardware or VM is detected from the file name.</strong> Fortinet's
+  naming carries it (<code>FWB_KVM-…</code>, <code>FGT_VM64_KVM-…</code> = VM; <code>FWB_1000E-…</code>,
+  <code>FGT_60F-…</code> = hardware). The upload form fills the Platform field, and the
+  hypervisor for install images, when you choose the file and says it was
+  detected. The server applies the same rule to uploads and backup-server
+  pulls. A platform the operator picked is never overruled, and a name that
+  does not say stays "Any". Matching an image to an appliance now reads the
+  appliance's probed hardware type; before, it guessed from the model string
+  (operator request: "firmware should detect directly whether it is HW or VM").</li>
+</ul>
 <h3 id="changed--automations-regrouped-operator-work-in-automation-satoms-own-in-administrator-schema-pages-under-api-2026-10-14">Changed — Automations regrouped: operator work in Automation, SATOM's own in Administrator; schema pages under API (2026-10-14)</h3>
 <ul>
 <li><strong>System Automations moved to Administrator → System</strong>, in every ADOM.

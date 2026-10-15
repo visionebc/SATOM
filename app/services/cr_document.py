@@ -490,84 +490,101 @@ _T: dict = {
 
 
 def _cert_renew_profile(eku_en: str, eku_de: str, label_en: str, label_de: str) -> dict:
-    """The three Cert Manager renewals differ only in the certificate purpose
+    """The three Cert Manager rotations differ only in the certificate purpose
     (EKU) they select; one text, three labels."""
     return {
         "de": {
             "label": label_de,
             "purpose": (
-                f"Erneuerung der ablaufenden Zertifikate mit Verwendungszweck "
-                f"{eku_de} auf den Ziel-Appliances: neuer Schlüssel und CSR, "
-                f"Signatur über den konfigurierten ADCS-Befehl, Ablage des "
-                f"neuen Zertifikats unter einem neuen, datierten Namen. Das "
-                f"bisherige Zertifikat bleibt erhalten."),
+                f"Rotation der Zertifikate mit Verwendungszweck {eku_de} auf den "
+                f"Ziel-Appliances, nach den Fristen jedes Zertifikats: Erneuerung "
+                f"vor Ablauf (neuer Schlüssel und CSR, Signatur über die "
+                f"konfigurierte CA, Ablage unter neuem Namen), Umstellung der "
+                f"Bindungen am Umstellungsdatum, Entfernen des alten Zertifikats "
+                f"von der Appliance nach der Entfernungsfrist und Löschen seines "
+                f"Schlüssels in SATOM nach der Aufbewahrungsfrist."),
             "justification": (
                 "Ein abgelaufenes Zertifikat unterbricht TLS für jeden Dienst, "
-                "der es verwendet. Die Erneuerung vor Ablauf hält den Betrieb "
-                "aufrecht; über SATOM ist sie protokolliert und nachvollziehbar."),
+                "der es verwendet. Erneuerung und Umstellung getrennt zu planen "
+                "verhindert, dass beides im selben Moment geschieht; über SATOM "
+                "ist jeder Schritt protokolliert und nachvollziehbar."),
             "impact": (
-                "Kein Eingriff in den Datenpfad: die Bindung an Server-Policies "
-                "bzw. Profile wird NICHT umgestellt. Das neue Zertifikat liegt "
-                "bereit, bis es in einem eigenen Wartungsfenster getauscht wird."),
-            "downtime": "keine (die Bindung wird nicht umgestellt)",
+                "Am Umstellungsdatum werden die Server-Policies, SNI-Einträge, "
+                "Zertifikatsgruppen bzw. das GUI-Zertifikat, die das alte "
+                "Zertifikat verwenden, auf das neue umgestellt. Neue "
+                "TLS-Verbindungen erhalten ab dann das neue Zertifikat. Die "
+                "Erneuerung selbst greift nicht in den Datenpfad ein."),
+            "downtime": "keine geplant (Umstellung der Bindung im Zeitplan dieser Aktion)",
             "risk": (
-                "Wesentliche Risiken: die CA lehnt die Anfrage ab oder signiert "
-                "mit einer anderen Vorlage; das neue Zertifikat trägt nicht den "
-                "erwarteten Verwendungszweck. Beides verhindert nur die "
-                "Bereitstellung — das laufende Zertifikat bleibt unverändert."),
+                "Wesentliche Risiken: die CA lehnt die Anfrage ab; das neue "
+                "Zertifikat trägt nicht den erwarteten Verwendungszweck oder "
+                "wird von Clients nicht als vertrauenswürdig erkannt. SATOM "
+                "stellt nur um, wenn alle Bindungen gelesen werden konnten, und "
+                "entfernt nie ein Zertifikat, das noch gebunden ist."),
             "rollback": (
-                "Das neue, nicht gebundene Zertifikat von der Appliance löschen.",
-                "Bei Bedarf das Zertifikat bei der CA widerrufen.",
+                "Solange das alte Zertifikat auf der Appliance liegt: "
+                "„Zurückrollen“ im Certificate Manager gibt ihm alle Bindungen "
+                "zurück.",
+                "Danach: das alte Zertifikat erneut importieren und binden.",
             ),
             "work": (
-                "Ablaufende Zertifikate mit dem gewählten Verwendungszweck "
-                "ermitteln.",
-                "Neuen Schlüssel und CSR erzeugen.",
-                "CSR über den konfigurierten ADCS-Befehl signieren lassen.",
-                "Neues Zertifikat unter datiertem Namen auf die Appliance "
-                "laden.",
+                "Zertifikate im Erneuerungsfenster erneuern bzw. CSR erzeugen.",
+                "Fällige Erneuerungen auf alle Bindungen des Vorgängers "
+                "umstellen.",
+                "Abgelöste Zertifikate nach der Entfernungsfrist von der "
+                "Appliance entfernen (und gemäß Richtlinie widerrufen).",
+                "Schlüssel nach der Aufbewahrungsfrist aus SATOM löschen.",
             ),
             "validation": (
-                "Das neue Zertifikat ist auf der Appliance vorhanden und gültig.",
-                "Verwendungszweck und Ablaufdatum entsprechen der Anforderung.",
-                "Die bestehenden Bindungen sind unverändert.",
+                "Das neue Zertifikat ist gültig und an allen Stellen des "
+                "Vorgängers gebunden.",
+                "Die veröffentlichten Dienste liefern das neue Zertifikat aus.",
             ),
         },
         "en": {
             "label": label_en,
             "purpose": (
-                f"Renew the expiring {eku_en} certificates on the target "
-                f"appliances: new key and CSR, signed through the configured "
-                f"ADCS command, deployed under a new date-stamped name. The "
-                f"current certificate is kept."),
+                f"Rotate the {eku_en} certificates on the target appliances by "
+                f"each certificate's windows: renew before expiry (new key and "
+                f"CSR, signed through the configured CA, deployed under a new "
+                f"name), swap the bindings on the swap date, take the old "
+                f"certificate off the appliance after its removal window and "
+                f"purge its key from SATOM after the retention window."),
             "justification": (
                 "An expired certificate breaks TLS for every service that uses "
-                "it. Renewing before expiry keeps those services running; "
-                "through SATOM the renewal is logged and traceable."),
+                "it. Scheduling the renewal and the swap apart keeps them from "
+                "happening at the same moment; through SATOM every step is "
+                "logged and traceable."),
             "impact": (
-                "No change to the data path: the binding on server policies or "
-                "profiles is NOT swapped. The new certificate waits on the "
-                "appliance until it is swapped in its own maintenance window."),
-            "downtime": "none (the binding is not swapped)",
+                "On the swap date the server policies, SNI members, certificate "
+                "groups or GUI certificate that use the old certificate are "
+                "pointed at the new one. New TLS connections get the new "
+                "certificate from then on. The renewal itself does not touch the "
+                "data path."),
+            "downtime": "none planned (the binding swap runs on this action's schedule)",
             "risk": (
-                "Main risks: the CA refuses the request or signs with a "
-                "different template; the new certificate does not carry the "
-                "expected purpose. Either only stops the deployment - the "
-                "certificate in use is untouched."),
+                "Main risks: the CA refuses the request; the new certificate "
+                "does not carry the expected purpose or is not trusted by the "
+                "clients. SATOM only swaps when every binding could be read, and "
+                "never removes a certificate that is still bound."),
             "rollback": (
-                "Delete the new, unbound certificate from the appliance.",
-                "Revoke it at the CA if required.",
+                "While the old certificate is still on the appliance: Roll back "
+                "in the Certificate Manager gives it every binding back.",
+                "After that: import the old certificate again and bind it.",
             ),
             "work": (
-                "Find the expiring certificates with the selected purpose.",
-                "Generate a new key and CSR.",
-                "Have the CSR signed through the configured ADCS command.",
-                "Upload the new certificate under a date-stamped name.",
+                "Renew the certificates inside their renew window (or generate "
+                "their CSR).",
+                "Swap due renewals onto every binding of the certificate they "
+                "replace.",
+                "Take superseded certificates off the appliance after their "
+                "removal window (revoking them if the policy says so).",
+                "Purge keys from SATOM after the retention window.",
             ),
             "validation": (
-                "The new certificate is on the appliance and valid.",
-                "Purpose and expiry date match the request.",
-                "The existing bindings are unchanged.",
+                "The new certificate is valid and bound everywhere its "
+                "predecessor was.",
+                "The published services serve the new certificate.",
             ),
         },
     }
@@ -1610,16 +1627,16 @@ ACTION_PROFILES: dict = {
     # -------------------------------------------------- cert manager renewals
     "cert_manager_server": _cert_renew_profile(
         "server-authentication", "Serverauthentifizierung",
-        "Cert Manager — renew Server certs",
-        "Cert Manager — Server-Zertifikate erneuern"),
+        "Cert Manager — rotate Server certs",
+        "Cert Manager — Server-Zertifikate rotieren"),
     "cert_manager_clientserver": _cert_renew_profile(
         "client+server (both EKU)", "Client- und Serverauthentifizierung",
-        "Cert Manager — renew Client+Server certs",
-        "Cert Manager — Client+Server-Zertifikate erneuern"),
+        "Cert Manager — rotate Client+Server certs",
+        "Cert Manager — Client+Server-Zertifikate rotieren"),
     "cert_manager_client": _cert_renew_profile(
         "client-authentication", "Clientauthentifizierung",
-        "Cert Manager — renew Client certs",
-        "Cert Manager — Client-Zertifikate erneuern"),
+        "Cert Manager — rotate Client certs",
+        "Cert Manager — Client-Zertifikate rotieren"),
     # ---------------------------------------------------------- manual_change
     #: Not an automation action: the documentary type SATOM ships, seeded once
     #: as an ordinary change type (``cr_types.SEEDED_TYPES``). Its text is

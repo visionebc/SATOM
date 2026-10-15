@@ -351,7 +351,7 @@ def hook_detail(slug):
     stored = set(mod.list_secret_names())
     return render_template("integrations/hook.html", hook=hook,
                            events=mod.EVENTS, recent=runs,
-                           secrets_stored=stored)
+                           secrets_stored=stored, secret_storage=mod.secret_storage())
 
 
 @bp.route("/hooks/<slug>/secret", methods=["POST"])
@@ -359,8 +359,9 @@ def hook_detail(slug):
 @require_permission(Permission.USER_MANAGE)
 def hook_secret(slug):
     """Store the VALUE of one secret this hook declares. Write-only: the value
-    is encrypted into the vault and never rendered, flashed or logged; the
-    page only ever learns whether a value is stored."""
+    goes where the vault mode says (vault only / vault + encrypted local copy /
+    encrypted local copy) and is never rendered, flashed or logged; the page
+    only ever learns whether a value is stored."""
     mod, error = _hooks()
     if mod is None:
         flash(error or "integrations unavailable", "danger")

@@ -7790,9 +7790,17 @@ CRM cannot hang this console.</p>
 <li>A hook receives only the secrets it declares, by name, through
   <code>ctx.secret("NAME")</code>. One it did not declare is not in its environment to
   leak. Never paste a token into the script itself. Once the hook is saved,
-  its <strong>Secret values</strong> card stores each declared value encrypted
-  (Administrators only, audited, write-only: the page shows <em>stored</em> or
-  <em>not set</em>, never the value).</li>
+  its <strong>Secret values</strong> card stores each declared value (Administrators
+  only, audited, write-only: the page shows <em>stored</em> or <em>not set</em>, never the
+  value). Where it goes follows the mode under <strong>Settings → Vault</strong>, like every
+  other secret: <em>vault only</em> keeps it only in the vault
+  (<code>&lt;mount&gt;/hooks/&lt;NAME&gt;</code>), <em>both</em> keeps an encrypted local copy as the
+  fallback, and with no vault it is encrypted in the SATOM database. The card
+  says which. <strong>Migrate existing credentials</strong> and <strong>Remove local copies</strong>
+  on the Vault tab cover hook secrets too, and a local copy is only removed
+  after the vault copy has been read back and matched. If the vault cannot be
+  read when a hook runs, the run record says so instead of reporting the
+  secret as not configured.</li>
 <li>Captured output is redacted (declared secret values are masked) and then
   truncated before it is stored.</li>
 <li>The result comes back through <code>ctx.result(ok, data)</code>, not from what the script

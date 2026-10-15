@@ -652,7 +652,48 @@ def migrate_local_to_vault(dry_run: bool = True) -> dict:
         except VaultError as exc:
             note("setting", label, "failed", str(exc))
 
+    # Integration-hook secrets: one app_settings row per name.
+    for key, name, local in _hook_secret_rows(note):
+        if local == VAULT_SENTINEL:
+            note("hook-secret", name, "skipped", "already vault-owned")
+            continue
+        if dry_run:
+            note("hook-secret", name, "copied", "would copy")
+            continue
+        try:
+            put_field(_hook_path(name), "value", local)
+            back = (read(_hook_path(name)) or {}).get("value")
+            note("hook-secret", name, "copied" if back == local else "failed",
+                 "verified" if back == local else "read-back did not match")
+        except VaultError as exc:
+            note("hook-secret", name, "failed", str(exc))
+
     return out
+
+
+_HOOK_PREFIX = "integrations.secret."
+
+
+def _hook_path(name: str) -> str:
+    return "hooks/%s" % name
+
+
+def _hook_secret_rows(note):
+    """(key, NAME, local plaintext) of every stored hook secret; an
+    undecryptable row is reported through ``note`` and skipped."""
+    rows = AppSetting.query.filter(AppSetting.key.like(_HOOK_PREFIX + "%")) \
+        .order_by(AppSetting.key).all()
+    for row in rows:
+        name = row.key[len(_HOOK_PREFIX):]
+        try:
+            local = encryption.decrypt(row.value) if row.value else ""
+        except Exception as exc:  # noqa: BLE001
+            note("hook-secret", name, "failed", "local copy undecryptable: %s" % exc)
+            continue
+        if not local:
+            note("hook-secret", name, "skipped", "no value stored")
+            continue
+        yield row.key, name, local
 
 
 def scrub_local_copies(dry_run: bool = True) -> dict:
@@ -806,5 +847,25 @@ def scrub_local_copies(dry_run: bool = True) -> dict:
             continue
         AppSetting.set(key, encryption.encrypt(VAULT_SENTINEL))
         note("setting", label, "scrubbed", "local copy replaced by the sentinel")
+
+    # Integration-hook secrets: same rule, read back before destroying.
+    for key, name, local in _hook_secret_rows(note):
+        if local == VAULT_SENTINEL:
+            note("hook-secret", name, "skipped", "already vault-owned")
+            continue
+        try:
+            remote = (read(_hook_path(name)) or {}).get("value") or ""
+        except VaultError as exc:
+            note("hook-secret", name, "failed", "vault unreadable: %s" % exc)
+            continue
+        if remote != local:
+            note("hook-secret", name, "failed",
+                 "the vault copy is missing or differs - the local one is the last one")
+            continue
+        if dry_run:
+            note("hook-secret", name, "scrubbed", "would remove the local copy")
+            continue
+        AppSetting.set(key, encryption.encrypt(VAULT_SENTINEL))
+        note("hook-secret", name, "scrubbed", "local copy replaced by the sentinel")
 
     return out

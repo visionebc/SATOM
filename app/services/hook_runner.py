@@ -170,7 +170,8 @@ def _redact_obj(obj: Any, secrets: dict[str, str]) -> Any:
 #  secrets
 # ---------------------------------------------------------------------------
 def resolve_secrets(names: list[str],
-                    resolver: Callable[[str], str | None] | None = None
+                    resolver: Callable[[str], str | None] | None = None,
+                    errors: list[str] | None = None
                     ) -> tuple[dict[str, str], list[str]]:
     """``({NAME: value}, missing)`` for the DECLARED names only.
 
@@ -187,8 +188,10 @@ def resolve_secrets(names: list[str],
         val = None
         try:
             val = resolver(name)
-        except Exception:  # noqa: BLE001 — a vault miss must not kill the run
+        except Exception as exc:  # noqa: BLE001 — a vault miss must not kill the run
             val = None
+            if errors is not None:
+                errors.append("%s (%s)" % (str(name).upper(), str(exc)[:160]))
         if val:
             out[str(name).upper()] = str(val)
         else:
@@ -327,7 +330,10 @@ def run_request(req: dict[str, Any], *,
     timeout = clamp_timeout(meta.get("timeout"))
     declared = [str(s).upper() for s in (meta.get("secrets") or [])]
 
-    secrets, missing = resolve_secrets(declared, resolver)
+    unreadable: list[str] = []
+    secrets, missing = resolve_secrets(declared, resolver, unreadable)
+    unread_names = {u.split(" ", 1)[0] for u in unreadable}
+    missing = [m for m in missing if m not in unread_names]
 
     write_status(request_id, slug=slug, event=event, status="running",
                  started_at=started_wall, finished_at=None, duration_ms=None,
@@ -408,6 +414,9 @@ def run_request(req: dict[str, Any], *,
         # Redact BEFORE truncating, and redact the structured data too.
         out_txt = truncate(redact(out or "", secrets))
         error = redact(error, secrets)
+        if unreadable:
+            note = "secret(s) could not be read from the vault: %s" % "; ".join(unreadable)
+            error = (error + " | " if error else "") + note
         if missing:
             note = "declared secret(s) not configured: %s" % ", ".join(missing)
             error = (error + " | " if error else "") + note

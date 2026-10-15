@@ -2213,6 +2213,14 @@ as written and listed in the result: the appliance resolves it itself at
 upload, and refuses the file if it can't. On the device, a schema has to exist
 before the schema or WSDL that imports it.
 
+A clone or migration takes care of that order. Before the first write it reads
+the WSDL and XML Schema content it is about to upload and, for every schema
+that content imports: moves it ahead if the plan already creates it, leaves it
+alone if the destination already holds it, and otherwise adds it to the plan
+right before the importing file, with the copy SATOM holds. The pre-flight
+lists those schemas and which file imports each one; one SATOM can't supply is
+a missing file like any other, and the files that import it are skipped.
+
 On FortiWeb 8.0.6 build0116 every gRPC IDL upload fails with
 `errcode -3000: Internal error processing requested file`, whatever the file;
 7.6.8 accepts the same file. SATOM adds that note to the error.

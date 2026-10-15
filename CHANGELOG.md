@@ -6,6 +6,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — Clone and migrate: the schemas a WSDL or XML Schema imports are created first (2026-10-15)
+
+- A policy clone or migration now carries the XML Schemas that a WSDL or XML
+  Schema **imports**, not only the files a rule names. FortiWeb checks those
+  imports when the file is uploaded and looks each one up as an XML Schema
+  object already on the device, so a WSDL that arrived before its schemas was
+  refused after everything before it had been written. Before the first write,
+  SATOM now reads the content it is about to upload: a schema the plan already
+  creates further down is moved ahead of the file that imports it, a schema the
+  destination already holds is left alone, and any other one is added to the
+  plan right before it, with the copy SATOM holds (deepest first).
+- The pre-flight lists those imported schemas and which file needs each one. A
+  schema SATOM can't supply goes through the same acknowledgement as any other
+  missing file; the files that import it, directly or through another schema,
+  are then skipped instead of being refused by the device mid-run.
+
 ### Added — WAF Artifacts: fetch a WSDL or XML Schema from the application (2026-10-15)
 
 - **Fetch from the application** (WAF Artifacts → Inventory) brings in the

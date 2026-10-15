@@ -168,7 +168,8 @@ def _resolve_certificates(items, certs: dict | None, *, dry_run: bool):
     return rows, [r for r in rows if not r["ok"]]
 
 
-def _resolve_artifacts(items, artifacts: dict | None, *, dry_run: bool):
+def _resolve_artifacts(items, artifacts: dict | None, *, dry_run: bool,
+                       dst_client=None):
     """Fetch the bytes for every file-backed object the plan will create.
 
     Returns ``({(kind, mkey): blob}, [missing…])`` and REWRITES the status of
@@ -222,6 +223,9 @@ def _resolve_artifacts(items, artifacts: dict | None, *, dry_run: bool):
         else:
             blobs[(kind, it.mkey)] = blob
             it.note = "content from %s (%d bytes)" % (origin, len(blob))
+    dep_rows = _expand_artifact_deps(items, blobs, missing, ctx, dst_client)
+    if isinstance(artifacts, dict):
+        artifacts["dep_rows"] = dep_rows
     if missing and not dry_run and not ctx.get("accept_missing"):
         names = ", ".join('%s "%s"' % (m["label"], m["name"]) for m in missing[:6])
         raise RuntimeError(
@@ -233,6 +237,122 @@ def _resolve_artifacts(items, artifacts: dict | None, *, dry_run: bool):
             "clone with those objects SKIPPED."
             % (len(missing), names, "…" if len(missing) > 6 else ""))
     return blobs, missing
+
+
+def _expand_artifact_deps(items, blobs: dict, missing: list, ctx: dict,
+                          dst_client) -> list[dict]:
+    """Put the XML Schemas a WSDL / XSD IMPORTS into the plan, ahead of it.
+
+    The planner walks configuration references; a ``schemaLocation`` lives in
+    a file's CONTENT, so it never saw one. FortiWeb validates those references
+    at upload time against the XML Schema objects it already holds, by name
+    (measured on 7.6.8): a WSDL whose schemas are not there yet is refused
+    after everything before it was written. So, for every file the plan will
+    create (in plan order):
+
+    * a schema the plan already creates further down is MOVED ahead of it;
+    * a schema the destination already holds is left alone;
+    * any other is ADDED to the plan, right before the file, with the copy
+      SATOM holds (a schema the store cannot supply joins ``missing`` — the
+      same gate, the same acknowledgement — and the files that import it are
+      SKIPPED, because the device would refuse them anyway).
+
+    Returns one row per reference, for the report.
+    """
+    from . import artifact_deps as ad
+    from . import object_refresh as orf
+    from . import waf_artifacts as wa
+    xsd_urn = wa.KINDS["xml_schema"]["urn"]
+    xsd_path = "/api/v2.0/" + xsd_urn
+
+    def dst_has(name):
+        if dst_client is None:
+            return None
+        try:
+            return orf.presence(dst_client, xsd_path, name)
+        except Exception:  # noqa: BLE001 — unknown, never "absent"
+            return None
+
+    def content(name):
+        return wa.content_for("xml_schema", name, src_client=None,
+                              source_appliance_id=ctx.get("source_appliance_id"),
+                              capture=False)
+
+    def is_xsd(it):
+        return _artifact_kind(it, ctx) == "xml_schema"
+
+    planned = {it.mkey for it in items
+               if is_xsd(it) and it.status in ("create", "exists")}
+    res = ad.Resolver(planned=planned, dst_has=dst_has, content=content,
+                      is_empty=wa.is_empty)
+    moved: set[str] = set()
+    i = 0
+    while i < len(items):
+        it = items[i]
+        kind = _artifact_kind(it, ctx)
+        blob = blobs.get((kind, it.mkey)) if (kind and it.status == "create") else None
+        if blob is None:
+            i += 1
+            continue
+        later = []
+        for ref in res.planned_refs(kind, blob):
+            j = next((k for k, x in enumerate(items) if is_xsd(x) and x.mkey == ref), None)
+            if j is not None and j > i and items[j].status == "create" and ref not in moved:
+                later.append(items[j])
+        if later:
+            # Hoist them and process THEM first: a hoisted schema may import
+            # schemas of its own. ``moved`` stops two files that include each
+            # other from swapping places forever.
+            for dep in later:
+                items.remove(dep)
+                moved.add(dep.mkey)
+            for dep in reversed(later):
+                items.insert(i, dep)
+            continue
+        for dep in res.needed_for(kind, it.mkey, blob):
+            new = clone.CloneItem(
+                label="XML Schema File", urn=xsd_urn, logical=None, mkey=dep["name"],
+                parent_mkey="", kind="object", depth=it.depth,
+                payload={"name": dep["name"]}, status="create",
+                note="imported by %s — content from %s (%d bytes)%s"
+                     % (it.mkey, dep["origin"], len(dep["blob"]),
+                        "; could not confirm whether the destination already "
+                        "has it" if dep["unconfirmed"] else ""))
+            items.insert(i, new)
+            blobs[("xml_schema", dep["name"])] = dep["blob"]
+            i += 1
+        i += 1
+
+    if res.missing:
+        blocked = {m["name"] for m in res.missing}
+        already = {(m.get("kind"), m.get("name")) for m in missing}
+        for m in res.missing:
+            if ("xml_schema", m["name"]) in already:
+                continue      # the plan's own item for it is already reported
+            missing.append({"kind": "xml_schema", "label": wa.label("xml_schema"),
+                            "name": m["name"], "empty": False,
+                            "reason": "imported by %s — %s" % (m["of"], m["reason"])})
+        # A file that imports a schema nobody can supply is refused by the
+        # device; skip it (and, transitively, whatever imports IT) the same
+        # way an absent artifact is skipped.
+        changed = True
+        while changed:
+            changed = False
+            for it in items:
+                kind = _artifact_kind(it, ctx)
+                blob = blobs.get((kind, it.mkey))
+                if it.status != "create" or blob is None:
+                    continue
+                names, _urls = ad.references(kind, blob)
+                hit = [n for n in names if n in blocked]
+                if hit:
+                    it.status = "no-content"
+                    it.note = ("skipped: imports %s, which SATOM cannot supply — "
+                               "FortiWeb refuses a file whose schemas are not on "
+                               "the device" % ", ".join('"%s"' % h for h in hit))
+                    blocked.add(it.mkey)
+                    changed = True
+    return res.notes
 
 
 def _push_artifact(ops, item, kind: str, blob: bytes, ctx: dict) -> None:
@@ -476,7 +596,8 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
     # ``_write``: whether the copy can be complete is a property of the whole
     # plan, and discovering it halfway through means the operator has already
     # been committed to a partial apply by the time anyone can tell them.
-    art_blobs, art_missing = _resolve_artifacts(items, artifacts, dry_run=dry_run)
+    art_blobs, art_missing = _resolve_artifacts(items, artifacts, dry_run=dry_run,
+                                                dst_client=getattr(ops, "client", None))
 
     # Certificate MATERIAL, over the CLI, before the first write — see
     # :func:`_resolve_certificates` for why the order is the whole point.
@@ -1482,6 +1603,9 @@ def _artifact_gate(rows, *, dest_name, accepted: bool):
         # either sends the operator to capture a file they already have.
         why = ((r.get("reason") or "the copy SATOM holds is EMPTY")
                if r.get("empty") else
+               # A schema another file IMPORTS: which file needs it is the
+               # whole point of the row, and the generic line would drop it.
+               r.get("reason") if r.get("dependency_of") else
                ("FortiWeb has no read endpoint for this type — only a copy "
                 "SATOM already holds can be supplied" if not r["readable"]
                 else (r.get("reason") or "no content available")))
@@ -1831,11 +1955,17 @@ def preflight(action: str, *, source_appl, dest_appl=None, policies: list[str],
         #     plan's handful of objects and not on the whole cached composite.
         try:
             from . import waf_artifacts as _wa
+            try:
+                from ..clients.fortiweb import FortiWebClient
+                _dst_client = FortiWebClient(dest)
+            except Exception:  # noqa: BLE001 — unknown destination = "could not confirm"
+                _dst_client = None
             art_rows = _wa.resolve_for_plan(
                 items if (live_ok and items) else [],
                 src_client=src_reader.client,
                 src_vdom=str(getattr(source_appl, "vdom", "") or ""),
-                source_appliance_id=source_appl.id)
+                source_appliance_id=source_appl.id,
+                dst_client=_dst_client)
         except Exception as exc:  # noqa: BLE001 — a checklist never crashes
             art_rows = []
             add("artifacts", "warn", "File-backed objects could NOT be checked",

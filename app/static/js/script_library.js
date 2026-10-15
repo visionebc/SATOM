@@ -68,6 +68,7 @@
   var current = files['main.py'] != null ? 'main.py' : Object.keys(files).sort()[0];
   var dirty = false;
   var problems = CFG.problems || [];
+  var shown = null;     // the file whose text is in the textarea right now
 
   function setDirty(v) {
     dirty = v;
@@ -106,8 +107,11 @@
     $('sl-rename').disabled = current === 'main.py';
   }
   function openFile(name) {
-    if (current != null && files[current] != null) files[current] = code.value;
+    // Keep the edits of the file being left -- only if one is really loaded:
+    // at boot the textarea is empty and must not overwrite main.py.
+    if (shown != null && files[shown] != null) files[shown] = code.value;
     current = name;
+    shown = name;
     code.value = files[name] || '';
     $('sl-cur-file').textContent = name;
     code.scrollTop = 0;
@@ -136,7 +140,7 @@
     n = n.trim();
     if (!validName(n)) { window.alert('Invalid name.'); return; }
     if (files[n] != null) { window.alert(n + ' already exists.'); return; }
-    files[n] = code.value; delete files[current]; current = n;
+    files[n] = code.value; delete files[current]; current = n; shown = n;
     setDirty(true); openFile(n);
   });
   $('sl-del-file').addEventListener('click', function () {
@@ -144,7 +148,7 @@
     if (!window.confirm('Delete ' + current + ' from the draft?')) return;
     delete files[current];
     setDirty(true);
-    current = null;
+    current = null; shown = null;
     openFile('main.py');
   });
   $('sl-upload').addEventListener('change', function () {
@@ -167,7 +171,7 @@
         files[current] = code.value;
         if (replaceAll) {
           if (d.files['main.py'] == null) { window.alert('The zip has no main.py; merging instead.'); }
-          else { files = {}; }
+          else { files = {}; shown = null; }
         }
         names.forEach(function (n) { files[n] = d.files[n]; });
         setDirty(true);

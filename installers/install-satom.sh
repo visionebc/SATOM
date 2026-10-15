@@ -1716,6 +1716,7 @@ for unit in satom.service satom-scheduler.service \
             satom-reconciler.service \
             satom-alerts.service satom-alerts.timer \
             satom-integrations.path satom-integrations.service \
+            satom-scripts.path satom-scripts.service \
             satom-responder.service satom-responder.timer; do
     [ -f "$APP_DIR/deploy/$unit" ] && cp "$APP_DIR/deploy/$unit" /etc/systemd/system/
 done
@@ -1802,6 +1803,15 @@ install -d -o "$APP_USER" -g "$APP_USER" -m 0750 \
 # accepts enqueued work and never runs it (this happened to satom-updater.path
 # on 249 on 2026-07-12 and the queue sat there silently).
 systemctl enable --now satom-integrations.path >>"$INSTALL_LOG" 2>&1 || true
+# Script Library queue: same single-parent rule as the hooks above. library/ is
+# read-only to satom-scripts.service, the rest is its working area.
+install -d -o "$APP_USER" -g "$APP_USER" -m 0750 \
+    "$APP_DIR/data/scripts" \
+    "$APP_DIR/data/scripts/library" \
+    "$APP_DIR/data/scripts/queue" \
+    "$APP_DIR/data/scripts/claimed" \
+    "$APP_DIR/data/scripts/status" >>"$INSTALL_LOG" 2>&1 || true
+systemctl enable --now satom-scripts.path >>"$INSTALL_LOG" 2>&1 || true
 systemctl enable --now satom-cert-renew.timer >>"$INSTALL_LOG" 2>&1 || true
 # Both timers carry an internal role guard (primary-only), so they are
 # enabled on both nodes: after a promote the new node is already set up.

@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Script Library — Studio{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex align-items-start">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-file-earmark-code me-2 text-accent"></i>{{ _('Script Library') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('Python scripts with a form: you write and test them here, operators fill in the form and run the published version. Every run is sandboxed and recorded.') }}</p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm ms-auto" href="{{ url_for('database.py_console_page') }}">
+    <i class="bi bi-terminal me-1"></i>{{ _('Python Console') }}</a>
+</div>
+
+{% if not sandbox_ok %}
+<div class="alert alert-danger" style="font-size:13px;">
+  <strong>{{ _('Sandbox unavailable on this node.') }}</strong>
+  {{ _('bubblewrap is not installed, so no script can run here. Install it from Settings > General > System packages.') }}
+</div>
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="fw-card">
+      <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-collection me-2 text-accent"></i>{{ _('Scripts') }}</span></div>
+      <div class="fw-card-body p-0">
+        <table class="table table-sm mb-0 align-middle" style="font-size:13px;">
+          <thead><tr>
+            <th>{{ _('Name') }}</th><th>{{ _('Published') }}</th><th>{{ _('Form fields') }}</th>
+            <th>{{ _('Network') }}</th><th>{{ _('Audience') }}</th><th>{{ _('Last change') }}</th>
+          </tr></thead>
+          <tbody>
+          {% for s in scripts %}
+            <tr>
+              <td><a href="{{ url_for('script_library.edit', slug=s.slug) }}"><strong>{{ s.name }}</strong></a>
+                <div class="text-muted" style="font-size:11px;"><code>{{ s.slug }}</code>{% if s.description %} · {{ s.description|truncate(80) }}{% endif %}</div></td>
+              <td>{% if s.published %}<span class="fw-badge fw-badge-success">v{{ s.published }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('draft only') }}</span>{% endif %}
+                {% if s.published and s.draft_changed %}<span class="fw-badge fw-badge-warning" title="{{ _('The draft has changes that are not published') }}">{{ _('draft ahead') }}</span>{% endif %}</td>
+              <td>{{ s.fields }}</td>
+              <td>{% if s.network == 'egress' %}<span class="fw-badge fw-badge-info">{{ _('outbound') }}</span>{% else %}<span class="text-muted">{{ _('none') }}</span>{% endif %}</td>
+              <td>{{ _('Operators') if s.audience == 'operators' else _('Administrators') }}</td>
+              <td class="text-muted" style="font-size:11px;">{{ (s.updated_at or '')[:16]|replace('T', ' ') }} · {{ s.updated_by }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" class="text-muted p-3">{{ _('No scripts yet. Create one on the right.') }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="fw-card mt-3">
+      <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Recent runs') }}</span></div>
+      <div class="fw-card-body p-0">
+        {% include "script_library/_runs.html" %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="fw-card">
+      <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-plus-circle me-2 text-accent"></i>{{ _('New script') }}</span></div>
+      <div class="fw-card-body">
+        <form method="post" action="{{ url_for('script_library.create') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="form-label small mb-1" for="sl-name">{{ _('Name') }}</label>
+          <input class="form-control form-control-sm mb-2" id="sl-name" name="name" required maxlength="120">
+          <label class="form-label small mb-1" for="sl-slug">{{ _('Id') }}</label>
+          <input class="form-control form-control-sm" id="sl-slug" name="slug" required pattern="[a-z0-9][a-z0-9_\-]{1,47}" maxlength="48">
+          <div class="form-text mb-2">{{ _('Lowercase letters, digits, - and _. It cannot be changed later.') }}</div>
+          <button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-plus-lg me-1"></i>{{ _('Create') }}</button>
+        </form>
+      </div>
+    </div>
+    <div class="fw-card mt-3">
+      <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-shield-lock me-2 text-accent"></i>{{ _('How scripts run') }}</span></div>
+      <div class="fw-card-body" style="font-size:12px;">
+        <ul class="mb-0 ps-3">
+          <li>{{ _('In a bubblewrap jail, by a separate runner that has no access to the SATOM database or its keys.') }}</li>
+          <li>{{ _('The script sees only its own files. No network unless you allow outbound access; this node and its local services are never reachable.') }}</li>
+          <li>{{ _('Form values arrive in satom_script.inputs. Password fields are masked in every run record.') }}</li>
+          <li>{{ _('Operators can run only published versions; editing the draft never changes what they run.') }}</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<script type="application/json" id="sl-config">{{ {'urls': {'run': url_for('script_library.run_status', rid='RID')}}|tojson }}</script>
+<script src="{{ asset('js/script_library.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

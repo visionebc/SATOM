@@ -1,0 +1,12 @@
+# Fires satom-scripts.service whenever a Script Library run is queued.
+# Enabled on BOTH nodes: a standby whose watcher is off accepts runs and
+# never executes them. The self-update runner arms it on first install.
+[Unit]
+Description=SATOM Script Library queue watcher
+
+[Path]
+DirectoryNotEmpty=/opt/satom/data/scripts/queue
+Unit=satom-scripts.service
+
+[Install]
+WantedBy=multi-user.target

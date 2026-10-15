@@ -6,6 +6,40 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Studio > Script Library: Python scripts with a form, tested and published by administrators (2026-10-15)
+
+- Administrators keep Python scripts as small projects (`main.py` plus modules
+  and data files; upload a `.py` or a `.zip`, download any version as a zip)
+  in an editor with a file tree, line numbers, indentation keys, Ctrl+S and a
+  syntax check that points at the file and line.
+- A form designer defines the fields operators fill in (text, textarea,
+  number, select, checkbox, password), with a live preview. Values reach the
+  script typed, through `satom_script.inputs`; only defined fields get
+  through. Password values are masked in every run record, output and
+  result.
+- Test runs of the draft, publishing frozen versions (code, form, network,
+  timeout), restoring a version to the draft, and a run history with output,
+  `result()` and every connection attempt (operator request: "a place where
+  the administrator can upload Python scripts, give them a user and password,
+  and build a mini form for the user to fill in, like a mini IDE").
+- Runs execute in the new `satom-scripts.service`, which has no database
+  connection and no access to the encryption key, inside the same bubblewrap
+  jail as integration hooks. Network is off unless the script is set to
+  outbound, and outbound never reaches the node itself. The operator page,
+  scheduled runs and credentials stored in the vault follow in the next
+  stages.
+
+### Fixed — a systemd unit added by an update is installed and armed by that update (2026-10-15)
+
+- The privileged updater copied the unit list it had read before checking out
+  the new code, so a unit introduced by an update was only installed on the
+  next one, without its service-account drop-in. Neither the updater nor
+  `satom execute reinstall units` ever enabled a new `.path` or `.timer`, so a
+  new queue watcher stayed off on every existing node. Both now install what
+  the new `deploy/` holds and enable a `.path`/`.timer` the first time it is
+  installed, as the installer does. A unit that was already installed keeps
+  the enabled state it had.
+
 ### Added — Settings > General > System packages (2026-10-15)
 
 - A card under Libraries lists the operating-system packages SATOM depends on,

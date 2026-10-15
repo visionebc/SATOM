@@ -242,10 +242,14 @@ def _unit_templates():
     satom-ha-datasync.* (written inline by the installer, and only in cluster
     mode) and satom-git-publish.* (RETIRED on 2026-08-05) are left out.
     """
+    return _units_in(APP / "deploy")
+
+
+def _units_in(deploy_dir):
     names = set()
     for pat in ("*.service", "*.timer", "*.path"):
         try:
-            names.update(p.name for p in (APP / "deploy").glob(pat))
+            names.update(p.name for p in Path(deploy_dir).glob(pat))
         except OSError:
             pass
     return tuple(sorted(names))
@@ -284,12 +288,21 @@ Group=%s
 """
 
 
-def enforce_unit_user(user):
-    """Pin User=/Group= via drop-in on the unprivileged units."""
+def _nonroot_units(names):
+    return tuple(sorted(({u for u in names if u.endswith(".service")}
+                         - {"satom-updater.service"}) | set(LEGACY_NONROOT_UNITS)))
+
+
+def enforce_unit_user(user, names=None):
+    """Pin User=/Group= via drop-in on the unprivileged units.
+
+    ``names``: the unit list of the deploy/ actually being installed. Without
+    it the import-time list is used, which predates the update's checkout.
+    """
     if not user or user == "root":
         return
-    for unit in NONROOT_UNITS:
-        p = Path("/etc/systemd/system/" + unit)
+    for unit in (NONROOT_UNITS if names is None else _nonroot_units(names)):
+        p = SYSTEMD_DIR / unit
         if not p.exists():
             continue
         d = Path(str(p) + ".d")
@@ -298,6 +311,45 @@ def enforce_unit_user(user):
             (d / "10-app-user.conf").write_text(UNIT_DROPIN % (user, user))
         except OSError:
             pass
+
+
+SYSTEMD_DIR = Path("/etc/systemd/system")
+
+
+def refresh_units(deploy_dir, st=None):
+    """Copy every unit template of ``deploy_dir``, pin the service account,
+    reload systemd, and ARM what arrived for the first time.
+
+    The list is read from ``deploy_dir`` NOW, not from the import-time
+    ``UNIT_FILES``: this process imported before the update's checkout, so a
+    unit introduced by this very update was otherwise skipped until the next
+    one, and its .service missed the User= drop-in.
+
+    Arming: a ``.path`` or ``.timer`` with no installed copy before this call
+    is ``enable --now``-ed once -- exactly what the installer does for every
+    one of them. A unit that was already installed keeps the enabled state the
+    operator gave it; this never enables or disables anything else.
+    """
+    names = _units_in(deploy_dir)
+    fresh = []
+    for unit in names:
+        src = Path(deploy_dir) / unit
+        if not src.exists():
+            continue
+        dst = SYSTEMD_DIR / unit
+        is_new = not dst.exists()
+        subprocess.run(["cp", str(src), str(dst)])
+        if is_new and unit.endswith((".path", ".timer")):
+            fresh.append(unit)
+    enforce_unit_user(APP_USER, names)
+    subprocess.run(["systemctl", "daemon-reload"])
+    for unit in fresh:
+        p = subprocess.run(["systemctl", "enable", "--now", unit],
+                           capture_output=True, text=True, timeout=60)
+        if st is not None:
+            st.step("arm new unit %s" % unit, p.returncode == 0,
+                    (p.stderr or p.stdout or "enabled").strip()[-300:])
+    return names, fresh
 
 
 # ── [SATOM-RELEASE-TRUST] opt-in release-signature enforcement ─────────────
@@ -1000,16 +1052,16 @@ def process(req_path):
             hold_root_side = deploy_dir is None
             st.d["release_trust"] = rel["mode"] if not hold_root_side else "held"
         try:
-            # Refresh unit files (they may have changed in the update).
-            for unit in (() if hold_root_side else UNIT_FILES):
-                src = deploy_dir / unit
-                if src.exists():
-                    subprocess.run(["cp", str(src), "/etc/systemd/system/" + unit])
-            # ...and pin the service account AGAIN. The deploy/ templates declare
-            # User=root, so the copy above would downgrade the privilege model on
-            # every update were it not for the drop-in.
-            enforce_unit_user(APP_USER)
-            subprocess.run(["systemctl", "daemon-reload"])
+            # Refresh unit files (they may have changed in the update) and pin
+            # the service account AGAIN: the deploy/ templates declare
+            # User=root, so the copy would downgrade the privilege model on
+            # every update were it not for the drop-in. refresh_units also
+            # arms a .path/.timer this update introduces.
+            if hold_root_side:
+                enforce_unit_user(APP_USER)
+                subprocess.run(["systemctl", "daemon-reload"])
+            else:
+                refresh_units(deploy_dir, st)
             # Refresh the ROOT-OWNED copies that live OUTSIDE the app tree: the
             # operator CLI, the update runner, and the /usr/local/sbin helper
             # scripts (install-runner.sh installs those last -- see
@@ -1724,12 +1776,7 @@ def package_change(req_path):
                               SATOM_DEPLOY_SRC=str(deploy_dir))
             st.step("stage verified release scripts", True, str(deploy_dir))
         try:
-            for unit in UNIT_FILES:
-                src = deploy_dir / unit
-                if src.exists():
-                    subprocess.run(["cp", str(src), "/etc/systemd/system/" + unit])
-            enforce_unit_user(APP_USER)
-            subprocess.run(["systemctl", "daemon-reload"])
+            refresh_units(deploy_dir, st)
             # install-runner.sh also re-installs the /usr/local/sbin helper
             # scripts ([SATOM-SBIN-ROOT-COPY]); they live outside the tree and no
             # code update reaches them otherwise.

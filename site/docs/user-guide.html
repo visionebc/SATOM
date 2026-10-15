@@ -4044,13 +4044,13 @@ sudo satom execute knowledge fetch --import --yes     # download and import
 sudo satom execute knowledge fetch --feed https://mirror.example/latest.json --import --yes
 </code></pre>
 <h2 id="23-studio-custom-views-plugins--lua">23. Studio: custom views, plugins &amp; Lua</h2>
-<p>Three admin-only authoring tools, grouped under <strong>Studio</strong>. In the Global ADOM
+<p>Four admin-only authoring tools, grouped under <strong>Studio</strong>. In the Global ADOM
 they have their own <strong>Studio</strong> nav group; in the FortiWeb and FortiADC ADOMs the
 same two authoring pages plus the read side (<strong>Custom Views</strong>) appear in their
 own <strong>Plugins</strong> nav group. Every entry is shown only to holders of its own
 <code>studio.*</code> key, so a menu link never answers 403.</p>
-<p>They are gated by <strong>three separate permissions</strong> — <code>studio.python_console</code>,
-<code>studio.plugin_studio</code> and <code>studio.lua_studio</code> — which are <em>not</em> the same thing
+<p>They are gated by <strong>four separate permissions</strong> — <code>studio.python_console</code>,
+<code>studio.plugin_studio</code>, <code>studio.lua_studio</code> and <code>studio.script_library</code> — which are <em>not</em> the same thing
 as <code>user_manage</code>. A profile can be given one studio tool without being given the
 others, and without being given user administration.</p>
 <table>
@@ -4076,6 +4076,11 @@ others, and without being given user administration.</p>
 <td><strong>Lua Studio</strong></td>
 <td><code>/lua</code></td>
 <td>Device scripts for FortiWeb <em>Web Scripting</em> and FortiADC <em>Scripting</em></td>
+</tr>
+<tr>
+<td><strong>Script Library</strong></td>
+<td><code>/database/scripts</code></td>
+<td>Python scripts with a form that operators fill in and run (§23.4)</td>
 </tr>
 </tbody>
 </table>
@@ -4162,6 +4167,58 @@ database or the keyring, and cannot open a socket. Wall-clock, CPU, memory and
 process-count caps stop runaway loops. The console receives a JSON snapshot of
 the data; it never touches the database itself. Every run is audited, including
 the first kilobyte of the source.</p>
+<h3 id="234-script-library">23.4 Script Library</h3>
+<p>Python scripts you keep, with a <strong>form</strong> an operator fills in. You write and
+test them here (<strong>Administrator → Studio → Script Library</strong>, also reachable from
+the Python Console); you publish a version; operators run that version. Gated by
+<code>studio.script_library</code>.</p>
+<p><strong>A script is a small project.</strong> <code>main.py</code> is what runs; other <code>.py</code> files are
+modules it can import (<code>from lib.devices import …</code>), and text files (<code>.json</code>,
+<code>.csv</code>, <code>.yaml</code>, …) are data it can open by relative path. Up to 64 files of
+512 KiB each. <strong>Upload</strong> takes a single file or a <code>.zip</code> of the whole project (a
+zip of a folder is unwrapped); the upload is loaded into the editor and only
+saved when you click <strong>Save</strong>. <strong>Download</strong> gives the draft, or any published
+version, as a zip.</p>
+<p><strong>The editor</strong> has a file tree, line numbers, Tab / Shift+Tab indentation,
+auto-indent after <code>:</code>, Ctrl+S to save and <strong>Check syntax</strong>, which lists every
+error with its file and line (click one to jump to it). A draft with a syntax
+error is saved anyway, so half-written code is never lost, but it cannot be
+published or test-run.</p>
+<p><strong>The form</strong> is defined under <strong>Form</strong>: one row per field, with the variable
+name, label, type (<code>text</code>, <code>textarea</code>, <code>number</code>, <code>select</code>, <code>checkbox</code>,
+<code>password</code>), whether it is required, a default and a help text. The preview next
+to it is the exact form operators get. In the script:</p>
+<pre><code class="language-python">from satom_script import inputs, result, log, tcp
+
+log(&quot;checking %s:%s&quot; % (inputs[&quot;host&quot;], inputs[&quot;port&quot;]))   # number fields arrive as numbers
+result({&quot;ok&quot;: True, &quot;rows&quot;: rows})                           # structured output of the run
+</code></pre>
+<p>Only the fields you defined reach the script; anything else a form submits is
+dropped. The values come in on standard input, never as environment variables.
+<strong>Password</strong> fields cannot have a default, and their values are masked in
+every run record, in the output, in <code>result()</code> and in the connection list.</p>
+<p><strong>Settings</strong> holds the name, the description operators see, the timeout
+(5–900 s), who may run it (administrators only, or operators) and the
+network: <strong>None</strong> (the script cannot open any connection) or <strong>Outbound</strong>
+(HTTP(S) clients work as usual; <code>tcp(host, port)</code> opens raw TCP, e.g.
+<code>paramiko.SSHClient().connect(host, sock=tcp(host, 22), …)</code>). Outbound never
+reaches this node: loopback and every address of the node are refused, so the
+script cannot talk to the database, the metrics store or the web app.</p>
+<p><strong>Test</strong> runs the saved draft on this node with the values you type and shows
+the output, the <code>result()</code> document and every connection attempt.
+<strong>Publish</strong> freezes the draft as version <em>n</em>: code, form, network and timeout.
+Operators always run a published version, so editing the draft never changes
+what they run. <strong>Versions &amp; runs</strong> lists the versions (zip, <em>restore to
+draft</em>) and the run history. The last 50 versions are kept, and the live one
+always is.</p>
+<p><strong>How a run is contained.</strong> Runs are executed by <code>satom-scripts.service</code>, not by
+the web application. That runner has no database connection and no access to
+the SATOM encryption key; it reads the frozen files and writes the run record.
+Each script runs in the bubblewrap jail of §35.3 (own process, user and network
+namespaces, none of SATOM mounted). A queued run holds the form values in a
+private file on this node only; the runner rewrites it without them the moment
+it starts. On an HA pair <code>satom-scripts.path</code> must be enabled on both nodes. An
+update arms it on nodes installed before it existed.</p>
 <h2 id="24-high-availability">24. High availability</h2>
 <p>Global → Administrator → <strong>High Availability</strong> (admin, <code>user_manage</code>). This page
 was <strong>split out of Software Update</strong> so that the two questions get their own nav
@@ -8241,8 +8298,8 @@ the page instead of on a manual.</p>
 discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
-   the console is either <strong>on the map</strong> (120 today) or <strong>excluded with a written
-   reason</strong> (148 today — JSON feeds, downloads, redirects and fragments that
+   the console is either <strong>on the map</strong> (121 today) or <strong>excluded with a written
+   reason</strong> (150 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>
 <li><strong>Nothing here is a second source of truth.</strong> Paths are generated from the

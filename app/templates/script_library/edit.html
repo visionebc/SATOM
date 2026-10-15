@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% block title %}{{ script.name }} — Script Library{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex align-items-start">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-file-earmark-code me-2 text-accent"></i><span id="sl-title">{{ script.name }}</span></h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      <code>{{ script.slug }}</code> ·
+      {% if script.published %}<span class="fw-badge fw-badge-success" id="sl-pub">v{{ script.published }} {{ _('published') }}</span>
+      {% else %}<span class="fw-badge fw-badge-secondary" id="sl-pub">{{ _('not published') }}</span>{% endif %}
+      <span id="sl-dirty" class="fw-badge fw-badge-warning" style="display:none;">{{ _('unsaved changes') }}</span>
+      <span id="sl-state" class="ms-2"></span>
+    </p>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('script_library.index') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Library') }}</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('script_library.download', slug=script.slug) }}"><i class="bi bi-download me-1"></i>{{ _('Download') }}</a>
+    <button type="button" class="btn btn-primary btn-sm" id="sl-save" title="Ctrl+S"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
+    <button type="button" class="btn btn-success btn-sm" id="sl-publish"><i class="bi bi-rocket-takeoff me-1"></i>{{ _('Publish') }}</button>
+  </div>
+</div>
+
+{% if not sandbox_ok %}
+<div class="alert alert-danger" style="font-size:13px;">
+  <strong>{{ _('Sandbox unavailable on this node.') }}</strong>
+  {{ _('bubblewrap is not installed, so no script can run here. Install it from Settings > General > System packages.') }}
+</div>
+{% endif %}
+
+<ul class="nav nav-tabs mb-3" role="tablist">
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#sl-tab-code" type="button"><i class="bi bi-code-square me-1"></i>{{ _('Code') }}</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-form" type="button"><i class="bi bi-ui-checks me-1"></i>{{ _('Form') }} <span class="fw-badge fw-badge-secondary" id="sl-field-count"></span></button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-settings" type="button"><i class="bi bi-sliders me-1"></i>{{ _('Settings') }}</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-test" type="button"><i class="bi bi-play-circle me-1"></i>{{ _('Test') }}</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-versions" type="button"><i class="bi bi-clock-history me-1"></i>{{ _('Versions & runs') }}</button></li>
+</ul>
+
+<div class="tab-content">
+  {# ---------------------------------------------------------------- code #}
+  <div class="tab-pane fade show active" id="sl-tab-code">
+    <div class="row g-3">
+      <div class="col-lg-3">
+        <div class="fw-card h-100">
+          <div class="fw-card-header d-flex justify-content-between align-items-center">
+            <span class="fw-card-title" style="font-size:13px;"><i class="bi bi-folder2-open me-2 text-accent"></i>{{ _('Files') }}</span>
+            <span class="d-flex gap-1">
+              <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1" id="sl-new-file" title="{{ _('New file') }}"><i class="bi bi-file-earmark-plus"></i></button>
+              <label class="btn btn-outline-secondary btn-sm py-0 px-1 mb-0" title="{{ _('Upload .py or .zip') }}"><i class="bi bi-upload"></i>
+                <input type="file" id="sl-upload" accept=".py,.zip,.txt,.json,.csv,.yaml,.yml,.md" hidden></label>
+            </span>
+          </div>
+          <div class="fw-card-body p-0">
+            <ul class="list-unstyled mb-0" id="sl-tree" style="font-size:12px;"></ul>
+          </div>
+          <div class="p-2 text-muted" style="font-size:11px;">
+            {{ _('main.py is what runs. Other .py files are importable modules.') }}
+            {{ _('Limits: %(files)s files, %(kib)s KiB each.', files=limits.files, kib=limits.file_kib) }}
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-9">
+        <div class="fw-card">
+          <div class="fw-card-header d-flex justify-content-between align-items-center py-1">
+            <span style="font-size:12px;"><i class="bi bi-file-earmark-text me-1"></i><code id="sl-cur-file"></code></span>
+            <span class="d-flex gap-1">
+              <button type="button" class="btn btn-outline-secondary btn-sm py-0" id="sl-rename" style="font-size:11px;">{{ _('Rename') }}</button>
+              <button type="button" class="btn btn-outline-danger btn-sm py-0" id="sl-del-file" style="font-size:11px;">{{ _('Delete file') }}</button>
+              <button type="button" class="btn btn-outline-primary btn-sm py-0" id="sl-check" style="font-size:11px;"><i class="bi bi-check2-square me-1"></i>{{ _('Check syntax') }}</button>
+            </span>
+          </div>
+          <div class="sl-editor" style="display:flex;height:60vh;min-height:360px;border-bottom:1px solid var(--fw-border);">
+            <pre id="sl-gutter" aria-hidden="true" style="margin:0;padding:8px 6px;min-width:44px;text-align:right;color:#8a94a6;background:var(--fw-surface-alt);border-right:1px solid var(--fw-border);overflow:hidden;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;user-select:none;"></pre>
+            <textarea id="sl-code" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off"
+              style="flex:1;margin:0;padding:8px;border:0;outline:none;resize:none;white-space:pre;overflow:auto;tab-size:4;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#fff;color:#1f2937;"></textarea>
+          </div>
+          <div class="d-flex justify-content-between px-2 py-1 text-muted" style="font-size:11px;">
+            <span id="sl-pos">Ln 1, Col 1</span>
+            <span>{{ _('Tab indents 4 spaces · Shift+Tab outdents · Ctrl+S saves') }}</span>
+          </div>
+          <div id="sl-problems" class="px-2 pb-2" style="font-size:12px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ---------------------------------------------------------------- form #}
+  <div class="tab-pane fade" id="sl-tab-form">
+    <div class="row g-3">
+      <div class="col-xl-7">
+        <div class="fw-card">
+          <div class="fw-card-header d-flex justify-content-between align-items-center">
+            <span class="fw-card-title" style="font-size:13px;"><i class="bi bi-ui-checks me-2 text-accent"></i>{{ _('Fields the operator fills in') }}</span>
+            <button type="button" class="btn btn-primary btn-sm" id="sl-add-field"><i class="bi bi-plus-lg me-1"></i>{{ _('Add field') }}</button>
+          </div>
+          <div class="fw-card-body">
+            <p class="text-muted" style="font-size:12px;">{{ _('Each field arrives in the script as inputs["name"]. Password fields are never stored by a test run and are masked in every run record; they cannot have a default.') }}</p>
+            <div id="sl-fields"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-5">
+        <div class="fw-card">
+          <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-eye me-2 text-accent"></i>{{ _('Preview — what the operator sees') }}</span></div>
+          <div class="fw-card-body"><form id="sl-preview"></form></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ------------------------------------------------------------ settings #}
+  <div class="tab-pane fade" id="sl-tab-settings">
+    <div class="fw-card">
+      <div class="fw-card-body row g-3" style="font-size:13px;">
+        <div class="col-md-6">
+          <label class="form-label small" for="sl-set-name">{{ _('Name') }}</label>
+          <input class="form-control form-control-sm" id="sl-set-name" maxlength="120">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small" for="sl-set-timeout">{{ _('Timeout (s)') }}</label>
+          <input class="form-control form-control-sm" id="sl-set-timeout" type="number" min="{{ limits.timeout_min }}" max="{{ limits.timeout_max }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small" for="sl-set-audience">{{ _('Who can run it') }}</label>
+          <select class="form-select form-select-sm" id="sl-set-audience">
+            <option value="admins">{{ _('Administrators only') }}</option>
+            <option value="operators">{{ _('Operators (Operations > Automation > Scripts)') }}</option>
+          </select>
+        </div>
+        <div class="col-12">
+          <label class="form-label small" for="sl-set-desc">{{ _('Description (shown to operators)') }}</label>
+          <textarea class="form-control form-control-sm" id="sl-set-desc" rows="3" maxlength="2000"></textarea>
+        </div>
+        <div class="col-12">
+          <label class="form-label small d-block">{{ _('Network') }}</label>
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio" name="sl-net" id="sl-net-none" value="none">
+            <label class="form-check-label" for="sl-net-none">{{ _('None — the script cannot open any connection') }}</label>
+          </div>
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio" name="sl-net" id="sl-net-egress" value="egress">
+            <label class="form-check-label" for="sl-net-egress">{{ _('Outbound — HTTP(S) and satom_script.tcp() to other hosts; never this node') }}</label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ---------------------------------------------------------------- test #}
+  <div class="tab-pane fade" id="sl-tab-test">
+    <div class="row g-3">
+      <div class="col-lg-5">
+        <div class="fw-card">
+          <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-input-cursor-text me-2 text-accent"></i>{{ _('Test inputs') }}</span></div>
+          <div class="fw-card-body">
+            <form id="sl-test-form"></form>
+            <button type="button" class="btn btn-primary btn-sm mt-2" id="sl-run-test"><i class="bi bi-play-fill me-1"></i>{{ _('Save and run the draft') }}</button>
+            <div class="form-text">{{ _('Runs the saved draft in the sandbox on this node, with these values.') }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-7">
+        <div class="fw-card">
+          <div class="fw-card-header d-flex justify-content-between"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-terminal me-2 text-accent"></i>{{ _('Result') }}</span><span id="sl-test-status"></span></div>
+          <div class="fw-card-body">
+            <div class="text-muted small mb-1">{{ _('Output') }}</div>
+            <pre id="sl-test-out" class="p-2 mb-2" style="min-height:120px;max-height:40vh;overflow:auto;font-size:11px;background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:8px;white-space:pre-wrap;"></pre>
+            <div class="text-muted small mb-1"><code>satom_script.result()</code></div>
+            <pre id="sl-test-result" class="p-2 mb-2" style="max-height:30vh;overflow:auto;font-size:11px;background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:8px;white-space:pre-wrap;"></pre>
+            <div class="text-muted small mb-1">{{ _('Connections') }}</div>
+            <pre id="sl-test-egress" class="p-2 mb-0" style="max-height:20vh;overflow:auto;font-size:11px;background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:8px;white-space:pre-wrap;"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ------------------------------------------------------------ versions #}
+  <div class="tab-pane fade" id="sl-tab-versions">
+    <div class="fw-card mb-3">
+      <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-tags me-2 text-accent"></i>{{ _('Published versions') }}</span></div>
+      <div class="fw-card-body p-0">
+        <table class="table table-sm mb-0" style="font-size:12px;">
+          <thead><tr><th>{{ _('Version') }}</th><th>{{ _('Published') }}</th><th>{{ _('By') }}</th><th>{{ _('Note') }}</th><th>{{ _('Files') }}</th><th></th></tr></thead>
+          <tbody id="sl-versions"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="fw-card">
+      <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Runs') }}</span></div>
+      <div class="fw-card-body p-0">{% include "script_library/_runs.html" %}</div>
+    </div>
+    <div class="mt-3 text-end">
+      <button type="button" class="btn btn-outline-danger btn-sm" id="sl-delete"><i class="bi bi-trash me-1"></i>{{ _('Delete script') }}</button>
+    </div>
+  </div>
+</div>
+
+<script type="application/json" id="sl-config">{{ {
+  'slug': script.slug,
+  'files': script.files,
+  'problems': script.problems,
+  'settings': {'name': script.name, 'description': script.description, 'network': script.network,
+               'timeout': script.timeout, 'audience': script.audience},
+  'fields': script.fields,
+  'fieldTypes': field_types,
+  'versions': script.versions,
+  'published': script.published,
+  'limits': limits,
+  'urls': {
+    'save': url_for('script_library.save', slug=script.slug),
+    'check': url_for('script_library.check', slug=script.slug),
+    'upload': url_for('script_library.upload', slug=script.slug),
+    'test': url_for('script_library.test_run', slug=script.slug),
+    'publish': url_for('script_library.publish', slug=script.slug),
+    'delete': url_for('script_library.delete', slug=script.slug),
+    'index': url_for('script_library.index'),
+    'download': url_for('script_library.download', slug=script.slug),
+    'version': url_for('script_library.version', slug=script.slug, n=0)[:-1],
+    'restore': url_for('script_library.restore', slug=script.slug, n=0)[:-1],
+    'run': url_for('script_library.run_status', rid='RID')
+  }
+}|tojson }}</script>
+<script src="{{ asset('js/script_library.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

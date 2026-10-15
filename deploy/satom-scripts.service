@@ -1,0 +1,40 @@
+# Script Library runner. Triggered by satom-scripts.path when
+# data/scripts/queue/ becomes non-empty.
+#
+# Same shape as satom-integrations.service with one more inversion: NO
+# EnvironmentFile. This process never needs the database or FERNET_KEY -- it
+# reads frozen script trees and writes status files -- so it is not given
+# them. Each script runs inside the bubblewrap jail of app/services/sandbox.py
+# on top of this containment.
+[Unit]
+Description=SATOM Script Library runner (unprivileged, oneshot, no database)
+After=network.target
+
+[Service]
+Type=oneshot
+User=satom
+Group=satom
+WorkingDirectory=/opt/satom
+Environment=FM_APP_DIR=/opt/satom
+ExecStart=/opt/satom/venv/bin/python -m app.services.script_runner
+# MAX_PARALLEL runs at a time, each at most 900 s, MAX_DRAIN per invocation;
+# what is left re-fires through the .path unit.
+TimeoutStartSec=4500
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+# ONE writable root for queue/claimed/status (the claim is a rename between
+# them; two bind-mounts would make it EXDEV). The script sources are
+# read-only to this unit: a run cannot rewrite the library it runs from.
+ReadWritePaths=-/opt/satom/data/scripts
+ReadOnlyPaths=-/opt/satom/data/scripts/library
+InaccessiblePaths=-/opt/satom/.env -/opt/satom/pki -/opt/satom/.ssh
+ProtectProc=invisible

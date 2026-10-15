@@ -112,6 +112,40 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--studio--script-library-python-scripts-with-a-form-tested-and-published-by-administrators-2026-10-15">Added — Studio &gt; Script Library: Python scripts with a form, tested and published by administrators (2026-10-15)</h3>
+<ul>
+<li>Administrators keep Python scripts as small projects (<code>main.py</code> plus modules
+  and data files; upload a <code>.py</code> or a <code>.zip</code>, download any version as a zip)
+  in an editor with a file tree, line numbers, indentation keys, Ctrl+S and a
+  syntax check that points at the file and line.</li>
+<li>A form designer defines the fields operators fill in (text, textarea,
+  number, select, checkbox, password), with a live preview. Values reach the
+  script typed, through <code>satom_script.inputs</code>; only defined fields get
+  through. Password values are masked in every run record, output and
+  result.</li>
+<li>Test runs of the draft, publishing frozen versions (code, form, network,
+  timeout), restoring a version to the draft, and a run history with output,
+  <code>result()</code> and every connection attempt (operator request: "a place where
+  the administrator can upload Python scripts, give them a user and password,
+  and build a mini form for the user to fill in, like a mini IDE").</li>
+<li>Runs execute in the new <code>satom-scripts.service</code>, which has no database
+  connection and no access to the encryption key, inside the same bubblewrap
+  jail as integration hooks. Network is off unless the script is set to
+  outbound, and outbound never reaches the node itself. The operator page,
+  scheduled runs and credentials stored in the vault follow in the next
+  stages.</li>
+</ul>
+<h3 id="fixed--a-systemd-unit-added-by-an-update-is-installed-and-armed-by-that-update-2026-10-15">Fixed — a systemd unit added by an update is installed and armed by that update (2026-10-15)</h3>
+<ul>
+<li>The privileged updater copied the unit list it had read before checking out
+  the new code, so a unit introduced by an update was only installed on the
+  next one, without its service-account drop-in. Neither the updater nor
+  <code>satom execute reinstall units</code> ever enabled a new <code>.path</code> or <code>.timer</code>, so a
+  new queue watcher stayed off on every existing node. Both now install what
+  the new <code>deploy/</code> holds and enable a <code>.path</code>/<code>.timer</code> the first time it is
+  installed, as the installer does. A unit that was already installed keeps
+  the enabled state it had.</li>
+</ul>
 <h3 id="added--settings--general--system-packages-2026-10-15">Added — Settings &gt; General &gt; System packages (2026-10-15)</h3>
 <ul>
 <li>A card under Libraries lists the operating-system packages SATOM depends on,

@@ -116,7 +116,8 @@ def _new_id() -> str:
 
 def create_job(type_: str, title: str, *, by: str = "",
                meta: dict | None = None, cancelable: bool = True,
-               reversible: bool = False, background: bool = False) -> dict:
+               reversible: bool = False, background: bool = False,
+               durable: bool = False) -> dict:
     """Create a pending job.
 
     ``cancelable`` — the UI offers a Stop control (default True). Set False for
@@ -130,6 +131,11 @@ def create_job(type_: str, title: str, *, by: str = "",
     and log, and the only thing that reaches the operator unprompted is a bell
     notification when it FAILS. Default False — a job is foreground unless it
     says otherwise, so no new job type can go silent by accident.
+    ``durable`` — no thread owns this job. Its whole state is in the file and a
+    driver outside the web (the scheduler sidecar) advances it, so it survives
+    the restarts it may itself cause (``services/library_jobs``). The pid rule
+    of ``sweep_orphans`` does not apply; a durable job is an orphan only when
+    nothing has advanced it for ``durable_stale_after_s``.
     """
     job_id = _new_id()
     now = datetime.utcnow().isoformat()
@@ -146,7 +152,7 @@ def create_job(type_: str, title: str, *, by: str = "",
         "percent": 0, "message": "", "result": None, "error": None,
         "by": by or "", "meta": meta,
         "cancelable": bool(cancelable), "reversible": bool(reversible),
-        "background": bool(background),
+        "background": bool(background), "durable": bool(durable),
         "cancel_requested": False, "pause_requested": False,
         "host": _HOST, "pid": None,
         "created": now, "updated": now, "finished": None,
@@ -515,7 +521,8 @@ def _pid_alive(pid: int) -> bool:
 
 
 def sweep_orphans(*, stale_after_s: int = 3600,
-                  no_pid_stale_after_s: int = 600) -> list[dict]:
+                  no_pid_stale_after_s: int = 600,
+                  durable_stale_after_s: int = 900) -> list[dict]:
     """Mark active jobs whose worker no longer exists as terminal ``error``.
 
     A worker is a daemon thread inside a gunicorn worker process: a service
@@ -529,11 +536,30 @@ def sweep_orphans(*, stale_after_s: int = 3600,
       starts, so a job still missing one minutes later was never dispatched
       (the request died, or a test built it and walked away). A false positive
       self-heals: if the worker does start, it rewrites status + pid.
+    * a ``durable`` job has no worker by design: it is an orphan only when its
+      driver has not advanced it for ``durable_stale_after_s`` (the driver
+      rewrites the file on every pass, so silence means the driver is gone).
     * a job on another host (shared/synced data dir) is never touched.
     """
     swept: list[dict] = []
     for st in list_jobs(limit=1000, active_only=True):
         if (st.get("host") or _HOST) != _HOST:
+            continue
+        if st.get("durable"):
+            try:
+                age = (datetime.utcnow() - datetime.fromisoformat(
+                    st.get("updated") or st.get("created"))).total_seconds()
+            except Exception:  # noqa: BLE001
+                age = durable_stale_after_s + 1
+            if age <= durable_stale_after_s:
+                continue
+            msg = ("Stalled — nothing advanced this job for %d min. Its driver "
+                   "is satom-scheduler on %s; check that it is running."
+                   % (durable_stale_after_s // 60, _HOST))
+            updated = update_job(st["id"], status=ERROR, error=msg, message=msg,
+                                 finished=datetime.utcnow().isoformat())
+            if updated:
+                swept.append(updated)
             continue
         pid = st.get("pid")
         if pid:

@@ -87,6 +87,29 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   HTTP(S) clients use it unchanged; `satom_sdk.tcp(host, port)` opens raw TCP
   (SSH to an appliance) through it. Each run records every attempt.
 
+### Changed — Libraries card changes run as a job on the server; the peer step no longer needs an open browser (2026-10-15)
+
+- An upgrade or rollback from Settings → Libraries is now a job in the global
+  job dock and the Job Manager, with every step of both nodes in its log
+  (operator request: "this process should run in the background and create a
+  job to show its status; we cannot depend on the browser for processes to
+  run"). Before, with "also the peer" ticked, the card's JavaScript waited for
+  this node to succeed and then asked the server to contact the peer. Closing
+  the page left the peer untouched, and nothing reported it.
+- `satom-scheduler` drives the job every 3 seconds. The job does not run as a
+  thread in the web, because the change itself restarts the web and the
+  scheduler. All of its state is in the job file, so it continues where it
+  stopped after those restarts. The peer is still asked only after this node
+  reports success. A failure, rollback, refusal or an unreachable peer ends
+  the job as an error that names the node. The job is never marked successful
+  while the two nodes differ.
+- The peer is never asked twice. If the driver stops while asking, the job
+  fails with "unknown whether the peer received the change". A request the updater does not pick up within 30 minutes, or a job
+  that nothing has advanced for 15 minutes, also fails with the reason.
+- Reopening Settings shows a change that is still running. The
+  `/settings/library-pip/peers` endpoint, used only by the old browser step,
+  is gone.
+
 ### Fixed — a psycopg upgrade from the Libraries card took both HA nodes down; the peer now waits for local success (2026-10-15)
 
 - **Extras were dropped.** The card upgraded the bare package name, so

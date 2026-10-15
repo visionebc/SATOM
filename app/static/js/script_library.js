@@ -575,6 +575,7 @@
     renderCompareBar();
   }
   // ---- compare any two versions
+  var cmpTouched = false;    // keep the operator's pick across saves; else previous -> latest
   function renderCompareBar() {
     var revs = (CFG.revisions || []).slice().reverse();
     var a = $('sl-cmp-a'), b = $('sl-cmp-b');
@@ -584,10 +585,16 @@
       return '<option value="r' + r.n + '">v' + r.n + (r.n === liveN() ? ' (published)' : '') + '</option>';
     }).join('');
     a.innerHTML = opts; b.innerHTML = opts;
-    a.value = keepA && a.querySelector('option[value="' + keepA + '"]') ? keepA : (revs[1] ? 'r' + revs[1].n : (revs[0] ? 'r' + revs[0].n : ''));
-    b.value = keepB && b.querySelector('option[value="' + keepB + '"]') ? keepB : (revs[0] ? 'r' + revs[0].n : '');
+    var defA = revs[1] ? 'r' + revs[1].n : (revs[0] ? 'r' + revs[0].n : '');
+    var defB = revs[0] ? 'r' + revs[0].n : '';
+    var has = function (v) { return v && a.querySelector('option[value="' + v + '"]'); };
+    a.value = cmpTouched && has(keepA) ? keepA : defA;
+    b.value = cmpTouched && has(keepB) ? keepB : defB;
     $('sl-cmp-go').disabled = revs.length < 2;
   }
+  ['sl-cmp-a', 'sl-cmp-b'].forEach(function (id) {
+    if ($(id)) $(id).addEventListener('change', function () { cmpTouched = true; });
+  });
   $('sl-cmp-go').addEventListener('click', function () {
     if ($('sl-cmp-a').value === $('sl-cmp-b').value) { state('Pick two different versions to compare', 'err'); return; }
     openCompare($('sl-cmp-a').value, $('sl-cmp-b').value);

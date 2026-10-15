@@ -18,9 +18,13 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import ssl
 import sys
 import tempfile
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -64,6 +68,53 @@ def _redact_obj(obj: Any, secrets: dict[str, str]) -> Any:
     return obj
 
 
+def unwrap(vault: dict, token: str) -> dict:
+    """Exchange a single-use wrapping token for the credential it wraps.
+
+    No login of our own: the token IS the authorisation, once. Used by
+    anybody else first, or older than its TTL, the vault refuses -- and the
+    run fails saying so."""
+    addr = str(vault.get("addr") or "")
+    if urllib.parse.urlsplit(addr).scheme not in ("http", "https"):
+        raise SL.ScriptError("invalid vault address")
+    if not vault.get("verify_tls", True):
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    elif str(vault.get("ca_cert") or "").strip().startswith("-----BEGIN"):
+        ctx = ssl.create_default_context(cadata=vault["ca_cert"])
+    else:
+        ctx = ssl.create_default_context()
+    req = urllib.request.Request(addr.rstrip("/") + "/v1/sys/wrapping/unwrap",
+                                 data=b"{}", method="POST")
+    req.add_header("X-Vault-Token", token)
+    req.add_header("Content-Type", "application/json")
+    if vault.get("namespace"):
+        req.add_header("X-Vault-Namespace", vault["namespace"])
+    try:
+        with urllib.request.urlopen(req, context=ctx,
+                                    timeout=float(vault.get("timeout") or 10)) as resp:
+            res = json.loads(resp.read() or b"{}")
+    except urllib.error.HTTPError as exc:
+        raise SL.ScriptError("HTTP %s" % exc.code)
+    except Exception as exc:  # noqa: BLE001
+        raise SL.ScriptError(str(exc)[:200])
+    data = (res.get("data") or {}).get("data")
+    if not isinstance(data, dict):
+        raise SL.ScriptError("the vault returned no credential")
+    return {str(k): str(v) for k, v in data.items()}
+
+
+def _credential_secrets(secrets: dict) -> dict[str, str]:
+    """Values to redact: everything but the user name."""
+    out = {}
+    for name, data in secrets.items():
+        for k, v in data.items():
+            if k != "username" and v:
+                out["%s.%s" % (name, k)] = v
+    return out
+
+
 def _cap(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
@@ -88,7 +139,8 @@ def _resolve(req: dict) -> tuple[dict[str, str], dict]:
     SL.validate_files(files)
     return files, {"fields": settings.get("fields") or [],
                    "network": settings.get("network") or "none",
-                   "timeout": int(settings.get("timeout") or SL.TIMEOUT_DEFAULT)}
+                   "timeout": int(settings.get("timeout") or SL.TIMEOUT_DEFAULT),
+                   "credentials": [c.get("name") for c in settings.get("credentials") or []]}
 
 
 def run_request(req: dict) -> dict:
@@ -101,7 +153,21 @@ def run_request(req: dict) -> dict:
         return _write_status(rid, status="failed", finished_at=SL._utcnow(),
                              error=str(exc))
     inputs = req.get("inputs") if isinstance(req.get("inputs"), dict) else {}
+    tokens = req.get("credentials") if isinstance(req.get("credentials"), dict) else {}
+    creds: dict[str, dict] = {}
+    for name, token in tokens.items():
+        if name not in settings["credentials"]:
+            continue                      # only what this version declares
+        try:
+            creds[name] = unwrap(req.get("vault") or {}, str(token))
+        except SL.ScriptError as exc:
+            return _write_status(
+                rid, status="failed", finished_at=SL._utcnow(),
+                error="credential %s could not be unwrapped (%s): already used or "
+                      "expired -- the run waited longer than %d s, or something else "
+                      "used its token first" % (name, exc, 900))
     secrets = SL.secret_inputs(settings["fields"], inputs)
+    secrets.update(_credential_secrets(creds))
     network = settings["network"] if settings["network"] in SL.NETWORK_MODES else "none"
     timeout = max(SL.TIMEOUT_MIN, min(SL.TIMEOUT_MAX, settings["timeout"]))
 
@@ -119,8 +185,8 @@ def run_request(req: dict) -> dict:
                "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8",
                "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1",
                "SATOM_RESULT_FD": str(resfh.fileno())}
-        stdin = json.dumps({"inputs": inputs, "script": req.get("slug"),
-                            "version": req.get("version")})
+        stdin = json.dumps({"inputs": inputs, "secrets": creds,
+                            "script": req.get("slug"), "version": req.get("version")})
         out = sandbox.execute(str(PYTHON), SL.ENTRY, workdir, env=env,
                               timeout=timeout, network=network,
                               pass_fds=(resfh.fileno(),), stdin_data=stdin,

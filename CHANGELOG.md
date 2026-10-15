@@ -25,9 +25,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - Runs execute in the new `satom-scripts.service`, which has no database
   connection and no access to the encryption key, inside the same bubblewrap
   jail as integration hooks. Network is off unless the script is set to
-  outbound, and outbound never reaches the node itself. The operator page,
-  scheduled runs and credentials stored in the vault follow in the next
-  stages.
+  outbound, and outbound never reaches the node itself.
+- **Credentials in the vault.** A script declares the credentials it needs
+  (user + password, or a single value) and reads them with
+  `satom_script.secret("NAME")`. Values are stored only in the configured
+  vault, are write-only from the page and are masked in every run record. A
+  queued run carries single-use wrapped tokens, never the secret; the runner
+  unwraps them with no vault login of its own, and a token someone else used
+  first fails the run visibly. Without a vault, credentials are unavailable
+  (operator request: "there may be passwords, so they must be stored, not in
+  the same database as SATOM"). The operator page and scheduled runs follow in
+  the next stage.
 
 ### Fixed — a systemd unit added by an update is installed and armed by that update (2026-10-15)
 

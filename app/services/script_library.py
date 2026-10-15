@@ -63,6 +63,7 @@ MAX_FIELDS = 40
 MAX_INPUT_CHARS = 64 * 1024
 MAX_OPTIONS = 100
 MAX_VERSIONS = 50
+MAX_CREDENTIALS = 10
 TIMEOUT_MIN, TIMEOUT_MAX, TIMEOUT_DEFAULT = 5, 900, 60
 OUTPUT_CAP = 64 * 1024
 RESULT_CAP = 256 * 1024
@@ -73,6 +74,8 @@ _PATH_SEG_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$")
 TEXT_SUFFIXES = (".py", ".txt", ".json", ".csv", ".yaml", ".yml", ".md",
                  ".cfg", ".ini", ".j2", ".tmpl", ".xml", ".sql")
 _FIELD_RE = re.compile(r"^[a-z_][a-z0-9_]{0,63}$")
+_CRED_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
+CREDENTIAL_KINDS = ("userpass", "secret")
 FIELD_TYPES = ("text", "textarea", "number", "select", "checkbox", "password")
 NETWORK_MODES = ("none", "egress")
 AUDIENCES = ("admins", "operators")
@@ -292,6 +295,32 @@ def shown_inputs(fields: list[dict], inputs: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def clean_credentials(creds: Any) -> list[dict]:
+    """Declared credentials: names only here; values live in the vault."""
+    if creds in (None, ""):
+        return []
+    if not isinstance(creds, list):
+        raise ScriptError("credentials must be a list")
+    if len(creds) > MAX_CREDENTIALS:
+        raise ScriptError("at most %d credentials" % MAX_CREDENTIALS)
+    out, seen = [], set()
+    for c in creds:
+        if not isinstance(c, dict):
+            raise ScriptError("a credential must be an object")
+        name = str(c.get("name") or "").strip()
+        if not _CRED_RE.match(name):
+            raise ScriptError("credential %r: use UPPER_CASE letters, digits and _" % name)
+        if name in seen:
+            raise ScriptError("credential %r is declared twice" % name)
+        seen.add(name)
+        kind = str(c.get("kind") or "userpass")
+        if kind not in CREDENTIAL_KINDS:
+            raise ScriptError("credential %r: unknown kind %r" % (name, kind))
+        out.append({"name": name, "kind": kind,
+                    "label": str(c.get("label") or name).strip()[:120]})
+    return out
+
+
 def clean_settings(meta: dict) -> dict:
     name = str(meta.get("name") or "").strip()[:120]
     if not name:
@@ -310,7 +339,8 @@ def clean_settings(meta: dict) -> dict:
     return {"name": name,
             "description": str(meta.get("description") or "").strip()[:2000],
             "network": network, "audience": audience, "timeout": timeout,
-            "fields": clean_fields(meta.get("fields"))}
+            "fields": clean_fields(meta.get("fields")),
+            "credentials": clean_credentials(meta.get("credentials"))}
 
 
 # ---------------------------------------------------------------------------
@@ -473,7 +503,8 @@ def publish(slug: str, note: str, by: str) -> dict:
     n = (max((v["n"] for v in versions), default=0)) + 1
     vdir = d / "versions" / str(n)
     _write_tree(vdir / "files", files)
-    frozen = {k: meta[k] for k in ("name", "fields", "network", "timeout", "entry")}
+    frozen = {k: meta.get(k) for k in ("name", "fields", "network", "timeout", "entry")}
+    frozen["credentials"] = meta.get("credentials") or []
     frozen.update({"n": n, "published_by": by, "published_at": _utcnow(),
                    "note": str(note or "").strip()[:500]})
     _write_json(vdir / "meta.json", frozen)
@@ -515,7 +546,8 @@ def restore(slug: str, n: int, by: str) -> dict:
     meta = _read_json(_dir(slug) / "meta.json")
     return save_draft(slug, v["files"], {**meta, "fields": v["fields"],
                                          "network": v["network"],
-                                         "timeout": v["timeout"]}, by)
+                                         "timeout": v["timeout"],
+                                         "credentials": v.get("credentials") or []}, by)
 
 
 def delete(slug: str) -> None:
@@ -619,13 +651,17 @@ def _new_request_id(slug: str) -> str:
 
 
 def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
-                trigger: str = "test", node: str = "") -> dict:
+                trigger: str = "test", node: str = "", wrap=None) -> dict:
     """Validate the inputs against the form OF THAT VERSION and queue a run.
 
     ``version_ref``: ``"draft"`` (administrators' test runs) or a published
     version number. The request carries the inputs, including password
     values, in a 0600 file the runner deletes as it claims it; the status
-    record only ever holds the masked form."""
+    record only ever holds the masked form.
+
+    ``wrap(slug, credentials) -> (tokens, missing, vault_info)`` comes from
+    the caller (``script_vault.wrap_for_run``): this module never talks to the
+    vault, so the runner that imports it cannot either."""
     slug = validate_slug(slug)
     if version_ref == "draft":
         meta = _read_json(_dir(slug) / "meta.json")
@@ -638,13 +674,20 @@ def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
             p = probs[0]
             raise ScriptError("%s line %s: %s" % (p["file"], p["line"], p["message"]))
         fields, network, timeout = meta["fields"], meta["network"], meta["timeout"]
+        creds = meta.get("credentials") or []
     else:
         frozen = version(slug, int(version_ref))
         if frozen is None:
             raise ScriptError("no version %s of %r" % (version_ref, slug))
         fields, network, timeout = frozen["fields"], frozen["network"], frozen["timeout"]
+        creds = frozen.get("credentials") or []
         version_ref = int(version_ref)
     inputs = resolve_inputs(fields, raw_inputs)
+    tokens, missing, vault_info = {}, [], {}
+    if creds:
+        if wrap is None:
+            raise ScriptError("this script uses credentials, which need a vault")
+        tokens, missing, vault_info = wrap(slug, creds)
     rid = _new_request_id(slug)
     now = _utcnow()
     STATUS_DIR.mkdir(parents=True, exist_ok=True)
@@ -652,11 +695,12 @@ def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
     status = {"request_id": rid, "slug": slug, "version": version_ref,
               "trigger": trigger, "requested_by": by, "queued_at": now,
               "status": "queued", "network": network, "timeout": timeout,
-              "inputs": shown_inputs(fields, inputs), "node": node}
+              "inputs": shown_inputs(fields, inputs), "node": node,
+              "credentials": [c["name"] for c in creds], "credentials_missing": missing}
     _write_json(STATUS_DIR / (rid + ".json"), status)
     req = {"request_id": rid, "slug": slug, "version": version_ref,
            "inputs": inputs, "requested_by": by, "trigger": trigger,
-           "queued_at": now}
+           "queued_at": now, "credentials": tokens, "vault": vault_info}
     _write_json(REQ_DIR / (rid + ".json"), req, mode=0o600)
     return status
 

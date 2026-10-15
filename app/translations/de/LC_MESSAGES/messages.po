@@ -24594,3 +24594,15 @@ msgstr "Veröffentlichte Versionen"
 
 msgid "Delete script"
 msgstr "Skript löschen"
+
+msgid "Credentials"
+msgstr "Zugangsdaten"
+
+msgid "Add credential"
+msgstr "Zugangsdaten hinzufügen"
+
+msgid "No vault is configured. Script credentials are stored only in the vault: configure it under Settings > Vault to use them."
+msgstr "Es ist kein Vault konfiguriert. Skript-Zugangsdaten werden nur im Vault gespeichert: Richten Sie ihn unter Settings > Vault ein, um sie zu verwenden."
+
+msgid "The script reads them with satom_script.secret(\"NAME\"). Values are kept in the vault, never in the SATOM database; this page can replace a value but never shows it. Each run receives single-use wrapped copies."
+msgstr "Das Skript liest sie mit satom_script.secret(\"NAME\"). Die Werte liegen im Vault, nie in der SATOM-Datenbank; diese Seite kann einen Wert ersetzen, zeigt ihn aber nie an. Jede Ausführung erhält einmalig verwendbare, verpackte Kopien."

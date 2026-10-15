@@ -15,6 +15,8 @@ it for ``tcp``). Nothing of ``/opt/satom`` is on ``sys.path`` in the jail.
             it again replaces the previous one. Not parsed out of stdout, so
             printing JSON cannot fake it.
 ``log``     a timestamped line on stdout (print() works too).
+``secret``  a credential the script declares, from the vault:
+            ``secret("FGT_ADMIN")["password"]``. Masked in the run record.
 ``tcp``     a TCP socket through the sandbox proxy, for SSH and other non-HTTP
             protocols (only when the script has network access); HTTP(S)
             clients use the proxy on their own.
@@ -26,7 +28,7 @@ import os
 import sys
 import time
 
-__all__ = ["inputs", "result", "log", "tcp", "script", "version"]
+__all__ = ["inputs", "result", "log", "tcp", "secret", "script", "version"]
 
 _RESULT_FD_ENV = "SATOM_RESULT_FD"
 
@@ -43,8 +45,19 @@ def _load() -> dict:
 
 _ctx = _load()
 inputs: dict = dict(_ctx.get("inputs") or {})
+_secrets: dict = dict(_ctx.get("secrets") or {})
 script: str = str(_ctx.get("script") or "")
 version = _ctx.get("version")
+
+
+def secret(name: str) -> dict:
+    """A credential the script declares: ``{"username": ..., "password": ...}``
+    or ``{"value": ...}``. Values come from the vault for this run only and
+    are masked in the run record."""
+    if name not in _secrets:
+        raise KeyError("credential %r is not available to this run: not declared "
+                       "by the script, or not set in the vault" % name)
+    return dict(_secrets[name])
 
 
 def log(msg) -> None:

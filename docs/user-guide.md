@@ -168,6 +168,11 @@ one tab and FortiADC in another; switching in one tab never changes the other.
 Data is strictly scoped: a FortiADC session sees only FortiADC jobs,
 notifications, templates and appliances (and vice versa); Global sees all.
 
+**A profile can be confined to some ADOMs** (§26.3). Then the selector and the
+sidebar offer only those ADOMs, opening another one is refused, and the Global
+console shows the union of them — their devices, records, jobs and counters —
+never the whole fleet.
+
 ### 3.1 The selected device is per ADOM
 
 Most per-device pages read an **implicit device context** rather than asking
@@ -3727,7 +3732,8 @@ published or test-run.
 
 **The form** is defined under **Form**: one row per field, with the variable
 name, label, type (`text`, `textarea`, `number`, `select`, `checkbox`,
-`password`), whether it is required, a default and a help text. The preview next
+`password`, and the database fields `lookup`, `lookup_multi`, `dataset`
+described below), whether it is required, a default and a help text. The preview next
 to it is the exact form operators get. In the script:
 
 ```python
@@ -3736,6 +3742,39 @@ from satom_script import inputs, result, log, tcp
 log("checking %s:%s" % (inputs["host"], inputs["port"]))   # number fields arrive as numbers
 result({"ok": True, "rows": rows})                           # structured output of the run
 ```
+
+**Database fields** take their values from the SATOM database. Three types:
+`lookup` (the user picks one row), `lookup_multi` (several rows) and `dataset`
+(no pick: the whole result goes to the script). For each one you build a
+query in the field's **Database query** panel: a table, other tables **combined
+with it** (the list offers only the tables related to it, with the join
+explained, up to two joins away — you never type a key), the columns, filters,
+order and a row limit (≤ 500). For a pick list you choose which column is the
+**value** the script gets and which is the **label** the user sees.
+**Preview rows** runs it right away. The query is read-only, built from the
+same catalogue as the Report Builder: credential columns and credential
+tables are refused.
+
+The rows are read for **the user's ADOMs**: a profile confined to some ADOMs
+(§26.3) sees only their rows, and a table that belongs to no ADOM is refused to
+it. The form only stores the chosen value; the full row is read again **when
+the run is queued** — with the operator's ADOMs for *Run now*, with the
+owner's for a saved run — so a scheduled run never works on a month-old copy,
+and a value that has gone away fails the run with a message instead of running
+anyway. In the script:
+
+```python
+dev = inputs["device"]                 # lookup
+log(dev["label"], dev["row"]["appliances.host"])
+for d in inputs["targets"]:            # lookup_multi: a list of the same
+    ...
+for row in inputs["inventory"]["rows"]:   # dataset: {"columns", "rows", "truncated"}
+    log(row["appliances.name"])
+```
+
+Columns are named `table.column`; values are text (empty for NULL). The script
+itself still has no route to the database: SATOM runs the query and hands it
+the rows.
 
 Only the fields you defined reach the script; anything else a form submits is
 dropped. The values come in on standard input, never as environment variables.
@@ -4354,12 +4393,35 @@ An **anti-lockout guard** keeps at least one active account holding both user
 management and profile management, so this page cannot be used to remove the
 last administrator.
 
+**ADOMs.** A profile can be confined to some ADOMs: tick them in the **ADOMs**
+card of the profile (no ADOM ticked = every ADOM, which is what every profile
+had before). A confined profile:
+
+- sees only its ADOMs in the switcher and the sidebar; opening any other ADOM —
+  by link, URL or the `X-ADOM` header — is refused with *Your profile does not
+  include the … ADOM* (a JSON caller gets 403);
+- sees, in the **Global** console, only the devices and records of its ADOMs:
+  appliance lists and pages, jobs, change requests (one that also names a
+  device outside its ADOMs is not shown), Sentinel incidents and border maps,
+  certificates, reports, metrics and the dashboard tiles; a record it creates
+  from Global lands in one of its ADOMs;
+- cannot open the database browser, the SQL console or DB reports (raw SQL
+  reads every ADOM), nor ADOM Assets from Global (open it from one of its
+  ADOMs). Script Library database fields still work: SATOM adds the ADOM filter
+  to them (§23.4).
+
+Background work (scheduled actions, sweeps already started, the scheduler) is
+not a session and acts on the whole fleet as before; a saved script run reads
+its database rows with its **owner's** ADOMs.
+
 **Nobody can grant more than they hold.** A holder of *Manage users* or
 *Manage profiles* who is not a full administrator cannot assign or create a
 profile wider than their own, cannot reset the password or clear the 2FA of an
 account that holds more than they do, cannot add a key they do not hold to a
 profile, and cannot edit the profile they are assigned to. You may move
-yourself to a narrower profile, never a wider one.
+yourself to a narrower profile, never a wider one. The same holds for ADOMs: a
+confined administrator composes and assigns profiles only within its own ADOMs
+and can never create or assign an unconfined one.
 
 ### 26.4 Software Update Repository — where this node downloads its own code from
 

@@ -296,6 +296,10 @@ each sidebar. <strong>The ADOM is per browser tab</strong> — you can keep Fort
 one tab and FortiADC in another; switching in one tab never changes the other.
 Data is strictly scoped: a FortiADC session sees only FortiADC jobs,
 notifications, templates and appliances (and vice versa); Global sees all.</p>
+<p><strong>A profile can be confined to some ADOMs</strong> (§26.3). Then the selector and the
+sidebar offer only those ADOMs, opening another one is refused, and the Global
+console shows the union of them — their devices, records, jobs and counters —
+never the whole fleet.</p>
 <h3 id="31-the-selected-device-is-per-adom">3.1 The selected device is per ADOM</h3>
 <p>Most per-device pages read an <strong>implicit device context</strong> rather than asking
 which appliance you mean on every page. That context is <strong>one slot per ADOM</strong>:
@@ -4236,13 +4240,42 @@ error is saved anyway, so half-written code is never lost, but it cannot be
 published or test-run.</p>
 <p><strong>The form</strong> is defined under <strong>Form</strong>: one row per field, with the variable
 name, label, type (<code>text</code>, <code>textarea</code>, <code>number</code>, <code>select</code>, <code>checkbox</code>,
-<code>password</code>), whether it is required, a default and a help text. The preview next
+<code>password</code>, and the database fields <code>lookup</code>, <code>lookup_multi</code>, <code>dataset</code>
+described below), whether it is required, a default and a help text. The preview next
 to it is the exact form operators get. In the script:</p>
 <pre><code class="language-python">from satom_script import inputs, result, log, tcp
 
 log(&quot;checking %s:%s&quot; % (inputs[&quot;host&quot;], inputs[&quot;port&quot;]))   # number fields arrive as numbers
 result({&quot;ok&quot;: True, &quot;rows&quot;: rows})                           # structured output of the run
 </code></pre>
+<p><strong>Database fields</strong> take their values from the SATOM database. Three types:
+<code>lookup</code> (the user picks one row), <code>lookup_multi</code> (several rows) and <code>dataset</code>
+(no pick: the whole result goes to the script). For each one you build a
+query in the field's <strong>Database query</strong> panel: a table, other tables <strong>combined
+with it</strong> (the list offers only the tables related to it, with the join
+explained, up to two joins away — you never type a key), the columns, filters,
+order and a row limit (≤ 500). For a pick list you choose which column is the
+<strong>value</strong> the script gets and which is the <strong>label</strong> the user sees.
+<strong>Preview rows</strong> runs it right away. The query is read-only, built from the
+same catalogue as the Report Builder: credential columns and credential
+tables are refused.</p>
+<p>The rows are read for <strong>the user's ADOMs</strong>: a profile confined to some ADOMs
+(§26.3) sees only their rows, and a table that belongs to no ADOM is refused to
+it. The form only stores the chosen value; the full row is read again <strong>when
+the run is queued</strong> — with the operator's ADOMs for <em>Run now</em>, with the
+owner's for a saved run — so a scheduled run never works on a month-old copy,
+and a value that has gone away fails the run with a message instead of running
+anyway. In the script:</p>
+<pre><code class="language-python">dev = inputs[&quot;device&quot;]                 # lookup
+log(dev[&quot;label&quot;], dev[&quot;row&quot;][&quot;appliances.host&quot;])
+for d in inputs[&quot;targets&quot;]:            # lookup_multi: a list of the same
+    ...
+for row in inputs[&quot;inventory&quot;][&quot;rows&quot;]:   # dataset: {&quot;columns&quot;, &quot;rows&quot;, &quot;truncated&quot;}
+    log(row[&quot;appliances.name&quot;])
+</code></pre>
+<p>Columns are named <code>table.column</code>; values are text (empty for NULL). The script
+itself still has no route to the database: SATOM runs the query and hands it
+the rows.</p>
 <p>Only the fields you defined reach the script; anything else a form submits is
 dropped. The values come in on standard input, never as environment variables.
 <strong>Password</strong> fields cannot have a default, and their values are masked in
@@ -4889,12 +4922,34 @@ profile sees a short menu rather than links that answer <em>access denied</em>.<
 <p>An <strong>anti-lockout guard</strong> keeps at least one active account holding both user
 management and profile management, so this page cannot be used to remove the
 last administrator.</p>
+<p><strong>ADOMs.</strong> A profile can be confined to some ADOMs: tick them in the <strong>ADOMs</strong>
+card of the profile (no ADOM ticked = every ADOM, which is what every profile
+had before). A confined profile:</p>
+<ul>
+<li>sees only its ADOMs in the switcher and the sidebar; opening any other ADOM —
+  by link, URL or the <code>X-ADOM</code> header — is refused with <em>Your profile does not
+  include the … ADOM</em> (a JSON caller gets 403);</li>
+<li>sees, in the <strong>Global</strong> console, only the devices and records of its ADOMs:
+  appliance lists and pages, jobs, change requests (one that also names a
+  device outside its ADOMs is not shown), Sentinel incidents and border maps,
+  certificates, reports, metrics and the dashboard tiles; a record it creates
+  from Global lands in one of its ADOMs;</li>
+<li>cannot open the database browser, the SQL console or DB reports (raw SQL
+  reads every ADOM), nor ADOM Assets from Global (open it from one of its
+  ADOMs). Script Library database fields still work: SATOM adds the ADOM filter
+  to them (§23.4).</li>
+</ul>
+<p>Background work (scheduled actions, sweeps already started, the scheduler) is
+not a session and acts on the whole fleet as before; a saved script run reads
+its database rows with its <strong>owner's</strong> ADOMs.</p>
 <p><strong>Nobody can grant more than they hold.</strong> A holder of <em>Manage users</em> or
 <em>Manage profiles</em> who is not a full administrator cannot assign or create a
 profile wider than their own, cannot reset the password or clear the 2FA of an
 account that holds more than they do, cannot add a key they do not hold to a
 profile, and cannot edit the profile they are assigned to. You may move
-yourself to a narrower profile, never a wider one.</p>
+yourself to a narrower profile, never a wider one. The same holds for ADOMs: a
+confined administrator composes and assigns profiles only within its own ADOMs
+and can never create or assign an unconfined one.</p>
 <h3 id="264-software-update-repository--where-this-node-downloads-its-own-code-from">26.4 Software Update Repository — where this node downloads its own code from</h3>
 <p>This is the product's <strong>source code</strong>, and the only one of the three
 repositories-or-destinations above that a software update is pulled from. It is

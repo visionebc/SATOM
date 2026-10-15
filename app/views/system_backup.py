@@ -44,7 +44,8 @@ def _sot_devices() -> list[dict]:
     from ..services import device_sync as ds
     rows: list[dict] = []
     try:
-        for a in Appliance.query.order_by(Appliance.kind, Appliance.name).all():
+        from ..models import visible_appliances
+        for a in visible_appliances().order_by(Appliance.kind, Appliance.name).all():
             p = ds.device_json_path(a)
             has = p.exists()
             mtime = ""

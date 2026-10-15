@@ -64,6 +64,19 @@ def _fortiweb_appliances():
     return _kind_scoped(visible_appliances()).order_by(Appliance.name).all()
 
 
+def _cert_or_404(id):
+    """One managed certificate, 404 when it sits on a device the active ADOM
+    (and the signed-in profile) cannot see — the rule the list applies. Every
+    by-id route used to load the row raw: the list hid another ADOM's
+    certificate and /cert-manager/<id>/deploy acted on it one URL away."""
+    from flask import abort
+    cert = ManagedCertificate.query.get_or_404(id)
+    if cert.appliance_id is not None and \
+            cert.appliance_id not in {a.id for a in _fortiweb_appliances()}:
+        abort(404)
+    return cert
+
+
 def _deploy_targets():
     """Deploy targets for a NEW certificate — FortiWeb (SSH import) AND FortiADC
     (REST upload; ``cert_adc``)."""
@@ -315,7 +328,7 @@ def _swap_targets(appliance):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def device_cert_swap():
-    a = db.session.get(Appliance, _int(request.form.get("appliance_id")))
+    a = visible_appliance_or_404(_int(request.form.get("appliance_id")))
     cert_name = (request.form.get("cert_name") or "").strip()
     kind = (request.form.get("kind") or "").strip()
     store_label = (request.form.get("store") or "").strip()
@@ -355,7 +368,7 @@ def _verdict_note(res: dict) -> str:
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def device_cert_remove():
-    a = db.session.get(Appliance, _int(request.form.get("appliance_id")))
+    a = visible_appliance_or_404(_int(request.form.get("appliance_id")))
     cert_name = (request.form.get("cert_name") or "").strip()
     store_label = (request.form.get("store") or "").strip()
     if a is None or not cert_name:
@@ -477,7 +490,7 @@ def _upload_bytes(file_field: str, text_field: str) -> bytes:
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def detail(id):
-    cert = ManagedCertificate.query.get_or_404(id)
+    cert = _cert_or_404(id)
     appliance = db.session.get(Appliance, cert.appliance_id) if cert.appliance_id else None
     # Live bindings (best-effort) so swap targets are real.
     live_bindings = []
@@ -523,7 +536,7 @@ def detail(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def csr_download(id):
-    cert = ManagedCertificate.query.get_or_404(id)
+    cert = _cert_or_404(id)
     if not cert.csr_pem:
         flash("This certificate has no CSR stored.", "warning")
         return redirect(url_for("cert_manager.detail", id=id))
@@ -537,7 +550,7 @@ def csr_download(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def import_signed(id):
-    cert = ManagedCertificate.query.get_or_404(id)
+    cert = _cert_or_404(id)
     data = _upload_bytes("signed_file", "signed_pem")
     try:
         text = data.decode("utf-8")
@@ -560,7 +573,7 @@ def import_signed(id):
 def replace(id):
     """Import a certificate + key made outside SATOM as the replacement of
     *id* (same staged swap as a renewal)."""
-    cert = ManagedCertificate.query.get_or_404(id)
+    cert = _cert_or_404(id)
     data = _upload_bytes("bundle_file", "bundle_pem")
     if not data:
         flash("Paste the PEM certificate or upload a PEM / PKCS#12 file.", "danger")
@@ -582,7 +595,7 @@ def replace(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def renew(id):
-    cert = ManagedCertificate.query.get_or_404(id)
+    cert = _cert_or_404(id)
     res = cm.renew_certificate(cert, deploy=True, actor=current_user.username)
     if res.get("ok"):
         new = db.session.get(ManagedCertificate, res["cert_id"])
@@ -603,7 +616,7 @@ def renew(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def deploy(id):
-    cert = ManagedCertificate.query.get_or_404(id)
+    cert = _cert_or_404(id)
     if not actions_for(cert)["deploy"]:
         flash("Nothing to deploy for this certificate.", "warning")
         return redirect(url_for("cert_manager.detail", id=id))
@@ -620,7 +633,7 @@ def deploy(id):
 def swap_now(id):
     """Swap a renewal in NOW instead of on its date: every binding of the
     certificate it replaces moves onto it."""
-    cert = ManagedCertificate.query.get_or_404(id)
+    cert = _cert_or_404(id)
     if not actions_for(cert)["swap"]:
         flash("This certificate has no deployed predecessor to take over from.", "warning")
         return redirect(url_for("cert_manager.detail", id=id))
@@ -638,7 +651,7 @@ def swap_now(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def rollback(id):
-    cert = ManagedCertificate.query.get_or_404(id)
+    cert = _cert_or_404(id)
     res = cm.rollback(cert, actor=current_user.username)
     flash((f"Rolled back: {cm.predecessor_of(cert).name} serves "
            + ", ".join(res.get("done") or []) + " again.") if res.get("ok")
@@ -651,7 +664,7 @@ def rollback(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def windows(id):
-    cert = ManagedCertificate.query.get_or_404(id)
+    cert = _cert_or_404(id)
     err = cm.apply_windows(cert, _window_form())
     if err:
         db.session.rollback()
@@ -669,7 +682,7 @@ def windows(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def swap(id):
-    cert = ManagedCertificate.query.get_or_404(id)
+    cert = _cert_or_404(id)
     policy = (request.form.get("policy") or "").strip()
     if not policy:
         flash("Choose a server policy to swap.", "danger")
@@ -686,7 +699,7 @@ def swap(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def revoke(id):
-    cert = ManagedCertificate.query.get_or_404(id)
+    cert = _cert_or_404(id)
     delete_from_box = bool(request.form.get("delete_from_box"))
     res = cm.revoke_certificate(cert, reason=(request.form.get("reason") or "unspecified"),
                                 delete_from_box=delete_from_box,
@@ -714,7 +727,7 @@ def revoke(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def delete(id):
-    cert = ManagedCertificate.query.get_or_404(id)
+    cert = _cert_or_404(id)
     res = cm.delete_record(cert, revoke_first=bool(request.form.get("revoke_first")),
                            reason=(request.form.get("reason") or "cessationOfOperation"),
                            remove_from_box=bool(request.form.get("remove_from_box")),
@@ -734,6 +747,8 @@ def delete(id):
 def revocation_confirm(rid):
     from ..models import CertRevocation
     rev = CertRevocation.query.get_or_404(rid)
+    if rev.cert_id is not None:
+        _cert_or_404(rev.cert_id)
     res = cm.confirm_manual_revocation(rev, actor=current_user.username)
     flash(f"Revocation of {rev.cert_name} confirmed at the CA." if res.get("ok")
           else res.get("error"), "success" if res.get("ok") else "warning")

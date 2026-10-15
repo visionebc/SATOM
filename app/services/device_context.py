@@ -129,6 +129,12 @@ def current_appliance() -> Appliance | None:
         from ..models import can_view_maintenance
         if appl.maintenance and not can_view_maintenance():
             appl = None
+    # ADOM confinement (profile): a device outside the profile's ADOMs never
+    # becomes the context, whatever slot or URL id put it there.
+    if appl is not None:
+        from .product_scope import adom_allowed, LEGACY_PRODUCT
+        if not adom_allowed((appl.kind or LEGACY_PRODUCT)):
+            appl = None
     if appl is None and aid:
         # stale id (device deleted) — forget it
         session.pop(key, None)

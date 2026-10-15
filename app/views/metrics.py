@@ -188,7 +188,15 @@ def api_data():
         counted as FortiWeb's; and an ADOM none of the branches named fell to
         ``return q`` and got the WHOLE table."""
         if _prod not in _concrete:
-            return q  # global ADOM / worker thread — everything
+            from ..services.product_scope import confined_appliance_ids, restricted_adoms
+            mine = confined_appliance_ids()
+            if mine is None:
+                return q  # global ADOM / worker thread — everything
+            # A confined profile's Global: changes on its ADOMs' devices only.
+            conds = [ChangeHistory.appliance_id.in_(sorted(mine) or [-1])]
+            if FORTIWEB in (restricted_adoms() or ()):
+                conds.append(ChangeHistory.appliance_id.is_(None))
+            return q.filter(or_(*conds))
         _ids = db.session.query(Appliance.id).filter(Appliance.kind == _prod)
         if _prod == FORTIWEB:
             # A NULL appliance_id is a manager-level change: unscoped, and

@@ -118,6 +118,7 @@ def detail(template_id: int):
     row = lib.get_template(template_id)
     if row is None:
         abort(404)
+    _visible = {a.id for a in visible_appliances().all()}
     history = [
         {'action': e.action, 'reviewer': e.reviewer or '',
          'reason': e.reason or '',
@@ -155,7 +156,10 @@ def detail(template_id: int):
         'field_decisions': row.field_decisions_dict,
         'product': row.product or 'fortiweb',
         'placeholders': tb.placeholders(row.body_dict),
-        'bindings': [_binding_json(b) for b in tb.for_template(row)],
+        # Bindings on devices this session cannot see are not listed: their
+        # names and variables are another ADOM's data.
+        'bindings': [_binding_json(b) for b in tb.for_template(row)
+                     if b.appliance_id in _visible],
         'versions': [{'id': t.id, 'version': t.version, 'status': t.status,
                       'source_firmware': t.source_firmware or ''}
                      for t in tb.family(row.kind, row.name)],

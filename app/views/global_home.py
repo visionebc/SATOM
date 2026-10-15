@@ -63,8 +63,11 @@ def adom_cards(fleet: list) -> list[dict]:
     ``fleet`` is passed in rather than re-queried so the counts, the rows and
     the fleet table are all the same scoped result set.
     """
+    from ..services.product_scope import adom_allowed
     cards = []
     for key, name in device_products():
+        if not adom_allowed(key):
+            continue        # an ADOM this profile cannot enter gets no card
         prod = get_product(key)
         rows = [a for a in fleet if (a.kind or _LEGACY_KIND) == key]
         cards.append({
@@ -103,7 +106,9 @@ def dashboard():
     jobs_running = 0
     try:
         from ..services import jobs as jobsvc
-        jobs_running = len(jobsvc.list_jobs(active_only=True, limit=200))
+        from ..services.product_scope import visible_product
+        jobs_running = len([j for j in jobsvc.list_jobs(active_only=True, limit=200)
+                            if visible_product((j.get('meta') or {}).get('product'))])
     except Exception:  # noqa: BLE001 — dashboard stays up without the jobs dir
         pass
 
@@ -111,8 +116,14 @@ def dashboard():
     try:
         from ..models import DeviceCertificate
         soon = datetime.utcnow() + timedelta(days=30)
-        certs['total'] = DeviceCertificate.query.count()
-        certs['expiring'] = (DeviceCertificate.query
+        # Counted over the devices this console shows, like the fleet table.
+        _cq = DeviceCertificate.query.filter(
+            DeviceCertificate.appliance_id.in_([a.id for a in fleet] or [-1])) \
+            if not fleet_hidden else DeviceCertificate.query.filter(
+                DeviceCertificate.appliance_id.in_(
+                    visible_appliances().with_entities(Appliance.id)))
+        certs['total'] = _cq.count()
+        certs['expiring'] = (_cq
                              .filter(DeviceCertificate.not_after.isnot(None))
                              .filter(DeviceCertificate.not_after <= soon)
                              .count())

@@ -15,6 +15,7 @@ from .. import permissions as perm
 from ..auth.decorators import require_permission
 from ..models import db, Profile, User
 from ..services import access
+from ..services import product_scope
 from ..services.audit import log_action
 
 bp = Blueprint('profiles', __name__, url_prefix='/profiles')
@@ -32,6 +33,29 @@ def _beyond_actor(keys: set[str]) -> set[str]:
     ``profiles.manage`` holder composes profiles out of what they have; they
     cannot mint a key (``users.manage`` above all) they were never given."""
     return set(keys) - current_user.effective_permissions
+
+
+def _posted_adoms() -> frozenset[str] | None:
+    """The ADOMs ticked on the form; ``None`` (every ADOM) when none is."""
+    known = {k for k, _ in product_scope.device_products()}
+    keys = {k.strip().lower() for k in request.form.getlist('adoms')}
+    keys &= known
+    return frozenset(keys) if keys else None
+
+
+def _adoms_beyond_actor(adoms: frozenset[str] | None) -> bool:
+    """True when a profile confined to ``adoms`` reaches an ADOM the signed-in
+    user cannot. An unconfined actor may set anything; a confined one composes
+    only out of its own ADOMs — and can never mint an UNconfined profile,
+    which would be every ADOM one assignment away."""
+    mine = product_scope.adoms_of(current_user)
+    if mine is None:
+        return False
+    return adoms is None or not set(adoms) <= mine
+
+
+def _adom_names() -> dict[str, str]:
+    return dict(product_scope.device_products())
 
 
 def _user_count(pid: int) -> int:
@@ -56,6 +80,7 @@ def index():
         'profiles/index.html',
         profiles=profiles, counts=counts,
         areas=perm.AREAS, catalog=perm.GRANULAR_PERMISSIONS,
+        adom_names=_adom_names(),
     )
 
 
@@ -77,8 +102,15 @@ def create():
         flash('Refused: you cannot grant permissions you do not hold yourself '
               f'({", ".join(sorted(_beyond_actor(posted)))}).', 'danger')
         return redirect(url_for('profiles.index'))
+    # A confined creator's new profile starts confined to the creator's own
+    # ADOMs; an unconfined one starts unconfined, as before.
+    adoms = _posted_adoms() or product_scope.adoms_of(current_user)
+    if _adoms_beyond_actor(adoms):
+        flash('Refused: you cannot grant ADOMs you do not have yourself.', 'danger')
+        return redirect(url_for('profiles.index'))
     p = Profile(name=name, description=description, is_system=False)
     p.permission_set = posted  # may be empty — matrix is filled on the edit page
+    p.adom_set = adoms
     db.session.add(p)
     db.session.commit()
     log_action('profile.create', target=name,
@@ -96,6 +128,7 @@ def edit(id):
         'profiles/edit.html',
         profile=p, areas=perm.AREAS, catalog=perm.GRANULAR_PERMISSIONS,
         selected=p.permission_set, user_count=_user_count(p.id),
+        adom_choices=product_scope.device_products(),
     )
 
 
@@ -127,9 +160,15 @@ def edit_save(id):
         flash('Refused: you cannot grant permissions you do not hold yourself '
               f'({", ".join(sorted(added_beyond))}).', 'danger')
         return redirect(url_for('profiles.edit', id=id))
+    new_adoms = _posted_adoms()
+    if _adoms_beyond_actor(new_adoms):
+        flash('Refused: you cannot grant ADOMs you do not have yourself.', 'danger')
+        return redirect(url_for('profiles.edit', id=id))
+    old_adoms = p.adom_set
     p.name = name
     p.description = request.form.get('description', p.description or '').strip()
     p.permission_set = new_perms
+    p.adom_set = new_adoms
     _sync_roles_for_profile(p)
 
     # Anti-lockout: simulate, then refuse if no admin-capable user remains.
@@ -142,7 +181,9 @@ def edit_save(id):
 
     db.session.commit()
     log_action('profile.update', target=p.name,
-               extra={'perms': sorted(new_perms)})
+               extra={'perms': sorted(new_perms),
+                      'adoms': sorted(new_adoms) if new_adoms else 'all',
+                      'adoms_before': sorted(old_adoms) if old_adoms else 'all'})
     flash(f'Profile “{p.name}” updated.', 'success')
     return redirect(url_for('profiles.edit', id=id))
 
@@ -152,6 +193,9 @@ def edit_save(id):
 @require_permission(MANAGE)
 def clone(id):
     src = db.session.get(Profile, id) or abort(404)
+    if _adoms_beyond_actor(src.adom_set):
+        flash('Refused: that profile reaches ADOMs you do not have yourself.', 'danger')
+        return redirect(url_for('profiles.index'))
     base = f'{src.name} copy'
     name = base
     n = 2
@@ -160,6 +204,7 @@ def clone(id):
         n += 1
     p = Profile(name=name, description=src.description, is_system=False)
     p.permission_set = src.permission_set
+    p.adom_set = src.adom_set
     db.session.add(p)
     db.session.commit()
     log_action('profile.clone', target=name, extra={'source': src.name})

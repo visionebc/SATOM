@@ -163,8 +163,49 @@ def console_context(status: str = "live", health: dict = None) -> dict:
 def _shows(inc, names) -> bool:
     """The console's visibility rule, in ONE place: the poll and the incident
     page used to skip it, so an incident hidden from the list was one URL (or
-    one poll) away."""
-    return not names or inc.device in names or not inc.device
+    one poll) away.
+
+    An EMPTY ``names`` used to mean "show everything" whatever the reason: a
+    session that could see no device (an ADOM with none, or a profile confined
+    away from every FortiWeb) was shown every incident in the fleet. It now
+    shows everything only when there is no fleet at all (a fresh or demo
+    install, whose incidents name devices nobody registered) and the profile
+    is not confined. Incidents with no device stay visible — no ADOM owns them."""
+    if not inc.device or inc.device in names:
+        return True
+    return not names and _no_fleet_unconfined()
+
+
+def _no_fleet_unconfined() -> bool:
+    from flask import g
+    from ..models import Appliance
+    from ..services.product_scope import restricted_adoms
+    key = "_sentinel_no_fleet"
+    if key not in g.__dict__:
+        g.__dict__[key] = (restricted_adoms() is None
+                           and Appliance.query.first() is None)
+    return g.__dict__[key]
+
+
+def _incident_or_404(iid):
+    """One incident, 404 unless the console would list it."""
+    inc = SentinelIncident.query.get_or_404(iid)
+    if not _shows(inc, _visible_names()):
+        abort(404)
+    return inc
+
+
+def _visible_ids() -> set:
+    return {a.id for a in visible_appliances().all()}
+
+
+def _device_row_or_404(row):
+    """A per-device Sentinel row (border map, block entry): 404 when it
+    names a device this session cannot see. Rows with no device pass."""
+    aid = getattr(row, "appliance_id", None)
+    if aid and aid not in _visible_ids():
+        abort(404)
+    return row
 
 
 @bp.route("/")
@@ -239,13 +280,10 @@ def sweep_targets() -> list:
     return nothing.
     """
     from ..models import Appliance
-    names = _visible_names()
-    rows = (Appliance.query.filter(Appliance.kind == "fortiweb")
+    rows = (visible_appliances().filter(Appliance.kind == "fortiweb")
             .order_by(Appliance.name).all())
     out = []
     for a in rows:
-        if names and a.name not in names:
-            continue
         reason = ""
         if getattr(a, "maintenance", False):
             reason = "in maintenance — the sweep skips it"
@@ -295,6 +333,15 @@ def run_now():
         flash("Every device you picked is in maintenance or retired — a sweep "
               "would skip all of them, so none was started.", "warning")
         return _back_to_console()
+    if not wanted:
+        # "Every eligible device" is every eligible device THIS session can
+        # see. Passing [] let the job default to the whole fleet, so a sweep
+        # from one ADOM (or a confined profile) read every FortiWeb.
+        names = [n for n, r in known.items() if r["eligible"]]
+        if not names:
+            flash("No eligible FortiWeb is visible here — nothing to sweep.",
+                  "warning")
+            return _back_to_console()
     job = sweep_job.start(current_app._get_current_object(), names, by=_who())
     flash(f"Sweep started as job {job['id']} over "
           f"{len(names) or len([r for r in known.values() if r['eligible']])} "
@@ -327,9 +374,7 @@ def recompute():
 @require_permission('monitoring.view')
 def incident_view(iid):
     s = _svc()
-    inc = SentinelIncident.query.get_or_404(iid)
-    if not _shows(inc, _visible_names()):
-        abort(404)
+    inc = _incident_or_404(iid)
     proposal = s["actions"].recommend(inc)
     gates = {key: s["actions"].evaluate(inc, key)
              for key in s["actions"].CATALOG}
@@ -360,7 +405,7 @@ def incident_charts(iid):
     moment someone needs to read it.
     """
     s = _svc()
-    inc = SentinelIncident.query.get_or_404(iid)
+    inc = _incident_or_404(iid)
     ctx = s["correlate"].build(inc.device, inc.src_ip, inc.attack_family,
                                inc.last_event_at or inc.opened_at,
                                appliance_id=inc.appliance_id)
@@ -379,7 +424,7 @@ def incident_charts(iid):
 @require_permission("config_write")
 def incident_rescore(iid):
     s = _svc()
-    inc = SentinelIncident.query.get_or_404(iid)
+    inc = _incident_or_404(iid)
     s["incident"].rescore(inc)
     inc.similar = s["incident"].similar(inc)
     db.session.commit()
@@ -394,7 +439,7 @@ def incident_rescore(iid):
 def incident_reason(iid):
     """Ask the model. Failure is reported, never raised at the operator."""
     s = _svc()
-    inc = SentinelIncident.query.get_or_404(iid)
+    inc = _incident_or_404(iid)
     if not s["ai"].enabled():
         flash("AI reasoning is disabled in Settings — the incident keeps its "
               "deterministic score and evidence.", "warning")
@@ -418,7 +463,7 @@ def incident_reason(iid):
 @require_permission("config_write")
 def incident_close(iid):
     s = _svc()
-    inc = SentinelIncident.query.get_or_404(iid)
+    inc = _incident_or_404(iid)
     status = request.form.get("status", "")
     try:
         s["incident"].close(inc, status, by=_who(),
@@ -444,7 +489,7 @@ def incident_action(iid):
     decision made under the state the approver could actually see.
     """
     s = _svc()
-    inc = SentinelIncident.query.get_or_404(iid)
+    inc = _incident_or_404(iid)
     action_type = request.form.get("action_type", "")
     if action_type not in s["actions"].CATALOG:
         abort(400)
@@ -547,11 +592,13 @@ def context_context() -> dict:
                      SentinelMaintenanceWindow.starts_at.desc()).all()],
         appliances=visible_appliances().all(),
         topology={t.appliance_id: t.to_dict()
-                  for t in SentinelTopology.query.all()},
+                  for t in SentinelTopology.query.all()
+                  if t.appliance_id in _visible_ids()},
         sentinel_list=s["transports"].SENTINEL_LIST,
         hypervisors=hypervisors.configured_targets(),
         edge_maps={e.appliance_id: e.to_dict()
-                   for e in SentinelEdgeMap.query.all()},
+                   for e in SentinelEdgeMap.query.all()
+                   if e.appliance_id in _visible_ids()},
         analyzers=[a for a in visible_appliances().all()
                    if a.kind == "fortianalyzer"],
         edge_logtypes=SentinelEdgeMap.LOGTYPES,
@@ -666,6 +713,8 @@ def topology_save():
     honest state, and it is also why this form exists.
     """
     appliance_id = int(request.form.get("appliance_id") or 0)
+    if appliance_id not in _visible_ids():
+        abort(404)
     row = SentinelTopology.query.filter_by(appliance_id=appliance_id).first()
     if row is None:
         row = SentinelTopology(appliance_id=appliance_id)
@@ -754,7 +803,7 @@ def edge_save():
 @login_required
 @require_permission("config_write")
 def edge_delete(mid):
-    row = SentinelEdgeMap.query.get_or_404(mid)
+    row = _device_row_or_404(SentinelEdgeMap.query.get_or_404(mid))
     db.session.delete(row)
     db.session.commit()
     flash("Border map removed — that appliance's border layer is now "
@@ -771,7 +820,7 @@ def edge_test(mid):
 
     Read-only, and the only route in this module that reaches the collector.
     """
-    row = SentinelEdgeMap.query.get_or_404(mid)
+    row = _device_row_or_404(SentinelEdgeMap.query.get_or_404(mid))
     ip = (request.form.get("test_ip") or "").strip()
     hours = request.form.get("test_hours") or "24"
     result = _edge().probe(row.appliance_id, ip,
@@ -948,7 +997,9 @@ def blocklist_context() -> dict:
     evidence of how often this list is wrong.
     """
     bl = _bl()
-    rows = [e.to_dict() for e in bl.all_entries()]
+    _vis = _visible_ids()
+    rows = [e.to_dict() for e in bl.all_entries()
+            if not getattr(e, "appliance_id", None) or e.appliance_id in _vis]
     return dict(
         entries=rows,
         live=[r for r in rows if r["live"]],
@@ -1027,6 +1078,8 @@ def blocklist_release(eid):
     component that is unrelated to it.
     """
     from ..services import audit
+    from ..models import SentinelBlockEntry
+    _device_row_or_404(SentinelBlockEntry.query.get_or_404(eid))
     out = _bl().release(eid, actor=_who(),
                         reason=(request.form.get("reason") or "").strip())
     audit.log_action("sentinel.blocklist.release",
@@ -1088,7 +1141,7 @@ def incident_blocklist(iid):
     from ..services import audit
     s = _svc()
     bl = _bl()
-    inc = SentinelIncident.query.get_or_404(iid)
+    inc = _incident_or_404(iid)
     stored = {}
     ev = (SentinelEvidence.query
           .filter_by(incident_id=inc.id, layer="edge")

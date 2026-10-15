@@ -254,15 +254,22 @@ def create_app(config_override: object | None = None) -> Flask:
 
     @app.before_request
     def _product_gate():
-        from flask import g, session, redirect, url_for
+        from flask import g, session, redirect, url_for, flash, jsonify
         from flask_login import current_user
         if not current_user.is_authenticated:
             return None
         ep = request.endpoint or ''
         bp_name = ep.split('.', 1)[0]
         from .branding import PRODUCTS as _BRAND_PRODUCTS
+        from .services import product_scope as _pscope
         valid = tuple(_BRAND_PRODUCTS.keys())
         sess_prod = session.get('product')
+        _allowed = _pscope.restricted_adoms()
+        if sess_prod in valid and not _pscope.adom_allowed(sess_prod, _allowed):
+            # The profile was narrowed while this session sat in an ADOM it no
+            # longer grants. Without the reset every header-less request would
+            # resolve to that ADOM and bounce below, forever.
+            sess_prod = None
         if sess_prod not in valid:
             # No product chosen yet (fresh login / deep link) — default to the
             # Global ADOM instead of bouncing to the selector: every page is
@@ -353,6 +360,19 @@ def create_app(config_override: object | None = None) -> Flask:
             # product's pages: opening one is an ADOM jump to the device's own
             # product, like its fgt / fac / adc / faz area.
             eff = _gx_kind
+        if not _pscope.adom_allowed(eff, _allowed) and not (
+                ep.startswith('auth.') or ep in ('static', 'healthz')):
+            # ADOM confinement (profile → ADOMs). The filters in
+            # services.product_scope already return zero rows for an ADOM
+            # outside the set; this turns the empty page into a clear refusal.
+            g.product = 'global'
+            msg = ('Your profile does not include the %s ADOM.'
+                   % _BRAND_PRODUCTS.get(eff, {}).get('name', eff))
+            if request.is_json or request.accept_mimetypes.best == 'application/json' \
+                    or request.path.startswith('/api/'):
+                return jsonify({'ok': False, 'error': msg}), 403
+            flash(msg, 'warning')
+            return redirect(url_for('index'))
         g.product = eff
         always = {
             'static', 'index', 'fortiweb_home', 'service_worker',
@@ -774,6 +794,7 @@ def create_app(config_override: object | None = None) -> Flask:
         from .services import settings_store as _store
         from .services import user_settings_store as _ustore
         from flask import g as _g
+        from .services.product_scope import adom_allowed as _pscope_allowed
         prod = get_product(getattr(_g, 'product', None) or session.get('product'))
         try:
             # Per-user banner (DB-backed) for a logged-in user; global/default
@@ -915,7 +936,10 @@ def create_app(config_override: object | None = None) -> Flask:
             # passes `products=` (a list of its own) used to shadow it and the
             # Global ADOM sidebar raised UndefinedError (Naming 2.11, Build
             # compatibility 2.13). tests/test_adom_registry_name.py.
-            'adom_registry': PRODUCTS,
+            # Confined profiles see only their own ADOMs in the switcher; the
+            # gate refuses the others anyway (services.product_scope).
+            'adom_registry': {k: v for k, v in PRODUCTS.items()
+                              if _pscope_allowed(k)},
             'env_mode': _env_mode,
             'ha_mode': _ha_mode,
             'node_role': _node_role,
@@ -1760,6 +1784,11 @@ def create_app(config_override: object | None = None) -> Flask:
         """
         from sqlalchemy import inspect, text
         adds = {
+            # --- ADOM confinement per profile (2026-10-15) ---
+            # '' = every ADOM, which is what every existing profile grants.
+            'profiles': [
+                ('adoms', "TEXT DEFAULT '' NOT NULL"),
+            ],
             # --- artifact -> Web Protection Profile attribution (2026-08-25) ---
             # NULLABLE, NO DEFAULT, NO BACKFILL. NULL means "nobody attributed
             # this edge", which is what every row derived before today truly is.

@@ -243,7 +243,12 @@ _CONSOLE_MAX = 1000
 
 
 def table_page(name, page=1, per_page=50):
-    """Paginated row browse for one table (sensitive columns masked)."""
+    """Paginated row browse for one table (sensitive columns masked).
+    Refused to a profile confined to some ADOMs, like :func:`run_query`."""
+    from .product_scope import restricted_adoms
+    if restricted_adoms() is not None:
+        return {"name": name, "columns": [], "rows": [], "row_count": 0,
+                "page": 1, "pages": 1, "error": CONFINED_ERROR}
     insp = inspect(db.engine)
     if name not in set(insp.get_table_names()):
         return {"name": name, "columns": [], "rows": [], "row_count": 0,
@@ -632,10 +637,26 @@ def _sync_console_grants(conn, out: dict) -> None:
             out["granted"].append("%s(%d columns)" % (name, len(missing)))
 
 
-def run_query(sql, max_rows=_CONSOLE_MAX):
+#: Error text for a raw query refused to a profile confined to some ADOMs.
+CONFINED_ERROR = ("refused: your profile is confined to some ADOMs and raw SQL "
+                  "reads every ADOM's rows")
+
+
+def run_query(sql, max_rows=_CONSOLE_MAX, *, adom_scoped=False):
     """Execute a READ-ONLY query in a rolled-back transaction with a statement
     timeout, under CONSOLE_ROLE on Postgres (refused if that role is not
-    usable). Returns {columns, rows, truncated, row_count, error}."""
+    usable). Returns {columns, rows, truncated, row_count, error}.
+
+    Raw SQL cannot be confined to an ADOM, so a signed-in user whose profile
+    is confined to some ADOMs is refused here — the one choke point the SQL
+    console, DB reports, plugin datasets and the Python console share.
+    ``adom_scoped=True`` is for a caller that already built the ADOM filter
+    into ``sql`` (services.db_lookup); nothing else may pass it."""
+    if not adom_scoped:
+        from .product_scope import restricted_adoms
+        if restricted_adoms() is not None:
+            return {"columns": [], "rows": [], "truncated": False,
+                    "error": CONFINED_ERROR}
     ok, why = is_read_only(sql)
     if not ok:
         return {"columns": [], "rows": [], "truncated": False, "error": why}

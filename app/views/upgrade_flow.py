@@ -1444,6 +1444,10 @@ def _visible_to_me(cr) -> bool:
     ids = cr.device_ids_list
     if not ids:
         return True
+    from ..services.product_scope import confined_appliance_ids
+    mine = confined_appliance_ids()
+    if mine is not None and not set(ids) <= mine:
+        return False        # names a device outside the profile's ADOMs
     visible = {row[0] for row in
                visible_appliances().with_entities(Appliance.id).all()}
     return any(i in visible for i in ids)

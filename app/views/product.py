@@ -2,13 +2,23 @@
 FortiAuthenticator, FortiGate, and any future ADOM from Settings → ADOMs)."""
 from __future__ import annotations
 
-from flask import (Blueprint, redirect, render_template, request, session,
-                   url_for)
+from flask import (Blueprint, flash, redirect, render_template, request,
+                   session, url_for)
 from flask_login import login_required
 
 from ..branding import PRODUCTS, get_product, is_valid
+from ..services.product_scope import adom_allowed
 
 bp = Blueprint('product', __name__, url_prefix='/product')
+
+
+def _refuse(key: str):
+    """An ADOM the signed-in profile does not include: say so and land in
+    Global (the union of the ADOMs it does include)."""
+    flash('Your profile does not include the %s ADOM.'
+          % get_product(key).get('name', key), 'warning')
+    session['product'] = 'global'
+    return redirect(url_for('index'))
 
 
 def _home_for(key: str):
@@ -33,7 +43,9 @@ def _home_for(key: str):
 @login_required
 def select():
     """Landing gate shown until a product is chosen for the session."""
-    return render_template('product/select.html', products=PRODUCTS)
+    return render_template('product/select.html',
+                           products={k: v for k, v in PRODUCTS.items()
+                                     if adom_allowed(k)})
 
 
 @bp.route('/select', methods=['POST'])
@@ -42,6 +54,8 @@ def set_product():
     choice = request.form.get('product', '')
     if not is_valid(choice):
         return redirect(url_for('product.select'))
+    if not adom_allowed(choice):
+        return _refuse(choice)
     session['product'] = choice
     session.permanent = True
     return _home_for(choice)
@@ -57,6 +71,8 @@ def enter(key):
         return '', 204
     if not is_valid(key):
         return redirect(url_for('product.select'))
+    if not adom_allowed(key):
+        return _refuse(key)
     session['product'] = key
     session.permanent = True
     return _home_for(key)

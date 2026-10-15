@@ -15,6 +15,7 @@
         <th>{{ _('Type') }}</th>
         <th>{{ _('Effective role') }}</th>
         <th>{{ _('Permissions') }}</th>
+        <th>{{ _('ADOMs') }}</th>
         <th>{{ _('Users') }}</th>
         <th class="actions-col">{{ _('Actions') }}</th>
       </tr>
@@ -47,6 +48,11 @@
           {% else %}<span class="fw-badge fw-badge-secondary">{{ _('Read Only') }}</span>{% endif %}
         </td>
         <td style="font-size:13px;">{{ p.permission_set|length }} granted</td>
+        <td style="font-size:13px;">
+          {%- if p.adom_set is none %}{{ _('All') }}{% else %}
+          {%- for _k in p.adom_set|sort %}<span class="fw-badge fw-badge-info me-1">{{ (adom_names or {}).get(_k, _k) }}</span>{% endfor %}
+          {%- if not p.adom_set %}<span class="fw-badge fw-badge-danger">{{ _('None') }}</span>{% endif %}{% endif %}
+        </td>
         <td style="font-size:13px;">{{ counts[p.id] }}</td>
         <td class="actions-col">
           <a class="btn btn-sm btn-outline-primary btn-sm-icon me-1"

@@ -28,6 +28,38 @@ from ..services.audit import log_action
 bp = Blueprint("adom_assets", __name__, url_prefix="/adom-assets")
 
 
+@bp.before_request
+def _confined_needs_an_adom():
+    """Global ADOM Assets is the whole backup server — every device folder,
+    unclaimed ones included — and cannot be narrowed to a profile's ADOMs. A
+    confined profile uses it from one of its own ADOMs."""
+    from flask import jsonify
+    from ..services.product_scope import restricted_adoms
+    if restricted_adoms() is None or _scope():
+        return None
+    msg = ("Your profile is confined to some ADOMs: open ADOM Assets from one "
+           "of them.")
+    if request.method != "GET" or request.is_json \
+            or request.accept_mimetypes.best == "application/json":
+        return jsonify({"ok": False, "error": msg}), 403
+    flash(msg, "warning")
+    return redirect(url_for("index"))
+
+
+def _device_in_scope_or_404(device: str) -> None:
+    """Inside an ADOM only that ADOM's device folders are reachable — the set
+    the page lists. Global still reaches every folder (it is the only view
+    that shows the unclaimed ones)."""
+    scope = _scope()
+    if not scope:
+        return
+    from ..services import device_identity
+    allowed = {m.slug for grp in device_identity.chassis_groups(scope)
+               for m in grp["rows"]}
+    if device not in allowed:
+        abort(404)
+
+
 def _scope() -> str:
     """The ADOM this request is about.
 
@@ -134,7 +166,11 @@ def refresh_identity():
 def files():
     """Full listing of one device's folder (the table shows a summary)."""
     from ..services import backup_server
-    return jsonify(backup_server.device_files(request.args.get("device", "")))
+    device = request.args.get("device", "")
+    # Listed only when the page would list it; any folder used to be readable
+    # from any ADOM by naming it.
+    _device_in_scope_or_404(device)
+    return jsonify(backup_server.device_files(device))
 
 
 @bp.route("/delete-backup", methods=["POST"])
@@ -152,13 +188,7 @@ def delete_backup():
     # set the page lists. Global (the console scope) still reaches every
     # folder, unclaimed ones included, because that is the only view that
     # shows them.
-    scope = _scope()
-    if scope:
-        from ..services import device_identity
-        allowed = {m.slug for grp in device_identity.chassis_groups(scope)
-                   for m in grp["rows"]}
-        if device not in allowed:
-            abort(404)
+    _device_in_scope_or_404(device)
     res = backup_server.delete_device_file(device, filename)
     # Audited on failure too: an attempt to destroy an appliance's artefact is
     # worth a line whether or not it succeeded.

@@ -230,6 +230,10 @@ def _cr_in_scope(cr, visible: set[int] | None = None) -> bool:
     ids = cr.device_ids_list
     if not ids:
         return True
+    from ..services.product_scope import confined_appliance_ids
+    mine = confined_appliance_ids()
+    if mine is not None and not set(ids) <= mine:
+        return False        # names a device outside the profile's ADOMs
     vis = _visible_appliance_ids() if visible is None else visible
     return any(i in vis for i in ids)
 

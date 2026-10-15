@@ -78,7 +78,13 @@ def list_config_templates(kind: str, collection: str | None = None) -> list[Temp
 
 
 def get_template(template_id: int) -> Template | None:
-    return db.session.get(Template, template_id)
+    """One template, or ``None`` when the active ADOM (and the signed-in
+    profile's ADOMs) would not list it. Every by-id view goes through here;
+    it used to read the row raw, so a template the list hid was one URL away.
+    Outside a request (workers) the scope is the whole fleet, as before."""
+    from .product_scope import scope_query
+    return (scope_query(Template.query, Template.product)
+            .filter(Template.id == template_id).first())
 
 
 def managed_wpp_names(appliance_id=None) -> set[str]:

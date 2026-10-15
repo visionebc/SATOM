@@ -78,10 +78,10 @@
   </table>
 </div>
 
-<div class="fw-card mt-3">
-  <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Recent runs') }}</h2></div>
+<details class="fw-card mt-3 sl-runs-card">
+  <summary class="fw-card-header" style="cursor:pointer;"><h2 class="fw-card-title"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Recent runs') }} ({{ runs|length }})</h2></summary>
   {% include "script_library/_runs.html" %}
-</div>
+</details>
 
 <div class="modal fade fw-modal" id="slNewModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">

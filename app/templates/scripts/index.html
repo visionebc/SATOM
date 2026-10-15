@@ -61,10 +61,10 @@
   </div>
 </div>
 
-<div class="fw-card mt-3">
-  <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Recent runs') }}</span></div>
+<details class="fw-card mt-3 sl-runs-card">
+  <summary class="fw-card-header" style="cursor:pointer;"><span class="fw-card-title"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Recent runs') }} ({{ runs|length }})</span></summary>
   <div class="fw-card-body p-0">{% include "script_library/_runs.html" %}</div>
-</div>
+</details>
 <script type="application/json" id="sl-config">{{ {'urls': {'run': url_for('scripts.run_status', rid='RID')}}|tojson }}</script>
 <script src="{{ asset('js/script_library.js') }}" nonce="{{ csp_nonce }}"></script>
 {% endblock %}

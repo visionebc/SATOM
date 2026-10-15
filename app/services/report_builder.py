@@ -204,6 +204,8 @@ def join_graph() -> dict[str, list[dict[str, str]]]:
         graph.setdefault(b, []).append({
             "to": a, "from_table": b, "from_col": e["to_col"],
             "to_table": a, "to_col": e["from_col"], "inferred": inferred,
+            # walked against the FK: the joined table's rows belong to ours
+            "reverse": True,
         })
     return graph
 
@@ -231,7 +233,14 @@ def related_tables(base: str, max_hops: int = 2) -> list[dict[str, Any]]:
                 "table": nxt, "label": table_label(nxt),
                 "domain": table_domain(nxt),
                 "path": new_path, "hops": len(new_path),
+                # The phrase reads in the FK's own direction ("each X row
+                # belongs to one Y"). A step walked against the FK used to be
+                # phrased as if it went with it: from Appliances, "each
+                # Appliances row belongs to one Server Policies".
                 "phrase": _edge_phrase({
+                    "from_table": step["to_table"], "from_col": step["to_col"],
+                    "to_table": step["from_table"], "to_col": step["from_col"],
+                    "inferred": step.get("inferred")} if step.get("reverse") else {
                     "from_table": step["from_table"], "from_col": step["from_col"],
                     "to_table": step["to_table"], "to_col": step["to_col"],
                     "inferred": step.get("inferred")}),

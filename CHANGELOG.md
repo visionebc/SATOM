@@ -103,6 +103,10 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - Sentinel showed every incident in the fleet to a session that could see no
   FortiWeb at all, and a sweep with no device picked read the whole fleet; it
   now sweeps the devices the session can see.
+- The Report Builder's list of related tables phrased a join walked against
+  its foreign key backwards ("each Appliances row belongs to one Server
+  Policies"); it now reads in the key's direction. The Script Library query
+  builder uses the same list.
 - Template details listed bindings on other ADOMs' devices; WAF Artifacts
   named other ADOMs' devices in its labels and divergence report; System
   Backup's coverage matrix, the firmware page's device banner and the Global

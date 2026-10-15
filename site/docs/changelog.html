@@ -112,6 +112,24 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--script-library-automatic-draft-history-autosave-read-only-view-and-diff-2026-10-15">Added — Script Library: automatic draft history, autosave, read-only view and diff (2026-10-15)</h3>
+<ul>
+<li><strong>Automatic draft history</strong>: every save, upload and restore of a script's
+  draft is recorded as a revision with its code, form and settings (<strong>History &amp;
+  runs → Draft history</strong>). Saves by the same person within ten minutes are
+  grouped into one entry; a save that changes nothing adds nothing; the
+  revision that became a published version is marked. The last 100 revisions
+  are kept. Before, a save overwrote the draft and only Publish kept a copy.</li>
+<li>The editor saves by itself a few seconds after the last change, and an
+  upload is saved at once (it used to wait in the editor until <strong>Save</strong>).</li>
+<li><strong>Read-only view and diff of any revision or version</strong>: file by file, with
+  <em>Changes against the current draft</em> (a line diff per file and the settings
+  that changed); <strong>Restore to draft</strong> works for revisions too, and
+  the replaced draft stays in the history. Each one downloads as a zip.</li>
+<li>The library lists <strong>View / edit</strong> and a history button per script (operator
+  request: "I must be able to find the script, see it and edit it online, or
+  upload a new version, and the system must save the version automatically").</li>
+</ul>
 <h3 id="changed--integration-hook-secrets-follow-the-vault-mode-2026-10-15">Changed — integration hook secrets follow the vault mode (2026-10-15)</h3>
 <ul>
 <li>Hook secrets were always stored encrypted in the SATOM database, even with a

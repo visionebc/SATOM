@@ -1,7 +1,9 @@
 /* Studio → Script Library. Two pages share this file:
  *  - the library index (only the run-log buttons),
  *  - the editor: file tree + code editor, form designer with live preview,
- *    settings, test runs of the saved draft, versions and publishing.
+ *    settings, test runs of the saved draft, versions and publishing, and
+ *    the draft history (every save/upload/restore is a revision; the editor
+ *    autosaves a few seconds after the last change).
  * The editor is a plain textarea with a line-number gutter (no third-party
  * editor: the product ships offline and vendors nothing it does not need).
  * Server side: app/views/script_library.py, app/services/script_library.py.
@@ -72,9 +74,20 @@
   var problems = CFG.problems || [];
   var shown = null;     // the file whose text is in the textarea right now
 
+  var AUTOSAVE_MS = 4000;
+  var autoTimer = null, saving = null, changes = 0;
   function setDirty(v) {
     dirty = v;
+    if (v) changes++;
     $('sl-dirty').style.display = v ? '' : 'none';
+    if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
+    if (v) autoTimer = setTimeout(autosave, AUTOSAVE_MS);
+  }
+  function autosave() {
+    autoTimer = null;
+    if (!dirty) return;
+    if (saving) { autoTimer = setTimeout(autosave, AUTOSAVE_MS); return; }
+    save('save', '', true).catch(function () {});
   }
   function state(msg, kind) {
     var el = $('sl-state');
@@ -176,10 +189,11 @@
           else { files = {}; shown = null; }
         }
         names.forEach(function (n) { files[n] = d.files[n]; });
-        setDirty(true);
         problems = d.problems || [];
-        state(names.length + ' file(s) loaded — not saved yet', 'ok');
         openFile(names.indexOf('main.py') >= 0 ? 'main.py' : names[0]);
+        // An upload is saved at once, as its own revision in the history.
+        setDirty(true);
+        return save('upload', f.name);
       })
       .catch(function (e) { state('Upload refused: ' + e.message, 'err'); });
   });
@@ -442,18 +456,28 @@
   });
 
   // ================================================================ save / publish
-  function save() {
+  function save(kind, note, auto) {
     files[current] = code.value;
-    state('saving…');
-    return postJSON(URLS.save, { files: files, settings: readSettings() }).then(function (d) {
+    state(auto ? 'autosaving…' : 'saving…');
+    var sent = changes;
+    var p = postJSON(URLS.save, { files: files, settings: readSettings(), kind: kind || 'save', note: note || '' }).then(function (d) {
       problems = d.problems || [];
       if (d.cred_status) { credStatus = d.cred_status; renderCreds(); }
-      setDirty(false);
+      if (d.revisions) { CFG.revisions = d.revisions; renderRevisions(); }
+      // Typing while the request was in flight is NOT saved: stay dirty.
+      if (changes === sent) setDirty(false); else setDirty(true);
       $('sl-title').textContent = $('sl-set-name').value;
       renderProblems(); renderGutter(); renderTree();
-      state('saved' + (problems.length ? ' — ' + problems.length + ' syntax error(s); publishing is blocked until fixed' : ''), problems.length ? 'err' : 'ok');
+      var last = (CFG.revisions || [])[(CFG.revisions || []).length - 1];
+      var when = new Date().toTimeString().slice(0, 5);
+      state((kind === 'upload' ? 'uploaded and saved' : auto ? 'saved automatically' : 'saved') + ' ' + when
+        + (last ? ' · r' + last.n : '')
+        + (problems.length ? ' — ' + problems.length + ' syntax error(s); publishing is blocked until fixed' : ''), problems.length ? 'err' : 'ok');
       return d;
     }).catch(function (e) { state('Not saved: ' + e.message, 'err'); throw e; });
+    saving = p;
+    p.then(function () { saving = null; }, function () { saving = null; });
+    return p;
   }
   $('sl-save').addEventListener('click', function () { save().catch(function () {}); });
   $('sl-publish').addEventListener('click', function () {
@@ -465,7 +489,8 @@
         CFG.versions = d.versions; CFG.published = d.published;
         $('sl-pub').className = 'fw-badge fw-badge-success';
         $('sl-pub').textContent = 'v' + d.published + ' published';
-        renderVersions();
+        if (d.revisions) CFG.revisions = d.revisions;
+        renderVersions(); renderRevisions();
         state('published v' + d.published, 'ok');
       })
       .catch(function (e) { state(e.message, 'err'); });
@@ -505,18 +530,125 @@
       return '<tr><td><strong>v' + v.n + '</strong>' + (v.n === CFG.published ? ' <span class="fw-badge fw-badge-success">live</span>' : '') + '</td>'
         + '<td class="text-muted">' + esc((v.at || '').slice(0, 16).replace('T', ' ')) + '</td><td>' + esc(v.by) + '</td>'
         + '<td>' + esc(v.note || '') + '</td><td>' + v.files + '</td>'
-        + '<td class="text-end"><a class="btn btn-link btn-sm p-0 me-2" href="' + URLS.download + '?version=' + v.n + '">zip</a>'
+        + '<td class="text-end"><button type="button" class="btn btn-link btn-sm p-0 me-2 sl-view" data-ref="v' + v.n + '">view</button>'
+        + '<a class="btn btn-link btn-sm p-0 me-2" href="' + URLS.download + '?version=' + v.n + '">zip</a>'
         + '<button type="button" class="btn btn-link btn-sm p-0 sl-restore" data-n="' + v.n + '">restore to draft</button></td></tr>';
     }).join('') : '<tr><td colspan="6" class="text-muted p-3">Nothing published yet.</td></tr>';
     $('sl-versions').querySelectorAll('.sl-restore').forEach(function (b) {
-      b.addEventListener('click', function () {
-        var n = b.getAttribute('data-n');
-        if (!window.confirm('Replace the draft (code, form and settings) with v' + n + '?' + (dirty ? '\nYour unsaved changes are lost.' : ''))) return;
-        postJSON(URLS.restore + n, {}).then(function () { dirty = false; window.location.reload(); })
-          .catch(function (e) { state(e.message, 'err'); });
-      });
+      b.addEventListener('click', function () { restoreRef('v' + b.getAttribute('data-n')); });
+    });
+    bindViews($('sl-versions'));
+  }
+  // ---- draft history
+  var KIND_LABEL = { created: 'Created', save: 'Saved', upload: 'Uploaded', restore: 'Restored' };
+  function renderRevisions() {
+    var rows = (CFG.revisions || []).slice().reverse();
+    var newest = rows.length ? rows[0].n : null;
+    $('sl-revisions').innerHTML = rows.length ? rows.map(function (r) {
+      var what = (KIND_LABEL[r.kind] || r.kind) + (r.note ? ' <span class="text-muted">' + esc(r.note) + '</span>' : '')
+        + (r.edits > 1 ? ' <span class="text-muted">(' + r.edits + ' saves)</span>' : '');
+      return '<tr><td><strong>r' + r.n + '</strong>'
+        + (r.n === newest ? ' <span class="fw-badge fw-badge-info">draft</span>' : '')
+        + (r.published_as ? ' <span class="fw-badge fw-badge-success">→ v' + r.published_as + '</span>' : '') + '</td>'
+        + '<td class="text-muted">' + esc((r.at || '').slice(0, 16).replace('T', ' ')) + '</td><td>' + esc(r.by) + '</td>'
+        + '<td>' + what + '</td><td>' + r.files + '</td>'
+        + '<td class="text-end text-nowrap"><button type="button" class="btn btn-link btn-sm p-0 me-2 sl-view" data-ref="r' + r.n + '">view</button>'
+        + '<a class="btn btn-link btn-sm p-0 me-2" href="' + URLS.download + '?revision=' + r.n + '">zip</a>'
+        + (r.n === newest ? '' : '<button type="button" class="btn btn-link btn-sm p-0 sl-rrestore" data-n="' + r.n + '">restore to draft</button>')
+        + '</td></tr>';
+    }).join('') : '<tr><td colspan="6" class="text-muted p-3">No saved revisions yet: the first save starts the history.</td></tr>';
+    $('sl-revisions').querySelectorAll('.sl-rrestore').forEach(function (b) {
+      b.addEventListener('click', function () { restoreRef('r' + b.getAttribute('data-n')); });
+    });
+    bindViews($('sl-revisions'));
+  }
+  function restoreRef(ref) {
+    var n = ref.slice(1);
+    if (!window.confirm('Replace the draft (code, form and settings) with ' + ref + '?\nThe current draft stays in the history.' + (dirty ? '\nUnsaved changes of the last seconds are lost.' : ''))) return;
+    var url = ref.charAt(0) === 'r' ? URLS.restoreRevision + n + '/restore' : URLS.restore + n;
+    if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
+    postJSON(url, {}).then(function () { dirty = false; window.location.hash = 'history'; window.location.reload(); })
+      .catch(function (e) { state(e.message, 'err'); });
+  }
+
+  // ---- read-only viewer + diff against the draft (versions and revisions)
+  var view = { ref: null, files: {}, diff: null, mode: 'code' };
+  function viewModal() {
+    var el = $('sl-view-modal');
+    return window.bootstrap && el ? window.bootstrap.Modal.getOrCreateInstance(el) : null;
+  }
+  function renderView() {
+    var sel = $('sl-view-file');
+    var body = $('sl-view-body');
+    var names;
+    if (view.mode === 'diff') {
+      if (!view.diff) { body.textContent = 'loading…'; return; }
+      names = view.diff.files.map(function (f) { return f.file; });
+      var extra = view.diff.settings_changed.length ? 'Also changed: ' + view.diff.settings_changed.join(', ') + '\n\n' : '';
+      if (!names.length) { sel.innerHTML = ''; body.textContent = extra + 'No code differences between ' + view.ref + ' and the current draft.'; return; }
+      if (names.indexOf(sel.value) < 0) sel.innerHTML = names.map(function (n) { return '<option>' + esc(n) + '</option>'; }).join('');
+      var f = view.diff.files.filter(function (x) { return x.file === sel.value; })[0] || view.diff.files[0];
+      body.innerHTML = esc(extra) + f.diff.split('\n').map(function (ln) {
+        var c = /^\+(?!\+\+)/.test(ln) ? '#15692A' : /^-(?!--)/.test(ln) ? '#8B1C2A' : /^@@/.test(ln) ? '#4C2A85' : '';
+        return c ? '<span style="color:' + c + ';">' + esc(ln) + '</span>' : esc(ln);
+      }).join('\n');
+      return;
+    }
+    names = Object.keys(view.files).sort(function (a, b) {
+      if (a === 'main.py') return -1; if (b === 'main.py') return 1; return a.localeCompare(b);
+    });
+    var keep = sel.value;
+    sel.innerHTML = names.map(function (n) { return '<option' + (n === keep ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('');
+    body.textContent = view.files[sel.value] != null ? view.files[sel.value] : '';
+  }
+  function setViewMode(m) {
+    view.mode = m;
+    $('sl-view-mode-code').classList.toggle('active', m === 'code');
+    $('sl-view-mode-diff').classList.toggle('active', m === 'diff');
+    $('sl-view-file').innerHTML = '';
+    if (m === 'diff' && !view.diff) {
+      var go = dirty ? save('save', '', true) : Promise.resolve();
+      go.then(function () {
+        return fetch(URLS.diff + '?a=' + encodeURIComponent(view.ref) + '&b=draft', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+      }).then(function (r) { return r.json(); })
+        .then(function (d) { view.diff = d.files ? d : { files: [], settings_changed: [] }; renderView(); })
+        .catch(function (e) { $('sl-view-body').textContent = 'Error: ' + e.message; });
+    }
+    renderView();
+  }
+  function openView(ref) {
+    var isRev = ref.charAt(0) === 'r';
+    var url = (isRev ? URLS.revision : URLS.version) + ref.slice(1);
+    view = { ref: ref, files: {}, diff: null, mode: 'code' };
+    $('sl-view-title').textContent = CFG.slug + ' — ' + ref + (isRev ? ' (draft history)' : ' (published version)');
+    $('sl-view-zip').href = URLS.download + (isRev ? '?revision=' : '?version=') + ref.slice(1);
+    $('sl-view-body').textContent = 'loading…';
+    $('sl-view-meta').textContent = '';
+    setViewMode('code');
+    var m = viewModal(); if (m) m.show();
+    fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (d) {
+        view.files = d.files || {};
+        $('sl-view-meta').textContent = (d.at || d.published_at || '').slice(0, 16).replace('T', ' ') + ' · ' + (d.by || d.published_by || '')
+          + ' · ' + (d.fields || []).length + ' form field(s) · network ' + (d.network || 'none');
+        renderView();
+      })
+      .catch(function (e) { $('sl-view-body').textContent = 'Error: ' + e.message; });
+  }
+  function bindViews(root) {
+    root.querySelectorAll('.sl-view').forEach(function (b) {
+      b.addEventListener('click', function () { openView(b.getAttribute('data-ref')); });
     });
   }
+  $('sl-view-file').addEventListener('change', renderView);
+  $('sl-view-mode-code').addEventListener('click', function () { setViewMode('code'); });
+  $('sl-view-mode-diff').addEventListener('click', function () { setViewMode('diff'); });
+  $('sl-view-restore').addEventListener('click', function () {
+    var m = viewModal(); if (m) m.hide();
+    restoreRef(view.ref);
+  });
+
   $('sl-delete').addEventListener('click', function () {
     var typed = window.prompt('Delete this script, its versions and its draft? Run records stay.\nType the id (' + CFG.slug + ') to confirm:', '');
     if (typed !== CFG.slug) return;
@@ -530,6 +662,12 @@
   renderFields();
   renderPreview();
   renderVersions();
+  renderRevisions();
   openFile(current);
   setDirty(false);
+  // /database/scripts/<slug>#history (the library's history button) opens that tab.
+  if (window.location.hash === '#history') {
+    var tabBtn = document.querySelector('[data-bs-target="#sl-tab-versions"]');
+    if (tabBtn && window.bootstrap) window.bootstrap.Tab.getOrCreateInstance(tabBtn).show();
+  }
 })();

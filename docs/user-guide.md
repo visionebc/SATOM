@@ -3668,12 +3668,17 @@ the Python Console); you publish a version; operators run that version. Gated by
 modules it can import (`from lib.devices import …`), and text files (`.json`,
 `.csv`, `.yaml`, …) are data it can open by relative path. Up to 64 files of
 512 KiB each. **Upload** takes a single file or a `.zip` of the whole project (a
-zip of a folder is unwrapped); the upload is loaded into the editor and only
-saved when you click **Save**. **Download** gives the draft, or any published
-version, as a zip.
+zip of a folder is unwrapped); the upload is loaded into the editor and saved
+at once, as its own entry in the draft history. **Download** gives the draft,
+any published version or any revision of the history as a zip.
+
+**Finding and editing a script.** The library lists every script with
+**View / edit** (opens the editor) and a history button (opens **History &
+runs** directly).
 
 **The editor** has a file tree, line numbers, Tab / Shift+Tab indentation,
-auto-indent after `:`, Ctrl+S to save and **Check syntax**, which lists every
+auto-indent after `:`, Ctrl+S to save (the editor also **saves by itself** about
+four seconds after you stop typing) and **Check syntax**, which lists every
 error with its file and line (click one to jump to it). A draft with a syntax
 error is saved anyway, so half-written code is never lost, but it cannot be
 published or test-run.
@@ -3721,9 +3726,24 @@ cannot be queued. Deleting a script deletes its credentials from the vault.
 the output, the `result()` document and every connection attempt.
 **Publish** freezes the draft as version *n*: code, form, network and timeout.
 Operators always run a published version, so editing the draft never changes
-what they run. **Versions & runs** lists the versions (zip, *restore to
-draft*) and the run history. The last 50 versions are kept, and the live one
-always is.
+what they run. **History & runs** has three parts:
+
+- **Draft history** — every save, upload and restore of the draft, recorded
+  automatically as a revision (*r1*, *r2*, …) with its code, form and settings.
+  Saves by the same person within ten minutes of the revision's first save are
+  grouped into one entry (the editor autosaves while you type); an upload, a
+  restore, another person or a publish always starts a new one, and a save
+  that changes nothing adds nothing. The revision that became a version is
+  marked *→ vN*. The last 100 revisions are kept.
+- **Published versions** — the frozen versions operators run. The last 50 are
+  kept, and the live one always is.
+- **Runs** — the run history.
+
+**View** on any revision or version opens it read-only, file by file, and
+**Changes against the current draft** shows a line diff per file (plus which
+settings or form changed). **Restore to draft** puts that revision or version
+back in the draft; the draft it replaces stays in the history, so a restore
+can itself be undone.
 
 **Who runs it.** Under Settings, *Who can run it* is **Administrators only**
 or **Operators**. A published script with the second audience appears to

@@ -24702,3 +24702,27 @@ msgstr "Los valores se guardan en el vault y, como respaldo que pide el modo del
 
 msgid "No vault is configured: values are stored encrypted in the SATOM database. Configure a vault under Settings > Vault to move them out."
 msgstr "No hay vault configurado: los valores se guardan cifrados en la base de datos de SATOM. Configura un vault en Settings > Vault para sacarlos de ahí."
+
+msgid "History & runs"
+msgstr "Historial y ejecuciones"
+
+msgid "Draft history"
+msgstr "Historial del borrador"
+
+msgid "Every save, upload and restore of the draft is kept here automatically, with its code, form and settings. Saves by the same person within 10 minutes are grouped into one entry. Publishing is a separate step: operators keep running the published version until you publish again."
+msgstr "Cada guardado, subida y restauración del borrador se conserva aquí automáticamente, con su código, formulario y ajustes. Los guardados de la misma persona en 10 minutos se agrupan en una sola entrada. Publicar es un paso aparte: los operadores siguen ejecutando la versión publicada hasta que vuelvas a publicar."
+
+msgid "Changes against the current draft"
+msgstr "Cambios frente al borrador actual"
+
+msgid "Restore to draft"
+msgstr "Restaurar al borrador"
+
+msgid "Ctrl+S. The editor also saves by itself a few seconds after you stop typing."
+msgstr "Ctrl+S. El editor también guarda solo unos segundos después de que dejas de escribir."
+
+msgid "%(n)s saved revisions"
+msgstr "%(n)s revisiones guardadas"
+
+msgid "Draft history and published versions"
+msgstr "Historial del borrador y versiones publicadas"

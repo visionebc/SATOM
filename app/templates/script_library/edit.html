@@ -15,7 +15,7 @@
   <div class="ms-auto d-flex gap-2">
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('script_library.index') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Library') }}</a>
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('script_library.download', slug=script.slug) }}"><i class="bi bi-download me-1"></i>{{ _('Download') }}</a>
-    <button type="button" class="btn btn-primary btn-sm" id="sl-save" title="Ctrl+S"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
+    <button type="button" class="btn btn-primary btn-sm" id="sl-save" title="{{ _('Ctrl+S. The editor also saves by itself a few seconds after you stop typing.') }}"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
     <button type="button" class="btn btn-success btn-sm" id="sl-publish"><i class="bi bi-rocket-takeoff me-1"></i>{{ _('Publish') }}</button>
   </div>
 </div>
@@ -32,7 +32,7 @@
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-form" type="button"><i class="bi bi-ui-checks me-1"></i>{{ _('Form') }} <span class="fw-badge fw-badge-secondary" id="sl-field-count"></span></button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-settings" type="button"><i class="bi bi-sliders me-1"></i>{{ _('Settings') }}</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-test" type="button"><i class="bi bi-play-circle me-1"></i>{{ _('Test') }}</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-versions" type="button"><i class="bi bi-clock-history me-1"></i>{{ _('Versions & runs') }}</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-versions" type="button"><i class="bi bi-clock-history me-1"></i>{{ _('History & runs') }}</button></li>
 </ul>
 
 <div class="tab-content">
@@ -190,6 +190,16 @@
   {# ------------------------------------------------------------ versions #}
   <div class="tab-pane fade" id="sl-tab-versions">
     <div class="fw-card mb-3">
+      <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-journal-code me-2 text-accent"></i>{{ _('Draft history') }}</span></div>
+      <div class="fw-card-body p-0">
+        <p class="text-muted px-3 pt-2 mb-1" style="font-size:12px;">{{ _('Every save, upload and restore of the draft is kept here automatically, with its code, form and settings. Saves by the same person within 10 minutes are grouped into one entry. Publishing is a separate step: operators keep running the published version until you publish again.') }}</p>
+        <table class="table table-sm mb-0" style="font-size:12px;">
+          <thead><tr><th>{{ _('Revision') }}</th><th>{{ _('Saved') }}</th><th>{{ _('By') }}</th><th>{{ _('Change') }}</th><th>{{ _('Files') }}</th><th></th></tr></thead>
+          <tbody id="sl-revisions"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="fw-card mb-3">
       <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-tags me-2 text-accent"></i>{{ _('Published versions') }}</span></div>
       <div class="fw-card-body p-0">
         <table class="table table-sm mb-0" style="font-size:12px;">
@@ -208,6 +218,32 @@
   </div>
 </div>
 
+<div class="modal fade" id="sl-view-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title" style="font-size:15px;" id="sl-view-title"></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex gap-2 align-items-center mb-2" style="font-size:12px;">
+          <div class="btn-group btn-group-sm" role="group">
+            <button type="button" class="btn btn-outline-secondary active" id="sl-view-mode-code">{{ _('Code') }}</button>
+            <button type="button" class="btn btn-outline-secondary" id="sl-view-mode-diff">{{ _('Changes against the current draft') }}</button>
+          </div>
+          <select class="form-select form-select-sm" id="sl-view-file" style="max-width:280px;"></select>
+          <span class="text-muted ms-auto" id="sl-view-meta"></span>
+        </div>
+        <pre id="sl-view-body" class="p-2 mb-0" style="min-height:240px;max-height:65vh;overflow:auto;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:8px;white-space:pre;"></pre>
+      </div>
+      <div class="modal-footer py-2">
+        <a class="btn btn-outline-secondary btn-sm" id="sl-view-zip" href="#"><i class="bi bi-download me-1"></i>{{ _('Download') }}</a>
+        <button type="button" class="btn btn-primary btn-sm" id="sl-view-restore"><i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Restore to draft') }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script type="application/json" id="sl-config">{{ {
   'slug': script.slug,
   'files': script.files,
@@ -220,6 +256,7 @@
   'vaultOk': vault_ok,
   'fieldTypes': field_types,
   'versions': script.versions,
+  'revisions': script.revisions or [],
   'published': script.published,
   'limits': limits,
   'urls': {
@@ -233,6 +270,9 @@
     'download': url_for('script_library.download', slug=script.slug),
     'version': url_for('script_library.version', slug=script.slug, n=0)[:-1],
     'restore': url_for('script_library.restore', slug=script.slug, n=0)[:-1],
+    'revision': url_for('script_library.revision', slug=script.slug, n=0)[:-1],
+    'restoreRevision': url_for('script_library.restore_revision', slug=script.slug, n=0)[:-9],
+    'diff': url_for('script_library.diff', slug=script.slug),
     'run': url_for('script_library.run_status', rid='RID'),
     'credential': url_for('script_library.credential', slug=script.slug, name='NAME')
   }

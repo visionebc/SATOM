@@ -4185,11 +4185,15 @@ the Python Console); you publish a version; operators run that version. Gated by
 modules it can import (<code>from lib.devices import …</code>), and text files (<code>.json</code>,
 <code>.csv</code>, <code>.yaml</code>, …) are data it can open by relative path. Up to 64 files of
 512 KiB each. <strong>Upload</strong> takes a single file or a <code>.zip</code> of the whole project (a
-zip of a folder is unwrapped); the upload is loaded into the editor and only
-saved when you click <strong>Save</strong>. <strong>Download</strong> gives the draft, or any published
-version, as a zip.</p>
+zip of a folder is unwrapped); the upload is loaded into the editor and saved
+at once, as its own entry in the draft history. <strong>Download</strong> gives the draft,
+any published version or any revision of the history as a zip.</p>
+<p><strong>Finding and editing a script.</strong> The library lists every script with
+<strong>View / edit</strong> (opens the editor) and a history button (opens <strong>History &amp;
+runs</strong> directly).</p>
 <p><strong>The editor</strong> has a file tree, line numbers, Tab / Shift+Tab indentation,
-auto-indent after <code>:</code>, Ctrl+S to save and <strong>Check syntax</strong>, which lists every
+auto-indent after <code>:</code>, Ctrl+S to save (the editor also <strong>saves by itself</strong> about
+four seconds after you stop typing) and <strong>Check syntax</strong>, which lists every
 error with its file and line (click one to jump to it). A draft with a syntax
 error is saved anyway, so half-written code is never lost, but it cannot be
 published or test-run.</p>
@@ -4230,9 +4234,24 @@ cannot be queued. Deleting a script deletes its credentials from the vault.</p>
 the output, the <code>result()</code> document and every connection attempt.
 <strong>Publish</strong> freezes the draft as version <em>n</em>: code, form, network and timeout.
 Operators always run a published version, so editing the draft never changes
-what they run. <strong>Versions &amp; runs</strong> lists the versions (zip, <em>restore to
-draft</em>) and the run history. The last 50 versions are kept, and the live one
-always is.</p>
+what they run. <strong>History &amp; runs</strong> has three parts:</p>
+<ul>
+<li><strong>Draft history</strong> — every save, upload and restore of the draft, recorded
+  automatically as a revision (<em>r1</em>, <em>r2</em>, …) with its code, form and settings.
+  Saves by the same person within ten minutes of the revision's first save are
+  grouped into one entry (the editor autosaves while you type); an upload, a
+  restore, another person or a publish always starts a new one, and a save
+  that changes nothing adds nothing. The revision that became a version is
+  marked <em>→ vN</em>. The last 100 revisions are kept.</li>
+<li><strong>Published versions</strong> — the frozen versions operators run. The last 50 are
+  kept, and the live one always is.</li>
+<li><strong>Runs</strong> — the run history.</li>
+</ul>
+<p><strong>View</strong> on any revision or version opens it read-only, file by file, and
+<strong>Changes against the current draft</strong> shows a line diff per file (plus which
+settings or form changed). <strong>Restore to draft</strong> puts that revision or version
+back in the draft; the draft it replaces stays in the history, so a restore
+can itself be undone.</p>
 <p><strong>Who runs it.</strong> Under Settings, <em>Who can run it</em> is <strong>Administrators only</strong>
 or <strong>Operators</strong>. A published script with the second audience appears to
 every user holding <code>operations.scripts_run</code> under <strong>Operations → Automation →

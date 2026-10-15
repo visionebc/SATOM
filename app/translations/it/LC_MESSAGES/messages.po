@@ -16312,8 +16312,8 @@ msgstr "Nessuna copia per QUESTO dispositivo, ma un altro dispositivo memorizza 
 msgid "Nobody holds a copy, but the type CAN be read back from a live FortiWeb. Capture it before the source box goes away."
 msgstr "Nessuno conserva una copia, ma il tipo PUÒ essere riletto da un FortiWeb attivo. Acquisiscilo prima che il dispositivo di origine sparisca."
 
-msgid "Nobody holds a copy and no FortiWeb hands this type back one object at a time. The device's Entire backup carries it only encrypted, for a full restore onto another FortiWeb. The policy CANNOT be migrated through SATOM until someone uploads the file."
-msgstr "Nessuno ne conserva una copia e nessun FortiWeb restituisce questo tipo un oggetto alla volta. Il backup completo (Entire) del dispositivo lo contiene solo cifrato, per un ripristino completo su un altro FortiWeb. La policy NON può essere migrata tramite SATOM finché qualcuno non carica il file."
+msgid "Nobody holds a copy, and no FortiWeb hands this type back: not one object at a time, and not through a restore of its Entire backup either (measured: the restore drops it). The policy CANNOT be migrated until someone uploads the file, or fetches it for XML Schema and WSDL."
+msgstr "Nessuno ne conserva una copia e nessun FortiWeb restituisce questo tipo: né un oggetto alla volta, né tramite il ripristino del suo backup completo (Entire) (misurato: il ripristino lo scarta). La policy NON può essere migrata finché qualcuno non carica il file, o lo scarica per XML Schema e WSDL."
 
 msgid "Same name, different content"
 msgstr "Stesso nome, contenuto diverso"
@@ -16702,8 +16702,8 @@ msgstr "Quattro dei sette tipi possono essere riletti tramite un endpoint privat
 msgid "to every shape of read that was tried — they are write-only from the API's point of view."
 msgstr "a ogni forma di lettura tentata: dal punto di vista dell'API sono a sola scrittura."
 
-msgid "The device's Entire configuration backup does carry them, inside a block the firmware encrypts with its own key. FortiWeb can restore that backup as a whole onto another appliance, but nothing can take one object out of it. For those three types, a copy held in SATOM — uploaded, or fetched from the application for XML Schema and WSDL — is the ONLY way to move one object from one appliance to another."
-msgstr "Il backup della configurazione completa (Entire) del dispositivo li contiene, dentro un blocco che il firmware cifra con la propria chiave. FortiWeb può ripristinare quel backup per intero su un altro dispositivo, ma niente può estrarne un singolo oggetto. Per questi tre tipi, una copia conservata in SATOM — caricata, o scaricata dall'applicazione per XML Schema e WSDL — è l'UNICO modo per spostare un oggetto da un dispositivo all'altro."
+msgid "The device's Entire configuration backup carries them only inside a block the firmware encrypts with its own key, and restoring that backup does not bring them back: measured on 7.6.8 and 8.0.6, in both directions, the restore puts the configuration back and drops these objects. For those three types, a copy held in SATOM — uploaded, or fetched from the application for XML Schema and WSDL — is the ONLY way to move them from one appliance to another."
+msgstr "Il backup della configurazione completa (Entire) del dispositivo li contiene solo dentro un blocco che il firmware cifra con la propria chiave, e ripristinare quel backup non li riporta: misurato su 7.6.8 e 8.0.6, in entrambe le direzioni, il ripristino rimette la configurazione e scarta questi oggetti. Per questi tre tipi, una copia conservata in SATOM — caricata, o scaricata dall'applicazione per XML Schema e WSDL — è l'UNICO modo per spostarli da un dispositivo all'altro."
 
 msgid "One name is validated by the firmware:"
 msgstr "Un nome è convalidato dal firmware:"
@@ -17071,8 +17071,8 @@ msgstr "artefatto"
 msgid "unreadable from any device"
 msgstr "illeggibile da qualsiasi dispositivo"
 
-msgid "This content cannot be read back off a FortiWeb one object at a time; its Entire backup carries it only encrypted, for a full restore. The copies below are the only ones SATOM can push to another device."
-msgstr "Questo contenuto non può essere riletto da un FortiWeb un oggetto alla volta; il suo backup completo (Entire) lo contiene solo cifrato, per un ripristino completo. Le copie qui sotto sono le sole che SATOM può inviare a un altro dispositivo."
+msgid "This content cannot be read back off a FortiWeb, and a restore of its Entire backup does not bring it back (the backup carries it only encrypted, and the restore drops it). The copies below are the only ones SATOM can push to another device."
+msgstr "Questo contenuto non può essere riletto da un FortiWeb, e il ripristino del suo backup completo (Entire) non lo riporta (il backup lo contiene solo cifrato e il ripristino lo scarta). Le copie qui sotto sono le sole che SATOM può inviare a un altro dispositivo."
 
 msgid "capturable"
 msgstr "acquisibile"
@@ -24823,3 +24823,24 @@ msgstr "Seleziona gli ADOM in cui questo profilo può lavorare. Senza alcuna sel
 #: 2026-10-15 adom confinement / script library db fields
 msgid "Rows from the SATOM database are read when the run starts and passed to the script."
 msgstr "Le righe del database di SATOM vengono lette all'avvio dell'esecuzione e passate allo script."
+
+msgid "Looking up the servers behind the policies that use it…"
+msgstr "Ricerca dei server dietro le policy che lo usano…"
+
+msgid "Servers behind the policies that use it — pick one, then add the service path (for example OrderService?wsdl):"
+msgstr "Server dietro le policy che lo usano — scegline uno, poi aggiungi il percorso del servizio (ad esempio OrderService?wsdl):"
+
+msgid "No policy of this device uses it, or its servers could not be read."
+msgstr "Nessuna policy di questo dispositivo lo usa, oppure i suoi server non sono leggibili."
+
+msgid "Could not read:"
+msgstr "Impossibile leggere:"
+
+msgid "no — fetch or upload"
+msgstr "no — scaricalo o caricalo"
+
+msgid "Fetch it from the application, with this name filled in and the servers behind the policies that use it offered as a starting URL"
+msgstr "Scaricalo dall'applicazione, con questo nome già compilato e i server dietro le policy che lo usano proposti come URL di partenza"
+
+msgid "Fetch…"
+msgstr "Scarica…"

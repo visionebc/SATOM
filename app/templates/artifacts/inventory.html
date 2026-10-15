@@ -132,6 +132,13 @@
                    placeholder="https://orders.example.internal/OrderService?wsdl"
                    title="{{ _('Where the service publishes its WSDL or XML Schema. Often the service address followed by ?wsdl.') }}">
             <div class="form-text" style="font-size:11.5px">{{ _('http or https only. Imports on another host, redirects, and this node\'s own or loopback addresses are not followed.') }}</div>
+            <div id="artFetchHints" class="mt-1" style="font-size:12px"
+                 data-hints-url="{{ url_for('artifacts.api_fetch_hints') }}"
+                 data-msg-loading="{{ _('Looking up the servers behind the policies that use it…') }}"
+                 data-msg-lead="{{ _('Servers behind the policies that use it — pick one, then add the service path (for example OrderService?wsdl):') }}"
+                 data-msg-none="{{ _('No policy of this device uses it, or its servers could not be read.') }}"
+                 data-msg-error="{{ _('Could not read:') }}"
+                 data-msg-disabled="{{ _('disabled') }}"></div>
           </div>
           <div class="mb-2">
             <label class="fw-fld-label">{{ _('Object name of the first document (mkey on the device)') }}</label>
@@ -663,6 +670,15 @@
           <td style="font-size:12.5px">{{ m.label }}</td>
           <td>{% if m.readable %}
                 <span class="fw-badge fw-badge-warning">{{ _('capture it') }}</span>
+              {% elif m.kind in ('wsdl', 'xml_schema') %}
+                <span class="fw-badge fw-badge-danger">{{ _('no — fetch or upload') }}</span>
+                {% if current_user.can('config_write') %}
+                <button type="button" class="btn btn-fw-outline btn-sm py-0 ms-1"
+                        data-bs-toggle="modal" data-bs-target="#artFetchModal"
+                        data-fetch-name="{{ m.name }}" data-fetch-kind="{{ m.kind }}"
+                        title="{{ _('Fetch it from the application, with this name filled in and the servers behind the policies that use it offered as a starting URL') }}">
+                  <i class="bi bi-cloud-arrow-down me-1"></i>{{ _('Fetch…') }}</button>
+                {% endif %}
               {% else %}
                 <span class="fw-badge fw-badge-danger">{{ _('no — upload only') }}</span>
               {% endif %}
@@ -686,4 +702,66 @@
    "what does this pair hold"; a fleet verdict built on top of that read as the
    authoritative migration answer while being the least current one — and it
    cost a blob read per edge on every single render. #}
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  // Fetch dialog opened from a "Needed by a policy and NOT held" row: fill the
+  // object name, then offer the real servers behind the policies that use it.
+  // Built with textContent only — the addresses come from a device.
+  var modal = document.getElementById('artFetchModal');
+  var hints = document.getElementById('artFetchHints');
+  if (!modal || !hints) return;
+  var nameIn = modal.querySelector('input[name="name"]');
+  var urlIn = modal.querySelector('input[name="url"]');
+  function msg(k) { return hints.getAttribute('data-msg-' + k) || ''; }
+  function line(text, cls) {
+    var d = document.createElement('div');
+    if (cls) d.className = cls;
+    d.textContent = text;
+    hints.appendChild(d);
+    return d;
+  }
+  modal.addEventListener('show.bs.modal', function (e) {
+    var btn = e.relatedTarget;
+    var name = btn ? btn.getAttribute('data-fetch-name') : '';
+    var kind = btn ? btn.getAttribute('data-fetch-kind') : '';
+    hints.textContent = '';
+    if (!name) { nameIn.value = ''; return; }
+    nameIn.value = name;
+    line(msg('loading'), 'text-secondary');
+    var q = '?kind=' + encodeURIComponent(kind) + '&name=' + encodeURIComponent(name);
+    fetch(hints.getAttribute('data-hints-url') + q,
+          {credentials: 'same-origin', headers: {'Accept': 'application/json'}})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        hints.textContent = '';
+        var cands = (d && d.candidates) || [];
+        if (!cands.length) { line(msg('none'), 'text-secondary'); }
+        else {
+          line(msg('lead'), 'text-secondary mb-1');
+          var box = line('', 'd-flex flex-wrap gap-1');
+          cands.forEach(function (c) {
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'btn btn-fw-outline btn-sm py-0';
+            b.textContent = c.url + (c.enabled ? '' : ' (' + msg('disabled') + ')');
+            b.title = (c.policy || '') + ' → ' + (c.pool || '');
+            b.addEventListener('click', function () {
+              urlIn.value = c.url;
+              urlIn.focus();
+              urlIn.setSelectionRange(urlIn.value.length, urlIn.value.length);
+            });
+            box.appendChild(b);
+          });
+        }
+        ((d && d.errors) || []).forEach(function (err) {
+          line(msg('error') + ' ' + err, 'text-danger');
+        });
+      })
+      .catch(function () { hints.textContent = ''; line(msg('none'), 'text-secondary'); });
+  });
+})();
+</script>
 {% endblock %}

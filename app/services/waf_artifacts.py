@@ -43,9 +43,12 @@ The content is NOT missing from the device's backup, though. The GUI's
 ``#FGBK|4|…``) — encrypted by the firmware even when no backup password is set.
 Deleting one XSD + one WSDL shrinks that block by ~1.1 KB on both 7.6.8 and
 8.0.6 while two untouched backups measure identical, so the files travel inside
-it. Only a FortiWeb can open it: a full-configuration restore onto another
-appliance moves them, all or nothing. SATOM does not and will not open that
-block.
+it. And a FortiWeb does NOT put them back from it: an Entire restore through
+the GUI's own endpoint (``maintenance.restoreconfiguration``), measured
+2026-10-15 on 7.6.8 -> 8.0.6, 8.0.6 -> 8.0.6 and 7.6.8 -> 7.6.8 with a marker
+object proving the restore applied, puts the configuration back and DROPS
+every XML Schema / WSDL object — not even the name survives. SATOM does not and
+will not open that block.
 
 So for those three a device→device clone of ONE object's content cannot exist,
 and the only correct architecture is the one here: **SATOM keeps the artifact**. It is
@@ -128,7 +131,8 @@ KINDS: dict[str, dict[str, Any]] = {
         "urn": "cmdb/waf/grpc-idl.file",
         "read": None,          # -20005
         # Same endpoint + field in the 7.6.8 and 8.0.6 GUI (fwb-grpc-file-
-        # upload.js). 8.0.6 build0116 still refuses every upload: GRPC_3000_HINT.
+        # upload.js). 8.0.6 build0116 refuses every upload, the GUI's own
+        # session path included (measured 2026-10-15): GRPC_3000_HINT.
         "upload": "/api/v2.0/waf/grpc.idlfile",
         "field": "idlfile",
     },
@@ -514,9 +518,10 @@ def _push_text(client, spec: dict, name: str, blob: bytes, *, vdom: str) -> tupl
 #: wrong", and the operator spends the afternoon rewriting a valid .proto.
 GRPC_3000_HINT = (
     "FortiWeb 8.0.6 build0116 refuses every gRPC IDL upload with -3000, "
-    "whatever the file (ten contents and archive formats were tried; 7.6.8 "
-    "accepts the same file). If the device's own GUI refuses it too, the cause "
-    "is the firmware, not the file.")
+    "whatever the file: ten contents and archive formats were tried, through "
+    "SATOM's API path and through the GUI's own session path, and 7.6.8 "
+    "accepts the same file. The cause is the firmware, not the file — open a "
+    "case with Fortinet.")
 
 
 def explain_push_error(kind: str, err: str) -> str:

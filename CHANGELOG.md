@@ -52,6 +52,11 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   URL at upload time) and refuses the file if it can't. `soap:address` is
   never touched.
 - The **Origin** filter on the inventory has a **fetched** option.
+- In **Needed by a policy and NOT held**, an XML Schema or WSDL row now reads
+  *no — fetch or upload* and has a **Fetch…** button: the dialog opens with
+  the object name filled in and offers, as starting URLs, the real servers
+  behind the policies that use it (read from the device when you open it, not
+  on page load).
 - A refused XML Schema, WSDL or other file upload now shows the device's own
   reason (for example *Cannot open '/data/etc/xml_schema/root/x.xsd' to
   retrieve schema*) instead of a bare `HTTP 500`: FortiWeb sends it in
@@ -139,12 +144,15 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   backup carries them, inside a block the firmware encrypts even without a
   backup password (measured on 7.6.8 and 8.0.6: deleting one XSD and one WSDL
   shrinks it by about 1.1 KB). The pages now say so, and say what follows: a
-  full restore onto another FortiWeb moves them all at once, while moving one
-  object still needs a copy uploaded to SATOM.
+  restore of that backup does not bring them back. Measured on 7.6.8 → 8.0.6,
+  8.0.6 → 8.0.6 and 7.6.8 → 7.6.8, with a marker object proving each restore
+  applied: the configuration comes back and every XML Schema and WSDL object
+  is dropped, name included. A copy held in SATOM is the only way to move them.
 - A gRPC IDL upload refused with `-3000` now says what was measured: FortiWeb
   8.0.6 build0116 refuses every gRPC IDL upload, whatever the content or
-  format, while 7.6.8 accepts the same file. The device's own error stays
-  first.
+  format, through SATOM's API path and through the GUI's own session path,
+  while 7.6.8 accepts the same file: the cause is the firmware. The device's
+  own error stays first.
 
 ### Added — Script Library: every edit is a new version, autosave, compare any two versions (2026-10-15)
 

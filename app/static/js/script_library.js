@@ -660,8 +660,9 @@
     var isRev = ref.charAt(0) === 'r';
     var url = (isRev ? URLS.revision : URLS.version) + ref.slice(1);
     view = { ref: ref, against: against || 'draft', files: {}, diff: null, mode: 'code' };
-    $('sl-view-title').textContent = CFG.slug + ' — v' + ref.slice(1)
-      + (view.against !== 'draft' ? ' → ' + vlabel(view.against) : '') + (ref.slice(1) == liveN() ? ' (published)' : '');
+    var tag = function (r) { return r !== 'draft' && +r.slice(1) === liveN() ? ' (published)' : ''; };
+    $('sl-view-title').textContent = CFG.slug + ' — v' + ref.slice(1) + tag(ref)
+      + (view.against !== 'draft' ? ' → ' + vlabel(view.against) + tag(view.against) : '');
     $('sl-view-zip').href = URLS.download + (isRev ? '?revision=' : '?version=') + ref.slice(1);
     $('sl-view-restore').style.display = (CFG.revisions || []).length && ('r' + CFG.revisions[CFG.revisions.length - 1].n) === ref ? 'none' : '';
     $('sl-view-body').textContent = 'loading…';

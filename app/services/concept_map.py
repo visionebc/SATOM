@@ -497,7 +497,8 @@ PAGES: tuple[dict, ...] = (
        "user account login create disable password person operator",
        "Console accounts."),
     _p("profiles.index", "Permission Profiles", "access",
-       "profile permission role rbac grant access rights authorisation",
+       "profile permission role rbac grant access rights authorisation "
+       "adom confine restrict scope per adom tenant global",
        "What each role is allowed to do."),
     _p("auth.profile", "My Profile", "access",
        "my profile password language 2fa preferences me account settings",
@@ -572,7 +573,8 @@ PAGES: tuple[dict, ...] = (
        "artifact inventory statistics filter orphan used by policy spo "
        "coverage migration missing stale where held "
        "upload edit author version file manage delete capture "
-       "schema xsd wsdl openapi grpc idl json lua editor online view",
+       "schema xsd wsdl openapi grpc idl json lua editor online view "
+       "fetch from application url download soap ?wsdl import include",
        "What SATOM holds, where each copy lives, which server policies need "
        "it, and which policies are blocked on content nobody has."),
     _p("artifacts.audit", "Artifact device audit", "waf",
@@ -599,7 +601,9 @@ PAGES: tuple[dict, ...] = (
        "scripts run operator form schedule cron saved run python",
        "Run the scripts your administrators published, now or on a schedule."),
     _p("script_library.index", "Script Library", "dev",
-       "script library python form operator run sandbox publish version ide",
+       "script library python form operator run sandbox publish version ide "
+       "edit compare diff versions database lookup dataset query builder "
+       "dropdown table join field",
        "Python scripts with a form that operators fill in and run."),
 )
 
@@ -673,7 +677,7 @@ EXCLUDED: dict[str, str] = {
     "settings.library_pip_drift": "json feed", "settings.library_pip_state": "json feed",
     "settings.library_updates": "json feed", "settings.node_cert_state": "json feed",
     "settings.peer_libraries": "json feed",
-    "settings.peer_system_packages": "json feed", "scripts.cron_preview": "json feed", "settings.system_packages_state": "json feed", "settings.peer_services": "json feed",
+    "settings.peer_system_packages": "json feed", "scripts.cron_preview": "json feed", "script_library.lookup_catalog": "json feed", "script_library.lookup_related": "json feed", "settings.system_packages_state": "json feed", "settings.peer_services": "json feed",
     "settings.services_state": "json feed", "settings.services_peers": "json feed",
     "container_ops.state": "json feed", "container_ops.status": "json feed",
     "settings.thresholds_state": "json feed", "settings.trust_store_state": "json feed",
@@ -729,6 +733,7 @@ EXCLUDED: dict[str, str] = {
     "artifacts.refresh_refs": "form action of artifacts.inventory",
     "artifacts.api_refs": "JSON feed of artifacts.inventory",
     "artifacts.api_coverage": "JSON feed of artifacts.inventory",
+    "artifacts.api_fetch_hints": "JSON feed of artifacts.inventory",
     "plugins.new": "create form of plugins.index",
     "provisioning.new": "create form of provisioning.index",
     "provisioning.baseline_new": "create form of provisioning.baselines",

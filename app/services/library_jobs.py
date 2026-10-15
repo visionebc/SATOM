@@ -44,7 +44,7 @@ JOB_TYPE = "library_pip"
 SYSPKG_TYPE = "system_package"
 JOB_TYPES = (JOB_TYPE, SYSPKG_TYPE)
 #: Steps a run of each kind writes, for a progress bar that never ends early.
-_EXPECTED_STEPS = {JOB_TYPE: 9, SYSPKG_TYPE: 4}
+_EXPECTED_STEPS = {JOB_TYPE: 10, SYSPKG_TYPE: 4}
 #: How often the scheduler sidecar drives active jobs.
 TICK_S = 3
 #: The updater normally picks a request up within a second or two.

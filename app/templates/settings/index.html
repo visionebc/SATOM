@@ -1510,6 +1510,7 @@
                     {{ _('Signing secret (HMAC-SHA256)') }}
                     {% if alerts_config.webhook.secret_set %}
                     <span class="fw-badge fw-badge-success">{{ _('set') }}</span>
+                    {% if alerts_config.webhook.secret_location == 'vault' %}<span class="fw-badge fw-badge-info">{{ _('in the vault') }}</span>{% endif %}
                     {% else %}
                     <span class="fw-badge fw-badge-secondary">{{ _('not set — requests go unsigned') }}</span>
                     {% endif %}

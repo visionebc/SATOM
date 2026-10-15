@@ -551,6 +551,41 @@ def import_smoke_ok():
         return False, str(e)
 
 
+#: Child program for :func:`db_smoke_ok`. Reads the app's own URI from .env
+#: (never passed on argv or in the environment) and runs SELECT 1 through
+#: SQLAlchemy, i.e. through the same driver the app will load.
+_DB_SMOKE = r"""
+import re, sys
+uri = ""
+for line in open(".env", encoding="utf-8"):
+    if line.startswith("SQLALCHEMY_DATABASE_URI="):
+        uri = line.split("=", 1)[1].strip().strip('"').strip("'")
+if not uri:
+    sys.exit("no SQLALCHEMY_DATABASE_URI in .env")
+import sqlalchemy as sa
+eng = sa.create_engine(uri, pool_pre_ping=False)
+with eng.connect() as c:
+    assert c.execute(sa.text("SELECT 1")).scalar() == 1
+eng.dispose()
+"""
+
+
+def db_smoke_ok():
+    """The new code can actually TALK to Postgres: one connection, SELECT 1.
+
+    An import smoke cannot see a driver that imports and then breaks on the
+    first connect. That is not hypothetical: psycopg 3.3.6 with
+    psycopg-binary 3.3.4 imported fine and every connection raised TypeError
+    (wait_c() got an unexpected keyword 'timeout'), which took both nodes
+    down. Read-only, so it is safe on the standby too."""
+    try:
+        r = run([str(VENV / "python"), "-c", _DB_SMOKE],
+                timeout=60, user=APP_USER, cwd=str(APP))
+        return r.returncode == 0, (r.stderr or r.stdout)
+    except Exception as e:
+        return False, str(e)
+
+
 def _peer_host():
     """The OTHER HA node's host from ha_nodes.json (failover-agnostic)."""
     try:
@@ -1384,6 +1419,11 @@ def pip_change(req_path):
         st.step("import smoke", ok, "app imports with new %s" % pkg if ok else detail[:300])
         if not ok:
             raise RuntimeError("import smoke failed: %s" % detail[:200])
+        ok, detail = db_smoke_ok()
+        st.step("database smoke", ok,
+                "SELECT 1 through the new %s" % pkg if ok else detail[-300:])
+        if not ok:
+            raise RuntimeError("database smoke failed: %s" % detail[-200:])
 
         # Reload the running workers so the new lib is actually loaded.
         restart_and_validate(st, is_standby, app_was_active,

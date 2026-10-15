@@ -622,12 +622,7 @@ def migrate_local_to_vault(dry_run: bool = True) -> dict:
             note("appliance", app.name, "failed", str(exc))
 
     # Directory secrets live in app_settings, not in a table we can iterate.
-    for label, key, path, field in (
-        ("FortiAuthenticator shared secret", "auth.radius.secret_enc",
-         "auth/fortiauthenticator", "shared_secret"),
-        ("LDAP/AD bind password", "auth.ldap.bind_password_enc",
-         "auth/ldap", "bind_password"),
-    ):
+    for label, key, path, field in SETTING_SECRETS:
         raw = AppSetting.get(key)
         if not raw:
             note("setting", label, "skipped", "not configured")
@@ -670,6 +665,18 @@ def migrate_local_to_vault(dry_run: bool = True) -> dict:
 
     return out
 
+
+#: Single secrets kept in ``app_settings`` (label, key, vault path, field).
+#: ONE list for migrate and scrub: two copies of it is how the alert-webhook
+#: secret stayed out of both until 2026-10-15.
+SETTING_SECRETS = (
+    ("FortiAuthenticator shared secret", "auth.radius.secret_enc",
+     "auth/fortiauthenticator", "shared_secret"),
+    ("LDAP/AD bind password", "auth.ldap.bind_password_enc",
+     "auth/ldap", "bind_password"),
+    ("Alert webhook HMAC secret", "alerts.webhook.secret",
+     "alerts/webhook", "secret"),
+)
 
 _HOOK_PREFIX = "integrations.secret."
 
@@ -808,12 +815,7 @@ def scrub_local_copies(dry_run: bool = True) -> dict:
         db.session.commit()
         note("appliance-ssh", name, "scrubbed", "local copy replaced by the sentinel")
 
-    for label, key, path, field in (
-        ("FortiAuthenticator shared secret", "auth.radius.secret_enc",
-         "auth/fortiauthenticator", "shared_secret"),
-        ("LDAP/AD bind password", "auth.ldap.bind_password_enc",
-         "auth/ldap", "bind_password"),
-    ):
+    for label, key, path, field in SETTING_SECRETS:
         raw = AppSetting.get(key)
         if not raw:
             note("setting", label, "skipped", "not configured")

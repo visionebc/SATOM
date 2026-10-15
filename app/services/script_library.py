@@ -15,6 +15,8 @@ except the queue and the claims, which are each node's own work)::
     library/<slug>/draft/<files>          what the editor shows and saves
     library/<slug>/versions/<n>/files/    frozen tree of version n
     library/<slug>/versions/<n>/meta.json frozen form/network/timeout/entry
+    library/<slug>/revisions/<n>/files/   draft history: every save, upload and
+    library/<slug>/revisions/<n>/meta.json restore, recorded automatically
     queue/<request_id>.json               a run waiting for the runner
     claimed/                              runs the runner took (at-most-once)
     status/<request_id>.json              live and finished run records
@@ -33,6 +35,10 @@ WHAT A SCRIPT RECEIVES
 """
 from __future__ import annotations
 
+import contextlib
+import difflib
+import fcntl
+import hashlib
 import io
 import json
 import keyword
@@ -63,6 +69,12 @@ MAX_FIELDS = 40
 MAX_INPUT_CHARS = 64 * 1024
 MAX_OPTIONS = 100
 MAX_VERSIONS = 50
+# Draft history. A revision is recorded on every save that changes something;
+# saves by the same person within COALESCE_SECONDS of the revision's first
+# save extend it instead of adding one (the editor autosaves while typing).
+MAX_REVISIONS = 100
+COALESCE_SECONDS = 600
+REVISION_KINDS = ("created", "save", "upload", "restore")
 MAX_CREDENTIALS = 10
 TIMEOUT_MIN, TIMEOUT_MAX, TIMEOUT_DEFAULT = 5, 900, 60
 OUTPUT_CAP = 64 * 1024
@@ -406,6 +418,148 @@ def _dir(slug: str) -> Path:
     return LIBRARY_DIR / validate_slug(slug)
 
 
+@contextlib.contextmanager
+def _locked(d: Path):
+    """One writer per script: two admins saving at once must not hand out
+    the same revision number or interleave meta.json writes."""
+    d.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(d / ".lock"), os.O_CREAT | os.O_RDWR, 0o640)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
+# ---------------------------------------------------------------------------
+#  draft history (revisions)
+# ---------------------------------------------------------------------------
+# What a revision captures besides the files: everything the editor saves.
+_SNAPSHOT_KEYS = ("name", "description", "network", "audience", "timeout",
+                  "fields", "credentials")
+
+
+def _snapshot_hash(files: dict[str, str], meta: dict) -> str:
+    blob = json.dumps({"files": files, **{k: meta.get(k) for k in _SNAPSHOT_KEYS}},
+                      sort_keys=True, default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _age_seconds(then: str | None, now: str) -> float:
+    try:
+        a = datetime.fromisoformat(str(then).rstrip("Z"))
+        b = datetime.fromisoformat(now.rstrip("Z"))
+    except ValueError:
+        return float("inf")
+    return (b - a).total_seconds()
+
+
+def _record_revision(d: Path, meta: dict, files: dict[str, str], by: str,
+                     kind: str, note: str = "") -> int | None:
+    """Record ``files`` + the settings in ``meta`` as a revision. Returns its
+    number, or None when nothing changed since the last one. Mutates
+    ``meta["revisions"]``; the caller writes meta.json."""
+    if kind not in REVISION_KINDS:
+        raise ScriptError("unknown revision kind %r" % kind)
+    revs = list(meta.get("revisions") or [])
+    digest = _snapshot_hash(files, meta)
+    last = revs[-1] if revs else None
+    if last and last.get("hash") == digest:
+        return None
+    now = _utcnow()
+    if (last and kind == "save" and last.get("kind") == "save" and last.get("by") == by
+            and not last.get("published_as")
+            and _age_seconds(last.get("started") or last.get("at"), now) < COALESCE_SECONDS):
+        revs.pop()
+        n, started, edits = last["n"], last.get("started") or last.get("at"), int(last.get("edits") or 1) + 1
+    else:
+        n, started, edits = max((r["n"] for r in revs), default=0) + 1, now, 1
+    rdir = d / "revisions" / str(n)
+    _write_tree(rdir / "files", files)
+    frozen = {k: meta.get(k) for k in _SNAPSHOT_KEYS}
+    frozen.update({"n": n, "at": now, "by": by, "kind": kind,
+                   "note": str(note or "").strip()[:200], "entry": ENTRY})
+    _write_json(rdir / "meta.json", frozen)
+    revs.append({"n": n, "at": now, "started": started, "by": by, "kind": kind,
+                 "note": frozen["note"], "files": len(files), "hash": digest, "edits": edits})
+    meta["revisions"] = revs
+    _prune_revisions(d, meta)
+    return n
+
+
+def _prune_revisions(d: Path, meta: dict) -> None:
+    revs = meta.get("revisions") or []
+    if len(revs) <= MAX_REVISIONS:
+        return
+    drop, meta["revisions"] = revs[:-MAX_REVISIONS], revs[-MAX_REVISIONS:]
+    for r in drop:
+        shutil.rmtree(d / "revisions" / str(int(r["n"])), ignore_errors=True)
+
+
+def revision(slug: str, n: int) -> dict | None:
+    rdir = _dir(slug) / "revisions" / str(int(n))
+    frozen = _read_json(rdir / "meta.json")
+    if not frozen:
+        return None
+    frozen["files"] = _read_tree(rdir / "files")
+    return frozen
+
+
+def restore_revision(slug: str, n: int, by: str) -> dict:
+    r = revision(slug, n)
+    if r is None:
+        raise ScriptError("no revision %s" % n)
+    meta = _read_json(_dir(slug) / "meta.json")
+    return save_draft(slug, r["files"], {**meta, **{k: r.get(k) for k in _SNAPSHOT_KEYS}},
+                      by, kind="restore", note="from r%d" % int(n))
+
+
+def snapshot(slug: str, ref: str) -> dict | None:
+    """``draft``, ``v<n>`` (published version) or ``r<n>`` (revision) ->
+    ``{"files": ..., "settings": ...}``; None when it does not exist."""
+    ref = str(ref or "")
+    if ref == "draft":
+        src = get(slug)
+    elif re.fullmatch(r"v\d{1,6}", ref):
+        src = version(slug, int(ref[1:]))
+    elif re.fullmatch(r"r\d{1,6}", ref):
+        src = revision(slug, int(ref[1:]))
+    else:
+        raise ScriptError("unknown reference %r" % ref)
+    if src is None:
+        return None
+    return {"files": src.get("files") or {},
+            "settings": {k: src.get(k) for k in _SNAPSHOT_KEYS if k in src}}
+
+
+DIFF_CAP = 200 * 1024
+
+
+def diff(slug: str, a: str, b: str) -> dict:
+    """Unified diff from ``a`` to ``b`` per file, plus the settings/form that
+    changed. Text only: the library holds no binary files."""
+    sa, sb = snapshot(slug, a), snapshot(slug, b)
+    if sa is None or sb is None:
+        raise ScriptError("nothing to compare: %s does not exist" % (a if sa is None else b))
+    out = []
+    fa, fb = sa["files"], sb["files"]
+    for name in sorted(set(fa) | set(fb)):
+        old, new = fa.get(name), fb.get(name)
+        if old == new:
+            continue
+        status = "added" if old is None else "removed" if new is None else "changed"
+        text = "".join(difflib.unified_diff(
+            (old or "").splitlines(keepends=True), (new or "").splitlines(keepends=True),
+            fromfile="%s/%s" % (a, name), tofile="%s/%s" % (b, name), n=3))
+        if len(text) > DIFF_CAP:
+            text = text[:DIFF_CAP] + "\n... (diff truncated)\n"
+        out.append({"file": name, "status": status, "diff": text})
+    settings = [k for k in _SNAPSHOT_KEYS
+                if k in sa["settings"] and k in sb["settings"]
+                and sa["settings"][k] != sb["settings"][k]]
+    return {"a": a, "b": b, "files": out, "settings_changed": settings}
+
+
 # ---------------------------------------------------------------------------
 #  scripts
 # ---------------------------------------------------------------------------
@@ -452,7 +606,8 @@ def list_scripts() -> list[dict]:
                 "slug", "name", "description", "audience", "network", "published",
                 "updated_at", "updated_by", "draft_changed")}
                 | {"fields": len(meta.get("fields") or []),
-                   "versions": len(meta.get("versions") or [])})
+                   "versions": len(meta.get("versions") or []),
+                   "revisions": len(meta.get("revisions") or [])})
     return out
 
 
@@ -466,30 +621,45 @@ def create(slug: str, name: str, by: str) -> dict:
     meta = {"slug": slug, **settings, "entry": ENTRY, "versions": [],
             "published": None, "draft_changed": True,
             "created_by": by, "created_at": now, "updated_by": by, "updated_at": now}
-    _write_tree(d / "draft", {ENTRY: STARTER})
-    _write_json(d / "meta.json", meta)
+    with _locked(d):
+        _write_tree(d / "draft", {ENTRY: STARTER})
+        _record_revision(d, meta, {ENTRY: STARTER}, by, "created")
+        _write_json(d / "meta.json", meta)
     return get(slug)
 
 
-def save_draft(slug: str, files: Any, settings: dict, by: str) -> dict:
-    """Save the editor's tree and the settings/form. Syntax errors do not
-    block a draft (an editor that refuses to save half-written code loses
-    work); they block publishing."""
+def save_draft(slug: str, files: Any, settings: dict, by: str,
+               kind: str = "save", note: str = "") -> dict:
+    """Save the editor's tree and the settings/form, and record the result in
+    the draft history. Syntax errors do not block a draft (an editor that
+    refuses to save half-written code loses work); they block publishing."""
     d = _dir(slug)
-    meta = _read_json(d / "meta.json")
-    if not meta:
-        raise ScriptError("no script %r" % slug)
-    files = validate_files(files)
-    clean = clean_settings({**meta, **(settings or {})})
-    _write_tree(d / "draft", files)
-    meta.update(clean)
-    meta.update({"updated_by": by, "updated_at": _utcnow(), "draft_changed": True})
-    _write_json(d / "meta.json", meta)
+    with _locked(d):
+        meta = _read_json(d / "meta.json")
+        if not meta:
+            raise ScriptError("no script %r" % slug)
+        files = validate_files(files)
+        clean = clean_settings({**meta, **(settings or {})})
+        if not meta.get("revisions"):
+            # A script from before the history existed: keep what it held
+            # as the first revision before overwriting it.
+            _record_revision(d, meta, _read_tree(d / "draft"),
+                             meta.get("updated_by") or meta.get("created_by") or "?", "created")
+        _write_tree(d / "draft", files)
+        meta.update(clean)
+        meta.update({"updated_by": by, "updated_at": _utcnow(), "draft_changed": True})
+        _record_revision(d, meta, files, by, kind, note)
+        _write_json(d / "meta.json", meta)
     return get(slug)
 
 
 def publish(slug: str, note: str, by: str) -> dict:
     d = _dir(slug)
+    with _locked(d):
+        return _publish(d, slug, note, by)
+
+
+def _publish(d: Path, slug: str, note: str, by: str) -> dict:
     meta = _read_json(d / "meta.json")
     if not meta:
         raise ScriptError("no script %r" % slug)
@@ -512,6 +682,10 @@ def publish(slug: str, note: str, by: str) -> dict:
                      "note": frozen["note"], "files": len(files)})
     meta.update({"versions": versions, "published": n, "draft_changed": False,
                  "updated_by": by, "updated_at": _utcnow()})
+    # Tie the history to the release: the revision that became vN. A draft
+    # that predates the history is recorded first.
+    _record_revision(d, meta, files, by, "save")
+    meta["revisions"][-1]["published_as"] = n
     _prune_versions(d, meta)
     _write_json(d / "meta.json", meta)
     return get(slug)
@@ -547,7 +721,8 @@ def restore(slug: str, n: int, by: str) -> dict:
     return save_draft(slug, v["files"], {**meta, "fields": v["fields"],
                                          "network": v["network"],
                                          "timeout": v["timeout"],
-                                         "credentials": v.get("credentials") or []}, by)
+                                         "credentials": v.get("credentials") or []},
+                      by, kind="restore", note="from v%d" % int(n))
 
 
 def delete(slug: str) -> None:

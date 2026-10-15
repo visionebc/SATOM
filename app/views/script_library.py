@@ -94,15 +94,22 @@ def edit(slug):
 @require_permission(PERM)
 def save(slug):
     body = request.get_json(silent=True) or {}
+    # The editor saves as "save" (button, Ctrl+S, autosave) or "upload" (a
+    # file it just merged in); "restore" belongs to the restore routes.
+    kind = body.get("kind") if body.get("kind") in ("save", "upload") else "save"
+    note = str(body.get("note") or "")[:200] if kind == "upload" else ""
     try:
-        script = SL.save_draft(slug, body.get("files"), body.get("settings") or {}, _who())
+        script = SL.save_draft(slug, body.get("files"), body.get("settings") or {}, _who(),
+                               kind=kind, note=note)
     except SL.ScriptError as exc:
         return _err(exc)
+    revs = script.get("revisions") or []
     log_action("script_library.save", target=slug,
                extra={"files": sorted(script["files"]), "fields": len(script["fields"]),
-                      "network": script["network"], "problems": len(script["problems"])})
+                      "network": script["network"], "problems": len(script["problems"]),
+                      "kind": kind, "revision": revs[-1]["n"] if revs else None})
     return jsonify({"ok": True, "problems": script["problems"],
-                    "updated_at": script["updated_at"],
+                    "updated_at": script["updated_at"], "revisions": revs,
                     "cred_status": SV.status(slug, script.get("credentials") or [])})
 
 
@@ -144,19 +151,20 @@ def upload(slug):
 @login_required
 @require_permission(PERM)
 def download(slug):
-    ref = request.args.get("version") or "draft"
+    if request.args.get("revision"):
+        ref = "r%s" % request.args["revision"]
+    elif request.args.get("version"):
+        ref = "v%s" % request.args["version"]
+    else:
+        ref = "draft"
     try:
-        if ref == "draft":
-            script = SL.get(slug)
-            files = script["files"] if script else None
-        else:
-            v = SL.version(slug, int(ref))
-            files = v["files"] if v else None
-    except (SL.ScriptError, ValueError):
+        snap = SL.snapshot(slug, ref)
+    except SL.ScriptError:
         abort(404)
-    if files is None:
+    if snap is None:
         abort(404)
-    name = "%s-%s.zip" % (slug, "draft" if ref == "draft" else "v%s" % int(ref))
+    files = snap["files"]
+    name = "%s-%s.zip" % (slug, ref)
     return Response(SL.zip_bytes(files), mimetype="application/zip",
                     headers={"Content-Disposition": "attachment; filename=%s" % name})
 
@@ -216,6 +224,44 @@ def restore(slug, n):
         return _err(exc)
     log_action("script_library.restore", target=slug, extra={"version": n})
     return jsonify({"ok": True})
+
+
+@bp.route("/<slug>/revision/<int:n>")
+@login_required
+@require_permission(PERM)
+def revision(slug, n):
+    try:
+        r = SL.revision(slug, n)
+    except SL.ScriptError:
+        abort(404)
+    if r is None:
+        abort(404)
+    return jsonify(r)
+
+
+@bp.route("/<slug>/revision/<int:n>/restore", methods=["POST"])
+@login_required
+@require_permission(PERM)
+def restore_revision(slug, n):
+    try:
+        SL.restore_revision(slug, n, _who())
+    except SL.ScriptError as exc:
+        return _err(exc)
+    log_action("script_library.restore", target=slug, extra={"revision": n})
+    return jsonify({"ok": True})
+
+
+@bp.route("/<slug>/diff")
+@login_required
+@require_permission(PERM)
+def diff(slug):
+    """What changed from ``a`` to ``b`` (``draft``, ``v<n>`` or ``r<n>``)."""
+    if not SL.exists(slug):
+        abort(404)
+    try:
+        return jsonify(SL.diff(slug, request.args.get("a") or "", request.args.get("b") or "draft"))
+    except SL.ScriptError as exc:
+        return _err(exc, 404)
 
 
 @bp.route("/<slug>/credential/<name>", methods=["POST"])

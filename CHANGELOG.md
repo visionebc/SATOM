@@ -6,6 +6,24 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Script Library: automatic draft history, autosave, read-only view and diff (2026-10-15)
+
+- **Automatic draft history**: every save, upload and restore of a script's
+  draft is recorded as a revision with its code, form and settings (**History &
+  runs → Draft history**). Saves by the same person within ten minutes are
+  grouped into one entry; a save that changes nothing adds nothing; the
+  revision that became a published version is marked. The last 100 revisions
+  are kept. Before, a save overwrote the draft and only Publish kept a copy.
+- The editor saves by itself a few seconds after the last change, and an
+  upload is saved at once (it used to wait in the editor until **Save**).
+- **Read-only view and diff of any revision or version**: file by file, with
+  *Changes against the current draft* (a line diff per file and the settings
+  that changed); **Restore to draft** works for revisions too, and
+  the replaced draft stays in the history. Each one downloads as a zip.
+- The library lists **View / edit** and a history button per script (operator
+  request: "I must be able to find the script, see it and edit it online, or
+  upload a new version, and the system must save the version automatically").
+
 ### Changed — integration hook secrets follow the vault mode (2026-10-15)
 
 - Hook secrets were always stored encrypted in the SATOM database, even with a

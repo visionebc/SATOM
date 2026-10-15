@@ -24683,3 +24683,27 @@ msgstr "Les valeurs sont stockées dans le vault et, comme repli exigé par le m
 
 msgid "No vault is configured: values are stored encrypted in the SATOM database. Configure a vault under Settings > Vault to move them out."
 msgstr "Aucun vault n'est configuré : les valeurs sont chiffrées dans la base de données SATOM. Configurez un vault dans Settings > Vault pour les en sortir."
+
+msgid "History & runs"
+msgstr "Historique et exécutions"
+
+msgid "Draft history"
+msgstr "Historique du brouillon"
+
+msgid "Every save, upload and restore of the draft is kept here automatically, with its code, form and settings. Saves by the same person within 10 minutes are grouped into one entry. Publishing is a separate step: operators keep running the published version until you publish again."
+msgstr "Chaque enregistrement, envoi et restauration du brouillon est conservé ici automatiquement, avec son code, son formulaire et ses réglages. Les enregistrements d'une même personne en moins de 10 minutes sont regroupés en une seule entrée. Publier est une étape distincte : les opérateurs continuent d'exécuter la version publiée jusqu'à la prochaine publication."
+
+msgid "Changes against the current draft"
+msgstr "Modifications par rapport au brouillon actuel"
+
+msgid "Restore to draft"
+msgstr "Restaurer dans le brouillon"
+
+msgid "Ctrl+S. The editor also saves by itself a few seconds after you stop typing."
+msgstr "Ctrl+S. L'éditeur enregistre aussi tout seul quelques secondes après la fin de la saisie."
+
+msgid "%(n)s saved revisions"
+msgstr "%(n)s révisions enregistrées"
+
+msgid "Draft history and published versions"
+msgstr "Historique du brouillon et versions publiées"

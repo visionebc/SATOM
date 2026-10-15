@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added — Certificate Manager: a CSR for another CA, importing certificates, staged rotation and a revocation register (2026-10-15) · 119 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added — Script Library: automatic draft history, autosave, read-only view and diff (2026-10-15) · 149 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added — Certificate Manager: a CSR for another CA, importing certificates, staged rotation and a revocation register (2026-10-15) · 119 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added — Script Library: automatic draft history, autosave, read-only view and diff (2026-10-15) · 149 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added — Certificate Manager: a CSR for another CA, importing certificates, staged rotation and a revocation register (2026-10-15) · 119 entries</span>
-        <ul class="rel-leads"><li>A CSR for another CA</li><li>Import a certificate + key made outside SATOM</li><li>Staged rotation instead of an in-place replacement</li><li class="rel-more">… and 116 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Added — Script Library: automatic draft history, autosave, read-only view and diff (2026-10-15) · 149 entries</span>
+        <ul class="rel-leads"><li>Automatic draft history</li><li>Read-only view and diff of any revision or version</li><li>Migrate existing credentials</li><li class="rel-more">… and 146 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.1.0.html" data-rel-version="3.1.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.1.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -365,6 +365,193 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="added--script-library-automatic-draft-history-autosave-read-only-view-and-diff-2026-10-15">Added — Script Library: automatic draft history, autosave, read-only view and diff (2026-10-15)</h3>
+<ul>
+<li><strong>Automatic draft history</strong>: every save, upload and restore of a script's
+  draft is recorded as a revision with its code, form and settings (<strong>History &amp;
+  runs → Draft history</strong>). Saves by the same person within ten minutes are
+  grouped into one entry; a save that changes nothing adds nothing; the
+  revision that became a published version is marked. The last 100 revisions
+  are kept. Before, a save overwrote the draft and only Publish kept a copy.</li>
+<li>The editor saves by itself a few seconds after the last change, and an
+  upload is saved at once (it used to wait in the editor until <strong>Save</strong>).</li>
+<li><strong>Read-only view and diff of any revision or version</strong>: file by file, with
+  <em>Changes against the current draft</em> (a line diff per file and the settings
+  that changed); <strong>Restore to draft</strong> works for revisions too, and
+  the replaced draft stays in the history. Each one downloads as a zip.</li>
+<li>The library lists <strong>View / edit</strong> and a history button per script (operator
+  request: "I must be able to find the script, see it and edit it online, or
+  upload a new version, and the system must save the version automatically").</li>
+</ul>
+<h3 id="changed--integration-hook-secrets-follow-the-vault-mode-2026-10-15">Changed — integration hook secrets follow the vault mode (2026-10-15)</h3>
+<ul>
+<li>Hook secrets were always stored encrypted in the SATOM database, even with a
+  vault configured. They now follow Settings &gt; Vault like appliance passwords
+  and directory secrets: vault only (<code>&lt;mount&gt;/hooks/&lt;NAME&gt;</code>, the database keeps
+  only a marker), both (vault plus an encrypted local fallback), or local when
+  no vault is configured. The hook page says where values live.</li>
+<li><strong>Migrate existing credentials</strong> and <strong>Remove local copies</strong> include hook
+  secrets; a local copy is removed only after the vault copy is read back and
+  matches. Deleting a secret deletes its vault copy.</li>
+<li>A run whose secret cannot be read from the vault now says so, instead of
+  reporting the secret as not configured (operator request: "move the
+  secrets").</li>
+</ul>
+<h3 id="added--studio--script-library-python-scripts-with-a-form-tested-and-published-by-administrators-2026-10-15">Added — Studio &gt; Script Library: Python scripts with a form, tested and published by administrators (2026-10-15)</h3>
+<ul>
+<li>Administrators keep Python scripts as small projects (<code>main.py</code> plus modules
+  and data files; upload a <code>.py</code> or a <code>.zip</code>, download any version as a zip)
+  in an editor with a file tree, line numbers, indentation keys, Ctrl+S and a
+  syntax check that points at the file and line.</li>
+<li>A form designer defines the fields operators fill in (text, textarea,
+  number, select, checkbox, password), with a live preview. Values reach the
+  script typed, through <code>satom_script.inputs</code>; only defined fields get
+  through. Password values are masked in every run record, output and
+  result.</li>
+<li>Test runs of the draft, publishing frozen versions (code, form, network,
+  timeout), restoring a version to the draft, and a run history with output,
+  <code>result()</code> and every connection attempt (operator request: "a place where
+  the administrator can upload Python scripts, give them a user and password,
+  and build a mini form for the user to fill in, like a mini IDE").</li>
+<li>Runs execute in the new <code>satom-scripts.service</code>, which has no database
+  connection and no access to the encryption key, inside the same bubblewrap
+  jail as integration hooks. Network is off unless the script is set to
+  outbound, and outbound never reaches the node itself.</li>
+<li><strong>Credentials in the vault.</strong> A script declares the credentials it needs
+  (user + password, or a single value) and reads them with
+  <code>satom_script.secret("NAME")</code>. Values are stored only in the configured
+  vault, are write-only from the page and are masked in every run record. A
+  queued run carries single-use wrapped tokens, never the secret; the runner
+  unwraps them with no vault login of its own, and a token someone else used
+  first fails the run visibly. Without a vault, credentials are unavailable
+  (operator request: "there may be passwords, so they must be stored, not in
+  the same database as SATOM").</li>
+<li><strong>Operations &gt; Automation &gt; Scripts</strong> (operators, <code>operations.scripts_run</code>):
+  the published scripts offered to operators, with their form, <strong>Run now</strong>
+  and the result. <strong>Saved runs</strong> keep a set of values on a cron schedule,
+  pinned to the version they were created against ("move to vN" re-checks the
+  values first). Password values of a saved run are kept in the vault and
+  delivered wrapped. A saved run whose owner is deactivated or loses access
+  is paused, and a missed fire is skipped rather than replayed (operator
+  request: "the operator sees the administrator's fields and can set a cron").</li>
+</ul>
+<h3 id="added--cron-schedules-for-every-automation-2026-10-15">Added — cron schedules for every automation (2026-10-15)</h3>
+<ul>
+<li>Automations (and Script Library saved runs) accept a <strong>cron</strong> expression
+  besides once / interval / daily / weekly / monthly: five fields, ranges,
+  lists, steps and names, evaluated in the console timezone. An expression
+  that can never fire is refused when the form is saved.</li>
+</ul>
+<h3 id="fixed--a-systemd-unit-added-by-an-update-is-installed-and-armed-by-that-update-2026-10-15">Fixed — a systemd unit added by an update is installed and armed by that update (2026-10-15)</h3>
+<ul>
+<li>The privileged updater copied the unit list it had read before checking out
+  the new code, so a unit introduced by an update was only installed on the
+  next one, without its service-account drop-in. Neither the updater nor
+  <code>satom execute reinstall units</code> ever enabled a new <code>.path</code> or <code>.timer</code>, so a
+  new queue watcher stayed off on every existing node. Both now install what
+  the new <code>deploy/</code> holds and enable a <code>.path</code>/<code>.timer</code> the first time it is
+  installed, as the installer does. A unit that was already installed keeps
+  the enabled state it had.</li>
+<li><code>satom-scripts.path</code> itself reached the standby installed but not enabled
+  (the previous updater copied it during the switch-over). The updater arms
+  it once, and remembers having done so, so an operator who disables it later
+  keeps it disabled.</li>
+</ul>
+<h3 id="added--settings--general--system-packages-2026-10-15">Added — Settings &gt; General &gt; System packages (2026-10-15)</h3>
+<ul>
+<li>A card under Libraries lists the operating-system packages SATOM depends on,
+  per node: installed, version, and whether it actually works for the service
+  account. Today that is <code>bubblewrap</code>, the sandbox for operator Python. A
+  node that does not answer is shown as unreachable, never as installed.</li>
+<li><strong>Install</strong> queues the package for the privileged updater on this node and,
+  if chosen, on the peers. The updater uses the node's package manager (apt,
+  dnf/yum, zypper or pacman) and then runs the sandbox check as the service
+  account. "Installed, but namespaces are not allowed" is reported as a
+  failure, not a success. The list is curated and install-only: the request
+  carries a package key, never a package name or a command (operator request:
+  "add an install in Settings, General, where the pips are, for future things
+  too").</li>
+<li>The installer and the three offline bundle builders now include
+  <code>bubblewrap</code>, so new installs have it. Existing nodes get it from this card.</li>
+</ul>
+<h3 id="security--integration-hooks-run-in-a-jail-with-a-filtered-network-2026-10-15">Security — integration hooks run in a jail with a filtered network (2026-10-15)</h3>
+<ul>
+<li>A hook ran as the same system user as the web application, contained only
+  by systemd. That was enough to open the SATOM database over its local
+  socket and to read the application's encryption key from another process
+  of the same user, which together decrypt every stored credential. No hook
+  was configured on the nodes checked, so nothing was exploited.</li>
+<li>Hooks now run inside bubblewrap with private process, user, IPC and
+  network namespaces. Only the system libraries, the Python environment
+  (read-only), the resolver and CA files and the hook's own work directory
+  are visible. There is no fallback: without <code>bubblewrap</code> a hook is refused,
+  not run unconfined.</li>
+<li>Outbound traffic goes through a proxy that refuses this node (loopback and
+  every address it owns) and link-local addresses. It checks the connected
+  socket, not the name, so a name that resolves to 127.0.0.1 changes nothing.
+  HTTP(S) clients use it unchanged; <code>satom_sdk.tcp(host, port)</code> opens raw TCP
+  (SSH to an appliance) through it. Each run records every attempt.</li>
+</ul>
+<h3 id="changed--libraries-card-changes-run-as-a-job-on-the-server-the-peer-step-no-longer-needs-an-open-browser-2026-10-15">Changed — Libraries card changes run as a job on the server; the peer step no longer needs an open browser (2026-10-15)</h3>
+<ul>
+<li>
+<p><strong>System packages too.</strong> Installing an OS package with "all nodes" used to
+  ask the peer at the same moment as this node, so a package that broke the
+  service could take both nodes down together, as psycopg did. It is now the
+  same kind of job: the peer is asked only after the install succeeded here,
+  and both nodes' steps are in the job log (operator request: "yes, do it and
+  test it").</p>
+</li>
+<li>
+<p>An upgrade or rollback from Settings → Libraries is now a job in the global
+  job dock and the Job Manager, with every step of both nodes in its log
+  (operator request: "this process should run in the background and create a
+  job to show its status; we cannot depend on the browser for processes to
+  run"). Before, with "also the peer" ticked, the card's JavaScript waited for
+  this node to succeed and then asked the server to contact the peer. Closing
+  the page left the peer untouched, and nothing reported it.</p>
+</li>
+<li><code>satom-scheduler</code> drives the job every 3 seconds. The job does not run as a
+  thread in the web, because the change itself restarts the web and the
+  scheduler. All of its state is in the job file, so it continues where it
+  stopped after those restarts. The peer is still asked only after this node
+  reports success. A failure, rollback, refusal or an unreachable peer ends
+  the job as an error that names the node. The job is never marked successful
+  while the two nodes differ.</li>
+<li>The peer is never asked twice. If the driver stops while asking, the job
+  fails with "unknown whether the peer received the change". A request the updater does not pick up within 30 minutes, or a job
+  that nothing has advanced for 15 minutes, also fails with the reason.</li>
+<li>Reopening Settings shows a change that is still running. The
+  <code>/settings/library-pip/peers</code> endpoint, used only by the old browser step,
+  is gone.</li>
+</ul>
+<h3 id="fixed--a-psycopg-upgrade-from-the-libraries-card-took-both-ha-nodes-down-the-peer-now-waits-for-local-success-2026-10-15">Fixed — a psycopg upgrade from the Libraries card took both HA nodes down; the peer now waits for local success (2026-10-15)</h3>
+<ul>
+<li><strong>Extras were dropped.</strong> The card upgraded the bare package name, so
+  <code>psycopg</code> moved to 3.3.6 while <code>psycopg-binary</code> stayed at 3.3.4. Its C
+  <code>wait_c()</code> rejects the new <code>timeout=</code> keyword, so every worker died on its
+  first database connection (the import smoke test passed because importing
+  does not connect). The install, the auto-rollback and the <code>requirements.txt</code>
+  bump now keep the extras pinned there (<code>psycopg[binary]</code>). The bump also no
+  longer appends a second, extras-less line beside an existing
+  <code>name[extra]==</code> pin.</li>
+<li><strong>Both nodes restarted together.</strong> With "also the peer" ticked, the peer
+  was asked at the same moment, so the bad upgrade took a1 and a2 down
+  together for ~100 s until each runner rolled back. The peer is now asked
+  only after this node reports success for that exact package and version.
+  A failed or rolled-back change never reaches it, and the server refuses the
+  peer step otherwise.</li>
+</ul>
+<h3 id="fixed--the-libraries-card-no-longer-reports-status-poll-failed-while-its-own-upgrade-restarts-the-web-2026-10-15">Fixed — the Libraries card no longer reports "status poll failed" while its own upgrade restarts the web (2026-10-15)</h3>
+<ul>
+<li>Upgrading a package from Settings → Libraries restarts <code>satom.service</code>,
+  so the browser's status poll got a 502 for a few seconds. The card gave up
+  on the first failed poll and printed "(status poll failed)", although the
+  upgrade went on to succeed (seen on SQLAlchemy 2.0.52 → 2.1.4). It now
+  shows "service restarting as part of the update — reconnecting…" and keeps
+  polling for up to 3 minutes, like the Software Update page; after that it
+  points to Software Update → Recent updates.</li>
+</ul>
 <h3 id="added--certificate-manager-a-csr-for-another-ca-importing-certificates-staged-rotation-and-a-revocation-register-2026-10-15">Added — Certificate Manager: a CSR for another CA, importing certificates, staged rotation and a revocation register (2026-10-15)</h3>
 <ul>
 <li><strong>A CSR for another CA.</strong> "Generate CSR" makes the key and the CSR in

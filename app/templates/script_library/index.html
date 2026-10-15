@@ -26,7 +26,7 @@
         <table class="table table-sm mb-0 align-middle" style="font-size:13px;">
           <thead><tr>
             <th>{{ _('Name') }}</th><th>{{ _('Published') }}</th><th>{{ _('Form fields') }}</th>
-            <th>{{ _('Network') }}</th><th>{{ _('Audience') }}</th><th>{{ _('Last change') }}</th>
+            <th>{{ _('Network') }}</th><th>{{ _('Audience') }}</th><th>{{ _('Last change') }}</th><th></th>
           </tr></thead>
           <tbody>
           {% for s in scripts %}
@@ -38,10 +38,15 @@
               <td>{{ s.fields }}</td>
               <td>{% if s.network == 'egress' %}<span class="fw-badge fw-badge-info">{{ _('outbound') }}</span>{% else %}<span class="text-muted">{{ _('none') }}</span>{% endif %}</td>
               <td>{{ _('Operators') if s.audience == 'operators' else _('Administrators') }}</td>
-              <td class="text-muted" style="font-size:11px;">{{ (s.updated_at or '')[:16]|replace('T', ' ') }} · {{ s.updated_by }}</td>
+              <td class="text-muted" style="font-size:11px;">{{ (s.updated_at or '')[:16]|replace('T', ' ') }} · {{ s.updated_by }}
+                {% if s.revisions %}<div>{{ _('%(n)s saved revisions', n=s.revisions) }}</div>{% endif %}</td>
+              <td class="text-end text-nowrap">
+                <a class="btn btn-outline-primary btn-sm py-0" href="{{ url_for('script_library.edit', slug=s.slug) }}"><i class="bi bi-pencil-square me-1"></i>{{ _('View / edit') }}</a>
+                <a class="btn btn-outline-secondary btn-sm py-0" href="{{ url_for('script_library.edit', slug=s.slug) }}#history" title="{{ _('Draft history and published versions') }}"><i class="bi bi-clock-history"></i></a>
+              </td>
             </tr>
           {% else %}
-            <tr><td colspan="6" class="text-muted p-3">{{ _('No scripts yet. Create one on the right.') }}</td></tr>
+            <tr><td colspan="7" class="text-muted p-3">{{ _('No scripts yet. Create one on the right.') }}</td></tr>
           {% endfor %}
           </tbody>
         </table>

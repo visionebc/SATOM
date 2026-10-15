@@ -6,6 +6,24 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Security — integration hooks run in a jail with a filtered network (2026-10-15)
+
+- A hook ran as the same system user as the web application, contained only
+  by systemd. That was enough to open the SATOM database over its local
+  socket and to read the application's encryption key from another process
+  of the same user, which together decrypt every stored credential. No hook
+  was configured on the nodes checked, so nothing was exploited.
+- Hooks now run inside bubblewrap with private process, user, IPC and
+  network namespaces. Only the system libraries, the Python environment
+  (read-only), the resolver and CA files and the hook's own work directory
+  are visible. There is no fallback: without `bubblewrap` a hook is refused,
+  not run unconfined.
+- Outbound traffic goes through a proxy that refuses this node (loopback and
+  every address it owns) and link-local addresses. It checks the connected
+  socket, not the name, so a name that resolves to 127.0.0.1 changes nothing.
+  HTTP(S) clients use it unchanged; `satom_sdk.tcp(host, port)` opens raw TCP
+  (SSH to an appliance) through it. Each run records every attempt.
+
 ### Fixed — the Libraries card no longer reports "status poll failed" while its own upgrade restarts the web (2026-10-15)
 
 - Upgrading a package from Settings → Libraries restarts `satom.service`,

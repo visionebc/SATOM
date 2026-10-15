@@ -7663,6 +7663,19 @@ CRM cannot hang this console.</p>
   truncated before it is stored.</li>
 <li>The result comes back through <code>ctx.result(ok, data)</code>, not from what the script
   prints — so a hook cannot fake its own verdict by printing JSON.</li>
+<li><strong>A hook runs in a jail</strong> (bubblewrap): its own process, user and network
+  namespaces, with nothing of SATOM mounted — no application directory, no
+  database socket, no other process to read. A node without <code>bubblewrap</code>
+  refuses to run hooks at all; install it from <strong>Settings → General → System
+  packages</strong>.</li>
+<li><strong>Network goes through a filter.</strong> HTTP(S) works as usual (<code>ctx.http</code>,
+  <code>urllib</code>, <code>requests</code> and <code>httpx</code> all pick up the proxy on their own). For
+  anything else, such as SSH to an appliance, open the connection with
+  <code>satom_sdk.tcp(host, port)</code> and hand it over, e.g.
+  <code>paramiko.SSHClient().connect(host, sock=tcp(host, 22), …)</code>. Connections to
+  this node itself (loopback or any of its addresses) and to link-local
+  addresses are refused. Every attempt, allowed or refused, is listed in the
+  run's record.</li>
 <li><strong>Dry run</strong> queues the hook against the event's sample payload through the
   same runner. It reports <em>queued</em>, not <em>ran</em>, because that is what happened;
   the outcome appears in the runs table a moment later. A dry run will queue a

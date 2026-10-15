@@ -6,6 +6,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — the Libraries card no longer reports "status poll failed" while its own upgrade restarts the web (2026-10-15)
+
+- Upgrading a package from Settings → Libraries restarts `satom.service`,
+  so the browser's status poll got a 502 for a few seconds. The card gave up
+  on the first failed poll and printed "(status poll failed)", although the
+  upgrade went on to succeed (seen on SQLAlchemy 2.0.52 → 2.1.4). It now
+  shows "service restarting as part of the update — reconnecting…" and keeps
+  polling for up to 3 minutes, like the Software Update page; after that it
+  points to Software Update → Recent updates.
+
 ### Added — Certificate Manager: a CSR for another CA, importing certificates, staged rotation and a revocation register (2026-10-15)
 
 - **A CSR for another CA.** "Generate CSR" makes the key and the CSR in

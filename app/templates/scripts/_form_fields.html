@@ -19,6 +19,15 @@
       {% if not f.required %}<option value=""></option>{% endif %}
       {% for o in f.options %}<option {% if o == f.default %}selected{% endif %}>{{ o }}</option>{% endfor %}
     </select>
+    {% elif f.type in ('lookup', 'lookup_multi') %}
+    {# Choices are read from the database for THIS user's ADOMs when the page
+       loads (scripts_run.js / script_library.js fill them). #}
+    <select class="form-select form-select-sm" id="{{ fid }}" name="{{ f.name }}" data-lookup="{{ f.name }}"
+            {% if f.type == 'lookup_multi' %}multiple size="6"{% endif %}>
+      <option value="" disabled>{{ _('Loading…') }}</option>
+    </select>
+    {% elif f.type == 'dataset' %}
+    <div class="form-text mt-0" id="{{ fid }}"><i class="bi bi-database me-1"></i>{{ _('Rows from the SATOM database are read when the run starts and passed to the script.') }}</div>
     {% elif f.type == 'password' %}
     <input class="form-control form-control-sm" type="password" id="{{ fid }}" name="{{ f.name }}" autocomplete="new-password">
     {% else %}

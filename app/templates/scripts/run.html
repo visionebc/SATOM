@@ -88,6 +88,7 @@
   'fields': v.fields,
   'urls': {
     'run': url_for('scripts.run_now', slug=slug),
+    'lookup': url_for('scripts.lookup_options', slug=slug, field='FIELD'),
     'status': url_for('scripts.run_status', rid='RID'),
     'preview': url_for('scripts.cron_preview'),
     'schedules': url_for('scripts.schedule_create', slug=slug),

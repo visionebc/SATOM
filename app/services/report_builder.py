@@ -322,8 +322,13 @@ def _scalar_value(v) -> str:
         return _quote_str(s)
 
 
-def build_sql(spec: Any) -> tuple[str, list[str]]:
-    """Compile a wizard spec into (sql, errors). On any error, sql is ''."""
+def build_sql(spec: Any, *, extra_where: list[str] | None = None
+              ) -> tuple[str, list[str]]:
+    """Compile a wizard spec into (sql, errors). On any error, sql is ''.
+
+    ``extra_where``: SQL conditions ANDed onto the spec's own filters. Built by
+    the server only (services.db_lookup adds the ADOM scope this way) — never
+    from a spec, which is client data."""
     errors: list[str] = []
     if isinstance(spec, str):
         try:
@@ -486,6 +491,7 @@ def build_sql(spec: Any) -> tuple[str, list[str]]:
     if errors:
         return "", errors
 
+    where_parts += list(extra_where or [])
     sql = "SELECT " + ", ".join(select_parts) + f' FROM "{base}"'
     if join_sql:
         sql += " " + " ".join(join_sql)

@@ -76,13 +76,35 @@ def run_now(slug):
         from .script_library import _node
         st = SL.enqueue_run(slug, version_ref=int(meta["published"]),
                             raw_inputs=body.get("inputs"), by=_who(), trigger="run",
-                            node=_node(), wrap=SV.wrap_for_run)
+                            node=_node(), wrap=SV.wrap_for_run, user=current_user)
     except SL.ScriptError as exc:
         return _err(exc)
     log_action("scripts.run", target=slug,
                extra={"request_id": st["request_id"], "version": st["version"],
                       "inputs": st["inputs"]})
     return jsonify(st)
+
+
+@bp.route("/<slug>/lookup/<field>")
+@login_required
+@require_permission(PERM)
+def lookup_options(slug, field):
+    """The choices of a database field of the PUBLISHED version, read with
+    the signed-in user's ADOMs (services.db_lookup)."""
+    from ..services import db_lookup
+    from ..services.product_scope import adoms_of
+    try:
+        _meta, v = SS.runnable(current_user, slug)
+    except SL.ScriptError:
+        abort(404)
+    f = next((x for x in v["fields"] if x["name"] == field
+              and x["type"] in db_lookup.PICK_TYPES), None)
+    if f is None:
+        abort(404)
+    try:
+        return jsonify({"options": db_lookup.options(f, adoms_of(current_user))})
+    except db_lookup.LookupError_ as exc:
+        return _err(exc)
 
 
 @bp.route("/runs/<rid>")

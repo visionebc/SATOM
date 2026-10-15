@@ -4969,10 +4969,13 @@ function libRenderSteps(pre, st) {
   });
   pre.textContent = lines.join('\n');
 }
-function libPollStatus(uid, pre) {
+function libPollStatus(uid, pre, offlineSince) {
+  // The runner restarts satom.service itself, so polls during that window get
+  // a 502 / connection reset. Keep retrying (like the Software Update page)
+  // instead of giving up on the first failed fetch.
   fetch('/settings/library-pip/status/' + encodeURIComponent(uid),
-        { headers: { 'Accept': 'application/json' } })
-    .then(function (r) { return r.json(); })
+        { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+    .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); })
     .then(function (st) {
       libRenderSteps(pre, st);
       if (st.state === 'running' || st.state === 'queued') {
@@ -4985,7 +4988,16 @@ function libPollStatus(uid, pre) {
       }
     })
     .catch(function () {
-      if (pre) pre.textContent += '\n(status poll failed)';
+      var since = offlineSince || Date.now();
+      var secs = Math.floor((Date.now() - since) / 1000);
+      if (!pre) return;
+      var base = pre.textContent.replace(/\n\((?:service restarting|status unavailable)[^\n]*\)$/, '');
+      if (secs < 180) {
+        pre.textContent = base + '\n(service restarting as part of the update — reconnecting… ' + secs + 's)';
+        setTimeout(function () { libPollStatus(uid, pre, since); }, 3000);
+      } else {
+        pre.textContent = base + '\n(status unavailable for 3 minutes — check Software Update → Recent updates for ' + uid + ')';
+      }
     });
 }
 function libRenderPeers(peers, partial, alsoPeer) {

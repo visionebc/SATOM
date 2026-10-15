@@ -3693,6 +3693,20 @@ network: **None** (the script cannot open any connection) or **Outbound**
 reaches this node: loopback and every address of the node are refused, so the
 script cannot talk to the database, the metrics store or the web app.
 
+**Credentials** (also under Settings) are the passwords and tokens a script
+needs, declared by name (`FGT_ADMIN` = user + password, `API_KEY` = one value)
+and read with `secret("FGT_ADMIN")["password"]`. Their values live **only in
+the vault** (Settings → Vault), at `<mount>/scripts/<script id>/<NAME>` — never
+in the SATOM database and never on the node's disk. The page shows *stored* or
+*not set* and lets you replace a value; it never shows one. When a run is
+queued, SATOM asks the vault for a **single-use wrapped copy** of each declared
+credential and puts only that token in the queued request; the runner, which
+has no vault login of its own, unwraps it as the run starts. A token that
+somebody else used first, or that waited more than 15 minutes, fails the run
+and says so. Values are masked in every run record (the user name is not).
+Without a vault, credentials cannot be set and a script that declares one
+cannot be queued. Deleting a script deletes its credentials from the vault.
+
 **Test** runs the saved draft on this node with the values you type and shows
 the output, the `result()` document and every connection attempt.
 **Publish** freezes the draft as version *n*: code, form, network and timeout.

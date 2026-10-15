@@ -17,6 +17,7 @@ from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
 from ..services import script_library as SL
+from ..services import script_vault as SV
 from ..services.audit import log_action
 
 bp = Blueprint("script_library", __name__, url_prefix="/database/scripts")
@@ -78,6 +79,8 @@ def edit(slug):
         abort(404)
     from ..services import sandbox
     return render_template("script_library/edit.html", script=script,
+                           vault_ok=SV.available(),
+                           cred_status=SV.status(slug, script.get("credentials") or []),
                            runs=SL.recent_runs(slug, limit=20),
                            limits={"files": SL.MAX_FILES, "file_kib": SL.MAX_FILE_BYTES // 1024,
                                    "fields": SL.MAX_FIELDS, "timeout_min": SL.TIMEOUT_MIN,
@@ -99,7 +102,8 @@ def save(slug):
                extra={"files": sorted(script["files"]), "fields": len(script["fields"]),
                       "network": script["network"], "problems": len(script["problems"])})
     return jsonify({"ok": True, "problems": script["problems"],
-                    "updated_at": script["updated_at"]})
+                    "updated_at": script["updated_at"],
+                    "cred_status": SV.status(slug, script.get("credentials") or [])})
 
 
 @bp.route("/<slug>/check", methods=["POST"])
@@ -165,7 +169,8 @@ def test_run(slug):
     body = request.get_json(silent=True) or {}
     try:
         st = SL.enqueue_run(slug, version_ref="draft", raw_inputs=body.get("inputs"),
-                            by=_who(), trigger="test", node=_node())
+                            by=_who(), trigger="test", node=_node(),
+                            wrap=SV.wrap_for_run)
     except SL.ScriptError as exc:
         return _err(exc)
     log_action("script_library.test", target=slug,
@@ -213,15 +218,41 @@ def restore(slug, n):
     return jsonify({"ok": True})
 
 
+@bp.route("/<slug>/credential/<name>", methods=["POST"])
+@login_required
+@require_permission(PERM)
+def credential(slug, name):
+    """Replace the value of one DECLARED credential, in the vault. Write-only:
+    nothing here ever returns a stored value."""
+    script = SL.get(slug) if SL.exists(slug) else None
+    if script is None:
+        abort(404)
+    cred = next((c for c in script.get("credentials") or [] if c["name"] == name), None)
+    if cred is None:
+        return _err(SL.ScriptError("declare %s under Settings and save first" % name))
+    body = request.get_json(silent=True) or {}
+    try:
+        SV.store(slug, cred, body)
+    except SL.ScriptError as exc:
+        return _err(exc)
+    except Exception as exc:  # noqa: BLE001 -- vault transport
+        return _err(SL.ScriptError("vault error: %s" % exc), 502)
+    log_action("script_library.credential", target=slug, extra={"credential": name})
+    return jsonify({"ok": True, "status": SV.status(slug, [cred]).get(name)})
+
+
 @bp.route("/<slug>/delete", methods=["POST"])
 @login_required
 @require_permission(PERM)
 def delete(slug):
+    script = SL.get(slug) if SL.exists(slug) else None
+    names = [c["name"] for c in (script or {}).get("credentials") or []]
     try:
         SL.delete(slug)
     except SL.ScriptError as exc:
         return _err(exc, 404)
-    log_action("script_library.delete", target=slug)
+    SV.forget(slug, names)
+    log_action("script_library.delete", target=slug, extra={"credentials_forgotten": names})
     if request.is_json:
         return jsonify({"ok": True})
     return redirect(url_for("script_library.index"))

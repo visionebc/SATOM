@@ -4204,6 +4204,19 @@ network: <strong>None</strong> (the script cannot open any connection) or <stron
 <code>paramiko.SSHClient().connect(host, sock=tcp(host, 22), …)</code>). Outbound never
 reaches this node: loopback and every address of the node are refused, so the
 script cannot talk to the database, the metrics store or the web app.</p>
+<p><strong>Credentials</strong> (also under Settings) are the passwords and tokens a script
+needs, declared by name (<code>FGT_ADMIN</code> = user + password, <code>API_KEY</code> = one value)
+and read with <code>secret("FGT_ADMIN")["password"]</code>. Their values live <strong>only in
+the vault</strong> (Settings → Vault), at <code>&lt;mount&gt;/scripts/&lt;script id&gt;/&lt;NAME&gt;</code> — never
+in the SATOM database and never on the node's disk. The page shows <em>stored</em> or
+<em>not set</em> and lets you replace a value; it never shows one. When a run is
+queued, SATOM asks the vault for a <strong>single-use wrapped copy</strong> of each declared
+credential and puts only that token in the queued request; the runner, which
+has no vault login of its own, unwraps it as the run starts. A token that
+somebody else used first, or that waited more than 15 minutes, fails the run
+and says so. Values are masked in every run record (the user name is not).
+Without a vault, credentials cannot be set and a script that declares one
+cannot be queued. Deleting a script deletes its credentials from the vault.</p>
 <p><strong>Test</strong> runs the saved draft on this node with the values you type and shows
 the output, the <code>result()</code> document and every connection attempt.
 <strong>Publish</strong> freezes the draft as version <em>n</em>: code, form, network and timeout.

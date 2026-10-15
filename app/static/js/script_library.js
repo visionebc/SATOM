@@ -65,6 +65,8 @@
   var files = CFG.files || {};
   var fields = (CFG.fields || []).map(function (f) { return Object.assign({}, f); });
   var settings = Object.assign({}, CFG.settings || {});
+  var creds = (CFG.credentials || []).map(function (c) { return Object.assign({}, c); });
+  var credStatus = CFG.credStatus || {};
   var current = files['main.py'] != null ? 'main.py' : Object.keys(files).sort()[0];
   var dirty = false;
   var problems = CFG.problems || [];
@@ -366,9 +368,78 @@
       timeout: parseInt($('sl-set-timeout').value, 10) || 60,
       audience: $('sl-set-audience').value,
       network: $('sl-net-egress').checked ? 'egress' : 'none',
-      fields: fields
+      fields: fields,
+      credentials: creds
     };
   }
+
+  // ================================================================ credentials
+  function credRow(c, i) {
+    var st = credStatus[c.name];
+    var badge = !CFG.vaultOk ? '<span class="fw-badge fw-badge-secondary">no vault</span>'
+      : st === 'stored' ? '<span class="fw-badge fw-badge-success">stored</span>'
+      : st === 'not set' ? '<span class="fw-badge fw-badge-warning">not set</span>'
+      : st ? '<span class="fw-badge fw-badge-danger" title="' + esc(st) + '">error</span>'
+      : '<span class="fw-badge fw-badge-secondary">save first</span>';
+    var isUp = c.kind !== 'secret';
+    return '<div class="border rounded p-2 mb-2 sl-cred" data-i="' + i + '" style="border-color:var(--fw-border)!important;">'
+      + '<div class="row g-2 align-items-end">'
+      + '<div class="col-md-3"><label class="form-label small mb-0">Name</label><input class="form-control form-control-sm sl-c" data-k="name" value="' + esc(c.name) + '" placeholder="FGT_ADMIN"></div>'
+      + '<div class="col-md-4"><label class="form-label small mb-0">Label</label><input class="form-control form-control-sm sl-c" data-k="label" value="' + esc(c.label || '') + '"></div>'
+      + '<div class="col-md-3"><label class="form-label small mb-0">Kind</label><select class="form-select form-select-sm sl-c" data-k="kind">'
+      + '<option value="userpass"' + (isUp ? ' selected' : '') + '>user + password</option>'
+      + '<option value="secret"' + (!isUp ? ' selected' : '') + '>single value (token, key)</option></select></div>'
+      + '<div class="col-md-2 d-flex gap-1 justify-content-end align-items-center">' + badge
+      + '<button type="button" class="btn btn-outline-danger btn-sm py-0 sl-crm" title="remove">✕</button></div>'
+      + '<div class="col-12 d-flex gap-2 align-items-end">'
+      + (isUp ? '<input class="form-control form-control-sm sl-cv" data-k="username" placeholder="username" autocomplete="off" style="max-width:220px;">' : '')
+      + '<input class="form-control form-control-sm sl-cv" data-k="' + (isUp ? 'password' : 'value') + '" type="password" autocomplete="new-password" placeholder="' + (isUp ? 'password' : 'value') + '" style="max-width:260px;">'
+      + '<button type="button" class="btn btn-outline-primary btn-sm sl-cset"' + (CFG.vaultOk ? '' : ' disabled') + '>Set value</button>'
+      + '<span class="small text-muted sl-cmsg"></span></div>'
+      + '</div></div>';
+  }
+  function renderCreds() {
+    var box = $('sl-creds');
+    box.innerHTML = creds.length ? creds.map(credRow).join('') : '<div class="text-muted small">No credentials declared.</div>';
+    box.querySelectorAll('.sl-cred').forEach(function (row) {
+      var i = +row.getAttribute('data-i');
+      row.querySelectorAll('.sl-c').forEach(function (inp) {
+        inp.addEventListener(inp.tagName === 'SELECT' ? 'change' : 'input', function () {
+          var k = inp.getAttribute('data-k');
+          creds[i][k] = k === 'name' ? inp.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_') : inp.value;
+          if (k === 'name') inp.value = creds[i].name;
+          delete credStatus[creds[i].name];
+          setDirty(true);
+          if (k === 'kind') renderCreds();
+        });
+      });
+      row.querySelector('.sl-crm').addEventListener('click', function () {
+        if (!window.confirm('Remove ' + creds[i].name + ' from the script? Its stored value is kept until the script is deleted.')) return;
+        creds.splice(i, 1); setDirty(true); renderCreds();
+      });
+      row.querySelector('.sl-cset').addEventListener('click', function () {
+        var body = {};
+        row.querySelectorAll('.sl-cv').forEach(function (v) { body[v.getAttribute('data-k')] = v.value; });
+        var msg = row.querySelector('.sl-cmsg');
+        var name = creds[i].name;
+        var go = dirty ? save() : Promise.resolve();
+        msg.textContent = 'storing…';
+        go.then(function () { return postJSON(URLS.credential.replace('NAME', encodeURIComponent(name)), body); })
+          .then(function (d) {
+            credStatus[name] = d.status || 'stored';
+            row.querySelectorAll('.sl-cv').forEach(function (v) { v.value = ''; });
+            renderCreds();
+          })
+          .catch(function (e) { msg.className = 'small text-danger sl-cmsg'; msg.textContent = e.message; });
+      });
+    });
+  }
+  var addCred = $('sl-add-cred');
+  if (addCred) addCred.addEventListener('click', function () {
+    var n = 1; while (creds.some(function (c) { return c.name === 'CREDENTIAL_' + n; })) n++;
+    creds.push({ name: 'CREDENTIAL_' + n, label: '', kind: 'userpass' });
+    setDirty(true); renderCreds();
+  });
 
   // ================================================================ save / publish
   function save() {
@@ -376,6 +447,7 @@
     state('saving…');
     return postJSON(URLS.save, { files: files, settings: readSettings() }).then(function (d) {
       problems = d.problems || [];
+      if (d.cred_status) { credStatus = d.cred_status; renderCreds(); }
       setDirty(false);
       $('sl-title').textContent = $('sl-set-name').value;
       renderProblems(); renderGutter(); renderTree();
@@ -454,6 +526,7 @@
 
   // ---- boot
   loadSettings();
+  renderCreds();
   renderFields();
   renderPreview();
   renderVersions();

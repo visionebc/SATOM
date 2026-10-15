@@ -24471,3 +24471,9 @@ msgstr "scambio"
 #: app/templates/cert_manager
 msgid "…or a file (PEM or PKCS#12)"
 msgstr "…o un file (PEM o PKCS#12)"
+
+msgid "System packages"
+msgstr "Pacchetti di sistema"
+
+msgid "Operating-system packages SATOM depends on, per node. Install runs through the privileged updater; the list is curated and nothing is ever removed."
+msgstr "Pacchetti del sistema operativo da cui dipende SATOM, per nodo. L'installazione avviene tramite l'aggiornatore privilegiato; l'elenco è chiuso e non viene mai rimosso nulla."

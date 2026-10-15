@@ -29,7 +29,7 @@ STAGE="$OUT/satom-installer"
 # openssh-*: replication channel for data/ in cluster mode; with no network
 # there is nowhere to fetch it from.
 PKGS=(python3 python3-venv python3-pip postgresql nginx rsync openssl curl ca-certificates
-      sudo openssh-client openssh-server git)
+      sudo openssh-client openssh-server git bubblewrap)
 
 echo "==> SATOM offline bundle v${VERSION} (ref ${REF})"
 command -v apt-get >/dev/null || { echo "Requires Debian/apt"; exit 1; }

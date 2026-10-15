@@ -6,6 +6,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Settings > General > System packages (2026-10-15)
+
+- A card under Libraries lists the operating-system packages SATOM depends on,
+  per node: installed, version, and whether it actually works for the service
+  account. Today that is `bubblewrap`, the sandbox for operator Python. A
+  node that does not answer is shown as unreachable, never as installed.
+- **Install** queues the package for the privileged updater on this node and,
+  if chosen, on the peers. The updater uses the node's package manager (apt,
+  dnf/yum, zypper or pacman) and then runs the sandbox check as the service
+  account. "Installed, but namespaces are not allowed" is reported as a
+  failure, not a success. The list is curated and install-only: the request
+  carries a package key, never a package name or a command (operator request:
+  "add an install in Settings, General, where the pips are, for future things
+  too").
+- The installer and the three offline bundle builders now include
+  `bubblewrap`, so new installs have it. Existing nodes get it from this card.
+
 ### Security — integration hooks run in a jail with a filtered network (2026-10-15)
 
 - A hook ran as the same system user as the web application, contained only

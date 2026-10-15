@@ -216,6 +216,21 @@
                     <thead id="lib-drift-head"></thead><tbody id="lib-drift-body"></tbody>
                   </table>
                 </div>
+
+                <!-- SYSTEM PACKAGES  [SATOM-SYSPKG-CARD] -->
+                <div class="fw-card-header px-0 pt-3 pb-1 d-flex justify-content-between align-items-center" id="syspkg-card">
+                  <span class="fw-card-title" style="font-size:13px;"><i class="bi bi-box-seam me-2 text-accent"></i>{{ _('System packages') }}</span>
+                  <button type="button" class="btn btn-sm btn-primary" id="syspkg-refresh"
+                          style="font-size:12px;padding:2px 10px;">
+                    <i class="bi bi-arrow-repeat me-1"></i>{{ _('Refresh') }}
+                  </button>
+                </div>
+                <div class="text-muted mb-1" style="font-size:11px;">{{ _('Operating-system packages SATOM depends on, per node. Install runs through the privileged updater; the list is curated and nothing is ever removed.') }}</div>
+                <table class="table table-sm mb-0" style="font-size:12px;">
+                  <thead id="syspkg-head"></thead>
+                  <tbody id="syspkg-body"><tr><td class="text-muted">{{ _('Loading…') }}</td></tr></tbody>
+                </table>
+                <pre id="syspkg-out" class="mb-0 mt-2 p-2" style="display:none;max-height:220px;overflow:auto;font-size:11px;background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:8px;white-space:pre-wrap;"></pre>
                 {% endif %}
               </div>
 
@@ -5215,6 +5230,111 @@ function checkLibraryUpdates(force) {
 }
 document.addEventListener('DOMContentLoaded', function () {
   libLoadState(); checkLibraryUpdates(false); libLoadDrift();
+});
+
+// --- System packages [SATOM-SYSPKG-CARD] ---------------------------------
+var sysOut = {};  // label -> rendered lines, one block per node/peer
+function sysEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function sysCell(st, reachable, err) {
+  if (!reachable) {
+    return '<span class="fw-badge fw-badge-secondary" title="' + sysEsc(err || '') + '">unreachable</span>';
+  }
+  if (!st || !st.installed) { return '<span class="fw-badge fw-badge-danger">missing</span>'; }
+  if (!st.works) {
+    return '<span class="fw-badge fw-badge-warning" title="' + sysEsc(st.detail || '') + '">installed, not usable</span>'
+      + '<div class="text-muted" style="font-size:10px;">' + sysEsc(st.detail || '') + '</div>';
+  }
+  return '<span class="fw-badge fw-badge-success">ok</span> <span class="text-muted">' + sysEsc(st.version || '') + '</span>';
+}
+function sysLoad() {
+  var head = document.getElementById('syspkg-head');
+  var body = document.getElementById('syspkg-body');
+  if (!body) { return; }
+  fetch('/settings/system-packages', { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+    .then(function (d) {
+      var nodes = d.nodes || [];
+      head.innerHTML = '<tr><th>Package</th>' + nodes.map(function (n) {
+        return '<th>' + sysEsc(n.name) + (n.self ? ' <span class="text-muted">(this)</span>' : '') + '</th>';
+      }).join('') + '<th></th></tr>';
+      body.innerHTML = (d.packages || []).map(function (p) {
+        var cells = nodes.map(function (n) {
+          return '<td>' + sysCell(p.nodes[n.name], n.reachable, n.error) + '</td>';
+        }).join('');
+        var btn = '';
+        if (!p.ok) {
+          btn = '<button type="button" class="btn btn-sm btn-primary syspkg-install" data-pkg="' + sysEsc(p.package)
+            + '" style="font-size:11px;padding:1px 8px;">Install</button>';
+        }
+        return '<tr><td><strong>' + sysEsc(p.package) + '</strong>'
+          + '<div class="text-muted" style="font-size:10px;">' + sysEsc(p.purpose) + '</div></td>'
+          + cells + '<td class="text-end">' + btn + '</td></tr>';
+      }).join('');
+      body.querySelectorAll('.syspkg-install').forEach(function (b) {
+        b.addEventListener('click', function () { sysInstall(b.getAttribute('data-pkg'), nodes.length > 1); });
+      });
+    })
+    .catch(function (e) {
+      body.innerHTML = '<tr><td class="text-danger">Could not read package state: ' + sysEsc(e.message) + '</td></tr>';
+    });
+}
+function sysPoll(uid, pre, label) {
+  fetch('/settings/library-pip/status/' + encodeURIComponent(uid),
+        { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+    .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); })
+    .then(function (st) {
+      var lines = [label + ' — state: ' + (st.state || '?')];
+      (st.steps || []).forEach(function (s) {
+        lines.push((s.ok ? (s.warn ? '!' : '✓') : '✗') + ' ' + s.name + (s.detail ? ' — ' + s.detail : ''));
+      });
+      if (st.current) { lines.push('… ' + st.current.name); }
+      if (st.error) { lines.push('error: ' + st.error); }
+      sysOut[uid] = lines.join('\n');
+      pre.textContent = Object.keys(sysOut).map(function (k) { return sysOut[k]; }).join('\n\n');
+      if (st.state === 'running' || st.state === 'queued') {
+        setTimeout(function () { sysPoll(uid, pre, label); }, 2000);
+      } else {
+        setTimeout(sysLoad, 1000);
+      }
+    })
+    .catch(function () { setTimeout(function () { sysPoll(uid, pre, label); }, 3000); });
+}
+function sysInstall(pkg, hasPeers) {
+  var alsoPeer = false;
+  if (hasPeers) {
+    alsoPeer = window.confirm('Install ' + pkg + ' on ALL nodes?\n\nOK = this node and the peer node(s)\nCancel = choose this node only');
+    if (!alsoPeer && !window.confirm('Install ' + pkg + ' on THIS node only?')) { return; }
+  } else if (!window.confirm('Install ' + pkg + ' on this node?')) { return; }
+  var pre = document.getElementById('syspkg-out');
+  sysOut = {};
+  pre.style.display = '';
+  pre.textContent = 'Queuing ' + pkg + ' …';
+  fetch('/settings/system-packages/install', {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': libCsrf() },
+    body: JSON.stringify({ package: pkg, also_peer: alsoPeer })
+  })
+    .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+    .then(function (res) {
+      if (!res.ok) { pre.textContent = 'Error: ' + (res.d.error || 'request rejected'); return; }
+      var extra = (res.d.peers || []).map(function (p) {
+        return 'peer ' + (p.node || '?') + ': ' + p.state + (p.error ? ' — ' + p.error : '')
+          + (p.state === 'queued' ? ' (its runner applies it; Refresh shows the result)' : '');
+      });
+      if (res.d.partial) { extra.push('PARTIAL: queued here but not on every peer.'); }
+      if (extra.length) { sysOut.peers = extra.join('\n'); }
+      sysPoll(res.d.uid, pre, res.d.node);
+    })
+    .catch(function (e) { pre.textContent = 'Error: ' + e.message; });
+}
+document.addEventListener('DOMContentLoaded', function () {
+  var r = document.getElementById('syspkg-refresh');
+  if (r) { r.addEventListener('click', sysLoad); }
+  sysLoad();
 });
 {% endif %}
 

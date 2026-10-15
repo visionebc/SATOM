@@ -24434,3 +24434,9 @@ msgstr "Tausch"
 #: app/templates/cert_manager
 msgid "…or a file (PEM or PKCS#12)"
 msgstr "…oder eine Datei (PEM oder PKCS#12)"
+
+msgid "System packages"
+msgstr "Systempakete"
+
+msgid "Operating-system packages SATOM depends on, per node. Install runs through the privileged updater; the list is curated and nothing is ever removed."
+msgstr "Betriebssystempakete, von denen SATOM abhängt, pro Knoten. Die Installation übernimmt der privilegierte Updater; die Liste ist kuratiert, entfernt wird nie etwas."

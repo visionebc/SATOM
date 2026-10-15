@@ -166,6 +166,20 @@ def run_request(req: dict) -> dict:
                 error="credential %s could not be unwrapped (%s): already used or "
                       "expired -- the run waited longer than %d s, or something else "
                       "used its token first" % (name, exc, 900))
+    sealed = req.get("sealed_inputs") if isinstance(req.get("sealed_inputs"), dict) else None
+    if sealed and sealed.get("token"):
+        pw = {f["name"] for f in settings["fields"] if f.get("type") == "password"}
+        allowed = pw & set(sealed.get("fields") or [])
+        try:
+            opened = unwrap(req.get("vault") or {}, str(sealed["token"]))
+        except SL.ScriptError as exc:
+            return _write_status(
+                rid, status="failed", finished_at=SL._utcnow(),
+                error="the saved password values could not be unwrapped (%s): already "
+                      "used or expired -- something else used the token first, or the "
+                      "run waited too long" % exc)
+        inputs = dict(inputs)
+        inputs.update({k: v for k, v in opened.items() if k in allowed})
     secrets = SL.secret_inputs(settings["fields"], inputs)
     secrets.update(_credential_secrets(creds))
     network = settings["network"] if settings["network"] in SL.NETWORK_MODES else "none"

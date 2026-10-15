@@ -210,6 +210,8 @@ def _build_schedule(kind: str) -> dict:
     if kind == 'monthly':
         return {"day": max(1, min(31, _to_int(f.get('monthly_day'), 1))),
                 "time": f.get('monthly_time') or '00:00'}
+    if kind == 'cron':
+        return {"expr": " ".join((f.get('cron_expr') or '').split())}
     return {}
 
 
@@ -297,6 +299,8 @@ def _schedule_summary(kind: str, spec: dict) -> str:
         return f"Weekly on {wd} at {spec.get('time', '00:00')}"
     if kind == 'monthly':
         return f"Monthly on day {spec.get('day', 1)} at {spec.get('time', '00:00')}"
+    if kind == 'cron':
+        return f"Cron {spec.get('expr') or '—'}"
     return kind or '—'
 
 
@@ -440,6 +444,15 @@ def _apply_form(action: ScheduledAction) -> bool:
     if kind not in SCHEDULE_KINDS:
         kind = 'once'
     schedule = _build_schedule(kind)
+    if kind == 'cron':
+        from ..services import scheduler as _sch
+        try:
+            if not _sch.cron_preview(schedule.get("expr", ""), 1):
+                flash('That cron expression never fires (for example 30 February).', 'danger')
+                return False
+        except _sch.CronError as exc:
+            flash('Cron expression: %s' % exc, 'danger')
+            return False
 
     action.name = name[:128]
     action.action = spec.key

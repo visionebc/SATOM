@@ -3054,13 +3054,22 @@ System Automations to Automations.</p>
   change's action against devices the change names. Anything else (another
   action, an extra device, the whole fleet) is skipped with the reason and
   leaves the change untouched.
-- Schedules: interval / daily / weekly / monthly / once, with catch-up
-  semantics and a run history per action. A dedicated scheduler sidecar fires
+- Schedules: interval / daily / weekly / monthly / once / <strong>cron</strong>, with
+  catch-up semantics and a run history per action. <strong>Cron</strong> takes a standard
+  five-field expression (minute hour day-of-month month day-of-week: <code>*</code>,
+  lists, ranges, <code>/step</code>, month and weekday names, Sunday as 0 or 7, and a day
+  matching either day field when both are restricted) in the console
+  timezone; one that can never fire (30 February) is refused. A dedicated scheduler sidecar fires
   them; <strong>Run now</strong> is always available. Every wall-clock field — including the
   one-time <strong>Run at</strong> — is in the console timezone (Settings → General), and
   the list shows <strong>Next run</strong> in that timezone with its zone. A run the
   scheduler was not up for, on an action without catch-up, shows as
   <strong>missed</strong>.</p>
+<p><strong>Scripts</strong> (Operations → Automation → <strong>Scripts</strong>, Global ADOM, needs
+<code>operations.scripts_run</code>, which operators hold): the Script Library scripts
+an administrator published for operators (§23.4). Pick one, fill in its form
+and <strong>Run now</strong>, or save the values with a cron expression as a <strong>saved run</strong>.
+See §23.4 for how saved runs behave.</p>
 <p><strong>Change Requests</strong> (maintenance windows):</p>
 <ul>
 <li>A CR captures the window, affected devices <strong>and the server policies whose
@@ -4224,6 +4233,25 @@ Operators always run a published version, so editing the draft never changes
 what they run. <strong>Versions &amp; runs</strong> lists the versions (zip, <em>restore to
 draft</em>) and the run history. The last 50 versions are kept, and the live one
 always is.</p>
+<p><strong>Who runs it.</strong> Under Settings, <em>Who can run it</em> is <strong>Administrators only</strong>
+or <strong>Operators</strong>. A published script with the second audience appears to
+every user holding <code>operations.scripts_run</code> under <strong>Operations → Automation →
+Scripts</strong> (Global ADOM): the form of the published version, <strong>Run now</strong>, the
+result, and their own run history. Administrators see every script and every
+user's runs and saved runs there too.</p>
+<p><strong>Saved runs.</strong> On the same page, a set of values can be saved with a cron
+expression (§15; the next five fire times are previewed as you type). A saved
+run is <strong>pinned to the version it was created against</strong>: publishing a new
+version changes nothing for it, and the row offers <em>move to vN</em>, which checks
+the saved values against the new form first. Password values of a saved run
+are kept in the vault (<code>&lt;mount&gt;/scripts-saved/&lt;script&gt;/&lt;id&gt;</code>), never in the
+saved-run file, and each fire hands the runner a single-use wrapped copy;
+without a vault, a saved run cannot keep one. The scheduler fires saved runs
+on the primary. A fire missed by more than five minutes (scheduler not
+running) is skipped, not replayed. A saved run whose owner is deactivated,
+loses <code>operations.scripts_run</code> or loses access to the script is <strong>paused</strong>
+with the reason instead of running on their behalf. Each user keeps at most
+50 saved runs.</p>
 <p><strong>How a run is contained.</strong> Runs are executed by <code>satom-scripts.service</code>, not by
 the web application. That runner has no database connection and no access to
 the SATOM encryption key; it reads the frozen files and writes the run record.
@@ -8317,8 +8345,8 @@ the page instead of on a manual.</p>
 discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
-   the console is either <strong>on the map</strong> (121 today) or <strong>excluded with a written
-   reason</strong> (150 today — JSON feeds, downloads, redirects and fragments that
+   the console is either <strong>on the map</strong> (122 today) or <strong>excluded with a written
+   reason</strong> (151 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>
 <li><strong>Nothing here is a second source of truth.</strong> Paths are generated from the

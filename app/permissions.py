@@ -34,7 +34,7 @@ AREAS: list[dict] = [
     {"key": "appliances", "label": "Appliances", "icon": "bi-hdd-rack",
      "desc": "Device inventory and appliance actions (console, rediscovery, upgrade)"},
     {"key": "studio", "label": "Studio", "icon": "bi-code-slash",
-     "desc": "Python Console, Plugin Studio and Lua Studio — admin code tools"},
+     "desc": "Python Console, Plugin Studio, Lua Studio and Script Library — admin code tools"},
     {"key": "users", "label": "Users", "icon": "bi-people",
      "desc": "Manage application users"},
     {"key": "profiles", "label": "Profiles", "icon": "bi-person-badge",
@@ -105,6 +105,9 @@ GRANULAR_PERMISSIONS: list[dict] = [
        "Author custom server-side views (plugins)", admin_only=True),
     _p("studio.lua_studio", "Lua Studio",
        "Author, lint and deploy device Lua scripts", admin_only=True),
+    _p("operations.scripts_run", "Run scripts",
+       "Run published Script Library scripts offered to operators, and keep "
+       "saved runs on a cron schedule"),
     _p("studio.script_library", "Script Library",
        "Write, test and publish sandboxed Python scripts with a form "
        "operators fill in", admin_only=True),
@@ -196,6 +199,7 @@ _READ_KEYS = {
 
 _OPERATOR_EXTRA = {
     "advisor.use",
+    "operations.scripts_run",
     "backups.create", "backups.restore",
     "protection.edit", "protection.apply",
     "network.edit", "network.apply",

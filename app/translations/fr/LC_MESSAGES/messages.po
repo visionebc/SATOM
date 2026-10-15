@@ -24608,3 +24608,66 @@ msgstr "Aucun coffre (vault) n'est configuré. Les identifiants des scripts ne s
 
 msgid "The script reads them with satom_script.secret(\"NAME\"). Values are kept in the vault, never in the SATOM database; this page can replace a value but never shows it. Each run receives single-use wrapped copies."
 msgstr "Le script les lit avec satom_script.secret(\"NOM\"). Les valeurs sont conservées dans le vault, jamais dans la base de données SATOM ; cette page peut remplacer une valeur mais ne l'affiche jamais. Chaque exécution reçoit des copies enveloppées à usage unique."
+
+msgid "timeout"
+msgstr "délai"
+
+msgid "Save these values with a schedule"
+msgstr "Enregistrer ces valeurs avec une planification"
+
+#, python-format
+msgid "Cron: minute hour day-of-month month day-of-week, in %(tz)s."
+msgstr "Cron : minute heure jour-du-mois mois jour-de-la-semaine, en %(tz)s."
+
+msgid "Password values can be kept in a saved run only when a vault is configured (Settings > Vault)."
+msgstr "Les mots de passe ne peuvent être conservés dans une exécution enregistrée que si un vault est configuré (Settings > Vault)."
+
+msgid "Save schedule"
+msgstr "Enregistrer la planification"
+
+msgid "Saved runs"
+msgstr "Exécutions enregistrées"
+
+msgid "Cron"
+msgstr "Cron"
+
+msgid "password values kept in the vault"
+msgstr "mots de passe conservés dans le vault"
+
+#, python-format
+msgid "v%(n)s available"
+msgstr "v%(n)s disponible"
+
+msgid "paused"
+msgstr "en pause"
+
+#, python-format
+msgid "move to v%(n)s"
+msgstr "passer à v%(n)s"
+
+msgid "pause"
+msgstr "suspendre"
+
+msgid "resume"
+msgstr "reprendre"
+
+msgid "delete"
+msgstr "supprimer"
+
+msgid "No saved runs."
+msgstr "Aucune exécution enregistrée."
+
+msgid "This script takes no input."
+msgstr "Ce script ne prend aucune entrée."
+
+msgid "Scripts your administrators published for you. Fill in the form and run one now, or save the values with a schedule."
+msgstr "Scripts publiés pour vous par vos administrateurs. Remplissez le formulaire et exécutez-en un maintenant, ou enregistrez les valeurs avec une planification."
+
+msgid "No script has been published for you yet."
+msgstr "Aucun script n'a encore été publié pour vous."
+
+msgid "Cron expression"
+msgstr "Expression cron"
+
+msgid "minute hour day-of-month month day-of-week, e.g. \"30 2 * * 1-5\" = 02:30 on weekdays."
+msgstr "minute heure jour-du-mois mois jour-de-la-semaine, p. ex. \"30 2 * * 1-5\" = 02:30 en semaine."

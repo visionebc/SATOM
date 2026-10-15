@@ -1,0 +1,34 @@
+{# The operator form of a published script: one control per field of the
+   FROZEN version. Password inputs never carry a value. #}
+{% macro form_fields(fields, prefix) %}
+{% for f in fields %}
+  {% set fid = prefix ~ '-' ~ f.name %}
+  {% if f.type == 'checkbox' %}
+  <div class="form-check mb-2">
+    <input class="form-check-input" type="checkbox" id="{{ fid }}" name="{{ f.name }}" {% if f.default %}checked{% endif %}>
+    <label class="form-check-label small" for="{{ fid }}">{{ f.label or f.name }}</label>
+    {% if f.help %}<div class="form-text">{{ f.help }}</div>{% endif %}
+  </div>
+  {% else %}
+  <div class="mb-2">
+    <label class="form-label small mb-0" for="{{ fid }}">{{ f.label or f.name }}{% if f.required %} <span class="text-danger">*</span>{% endif %}</label>
+    {% if f.type == 'textarea' %}
+    <textarea class="form-control form-control-sm" rows="3" id="{{ fid }}" name="{{ f.name }}">{{ f.default if f.default is not none else '' }}</textarea>
+    {% elif f.type == 'select' %}
+    <select class="form-select form-select-sm" id="{{ fid }}" name="{{ f.name }}">
+      {% if not f.required %}<option value=""></option>{% endif %}
+      {% for o in f.options %}<option {% if o == f.default %}selected{% endif %}>{{ o }}</option>{% endfor %}
+    </select>
+    {% elif f.type == 'password' %}
+    <input class="form-control form-control-sm" type="password" id="{{ fid }}" name="{{ f.name }}" autocomplete="new-password">
+    {% else %}
+    <input class="form-control form-control-sm" type="{{ 'number' if f.type == 'number' else 'text' }}" {% if f.type == 'number' %}step="any"{% endif %}
+           id="{{ fid }}" name="{{ f.name }}" value="{{ f.default if f.default is not none else '' }}">
+    {% endif %}
+    {% if f.help %}<div class="form-text">{{ f.help }}</div>{% endif %}
+  </div>
+  {% endif %}
+{% else %}
+  <div class="text-muted small">{{ _('This script takes no input.') }}</div>
+{% endfor %}
+{% endmacro %}

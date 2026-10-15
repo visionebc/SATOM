@@ -651,7 +651,8 @@ def _new_request_id(slug: str) -> str:
 
 
 def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
-                trigger: str = "test", node: str = "", wrap=None) -> dict:
+                trigger: str = "test", node: str = "", wrap=None,
+                sealed: dict | None = None) -> dict:
     """Validate the inputs against the form OF THAT VERSION and queue a run.
 
     ``version_ref``: ``"draft"`` (administrators' test runs) or a published
@@ -661,7 +662,11 @@ def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
 
     ``wrap(slug, credentials) -> (tokens, missing, vault_info)`` comes from
     the caller (``script_vault.wrap_for_run``): this module never talks to the
-    vault, so the runner that imports it cannot either."""
+    vault, so the runner that imports it cannot either.
+
+    ``sealed``: ``{"fields": [password field names], "wrap": callable ->
+    (token, vault_info)}`` -- the saved password values of a schedule, kept
+    in the vault and delivered wrapped like credentials."""
     slug = validate_slug(slug)
     if version_ref == "draft":
         meta = _read_json(_dir(slug) / "meta.json")
@@ -682,12 +687,27 @@ def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
         fields, network, timeout = frozen["fields"], frozen["network"], frozen["timeout"]
         creds = frozen.get("credentials") or []
         version_ref = int(version_ref)
-    inputs = resolve_inputs(fields, raw_inputs)
+    sealed_fields = set((sealed or {}).get("fields") or [])
+    pw_names = {f["name"] for f in fields if f["type"] == "password"}
+    sealed_fields &= pw_names                      # only password fields are sealed
+    relaxed = [dict(f, required=False) if f["name"] in sealed_fields else f for f in fields]
+    inputs = resolve_inputs(relaxed, raw_inputs)
+    for n in sealed_fields:
+        inputs.pop(n, None)
     tokens, missing, vault_info = {}, [], {}
+    sealed_req = None
+    if sealed_fields:
+        token, info = sealed["wrap"]()
+        if not token:
+            raise ScriptError("the saved password values of this run are missing "
+                              "from the vault")
+        sealed_req = {"token": token, "fields": sorted(sealed_fields)}
+        vault_info = info
     if creds:
         if wrap is None:
             raise ScriptError("this script uses credentials, which need a vault")
-        tokens, missing, vault_info = wrap(slug, creds)
+        tokens, missing, info = wrap(slug, creds)
+        vault_info = info or vault_info
     rid = _new_request_id(slug)
     now = _utcnow()
     STATUS_DIR.mkdir(parents=True, exist_ok=True)
@@ -695,12 +715,14 @@ def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
     status = {"request_id": rid, "slug": slug, "version": version_ref,
               "trigger": trigger, "requested_by": by, "queued_at": now,
               "status": "queued", "network": network, "timeout": timeout,
-              "inputs": shown_inputs(fields, inputs), "node": node,
+              "inputs": {**shown_inputs(fields, inputs),
+                         **{n: "********" for n in sealed_fields}}, "node": node,
               "credentials": [c["name"] for c in creds], "credentials_missing": missing}
     _write_json(STATUS_DIR / (rid + ".json"), status)
     req = {"request_id": rid, "slug": slug, "version": version_ref,
            "inputs": inputs, "requested_by": by, "trigger": trigger,
-           "queued_at": now, "credentials": tokens, "vault": vault_info}
+           "queued_at": now, "credentials": tokens, "vault": vault_info,
+           "sealed_inputs": sealed_req}
     _write_json(REQ_DIR / (rid + ".json"), req, mode=0o600)
     return status
 

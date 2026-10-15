@@ -4122,12 +4122,18 @@ deliberately not merged. Practical notes:
   same change to the other node, but only **after it succeeded on this one**:
   the two nodes never restart together, so a bad version takes down one node
   for the length of its auto-rollback, not the pair. If the change fails or
-  rolls back here, the peer is left untouched and the card says so.
+  rolls back here, the peer is left untouched and the job says so.
 - **Extras are kept.** A package pinned with extras in `requirements.txt`
   (`psycopg[binary]`) is installed, rolled back and re-pinned with them, so its
   companion package moves in lockstep.
-- A queued change is polled live and its steps are written by the runner. The
-  restart it triggers shows as "reconnecting…" rather than a failure.
+- **Each change is a job on the server.** It appears in the job dock and the
+  Job Manager with the steps of both nodes. `satom-scheduler` drives it, not the
+  browser, so you can close the page and the peer step still happens. The job
+  survives the restarts the change itself causes. It ends as an error, naming
+  the node, if either node fails or rolls back, if the peer refuses or cannot be
+  reached, or if the updater never picks the request up. Reopening Settings
+  shows a change that is still running. While the web restarts, the card shows
+  "reconnecting…" rather than a failure.
 
 **System packages**, under Libraries, is the same mechanism for the
 **operating-system** packages SATOM depends on. Today the list holds one:

@@ -22,7 +22,7 @@ from sqlalchemy import text
 
 from app import create_app
 from app.models import db
-from app.services import scheduled_actions, scheduler
+from app.services import library_jobs, scheduled_actions, scheduler
 
 def _configured_tz() -> str:
     """Wall-clock schedules ("daily at 02:00") are LOCAL times. The sidecar runs
@@ -111,10 +111,28 @@ def main() -> None:
             tick(app)
         except Exception:  # noqa: BLE001
             pass
-        for _ in range(TICK_SECONDS):  # SIGTERM-responsive sleep
+        for i in range(TICK_SECONDS):  # SIGTERM-responsive sleep
             if _stop:
                 break
+            if i % library_jobs.TICK_S == 0:
+                drive_library_jobs(app)
             time.sleep(1)
+
+
+def drive_library_jobs(app) -> None:
+    """Advance Libraries card jobs (this node, then the peer) between ticks.
+
+    Here and not in the web: the change restarts the web, and nobody may need
+    to keep a browser open for the peer half to happen. Cheap when idle -- one
+    listdir of the active-marker directory."""
+    try:
+        if not library_jobs.has_active():
+            return
+        with app.app_context():
+            library_jobs.advance_all()
+            db.session.remove()
+    except Exception:  # noqa: BLE001 - never stop the loop over a job
+        pass
 
 
 if __name__ == "__main__":

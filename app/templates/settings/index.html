@@ -4975,28 +4975,30 @@ function libPipOut(title) {
   if (pre) pre.textContent = '…';
   return pre;
 }
-function libRenderSteps(pre, st) {
+function libRenderJob(pre, job) {
   if (!pre) return;
-  var lines = [];
-  lines.push('state: ' + (st.state || '?') + (st.rolled_back ? ' (rolled back)' : ''));
-  (st.steps || []).forEach(function (s) {
-    lines.push((s.ok ? '✓' : '✗') + ' ' + s.name + (s.detail ? ' — ' + s.detail : ''));
+  var m = job.meta || {};
+  var lines = ['job ' + job.id + ' — ' + (job.status || '?') + ' · ' + (job.percent || 0) + '%'];
+  if (job.message) { lines.push(job.message); }
+  lines.push('');
+  (m.steps || []).forEach(function (s) {
+    lines.push((s.ok ? '✓' : '✗') + ' ' + s.label + (s.outcome ? ' — ' + s.outcome : ''));
   });
   pre.textContent = lines.join('\n');
+  libRenderPeers(m);
 }
-function libPollStatus(uid, pre, offlineSince, onDone) {
-  // The runner restarts satom.service itself, so polls during that window get
-  // a 502 / connection reset. Keep retrying (like the Software Update page)
-  // instead of giving up on the first failed fetch.
-  fetch('/settings/library-pip/status/' + encodeURIComponent(uid),
+function libPollJob(jobId, pre, offlineSince) {
+  // The job runs on the server (driven by satom-scheduler), so this poll only
+  // WATCHES it. It survives the 502s of the restart the change itself causes;
+  // closing the page does not stop anything.
+  fetch('/jobs/' + encodeURIComponent(jobId),
         { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
     .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); })
-    .then(function (st) {
-      libRenderSteps(pre, st);
-      if (st.state === 'running' || st.state === 'queued') {
-        setTimeout(function () { libPollStatus(uid, pre, null, onDone); }, 2000);
+    .then(function (job) {
+      libRenderJob(pre, job);
+      if (['pending', 'running'].indexOf(job.status) >= 0) {
+        setTimeout(function () { libPollJob(jobId, pre, null); }, 2000);
       } else {
-        if (onDone) { onDone(st); }
         // done — refresh installed versions + rollback buttons
         setTimeout(function () {
           libLoadState(); checkLibraryUpdates(false); libLoadDrift();
@@ -5010,34 +5012,29 @@ function libPollStatus(uid, pre, offlineSince, onDone) {
       var base = pre.textContent.replace(/\n\((?:service restarting|status unavailable)[^\n]*\)$/, '');
       if (secs < 180) {
         pre.textContent = base + '\n(service restarting as part of the update — reconnecting… ' + secs + 's)';
-        setTimeout(function () { libPollStatus(uid, pre, since, onDone); }, 3000);
+        setTimeout(function () { libPollJob(jobId, pre, since); }, 3000);
       } else {
-        pre.textContent = base + '\n(status unavailable for 3 minutes — check Software Update → Recent updates for ' + uid + ')';
+        pre.textContent = base + '\n(status unavailable for 3 minutes — the job keeps running on the server; follow it in Jobs (' + jobId + '))';
       }
     });
 }
-function libRenderPeers(peers, partial, alsoPeer) {
+function libRenderPeers(m) {
   var box = document.getElementById('lib-peer-out');
   if (!box) { return; }
-  if (!alsoPeer) { box.style.display = 'none'; box.textContent = ''; return; }
+  if (!m || !m.also_peer) { box.style.display = 'none'; box.textContent = ''; return; }
   var lines = [];
-  (Array.isArray(peers) ? peers : []).forEach(function (p) {
-    var tag = p.state === 'queued' ? 'queued'
-            : (p.state === 'unreachable' ? 'UNREACHABLE' : 'REJECTED');
-    lines.push('peer ' + (p.node || '?') + ' (' + (p.host || '?') + '): ' + tag
-      + (p.uid ? ' ' + p.uid : '') + (p.error ? ' — ' + p.error : ''));
+  if (m.phase === 'local') {
+    lines.push('peer: waits until the change succeeds on ' + (m.node || 'this node')
+      + ', so both nodes never restart together. This runs on the server; you can close the page.');
+    if (m.local_state === 'failed') { lines = ['peer: NOT touched — the change did not succeed on this node.']; }
+  }
+  (m.peers || []).forEach(function (p) {
+    var st = p.run_state || (p.state === 'queued' ? 'queued' : String(p.state || '?').toUpperCase());
+    lines.push('peer ' + (p.node || '?') + ' (' + (p.host || '?') + '): ' + st
+      + (p.uid ? ' ' + p.uid : '') + (p.note ? ' — ' + p.note : '') + (p.error ? ' — ' + p.error : ''));
   });
-  if (peers === 'pending') {
-    lines.push('peer: waits until the change succeeds on this node, so both nodes never restart together.');
-  } else if (peers === 'skipped') {
-    lines.push('peer: NOT touched — the change did not succeed on this node.');
-  }
-  if (!lines.length) { lines.push('peer: no other node is registered — this node only.'); }
-  if (partial) {
-    lines.push('PARTIAL: the change is queued HERE but NOT on the peer. '
-      + 'The pair will drift until you retry on the peer.');
-  }
-  box.style.display = '';
+  if (m.phase === 'peer' && !(m.peers || []).length) { lines.push('peer: no other node is registered — this node only.'); }
+  box.style.display = lines.length ? '' : 'none';
   box.textContent = lines.join('\n');
 }
 function libPipChange(pkg, version, action) {
@@ -5046,9 +5043,10 @@ function libPipChange(pkg, version, action) {
   var scope = alsoPeer ? 'THIS node AND the peer node(s)' : 'THIS node only';
   if (!window.confirm(verb + ' ' + pkg + ' to ' + version + ' on ' + scope + '?\n\n'
       + 'The privileged runner on each node installs it and restarts the service; '
-      + 'on failure it auto-reverts to the current version.')) { return; }
+      + 'on failure it auto-reverts to the current version. It runs as a job on the '
+      + 'server, so closing this page does not stop it.')) { return; }
   var pre = libPipOut(verb + ' ' + pkg + ' → ' + version + ' …');
-  libRenderPeers([], false, false);
+  libRenderPeers(null);
   fetch('/settings/library-pip', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': libCsrf() },
@@ -5058,35 +5056,22 @@ function libPipChange(pkg, version, action) {
     .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
     .then(function (res) {
       if (!res.ok) { if (pre) pre.textContent = 'Error: ' + (res.d.error || 'request rejected'); return; }
-      if (pre) pre.textContent = 'queued (' + res.d.uid + ') on ' + res.d.node + ' — applying…';
-      var uid = res.d.uid;
-      if (!res.d.peer_deferred) {
-        libRenderPeers(res.d.peers, res.d.partial, !!res.d.also_peer);
-        libPollStatus(uid, pre);
-        return;
-      }
-      libRenderPeers('pending', false, true);
-      libPollStatus(uid, pre, null, function (st) {
-        if (st.state !== 'success') { libRenderPeers('skipped', false, true); return; }
-        fetch('/settings/library-pip/peers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': libCsrf() },
-          body: JSON.stringify({ package: pkg, version: version, action: action, local_uid: uid })
-        })
-          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
-          .then(function (pr) {
-            if (!pr.ok) {
-              libRenderPeers([{ node: 'peer', state: 'rejected', error: pr.d.error || 'refused' }], true, true);
-              return;
-            }
-            libRenderPeers(pr.d.peers, pr.d.partial, true);
-          })
-          .catch(function (e) {
-            libRenderPeers([{ node: 'peer', state: 'unreachable', error: e.message }], true, true);
-          });
-      });
+      if (pre) pre.textContent = 'job ' + res.d.job_id + ' queued on ' + res.d.node + ' — applying…';
+      libPollJob(res.d.job_id, pre, null);
     })
     .catch(function (e) { if (pre) pre.textContent = 'Error: ' + e.message; });
+}
+function libResumeJob() {
+  // Back on the page while a change is still running: show it again.
+  fetch('/jobs/all?type=library_pip&status=running&limit=1',
+        { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function (d) {
+      var job = (d.jobs || [])[0];
+      if (!job) { return; }
+      libPollJob(job.id, libPipOut(job.title || 'Library change'), null);
+    })
+    .catch(function () {});
 }
 function libLoadDrift() {
   fetch(LIB_DRIFT_URL, { headers: { 'Accept': 'application/json' } })
@@ -5229,7 +5214,7 @@ function checkLibraryUpdates(force) {
     });
 }
 document.addEventListener('DOMContentLoaded', function () {
-  libLoadState(); checkLibraryUpdates(false); libLoadDrift();
+  libLoadState(); checkLibraryUpdates(false); libLoadDrift(); libResumeJob();
 });
 
 // --- System packages [SATOM-SYSPKG-CARD] ---------------------------------

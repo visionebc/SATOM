@@ -220,7 +220,9 @@ def _out_of_scope(dest: str):
 
 
 def _appliance_names() -> dict:
-    return {a.id: a.name for a in Appliance.query.order_by(Appliance.name).all()}
+    """Names of the devices this session may see. A device of another ADOM
+    stays an ``#id`` — its name is that ADOM's data."""
+    return {a.id: a.name for a in visible_appliances().order_by(Appliance.name).all()}
 
 
 #: What a library-wide copy is shown as in the DEVICE column. Never a blank
@@ -241,7 +243,7 @@ def _scopes() -> dict:
     tooltip: it is still the thing an operator types into a browser.
     """
     out = {}
-    for a in Appliance.query.order_by(Appliance.name).all():
+    for a in visible_appliances().order_by(Appliance.name).all():
         out[a.id] = {"name": a.name, "device": _device_name(a),
                      "host": (a.host or "").strip(),
                      "adom": (a.vdom or "").strip()}
@@ -1190,7 +1192,14 @@ def audit():
     report = ar.fleet_audit(selected)
     names = _appliance_names()
 
-    diverge = ar.content_divergence()
+    # Copies on devices this session cannot see are dropped, and a group left
+    # with fewer than two copies is no divergence HERE.
+    diverge = []
+    for d in ar.content_divergence():
+        d["copies"] = [c for c in d["copies"]
+                       if not c["appliance_id"] or c["appliance_id"] in names]
+        if len(d["copies"]) >= 2:
+            diverge.append(d)
     for d in diverge:
         for c in d["copies"]:
             c["appliance"] = (names.get(c["appliance_id"], "#%s" % c["appliance_id"])

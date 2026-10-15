@@ -33,6 +33,27 @@ from ..models import DbReport
 
 bp = Blueprint("database", __name__, url_prefix="/database")
 
+#: Endpoints a profile confined to some ADOMs may still open: the Python
+#: console runs in a sandbox without the database.
+_CONFINED_OK = frozenset({"database.py_console_page", "database.py_console_run"})
+CONFINED_REFUSAL = ("The database browser, the SQL console and DB reports read "
+                    "every ADOM's rows. A profile confined to some ADOMs "
+                    "cannot open them.")
+
+
+@bp.before_request
+def _refuse_confined_profiles():
+    """Raw SQL cannot be scoped to an ADOM: refuse it to a confined profile
+    rather than show it the whole fleet (services.product_scope)."""
+    from ..services.product_scope import restricted_adoms
+    if restricted_adoms() is None or request.endpoint in _CONFINED_OK:
+        return None
+    if request.method != "GET" or request.is_json \
+            or request.accept_mimetypes.best == "application/json":
+        return jsonify({"ok": False, "error": CONFINED_REFUSAL}), 403
+    flash(CONFINED_REFUSAL, "warning")
+    return redirect(url_for("index"))
+
 
 @bp.route("/")
 @login_required

@@ -689,7 +689,10 @@ def add_member(id):
     attach_id = (request.form.get('attach_id') or '').strip()
 
     if attach_id:
-        m = db.session.get(Appliance, int(attach_id)) if attach_id.isdigit() else None
+        # Scoped like node0: attaching re-parents the member, so a device the
+        # session cannot see must not be reachable by typing its id.
+        m = (visible_appliances().filter(Appliance.id == int(attach_id)).first()
+             if attach_id.isdigit() else None)
         if m is None or not m.is_standalone or m.id == node0.id:
             flash('Pick an existing standalone appliance to attach.', 'danger')
             return redirect(url_for('appliances.detail', id=id))

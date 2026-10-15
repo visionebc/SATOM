@@ -36,7 +36,7 @@ from flask_wtf.csrf import validate_csrf
 
 from ..auth.decorators import require_permission
 from ..extensions import csrf, db
-from ..models import Appliance, Permission
+from ..models import Appliance, Permission, visible_appliances
 from ..models_firmware import FirmwareImage
 from ..services import device_context, jobs as jobsvc
 from ..services.audit import log_action
@@ -215,7 +215,7 @@ def index():
     _scope = getattr(g, "product", None)
     if _scope and _scope != "global" and (
             header_dev is None or header_dev.kind != _scope):
-        _same = Appliance.query.filter(Appliance.kind == _scope).all()
+        _same = visible_appliances().filter(Appliance.kind == _scope).all()
         header_dev = _same[0] if len(_same) == 1 else None
     # Per-box downgrade deep-links moved to Appliances > (device) >
     # Appliance Actions > Downgrade; this page keeps the rollback guidance.

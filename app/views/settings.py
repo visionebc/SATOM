@@ -26,7 +26,7 @@ from flask_login import login_required, current_user
 from ..auth.decorators import require_permission
 from ..auth.password_policy import password_problem
 from ..extensions import csrf
-from ..models import db, Permission, User, Profile, Appliance
+from ..models import db, Permission, User, Profile, Appliance, visible_appliances
 from ..services import settings_store as store
 from ..services import lang_policy, langs as lang_registry
 from ..services import email_service as email
@@ -163,6 +163,7 @@ def index():
         scout_docs=_scout_docs_context(),
         platform_options=product_scope.device_products(),
         platform_labels=dict(product_scope.device_products()),
+        adom_names=dict(product_scope.device_products()),
         log_levels_all=store.LOG_LEVELS_ALL,
         log_formats_all=store.LOG_FORMATS,
         timezones_all=store.timezones(),
@@ -186,7 +187,7 @@ def index():
         alerts_config=alerts_svc.config(),
         auth_config=(auth_store.config() if _is_admin() else None),
         auth_backends=auth_store.BACKENDS,
-        fac_appliances=(Appliance.query.filter_by(kind='fortiauthenticator')
+        fac_appliances=(visible_appliances(Appliance.query.filter_by(kind='fortiauthenticator'))
                         .order_by(Appliance.name).all() if _is_admin() else []),
         twofa_status={
             'enabled': bool(getattr(current_user, 'totp_enabled', False)),

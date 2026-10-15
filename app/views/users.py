@@ -13,6 +13,7 @@ from ..auth.decorators import require_permission
 from ..auth.password_policy import password_problem
 from ..models import Appliance, db, Permission, Profile, User
 from ..services import access
+from ..services import product_scope
 from ..services.audit import log_action
 
 bp = Blueprint('users', __name__, url_prefix='/users')
@@ -43,11 +44,21 @@ def _assign_profile(user: User, profile: Profile) -> None:
     user.role = profile.role_label
 
 
-def _exceeds_actor(granted: set[str]) -> bool:
+def _exceeds_actor(granted: set[str], adoms=frozenset()) -> bool:
     """True when ``granted`` (an effective permission set) holds anything the
     signed-in user does not. ``users.manage`` alone must never hand out more
-    than its holder has — otherwise it is full admin one assignment away."""
-    return not set(granted) <= current_user.effective_permissions
+    than its holder has — otherwise it is full admin one assignment away.
+
+    ``adoms`` is the target's ADOM confinement (``None`` = every ADOM; the
+    default empty set = "not part of this check"). A confined actor never
+    reaches an account wider than itself: assigning an unconfined profile, or
+    resetting the password of an unconfined user, would hand out every ADOM."""
+    if not set(granted) <= current_user.effective_permissions:
+        return True
+    mine = product_scope.adoms_of(current_user)
+    if mine is None:
+        return False
+    return adoms is None or not set(adoms) <= mine
 
 
 def _is_last_admin(user: User) -> bool:
@@ -130,8 +141,8 @@ def create():
 
     granted = (profile.effective if profile is not None else
                perm.expand(perm.SYSTEM_PROFILES.get(perm.role_to_profile_name(role), set())))
-    if _exceeds_actor(granted):
-        flash('Refused: you cannot grant permissions you do not hold yourself.', 'danger')
+    if _exceeds_actor(granted, profile.adom_set if profile is not None else None):
+        flash('Refused: you cannot grant permissions or ADOMs you do not hold yourself.', 'danger')
         return redirect(url_for('users.index'))
 
     user = User(username=username)
@@ -164,9 +175,9 @@ def set_profile(id):
         return redirect(url_for('users.index'))
     # This also covers re-profiling oneself: only to a profile no wider than
     # the one already held (a self-downgrade stays possible, see anti-lockout).
-    if _exceeds_actor(profile.effective):
-        flash('Refused: you cannot assign a profile with permissions you do '
-              'not hold yourself.', 'danger')
+    if _exceeds_actor(profile.effective, profile.adom_set):
+        flash('Refused: you cannot assign a profile with permissions or ADOMs '
+              'you do not hold yourself.', 'danger')
         return redirect(url_for('users.index'))
 
     old = user.profile.name if user.profile else user.role
@@ -204,9 +215,9 @@ def delete(id):
 def reset_password(id):
     User = _get_user_model()
     user = User.query.get_or_404(id)
-    if _exceeds_actor(user.effective_permissions):
-        flash(f'Refused: {user.username} holds permissions you do not; you '
-              'cannot reset their password.', 'danger')
+    if _exceeds_actor(user.effective_permissions, user.allowed_adoms):
+        flash(f'Refused: {user.username} holds permissions or ADOMs you do not; '
+              'you cannot reset their password.', 'danger')
         return redirect(url_for('users.index'))
     if not user.is_local:
         flash(f'{user.username} signs in through the directory; its password '
@@ -234,9 +245,9 @@ def clear_2fa(id):
     their password (e.g. lost authenticator). Local accounts only."""
     User = _get_user_model()
     user = User.query.get_or_404(id)
-    if _exceeds_actor(user.effective_permissions):
-        flash(f'Refused: {user.username} holds permissions you do not; you '
-              'cannot clear their two-factor authentication.', 'danger')
+    if _exceeds_actor(user.effective_permissions, user.allowed_adoms):
+        flash(f'Refused: {user.username} holds permissions or ADOMs you do not; '
+              'you cannot clear their two-factor authentication.', 'danger')
         return redirect(url_for('users.index'))
     user.totp_enabled = False
     user.totp_secret = None

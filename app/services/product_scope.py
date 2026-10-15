@@ -160,11 +160,90 @@ def session_product() -> str:
     return ""
 
 
+#: Per-request cache key for :func:`restricted_adoms` (``flask.g``).
+_G_ADOMS = "_satom_allowed_adoms"
+_NOT_CACHED = object()
+
+
+def adoms_of(user) -> frozenset[str] | None:
+    """The ADOM keys ``user`` is confined to, ``None`` for every ADOM.
+
+    Reads :attr:`app.models.User.allowed_adoms` (the profile). Any error reading
+    it confines to NOTHING: a restriction that cannot be read must not turn
+    into "everything"."""
+    if user is None or not getattr(user, "is_authenticated", False):
+        return None
+    try:
+        allowed = user.allowed_adoms
+    except Exception:  # noqa: BLE001 — fail closed, never open
+        return frozenset()
+    if allowed is None:
+        return None
+    return frozenset(str(k).strip().lower() for k in allowed)
+
+
+def restricted_adoms() -> frozenset[str] | None:
+    """ADOM confinement of the SIGNED-IN user of this request.
+
+    ``None`` = unrestricted: outside a request (background workers, CLI — they
+    act on the whole fleet, as they always did), anonymous requests, and every
+    user whose profile names no ADOM. A confined user's Global console is the
+    UNION of their ADOMs, never the whole fleet: every filter below applies the
+    set, and the app-factory gate refuses a concrete ADOM outside it."""
+    try:
+        if not has_request_context():
+            return None
+    except Exception:  # noqa: BLE001
+        return None
+    from flask import g
+    cached = getattr(g, _G_ADOMS, _NOT_CACHED)
+    if cached is not _NOT_CACHED:
+        return cached
+    try:
+        from flask_login import current_user
+        user = current_user._get_current_object()
+    except Exception:  # noqa: BLE001 — no login manager (bare test app)
+        user = None
+    allowed = adoms_of(user)
+    setattr(g, _G_ADOMS, allowed)
+    return allowed
+
+
+def adom_allowed(key: str | None, allowed=_NOT_CACHED) -> bool:
+    """May the signed-in user (or ``allowed``) enter ADOM ``key``? Global is
+    always allowed — for a confined user it is the union of their ADOMs."""
+    if allowed is _NOT_CACHED:
+        allowed = restricted_adoms()
+    k = (key or "").strip().lower()
+    if allowed is None or k == GLOBAL:
+        return True
+    return k in allowed
+
+
+def _allowed_clause(column, allowed: frozenset[str]):
+    """SQL condition: ``column`` is one of ``allowed``. NULL/'' rows are the
+    FortiWeb ADOM's (module docstring), so they count only when FortiWeb is in
+    the set. An empty set yields FALSE — zero rows, never all rows."""
+    from sqlalchemy import false, or_
+    if not allowed:
+        return false()
+    conds = [column.in_(sorted(allowed))]
+    if LEGACY_PRODUCT in allowed:
+        conds += [column.is_(None), column == ""]
+    return or_(*conds)
+
+
 def stamp() -> str:
     """Value to store on a record created now ('' = unscoped).
 
     Raises :class:`ProductScopeUnresolved` when the ADOM could not be
     determined — see :data:`UNRESOLVED`.
+
+    A user confined to some ADOMs who creates something from the Global
+    console does not get an unscoped record — unscoped rows belong to the
+    FortiWeb ADOM, which they may not see. It lands in their only ADOM, in
+    '' when FortiWeb is one of theirs, else in the first of theirs in
+    registry order: always somewhere its creator can see it.
     """
     p = session_product()
     if p == UNRESOLVED:
@@ -172,7 +251,20 @@ def stamp() -> str:
             "the ADOM of this request could not be determined (the ADOM "
             "registry is serving its offline fallback); refusing to stamp the "
             "record unscoped, which would file it under the FortiWeb ADOM")
-    return p if p in concrete_products() else ""
+    if p in concrete_products():
+        return p
+    allowed = restricted_adoms()
+    if allowed is None:
+        return ""
+    if not allowed:
+        raise ProductScopeUnresolved(
+            "this account is confined to no ADOM it can write into")
+    if len(allowed) == 1:
+        return next(iter(allowed))
+    if LEGACY_PRODUCT in allowed:
+        return ""
+    order = [k for k, _ in device_products() if k in allowed]
+    return order[0] if order else sorted(allowed)[0]
 
 
 def visible_product(record_product: str | None) -> bool:
@@ -180,9 +272,16 @@ def visible_product(record_product: str | None) -> bool:
     p = session_product()
     if p == UNRESOLVED:
         return False       # ADOM unknown → show nothing, never everything
-    if p not in concrete_products():
-        return True
+    allowed = restricted_adoms()
     rp = (record_product or "").strip().lower()
+    if p not in concrete_products():
+        if allowed is None:
+            return True
+        if not rp:
+            return LEGACY_PRODUCT in allowed
+        return rp in allowed
+    if allowed is not None and p not in allowed:
+        return False
     if not rp:
         return p == LEGACY_PRODUCT
     return rp == p
@@ -191,12 +290,19 @@ def visible_product(record_product: str | None) -> bool:
 def scope_query(query, column):
     """Apply the same rule to a SQLAlchemy query. ``column`` is the model's
     ``product`` column; NULL/'' rows count as unscoped (visible to FortiWeb
-    and Global, hidden from every other ADOM)."""
+    and Global, hidden from every other ADOM). A user confined to some ADOMs
+    sees, in Global, only the rows of those ADOMs."""
     p = session_product()
     if p == UNRESOLVED:
         from sqlalchemy import false
         return query.filter(false())   # ADOM unknown → zero rows, not all rows
+    allowed = restricted_adoms()
+    if allowed is not None and p in concrete_products() and p not in allowed:
+        from sqlalchemy import false
+        return query.filter(false())
     if p not in concrete_products():
+        if allowed is not None:
+            return query.filter(_allowed_clause(column, allowed))
         return query
     if p == LEGACY_PRODUCT:
         from sqlalchemy import or_
@@ -248,7 +354,12 @@ def creatable_kinds() -> tuple[tuple[str, str], ...]:
     p = session_product()
     if p == UNRESOLVED:
         return ()          # nothing may be created into an unknown ADOM
+    allowed = restricted_adoms()
+    if allowed is not None and p in concrete_products() and p not in allowed:
+        return ()
     if p not in concrete_products():
+        if allowed is not None:
+            return tuple(t for t in everything if t[0] in allowed)
         return everything
     mine = tuple(t for t in everything if t[0] == p)
     # An ADOM deactivated mid-session still has to be able to name itself,
@@ -275,10 +386,36 @@ def scope_appliance_query(query, kind_column):
     if p == UNRESOLVED:
         from sqlalchemy import false
         return query.filter(false())   # ADOM unknown → zero rows, not all rows
+    allowed = restricted_adoms()
+    if allowed is not None and p in concrete_products() and p not in allowed:
+        from sqlalchemy import false
+        return query.filter(false())
     if p not in concrete_products():
+        if allowed is not None:
+            # A confined user's Global: the devices of their ADOMs only. A kind
+            # no ADOM owns is Global-only (docstring) — not theirs.
+            return query.filter(_allowed_clause(kind_column, allowed))
         return query
     if p == LEGACY_PRODUCT:
         from sqlalchemy import or_
         return query.filter(or_(
             kind_column.is_(None), kind_column == "", kind_column == p))
     return query.filter(kind_column == p)
+
+
+def confined_appliance_ids() -> frozenset[int] | None:
+    """Every appliance id the signed-in user's PROFILE reaches, whatever the
+    active ADOM is; ``None`` when the profile names no ADOM.
+
+    For records that name several devices across ADOMs (a change request, an
+    upgrade window): the per-ADOM rule shows such a record in every ADOM that
+    owns ANY of its devices. A confined profile must not open one that also
+    names a device outside its ADOMs — the page would list that device and
+    could act on it."""
+    allowed = restricted_adoms()
+    if allowed is None:
+        return None
+    from ..models import Appliance
+    rows = (Appliance.query.with_entities(Appliance.id)
+            .filter(_allowed_clause(Appliance.kind, allowed)).all())
+    return frozenset(r[0] for r in rows)

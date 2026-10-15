@@ -47,6 +47,27 @@
     </div>
   </div>
 
+  <div class="fw-card mb-3">
+    <div class="fw-card-header d-flex align-items-center gap-2">
+      <i class="bi bi-grid-1x2 text-accent"></i>
+      <strong>{{ _('ADOMs') }}</strong>
+    </div>
+    <div class="fw-card-body">
+      <p class="text-muted" style="font-size:12px;">
+        {{ _('Tick the ADOMs this profile may work in. With none ticked it may work in every ADOM. A confined profile sees only its ADOMs in the switcher, and its Global console shows only their devices and records.') }}
+      </p>
+      <div class="d-flex flex-wrap gap-3">
+        {% for key, name in adom_choices %}
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="adoms" value="{{ key }}" id="adom-{{ key }}"
+                 {{ 'checked' if profile.adom_set and key in profile.adom_set }} {{ 'disabled' if disabled }}>
+          <label class="form-check-label" for="adom-{{ key }}">{{ name }}</label>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
   {% if not disabled %}
   <div class="d-flex gap-2 mb-3">
     <button type="button" class="btn btn-sm btn-outline-secondary" data-js="set-perms" data-perms="true"><i class="bi bi-check2-all me-1"></i>{{ _('Select all') }}</button>

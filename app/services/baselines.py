@@ -22,7 +22,11 @@ def list_baselines() -> list[Baseline]:
 
 
 def get_baseline(baseline_id: int) -> Baseline | None:
-    return db.session.get(Baseline, baseline_id)
+    """One baseline, ``None`` when :func:`list_baselines` would not show it
+    in this session (ADOM + profile). Workers see every baseline."""
+    from .product_scope import scope_query
+    return (scope_query(Baseline.query, Baseline.product)
+            .filter(Baseline.id == baseline_id).first())
 
 
 def approved_templates() -> list[Template]:

@@ -40,10 +40,17 @@ def _scoped():
     product ADOM sees only its own, so a report built while scoped to FortiADC
     does not appear under FortiWeb.
     """
+    from ..services.product_scope import restricted_adoms
     prod = _product()
     q = MonitorReport.query
     if prod:
         q = q.filter(MonitorReport.product == prod)
+    else:
+        allowed = restricted_adoms()
+        if allowed is not None:
+            # A confined profile's Global is the union of its ADOMs: reports
+            # built in Global (product '') name devices of every ADOM.
+            q = q.filter(MonitorReport.product.in_(sorted(allowed) or ['-']))
     return q.order_by(MonitorReport.period_start.desc(),
                       MonitorReport.id.desc())
 

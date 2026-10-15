@@ -135,6 +135,15 @@ class User(db.Model, UserMixin):
         return permission in self.effective_permissions
 
     @property
+    def allowed_adoms(self) -> frozenset[str] | None:
+        """The product ADOM keys this user is confined to, or ``None`` for
+        every ADOM. Comes from the assigned profile; a user without one (legacy
+        role) is unrestricted, exactly like the role it falls back to."""
+        if self.profile is not None:
+            return self.profile.adom_set
+        return None
+
+    @property
     def permissions(self) -> set[str]:
         return self.effective_permissions
 
@@ -164,6 +173,10 @@ class Profile(db.Model):
     name = db.Column(db.String(64), unique=True, nullable=False, index=True)
     description = db.Column(db.Text, nullable=True, default="")
     permissions = db.Column(db.Text, nullable=False, default="[]")  # JSON list of keys
+    # ADOM confinement (2026-10-15): JSON list of product ADOM keys. '' / [] =
+    # every ADOM. Read through ``adom_set`` and enforced by
+    # services.product_scope — never compare this column directly.
+    adoms = db.Column(db.Text, nullable=False, default="")
     is_system = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
@@ -188,6 +201,32 @@ class Profile(db.Model):
 
     def has(self, key: str) -> bool:
         return key in self.permission_set
+
+    @property
+    def adom_set(self) -> frozenset[str] | None:
+        """ADOM keys this profile is confined to; ``None`` = every ADOM.
+
+        A value that cannot be parsed confines to NOTHING (empty set) rather
+        than to everything: a corrupted restriction must not widen access."""
+        raw = (self.adoms or "").strip()
+        if not raw:
+            return None
+        try:
+            data = json.loads(raw)
+        except (ValueError, TypeError):
+            return frozenset()
+        if not isinstance(data, list):
+            return frozenset()
+        keys = {str(k).strip().lower() for k in data if isinstance(k, str)}
+        keys.discard("")
+        keys.discard("global")
+        return frozenset(keys) if keys else None
+
+    @adom_set.setter
+    def adom_set(self, value) -> None:
+        keys = sorted({str(k).strip().lower() for k in (value or ())
+                       if str(k).strip() and str(k).strip().lower() != "global"})
+        self.adoms = json.dumps(keys) if keys else ""
 
     @property
     def effective(self) -> set[str]:

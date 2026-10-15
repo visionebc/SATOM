@@ -62,6 +62,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -315,6 +316,14 @@ def _err_of(raw: Any) -> str:
         if code not in (None, 0, "0"):
             return "errcode %s%s" % (code, (": %s" % holder["message"])
                                      if holder.get("message") else "")
+        # The XML uploads answer HTTP 500 with NO errcode and the reason in
+        # ``errmsg`` (HTML): "Cannot open '/data/etc/xml_schema/root/x.xsd' to
+        # retrieve schema", "Failed to load the document …". Reading only
+        # ``errcode`` reported all of those as a bare "HTTP 500".
+        msg = holder.get("errmsg")
+        if isinstance(msg, str) and msg.strip():
+            text = " ".join(re.sub(r"<[^>]+>", " ", msg).split())
+            return "device refused the file: %s" % text[:400]
     return ""
 
 

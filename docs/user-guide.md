@@ -2205,6 +2205,14 @@ instead of following them, and stops at 25 documents, 5 levels or 60 seconds.
 Imported schemas are named after their file; check the names against what the
 policy needs (**Needed by a policy and NOT held**).
 
+FortiWeb checks a schema's references when the file is uploaded, and looks a
+relative `schemaLocation` up as an XML Schema object on the device, by name. So
+SATOM rewrites every reference it followed to the name it stored that document
+under, and says so in the version note. A reference it did not follow is kept
+as written and listed in the result: the appliance resolves it itself at
+upload, and refuses the file if it can't. On the device, a schema has to exist
+before the schema or WSDL that imports it.
+
 On FortiWeb 8.0.6 build0116 every gRPC IDL upload fails with
 `errcode -3000: Internal error processing requested file`, whatever the file;
 7.6.8 accepts the same file. SATOM adds that note to the error.

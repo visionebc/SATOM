@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added — WAF Artifacts: fetch a WSDL or XML Schema from the application (2026-10-15) · 154 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added — WAF Artifacts: fetch a WSDL or XML Schema from the application (2026-10-15) · 156 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added — WAF Artifacts: fetch a WSDL or XML Schema from the application (2026-10-15) · 154 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added — WAF Artifacts: fetch a WSDL or XML Schema from the application (2026-10-15) · 156 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added — WAF Artifacts: fetch a WSDL or XML Schema from the application (2026-10-15) · 154 entries</span>
-        <ul class="rel-leads"><li>Fetch from the application</li><li>Every edit is a new version</li><li>Compare versions</li><li class="rel-more">… and 151 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Added — WAF Artifacts: fetch a WSDL or XML Schema from the application (2026-10-15) · 156 entries</span>
+        <ul class="rel-leads"><li>Fetch from the application</li><li>Every edit is a new version</li><li>Compare versions</li><li class="rel-more">… and 153 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.1.0.html" data-rel-version="3.1.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.1.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -385,7 +385,20 @@
   own addresses are refused before connecting and again on the connected
   socket, so a host name that changes what it resolves to between the two
   checks is still caught.</li>
+<li>References are rewritten to the stored object names. Measured on FortiWeb
+  7.6.8: the device checks a schema's <code>schemaLocation</code> when the file is
+  uploaded, and opens a relative one as an XML Schema object on the device, by
+  name. A copy kept exactly as served (<code>types/order.xsd</code>, <code>OrderService?xsd=1</code>)
+  is refused, so each followed reference now names the object it was stored
+  as, and the version note says so. A reference SATOM did not fetch is left as
+  written and listed: the device resolves it itself (it downloads an absolute
+  URL at upload time) and refuses the file if it can't. <code>soap:address</code> is
+  never touched.</li>
 <li>The <strong>Origin</strong> filter on the inventory has a <strong>fetched</strong> option.</li>
+<li>A refused XML Schema, WSDL or other file upload now shows the device's own
+  reason (for example <em>Cannot open '/data/etc/xml_schema/root/x.xsd' to
+  retrieve schema</em>) instead of a bare <code>HTTP 500</code>: FortiWeb sends it in
+  <code>errmsg</code>, without an error code.</li>
 </ul>
 <h3 id="fixed--waf-artifacts-what-a-fortiweb-backup-holds-and-the-grpc-idl-error-on-806-2026-10-15">Fixed — WAF Artifacts: what a FortiWeb backup holds, and the gRPC IDL error on 8.0.6 (2026-10-15)</h3>
 <ul>

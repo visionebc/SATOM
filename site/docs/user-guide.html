@@ -4614,6 +4614,26 @@ deliberately not merged. Practical notes:</p>
 <li>A queued change is polled live and its steps are written by the runner. The
   restart it triggers shows as "reconnecting…" rather than a failure.</li>
 </ul>
+<p><strong>System packages</strong>, under Libraries, is the same mechanism for the
+<strong>operating-system</strong> packages SATOM depends on. Today the list holds one:
+<code>bubblewrap</code>, the sandbox for operator Python (integration hooks, the Python
+console, Script Library). Without it that code is refused, never run
+unconfined.</p>
+<ul>
+<li>One column per registered node. <strong>ok</strong> means the package is installed <em>and</em>
+  the sandbox actually works for the service account. <strong>installed, not usable</strong>
+  means the binary is there but the kernel will not let the service account
+  create namespaces (for example an LXC without user namespaces); the message
+  says why. A node that did not answer shows <strong>unreachable</strong>, never <em>ok</em>.</li>
+<li><strong>Install</strong> appears while any node is not <em>ok</em>. It asks whether to install on
+  every node or only this one. The privileged updater on each node picks the
+  distribution's package manager, installs the package and runs the same sandbox
+  check before it reports success.</li>
+<li>The list is curated and install-only. The web worker sends a package <em>key</em>,
+  never a package name or a command, and nothing here removes a package.</li>
+<li>New installs bring <code>bubblewrap</code> with them (online and offline bundles). This
+  card is how a node installed before that gets it.</li>
+</ul>
 <h3 id="261b-services--starting-stopping-and-restarting-this-nodes-units">26.1b Services — starting, stopping and restarting this node's units</h3>
 <p>The <strong>Services</strong> card at the bottom of the tab controls the units this node
 runs: the web app, the scheduler, the reconciler, the metrics store, the alert /

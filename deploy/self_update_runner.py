@@ -12,7 +12,8 @@ Because it runs in its OWN service (not the gunicorn worker), restarting the
 web app does not kill the update mid-flight. It is DB-free: progress is written
 to a status JSON the web UI polls.
 
-Scope: git app code + pip requirements + migrations. NEVER OS packages.
+Scope: git app code + pip requirements + migrations. OS packages ONLY from
+the curated ``_SYSPKG`` table (install, never remove) -- see syspkg_install.
 """
 import glob
 import json
@@ -2212,6 +2213,116 @@ def _reject(rp, req, reason):
 # Every kind this runner executes. A request without a kind is a code update
 # (app/services/self_update.request_update() writes none); any OTHER kind is
 # refused -- it used to fall through to the git reset + root scripts path.
+# ---------------------------------------------------------------------------
+# curated OS packages (kind: "syspkg") -- Settings > General > System packages
+# ---------------------------------------------------------------------------
+# [SATOM-RUNNER-NO-APP-IMPORT] A COPY of app/services/system_packages.PACKAGES
+# (keys + binary), asserted equal by tests/test_system_packages.py. The web
+# side only ever sends a KEY; the distro package name comes from here, so a
+# forged request cannot name a package, a flag or a version.
+_SYSPKG = {
+    "bubblewrap": {"binary": "bwrap",
+                   "names": {"apt": "bubblewrap", "dnf": "bubblewrap",
+                             "yum": "bubblewrap", "zypper": "bubblewrap",
+                             "pacman": "bubblewrap"}},
+}
+_SYSPKG_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9.+-]{0,63}$")
+
+
+def _pkg_manager():
+    import shutil
+    for m in ("apt-get", "dnf", "yum", "zypper", "pacman"):
+        if shutil.which(m):
+            return "apt" if m == "apt-get" else m
+    return ""
+
+
+def _pkg_install_cmd(mgr, name):
+    return {
+        "apt": ["apt-get", "install", "-y", "-q", "--no-install-recommends", name],
+        "dnf": ["dnf", "install", "-y", "-q", name],
+        "yum": ["yum", "install", "-y", "-q", name],
+        "zypper": ["zypper", "--non-interactive", "--quiet", "install", name],
+        "pacman": ["pacman", "-S", "--noconfirm", "--needed", name],
+    }[mgr]
+
+
+def _bwrap_works_for_app_user():
+    """bubblewrap installed is not bubblewrap usable: the app user must be
+    allowed to create namespaces. Same flags the product's jail uses."""
+    p = run(["bwrap", "--unshare-all", "--die-with-parent",
+             "--ro-bind", "/usr", "/usr", "--symlink", "usr/lib", "/lib",
+             "--symlink", "usr/lib64", "/lib64", "--symlink", "usr/bin", "/bin",
+             "--proc", "/proc", "--dev", "/dev", "/usr/bin/true"],
+            timeout=30, user=APP_USER, cwd="/")
+    return p.returncode == 0, (p.stderr or p.stdout or "").strip()
+
+
+def syspkg_install(req_path):
+    """Install ONE curated OS package on this node (root, table-bounded)."""
+    import shutil
+    req = _read_request(req_path)
+    uid = req.get("id") or Path(req_path).stem
+    st = Status(uid, req)
+    try:
+        os.remove(req_path)  # dequeue so the .path unit stops re-firing
+    except OSError:
+        pass
+    key = req.get("package")
+    key = key.strip() if isinstance(key, str) else ""
+    st.d["kind"] = "syspkg"
+    st.d["package"] = key
+    st.d["action"] = "install"
+    st.flush()
+
+    if not _SYSPKG_KEY_RE.match(key) or key not in _SYSPKG:
+        st.step("validate package", False, "%r is not a curated system package" % key)
+        st.finish("failed", error="package not allowed")
+        return
+    if (req.get("action") or "install") != "install":
+        st.step("validate action", False, "only 'install' is supported")
+        st.finish("failed", error="action not allowed")
+        return
+    spec = _SYSPKG[key]
+    mgr = _pkg_manager()
+    if not mgr:
+        st.step("package manager", False, "no apt-get/dnf/yum/zypper/pacman found")
+        st.finish("failed", error="unsupported distribution")
+        return
+    st.step("validate", True, "%s via %s" % (key, mgr))
+
+    env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+    if shutil.which(spec["binary"]):
+        st.step("already installed", True, shutil.which(spec["binary"]))
+    else:
+        if mgr == "apt":
+            st.begin("apt-get update")
+            u = run(["apt-get", "update", "-q"], timeout=600, env=env)
+            # A stale mirror list is a warning: the install below may still
+            # succeed from the cached index, and its own result is what counts.
+            st.step("apt-get update", True, (u.stderr or u.stdout)[-300:],
+                    warn=u.returncode != 0)
+        cmd = _pkg_install_cmd(mgr, spec["names"][mgr])
+        st.begin(" ".join(cmd))
+        p = run(cmd, timeout=900, env=env)
+        st.step(" ".join(cmd), p.returncode == 0, (p.stderr or p.stdout)[-500:])
+        if p.returncode != 0 or not shutil.which(spec["binary"]):
+            st.finish("failed", error="install failed" if p.returncode != 0
+                      else "%s still not on PATH" % spec["binary"])
+            return
+        st.step("binary present", True, shutil.which(spec["binary"]))
+
+    if key == "bubblewrap":
+        ok, detail = _bwrap_works_for_app_user()
+        st.step("sandbox works for %s" % APP_USER, ok,
+                detail or "namespaces created and torn down")
+        if not ok:
+            st.finish("failed", error="installed, but %s cannot create namespaces: %s"
+                      % (APP_USER, detail[:200]))
+            return
+    st.finish("success", package=key)
+
+
 _HANDLERS = {
     "": "process",
     "promote": "promote",
@@ -2219,6 +2330,7 @@ _HANDLERS = {
     "package": "package_change",
     "service": "service_action",
     "pg_ssl": "pg_ssl_apply",
+    "syspkg": "syspkg_install",
 }
 
 

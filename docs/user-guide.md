@@ -4051,6 +4051,26 @@ deliberately not merged. Practical notes:
 - A queued change is polled live and its steps are written by the runner. The
   restart it triggers shows as "reconnecting…" rather than a failure.
 
+**System packages**, under Libraries, is the same mechanism for the
+**operating-system** packages SATOM depends on. Today the list holds one:
+`bubblewrap`, the sandbox for operator Python (integration hooks, the Python
+console, Script Library). Without it that code is refused, never run
+unconfined.
+
+- One column per registered node. **ok** means the package is installed *and*
+  the sandbox actually works for the service account. **installed, not usable**
+  means the binary is there but the kernel will not let the service account
+  create namespaces (for example an LXC without user namespaces); the message
+  says why. A node that did not answer shows **unreachable**, never *ok*.
+- **Install** appears while any node is not *ok*. It asks whether to install on
+  every node or only this one. The privileged updater on each node picks the
+  distribution's package manager, installs the package and runs the same sandbox
+  check before it reports success.
+- The list is curated and install-only. The web worker sends a package *key*,
+  never a package name or a command, and nothing here removes a package.
+- New installs bring `bubblewrap` with them (online and offline bundles). This
+  card is how a node installed before that gets it.
+
 ### 26.1b Services — starting, stopping and restarting this node's units
 
 The **Services** card at the bottom of the tab controls the units this node

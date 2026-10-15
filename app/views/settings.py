@@ -627,6 +627,92 @@ def peer_library_pip():
     return jsonify({'uid': uid, 'node': su.this_node_name()})
 
 
+@bp.route('/system-packages')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def system_packages_state():
+    """Every node x every curated OS package: installed, version, and whether
+    the sandbox actually works for the app user. A silent peer is shown as
+    unreachable, never as installed."""
+    from ..services import system_packages as sp
+    return jsonify(sp.overview())
+
+
+@bp.route('/system-packages/install', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def system_packages_install():
+    """Enqueue the install of ONE curated OS package for the privileged runner
+    on this node, and optionally on the peers. The web worker installs nothing;
+    the runner re-checks the key against its own table."""
+    from ..services import self_update as su
+    from ..services import system_packages as sp
+    payload = request.get_json(silent=True) or {}
+    key = (payload.get('package') or '').strip()
+    also_peer = bool(payload.get('also_peer'))
+    who = getattr(current_user, 'username', '?')
+    try:
+        uid = sp.request_install(key, by=who)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    peers = []
+    if also_peer:
+        try:
+            peers = sp.request_install_on_peers(key, by=who)
+        except Exception as exc:  # noqa: BLE001
+            peers = [{'node': '?', 'host': '', 'uid': None,
+                      'state': 'unreachable', 'error': str(exc)}]
+    log_action('settings.system_package',
+               detail='install %s on %s%s' % (key, su.this_node_name(),
+                      (' (+peers: %s)' % (', '.join('%s=%s' % (p.get('node'), p.get('state'))
+                                                    for p in peers) or 'none registered'))
+                      if also_peer else ''))
+    return jsonify({'uid': uid, 'node': su.this_node_name(), 'peers': peers,
+                    'partial': bool(also_peer and any(p.get('state') != 'queued'
+                                                      for p in peers))})
+
+
+@bp.route('/peer/system-packages')
+@csrf.exempt
+def peer_system_packages():
+    """THIS node's curated OS package state, for the peer's card. Read-only."""
+    denied = _peer_gate()
+    if denied is not None:
+        return denied
+    from ..services import self_update as su
+    from ..services import system_packages as sp
+    return jsonify({'node': su.this_node_name(), 'role': su.node_role(),
+                    'packages': sp.local_state()})
+
+
+@bp.route('/peer/system-package-install', methods=['POST'])
+@csrf.exempt
+def peer_system_package_install():
+    """Enqueue a curated OS package install on THIS node, asked for by the
+    peer. Only a package KEY crosses the wire, re-checked against THIS node's
+    table; the distro name and the command come from this node's runner."""
+    denied = _peer_gate()
+    if denied is not None:
+        return denied
+    from ..services import self_update as su
+    from ..services import system_packages as sp
+    payload = request.get_json(silent=True) or {}
+    key = (payload.get('package') or '').strip()
+    by = '%s@%s' % ((str(payload.get('requested_by') or 'peer').strip() or 'peer')[:40],
+                    (str(payload.get('origin_node') or 'peer').strip() or 'peer')[:40])
+    try:
+        uid = sp.request_install(key, by=by, origin='peer-push')
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    log_action('settings.system_package.peer',
+               detail='install %s enqueued on %s for %s' % (key, su.this_node_name(), by))
+    return jsonify({'uid': uid, 'node': su.this_node_name()})
+
+
 @bp.route('/peer/services')
 @csrf.exempt
 def peer_services():

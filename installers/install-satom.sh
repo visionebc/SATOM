@@ -256,10 +256,10 @@ done
 
 # Package names per family (same order of concepts in all of them)
 case "$PKG_MGR" in
-    apt)        REQUIRED_PKGS=(python3 python3-venv python3-pip postgresql nginx rsync openssl curl ca-certificates sudo git) ;;
-    dnf|yum)    REQUIRED_PKGS=(python3.11 python3.11-pip postgresql-server postgresql nginx rsync openssl curl ca-certificates sudo git) ;;
-    zypper)     REQUIRED_PKGS=(python311 python311-pip postgresql-server postgresql nginx rsync openssl curl ca-certificates sudo git) ;;
-    pacman)     REQUIRED_PKGS=(python python-pip postgresql nginx rsync openssl curl ca-certificates sudo git) ;;
+    apt)        REQUIRED_PKGS=(python3 python3-venv python3-pip postgresql nginx rsync openssl curl ca-certificates sudo git bubblewrap) ;;
+    dnf|yum)    REQUIRED_PKGS=(python3.11 python3.11-pip postgresql-server postgresql nginx rsync openssl curl ca-certificates sudo git bubblewrap) ;;
+    zypper)     REQUIRED_PKGS=(python311 python311-pip postgresql-server postgresql nginx rsync openssl curl ca-certificates sudo git bubblewrap) ;;
+    pacman)     REQUIRED_PKGS=(python python-pip postgresql nginx rsync openssl curl ca-certificates sudo git bubblewrap) ;;
 esac
 ONLINE_EXTRA_PKGS=(git)
 

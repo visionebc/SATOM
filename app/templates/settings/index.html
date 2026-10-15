@@ -4969,7 +4969,7 @@ function libRenderSteps(pre, st) {
   });
   pre.textContent = lines.join('\n');
 }
-function libPollStatus(uid, pre, offlineSince) {
+function libPollStatus(uid, pre, offlineSince, onDone) {
   // The runner restarts satom.service itself, so polls during that window get
   // a 502 / connection reset. Keep retrying (like the Software Update page)
   // instead of giving up on the first failed fetch.
@@ -4979,8 +4979,9 @@ function libPollStatus(uid, pre, offlineSince) {
     .then(function (st) {
       libRenderSteps(pre, st);
       if (st.state === 'running' || st.state === 'queued') {
-        setTimeout(function () { libPollStatus(uid, pre); }, 2000);
+        setTimeout(function () { libPollStatus(uid, pre, null, onDone); }, 2000);
       } else {
+        if (onDone) { onDone(st); }
         // done — refresh installed versions + rollback buttons
         setTimeout(function () {
           libLoadState(); checkLibraryUpdates(false); libLoadDrift();
@@ -4994,7 +4995,7 @@ function libPollStatus(uid, pre, offlineSince) {
       var base = pre.textContent.replace(/\n\((?:service restarting|status unavailable)[^\n]*\)$/, '');
       if (secs < 180) {
         pre.textContent = base + '\n(service restarting as part of the update — reconnecting… ' + secs + 's)';
-        setTimeout(function () { libPollStatus(uid, pre, since); }, 3000);
+        setTimeout(function () { libPollStatus(uid, pre, since, onDone); }, 3000);
       } else {
         pre.textContent = base + '\n(status unavailable for 3 minutes — check Software Update → Recent updates for ' + uid + ')';
       }
@@ -5005,12 +5006,17 @@ function libRenderPeers(peers, partial, alsoPeer) {
   if (!box) { return; }
   if (!alsoPeer) { box.style.display = 'none'; box.textContent = ''; return; }
   var lines = [];
-  (peers || []).forEach(function (p) {
+  (Array.isArray(peers) ? peers : []).forEach(function (p) {
     var tag = p.state === 'queued' ? 'queued'
             : (p.state === 'unreachable' ? 'UNREACHABLE' : 'REJECTED');
     lines.push('peer ' + (p.node || '?') + ' (' + (p.host || '?') + '): ' + tag
       + (p.uid ? ' ' + p.uid : '') + (p.error ? ' — ' + p.error : ''));
   });
+  if (peers === 'pending') {
+    lines.push('peer: waits until the change succeeds on this node, so both nodes never restart together.');
+  } else if (peers === 'skipped') {
+    lines.push('peer: NOT touched — the change did not succeed on this node.');
+  }
   if (!lines.length) { lines.push('peer: no other node is registered — this node only.'); }
   if (partial) {
     lines.push('PARTIAL: the change is queued HERE but NOT on the peer. '
@@ -5038,8 +5044,32 @@ function libPipChange(pkg, version, action) {
     .then(function (res) {
       if (!res.ok) { if (pre) pre.textContent = 'Error: ' + (res.d.error || 'request rejected'); return; }
       if (pre) pre.textContent = 'queued (' + res.d.uid + ') on ' + res.d.node + ' — applying…';
-      libRenderPeers(res.d.peers, res.d.partial, !!res.d.also_peer);
-      libPollStatus(res.d.uid, pre);
+      var uid = res.d.uid;
+      if (!res.d.peer_deferred) {
+        libRenderPeers(res.d.peers, res.d.partial, !!res.d.also_peer);
+        libPollStatus(uid, pre);
+        return;
+      }
+      libRenderPeers('pending', false, true);
+      libPollStatus(uid, pre, null, function (st) {
+        if (st.state !== 'success') { libRenderPeers('skipped', false, true); return; }
+        fetch('/settings/library-pip/peers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': libCsrf() },
+          body: JSON.stringify({ package: pkg, version: version, action: action, local_uid: uid })
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+          .then(function (pr) {
+            if (!pr.ok) {
+              libRenderPeers([{ node: 'peer', state: 'rejected', error: pr.d.error || 'refused' }], true, true);
+              return;
+            }
+            libRenderPeers(pr.d.peers, pr.d.partial, true);
+          })
+          .catch(function (e) {
+            libRenderPeers([{ node: 'peer', state: 'unreachable', error: e.message }], true, true);
+          });
+      });
     })
     .catch(function (e) { if (pre) pre.textContent = 'Error: ' + e.message; });
 }

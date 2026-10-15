@@ -314,6 +314,33 @@ def enforce_unit_user(user, names=None):
 
 
 SYSTEMD_DIR = Path("/etc/systemd/system")
+# Units this runner has armed itself, so a late arm happens at most once and an
+# operator who disables one afterwards keeps it disabled. Root-owned, outside
+# the app tree.
+ARMED_REGISTRY = Path("/var/lib/satom-runner/armed-units.json")
+# Units that reached nodes INSTALLED BUT NOT ARMED: introduced while the
+# previous runner (which never enabled anything) was still the one applying
+# updates, so the current runner saw them as "already installed". Armed once.
+_LATE_ARM = ("satom-scripts.path",)
+
+
+def _armed_registry():
+    try:
+        data = json.loads(ARMED_REGISTRY.read_text())
+        return set(data) if isinstance(data, list) else set()
+    except (OSError, ValueError):
+        return set()
+
+
+def _remember_armed(units):
+    if not units:
+        return
+    try:
+        ARMED_REGISTRY.parent.mkdir(parents=True, exist_ok=True)
+        os.chmod(str(ARMED_REGISTRY.parent), 0o700)
+        ARMED_REGISTRY.write_text(json.dumps(sorted(_armed_registry() | set(units))))
+    except OSError:
+        pass
 
 
 def refresh_units(deploy_dir, st=None):
@@ -343,13 +370,20 @@ def refresh_units(deploy_dir, st=None):
             fresh.append(unit)
     enforce_unit_user(APP_USER, names)
     subprocess.run(["systemctl", "daemon-reload"])
-    for unit in fresh:
+    done = _armed_registry()
+    late = [u for u in _LATE_ARM if u in names and u not in fresh and u not in done
+            and (SYSTEMD_DIR / u).exists()]
+    armed = []
+    for unit in fresh + late:
         p = subprocess.run(["systemctl", "enable", "--now", unit],
                            capture_output=True, text=True, timeout=60)
+        if p.returncode == 0:
+            armed.append(unit)
         if st is not None:
-            st.step("arm new unit %s" % unit, p.returncode == 0,
-                    (p.stderr or p.stdout or "enabled").strip()[-300:])
-    return names, fresh
+            st.step("arm %s unit %s" % ("new" if unit in fresh else "late", unit),
+                    p.returncode == 0, (p.stderr or p.stdout or "enabled").strip()[-300:])
+    _remember_armed(armed)
+    return names, fresh + late
 
 
 # ── [SATOM-RELEASE-TRUST] opt-in release-signature enforcement ─────────────

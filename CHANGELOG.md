@@ -39,6 +39,10 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   the new `deploy/` holds and enable a `.path`/`.timer` the first time it is
   installed, as the installer does. A unit that was already installed keeps
   the enabled state it had.
+- `satom-scripts.path` itself reached the standby installed but not enabled
+  (the previous updater copied it during the switch-over). The updater arms
+  it once, and remembers having done so, so an operator who disables it later
+  keeps it disabled.
 
 ### Added — Settings > General > System packages (2026-10-15)
 

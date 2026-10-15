@@ -145,6 +145,10 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   the new <code>deploy/</code> holds and enable a <code>.path</code>/<code>.timer</code> the first time it is
   installed, as the installer does. A unit that was already installed keeps
   the enabled state it had.</li>
+<li><code>satom-scripts.path</code> itself reached the standby installed but not enabled
+  (the previous updater copied it during the switch-over). The updater arms
+  it once, and remembers having done so, so an operator who disables it later
+  keeps it disabled.</li>
 </ul>
 <h3 id="added--settings--general--system-packages-2026-10-15">Added — Settings &gt; General &gt; System packages (2026-10-15)</h3>
 <ul>

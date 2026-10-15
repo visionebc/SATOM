@@ -25,17 +25,30 @@ of SATOM already uses — no browser, no session cookie, no ``X-CSRFTOKEN`` (bot
 were tried; both 200). The upload endpoints are not under ``/cmdb/`` and the
 multipart FIELD NAME differs per type; that field name is the whole trick, and
 getting it wrong is what produces the ``-3000`` this module's first draft
-concluded was a wall.
+concluded was a wall. One exception, measured 2026-10-15: FortiWeb 8.0.6
+build0116 answers ``-3000`` to EVERY gRPC IDL upload — ten contents and archive
+formats, the same endpoint and field its own GUI posts — while 7.6.8 takes the
+same bytes. See :data:`GRPC_3000_HINT`.
 
 **Reading** works for four. XML Schema, WSDL and gRPC IDL answer ``-20005
-invalid HTTP method`` on every shape, expose ``can_view: 0``, have no ``*-view``
-GUI component, and their tab offers only *Create New | Delete*. They are also
-absent from ``execute backup full-config`` (7.5 MB, emits ``edit "xsd-order"`` /
-``next`` and no bytes) while certificates in the SAME backup travel whole — the
-omission is a product decision, not a gap we can route around.
+invalid HTTP method`` on every shape (7.6.8 and 8.0.6), expose ``can_view: 0``,
+have no ``*-view`` GUI component, and their tab offers only *Create New |
+Delete*. The CLI text (``show full-configuration``, ``execute backup
+full-config``) carries ``edit "xsd-order"`` / ``next`` and no bytes.
 
-So for those three a device→device clone of the CONTENT cannot exist, and the
-only correct architecture is the one here: **SATOM keeps the artifact**. It is
+The content is NOT missing from the device's backup, though. The GUI's
+*Entire configuration* backup (``GET system/maintenance.backupconfiguration
+?type=entire``) is a ZIP whose ``fwb_system.conf`` ends in a
+``/tmp/extend_tar_file`` block (``compress=gzipped``, ``encrypt=yes``, header
+``#FGBK|4|…``) — encrypted by the firmware even when no backup password is set.
+Deleting one XSD + one WSDL shrinks that block by ~1.1 KB on both 7.6.8 and
+8.0.6 while two untouched backups measure identical, so the files travel inside
+it. Only a FortiWeb can open it: a full-configuration restore onto another
+appliance moves them, all or nothing. SATOM does not and will not open that
+block.
+
+So for those three a device→device clone of ONE object's content cannot exist,
+and the only correct architecture is the one here: **SATOM keeps the artifact**. It is
 captured whenever a device does allow the read, or uploaded by an operator. Its
 content reaches a device only when the clone/migrate engine CREATES the object
 there (``policy_ops._push_artifact``); there is no standalone push from the
@@ -113,6 +126,8 @@ KINDS: dict[str, dict[str, Any]] = {
         "label": "gRPC IDL",
         "urn": "cmdb/waf/grpc-idl.file",
         "read": None,          # -20005
+        # Same endpoint + field in the 7.6.8 and 8.0.6 GUI (fwb-grpc-file-
+        # upload.js). 8.0.6 build0116 still refuses every upload: GRPC_3000_HINT.
         "upload": "/api/v2.0/waf/grpc.idlfile",
         "field": "idlfile",
     },
@@ -430,7 +445,7 @@ def push_checked(client, kind: str, name: str, blob: bytes, *, vdom: str = "") -
     cannot check is ok and ``verify["verdict"] == "unverified"``."""
     ok, err = _push(client, kind, name, blob, vdom=vdom)
     if not ok:
-        return {"ok": False, "error": err, "verify": None}
+        return {"ok": False, "error": explain_push_error(kind, err), "verify": None}
     v = confirm(client, kind, name, blob, vdom=vdom)
     if v["verdict"] == "mismatch":
         return {"ok": False, "error": v["why"], "verify": v}
@@ -484,6 +499,23 @@ def _push_text(client, spec: dict, name: str, blob: bytes, *, vdom: str) -> tupl
     if not ok2 and "-3" not in err2:      # -3 = already there; the body still landed
         return False, err2
     return True, ""
+
+
+#: Appended to a gRPC IDL ``-3000``. Bare, that errcode reads "your file is
+#: wrong", and the operator spends the afternoon rewriting a valid .proto.
+GRPC_3000_HINT = (
+    "FortiWeb 8.0.6 build0116 refuses every gRPC IDL upload with -3000, "
+    "whatever the file (ten contents and archive formats were tried; 7.6.8 "
+    "accepts the same file). If the device's own GUI refuses it too, the cause "
+    "is the firmware, not the file.")
+
+
+def explain_push_error(kind: str, err: str) -> str:
+    """The device's error, plus what SATOM measured about it when that changes
+    the operator's next step. Never drops the device's own words."""
+    if kind == "grpc_idl" and "-3000" in (err or ""):
+        return "%s — %s" % (err, GRPC_3000_HINT)
+    return err
 
 
 def _upload_result(resp) -> tuple[bool, str]:

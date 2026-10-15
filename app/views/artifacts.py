@@ -541,10 +541,14 @@ def fetch_from_app():
     by = getattr(current_user, "username", "") or ""
     owner = int(appl_id) if appl_id.isdigit() else None
     stored = []
+    rewrote = {d for d, _raw, _new in rep.rewritten}
     for doc in rep.docs:
+        prov = "fetched from %s" % doc.url
+        if doc.name in rewrote:
+            prov += " (references rewritten to object names)"
         _row, created = wa.put(doc.kind, doc.name, doc.blob, appliance_id=owner,
                                source="fetched", by=by,
-                               note=("fetched from %s%s" % (doc.url, (" — " + note) if note else ""))[:500])
+                               note=(prov + ((" — " + note) if note else ""))[:500])
         stored.append("%s \"%s\" (%d bytes%s)" % (wa.label(doc.kind), doc.name,
                                                   len(doc.blob), "" if created else ", unchanged"))
     log_action("artifact.fetch", "%s -> %d document(s): %s%s"
@@ -553,12 +557,20 @@ def fetch_from_app():
     msg = "Fetched from %s and stored %s." % (url, "; ".join(stored))
     if rep.renamed:
         msg += " Renamed to avoid a clash: %s." % ", ".join("%s → %s" % r for r in rep.renamed)
+    if rep.rewritten:
+        msg += (" References now name the stored objects, because FortiWeb opens a "
+                "schemaLocation as an object on the device: %s."
+                % "; ".join("%s: %s → %s" % r for r in rep.rewritten[:8]))
+    if rep.unresolved:
+        msg += (" Still pointing at what SATOM did not fetch — FortiWeb resolves these "
+                "itself when the file is uploaded and refuses the file if it cannot: %s."
+                % "; ".join("%s: %s" % r for r in rep.unresolved[:8]))
     if rep.skipped:
         shown = rep.skipped[:8]
         msg += " Not fetched: %s%s." % ("; ".join("%s (%s)" % s for s in shown),
                                         " … and %d more" % (len(rep.skipped) - len(shown))
                                         if len(rep.skipped) > len(shown) else "")
-    flash(msg, "warning" if rep.skipped else "success")
+    flash(msg, "warning" if (rep.skipped or rep.unresolved) else "success")
     return redirect(dest)
 
 

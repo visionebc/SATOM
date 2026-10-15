@@ -43,6 +43,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Callable
 from urllib.parse import parse_qsl, unquote, urldefrag, urljoin, urlsplit
+from xml.sax.saxutils import escape as xml_escape
 
 from .artifact_files import MAX_BYTES
 
@@ -88,6 +89,8 @@ class Doc:
     blob: bytes
     depth: int
     referenced_by: str = ""
+    #: ``(as written in the document, absolute URL)`` for every reference
+    refs: list[tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -95,6 +98,10 @@ class Report:
     docs: list[Doc] = field(default_factory=list)
     skipped: list[tuple[str, str]] = field(default_factory=list)
     renamed: list[tuple[str, str]] = field(default_factory=list)
+    #: ``(document name, reference as written, object name it now points at)``
+    rewritten: list[tuple[str, str, str]] = field(default_factory=list)
+    #: ``(document name, reference as written)`` left untouched: not fetched
+    unresolved: list[tuple[str, str]] = field(default_factory=list)
     error: str = ""
 
 
@@ -315,11 +322,13 @@ def fetch_tree(url: str, *, root_name: str = "", verify_tls: bool = True,
             rep.renamed.append((name, new))
             name = new
         names.add(name)
-        rep.docs.append(Doc(url=doc_url, kind=kind, name=name, blob=blob,
-                            depth=depth, referenced_by=parent))
+        doc = Doc(url=doc_url, kind=kind, name=name, blob=blob,
+                  depth=depth, referenced_by=parent)
+        rep.docs.append(doc)
 
         for ref in refs:
             target = urldefrag(urljoin(doc_url, ref))[0]
+            doc.refs.append((ref, target))
             if target in seen:
                 continue
             seen.add(target)
@@ -334,4 +343,50 @@ def fetch_tree(url: str, *, root_name: str = "", verify_tls: bool = True,
                 rep.skipped.append((target, "over the %d-document limit" % MAX_DOCS))
                 continue
             queue.append((target, depth + 1, doc_url))
+    _point_at_object_names(rep)
     return rep
+
+
+def _rewrite_ref(blob: bytes, raw: str, new: str) -> tuple[bytes, int]:
+    """Replace one ``schemaLocation`` / ``location`` value, as written, ONLY
+    inside an import/include/redefine/override element — ``soap:address
+    location`` is the service endpoint and must survive even when it happens
+    to hold the same string."""
+    forms = {raw, xml_escape(raw, {'"': "&quot;"}), xml_escape(raw, {"'": "&apos;"})}
+    count = 0
+    for form in forms:
+        pat = re.compile(rb"(<(?:[\w.-]+:)?(?:import|include|redefine|override)\b[^>]*?"
+                         rb"\b(?:schemaLocation|location)\s*=\s*)([\"'])"
+                         + re.escape(form.encode("utf-8")) + rb"\2")
+        blob, n = pat.subn(lambda m: m.group(1) + m.group(2)
+                           + xml_escape(new).encode("utf-8") + m.group(2), blob)
+        count += n
+    return blob, count
+
+
+def _point_at_object_names(rep: Report) -> None:
+    """Make every followed reference name the object it was stored under.
+
+    MEASURED on FortiWeb 7.6.8 (2026-10-15): the device validates references
+    when the file is uploaded. A relative ``schemaLocation`` is opened as
+    ``/data/etc/xml_schema/root/<value>`` — an XML Schema object ON THE DEVICE,
+    by name — so ``OrderService?xsd=1`` or ``types/order.xsd`` is refused
+    ("Cannot open … to retrieve schema"); an absolute URL is fetched by the
+    appliance itself at upload time. A copy stored exactly as served therefore
+    cannot be pushed. References SATOM did not fetch are left as written and
+    reported: the device will resolve (or refuse) them itself.
+    """
+    stored = {d.url: d.name for d in rep.docs}
+    for doc in rep.docs:
+        for raw, target in doc.refs:
+            new = stored.get(target)
+            if not new:
+                rep.unresolved.append((doc.name, raw))
+                continue
+            if raw == new:
+                continue
+            doc.blob, n = _rewrite_ref(doc.blob, raw, new)
+            if n:
+                rep.rewritten.append((doc.name, raw, new))
+            else:
+                rep.unresolved.append((doc.name, raw))

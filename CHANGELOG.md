@@ -26,7 +26,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   own addresses are refused before connecting and again on the connected
   socket, so a host name that changes what it resolves to between the two
   checks is still caught.
+- References are rewritten to the stored object names. Measured on FortiWeb
+  7.6.8: the device checks a schema's `schemaLocation` when the file is
+  uploaded, and opens a relative one as an XML Schema object on the device, by
+  name. A copy kept exactly as served (`types/order.xsd`, `OrderService?xsd=1`)
+  is refused, so each followed reference now names the object it was stored
+  as, and the version note says so. A reference SATOM did not fetch is left as
+  written and listed: the device resolves it itself (it downloads an absolute
+  URL at upload time) and refuses the file if it can't. `soap:address` is
+  never touched.
 - The **Origin** filter on the inventory has a **fetched** option.
+- A refused XML Schema, WSDL or other file upload now shows the device's own
+  reason (for example *Cannot open '/data/etc/xml_schema/root/x.xsd' to
+  retrieve schema*) instead of a bare `HTTP 500`: FortiWeb sends it in
+  `errmsg`, without an error code.
 
 ### Fixed — WAF Artifacts: what a FortiWeb backup holds, and the gRPC IDL error on 8.0.6 (2026-10-15)
 

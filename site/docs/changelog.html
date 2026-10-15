@@ -132,7 +132,20 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   own addresses are refused before connecting and again on the connected
   socket, so a host name that changes what it resolves to between the two
   checks is still caught.</li>
+<li>References are rewritten to the stored object names. Measured on FortiWeb
+  7.6.8: the device checks a schema's <code>schemaLocation</code> when the file is
+  uploaded, and opens a relative one as an XML Schema object on the device, by
+  name. A copy kept exactly as served (<code>types/order.xsd</code>, <code>OrderService?xsd=1</code>)
+  is refused, so each followed reference now names the object it was stored
+  as, and the version note says so. A reference SATOM did not fetch is left as
+  written and listed: the device resolves it itself (it downloads an absolute
+  URL at upload time) and refuses the file if it can't. <code>soap:address</code> is
+  never touched.</li>
 <li>The <strong>Origin</strong> filter on the inventory has a <strong>fetched</strong> option.</li>
+<li>A refused XML Schema, WSDL or other file upload now shows the device's own
+  reason (for example <em>Cannot open '/data/etc/xml_schema/root/x.xsd' to
+  retrieve schema</em>) instead of a bare <code>HTTP 500</code>: FortiWeb sends it in
+  <code>errmsg</code>, without an error code.</li>
 </ul>
 <h3 id="fixed--waf-artifacts-what-a-fortiweb-backup-holds-and-the-grpc-idl-error-on-806-2026-10-15">Fixed — WAF Artifacts: what a FortiWeb backup holds, and the gRPC IDL error on 8.0.6 (2026-10-15)</h3>
 <ul>

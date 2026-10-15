@@ -381,7 +381,11 @@
       .catch(function (e) { box.innerHTML = '<div class="text-danger small">' + esc(e.message) + '</div>'; });
   }
   function drawQB(i, box, cat, rel) {
-    var f = fields[i], q = f.query, used = qTables(q);
+    var f = fields[i], q = f.query;
+    // A saved query carries only the keys it uses: no "joins" when it joins
+    // nothing. Normalise before anything pushes into them.
+    q.joins = q.joins || []; q.columns = q.columns || []; q.filters = q.filters || [];
+    var used = qTables(q);
     var colSet = {}; qColNames(q).forEach(function (n) { colSet[n] = true; });
     var allCols = [];
     used.forEach(function (t) { ((cat.by[t] || {}).columns || []).forEach(function (c) { allCols.push(t + '.' + c.name); }); });

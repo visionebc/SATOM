@@ -770,10 +770,19 @@ def is_empty(blob) -> bool:
 
 
 def resolve_for_plan(items, *, src_client=None, src_vdom: str = "",
-                     source_appliance_id: int | None = None) -> list[dict]:
+                     source_appliance_id: int | None = None,
+                     dst_client=None) -> list[dict]:
     """Read-only report: for every file-backed object in the plan, can its
-    CONTENT be supplied? Never captures (see :func:`content_for`)."""
+    CONTENT be supplied? Never captures (see :func:`content_for`).
+
+    Also lists the XML Schemas those files IMPORT (``dependency_of`` set): the
+    device refuses a WSDL/XSD whose schemas it does not hold yet, and the clone
+    adds them to the plan (``policy_ops._expand_artifact_deps``) — so the
+    checklist has to show them, and show the ones nobody can supply."""
     out = []
+    blobs: list[tuple[str, str, bytes]] = []
+    planned = {a["name"] for a in plan_artifacts(items)
+               if a["kind"] == "xml_schema" and a["status"] in ("create", "exists")}
     for a in plan_artifacts(items):
         rec = dict(a, resolved=False, origin="", reason="", size=0,
                    empty=False)
@@ -803,8 +812,44 @@ def resolve_for_plan(items, *, src_client=None, src_vdom: str = "",
                               "configured and enforces nothing" % len(blob))
         else:
             rec.update(resolved=True, origin=origin, size=len(blob))
+            blobs.append((a["kind"], a["name"], blob))
         out.append(rec)
+    out.extend(_dependency_rows(blobs, planned, dst_client=dst_client,
+                                source_appliance_id=source_appliance_id))
     return out
+
+
+def _dependency_rows(blobs, planned: set, *, dst_client,
+                     source_appliance_id) -> list[dict]:
+    from . import artifact_deps as ad
+    from . import object_refresh as orf
+    path = "/api/v2.0/" + KINDS["xml_schema"]["urn"]
+
+    def dst_has(name):
+        if dst_client is None:
+            return None
+        try:
+            return orf.presence(dst_client, path, name)
+        except Exception:  # noqa: BLE001
+            return None
+
+    res = ad.Resolver(
+        planned=planned, dst_has=dst_has, is_empty=is_empty,
+        content=lambda n: content_for("xml_schema", n,
+                                      source_appliance_id=source_appliance_id))
+    rows = []
+    base = {"kind": "xml_schema", "label": label("xml_schema"), "urn": KINDS["xml_schema"]["urn"],
+            "status": "create", "readable": False, "name_warning": "", "empty": False}
+    for kind, name, blob in blobs:
+        for dep in res.needed_for(kind, name, blob):
+            rows.append(dict(base, name=dep["name"], resolved=True, origin=dep["origin"],
+                             size=len(dep["blob"]), dependency_of=dep["of"],
+                             reason="imported by %s" % dep["of"]))
+    for m in res.missing:
+        rows.append(dict(base, name=m["name"], resolved=False, origin="", size=0,
+                         dependency_of=m["of"],
+                         reason="imported by %s — %s" % (m["of"], m["reason"])))
+    return rows
 
 
 def history(kind: str = "", name: str = "", limit: int = 200,

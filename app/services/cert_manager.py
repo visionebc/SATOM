@@ -1889,8 +1889,10 @@ def delete_record(cert: ManagedCertificate, *, revoke_first: bool = False,
             return {"ok": False, "bindings": r.get("bindings", []),
                     "error": f"not removed from the device: {r.get('error')}"}
     name, cid = cert.name, cert.id
+    # On the device only if a deploy of it succeeded and it was not taken off
+    # since: a CSR, or a certificate stored without deploying, has no copy there.
     on_device = bool(cert.appliance_id and not cert.removed_at
-                     and cert.status != "awaiting_signature")
+                     and any(e.kind == "deploy" and e.ok for e in cert.events))
     CertRevocation.query.filter_by(cert_id=cid).update({"cert_id": None})
     ManagedCertificate.query.filter_by(supersedes_id=cid).update({"supersedes_id": None})
     ManagedCertificateEvent.query.filter_by(cert_id=cid).delete()

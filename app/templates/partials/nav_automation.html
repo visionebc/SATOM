@@ -112,7 +112,7 @@
     {% endif %}
     {# Script Library scripts are global, not per device: Global ADOM only. #}
     {% if product.key == 'global' and may_open('scripts.index') %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint == 'scripts' else '' }}" href="{{ url_for('scripts.index') }}">
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'scripts' else '' }}" href="{{ url_for('scripts.index', _adom=product.key) }}">
       <i class="bi bi-file-earmark-play fw-nav-icon"></i><span>{{ _('Scripts') }}</span></a>
     {% endif %}
     {% if may_open('device_provision.index') %}

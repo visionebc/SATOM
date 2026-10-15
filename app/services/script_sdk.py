@@ -10,7 +10,12 @@ it for ``tcp``). Nothing of ``/opt/satom`` is on ``sys.path`` in the jail.
     result({"ok": True, "rows": [...]})
 
 ``inputs``  the form values, keyed by field name, typed (numbers are numbers,
-            checkboxes are booleans). Read once from stdin.
+            checkboxes are booleans). Read once from stdin. Database fields
+            arrive as rows the server read for the user's ADOMs:
+            ``lookup`` → ``{"value", "label", "row": {"table.col": ...}}``,
+            ``lookup_multi`` → a list of those, ``dataset`` →
+            ``{"columns": [...], "rows": [{"table.col": ...}], "truncated"}``.
+            Cell values are text ('' for NULL).
 ``result``  one JSON document, shown as structured output of the run. Calling
             it again replaces the previous one. Not parsed out of stdout, so
             printing JSON cannot fake it.

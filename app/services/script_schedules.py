@@ -171,6 +171,7 @@ def create(user, slug: str, *, name: str, cron: str, raw_inputs) -> dict:
         raise SL.ScriptError("at most %d saved runs per user" % MAX_PER_USER)
     expr = validate_cron(cron)
     inputs = SL.resolve_inputs(v["fields"], raw_inputs)
+    _check_db_fields(user, v["fields"], inputs)
     plain, secret = _split(v["fields"], inputs)
     sid = uuid.uuid4().hex[:12]
     if secret:
@@ -187,6 +188,20 @@ def create(user, slug: str, *, name: str, cron: str, raw_inputs) -> dict:
          "created_at": SL._utcnow(), "next_run": _iso(_next(expr)),
          "last_run": None, "last_request_id": None, "last_status": ""}
     return _save(s)
+
+
+def _check_db_fields(user, fields: list[dict], inputs: dict) -> None:
+    """Refuse a saved run whose database picks the owner cannot read now.
+    The rows themselves are NOT saved: each fire reads them again."""
+    from . import db_lookup
+    from .product_scope import adoms_of
+    if not any(f["type"] in db_lookup.LOOKUP_TYPES for f in fields):
+        return
+    try:
+        db_lookup.expand([f for f in fields if f["type"] in db_lookup.PICK_TYPES],
+                         inputs, adoms_of(user))
+    except db_lookup.LookupError_ as exc:
+        raise SL.ScriptError(str(exc))
 
 
 def _iso(dt):
@@ -226,6 +241,7 @@ def move_to_published(user, s: dict) -> dict:
     relaxed = [dict(f, required=False) if f["name"] in keep_secret else f for f in fields]
     try:
         inputs = SL.resolve_inputs(relaxed, {k: v_ for k, v_ in trial.items() if k in names})
+        _check_db_fields(user, fields, inputs)
     except SL.ScriptError as exc:
         raise SL.ScriptError("v%s needs different values (%s): delete this saved run "
                              "and create it again" % (meta["published"], exc))
@@ -269,7 +285,7 @@ def fire(s: dict, now=None) -> dict:
         st = SL.enqueue_run(s["slug"], version_ref=int(s["version"]),
                             raw_inputs=dict(s.get("inputs") or {}),
                             by=s.get("owner") or "?", trigger="schedule",
-                            wrap=SV.wrap_for_run, sealed=sealed)
+                            wrap=SV.wrap_for_run, sealed=sealed, user=user)
     except SL.ScriptError as exc:
         s["last_status"] = "not queued: %s" % str(exc)[:200]
         s["last_run"] = _iso(now)

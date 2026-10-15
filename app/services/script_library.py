@@ -88,7 +88,11 @@ TEXT_SUFFIXES = (".py", ".txt", ".json", ".csv", ".yaml", ".yml", ".md",
 _FIELD_RE = re.compile(r"^[a-z_][a-z0-9_]{0,63}$")
 _CRED_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 CREDENTIAL_KINDS = ("userpass", "secret")
-FIELD_TYPES = ("text", "textarea", "number", "select", "checkbox", "password")
+FIELD_TYPES = ("text", "textarea", "number", "select", "checkbox", "password",
+               # Database fields (services.db_lookup): a pick list, a multi-pick
+               # list, or a whole result handed to the script.
+               "lookup", "lookup_multi", "dataset")
+DB_FIELD_TYPES = ("lookup", "lookup_multi", "dataset")
 NETWORK_MODES = ("none", "egress")
 AUDIENCES = ("admins", "operators")
 # Names the SDK and the runner own inside the work directory.
@@ -213,8 +217,18 @@ def clean_fields(fields: Any) -> list[dict]:
             if len(opts) > MAX_OPTIONS or len(set(opts)) != len(opts):
                 raise ScriptError("field %r: up to %d distinct options" % (name, MAX_OPTIONS))
             clean["options"] = opts
+        if ftype in DB_FIELD_TYPES:
+            from . import db_lookup
+            try:
+                db_lookup.clean_field(clean, f)
+            except db_lookup.LookupError_ as exc:
+                raise ScriptError("field %r: %s" % (name, exc))
+            if ftype == "dataset":
+                clean["required"] = False   # nothing to fill in
         default = f.get("default")
-        if ftype == "password":
+        if ftype in DB_FIELD_TYPES:
+            default = None            # the choices live in the database
+        elif ftype == "password":
             default = None            # a default secret would be stored in clear
         elif ftype == "checkbox":
             default = bool(default) if default not in (None, "") else False
@@ -232,6 +246,12 @@ def clean_fields(fields: Any) -> list[dict]:
 
 def coerce_value(field: dict, value: Any) -> Any:
     ftype = field["type"]
+    if ftype in DB_FIELD_TYPES:
+        from . import db_lookup
+        try:
+            return db_lookup.coerce(field, value)
+        except db_lookup.LookupError_ as exc:
+            raise ScriptError(str(exc))
     if ftype == "checkbox":
         if isinstance(value, bool):
             return value
@@ -271,7 +291,11 @@ def resolve_inputs(fields: list[dict], raw: Any) -> dict[str, Any]:
     for f in fields:
         name = f["name"]
         val = raw.get(name)
-        empty = val is None or (isinstance(val, str) and val.strip() == "")
+        empty = val is None or (isinstance(val, str) and val.strip() == "") \
+            or (isinstance(val, (list, tuple)) and not any(
+                str(x).strip() for x in val if x is not None))
+        if f["type"] == "dataset":
+            continue                  # read from the database when queued
         if f["type"] == "checkbox":
             out[name] = coerce_value(f, val) if val is not None else bool(f.get("default"))
             continue
@@ -303,7 +327,9 @@ def shown_inputs(fields: list[dict], inputs: dict[str, Any]) -> dict[str, Any]:
         if f["name"] not in inputs:
             continue
         v = inputs[f["name"]]
-        out[f["name"]] = ("********" if v else "") if f["type"] == "password" else v
+        if f["type"] == "password":
+            v = "********" if v else ""
+        out[f["name"]] = v
     return out
 
 
@@ -836,9 +862,12 @@ def _new_request_id(slug: str) -> str:
                          uuid.uuid4().hex[:6])
 
 
+_NO_USER = object()
+
+
 def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
                 trigger: str = "test", node: str = "", wrap=None,
-                sealed: dict | None = None) -> dict:
+                sealed: dict | None = None, user=_NO_USER) -> dict:
     """Validate the inputs against the form OF THAT VERSION and queue a run.
 
     ``version_ref``: ``"draft"`` (administrators' test runs) or a published
@@ -880,6 +909,21 @@ def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
     inputs = resolve_inputs(relaxed, raw_inputs)
     for n in sealed_fields:
         inputs.pop(n, None)
+    # Database fields: the stored keys become rows NOW, read with the ADOMs of
+    # ``user`` (whoever queues the run: the operator, or a schedule's owner).
+    # No caller may skip naming the user — an unnamed one would read unscoped.
+    db_payload: dict[str, Any] = {}
+    if any(f["type"] in DB_FIELD_TYPES for f in fields):
+        if user is _NO_USER:
+            raise ScriptError("internal: a run with database fields needs the "
+                              "user it runs for")
+        from . import db_lookup
+        from .product_scope import adoms_of
+        try:
+            db_payload = db_lookup.expand(fields, inputs,
+                                          adoms_of(user) if user is not None else None)
+        except db_lookup.LookupError_ as exc:
+            raise ScriptError(str(exc))
     tokens, missing, vault_info = {}, [], {}
     sealed_req = None
     if sealed_fields:
@@ -902,11 +946,14 @@ def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
               "trigger": trigger, "requested_by": by, "queued_at": now,
               "status": "queued", "network": network, "timeout": timeout,
               "inputs": {**shown_inputs(fields, inputs),
+                         **{n: "%d rows" % len(v.get("rows") or [])
+                            for n, v in db_payload.items()
+                            if isinstance(v, dict) and "rows" in v},
                          **{n: "********" for n in sealed_fields}}, "node": node,
               "credentials": [c["name"] for c in creds], "credentials_missing": missing}
     _write_json(STATUS_DIR / (rid + ".json"), status)
     req = {"request_id": rid, "slug": slug, "version": version_ref,
-           "inputs": inputs, "requested_by": by, "trigger": trigger,
+           "inputs": {**inputs, **db_payload}, "requested_by": by, "trigger": trigger,
            "queued_at": now, "credentials": tokens, "vault": vault_info,
            "sealed_inputs": sealed_req}
     _write_json(REQ_DIR / (rid + ".json"), req, mode=0o600)

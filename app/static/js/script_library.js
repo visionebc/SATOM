@@ -292,7 +292,9 @@
   function fieldRow(f, i) {
     var opts = TYPES.map(function (t) { return '<option' + (t === f.type ? ' selected' : '') + '>' + t + '</option>'; }).join('');
     var isSel = f.type === 'select', isPw = f.type === 'password', isCb = f.type === 'checkbox';
-    var def = isCb ? '<div class="form-check mt-1"><input class="form-check-input sl-f" data-k="default" type="checkbox"' + (f.default ? ' checked' : '') + '><label class="form-check-label small">checked by default</label></div>'
+    var isDb = DB_TYPES.indexOf(f.type) >= 0;
+    var def = isDb ? '<div class="small text-muted mt-1">' + (f.type === 'dataset' ? 'The whole result goes to the script.' : 'Choices come from the query below.') + '</div>'
+      : isCb ? '<div class="form-check mt-1"><input class="form-check-input sl-f" data-k="default" type="checkbox"' + (f.default ? ' checked' : '') + '><label class="form-check-label small">checked by default</label></div>'
       : '<input class="form-control form-control-sm sl-f" data-k="default" placeholder="' + (isPw ? 'no default for passwords' : 'default') + '" value="' + esc(f.default == null ? '' : f.default) + '"' + (isPw ? ' disabled' : '') + '>';
     return '<div class="border rounded p-2 mb-2 sl-field" data-i="' + i + '" style="border-color:var(--fw-border)!important;">'
       + '<div class="row g-2 align-items-end">'
@@ -307,6 +309,7 @@
       + '<div class="col-md-5">' + def + '</div>'
       + '<div class="col-md-7"><input class="form-control form-control-sm sl-f" data-k="help" value="' + esc(f.help || '') + '" placeholder="help text (optional)"></div>'
       + (isSel ? '<div class="col-12"><label class="form-label small mb-0">Options (one per line)</label><textarea class="form-control form-control-sm sl-f" data-k="options" rows="3">' + esc((f.options || []).join('\n')) + '</textarea></div>' : '')
+      + (isDb ? '<div class="col-12 sl-qb" data-i="' + i + '"></div>' : '')
       + '</div></div>';
   }
   function renderFields() {
@@ -324,13 +327,178 @@
           if (k === 'options') v = inp.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
           fields[i][k] = v;
           setDirty(true);
-          if (k === 'type') { if (v === 'password') fields[i].default = null; renderFields(); }
+          if (k === 'type') {
+            if (v === 'password' || DB_TYPES.indexOf(v) >= 0) fields[i].default = null;
+            if (DB_TYPES.indexOf(v) >= 0 && !fields[i].query) {
+              fields[i].query = { base: 'appliances', joins: [], columns: [{ table: 'appliances', col: 'id' }, { table: 'appliances', col: 'name' }], filters: [], limit: 100 };
+              fields[i].value_col = 'appliances.id'; fields[i].label_col = 'appliances.name';
+            }
+            renderFields();
+          }
           renderPreview();
         });
       });
       row.querySelector('.sl-rm').addEventListener('click', function () { fields.splice(i, 1); setDirty(true); renderFields(); renderPreview(); });
       row.querySelector('.sl-up').addEventListener('click', function () { if (i > 0) { fields.splice(i - 1, 0, fields.splice(i, 1)[0]); setDirty(true); renderFields(); renderPreview(); } });
       row.querySelector('.sl-down').addEventListener('click', function () { if (i < fields.length - 1) { fields.splice(i + 1, 0, fields.splice(i, 1)[0]); setDirty(true); renderFields(); renderPreview(); } });
+    });
+    box.querySelectorAll('.sl-qb').forEach(function (qb) { renderQB(+qb.getAttribute('data-i'), qb); });
+  }
+
+  // ================================================================ database fields
+  // A database field's query is a Report Builder spec: base table, joins
+  // (picked from the tables related to it, so the admin never types a key),
+  // columns, filters, order and limit. The SERVER adds the ADOM scope and
+  // runs it (services/db_lookup.py); this only edits the spec.
+  var DB_TYPES = ['lookup', 'lookup_multi', 'dataset'];
+  var QB_OPS = ['=', '!=', '>', '<', '>=', '<=', 'like', 'not-like', 'is-null', 'is-not-null', 'in'];
+  var CAT = null, RELATED = {};
+  function getJSON(url) {
+    return fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status)); return d; }); });
+  }
+  function catalog() {
+    if (CAT) return Promise.resolve(CAT);
+    return getJSON(URLS.lookupCatalog).then(function (d) {
+      CAT = { tables: d.tables || [], by: {} };
+      CAT.tables.forEach(function (t) { CAT.by[t.name] = t; });
+      return CAT;
+    });
+  }
+  function related(base) {
+    if (RELATED[base]) return Promise.resolve(RELATED[base]);
+    return getJSON(URLS.lookupRelated + '?base=' + encodeURIComponent(base)).then(function (d) { RELATED[base] = d.related || []; return RELATED[base]; });
+  }
+  function qTables(q) { return [q.base].concat((q.joins || []).map(function (j) { return j.table; })); }
+  function qColNames(q) {
+    return (q.columns || []).map(function (c) { return (c.table || q.base) + '.' + c.col; });
+  }
+  function qbChanged(i) { setDirty(true); renderPreview(); }
+  function renderQB(i, box) {
+    var f = fields[i], q = f.query || (f.query = { base: 'appliances', joins: [], columns: [], filters: [], limit: 100 });
+    box.innerHTML = '<div class="text-muted small">loading the database catalogue…</div>';
+    catalog().then(function (cat) { return related(q.base).then(function (rel) { drawQB(i, box, cat, rel); }); })
+      .catch(function (e) { box.innerHTML = '<div class="text-danger small">' + esc(e.message) + '</div>'; });
+  }
+  function drawQB(i, box, cat, rel) {
+    var f = fields[i], q = f.query, used = qTables(q);
+    var colSet = {}; qColNames(q).forEach(function (n) { colSet[n] = true; });
+    var allCols = [];
+    used.forEach(function (t) { ((cat.by[t] || {}).columns || []).forEach(function (c) { allCols.push(t + '.' + c.name); }); });
+    var chosen = qColNames(q);
+    function opt(v, cur, label) { return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(label || v) + '</option>'; }
+    var h = '<div class="border rounded p-2" style="border-color:var(--fw-border)!important;background:var(--fw-content-bg,#F3F6FC);">';
+    h += '<div class="d-flex align-items-center gap-2 mb-2"><i class="bi bi-database text-accent"></i><strong class="small">Database query</strong>'
+      + '<span class="text-muted small">Read-only. Each user sees only the rows of their ADOMs.</span></div>';
+    h += '<div class="row g-2 align-items-end mb-2"><div class="col-md-5"><label class="form-label small mb-0">Table</label><select class="form-select form-select-sm" data-qb="base">'
+      + cat.tables.map(function (t) { return opt(t.name, q.base, t.label + (t.label !== t.name ? ' (' + t.name + ')' : '')); }).join('') + '</select></div>';
+    var free = rel.filter(function (r) { return used.indexOf(r.table) < 0; });
+    h += '<div class="col-md-7"><label class="form-label small mb-0">Combine with a related table</label><select class="form-select form-select-sm" data-qb="join"><option value="">— add a table —</option>'
+      + free.map(function (r, k) { return '<option value="' + k + '">' + esc(r.label) + ' — ' + esc(r.phrase) + (r.hops > 1 ? ' (via ' + r.hops + ' joins)' : '') + '</option>'; }).join('') + '</select></div></div>';
+    used.forEach(function (t, ti) {
+      var cols = (cat.by[t] || {}).columns || [];
+      h += '<div class="mb-1"><span class="small fw-semibold">' + esc((cat.by[t] || {}).label || t) + '</span>'
+        + (ti > 0 ? ' <button type="button" class="btn btn-link btn-sm p-0 text-danger" data-qb="unjoin" data-t="' + esc(t) + '">remove</button>' : '')
+        + '<div class="d-flex flex-wrap gap-2">' + cols.map(function (c) {
+          var n = t + '.' + c.name;
+          return '<label class="small"><input type="checkbox" class="form-check-input me-1" data-qb="col" data-n="' + esc(n) + '"' + (colSet[n] ? ' checked' : '') + '>' + esc(c.name) + '</label>';
+        }).join('') + '</div></div>';
+    });
+    h += '<div class="mt-2"><span class="small fw-semibold">Filters</span>';
+    (q.filters || []).forEach(function (fl, k) {
+      var n = (fl.table || q.base) + '.' + fl.col, nul = fl.op === 'is-null' || fl.op === 'is-not-null';
+      h += '<div class="d-flex gap-1 mt-1"><select class="form-select form-select-sm" data-qb="fcol" data-k="' + k + '">' + allCols.map(function (c) { return opt(c, n); }).join('') + '</select>'
+        + '<select class="form-select form-select-sm" style="max-width:130px" data-qb="fop" data-k="' + k + '">' + QB_OPS.map(function (o) { return opt(o, fl.op || '='); }).join('') + '</select>'
+        + '<input class="form-control form-control-sm" data-qb="fval" data-k="' + k + '" value="' + esc(fl.value == null ? '' : fl.value) + '"' + (nul ? ' disabled' : '') + ' placeholder="' + (fl.op === 'in' ? 'a, b, c' : 'value') + '">'
+        + '<button type="button" class="btn btn-outline-danger btn-sm py-0" data-qb="frm" data-k="' + k + '">✕</button></div>';
+    });
+    h += ' <button type="button" class="btn btn-link btn-sm p-0" data-qb="fadd">+ add a filter</button></div>';
+    var ob = q.order_by || {};
+    h += '<div class="row g-2 mt-1 align-items-end"><div class="col-md-5"><label class="form-label small mb-0">Order by</label><select class="form-select form-select-sm" data-qb="ocol"><option value="">—</option>'
+      + allCols.map(function (c) { return opt(c, ob.col ? (ob.table || q.base) + '.' + ob.col : ''); }).join('') + '</select></div>'
+      + '<div class="col-md-3"><label class="form-label small mb-0">&nbsp;</label><select class="form-select form-select-sm" data-qb="odir">' + opt('asc', ob.dir || 'asc', 'ascending') + opt('desc', ob.dir || 'asc', 'descending') + '</select></div>'
+      + '<div class="col-md-4"><label class="form-label small mb-0">Max rows (≤500)</label><input type="number" min="1" max="500" class="form-control form-control-sm" data-qb="limit" value="' + esc(q.limit || 100) + '"></div></div>';
+    if (f.type !== 'dataset') {
+      h += '<div class="row g-2 mt-1"><div class="col-md-6"><label class="form-label small mb-0">Value (what the script gets)</label><select class="form-select form-select-sm" data-qb="vcol">' + chosen.map(function (c) { return opt(c, f.value_col); }).join('') + '</select></div>'
+        + '<div class="col-md-6"><label class="form-label small mb-0">Label (what the user sees)</label><select class="form-select form-select-sm" data-qb="lcol">' + chosen.map(function (c) { return opt(c, f.label_col || f.value_col); }).join('') + '</select></div></div>';
+    }
+    h += '<div class="mt-2 d-flex gap-2 align-items-center"><button type="button" class="btn btn-sm btn-fw-outline" data-qb="preview"><i class="bi bi-eye me-1"></i>Preview rows</button><span class="small text-muted" data-qb="pmsg"></span></div>'
+      + '<div class="sl-qb-out mt-2" style="max-height:260px;overflow:auto;"></div></div>';
+    box.innerHTML = h;
+    function redraw() { drawQB(i, box, cat, rel); qbChanged(i); }
+    function syncPick() {
+      var names = qColNames(q);
+      if (names.indexOf(f.value_col) < 0) f.value_col = names[0] || '';
+      if (names.indexOf(f.label_col) < 0) f.label_col = f.value_col;
+    }
+    box.querySelector('[data-qb="base"]').addEventListener('change', function () {
+      q.base = this.value; q.joins = []; q.filters = []; q.order_by = null;
+      var cols = (cat.by[q.base] || {}).columns || [];
+      q.columns = cols.slice(0, 2).map(function (c) { return { table: q.base, col: c.name }; });
+      syncPick(); related(q.base).then(function (r) { rel = r; redraw(); });
+    });
+    box.querySelector('[data-qb="join"]').addEventListener('change', function () {
+      var r = free[+this.value]; if (!r) return;
+      (r.path || []).forEach(function (st) {
+        if (qTables(q).indexOf(st.to_table) >= 0) return;
+        q.joins.push({ table: st.to_table, from_table: st.from_table, from_col: st.from_col, to_col: st.to_col });
+      });
+      redraw();
+    });
+    box.querySelectorAll('[data-qb="unjoin"]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var gone = [b.getAttribute('data-t')], again = true;
+        while (again) {   // drop the table and every join hanging from it
+          again = false;
+          q.joins.forEach(function (j) { if (gone.indexOf(j.from_table) >= 0 && gone.indexOf(j.table) < 0) { gone.push(j.table); again = true; } });
+        }
+        q.joins = q.joins.filter(function (j) { return gone.indexOf(j.table) < 0; });
+        q.columns = q.columns.filter(function (c) { return gone.indexOf(c.table || q.base) < 0; });
+        q.filters = (q.filters || []).filter(function (x) { return gone.indexOf(x.table || q.base) < 0; });
+        if (q.order_by && gone.indexOf(q.order_by.table || q.base) >= 0) q.order_by = null;
+        syncPick(); redraw();
+      });
+    });
+    box.querySelectorAll('[data-qb="col"]').forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        var n = cb.getAttribute('data-n'), dot = n.indexOf('.'), t = n.slice(0, dot), c = n.slice(dot + 1);
+        q.columns = q.columns.filter(function (x) { return !((x.table || q.base) === t && x.col === c); });
+        if (cb.checked) q.columns.push({ table: t, col: c });
+        syncPick(); redraw();
+      });
+    });
+    function split(n) { var d = n.indexOf('.'); return { table: n.slice(0, d), col: n.slice(d + 1) }; }
+    box.querySelector('[data-qb="fadd"]').addEventListener('click', function () {
+      var c = split(allCols[0] || (q.base + '.id'));
+      (q.filters = q.filters || []).push({ table: c.table, col: c.col, op: '=', value: '' }); redraw();
+    });
+    box.querySelectorAll('[data-qb="frm"]').forEach(function (b) { b.addEventListener('click', function () { q.filters.splice(+b.getAttribute('data-k'), 1); redraw(); }); });
+    box.querySelectorAll('[data-qb="fcol"]').forEach(function (el) { el.addEventListener('change', function () { var c = split(el.value), fl = q.filters[+el.getAttribute('data-k')]; fl.table = c.table; fl.col = c.col; qbChanged(i); }); });
+    box.querySelectorAll('[data-qb="fop"]').forEach(function (el) { el.addEventListener('change', function () { q.filters[+el.getAttribute('data-k')].op = el.value; redraw(); }); });
+    box.querySelectorAll('[data-qb="fval"]').forEach(function (el) {
+      el.addEventListener('input', function () {
+        var fl = q.filters[+el.getAttribute('data-k')];
+        fl.value = fl.op === 'in' ? el.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean) : el.value;
+        qbChanged(i);
+      });
+    });
+    box.querySelector('[data-qb="ocol"]').addEventListener('change', function () {
+      if (!this.value) { q.order_by = null; } else { var c = split(this.value); q.order_by = { table: c.table, col: c.col, dir: (q.order_by || {}).dir || 'asc' }; }
+      qbChanged(i);
+    });
+    box.querySelector('[data-qb="odir"]').addEventListener('change', function () { if (q.order_by) { q.order_by.dir = this.value; qbChanged(i); } });
+    box.querySelector('[data-qb="limit"]').addEventListener('input', function () { q.limit = Math.max(1, Math.min(500, +this.value || 100)); qbChanged(i); });
+    var vc = box.querySelector('[data-qb="vcol"]'), lc = box.querySelector('[data-qb="lcol"]');
+    if (vc) vc.addEventListener('change', function () { f.value_col = vc.value; qbChanged(i); });
+    if (lc) lc.addEventListener('change', function () { f.label_col = lc.value; qbChanged(i); });
+    box.querySelector('[data-qb="preview"]').addEventListener('click', function () {
+      var out = box.querySelector('.sl-qb-out'), msg = box.querySelector('[data-qb="pmsg"]');
+      msg.textContent = 'running…'; out.innerHTML = '';
+      postJSON(URLS.lookupPreview, { field: f }).then(function (d) {
+        msg.textContent = d.row_count + ' row(s) for your ADOMs' + (d.truncated ? ' (more than the limit)' : '') + (d.row_count > d.rows.length ? ', first ' + d.rows.length + ' shown' : '');
+        out.innerHTML = '<table class="fw-table table table-sm mb-0" style="font-size:12px;"><thead><tr>' + d.columns.map(function (c) { return '<th>' + esc(c) + (c === d.value_col ? ' <span class="fw-badge fw-badge-info">value</span>' : '') + (c === d.label_col ? ' <span class="fw-badge fw-badge-secondary">label</span>' : '') + '</th>'; }).join('') + '</tr></thead><tbody>'
+          + d.rows.map(function (r) { return '<tr>' + d.columns.map(function (c) { return '<td>' + esc(r[c]) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table>';
+      }).catch(function (e) { msg.textContent = ''; out.innerHTML = '<div class="text-danger small">' + esc(e.message) + '</div>'; });
     });
   }
   $('sl-add-field').addEventListener('click', function () {
@@ -352,6 +520,8 @@
       var ctl;
       if (f.type === 'textarea') ctl = '<textarea class="form-control form-control-sm" rows="3" id="' + id + '" name="' + esc(f.name) + '">' + esc(v) + '</textarea>';
       else if (f.type === 'select') ctl = '<select class="form-select form-select-sm" id="' + id + '" name="' + esc(f.name) + '">' + (f.required ? '' : '<option value=""></option>') + (f.options || []).map(function (o) { return '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select>';
+      else if (f.type === 'lookup' || f.type === 'lookup_multi') ctl = '<select class="form-select form-select-sm" id="' + id + '" name="' + esc(f.name) + '" data-lookup-i="' + fields.indexOf(f) + '"' + (f.type === 'lookup_multi' ? ' multiple size="5"' : '') + '><option value="" disabled>loading…</option></select>';
+      else if (f.type === 'dataset') ctl = '<div class="form-text mt-0"><i class="bi bi-database me-1"></i>Rows from the SATOM database are read when the run starts and passed to the script.</div>';
       else if (f.type === 'checkbox') return '<div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="' + id + '" name="' + esc(f.name) + '"' + (v === true ? ' checked' : '') + '><label class="form-check-label small" for="' + id + '">' + esc(f.label || f.name) + '</label>' + help + '</div>';
       else ctl = '<input class="form-control form-control-sm" type="' + (f.type === 'number' ? 'number' : f.type === 'password' ? 'password' : 'text') + '" id="' + id + '" name="' + esc(f.name) + '" value="' + (f.type === 'password' ? '' : esc(v)) + '"' + (f.type === 'password' ? ' autocomplete="new-password"' : '') + (f.type === 'number' ? ' step="any"' : '') + '>';
       return '<div class="mb-2"><label class="form-label small mb-0" for="' + id + '">' + esc(f.label || f.name) + req + '</label>' + ctl + help + '</div>';
@@ -362,14 +532,35 @@
     fields.forEach(function (f) {
       var el = form.querySelector('[name="' + f.name + '"]');
       if (!el) return;
-      out[f.name] = f.type === 'checkbox' ? el.checked : el.value;
+      if (f.type === 'checkbox') out[f.name] = el.checked;
+      else if (f.type === 'lookup_multi') out[f.name] = Array.prototype.filter.call(el.options, function (o) { return o.selected && o.value; }).map(function (o) { return o.value; });
+      else out[f.name] = el.value;
     });
     return out;
+  }
+  // Pick lists of the preview and Test forms: read through the designer
+  // preview, so an unsaved query already shows its choices.
+  var lookupTimer = null;
+  function fillLookups(form, keep) {
+    form.querySelectorAll('select[data-lookup-i]').forEach(function (sel) {
+      var f = fields[+sel.getAttribute('data-lookup-i')];
+      if (!f) return;
+      postJSON(URLS.lookupPreview, { field: f, options: true }).then(function (d) {
+        var was = keep && keep[f.name], opts = d.options || [];
+        sel.innerHTML = (f.type === 'lookup' && !f.required ? '<option value=""></option>' : '')
+          + opts.map(function (o) {
+            var on = Array.isArray(was) ? was.indexOf(o.value) >= 0 : was === o.value;
+            return '<option value="' + esc(o.value) + '"' + (on ? ' selected' : '') + '>' + esc(o.label) + '</option>';
+          }).join('') + (opts.length ? '' : '<option value="" disabled>no rows</option>');
+      }).catch(function (e) { sel.innerHTML = '<option value="" disabled>' + esc(e.message) + '</option>'; });
+    });
   }
   function renderPreview() {
     renderForm($('sl-preview'), 'pv');
     var keep = formValues($('sl-test-form'));
     renderForm($('sl-test-form'), 'tf', keep);
+    clearTimeout(lookupTimer);
+    lookupTimer = setTimeout(function () { fillLookups($('sl-preview')); fillLookups($('sl-test-form'), keep); }, 400);
   }
   [$('sl-preview'), $('sl-test-form')].forEach(function (f) { f.addEventListener('submit', function (e) { e.preventDefault(); }); });
 

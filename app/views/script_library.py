@@ -67,6 +67,73 @@ def create():
     return redirect(url_for("script_library.edit", slug=slug))
 
 
+# ---------------------------------------------------------------------------
+#  database fields (services.db_lookup)
+# ---------------------------------------------------------------------------
+@bp.route("/lookup/catalog")
+@login_required
+@require_permission(PERM)
+def lookup_catalog():
+    """Tables, their non-sensitive columns and the FK edges, for the field
+    designer — the Report Builder's catalogue."""
+    from ..services import report_builder
+    return jsonify(report_builder.catalog())
+
+
+@bp.route("/lookup/related")
+@login_required
+@require_permission(PERM)
+def lookup_related():
+    """Tables reachable from ``base`` in up to two joins, with the join path."""
+    from ..services import report_builder
+    base = (request.args.get("base") or "").strip()
+    return jsonify({"related": report_builder.related_tables(base, max_hops=2)})
+
+
+@bp.route("/lookup/preview", methods=["POST"])
+@login_required
+@require_permission(PERM)
+def lookup_preview():
+    """What a database field returns right now for the signed-in user's ADOMs."""
+    from ..services import db_lookup
+    from ..services.product_scope import adoms_of
+    body = request.get_json(silent=True) or {}
+    try:
+        return jsonify(db_lookup.preview(body.get("field") or {},
+                                         adoms_of(current_user),
+                                         as_options=bool(body.get("options"))))
+    except db_lookup.LookupError_ as exc:
+        return _err(exc)
+
+
+@bp.route("/<slug>/lookup/<field>")
+@login_required
+@require_permission(PERM)
+def lookup_options(slug, field):
+    """Choices of a database field of the saved draft (``?version=draft``) or
+    of a published version, for the Test tab and the version viewer."""
+    from ..services import db_lookup
+    from ..services.product_scope import adoms_of
+    ref = request.args.get("version") or "draft"
+    try:
+        if ref == "draft":
+            script = SL.get(slug)
+            fields = (script or {}).get("fields") or []
+        else:
+            frozen = SL.version(slug, int(ref))
+            fields = (frozen or {}).get("fields") or []
+    except (SL.ScriptError, ValueError):
+        abort(404)
+    f = next((x for x in fields if x["name"] == field
+              and x["type"] in db_lookup.PICK_TYPES), None)
+    if f is None:
+        abort(404)
+    try:
+        return jsonify({"options": db_lookup.options(f, adoms_of(current_user))})
+    except db_lookup.LookupError_ as exc:
+        return _err(exc)
+
+
 @bp.route("/<slug>")
 @login_required
 @require_permission(PERM)
@@ -178,7 +245,7 @@ def test_run(slug):
     try:
         st = SL.enqueue_run(slug, version_ref="draft", raw_inputs=body.get("inputs"),
                             by=_who(), trigger="test", node=_node(),
-                            wrap=SV.wrap_for_run)
+                            wrap=SV.wrap_for_run, user=current_user)
     except SL.ScriptError as exc:
         return _err(exc)
     log_action("script_library.test", target=slug,

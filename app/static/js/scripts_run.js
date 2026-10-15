@@ -32,10 +32,29 @@
     var out = {};
     (CFG.fields || []).forEach(function (f) {
       var el = form.querySelector('[name="' + f.name + '"]');
-      if (el) out[f.name] = f.type === 'checkbox' ? el.checked : el.value;
+      if (!el) return;
+      if (f.type === 'checkbox') out[f.name] = el.checked;
+      else if (f.type === 'lookup_multi') out[f.name] = Array.prototype.filter.call(el.options, function (o) { return o.selected && o.value; }).map(function (o) { return o.value; });
+      else out[f.name] = el.value;
     });
     return out;
   }
+
+  // ---- database fields: choices read for THIS user's ADOMs
+  form.querySelectorAll('select[data-lookup]').forEach(function (sel) {
+    var name = sel.getAttribute('data-lookup');
+    var f = (CFG.fields || []).filter(function (x) { return x.name === name; })[0] || {};
+    fetch(U.lookup.replace('FIELD', encodeURIComponent(name)), { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok) { sel.innerHTML = '<option value="">' + esc(res.d.error || 'could not read the choices') + '</option>'; sel.disabled = true; return; }
+        var opts = res.d.options || [];
+        sel.innerHTML = (f.type === 'lookup' && !f.required ? '<option value=""></option>' : '')
+          + opts.map(function (o) { return '<option value="' + esc(o.value) + '">' + esc(o.label) + '</option>'; }).join('')
+          + (opts.length ? '' : '<option value="" disabled>no rows</option>');
+      })
+      .catch(function () { sel.innerHTML = '<option value="">could not read the choices</option>'; });
+  });
 
   // ---- run now
   function poll(rid, n) {

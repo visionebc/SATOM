@@ -6,23 +6,31 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
-### Added — Script Library: automatic draft history, autosave, read-only view and diff (2026-10-15)
+### Added — Script Library: every edit is a new version, autosave, compare any two versions (2026-10-15)
 
-- **Automatic draft history**: every save, upload and restore of a script's
-  draft is recorded as a revision with its code, form and settings (**History &
-  runs → Draft history**). Saves by the same person within ten minutes are
-  grouped into one entry; a save that changes nothing adds nothing; the
-  revision that became a published version is marked. The last 100 revisions
-  are kept. Before, a save overwrote the draft and only Publish kept a copy.
+- **Every edit is a new version**: each save, upload and restore of a script —
+  published or not — is recorded automatically as version *vN* with its code,
+  form and settings (**Versions & runs**). Saves by the same person within ten
+  minutes are grouped into one version; a save that changes nothing adds
+  nothing; the starter template is not a version, so the first save is *v1*.
+  **Publish** approves the latest version under its own number, and operators
+  keep running the published one while you edit. The last 100 versions are
+  kept, and the published one always is. Before, a save overwrote the draft
+  and only Publish kept a copy, under a separate numbering.
 - The editor saves by itself a few seconds after the last change, and an
   upload is saved at once (it used to wait in the editor until **Save**).
-- **Read-only view and diff of any revision or version**: file by file, with
-  *Changes against the current draft* (a line diff per file and the settings
-  that changed); **Restore to draft** works for revisions too, and
-  the replaced draft stays in the history. Each one downloads as a zip.
-- The library lists **View / edit** and a history button per script (operator
-  request: "I must be able to find the script, see it and edit it online, or
-  upload a new version, and the system must save the version automatically").
+- **Compare versions**: pick any two in the Versions card, or compare a row
+  with the previous version; a line diff per file and the settings that
+  changed. **View** shows any version read-only; **Restore** saves an old
+  version's content as a new version (nothing is deleted). Each one downloads
+  as a zip.
+- **Library page in the SATOM list layout**: the standard table with a search
+  box and row actions (edit, compare, versions, download), **New script** as a
+  button that opens a dialog, and the "how scripts run" notes as one strip at
+  the top (operator requests: "I must be able to find the script, see it and
+  edit it online, or upload a new version, and the system must save the
+  version automatically"; "editing a published script generates the new
+  version; versions can be compared with an action").
 
 ### Changed — integration hook secrets follow the vault mode (2026-10-15)
 

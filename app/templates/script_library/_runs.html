@@ -1,25 +1,29 @@
 {# Run history rows. `runs` = script_library.recent_runs(); output is fetched on demand. #}
-<table class="table table-sm mb-0 align-middle sl-runs" style="font-size:12px;">
+<div class="sl-runs-wrap">
+<div class="fw-table-wrapper mb-0" style="border:0;border-radius:0;">
+<table class="fw-table sl-runs">
   <thead><tr>
     <th>{{ _('Queued') }}</th><th>{{ _('Script') }}</th><th>{{ _('Version') }}</th><th>{{ _('Trigger') }}</th>
-    <th>{{ _('By') }}</th><th>{{ _('Status') }}</th><th>{{ _('Duration') }}</th><th></th>
+    <th>{{ _('By') }}</th><th>{{ _('Status') }}</th><th>{{ _('Duration') }}</th><th class="actions-col">{{ _('Actions') }}</th>
   </tr></thead>
   <tbody>
   {% for r in runs %}
     {% set badge = {'ok': 'success', 'failed': 'danger', 'timeout': 'warning', 'running': 'info', 'queued': 'secondary'}.get(r.status, 'secondary') %}
     <tr>
-      <td class="text-muted">{{ (r.queued_at or '')[:19]|replace('T', ' ') }}</td>
+      <td style="font-size:13px; white-space:nowrap;">{{ (r.queued_at or '')[:19]|replace('T', ' ') }}</td>
       <td><code>{{ r.slug }}</code></td>
       <td>{{ 'draft' if r.version == 'draft' else 'v%s' % r.version }}</td>
       <td>{{ r.trigger }}</td>
       <td>{{ r.requested_by }}</td>
       <td><span class="fw-badge fw-badge-{{ badge }}">{{ r.status }}</span></td>
       <td>{% if r.duration_ms %}{{ '%.1f'|format(r.duration_ms / 1000) }} s{% endif %}</td>
-      <td class="text-end"><button type="button" class="btn btn-link btn-sm p-0 sl-run-open" data-rid="{{ r.request_id }}">{{ _('Log') }}</button></td>
+      <td class="actions-col"><button type="button" class="btn btn-sm btn-outline-secondary btn-sm-icon sl-run-open" data-rid="{{ r.request_id }}" title="{{ _('Log') }}"><i class="bi bi-file-text"></i></button></td>
     </tr>
   {% else %}
     <tr><td colspan="8" class="text-muted p-3">{{ _('No runs yet.') }}</td></tr>
   {% endfor %}
   </tbody>
 </table>
+</div>
 <pre class="sl-run-log mb-0 p-2" style="display:none;max-height:320px;overflow:auto;font-size:11px;background:var(--fw-surface-alt);border-top:1px solid var(--fw-border);white-space:pre-wrap;"></pre>
+</div>

@@ -24,7 +24,7 @@
     {% if current_user.can('config_write') %}
     <button class="btn btn-fw-primary btn-sm" type="button" data-add-verb="upload"
             data-bs-toggle="modal" data-bs-target="#artUploadModal"
-            title="{{ _('Store a file you supply. Touches no appliance — and it is the ONLY way XML Schema, WSDL and gRPC IDL can ever enter the store.') }}">
+            title="{{ _('Store a file you supply. Touches no appliance. The only way a gRPC IDL can enter the store; an XML Schema or WSDL can also be fetched from the application.') }}">
       <i class="bi bi-upload me-1"></i>{{ _('Upload a file') }}</button>
     <button class="btn btn-fw-outline btn-sm" type="button" data-add-verb="author"
             data-bs-toggle="modal" data-bs-target="#artAuthorModal"
@@ -34,6 +34,10 @@
             data-bs-toggle="modal" data-bs-target="#artCaptureModal"
             title="{{ _('Read the object off this device and keep a copy. Read-only on the appliance, and only for the four kinds it will return.') }}">
       <i class="bi bi-download me-1"></i>{{ _('Capture from device') }}</button>
+    <button class="btn btn-fw-outline btn-sm" type="button" data-add-verb="fetch"
+            data-bs-toggle="modal" data-bs-target="#artFetchModal"
+            title="{{ _('Download a WSDL or XML Schema from the application it describes, with the schemas it imports. Touches no appliance.') }}">
+      <i class="bi bi-cloud-arrow-down me-1"></i>{{ _('Fetch from the application') }}</button>
     {% endif %}
   </div>
 </div>
@@ -61,7 +65,7 @@
         <div class="modal-body">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="back" value="inventory">
-          <p class="text-secondary" style="font-size:12.5px">{{ _('The only way XML Schema, WSDL and gRPC IDL can ever enter the store. Touches no appliance.') }}</p>
+          <p class="text-secondary" style="font-size:12.5px">{{ _('The only way a gRPC IDL can enter the store; an XML Schema or WSDL can also be fetched from the application. Touches no appliance.') }}</p>
           <div class="mb-2">
             <label class="fw-fld-label">{{ _('Type') }}</label>
             <select class="form-select form-select-sm" name="kind" required
@@ -104,6 +108,64 @@
           <button class="btn btn-fw-primary btn-sm"
                   title="{{ _('Store this file as a new version in the SATOM artifact library') }}">
             <i class="bi bi-upload me-1"></i>{{ _('Store') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="artFetchModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-cloud-arrow-down me-2"></i>{{ _('Fetch from the application') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <form method="post" action="{{ url_for('artifacts.fetch_from_app') }}">
+        <div class="modal-body">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="back" value="inventory">
+          <p class="text-secondary" style="font-size:12.5px">{{ _('For a FortiWeb already in production: the device will not hand back a WSDL or an XML Schema, but the SOAP service it protects usually publishes them. SATOM downloads the document, follows the schemas it imports from the same host, and stores each one. Touches no appliance.') }}</p>
+          <div class="mb-2">
+            <label class="fw-fld-label">{{ _('URL') }}</label>
+            <input class="form-control form-control-sm" name="url" required type="url"
+                   placeholder="https://orders.example.internal/OrderService?wsdl"
+                   title="{{ _('Where the service publishes its WSDL or XML Schema. Often the service address followed by ?wsdl.') }}">
+            <div class="form-text" style="font-size:11.5px">{{ _('http or https only. Imports on another host, redirects, and this node\'s own or loopback addresses are not followed.') }}</div>
+          </div>
+          <div class="mb-2">
+            <label class="fw-fld-label">{{ _('Object name of the first document (mkey on the device)') }}</label>
+            <input class="form-control form-control-sm" name="name" placeholder="wsdl-orders"
+                   title="{{ _('Use the name the FortiWeb policy already references, so the copy matches it. Left empty, the name comes from the URL. Imported schemas are named after their file.') }}">
+            <div class="form-text" style="font-size:11.5px">{{ _('Use the name the policy already references. Left empty, the name comes from the URL; imported schemas are named after their file.') }}</div>
+          </div>
+          <div class="mb-2">
+            <label class="fw-fld-label">{{ _('Belongs to (device / ADOM)') }}</label>
+            <select class="form-select form-select-sm" name="appliance_id"
+                    title="{{ _('Scoped to this pair, or shared library-wide — a shared copy is ONE file that every device without its own copy reads.') }}">
+              {% for a in appliances %}
+                <option value="{{ a.id }}" title="{{ a.host }}">{{ appliance_name_parts(a)[0] }} / {{ a.vdom or _('no ADOM') }}</option>
+              {% endfor %}
+              <option value="">{{ _('Library-wide (any appliance may use it)') }}</option>
+            </select>
+          </div>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="verify_tls" value="1" id="artFetchTls" checked>
+            <label class="form-check-label" for="artFetchTls" style="font-size:12.5px"
+                   title="{{ _('Untick only for an internal service with a self-signed certificate you trust.') }}">{{ _('Verify the TLS certificate') }}</label>
+          </div>
+          <div class="mb-1">
+            <label class="fw-fld-label">{{ _('Note') }}</label>
+            <input class="form-control form-control-sm" name="note" placeholder="{{ _('where this came from') }}"
+                   title="{{ _('Recorded on every version, after the URL it was fetched from.') }}">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-fw-outline btn-sm" data-bs-dismiss="modal"
+                  title="{{ _('Close without storing anything') }}">{{ _('Cancel') }}</button>
+          <button class="btn btn-fw-primary btn-sm"
+                  title="{{ _('Download the document and its same-host imports and store each one as a new version') }}">
+            <i class="bi bi-cloud-arrow-down me-1"></i>{{ _('Fetch and store') }}</button>
         </div>
       </form>
     </div>
@@ -469,6 +531,7 @@
           <option value="">{{ _('Any') }}</option>
           <option value="uploaded" {{ 'selected' if active_source == 'uploaded' }}>{{ _('uploaded') }}</option>
           <option value="captured" {{ 'selected' if active_source == 'captured' }}>{{ _('captured') }}</option>
+          <option value="fetched" {{ 'selected' if active_source == 'fetched' }}>{{ _('fetched') }}</option>
         </select>
       </div>
       <div class="col-md-2">
@@ -536,7 +599,7 @@
           <td>{{ o.versions }}</td>
           <td class="font-monospace" style="font-size:12px">{{ o.latest.short_sha }}</td>
           <td>{{ '%.1f'|format(o.bytes / 1024) }}</td>
-          <td>{% for s in o.sources %}<span class="fw-badge {{ 'fw-badge-info' if s == 'captured' else 'fw-badge-secondary' }}">{{ s }}</span> {% endfor %}</td>
+          <td>{% for s in o.sources %}<span class="fw-badge {{ 'fw-badge-info' if s == 'captured' else ('fw-badge-success' if s == 'fetched' else 'fw-badge-secondary') }}">{{ s }}</span> {% endfor %}</td>
           <td style="font-size:12px" data-policies-cell>
             {% if o.policies %}
               <span class="fw-semibold">{{ o.policies }}</span>

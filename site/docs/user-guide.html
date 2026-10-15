@@ -2400,7 +2400,18 @@ time. The device's <strong>Entire</strong> configuration backup does carry their
 but inside a block the firmware encrypts even without a backup password: a full
 restore onto another FortiWeb moves them, all or nothing, and nothing can take a
 single file out of it. To move one of these objects through SATOM, upload the
-original file (from the team that owns the API, or the service's own WSDL).</p>
+original file (from the team that owns the API), or fetch it from the service.</p>
+<p><strong>Fetch from the application</strong> (Inventory) is the way in for a FortiWeb already
+in production. Give the URL where the SOAP service publishes its WSDL or XML
+Schema (often the service address followed by <code>?wsdl</code>) and the object name the
+policy already references. SATOM downloads it, follows the schemas it imports
+or includes from the same host, and stores each one as a version with the
+origin <strong>fetched</strong>. It never writes to the appliance. It refuses non-http(s)
+URLs, credentials in the URL, documents with a DTD, loopback, link-local and
+SATOM's own addresses; it reports redirects and references to other hosts
+instead of following them, and stops at 25 documents, 5 levels or 60 seconds.
+Imported schemas are named after their file; check the names against what the
+policy needs (<strong>Needed by a policy and NOT held</strong>).</p>
 <p>On FortiWeb 8.0.6 build0116 every gRPC IDL upload fails with
 <code>errcode -3000: Internal error processing requested file</code>, whatever the file;
 7.6.8 accepts the same file. SATOM adds that note to the error.</p>

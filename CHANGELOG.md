@@ -6,6 +6,28 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — WAF Artifacts: fetch a WSDL or XML Schema from the application (2026-10-15)
+
+- **Fetch from the application** (WAF Artifacts → Inventory) brings in the
+  WSDL and XML Schema files of a FortiWeb already in production. The device
+  won't return those two types, but the SOAP service it protects usually
+  publishes them (often at its address followed by `?wsdl`). SATOM downloads
+  the document, follows the XML Schema and WSDL `import`, `include` and
+  `redefine` references on the same host, and stores each document as a new
+  version with the origin **fetched** and the URL in its note. The first
+  document takes the object name you give (use the one the policy already
+  references); imported schemas are named after their file. Touches no
+  appliance. Requested by the operator: "we need a way to integrate FortiWebs
+  that are already in use".
+- Safe by construction: http/https only, no credentials in the URL, redirects
+  reported instead of followed, references to another host listed and not
+  fetched, documents with a DTD or entity declarations refused, and at most
+  25 documents, 5 levels and 60 seconds. Loopback, link-local and the node's
+  own addresses are refused before connecting and again on the connected
+  socket, so a host name that changes what it resolves to between the two
+  checks is still caught.
+- The **Origin** filter on the inventory has a **fetched** option.
+
 ### Fixed — WAF Artifacts: what a FortiWeb backup holds, and the gRPC IDL error on 8.0.6 (2026-10-15)
 
 - The WAF Artifacts pages said XML Schema, WSDL and gRPC IDL are absent from

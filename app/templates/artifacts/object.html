@@ -121,7 +121,7 @@
             {% elif v.appliance_id %}<span class="text-secondary">{{ _('no ADOM') }}</span>
             {% else %}<span class="text-secondary">—</span>{% endif %}</td>
           <td>{{ v.size }}</td>
-          <td><span class="fw-badge {{ 'fw-badge-info' if v.source == 'captured' else 'fw-badge-secondary' }}">{{ v.source }}</span></td>
+          <td><span class="fw-badge {{ 'fw-badge-info' if v.source == 'captured' else ('fw-badge-success' if v.source == 'fetched' else 'fw-badge-secondary') }}">{{ v.source }}</span></td>
           <td style="font-size:12px">{{ v.created_by or '—' }}</td>
           <td style="font-size:12px">{{ v.created_at }}</td>
           <td style="font-size:12px">{{ v.last_seen_at }}</td>

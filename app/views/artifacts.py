@@ -8,13 +8,16 @@ inside a block the firmware encrypts, usable by a full restore and nothing else.
 For those, a clone can only ever be as complete as what SATOM itself holds —
 which is what this page fills.
 
-Three verbs, and the separation is deliberate:
+Four verbs, and the separation is deliberate:
 
-``upload``   an operator hands SATOM the file. The ONLY way the three unreadable
-             kinds ever enter the store.
+``upload``   an operator hands SATOM the file. The ONLY way a gRPC IDL ever
+             enters the store.
+``fetch``    SATOM downloads a WSDL / XML Schema from the application it
+             describes, with its same-origin imports (``services.artifact_fetch``).
+             With ``upload``, the only way XSD and WSDL enter the store.
 ``capture``  SATOM reads it off a device and keeps it. Available for the four
              readable kinds; a write to SATOM, never to the appliance.
-Neither writes to an appliance. There is no standalone ``push`` here any
+None writes to an appliance. There is no standalone ``push`` here any
 more: content reaches a device at CREATE time and nowhere else, uploaded by the
 clone/migrate engine for the objects that run is creating
 (``policy_ops._push_artifact``), under a pre-flight that refuses to proceed
@@ -503,6 +506,62 @@ def capture():
     return redirect(dest)
 
 
+@bp.route("/fetch", methods=["POST"])
+@login_required
+@require_permission("config_write")
+def fetch_from_app():
+    """Fetch a WSDL / XML Schema from the application it describes, with its
+    same-origin imports, and store each document. Touches no appliance.
+
+    The way in for a FortiWeb already in production: the device will not hand
+    these two types back, but the SOAP service it protects usually publishes
+    them. The network rules live in :mod:`services.artifact_fetch`.
+    """
+    from ..services import artifact_fetch as afx
+
+    url = (request.form.get("url") or "").strip()
+    name = (request.form.get("name") or "").strip()
+    appl_id = (request.form.get("appliance_id") or "").strip()
+    back = request.form.get("back") or ""
+    note = (request.form.get("note") or "").strip()
+    verify_tls = request.form.get("verify_tls") == "1"
+    dest = _verb_dest(back)
+    if not _in_scope(appl_id, allow_library=True):
+        return _out_of_scope(dest)
+    if not url:
+        flash("A URL is required — the address the service publishes its WSDL "
+              "or XML Schema at (often the service URL followed by ?wsdl).", "danger")
+        return redirect(dest)
+    rep = afx.fetch_tree(url, root_name=name, verify_tls=verify_tls)
+    if rep.error:
+        log_action("artifact.fetch", "%s: nothing stored — %s" % (url, rep.error))
+        flash("Nothing was stored — %s could not be fetched: %s" % (url, rep.error),
+              "danger")
+        return redirect(dest)
+    by = getattr(current_user, "username", "") or ""
+    owner = int(appl_id) if appl_id.isdigit() else None
+    stored = []
+    for doc in rep.docs:
+        _row, created = wa.put(doc.kind, doc.name, doc.blob, appliance_id=owner,
+                               source="fetched", by=by,
+                               note=("fetched from %s%s" % (doc.url, (" — " + note) if note else ""))[:500])
+        stored.append("%s \"%s\" (%d bytes%s)" % (wa.label(doc.kind), doc.name,
+                                                  len(doc.blob), "" if created else ", unchanged"))
+    log_action("artifact.fetch", "%s -> %d document(s): %s%s"
+               % (url, len(rep.docs), ", ".join(d.name for d in rep.docs),
+                  "; %d not fetched" % len(rep.skipped) if rep.skipped else ""))
+    msg = "Fetched from %s and stored %s." % (url, "; ".join(stored))
+    if rep.renamed:
+        msg += " Renamed to avoid a clash: %s." % ", ".join("%s → %s" % r for r in rep.renamed)
+    if rep.skipped:
+        shown = rep.skipped[:8]
+        msg += " Not fetched: %s%s." % ("; ".join("%s (%s)" % s for s in shown),
+                                        " … and %d more" % (len(rep.skipped) - len(shown))
+                                        if len(rep.skipped) > len(shown) else "")
+    flash(msg, "warning" if rep.skipped else "success")
+    return redirect(dest)
+
+
 @bp.route("/blob/<int:row_id>")
 @login_required
 @require_permission('protection.view')
@@ -927,7 +986,7 @@ def inventory():
     if kind in wa.KINDS:
         rows = [o for o in rows if o["kind"] == kind]
         missing = [m for m in missing if m["kind"] == kind]
-    if source in ("uploaded", "captured"):
+    if source in ("uploaded", "captured", "fetched"):
         rows = [o for o in rows if source in o["sources"]]
     if held_f == "library":
         rows = [o for o in rows if not o["appliance_id"]]

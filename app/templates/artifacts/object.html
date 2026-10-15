@@ -36,7 +36,7 @@
       {{ label }}
       {% if not readable %}
         · <span class="fw-badge fw-badge-danger">{{ _('unreadable from any device') }}</span>
-        {{ _('This content cannot be read back off a FortiWeb and is absent from its full-config backup. The copies below are the only ones that exist.') }}
+        {{ _('This content cannot be read back off a FortiWeb one object at a time; its Entire backup carries it only encrypted, for a full restore. The copies below are the only ones SATOM can push to another device.') }}
       {% else %}
         · <span class="fw-badge fw-badge-success">{{ _('capturable') }}</span>
       {% endif %}

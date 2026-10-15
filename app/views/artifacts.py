@@ -3,9 +3,10 @@
 Seven API-Protection object types (XML Schema, XML DTD, WSDL, OpenAPI, gRPC
 IDL, JSON Schema, Lua scripting) keep only a NAME in the configuration. Four can
 be read off a device through a private endpoint; **three cannot be read from any
-FortiWeb at all**, and are absent from the device's own full-config backup. For
-those, a clone can only ever be as complete as what SATOM itself holds — which
-is what this page fills.
+FortiWeb one object at a time**. The device's Entire backup carries them only
+inside a block the firmware encrypts, usable by a full restore and nothing else.
+For those, a clone can only ever be as complete as what SATOM itself holds —
+which is what this page fills.
 
 Three verbs, and the separation is deliberate:
 
@@ -468,10 +469,10 @@ def capture():
         return _out_of_scope(dest)
     appl = Appliance.query.get_or_404(int(raw_appl))
     if not wa.is_readable(kind):
-        flash("%s cannot be read back from any FortiWeb (7.6.8 answers -20005 "
-              "on every request shape, and it is absent from the device's own "
-              "full-config backup). Upload the file instead." % wa.label(kind),
-              "danger")
+        flash("%s cannot be read back from any FortiWeb (7.6.8 and 8.0.6 answer "
+              "-20005 on every request shape; the device's Entire backup carries "
+              "it only encrypted, for a full restore). Upload the file instead."
+              % wa.label(kind), "danger")
         return redirect(dest)
     from ..clients.fortiweb import FortiWebClient
     blob, err = wa.fetch(FortiWebClient(appl), kind, name,

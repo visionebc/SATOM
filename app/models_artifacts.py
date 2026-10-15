@@ -3,10 +3,12 @@
 Seven API-Protection object types are backed by an uploaded FILE (XML Schema,
 XML DTD, WSDL, OpenAPI, gRPC IDL, JSON Schema) or by a script body (Lua
 scripting). Their configuration record is *only a name*: ``GET`` on the cmdb
-object returns ``{"name": …}`` and nothing else, and the device's own
-``execute backup full-config`` emits ``edit "xsd-order"`` / ``next`` with no
-content (measured on 7.6.8 — certificates DO travel whole in the same backup,
-so the omission is deliberate, not an oversight).
+object returns ``{"name": …}`` and nothing else, and the CLI text
+(``execute backup full-config``) emits ``edit "xsd-order"`` / ``next`` with no
+content. The GUI's *Entire configuration* backup does carry the files, inside a
+block the firmware encrypts (measured 2026-10-15 on 7.6.8 and 8.0.6; see
+:mod:`services.waf_artifacts`): only a full restore onto another FortiWeb can
+use it, never one object at a time.
 
 Four of the seven have a private read endpoint outside ``/cmdb/`` and can be
 copied device→device. **Three do not** — XML Schema, WSDL and gRPC IDL answer

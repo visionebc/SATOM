@@ -16275,8 +16275,8 @@ msgstr "Keine Kopie für DIESES Gerät, aber ein anderes Gerät speichert densel
 msgid "Nobody holds a copy, but the type CAN be read back from a live FortiWeb. Capture it before the source box goes away."
 msgstr "Niemand hält eine Kopie, aber der Typ KANN von einem Live-FortiWeb zurückgelesen werden. Erfassen Sie ihn, bevor das Quellgerät verschwindet."
 
-msgid "Nobody holds a copy and no FortiWeb will ever hand this type back — it is absent from the device's own full-config backup too. The policy CANNOT be migrated until someone uploads the file."
-msgstr "Niemand hält eine Kopie, und kein FortiWeb gibt diesen Typ jemals zurück – er fehlt auch im vollständigen Konfigurations-Backup des Geräts. Die Richtlinie kann NICHT migriert werden, bis jemand die Datei hochlädt."
+msgid "Nobody holds a copy and no FortiWeb hands this type back one object at a time. The device's Entire backup carries it only encrypted, for a full restore onto another FortiWeb. The policy CANNOT be migrated through SATOM until someone uploads the file."
+msgstr "Niemand hält eine Kopie, und kein FortiWeb gibt diesen Typ einzeln zurück. Das vollständige Backup (Entire) des Geräts enthält ihn nur verschlüsselt, für eine vollständige Wiederherstellung auf einem anderen FortiWeb. Die Richtlinie kann NICHT über SATOM migriert werden, bis jemand die Datei hochlädt."
 
 msgid "Same name, different content"
 msgstr "Gleicher Name, anderer Inhalt"
@@ -16665,8 +16665,8 @@ msgstr "Vier der sieben Typen können über einen privaten Endpunkt zurückgeles
 msgid "to every shape of read that was tried — they are write-only from the API's point of view."
 msgstr "auf jede versuchte Leseform – aus Sicht der API sind sie nur schreibbar."
 
-msgid "The device's own full-config backup does not carry them either. For those three types, an uploaded copy in SATOM is the ONLY path from one appliance to another. If nobody uploaded one, the content is gone with the box."
-msgstr "Auch das vollständige Konfigurations-Backup des Geräts enthält sie nicht. Für diese drei Typen ist eine hochgeladene Kopie in SATOM der EINZIGE Weg von einem Gerät zum anderen. Hat niemand eine hochgeladen, ist der Inhalt mit dem Gerät verloren."
+msgid "The device's Entire configuration backup does carry them, inside a block the firmware encrypts with its own key. FortiWeb can restore that backup as a whole onto another appliance, but nothing can take one object out of it. For those three types, an uploaded copy in SATOM is the ONLY way to move one object from one appliance to another."
+msgstr "Das vollständige Konfigurations-Backup (Entire) des Geräts enthält sie sehr wohl, in einem Block, den die Firmware mit ihrem eigenen Schlüssel verschlüsselt. FortiWeb kann dieses Backup als Ganzes auf einem anderen Gerät wiederherstellen, aber nichts kann ein einzelnes Objekt daraus entnehmen. Für diese drei Typen ist eine hochgeladene Kopie in SATOM der EINZIGE Weg, ein Objekt von einem Gerät auf ein anderes zu bringen."
 
 msgid "One name is validated by the firmware:"
 msgstr "Ein Name wird von der Firmware validiert:"
@@ -17034,8 +17034,8 @@ msgstr "Artefakt"
 msgid "unreadable from any device"
 msgstr "von keinem Gerät lesbar"
 
-msgid "This content cannot be read back off a FortiWeb and is absent from its full-config backup. The copies below are the only ones that exist."
-msgstr "Dieser Inhalt kann nicht von einem FortiWeb zurückgelesen werden und fehlt in dessen vollständigem Konfigurations-Backup. Die Kopien unten sind die einzigen, die existieren."
+msgid "This content cannot be read back off a FortiWeb one object at a time; its Entire backup carries it only encrypted, for a full restore. The copies below are the only ones SATOM can push to another device."
+msgstr "Dieser Inhalt kann nicht einzeln von einem FortiWeb zurückgelesen werden; sein vollständiges Backup (Entire) enthält ihn nur verschlüsselt, für eine vollständige Wiederherstellung. Die Kopien unten sind die einzigen, die SATOM auf ein anderes Gerät übertragen kann."
 
 msgid "capturable"
 msgstr "erfassbar"

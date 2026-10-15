@@ -2186,6 +2186,17 @@ it to the fleet; for the fleet-wide view, use Operations → WAF → Artifacts (
   artifact. It reads only SATOM's index and contacts no appliance. The report
   itself warns that a policy created since the last sweep is missing from it.
 
+XML Schema, WSDL and gRPC IDL can't be read back off a FortiWeb one object at a
+time. The device's **Entire** configuration backup does carry their content,
+but inside a block the firmware encrypts even without a backup password: a full
+restore onto another FortiWeb moves them, all or nothing, and nothing can take a
+single file out of it. To move one of these objects through SATOM, upload the
+original file (from the team that owns the API, or the service's own WSDL).
+
+On FortiWeb 8.0.6 build0116 every gRPC IDL upload fails with
+`errcode -3000: Internal error processing requested file`, whatever the file;
+7.6.8 accepts the same file. SATOM adds that note to the error.
+
 ![WAF Artifacts inventory](img/screens/fleet-artifacts.webp)
 *Operations → WAF → WAF Artifacts → Inventory for the selected device*
 

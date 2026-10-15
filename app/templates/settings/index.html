@@ -5218,7 +5218,6 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 // --- System packages [SATOM-SYSPKG-CARD] ---------------------------------
-var sysOut = {};  // label -> rendered lines, one block per node/peer
 function sysEsc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -5267,35 +5266,42 @@ function sysLoad() {
       body.innerHTML = '<tr><td class="text-danger">Could not read package state: ' + sysEsc(e.message) + '</td></tr>';
     });
 }
-function sysPoll(uid, pre, label) {
-  fetch('/settings/library-pip/status/' + encodeURIComponent(uid),
+function sysRenderJob(pre, job) {
+  var m = job.meta || {};
+  var lines = ['job ' + job.id + ' — ' + (job.status || '?') + ' · ' + (job.percent || 0) + '%'];
+  if (job.message) { lines.push(job.message); }
+  if (m.also_peer && m.phase === 'local') {
+    lines.push('peer: waits until the install succeeds on ' + (m.node || 'this node')
+      + '. This runs on the server; you can close the page.');
+  }
+  lines.push('');
+  (m.steps || []).forEach(function (s) {
+    lines.push((s.ok ? '✓' : '✗') + ' ' + s.label + (s.outcome ? ' — ' + s.outcome : ''));
+  });
+  pre.textContent = lines.join('\n');
+}
+function sysPollJob(jobId, pre) {
+  // Watches the server-side job (driven by satom-scheduler); the page drives nothing.
+  fetch('/jobs/' + encodeURIComponent(jobId),
         { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
     .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); })
-    .then(function (st) {
-      var lines = [label + ' — state: ' + (st.state || '?')];
-      (st.steps || []).forEach(function (s) {
-        lines.push((s.ok ? (s.warn ? '!' : '✓') : '✗') + ' ' + s.name + (s.detail ? ' — ' + s.detail : ''));
-      });
-      if (st.current) { lines.push('… ' + st.current.name); }
-      if (st.error) { lines.push('error: ' + st.error); }
-      sysOut[uid] = lines.join('\n');
-      pre.textContent = Object.keys(sysOut).map(function (k) { return sysOut[k]; }).join('\n\n');
-      if (st.state === 'running' || st.state === 'queued') {
-        setTimeout(function () { sysPoll(uid, pre, label); }, 2000);
+    .then(function (job) {
+      sysRenderJob(pre, job);
+      if (['pending', 'running'].indexOf(job.status) >= 0) {
+        setTimeout(function () { sysPollJob(jobId, pre); }, 2000);
       } else {
         setTimeout(sysLoad, 1000);
       }
     })
-    .catch(function () { setTimeout(function () { sysPoll(uid, pre, label); }, 3000); });
+    .catch(function () { setTimeout(function () { sysPollJob(jobId, pre); }, 3000); });
 }
 function sysInstall(pkg, hasPeers) {
   var alsoPeer = false;
   if (hasPeers) {
-    alsoPeer = window.confirm('Install ' + pkg + ' on ALL nodes?\n\nOK = this node and the peer node(s)\nCancel = choose this node only');
+    alsoPeer = window.confirm('Install ' + pkg + ' on ALL nodes?\n\nOK = this node, then the peer node(s) once it succeeded here\nCancel = choose this node only');
     if (!alsoPeer && !window.confirm('Install ' + pkg + ' on THIS node only?')) { return; }
   } else if (!window.confirm('Install ' + pkg + ' on this node?')) { return; }
   var pre = document.getElementById('syspkg-out');
-  sysOut = {};
   pre.style.display = '';
   pre.textContent = 'Queuing ' + pkg + ' …';
   fetch('/settings/system-packages/install', {
@@ -5306,20 +5312,29 @@ function sysInstall(pkg, hasPeers) {
     .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
     .then(function (res) {
       if (!res.ok) { pre.textContent = 'Error: ' + (res.d.error || 'request rejected'); return; }
-      var extra = (res.d.peers || []).map(function (p) {
-        return 'peer ' + (p.node || '?') + ': ' + p.state + (p.error ? ' — ' + p.error : '')
-          + (p.state === 'queued' ? ' (its runner applies it; Refresh shows the result)' : '');
-      });
-      if (res.d.partial) { extra.push('PARTIAL: queued here but not on every peer.'); }
-      if (extra.length) { sysOut.peers = extra.join('\n'); }
-      sysPoll(res.d.uid, pre, res.d.node);
+      pre.textContent = 'job ' + res.d.job_id + ' queued on ' + res.d.node + ' — installing…';
+      sysPollJob(res.d.job_id, pre);
     })
     .catch(function (e) { pre.textContent = 'Error: ' + e.message; });
+}
+function sysResumeJob() {
+  // Back on the page while an install is still running: show it again.
+  fetch('/jobs/all?type=system_package&status=running&limit=1',
+        { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function (d) {
+      var job = (d.jobs || [])[0];
+      var pre = document.getElementById('syspkg-out');
+      if (!job || !pre) { return; }
+      pre.style.display = '';
+      sysPollJob(job.id, pre);
+    })
+    .catch(function () {});
 }
 document.addEventListener('DOMContentLoaded', function () {
   var r = document.getElementById('syspkg-refresh');
   if (r) { r.addEventListener('click', sysLoad); }
-  sysLoad();
+  sysLoad(); sysResumeJob();
 });
 {% endif %}
 

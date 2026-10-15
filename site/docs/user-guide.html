@@ -4186,11 +4186,14 @@ modules it can import (<code>from lib.devices import …</code>), and text files
 <code>.csv</code>, <code>.yaml</code>, …) are data it can open by relative path. Up to 64 files of
 512 KiB each. <strong>Upload</strong> takes a single file or a <code>.zip</code> of the whole project (a
 zip of a folder is unwrapped); the upload is loaded into the editor and saved
-at once, as its own entry in the draft history. <strong>Download</strong> gives the draft,
-any published version or any revision of the history as a zip.</p>
-<p><strong>Finding and editing a script.</strong> The library lists every script with
-<strong>View / edit</strong> (opens the editor) and a history button (opens <strong>History &amp;
-runs</strong> directly).</p>
+at once, as a new version. <strong>Download</strong> gives the current state or any version
+as a zip.</p>
+<p><strong>The library page</strong> shows how scripts run in one strip at the top, a search
+box and the script table: published version, latest version (flagged when it is
+not published), form fields, network, audience and last change. Row actions:
+<strong>Edit</strong> (every edit saves a new version), <strong>Compare versions</strong>, <strong>Versions and
+runs</strong>, <strong>Download</strong>. <strong>New script</strong> (top right) opens a dialog for the name and
+the id.</p>
 <p><strong>The editor</strong> has a file tree, line numbers, Tab / Shift+Tab indentation,
 auto-indent after <code>:</code>, Ctrl+S to save (the editor also <strong>saves by itself</strong> about
 four seconds after you stop typing) and <strong>Check syntax</strong>, which lists every
@@ -4232,26 +4235,26 @@ Without a vault, credentials cannot be set and a script that declares one
 cannot be queued. Deleting a script deletes its credentials from the vault.</p>
 <p><strong>Test</strong> runs the saved draft on this node with the values you type and shows
 the output, the <code>result()</code> document and every connection attempt.
-<strong>Publish</strong> freezes the draft as version <em>n</em>: code, form, network and timeout.
-Operators always run a published version, so editing the draft never changes
-what they run. <strong>History &amp; runs</strong> has three parts:</p>
-<ul>
-<li><strong>Draft history</strong> — every save, upload and restore of the draft, recorded
-  automatically as a revision (<em>r1</em>, <em>r2</em>, …) with its code, form and settings.
-  Saves by the same person within ten minutes of the revision's first save are
-  grouped into one entry (the editor autosaves while you type); an upload, a
-  restore, another person or a publish always starts a new one, and a save
-  that changes nothing adds nothing. The revision that became a version is
-  marked <em>→ vN</em>. The last 100 revisions are kept.</li>
-<li><strong>Published versions</strong> — the frozen versions operators run. The last 50 are
-  kept, and the live one always is.</li>
-<li><strong>Runs</strong> — the run history.</li>
-</ul>
-<p><strong>View</strong> on any revision or version opens it read-only, file by file, and
-<strong>Changes against the current draft</strong> shows a line diff per file (plus which
-settings or form changed). <strong>Restore to draft</strong> puts that revision or version
-back in the draft; the draft it replaces stays in the history, so a restore
-can itself be undone.</p>
+<strong>Versions.</strong> Every edit of a script — published or not — saves a <strong>new
+version</strong> (<em>v1</em>, <em>v2</em>, …) automatically, with its code, form and settings; the
+starter template a script is created with is not a version, so the first save
+is <em>v1</em>. Saves by the same person within ten minutes of the version's first
+save are grouped into one version (the editor autosaves while you type); an
+upload, a restore, another person or a publish always starts a new one, and a
+save that changes nothing adds nothing. The last 100 versions are kept, and the
+published one always is.</p>
+<p><strong>Publish</strong> approves the latest version under <strong>its own number</strong>: what the
+editor showed as <em>v7</em> is what operators run as <em>v7</em>. Operators keep running the
+published version while you edit; a version that is already published cannot
+be published again (edit the script to make a new one).</p>
+<p><strong>Versions &amp; runs</strong> lists every version with its status (<em>published</em>,
+<em>published before</em>, <em>latest · not published</em>), who saved it and how (edited,
+uploaded, restored). Row actions: <strong>View</strong> (read-only, file by file, with
+<em>Changes against the current draft</em>), <strong>Compare with the previous version</strong>,
+<strong>Download</strong> and <strong>Restore</strong> (saves that version's content as a new version;
+nothing is deleted). <strong>Compare</strong> in the card header diffs any two versions you
+pick: a line diff per file, plus which settings or form changed. The run
+history is below.</p>
 <p><strong>Who runs it.</strong> Under Settings, <em>Who can run it</em> is <strong>Administrators only</strong>
 or <strong>Operators</strong>. A published script with the second audience appears to
 every user holding <code>operations.scripts_run</code> under <strong>Operations → Automation →

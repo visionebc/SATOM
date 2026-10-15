@@ -24707,3 +24707,30 @@ msgstr "%(n)s révisions enregistrées"
 
 msgid "Draft history and published versions"
 msgstr "Historique du brouillon et versions publiées"
+
+msgid "Compare versions"
+msgstr "Comparer les versions"
+
+msgid "Every edit saves a new version automatically, with its code, form and settings; saves by the same person within 10 minutes are grouped into one version. Operators run the published version until you publish another one."
+msgstr "Chaque modification enregistre automatiquement une nouvelle version, avec son code, son formulaire et ses réglages ; les enregistrements d'une même personne en moins de 10 minutes sont regroupés en une seule version. Les opérateurs exécutent la version publiée jusqu'à ce que vous en publiiez une autre."
+
+msgid "Every edit saves a new version. Operators run the published version until you publish another one."
+msgstr "Chaque modification enregistre une nouvelle version. Les opérateurs exécutent la version publiée jusqu'à ce que vous en publiiez une autre."
+
+msgid "Latest version"
+msgstr "Dernière version"
+
+msgid "No scripts yet. Create one with New script."
+msgstr "Aucun script pour l'instant. Créez-en un avec New script."
+
+msgid "Restore as a new version"
+msgstr "Restaurer comme nouvelle version"
+
+msgid "Search scripts…"
+msgstr "Rechercher des scripts…"
+
+msgid "The latest version is not published"
+msgstr "La dernière version n'est pas publiée"
+
+msgid "Versions and runs"
+msgstr "Versions et exécutions"

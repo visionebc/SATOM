@@ -491,7 +491,13 @@ def _prune_revisions(d: Path, meta: dict) -> None:
     revs = meta.get("revisions") or []
     if len(revs) <= MAX_REVISIONS:
         return
-    drop, meta["revisions"] = revs[:-MAX_REVISIONS], revs[-MAX_REVISIONS:]
+    keep = revs[-MAX_REVISIONS:]
+    live = meta.get("published")
+    if live and live not in [r["n"] for r in keep]:
+        # The version operators run stays listed, however old.
+        keep = [r for r in revs if r["n"] == live] + keep[1:]
+    kept = {r["n"] for r in keep}
+    drop, meta["revisions"] = [r for r in revs if r["n"] not in kept], keep
     for r in drop:
         shutil.rmtree(d / "revisions" / str(int(r["n"])), ignore_errors=True)
 
@@ -607,7 +613,8 @@ def list_scripts() -> list[dict]:
                 "updated_at", "updated_by", "draft_changed")}
                 | {"fields": len(meta.get("fields") or []),
                    "versions": len(meta.get("versions") or []),
-                   "revisions": len(meta.get("revisions") or [])})
+                   "revisions": len(meta.get("revisions") or []),
+                   "latest": (meta.get("revisions") or [{}])[-1].get("n")})
     return out
 
 
@@ -618,12 +625,13 @@ def create(slug: str, name: str, by: str) -> dict:
         raise ScriptError("a script with the id %r already exists" % slug)
     settings = clean_settings({"name": name or slug, "fields": STARTER_FIELDS})
     now = _utcnow()
-    meta = {"slug": slug, **settings, "entry": ENTRY, "versions": [],
+    # "revisions": [] marks a script born with the history. The starter
+    # template is not a version: the first save is v1.
+    meta = {"slug": slug, **settings, "entry": ENTRY, "versions": [], "revisions": [],
             "published": None, "draft_changed": True,
             "created_by": by, "created_at": now, "updated_by": by, "updated_at": now}
     with _locked(d):
         _write_tree(d / "draft", {ENTRY: STARTER})
-        _record_revision(d, meta, {ENTRY: STARTER}, by, "created")
         _write_json(d / "meta.json", meta)
     return get(slug)
 
@@ -640,9 +648,9 @@ def save_draft(slug: str, files: Any, settings: dict, by: str,
             raise ScriptError("no script %r" % slug)
         files = validate_files(files)
         clean = clean_settings({**meta, **(settings or {})})
-        if not meta.get("revisions"):
+        if "revisions" not in meta:
             # A script from before the history existed: keep what it held
-            # as the first revision before overwriting it.
+            # as the first version before overwriting it.
             _record_revision(d, meta, _read_tree(d / "draft"),
                              meta.get("updated_by") or meta.get("created_by") or "?", "created")
         _write_tree(d / "draft", files)
@@ -670,7 +678,13 @@ def _publish(d: Path, slug: str, note: str, by: str) -> dict:
         p = probs[0]
         raise ScriptError("cannot publish: %s line %s: %s" % (p["file"], p["line"], p["message"]))
     versions = meta.get("versions") or []
-    n = (max((v["n"] for v in versions), default=0)) + 1
+    # One numbering: every save is version N of the script (a revision), and
+    # publishing approves THAT number -- what the editor showed as v7 is what
+    # operators run as v7. A draft from before the history is recorded first.
+    _record_revision(d, meta, files, by, "save")
+    n = int(meta["revisions"][-1]["n"])
+    if any(int(v["n"]) == n for v in versions):
+        raise ScriptError("v%d is already published; edit the script to make a new version" % n)
     vdir = d / "versions" / str(n)
     _write_tree(vdir / "files", files)
     frozen = {k: meta.get(k) for k in ("name", "fields", "network", "timeout", "entry")}
@@ -682,9 +696,6 @@ def _publish(d: Path, slug: str, note: str, by: str) -> dict:
                      "note": frozen["note"], "files": len(files)})
     meta.update({"versions": versions, "published": n, "draft_changed": False,
                  "updated_by": by, "updated_at": _utcnow()})
-    # Tie the history to the release: the revision that became vN. A draft
-    # that predates the history is recorded first.
-    _record_revision(d, meta, files, by, "save")
     meta["revisions"][-1]["published_as"] = n
     _prune_versions(d, meta)
     _write_json(d / "meta.json", meta)

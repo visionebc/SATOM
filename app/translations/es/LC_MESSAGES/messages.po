@@ -24726,3 +24726,30 @@ msgstr "%(n)s revisiones guardadas"
 
 msgid "Draft history and published versions"
 msgstr "Historial del borrador y versiones publicadas"
+
+msgid "Compare versions"
+msgstr "Comparar versiones"
+
+msgid "Every edit saves a new version automatically, with its code, form and settings; saves by the same person within 10 minutes are grouped into one version. Operators run the published version until you publish another one."
+msgstr "Cada edición guarda una versión nueva automáticamente, con su código, formulario y ajustes; los guardados de la misma persona en 10 minutos se agrupan en una sola versión. Los operadores ejecutan la versión publicada hasta que publiques otra."
+
+msgid "Every edit saves a new version. Operators run the published version until you publish another one."
+msgstr "Cada edición guarda una versión nueva. Los operadores ejecutan la versión publicada hasta que publiques otra."
+
+msgid "Latest version"
+msgstr "Última versión"
+
+msgid "No scripts yet. Create one with New script."
+msgstr "Aún no hay scripts. Crea uno con New script."
+
+msgid "Restore as a new version"
+msgstr "Restaurar como versión nueva"
+
+msgid "Search scripts…"
+msgstr "Buscar scripts…"
+
+msgid "The latest version is not published"
+msgstr "La última versión no está publicada"
+
+msgid "Versions and runs"
+msgstr "Versiones y ejecuciones"

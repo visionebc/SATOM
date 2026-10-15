@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added — Script Library: automatic draft history, autosave, read-only view and diff (2026-10-15) · 149 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added — Script Library: every edit is a new version, autosave, compare any two versions (2026-10-15) · 149 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added — Script Library: automatic draft history, autosave, read-only view and diff (2026-10-15) · 149 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added — Script Library: every edit is a new version, autosave, compare any two versions (2026-10-15) · 149 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added — Script Library: automatic draft history, autosave, read-only view and diff (2026-10-15) · 149 entries</span>
-        <ul class="rel-leads"><li>Automatic draft history</li><li>Read-only view and diff of any revision or version</li><li>Migrate existing credentials</li><li class="rel-more">… and 146 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Added — Script Library: every edit is a new version, autosave, compare any two versions (2026-10-15) · 149 entries</span>
+        <ul class="rel-leads"><li>Every edit is a new version</li><li>Compare versions</li><li>Library page in the SATOM list layout</li><li class="rel-more">… and 146 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.1.0.html" data-rel-version="3.1.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.1.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -365,23 +365,31 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="added--script-library-automatic-draft-history-autosave-read-only-view-and-diff-2026-10-15">Added — Script Library: automatic draft history, autosave, read-only view and diff (2026-10-15)</h3>
+<h3 id="added--script-library-every-edit-is-a-new-version-autosave-compare-any-two-versions-2026-10-15">Added — Script Library: every edit is a new version, autosave, compare any two versions (2026-10-15)</h3>
 <ul>
-<li><strong>Automatic draft history</strong>: every save, upload and restore of a script's
-  draft is recorded as a revision with its code, form and settings (<strong>History &amp;
-  runs → Draft history</strong>). Saves by the same person within ten minutes are
-  grouped into one entry; a save that changes nothing adds nothing; the
-  revision that became a published version is marked. The last 100 revisions
-  are kept. Before, a save overwrote the draft and only Publish kept a copy.</li>
+<li><strong>Every edit is a new version</strong>: each save, upload and restore of a script —
+  published or not — is recorded automatically as version <em>vN</em> with its code,
+  form and settings (<strong>Versions &amp; runs</strong>). Saves by the same person within ten
+  minutes are grouped into one version; a save that changes nothing adds
+  nothing; the starter template is not a version, so the first save is <em>v1</em>.
+  <strong>Publish</strong> approves the latest version under its own number, and operators
+  keep running the published one while you edit. The last 100 versions are
+  kept, and the published one always is. Before, a save overwrote the draft
+  and only Publish kept a copy, under a separate numbering.</li>
 <li>The editor saves by itself a few seconds after the last change, and an
   upload is saved at once (it used to wait in the editor until <strong>Save</strong>).</li>
-<li><strong>Read-only view and diff of any revision or version</strong>: file by file, with
-  <em>Changes against the current draft</em> (a line diff per file and the settings
-  that changed); <strong>Restore to draft</strong> works for revisions too, and
-  the replaced draft stays in the history. Each one downloads as a zip.</li>
-<li>The library lists <strong>View / edit</strong> and a history button per script (operator
-  request: "I must be able to find the script, see it and edit it online, or
-  upload a new version, and the system must save the version automatically").</li>
+<li><strong>Compare versions</strong>: pick any two in the Versions card, or compare a row
+  with the previous version; a line diff per file and the settings that
+  changed. <strong>View</strong> shows any version read-only; <strong>Restore</strong> saves an old
+  version's content as a new version (nothing is deleted). Each one downloads
+  as a zip.</li>
+<li><strong>Library page in the SATOM list layout</strong>: the standard table with a search
+  box and row actions (edit, compare, versions, download), <strong>New script</strong> as a
+  button that opens a dialog, and the "how scripts run" notes as one strip at
+  the top (operator requests: "I must be able to find the script, see it and
+  edit it online, or upload a new version, and the system must save the
+  version automatically"; "editing a published script generates the new
+  version; versions can be compared with an action").</li>
 </ul>
 <h3 id="changed--integration-hook-secrets-follow-the-vault-mode-2026-10-15">Changed — integration hook secrets follow the vault mode (2026-10-15)</h3>
 <ul>

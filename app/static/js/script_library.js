@@ -50,13 +50,22 @@
   }
   document.querySelectorAll('.sl-run-open').forEach(function (b) {
     b.addEventListener('click', function () {
-      var box = b.closest('.fw-card-body').querySelector('.sl-run-log');
+      var box = b.closest('.sl-runs-wrap').querySelector('.sl-run-log');
       box.style.display = '';
       box.textContent = 'loading…';
       fetch(runUrl(b.getAttribute('data-rid')), { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
         .then(function (r) { return r.json(); })
         .then(function (st) { box.textContent = renderRun(st); })
         .catch(function (e) { box.textContent = 'Error: ' + e.message; });
+    });
+  });
+
+  // index page: filter the script table as you type
+  var search = $('slSearch');
+  if (search) search.addEventListener('input', function () {
+    var q = search.value.trim().toLowerCase();
+    document.querySelectorAll('#slTable tbody tr').forEach(function (tr) {
+      tr.style.display = !q || tr.textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
     });
   });
 
@@ -471,7 +480,7 @@
       var last = (CFG.revisions || [])[(CFG.revisions || []).length - 1];
       var when = new Date().toTimeString().slice(0, 5);
       state((kind === 'upload' ? 'uploaded and saved' : auto ? 'saved automatically' : 'saved') + ' ' + when
-        + (last ? ' · r' + last.n : '')
+        + (last ? ' · v' + last.n : '')
         + (problems.length ? ' — ' + problems.length + ' syntax error(s); publishing is blocked until fixed' : ''), problems.length ? 'err' : 'ok');
       return d;
     }).catch(function (e) { state('Not saved: ' + e.message, 'err'); throw e; });
@@ -481,7 +490,8 @@
   }
   $('sl-save').addEventListener('click', function () { save().catch(function () {}); });
   $('sl-publish').addEventListener('click', function () {
-    var note = window.prompt('Publish the saved draft as a new version.\nOperators will run this version from now on.\n\nRelease note (optional):', '');
+    var latest = (CFG.revisions || [])[(CFG.revisions || []).length - 1];
+    var note = window.prompt('Publish ' + (latest ? 'v' + latest.n + ' (the latest version)' : 'the latest version') + '.\nOperators will run it from now on.\n\nRelease note (optional):', '');
     if (note === null) return;
     var go = dirty ? save() : Promise.resolve();
     go.then(function () { return postJSON(URLS.publish, { note: note }); })
@@ -490,7 +500,7 @@
         $('sl-pub').className = 'fw-badge fw-badge-success';
         $('sl-pub').textContent = 'v' + d.published + ' published';
         if (d.revisions) CFG.revisions = d.revisions;
-        renderVersions(); renderRevisions();
+        renderRevisions();
         state('published v' + d.published, 'ok');
       })
       .catch(function (e) { state(e.message, 'err'); });
@@ -524,55 +534,76 @@
   });
 
   // ================================================================ versions
-  function renderVersions() {
-    var rows = (CFG.versions || []).slice().reverse();
-    $('sl-versions').innerHTML = rows.length ? rows.map(function (v) {
-      return '<tr><td><strong>v' + v.n + '</strong>' + (v.n === CFG.published ? ' <span class="fw-badge fw-badge-success">live</span>' : '') + '</td>'
-        + '<td class="text-muted">' + esc((v.at || '').slice(0, 16).replace('T', ' ')) + '</td><td>' + esc(v.by) + '</td>'
-        + '<td>' + esc(v.note || '') + '</td><td>' + v.files + '</td>'
-        + '<td class="text-end"><button type="button" class="btn btn-link btn-sm p-0 me-2 sl-view" data-ref="v' + v.n + '">view</button>'
-        + '<a class="btn btn-link btn-sm p-0 me-2" href="' + URLS.download + '?version=' + v.n + '">zip</a>'
-        + '<button type="button" class="btn btn-link btn-sm p-0 sl-restore" data-n="' + v.n + '">restore to draft</button></td></tr>';
-    }).join('') : '<tr><td colspan="6" class="text-muted p-3">Nothing published yet.</td></tr>';
-    $('sl-versions').querySelectorAll('.sl-restore').forEach(function (b) {
-      b.addEventListener('click', function () { restoreRef('v' + b.getAttribute('data-n')); });
-    });
-    bindViews($('sl-versions'));
+  // One list: every save is version N (a revision on disk, ref "r<N>");
+  // publishing approves one of them, and operators run that one.
+  var KIND_LABEL = { created: 'Created', save: 'Edited', upload: 'Uploaded', restore: 'Restored' };
+  function liveN() { return CFG.published || null; }
+  function wasPublished(n) { return (CFG.versions || []).some(function (v) { return v.n === n; }); }
+  function vlabel(ref) { return ref === 'draft' ? 'the current draft' : 'v' + ref.slice(1); }
+  function iconBtn(cls, ref, icon, title, extra) {
+    return '<button type="button" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1 ' + cls + '" data-ref="' + ref + '"'
+      + (extra || '') + ' title="' + title + '"><i class="bi ' + icon + '"></i></button>';
   }
-  // ---- draft history
-  var KIND_LABEL = { created: 'Created', save: 'Saved', upload: 'Uploaded', restore: 'Restored' };
   function renderRevisions() {
-    var rows = (CFG.revisions || []).slice().reverse();
+    var revs = CFG.revisions || [];
+    var rows = revs.slice().reverse();
     var newest = rows.length ? rows[0].n : null;
-    $('sl-revisions').innerHTML = rows.length ? rows.map(function (r) {
-      var what = (KIND_LABEL[r.kind] || r.kind) + (r.note ? ' <span class="text-muted">' + esc(r.note) + '</span>' : '')
+    $('sl-revisions').innerHTML = rows.length ? rows.map(function (r, i) {
+      var prev = rows[i + 1];
+      var what = esc(KIND_LABEL[r.kind] || r.kind) + (r.note ? ' <span class="text-muted">' + esc(r.note) + '</span>' : '')
         + (r.edits > 1 ? ' <span class="text-muted">(' + r.edits + ' saves)</span>' : '');
-      return '<tr><td><strong>r' + r.n + '</strong>'
-        + (r.n === newest ? ' <span class="fw-badge fw-badge-info">draft</span>' : '')
-        + (r.published_as ? ' <span class="fw-badge fw-badge-success">→ v' + r.published_as + '</span>' : '') + '</td>'
-        + '<td class="text-muted">' + esc((r.at || '').slice(0, 16).replace('T', ' ')) + '</td><td>' + esc(r.by) + '</td>'
+      var status = r.n === liveN() ? '<span class="fw-badge fw-badge-success">published</span>'
+        : wasPublished(r.n) ? '<span class="fw-badge fw-badge-secondary">published before</span>'
+        : r.n === newest ? '<span class="fw-badge fw-badge-warning">latest · not published</span>' : '';
+      return '<tr><td><strong>v' + r.n + '</strong></td><td>' + status + '</td>'
+        + '<td style="font-size:13px;white-space:nowrap;">' + esc((r.at || '').slice(0, 16).replace('T', ' ')) + '</td><td>' + esc(r.by) + '</td>'
         + '<td>' + what + '</td><td>' + r.files + '</td>'
-        + '<td class="text-end text-nowrap"><button type="button" class="btn btn-link btn-sm p-0 me-2 sl-view" data-ref="r' + r.n + '">view</button>'
-        + '<a class="btn btn-link btn-sm p-0 me-2" href="' + URLS.download + '?revision=' + r.n + '">zip</a>'
-        + (r.n === newest ? '' : '<button type="button" class="btn btn-link btn-sm p-0 sl-rrestore" data-n="' + r.n + '">restore to draft</button>')
+        + '<td class="actions-col">'
+        + iconBtn('sl-view', 'r' + r.n, 'bi-eye', 'View')
+        + (prev ? iconBtn('sl-cmp-prev', 'r' + r.n, 'bi-arrow-left-right', 'Compare with v' + prev.n, ' data-prev="r' + prev.n + '"') : '')
+        + '<a class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" href="' + URLS.download + '?revision=' + r.n + '" title="Download"><i class="bi bi-download"></i></a>'
+        + (r.n === newest ? '' : iconBtn('sl-rrestore', 'r' + r.n, 'bi-arrow-counterclockwise', 'Restore (saves it as a new version)'))
         + '</td></tr>';
-    }).join('') : '<tr><td colspan="6" class="text-muted p-3">No saved revisions yet: the first save starts the history.</td></tr>';
+    }).join('') : '<tr><td colspan="7" class="text-muted p-3">No versions yet: the first save creates one.</td></tr>';
     $('sl-revisions').querySelectorAll('.sl-rrestore').forEach(function (b) {
-      b.addEventListener('click', function () { restoreRef('r' + b.getAttribute('data-n')); });
+      b.addEventListener('click', function () { restoreRef(b.getAttribute('data-ref')); });
+    });
+    $('sl-revisions').querySelectorAll('.sl-cmp-prev').forEach(function (b) {
+      b.addEventListener('click', function () { openCompare(b.getAttribute('data-prev'), b.getAttribute('data-ref')); });
     });
     bindViews($('sl-revisions'));
+    renderCompareBar();
   }
+  // ---- compare any two versions
+  function renderCompareBar() {
+    var revs = (CFG.revisions || []).slice().reverse();
+    var a = $('sl-cmp-a'), b = $('sl-cmp-b');
+    if (!a) return;
+    var keepA = a.value, keepB = b.value;
+    var opts = revs.map(function (r) {
+      return '<option value="r' + r.n + '">v' + r.n + (r.n === liveN() ? ' (published)' : '') + '</option>';
+    }).join('');
+    a.innerHTML = opts; b.innerHTML = opts;
+    a.value = keepA && a.querySelector('option[value="' + keepA + '"]') ? keepA : (revs[1] ? 'r' + revs[1].n : (revs[0] ? 'r' + revs[0].n : ''));
+    b.value = keepB && b.querySelector('option[value="' + keepB + '"]') ? keepB : (revs[0] ? 'r' + revs[0].n : '');
+    $('sl-cmp-go').disabled = revs.length < 2;
+  }
+  $('sl-cmp-go').addEventListener('click', function () {
+    if ($('sl-cmp-a').value === $('sl-cmp-b').value) { state('Pick two different versions to compare', 'err'); return; }
+    openCompare($('sl-cmp-a').value, $('sl-cmp-b').value);
+  });
   function restoreRef(ref) {
     var n = ref.slice(1);
-    if (!window.confirm('Replace the draft (code, form and settings) with ' + ref + '?\nThe current draft stays in the history.' + (dirty ? '\nUnsaved changes of the last seconds are lost.' : ''))) return;
+    if (!window.confirm('Restore v' + n + '? Its code, form and settings are saved as a new version; nothing is deleted.'
+      + (dirty ? '\nUnsaved changes of the last seconds are lost.' : ''))) return;
     var url = ref.charAt(0) === 'r' ? URLS.restoreRevision + n + '/restore' : URLS.restore + n;
     if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
     postJSON(url, {}).then(function () { dirty = false; window.location.hash = 'history'; window.location.reload(); })
       .catch(function (e) { state(e.message, 'err'); });
   }
 
-  // ---- read-only viewer + diff against the draft (versions and revisions)
-  var view = { ref: null, files: {}, diff: null, mode: 'code' };
+  // ---- read-only viewer + diff (a version against the draft, or two versions)
+  var view = { ref: null, against: 'draft', files: {}, diff: null, mode: 'code' };
   function viewModal() {
     var el = $('sl-view-modal');
     return window.bootstrap && el ? window.bootstrap.Modal.getOrCreateInstance(el) : null;
@@ -585,7 +616,7 @@
       if (!view.diff) { body.textContent = 'loading…'; return; }
       names = view.diff.files.map(function (f) { return f.file; });
       var extra = view.diff.settings_changed.length ? 'Also changed: ' + view.diff.settings_changed.join(', ') + '\n\n' : '';
-      if (!names.length) { sel.innerHTML = ''; body.textContent = extra + 'No code differences between ' + view.ref + ' and the current draft.'; return; }
+      if (!names.length) { sel.innerHTML = ''; body.textContent = extra + 'No code differences between ' + vlabel(view.ref) + ' and ' + vlabel(view.against) + '.'; return; }
       if (names.indexOf(sel.value) < 0) sel.innerHTML = names.map(function (n) { return '<option>' + esc(n) + '</option>'; }).join('');
       var f = view.diff.files.filter(function (x) { return x.file === sel.value; })[0] || view.diff.files[0];
       body.innerHTML = esc(extra) + f.diff.split('\n').map(function (ln) {
@@ -605,26 +636,30 @@
     view.mode = m;
     $('sl-view-mode-code').classList.toggle('active', m === 'code');
     $('sl-view-mode-diff').classList.toggle('active', m === 'diff');
+    $('sl-view-mode-diff').textContent = 'Changes against ' + vlabel(view.against);
     $('sl-view-file').innerHTML = '';
     if (m === 'diff' && !view.diff) {
-      var go = dirty ? save('save', '', true) : Promise.resolve();
+      var go = dirty && view.against === 'draft' ? save('save', '', true) : Promise.resolve();
       go.then(function () {
-        return fetch(URLS.diff + '?a=' + encodeURIComponent(view.ref) + '&b=draft', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+        return fetch(URLS.diff + '?a=' + encodeURIComponent(view.ref) + '&b=' + encodeURIComponent(view.against),
+          { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
       }).then(function (r) { return r.json(); })
         .then(function (d) { view.diff = d.files ? d : { files: [], settings_changed: [] }; renderView(); })
         .catch(function (e) { $('sl-view-body').textContent = 'Error: ' + e.message; });
     }
     renderView();
   }
-  function openView(ref) {
+  function openView(ref, against, mode) {
     var isRev = ref.charAt(0) === 'r';
     var url = (isRev ? URLS.revision : URLS.version) + ref.slice(1);
-    view = { ref: ref, files: {}, diff: null, mode: 'code' };
-    $('sl-view-title').textContent = CFG.slug + ' — ' + ref + (isRev ? ' (draft history)' : ' (published version)');
+    view = { ref: ref, against: against || 'draft', files: {}, diff: null, mode: 'code' };
+    $('sl-view-title').textContent = CFG.slug + ' — v' + ref.slice(1)
+      + (view.against !== 'draft' ? ' → ' + vlabel(view.against) : '') + (ref.slice(1) == liveN() ? ' (published)' : '');
     $('sl-view-zip').href = URLS.download + (isRev ? '?revision=' : '?version=') + ref.slice(1);
+    $('sl-view-restore').style.display = (CFG.revisions || []).length && ('r' + CFG.revisions[CFG.revisions.length - 1].n) === ref ? 'none' : '';
     $('sl-view-body').textContent = 'loading…';
     $('sl-view-meta').textContent = '';
-    setViewMode('code');
+    setViewMode(mode || 'code');
     var m = viewModal(); if (m) m.show();
     fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
@@ -632,10 +667,11 @@
         view.files = d.files || {};
         $('sl-view-meta').textContent = (d.at || d.published_at || '').slice(0, 16).replace('T', ' ') + ' · ' + (d.by || d.published_by || '')
           + ' · ' + (d.fields || []).length + ' form field(s) · network ' + (d.network || 'none');
-        renderView();
+        if (view.mode === 'code') renderView();
       })
       .catch(function (e) { $('sl-view-body').textContent = 'Error: ' + e.message; });
   }
+  function openCompare(a, b) { openView(a, b, 'diff'); }
   function bindViews(root) {
     root.querySelectorAll('.sl-view').forEach(function (b) {
       b.addEventListener('click', function () { openView(b.getAttribute('data-ref')); });
@@ -661,13 +697,13 @@
   renderCreds();
   renderFields();
   renderPreview();
-  renderVersions();
   renderRevisions();
   openFile(current);
   setDirty(false);
-  // /database/scripts/<slug>#history (the library's history button) opens that tab.
-  if (window.location.hash === '#history') {
+  // #history / #compare (the library's row actions) open the Versions tab.
+  if (window.location.hash === '#history' || window.location.hash === '#compare') {
     var tabBtn = document.querySelector('[data-bs-target="#sl-tab-versions"]');
     if (tabBtn && window.bootstrap) window.bootstrap.Tab.getOrCreateInstance(tabBtn).show();
+    if (window.location.hash === '#compare' && $('sl-cmp-a')) $('sl-cmp-a').focus();
   }
 })();

@@ -32,7 +32,7 @@
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-form" type="button"><i class="bi bi-ui-checks me-1"></i>{{ _('Form') }} <span class="fw-badge fw-badge-secondary" id="sl-field-count"></span></button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-settings" type="button"><i class="bi bi-sliders me-1"></i>{{ _('Settings') }}</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-test" type="button"><i class="bi bi-play-circle me-1"></i>{{ _('Test') }}</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-versions" type="button"><i class="bi bi-clock-history me-1"></i>{{ _('History & runs') }}</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-versions" type="button"><i class="bi bi-tags me-1"></i>{{ _('Versions & runs') }}</button></li>
 </ul>
 
 <div class="tab-content">
@@ -190,27 +190,26 @@
   {# ------------------------------------------------------------ versions #}
   <div class="tab-pane fade" id="sl-tab-versions">
     <div class="fw-card mb-3">
-      <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-journal-code me-2 text-accent"></i>{{ _('Draft history') }}</span></div>
-      <div class="fw-card-body p-0">
-        <p class="text-muted px-3 pt-2 mb-1" style="font-size:12px;">{{ _('Every save, upload and restore of the draft is kept here automatically, with its code, form and settings. Saves by the same person within 10 minutes are grouped into one entry. Publishing is a separate step: operators keep running the published version until you publish again.') }}</p>
-        <table class="table table-sm mb-0" style="font-size:12px;">
-          <thead><tr><th>{{ _('Revision') }}</th><th>{{ _('Saved') }}</th><th>{{ _('By') }}</th><th>{{ _('Change') }}</th><th>{{ _('Files') }}</th><th></th></tr></thead>
+      <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h2 class="fw-card-title"><i class="bi bi-tags me-2 text-accent"></i>{{ _('Versions') }}</h2>
+        <div class="d-flex gap-2 align-items-center" id="sl-compare-bar" style="font-size:12px;">
+          <select class="form-select form-select-sm" id="sl-cmp-a" style="width:auto;" aria-label="{{ _('From') }}"></select>
+          <i class="bi bi-arrow-right text-muted"></i>
+          <select class="form-select form-select-sm" id="sl-cmp-b" style="width:auto;" aria-label="{{ _('To') }}"></select>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="sl-cmp-go"><i class="bi bi-arrow-left-right me-1"></i>{{ _('Compare') }}</button>
+        </div>
+      </div>
+      <p class="text-muted px-3 pt-2 mb-2" style="font-size:12px;">{{ _('Every edit saves a new version automatically, with its code, form and settings; saves by the same person within 10 minutes are grouped into one version. Operators run the published version until you publish another one.') }}</p>
+      <div class="fw-table-wrapper mb-0" style="border:0;border-radius:0;">
+        <table class="fw-table">
+          <thead><tr><th>{{ _('Version') }}</th><th>{{ _('Status') }}</th><th>{{ _('Saved') }}</th><th>{{ _('By') }}</th><th>{{ _('Change') }}</th><th>{{ _('Files') }}</th><th class="actions-col">{{ _('Actions') }}</th></tr></thead>
           <tbody id="sl-revisions"></tbody>
         </table>
       </div>
     </div>
-    <div class="fw-card mb-3">
-      <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-tags me-2 text-accent"></i>{{ _('Published versions') }}</span></div>
-      <div class="fw-card-body p-0">
-        <table class="table table-sm mb-0" style="font-size:12px;">
-          <thead><tr><th>{{ _('Version') }}</th><th>{{ _('Published') }}</th><th>{{ _('By') }}</th><th>{{ _('Note') }}</th><th>{{ _('Files') }}</th><th></th></tr></thead>
-          <tbody id="sl-versions"></tbody>
-        </table>
-      </div>
-    </div>
     <div class="fw-card">
-      <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Runs') }}</span></div>
-      <div class="fw-card-body p-0">{% include "script_library/_runs.html" %}</div>
+      <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Runs') }}</h2></div>
+      {% include "script_library/_runs.html" %}
     </div>
     <div class="mt-3 text-end">
       <button type="button" class="btn btn-outline-danger btn-sm" id="sl-delete"><i class="bi bi-trash me-1"></i>{{ _('Delete script') }}</button>
@@ -218,7 +217,7 @@
   </div>
 </div>
 
-<div class="modal fade" id="sl-view-modal" tabindex="-1" aria-hidden="true">
+<div class="modal fade fw-modal" id="sl-view-modal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header py-2">
@@ -238,7 +237,7 @@
       </div>
       <div class="modal-footer py-2">
         <a class="btn btn-outline-secondary btn-sm" id="sl-view-zip" href="#"><i class="bi bi-download me-1"></i>{{ _('Download') }}</a>
-        <button type="button" class="btn btn-primary btn-sm" id="sl-view-restore"><i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Restore to draft') }}</button>
+        <button type="button" class="btn btn-primary btn-sm" id="sl-view-restore"><i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Restore as a new version') }}</button>
       </div>
     </div>
   </div>

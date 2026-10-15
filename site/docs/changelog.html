@@ -158,6 +158,11 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   URL at upload time) and refuses the file if it can't. <code>soap:address</code> is
   never touched.</li>
 <li>The <strong>Origin</strong> filter on the inventory has a <strong>fetched</strong> option.</li>
+<li>In <strong>Needed by a policy and NOT held</strong>, an XML Schema or WSDL row now reads
+  <em>no — fetch or upload</em> and has a <strong>Fetch…</strong> button: the dialog opens with
+  the object name filled in and offers, as starting URLs, the real servers
+  behind the policies that use it (read from the device when you open it, not
+  on page load).</li>
 <li>A refused XML Schema, WSDL or other file upload now shows the device's own
   reason (for example <em>Cannot open '/data/etc/xml_schema/root/x.xsd' to
   retrieve schema</em>) instead of a bare <code>HTTP 500</code>: FortiWeb sends it in
@@ -245,12 +250,15 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   backup carries them, inside a block the firmware encrypts even without a
   backup password (measured on 7.6.8 and 8.0.6: deleting one XSD and one WSDL
   shrinks it by about 1.1 KB). The pages now say so, and say what follows: a
-  full restore onto another FortiWeb moves them all at once, while moving one
-  object still needs a copy uploaded to SATOM.</li>
+  restore of that backup does not bring them back. Measured on 7.6.8 → 8.0.6,
+  8.0.6 → 8.0.6 and 7.6.8 → 7.6.8, with a marker object proving each restore
+  applied: the configuration comes back and every XML Schema and WSDL object
+  is dropped, name included. A copy held in SATOM is the only way to move them.</li>
 <li>A gRPC IDL upload refused with <code>-3000</code> now says what was measured: FortiWeb
   8.0.6 build0116 refuses every gRPC IDL upload, whatever the content or
-  format, while 7.6.8 accepts the same file. The device's own error stays
-  first.</li>
+  format, through SATOM's API path and through the GUI's own session path,
+  while 7.6.8 accepts the same file: the cause is the firmware. The device's
+  own error stays first.</li>
 </ul>
 <h3 id="added--script-library-every-edit-is-a-new-version-autosave-compare-any-two-versions-2026-10-15">Added — Script Library: every edit is a new version, autosave, compare any two versions (2026-10-15)</h3>
 <ul>

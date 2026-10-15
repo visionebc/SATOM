@@ -3,8 +3,9 @@
 Seven API-Protection object types (XML Schema, XML DTD, WSDL, OpenAPI, gRPC
 IDL, JSON Schema, Lua scripting) keep only a NAME in the configuration. Four can
 be read off a device through a private endpoint; **three cannot be read from any
-FortiWeb one object at a time**. The device's Entire backup carries them only
-inside a block the firmware encrypts, usable by a full restore and nothing else.
+FortiWeb**, and a restore of the device's Entire backup drops them (measured on
+7.6.8 and 8.0.6): the backup carries them only inside a block the firmware
+encrypts.
 For those, a clone can only ever be as complete as what SATOM itself holds —
 which is what this page fills.
 
@@ -475,8 +476,8 @@ def capture():
     appl = Appliance.query.get_or_404(int(raw_appl))
     if not wa.is_readable(kind):
         flash("%s cannot be read back from any FortiWeb (7.6.8 and 8.0.6 answer "
-              "-20005 on every request shape; the device's Entire backup carries "
-              "it only encrypted, for a full restore). Upload the file instead."
+              "-20005 on every request shape, and a restore of the device's Entire "
+              "backup drops it). Upload the file instead."
               % wa.label(kind), "danger")
         return redirect(dest)
     from ..clients.fortiweb import FortiWebClient
@@ -1103,6 +1104,57 @@ def refresh_refs():
         flash(res["summary"].capitalize() + ".",
               "success" if res.get("ok") else "danger")
     return redirect(request.form.get("back") or url_for("artifacts.inventory"))
+
+
+@bp.route("/api/fetch-hints")
+@login_required
+@require_permission('protection.view')
+def api_fetch_hints():
+    """Where could THIS object be fetched from? For the Fetch dialog.
+
+    The policies of this pair that name the object, and the real servers
+    behind them, read live from the device (read-only, only when an operator
+    opens the dialog from a row — never on page load). Each server becomes a
+    base URL; the service path (``/OrderService?wsdl``) is the operator's to
+    add, because nothing on the FortiWeb says what it is.
+    """
+    scope = _scope()
+    if scope is None:
+        return _no_device_json()
+    kind = (request.args.get("kind") or "").strip()
+    name = (request.args.get("name") or "").strip()
+    if kind not in ("wsdl", "xml_schema") or not name:
+        return jsonify(ok=False, error="only a WSDL or XML Schema can be fetched"), 400
+    policies = sorted({r["policy_mkey"] for r in ar.refs_for(kind, name, appliance_id=scope.id)})
+    out = {"ok": True, "name": name, "kind": kind, "policies": policies,
+           "candidates": [], "errors": []}
+    if not policies:
+        return jsonify(out)
+    from ..clients.fortiweb import FortiWebClient
+    from ..services import backend_probe as bp_
+    try:
+        targets = bp_.dst_pool_targets(FortiWebClient(scope), policies)
+    except Exception as exc:  # noqa: BLE001 — a hint that cannot be read is said so
+        out["errors"].append("could not read the device's server pools: %s" % exc)
+        return jsonify(out)
+    seen = set()
+    for t in targets:
+        if t.get("error"):
+            out["errors"].append("%s: %s" % (t.get("policy"), t["error"]))
+            continue
+        addr, port = str(t.get("address") or ""), int(t.get("port") or 0)
+        if not addr:
+            continue
+        scheme = "https" if t.get("ssl") else "http"
+        host = "[%s]" % addr if ":" in addr else addr
+        default = (scheme == "https" and port == 443) or (scheme == "http" and port == 80)
+        url = "%s://%s%s/" % (scheme, host, "" if (default or not port) else ":%d" % port)
+        if url in seen:
+            continue
+        seen.add(url)
+        out["candidates"].append({"url": url, "policy": t.get("policy"),
+                                  "pool": t.get("pool"), "enabled": bool(t.get("enabled"))})
+    return jsonify(out)
 
 
 @bp.route("/api/refs")

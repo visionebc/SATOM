@@ -75,7 +75,7 @@
         <tr><td><span class="fw-badge fw-badge-warning">at risk</span></td>
             <td>{{ _('Nobody holds a copy, but the type CAN be read back from a live FortiWeb. Capture it before the source box goes away.') }}</td></tr>
         <tr><td><span class="fw-badge fw-badge-danger">blocked</span></td>
-            <td>{{ _('Nobody holds a copy and no FortiWeb hands this type back one object at a time. The device\'s Entire backup carries it only encrypted, for a full restore onto another FortiWeb. The policy CANNOT be migrated through SATOM until someone uploads the file.') }}</td></tr>
+            <td>{{ _('Nobody holds a copy, and no FortiWeb hands this type back: not one object at a time, and not through a restore of its Entire backup either (measured: the restore drops it). The policy CANNOT be migrated until someone uploads the file, or fetches it for XML Schema and WSDL.') }}</td></tr>
       </tbody>
     </table>
   </div>

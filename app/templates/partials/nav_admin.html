@@ -125,9 +125,15 @@
 {% set _s_studio %}
     {% if _pk == 'global' %}
     {% with studio_entries_only = True %}{% include 'partials/nav_studio.html' %}{% endwith %}
-    {% elif current_user.can('studio.python_console') and may_open('database.py_console_page') %}
+    {% else %}
+    {% if current_user.can('studio.python_console') and may_open('database.py_console_page') %}
     <a class="fw-nav-item {{ 'active' if request.endpoint == 'database.py_console_page' else '' }}" href="{{ url_for('database.py_console_page') }}">
       <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Python Console') }}</span></a>
+    {% endif %}
+    {% if current_user.can('studio.script_library') and may_open('script_library.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'script_library' else '' }}" href="{{ url_for('script_library.index') }}">
+      <i class="bi bi-file-earmark-code fw-nav-icon"></i><span>{{ _('Script Library') }}</span></a>
+    {% endif %}
     {% endif %}
 {% endset %}
 

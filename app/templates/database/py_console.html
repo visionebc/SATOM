@@ -7,8 +7,14 @@
     <p class="text-muted mb-0" style="font-size:13px;">
       {{ _('Run Python over the curated fleet datasets — inside a locked-down sandbox.') }}</p>
   </div>
-  <a class="btn btn-outline-secondary btn-sm ms-auto" href="{{ url_for('database.index') }}">
-    <i class="bi bi-arrow-left me-1"></i>{{ _('Back to Database') }}</a>
+  <div class="ms-auto d-flex gap-2">
+    {% if current_user.can('studio.script_library') %}
+    <a class="btn btn-primary btn-sm" href="{{ url_for('script_library.index') }}">
+      <i class="bi bi-file-earmark-code me-1"></i>{{ _('Script Library') }}</a>
+    {% endif %}
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('database.index') }}">
+      <i class="bi bi-arrow-left me-1"></i>{{ _('Back to Database') }}</a>
+  </div>
 </div>
 
 <div class="alert alert-warning d-flex" style="gap:10px;">

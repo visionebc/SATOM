@@ -24440,3 +24440,157 @@ msgstr "Systempakete"
 
 msgid "Operating-system packages SATOM depends on, per node. Install runs through the privileged updater; the list is curated and nothing is ever removed."
 msgstr "Betriebssystempakete, von denen SATOM abhängt, pro Knoten. Die Installation übernimmt der privilegierte Updater; die Liste ist kuratiert, entfernt wird nie etwas."
+
+msgid "Queued"
+msgstr "In Warteschlange"
+
+msgid "Script Library"
+msgstr "Skriptbibliothek"
+
+msgid "Python scripts with a form: you write and test them here, operators fill in the form and run the published version. Every run is sandboxed and recorded."
+msgstr "Python-Skripte mit einem Formular: Hier werden sie geschrieben und getestet; Operatoren füllen das Formular aus und führen die veröffentlichte Version aus. Jede Ausführung ist isoliert und wird protokolliert."
+
+msgid "Sandbox unavailable on this node."
+msgstr "Sandbox auf diesem Knoten nicht verfügbar."
+
+msgid "bubblewrap is not installed, so no script can run here. Install it from Settings > General > System packages."
+msgstr "bubblewrap ist nicht installiert, daher kann hier kein Skript laufen. Installieren Sie es unter Settings > General > System packages."
+
+msgid "Published"
+msgstr "Veröffentlicht"
+
+msgid "Form fields"
+msgstr "Formularfelder"
+
+msgid "Audience"
+msgstr "Zielgruppe"
+
+msgid "draft only"
+msgstr "nur Entwurf"
+
+msgid "The draft has changes that are not published"
+msgstr "Der Entwurf enthält unveröffentlichte Änderungen"
+
+msgid "draft ahead"
+msgstr "Entwurf voraus"
+
+msgid "outbound"
+msgstr "ausgehend"
+
+msgid "Administrators"
+msgstr "Administratoren"
+
+msgid "No scripts yet. Create one on the right."
+msgstr "Noch keine Skripte. Legen Sie rechts eines an."
+
+msgid "New script"
+msgstr "Neues Skript"
+
+msgid "Lowercase letters, digits, - and _. It cannot be changed later."
+msgstr "Kleinbuchstaben, Ziffern, - und _. Kann später nicht geändert werden."
+
+msgid "How scripts run"
+msgstr "Wie Skripte ausgeführt werden"
+
+msgid "In a bubblewrap jail, by a separate runner that has no access to the SATOM database or its keys."
+msgstr "In einem bubblewrap-Käfig, durch einen eigenen Runner ohne Zugriff auf die SATOM-Datenbank oder ihre Schlüssel."
+
+msgid "The script sees only its own files. No network unless you allow outbound access; this node and its local services are never reachable."
+msgstr "Das Skript sieht nur seine eigenen Dateien. Kein Netzwerk, außer Sie erlauben ausgehenden Zugriff; dieser Knoten und seine lokalen Dienste sind nie erreichbar."
+
+msgid "Form values arrive in satom_script.inputs. Password fields are masked in every run record."
+msgstr "Formularwerte kommen in satom_script.inputs an. Passwortfelder werden in jedem Ausführungsprotokoll maskiert."
+
+msgid "Operators can run only published versions; editing the draft never changes what they run."
+msgstr "Operatoren können nur veröffentlichte Versionen ausführen; das Bearbeiten des Entwurfs ändert nie, was sie ausführen."
+
+msgid "published"
+msgstr "veröffentlicht"
+
+msgid "not published"
+msgstr "nicht veröffentlicht"
+
+msgid "unsaved changes"
+msgstr "ungespeicherte Änderungen"
+
+msgid "Publish"
+msgstr "Veröffentlichen"
+
+msgid "Form"
+msgstr "Formular"
+
+msgid "Versions & runs"
+msgstr "Versionen und Ausführungen"
+
+msgid "New file"
+msgstr "Neue Datei"
+
+msgid "Upload .py or .zip"
+msgstr ".py oder .zip hochladen"
+
+msgid "main.py is what runs. Other .py files are importable modules."
+msgstr "main.py wird ausgeführt. Andere .py-Dateien sind importierbare Module."
+
+#, python-format
+msgid "Limits: %(files)s files, %(kib)s KiB each."
+msgstr "Grenzen: %(files)s Dateien, je %(kib)s KiB."
+
+msgid "Rename"
+msgstr "Umbenennen"
+
+msgid "Delete file"
+msgstr "Datei löschen"
+
+msgid "Check syntax"
+msgstr "Syntax prüfen"
+
+msgid "Tab indents 4 spaces · Shift+Tab outdents · Ctrl+S saves"
+msgstr "Tab rückt 4 Leerzeichen ein · Shift+Tab rückt aus · Ctrl+S speichert"
+
+msgid "Fields the operator fills in"
+msgstr "Felder, die der Operator ausfüllt"
+
+msgid "Add field"
+msgstr "Feld hinzufügen"
+
+msgid "Each field arrives in the script as inputs[\"name\"]. Password fields are never stored by a test run and are masked in every run record; they cannot have a default."
+msgstr "Jedes Feld kommt im Skript als inputs[\"name\"] an. Passwortfelder werden von einem Testlauf nie gespeichert und in jedem Ausführungsprotokoll maskiert; sie können keinen Standardwert haben."
+
+msgid "Preview — what the operator sees"
+msgstr "Vorschau – was der Operator sieht"
+
+msgid "Who can run it"
+msgstr "Wer es ausführen darf"
+
+msgid "Administrators only"
+msgstr "Nur Administratoren"
+
+msgid "Operators (Operations > Automation > Scripts)"
+msgstr "Operatoren (Operations > Automation > Scripts)"
+
+msgid "Description (shown to operators)"
+msgstr "Beschreibung (für Operatoren sichtbar)"
+
+msgid "None — the script cannot open any connection"
+msgstr "Keine – das Skript kann keine Verbindung öffnen"
+
+msgid "Outbound — HTTP(S) and satom_script.tcp() to other hosts; never this node"
+msgstr "Ausgehend – HTTP(S) und satom_script.tcp() zu anderen Hosts; nie zu diesem Knoten"
+
+msgid "Test inputs"
+msgstr "Testeingaben"
+
+msgid "Save and run the draft"
+msgstr "Speichern und Entwurf ausführen"
+
+msgid "Runs the saved draft in the sandbox on this node, with these values."
+msgstr "Führt den gespeicherten Entwurf in der Sandbox dieses Knotens mit diesen Werten aus."
+
+msgid "Connections"
+msgstr "Verbindungen"
+
+msgid "Published versions"
+msgstr "Veröffentlichte Versionen"
+
+msgid "Delete script"
+msgstr "Skript löschen"

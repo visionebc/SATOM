@@ -105,6 +105,9 @@ GRANULAR_PERMISSIONS: list[dict] = [
        "Author custom server-side views (plugins)", admin_only=True),
     _p("studio.lua_studio", "Lua Studio",
        "Author, lint and deploy device Lua scripts", admin_only=True),
+    _p("studio.script_library", "Script Library",
+       "Write, test and publish sandboxed Python scripts with a form "
+       "operators fill in", admin_only=True),
 
     _p("users.view", "View users", "See the user list"),
     _p("users.manage", "Manage users",

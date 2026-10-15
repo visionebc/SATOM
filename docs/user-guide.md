@@ -3540,14 +3540,14 @@ sudo satom execute knowledge fetch --feed https://mirror.example/latest.json --i
 
 ## 23. Studio: custom views, plugins & Lua
 
-Three admin-only authoring tools, grouped under **Studio**. In the Global ADOM
+Four admin-only authoring tools, grouped under **Studio**. In the Global ADOM
 they have their own **Studio** nav group; in the FortiWeb and FortiADC ADOMs the
 same two authoring pages plus the read side (**Custom Views**) appear in their
 own **Plugins** nav group. Every entry is shown only to holders of its own
 `studio.*` key, so a menu link never answers 403.
 
-They are gated by **three separate permissions** — `studio.python_console`,
-`studio.plugin_studio` and `studio.lua_studio` — which are *not* the same thing
+They are gated by **four separate permissions** — `studio.python_console`,
+`studio.plugin_studio`, `studio.lua_studio` and `studio.script_library` — which are *not* the same thing
 as `user_manage`. A profile can be given one studio tool without being given the
 others, and without being given user administration.
 
@@ -3556,6 +3556,7 @@ others, and without being given user administration.
 | **Python Console** | `/database/py-console` | Throwaway Python over the curated fleet datasets |
 | **Plugin Studio** | `/plugins` | Server-rendered custom views/widgets, published as **Custom Views** |
 | **Lua Studio** | `/lua` | Device scripts for FortiWeb *Web Scripting* and FortiADC *Scripting* |
+| **Script Library** | `/database/scripts` | Python scripts with a form that operators fill in and run (§23.4) |
 
 ### 23.1 Plugin Studio and Custom Views
 
@@ -3645,6 +3646,69 @@ database or the keyring, and cannot open a socket. Wall-clock, CPU, memory and
 process-count caps stop runaway loops. The console receives a JSON snapshot of
 the data; it never touches the database itself. Every run is audited, including
 the first kilobyte of the source.
+
+### 23.4 Script Library
+
+Python scripts you keep, with a **form** an operator fills in. You write and
+test them here (**Administrator → Studio → Script Library**, also reachable from
+the Python Console); you publish a version; operators run that version. Gated by
+`studio.script_library`.
+
+**A script is a small project.** `main.py` is what runs; other `.py` files are
+modules it can import (`from lib.devices import …`), and text files (`.json`,
+`.csv`, `.yaml`, …) are data it can open by relative path. Up to 64 files of
+512 KiB each. **Upload** takes a single file or a `.zip` of the whole project (a
+zip of a folder is unwrapped); the upload is loaded into the editor and only
+saved when you click **Save**. **Download** gives the draft, or any published
+version, as a zip.
+
+**The editor** has a file tree, line numbers, Tab / Shift+Tab indentation,
+auto-indent after `:`, Ctrl+S to save and **Check syntax**, which lists every
+error with its file and line (click one to jump to it). A draft with a syntax
+error is saved anyway, so half-written code is never lost, but it cannot be
+published or test-run.
+
+**The form** is defined under **Form**: one row per field, with the variable
+name, label, type (`text`, `textarea`, `number`, `select`, `checkbox`,
+`password`), whether it is required, a default and a help text. The preview next
+to it is the exact form operators get. In the script:
+
+```python
+from satom_script import inputs, result, log, tcp
+
+log("checking %s:%s" % (inputs["host"], inputs["port"]))   # number fields arrive as numbers
+result({"ok": True, "rows": rows})                           # structured output of the run
+```
+
+Only the fields you defined reach the script; anything else a form submits is
+dropped. The values come in on standard input, never as environment variables.
+**Password** fields cannot have a default, and their values are masked in
+every run record, in the output, in `result()` and in the connection list.
+
+**Settings** holds the name, the description operators see, the timeout
+(5–900 s), who may run it (administrators only, or operators) and the
+network: **None** (the script cannot open any connection) or **Outbound**
+(HTTP(S) clients work as usual; `tcp(host, port)` opens raw TCP, e.g.
+`paramiko.SSHClient().connect(host, sock=tcp(host, 22), …)`). Outbound never
+reaches this node: loopback and every address of the node are refused, so the
+script cannot talk to the database, the metrics store or the web app.
+
+**Test** runs the saved draft on this node with the values you type and shows
+the output, the `result()` document and every connection attempt.
+**Publish** freezes the draft as version *n*: code, form, network and timeout.
+Operators always run a published version, so editing the draft never changes
+what they run. **Versions & runs** lists the versions (zip, *restore to
+draft*) and the run history. The last 50 versions are kept, and the live one
+always is.
+
+**How a run is contained.** Runs are executed by `satom-scripts.service`, not by
+the web application. That runner has no database connection and no access to
+the SATOM encryption key; it reads the frozen files and writes the run record.
+Each script runs in the bubblewrap jail of §35.3 (own process, user and network
+namespaces, none of SATOM mounted). A queued run holds the form values in a
+private file on this node only; the runner rewrites it without them the moment
+it starts. On an HA pair `satom-scripts.path` must be enabled on both nodes. An
+update arms it on nodes installed before it existed.
 
 ## 24. High availability
 
@@ -7340,8 +7404,8 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (120 today) or **excluded with a written
-   reason** (148 today — JSON feeds, downloads, redirects and fragments that
+   the console is either **on the map** (121 today) or **excluded with a written
+   reason** (150 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the

@@ -31,6 +31,7 @@ from .render import Result
 # edit is overwritten on the next update (that is how the standby silently
 # reverted to User=root after the deprivilege).
 DROPIN_UNITS = ("satom.service", "satom-scheduler.service", "satom-reconciler.service")
+SYSTEMD_DIR = Path("/etc/systemd/system")
 
 
 def _app_call(ctx, code, timeout=120):
@@ -325,9 +326,10 @@ def reinstall_units(ctx, args):
     on every code update, so a unit edited in place reverts to User=root. Only
     the drop-in survives.
     """
-    dst = Path("/etc/systemd/system")
+    dst = SYSTEMD_DIR
     r = Result("ok", "reinstall systemd units")
     copied = []
+    fresh = []   # .path/.timer with no installed copy before: armed below
     # [SATOM-RELEASE-TRUST] With a release trust anchor the templates come from
     # the newest SIGNED release (refused when deploy/ has unsigned changes);
     # with none, from <app>/deploy exactly as before.
@@ -338,6 +340,8 @@ def reinstall_units(ctx, args):
         for p in sorted(src.glob("satom*.service")) + sorted(src.glob("satom*.timer")) \
                 + sorted(src.glob("satom*.path")):
             try:
+                if not (dst / p.name).exists() and p.suffix in (".path", ".timer"):
+                    fresh.append(p.name)
                 shutil.copy2(str(p), str(dst / p.name))
                 os.chown(str(dst / p.name), 0, 0)
                 os.chmod(str(dst / p.name), 0o644)
@@ -368,6 +372,16 @@ def reinstall_units(ctx, args):
         r.lines("daemon-reload", (err or out).splitlines())
         return r
     r.rows("daemon-reload", [("result", "ok")])
+    # A .path/.timer installed for the first time is armed, as the installer
+    # arms every one of them; one already installed keeps its enabled state.
+    armed = []
+    for unit in fresh:
+        rc, out, err = run(["systemctl", "enable", "--now", unit])
+        armed.append("%s: %s" % (unit, "enabled" if rc == 0 else (err or out).strip()[-200:]))
+        if rc != 0:
+            r.worst("warn")
+    if armed:
+        r.lines("armed (new)", armed)
     r.note("Units are on disk but not restarted. Restart what you changed, "
            "e.g.  satom execute restart web")
     return r

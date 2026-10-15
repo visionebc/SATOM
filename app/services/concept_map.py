@@ -595,6 +595,9 @@ PAGES: tuple[dict, ...] = (
     _p("database.py_console_page", "Python Console", "dev",
        "python console repl shell execute code debug",
        "A Python console against the live application."),
+    _p("script_library.index", "Script Library", "dev",
+       "script library python form operator run sandbox publish version ide",
+       "Python scripts with a form that operators fill in and run."),
 )
 
 
@@ -666,7 +669,8 @@ EXCLUDED: dict[str, str] = {
     "settings.dns_backends_state": "json feed",
     "settings.library_pip_drift": "json feed", "settings.library_pip_state": "json feed",
     "settings.library_updates": "json feed", "settings.node_cert_state": "json feed",
-    "settings.peer_libraries": "json feed", "settings.peer_services": "json feed",
+    "settings.peer_libraries": "json feed",
+    "settings.peer_system_packages": "json feed", "settings.system_packages_state": "json feed", "settings.peer_services": "json feed",
     "settings.services_state": "json feed", "settings.services_peers": "json feed",
     "container_ops.state": "json feed", "container_ops.status": "json feed",
     "settings.thresholds_state": "json feed", "settings.trust_store_state": "json feed",

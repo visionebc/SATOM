@@ -10,8 +10,9 @@
 {% set _can_pyc = current_user.is_authenticated and current_user.can('studio.python_console') %}
 {% set _can_plg = current_user.is_authenticated and current_user.can('studio.plugin_studio') %}
 {% set _can_lua = current_user.is_authenticated and current_user.can('studio.lua_studio') %}
-{% if _can_pyc or _can_plg or _can_lua %}
-{% set _st_open = request.endpoint == 'database.py_console_page' or request.blueprint in ['plugins','lua_studio'] %}
+{% set _can_scl = current_user.is_authenticated and current_user.can('studio.script_library') %}
+{% if _can_pyc or _can_plg or _can_lua or _can_scl %}
+{% set _st_open = request.endpoint == 'database.py_console_page' or request.blueprint in ['plugins','lua_studio','script_library'] %}
 {# studio_entries_only: the bare entries, for the Studio section of
    Administrator (partials/nav_admin.html sorts and wraps them, 2026-10-14). #}
 {% if studio_entries_only %}
@@ -31,6 +32,10 @@
     {% if _can_plg and may_open('plugins.index') %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'plugins' and request.endpoint != 'plugins.gallery' else '' }}" href="{{ url_for('plugins.index') }}">
       <i class="bi bi-puzzle fw-nav-icon"></i><span>{{ _('Plugin Studio') }}</span></a>
+    {% endif %}
+    {% if _can_scl and may_open('script_library.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'script_library' else '' }}" href="{{ url_for('script_library.index') }}">
+      <i class="bi bi-file-earmark-code fw-nav-icon"></i><span>{{ _('Script Library') }}</span></a>
     {% endif %}
     {% if _can_lua and may_open('lua_studio.index') %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'lua_studio' else '' }}" href="{{ url_for('lua_studio.index') }}">

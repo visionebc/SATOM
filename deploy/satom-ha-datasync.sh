@@ -130,6 +130,8 @@ fi
 # satom-integrations.path is enabled on BOTH nodes (installer), so a queue copied
 # from the primary would run every pending hook a second time on the standby.
 # Hook definitions (integrations/hooks/) and their status history still replicate.
+# scripts/queue/ and scripts/claimed/ likewise (satom-scripts.path, both nodes);
+# a queued run also holds the form's password values, which stay on this node.
 #
 # StrictHostKeyChecking=yes, NOT accept-new: the peer's host key is seeded at
 # install time (ssh-keyscan over the already-authenticated join step), so a
@@ -139,5 +141,6 @@ exec rsync -az --delete \
   --exclude 'update-requests/' --exclude 'update-status/' \
   --exclude 'logs/' --exclude 'diagnostics/' --exclude 'deep_jobs/' \
   --exclude 'integrations/queue/' --exclude 'integrations/claimed/' \
+  --exclude 'scripts/queue/' --exclude 'scripts/claimed/' \
   -e "ssh -i ${SSH_KEY} -o IdentitiesOnly=yes -o UserKnownHostsFile=${KNOWN_HOSTS} -o StrictHostKeyChecking=yes -o ConnectTimeout=10" \
   "${APP_USER}@${PEER}:${APP}/data/" "${APP}/data/"

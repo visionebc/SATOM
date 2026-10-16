@@ -540,6 +540,18 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "Read-only against the box; powers the Certificate Manager table. "
                 "Schedule DAILY.",
     ),
+    ActionSpec(
+        "observatory_scan", "HTTP Observatory — grade published sites", "admin",
+        needs_targets=True, products=("fortiweb", "fortiadc"),
+        summary="Grade every site each target publishes (FortiWeb server "
+                "policies, FortiADC virtual servers) the way the MDN HTTP "
+                "Observatory does, from this node to the policy's VIP only, "
+                "and keep the result in Troubleshooting → HTTP Observatory "
+                "(services.observatory). A grade lower than the previous run "
+                "is named first in the summary. Reads the box and sends GET/"
+                "OPTIONS to its published sites; never writes configuration. "
+                "Schedule DAILY or WEEKLY.",
+    ),
 ]
 
 # Operator automations: work on the fleet's services, scheduled for a chosen time
@@ -1175,6 +1187,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_ha_check(appliance, dry_run)
         if key == "cert_scan":
             return _do_cert_scan(appliance, dry_run)
+        if key == "observatory_scan":
+            return _do_observatory_scan(appliance, dry_run)
         if key == "cert_lifecycle":
             return _do_cert_lifecycle(appliance, dry_run)
         if key.startswith("cert_manager_"):
@@ -1190,6 +1204,15 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             "summary": f"{type(exc).__name__}: {exc}",
             "log": traceback.format_exc()[:_LOG_MAX],
         }
+
+
+def _do_observatory_scan(appliance, dry_run: bool) -> dict:
+    """Grade every published site of one target (services.observatory)."""
+    if appliance is None:
+        return {"ok": False, "summary": "observatory_scan needs a target device.", "log": ""}
+    from . import observatory
+    return observatory.scan_appliance(appliance, trigger="scheduled", username="system",
+                                      dry_run=dry_run)
 
 
 # --- admin read / file writers --------------------------------------------- #

@@ -1539,6 +1539,32 @@ def fields_at(product: str, endpoint: str, version) -> dict:
     return {**base, "status": "measured", "fields": dict(sorted(fields.items()))}
 
 
+def field_options_at(product: str, endpoint: str, version, field: str) -> list | None:
+    """The choices one field accepts on one build, or ``None``.
+
+    The CLI ``tree`` prints every option of an enum, so it speaks first; any
+    other measured source that recorded choices comes after it, vendor data
+    last. ``None`` = no source on THAT build lists choices (an unmeasured
+    build, or a free string) — never borrowed from another build: a choice
+    8.0.6 accepts and 7.6.8 rejects is exactly what this answers.
+    :func:`fields_at` reads the REST channel only, which records types and no
+    choices, so it cannot answer this.
+    """
+    b = _build_row(product, version)
+    if b is None:
+        return None
+    by_src = _point_state([b.id], endpoint, True, sources=SOURCES).get(b.id, {}) \
+        .get(endpoint, {})
+    order = (SOURCE_CLI_TREE, SOURCE_CLI_FULL, SOURCE_SWEEP, SOURCE_SCHEMA,
+             SOURCE_MANUAL, SOURCE_LEGACY, SOURCE_VENDOR)
+    for src in order:
+        spec = ((by_src.get(src) or {}).get("fields") or {}).get(field) or {}
+        opts = spec.get("options")
+        if isinstance(opts, list) and opts:
+            return [str(o) for o in opts]
+    return None
+
+
 def _renames(product: str, names, base: str, target: str) -> dict:
     """``{endpoint: [(old, new, note)]}`` applicable to a base->target move."""
     names = list(names)

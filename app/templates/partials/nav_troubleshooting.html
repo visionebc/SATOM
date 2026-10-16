@@ -29,12 +29,17 @@
    whoever passes its route's own gate (may_open). Its services/adom_menu.py
    row (every device ADOM) is what lets the per-ADOM product gate in
    app/__init__.py serve the page instead of bouncing it to the ADOM home.
+
+   HTTP Observatory joined on 2026-10-16 (operator request): it grades the
+   sites FortiWeb server policies and FortiADC virtual servers publish, so it
+   is drawn where Backend Reachability is (Global, FortiWeb, FortiADC) and its
+   services/adom_menu.py row gates the device ADOMs.
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
 {% set _ts_dev = product.key != 'global' and not product.placeholder %}
 {% set _ts_two = product.key == 'global' or _ts_dev %}
 {% set _ts_lb = product.key not in ('fortigate', 'fortianalyzer', 'fortiauthenticator') %}
-<div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['reach_batch','config_compare','scout','advisor','logs','txn_trace'] }}" data-nav-subgroup="Troubleshooting">
+<div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['reach_batch','config_compare','scout','advisor','logs','txn_trace','observatory'] }}" data-nav-subgroup="Troubleshooting">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-life-preserver fw-nav-icon"></i><span>{{ _('Troubleshooting') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
     {% if _ts_lb %}
@@ -51,6 +56,13 @@
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'config_compare' else '' }}" href="{{ url_for('config_compare.index') }}">
       <i class="bi bi-file-diff fw-nav-icon"></i><span>{{ _('Config Compare') }}</span></a>
     {% else %}{{ nav_off('bi-file-diff', _('Config Compare'), _m.reason) }}{% endif %}
+    {% endif %}
+    {% if _ts_two and may_open('observatory.index') %}
+    {% set _m = adom_menu('observatory', product) if _ts_dev else none %}
+    {% if not _ts_dev or _m.on %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'observatory' else '' }}" href="{{ url_for('observatory.index') }}">
+      <i class="bi bi-clipboard2-pulse fw-nav-icon"></i><span>{{ _('HTTP Observatory') }}</span></a>
+    {% else %}{{ nav_off('bi-clipboard2-pulse', _('HTTP Observatory'), _m.reason) }}{% endif %}
     {% endif %}
     {% if scout_on and may_open('scout.index') %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'scout' else '' }}" href="{{ url_for('scout.index') }}">

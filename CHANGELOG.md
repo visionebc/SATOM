@@ -6,6 +6,55 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — HTTP Observatory: grade every published site, see who caused each finding, fix it on the FortiWeb (2026-10-16)
+
+- New page **Troubleshooting › HTTP Observatory** (Global, FortiWeb and
+  FortiADC ADOMs). Operator request: "a tool like the MDN HTTP Observatory".
+  Every FortiWeb server policy and FortiADC virtual server is listed with its
+  VIP, its HTTP/HTTPS ports and a site name (Host/SNI, the first Protected
+  Hostname by default); **Grade** or **Grade all** scores them with the MDN
+  HTTP Observatory's twelve tests and scoring (algorithm version 6). Checked
+  against the MDN API: developer.mozilla.org and example.com get the same
+  score in both; a preloaded site gets 5 points less here because the HSTS
+  preload list is not consulted (stated on the page).
+- SATOM connects only to the policy's VIP, on the ports the policy serves; a
+  redirect is followed only while it stays on the policy. An untrusted
+  certificate is a graded finding, and the summary shows the grade the site
+  would get with a trusted one.
+- Each test says **who** produced the result — FortiWeb (HTTP Header
+  Security profile, HSTS or redirect on the server policy, its own
+  `cookiesession1` cookie), the application, or the certificate — read from
+  the appliance's configuration.
+- **Fix on the FortiWeb** (`config_write`): tick fixes, preview the writes,
+  the server policies they reach and the projected grade, then apply. Header
+  rows (X-Frame-Options, X-Content-Type-Options, Referrer-Policy, a starter
+  Content-Security-Policy, and Cross-Origin-Resource/Opener/Embedder-Policy
+  on builds that accept them, per the API library), HSTS, HTTP-to-HTTPS,
+  FortiWeb's own cookie flags and Cookie Security flags for the application's
+  cookies. Writes go through the object editor's path (re-read verification,
+  change history); template-managed profiles, another user's edit lease and
+  values that would not pass are refused before anything is sent, and a
+  change that reaches other server policies names them and needs a
+  confirmation. The site is graded again after the fix. Every fix was
+  measured on FortiWeb 8.0.6 (and the payloads on 7.6.8) before it was
+  offered.
+- **History** keeps 60 grades per site; the new scheduled action
+  **HTTP Observatory — grade published sites** (`observatory_scan`) grades
+  every site of its targets and names a lower grade first. Stored results
+  never contain cookie values or page bodies.
+- The **Transaction Tracer** shows the security-header grade of leg A's
+  response, with a link to the Observatory.
+
+### Fixed — Published-service probes read custom services and the HTTPS service of a policy (2026-10-16)
+
+- The resolver behind the upgrade pre-flight service probes, Path Diagnostics
+  and the new Observatory read custom services from `service-custom`, which
+  FortiWeb 7.6.8 and 8.0.6 answer with "invalid URL", so every custom port
+  became 80 or 443; they are read from `service.custom` now. It also ignored a
+  policy's `https-service`, so a policy with an HTTP and an HTTPS front end was
+  probed at `https://<vip>:80/`; both ports are resolved now and the HTTPS one
+  is preferred.
+
 ### Added — Transaction Tracer: a page with cookie analysis, revealable values and a HAR viewer (2026-10-16)
 
 - The transaction tracer moved out of the header Tools menu into

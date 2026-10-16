@@ -40,7 +40,7 @@
 </div></div>
 {% else %}
 <div class="fw-card mb-3">
-  <div class="fw-card-header d-flex align-items-center gap-2 flex-wrap">
+  <div class="fw-card-header d-flex align-items-center gap-2 flex-wrap justify-content-start">
     <h6 class="fw-card-title mb-0"><i class="bi bi-globe2 me-1"></i>{{ _('Published sites') }}</h6>
     <select id="fw-obs-appliance" class="form-select form-select-sm" style="width:auto;min-width:220px">
       {% for a in appliances %}
@@ -50,11 +50,14 @@
     {#  An appliance can publish hundreds of policies: the table holds only
         the ones ticked here. The ticked set lives in JS state (and per
         appliance in localStorage), never in the DOM, so a search that hides
-        an item does not untick it.                                         #}
+        an item does not untick it. The menu is position:fixed: .fw-card is
+        overflow:hidden, and an absolute menu reaching past the card edge
+        let the search-box focus scroll the whole card sideways.            #}
     <div class="dropdown" id="fw-obs-pick">
       <button class="form-select form-select-sm text-start text-truncate" type="button" id="fw-obs-pickbtn"
               data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false"
-              style="width:280px" disabled><span id="fw-obs-picksum">{{ _('Select sites') }}</span></button>
+              data-bs-popper-config='{"strategy":"fixed"}'
+              style="width:280px;max-width:100%" disabled><span id="fw-obs-picksum">{{ _('Select sites') }}</span></button>
       <div class="dropdown-menu p-2" style="width:460px;max-width:90vw">
         <input type="search" class="form-control form-control-sm mb-2" id="fw-obs-picksearch"
                placeholder="{{ _('Search policy, site name or VIP') }}" aria-label="{{ _('Search policy, site name or VIP') }}" autocomplete="off">

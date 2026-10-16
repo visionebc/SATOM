@@ -47,10 +47,28 @@
       <option value="{{ a.id }}" {{ 'selected' if a.id == selected else '' }}>{{ a.name }} ({{ a.kind }})</option>
       {% endfor %}
     </select>
-    <input id="fw-obs-filter" class="form-control form-control-sm" style="width:200px" placeholder="{{ _('Filter policies') }}">
+    {#  An appliance can publish hundreds of policies: the table holds only
+        the ones ticked here. The ticked set lives in JS state (and per
+        appliance in localStorage), never in the DOM, so a search that hides
+        an item does not untick it.                                         #}
+    <div class="dropdown" id="fw-obs-pick">
+      <button class="form-select form-select-sm text-start text-truncate" type="button" id="fw-obs-pickbtn"
+              data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false"
+              style="width:280px" disabled><span id="fw-obs-picksum">{{ _('Select sites') }}</span></button>
+      <div class="dropdown-menu p-2" style="width:460px;max-width:90vw">
+        <input type="search" class="form-control form-control-sm mb-2" id="fw-obs-picksearch"
+               placeholder="{{ _('Search policy, site name or VIP') }}" aria-label="{{ _('Search policy, site name or VIP') }}" autocomplete="off">
+        <div class="d-flex gap-3 mb-1 small align-items-center">
+          <button type="button" class="btn btn-link btn-sm p-0" id="fw-obs-pickall">{{ _('Select all matches') }}</button>
+          <button type="button" class="btn btn-link btn-sm p-0" id="fw-obs-picknone">{{ _('Clear selection') }}</button>
+          <span class="ms-auto text-muted text-nowrap" id="fw-obs-pickcount"></span>
+        </div>
+        <div id="fw-obs-picklist" style="max-height:340px;overflow-y:auto"></div>
+      </div>
+    </div>
     <div class="ms-auto d-flex gap-2">
       <button type="button" class="btn btn-sm btn-fw-outline" id="fw-obs-reload"><i class="bi bi-arrow-clockwise me-1"></i>{{ _('Reload') }}</button>
-      <button type="button" class="btn btn-sm btn-fw-primary" id="fw-obs-scanall"><i class="bi bi-play-fill me-1"></i>{{ _('Grade all') }}</button>
+      <button type="button" class="btn btn-sm btn-fw-primary" id="fw-obs-scanall" disabled><i class="bi bi-play-fill me-1"></i>{{ _('Grade selected') }}</button>
     </div>
   </div>
   <div class="fw-card-body">

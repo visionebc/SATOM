@@ -44,6 +44,12 @@ class ServiceTarget:
     pool: str = ""
     backends: list[str] = field(default_factory=list)
     note: str = ""
+    #: Every port the policy serves, by scheme. ``port``/``scheme`` name the
+    #: one primary front-end (HTTPS when the policy has one); a policy with
+    #: both an HTTP and an HTTPS service has BOTH here, which is what a
+    #: redirect or HSTS check needs. ``None`` = that scheme is not served.
+    http_port: int | None = None
+    https_port: int | None = None
 
 
 @dataclass
@@ -81,6 +87,33 @@ def _port_for(service: str, custom_ports: dict[str, int], is_https: bool) -> int
     return 443 if is_https else 80
 
 
+def served_ports(policy: dict, custom_ports: dict[str, int]) -> tuple[int | None, int | None]:
+    """``(http_port, https_port)`` a server policy listens on.
+
+    FortiWeb 7.x carries two fields: ``service`` (the plain-HTTP front-end)
+    and ``https-service`` (the HTTPS one), and a policy may have both — that
+    is how "HTTP redirects to HTTPS" is configured. Reading only ``service``
+    made such a policy probe ``https://vip:80/``. An older single-service
+    policy (no ``https-service`` field) is HTTPS when ``ssl`` is on or the
+    service is named HTTPS.
+    """
+    svc = str(policy.get("service") or "").strip()
+    https_svc = str(policy.get("https-service") or "").strip()
+    http_port = https_port = None
+    if https_svc:
+        https_port = _port_for(https_svc, custom_ports, True)
+        if svc:
+            http_port = _port_for(svc, custom_ports, False)
+    elif svc:
+        is_https = ("https-service" not in policy and _truthy(policy.get("ssl"))) \
+            or "HTTPS" in svc.upper()
+        if is_https:
+            https_port = _port_for(svc, custom_ports, True)
+        else:
+            http_port = _port_for(svc, custom_ports, False)
+    return http_port, https_port
+
+
 def resolve_targets_from_client(client) -> list[ServiceTarget]:
     """Resolve every server policy on a connected client to a probe target.
 
@@ -102,7 +135,13 @@ def resolve_targets_from_client(client) -> list[ServiceTarget]:
         if name and ip:
             iface_ip[name] = ip
     custom_ports: dict[str, int] = {}
-    for s in client._safe_list("/api/v2.0/cmdb/server-policy/service-custom"):
+    # ``service.custom`` is the collection FortiWeb 7.6.8 and 8.0.6 serve
+    # (measured; ``service-custom`` answers -20001 "invalid URL" there, so
+    # every custom service used to fall back to 80/443). The dashed spelling
+    # stays as a fallback for builds that never got measured.
+    rows = client._safe_list("/api/v2.0/cmdb/server-policy/service.custom") \
+        or client._safe_list("/api/v2.0/cmdb/server-policy/service-custom")
+    for s in rows:
         name = str(s.get("name") or s.get("mkey") or "").strip()
         raw = str(s.get("port") or "").strip().split("-")[0].split()
         if name and raw and raw[0].isdigit():
@@ -128,10 +167,11 @@ def resolve_targets_from_client(client) -> list[ServiceTarget]:
         if not host:  # fall back to the vserver's own interface, if any
             vs = full.get("vserver") or {}
             host = iface_ip.get(str(vs.get("interface") or ""), "")
-        service = str(policy.get("service") or "")
-        is_https = _truthy(policy.get("ssl")) or "HTTPS" in service.upper()
-        port = _port_for(service, custom_ports, is_https)
-        scheme = "https" if (is_https or port == 443) else "http"
+        http_port, https_port = served_ports(policy, custom_ports)
+        if https_port:
+            scheme, port = "https", https_port
+        else:
+            scheme, port = "http", http_port or 80
         url = f"{scheme}://{host}:{port}/" if host else ""
         backends = []
         for m in full.get("backends") or []:
@@ -145,6 +185,7 @@ def resolve_targets_from_client(client) -> list[ServiceTarget]:
             pool=str(policy.get("server-pool") or ""),
             backends=backends,
             note="" if url else "could not resolve a VIP IP for this policy",
+            http_port=http_port, https_port=https_port,
         ))
     return targets
 

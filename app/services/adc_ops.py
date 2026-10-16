@@ -536,6 +536,8 @@ def resolve_targets(client) -> list[ServiceTarget]:
         targets.append(ServiceTarget(
             policy=name, scheme=scheme, host=addr, port=port, url=url,
             vserver=name, pool=pool_name, backends=backends, note=note,
+            http_port=port if scheme == "http" else None,
+            https_port=port if scheme == "https" else None,
         ))
     return targets
 

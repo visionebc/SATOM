@@ -26,7 +26,9 @@
    Transaction tracer joined on 2026-10-16 (operator request), as a PAGE: it
    was a modal in the header Tools menu. It traces plain HTTP(S) to any
    destination, so it is drawn live in EVERY ADOM, Global included, for
-   whoever passes its route's own gate (may_open).
+   whoever passes its route's own gate (may_open). Its services/adom_menu.py
+   row (every device ADOM) is what lets the per-ADOM product gate in
+   app/__init__.py serve the page instead of bouncing it to the ADOM home.
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
 {% set _ts_dev = product.key != 'global' and not product.placeholder %}
@@ -64,8 +66,11 @@
     {% endif %}
     {% endif %}
     {% if may_open('txn_trace.index') %}
+    {% set _m = adom_menu('txn_trace', product) if _ts_dev else none %}
+    {% if not _ts_dev or _m.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'txn_trace' else '' }}" href="{{ url_for('txn_trace.index') }}">
       <i class="bi bi-arrow-left-right fw-nav-icon"></i><span>{{ _('Transaction Tracer') }}</span></a>
+    {% else %}{{ nav_off('bi-arrow-left-right', _('Transaction Tracer'), _m.reason) }}{% endif %}
     {% endif %}
     {% include 'partials/nav_advisor.html' %}
     {% if _ts_dev and current_user.can('config_write') and may_open('logs.index') %}

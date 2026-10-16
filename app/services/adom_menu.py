@@ -124,6 +124,11 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
     # Troubleshooting since 2026-10-14: Diagnose Log Collection runs each
     # ADOM's own battery (services/diag_battery.py) on that ADOM's devices.
     Entry("logs", ("logs",), _every_device, ""),
+    # Troubleshooting since 2026-10-16 (operator): the transaction tracer
+    # traces plain HTTP(S) to any destination, so every device ADOM can use
+    # it. Without this row the FortiGate/FortiADC/FortiAnalyzer/
+    # FortiAuthenticator gates bounced the live menu entry to the ADOM home.
+    Entry("txn_trace", ("txn_trace",), _every_device, ""),
     Entry("import_backup", ("import_backup",), _fortiweb,
           "the offline parser reads FortiWeb configuration files"),
     # Automation

@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Fixed — Concept Map: the newest pages are findable by what they do (2026-10-16) · 177 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added — Transaction Tracer: a page with cookie analysis, revealable values and a HAR viewer (2026-10-16) · 183 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Fixed — Concept Map: the newest pages are findable by what they do (2026-10-16) · 177 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added — Transaction Tracer: a page with cookie analysis, revealable values and a HAR viewer (2026-10-16) · 183 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Fixed — Concept Map: the newest pages are findable by what they do (2026-10-16) · 177 entries</span>
-        <ul class="rel-leads"><li>Fetch from the application</li><li>Every edit is a new version</li><li>Compare versions</li><li class="rel-more">… and 174 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Added — Transaction Tracer: a page with cookie analysis, revealable values and a HAR viewer (2026-10-16) · 183 entries</span>
+        <ul class="rel-leads"><li>Cookies</li><li>Reveal values</li><li>HAR viewer</li><li class="rel-more">… and 180 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.1.0.html" data-rel-version="3.1.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.1.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -365,6 +365,37 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="added--transaction-tracer-a-page-with-cookie-analysis-revealable-values-and-a-har-viewer-2026-10-16">Added — Transaction Tracer: a page with cookie analysis, revealable values and a HAR viewer (2026-10-16)</h3>
+<ul>
+<li>The transaction tracer moved out of the header Tools menu into
+  <strong>Operations › Troubleshooting › Transaction Tracer</strong>, in every ADOM. It is a
+  page now: the trace, its cookies and its HAR stay on screen, and <code>?vip=</code>,
+  <code>?backend=</code> and <code>?path=</code> prefill the form.</li>
+<li><strong>Cookies</strong> for each leg: every cookie the response sets with its flags, the
+  cookies the request sent, and what a browser will do with them (rejected for
+  <code>SameSite=None</code> without <code>Secure</code> or a broken <code>__Host-</code>/<code>__Secure-</code> prefix,
+  warnings for a missing <code>Secure</code> or <code>HttpOnly</code>). With both legs, <strong>Cookies A vs
+  C</strong> names the cookies the appliance issued, removed or rewrote.</li>
+<li><strong>Reveal values</strong> (new permission <code>monitoring.reveal_secrets</code>,
+  Administrator-only): shows the real cookie, <code>Authorization</code> and API-key values
+  in the page. They are never written to the audit log, which records only that
+  values were revealed; trace answers are no longer cacheable.</li>
+<li><strong>HAR viewer</strong>: the trace's HAR, or any HAR file you open (read in the
+  browser, never uploaded), as a table with a waterfall and per-entry headers,
+  cookies, timings and content. The exported HAR now carries each leg's real
+  start time, server address, query string and structured cookies; values and
+  the response body are included only on request, with the new permission, and
+  that export is audited.</li>
+<li>Each leg also shows the request headers it sent and the first 2,000
+  characters of the response body.</li>
+</ul>
+<h3 id="fixed--transaction-tracer-a-cookie-the-appliance-rewrites-is-no-longer-called-identical-2026-10-16">Fixed — Transaction Tracer: a cookie the appliance rewrites is no longer called "identical" (2026-10-16)</h3>
+<ul>
+<li>Set-Cookie values are compared by their redacted length, so an appliance that
+  added <code>Secure</code> to a cookie of the same length produced the verdict <em>the
+  appliance is not altering this transaction</em>. Cookie flags are now compared
+  directly and a rewritten cookie makes the verdict <em>transforming</em>.</li>
+</ul>
 <h3 id="fixed--concept-map-the-newest-pages-are-findable-by-what-they-do-2026-10-16">Fixed — Concept Map: the newest pages are findable by what they do (2026-10-16)</h3>
 <ul>
 <li>The map's coverage check failed after three JSON endpoints shipped without an

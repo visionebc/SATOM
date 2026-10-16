@@ -112,6 +112,37 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--transaction-tracer-a-page-with-cookie-analysis-revealable-values-and-a-har-viewer-2026-10-16">Added — Transaction Tracer: a page with cookie analysis, revealable values and a HAR viewer (2026-10-16)</h3>
+<ul>
+<li>The transaction tracer moved out of the header Tools menu into
+  <strong>Operations › Troubleshooting › Transaction Tracer</strong>, in every ADOM. It is a
+  page now: the trace, its cookies and its HAR stay on screen, and <code>?vip=</code>,
+  <code>?backend=</code> and <code>?path=</code> prefill the form.</li>
+<li><strong>Cookies</strong> for each leg: every cookie the response sets with its flags, the
+  cookies the request sent, and what a browser will do with them (rejected for
+  <code>SameSite=None</code> without <code>Secure</code> or a broken <code>__Host-</code>/<code>__Secure-</code> prefix,
+  warnings for a missing <code>Secure</code> or <code>HttpOnly</code>). With both legs, <strong>Cookies A vs
+  C</strong> names the cookies the appliance issued, removed or rewrote.</li>
+<li><strong>Reveal values</strong> (new permission <code>monitoring.reveal_secrets</code>,
+  Administrator-only): shows the real cookie, <code>Authorization</code> and API-key values
+  in the page. They are never written to the audit log, which records only that
+  values were revealed; trace answers are no longer cacheable.</li>
+<li><strong>HAR viewer</strong>: the trace's HAR, or any HAR file you open (read in the
+  browser, never uploaded), as a table with a waterfall and per-entry headers,
+  cookies, timings and content. The exported HAR now carries each leg's real
+  start time, server address, query string and structured cookies; values and
+  the response body are included only on request, with the new permission, and
+  that export is audited.</li>
+<li>Each leg also shows the request headers it sent and the first 2,000
+  characters of the response body.</li>
+</ul>
+<h3 id="fixed--transaction-tracer-a-cookie-the-appliance-rewrites-is-no-longer-called-identical-2026-10-16">Fixed — Transaction Tracer: a cookie the appliance rewrites is no longer called "identical" (2026-10-16)</h3>
+<ul>
+<li>Set-Cookie values are compared by their redacted length, so an appliance that
+  added <code>Secure</code> to a cookie of the same length produced the verdict <em>the
+  appliance is not altering this transaction</em>. Cookie flags are now compared
+  directly and a rewritten cookie makes the verdict <em>transforming</em>.</li>
+</ul>
 <h3 id="fixed--concept-map-the-newest-pages-are-findable-by-what-they-do-2026-10-16">Fixed — Concept Map: the newest pages are findable by what they do (2026-10-16)</h3>
 <ul>
 <li>The map's coverage check failed after three JSON endpoints shipped without an

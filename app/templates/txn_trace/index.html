@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('Transaction Tracer') }} — SATOM{% endblock %}
+
+{#  Operations › Troubleshooting since 2026-10-16 (it was a header Tools-menu
+    modal). The markup lives here so its labels translate; everything the
+    trace RETURNS is rendered by static/js/txn_trace.js. Light theme only:
+    colours come from .fw-badge-* (safeguards §9m).                        #}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Troubleshooting') }}</span>
+  <span class="separator">/</span>
+  <span>{{ _('Transaction Tracer') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="fw-tt-page"
+     data-may-free="{{ '1' if may_free else '0' }}"
+     data-may-reveal="{{ '1' if may_reveal else '0' }}"
+     data-free-permission="{{ free_permission }}"
+     data-prefill-vip="{{ prefill.vip }}"
+     data-prefill-backend="{{ prefill.backend }}"
+     data-prefill-path="{{ prefill.path }}">
+
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-arrow-left-right me-2 text-accent"></i>{{ _('Transaction Tracer') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('One request through the appliance (leg A) and the same request straight to the backend (leg C), diffed: is it the WAF or the application? Leg B is read from the appliance configuration and is never measured.') }}
+    </p>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-xl-5">
+    <div class="fw-card">
+      <div class="fw-card-header"><h6 class="fw-card-title"><i class="bi bi-send me-1"></i>{{ _('Request') }}</h6></div>
+      <div class="fw-card-body">
+        <div class="row g-2">
+          <div class="col-12">
+            <label class="form-label small fw-bold mb-1" for="fw-tt-vip">{{ _('Leg A — through the appliance') }}</label>
+            <div class="input-group">
+              <select id="fw-tt-vipinv" class="form-select form-select-sm" style="max-width:45%"></select>
+              <input id="fw-tt-vip" class="form-control form-control-sm" placeholder="https://shop.example.com">
+            </div>
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-bold mb-1" for="fw-tt-backend">{{ _('Leg C — backend (bypassing the appliance)') }}</label>
+            <input id="fw-tt-backend" class="form-control form-control-sm" placeholder="backend.example:8080">
+            <div class="form-text">{{ _('No scheme: HTTPS on port 443 or 8443, plain HTTP on any other port.') }}</div>
+          </div>
+          <div class="col-4">
+            <label class="form-label small fw-bold mb-1" for="fw-tt-method">{{ _('Method') }}</label>
+            <select id="fw-tt-method" class="form-select form-select-sm"></select>
+          </div>
+          <div class="col-8">
+            <label class="form-label small fw-bold mb-1" for="fw-tt-path">{{ _('Path') }}</label>
+            <input id="fw-tt-path" class="form-control form-control-sm font-monospace" value="/">
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-bold mb-1" for="fw-tt-headers">{{ _('Extra request headers (one per line)') }}</label>
+            <textarea id="fw-tt-headers" class="form-control form-control-sm font-monospace" rows="3"
+                      placeholder="Cookie: SESSID=…&#10;X-Forwarded-For: 203.0.113.9"></textarea>
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-bold mb-1" for="fw-tt-body">{{ _('Request body (mutating methods only)') }}</label>
+            <textarea id="fw-tt-body" class="form-control form-control-sm font-monospace" rows="2"></textarea>
+          </div>
+        </div>
+
+        <div class="form-check mt-2" id="fw-tt-confirmwrap" style="display:none">
+          <input class="form-check-input" type="checkbox" id="fw-tt-confirm">
+          <label class="form-check-label small" for="fw-tt-confirm">{{ _('I understand this sends a real write to that application from this server.') }}</label>
+        </div>
+
+        {% if may_reveal %}
+        <div class="form-check mt-2">
+          <input class="form-check-input" type="checkbox" id="fw-tt-reveal">
+          <label class="form-check-label small" for="fw-tt-reveal">
+            <strong>{{ _('Reveal values') }}</strong> — {{ _('show cookie, Authorization and API-key values in this page. They are never written to the audit log (it only records that values were revealed) and are gone when you leave the page.') }}
+          </label>
+        </div>
+        {% else %}
+        <div class="form-text mt-2"><i class="bi bi-eye-slash me-1"></i>{{ _('Cookie and credential values are redacted. Seeing them needs the permission') }} <code>{{ reveal_permission }}</code>.</div>
+        {% endif %}
+
+        <div class="mt-3 d-flex gap-2 flex-wrap">
+          <button type="button" class="btn btn-sm btn-fw-primary" id="fw-tt-run"><i class="bi bi-play-fill me-1"></i>{{ _('Trace') }}</button>
+          <button type="button" class="btn btn-sm btn-fw-outline" id="fw-tt-curl"><i class="bi bi-terminal me-1"></i>{{ _('Copy curl') }}</button>
+          <button type="button" class="btn btn-sm btn-fw-outline" id="fw-tt-har"><i class="bi bi-download me-1"></i>{{ _('Download HAR') }}</button>
+          <button type="button" class="btn btn-sm btn-fw-outline" id="fw-tt-harview"><i class="bi bi-table me-1"></i>{{ _('View HAR') }}</button>
+        </div>
+        {% if may_reveal %}
+        <div class="form-check mt-2">
+          <input class="form-check-input" type="checkbox" id="fw-tt-harvalues">
+          <label class="form-check-label small" for="fw-tt-harvalues">{{ _('Include credential values and the response body in the HAR (audited)') }}</label>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="fw-card">
+      <div class="fw-card-header"><h6 class="fw-card-title"><i class="bi bi-file-earmark-code me-1"></i>{{ _('Leg B and the attack log') }}</h6></div>
+      <div class="fw-card-body">
+        <div class="row g-2 align-items-end">
+          <div class="col-md-6">
+            <label class="form-label small fw-bold mb-1" for="fw-tt-devinv">{{ _('Appliance (FortiWeb)') }}</label>
+            <select id="fw-tt-devinv" class="form-select form-select-sm"></select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-bold mb-1" for="fw-tt-policy">{{ _('Server policy') }}</label>
+            <input id="fw-tt-policy" class="form-control form-control-sm" placeholder="pol-shop-cms">
+          </div>
+        </div>
+        <div class="mt-2 d-flex gap-2 flex-wrap">
+          <button type="button" class="btn btn-sm btn-fw-primary" id="fw-tt-derive"><i class="bi bi-file-earmark-code me-1"></i>{{ _('Derive leg B') }}</button>
+          <button type="button" class="btn btn-sm btn-fw-secondary" id="fw-tt-corr"><i class="bi bi-link-45deg me-1"></i>{{ _('Correlate attack log') }}</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-xl-7">
+    <div id="fw-tt-err" class="text-danger small mb-2"></div>
+    <div id="fw-tt-out">
+      <div class="text-muted small">{{ _('Results appear here: the verdict, each leg, the A vs C diff and every cookie the legs set.') }}</div>
+    </div>
+    <div id="fw-tt-cookies" class="mt-3"></div>
+    <div id="fw-tt-legb" class="mt-3"></div>
+    <div id="fw-tt-corrout" class="mt-3"></div>
+  </div>
+</div>
+
+<div class="fw-card mt-3" id="fw-tt-harcard">
+  <div class="fw-card-header d-flex align-items-center flex-wrap gap-2">
+    <h6 class="fw-card-title mb-0"><i class="bi bi-table me-1"></i>{{ _('HAR viewer') }}</h6>
+    <span class="small text-muted" id="fw-tt-harsrc"></span>
+    <div class="ms-auto d-flex gap-2 align-items-center flex-wrap">
+      <input id="fw-tt-harfilter" class="form-control form-control-sm" style="width:200px" placeholder="{{ _('Filter URL, status, method') }}">
+      <label class="btn btn-sm btn-fw-outline mb-0" for="fw-tt-harfile"><i class="bi bi-folder2-open me-1"></i>{{ _('Open a HAR file') }}</label>
+      <input type="file" id="fw-tt-harfile" accept=".har,.json,application/json" class="d-none">
+    </div>
+  </div>
+  <div class="fw-card-body">
+    <div class="form-text mb-2"><i class="bi bi-shield-lock me-1"></i>{{ _('A HAR file you open is read in your browser and never uploaded to SATOM. Any HAR works, including one saved from browser devtools.') }}</div>
+    <div id="fw-tt-hartable"><div class="text-muted small">{{ _('Trace and press View HAR, or open a HAR file.') }}</div></div>
+    <div id="fw-tt-hardetail" class="mt-3"></div>
+  </div>
+</div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/txn_trace.js') }}"></script>
+{% endblock %}

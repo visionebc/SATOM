@@ -9078,6 +9078,20 @@ the operator acts on it.</p>
   refused, because taking the first acceptable answer is exactly the bug that
   attempt targets.</p>
 </li>
+<li>
+<p><strong>Revealed credential values live in ONE place</strong> (2026-10-16). With
+  <code>monitoring.reveal_secrets</code> the tracer returns cookie/<code>Authorization</code>/API-key
+  values, but <code>txn_trace.send</code> keeps them only under the leg's <code>secrets</code> key;
+  <code>headers</code>, <code>set_cookie</code> and every other field stay redacted either way, so
+  the audit row, the curl line and a HAR exported without values cannot carry
+  one even by accident. <code>to_har</code> never reads <code>secrets</code> unless asked by name —
+  the legs come BACK from the browser, so a forwarded block must not reach a
+  redacted export. Guards: <code>test_reveal_keeps_values_only_under_secrets</code>,
+  <code>test_har_without_secrets_never_reads_the_secrets_block</code>,
+  <code>test_a_revealed_trace_shows_values_but_the_audit_only_says_so</code>. Trace and
+  HAR answers are <code>Cache-Control: no-store</code>. A HAR file the operator opens in
+  the viewer is parsed in the browser (<code>FileReader</code>) and never posted.</p>
+</li>
 </ul>
 <p><strong>42 mutations, 42 bite</strong> (<code>/var/tmp/mut_tools.py</code>, measured by rc; only
 <code>rc == 1</code> is a failure, every mutation restored in <code>finally</code>, baseline re-run

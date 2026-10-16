@@ -22,12 +22,17 @@
    ADOM's own curated battery (Administrator → Diagnostic Battery) on that
    ADOM's devices. Same permission gate as before (config_write + may_open).
    The Global ADOM does not draw it.
+
+   Transaction tracer joined on 2026-10-16 (operator request), as a PAGE: it
+   was a modal in the header Tools menu. It traces plain HTTP(S) to any
+   destination, so it is drawn live in EVERY ADOM, Global included, for
+   whoever passes its route's own gate (may_open).
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
 {% set _ts_dev = product.key != 'global' and not product.placeholder %}
 {% set _ts_two = product.key == 'global' or _ts_dev %}
 {% set _ts_lb = product.key not in ('fortigate', 'fortianalyzer', 'fortiauthenticator') %}
-<div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['reach_batch','config_compare','scout','advisor','logs'] }}" data-nav-subgroup="Troubleshooting">
+<div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['reach_batch','config_compare','scout','advisor','logs','txn_trace'] }}" data-nav-subgroup="Troubleshooting">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-life-preserver fw-nav-icon"></i><span>{{ _('Troubleshooting') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
     {% if _ts_lb %}
@@ -57,6 +62,10 @@
       <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Path Diagnostics') }}</span>
       <i class="bi bi-slash-circle ms-1 small"></i></span>
     {% endif %}
+    {% endif %}
+    {% if may_open('txn_trace.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'txn_trace' else '' }}" href="{{ url_for('txn_trace.index') }}">
+      <i class="bi bi-arrow-left-right fw-nav-icon"></i><span>{{ _('Transaction Tracer') }}</span></a>
     {% endif %}
     {% include 'partials/nav_advisor.html' %}
     {% if _ts_dev and current_user.can('config_write') and may_open('logs.index') %}

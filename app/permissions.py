@@ -59,6 +59,10 @@ GRANULAR_PERMISSIONS: list[dict] = [
     _p("monitoring.view", "View monitoring", "See search, status and dashboards"),
     _p("monitoring.probe_free", "Probe free targets",
        "Point the certificate inspector and the transaction tracer at a\n       host SATOM does not manage. Inventory destinations never need this."),
+    _p("monitoring.reveal_secrets", "Reveal traced credentials",
+       "Show cookie, Authorization and API-key VALUES in the transaction "
+       "tracer and include them in its HAR export. Never written to the audit "
+       "log; without it those values stay redacted.", admin_only=True),
 
     _p("protection.view", "View protection", "Browse WAF profiles, signatures, exceptions"),
     _p("protection.edit", "Edit protection", "Author/stage web-protection changes"),
@@ -144,7 +148,8 @@ COARSE_KEYS = ("view", "backup", "config_write", "registry_edit", "user_manage")
 # legacy coarse key  <-  any of these granular keys (presence implies the coarse)
 _DERIVE: dict[str, set[str]] = {
     "view": {
-        "monitoring.view", "monitoring.probe_free", "protection.view", "network.view", "operations.view",
+        "monitoring.view", "monitoring.probe_free", "monitoring.reveal_secrets",
+        "protection.view", "network.view", "operations.view",
         "backups.view", "registry.view", "audit.view", "appliances.view",
     },
     "backup": {"backups.create", "backups.restore"},

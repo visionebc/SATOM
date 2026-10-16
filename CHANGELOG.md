@@ -6,6 +6,37 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Transaction Tracer: a page with cookie analysis, revealable values and a HAR viewer (2026-10-16)
+
+- The transaction tracer moved out of the header Tools menu into
+  **Operations › Troubleshooting › Transaction Tracer**, in every ADOM. It is a
+  page now: the trace, its cookies and its HAR stay on screen, and `?vip=`,
+  `?backend=` and `?path=` prefill the form.
+- **Cookies** for each leg: every cookie the response sets with its flags, the
+  cookies the request sent, and what a browser will do with them (rejected for
+  `SameSite=None` without `Secure` or a broken `__Host-`/`__Secure-` prefix,
+  warnings for a missing `Secure` or `HttpOnly`). With both legs, **Cookies A vs
+  C** names the cookies the appliance issued, removed or rewrote.
+- **Reveal values** (new permission `monitoring.reveal_secrets`,
+  Administrator-only): shows the real cookie, `Authorization` and API-key values
+  in the page. They are never written to the audit log, which records only that
+  values were revealed; trace answers are no longer cacheable.
+- **HAR viewer**: the trace's HAR, or any HAR file you open (read in the
+  browser, never uploaded), as a table with a waterfall and per-entry headers,
+  cookies, timings and content. The exported HAR now carries each leg's real
+  start time, server address, query string and structured cookies; values and
+  the response body are included only on request, with the new permission, and
+  that export is audited.
+- Each leg also shows the request headers it sent and the first 2,000
+  characters of the response body.
+
+### Fixed — Transaction Tracer: a cookie the appliance rewrites is no longer called "identical" (2026-10-16)
+
+- Set-Cookie values are compared by their redacted length, so an appliance that
+  added `Secure` to a cookie of the same length produced the verdict *the
+  appliance is not altering this transaction*. Cookie flags are now compared
+  directly and a rewritten cookie makes the verdict *transforming*.
+
 ### Fixed — Concept Map: the newest pages are findable by what they do (2026-10-16)
 
 - The map's coverage check failed after three JSON endpoints shipped without an

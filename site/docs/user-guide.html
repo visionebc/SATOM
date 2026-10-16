@@ -2533,6 +2533,14 @@ unexplained:</p>
 <li><strong>A disabled probe is not a passing probe.</strong> Switching off a monitor that
   always fails removes coverage, and the card says so rather than turning green.</li>
 </ul>
+<p>When a deep monitor is what makes a device degraded or critical, the alert
+says what was measured and against which line. The title carries the reading
+and the limit crossed (<em>Device {device} is critical — CPU 97.0% (critical
+95%)</em>), and the body lists each alerting probe: what it measures (for CPU and
+memory, the whole appliance), the last reading, every limit it is graded
+against with where that limit is set (<em>set on this probe</em>, <em>inherited from
+fortiweb</em>, <em>factory default</em>) and when it was read. Six probes are spelled
+out; the rest are counted. The in-app notification keeps the line breaks.</p>
 <p>Appliances in <strong>maintenance</strong> are marked as such and are skipped by automatic
 runs and by their alerts. That is the correct way to silence a box you know is
 down — not lowering the alert floor.</p>
@@ -10270,34 +10278,32 @@ and of the Global block in the Global ADOM. Articles are written in Markdown
 console, for each other: how a certificate is renewed here, why a policy is
 built the way it is, what to check first when a backend fails.</p>
 <h3 id="461-who-can-read-an-article">46.1 Who can read an article</h3>
-<p>The editor's <strong>Who can read it</strong> card sets the audience. Three filters, and a
-reader must pass all of them:</p>
+<p>The editor's <strong>Who can read it</strong> card sets the audience. A reader must pass
+both filters:</p>
 <table>
 <thead>
 <tr>
 <th>Filter</th>
-<th>Nothing ticked means</th>
+<th>Default</th>
 <th>Example</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>ADOMs</strong></td>
-<td>Global: every ADOM</td>
+<td><strong>Global</strong> ticked: every ADOM</td>
 <td>FortiWeb + FortiADC</td>
 </tr>
 <tr>
 <td><strong>Profiles</strong> and <strong>Groups</strong></td>
-<td>everyone who can see those ADOMs</td>
+<td>nothing ticked: everyone who can see those ADOMs</td>
 <td>the <code>admin</code> profile, or the <em>Network team</em> group</td>
-</tr>
-<tr>
-<td><strong>Status</strong></td>
-<td>—</td>
-<td><em>Draft</em> (only you), <em>Published</em>, <em>Archived</em></td>
 </tr>
 </tbody>
 </table>
+<p><strong>Global</strong> is its own checkbox. Ticking an ADOM clears it; unticking the last
+ADOM ticks it again. ADOMs you cannot list yourself stay on the article when
+you save it.</p>
 <ul>
 <li>With profiles or groups ticked, a reader needs one of the ticked profiles
   <strong>or</strong> membership of one of the ticked groups.</li>
@@ -10315,12 +10321,39 @@ reader must pass all of them:</p>
 <p>Each article sits in at most one <strong>topic</strong>, in a tree (<em>FortiWeb › Certificates</em>).
 Filtering by a topic includes its sub-topics. <strong>Tags</strong> are free: type them
 comma-separated; they are stored in lower case, so <code>TLS</code> and <code>tls</code> are one
-tag. The list filters by text (title and body), ADOM, status, topic, tag and
-"mine". In a device ADOM the list opens on that ADOM's articles plus the
-Global ones; in the Global ADOM it opens on every ADOM.</p>
-<p>Every save that changes the title or the text keeps a revision. <strong>Revision N</strong>
-on the article opens the history; each revision can be read as it was.</p>
-<h3 id="463-permissions-and-moderation">46.3 Permissions and moderation</h3>
+tag. The <strong>Description</strong> (one or two sentences) is shown under the title in
+the list and on the article.</p>
+<p>The menu on the left of the list and of every article holds <strong>New article</strong>,
+<strong>Search the Wiki</strong>, the topic tree — each topic with the number of articles
+you can read, sub-topics included; the branch you are in is open — and the
+tags. A search matches an article when every word appears somewhere in its
+title, description, text, tags, author, or the name or description of its
+topic or any topic above it. The list also filters by ADOM (one checkbox per
+active ADOM plus <strong>Global</strong>), status, topic, tag and <strong>Mine</strong>. In a device
+ADOM the list opens on that ADOM's articles plus the Global ones; in the
+Global ADOM it opens on every ADOM. When the Wiki is narrower than about
+520 px the menu moves above the list.</p>
+<h3 id="463-writing-drafts-and-versions">46.3 Writing, drafts and versions</h3>
+<p><strong>New article</strong> opens a dialog; the full editor is behind <strong>Edit</strong> on any
+article you may edit. The text is written in a rich-text editor that stores
+Markdown (without JavaScript the plain Markdown field remains). Pasted or
+dropped files are not stored: link an image by its <code>https://</code> address.</p>
+<ul>
+<li><strong>Changes are saved automatically as a draft</strong>, 2.5 seconds after you stop
+  typing and when you leave the page; <strong>Save draft</strong> saves at once. Readers
+  keep the published version until someone presses <strong>Publish</strong>.</li>
+<li><strong>Publish</strong> releases the draft as a new numbered version, with an optional
+  <em>What changed</em> note. Publishing with nothing new creates no version.</li>
+<li><strong>Discard draft</strong> drops the unpublished changes; readers are unaffected.</li>
+<li>A new article is a draft only you can see until its first publication.</li>
+<li><strong>History</strong> lists every published version; each can be read as it was.</li>
+<li>If someone else saved the draft while you were editing, your save is
+  refused and autosave stops with a message: reload to see their changes.
+  Nobody's text is overwritten.</li>
+<li><strong>Archive</strong> (on the article) takes it out of the default list without
+  deleting it; <strong>Restore</strong> brings it back.</li>
+</ul>
+<h3 id="464-permissions-and-moderation">46.4 Permissions and moderation</h3>
 <table>
 <thead>
 <tr>
@@ -10335,7 +10368,7 @@ on the article opens the history; each revision can be read as it was.</p>
 </tr>
 <tr>
 <td><code>wiki.write</code> (<em>Write Wiki articles</em>)</td>
-<td>create articles and edit or delete your own</td>
+<td>create articles; edit the text, topic and tags of any article you can read</td>
 </tr>
 <tr>
 <td><code>wiki.moderate</code> (<em>Moderate the Wiki</em>, admin)</td>
@@ -10343,6 +10376,8 @@ on the article opens the history; each revision can be read as it was.</p>
 </tr>
 </tbody>
 </table>
+<p>Who can read an article, archiving it and deleting it stay with its author
+and the moderators; other editors see the audience fields disabled.</p>
 <p>The <code>readonly</code> system profile has <code>wiki.view</code>, <code>operator</code> adds <code>wiki.write</code>,
 and <code>admin</code> has all three. Custom profiles get none of them until an
 administrator adds them under <strong>Profiles</strong>.</p>

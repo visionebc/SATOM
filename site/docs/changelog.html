@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#330---2026-10-16">[3.3.0] - 2026-10-16</a>
       <a href="#321---2026-10-16">[3.2.1] - 2026-10-16</a>
       <a href="#320---2026-10-16">[3.2.0] - 2026-10-16</a>
       <a href="#310---2026-10-13">[3.1.0] - 2026-10-13</a>
@@ -104,7 +105,6 @@
       <a href="#191---2026-08-09">[1.9.1] - 2026-08-09</a>
       <a href="#190---2026-08-08">[1.9.0] - 2026-08-08</a>
       <a href="#180---2026-08-07">[1.8.0] - 2026-08-07</a>
-      <a href="#171---2026-08-07">[1.7.1] - 2026-08-07</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="changelog">Changelog</h1>
@@ -112,17 +112,45 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
-<h3 id="added--operations--wiki-articles-by-adom-profile-and-group-with-topics-tags-and-revisions-2026-10-16">Added — Operations › Wiki: articles by ADOM, profile and group, with topics, tags and revisions (2026-10-16)</h3>
+<h2 id="330---2026-10-16">[3.3.0] - 2026-10-16</h2>
+<h3 id="added--operations--wiki-articles-by-adom-profile-and-group-with-topics-tags-and-versions-2026-10-16">Added — Operations › Wiki: articles by ADOM, profile and group, with topics, tags and versions (2026-10-16)</h3>
 <ul>
 <li><strong>Wiki</strong> is the first entry of Operations in every device ADOM and of the
-  Global block. Articles are Markdown, kept with every revision, in a topic
-  tree and with free tags; the list filters by text, ADOM, status, topic, tag
-  and "mine", on the server.</li>
+  Global block. Articles are Markdown, in a topic tree and with free tags,
+  each with a one- or two-sentence <strong>description</strong> shown under its title.</li>
+<li><strong>Menu and search.</strong> A left-hand menu on the list and on every article
+  holds <strong>New article</strong>, a search box, the topic tree (with the number of
+  readable articles; a topic counts its sub-topics, and the branch you are in
+  is open) and the tags. A search matches when every word appears somewhere:
+  title, description, text, a tag, the author, or the name or description of
+  the article's topic or any topic above it. The list also filters by ADOM
+  (one checkbox per active ADOM plus <strong>Global</strong>), status, topic, tag and
+  "mine", on the server. The two columns follow the Wiki's own width, not the
+  window's, so a scaled display no longer pushes the menu on top.</li>
+<li><strong>Rich-text editor.</strong> Articles are written in a WYSIWYG editor (Toast UI
+  Editor 3.2.2, vendored, no usage statistics, in the console's language)
+  that stores Markdown; without JavaScript the plain Markdown field remains.
+  Pasted or dropped files are refused — link an image by its <code>https://</code>
+  address. <strong>New article</strong> opens a dialog; an error keeps what was typed.</li>
+<li><strong>Drafts and versions.</strong> Editing autosaves a draft 2.5 s after the last
+  change (and on leaving the page). Readers keep the published text until
+  someone presses <strong>Publish</strong>, which releases the draft as a new numbered
+  version with an optional <em>What changed</em> note; publishing nothing new makes
+  no version, and <strong>Discard draft</strong> drops the pending changes. A new article
+  is a draft only its author sees until its first publication. <strong>History</strong>
+  lists every version, each readable as it was.</li>
+<li><strong>Editing together.</strong> Anyone with <code>wiki.write</code> who can read an article can
+  edit its text. If someone else saved the draft in the meantime, the save is
+  refused and autosave stops — nobody's text is overwritten. Who can read it,
+  archiving and deleting stay with the author and the moderators.</li>
 <li><strong>Audience.</strong> An article is published to Global or to chosen ADOMs and can
   be limited to profiles and to Wiki groups (a reader needs one of the
   profiles OR one of the groups). ADOM confinement of the reader's profile
   always applies. An article a user may not read is absent from the list,
-  the tag suggestions and the counts, and answers 404 by id.</li>
+  the tag suggestions and the counts, and answers 404 by id. In the editor
+  <strong>Global</strong> is its own checkbox, ticked by default; ticking an ADOM clears
+  it and unticking the last ADOM ticks it again. ADOMs an editor cannot list
+  are kept when they save.</li>
 <li><strong>Wiki groups</strong> (moderators): people across profiles, such as a team.</li>
 <li><strong>Permissions</strong> <code>wiki.view</code> (readonly and up), <code>wiki.write</code> (operator and
   up) and <code>wiki.moderate</code> (admin): moderators read and edit every article
@@ -183,8 +211,29 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   checks; <code>satom execute seed actions --yes</code> adds them to an existing node.
   Until now the Observatory graded only when someone clicked.</li>
 </ul>
+<h3 id="changed--device-alerts-say-which-threshold-fired-with-the-reading-and-where-the-limit-is-set-2026-10-16">Changed — Device alerts say which threshold fired, with the reading and where the limit is set (2026-10-16)</h3>
+<ul>
+<li>A device alert raised by a deep monitor used to read <em>1/6 probes alerting:
+  {device} · CPU</em> and nothing more. The title now carries the reading and
+  the limit crossed — <em>Device {device} is critical — CPU 97.0% (critical
+  95%)</em> — so the bell, the push and the mail subject say it without opening
+  the page. Requested by the user: notifications must say exactly what CPU
+  and what percentage.</li>
+<li>The body lists each alerting probe under its signal: what it measures (CPU
+  and memory say <em>whole appliance</em>), the last reading, every limit with its
+  origin (<em>set on this probe</em>, <em>inherited from <product></em>, <em>factory
+  default</em>) and the time of the reading. Six are spelled out, the rest
+  counted. The cooldown key is unchanged, so a reading moving from 96 % to
+  97 % does not re-send the alert.</li>
+</ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li>The HTML part of alert mail inserted titles and details unescaped and
+  without line breaks: a multi-line device finding ran together into one
+  paragraph, and text reported by a device went into the mail as HTML. Both
+  are now escaped and keep their line breaks; so does the notification list.
+  The in-app notification now keeps up to 1,500 characters of the detail
+  (was 400, which cut the evidence off).</li>
 <li>The HTTP Observatory site picker labels added in 3.2.1 (<strong>Select sites</strong>,
   <strong>Select all matches</strong>, <strong>Clear selection</strong>, <strong>Grade selected</strong>, the search
   placeholder) were untranslated in Spanish, German, French and Italian.</li>

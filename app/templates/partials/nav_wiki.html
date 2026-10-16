@@ -1,0 +1,7 @@
+{# Wiki — the FIRST entry of Operations in every device ADOM and of the
+   Global block (operator, 2026-10-16). Product-neutral: the blueprint is in
+   CHROME_BPS and every row it serves is scoped by services/wiki_access.py. #}
+{% if current_user.can('wiki.view') and may_open('wiki.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'wiki' else '' }}" href="{{ url_for('wiki.index') }}">
+  <i class="bi bi-journal-richtext fw-nav-icon"></i><span>{{ _('Wiki') }}</span></a>
+{% endif %}

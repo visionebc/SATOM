@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Revision') }} {{ rev.number }} — {{ article.title }} — SATOM{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/wiki.css') }}" data-turbo-track="reload">
+{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('wiki.index') }}">{{ _('Wiki') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('wiki.history', article_id=article.id) }}">{{ _('History') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Revision') }} {{ rev.number }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">{{ rev.title }}</h1>
+    <div class="wiki-meta mt-1">
+      <span class="fw-badge fw-badge-secondary">{{ _('Revision') }} {{ rev.number }}</span>
+      <span>{{ rev.edited_by }} · {{ rev.edited_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
+      {% if rev.number != article.revision %}<a href="{{ url_for('wiki.article', article_id=article.id, slug=article.slug) }}">{{ _('Current version') }}</a>{% endif %}
+    </div>
+  </div>
+</div>
+<div class="fw-card"><div class="fw-card-body wiki-body">{{ html }}</div></div>
+{% endblock %}

@@ -25004,3 +25004,215 @@ msgstr "Sélectionner toutes les correspondances"
 #: app/templates/observatory/index.html
 msgid "Select sites"
 msgstr "Sélectionner des sites"
+
+#: wiki (2026-10-16)
+msgid "(top level)"
+msgstr "(niveau supérieur)"
+
+#: wiki (2026-10-16)
+msgid "A group names people across profiles, for example a team. An article limited to a group is readable by its members. Deleting a group never opens its articles to everyone: they stay readable by their author and the moderators only."
+msgstr "Un groupe réunit des personnes de profils différents, par exemple une équipe. Un article limité à un groupe est lisible par ses membres. Supprimer un groupe n'ouvre jamais ses articles à tout le monde : seuls leur auteur et les modérateurs peuvent encore les lire."
+
+#: wiki (2026-10-16)
+msgid "Add or rename a topic"
+msgstr "Ajouter ou renommer un sujet"
+
+#: wiki (2026-10-16)
+msgid "All ADOMs"
+msgstr "Tous les ADOM"
+
+#: wiki (2026-10-16)
+msgid "All topics"
+msgstr "Tous les sujets"
+
+#: wiki (2026-10-16)
+msgid "Articles"
+msgstr "Articles"
+
+#: wiki (2026-10-16)
+msgid "Articles written by the people who run this console. Each one is published to Global or to chosen ADOMs, and can be limited to profiles and Wiki groups."
+msgstr "Articles écrits par les personnes qui exploitent cette console. Chacun est publié dans Global ou dans les ADOM choisis, et peut être limité à des profils et à des groupes du Wiki."
+
+#: wiki (2026-10-16)
+msgid "Change the filters, or write the first article."
+msgstr "Modifiez les filtres ou écrivez le premier article."
+
+#: wiki (2026-10-16)
+msgid "Comma separated. Stored in lower case."
+msgstr "Séparés par des virgules. Enregistrés en minuscules."
+
+#: wiki (2026-10-16)
+msgid "Current version"
+msgstr "Version actuelle"
+
+#: wiki (2026-10-16)
+msgid "Delete this article and its history?"
+msgstr "Supprimer cet article et son historique ?"
+
+#: wiki (2026-10-16)
+msgid "Delete this group?"
+msgstr "Supprimer ce groupe ?"
+
+#: wiki (2026-10-16)
+msgid "Delete this topic and its sub-topics?"
+msgstr "Supprimer ce sujet et ses sous-sujets ?"
+
+#: wiki (2026-10-16)
+msgid "Draft"
+msgstr "Brouillon"
+
+#: wiki (2026-10-16)
+msgid "Draft — only you"
+msgstr "Brouillon — vous seul"
+
+#: wiki (2026-10-16)
+msgid "Edit article"
+msgstr "Modifier l'article"
+
+#: wiki (2026-10-16)
+msgid "Edit group"
+msgstr "Modifier le groupe"
+
+#: wiki (2026-10-16)
+msgid "Global only"
+msgstr "Global uniquement"
+
+#: wiki (2026-10-16)
+msgid "Group"
+msgstr "Groupe"
+
+#: wiki (2026-10-16)
+msgid "Groups"
+msgstr "Groupes"
+
+#: wiki (2026-10-16)
+msgid "Headings, lists, tables, code blocks and links. HTML is shown as text. Do not paste passwords, keys or tokens: everyone in the audience can read the article and its history."
+msgstr "Titres, listes, tableaux, blocs de code et liens. Le HTML est affiché comme texte. Ne collez ni mots de passe, ni clés, ni jetons : tout le public peut lire l'article et son historique."
+
+#: wiki (2026-10-16)
+msgid "Its profiles and groups were deleted: only the author and moderators can read it"
+msgstr "Ses profils et groupes ont été supprimés : seuls l'auteur et les modérateurs peuvent le lire"
+
+#: wiki (2026-10-16)
+msgid "Limited to profiles or groups"
+msgstr "Limité à des profils ou des groupes"
+
+#: wiki (2026-10-16)
+msgid "Mine"
+msgstr "Les miens"
+
+#: wiki (2026-10-16)
+msgid "New article"
+msgstr "Nouvel article"
+
+#: wiki (2026-10-16)
+msgid "New group"
+msgstr "Nouveau groupe"
+
+#: wiki (2026-10-16)
+msgid "No article matches"
+msgstr "Aucun article ne correspond"
+
+#: wiki (2026-10-16)
+msgid "No groups yet."
+msgstr "Aucun groupe pour l'instant."
+
+#: wiki (2026-10-16)
+msgid "No tags yet."
+msgstr "Aucun tag pour l'instant."
+
+#: wiki (2026-10-16)
+msgid "No topic"
+msgstr "Aucun sujet"
+
+#: wiki (2026-10-16)
+msgid "No topics yet."
+msgstr "Aucun sujet pour l'instant."
+
+#: wiki (2026-10-16)
+msgid "None ticked = Global: every ADOM."
+msgstr "Aucun coché = Global : tous les ADOM."
+
+#: wiki (2026-10-16)
+msgid "None ticked = everyone who can see those ADOMs. Otherwise a reader needs one of the ticked profiles OR membership of one of the ticked groups."
+msgstr "Aucun coché = tous ceux qui voient ces ADOM. Sinon, un lecteur doit avoir l'un des profils cochés OU être membre de l'un des groupes cochés."
+
+#: wiki (2026-10-16)
+msgid "One topic per article, in a tree. Filtering by a topic includes its sub-topics. Deleting a topic deletes its sub-topics; their articles stay, without a topic."
+msgstr "Un sujet par article, en arbre. Filtrer par un sujet inclut ses sous-sujets. Supprimer un sujet supprime ses sous-sujets ; leurs articles restent, sans sujet."
+
+#: wiki (2026-10-16)
+msgid "Published and drafts"
+msgstr "Publiés et brouillons"
+
+#: wiki (2026-10-16)
+msgid "Rendering…"
+msgstr "Rendu en cours…"
+
+#: wiki (2026-10-16)
+msgid "Restricted"
+msgstr "Restreint"
+
+#: wiki (2026-10-16)
+msgid "Text (Markdown)"
+msgstr "Texte (Markdown)"
+
+#: wiki (2026-10-16)
+msgid "This article has no text yet."
+msgstr "Cet article n'a pas encore de texte."
+
+#: wiki (2026-10-16)
+msgid "Title or text"
+msgstr "Titre ou texte"
+
+#: wiki (2026-10-16)
+msgid "Topic to rename"
+msgstr "Sujet à renommer"
+
+#: wiki (2026-10-16)
+msgid "Topics"
+msgstr "Sujets"
+
+#: wiki (2026-10-16)
+msgid "Under"
+msgstr "Sous"
+
+#: wiki (2026-10-16)
+msgid "What changed"
+msgstr "Ce qui a changé"
+
+#: wiki (2026-10-16)
+msgid "What changed (optional)"
+msgstr "Ce qui a changé (facultatif)"
+
+#: wiki (2026-10-16)
+msgid "Who can read it"
+msgstr "Qui peut le lire"
+
+#: wiki (2026-10-16)
+msgid "Wiki"
+msgstr "Wiki"
+
+#: wiki (2026-10-16)
+msgid "Wiki groups"
+msgstr "Groupes du Wiki"
+
+#: wiki (2026-10-16)
+msgid "Wiki topics"
+msgstr "Sujets du Wiki"
+
+#: wiki (2026-10-16)
+msgid "Write"
+msgstr "Écrire"
+
+#: wiki (2026-10-16)
+msgid "certificates, tls"
+msgstr "certificats, tls"
+
+#: wiki (2026-10-16)
+msgid "deleted user"
+msgstr "utilisateur supprimé"
+
+#: wiki (2026-10-16)
+msgid "— new topic —"
+msgstr "— nouveau sujet —"

@@ -41,6 +41,8 @@ AREAS: list[dict] = [
      "desc": "Define permission profiles (administrative)"},
     {"key": "advisor", "label": "Scout (AI assistant)", "icon": "bi-stars",
      "desc": "Chat assistant for WAF/Lua help and report search; provider/API-key configuration"},
+    {"key": "wiki", "label": "Wiki", "icon": "bi-journal-richtext",
+     "desc": "Operations › Wiki: articles users write for each other, by ADOM, profile and group"},
 ]
 
 _AREA_LABELS = {a["key"]: a["label"] for a in AREAS}
@@ -128,6 +130,16 @@ GRANULAR_PERMISSIONS: list[dict] = [
     _p("advisor.configure", "Configure Scout",
        "Manage AI providers, models and API keys; enable/disable external providers and tools",
        admin_only=True),
+
+    _p("wiki.view", "Read the Wiki",
+       "Open Operations › Wiki and read the articles whose ADOMs, profiles "
+       "and groups include you"),
+    _p("wiki.write", "Write Wiki articles",
+       "Create articles and edit your own; choose their topic, tags, ADOMs, "
+       "profiles and groups"),
+    _p("wiki.moderate", "Moderate the Wiki",
+       "Read and edit every article whatever its audience, and manage the "
+       "topic tree and the Wiki groups", admin_only=True),
 ]
 
 
@@ -200,10 +212,12 @@ def expand(granular: set[str]) -> set[str]:
 _READ_KEYS = {
     "monitoring.view", "protection.view", "network.view", "operations.view",
     "backups.view", "registry.view", "audit.view", "appliances.view",
+    "wiki.view",
 }
 
 _OPERATOR_EXTRA = {
     "advisor.use",
+    "wiki.write",
     "operations.scripts_run",
     "backups.create", "backups.restore",
     "protection.edit", "protection.apply",

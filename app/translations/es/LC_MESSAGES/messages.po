@@ -25149,8 +25149,12 @@ msgid "No topics yet."
 msgstr "Aún no hay temas."
 
 #: wiki (2026-10-16)
-msgid "None ticked = Global: every ADOM."
-msgstr "Ninguno marcado = Global: todos los ADOM."
+msgid "Global = every ADOM. Tick ADOMs instead to publish only there."
+msgstr "Global = todos los ADOM. Marca ADOM en su lugar para publicar solo ahí."
+
+#, python-format
+msgid "Also published to ADOMs not listed here (inactive or outside your profile), kept on save: %(names)s"
+msgstr "También publicado en ADOM que no aparecen aquí (inactivos o fuera de tu perfil), se conservan al guardar: %(names)s"
 
 #: wiki (2026-10-16)
 msgid "None ticked = everyone who can see those ADOMs. Otherwise a reader needs one of the ticked profiles OR membership of one of the ticked groups."

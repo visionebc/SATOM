@@ -9,7 +9,8 @@
 {% set v_status = f.status if form else (article.status if article else 'draft') %}
 {% set v_topic = (f.topic_id | int if f.topic_id else none) if form else (article.topic_id if article else none) %}
 {% set v_tags = f.tags if form else (article.tags | map(attribute='name') | join(', ') if article else '') %}
-{% set v_adoms = f.adoms if form else (article.adoms if article else ([default_adom] if default_adom != 'global' else [])) %}
+{% set v_adoms = f.adoms if form else (article.adoms if article else []) %}
+{% set v_global = ('global' in f.adoms and not (f.adoms | reject('equalto', 'global') | list)) if form else (not article or not article.adoms) %}
 {% set v_profiles = (f.profiles | map('int') | list) if form else (article.profiles | map(attribute='id') | list if article else []) %}
 {% set v_groups = (f.groups | map('int') | list) if form else (article.groups | map(attribute='id') | list if article else []) %}
 
@@ -89,13 +90,17 @@
       <div class="fw-card"><div class="fw-card-body">
         <div class="fw-form-section-title mb-2">{{ _('Who can read it') }}</div>
         <span class="form-label small mb-1 d-block">{{ _('ADOMs') }}</span>
-        <div class="wiki-choice-list mb-1">
+        <div class="wiki-choice-list mb-1" data-wiki-adoms>
+          <div class="form-check"><input class="form-check-input" type="checkbox" name="adoms" value="global" id="wiki-adom-global" data-wiki-global {{ 'checked' if v_global }}>
+            <label class="form-check-label small fw-semibold" for="wiki-adom-global">{{ _('Global') }}</label></div>
           {% for k, n in adoms %}
-          <div class="form-check"><input class="form-check-input" type="checkbox" name="adoms" value="{{ k }}" id="wiki-adom-{{ k }}" {{ 'checked' if k in v_adoms }}>
+          <div class="form-check"><input class="form-check-input" type="checkbox" name="adoms" value="{{ k }}" id="wiki-adom-{{ k }}" {{ 'checked' if k in v_adoms and not v_global }}>
             <label class="form-check-label small" for="wiki-adom-{{ k }}">{{ n }}</label></div>
           {% endfor %}
         </div>
-        <div class="form-text mb-3" style="font-size:11px;">{{ _('None ticked = Global: every ADOM.') }}</div>
+        {% set kept = (article.adoms | reject('in', adoms | map('first') | list) | list) if article else [] %}
+        {% if kept and not v_global %}<div class="form-text mb-1" style="font-size:11px;">{{ _('Also published to ADOMs not listed here (inactive or outside your profile), kept on save: %(names)s', names=kept | join(', ')) }}</div>{% endif %}
+        <div class="form-text mb-3" style="font-size:11px;">{{ _('Global = every ADOM. Tick ADOMs instead to publish only there.') }}</div>
 
         <span class="form-label small mb-1 d-block">{{ _('Profiles') }}</span>
         <div class="wiki-choice-list mb-2">

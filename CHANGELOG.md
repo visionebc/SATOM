@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-10-16
+
 ### Added — HTTP Observatory: grade every published site, see who caused each finding, fix it on the FortiWeb (2026-10-16)
 
 - New page **Troubleshooting › HTTP Observatory** (Global, FortiWeb and

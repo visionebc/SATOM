@@ -32,16 +32,21 @@
    Later on 2026-10-14 (operator): Automation moved up to right below WAF
    (drawn by partials/nav_fleet.html), and Jobs left the Fleet entries to
    close this group, below Plugins.
+
+   2026-10-16 (operator): Wiki (partials/nav_wiki.html) is the first entry,
+   here and at the top of the Global block in base.html.
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
 {% if product.key != 'global' and not product.placeholder %}
-{% set _g_ops = request.blueprint in ['backups','import_backup','plugins','lua_studio'] %}
+{% set _g_ops = request.blueprint in ['backups','import_backup','plugins','lua_studio','wiki'] %}
 {% set _m_bak = adom_menu('backups', product) %}
 {% set _m_imp = adom_menu('import_backup', product) %}
 {% set _m_tpl = adom_menu('templates', product) %}
 <div class="fw-nav-group{{ ' open' if _g_ops }}" data-nav-group="Operations">
   <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-tools fw-nav-section-icon" style="color:#94a3b8;"></i><span>{{ _('Operations') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-group-body">
+    {# Wiki leads the group (operator, 2026-10-16), above the Fleet entries. #}
+    {% include 'partials/nav_wiki.html' %}
     {% include 'partials/nav_fleet.html' %}
     {% if current_user.can('backups.view') and may_open('backups.index') %}
     {% if _m_bak.on %}

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ _('History') }} — {{ article.title }} — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('wiki.index') }}">{{ _('Wiki') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('wiki.article', article_id=article.id, slug=article.slug) }}">{{ article.title }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('History') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <h1 class="fw-page-title"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('History') }}: {{ article.title }}</h1>
+</div>
+<div class="fw-card">
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle">
+      <thead><tr><th>{{ _('Revision') }}</th><th>{{ _('Title') }}</th><th>{{ _('By') }}</th><th>{{ _('When (UTC)') }}</th><th>{{ _('What changed') }}</th></tr></thead>
+      <tbody>
+      {% for r in revisions %}
+      <tr>
+        <td><a href="{{ url_for('wiki.revision', article_id=article.id, number=r.number) }}">{{ r.number }}</a>
+          {% if r.number == article.revision %}<span class="fw-badge fw-badge-success ms-1">{{ _('current') }}</span>{% endif %}</td>
+        <td>{{ r.title }}</td>
+        <td>{{ r.edited_by }}</td>
+        <td class="text-nowrap">{{ r.edited_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td class="text-muted">{{ r.note or '—' }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

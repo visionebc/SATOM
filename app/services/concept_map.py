@@ -163,6 +163,13 @@ PAGES: tuple[dict, ...] = (
        "Grades every site an appliance publishes with the MDN HTTP Observatory "
        "tests, says whether FortiWeb, the application or the certificate "
        "caused each result, and applies the FortiWeb fix."),
+    _p("wiki.index", "Wiki", "platform",
+       "wiki knowledge base kb article articles how to howto runbook notes "
+       "documentation write share team procedure topic tag search markdown "
+       "restricted audience profile group adom global revision history",
+       "Articles the people who run the console write for each other, by "
+       "topic and tags, published to Global or chosen ADOMs and optionally "
+       "limited to profiles and Wiki groups."),
     _p("scout.index", "Path Diagnostics", "monitoring",
        "formerly scout troubleshoot fault isolation which layer is broken localise "
        "diagnose service down slow backend firewall drop reset routing "
@@ -661,6 +668,10 @@ EXCLUDED: dict[str, str] = {
     "observatory.api_targets": "json feed", "observatory.api_history": "json feed",
     "observatory.api_fixes": "json feed", "observatory.api_preload_status": "json feed",
     "observatory.api_export_csv": "file download", "cert_manager.renewals_durability": "json feed",
+    # Operations -> Wiki: the editor and the two moderator pages are doors
+    # on wiki.index (its header links them); the tag list is its JS feed.
+    "wiki.new": "form", "wiki.topics": "sub-view of wiki.index",
+    "wiki.groups": "sub-view of wiki.index", "wiki.api_tags": "json feed",
     "database.report_column_values": "json feed", "database.table": "sub-view of database.index",
     "device_provision.data": "json feed", "dns_tool.records_list": "json feed",
     "dns_tool.records_schema": "json feed", "jobs.index": "json feed",

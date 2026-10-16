@@ -6,6 +6,27 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Operations › Wiki: articles by ADOM, profile and group, with topics, tags and revisions (2026-10-16)
+
+- **Wiki** is the first entry of Operations in every device ADOM and of the
+  Global block. Articles are Markdown, kept with every revision, in a topic
+  tree and with free tags; the list filters by text, ADOM, status, topic, tag
+  and "mine", on the server.
+- **Audience.** An article is published to Global or to chosen ADOMs and can
+  be limited to profiles and to Wiki groups (a reader needs one of the
+  profiles OR one of the groups). ADOM confinement of the reader's profile
+  always applies. An article a user may not read is absent from the list,
+  the tag suggestions and the counts, and answers 404 by id.
+- **Wiki groups** (moderators): people across profiles, such as a team.
+- **Permissions** `wiki.view` (readonly and up), `wiki.write` (operator and
+  up) and `wiki.moderate` (admin): moderators read and edit every article
+  and manage topics and groups.
+- Deleting the last profile or group an article was limited to leaves it
+  readable by its author and moderators only, never by everyone.
+- The requester asked: "a wiki and knowledge base in the style of articles,
+  where users post things that others can look up; the user decides which
+  ADOM a post belongs to; at the top of the Operations menu."
+
 ### Added — HTTP Observatory: revert a fix, CSP in Report-Only first, the HSTS preload list, CSV and PDF exports, nightly grading (2026-10-16)
 
 - **Revert a fix.** Every set of fixes applied from the page is kept with, for

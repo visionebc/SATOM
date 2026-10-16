@@ -56,6 +56,7 @@
 43. [Upgrading to 2.0](#43-upgrading-to-20)
 44. [Container operations (Docker nodes)](#44-container-operations-docker-nodes)
 45. [Upgrading to 3.0](#45-upgrading-to-30)
+46. [Wiki: articles the team writes for itself](#46-wiki-articles-the-team-writes-for-itself)
 
 ---
 
@@ -7779,8 +7780,8 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (124 today) or **excluded with a written
-   reason** (159 today — JSON feeds, downloads, redirects and fragments that
+   the console is either **on the map** (125 today) or **excluded with a written
+   reason** (163 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the
@@ -9054,3 +9055,68 @@ purposes: `update`, `api_pack`, `knowledge`) and `satom show knowledge`.
 **Rollback** is a normal downgrade plus, for a clean state, the database backup
 the update took. The full procedure, the key fingerprints and the rollback
 caveats: [Upgrading to 3.0](upgrading-to-3.0.md).
+
+---
+
+## 46. Wiki: articles the team writes for itself
+
+**Operations › Wiki** is the first entry of Operations in every device ADOM,
+and of the Global block in the Global ADOM. Articles are written in Markdown
+(headings, lists, tables, code blocks, links) by the people who run the
+console, for each other: how a certificate is renewed here, why a policy is
+built the way it is, what to check first when a backend fails.
+
+### 46.1 Who can read an article
+
+The editor's **Who can read it** card sets the audience. Three filters, and a
+reader must pass all of them:
+
+| Filter | Nothing ticked means | Example |
+|---|---|---|
+| **ADOMs** | Global: every ADOM | FortiWeb + FortiADC |
+| **Profiles** and **Groups** | everyone who can see those ADOMs | the `admin` profile, or the *Network team* group |
+| **Status** | — | *Draft* (only you), *Published*, *Archived* |
+
+- With profiles or groups ticked, a reader needs one of the ticked profiles
+  **or** membership of one of the ticked groups.
+- A reader confined to some ADOMs by their profile never sees an article
+  published only to other ADOMs, even when their profile is ticked.
+- You can only publish to the ADOMs your own profile reaches.
+- The author always reads their own articles; moderators read every article.
+- An article you may not read does not exist for you: it is not listed, its
+  tags are not offered, and opening it by its address answers *not found*.
+- Deleting the last profile or group an article was limited to never opens
+  it to everyone: it stays readable by its author and the moderators only,
+  and says so on the article.
+
+### 46.2 Topics, tags and finding an article
+
+Each article sits in at most one **topic**, in a tree (*FortiWeb › Certificates*).
+Filtering by a topic includes its sub-topics. **Tags** are free: type them
+comma-separated; they are stored in lower case, so `TLS` and `tls` are one
+tag. The list filters by text (title and body), ADOM, status, topic, tag and
+"mine". In a device ADOM the list opens on that ADOM's articles plus the
+Global ones; in the Global ADOM it opens on every ADOM.
+
+Every save that changes the title or the text keeps a revision. **Revision N**
+on the article opens the history; each revision can be read as it was.
+
+### 46.3 Permissions and moderation
+
+| Permission | Allows |
+|---|---|
+| `wiki.view` (*Read the Wiki*) | open the Wiki and read the articles whose audience includes you |
+| `wiki.write` (*Write Wiki articles*) | create articles and edit or delete your own |
+| `wiki.moderate` (*Moderate the Wiki*, admin) | read, edit and delete every article; manage **Topics** and **Groups** |
+
+The `readonly` system profile has `wiki.view`, `operator` adds `wiki.write`,
+and `admin` has all three. Custom profiles get none of them until an
+administrator adds them under **Profiles**.
+
+**Groups** (Wiki › Groups) name people across profiles — a team, an on-call
+rota. A group is the Wiki's own; it grants nothing outside the Wiki.
+
+Raw HTML in an article is shown as text, and links to anything but `http`,
+`https`, `mailto`, in-page anchors and relative addresses are removed. Do not
+paste passwords, keys or tokens into an article: everyone in its audience can
+read it and every earlier revision.

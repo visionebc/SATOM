@@ -112,6 +112,27 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--operations--wiki-articles-by-adom-profile-and-group-with-topics-tags-and-revisions-2026-10-16">Added — Operations › Wiki: articles by ADOM, profile and group, with topics, tags and revisions (2026-10-16)</h3>
+<ul>
+<li><strong>Wiki</strong> is the first entry of Operations in every device ADOM and of the
+  Global block. Articles are Markdown, kept with every revision, in a topic
+  tree and with free tags; the list filters by text, ADOM, status, topic, tag
+  and "mine", on the server.</li>
+<li><strong>Audience.</strong> An article is published to Global or to chosen ADOMs and can
+  be limited to profiles and to Wiki groups (a reader needs one of the
+  profiles OR one of the groups). ADOM confinement of the reader's profile
+  always applies. An article a user may not read is absent from the list,
+  the tag suggestions and the counts, and answers 404 by id.</li>
+<li><strong>Wiki groups</strong> (moderators): people across profiles, such as a team.</li>
+<li><strong>Permissions</strong> <code>wiki.view</code> (readonly and up), <code>wiki.write</code> (operator and
+  up) and <code>wiki.moderate</code> (admin): moderators read and edit every article
+  and manage topics and groups.</li>
+<li>Deleting the last profile or group an article was limited to leaves it
+  readable by its author and moderators only, never by everyone.</li>
+<li>The requester asked: "a wiki and knowledge base in the style of articles,
+  where users post things that others can look up; the user decides which
+  ADOM a post belongs to; at the top of the Operations menu."</li>
+</ul>
 <h3 id="added--http-observatory-revert-a-fix-csp-in-report-only-first-the-hsts-preload-list-csv-and-pdf-exports-nightly-grading-2026-10-16">Added — HTTP Observatory: revert a fix, CSP in Report-Only first, the HSTS preload list, CSV and PDF exports, nightly grading (2026-10-16)</h3>
 <ul>
 <li><strong>Revert a fix.</strong> Every set of fixes applied from the page is kept with, for
@@ -167,6 +188,11 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <li>The HTTP Observatory site picker labels added in 3.2.1 (<strong>Select sites</strong>,
   <strong>Select all matches</strong>, <strong>Clear selection</strong>, <strong>Grade selected</strong>, the search
   placeholder) were untranslated in Spanish, German, French and Italian.</li>
+<li>On a phone the ADOM chooser shown after sign-in could not be scrolled: the
+  six product cards were taller than the screen and centred in a fixed box,
+  so the header, <strong>Global</strong> and <strong>FortiGate</strong> sat off-screen out of reach.
+  The chooser now scrolls, and on narrow or short (landscape) screens each
+  ADOM is a compact row — all six fit on a 390 × 844 phone without scrolling.</li>
 </ul>
 <h2 id="321---2026-10-16">[3.2.1] - 2026-10-16</h2>
 <h3 id="changed--http-observatory-pick-the-sites-to-grade-from-a-searchable-checkbox-list-2026-10-16">Changed — HTTP Observatory: pick the sites to grade from a searchable checkbox list (2026-10-16)</h3>

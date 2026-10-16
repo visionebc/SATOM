@@ -81,7 +81,11 @@ def widen_plan(tables, live_widths):
 #: through ``product_scope``/``visible_appliances``, so a console reaches its
 #: own rail and sees only its own devices. Nothing whose ROWS are not scoped
 #: that way belongs in this set.
-CHROME_BPS = frozenset({'bookmarks'})
+#:
+#: ``wiki`` (2026-10-16) is drawn at the top of Operations in every device
+#: ADOM and of the Global block, and its rows are scoped by
+#: services/wiki_access.py (ADOM confinement included) on every route.
+CHROME_BPS = frozenset({'bookmarks', 'wiki'})
 
 
 def create_app(config_override: object | None = None) -> Flask:
@@ -2370,6 +2374,9 @@ def create_app(config_override: object | None = None) -> Flask:
             # observatory_scans / observatory_fixes and the first scan (or
             # the first fix's revert record) fails to store.
             from . import models_observatory  # noqa: F401
+            # Operations -> Wiki. Without this import create_all() never
+            # makes the wiki_* tables and the first article fails to store.
+            from . import models_wiki  # noqa: F401
             # Sentinel's two collectors (http_status, infra) join the
             # fleet collection registry here so the scheduler sidecar — which
             # never imports a view — provisions and runs them like any other.
@@ -2580,6 +2587,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.fp_triage", "bp"),
         ("app.views.txn_trace", "bp"),
         ("app.views.observatory", "bp"),
+        ("app.views.wiki", "bp"),
         ("app.views.server_objects", "bp"),
         ("app.views.web_protection", "bp"),
         ("app.views.exceptions", "bp"),

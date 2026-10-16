@@ -70,6 +70,7 @@
       </div>
     </div>
     <div class="ms-auto d-flex gap-2">
+      <a class="btn btn-sm btn-fw-outline" id="fw-obs-export" href="#" title="{{ _('Every published site of this appliance with its latest grade and the result of each test, as CSV') }}"><i class="bi bi-filetype-csv me-1"></i>{{ _('Export CSV') }}</a>
       <button type="button" class="btn btn-sm btn-fw-outline" id="fw-obs-reload"><i class="bi bi-arrow-clockwise me-1"></i>{{ _('Reload') }}</button>
       <button type="button" class="btn btn-sm btn-fw-primary" id="fw-obs-scanall" disabled><i class="bi bi-play-fill me-1"></i>{{ _('Grade selected') }}</button>
     </div>
@@ -89,6 +90,7 @@
     <span class="small text-muted" id="fw-obs-resultsite"></span>
     <div class="ms-auto d-flex gap-2">
       <a class="btn btn-sm btn-fw-outline" id="fw-obs-trace" href="#" title="{{ _('Open this site in the Transaction Tracer (leg A). A VIP that is not an appliance management address is a free target there.') }}"><i class="bi bi-arrow-left-right me-1"></i>{{ _('Trace this request') }}</a>
+      <a class="btn btn-sm btn-fw-outline" id="fw-obs-pdf" href="#" title="{{ _('This result as a PDF report') }}"><i class="bi bi-filetype-pdf me-1"></i>{{ _('PDF report') }}</a>
       <button type="button" class="btn btn-sm btn-fw-outline" id="fw-obs-history"><i class="bi bi-clock-history me-1"></i>{{ _('History') }}</button>
     </div>
   </div>
@@ -118,6 +120,29 @@
     <div id="fw-obs-applyout" class="mt-2"></div>
   </div>
 </div>
+
+{#  Revert (2026-10-16): every applied set of fixes is kept with what each
+    write found before it. The plan is read against the device NOW: a field
+    someone changed since the fix is skipped and named, never overwritten.  #}
+<div class="fw-card mb-3" id="fw-obs-revertcard" style="display:none">
+  <div class="fw-card-header d-flex align-items-center gap-2">
+    <h6 class="fw-card-title mb-0"><i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Revert a fix') }}</h6>
+    <span class="small text-muted" id="fw-obs-reverttitle"></span>
+    <div class="ms-auto d-flex gap-2">
+      <button type="button" class="btn btn-sm btn-fw-outline" id="fw-obs-revertclose">{{ _('Close') }}</button>
+      <button type="button" class="btn btn-sm btn-fw-primary" id="fw-obs-revertgo" disabled><i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Revert') }}</button>
+    </div>
+  </div>
+  <div class="fw-card-body">
+    <div class="form-text mb-2"><i class="bi bi-shield-check me-1"></i>{{ _('Newest write first. A field is restored only while the device still holds what the fix wrote; anything changed since is left as it is and named here. The site is graded again afterwards.') }}</div>
+    <div id="fw-obs-revertplan"></div>
+    <div class="form-check mt-2" id="fw-obs-revertackwrap" style="display:none">
+      <input class="form-check-input" type="checkbox" id="fw-obs-revertack">
+      <label class="form-check-label small" for="fw-obs-revertack" id="fw-obs-revertacklabel"></label>
+    </div>
+    <div id="fw-obs-revertout" class="mt-2"></div>
+  </div>
+</div>
 {% endif %}
 
 <div class="modal fade" id="fw-obs-histmodal" tabindex="-1" aria-hidden="true">
@@ -126,14 +151,31 @@
       <h6 class="modal-title mb-0"><i class="bi bi-clock-history me-1"></i>{{ _('Grade history') }} <span class="text-muted small" id="fw-obs-histtitle"></span></h6>
       <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
     </div>
-    <div class="modal-body" id="fw-obs-histbody"></div>
+    <div class="modal-body">
+      <div id="fw-obs-histbody"></div>
+      <h6 class="mt-3 mb-1 small fw-bold"><i class="bi bi-wrench-adjustable me-1"></i>{{ _('Fixes applied to this site') }}</h6>
+      <div id="fw-obs-fixhist" class="small"></div>
+    </div>
   </div></div>
 </div>
 {% endif %}
 
 <div class="small text-muted mt-2">
-  {{ _('Scoring: MDN HTTP Observatory, algorithm version 6. Differences: the HSTS preload list is not consulted (no +5 for preloaded sites), and redirects are followed only while they stay on the scanned policy.') }}
+  {{ _('Scoring: MDN HTTP Observatory, algorithm version 6. Difference: redirects are followed only while they stay on the scanned policy.') }}
   <a href="https://developer.mozilla.org/en-US/observatory/docs/tests_and_scoring" target="_blank" rel="noopener noreferrer">{{ _('Tests and scoring') }}</a>
+</div>
+{#  The HSTS preload list this node grades with (services/hsts_preload.py):
+    refreshed weekly by the hsts_preload_refresh action, or here; a node
+    without internet access imports Chromium's file.                         #}
+<div class="small text-muted mt-1 d-flex align-items-center gap-2 flex-wrap" id="fw-obs-preloadbar">
+  <span><i class="bi bi-list-check me-1"></i>{{ _('HSTS preload list') }}:</span>
+  <span id="fw-obs-preload">…</span>
+  <span id="fw-obs-preloadactions" class="d-none gap-2">
+    <button type="button" class="btn btn-link btn-sm p-0" id="fw-obs-preloadrefresh">{{ _('Refresh now') }}</button>
+    <label class="btn btn-link btn-sm p-0 mb-0" for="fw-obs-preloadfile" title="{{ _('For a node without internet access: Chromium transport_security_state_static.json') }}">{{ _('Import file') }}</label>
+    <input type="file" id="fw-obs-preloadfile" accept=".json,application/json" class="d-none">
+  </span>
+  <span id="fw-obs-preloadmsg"></span>
 </div>
 
 </div>

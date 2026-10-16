@@ -63,6 +63,9 @@ HSTS_MIN_PASS = 15_552_000
 CSP_STARTER = ("default-src 'self'; object-src 'none'; base-uri 'self'; "
                "frame-ancestors 'self'; form-action 'self'")
 
+#: The row name (and response header) of a report-only CSP.
+REPORT_ONLY = "content-security-policy-report-only"
+
 #: Header row specs: test → (row name, value field, default value, values
 #: that make the test pass, risk note).
 HEADER_ROWS = {
@@ -79,6 +82,16 @@ HEADER_ROWS = {
         "A Content Security Policy blocks every script, style, image or "
         "frame source it does not list. Deploy it on a test policy first or "
         "review the browser console after applying."),
+    #: Not a test of its own: step 1 of the CSP finding. Browsers apply
+    #: nothing and report what the policy WOULD block, so a site can be
+    #: watched before it is enforced; the Observatory scores it like no CSP
+    #: (``csp-not-implemented-but-reporting-enabled``, -25), and the preview
+    #: says so.
+    REPORT_ONLY: (
+        REPORT_ONLY, "custom-value", CSP_STARTER, (),
+        "Nothing is blocked: browsers only report what this policy would block "
+        "(in the developer console, and to a report-uri if the policy names "
+        "one). The grade does not change until the policy is enforced."),
     "cross-origin-resource-policy": (
         "cross-origin-resource-policy", "value", "same-site",
         ("same-site", "same-origin", "cross-origin"),
@@ -298,12 +311,39 @@ def findings(analysis: dict, retrieval: dict, ctx: dict | None,
                 "referrer-policy", "cross-origin-resource-policy",
                 "cross-origin-opener-policy", "cross-origin-embedder-policy")
                 and result.endswith(("not-implemented", "unsafe-none", "cross-origin")))
+            ro_live = []
             if name == "content-security-policy":
                 wants = result in ("csp-not-implemented", "csp-not-implemented-but-reporting-enabled",
                                    "csp-header-invalid") or (f["who"] == "fortiweb" and not t.get("pass"))
+                ro_live = [r for r in _rows_named(ctx, REPORT_ONLY) if not _row_filtered(r)]
+                if ro_live:
+                    f["explain"] += (" FortiWeb sends Content-Security-Policy-Report-Only (profile "
+                                     "%s, row %s): browsers report what it would block and block "
+                                     "nothing. When the reports are clean, enforce the same policy."
+                                     % (ctx["hhs"], ro_live[0].get("id")))
+                elif _header_present(retrieval, REPORT_ONLY):
+                    f["explain"] += (" The application sends Content-Security-Policy-Report-Only: "
+                                     "nothing is enforced yet.")
+                elif wants:
+                    # Step 1: watch the policy before it can break the site.
+                    # Offered only when it can be applied: an unavailable
+                    # step 1 repeats the reason step 2 already gives.
+                    ro = _header_fix(ctx, REPORT_ONLY, True)
+                    if ro and ro.get("available"):
+                        ro["label"] = ("Step 1 — send it as Content-Security-Policy-Report-Only "
+                                       "on the FortiWeb (nothing is blocked)")
+                        ro["step"] = 1
+                        f["fixes"].append(ro)
             if name == "x-frame-options":
                 wants = not t.get("pass")
             fx = _header_fix(ctx, name, wants)
+            if fx and name == "content-security-policy":
+                fx["step"] = 2
+                fx["label"] = "Step 2 — enforce it: " + fx["label"]
+                if ro_live and ro_live[0].get("custom-value"):
+                    # Promote exactly the policy that was watched.
+                    fx["option"]["default"] = str(ro_live[0]["custom-value"])
+                    fx["promotes"] = str(ro_live[0].get("id"))
             if fx:
                 f["fixes"].append(fx)
         elif name == "strict-transport-security":
@@ -551,9 +591,24 @@ def effects_of(fix_id: str, options: dict, ctx: dict) -> dict:
 # --------------------------------------------------------------------------- #
 #  Plans                                                                       #
 # --------------------------------------------------------------------------- #
-def _write(action, endpoint, mkey, data, describe, sub_mkey=None):
-    return {"action": action, "endpoint": endpoint, "mkey": mkey,
-            "sub_mkey": sub_mkey, "data": {"data": data}, "describe": describe}
+def _write(action, endpoint, mkey, data, describe, sub_mkey=None, before=None,
+           before_ids=None):
+    """One write of a plan. ``before`` is what the device held in the fields
+    an update writes (read with the context, so the revert restores exactly
+    those and nothing else); ``before_ids`` the sub-table row ids before a
+    row create (the new row is the id that was not there)."""
+    w = {"action": action, "endpoint": endpoint, "mkey": mkey,
+         "sub_mkey": sub_mkey, "data": {"data": data}, "describe": describe}
+    if before is not None:
+        w["before"] = before
+    if before_ids is not None:
+        w["before_ids"] = [str(i) for i in before_ids]
+    return w
+
+
+def _held(obj: dict, data: dict) -> dict:
+    """The current values of the fields *data* writes (None = not present)."""
+    return {k: (obj or {}).get(k) for k in data}
 
 
 def _free_name(existing: set, base: str) -> str:
@@ -604,17 +659,20 @@ def plan(appliance, policy: str, fix_id: str, options: dict | None, ctx: dict) -
                 "hsts-include-subdomains": "enable" if options.get("include_subdomains") else "disable",
                 "hsts-preload": "enable" if options.get("preload") else "disable"}
         writes.append(_write("update", POLICY_EP, policy, data,
-                             "server policy %s: HSTS on, max-age %d" % (policy, max_age)))
+                             "server policy %s: HSTS on, max-age %d" % (policy, max_age),
+                             before=_held(ctx.get("policy_obj"), data)))
         objects.append("server policy %s" % policy)
     elif fix_id == "redirect":
         writes.append(_write("update", POLICY_EP, policy, {"http-to-https": "enable"},
-                             "server policy %s: redirect HTTP to HTTPS" % policy))
+                             "server policy %s: redirect HTTP to HTTPS" % policy,
+                             before=_held(ctx.get("policy_obj"), {"http-to-https": 1})))
         objects.append("server policy %s" % policy)
     elif fix_id == "internal-cookie":
-        writes.append(_write("update", POLICY_EP, policy, {
-            "internal-cookie-secure": "enable", "internal-cookie-httponly": "enable",
-            "internal-cookie-samesite": "enable", "internal-cookie-samesite-value": "lax"},
-            "server policy %s: FortiWeb's own cookie Secure, HttpOnly, SameSite=Lax" % policy))
+        data = {"internal-cookie-secure": "enable", "internal-cookie-httponly": "enable",
+                "internal-cookie-samesite": "enable", "internal-cookie-samesite-value": "lax"}
+        writes.append(_write("update", POLICY_EP, policy, data,
+            "server policy %s: FortiWeb's own cookie Secure, HttpOnly, SameSite=Lax" % policy,
+            before=_held(ctx.get("policy_obj"), data)))
         objects.append("server policy %s" % policy)
     elif fix_id.startswith("header:") or fix_id == "cookie-security":
         if not ctx.get("wpp"):
@@ -651,10 +709,12 @@ def plan(appliance, policy: str, fix_id: str, options: dict | None, ctx: dict) -
                     writes.append(_write("update", HHS_ROWS_EP, ctx["hhs"], row,
                                          "HTTP Header Security %s, row %s: %s = %s"
                                          % (ctx["hhs"], live[0].get("id"), name, value),
-                                         sub_mkey=str(live[0].get("id"))))
+                                         sub_mkey=str(live[0].get("id")),
+                                         before=_held(live[0], row)))
                 else:
                     writes.append(_write("create", HHS_ROWS_EP, ctx["hhs"], row,
-                                         "HTTP Header Security %s: add %s = %s" % (ctx["hhs"], name, value)))
+                                         "HTTP Header Security %s: add %s = %s" % (ctx["hhs"], name, value),
+                                         before_ids=[r.get("id") for r in ctx.get("hhs_rows") or []]))
                 objects.append("HTTP Header Security %s" % ctx["hhs"])
                 shared_wpps = [w for w in ctx.get("hhs_wpps") or [] if w != wpp]
             else:
@@ -662,9 +722,11 @@ def plan(appliance, policy: str, fix_id: str, options: dict | None, ctx: dict) -
                 writes.append(_write("create", HHS_EP, None, {"name": new},
                                      "create HTTP Header Security profile %s" % new))
                 writes.append(_write("create", HHS_ROWS_EP, new, row,
-                                     "HTTP Header Security %s: add %s = %s" % (new, name, value)))
+                                     "HTTP Header Security %s: add %s = %s" % (new, name, value),
+                                     before_ids=[]))
                 writes.append(_write("update", WPP_EP, wpp, {"http-header-security": new},
-                                     "Web Protection Profile %s: use %s" % (wpp, new)))
+                                     "Web Protection Profile %s: use %s" % (wpp, new),
+                                     before=_held(ctx.get("wpp_obj"), {"http-header-security": 1})))
                 objects += ["HTTP Header Security %s (new)" % new, "Web Protection Profile %s" % wpp]
                 shared_wpps = []
         else:
@@ -683,7 +745,8 @@ def plan(appliance, policy: str, fix_id: str, options: dict | None, ctx: dict) -
             risk = ("HttpOnly hides cookies from the page's JavaScript." if http_only else "")
             if ctx.get("cks"):
                 writes.append(_write("update", CKS_EP, ctx["cks"], data,
-                                     "Cookie Security %s: %s" % (ctx["cks"], _flags(data))))
+                                     "Cookie Security %s: %s" % (ctx["cks"], _flags(data)),
+                                     before=_held(ctx.get("cks_obj"), data)))
                 objects.append("Cookie Security %s" % ctx["cks"])
                 shared_wpps = [w for w in ctx.get("cks_wpps") or [] if w != wpp]
             else:
@@ -692,7 +755,8 @@ def plan(appliance, policy: str, fix_id: str, options: dict | None, ctx: dict) -
                                      "create Cookie Security profile %s (no signing or "
                                      "encryption): %s" % (new, _flags(data))))
                 writes.append(_write("update", WPP_EP, wpp, {"cookie-security-policy": new},
-                                     "Web Protection Profile %s: use %s" % (wpp, new)))
+                                     "Web Protection Profile %s: use %s" % (wpp, new),
+                                     before=_held(ctx.get("wpp_obj"), {"cookie-security-policy": 1})))
                 objects += ["Cookie Security %s (new)" % new, "Web Protection Profile %s" % wpp]
                 shared_wpps = []
         affected = list(ctx.get("wpp_policies") or [policy])
@@ -800,7 +864,226 @@ def apply(appliance, the_plan: dict, *, ack_shared: bool, user_id=None, dry_run=
         results.append({"describe": w["describe"], "ok": bool(res.get("ok")),
                         "error": res.get("error") or "", "request": res.get("request"),
                         "verify": (res.get("verify") or {}).get("verdict") if isinstance(res.get("verify"), dict) else res.get("verify")})
+        if res.get("ok") and not dry_run and w["action"] == "create" and w.get("before_ids") is not None:
+            # The revert deletes exactly the row this write made: the id the
+            # sub-table did not have before. An unreadable list leaves it
+            # unknown, and the revert then says so instead of guessing.
+            results[-1]["created_id"] = _new_row_id(getattr(ops, "client", None), w)
         if not res.get("ok"):
             return {"ok": False, "results": results,
                     "error": "%s failed: %s" % (w["describe"], res.get("error") or "rejected")}
     return {"ok": True, "results": results, "error": ""}
+
+
+def _new_row_id(client, w) -> str:
+    name = str(((w.get("data") or {}).get("data") or {}).get("name") or "").lower()
+    before = set(w.get("before_ids") or [])
+    if client is None:
+        return ""
+    try:
+        rows = client._safe_list("%s?mkey=%s" % (w["endpoint"], quote(str(w["mkey"]), safe="")))
+    except Exception:  # noqa: BLE001
+        return ""
+    fresh = [str(r.get("id")) for r in rows or []
+             if str(r.get("id")) not in before and str(r.get("name") or "").lower() == name]
+    return fresh[-1] if fresh else ""
+
+
+def steps_of(the_plan: dict, out: dict) -> list[dict]:
+    """The plan's writes joined with what happened to each — what an
+    :class:`ObservatoryFix` row keeps. A write that never ran has ``ok``
+    False and is never reverted."""
+    results = out.get("results") or []
+    steps = []
+    for i, w in enumerate(the_plan.get("writes") or []):
+        r = results[i] if i < len(results) else {}
+        steps.append({"describe": w.get("describe"), "action": w.get("action"),
+                      "endpoint": w.get("endpoint"), "mkey": w.get("mkey"),
+                      "sub_mkey": w.get("sub_mkey"), "data": w.get("data"),
+                      "before": w.get("before"), "ok": bool(r.get("ok")),
+                      "created_id": r.get("created_id", ""),
+                      "verify": r.get("verify")})
+    return steps
+
+
+# --------------------------------------------------------------------------- #
+#  Revert                                                                      #
+# --------------------------------------------------------------------------- #
+def _same(a, b) -> bool:
+    return str("" if a is None else a).strip().lower() == str("" if b is None else b).strip().lower()
+
+
+def _read(client, endpoint, mkey, sub_mkey=None):
+    """The object (or sub-table row) as the device has it now; None = gone."""
+    q = quote(str(mkey), safe="")
+    if sub_mkey:
+        rows = client._safe_list("%s?mkey=%s" % (endpoint, q))
+        return next((r for r in rows or [] if str(r.get("id")) == str(sub_mkey)), None)
+    obj = client._safe_one("%s?mkey=%s" % (endpoint, q))
+    return obj or None
+
+
+def revert_plan(appliance, fix) -> dict:
+    """What undoing *fix* (an :class:`ObservatoryFix`) would write, read
+    against the device NOW. Sends nothing.
+
+    Newest write first. A field is restored only while the device still holds
+    what the fix wrote: anything changed since belongs to whoever changed it,
+    so that step is skipped and named, never overwritten. A row or profile
+    the fix created is deleted only while it still holds what the fix put
+    there; a profile still in use is refused by the delete guard."""
+    from ..clients import client_for
+    if appliance.kind != "fortiweb":
+        raise FixRefused("SATOM reverts Observatory fixes on FortiWeb only.")
+    if fix.reverted_at:
+        raise FixRefused("this fix was already reverted (%s by %s)"
+                         % (fix.reverted_at.strftime("%Y-%m-%d %H:%M UTC"), fix.reverted_by or "?"))
+    client = client_for(appliance)
+    undo = []
+    deleting: dict[str, set] = {}      # profile -> row ids this revert removes
+    detaching: set = set()             # WPPs this revert points back elsewhere
+    for s in reversed([x for x in fix.steps_list if x.get("ok")]):
+        ep, mkey, sub = s.get("endpoint"), s.get("mkey"), s.get("sub_mkey")
+        sent = (s.get("data") or {}).get("data") or {}
+        item = {"undoes": s.get("describe"), "endpoint": ep, "status": "skip", "why": ""}
+        if s.get("action") == "update":
+            cur = _read(client, ep, mkey, sub)
+            if cur is None:
+                item["why"] = "%s no longer exists" % mkey
+            else:
+                before = s.get("before") or {}
+                drift = ["%s is now %s (the fix wrote %s)" % (k, cur.get(k), v)
+                         for k, v in sent.items()
+                         if not _same(cur.get(k), v) and not _same(cur.get(k), before.get(k))]
+                restore = {k: before[k] for k, v in sent.items()
+                           if _same(cur.get(k), v) and before.get(k) is not None
+                           and not _same(before[k], v)}
+                unknown = [k for k in sent if before.get(k) is None]
+                if drift:
+                    item["why"] = "changed since the fix: " + "; ".join(drift)
+                elif unknown and not restore:
+                    item["why"] = "no previous value was recorded for " + ", ".join(unknown)
+                elif not restore:
+                    item.update(status="done", why="already as before the fix")
+                else:
+                    if ep == WPP_EP:
+                        detaching.add(str(mkey))
+                    # FortiWeb drops a dependent field written while (or in
+                    # the same body as) its switch goes to "disable" — 200,
+                    # nothing stored: hsts-max-age and hsts-include-subdomains
+                    # next to hsts-header disable (measured on 8.0.6). So the
+                    # values go back first, then each switch is turned off in
+                    # a write of its own, in the reverse of the order the fix
+                    # wrote them — a fix writes the parent switch first.
+                    values = {k: v for k, v in restore.items() if not _same(v, "disable")}
+                    switches = [k for k in reversed(list(sent)) if k in restore and k not in values]
+                    phases = ([values] if values else []) + [{k: restore[k]} for k in switches]
+                    label = s.get("describe", "").split(":")[0]
+                    writes = [dict(item, status="restore", action="update", mkey=mkey, sub_mkey=sub,
+                                   data={"data": part},
+                                   describe="%s: restore %s" % (label, ", ".join(
+                                       "%s = %s" % (k, v if v not in ("", None) else "(none)")
+                                       for k, v in part.items())))
+                              for part in phases]
+                    if unknown:
+                        writes[-1]["why"] = "left as is (no previous value recorded): " + ", ".join(unknown)
+                    undo.extend(writes[:-1])
+                    item = writes[-1]
+        elif s.get("action") == "create" and ep in (HHS_EP, CKS_EP):
+            # A profile the fix created (create on the collection, name in data).
+            name = str(sent.get("name") or "")
+            cur = _read(client, ep, name) if name else None
+            foreign = []
+            if cur is not None and ep == HHS_EP:
+                # Deleting the profile deletes its rows: only when every row
+                # it holds is one this fix added AND is being removed here.
+                mine = deleting.get(name, set())
+                rows = client._safe_list("%s?mkey=%s" % (HHS_ROWS_EP, quote(name, safe=""))) or []
+                foreign = [str(r.get("id")) for r in rows if str(r.get("id")) not in mine]
+            if cur is None:
+                item.update(status="done", why="%s is already gone" % name)
+            elif foreign:
+                item["why"] = ("%s holds rows the fix did not add, or that changed since "
+                               "(row %s): it stays" % (name, ", ".join(foreign)))
+            else:
+                # Who still uses it once this revert has run: its references
+                # minus the profiles this revert detaches it from. The delete
+                # itself still goes through the delete guard on the device.
+                users = [w for w in _refs(cur, "inline-protection") if w not in detaching]
+                if users:
+                    item["why"] = ("%s is used by Web Protection Profile %s: it stays"
+                                   % (name, ", ".join(users)))
+                else:
+                    item.update(status="restore", action="delete", mkey=name, sub_mkey=None,
+                                describe="delete %s (created by the fix)" % name)
+        elif s.get("action") == "create":
+            # A row the fix added to a sub-table.
+            rid = str(s.get("created_id") or "")
+            if not rid:
+                item["why"] = ("the id of the row the fix added was not recorded; remove the "
+                               "%s row from %s by hand" % (sent.get("name"), mkey))
+            else:
+                cur = _read(client, ep, mkey, rid)
+                if cur is None:
+                    item.update(status="done", why="row %s of %s is already gone" % (rid, mkey))
+                elif any(not _same(cur.get(k), v) for k, v in sent.items()):
+                    item["why"] = "row %s of %s changed since the fix" % (rid, mkey)
+                else:
+                    item.update(status="restore", action="delete", mkey=mkey, sub_mkey=rid,
+                                describe="%s: remove row %s (%s, added by the fix)"
+                                % (mkey, rid, sent.get("name")))
+                    deleting.setdefault(str(mkey), set()).add(rid)
+        undo.append(item)
+    return {"fix": fix.id, "policy": fix.policy, "steps": undo,
+            "writes": [u for u in undo if u["status"] == "restore"],
+            "others": fix.others_list, "shared": bool(fix.others_list)}
+
+
+def revert(appliance, fix, *, ack_shared: bool, user_id=None) -> dict:
+    """Undo *fix*: re-read, re-plan (:func:`revert_plan`) and run the steps
+    that are still safe, newest first, through FortiWebOps. Stops at the
+    first failure. ``reverted`` is True only when nothing is left to undo."""
+    from .fortiweb_ops import FortiWebOps
+    from . import object_refresh
+    rp = revert_plan(appliance, fix)
+    writes = rp["writes"]
+    if not writes:
+        skipped = [u for u in rp["steps"] if u["status"] == "skip"]
+        return {"ok": not skipped, "results": [], "plan": rp, "reverted": not skipped,
+                "error": "" if not skipped else "nothing can be reverted: " +
+                "; ".join(u["why"] for u in skipped)}
+    if rp["shared"] and not ack_shared:
+        raise FixRefused("this revert also changes: %s. Confirm to revert it for all of them."
+                         % ", ".join(rp["others"]))
+    try:
+        from .templates import managed_wpp_names
+        managed = set(managed_wpp_names(appliance.id))
+    except Exception:  # noqa: BLE001
+        managed = set()
+    hit = [w["mkey"] for w in writes if w["endpoint"] == WPP_EP and w["mkey"] in managed]
+    if hit:
+        raise FixRefused("Web Protection Profile %s is template-managed now: change it in "
+                         "Administrator → Template Library" % hit[0])
+    held = _lease_holder(appliance.id, writes, user_id)
+    if held:
+        raise FixRefused(held + "; nothing was sent to the device.")
+    ops = FortiWebOps(appliance)
+    results = []
+    for w in writes:
+        if w["action"] == "delete":
+            res = ops.delete(w["endpoint"], w["mkey"], dry_run=False, sub_mkey=w.get("sub_mkey"),
+                             check_refs=not w.get("sub_mkey"))
+        else:
+            res = ops.update(w["endpoint"], w["mkey"], w["data"], dry_run=False,
+                             sub_mkey=w.get("sub_mkey"))
+        res = object_refresh.enforce(res)
+        results.append({"describe": w["describe"], "ok": bool(res.get("ok")),
+                        "error": res.get("error") or "",
+                        "verify": (res.get("verify") or {}).get("verdict")
+                        if isinstance(res.get("verify"), dict) else res.get("verify")})
+        if not res.get("ok"):
+            return {"ok": False, "results": results, "plan": rp, "reverted": False,
+                    "error": "%s failed: %s" % (w["describe"], res.get("error") or "rejected")}
+    skipped = [u for u in rp["steps"] if u["status"] == "skip"]
+    return {"ok": True, "results": results, "plan": rp, "reverted": not skipped,
+            "error": "" if not skipped else "reverted except: " + "; ".join(u["why"] for u in skipped)}

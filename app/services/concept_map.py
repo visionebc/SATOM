@@ -158,7 +158,8 @@ PAGES: tuple[dict, ...] = (
        "security policy hsts strict transport security x-frame-options "
        "clickjacking referrer policy cookies secure httponly samesite sri "
        "subresource integrity cors corp coop coep nosniff redirect http to https "
-       "header security fix published site",
+       "header security fix published site revert undo report-only preload "
+       "list export csv pdf report",
        "Grades every site an appliance publishes with the MDN HTTP Observatory "
        "tests, says whether FortiWeb, the application or the certificate "
        "caused each result, and applies the FortiWeb fix."),
@@ -657,7 +658,9 @@ EXCLUDED: dict[str, str] = {
     # The three helper tools are API-only blueprints; their UI is rendered by
     # a page that is already on the map, so these two are feeds, not pages.
     "cert_inspect.targets": "json feed", "txn_trace.context": "json feed",
-    "observatory.api_targets": "json feed", "observatory.api_history": "json feed", "cert_manager.renewals_durability": "json feed",
+    "observatory.api_targets": "json feed", "observatory.api_history": "json feed",
+    "observatory.api_fixes": "json feed", "observatory.api_preload_status": "json feed",
+    "observatory.api_export_csv": "file download", "cert_manager.renewals_durability": "json feed",
     "database.report_column_values": "json feed", "database.table": "sub-view of database.index",
     "device_provision.data": "json feed", "dns_tool.records_list": "json feed",
     "dns_tool.records_schema": "json feed", "jobs.index": "json feed",

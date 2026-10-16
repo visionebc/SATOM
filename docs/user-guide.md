@@ -7552,11 +7552,25 @@ Embedder Policy, Cross-Origin Opener Policy, CORS, Redirection, Referrer
 Policy, HSTS, Subresource Integrity, X-Content-Type-Options, X-Frame-Options
 and Cross-Origin Resource Policy. Every site starts at 100; penalties are
 subtracted first, and bonuses count only when the penalties leave the site at
-90 or more. Three differences from mozilla.org, all stated on the page: the
-HSTS preload list is not consulted (a preloaded site does not get its +5), a
-non-numeric HSTS `max-age` is invalid (mozilla.org passes it by accident), and
-the registrable domain the SRI test uses comes from a short built-in suffix
-list instead of the full Public Suffix List.
+90 or more. Two differences from mozilla.org: a non-numeric HSTS `max-age` is
+invalid (mozilla.org passes it by accident), and the registrable domain the SRI
+test uses comes from a short built-in suffix list instead of the full Public
+Suffix List.
+
+**The HSTS preload list.** The node holds Chromium's HSTS preload list — the
+file the MDN Observatory reads — so a preloaded site gets the same +5
+(`hsts-preloaded`) as on mozilla.org, and an HTTP redirect chain whose every
+host is preloaded passes Redirection. As in MDN's code: an exact name always
+counts, a parent name only when its entry includes subdomains, and an
+untrusted certificate does not cancel it. The page footer shows how many names
+the list holds and how old it is (older than three weeks is flagged); the
+action **HTTP Observatory — refresh the HSTS preload list**
+(`hsts_preload_refresh`, weekly) downloads it again, and a failed download
+keeps the stored copy. With *Run operations*, **Refresh now** downloads it on
+the spot and **Import file** takes a copy of Chromium's
+`transport_security_state_static.json` for a node without internet access. A
+node without a list grades every site as not preloaded, and each result says
+which list it was graded with.
 
 **Who.** Each test carries one of:
 
@@ -7576,6 +7590,7 @@ device after each one — and grades the site again.
 | Fix | What it writes |
 |---|---|
 | Set X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Content-Security-Policy | A row in the Web Protection Profile's HTTP Header Security profile; a profile named `satom-hdr-<policy>` is created and attached when there is none. An existing row for that header has its value changed instead of getting a twin. |
+| Content Security Policy, step 1 — Report-Only | A `content-security-policy-report-only` row with the same starting policy. Browsers report what it would block (in the developer console, and to a `report-uri` if the policy names one) and block nothing. The grade does not change — the Observatory scores Report-Only like no CSP — and the preview says so. Once the row exists the finding names it, and **step 2 — enforce it** starts from that exact policy. Offered on builds whose profile rows accept it (7.6.8 and 8.0.6 do). |
 | Set Cross-Origin-Resource/Opener/Embedder-Policy | The same, on builds whose profile rows accept them (FortiWeb 8.0.6 does, 7.6.8 does not — the build's choices come from the API library, and a header the build cannot carry is shown as unavailable with that reason). |
 | Enable HSTS | `hsts-header`, `hsts-max-age` (one year by default), `hsts-include-subdomains`, `hsts-preload` on the server policy. Needs an HTTPS service. |
 | Redirect HTTP to HTTPS | `http-to-https` on the server policy (FortiWeb answers 301 to the HTTPS service port). Needs both services. |
@@ -7594,12 +7609,47 @@ Integrity and CORS are page content: they are explained, never "fixed" on the
 appliance. FortiADC sites are graded and explained; the fixes are FortiWeb
 only.
 
+**Reverting a fix** (`config_write`). Every applied set of fixes is kept with,
+for each write, the fields it changed and their previous values, and the id of
+each row it added. **History → Fixes applied to this site** lists them, and
+**Revert these changes** is offered right after **Apply**. **Revert** first
+reads the appliance again and shows, newest write first, what it would undo:
+*will undo* (restore those fields, remove a row the fix added, delete a
+profile it created), *left as is* (with the reason) or *nothing to do*. A
+field someone changed after the fix is never overwritten — the step is skipped
+and named, e.g. "hsts-max-age is now 600 (the fix wrote 31536000)". A row
+someone edited is not removed, and a profile the fix created is deleted only
+when every row in it is one the fix added and no other Web Protection Profile
+uses it. The same gates as a fix apply: a revert that reaches other server
+policies needs the confirmation tick, and a template-managed profile or
+another user's edit lease refuses it. The site is graded again afterwards; the
+fix is marked reverted once nothing is left to undo (a partial revert can be
+run again). Fields come back before the switch that governs them is turned
+off, and each switch is turned off in a write of its own: FortiWeb answers 200
+and silently keeps the old value of a dependent field written in the same
+request that disables its switch (`hsts-max-age` and `hsts-include-subdomains`
+next to `hsts-header disable`, measured on 8.0.6) — every write is re-read, so
+such a drop would show as *mismatch*, not as success. Audited as
+`observatory.fix.revert`.
+
+**Exports.** **Export CSV** (next to *Reload*) downloads every published site
+of the appliance with its site name, ports, latest grade, score, when and how
+it was graded, and the result code of each test — one column per test. If the
+appliance cannot be listed, the stored grades are exported and the `note`
+column says why. **PDF report** (on a result) is that result as a document:
+grade, what was graded and against which preload list, and per test who
+produced it and the fixes — the findings the page shows. Both need `view` and
+are audited as `observatory.export`.
+
 **History and schedule.** Every grade is kept (60 per site): **History** lists
 them and opens any of them with its findings recomputed against the current
 configuration. The scheduled action **HTTP Observatory — grade published
 sites** (`observatory_scan`, Administrator → Automation) grades every site of
 its targets and names a grade lower than the previous run first in its
-summary. Stored results keep headers, statuses, redirect routes and cookie
+summary. A node arms it by itself (daily 05:30, every FortiWeb and FortiADC),
+together with the weekly preload refresh (Monday 05:00); on a node installed
+earlier, `satom execute seed actions --yes` adds the two, and `satom diagnose
+install` reports them missing until then. Stored results keep headers, statuses, redirect routes and cookie
 flags — never cookie values or page bodies.
 
 
@@ -7730,7 +7780,7 @@ discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
    the console is either **on the map** (124 today) or **excluded with a written
-   reason** (156 today — JSON feeds, downloads, redirects and fragments that
+   reason** (159 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the

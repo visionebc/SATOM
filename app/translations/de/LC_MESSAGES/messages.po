@@ -25218,3 +25218,49 @@ msgstr "gelöschter Benutzer"
 #: wiki (2026-10-16)
 msgid "— new topic —"
 msgstr "— neues Thema —"
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "All articles"
+msgstr "Alle Artikel"
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "Create one"
+msgstr "Eines anlegen"
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "Exactly as readers will see it"
+msgstr "Genau so, wie Leser es sehen"
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "Headings, lists, tables, code blocks and links; switch to Markdown at the bottom of the editor. HTML is shown as text. Do not paste passwords, keys or tokens: everyone in the audience can read the article and its history."
+msgstr "Überschriften, Listen, Tabellen, Codeblöcke und Links; unten im Editor auf Markdown umschalten. HTML wird als Text angezeigt. Keine Passwörter, Schlüssel oder Tokens einfügen: Alle Leser sehen den Artikel und seinen Verlauf."
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "Loading the editor…"
+msgstr "Editor wird geladen…"
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "Manage topics"
+msgstr "Themen verwalten"
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "One or two sentences shown under the title in the list"
+msgstr "Ein oder zwei Sätze, die in der Liste unter dem Titel stehen"
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "Pasted or dropped files are not stored in the Wiki. Link the image by its https:// address instead."
+msgstr "Eingefügte oder abgelegte Dateien werden nicht im Wiki gespeichert. Verlinken Sie das Bild stattdessen über seine https://-Adresse."
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "Search the Wiki"
+msgstr "Wiki durchsuchen"
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "Title, description, text, topics, tags and authors."
+msgstr "Titel, Beschreibung, Text, Themen, Tags und Autoren."
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "%(num)d article"
+msgid_plural "%(num)d articles"
+msgstr[0] "%(num)d Artikel"
+msgstr[1] "%(num)d Artikel"

@@ -34,6 +34,10 @@ renders correctly:
   Chart.js            https://www.chartjs.org/            MIT License
   Bootstrap           https://getbootstrap.com/           MIT License
   Bootstrap Icons     https://icons.getbootstrap.com/     MIT License
+  Toast UI Editor     https://ui.toast.com/tui-editor     MIT License
+    The Wiki's rich-text editor. Its self-contained build bundles
+    ProseMirror (MIT License) and DOMPurify 2.3.3 (Apache License 2.0 or
+    Mozilla Public License 2.0, at the user's choice).
 
 The exact versions, the URL each file was taken from and its SHA-256 are in
 app/static/vendor/MANIFEST.json; Bootstrap Icons ships its own LICENSE file

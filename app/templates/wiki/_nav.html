@@ -1,0 +1,67 @@
+{#  The Wiki's own menu, on the article list and on every article: "New
+    article", the search box, the topic tree and the tags. Counts come from
+    views/wiki._nav_context(): readable, non-archived articles only, a
+    topic counting its sub-topics. The search box searches everything a
+    reader can open — title, description, text, tags, author, topic.     #}
+{% macro topic_node(n, active_id, open_ids) %}
+  {% set is_active = active_id == n.topic.id %}
+  {% if n.children %}
+  <details class="wiki-nav-node" {{ 'open' if n.topic.id in open_ids }}>
+    <summary>
+      <a class="wiki-nav-link {{ 'active' if is_active }}" href="{{ url_for('wiki.index', topic=n.topic.id, adom='all') }}"
+         {% if n.topic.description %}title="{{ n.topic.description }}"{% endif %}{% if is_active %} aria-current="page"{% endif %}>
+        <i class="bi bi-folder2"></i><span class="wiki-nav-name">{{ n.topic.name }}</span><span class="wiki-nav-count">{{ n.count }}</span></a>
+    </summary>
+    <div class="wiki-nav-children">
+      {% for c in n.children %}{{ topic_node(c, active_id, open_ids) }}{% endfor %}
+    </div>
+  </details>
+  {% else %}
+  <a class="wiki-nav-link wiki-nav-leaf {{ 'active' if is_active }}" href="{{ url_for('wiki.index', topic=n.topic.id, adom='all') }}"
+     {% if n.topic.description %}title="{{ n.topic.description }}"{% endif %}{% if is_active %} aria-current="page"{% endif %}>
+    <i class="bi bi-folder2"></i><span class="wiki-nav-name">{{ n.topic.name }}</span><span class="wiki-nav-count">{{ n.count }}</span></a>
+  {% endif %}
+{% endmacro %}
+
+<aside class="wiki-nav d-flex flex-column gap-3">
+  {% if may_write %}
+  <a class="btn btn-fw-primary btn-sm w-100" href="{{ url_for('wiki.new') }}"
+     data-bs-toggle="modal" data-bs-target="#wiki-new-modal"><i class="bi bi-plus-lg me-1"></i>{{ _('New article') }}</a>
+  {% endif %}
+
+  <form method="get" action="{{ url_for('wiki.index') }}" role="search">
+    <input type="hidden" name="adom" value="all">
+    <div class="input-group input-group-sm">
+      <span class="input-group-text"><i class="bi bi-search"></i></span>
+      <input class="form-control" type="search" name="q" value="{{ text or '' }}" aria-label="{{ _('Search the Wiki') }}"
+             placeholder="{{ _('Search the Wiki') }}">
+    </div>
+    <div class="form-text" style="font-size:11px;">{{ _('Title, description, text, topics, tags and authors.') }}</div>
+  </form>
+
+  <div class="fw-card"><div class="fw-card-body wiki-nav-tree">
+    <div class="d-flex align-items-center mb-2">
+      <h4 class="me-auto mb-0">{{ _('Topics') }}</h4>
+      {% if may_moderate %}<a class="small text-decoration-none" href="{{ url_for('wiki.topics') }}" title="{{ _('Manage topics') }}"><i class="bi bi-gear"></i></a>{% endif %}
+    </div>
+    <a class="wiki-nav-link {{ 'active' if not nav_topic_id and not nav_tag and request.endpoint == 'wiki.index' }}" href="{{ url_for('wiki.index', adom='all') }}">
+      <i class="bi bi-journals"></i><span class="wiki-nav-name">{{ _('All articles') }}</span><span class="wiki-nav-count">{{ nav_total }}</span></a>
+    {% for n in nav_topics %}{{ topic_node(n, nav_topic_id, nav_open_ids or []) }}{% endfor %}
+    {% if not nav_topics %}<div class="text-muted small mt-1">{{ _('No topics yet.') }}{% if may_moderate %} <a href="{{ url_for('wiki.topics') }}">{{ _('Create one') }}</a>{% endif %}</div>{% endif %}
+  </div></div>
+
+  {% if tag_counts %}
+  <div class="fw-card"><div class="fw-card-body">
+    <h4>{{ _('Tags') }}</h4>
+    <div class="d-flex flex-wrap gap-1">
+      {% for name, n in tag_counts %}
+      <a class="wiki-tag {{ 'active' if nav_tag == name }}" href="{{ url_for('wiki.index', tag=name, adom='all') }}">#{{ name }}<span class="wiki-tag-count">{{ n }}</span></a>
+      {% endfor %}
+    </div>
+  </div></div>
+  {% endif %}
+
+  {% if may_moderate %}
+  <a class="small text-decoration-none" href="{{ url_for('wiki.groups') }}"><i class="bi bi-people me-1"></i>{{ _('Wiki groups') }}</a>
+  {% endif %}
+</aside>

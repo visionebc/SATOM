@@ -14,6 +14,11 @@ are closed here instead of adding a sanitiser:
 * every link gets ``rel="noopener noreferrer nofollow"``; external ones open
   in a new tab.
 
+The rich-text editor (Toast UI, vendored) writes GitHub-flavoured Markdown:
+``~~struck~~`` becomes ``<del>`` and its line breaks, which it writes as a
+literal ``<br>`` (also inside table cells), become a ``<br>`` element — the
+one tag recognised, built here with no attributes, never passed through.
+
 No extension that re-enables HTML (``md_in_html``) may be added to
 ``_EXTENSIONS``; tests/test_wiki_markdown.py pins the dangerous cases.
 """
@@ -23,7 +28,10 @@ import html
 import re
 from urllib.parse import urlsplit
 
+import xml.etree.ElementTree as etree
+
 import markdown
+from markdown.inlinepatterns import InlineProcessor, SimpleTagInlineProcessor
 from markdown.treeprocessors import Treeprocessor
 from markupsafe import Markup
 
@@ -87,11 +95,21 @@ class _LinkGuard(Treeprocessor):
         return None
 
 
+class _LineBreak(InlineProcessor):
+    """``<br>`` / ``<br/>`` / ``<br />`` → an empty ``br`` element."""
+    def handleMatch(self, m, data):
+        return etree.Element("br"), m.start(0), m.end(0)
+
+
 def _converter() -> markdown.Markdown:
     md = markdown.Markdown(extensions=list(_EXTENSIONS),
                            extension_configs={"toc": {"permalink": False}})
     md.preprocessors.deregister("html_block")
     md.inlinePatterns.deregister("html")
+    # Below backticks (190) so `<br>` and ~~ inside code spans stay text.
+    md.inlinePatterns.register(_LineBreak(r"(?i:<br\s*/?>)", md), "wiki_br", 95)
+    md.inlinePatterns.register(SimpleTagInlineProcessor(r"(~~)(?=\S)(.+?)(?<=\S)~~", "del"),
+                               "wiki_del", 94)
     md.treeprocessors.register(_LinkGuard(md), "wiki_link_guard", 0)
     return md
 
@@ -105,6 +123,7 @@ def render(text: str | None) -> Markup:
 def plain_excerpt(text: str | None, limit: int = 220) -> str:
     """A one-line, markup-free preview for lists (escaped by Jinja)."""
     s = re.sub(r"```.*?```", " ", str(text or ""), flags=re.S)
+    s = re.sub(r"<br\s*/?>", " ", s, flags=re.I)
     s = re.sub(r"!\[[^\]]*\]\([^)]*\)", " ", s)
     s = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", s)
     s = re.sub(r"[#>*_`|~-]+", " ", s)

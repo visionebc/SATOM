@@ -17,7 +17,7 @@
 .wiki-tag:hover { background: var(--fw-accent); color: #fff; }
 .wiki-tag-count { opacity: .7; margin-left: 3px; }
 
-.wiki-side h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
+.wiki-side h4, .wiki-nav h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
   color: var(--fw-text-secondary); margin: 0 0 8px; }
 .wiki-topic-link { display: block; font-size: 13px; padding: 2px 0; color: var(--fw-text-primary); text-decoration: none; }
 .wiki-topic-link.active { color: var(--fw-accent); font-weight: 600; }
@@ -37,8 +37,48 @@
 .wiki-body th { background: var(--fw-surface-alt); }
 .wiki-body img { max-width: 100%; height: auto; }
 
-.wiki-editor textarea { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; min-height: 420px; }
+.wiki-editor textarea.wiki-source { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; min-height: 420px; }
 .wiki-preview { min-height: 420px; border: 1px solid var(--fw-border); border-radius: var(--fw-radius);
   padding: 10px 14px; background: var(--fw-surface); overflow: auto; }
 .wiki-choice-list { max-height: 180px; overflow-y: auto; border: 1px solid var(--fw-border);
   border-radius: var(--fw-radius); padding: 6px 10px; background: var(--fw-surface); }
+
+/* The Wiki's own menu (wiki/_nav.html): left column on the list and on
+   every article; above the content on narrow screens. */
+.wiki-shell { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 991px) { .wiki-shell { grid-template-columns: minmax(0, 1fr); } }
+.wiki-nav-tree { max-height: 60vh; overflow-y: auto; }
+.wiki-nav-link { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 3px 6px; border-radius: 6px;
+  color: var(--fw-text-primary); text-decoration: none; min-width: 0; }
+.wiki-nav-link:hover { background: var(--fw-surface-alt); }
+.wiki-nav-link.active { background: var(--fw-accent-light); color: var(--fw-accent); font-weight: 600; }
+.wiki-nav-link .bi { color: var(--fw-text-secondary); flex: 0 0 auto; }
+.wiki-nav-link.active .bi { color: var(--fw-accent); }
+.wiki-nav-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wiki-nav-count { flex: 0 0 auto; font-size: 11px; color: var(--fw-text-secondary); }
+.wiki-nav-node > summary { list-style: none; display: flex; align-items: center; cursor: pointer; }
+.wiki-nav-node > summary::-webkit-details-marker { display: none; }
+.wiki-nav-node > summary::before { content: "\F285"; font-family: bootstrap-icons; font-size: 10px; width: 14px;
+  flex: 0 0 14px; color: var(--fw-text-secondary); transition: transform .15s; }
+.wiki-nav-node[open] > summary::before { transform: rotate(90deg); }
+.wiki-nav-node > summary > .wiki-nav-link { flex: 1 1 auto; }
+.wiki-nav-leaf { margin-left: 14px; }
+.wiki-nav-children { margin-left: 12px; border-left: 1px solid var(--fw-border-light); padding-left: 2px; }
+.wiki-tag.active { background: var(--fw-accent); color: #fff; }
+
+.wiki-topic-head { padding: 10px 14px; border-left: 3px solid var(--fw-accent); background: var(--fw-surface);
+  border-radius: var(--fw-radius); font-size: 13px; color: var(--fw-text-secondary); }
+.wiki-topic-path { font-size: 15px; font-weight: 600; color: var(--fw-text-primary); }
+.wiki-topic-path a { color: inherit; text-decoration: none; }
+.wiki-topic-path a:hover { color: var(--fw-accent); text-decoration: underline; }
+.wiki-summary { color: var(--fw-text-primary); font-size: 13px; margin: 0 0 6px; }
+.wiki-summary-lead { font-size: 14px; color: var(--fw-text-secondary); }
+
+/* Rich-text editor (Toast UI). The textarea is the fallback editor and the
+   field that is posted; wiki.js hides it once the editor is up. */
+.wiki-rich { min-height: 0; }
+.wiki-rich:empty::before { content: attr(data-loading); font-size: 12px; color: var(--fw-text-secondary); }
+.wiki-rich.is-ready::before, .wiki-rich.is-failed { display: none; }
+.wiki-rich .toastui-editor-defaultUI { border-color: var(--fw-border); border-radius: var(--fw-radius); }
+.wiki-rich .toastui-editor-contents { font-family: inherit; font-size: 14px; }
+.wiki-modal-body { background: var(--fw-content-bg, #F3F6FC); }

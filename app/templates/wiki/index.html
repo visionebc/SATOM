@@ -28,120 +28,107 @@
       {{ _('Articles written by the people who run this console. Each one is published to Global or to chosen ADOMs, and can be limited to profiles and Wiki groups.') }}
     </p>
   </div>
-  <div class="d-flex gap-2">
-    {% if may_moderate %}
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('wiki.topics') }}"><i class="bi bi-diagram-3 me-1"></i>{{ _('Topics') }}</a>
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('wiki.groups') }}"><i class="bi bi-people me-1"></i>{{ _('Groups') }}</a>
-    {% endif %}
-    {% if may_write %}
-    <a class="btn btn-fw-primary btn-sm" href="{{ url_for('wiki.new') }}"><i class="bi bi-plus-lg me-1"></i>{{ _('New article') }}</a>
-    {% endif %}
-  </div>
 </div>
 
-<form class="fw-card mb-3" method="get" action="{{ url_for('wiki.index') }}">
-  <div class="fw-card-body d-flex flex-wrap gap-2 align-items-end">
-    <div class="flex-grow-1" style="min-width:220px;">
-      <label class="form-label small mb-1" for="wiki-q">{{ _('Search') }}</label>
-      <input class="form-control form-control-sm" id="wiki-q" name="q" value="{{ text }}" placeholder="{{ _('Title or text') }}">
-    </div>
-    <div>
-      <label class="form-label small mb-1" for="wiki-adom">{{ _('ADOM') }}</label>
-      <select class="form-select form-select-sm" id="wiki-adom" name="adom">
-        <option value="all" {{ 'selected' if adom == 'all' }}>{{ _('All ADOMs') }}</option>
-        <option value="global" {{ 'selected' if adom == 'global' }}>{{ _('Global only') }}</option>
-        {% for k, n in adom_names.items() %}
-        <option value="{{ k }}" {{ 'selected' if adom == k }}>{{ n }} + {{ _('Global') }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div>
-      <label class="form-label small mb-1" for="wiki-status">{{ _('Status') }}</label>
-      <select class="form-select form-select-sm" id="wiki-status" name="status">
-        <option value="">{{ _('Published and drafts') }}</option>
-        <option value="published" {{ 'selected' if status == 'published' }}>{{ _('Published') }}</option>
-        <option value="draft" {{ 'selected' if status == 'draft' }}>{{ _('Draft') }}</option>
-        <option value="archived" {{ 'selected' if status == 'archived' }}>{{ _('Archived') }}</option>
-      </select>
-    </div>
-    <div class="form-check mb-1">
-      <input class="form-check-input" type="checkbox" name="mine" value="1" id="wiki-mine" {{ 'checked' if mine }}>
-      <label class="form-check-label small" for="wiki-mine">{{ _('Mine') }}</label>
-    </div>
-    {% if topic %}<input type="hidden" name="topic" value="{{ topic.id }}">{% endif %}
-    {% if tag %}<input type="hidden" name="tag" value="{{ tag }}">{% endif %}
-    <button class="btn btn-fw-primary btn-sm px-3">{{ _('Filter') }}</button>
-    {% if text or topic or tag or status or mine %}
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('wiki.index') }}">{{ _('Clear') }}</a>
-    {% endif %}
-  </div>
-  {% if topic or tag %}
-  <div class="fw-card-footer d-flex flex-wrap gap-2 align-items-center" style="font-size:12px;">
-    {% if topic %}<span class="fw-badge fw-badge-primary">{{ _('Topic') }}: {{ topic.label }}</span>{% endif %}
-    {% if tag %}<span class="fw-badge fw-badge-info">#{{ tag }}</span>{% endif %}
-  </div>
-  {% endif %}
-</form>
+<div class="wiki-shell">
+  {% include "wiki/_nav.html" %}
 
-<div class="wiki-layout">
-  <div class="fw-card">
-    {% if not articles %}
-    <div class="fw-card-body">
-      <div class="fw-empty-state">
-        <div class="fw-empty-state-icon"><i class="bi bi-journal"></i></div>
-        <div class="fw-empty-state-title">{{ _('No article matches') }}</div>
-        <div class="fw-empty-state-text">{{ _('Change the filters, or write the first article.') }}</div>
-      </div>
-    </div>
-    {% else %}
-    {% for a in articles %}
-    <div class="wiki-list-item">
-      <h3><a href="{{ url_for('wiki.article', article_id=a.id, slug=a.slug) }}">{{ a.title }}</a></h3>
-      {% set ex = excerpt(a.body) %}{% if ex %}<p class="wiki-excerpt">{{ ex }}</p>{% endif %}
-      <div class="wiki-meta">
-        {% if a.status == 'draft' %}<span class="fw-badge fw-badge-warning">{{ _('Draft') }}</span>
-        {% elif a.status == 'archived' %}<span class="fw-badge fw-badge-secondary">{{ _('Archived') }}</span>{% endif %}
-        {% set ad = a.adoms %}
-        {% if ad %}{% for k in ad %}<span class="fw-badge fw-badge-info">{{ adom_names.get(k, k) }}</span>{% endfor %}
-        {% else %}<span class="fw-badge fw-badge-primary">{{ _('Global') }}</span>{% endif %}
-        {% if a.audience_restricted %}<span class="fw-badge fw-badge-danger" title="{{ _('Limited to profiles or groups') }}"><i class="bi bi-lock-fill"></i> {{ _('Restricted') }}</span>{% endif %}
-        {% if a.topic %}<a class="text-decoration-none" href="{{ url_for('wiki.index', topic=a.topic.id, adom=adom) }}"><i class="bi bi-folder2"></i> {{ a.topic.label }}</a>{% endif %}
-        {% for t in a.tags %}<a class="wiki-tag" href="{{ url_for('wiki.index', tag=t.name, adom=adom) }}">#{{ t.name }}</a>{% endfor %}
-        <span>{{ a.author.username if a.author else _('deleted user') }} · {{ a.updated_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
-      </div>
-    </div>
-    {% endfor %}
-    {% endif %}
-    {% if pagination.pages > 1 %}
-    <div class="fw-card-footer d-flex justify-content-between align-items-center">
-      <span class="text-muted" style="font-size:13px;">{{ _('Page') }} {{ pagination.page }} / {{ pagination.pages }} · {{ pagination.total }}</span>
-      <div class="d-flex gap-1">
-        {% if pagination.has_prev %}<a class="btn btn-sm btn-outline-secondary" href="{{ page_url(pagination.prev_num) }}">‹</a>{% endif %}
-        {% if pagination.has_next %}<a class="btn btn-sm btn-outline-secondary" href="{{ page_url(pagination.next_num) }}">›</a>{% endif %}
-      </div>
+  <div class="wiki-main">
+    {% if topic %}
+    <div class="wiki-topic-head mb-3">
+      <div class="wiki-topic-path">{% for t in topic.path %}{% if not loop.first %} › {% endif %}<a href="{{ url_for('wiki.index', topic=t.id, adom='all') }}">{{ t.name }}</a>{% endfor %}</div>
+      {% if topic.description %}<p class="mb-0">{{ topic.description }}</p>{% endif %}
     </div>
     {% endif %}
-  </div>
 
-  <aside class="wiki-side d-flex flex-column gap-3">
-    <div class="fw-card"><div class="fw-card-body">
-      <h4>{{ _('Topics') }}</h4>
-      {% if not topics %}<div class="text-muted small">{{ _('No topics yet.') }}</div>{% endif %}
-      <a class="wiki-topic-link {{ 'active' if not topic }}" href="{{ url_for('wiki.index', adom=adom) }}">{{ _('All topics') }}</a>
-      {% for row in topics %}
-      <a class="wiki-topic-link {{ 'active' if topic and topic.id == row.topic.id }}" style="padding-left:{{ row.depth * 12 }}px;"
-         href="{{ url_for('wiki.index', topic=row.topic.id, adom=adom) }}">{{ row.topic.name }}</a>
+    <form class="fw-card mb-3" method="get" action="{{ url_for('wiki.index') }}">
+      <div class="fw-card-body d-flex flex-wrap gap-2 align-items-end">
+        <div>
+          <label class="form-label small mb-1" for="wiki-adom">{{ _('ADOM') }}</label>
+          <select class="form-select form-select-sm" id="wiki-adom" name="adom">
+            <option value="all" {{ 'selected' if adom == 'all' }}>{{ _('All ADOMs') }}</option>
+            <option value="global" {{ 'selected' if adom == 'global' }}>{{ _('Global only') }}</option>
+            {% for k, n in adom_names.items() %}
+            <option value="{{ k }}" {{ 'selected' if adom == k }}>{{ n }} + {{ _('Global') }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label small mb-1" for="wiki-status">{{ _('Status') }}</label>
+          <select class="form-select form-select-sm" id="wiki-status" name="status">
+            <option value="">{{ _('Published and drafts') }}</option>
+            <option value="published" {{ 'selected' if status == 'published' }}>{{ _('Published') }}</option>
+            <option value="draft" {{ 'selected' if status == 'draft' }}>{{ _('Draft') }}</option>
+            <option value="archived" {{ 'selected' if status == 'archived' }}>{{ _('Archived') }}</option>
+          </select>
+        </div>
+        <div class="form-check mb-1">
+          <input class="form-check-input" type="checkbox" name="mine" value="1" id="wiki-mine" {{ 'checked' if mine }}>
+          <label class="form-check-label small" for="wiki-mine">{{ _('Mine') }}</label>
+        </div>
+        {% if text %}<input type="hidden" name="q" value="{{ text }}">{% endif %}
+        {% if topic %}<input type="hidden" name="topic" value="{{ topic.id }}">{% endif %}
+        {% if tag %}<input type="hidden" name="tag" value="{{ tag }}">{% endif %}
+        <button class="btn btn-fw-primary btn-sm px-3">{{ _('Filter') }}</button>
+        {% if text or topic or tag or status or mine %}
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('wiki.index') }}">{{ _('Clear') }}</a>
+        {% endif %}
+      </div>
+      {% if text or topic or tag %}
+      <div class="fw-card-footer d-flex flex-wrap gap-2 align-items-center" style="font-size:12px;">
+        <span class="text-muted">{{ ngettext('%(num)d article', '%(num)d articles', pagination.total) }}</span>
+        {% if text %}<span class="fw-badge fw-badge-primary"><i class="bi bi-search"></i> {{ text }}</span>{% endif %}
+        {% if topic %}<span class="fw-badge fw-badge-primary">{{ _('Topic') }}: {{ topic.label }}</span>{% endif %}
+        {% if tag %}<span class="fw-badge fw-badge-info">#{{ tag }}</span>{% endif %}
+      </div>
+      {% endif %}
+    </form>
+
+    <div class="fw-card">
+      {% if not articles %}
+      <div class="fw-card-body">
+        <div class="fw-empty-state">
+          <div class="fw-empty-state-icon"><i class="bi bi-journal"></i></div>
+          <div class="fw-empty-state-title">{{ _('No article matches') }}</div>
+          <div class="fw-empty-state-text">{{ _('Change the filters, or write the first article.') }}</div>
+        </div>
+      </div>
+      {% else %}
+      {% for a in articles %}
+      <div class="wiki-list-item">
+        <h3><a href="{{ url_for('wiki.article', article_id=a.id, slug=a.slug) }}">{{ a.title }}</a></h3>
+        {% if a.summary %}<p class="wiki-summary">{{ a.summary }}</p>
+        {% else %}{% set ex = excerpt(a.body) %}{% if ex %}<p class="wiki-excerpt">{{ ex }}</p>{% endif %}{% endif %}
+        <div class="wiki-meta">
+          {% if a.status == 'draft' %}<span class="fw-badge fw-badge-warning">{{ _('Draft') }}</span>
+          {% elif a.status == 'archived' %}<span class="fw-badge fw-badge-secondary">{{ _('Archived') }}</span>{% endif %}
+          {% set ad = a.adoms %}
+          {% if ad %}{% for k in ad %}<span class="fw-badge fw-badge-info">{{ adom_names.get(k, k) }}</span>{% endfor %}
+          {% else %}<span class="fw-badge fw-badge-primary">{{ _('Global') }}</span>{% endif %}
+          {% if a.audience_restricted %}<span class="fw-badge fw-badge-danger" title="{{ _('Limited to profiles or groups') }}"><i class="bi bi-lock-fill"></i> {{ _('Restricted') }}</span>{% endif %}
+          {% if a.topic %}<a class="text-decoration-none" href="{{ url_for('wiki.index', topic=a.topic.id, adom='all') }}"><i class="bi bi-folder2"></i> {{ a.topic.label }}</a>{% endif %}
+          {% for t in a.tags %}<a class="wiki-tag" href="{{ url_for('wiki.index', tag=t.name, adom='all') }}">#{{ t.name }}</a>{% endfor %}
+          <span>{{ a.author.username if a.author else _('deleted user') }} · {{ a.updated_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
+        </div>
+      </div>
       {% endfor %}
-    </div></div>
-    <div class="fw-card"><div class="fw-card-body">
-      <h4>{{ _('Tags') }}</h4>
-      {% if not tag_counts %}<div class="text-muted small">{{ _('No tags yet.') }}</div>{% endif %}
-      <div class="d-flex flex-wrap gap-1">
-        {% for name, n in tag_counts %}
-        <a class="wiki-tag" href="{{ url_for('wiki.index', tag=name, adom=adom) }}">#{{ name }}<span class="wiki-tag-count">{{ n }}</span></a>
-        {% endfor %}
+      {% endif %}
+      {% if pagination.pages > 1 %}
+      <div class="fw-card-footer d-flex justify-content-between align-items-center">
+        <span class="text-muted" style="font-size:13px;">{{ _('Page') }} {{ pagination.page }} / {{ pagination.pages }} · {{ pagination.total }}</span>
+        <div class="d-flex gap-1">
+          {% if pagination.has_prev %}<a class="btn btn-sm btn-outline-secondary" href="{{ page_url(pagination.prev_num) }}">‹</a>{% endif %}
+          {% if pagination.has_next %}<a class="btn btn-sm btn-outline-secondary" href="{{ page_url(pagination.next_num) }}">›</a>{% endif %}
+        </div>
       </div>
-    </div></div>
-  </aside>
+      {% endif %}
+    </div>
+  </div>
 </div>
+
+{% include "wiki/_new_modal.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/wiki.js') }}"></script>
 {% endblock %}

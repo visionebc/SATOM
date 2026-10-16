@@ -422,6 +422,7 @@ with the upstream link each file was taken from:
 | Bootstrap | 5.3.3 | MIT | https://getbootstrap.com/ | https://registry.npmjs.org/bootstrap/-/bootstrap-5.3.3.tgz | `vendor/bootstrap/` |
 | Bootstrap Icons | 1.11.3 | MIT | https://icons.getbootstrap.com/ | https://registry.npmjs.org/bootstrap-icons/-/bootstrap-icons-1.11.3.tgz | `vendor/bootstrap-icons/` (CSS + `fonts/` + `LICENSE`) |
 | Chart.js | 4.4.4 | MIT | https://www.chartjs.org/ | https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js | `vendor/chart/` |
+| Toast UI Editor | 3.2.2 | MIT (bundles ProseMirror, MIT; DOMPurify, Apache-2.0/MPL-2.0) | https://ui.toast.com/tui-editor | https://uicdn.toast.com/editor/3.2.2/toastui-editor-all.min.js (the npm UMD needs ProseMirror as separate globals); CSS and `i18n/` from https://registry.npmjs.org/@toast-ui/editor/-/editor-3.2.2.tgz | `vendor/toastui-editor/` (Wiki editor only) |
 
 `app/static/vendor/MANIFEST.json` is the authoritative record: version,
 license, source URL and the SHA-256 of every file. Each file was checked

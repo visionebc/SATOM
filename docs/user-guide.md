@@ -7530,6 +7530,14 @@ always the policy's VIP, never a name you type, so the page needs only the
 `view` permission and no free-target permission. A disabled policy, or one
 whose VIP cannot be resolved, is listed with the reason and not graded.
 
+**Choosing the sites.** The table holds only the sites ticked in **Select
+sites**, next to the appliance selector — an appliance can publish hundreds.
+The list has a search box (policy name, site name, Protected Hostnames, VIP);
+searching hides items but never unticks them. **Select all matches** ticks
+what the search shows, **Clear selection** unticks everything, and the ✕ on a
+row removes that site. **Grade selected (N)** grades the ticked sites that can
+be graded. The selection is remembered per appliance in your browser.
+
 **What is fetched**, as the Observatory does it: `https://<site>/` and
 `http://<site>/`, each following its redirects, then `/robots.txt` and a CORS
 preflight (`OPTIONS` with `Origin: https://observatory.satom.invalid`). A

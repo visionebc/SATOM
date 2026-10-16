@@ -8362,6 +8362,13 @@ Protected Hostnames group and can be changed per row; the address dialled is
 always the policy's VIP, never a name you type, so the page needs only the
 <code>view</code> permission and no free-target permission. A disabled policy, or one
 whose VIP cannot be resolved, is listed with the reason and not graded.</p>
+<p><strong>Choosing the sites.</strong> The table holds only the sites ticked in <strong>Select
+sites</strong>, next to the appliance selector — an appliance can publish hundreds.
+The list has a search box (policy name, site name, Protected Hostnames, VIP);
+searching hides items but never unticks them. <strong>Select all matches</strong> ticks
+what the search shows, <strong>Clear selection</strong> unticks everything, and the ✕ on a
+row removes that site. <strong>Grade selected (N)</strong> grades the ticked sites that can
+be graded. The selection is remembered per appliance in your browser.</p>
 <p><strong>What is fetched</strong>, as the Observatory does it: <code>https://&lt;site&gt;/</code> and
 <code>http://&lt;site&gt;/</code>, each following its redirects, then <code>/robots.txt</code> and a CORS
 preflight (<code>OPTIONS</code> with <code>Origin: https://observatory.satom.invalid</code>). A

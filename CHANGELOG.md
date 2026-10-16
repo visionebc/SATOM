@@ -77,8 +77,29 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   checks; `satom execute seed actions --yes` adds them to an existing node.
   Until now the Observatory graded only when someone clicked.
 
+### Changed — Device alerts say which threshold fired, with the reading and where the limit is set (2026-10-16)
+
+- A device alert raised by a deep monitor used to read *1/6 probes alerting:
+  fortiweb17 · CPU* and nothing more. The title now carries the reading and
+  the limit crossed — *Device fortiweb17 is critical — CPU 97.0% (critical
+  95%)* — so the bell, the push and the mail subject say it without opening
+  the page. Requested by the user: notifications must say exactly what CPU
+  and what percentage.
+- The body lists each alerting probe under its signal: what it measures (CPU
+  and memory say *whole appliance*), the last reading, every limit with its
+  origin (*set on this probe*, *inherited from <product>*, *factory
+  default*) and the time of the reading. Six are spelled out, the rest
+  counted. The cooldown key is unchanged, so a reading moving from 96 % to
+  97 % does not re-send the alert.
+
 ### Fixed
 
+- The HTML part of alert mail inserted titles and details unescaped and
+  without line breaks: a multi-line device finding ran together into one
+  paragraph, and text reported by a device went into the mail as HTML. Both
+  are now escaped and keep their line breaks; so does the notification list.
+  The in-app notification now keeps up to 1,500 characters of the detail
+  (was 400, which cut the evidence off).
 - The HTTP Observatory site picker labels added in 3.2.1 (**Select sites**,
   **Select all matches**, **Clear selection**, **Grade selected**, the search
   placeholder) were untranslated in Spanish, German, French and Italian.

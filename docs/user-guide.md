@@ -2316,6 +2316,15 @@ Two rules matter when reading it:
 - **A disabled probe is not a passing probe.** Switching off a monitor that
   always fails removes coverage, and the card says so rather than turning green.
 
+When a deep monitor is what makes a device degraded or critical, the alert
+says what was measured and against which line. The title carries the reading
+and the limit crossed (*Device fortiweb17 is critical — CPU 97.0% (critical
+95%)*), and the body lists each alerting probe: what it measures (for CPU and
+memory, the whole appliance), the last reading, every limit it is graded
+against with where that limit is set (*set on this probe*, *inherited from
+fortiweb*, *factory default*) and when it was read. Six probes are spelled
+out; the rest are counted. The in-app notification keeps the line breaks.
+
 Appliances in **maintenance** are marked as such and are skipped by automatic
 runs and by their alerts. That is the correct way to silence a box you know is
 down — not lowering the alert floor.

@@ -72,7 +72,7 @@
         </div>
         <div class="col-12">
           <label class="fw-form-label">{{ _('Private key (PEM)') }}</label>
-          <textarea class="form-control fw-form-control" name="key_pem" rows="4" style="font-family:monospace;font-size:11.5px;" placeholder="-----BEGIN PRIVATE KEY-----" autocomplete="off"></textarea>
+          <textarea class="form-control fw-form-control" name="key_pem" rows="4" style="font-family:monospace;font-size:11.5px;" placeholder="{{ '-' * 5 }}BEGIN PRIVATE KEY{{ '-' * 5 }}" autocomplete="off"></textarea>
         </div>
         <div class="col-md-7">
           <label class="fw-form-label">{{ _('…or a file (PEM or PKCS#12)') }}</label>

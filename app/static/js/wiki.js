@@ -22,8 +22,30 @@
       });
     }
 
+    // Global and the ADOM boxes exclude each other; unticking the last ADOM
+    // falls back to Global so the list is never left empty.
+    function bindAdoms() {
+      document.querySelectorAll('[data-wiki-adoms]').forEach(function (list) {
+        if (list.dataset.bound) return;
+        list.dataset.bound = '1';
+        const glob = list.querySelector('[data-wiki-global]');
+        const boxes = Array.from(list.querySelectorAll('input[name="adoms"]')).filter(b => b !== glob);
+        glob.addEventListener('change', function () {
+          if (glob.checked) boxes.forEach(b => { b.checked = false; });
+          else if (!boxes.some(b => b.checked)) glob.checked = true;
+        });
+        boxes.forEach(function (b) {
+          b.addEventListener('change', function () {
+            if (b.checked) glob.checked = false;
+            else if (!boxes.some(x => x.checked)) glob.checked = true;
+          });
+        });
+      });
+    }
+
     function init() {
       bindConfirms();
+      bindAdoms();
       const root = document.getElementById('wiki-editor');
       if (!root || root.dataset.bound) return;
       root.dataset.bound = '1';

@@ -110,11 +110,18 @@ def save_article(user, form: dict, article: WikiArticle | None = None, *,
         if topic is None:
             raise WikiError("That topic no longer exists.")
 
+    # The editor sends "global" as its own checkbox. Ticked ADOMs win over it
+    # (the narrower audience) if both arrive. ADOMs the editor could not list
+    # (inactive, or outside the editor's profile) are kept unless Global was
+    # ticked on its own: an unchanged save must never widen the audience.
     may = set(wiki_access.assignable_adoms(user, adom_keys))
-    adoms = [str(k) for k in (form.get("adoms") or []) if str(k)]
+    raw = [str(k) for k in (form.get("adoms") or []) if str(k)]
+    adoms = [k for k in raw if k != "global"]
     bad = [k for k in adoms if k not in may]
     if bad:
         raise WikiError("You cannot publish to the %s ADOM." % ", ".join(sorted(bad)))
+    if article is not None and (adoms or "global" not in raw):
+        adoms += [k for k in article.adoms if k not in may and k not in adoms]
 
     profile_ids = sorted({int(p) for p in (form.get("profiles") or []) if str(p).isdigit()})
     group_ids = sorted({int(g) for g in (form.get("groups") or []) if str(g).isdigit()})

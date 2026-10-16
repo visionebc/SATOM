@@ -53,15 +53,10 @@ def _article_or_404(article_id: int) -> WikiArticle:
     return art
 
 
-def _like(text: str) -> str:
-    """``%text%`` for ILIKE with ``%`` / ``_`` / ``\\`` taken literally."""
-    esc = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return "%" + esc + "%"
-
-
 def _form_dict() -> dict:
     f = request.form
-    return {"title": f.get("title", ""), "body": f.get("body", ""),
+    return {"title": f.get("title", ""), "summary": f.get("summary", ""),
+            "body": f.get("body", ""),
             "status": f.get("status", "draft"), "topic_id": f.get("topic_id") or None,
             "tags": f.get("tags", ""), "note": f.get("note", ""),
             "adoms": f.getlist("adoms"), "profiles": f.getlist("profiles"),
@@ -76,7 +71,8 @@ def _editor_context(article=None, form=None) -> dict:
             "profiles": Profile.query.order_by(Profile.name).all(),
             "groups": WikiGroup.query.order_by(WikiGroup.name).all(),
             "statuses": STATUSES,
-            "default_adom": _current_adom()}
+            "default_adom": _current_adom(),
+            "default_topic": None}
 
 
 # ── reading ──────────────────────────────────────────────────────────────────
@@ -89,10 +85,9 @@ def index():
     q = wiki_access.visible_query(current_user)
     args = request.args
     text = (args.get("q") or "").strip()[:200]
-    if text:
-        pat = _like(text)
-        q = q.filter(or_(WikiArticle.title.ilike(pat, escape="\\"),
-                         WikiArticle.body.ilike(pat, escape="\\")))
+    found = wiki.search_clause(text)
+    if found is not None:
+        q = q.filter(found)
     topic_id = args.get("topic", type=int)
     topic = db.session.get(WikiTopic, topic_id) if topic_id else None
     if topic is not None:
@@ -124,21 +119,43 @@ def index():
     page = max(1, args.get("page", 1, type=int))
     pagination = (q.order_by(WikiArticle.updated_at.desc(), WikiArticle.id.desc())
                   .paginate(page=page, per_page=PER_PAGE, error_out=False))
-    tag_counts = _tag_counts()
     return render_template(
         "wiki/index.html", pagination=pagination, articles=pagination.items,
-        topics=wiki.topic_tree(), topic=topic, tag=tag, text=text, adom=adom,
+        topic=topic, tag=tag, text=text, adom=adom,
         status=status, mine=bool(args.get("mine")), archived=bool(args.get("archived")),
-        adom_names=_adom_names(), current_adom=_current_adom(), tag_counts=tag_counts,
-        may_write=wiki_access.can_write(current_user),
-        may_moderate=wiki_access.is_moderator(current_user),
-        excerpt=wmd.plain_excerpt, page_url=_page_url)
+        adom_names=_adom_names(), current_adom=_current_adom(),
+        excerpt=wmd.plain_excerpt, page_url=_page_url,
+        **_nav_context(topic_id=topic.id if topic else None, tag=tag))
 
 
 def _page_url(number: int) -> str:
     args = request.args.to_dict()
     args["page"] = number
     return url_for("wiki.index", **args)
+
+
+def _nav_context(*, topic_id=None, tag="") -> dict:
+    """What the Wiki's left menu needs: the topic tree with the number of
+    readable, non-archived articles under each node, the tags in use, and
+    the editor choices for the "New article" dialog. Counted after
+    visibility, so a restricted article never shows up as a number."""
+    visible = (wiki_access.visible_query(current_user)
+               .filter(WikiArticle.status != "archived"))
+    counts = dict(visible.with_entities(WikiArticle.topic_id, db.func.count(WikiArticle.id))
+                  .order_by(None).group_by(WikiArticle.topic_id).all())
+    may_write = wiki_access.can_write(current_user)
+    active = db.session.get(WikiTopic, topic_id) if topic_id else None
+    ctx = {"nav_topics": wiki.topic_nav(counts), "nav_topic_id": topic_id,
+           # The branch holding the current topic opens; the rest stay folded.
+           "nav_open_ids": [t.id for t in active.path] if active else [],
+           "nav_total": sum(counts.values()), "nav_untopiced": int(counts.get(None, 0)),
+           "nav_tag": tag, "tag_counts": _tag_counts(),
+           "may_write": may_write,
+           "may_moderate": wiki_access.is_moderator(current_user)}
+    if may_write:
+        ctx["new_editor"] = _editor_context()
+        ctx["new_editor"]["default_topic"] = topic_id
+    return ctx
 
 
 def _tag_counts(limit: int = 40) -> list[tuple[str, int]]:
@@ -163,7 +180,7 @@ def article(article_id, slug=None):
         "wiki/article.html", article=art, html=wmd.render(art.body),
         adom_names=_adom_names(),
         may_edit=wiki_access.can_edit(current_user, art),
-        may_moderate=wiki_access.is_moderator(current_user))
+        **_nav_context(topic_id=art.topic_id))
 
 
 @bp.route("/a/<int:article_id>/history")
@@ -217,17 +234,23 @@ def new():
         abort(403)
     if request.method == "POST":
         form = _form_dict()
+        wants_json = request.accept_mimetypes.best == "application/json"
         try:
             art = wiki.save_article(current_user, form, adom_keys=_adom_keys())
         except wiki.WikiError as exc:
             db.session.rollback()
+            if wants_json:
+                return jsonify(ok=False, error=str(exc)), 400
             flash(str(exc), "danger")
             return render_template("wiki/edit.html", **_editor_context(form=form)), 400
         log_action("wiki.article.create", target=art.slug,
                    extra={"article_id": art.id, "status": art.status,
                           "adoms": art.adoms, "restricted": art.audience_restricted})
+        url = url_for("wiki.article", article_id=art.id, slug=art.slug)
+        if wants_json:
+            return jsonify(ok=True, id=art.id, url=url)
         flash("Article saved.", "success")
-        return redirect(url_for("wiki.article", article_id=art.id, slug=art.slug))
+        return redirect(url)
     return render_template("wiki/edit.html", **_editor_context())
 
 

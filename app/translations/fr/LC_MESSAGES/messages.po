@@ -25220,3 +25220,49 @@ msgstr "utilisateur supprimé"
 #: wiki (2026-10-16)
 msgid "— new topic —"
 msgstr "— nouveau sujet —"
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "All articles"
+msgstr "Tous les articles"
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "Create one"
+msgstr "En créer un"
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "Exactly as readers will see it"
+msgstr "Exactement comme les lecteurs le verront"
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "Headings, lists, tables, code blocks and links; switch to Markdown at the bottom of the editor. HTML is shown as text. Do not paste passwords, keys or tokens: everyone in the audience can read the article and its history."
+msgstr "Titres, listes, tableaux, blocs de code et liens ; passez en Markdown en bas de l'éditeur. Le HTML est affiché comme du texte. Ne collez ni mots de passe, ni clés, ni jetons : toute l'audience peut lire l'article et son historique."
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "Loading the editor…"
+msgstr "Chargement de l'éditeur…"
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "Manage topics"
+msgstr "Gérer les thèmes"
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "One or two sentences shown under the title in the list"
+msgstr "Une ou deux phrases affichées sous le titre dans la liste"
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "Pasted or dropped files are not stored in the Wiki. Link the image by its https:// address instead."
+msgstr "Les fichiers collés ou déposés ne sont pas enregistrés dans le Wiki. Liez plutôt l'image par son adresse https://."
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "Search the Wiki"
+msgstr "Rechercher dans le Wiki"
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "Title, description, text, topics, tags and authors."
+msgstr "Titre, description, texte, thèmes, étiquettes et auteurs."
+
+#: wiki menu, search, editor (2026-10-16)
+msgid "%(num)d article"
+msgid_plural "%(num)d articles"
+msgstr[0] "%(num)d article"
+msgstr[1] "%(num)d articles"

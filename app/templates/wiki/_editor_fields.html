@@ -1,0 +1,112 @@
+{#  The article form's fields, shared by the editor page (wiki/edit.html) and
+    the "New article" dialog (wiki/_new_modal.html). Expects the
+    views/wiki._editor_context() names: article, form, topics, adoms,
+    profiles, groups; ``default_topic`` preselects a topic for a new article.
+    After a refused save ``form`` holds what was typed, so the author never
+    loses the text to a validation message.
+
+    The body is written in a rich-text editor (Toast UI, vendored) that
+    stores Markdown in the hidden textarea; static/js/wiki.js loads it.    #}
+{% set f = form or {} %}
+{% set v_title = f.title if form else (article.title if article else '') %}
+{% set v_summary = f.summary if form else (article.summary if article else '') %}
+{% set v_body = f.body if form else (article.body if article else '') %}
+{% set v_status = f.status if form else (article.status if article else 'draft') %}
+{% set v_topic = (f.topic_id | int if f.topic_id else none) if form else (article.topic_id if article else default_topic) %}
+{% set v_tags = f.tags if form else (article.tags | map(attribute='name') | join(', ') if article else '') %}
+{% set v_adoms = f.adoms if form else (article.adoms if article else []) %}
+{% set v_global = ('global' in f.adoms and not (f.adoms | reject('equalto', 'global') | list)) if form else (not article or not article.adoms) %}
+{% set v_profiles = (f.profiles | map('int') | list) if form else (article.profiles | map(attribute='id') | list if article else []) %}
+{% set v_groups = (f.groups | map('int') | list) if form else (article.groups | map(attribute='id') | list if article else []) %}
+{% set ui_locale = {'es': 'es', 'de': 'de', 'fr': 'fr', 'it': 'it'}.get(ui_lang or 'en', '') %}
+
+<div class="wiki-layout">
+  <div class="fw-card"><div class="fw-card-body">
+    <label class="form-label small mb-1" for="wiki-title">{{ _('Title') }}</label>
+    <input class="form-control mb-3" id="wiki-title" name="title" maxlength="200" required value="{{ v_title }}">
+
+    <label class="form-label small mb-1" for="wiki-summary">{{ _('Description') }}</label>
+    <input class="form-control form-control-sm mb-3" id="wiki-summary" name="summary" maxlength="300" value="{{ v_summary }}"
+           placeholder="{{ _('One or two sentences shown under the title in the list') }}">
+
+    <div class="d-flex align-items-center mb-1">
+      <span class="form-label small mb-0 me-auto">{{ _('Text') }}</span>
+      <div class="btn-group btn-group-sm" role="group">
+        <button type="button" class="btn btn-outline-secondary active" data-wiki-tab="write">{{ _('Write') }}</button>
+        <button type="button" class="btn btn-outline-secondary" data-wiki-tab="preview" title="{{ _('Exactly as readers will see it') }}">{{ _('Preview') }}</button>
+      </div>
+    </div>
+    <div class="wiki-rich" data-wiki-rich
+         data-lib-js="{{ asset('vendor/toastui-editor/toastui-editor-all.min.js') }}"
+         data-lib-css="{{ asset('vendor/toastui-editor/toastui-editor.css') }}"
+         {% if ui_locale %}data-lib-i18n="{{ asset('vendor/toastui-editor/i18n/' ~ ui_locale ~ '-' ~ ui_locale ~ '.js') }}" data-lang="{{ ui_locale }}"{% endif %}
+         data-no-upload="{{ _('Pasted or dropped files are not stored in the Wiki. Link the image by its https:// address instead.') }}"
+         data-loading="{{ _('Loading the editor…') }}"></div>
+    {# Without JavaScript (or if the editor fails to load) this is the editor. #}
+    <textarea class="form-control wiki-source" name="body" data-wiki-body>{{ v_body }}</textarea>
+    <div class="wiki-preview wiki-body d-none" data-wiki-preview data-loading="{{ _('Rendering…') }}"></div>
+    <div class="form-text" style="font-size:11px;">{{ _('Headings, lists, tables, code blocks and links; switch to Markdown at the bottom of the editor. HTML is shown as text. Do not paste passwords, keys or tokens: everyone in the audience can read the article and its history.') }}</div>
+
+    {% if article %}
+    <label class="form-label small mb-1 mt-3" for="wiki-note">{{ _('What changed (optional)') }}</label>
+    <input class="form-control form-control-sm" id="wiki-note" name="note" maxlength="200" value="{{ f.note or '' }}">
+    {% endif %}
+  </div></div>
+
+  <aside class="d-flex flex-column gap-3">
+    <div class="fw-card"><div class="fw-card-body">
+      <label class="form-label small mb-1" for="wiki-status">{{ _('Status') }}</label>
+      <select class="form-select form-select-sm mb-3" id="wiki-status" name="status">
+        <option value="draft" {{ 'selected' if v_status == 'draft' }}>{{ _('Draft — only you') }}</option>
+        <option value="published" {{ 'selected' if v_status == 'published' }}>{{ _('Published') }}</option>
+        <option value="archived" {{ 'selected' if v_status == 'archived' }}>{{ _('Archived') }}</option>
+      </select>
+
+      <label class="form-label small mb-1" for="wiki-topic">{{ _('Topic') }}</label>
+      <select class="form-select form-select-sm mb-3" id="wiki-topic" name="topic_id">
+        <option value="">{{ _('No topic') }}</option>
+        {% for row in topics %}
+        <option value="{{ row.topic.id }}" {{ 'selected' if v_topic == row.topic.id }}>{{ '— ' * row.depth }}{{ row.topic.name }}</option>
+        {% endfor %}
+      </select>
+
+      <label class="form-label small mb-1" for="wiki-tags">{{ _('Tags') }}</label>
+      <input class="form-control form-control-sm" id="wiki-tags" name="tags" list="wiki-tag-options" autocomplete="off"
+             value="{{ v_tags }}" placeholder="{{ _('certificates, tls') }}" data-wiki-tags>
+      <datalist id="wiki-tag-options"></datalist>
+      <div class="form-text" style="font-size:11px;">{{ _('Comma separated. Stored in lower case.') }}</div>
+    </div></div>
+
+    <div class="fw-card"><div class="fw-card-body">
+      <div class="fw-form-section-title mb-2">{{ _('Who can read it') }}</div>
+      <span class="form-label small mb-1 d-block">{{ _('ADOMs') }}</span>
+      <div class="wiki-choice-list mb-1" data-wiki-adoms>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="adoms" value="global" id="wiki-adom-global" data-wiki-global {{ 'checked' if v_global }}>
+          <label class="form-check-label small fw-semibold" for="wiki-adom-global">{{ _('Global') }}</label></div>
+        {% for k, n in adoms %}
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="adoms" value="{{ k }}" id="wiki-adom-{{ k }}" {{ 'checked' if k in v_adoms and not v_global }}>
+          <label class="form-check-label small" for="wiki-adom-{{ k }}">{{ n }}</label></div>
+        {% endfor %}
+      </div>
+      {% set kept = (article.adoms | reject('in', adoms | map('first') | list) | list) if article else [] %}
+      {% if kept and not v_global %}<div class="form-text mb-1" style="font-size:11px;">{{ _('Also published to ADOMs not listed here (inactive or outside your profile), kept on save: %(names)s', names=kept | join(', ')) }}</div>{% endif %}
+      <div class="form-text mb-3" style="font-size:11px;">{{ _('Global = every ADOM. Tick ADOMs instead to publish only there.') }}</div>
+
+      <span class="form-label small mb-1 d-block">{{ _('Profiles') }}</span>
+      <div class="wiki-choice-list mb-2">
+        {% for p in profiles %}
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="profiles" value="{{ p.id }}" id="wiki-prof-{{ p.id }}" {{ 'checked' if p.id in v_profiles }}>
+          <label class="form-check-label small" for="wiki-prof-{{ p.id }}">{{ p.name }}</label></div>
+        {% endfor %}
+      </div>
+      <span class="form-label small mb-1 d-block">{{ _('Groups') }}</span>
+      <div class="wiki-choice-list mb-1">
+        {% for gr in groups %}
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="groups" value="{{ gr.id }}" id="wiki-grp-{{ gr.id }}" {{ 'checked' if gr.id in v_groups }}>
+          <label class="form-check-label small" for="wiki-grp-{{ gr.id }}">{{ gr.name }}</label></div>
+        {% else %}<div class="text-muted small">{{ _('No groups yet.') }}</div>{% endfor %}
+      </div>
+      <div class="form-text" style="font-size:11px;">{{ _('None ticked = everyone who can see those ADOMs. Otherwise a reader needs one of the ticked profiles OR membership of one of the ticked groups.') }}</div>
+    </div></div>
+  </aside>
+</div>

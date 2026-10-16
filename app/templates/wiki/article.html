@@ -19,9 +19,13 @@
 {% endblock %}
 
 {% block content %}
+<div class="wiki-shell">
+{% include "wiki/_nav.html" %}
+<div class="wiki-main">
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title">{{ article.title }}</h1>
+    {% if article.summary %}<p class="wiki-summary wiki-summary-lead mb-1">{{ article.summary }}</p>{% endif %}
     <div class="wiki-meta mt-1">
       {% if article.status == 'draft' %}<span class="fw-badge fw-badge-warning">{{ _('Draft') }}</span>
       {% elif article.status == 'archived' %}<span class="fw-badge fw-badge-secondary">{{ _('Archived') }}</span>{% endif %}
@@ -48,6 +52,10 @@
 <div class="fw-card"><div class="fw-card-body wiki-body">
   {% if article.body.strip() %}{{ html }}{% else %}<p class="text-muted">{{ _('This article has no text yet.') }}</p>{% endif %}
 </div></div>
+</div>
+</div>
+
+{% include "wiki/_new_modal.html" %}
 {% endblock %}
 
 {% block scripts %}

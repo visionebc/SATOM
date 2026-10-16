@@ -18,6 +18,7 @@ from . import wiki_access
 
 MAX_TAGS = 12
 MAX_BODY = 200_000
+MAX_SUMMARY = 300
 _TAG_OK = re.compile(r"[^\w.+#-]+", re.U)
 
 
@@ -100,6 +101,9 @@ def save_article(user, form: dict, article: WikiArticle | None = None, *,
         raise WikiError("The title is longer than 200 characters.")
     if len(body) > MAX_BODY:
         raise WikiError("The article is longer than %d characters." % MAX_BODY)
+    summary = " ".join(str(form.get("summary") or "").split())
+    if len(summary) > MAX_SUMMARY:
+        raise WikiError("The description is longer than %d characters." % MAX_SUMMARY)
     status = str(form.get("status") or "draft")
     if status not in STATUSES:
         raise WikiError("Unknown status.")
@@ -147,6 +151,7 @@ def save_article(user, form: dict, article: WikiArticle | None = None, *,
         changed = article.title != title or article.body != body
 
     article.title = title
+    article.summary = summary
     article.body = body
     article.slug = slug
     article.topic = topic
@@ -213,6 +218,67 @@ def descendant_ids(topic_id: int) -> list[int]:
                     if t.id not in ids]
         ids.extend(frontier)
     return ids
+
+
+def topic_nav(counts: dict) -> list[dict]:
+    """The topic tree as nested ``{"topic", "count", "children"}`` for the
+    Wiki's topic menu. ``counts`` = readable articles per ``topic_id``
+    (the caller counts them after visibility); a node's count includes its
+    sub-topics, like filtering by it does."""
+    rows = WikiTopic.query.order_by(WikiTopic.name).all()
+    kids: dict[int | None, list[WikiTopic]] = {}
+    for t in rows:
+        kids.setdefault(t.parent_id, []).append(t)
+
+    def build(parent, depth, seen):
+        out = []
+        for t in kids.get(parent, []):
+            if t.id in seen or depth > 16:
+                continue
+            children = build(t.id, depth + 1, seen | {t.id})
+            out.append({"topic": t, "children": children,
+                        "count": int(counts.get(t.id, 0))
+                        + sum(c["count"] for c in children)})
+        return out
+    return build(None, 0, frozenset())
+
+
+def _like(text: str) -> str:
+    """``%text%`` for ILIKE with ``%`` / ``_`` / ``\\`` taken literally."""
+    esc = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return "%" + esc + "%"
+
+
+def search_clause(text: str):
+    """SQL condition for the Wiki search box, or ``None`` for no words.
+
+    Every word must appear SOMEWHERE in the article: title, description,
+    text, a tag, the author's user name, or the name or description of its
+    topic or of any topic above it (a word naming "FortiWeb" finds the
+    articles under FortiWeb › Certificates). The caller applies it on top
+    of :func:`wiki_access.visible_query`, never instead of it.
+    """
+    words = [w for w in str(text or "").split() if w][:8]
+    if not words:
+        return None
+    conds = []
+    for w in words:
+        pat = _like(w[:100])
+        topic_ids: set[int] = set()
+        for t in WikiTopic.query.filter(db.or_(
+                WikiTopic.name.ilike(pat, escape="\\"),
+                WikiTopic.description.ilike(pat, escape="\\"))).all():
+            topic_ids.update(descendant_ids(t.id))
+        authors = db.select(User.id).where(User.username.ilike(pat, escape="\\"))
+        one = [WikiArticle.title.ilike(pat, escape="\\"),
+               WikiArticle.summary.ilike(pat, escape="\\"),
+               WikiArticle.body.ilike(pat, escape="\\"),
+               WikiArticle.tags.any(WikiTag.name.ilike(pat, escape="\\")),
+               WikiArticle.author_id.in_(authors)]
+        if topic_ids:
+            one.append(WikiArticle.topic_id.in_(sorted(topic_ids)))
+        conds.append(db.or_(*one))
+    return db.and_(*conds)
 
 
 def save_topic(form: dict, topic: WikiTopic | None = None) -> WikiTopic:

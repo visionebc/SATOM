@@ -124,6 +124,9 @@ class WikiArticle(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     slug = db.Column(db.String(120), unique=True, nullable=False)
     title = db.Column(db.String(200), nullable=False)
+    #: One or two plain-text sentences shown under the title in lists and
+    #: searched with everything else (``summary`` in the schema).
+    summary = db.Column(db.String(300), nullable=False, default="", server_default="")
     body = db.Column(db.Text, nullable=False, default="")
     status = db.Column(db.String(16), nullable=False, default="draft", index=True)
     topic_id = db.Column(db.Integer, db.ForeignKey("wiki_topics.id", ondelete="SET NULL"),
@@ -139,7 +142,7 @@ class WikiArticle(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     published_at = db.Column(db.DateTime, nullable=True)
 
-    topic =db.relationship("WikiTopic")
+    topic = db.relationship("WikiTopic")
     author = db.relationship("User")
     tags = db.relationship(WikiTag, secondary=wiki_article_tags, lazy="select",
                            order_by=WikiTag.name)

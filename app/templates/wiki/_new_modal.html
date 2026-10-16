@@ -1,0 +1,29 @@
+{#  "New article" dialog, opened from the Wiki menu (wiki/_nav.html). It
+    posts to /wiki/new asking for JSON: a refused save shows its message
+    here and keeps everything typed; a saved one opens the article. The
+    trigger is a link to /wiki/new, so without JavaScript it is the page.  #}
+{% if may_write and new_editor %}
+<div class="modal fade fw-modal" id="wiki-new-modal" tabindex="-1" aria-labelledby="wiki-new-title" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable modal-fullscreen-lg-down">
+    <form class="modal-content wiki-editor" method="post" action="{{ url_for('wiki.new') }}" data-wiki-form="modal"
+          data-preview-url="{{ url_for('wiki.api_preview') }}" data-tags-url="{{ url_for('wiki.api_tags') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="modal-header">
+        <h5 class="modal-title" id="wiki-new-title"><i class="bi bi-plus-lg me-2 text-accent"></i>{{ _('New article') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body wiki-modal-body">
+        <div class="alert alert-danger py-2 small d-none" role="alert" data-wiki-error></div>
+        {% with article=none, form=none, topics=new_editor.topics, adoms=new_editor.adoms,
+                profiles=new_editor.profiles, groups=new_editor.groups, default_topic=new_editor.default_topic %}
+        {% include "wiki/_editor_fields.html" %}
+        {% endwith %}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+        <button class="btn btn-fw-primary btn-sm px-4" data-wiki-save>{{ _('Save') }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}

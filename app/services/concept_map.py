@@ -147,6 +147,12 @@ PAGES: tuple[dict, ...] = (
        "days-since-last-push grade, the configuration history split local vs "
        "off-box, firmware, and the identity — serial and every earlier name — "
        "of each device, including the ones that were de-registered."),
+    _p("txn_trace.index", "Transaction Tracer", "monitoring",
+       "trace request waf or app cookie set-cookie session har viewer "
+       "open har file curl headers diff backend bypass vip timing tls "
+       "reveal cookie value samesite httponly secure",
+       "One request through the appliance and one straight to the backend, "
+       "diffed — headers, cookies and a HAR you can read in the page."),
     _p("scout.index", "Path Diagnostics", "monitoring",
        "formerly scout troubleshoot fault isolation which layer is broken localise "
        "diagnose service down slow backend firewall drop reset routing "

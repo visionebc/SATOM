@@ -9340,6 +9340,19 @@ The three shapes, and the guard for each:
   refused, because taking the first acceptable answer is exactly the bug that
   attempt targets.
 
+* **Revealed credential values live in ONE place** (2026-10-16). With
+  `monitoring.reveal_secrets` the tracer returns cookie/`Authorization`/API-key
+  values, but `txn_trace.send` keeps them only under the leg's `secrets` key;
+  `headers`, `set_cookie` and every other field stay redacted either way, so
+  the audit row, the curl line and a HAR exported without values cannot carry
+  one even by accident. `to_har` never reads `secrets` unless asked by name —
+  the legs come BACK from the browser, so a forwarded block must not reach a
+  redacted export. Guards: `test_reveal_keeps_values_only_under_secrets`,
+  `test_har_without_secrets_never_reads_the_secrets_block`,
+  `test_a_revealed_trace_shows_values_but_the_audit_only_says_so`. Trace and
+  HAR answers are `Cache-Control: no-store`. A HAR file the operator opens in
+  the viewer is parsed in the browser (`FileReader`) and never posted.
+
 **42 mutations, 42 bite** (`/var/tmp/mut_tools.py`, measured by rc; only
 `rc == 1` is a failure, every mutation restored in `finally`, baseline re-run
 after restore).

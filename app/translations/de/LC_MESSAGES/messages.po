@@ -24807,3 +24807,78 @@ msgstr "Von der Anwendung abrufen, mit diesem Namen vorausgefüllt und den Serve
 
 msgid "Fetch…"
 msgstr "Abrufen…"
+
+msgid "Transaction Tracer"
+msgstr "Transaktions-Tracer"
+
+msgid "One request through the appliance (leg A) and the same request straight to the backend (leg C), diffed: is it the WAF or the application? Leg B is read from the appliance configuration and is never measured."
+msgstr "Eine Anfrage über die Appliance (Abschnitt A) und dieselbe Anfrage direkt an das Backend (Abschnitt C), verglichen: Liegt es an der WAF oder an der Anwendung? Abschnitt B wird aus der Konfiguration der Appliance gelesen und nie gemessen."
+
+msgid "Leg A — through the appliance"
+msgstr "Abschnitt A — über die Appliance"
+
+msgid "Leg C — backend (bypassing the appliance)"
+msgstr "Abschnitt C — Backend (an der Appliance vorbei)"
+
+msgid "No scheme: HTTPS on port 443 or 8443, plain HTTP on any other port."
+msgstr "Ohne Schema: HTTPS auf Port 443 oder 8443, einfaches HTTP auf jedem anderen Port."
+
+msgid "Extra request headers (one per line)"
+msgstr "Zusätzliche Anfrage-Header (einer pro Zeile)"
+
+msgid "Request body (mutating methods only)"
+msgstr "Anfragetext (nur für ändernde Methoden)"
+
+msgid "I understand this sends a real write to that application from this server."
+msgstr "Mir ist bewusst, dass dies einen echten Schreibvorgang von diesem Server an diese Anwendung sendet."
+
+msgid "Reveal values"
+msgstr "Werte anzeigen"
+
+msgid "show cookie, Authorization and API-key values in this page. They are never written to the audit log (it only records that values were revealed) and are gone when you leave the page."
+msgstr "zeigt die Werte von Cookies, Authorization und API-Schlüsseln auf dieser Seite. Sie werden nie ins Audit-Log geschrieben (es vermerkt nur, dass Werte angezeigt wurden) und sind beim Verlassen der Seite verschwunden."
+
+msgid "Cookie and credential values are redacted. Seeing them needs the permission"
+msgstr "Cookie- und Anmeldedatenwerte sind geschwärzt. Um sie zu sehen, ist die Berechtigung nötig"
+
+msgid "Copy curl"
+msgstr "curl kopieren"
+
+msgid "Download HAR"
+msgstr "HAR herunterladen"
+
+msgid "View HAR"
+msgstr "HAR anzeigen"
+
+msgid "Include credential values and the response body in the HAR (audited)"
+msgstr "Anmeldedatenwerte und Antworttext in das HAR aufnehmen (wird protokolliert)"
+
+msgid "Leg B and the attack log"
+msgstr "Abschnitt B und Angriffsprotokoll"
+
+msgid "Appliance (FortiWeb)"
+msgstr "Appliance (FortiWeb)"
+
+msgid "Derive leg B"
+msgstr "Abschnitt B ableiten"
+
+msgid "Correlate attack log"
+msgstr "Angriffsprotokoll korrelieren"
+
+msgid "Results appear here: the verdict, each leg, the A vs C diff and every cookie the legs set."
+msgstr "Hier erscheinen die Ergebnisse: das Urteil, jeder Abschnitt, der Vergleich A gegen C und jedes Cookie, das die Abschnitte setzen."
+
+msgid "HAR viewer"
+msgstr "HAR-Viewer"
+
+msgid "Filter URL, status, method"
+msgstr "URL, Status, Methode filtern"
+
+msgid "Open a HAR file"
+msgstr "HAR-Datei öffnen"
+
+msgid "A HAR file you open is read in your browser and never uploaded to SATOM. Any HAR works, including one saved from browser devtools."
+msgstr "Eine geöffnete HAR-Datei wird in Ihrem Browser gelesen und nie zu SATOM hochgeladen. Jede HAR-Datei funktioniert, auch eine aus den Entwicklertools des Browsers."
+
+msgid "Trace and press View HAR, or open a HAR file."
+msgstr "Führen Sie einen Trace aus und klicken Sie auf HAR anzeigen, oder öffnen Sie eine HAR-Datei."

@@ -2053,13 +2053,14 @@ against what the devices say.
   (AdGuard/OPNsense/etc., admin-configurable list) and simultaneously match it
   against the fleet's load-balancing config: which policy/virtual server
   publishes it, with a mini policy→pool→backend graph and config deep links.
-- **Where these live:** Backend Reachability, Config Compare, Path Diagnostics
-  and Scout sit together under **Operations › Troubleshooting** in every ADOM
-  (since 2026-10-14; before that they were spread over Operations and Fleet).
-  The FortiGate, FortiAnalyzer and FortiAuthenticator ADOMs list only Scout
-  from this set, because the other three work on FortiWeb and FortiADC
-  objects. **Diagnose Log Collection** is also in Troubleshooting, in all five
-  device ADOMs (§27.1).
+- **Where these live:** Backend Reachability, Config Compare, Path Diagnostics,
+  the **Transaction Tracer** (§37.3) and Scout sit together under
+  **Operations › Troubleshooting** in every ADOM (since 2026-10-14; the tracer
+  since 2026-10-16 — before that it was a window in the header Tools menu).
+  The FortiGate, FortiAnalyzer and FortiAuthenticator ADOMs list only the
+  Transaction Tracer and Scout from this set, because the other three work on
+  FortiWeb and FortiADC objects. **Diagnose Log Collection** is also in
+  Troubleshooting, in all five device ADOMs (§27.1).
 - **Backend Reachability** — paste or upload a list of
   `source;policy;destination` lines and ask one question per line: *do the real
   servers behind this policy answer, on the source box and then on the
@@ -7326,7 +7327,8 @@ The wrench icon in the header opens SATOM's helper tools. Four of them are pure
 calculators (regex tester, regex cheat sheet, pattern library, network
 calculator). The three below do more than arithmetic, and two of them make
 **this server** open a connection on your behalf — so each one states what it
-measured and what it only derived.
+measured and what it only derived. The transaction tracer (§37.3) left the
+Tools menu on 2026-10-16: it is a page under **Operations › Troubleshooting**.
 
 ### 37.1 Certificate inspector
 
@@ -7408,6 +7410,10 @@ its own** peels the encoding layers off a value you paste without a log entry.
 
 ### 37.3 Transaction tracer
 
+**Operations › Troubleshooting › Transaction Tracer** (`/txn-trace/`), in every
+ADOM. It is a page, not a window: the trace, its cookies and its HAR stay on
+screen, and `?vip=`, `?backend=` and `?path=` in the address prefill the form.
+
 Three legs, answering *is it the WAF or is it the app?*
 
 * **Leg A** — SATOM to the VIP, through the appliance. Measured. Type the VIP;
@@ -7453,6 +7459,42 @@ a different request from the one you asked about, and the redirect is often the
 finding. `Authorization`, `Cookie` and friends are recorded as present and never
 echoed back. Set-Cookie is reduced to its flags: the flags are the finding, the
 value is a session credential.
+
+**Cookies.** Every cookie each leg sets is listed with its flags (Secure,
+HttpOnly, SameSite, Path, Domain, Expires / Max-Age), and the cookies the
+request sent are named. Under the table, *what a browser does with them*:
+`SameSite=None` without `Secure` and a broken `__Host-` / `__Secure-` prefix are
+marked as rejections (the browser drops the cookie), a missing `Secure` on an
+HTTPS response and a missing `HttpOnly` as warnings (a CSRF-token cookie is
+meant to be readable by the page), no `SameSite` as information (browsers apply
+Lax). With both legs traced, **Cookies A vs C** says which cookies the appliance
+**issued** (set on A only — its own session or persistence cookie), which it
+**removed** (set by the backend, missing on A) and which it **rewrote** (same
+name and path, different flags). A rewritten cookie alone makes the verdict
+*transforming*, even when the redacted header lengths happen to match.
+
+**Reveal values.** A holder of `monitoring.reveal_secrets` (Administrator-only,
+not in the Operator profile; `user_manage` passes too) sees a **Reveal values**
+box. Ticked, the trace shows the real `Cookie`, `Set-Cookie`, `Authorization`
+and API-key values, each marked *revealed*. They come back only in the answer to
+the operator who asked, in a separate block the rest of SATOM never reads, with
+`Cache-Control: no-store`; the audit log records **that** values were revealed
+(`revealed: true` on `txn_trace.run`), never what they were. Asking without the
+permission is refused and audited. Without it the page says which permission
+would show them.
+
+**HAR viewer.** **View HAR** renders the trace's HAR in the page: one row per
+leg with method, status, URL, type, size, time and a waterfall bar; a click
+opens its request and response headers, query string, cookies (as structured
+HAR cookies), timings and content. **Open a HAR file** reads any HAR — one from
+browser devtools included — **in your browser**; it is never uploaded to SATOM.
+Files over 50 MB are refused rather than freezing the tab, and content is shown
+as text, never rendered. The HAR SATOM builds carries the real start time of
+each leg, its server address and its query string. Credential values and the
+response body stay out of it unless **Include credential values and the response
+body** is ticked — that needs `monitoring.reveal_secrets` and is audited as
+`txn_trace.har_values`; without the permission the request is refused rather
+than answered with a quietly redacted file.
 
 **Destinations.** Inventory appliances are always available. A free `host:port`
 — and a backend for leg C is always one — requires `monitoring.probe_free`; a
@@ -7592,7 +7634,7 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (122 today) or **excluded with a written
+   the console is either **on the map** (123 today) or **excluded with a written
    reason** (154 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.

@@ -10,6 +10,10 @@ point, not decoration:
   permission AND an explicit per-call ``confirm_mutating`` flag.
 * Every trace — completed or refused — is audited with the destinations, the
   method and the outcome.
+* Credential VALUES (cookies, ``Authorization``, API keys) are shown only to a
+  holder of :data:`REVEAL_PERMISSION`, only in the response to the operator
+  who asked, and never in the audit log: the audit records THAT values were
+  revealed, not what they were. Every trace response is ``no-store``.
 
 Leg B is derived from the device's configuration and is labelled as derived at
 every layer: service, endpoint and panel. It is the one thing in this feature
@@ -19,7 +23,7 @@ from __future__ import annotations
 
 import time
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, render_template, request
 from flask_login import current_user, login_required
 from ..auth.decorators import require_permission
 
@@ -30,6 +34,9 @@ from ..services.audit import log_action
 bp = Blueprint("txn_trace", __name__, url_prefix="/txn-trace")
 
 MAX_HEADERS = 24
+
+#: Granular key that lets an operator see credential values in a trace.
+REVEAL_PERMISSION = "monitoring.reveal_secrets"
 
 
 def _may_free() -> bool:
@@ -42,6 +49,23 @@ def _may_free() -> bool:
     except Exception:  # noqa: BLE001
         return False
     return net_guard.FREE_PERMISSION in perms or "user_manage" in perms
+
+
+def _may_reveal() -> bool:
+    """:data:`REVEAL_PERMISSION`, or ``user_manage`` for the same reason
+    :func:`_may_free` accepts it: it can grant itself the key anyway."""
+    try:
+        perms = set(current_user.effective_permissions or ())
+    except Exception:  # noqa: BLE001
+        return False
+    return REVEAL_PERMISSION in perms or "user_manage" in perms
+
+
+def _no_store(resp):
+    """A trace answer can carry someone's session; no cache may keep it."""
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
 
 
 def _inventory() -> dict:
@@ -107,6 +131,23 @@ def _resolve(mode: str, raw: str, inventory: dict, default_port: int = 443,
     return dest, parsed["scheme"], parsed["path"], None
 
 
+@bp.route("/")
+@login_required
+@require_permission('view')
+def index():
+    """The tracer page (Operations › Troubleshooting). It was a header-menu
+    modal until 2026-10-16; a page keeps a long trace, its HAR and its cookie
+    analysis on screen and gives them a URL. ``?vip=``/``?backend=``/``?path=``
+    prefill the form."""
+    return render_template(
+        "txn_trace/index.html",
+        prefill={k: str(request.args.get(k) or "")[:2048]
+                 for k in ("vip", "backend", "path")},
+        may_free=_may_free(), may_reveal=_may_reveal(),
+        free_permission=net_guard.FREE_PERMISSION,
+        reveal_permission=REVEAL_PERMISSION)
+
+
 @bp.route("/context")
 @login_required
 @require_permission('view')
@@ -118,6 +159,8 @@ def context():
                      "host": a.host, "port": a.port or 443})
     return jsonify(ok=True, appliances=rows, may_free=_may_free(),
                    free_permission=net_guard.FREE_PERMISSION,
+                   may_reveal=_may_reveal(),
+                   reveal_permission=REVEAL_PERMISSION,
                    safe_methods=list(txn_trace.SAFE_METHODS),
                    mutating_methods=list(txn_trace.MUTATING_METHODS))
 
@@ -141,6 +184,14 @@ def run():
     req_body = str(body.get("body") or "")[:txn_trace.MAX_REQ_BODY].encode()
     vip_raw = str(body.get("vip") or "").strip()
     backend_raw = str(body.get("backend") or "").strip()
+    reveal = bool(body.get("reveal"))
+
+    if reveal and not _may_reveal():
+        log_action("txn_trace.denied", target=(vip_raw or backend_raw)[:200],
+                   extra={"reason": "reveal without " + REVEAL_PERMISSION})
+        return jsonify(ok=False, error=(
+            "Revealing credential values requires the '%s' permission. Trace "
+            "without it: values stay redacted." % REVEAL_PERMISSION)), 403
 
     if method not in txn_trace.SAFE_METHODS + txn_trace.MUTATING_METHODS:
         return jsonify(ok=False, error="Method %s is not traceable." % method), 400
@@ -184,7 +235,7 @@ def run():
             dest["ip"], dest["port"], host=dest["host"],
             path=path or tpath or "/", scheme=scheme, method=method,
             headers=headers, body=req_body, leg=txn_trace.LEG_A,
-            label="through the appliance")
+            label="through the appliance", reveal=reveal)
         legs.append(leg_a)
 
     if backend_raw:
@@ -202,7 +253,8 @@ def run():
             dest["ip"], dest["port"], host=host_for_c,
             path=path or tpath or "/", scheme=scheme, method=method,
             headers=headers, body=req_body, sni=host_for_c,
-            leg=txn_trace.LEG_C, label="direct to the backend")
+            leg=txn_trace.LEG_C, label="direct to the backend",
+            reveal=reveal)
         leg_c["request"]["dialled_host"] = dest["host"]
         legs.append(leg_c)
     ended = time.time()
@@ -223,12 +275,19 @@ def run():
                       "mode_a": mode_a, "mode_c": mode_c,
                       "status_a": leg_a["status"] if leg_a else None,
                       "status_c": leg_c["status"] if leg_c else None,
-                      "verdict": comparison.get("verdict", {}).get("key", "")})
+                      "verdict": comparison.get("verdict", {}).get("key", ""),
+                      # THAT values were shown, never what they were.
+                      "revealed": reveal})
 
-    return jsonify(ok=True, legs=legs, diff=comparison,
-                   curl=[{"leg": l["leg"], "label": l.get("label"),
-                          "cmd": txn_trace.to_curl(l)} for l in legs],
-                   window=[started, ended])
+    findings = {l["leg"]: txn_trace.cookie_findings(
+        l.get("set_cookie"), l["request"].get("scheme", "https"))
+        for l in legs if l.get("ok")}
+    return _no_store(jsonify(
+        ok=True, legs=legs, diff=comparison, cookie_findings=findings,
+        revealed=reveal,
+        curl=[{"leg": l["leg"], "label": l.get("label"),
+               "cmd": txn_trace.to_curl(l)} for l in legs],
+        window=[started, ended]))
 
 
 @bp.route("/derive", methods=["POST"])
@@ -308,9 +367,28 @@ def correlate():
 @login_required
 @require_permission('view')
 def har():
-    """The traced legs as a HAR 1.2 log, for browser devtools."""
+    """The traced legs as a HAR 1.2 log, for browser devtools and the page's
+    own HAR viewer.
+
+    Values are redacted unless the caller asks for ``secrets`` AND holds
+    :data:`REVEAL_PERMISSION`. Asking without it is refused rather than
+    silently redacted: an operator who ticked "include values" and got a
+    redacted file would attach it to a ticket believing it complete.
+    """
     body = request.get_json(silent=True) or {}
     legs = body.get("legs") or []
     if not isinstance(legs, list):
         return jsonify(ok=False, error="legs must be a list"), 400
-    return jsonify(ok=True, har=txn_trace.to_har(legs[:8]))
+    secrets = bool(body.get("secrets"))
+    if secrets:
+        if not _may_reveal():
+            log_action("txn_trace.denied", target="har",
+                       extra={"reason": "HAR values without "
+                                        + REVEAL_PERMISSION})
+            return jsonify(ok=False, error=(
+                "A HAR with credential values requires the '%s' permission."
+                % REVEAL_PERMISSION)), 403
+        log_action("txn_trace.har_values", target="har",
+                   extra={"entries": len(legs[:8])})
+    return _no_store(jsonify(ok=True, secrets=secrets,
+                             har=txn_trace.to_har(legs[:8], secrets=secrets)))

@@ -75,13 +75,23 @@ def _redact(name: str, value: str) -> str:
     return value
 
 
+def _is_secret(name: str) -> bool:
+    return str(name).lower() in REDACT
+
+
+def _now_iso() -> str:
+    import datetime as _dt
+    return _dt.datetime.now(_dt.timezone.utc).isoformat(
+        timespec="milliseconds").replace("+00:00", "Z")
+
+
 # --------------------------------------------------------------------------- #
 #  One leg                                                                     #
 # --------------------------------------------------------------------------- #
 def send(ip: str, port: int, *, host: str, path: str = "/", scheme: str = "https",
          method: str = "GET", headers: dict | None = None, body: bytes = b"",
          sni: str = "", timeout: float = DEFAULT_TIMEOUT, leg: str = LEG_A,
-         label: str = "") -> dict:
+         label: str = "", reveal: bool = False) -> dict:
     """Issue one request and measure it, phase by phase.
 
     Connects to *ip* (already authorised by :mod:`net_guard`) and sends *host*
@@ -89,6 +99,12 @@ def send(ip: str, port: int, *, host: str, path: str = "/", scheme: str = "https
     ``Host`` at two different addresses is exactly how leg A and leg C are made
     comparable, and it is also how the ``proxy_set_header Host`` class of bug
     becomes visible.
+
+    ``reveal`` keeps the credential values (``Cookie``, ``Set-Cookie``,
+    ``Authorization``…) — but ONLY under the leg's ``secrets`` key. Every other
+    field stays redacted either way, so a caller that logs, stores or exports
+    the leg without asking for ``secrets`` by name cannot leak one. The caller
+    owns the permission check; this function only keeps the two apart.
     """
     method = (method or "GET").upper()
     path = path or "/"
@@ -99,9 +115,13 @@ def send(ip: str, port: int, *, host: str, path: str = "/", scheme: str = "https
 
     out = {
         "leg": leg, "label": label, "ok": False, "error": "",
+        "started": _now_iso(),
         "request": {"method": method, "scheme": scheme, "host": host,
                     "ip": ip, "port": int(port), "path": path,
                     "headers": [[k, _redact(k, v)] for k, v in hdrs.items()],
+                    # Names only: which cookies were SENT is diagnosis, their
+                    # values are someone's session.
+                    "cookie_names": request_cookie_names(hdrs),
                     "body_bytes": len(body)},
         "status": None, "reason": "", "http_version": "",
         "headers": [], "set_cookie": [], "location": "",
@@ -110,6 +130,12 @@ def send(ip: str, port: int, *, host: str, path: str = "/", scheme: str = "https
         "timing": {"tcp_ms": None, "tls_ms": None, "ttfb_ms": None,
                    "total_ms": None},
     }
+    secrets = None
+    if reveal:
+        secrets = {"request_headers": [[k, v] for k, v in hdrs.items()
+                                       if _is_secret(k)],
+                   "response_headers": [], "set_cookie_values": []}
+        out["secrets"] = secrets
 
     t_start = time.perf_counter()
     sock = None
@@ -189,8 +215,15 @@ def send(ip: str, port: int, *, host: str, path: str = "/", scheme: str = "https
             resp.version, str(resp.version))
         for k, v in resp.getheaders():
             out["headers"].append([k, _redact(k, v)])
+            if secrets is not None and _is_secret(k):
+                secrets["response_headers"].append([k, v])
             if k.lower() == "set-cookie":
                 out["set_cookie"].append(_cookie_shape(v))
+                if secrets is not None:
+                    # Index-aligned with ``set_cookie``: two cookies may share
+                    # a name (different Path/Domain), so a name-keyed map
+                    # would silently keep one of them.
+                    secrets["set_cookie_values"].append(_cookie_value(v))
             elif k.lower() == "location":
                 out["location"] = v
         raw = resp.read(MAX_BODY + 1)
@@ -239,7 +272,98 @@ def _cookie_shape(value: str) -> dict:
     return {"name": name, "secure": "secure" in attrs,
             "httponly": "httponly" in attrs,
             "samesite": attrs.get("samesite", ""),
-            "path": attrs.get("path", ""), "domain": attrs.get("domain", "")}
+            "path": attrs.get("path", ""), "domain": attrs.get("domain", ""),
+            "expires": attrs.get("expires", ""),
+            "max_age": attrs.get("max-age", "")}
+
+
+def _cookie_value(value: str) -> str:
+    """The value of a Set-Cookie — only ever stored under a leg's ``secrets``."""
+    first = str(value or "").split(";", 1)[0]
+    return first.split("=", 1)[1].strip() if "=" in first else ""
+
+
+def request_cookie_names(headers: dict) -> list[str]:
+    """Names of the cookies an operator-supplied ``Cookie`` header carries."""
+    names = []
+    for k, v in (headers or {}).items():
+        if str(k).lower() != "cookie":
+            continue
+        for part in str(v).split(";"):
+            n = part.split("=", 1)[0].strip()
+            if n and n not in names:
+                names.append(n)
+    return names
+
+
+#: Cookie FLAG fields compared between the two legs.
+COOKIE_FLAGS = ("secure", "httponly", "samesite", "path", "domain")
+
+
+def cookie_findings(cookies, scheme: str = "https") -> list[dict]:
+    """What a browser will do with each Set-Cookie, read off its flags.
+
+    ``level`` is ``danger`` only where the browser REJECTS or the prefix rule is
+    broken — those are facts, not opinions. A missing ``HttpOnly`` is a
+    ``warning``: some cookies are meant to be read by the page's JavaScript
+    (CSRF tokens, UI state), so calling it an error would be wrong half the time.
+    """
+    out = []
+    for c in (cookies or []):
+        if not isinstance(c, dict):
+            continue
+        name = str(c.get("name") or "")
+        same = str(c.get("samesite") or "").lower()
+        secure = bool(c.get("secure"))
+
+        def add(level, text, _n=name):
+            out.append({"cookie": _n, "level": level, "text": text})
+
+        if same == "none" and not secure:
+            add("danger", "SameSite=None without Secure: current browsers "
+                          "reject this cookie outright.")
+        if name.startswith("__Host-") and (not secure or c.get("domain")
+                                           or (c.get("path") or "") != "/"):
+            add("danger", "__Host- prefix needs Secure, Path=/ and no Domain; "
+                          "the browser drops it as sent.")
+        elif name.startswith("__Secure-") and not secure:
+            add("danger", "__Secure- prefix needs Secure; the browser drops it.")
+        if scheme == "https" and not secure:
+            add("warning", "Not marked Secure on an HTTPS response: the browser "
+                           "will also send it over plain HTTP.")
+        if not c.get("httponly"):
+            add("warning", "Not HttpOnly: page JavaScript can read it. Fine "
+                           "for a CSRF token, wrong for a session cookie.")
+        if not same:
+            add("info", "No SameSite attribute: browsers apply Lax by default.")
+        dom = str(c.get("domain") or "").lstrip(".")
+        if dom and dom.count(".") < 1:
+            add("warning", "Domain=%s is a bare name: the cookie is offered to "
+                           "every host under it." % dom)
+    return out
+
+
+def cookie_diff(a_cookies, c_cookies) -> dict:
+    """A vs C for Set-Cookie, by (name, path) — names alone collide.
+
+    A cookie only on A is one the appliance ISSUED (its own session or
+    persistence cookie); only on C, one the appliance removed; same cookie with
+    different flags, one the appliance rewrote (a ``Secure`` it adds is the
+    common case)."""
+    def key(c):
+        return (str(c.get("name") or ""), str(c.get("path") or ""))
+    ia = {key(c): c for c in (a_cookies or []) if isinstance(c, dict)}
+    ic = {key(c): c for c in (c_cookies or []) if isinstance(c, dict)}
+    added = [ia[k] for k in sorted(set(ia) - set(ic))]
+    dropped = [ic[k] for k in sorted(set(ic) - set(ia))]
+    changed = []
+    for k in sorted(set(ia) & set(ic)):
+        flags = [{"flag": f, "a": ia[k].get(f), "c": ic[k].get(f)}
+                 for f in COOKIE_FLAGS if ia[k].get(f) != ic[k].get(f)]
+        if flags:
+            changed.append({"name": k[0], "path": k[1], "flags": flags})
+    return {"added_by_appliance": added, "dropped_by_appliance": dropped,
+            "flags_changed": changed}
 
 
 # --------------------------------------------------------------------------- #
@@ -493,7 +617,12 @@ def diff(a: dict, c: dict) -> dict:
         elif va != vc:
             changed.append({"header": k, "a": va, "c": vc})
 
-    verdict = _verdict(a, c, only_a, only_c, changed)
+    cookies = cookie_diff(a["set_cookie"], c["set_cookie"])
+    # Set-Cookie values are redacted to their LENGTH in ``headers``, and two
+    # Set-Cookie headers collapse into one key above, so the header diff alone
+    # can call a rewritten cookie "same". The flag diff cannot.
+    cookie_delta = any(cookies.values())
+    verdict = _verdict(a, c, only_a, only_c, changed, cookie_delta)
     return {
         "comparable": True,
         "status": {"a": a["status"], "c": c["status"],
@@ -503,7 +632,8 @@ def diff(a: dict, c: dict) -> dict:
                  "truncated": a["truncated"] or c["truncated"]},
         "headers": {"added_by_appliance": only_a, "dropped_before_client": only_c,
                     "changed": changed, "volatile": volatile},
-        "cookies": {"a": a["set_cookie"], "c": c["set_cookie"]},
+        "cookies": dict({"a": a["set_cookie"], "c": c["set_cookie"]},
+                        **cookies),
         "redirect": {"a": a["location"], "c": c["location"],
                      "same": a["location"] == c["location"]},
         "timing": {"a": a["timing"], "c": c["timing"]},
@@ -520,7 +650,7 @@ def _leg_errors(a: dict, c: dict) -> str:
     return " ".join(bits)
 
 
-def _verdict(a, c, only_a, only_c, changed) -> dict:
+def _verdict(a, c, only_a, only_c, changed, cookie_delta=False) -> dict:
     """A sentence, not a colour. The operator came for this one line."""
     if a["status"] != c["status"]:
         return {"key": "appliance_decides",
@@ -534,7 +664,7 @@ def _verdict(a, c, only_a, only_c, changed) -> dict:
                         "the response, or the two legs did not reach the same "
                         "application (content routing, a different pool member, "
                         "or a cache)."}
-    if only_a or only_c or changed:
+    if only_a or only_c or changed or cookie_delta:
         return {"key": "appliance_transforms",
                 "text": "Same status and same body; only headers differ. The "
                         "appliance is transforming, not blocking — the table "
@@ -645,39 +775,109 @@ def _shq(s: str) -> str:
     return "'" + s.replace("'", "'\\''") + "'"
 
 
-def to_har(legs: list[dict]) -> dict:
-    """A HAR 1.2 log the operator can open in any browser devtools."""
+def _har_headers(pairs, real) -> list[dict]:
+    """HAR headers; a redacted credential is replaced by its real value only
+    when *real* (the leg's ``secrets``) carries one under the same name."""
+    pool = {}
+    for k, v in (real or []):
+        pool.setdefault(str(k).lower(), []).append(v)
+    out = []
+    for k, v in (pairs or []):
+        vals = pool.get(str(k).lower())
+        out.append({"name": k, "value": vals.pop(0) if vals else v})
+    return out
+
+
+def _har_cookie(shape: dict, value: str = "") -> dict:
+    c = {"name": shape.get("name") or "", "value": value,
+         "httpOnly": bool(shape.get("httponly")),
+         "secure": bool(shape.get("secure"))}
+    for src, dst in (("path", "path"), ("domain", "domain"),
+                     ("samesite", "sameSite"), ("expires", "expires")):
+        if shape.get(src):
+            c[dst] = shape[src]
+    return c
+
+
+def to_har(legs: list[dict], secrets: bool = False) -> dict:
+    """A HAR 1.2 log the operator can open in any browser devtools — or in
+    SATOM's own HAR viewer.
+
+    Credential values stay redacted unless *secrets* is asked for by name AND
+    the leg carries a ``secrets`` block (a trace run with Reveal values). The
+    caller owns the permission check for *secrets*; without it this function
+    never reads that block, so a forwarded leg cannot smuggle values into an
+    export the operator did not ask to contain them.
+    """
     entries = []
     for leg in (legs or []):
-        if not leg or not leg.get("ok"):
+        if not isinstance(leg, dict) or not leg.get("ok"):
             continue
-        req = leg["request"]
+        req = leg.get("request") or {}
+        sec = (leg.get("secrets") or {}) if secrets else {}
+        if not isinstance(sec, dict):
+            sec = {}
         scheme = req.get("scheme", "https")
         port = int(req.get("port") or 443)
         url = "%s://%s%s%s" % (scheme, req.get("host", ""),
                                "" if port in (80, 443) else ":%d" % port,
                                req.get("path", "/"))
-        t = leg["timing"]
+        t = leg.get("timing") or {}
+        values = list(sec.get("set_cookie_values") or [])
+        resp_cookies = [_har_cookie(c, values[i] if i < len(values) else "")
+                        for i, c in enumerate(leg.get("set_cookie") or [])
+                        if isinstance(c, dict)]
+        req_cookies = [{"name": n, "value": ""}
+                       for n in (req.get("cookie_names") or [])]
+        if sec:
+            for k, v in (sec.get("request_headers") or []):
+                if str(k).lower() == "cookie":
+                    req_cookies = [{"name": p.split("=", 1)[0].strip(),
+                                    "value": p.split("=", 1)[1].strip()
+                                    if "=" in p else ""}
+                                   for p in str(v).split(";") if p.strip()]
+        query = []
+        path = str(req.get("path") or "/")
+        if "?" in path:
+            from urllib.parse import parse_qsl
+            query = [{"name": k, "value": v} for k, v in
+                     parse_qsl(path.split("?", 1)[1], keep_blank_values=True)]
+        preview = leg.get("body_preview") or ""
+        content = {"size": leg.get("body_bytes", 0), "mimeType":
+                   next((v for k, v in leg.get("headers") or []
+                         if str(k).lower() == "content-type"), ""),
+                   "comment": "sha256=%s" % leg.get("body_sha256", "")}
+        # The body travels like a credential: a response body is where tokens,
+        # personal data and session state live, so a portable file carries
+        # only its hash unless values were asked for by name.
+        if preview and secrets:
+            content["text"] = preview
+            if len(preview) < (leg.get("body_bytes") or 0):
+                content["comment"] += ("; text is the first %d characters only"
+                                       % len(preview))
+        else:
+            content["comment"] += "; body not captured in HAR"
         entries.append({
-            "startedDateTime": "1970-01-01T00:00:00.000Z",
+            "startedDateTime": leg.get("started") or "1970-01-01T00:00:00.000Z",
             "time": t.get("total_ms") or 0,
             "comment": leg.get("label") or leg.get("leg"),
-            "request": {"method": req["method"], "url": url,
+            "serverIPAddress": req.get("ip", ""),
+            "request": {"method": req.get("method", "GET"), "url": url,
                         "httpVersion": "HTTP/1.1",
-                        "headers": [{"name": k, "value": v}
-                                    for k, v in req.get("headers") or []],
-                        "queryString": [], "cookies": [], "headersSize": -1,
+                        "headers": _har_headers(req.get("headers"),
+                                                sec.get("request_headers")),
+                        "queryString": query, "cookies": req_cookies,
+                        "headersSize": -1,
                         "bodySize": req.get("body_bytes", 0)},
-            "response": {"status": leg["status"], "statusText": leg["reason"],
-                         "httpVersion": leg["http_version"] or "HTTP/1.1",
-                         "headers": [{"name": k, "value": v}
-                                     for k, v in leg["headers"]],
-                         "cookies": [], "content": {
-                             "size": leg["body_bytes"], "mimeType": "",
-                             "comment": "body not captured in HAR; sha256=%s"
-                                        % leg["body_sha256"]},
-                         "redirectURL": leg["location"], "headersSize": -1,
-                         "bodySize": leg["body_bytes"]},
+            "response": {"status": leg.get("status"),
+                         "statusText": leg.get("reason", ""),
+                         "httpVersion": leg.get("http_version") or "HTTP/1.1",
+                         "headers": _har_headers(leg.get("headers"),
+                                                 sec.get("response_headers")),
+                         "cookies": resp_cookies, "content": content,
+                         "redirectURL": leg.get("location", ""),
+                         "headersSize": -1,
+                         "bodySize": leg.get("body_bytes", 0)},
             "cache": {},
             "timings": {"blocked": -1, "dns": -1,
                         "connect": t.get("tcp_ms") if t.get("tcp_ms") is not None else -1,
@@ -688,19 +888,21 @@ def to_har(legs: list[dict]) -> dict:
         })
     return {"log": {"version": "1.2",
                     "creator": {"name": "SATOM transaction tracer",
-                                "version": "1"},
+                                "version": "2"},
+                    "comment": ("credential values included" if secrets
+                                else "credential values redacted"),
                     "entries": entries}}
 
 
-def to_har_text(legs: list[dict]) -> str:
+def to_har_text(legs: list[dict], secrets: bool = False) -> str:
     buf = io.StringIO()
-    json.dump(to_har(legs), buf, indent=1)
+    json.dump(to_har(legs, secrets=secrets), buf, indent=1)
     return buf.getvalue()
 
 
 __all__ = [
     "LEG_A", "LEG_C", "SAFE_METHODS", "MUTATING_METHODS", "MAX_BODY",
-    "REDACT", "DERIVATIONS", "VOLATILE_HEADERS",
+    "REDACT", "DERIVATIONS", "VOLATILE_HEADERS", "COOKIE_FLAGS",
     "send", "derive_forwarded", "diff", "correlate", "to_curl", "to_har",
-    "to_har_text",
+    "to_har_text", "cookie_findings", "cookie_diff", "request_cookie_names",
 ]

@@ -2230,13 +2230,14 @@ against what the devices say.</p>
   (AdGuard/OPNsense/etc., admin-configurable list) and simultaneously match it
   against the fleet's load-balancing config: which policy/virtual server
   publishes it, with a mini policy→pool→backend graph and config deep links.
-- <strong>Where these live:</strong> Backend Reachability, Config Compare, Path Diagnostics
-  and Scout sit together under <strong>Operations › Troubleshooting</strong> in every ADOM
-  (since 2026-10-14; before that they were spread over Operations and Fleet).
-  The FortiGate, FortiAnalyzer and FortiAuthenticator ADOMs list only Scout
-  from this set, because the other three work on FortiWeb and FortiADC
-  objects. <strong>Diagnose Log Collection</strong> is also in Troubleshooting, in all five
-  device ADOMs (§27.1).
+- <strong>Where these live:</strong> Backend Reachability, Config Compare, Path Diagnostics,
+  the <strong>Transaction Tracer</strong> (§37.3) and Scout sit together under
+  <strong>Operations › Troubleshooting</strong> in every ADOM (since 2026-10-14; the tracer
+  since 2026-10-16 — before that it was a window in the header Tools menu).
+  The FortiGate, FortiAnalyzer and FortiAuthenticator ADOMs list only the
+  Transaction Tracer and Scout from this set, because the other three work on
+  FortiWeb and FortiADC objects. <strong>Diagnose Log Collection</strong> is also in
+  Troubleshooting, in all five device ADOMs (§27.1).
 - <strong>Backend Reachability</strong> — paste or upload a list of
   <code>source;policy;destination</code> lines and ask one question per line: <em>do the real
   servers behind this policy answer, on the source box and then on the
@@ -8130,7 +8131,8 @@ appliance's Upgrade page inside the window.</p>
 calculators (regex tester, regex cheat sheet, pattern library, network
 calculator). The three below do more than arithmetic, and two of them make
 <strong>this server</strong> open a connection on your behalf — so each one states what it
-measured and what it only derived.</p>
+measured and what it only derived. The transaction tracer (§37.3) left the
+Tools menu on 2026-10-16: it is a page under <strong>Operations › Troubleshooting</strong>.</p>
 <h3 id="371-certificate-inspector">37.1 Certificate inspector</h3>
 <p>Two ways in:</p>
 <ul>
@@ -8225,6 +8227,9 @@ recommendation is identical and the evidence is device-read.</p>
 "where on the device" path shown under each carve-out, and <strong>Decode a payload on
 its own</strong> peels the encoding layers off a value you paste without a log entry.</p>
 <h3 id="373-transaction-tracer">37.3 Transaction tracer</h3>
+<p><strong>Operations › Troubleshooting › Transaction Tracer</strong> (<code>/txn-trace/</code>), in every
+ADOM. It is a page, not a window: the trace, its cookies and its HAR stay on
+screen, and <code>?vip=</code>, <code>?backend=</code> and <code>?path=</code> in the address prefill the form.</p>
 <p>Three legs, answering <em>is it the WAF or is it the app?</em></p>
 <ul>
 <li><strong>Leg A</strong> — SATOM to the VIP, through the appliance. Measured. Type the VIP;
@@ -8295,6 +8300,39 @@ a different request from the one you asked about, and the redirect is often the
 finding. <code>Authorization</code>, <code>Cookie</code> and friends are recorded as present and never
 echoed back. Set-Cookie is reduced to its flags: the flags are the finding, the
 value is a session credential.</p>
+<p><strong>Cookies.</strong> Every cookie each leg sets is listed with its flags (Secure,
+HttpOnly, SameSite, Path, Domain, Expires / Max-Age), and the cookies the
+request sent are named. Under the table, <em>what a browser does with them</em>:
+<code>SameSite=None</code> without <code>Secure</code> and a broken <code>__Host-</code> / <code>__Secure-</code> prefix are
+marked as rejections (the browser drops the cookie), a missing <code>Secure</code> on an
+HTTPS response and a missing <code>HttpOnly</code> as warnings (a CSRF-token cookie is
+meant to be readable by the page), no <code>SameSite</code> as information (browsers apply
+Lax). With both legs traced, <strong>Cookies A vs C</strong> says which cookies the appliance
+<strong>issued</strong> (set on A only — its own session or persistence cookie), which it
+<strong>removed</strong> (set by the backend, missing on A) and which it <strong>rewrote</strong> (same
+name and path, different flags). A rewritten cookie alone makes the verdict
+<em>transforming</em>, even when the redacted header lengths happen to match.</p>
+<p><strong>Reveal values.</strong> A holder of <code>monitoring.reveal_secrets</code> (Administrator-only,
+not in the Operator profile; <code>user_manage</code> passes too) sees a <strong>Reveal values</strong>
+box. Ticked, the trace shows the real <code>Cookie</code>, <code>Set-Cookie</code>, <code>Authorization</code>
+and API-key values, each marked <em>revealed</em>. They come back only in the answer to
+the operator who asked, in a separate block the rest of SATOM never reads, with
+<code>Cache-Control: no-store</code>; the audit log records <strong>that</strong> values were revealed
+(<code>revealed: true</code> on <code>txn_trace.run</code>), never what they were. Asking without the
+permission is refused and audited. Without it the page says which permission
+would show them.</p>
+<p><strong>HAR viewer.</strong> <strong>View HAR</strong> renders the trace's HAR in the page: one row per
+leg with method, status, URL, type, size, time and a waterfall bar; a click
+opens its request and response headers, query string, cookies (as structured
+HAR cookies), timings and content. <strong>Open a HAR file</strong> reads any HAR — one from
+browser devtools included — <strong>in your browser</strong>; it is never uploaded to SATOM.
+Files over 50 MB are refused rather than freezing the tab, and content is shown
+as text, never rendered. The HAR SATOM builds carries the real start time of
+each leg, its server address and its query string. Credential values and the
+response body stay out of it unless <strong>Include credential values and the response
+body</strong> is ticked — that needs <code>monitoring.reveal_secrets</code> and is audited as
+<code>txn_trace.har_values</code>; without the permission the request is refused rather
+than answered with a quietly redacted file.</p>
 <p><strong>Destinations.</strong> Inventory appliances are always available. A free <code>host:port</code>
 — and a backend for leg C is always one — requires <code>monitoring.probe_free</code>; a
 trace with only an inventory leg A needs nothing more. In both tools a holder of
@@ -8467,7 +8505,7 @@ the page instead of on a manual.</p>
 discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
-   the console is either <strong>on the map</strong> (122 today) or <strong>excluded with a written
+   the console is either <strong>on the map</strong> (123 today) or <strong>excluded with a written
    reason</strong> (154 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>

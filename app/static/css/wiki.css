@@ -82,3 +82,4 @@
 .wiki-rich .toastui-editor-defaultUI { border-color: var(--fw-border); border-radius: var(--fw-radius); }
 .wiki-rich .toastui-editor-contents { font-family: inherit; font-size: 14px; }
 .wiki-modal-body { background: var(--fw-content-bg, #F3F6FC); }
+.wiki-nav .fw-card { margin-bottom: 0; }

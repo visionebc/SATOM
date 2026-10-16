@@ -185,6 +185,81 @@ def cache_signal(meta: dict | None, hours: float | None = None,
     return {"status": "ok", "text": f"cache {_hours(age)} old"}
 
 
+#: Kinds graded on ONE number against warn/crit, so the limit a warning or a
+#: critical crossed is known. ``https`` and ``policy_sessions`` can go amber on
+#: a second axis (certificate days, latency) and get the reading alone.
+_ONE_METRIC = ("cpu", "memory", "sessions", "throughput", "transactions",
+               "licence", "tokens")
+
+#: Box-wide readings, said out loud: "CPU 97%" alone does not tell the reader
+#: whether that is one core, one daemon or the appliance.
+_WHOLE_BOX = ("cpu", "memory", "sessions")
+
+
+def _limit_text(value, unit: str) -> str:
+    """``95%``, ``2000 ms``, ``off`` -- one threshold as the mail prints it."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if not value:
+            return "off"
+        unit = unit or ""
+        sep = "" if unit.startswith("%") or not unit else " "
+        return f"{value:g}{sep}{unit}"
+    return str(value)
+
+
+def probe_item(probe, status: str) -> dict:
+    """Everything a notification needs to explain ONE alerting probe.
+
+    "1/6 probes alerting: fortiweb17 · CPU" (2026-10-16) named the probe and
+    nothing else: not the reading, not the line it crossed, not where that line
+    was set. The probe row already holds all three -- ``last_detail`` carries
+    the reading (``classify_box`` writes "CPU 97%; ...; at or over the critical
+    threshold (95%)") and :func:`thresholds.probe_origins` resolves each limit
+    with its origin -- so the roll-up passes them on instead of dropping them.
+    """
+    from . import deep_monitor, thresholds as th
+
+    kind = probe.kind or ""
+    limits = []
+    try:
+        origins = th.probe_origins(probe)
+    except Exception:  # noqa: BLE001 -- a missing limit must not hide the alert
+        origins = []
+    for o in origins:
+        if o.get("value") is None:
+            continue
+        limits.append({"key": o["key"], "label": o["label"],
+                       "value": o["value"], "unit": o.get("unit") or "",
+                       "text": _limit_text(o["value"], o.get("unit") or ""),
+                       "origin": o.get("explain") or ""})
+    return {"id": getattr(probe, "id", None), "name": probe.name or kind,
+            "kind": kind,
+            "what": deep_monitor.KIND_LABEL.get(kind, kind)
+                    + (", whole appliance" if kind in _WHOLE_BOX else ""),
+            "status": status, "raw_status": probe.last_status or "unknown",
+            "detail": (probe.last_detail or "").strip(),
+            "at": probe.last_run_at, "limits": limits}
+
+
+def probe_headline(item: dict) -> str:
+    """One-line reading for a notification title: ``CPU 97% (critical 95%)``.
+
+    The title is all a push/bell notification shows, so it has to carry the
+    number. The first ``;`` segment of the detail is the reading; the limit
+    that matches the grade is appended when the probe has one."""
+    reading = (item.get("detail") or "").split(";")[0].strip()[:90]
+    if not reading:
+        return item.get("name") or ""
+    if item.get("kind") not in _ONE_METRIC:
+        return reading
+    level = "crit" if item.get("status") == "crit" else "warn"
+    for lim in item.get("limits") or []:
+        if lim["key"] in (f"{level}_pct", f"{level}_num") and lim["text"] != "off":
+            word = "critical" if level == "crit" else "warning"
+            return f"{reading} ({word} {lim['text']})"
+    return reading
+
+
 def probe_signal(appliance_id: int) -> dict:
     """Worst enabled deep monitor bound to this device."""
     from ..models import MonitorProbe
@@ -221,7 +296,10 @@ def probe_signal(appliance_id: int) -> dict:
         # Say how many names were cut: "49/55 alerting: a, b, c, d" read as if
         # four probes were failing.
         more = f" (+{len(bad) - 4} more)" if len(bad) > 4 else ""
-        return {"status": st, "suppressed": len(sup),
+        alerting = [probe_item(p, m) for p, m in zip(live, mapped)
+                    if m in ("warn", "crit")]
+        alerting.sort(key=lambda i: -RANK.get(i["status"], 0))
+        return {"status": st, "suppressed": len(sup), "alerting": alerting,
                 "text": f"{len(bad)}/{len(live)} probes alerting: "
                         + ", ".join(bad[:4]) + more + tail}
     if st == "ok":

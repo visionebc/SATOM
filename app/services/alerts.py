@@ -32,6 +32,7 @@ import json
 import re
 import socket
 from datetime import datetime, timezone
+from html import escape as _esc
 
 from ..models import AppSetting
 from . import alert_routing as routing
@@ -470,6 +471,41 @@ def _product_of(appliance) -> str:
     return kind if kind in concrete_products() else ""
 
 
+#: Characters of a finding's detail stored in the in-app notification.
+BELL_BODY_MAX = 1500
+
+#: Alerting probes spelled out per device finding; the rest are counted.
+PROBE_LINES_MAX = 6
+
+
+def _probe_lines(items: list[dict], cap: int = PROBE_LINES_MAX) -> list[str]:
+    """One indented block per alerting deep monitor: what it measures, the
+    reading, every limit it is graded against with WHERE that limit is set,
+    and when it was read.
+
+    Before 2026-10-16 the mail said "1/6 probes alerting: fortiweb17 · CPU" and
+    stopped -- the operator had to open the page to learn the CPU was at 97 %
+    against a 95 % line inherited from the product scope."""
+    out: list[str] = []
+    for it in items[:cap]:
+        word = ("COULD NOT RUN" if it.get("raw_status") == "error"
+                else {"crit": "CRITICAL", "warn": "WARNING"}.get(
+                    it["status"], str(it["status"]).upper()))
+        out.append(f"    · {it['name']} [{word}] — {it['what']}: "
+                   f"{it.get('detail') or 'no detail recorded'}")
+        bits = [f"{lim['label']} {lim['text']} ({lim['origin']})"
+                for lim in it.get("limits") or []]
+        at = it.get("at")
+        if isinstance(at, datetime):
+            bits.append(f"read {at:%Y-%m-%d %H:%M} UTC")
+        if bits:
+            out.append("      " + "; ".join(bits))
+    if len(items) > cap:
+        out.append(f"    · +{len(items) - cap} more alerting probe(s) — "
+                   "see /monitoring/")
+    return out
+
+
 def _check_devices() -> list[dict]:
     """One finding per unhealthy appliance, graded on the SAME ladder the
     Monitoring page prints.
@@ -517,8 +553,10 @@ def _check_devices() -> list[dict]:
         lines = [] if reachable else [
             f"- Reachability: no TCP connection to {host}:{port} within 4s "
             f"(probed from {_node()}) — down or network-partitioned"]
-        lines += [f"- {r['label']}: {r['text']}" for r in health["reasons"]
-                  if r["status"] in ("warn", "crit")]
+        for r in health["reasons"]:
+            if r["status"] in ("warn", "crit"):
+                lines.append(f"- {r['label']}: {r['text']}")
+                lines += _probe_lines(r.get("alerting") or [])
 
         status = devhealth.worst_of([health["status"]] +
                                     ([] if reachable else ["warn"]))
@@ -526,12 +564,22 @@ def _check_devices() -> list[dict]:
             continue
 
         crit = status == "crit"
+        title = f"Device {a.name} is {'critical' if crit else 'degraded'}"
+        # The title is all the bell and the push show, and the mail subject
+        # repeats it: when a deep monitor is the worst reason, it carries the
+        # reading ("CPU 97% (critical 95%)"), not just the word "critical".
+        top = next((r for r in health["reasons"]
+                    if r["status"] in ("warn", "crit")), None)
+        if top and top.get("alerting"):
+            title += f" — {devhealth.probe_headline(top['alerting'][0])}"
         findings.append({
             # The status is part of the key ON PURPOSE: an escalation from warn
             # to crit inside the cooldown window must still reach the operator.
+            # The key never carries the reading: a CPU wobbling 96 -> 97 % must
+            # not re-arm the cooldown.
             "key": f"device.health.{a.name}.{status}",
             "severity": SEV_CRITICAL if crit else SEV_WARNING,
-            "title": f"Device {a.name} is {'critical' if crit else 'degraded'}",
+            "title": title,
             "product": _product_of(a),
             "detail": ("\n".join(lines) +
                        f"\n\n{a.kind} appliance at {host}:{port}, probed from "
@@ -1180,10 +1228,15 @@ def _email_body(new_findings: list[dict]) -> tuple[str, str]:
         lines.append(f"    {f['detail']}")
         lines.append("")
     text = "\n".join(lines)
+    # Escaped, and pre-wrap so the per-probe sub-lines keep their breaks and
+    # indentation: the detail carries device-reported text (probe details,
+    # sync errors), and without pre-wrap a multi-line detail collapsed into one
+    # run-on paragraph in every HTML mail client.
     rows = "".join(
         f"<tr><td style='padding:4px 8px;font-weight:600'>{f['severity'].upper()}</td>"
-        f"<td style='padding:4px 8px'><b>{f['title']}</b><br>"
-        f"<span style='color:#555'>{f['detail']}</span></td></tr>"
+        f"<td style='padding:4px 8px'><b>{_esc(f['title'])}</b><br>"
+        f"<span style='color:#555;white-space:pre-wrap'>{_esc(f['detail'])}</span>"
+        f"</td></tr>"
         for f in new_findings)
     html = (f"<h3>SATOM alerts — {node}</h3>"
             f"<table style='border-collapse:collapse'>{rows}</table>")
@@ -1302,8 +1355,10 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
             # product=None means "stamp from the session", which is '' in this
             # worker thread. Device findings carry the device's ADOM instead.
             try:
+                # 1500, not 400: at 400 the per-probe evidence (reading,
+                # limits, where they are set) was cut before it began.
                 notify.push_many(admin_ids, f["title"], kind=kind,
-                                 body=f["detail"][:400],
+                                 body=f["detail"][:BELL_BODY_MAX],
                                  product=f.get("product") or None)
                 result["in_app"] += 1
                 delivered.add(f["key"])

@@ -73,7 +73,16 @@
       state.appliance = sel.value;
       $('fw-obs-err').textContent = '';
       $('fw-obs-targets').innerHTML = '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-2"></span>Reading the appliance…</div>';
+      // Until this appliance's list arrives the previous one must not stay
+      // tickable: its policy names would be saved under, and graded against,
+      // the new appliance. Only memory is cleared — the stored set stays.
+      state.targets = [];
+      state.picked = new Set();
+      renderPicker();
+      $('fw-obs-picksum').textContent = 'Reading the appliance…';
+      const forAppliance = state.appliance;
       req('GET', '/observatory/api/targets?appliance_id=' + encodeURIComponent(state.appliance)).then(r => {
+        if (state.appliance !== forAppliance) return;  // a later switch won
         if (!r.d.ok) {
           $('fw-obs-targets').innerHTML = '';
           $('fw-obs-err').textContent = r.d.error || 'Could not list the sites.';
@@ -186,18 +195,18 @@
         return;
       }
       let h = '<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr>' +
-        '<th>Policy</th><th style="min-width:200px">Site name</th><th>Ports</th><th>Grade</th><th>Last graded</th><th></th></tr></thead><tbody>';
+        '<th>Policy</th><th style="min-width:160px">Site name</th><th>Ports</th><th>Grade</th><th>Last graded</th><th></th></tr></thead><tbody>';
       rows.forEach(t => {
         const ports = [];
         if (t.http_port) ports.push('HTTP ' + t.http_port);
         if (t.https_port) ports.push('HTTPS ' + t.https_port);
         const last = t.last;
         h += '<tr data-policy="' + esc(t.policy) + '">' +
-          '<td class="fw-mono small">' + esc(t.policy) + (t.vip ? '<div class="text-muted small">VIP ' + esc(t.vip) + '</div>' : '') + '</td>' +
+          '<td class="fw-mono small text-nowrap">' + esc(t.policy) + (t.vip ? '<div class="text-muted small">VIP ' + esc(t.vip) + '</div>' : '') + '</td>' +
           '<td><input class="form-control form-control-sm fw-obs-host" value="' + esc(t.host_edit !== undefined ? t.host_edit : (t.default_host || '')) + '"' +
           (t.scannable ? '' : ' disabled') + ' list="fw-obs-hosts-' + esc(t.policy) + '">' +
           '<datalist id="fw-obs-hosts-' + esc(t.policy) + '">' + (t.hosts || []).map(x => '<option value="' + esc(x) + '">').join('') + '</datalist></td>' +
-          '<td class="small">' + esc(ports.join(' · ') || '—') + '</td>' +
+          '<td class="small text-nowrap">' + esc(ports.join(' · ') || '—') + '</td>' +
           '<td class="fw-obs-grade">' + (last ? (last.grade ? gradeBadge(last.grade) + ' <span class="small text-muted">' + esc(last.score) + '</span>'
             : '<span class="small text-danger" title="' + esc(last.error) + '">not graded</span>') : '<span class="text-muted small">—</span>') + '</td>' +
           '<td class="small text-muted fw-obs-when">' + (last ? when(last.started_at) : '') + '</td>' +

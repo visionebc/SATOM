@@ -61,6 +61,11 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - The HTTP Observatory site picker labels added in 3.2.1 (**Select sites**,
   **Select all matches**, **Clear selection**, **Grade selected**, the search
   placeholder) were untranslated in Spanish, German, French and Italian.
+- On a phone the ADOM chooser shown after sign-in could not be scrolled: the
+  six product cards were taller than the screen and centred in a fixed box,
+  so the header, **Global** and **FortiGate** sat off-screen out of reach.
+  The chooser now scrolls, and on narrow or short (landscape) screens each
+  ADOM is a compact row — all six fit on a 390 × 844 phone without scrolling.
 
 ## [3.2.1] - 2026-10-16
 

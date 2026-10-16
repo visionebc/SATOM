@@ -17,10 +17,12 @@ would fix a failed test is :mod:`app.services.observatory_fix`.
 
 Three documented differences from mozilla.org:
 
-* **The HSTS preload list is not consulted.** It is a Chromium data file the
-  node does not carry. ``hsts-preloaded`` (+5) and
-  ``redirection-all-redirects-preloaded`` are therefore never awarded; a site
-  that is preloaded scores what its own headers earn.
+* **The HSTS preload list is the one the node holds.** MDN reads Chromium's
+  list at install time; SATOM reads it from :mod:`app.services.hsts_preload`
+  (refreshed weekly). The engine stays pure: the scanner looks the names up
+  and passes the answers in ``req["hsts_preload"]`` (``{host: entry|None}``),
+  so a stored scan re-grades with the list it was graded with. A node without
+  a list answers "not preloaded" for every name, as before 2026-10-16.
 * **The registrable domain used by the SRI test** is read with a short
   built-in list of multi-label public suffixes instead of the full Public
   Suffix List (no PSL library on the node). It only decides whether an
@@ -676,6 +678,14 @@ def test_csp(req: dict) -> dict:
     return out
 
 
+def preloaded(req: dict, host: str | None) -> dict | None:
+    """The preload entry the scanner found for *host* (``req["hsts_preload"]``,
+    see :mod:`app.services.hsts_preload`), or None."""
+    h = str(host or "").strip().lower().rstrip(".")
+    entry = (req.get("hsts_preload") or {}).get(h) if h else None
+    return entry if isinstance(entry, dict) else None
+
+
 def test_hsts(req: dict) -> dict:
     out = _out("strict-transport-security", "hsts-not-implemented")
     resp = req.get("https")
@@ -714,6 +724,15 @@ def test_hsts(req: dict) -> dict:
         except ValueError as exc:
             out["result"] = "hsts-header-invalid"
             out["data"]["error"] = str(exc)
+    # On the preload list: overrides most anything else — even an untrusted
+    # certificate — as long as there is an HTTPS response (the reference).
+    if resp:
+        pre = preloaded(req, req.get("host"))
+        if pre:
+            out["result"] = "hsts-preloaded"
+            out["data"]["preloaded"] = True
+            out["data"]["preload_entry"] = pre.get("name")
+            out["data"]["include_subdomains"] = bool(pre.get("include_subdomains"))
     out["pass"] = out["result"] in ("hsts-implemented-max-age-at-least-six-months",
                                     "hsts-preloaded")
     return out
@@ -832,7 +851,12 @@ def test_redirection(req: dict) -> dict:
     else:
         urls = [r["url"] for r in route]
         out["data"]["route"] = urls
-        if len(urls) <= 1:
+        # Every host of the chain on the preload list: no request ever goes
+        # out in plain HTTP from a browser that has the list. (The reference's
+        # route always holds the first request, so an empty one never counts.)
+        if urls and all(preloaded(req, _host_of(u)) for u in urls):
+            out["result"] = "redirection-all-redirects-preloaded"
+        elif len(urls) <= 1:
             out["result"] = "redirection-missing"
         elif _scheme_of(urls[-1]) != "https:":
             out["result"] = "redirection-not-to-https"

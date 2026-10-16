@@ -552,6 +552,16 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "OPTIONS to its published sites; never writes configuration. "
                 "Schedule DAILY or WEEKLY.",
     ),
+    ActionSpec(
+        "hsts_preload_refresh", "HTTP Observatory — refresh the HSTS preload list", "admin",
+        needs_targets=False,
+        summary="Download Chromium's HSTS preload list (the file the MDN HTTP "
+                "Observatory reads) into data/hsts-preload/, so a preloaded site "
+                "earns the same +5 it gets on mozilla.org "
+                "(services.hsts_preload). A failed download keeps the stored "
+                "list. One outbound HTTPS request; no device call. Schedule "
+                "WEEKLY.",
+    ),
 ]
 
 # Operator automations: work on the fleet's services, scheduled for a chosen time
@@ -1189,6 +1199,9 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_cert_scan(appliance, dry_run)
         if key == "observatory_scan":
             return _do_observatory_scan(appliance, dry_run)
+        if key == "hsts_preload_refresh":
+            from . import hsts_preload
+            return hsts_preload.scheduled_refresh(dry_run)
         if key == "cert_lifecycle":
             return _do_cert_lifecycle(appliance, dry_run)
         if key.startswith("cert_manager_"):

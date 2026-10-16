@@ -54,6 +54,8 @@ MIN_ACTIONS = {
     "sentinel_vuln_sync": "Sentinel CVE mirror refresh (daily, gated)",
     "knowledge_fetch": "knowledge packs from the feed (daily; mode is a setting)",
     "signature_check": "signature DB freshness per FortiWeb (daily)",
+    "observatory_scan": "HTTP Observatory grades of published sites (daily)",
+    "hsts_preload_refresh": "HSTS preload list for the Observatory (weekly)",
 }
 
 

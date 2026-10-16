@@ -89,6 +89,32 @@ def history(appliance_id: int, policy: str, limit: int = KEEP_PER_SITE) -> list[
             .limit(limit).all())
 
 
+def record_fix(appliance, policy: str, the_plan: dict, out: dict, *,
+               scan_id: int | None, username: str):
+    """Keep an applied plan so it can be reverted (nothing is kept when no
+    write was accepted: there is nothing to undo)."""
+    from ..models_observatory import ObservatoryFix
+    from . import observatory_fix as ofx
+    steps = ofx.steps_of(the_plan, out)
+    if not any(s["ok"] for s in steps):
+        return None
+    row = ObservatoryFix(appliance_id=appliance.id, policy=policy, scan_id=scan_id,
+                         username=(username or "")[:64],
+                         fixes=json.dumps(the_plan.get("fixes") or []),
+                         steps=json.dumps(steps), others=json.dumps(the_plan.get("others") or []),
+                         ok=bool(out.get("ok")))
+    db.session.add(row)
+    db.session.commit()
+    return row
+
+
+def fixes(appliance_id: int, policy: str, limit: int = 50):
+    from ..models_observatory import ObservatoryFix
+    return (ObservatoryFix.query.filter_by(appliance_id=appliance_id, policy=policy)
+            .order_by(ObservatoryFix.applied_at.desc(), ObservatoryFix.id.desc())
+            .limit(limit).all())
+
+
 def _rank(grade: str | None) -> int:
     from .header_observatory import GRADES
     return GRADES.index(grade) if grade in GRADES else len(GRADES)

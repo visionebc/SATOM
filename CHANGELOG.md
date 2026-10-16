@@ -6,6 +6,62 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — HTTP Observatory: revert a fix, CSP in Report-Only first, the HSTS preload list, CSV and PDF exports, nightly grading (2026-10-16)
+
+- **Revert a fix.** Every set of fixes applied from the page is kept with, for
+  each write, the fields it changed and what they held before, and the id of
+  every row it added. **History → Fixes applied to this site** lists them;
+  **Revert** (also offered right after **Apply**) reads the appliance again,
+  shows what it would undo — newest write first — and, on confirmation,
+  restores those fields, removes the rows the fix added and deletes the
+  profiles it created. The site is graded again afterwards. A field someone
+  changed after the fix is left as it is and named ("hsts-max-age is now 600
+  (the fix wrote 31536000)"), never overwritten; a row someone edited is not
+  removed, and a profile is deleted only when every row in it is one the fix
+  added and nothing else uses it. A revert that reaches other server policies
+  needs the same acknowledgement as the fix, and a template-managed profile or
+  someone else's edit lease refuses it. Fields are restored before the
+  switch that governs them is turned off, one switch per write: FortiWeb 8.0.6
+  answers 200 and keeps the old `hsts-max-age` / `hsts-include-subdomains` when
+  they arrive in the same request as `hsts-header disable` (measured). Needs
+  *config write*; audited (`observatory.fix.revert`).
+- **Content Security Policy in two steps.** When a site has no CSP, the
+  finding now offers **Step 1 — send it as Content-Security-Policy-Report-Only**
+  (FortiWeb 7.6.8 and 8.0.6 profile rows accept it): browsers report what the
+  policy would block and block nothing, so a policy can be watched before it
+  can break the site. The preview says the grade does not change — the MDN
+  Observatory scores Report-Only like no CSP. Once a Report-Only row exists,
+  the finding names it and **Step 2 — enforce it** starts from that exact
+  policy.
+- **HSTS preload list.** The node now holds Chromium's HSTS preload list —
+  the file the MDN HTTP Observatory reads — so a preloaded site gets the same
+  +5 (`hsts-preloaded`) it gets on mozilla.org, and an HTTP chain whose every
+  host is preloaded passes Redirection (`redirection-all-redirects-preloaded`).
+  The lookup and both rules follow MDN's source (an exact name always counts,
+  a parent name only with includeSubDomains, an untrusted certificate does not
+  cancel it). The new **HTTP Observatory — refresh the HSTS preload list**
+  action downloads it weekly (a failed download keeps the stored list); the
+  page footer shows its size and age, with **Refresh now** and **Import file**
+  (for a node without internet access) for operators with *Run operations*.
+  Each scan records which list it was graded with.
+- **Exports.** **Export CSV** on *Published sites*: every site of the
+  appliance with its latest grade, score and the result of each of the ten
+  tests (an appliance that cannot be listed exports its stored grades, marked
+  so). **PDF report** on a result: the grade, what was graded, and per test who
+  produced it and what fixes it — the same findings the page shows. Both are
+  audited (`observatory.export`); cells are spreadsheet-safe.
+- **Nightly grading armed by default.** *HTTP Observatory — grade published
+  sites* (daily 05:30) and the weekly preload refresh (Monday 05:00) join the
+  system automations a node seeds for itself and that `satom diagnose install`
+  checks; `satom execute seed actions --yes` adds them to an existing node.
+  Until now the Observatory graded only when someone clicked.
+
+### Fixed
+
+- The HTTP Observatory site picker labels added in 3.2.1 (**Select sites**,
+  **Select all matches**, **Clear selection**, **Grade selected**, the search
+  placeholder) were untranslated in Spanish, German, French and Italian.
+
 ## [3.2.1] - 2026-10-16
 
 ### Changed — HTTP Observatory: pick the sites to grade from a searchable checkbox list (2026-10-16)

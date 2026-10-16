@@ -185,6 +185,63 @@ def api_history():
     return jsonify(ok=True, scans=[r.summary() for r in observatory.history(appl.id, policy)])
 
 
+def _download(data, mimetype, filename):
+    from flask import Response
+    resp = Response(data, mimetype=mimetype)
+    resp.headers["Content-Disposition"] = 'attachment; filename="%s"' % filename
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+def _file_part(text: str) -> str:
+    import re
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", text or "")[:60].strip("-") or "site"
+
+
+@bp.route("/api/export.csv")
+@login_required
+@require_permission("view")
+def api_export_csv():
+    """Every published site of one appliance with its latest grade (CSV)."""
+    from datetime import datetime
+    from ..services import observatory_report
+    appl = _appliance(request.args.get("appliance_id"))
+    if appl is None:
+        return jsonify(ok=False, error="Not a FortiWeb or FortiADC appliance."), 400
+    latest = observatory.latest_by_policy(appl.id)
+    try:
+        targets, err = osc.targets_for(appl), ""
+    except Exception as exc:  # noqa: BLE001 — stored grades still export, marked
+        targets, err = [], "the appliance could not be listed (%s); stored grades only" % str(exc)[:120]
+    data = observatory_report.sites_csv(appl, targets, latest, listing_error=err)
+    log_action("observatory.export", target=appl.name,
+               extra={"appliance_id": appl.id, "format": "csv",
+                      "rows": len(targets) or len(latest)})
+    return _download(data, "text/csv; charset=utf-8", "observatory-%s-%s.csv" % (
+        _file_part(appl.name), datetime.utcnow().strftime("%Y%m%d-%H%M")))
+
+
+@bp.route("/api/scan/<int:scan_id>/report.pdf")
+@login_required
+@require_permission("view")
+def api_scan_pdf(scan_id):
+    """One scan as a PDF report (the findings the page shows)."""
+    from ..extensions import db
+    from ..models_observatory import ObservatoryScan
+    from ..services import observatory_report
+    row = db.session.get(ObservatoryScan, scan_id)
+    if row is None:
+        return jsonify(ok=False, error="scan not found"), 404
+    appl = visible_appliance_or_404(row.appliance_id)
+    data = observatory_report.scan_pdf(_view(row, appl), appliance_name=appl.name,
+                                       generated_by=_username())
+    log_action("observatory.export", target="%s:%s" % (appl.name, row.policy),
+               extra={"appliance_id": appl.id, "format": "pdf", "scan_id": row.id})
+    return _download(data, "application/pdf", "observatory-%s-%s-%s.pdf" % (
+        _file_part(appl.name), _file_part(row.policy),
+        row.started_at.strftime("%Y%m%d-%H%M") if row.started_at else row.id))
+
+
 def _plan_request(body):
     """``(appliance, row, items, ctx, plan, projection)`` or a ready error."""
     from ..models_observatory import ObservatoryScan
@@ -255,19 +312,160 @@ def api_apply():
                       "writes": [r["describe"] for r in out["results"]],
                       "error": out.get("error", "")[:300],
                       "affected_policies": the_plan.get("affected_policies")})
-    after = None
-    if out["results"] and any(r["ok"] for r in out["results"]):
-        target = None
-        try:
-            target = osc.find_target(appl, row.policy)
-        except Exception:  # noqa: BLE001 — the fix stands; the re-scan is a bonus
-            target = None
-        if target is not None:
-            new = observatory.run(appl, target, row.host or None, trigger="fix",
-                                  username=_username())
-            after = _view(new, appl)
+    fix = observatory.record_fix(appl, row.policy, the_plan, out, scan_id=row.id,
+                                 username=_username())
+    after = _regrade(appl, row.policy, row.host)
+    if fix is not None and after is not None:
+        fix.after_scan_id = after["scan"]["id"]
+        from ..extensions import db
+        db.session.commit()
     return jsonify(ok=out["ok"], error=out.get("error", ""), results=out["results"],
-                   plan=the_plan, projection=projection, after=after)
+                   plan=the_plan, projection=projection, after=after,
+                   fix=fix.summary() if fix is not None else None)
+
+
+def _regrade(appl, policy, host):
+    """Grade the site again after a write (the change stands either way; the
+    re-grade is how the operator sees what it did)."""
+    try:
+        target = osc.find_target(appl, policy)
+    except Exception:  # noqa: BLE001
+        target = None
+    if target is None:
+        return None
+    new = observatory.run(appl, target, host or None, trigger="fix", username=_username())
+    return _view(new, appl)
+
+
+def _fix_or_404(fix_id):
+    from flask import abort
+    from ..extensions import db
+    from ..models_observatory import ObservatoryFix
+    fix = db.session.get(ObservatoryFix, int(fix_id))
+    if fix is None:
+        abort(404)
+    appl = visible_appliance_or_404(fix.appliance_id)
+    return fix, appl
+
+
+@bp.route("/api/fixes")
+@login_required
+@require_permission("view")
+def api_fixes():
+    """The fixes applied to one site, newest first, with their revert state."""
+    appl = _appliance(request.args.get("appliance_id"))
+    if appl is None:
+        return jsonify(ok=False, error="Not a FortiWeb or FortiADC appliance."), 400
+    policy = str(request.args.get("policy") or "")
+    return jsonify(ok=True, fixes=[f.summary() for f in observatory.fixes(appl.id, policy)])
+
+
+@bp.route("/api/fix/<int:fix_id>/revert-plan", methods=["POST"])
+@login_required
+@require_permission("config_write")
+def api_revert_plan(fix_id):
+    """What reverting a fix would write, read against the device now."""
+    fix, appl = _fix_or_404(fix_id)
+    try:
+        rp = ofx.revert_plan(appl, fix)
+    except ofx.FixRefused as exc:
+        return jsonify(ok=False, error=str(exc)), 409
+    except Exception as exc:  # noqa: BLE001 — unreadable box: say so
+        return jsonify(ok=False, error="Could not read %s: %s" % (appl.name, exc)), 502
+    return jsonify(ok=True, plan=rp, fix=fix.summary())
+
+
+@bp.route("/api/fix/<int:fix_id>/revert", methods=["POST"])
+@login_required
+@require_permission("config_write")
+def api_revert(fix_id):
+    """Revert a fix, then grade the site again."""
+    from datetime import datetime
+    import json as _json
+    from ..extensions import db
+    fix, appl = _fix_or_404(fix_id)
+    body = request.get_json(silent=True) or {}
+    try:
+        out = ofx.revert(appl, fix, ack_shared=bool(body.get("ack_shared")),
+                         user_id=getattr(current_user, "id", None))
+    except ofx.FixRefused as exc:
+        log_action("observatory.fix.revert.refused", target="%s:%s" % (appl.name, fix.policy),
+                   extra={"appliance_id": appl.id, "fix_id": fix.id, "reason": str(exc)[:300]})
+        return jsonify(ok=False, error=str(exc)), 409
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error="Could not read %s: %s" % (appl.name, exc)), 502
+    fix.revert_result = _json.dumps(out["results"])
+    if out["reverted"]:
+        fix.reverted_at = datetime.utcnow()
+        fix.reverted_by = _username()[:64]
+    db.session.commit()
+    log_action("observatory.fix.revert", target="%s:%s" % (appl.name, fix.policy),
+               extra={"appliance_id": appl.id, "fix_id": fix.id, "ok": out["ok"],
+                      "reverted": out["reverted"],
+                      "writes": [r["describe"] for r in out["results"]],
+                      "error": (out.get("error") or "")[:300]})
+    from ..models_observatory import ObservatoryScan
+    planned_from = db.session.get(ObservatoryScan, fix.scan_id) if fix.scan_id else None
+    after = (_regrade(appl, fix.policy, planned_from.host if planned_from else "")
+             if out["results"] else None)
+    return jsonify(ok=out["ok"], error=out.get("error", ""), results=out["results"],
+                   reverted=out["reverted"], plan=out["plan"], after=after, fix=fix.summary())
+
+
+#: Refreshing or importing the preload list replaces node data every grade
+#: reads: the permission that runs scheduled actions (the weekly refresh is
+#: one), not a viewer's.
+PRELOAD_PERMISSION = "operations.apply"
+
+
+@bp.route("/api/hsts-preload")
+@login_required
+@require_permission("view")
+def api_preload_status():
+    from ..services import hsts_preload
+    return jsonify(ok=True, status=hsts_preload.status(),
+                   may_refresh=current_user.can(PRELOAD_PERMISSION))
+
+
+@bp.route("/api/hsts-preload/refresh", methods=["POST"])
+@login_required
+@require_permission("view")
+def api_preload_refresh():
+    """Download the list now (what the weekly action does)."""
+    from ..services import hsts_preload
+    if not current_user.can(PRELOAD_PERMISSION):
+        return jsonify(ok=False, error="Refreshing the HSTS preload list needs Run operations."), 403
+    try:
+        meta = hsts_preload.refresh()
+    except hsts_preload.PreloadError as exc:
+        log_action("observatory.hsts_preload.refresh", target="hsts-preload",
+                   extra={"ok": False, "error": str(exc)[:200]})
+        return jsonify(ok=False, error=str(exc), status=hsts_preload.status()), 502
+    log_action("observatory.hsts_preload.refresh", target="hsts-preload",
+               extra={"ok": True, "count": meta.get("count")})
+    return jsonify(ok=True, status=hsts_preload.status())
+
+
+@bp.route("/api/hsts-preload/import", methods=["POST"])
+@login_required
+@require_permission("view")
+def api_preload_import():
+    """Store an uploaded copy of Chromium's transport_security_state_static.json
+    (a node without internet access)."""
+    from ..services import hsts_preload
+    if not current_user.can(PRELOAD_PERMISSION):
+        return jsonify(ok=False, error="Importing the HSTS preload list needs Run operations."), 403
+    f = request.files.get("file")
+    if f is None:
+        return jsonify(ok=False, error="Choose the Chromium transport_security_state_static.json file."), 400
+    raw = f.stream.read(hsts_preload.MAX_BYTES + 1)
+    try:
+        meta = hsts_preload.import_bytes(raw, origin="upload by %s" % _username())
+    except hsts_preload.PreloadError as exc:
+        return jsonify(ok=False, error=str(exc), status=hsts_preload.status()), 400
+    log_action("observatory.hsts_preload.import", target="hsts-preload",
+               extra={"count": meta.get("count"), "bytes": len(raw)})
+    return jsonify(ok=True, status=hsts_preload.status())
 
 
 @bp.route("/api/grade-headers", methods=["POST"])
@@ -288,9 +486,15 @@ def api_grade_headers():
     url = str(body.get("url") or "")[:2048]
     resp = {"status": 200, "headers": clean, "set_cookie": cookies,
             "verified": True, "body": ""}
-    req = {"host": "", "auto": resp, "auto_url": url,
+    host = ho._host_of(url)
+    req = {"host": host, "auto": resp, "auto_url": url,
            "https": resp if url.lower().startswith("https:") else None,
            "cookies": cookies}
+    try:
+        from ..services import hsts_preload
+        req["hsts_preload"] = hsts_preload.lookup_many([host])
+    except Exception:  # noqa: BLE001 — no list: nothing is preloaded
+        req["hsts_preload"] = {}
     tests = []
     with_extra = uncurved = 100
     for name in ("content-security-policy", "x-frame-options", "x-content-type-options",

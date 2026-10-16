@@ -24930,3 +24930,75 @@ msgstr "Bewertung: MDN HTTP Observatory, Algorithmus-Version 6. Unterschiede: Di
 
 msgid "Tests and scoring"
 msgstr "Tests und Bewertung"
+
+# HTTP Observatory: revert, exports, HSTS preload list (2026-10-16)
+
+#: app/templates/observatory/index.html
+msgid "Every published site of this appliance with its latest grade and the result of each test, as CSV"
+msgstr "Alle veröffentlichten Sites dieses Geräts mit ihrer letzten Note und dem Ergebnis jedes Tests, als CSV"
+
+#: app/templates/observatory/index.html
+msgid "Fixes applied to this site"
+msgstr "Auf diese Site angewendete Korrekturen"
+
+#: app/templates/observatory/index.html
+msgid "For a node without internet access: Chromium transport_security_state_static.json"
+msgstr "Für einen Knoten ohne Internetzugang: transport_security_state_static.json von Chromium"
+
+#: app/templates/observatory/index.html
+msgid "HSTS preload list"
+msgstr "HSTS-Preload-Liste"
+
+#: app/templates/observatory/index.html
+msgid "Import file"
+msgstr "Datei importieren"
+
+#: app/templates/observatory/index.html
+msgid "Newest write first. A field is restored only while the device still holds what the fix wrote; anything changed since is left as it is and named here. The site is graded again afterwards."
+msgstr "Neueste Schreiboperation zuerst. Ein Feld wird nur wiederhergestellt, solange das Gerät noch enthält, was die Korrektur geschrieben hat; was sich seitdem geändert hat, bleibt unverändert und wird hier genannt. Danach wird die Site erneut bewertet."
+
+#: app/templates/observatory/index.html
+msgid "PDF report"
+msgstr "PDF-Bericht"
+
+#: app/templates/observatory/index.html
+msgid "Refresh now"
+msgstr "Jetzt aktualisieren"
+
+#: app/templates/observatory/index.html
+msgid "Revert"
+msgstr "Zurücknehmen"
+
+#: app/templates/observatory/index.html
+msgid "Revert a fix"
+msgstr "Eine Korrektur zurücknehmen"
+
+#: app/templates/observatory/index.html
+msgid "Scoring: MDN HTTP Observatory, algorithm version 6. Difference: redirects are followed only while they stay on the scanned policy."
+msgstr "Bewertung: MDN HTTP Observatory, Algorithmusversion 6. Unterschied: Weiterleitungen werden nur verfolgt, solange sie auf der geprüften Policy bleiben."
+
+#: app/templates/observatory/index.html
+msgid "This result as a PDF report"
+msgstr "Dieses Ergebnis als PDF-Bericht"
+
+# HTTP Observatory: site picker (3.2.1, untranslated until 2026-10-16)
+
+#: app/templates/observatory/index.html
+msgid "Clear selection"
+msgstr "Auswahl aufheben"
+
+#: app/templates/observatory/index.html
+msgid "Grade selected"
+msgstr "Auswahl bewerten"
+
+#: app/templates/observatory/index.html
+msgid "Search policy, site name or VIP"
+msgstr "Policy, Site-Name oder VIP suchen"
+
+#: app/templates/observatory/index.html
+msgid "Select all matches"
+msgstr "Alle Treffer auswählen"
+
+#: app/templates/observatory/index.html
+msgid "Select sites"
+msgstr "Sites auswählen"

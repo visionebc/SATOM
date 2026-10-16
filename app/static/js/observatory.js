@@ -71,6 +71,7 @@
       const sel = $('fw-obs-appliance');
       if (!sel) return;
       state.appliance = sel.value;
+      $('fw-obs-export').href = '/observatory/api/export.csv?appliance_id=' + encodeURIComponent(state.appliance);
       $('fw-obs-err').textContent = '';
       $('fw-obs-targets').innerHTML = '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-2"></span>Reading the appliance…</div>';
       // Until this appliance's list arrives the previous one must not stay
@@ -288,6 +289,7 @@
       $('fw-obs-resultsite').textContent = (tgt.appliance || '') + ' · ' + s.policy + ' · ' + (s.host || '');
       const autoUrl = ((v.retrieval || {}).auto_url) || '';
       $('fw-obs-trace').href = '/txn-trace/?vip=' + encodeURIComponent(autoUrl || ('https://' + (tgt.vip || '')));
+      $('fw-obs-pdf').href = '/observatory/api/scan/' + encodeURIComponent(s.id) + '/report.pdf';
       let h = '<div class="d-flex align-items-center gap-3 flex-wrap">' + gradeBadge(s.grade, true);
       if (s.grade) {
         h += '<div><div class="fw-bold">' + esc(s.score) + ' / 100</div><div class="small text-muted">' +
@@ -313,6 +315,9 @@
         if (route.length) notes.push(k.toUpperCase() + ': ' + route.map(x => x.url + (x.status ? ' [' + x.status + ']' : ' [not followed: outside this policy]')).join(' → '));
         if ((ret.errors || {})[k]) notes.push(k.toUpperCase() + ' error: ' + ret.errors[k]);
       });
+      const pl = ret.hsts_preload_list;
+      if (pl) notes.push(pl.available ? 'Graded with the HSTS preload list of this node (' + pl.count + ' names)'
+        : 'Graded without an HSTS preload list (this node has none): a preloaded site gets no +5');
       if (v.context_error) notes.push(v.context_error);
       if (v.context) notes.push('Web Protection Profile: ' + (v.context.wpp || 'none') + ' · HTTP Header Security: ' + (v.context.hhs || 'none') +
         ' · Cookie Security: ' + (v.context.cks || 'none') + ' · FortiWeb ' + (v.context.version || '?'));
@@ -335,7 +340,7 @@
     function optionsHtml(fx) {
       const o = fx.option || {};
       const id = 'fw-obs-o-' + fx.id.replace(/[^a-z0-9]/gi, '-');
-      if (fx.id === 'header:content-security-policy') {
+      if (fx.id === 'header:content-security-policy' || fx.id === 'header:content-security-policy-report-only') {
         return '<textarea class="form-control form-control-sm fw-mono mt-1 fw-obs-opt" data-k="value" id="' + id + '" rows="2">' + esc(o.default || '') + '</textarea>';
       }
       if (o.choices && o.choices.length) {
@@ -452,6 +457,8 @@
             esc(x.describe) + (x.verify ? ' <span class="text-muted">(' + esc(x.verify) + ')</span>' : '') + (x.error ? ' — ' + esc(x.error) : '') + '</div>';
         });
         if (!d.ok) h += '<div class="text-danger small mt-1">' + esc(d.error) + '</div>';
+        if (d.fix) h += '<div class="mt-1"><button type="button" class="btn btn-sm btn-fw-outline fw-obs-revert" data-fix-id="' + esc(d.fix.id) + '">' +
+          '<i class="bi bi-arrow-counterclockwise me-1"></i>Revert these changes</button> <span class="small text-muted">also in History</span></div>';
         $('fw-obs-applyout').innerHTML = h;
         if (d.after) {
           const t = state.targets.find(x => x.policy === d.after.scan.policy);
@@ -482,6 +489,132 @@
         });
         $('fw-obs-histbody').innerHTML = h + '</tbody></table>';
       });
+      loadFixHistory(s.appliance_id, s.policy);
+    }
+
+    // ----------------------------------------------------------------- revert
+    function loadFixHistory(applianceId, policy) {
+      const box = $('fw-obs-fixhist');
+      box.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+      const mayFix = $('fw-obs-page').dataset.mayFix === '1';
+      req('GET', '/observatory/api/fixes?appliance_id=' + encodeURIComponent(applianceId) + '&policy=' + encodeURIComponent(policy)).then(r => {
+        if (!r.d.ok) { box.textContent = r.d.error || 'error'; return; }
+        if (!r.d.fixes.length) { box.innerHTML = '<span class="text-muted">No fix was applied to this site from SATOM.</span>'; return; }
+        let h = '<table class="table table-sm mb-0"><thead><tr><th>When</th><th>By</th><th>Writes</th><th>State</th><th></th></tr></thead><tbody>';
+        r.d.fixes.forEach(f => {
+          const state = f.reverted_at ? '<span class="fw-badge fw-badge-secondary fw-badge-nowrap">reverted ' + when(f.reverted_at) + (f.reverted_by ? ' · ' + esc(f.reverted_by) : '') + '</span>'
+            : (f.ok ? '<span class="fw-badge fw-badge-success">applied</span>' : '<span class="fw-badge fw-badge-warning">partly applied</span>');
+          h += '<tr><td class="text-nowrap">' + when(f.applied_at) + '</td><td>' + esc(f.username) + '</td><td><ul class="mb-0 ps-3">' +
+            (f.writes || []).map(w => '<li>' + esc(w) + '</li>').join('') + '</ul></td><td>' + state + '</td><td class="text-end">' +
+            (!f.reverted_at && mayFix ? '<button type="button" class="btn btn-sm btn-fw-outline fw-obs-revert" data-fix-id="' + esc(f.id) + '"><i class="bi bi-arrow-counterclockwise me-1"></i>Revert</button>' : '') +
+            '</td></tr>';
+        });
+        box.innerHTML = h + '</tbody></table>';
+      });
+    }
+
+    const RV = { restore: ['fw-badge-primary', 'will undo'], skip: ['fw-badge-warning', 'left as is'], done: ['fw-badge-secondary', 'nothing to do'] };
+    function revertPreview(fixId) {
+      const card = $('fw-obs-revertcard');
+      if (!card) return;
+      card.style.display = '';
+      card.dataset.fixId = fixId;
+      $('fw-obs-reverttitle').textContent = 'fix #' + fixId;
+      $('fw-obs-revertout').innerHTML = '';
+      $('fw-obs-revertgo').disabled = true;
+      $('fw-obs-revertackwrap').style.display = 'none';
+      $('fw-obs-revertplan').innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Reading the appliance…';
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      req('POST', '/observatory/api/fix/' + encodeURIComponent(fixId) + '/revert-plan', {}).then(r => {
+        if (!r.d.ok) { $('fw-obs-revertplan').innerHTML = '<div class="text-danger small">' + esc(r.d.error) + '</div>'; return; }
+        const p = r.d.plan;
+        let h = '<div class="small mb-1">Applied ' + when(r.d.fix.applied_at) + ' by ' + esc(r.d.fix.username || '?') + ' to <code>' + esc(p.policy) + '</code></div><ol class="small mb-1">';
+        p.steps.forEach(u => {
+          const b = RV[u.status] || RV.skip;
+          h += '<li><span class="fw-badge ' + b[0] + ' fw-badge-nowrap">' + b[1] + '</span> ' + esc(u.status === 'restore' ? u.describe : u.undoes) +
+            (u.why ? '<div class="text-muted">' + esc(u.why) + '</div>' : '') + '</li>';
+        });
+        h += '</ol>';
+        if (!p.writes.length) h += '<div class="small text-muted">Nothing to revert.</div>';
+        $('fw-obs-revertplan').innerHTML = h;
+        $('fw-obs-revertackwrap').style.display = p.shared && p.writes.length ? '' : 'none';
+        $('fw-obs-revertack').checked = false;
+        $('fw-obs-revertacklabel').textContent = 'This also changes ' + (p.others || []).join(', ') + ' (they share the profile). Revert it for all of them.';
+        $('fw-obs-revertgo').disabled = !p.writes.length;
+      });
+    }
+
+    function revertRun() {
+      const card = $('fw-obs-revertcard');
+      const fixId = card.dataset.fixId;
+      $('fw-obs-revertgo').disabled = true;
+      $('fw-obs-revertout').innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Reverting and grading again…';
+      req('POST', '/observatory/api/fix/' + encodeURIComponent(fixId) + '/revert', { ack_shared: $('fw-obs-revertack').checked }).then(r => {
+        const d = r.d;
+        let h = '';
+        (d.results || []).forEach(x => {
+          h += '<div class="small">' + (x.ok ? '<i class="bi bi-check-circle text-success me-1"></i>' : '<i class="bi bi-x-circle text-danger me-1"></i>') +
+            esc(x.describe) + (x.verify ? ' <span class="text-muted">(' + esc(x.verify) + ')</span>' : '') + (x.error ? ' — ' + esc(x.error) : '') + '</div>';
+        });
+        if (d.error) h += '<div class="small mt-1 ' + (d.ok ? 'text-muted' : 'text-danger') + '">' + esc(d.error) + '</div>';
+        if (d.reverted) h += '<div class="small mt-1"><span class="fw-badge fw-badge-success">reverted</span></div>';
+        if (d.after) {
+          const t = state.targets.find(x => x.policy === d.after.scan.policy);
+          if (t) t.last = d.after.scan;
+          renderTargets();
+          renderResult(d.after);
+          h += '<div class="mt-1">Graded again: ' + gradeBadge(d.after.scan.grade) + ' ' + esc(d.after.scan.score) + '</div>';
+          card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        $('fw-obs-revertout').innerHTML = h;
+      });
+    }
+
+    // ---------------------------------------------------------- preload list
+    function renderPreload(st, mayRefresh) {
+      const el = $('fw-obs-preload');
+      if (!el) return;
+      if (st && st.available) {
+        el.innerHTML = '<span class="fw-badge ' + (st.stale ? 'fw-badge-warning' : 'fw-badge-success') + ' fw-badge-nowrap">' +
+          esc(st.count) + ' names</span> ' + (st.fetched_at ? 'fetched ' + when(new Date(st.fetched_at * 1000).toISOString()) : '') +
+          (st.stale ? ' — older than three weeks' : '') + (st.origin && st.origin !== 'download' ? ' (' + esc(st.origin) + ')' : '');
+      } else {
+        el.innerHTML = '<span class="fw-badge fw-badge-warning fw-badge-nowrap">not on this node</span> preloaded sites get no +5 until it is downloaded' +
+          (st && st.error ? ' — ' + esc(st.error) : '');
+      }
+      if (mayRefresh !== undefined) {
+        const a = $('fw-obs-preloadactions');
+        a.classList.toggle('d-none', !mayRefresh);
+        a.classList.toggle('d-flex', !!mayRefresh);
+      }
+    }
+    function loadPreload() {
+      if (!$('fw-obs-preload')) return;
+      req('GET', '/observatory/api/hsts-preload').then(r => { if (r.d.ok) renderPreload(r.d.status, r.d.may_refresh); });
+    }
+    function refreshPreload() {
+      $('fw-obs-preloadmsg').innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Downloading…';
+      req('POST', '/observatory/api/hsts-preload/refresh', {}).then(r => {
+        $('fw-obs-preloadmsg').innerHTML = r.d.ok ? '<span class="text-success">updated</span>' : '<span class="text-danger">' + esc(r.d.error) + '</span>';
+        if (r.d.status) renderPreload(r.d.status);
+      });
+    }
+    function importPreload() {
+      const inp = $('fw-obs-preloadfile');
+      if (!inp.files || !inp.files.length) return;
+      const fd = new FormData();
+      fd.append('file', inp.files[0]);
+      const headers = { Accept: 'application/json' };
+      const meta = document.querySelector('meta[name="csrf-token"]');
+      if (meta && meta.content) headers['X-CSRFToken'] = meta.content;
+      $('fw-obs-preloadmsg').innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Importing…';
+      fetch('/observatory/api/hsts-preload/import', { method: 'POST', headers: headers, body: fd })
+        .then(r => r.json().catch(() => ({ ok: false, error: 'HTTP ' + r.status })))
+        .then(d => {
+          $('fw-obs-preloadmsg').innerHTML = d.ok ? '<span class="text-success">imported</span>' : '<span class="text-danger">' + esc(d.error) + '</span>';
+          if (d.status) renderPreload(d.status);
+          inp.value = '';
+        });
     }
 
     function init() {
@@ -489,6 +622,9 @@
       if (!root || root.dataset.obsBound) return;
       root.dataset.obsBound = '1';
       state = { appliance: null, targets: [], picked: new Set(), current: null, busy: false };
+      loadPreload();
+      $('fw-obs-preloadrefresh').addEventListener('click', refreshPreload);
+      $('fw-obs-preloadfile').addEventListener('change', importPreload);
       if (!$('fw-obs-appliance')) return;
       $('fw-obs-appliance').addEventListener('change', loadTargets);
       $('fw-obs-reload').addEventListener('click', loadTargets);
@@ -518,12 +654,20 @@
       if ($('fw-obs-preview')) {
         $('fw-obs-preview').addEventListener('click', preview);
         $('fw-obs-apply').addEventListener('click', apply);
+        $('fw-obs-revertgo').addEventListener('click', revertRun);
+        $('fw-obs-revertclose').addEventListener('click', () => { $('fw-obs-revertcard').style.display = 'none'; });
       }
       root.addEventListener('click', function (ev) {
         const b = ev.target.closest('.fw-obs-scan');
         if (b) { scan(b.closest('tr').getAttribute('data-policy')); return; }
         const up = ev.target.closest('.fw-obs-unpick');
         if (up) { setPicked(up.closest('tr').getAttribute('data-policy'), false); pickChanged(); return; }
+        const rv = ev.target.closest('.fw-obs-revert');
+        if (rv) {
+          bootstrap.Modal.getOrCreateInstance($('fw-obs-histmodal')).hide();
+          revertPreview(rv.getAttribute('data-fix-id'));
+          return;
+        }
         const vw = ev.target.closest('.fw-obs-view');
         if (vw) { view(vw.getAttribute('data-scan')); return; }
         const hv = ev.target.closest('.fw-obs-histview');

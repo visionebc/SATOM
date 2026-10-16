@@ -91,7 +91,17 @@ SEED_PLAN = [
     # One CLI read per FortiWeb; the alert engine turns a signature DB older
     # than 7 days (or unreadable) into a device finding.
     ("signature_check", "Signature DB freshness — read each FortiWeb's version", "daily",
-     {"time": "06:15"}, {}, "fortiweb"),
+     {"time": "06:15"}, {}, "fortiweb"),    # Without this row the HTTP Observatory grades only when someone clicks:
+    # a backend release that drops a header goes unseen until the next manual
+    # look (2026-10-16: five scans ever, all manual). Every FortiWeb server
+    # policy and FortiADC virtual server; GET/OPTIONS to their VIPs only,
+    # never a write. A drop in grade is named first in the run summary.
+    ("observatory_scan", "HTTP Observatory — grade published sites", "daily",
+     {"time": "05:30"}, {}, "global"),
+    # The preload list the Observatory's +5 depends on, refreshed BEFORE the
+    # Monday grading. One HTTPS download; a failure keeps the stored list.
+    ("hsts_preload_refresh", "HTTP Observatory — refresh the HSTS preload list", "weekly",
+     {"weekday": 0, "time": "05:00"}, {}, "global"),
 ]
 
 

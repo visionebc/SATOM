@@ -342,6 +342,7 @@ def retrieve(target: Target, host: str | None = None) -> dict:
             req["errors"][scheme] = ch["error"]
     pick = "https" if req["https"] else ("http" if req["http"] else "")
     if not pick:
+        _preload(req)
         return req
     req["auto"] = req[pick]
     req["auto_url"] = req[pick]["url"]
@@ -370,7 +371,25 @@ def retrieve(target: Target, host: str | None = None) -> dict:
     except net_guard.TargetError:
         pass
     req["cookies"] = list(session.cookies)
+    _preload(req)
     return req
+
+
+def _preload(req: dict) -> None:
+    """The preload-list answers the engine reads (it never opens a file):
+    the site name and every host of both redirect chains, plus which list
+    answered, so the result says what it was graded against."""
+    from . import hsts_preload
+    hosts = [req.get("host")] + [ho._host_of(r.get("url") or "")
+                                 for k in ("http_route", "https_route")
+                                 for r in req.get(k) or []]
+    try:
+        req["hsts_preload"] = hsts_preload.lookup_many(hosts)
+        st = hsts_preload.status()
+    except Exception as exc:  # noqa: BLE001 — no list = nothing preloaded
+        req["hsts_preload"] = {}
+        st = {"available": False, "error": str(exc)[:200]}
+    req["hsts_preload_list"] = {k: st.get(k) for k in ("available", "count", "fetched_at", "error")}
 
 
 def _strip_bodies(req: dict) -> dict:

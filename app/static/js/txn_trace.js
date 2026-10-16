@@ -36,6 +36,10 @@
     // can be hundreds of MB and would freeze the tab instead of failing.
     const MAX_HAR_BYTES = 50 * 1024 * 1024;
     const MAX_TEXT = 200 * 1024;
+    // A session value is one 100-300 character token: in a narrow column it
+    // broke one character per line (seen in the first live render). A block
+    // with a floor and a ceiling wraps it into a few readable lines.
+    const VALUE_CELL = 'min-width:240px;max-width:420px;word-break:break-all;white-space:normal';
 
     let CTX = { safe_methods: ['GET'], mutating_methods: [], may_free: false };
 
@@ -299,8 +303,9 @@
       cookies.forEach((c, i) => {
         const val = values ? values[i] : null;
         h += '<tr><td class="font-monospace">' + esc(c.name) + '</td>' +
-          '<td class="font-monospace text-break">' + (val !== null && val !== undefined
-            ? esc(val) + ' <span class="fw-badge fw-badge-warning">revealed</span>'
+          '<td>' + (val !== null && val !== undefined
+            ? '<span class="fw-badge fw-badge-warning fw-badge-nowrap">revealed</span>' +
+              '<div class="font-monospace small mt-1" style="' + VALUE_CELL + '">' + esc(val) + '</div>'
             : '<span class="text-muted">redacted</span>') + '</td>' +
           '<td>' + flag(c.secure) + '</td><td>' + flag(c.httponly) + '</td>' +
           '<td>' + esc(c.samesite || '—') + '</td><td class="font-monospace">' + esc(c.path || '—') + '</td>' +
@@ -636,7 +641,8 @@
         '<th>Secure</th><th>HttpOnly</th><th>SameSite</th><th>Path</th><th>Domain</th><th>Expires</th></tr></thead><tbody>';
       list.forEach(c => {
         h += '<tr><td class="font-monospace">' + esc(c.name) + '</td>' +
-          '<td class="font-monospace text-break">' + (c.value ? esc(c.value) : '<span class="text-muted">—</span>') + '</td>' +
+          '<td>' + (c.value ? '<div class="font-monospace small" style="' + VALUE_CELL + '">' + esc(c.value) + '</div>'
+            : '<span class="text-muted">—</span>') + '</td>' +
           '<td>' + (c.secure === undefined ? '—' : flag(c.secure)) + '</td>' +
           '<td>' + (c.httpOnly === undefined ? '—' : flag(c.httpOnly)) + '</td>' +
           '<td>' + esc(c.sameSite || '—') + '</td><td class="font-monospace">' + esc(c.path || '—') + '</td>' +

@@ -5,7 +5,7 @@
    require (views/registry.py, adc_api.py, faz_api.py, fac_api.py, fgt_api.py).
 
    Since 2026-10-14 (operator) it is a subgroup of Automation
-   (partials/nav_automation.html, ``api_menu(nested=True)``), itself a
+   (partials/nav_automation.html calls ``api_menu`` in its nested form), itself a
    subgroup of Operations in the device ADOMs since later the same day.
    Automation is drawn for config_write only, so a profile holding registry.view without
    config_write keeps the standalone "API" group instead

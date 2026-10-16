@@ -2,7 +2,7 @@
    cm.default_policy); ``cert`` is optional (absent on the New form). Blank =
    follow the default, shown as the placeholder. #}
 {% set _c = cert if cert is defined else none %}
-<div class="row g-3 mt-1" style="font-size:13px;">
+<div class="row g-3 mt-1 align-items-end" style="font-size:13px;">
   <div class="col-md-3">
     <label class="fw-form-label" for="w-renew">{{ _('Renew (days before expiry)') }}</label>
     <input class="form-control fw-form-control" type="number" min="1" max="3650" id="w-renew"
@@ -36,7 +36,7 @@
       <option value="0" {{ 'selected' if _rv is sameas false }}>{{ _('No') }}</option>
     </select>
   </div>
-  <div class="col-md-6 d-flex align-items-end">
+  <div class="col-12">
     <div class="form-check">
       <input class="form-check-input" type="checkbox" name="auto_renew" id="w-auto" value="1"
              {{ 'checked' if (not _c) or _c.auto_renew }}>

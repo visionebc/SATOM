@@ -112,6 +112,33 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="fixed--concept-map-the-newest-pages-are-findable-by-what-they-do-2026-10-16">Fixed — Concept Map: the newest pages are findable by what they do (2026-10-16)</h3>
+<ul>
+<li>The map's coverage check failed after three JSON endpoints shipped without an
+  entry: the server hints behind <strong>Fetch…</strong> on WAF Artifacts and the two
+  database-lookup catalogs of the Script Library form designer. They are now
+  listed as JSON feeds, so the map again accounts for every page in the console
+  (122 pages on the map and 154 written exclusions today).</li>
+<li>Search now reaches the features added on 2026-10-15: <em>fetch</em>, <em>wsdl</em>, <em>soap</em>
+  or <em>import</em> finds <strong>Artifact inventory</strong>; <em>adom</em>, <em>confine</em> or <em>restrict</em>
+  finds <strong>Permission Profiles</strong>; <em>compare</em>, <em>lookup</em>, <em>dataset</em> or <em>query
+  builder</em> finds <strong>Script Library</strong>.</li>
+</ul>
+<h3 id="changed--cert-manager-windows-renewal-fields-line-up-2026-10-16">Changed — Cert Manager: Windows renewal fields line up (2026-10-16)</h3>
+<ul>
+<li>In the Windows renewal settings the inputs share one baseline, and
+  <strong>Auto-renew</strong> sits on its own line under them instead of floating beside the
+  last field.</li>
+</ul>
+<h3 id="fixed--cert-manager-copy-on-a-certificate-signing-request-works-2026-10-16">Fixed — Cert Manager: Copy on a certificate signing request works (2026-10-16)</h3>
+<ul>
+<li>On a certificate's page, <strong>Copy</strong> next to a signing request generated for
+  another CA did nothing: its script lacked the page's content-security nonce,
+  so the browser blocked it without a message. It now copies the request.</li>
+<li>The private-key boxes on <strong>New certificate</strong> and the import form keep their
+  PEM hint, now produced when the page is drawn, so the release secret scanner
+  no longer stops a release on the template.</li>
+</ul>
 <h3 id="fixed--clone-and-migrate-the-schemas-a-wsdl-or-xml-schema-imports-are-created-first-2026-10-15">Fixed — Clone and migrate: the schemas a WSDL or XML Schema imports are created first (2026-10-15)</h3>
 <ul>
 <li>A policy clone or migration now carries the XML Schemas that a WSDL or XML

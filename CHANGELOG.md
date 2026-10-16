@@ -6,6 +6,33 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — Concept Map: the newest pages are findable by what they do (2026-10-16)
+
+- The map's coverage check failed after three JSON endpoints shipped without an
+  entry: the server hints behind **Fetch…** on WAF Artifacts and the two
+  database-lookup catalogs of the Script Library form designer. They are now
+  listed as JSON feeds, so the map again accounts for every page in the console
+  (122 pages on the map and 154 written exclusions today).
+- Search now reaches the features added on 2026-10-15: *fetch*, *wsdl*, *soap*
+  or *import* finds **Artifact inventory**; *adom*, *confine* or *restrict*
+  finds **Permission Profiles**; *compare*, *lookup*, *dataset* or *query
+  builder* finds **Script Library**.
+
+### Changed — Cert Manager: Windows renewal fields line up (2026-10-16)
+
+- In the Windows renewal settings the inputs share one baseline, and
+  **Auto-renew** sits on its own line under them instead of floating beside the
+  last field.
+
+### Fixed — Cert Manager: Copy on a certificate signing request works (2026-10-16)
+
+- On a certificate's page, **Copy** next to a signing request generated for
+  another CA did nothing: its script lacked the page's content-security nonce,
+  so the browser blocked it without a message. It now copies the request.
+- The private-key boxes on **New certificate** and the import form keep their
+  PEM hint, now produced when the page is drawn, so the release secret scanner
+  no longer stops a release on the template.
+
 ### Fixed — Clone and migrate: the schemas a WSDL or XML Schema imports are created first (2026-10-15)
 
 - A policy clone or migration now carries the XML Schemas that a WSDL or XML

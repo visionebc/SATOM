@@ -13,9 +13,16 @@
 // CSP-safe: no inline handlers. The preview HTML comes from
 // /wiki/api/preview, the same safe converter as the article page
 // (services/wiki_markdown.py). Turbo Drive re-runs this script on every
-// visit: definitions run once, init() on every visit.
+// visit: definitions run once per version of this file, init() on every
+// visit.
 (function () {
-  if (!window.FWWiki) {
+  // Turbo keeps window.FWWiki across visits, so "define once" would keep
+  // running the OLD code after a deploy until a full reload (a fixed bug
+  // kept failing that way on a1). The definitions are keyed on this
+  // script's own URL, which carries the file's ?v=<mtime>: a new file
+  // redefines them on the next visit.
+  const VERSION = (document.currentScript && document.currentScript.src) || 'inline';
+  if (!window.FWWiki || window.FWWiki.version !== VERSION) {
     const TOOLBAR = [
       ['heading', 'bold', 'italic', 'strike'],
       ['hr', 'quote'],
@@ -384,7 +391,8 @@
       document.querySelectorAll('form[data-wiki-form]').forEach(bindForm);
     }
 
-    window.FWWiki = { init: init, langs: {} };
+    window.FWWiki = { init: init, langs: (window.FWWiki && window.FWWiki.langs) || {},
+                      version: VERSION };
   }
   window.FWWiki.init();
 })();

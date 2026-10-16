@@ -1,7 +1,8 @@
 // HTTP Observatory — the PAGE at /observatory/ (Troubleshooting).
 //
 // Lists the sites an appliance publishes (FortiWeb server policies, FortiADC
-// virtual servers), grades them through /observatory/api/scan, renders each
+// virtual servers) in a searchable checkbox picker — an appliance can publish
+// hundreds, so the table only holds the ticked ones — grades them through /observatory/api/scan, renders each
 // test with WHO produced it (FortiWeb / application / certificate) and lets an
 // operator with config_write tick FortiWeb fixes, preview the writes and the
 // grade they would give, and apply them (the site is graded again after).
@@ -18,7 +19,7 @@
     }
     function $(id) { return document.getElementById(id); }
 
-    let state = { appliance: null, targets: [], current: null, busy: false };
+    let state = { appliance: null, targets: [], picked: new Set(), current: null, busy: false };
 
     function req(method, url, body) {
       const opts = { method: method, headers: { Accept: 'application/json' } };
@@ -79,8 +80,14 @@
           return;
         }
         state.targets = r.d.targets || [];
-        renderTargets();
+        const known = new Set(state.targets.map(t => t.policy));
+        state.picked = new Set(loadPicked().filter(x => known.has(x)));
         const pre = $('fw-obs-page').dataset.prefillPolicy;
+        if (pre && known.has(pre)) state.picked.add(pre);
+        savePicked();
+        $('fw-obs-picksearch').value = '';
+        renderPicker();
+        renderTargets();
         if (pre) {
           $('fw-obs-page').dataset.prefillPolicy = '';
           const t = state.targets.find(x => x.policy === pre);
@@ -89,12 +96,93 @@
       });
     }
 
+    // ----------------------------------------------------------------- picker
+    // The ticked set is state.picked — never read back from the DOM — so the
+    // search can hide items freely without unticking them. Kept per
+    // appliance in localStorage: the operator's working set survives a visit.
+    function pickKey() { return 'satom.observatory.picked.' + state.appliance; }
+    function loadPicked() {
+      try { const v = JSON.parse(localStorage.getItem(pickKey()) || '[]'); return Array.isArray(v) ? v.map(String) : []; }
+      catch (e) { return []; }
+    }
+    function savePicked() {
+      try { localStorage.setItem(pickKey(), JSON.stringify(Array.from(state.picked))); } catch (e) { /* private mode */ }
+    }
+
+    function renderPicker() {
+      const btn = $('fw-obs-pickbtn');
+      btn.disabled = !state.targets.length;
+      $('fw-obs-picklist').innerHTML = state.targets.map((t, i) => {
+        const id = 'fw-obs-pk-' + i;
+        const text = [t.policy, t.default_host, t.vip].concat(t.hosts || []).join(' ').toLowerCase();
+        const last = t.last && t.last.grade ? ' ' + gradeBadge(t.last.grade) : '';
+        return '<div class="form-check fw-obs-pickitem py-1" data-text="' + esc(text) + '">' +
+          '<input type="checkbox" class="form-check-input" id="' + id + '" data-policy="' + esc(t.policy) + '"' +
+          (state.picked.has(t.policy) ? ' checked' : '') + '>' +
+          '<label class="form-check-label small w-100 d-flex align-items-center gap-2" for="' + id + '">' +
+          '<span class="fw-mono text-truncate">' + esc(t.policy) + '</span>' +
+          '<span class="text-muted text-truncate">' + esc(t.default_host || '') + '</span>' +
+          '<span class="ms-auto text-nowrap">' + (t.scannable ? '' : '<span class="text-muted">not scannable</span>') + last + '</span>' +
+          '</label></div>';
+      }).join('') + '<div class="text-muted small py-1" id="fw-obs-picknomatch" style="display:none">No site matches.</div>';
+      filterPicker();
+    }
+
+    function filterPicker() {
+      const f = ($('fw-obs-picksearch').value || '').trim().toLowerCase();
+      let shown = 0;
+      document.querySelectorAll('#fw-obs-picklist .fw-obs-pickitem').forEach(el => {
+        const hit = !f || el.getAttribute('data-text').indexOf(f) >= 0;
+        el.style.display = hit ? '' : 'none';
+        if (hit) shown++;
+      });
+      const nm = $('fw-obs-picknomatch');
+      if (nm) nm.style.display = shown || !state.targets.length ? 'none' : '';
+      updatePickSummary(shown);
+    }
+
+    function updatePickSummary(shown) {
+      const n = state.picked.size, total = state.targets.length;
+      let sum;
+      if (!total) sum = 'No published sites';
+      else if (!n) sum = 'Select sites (' + total + ')';
+      else if (n === 1) sum = Array.from(state.picked)[0];
+      else sum = n + ' of ' + total + ' sites selected';
+      $('fw-obs-picksum').textContent = sum;
+      $('fw-obs-pickcount').textContent = n + ' selected' +
+        (shown !== undefined && shown !== total ? ' · ' + shown + ' shown' : '');
+      const todo = state.targets.filter(t => t.scannable && state.picked.has(t.policy)).length;
+      const all = $('fw-obs-scanall');
+      if (!state.busy) {
+        all.disabled = !todo;
+        all.innerHTML = '<i class="bi bi-play-fill me-1"></i>Grade selected' + (todo ? ' (' + todo + ')' : '');
+      }
+    }
+
+    function setPicked(policy, on) {
+      if (on) state.picked.add(policy); else state.picked.delete(policy);
+      const cb = Array.from(document.querySelectorAll('#fw-obs-picklist input[data-policy]'))
+        .find(x => x.getAttribute('data-policy') === policy);
+      if (cb) cb.checked = on;
+    }
+
+    function pickChanged() {
+      savePicked();
+      filterPicker();
+      renderTargets();
+    }
+
     function renderTargets() {
-      const f = ($('fw-obs-filter').value || '').toLowerCase();
-      const rows = state.targets.filter(t => !f || t.policy.toLowerCase().indexOf(f) >= 0 ||
-        (t.default_host || '').toLowerCase().indexOf(f) >= 0);
+      // Only the ticked sites, in the appliance's order.
+      const rows = state.targets.filter(t => state.picked.has(t.policy));
       if (!state.targets.length) {
         $('fw-obs-targets').innerHTML = '<div class="text-muted small">This appliance publishes no sites.</div>';
+        return;
+      }
+      if (!rows.length) {
+        $('fw-obs-targets').innerHTML = '<div class="text-muted small"><i class="bi bi-check2-square me-1"></i>' +
+          esc(state.targets.length) + ' published site' + (state.targets.length === 1 ? '' : 's') +
+          '. Tick the ones to grade in <strong>Select sites</strong>; they appear here.</div>';
         return;
       }
       let h = '<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr>' +
@@ -106,7 +194,7 @@
         const last = t.last;
         h += '<tr data-policy="' + esc(t.policy) + '">' +
           '<td class="fw-mono small">' + esc(t.policy) + (t.vip ? '<div class="text-muted small">VIP ' + esc(t.vip) + '</div>' : '') + '</td>' +
-          '<td><input class="form-control form-control-sm fw-obs-host" value="' + esc(t.default_host || '') + '"' +
+          '<td><input class="form-control form-control-sm fw-obs-host" value="' + esc(t.host_edit !== undefined ? t.host_edit : (t.default_host || '')) + '"' +
           (t.scannable ? '' : ' disabled') + ' list="fw-obs-hosts-' + esc(t.policy) + '">' +
           '<datalist id="fw-obs-hosts-' + esc(t.policy) + '">' + (t.hosts || []).map(x => '<option value="' + esc(x) + '">').join('') + '</datalist></td>' +
           '<td class="small">' + esc(ports.join(' · ') || '—') + '</td>' +
@@ -116,7 +204,8 @@
           '<td class="text-end text-nowrap">' +
           (t.scannable ? '<button type="button" class="btn btn-sm btn-fw-outline fw-obs-scan"><i class="bi bi-play-fill"></i> Grade</button> '
             : '<span class="small text-muted">' + esc(t.note || 'not scannable') + '</span> ') +
-          (last ? '<button type="button" class="btn btn-sm btn-fw-outline fw-obs-view" data-scan="' + esc(last.id) + '"><i class="bi bi-eye"></i></button>' : '') +
+          (last ? '<button type="button" class="btn btn-sm btn-fw-outline fw-obs-view" data-scan="' + esc(last.id) + '"><i class="bi bi-eye"></i></button> ' : '') +
+          '<button type="button" class="btn btn-sm btn-fw-outline fw-obs-unpick" title="Remove from the selection"><i class="bi bi-x-lg"></i></button>' +
           '</td></tr>';
       });
       h += '</tbody></table></div>';
@@ -156,13 +245,14 @@
       if (state.busy) return;
       state.busy = true;
       const btn = $('fw-obs-scanall');
+      const todo = state.targets.filter(t => t.scannable && state.picked.has(t.policy)).map(t => t.policy);
+      if (!todo.length) { state.busy = false; return; }
       btn.disabled = true;
-      const todo = state.targets.filter(t => t.scannable).map(t => t.policy);
       let i = 0;
       function next() {
         if (i >= todo.length) {
-          state.busy = false; btn.disabled = false;
-          btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Grade all';
+          state.busy = false;
+          renderPicker();
           renderTargets();
           return;
         }
@@ -389,11 +479,31 @@
       const root = $('fw-obs-page');
       if (!root || root.dataset.obsBound) return;
       root.dataset.obsBound = '1';
-      state = { appliance: null, targets: [], current: null, busy: false };
+      state = { appliance: null, targets: [], picked: new Set(), current: null, busy: false };
       if (!$('fw-obs-appliance')) return;
       $('fw-obs-appliance').addEventListener('change', loadTargets);
       $('fw-obs-reload').addEventListener('click', loadTargets);
-      $('fw-obs-filter').addEventListener('input', renderTargets);
+      $('fw-obs-picksearch').addEventListener('input', filterPicker);
+      $('fw-obs-pick').addEventListener('shown.bs.dropdown', () => $('fw-obs-picksearch').focus());
+      $('fw-obs-picklist').addEventListener('change', function (ev) {
+        const cb = ev.target.closest('input[data-policy]');
+        if (!cb) return;
+        setPicked(cb.getAttribute('data-policy'), cb.checked);
+        pickChanged();
+      });
+      $('fw-obs-pickall').addEventListener('click', function () {
+        // "All matches" = the items the search leaves visible, added to what
+        // is already ticked (a hidden tick is never dropped).
+        document.querySelectorAll('#fw-obs-picklist .fw-obs-pickitem').forEach(el => {
+          if (el.style.display === 'none') return;
+          setPicked(el.querySelector('input').getAttribute('data-policy'), true);
+        });
+        pickChanged();
+      });
+      $('fw-obs-picknone').addEventListener('click', function () {
+        Array.from(state.picked).forEach(x => setPicked(x, false));
+        pickChanged();
+      });
       $('fw-obs-scanall').addEventListener('click', scanAll);
       $('fw-obs-history').addEventListener('click', history);
       if ($('fw-obs-preview')) {
@@ -403,6 +513,8 @@
       root.addEventListener('click', function (ev) {
         const b = ev.target.closest('.fw-obs-scan');
         if (b) { scan(b.closest('tr').getAttribute('data-policy')); return; }
+        const up = ev.target.closest('.fw-obs-unpick');
+        if (up) { setPicked(up.closest('tr').getAttribute('data-policy'), false); pickChanged(); return; }
         const vw = ev.target.closest('.fw-obs-view');
         if (vw) { view(vw.getAttribute('data-scan')); return; }
         const hv = ev.target.closest('.fw-obs-histview');
@@ -413,6 +525,12 @@
       });
       root.addEventListener('change', function (ev) {
         if (ev.target.closest('.fw-obs-fix')) updateFixCount();
+      });
+      root.addEventListener('input', function (ev) {
+        const hi = ev.target.closest('.fw-obs-host');
+        if (!hi) return;
+        const t = state.targets.find(x => x.policy === hi.closest('tr').getAttribute('data-policy'));
+        if (t) t.host_edit = hi.value;
       });
       loadTargets();
     }

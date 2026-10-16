@@ -7,9 +7,12 @@ an article with that id exists. Lists, counters and the tag autocomplete go
 through :func:`wiki_access.visible_query`, so a restricted article never
 lends its title, its tags or its count to anything a reader sees.
 
-Writes: ``wiki.write`` to create and to edit one's own articles,
-``wiki.moderate`` for everybody's, for the topic tree and for the Wiki
-groups. Every write is audited.
+Writes: ``wiki.write`` to create, and to edit every article one can READ
+(services/wiki_access.can_edit); the audience, archiving and deleting stay
+with the author and ``wiki.moderate`` (can_manage), as do the topic tree
+and the Wiki groups. Editing autosaves a shared draft; publishing makes a
+new version. Creating, publishing, discarding, archiving and deleting are
+audited (an autosave is not).
 """
 from __future__ import annotations
 
@@ -64,13 +67,20 @@ def _form_dict() -> dict:
 
 
 def _editor_context(article=None, form=None) -> dict:
+    """Names wiki/_editor_fields.html reads. For an existing article with
+    no posted ``form`` the fields show its pending draft, or else the
+    released text."""
+    if article is not None and form is None:
+        form = wiki.form_from_values(wiki.draft_values(article))
     return {"article": article, "form": form,
             "topics": wiki.topic_tree(),
             "adoms": [(k, n) for k, n in _adom_names().items()
                       if k in wiki_access.assignable_adoms(current_user, _adom_keys())],
             "profiles": Profile.query.order_by(Profile.name).all(),
             "groups": WikiGroup.query.order_by(WikiGroup.name).all(),
-            "statuses": STATUSES,
+            "may_set_audience": article is None or wiki_access.can_manage(current_user, article),
+            "draft_rev": article.draft_rev if article is not None else 0,
+            "has_draft": bool(article is not None and wiki.has_draft(article)),
             "default_adom": _current_adom(),
             "default_topic": None}
 
@@ -95,19 +105,32 @@ def index():
     tag = wiki.normalise_tag(args.get("tag"))
     if tag:
         q = q.filter(WikiArticle.tags.any(WikiTag.name == tag))
-    # ADOM filter. Default: in a device ADOM "this ADOM + Global", in the
-    # Global ADOM every ADOM. ``all`` lifts it, ``global`` = Global articles
-    # only, a key = that ADOM's articles + Global ones.
-    adom = (args.get("adom") or "").strip().lower()
-    if adom not in _adom_keys() and adom not in ("all", "global"):
-        adom = _current_adom() if _current_adom() != "global" else "all"
-    any_adom = db.exists().where(wiki_article_adoms.c.article_id == WikiArticle.id)
-    if adom == "global":
-        q = q.filter(~any_adom)
-    elif adom != "all":
-        q = q.filter(or_(~any_adom, db.exists().where(
-            (wiki_article_adoms.c.article_id == WikiArticle.id)
-            & (wiki_article_adoms.c.adom == adom))))
+    # ADOM filter: one checkbox per active ADOM plus Global. An article is
+    # listed when it is Global and Global is ticked, or names a ticked ADOM.
+    # Default: in a device ADOM "that ADOM + Global", in the Global ADOM all.
+    # The old ``adom=`` links (all / global / a key) still work.
+    choices = ["global"] + _adom_keys()
+    picked = [k for k in args.getlist("adoms") if k in choices]
+    if not picked:
+        legacy = (args.get("adom") or "").strip().lower()
+        if legacy == "all":
+            picked = list(choices)
+        elif legacy == "global":
+            picked = ["global"]
+        elif legacy in _adom_keys():
+            picked = [legacy, "global"]
+        else:
+            cur = _current_adom()
+            picked = list(choices) if cur == "global" else [cur, "global"]
+    if set(picked) != set(choices):
+        any_adom = db.exists().where(wiki_article_adoms.c.article_id == WikiArticle.id)
+        conds = [~any_adom] if "global" in picked else []
+        keys = [k for k in picked if k != "global"]
+        if keys:
+            conds.append(db.exists().where(
+                (wiki_article_adoms.c.article_id == WikiArticle.id)
+                & (wiki_article_adoms.c.adom.in_(keys))))
+        q = q.filter(or_(*conds))
     status = args.get("status") or ""
     if status in STATUSES:
         q = q.filter(WikiArticle.status == status)
@@ -121,10 +144,11 @@ def index():
                   .paginate(page=page, per_page=PER_PAGE, error_out=False))
     return render_template(
         "wiki/index.html", pagination=pagination, articles=pagination.items,
-        topic=topic, tag=tag, text=text, adom=adom,
+        topic=topic, tag=tag, text=text, picked=picked,
+        adom_choices=[("global", "Global")] + list(_adom_names().items()),
         status=status, mine=bool(args.get("mine")), archived=bool(args.get("archived")),
         adom_names=_adom_names(), current_adom=_current_adom(),
-        excerpt=wmd.plain_excerpt, page_url=_page_url,
+        excerpt=wmd.plain_excerpt, page_url=_page_url, has_draft=wiki.has_draft,
         **_nav_context(topic_id=topic.id if topic else None, tag=tag))
 
 
@@ -180,6 +204,8 @@ def article(article_id, slug=None):
         "wiki/article.html", article=art, html=wmd.render(art.body),
         adom_names=_adom_names(),
         may_edit=wiki_access.can_edit(current_user, art),
+        may_manage=wiki_access.can_manage(current_user, art),
+        has_draft=wiki.has_draft(art),
         **_nav_context(topic_id=art.topic_id))
 
 
@@ -226,6 +252,65 @@ def api_preview():
 
 # ── writing ──────────────────────────────────────────────────────────────────
 
+def _wants_json() -> bool:
+    return request.accept_mimetypes.best == "application/json"
+
+
+def _write(art, *, may_set_audience: bool):
+    """POST of the editor (page or dialog). ``action=draft`` saves the
+    shared draft (the editor autosaves this way), ``action=publish``
+    releases it as a new version. JSON for the editor's script, a redirect
+    or the re-rendered page otherwise."""
+    form = _form_dict()
+    action = request.form.get("action", "draft")
+    base_rev = request.form.get("draft_rev") if art is not None else None
+    try:
+        if action == "publish":
+            before = art.revision if art is not None else 0
+            art = wiki.publish(current_user, form, art, adom_keys=_adom_keys(),
+                               base_rev=base_rev, may_set_audience=may_set_audience,
+                               note=form.get("note", ""))
+            created = art.revision != before
+            if created:
+                log_action("wiki.article.publish", target=art.slug,
+                           extra={"article_id": art.id, "version": art.revision,
+                                  "adoms": art.adoms, "restricted": art.audience_restricted})
+        else:
+            first = art is None
+            art = wiki.save_draft(current_user, form, art, adom_keys=_adom_keys(),
+                                  base_rev=base_rev, may_set_audience=may_set_audience)
+            if first:
+                log_action("wiki.article.create", target=art.slug,
+                           extra={"article_id": art.id, "status": art.status})
+    except wiki.WikiConflict as exc:
+        db.session.rollback()
+        if _wants_json():
+            return jsonify(ok=False, conflict=True, error=str(exc)), 409
+        flash(str(exc), "danger")
+        return render_template("wiki/edit.html", **_editor_context(article=art, form=form)), 409
+    except wiki.WikiError as exc:
+        db.session.rollback()
+        if _wants_json():
+            return jsonify(ok=False, error=str(exc)), 400
+        flash(str(exc), "danger")
+        return render_template("wiki/edit.html", **_editor_context(article=art, form=form)), 400
+
+    url = url_for("wiki.article", article_id=art.id, slug=art.slug)
+    edit_url = url_for("wiki.edit", article_id=art.id)
+    if action == "publish":
+        msg = ("Version %d published." % art.revision) if created else "Nothing changed: no new version."
+        flash(msg, "success" if created else "info")
+        if _wants_json():
+            return jsonify(ok=True, id=art.id, url=url, revision=art.revision, published=created)
+        return redirect(url)
+    saved = art.draft_saved_at.strftime("%H:%M:%S") if art.draft_saved_at else ""
+    if _wants_json():
+        return jsonify(ok=True, id=art.id, url=url, edit_url=edit_url,
+                       draft_rev=art.draft_rev, saved_at=saved)
+    flash("Draft saved.", "success")
+    return redirect(edit_url)
+
+
 @bp.route("/new", methods=["GET", "POST"])
 @login_required
 @require_permission("wiki.view")
@@ -233,24 +318,7 @@ def new():
     if not wiki_access.can_write(current_user):
         abort(403)
     if request.method == "POST":
-        form = _form_dict()
-        wants_json = request.accept_mimetypes.best == "application/json"
-        try:
-            art = wiki.save_article(current_user, form, adom_keys=_adom_keys())
-        except wiki.WikiError as exc:
-            db.session.rollback()
-            if wants_json:
-                return jsonify(ok=False, error=str(exc)), 400
-            flash(str(exc), "danger")
-            return render_template("wiki/edit.html", **_editor_context(form=form)), 400
-        log_action("wiki.article.create", target=art.slug,
-                   extra={"article_id": art.id, "status": art.status,
-                          "adoms": art.adoms, "restricted": art.audience_restricted})
-        url = url_for("wiki.article", article_id=art.id, slug=art.slug)
-        if wants_json:
-            return jsonify(ok=True, id=art.id, url=url)
-        flash("Article saved.", "success")
-        return redirect(url)
+        return _write(None, may_set_audience=True)
     return render_template("wiki/edit.html", **_editor_context())
 
 
@@ -262,21 +330,44 @@ def edit(article_id):
     if not wiki_access.can_edit(current_user, art):
         abort(403)
     if request.method == "POST":
-        form = _form_dict()
-        try:
-            wiki.save_article(current_user, form, art, adom_keys=_adom_keys())
-        except wiki.WikiError as exc:
-            db.session.rollback()
-            flash(str(exc), "danger")
-            return render_template("wiki/edit.html",
-                                   **_editor_context(article=art, form=form)), 400
-        log_action("wiki.article.update", target=art.slug,
-                   extra={"article_id": art.id, "revision": art.revision,
-                          "status": art.status, "adoms": art.adoms,
-                          "restricted": art.audience_restricted})
-        flash("Article saved.", "success")
-        return redirect(url_for("wiki.article", article_id=art.id, slug=art.slug))
+        return _write(art, may_set_audience=wiki_access.can_manage(current_user, art))
     return render_template("wiki/edit.html", **_editor_context(article=art))
+
+
+@bp.route("/a/<int:article_id>/discard", methods=["POST"])
+@login_required
+@require_permission("wiki.view")
+def discard(article_id):
+    """Drop a published article's unpublished changes."""
+    art = _article_or_404(article_id)
+    if not wiki_access.can_edit(current_user, art):
+        abort(403)
+    if wiki.has_draft(art):
+        wiki.discard_draft(art)
+        log_action("wiki.draft.discard", target=art.slug, extra={"article_id": art.id})
+        flash("Unpublished changes discarded.", "success")
+    return redirect(url_for("wiki.article", article_id=art.id, slug=art.slug))
+
+
+@bp.route("/a/<int:article_id>/status", methods=["POST"])
+@login_required
+@require_permission("wiki.view")
+def set_status(article_id):
+    """Archive or restore — the author and the moderators."""
+    art = _article_or_404(article_id)
+    if not wiki_access.can_manage(current_user, art):
+        abort(403)
+    status = request.form.get("status", "")
+    try:
+        wiki.set_status(art, status)
+    except wiki.WikiError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+    else:
+        log_action("wiki.article.status", target=art.slug,
+                   extra={"article_id": art.id, "status": status})
+        flash("Article archived." if status == "archived" else "Article restored.", "success")
+    return redirect(url_for("wiki.article", article_id=art.id, slug=art.slug))
 
 
 @bp.route("/a/<int:article_id>/delete", methods=["POST"])
@@ -284,7 +375,7 @@ def edit(article_id):
 @require_permission("wiki.view")
 def delete(article_id):
     art = _article_or_404(article_id)
-    if not wiki_access.can_edit(current_user, art):
+    if not wiki_access.can_manage(current_user, art):
         abort(403)
     slug, aid = art.slug, art.id
     wiki.delete_article(art)

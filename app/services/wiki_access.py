@@ -15,6 +15,10 @@ An article is visible to a user when ALL of these hold:
 4. Who: the article is not ``audience_restricted``, or the user's profile
    is named, or the user belongs to a named group.
 
+Editing follows reading: :func:`can_edit` is "can read it + ``wiki.write``";
+the audience, archiving and deleting stay with the author and the
+moderators (:func:`can_manage`).
+
 Bypasses: the author always sees their own article (they still need
 ``wiki.view`` to open the Wiki at all), and ``wiki.moderate`` sees every
 article — moderation has to reach what it moderates.
@@ -124,7 +128,18 @@ def can_write(user) -> bool:
 
 
 def can_edit(user, article: WikiArticle) -> bool:
-    """The author (still holding ``wiki.write``) and moderators."""
+    """Everyone who may READ the article and holds ``wiki.write`` edits its
+    text (title, description, body, topic, tags) — reading is the gate, so
+    nobody edits what they cannot see. Moderators edit everything."""
+    if is_moderator(user):
+        return True
+    return can_write(user) and can_view(user, article)
+
+
+def can_manage(user, article: WikiArticle) -> bool:
+    """Who changes WHO CAN READ an article, archives it or deletes it: its
+    author (still holding ``wiki.write``) and the moderators. Another editor
+    could otherwise open a restricted article to the whole console."""
     if is_moderator(user):
         return True
     return (_can(user, "wiki.write") and article.author_id is not None

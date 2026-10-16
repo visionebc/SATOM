@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ _('Revision') }} {{ rev.number }} — {{ article.title }} — SATOM{% endblock %}
+{% block title %}{{ _('Version') }} {{ rev.number }} — {{ article.title }} — SATOM{% endblock %}
 
 {% block head %}
 <link rel="stylesheet" href="{{ asset('css/wiki.css') }}" data-turbo-track="reload">
@@ -13,7 +13,7 @@
   <span class="separator">/</span>
   <a href="{{ url_for('wiki.history', article_id=article.id) }}">{{ _('History') }}</a>
   <span class="separator">/</span>
-  <span>{{ _('Revision') }} {{ rev.number }}</span>
+  <span>{{ _('Version') }} {{ rev.number }}</span>
 </div>
 {% endblock %}
 
@@ -22,7 +22,7 @@
   <div>
     <h1 class="fw-page-title">{{ rev.title }}</h1>
     <div class="wiki-meta mt-1">
-      <span class="fw-badge fw-badge-secondary">{{ _('Revision') }} {{ rev.number }}</span>
+      <span class="fw-badge fw-badge-secondary">{{ _('Version') }} {{ rev.number }}</span>
       <span>{{ rev.edited_by }} · {{ rev.edited_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
       {% if rev.number != article.revision %}<a href="{{ url_for('wiki.article', article_id=article.id, slug=article.slug) }}">{{ _('Current version') }}</a>{% endif %}
     </div>

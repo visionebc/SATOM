@@ -20,17 +20,34 @@
 {% endblock %}
 
 {% block content %}
-<form method="post" id="wiki-editor" class="wiki-editor" data-wiki-form
+<form method="post" id="wiki-editor" class="wiki-editor" data-wiki-form="page"
+      action="{{ url_for('wiki.edit', article_id=article.id) if article else url_for('wiki.new') }}"
       data-preview-url="{{ url_for('wiki.api_preview') }}" data-tags-url="{{ url_for('wiki.api_tags') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
   <div class="fw-page-header">
-    <h1 class="fw-page-title"><i class="bi bi-pencil-square me-2 text-accent"></i>{{ _('Edit article') if article else _('New article') }}</h1>
-    <div class="d-flex gap-2">
-      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('wiki.article', article_id=article.id, slug=article.slug) if article else url_for('wiki.index') }}">{{ _('Cancel') }}</a>
-      <button class="btn btn-fw-primary btn-sm px-4">{{ _('Save') }}</button>
+    <div>
+      <h1 class="fw-page-title"><i class="bi bi-pencil-square me-2 text-accent"></i>{{ _('Edit article') if article else _('New article') }}</h1>
+      <div class="wiki-meta mt-1">
+        {% if article and article.revision %}<span>{{ _('Published version') }} {{ article.revision }}</span>{% else %}<span class="fw-badge fw-badge-warning">{{ _('Not published yet') }}</span>{% endif %}
+        {% if has_draft and article.draft_saved_at %}<span>{{ _('Draft saved by %(user)s at %(time)s UTC', user=(article.draft_user.username if article.draft_user else '?'), time=article.draft_saved_at.strftime('%Y-%m-%d %H:%M')) }}</span>{% endif %}
+        <span class="wiki-autosave" data-wiki-autosave aria-live="polite"
+              data-saving="{{ _('Saving draft…') }}" data-saved="{{ _('Draft saved %(time)s', time='{t}') }}"
+              data-failed="{{ _('Draft not saved') }}"></span>
+      </div>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('wiki.article', article_id=article.id, slug=article.slug) if article else url_for('wiki.index') }}">{{ _('Close') }}</a>
+      {% if has_draft %}
+      <button class="btn btn-sm btn-outline-danger" formaction="{{ url_for('wiki.discard', article_id=article.id) }}" data-wiki-discard
+              data-confirm-text="{{ _('Discard the unpublished changes? Readers keep the published version.') }}">{{ _('Discard draft') }}</button>
+      {% endif %}
+      <button class="btn btn-sm btn-outline-secondary" name="action" value="draft">{{ _('Save draft') }}</button>
+      <button class="btn btn-fw-primary btn-sm px-4" name="action" value="publish" data-wiki-publish>{{ _('Publish') }}</button>
     </div>
   </div>
+  <div class="alert alert-danger py-2 small d-none" role="alert" data-wiki-error></div>
+  <div class="form-text mb-2" style="font-size:12px;">{{ _('Changes are saved automatically as a draft. Readers keep the published version until you publish; every publication is a new version.') }}</div>
 
   {% include "wiki/_editor_fields.html" %}
 </form>

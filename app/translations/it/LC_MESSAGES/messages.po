@@ -25301,3 +25301,79 @@ msgid "%(num)d article"
 msgid_plural "%(num)d articles"
 msgstr[0] "%(num)d articolo"
 msgstr[1] "%(num)d articoli"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Archive"
+msgstr "Archivia"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Changes are saved automatically as a draft. Readers keep the published version until you publish; every publication is a new version."
+msgstr "Le modifiche vengono salvate automaticamente come bozza. I lettori vedono la versione pubblicata finché non pubblichi; ogni pubblicazione è una nuova versione."
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Continue editing"
+msgstr "Continua a modificare"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Discard draft"
+msgstr "Scarta bozza"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Discard the unpublished changes? Readers keep the published version."
+msgstr "Scartare le modifiche non pubblicate? I lettori mantengono la versione pubblicata."
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Draft not saved"
+msgstr "Bozza non salvata"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Draft saved %(time)s"
+msgstr "Bozza salvata %(time)s"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Draft saved by %(user)s at %(time)s UTC"
+msgstr "Bozza salvata da %(user)s il %(time)s UTC"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Draft — not published yet"
+msgstr "Bozza — non ancora pubblicata"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "None ticked = everyone who can see those ADOMs. Otherwise a reader needs one of the ticked profiles OR membership of one of the ticked groups. Whoever can read it and writes in the Wiki can also edit it."
+msgstr "Nessuna selezione = chiunque veda quegli ADOM. Altrimenti il lettore deve avere uno dei profili selezionati O appartenere a uno dei gruppi selezionati. Chi può leggerlo e scrive nel Wiki può anche modificarlo."
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Not published yet"
+msgstr "Non ancora pubblicato"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Only the author and Wiki moderators change who can read an article."
+msgstr "Solo l'autore e i moderatori del Wiki cambiano chi può leggere un articolo."
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Published version"
+msgstr "Versione pubblicata"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Readers see the published version"
+msgstr "I lettori vedono la versione pubblicata"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Save draft"
+msgstr "Salva bozza"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Saved automatically as a draft only you can see until you publish it."
+msgstr "Salvato automaticamente come bozza visibile solo a te finché non la pubblichi."
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Saving draft…"
+msgstr "Salvataggio bozza…"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Unpublished changes"
+msgstr "Modifiche non pubblicate"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Unpublished changes saved by %(user)s at %(time)s UTC. Readers see the published version below."
+msgstr "Modifiche non pubblicate salvate da %(user)s il %(time)s UTC. I lettori vedono la versione pubblicata qui sotto."

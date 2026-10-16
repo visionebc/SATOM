@@ -24919,3 +24919,51 @@ msgstr "Un file HAR che apri viene letto nel tuo browser e non viene mai caricat
 
 msgid "Trace and press View HAR, or open a HAR file."
 msgstr "Esegui una traccia e premi Visualizza HAR, oppure apri un file HAR."
+
+msgid "HTTP Observatory"
+msgstr "Osservatorio HTTP"
+
+msgid "Grades each site an appliance publishes with the MDN HTTP Observatory tests and scoring, says who produced every result — the FortiWeb, the application or the certificate — and applies the FortiWeb fix. SATOM only ever connects to the VIP of the server policy."
+msgstr "Valuta ogni sito pubblicato da un'appliance con i test e il punteggio del MDN HTTP Observatory, indica chi ha prodotto ogni risultato — il FortiWeb, l'applicazione o il certificato — e applica la correzione sul FortiWeb. SATOM si collega solo al VIP della policy server."
+
+msgid "No FortiWeb or FortiADC appliance is visible to you."
+msgstr "Nessuna appliance FortiWeb o FortiADC è visibile per te."
+
+msgid "Published sites"
+msgstr "Siti pubblicati"
+
+msgid "Filter policies"
+msgstr "Filtra policy"
+
+msgid "Grade all"
+msgstr "Valuta tutti"
+
+msgid "Site name is the Host and SNI the requests carry (first Protected Hostname by default). The address is always the policy VIP. Disabled policies and policies without a resolvable VIP are listed but not graded."
+msgstr "Il nome del sito è l'Host e l'SNI delle richieste (per impostazione predefinita il primo nome host protetto). L'indirizzo è sempre il VIP della policy. Le policy disattivate o senza VIP risolvibile sono elencate ma non valutate."
+
+msgid "Reading the appliance…"
+msgstr "Lettura dell'appliance…"
+
+msgid "Open this site in the Transaction Tracer (leg A). A VIP that is not an appliance management address is a free target there."
+msgstr "Apre questo sito nel Transaction Tracer (tratta A). Un VIP che non è l'indirizzo di gestione di un'appliance è lì una destinazione libera."
+
+msgid "Trace this request"
+msgstr "Traccia questa richiesta"
+
+msgid "Fix on the FortiWeb"
+msgstr "Correggi sul FortiWeb"
+
+msgid "Preview changes"
+msgstr "Anteprima delle modifiche"
+
+msgid "Tick fixes in the result above, preview what would be written and the grade it would give, then apply. Every write is re-read from the device; the site is graded again afterwards."
+msgstr "Seleziona le correzioni nel risultato sopra, visualizza in anteprima cosa verrebbe scritto e il voto che darebbe, poi applica. Ogni scrittura viene riletta dal dispositivo; poi il sito viene valutato di nuovo."
+
+msgid "Grade history"
+msgstr "Cronologia dei voti"
+
+msgid "Scoring: MDN HTTP Observatory, algorithm version 6. Differences: the HSTS preload list is not consulted (no +5 for preloaded sites), and redirects are followed only while they stay on the scanned policy."
+msgstr "Punteggio: MDN HTTP Observatory, versione 6 dell'algoritmo. Differenze: l'elenco di precaricamento HSTS non viene consultato (nessun +5 per i siti precaricati) e i reindirizzamenti vengono seguiti solo finché restano sulla policy analizzata."
+
+msgid "Tests and scoring"
+msgstr "Test e punteggio"

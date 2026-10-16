@@ -91,7 +91,8 @@ def _now_iso() -> str:
 def send(ip: str, port: int, *, host: str, path: str = "/", scheme: str = "https",
          method: str = "GET", headers: dict | None = None, body: bytes = b"",
          sni: str = "", timeout: float = DEFAULT_TIMEOUT, leg: str = LEG_A,
-         label: str = "", reveal: bool = False) -> dict:
+         label: str = "", reveal: bool = False, verify_tls: bool = False,
+         keep_body: bool = False) -> dict:
     """Issue one request and measure it, phase by phase.
 
     Connects to *ip* (already authorised by :mod:`net_guard`) and sends *host*
@@ -105,6 +106,17 @@ def send(ip: str, port: int, *, host: str, path: str = "/", scheme: str = "https
     field stays redacted either way, so a caller that logs, stores or exports
     the leg without asking for ``secrets`` by name cannot leak one. The caller
     owns the permission check; this function only keeps the two apart.
+
+    ``verify_tls`` asks whether a BROWSER would trust the certificate (the
+    node's trust store, the name in *sni*/*host*). The answer lands in
+    ``tls.verified`` / ``tls.verify_error`` and the request is still made over
+    an unverified session when the answer is no: the header review
+    (:mod:`app.services.observatory_scan`) grades what the site sends AND
+    whether its certificate would let HSTS take effect, and one does not hide
+    the other. Off by default — the tracer measures behaviour, not trust.
+
+    ``keep_body`` returns the read body (up to :data:`MAX_BODY`) as
+    ``body_text``; the preview stays as it is.
     """
     method = (method or "GET").upper()
     path = path or "/"
@@ -156,23 +168,48 @@ def send(ip: str, port: int, *, host: str, path: str = "/", scheme: str = "https
             pass
 
         if scheme == "https":
-            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-            # Read-only inspection, never a trust decision — the same stance
-            # cert_probe takes, and the reason the certificate inspector exists
-            # as a SEPARATE tool: this one measures behaviour, that one judges
-            # the chain.
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-            try:
-                sock = ctx.wrap_socket(sock, server_hostname=sni or host)
-            except (ssl.SSLError, OSError) as exc:
-                out["error"] = "TLS handshake failed: %s" % exc
-                return out
+            verified, verify_error = None, ""
+            if verify_tls:
+                vctx = ssl.create_default_context()
+                try:
+                    sock = vctx.wrap_socket(sock, server_hostname=sni or host)
+                    verified = True
+                except ssl.SSLCertVerificationError as exc:
+                    verified = False
+                    verify_error = str(getattr(exc, "verify_message", "") or exc)
+                    try:
+                        sock.close()
+                    except OSError:
+                        pass
+                    try:
+                        sock = socket.create_connection((ip, int(port)), timeout=timeout)
+                    except OSError as exc2:
+                        out["error"] = "TCP reconnect failed: %s" % exc2
+                        return out
+                except (ssl.SSLError, OSError) as exc:
+                    out["error"] = "TLS handshake failed: %s" % exc
+                    return out
+            if not verified:
+                ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                # Read-only inspection, never a trust decision — the same
+                # stance cert_probe takes, and the reason the certificate
+                # inspector exists as a SEPARATE tool: this one measures
+                # behaviour, that one judges the chain.
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                try:
+                    sock = ctx.wrap_socket(sock, server_hostname=sni or host)
+                except (ssl.SSLError, OSError) as exc:
+                    out["error"] = "TLS handshake failed: %s" % exc
+                    return out
             t_tls = time.perf_counter()
             out["timing"]["tls_ms"] = round((t_tls - t_tcp) * 1000, 1)
             cipher = sock.cipher() or ("", "", 0)
             out["tls"] = {"protocol": sock.version() or "",
                           "cipher": cipher[0], "sni": sni or host}
+            if verify_tls:
+                out["tls"]["verified"] = bool(verified)
+                out["tls"]["verify_error"] = verify_error
             try:
                 der = sock.getpeercert(binary_form=True)
                 if der:
@@ -233,6 +270,8 @@ def send(ip: str, port: int, *, host: str, path: str = "/", scheme: str = "https
         out["body_bytes"] = len(raw)
         out["body_sha256"] = hashlib.sha256(raw).hexdigest()
         out["body_preview"] = raw[:PREVIEW].decode("utf-8", "replace")
+        if keep_body:
+            out["body_text"] = raw.decode("utf-8", "replace")
         out["ok"] = True
     finally:
         out["timing"]["total_ms"] = round(

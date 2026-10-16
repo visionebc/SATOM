@@ -153,6 +153,15 @@ PAGES: tuple[dict, ...] = (
        "reveal cookie value samesite httponly secure",
        "One request through the appliance and one straight to the backend, "
        "diffed — headers, cookies and a HAR you can read in the page."),
+    _p("observatory.index", "HTTP Observatory", "monitoring",
+       "observatory mozilla mdn security headers grade score a+ csp content "
+       "security policy hsts strict transport security x-frame-options "
+       "clickjacking referrer policy cookies secure httponly samesite sri "
+       "subresource integrity cors corp coop coep nosniff redirect http to https "
+       "header security fix published site",
+       "Grades every site an appliance publishes with the MDN HTTP Observatory "
+       "tests, says whether FortiWeb, the application or the certificate "
+       "caused each result, and applies the FortiWeb fix."),
     _p("scout.index", "Path Diagnostics", "monitoring",
        "formerly scout troubleshoot fault isolation which layer is broken localise "
        "diagnose service down slow backend firewall drop reset routing "
@@ -647,7 +656,8 @@ EXCLUDED: dict[str, str] = {
     "adom_assets.files": "json feed",
     # The three helper tools are API-only blueprints; their UI is rendered by
     # a page that is already on the map, so these two are feeds, not pages.
-    "cert_inspect.targets": "json feed", "txn_trace.context": "json feed", "cert_manager.renewals_durability": "json feed",
+    "cert_inspect.targets": "json feed", "txn_trace.context": "json feed",
+    "observatory.api_targets": "json feed", "observatory.api_history": "json feed", "cert_manager.renewals_durability": "json feed",
     "database.report_column_values": "json feed", "database.table": "sub-view of database.index",
     "device_provision.data": "json feed", "dns_tool.records_list": "json feed",
     "dns_tool.records_schema": "json feed", "jobs.index": "json feed",

@@ -96,6 +96,11 @@ def _cert_kinds() -> Iterable[str]:
     return CERT_KINDS
 
 
+def _observatory_kinds() -> Iterable[str]:
+    from .observatory_scan import PRODUCTS
+    return PRODUCTS
+
+
 def _every_device() -> Iterable[str] | None:
     return None  # None = every device ADOM
 
@@ -129,6 +134,11 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
     # it. Without this row the FortiGate/FortiADC/FortiAnalyzer/
     # FortiAuthenticator gates bounced the live menu entry to the ADOM home.
     Entry("txn_trace", ("txn_trace",), _every_device, ""),
+    # Troubleshooting since 2026-10-16: HTTP Observatory grades the sites a
+    # FortiWeb server policy or a FortiADC virtual server publishes.
+    Entry("observatory", ("observatory",), _observatory_kinds,
+          "it grades sites published by FortiWeb server policies and FortiADC "
+          "virtual servers"),
     Entry("import_backup", ("import_backup",), _fortiweb,
           "the offline parser reads FortiWeb configuration files"),
     # Automation

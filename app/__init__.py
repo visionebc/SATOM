@@ -2365,6 +2365,10 @@ def create_app(config_override: object | None = None) -> Flask:
             # Fleet -> Architecture drawings. Without this import create_all()
             # never makes arch_diagrams and the page fails on its first query.
             from . import models_netarch  # noqa: F401
+            # Troubleshooting -> HTTP Observatory scan history. Without this
+            # import create_all() never makes observatory_scans and the first
+            # scan fails to store.
+            from . import models_observatory  # noqa: F401
             # Sentinel's two collectors (http_status, infra) join the
             # fleet collection registry here so the scheduler sidecar — which
             # never imports a view — provisions and runs them like any other.
@@ -2574,6 +2578,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.cert_inspect", "bp"),
         ("app.views.fp_triage", "bp"),
         ("app.views.txn_trace", "bp"),
+        ("app.views.observatory", "bp"),
         ("app.views.server_objects", "bp"),
         ("app.views.web_protection", "bp"),
         ("app.views.exceptions", "bp"),

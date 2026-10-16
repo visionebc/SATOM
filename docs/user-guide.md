@@ -7507,6 +7507,93 @@ once and the **address** is dialled, with the hostname carried separately as
 SNI and `Host`, so a name cannot answer differently between the check and the
 connection.
 
+**Security-header grade.** After a trace, a line under the legs gives the
+HTTP Observatory grade of leg A's response headers (§37.4), with a link to the
+Observatory. It scores only what the trace already returned — no request
+leaves the server for it — and says it is partial: redirects, Subresource
+Integrity, CORS and certificate trust are graded by the Observatory, not here.
+
+### 37.4 HTTP Observatory
+
+**Troubleshooting › HTTP Observatory** (`/observatory/`), in the Global,
+FortiWeb and FortiADC ADOMs. It grades every site an appliance publishes with
+the tests and the scoring of the MDN HTTP Observatory
+(developer.mozilla.org/observatory, algorithm version 6), then says **who**
+produced each result and, on a FortiWeb, applies the fix.
+
+**What is graded.** One row per FortiWeb server policy or FortiADC virtual
+server: its VIP, the HTTP and HTTPS ports it serves (both, when the policy has
+an HTTP and an HTTPS service), and a **site name** — the `Host` and SNI the
+requests carry. The site name defaults to the first plain name of the policy's
+Protected Hostnames group and can be changed per row; the address dialled is
+always the policy's VIP, never a name you type, so the page needs only the
+`view` permission and no free-target permission. A disabled policy, or one
+whose VIP cannot be resolved, is listed with the reason and not graded.
+
+**What is fetched**, as the Observatory does it: `https://<site>/` and
+`http://<site>/`, each following its redirects, then `/robots.txt` and a CORS
+preflight (`OPTIONS` with `Origin: https://observatory.satom.invalid`). A
+redirect is followed only while it stays on the policy — the same name or the
+VIP, on a port the policy serves; a hop anywhere else is recorded as *not
+followed: outside this policy* and never dialled. The certificate is checked
+against this node's trust store; an untrusted one is a graded finding, not a
+failed scan.
+
+**The grade.** Twelve tests: Content Security Policy, Cookies, Cross-Origin
+Embedder Policy, Cross-Origin Opener Policy, CORS, Redirection, Referrer
+Policy, HSTS, Subresource Integrity, X-Content-Type-Options, X-Frame-Options
+and Cross-Origin Resource Policy. Every site starts at 100; penalties are
+subtracted first, and bonuses count only when the penalties leave the site at
+90 or more. Three differences from mozilla.org, all stated on the page: the
+HSTS preload list is not consulted (a preloaded site does not get its +5), a
+non-numeric HSTS `max-age` is invalid (mozilla.org passes it by accident), and
+the registrable domain the SRI test uses comes from a short built-in suffix
+list instead of the full Public Suffix List.
+
+**Who.** Each test carries one of:
+
+| Badge | Meaning |
+|---|---|
+| **FortiWeb** | The appliance sets it: an HTTP Header Security row, HSTS or the HTTP-to-HTTPS redirect on the server policy, its own `cookiesession1` cookie. A header the profile adds **replaces** the one the application sends (measured on FortiWeb 8.0.6). |
+| **Application** | The backend sent it and FortiWeb passed it through. |
+| **Certificate** | The points are lost to an untrusted certificate: HSTS and the redirect test fail whatever the headers say. The summary shows the grade the site would get with a trusted certificate, and the fix links to Cert Manager. |
+| **Not sent** | Nobody sends it. |
+
+**Fixes** (FortiWeb, `config_write`). Tick them in the result, set the
+options, press **Preview changes**: the page lists every write in order, the
+server policies it reaches and the grade the site would get. **Apply** sends
+the writes through the same path as the object editor — re-read from the
+device after each one — and grades the site again.
+
+| Fix | What it writes |
+|---|---|
+| Set X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Content-Security-Policy | A row in the Web Protection Profile's HTTP Header Security profile; a profile named `satom-hdr-<policy>` is created and attached when there is none. An existing row for that header has its value changed instead of getting a twin. |
+| Set Cross-Origin-Resource/Opener/Embedder-Policy | The same, on builds whose profile rows accept them (FortiWeb 8.0.6 does, 7.6.8 does not — the build's choices come from the API library, and a header the build cannot carry is shown as unavailable with that reason). |
+| Enable HSTS | `hsts-header`, `hsts-max-age` (one year by default), `hsts-include-subdomains`, `hsts-preload` on the server policy. Needs an HTTPS service. |
+| Redirect HTTP to HTTPS | `http-to-https` on the server policy (FortiWeb answers 301 to the HTTPS service port). Needs both services. |
+| Harden FortiWeb's own cookie | `internal-cookie-secure`, `-httponly`, `-samesite` on the server policy. `Secure` is added on HTTPS responses only. |
+| Cookie flags for the application's cookies | `secure-cookie`, `http-only`, `samesite` on the profile's Cookie Security policy; one named `satom-ck-<policy>` with `security-mode no` (no signing or encryption) is created and attached when there is none. `HttpOnly` is offered on only when a session cookie lacks it: it hides cookies from the page's JavaScript. |
+
+Refused before anything is sent: a template-managed Web Protection Profile
+(change it in the Template Library), an edit lease another user holds, a
+value that would not pass the test, a Content Security Policy that does not
+parse, and a policy without a Web Protection Profile for the profile-based
+fixes. When the change reaches other server policies (the Web Protection
+Profile or the header profile is shared), they are named and **Apply** needs
+the confirmation tick. Every scan is audited as `observatory.scan`, every fix
+as `observatory.fix` (refusals as `observatory.fix.refused`). Subresource
+Integrity and CORS are page content: they are explained, never "fixed" on the
+appliance. FortiADC sites are graded and explained; the fixes are FortiWeb
+only.
+
+**History and schedule.** Every grade is kept (60 per site): **History** lists
+them and opens any of them with its findings recomputed against the current
+configuration. The scheduled action **HTTP Observatory — grade published
+sites** (`observatory_scan`, Administrator → Automation) grades every site of
+its targets and names a grade lower than the previous run first in its
+summary. Stored results keep headers, statuses, redirect routes and cookie
+flags — never cookie values or page bodies.
+
 
 ---
 
@@ -7634,8 +7721,8 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (123 today) or **excluded with a written
-   reason** (154 today — JSON feeds, downloads, redirects and fragments that
+   the console is either **on the map** (124 today) or **excluded with a written
+   reason** (156 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the

@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('HTTP Observatory') }} — SATOM{% endblock %}
+
+{#  Troubleshooting › HTTP Observatory (2026-10-16). Grades the sites the
+    appliances publish the way the MDN HTTP Observatory does, says who
+    produced each result (FortiWeb, the application, the certificate) and
+    applies the FortiWeb fix. The markup lives here so its labels translate;
+    what a scan RETURNS is rendered by static/js/observatory.js. Light theme
+    only: colours come from .fw-badge-* (safeguards §9m).                    #}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Troubleshooting') }}</span>
+  <span class="separator">/</span>
+  <span>{{ _('HTTP Observatory') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="fw-obs-page"
+     data-may-fix="{{ '1' if may_fix else '0' }}"
+     data-selected="{{ selected or '' }}"
+     data-prefill-policy="{{ prefill_policy }}">
+
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-clipboard2-pulse me-2 text-accent"></i>{{ _('HTTP Observatory') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('Grades each site an appliance publishes with the MDN HTTP Observatory tests and scoring, says who produced every result — the FortiWeb, the application or the certificate — and applies the FortiWeb fix. SATOM only ever connects to the VIP of the server policy.') }}
+    </p>
+  </div>
+</div>
+
+{% if not appliances %}
+<div class="fw-card"><div class="fw-card-body text-muted">
+  {{ _('No FortiWeb or FortiADC appliance is visible to you.') }}
+</div></div>
+{% else %}
+<div class="fw-card mb-3">
+  <div class="fw-card-header d-flex align-items-center gap-2 flex-wrap">
+    <h6 class="fw-card-title mb-0"><i class="bi bi-globe2 me-1"></i>{{ _('Published sites') }}</h6>
+    <select id="fw-obs-appliance" class="form-select form-select-sm" style="width:auto;min-width:220px">
+      {% for a in appliances %}
+      <option value="{{ a.id }}" {{ 'selected' if a.id == selected else '' }}>{{ a.name }} ({{ a.kind }})</option>
+      {% endfor %}
+    </select>
+    <input id="fw-obs-filter" class="form-control form-control-sm" style="width:200px" placeholder="{{ _('Filter policies') }}">
+    <div class="ms-auto d-flex gap-2">
+      <button type="button" class="btn btn-sm btn-fw-outline" id="fw-obs-reload"><i class="bi bi-arrow-clockwise me-1"></i>{{ _('Reload') }}</button>
+      <button type="button" class="btn btn-sm btn-fw-primary" id="fw-obs-scanall"><i class="bi bi-play-fill me-1"></i>{{ _('Grade all') }}</button>
+    </div>
+  </div>
+  <div class="fw-card-body">
+    <div class="form-text mb-2">
+      <i class="bi bi-info-circle me-1"></i>{{ _('Site name is the Host and SNI the requests carry (first Protected Hostname by default). The address is always the policy VIP. Disabled policies and policies without a resolvable VIP are listed but not graded.') }}
+    </div>
+    <div id="fw-obs-err" class="text-danger small mb-2"></div>
+    <div id="fw-obs-targets"><div class="text-muted small"><span class="spinner-border spinner-border-sm me-2"></span>{{ _('Reading the appliance…') }}</div></div>
+  </div>
+</div>
+
+<div class="fw-card mb-3" id="fw-obs-resultcard" style="display:none">
+  <div class="fw-card-header d-flex align-items-center gap-2 flex-wrap">
+    <h6 class="fw-card-title mb-0"><i class="bi bi-clipboard2-check me-1"></i>{{ _('Result') }}</h6>
+    <span class="small text-muted" id="fw-obs-resultsite"></span>
+    <div class="ms-auto d-flex gap-2">
+      <a class="btn btn-sm btn-fw-outline" id="fw-obs-trace" href="#" title="{{ _('Open this site in the Transaction Tracer (leg A). A VIP that is not an appliance management address is a free target there.') }}"><i class="bi bi-arrow-left-right me-1"></i>{{ _('Trace this request') }}</a>
+      <button type="button" class="btn btn-sm btn-fw-outline" id="fw-obs-history"><i class="bi bi-clock-history me-1"></i>{{ _('History') }}</button>
+    </div>
+  </div>
+  <div class="fw-card-body">
+    <div id="fw-obs-summary" class="mb-3"></div>
+    <div id="fw-obs-tests"></div>
+  </div>
+</div>
+
+{% if may_fix %}
+<div class="fw-card mb-3" id="fw-obs-fixcard" style="display:none">
+  <div class="fw-card-header d-flex align-items-center gap-2">
+    <h6 class="fw-card-title mb-0"><i class="bi bi-wrench-adjustable me-1"></i>{{ _('Fix on the FortiWeb') }}</h6>
+    <span class="small text-muted" id="fw-obs-fixcount"></span>
+    <div class="ms-auto d-flex gap-2">
+      <button type="button" class="btn btn-sm btn-fw-outline" id="fw-obs-preview"><i class="bi bi-eye me-1"></i>{{ _('Preview changes') }}</button>
+      <button type="button" class="btn btn-sm btn-fw-primary" id="fw-obs-apply" disabled><i class="bi bi-check2-circle me-1"></i>{{ _('Apply') }}</button>
+    </div>
+  </div>
+  <div class="fw-card-body">
+    <div class="form-text mb-2"><i class="bi bi-shield-check me-1"></i>{{ _('Tick fixes in the result above, preview what would be written and the grade it would give, then apply. Every write is re-read from the device; the site is graded again afterwards.') }}</div>
+    <div id="fw-obs-plan"></div>
+    <div class="form-check mt-2" id="fw-obs-ackwrap" style="display:none">
+      <input class="form-check-input" type="checkbox" id="fw-obs-ack">
+      <label class="form-check-label small" for="fw-obs-ack" id="fw-obs-acklabel"></label>
+    </div>
+    <div id="fw-obs-applyout" class="mt-2"></div>
+  </div>
+</div>
+{% endif %}
+
+<div class="modal fade" id="fw-obs-histmodal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+    <div class="modal-header py-2">
+      <h6 class="modal-title mb-0"><i class="bi bi-clock-history me-1"></i>{{ _('Grade history') }} <span class="text-muted small" id="fw-obs-histtitle"></span></h6>
+      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+    </div>
+    <div class="modal-body" id="fw-obs-histbody"></div>
+  </div></div>
+</div>
+{% endif %}
+
+<div class="small text-muted mt-2">
+  {{ _('Scoring: MDN HTTP Observatory, algorithm version 6. Differences: the HSTS preload list is not consulted (no +5 for preloaded sites), and redirects are followed only while they stay on the scanned policy.') }}
+  <a href="https://developer.mozilla.org/en-US/observatory/docs/tests_and_scoring" target="_blank" rel="noopener noreferrer">{{ _('Tests and scoring') }}</a>
+</div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/observatory.js') }}"></script>
+{% endblock %}

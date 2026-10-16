@@ -8343,6 +8343,127 @@ refused in every mode and that refusal is not configurable. Names are resolved
 once and the <strong>address</strong> is dialled, with the hostname carried separately as
 SNI and <code>Host</code>, so a name cannot answer differently between the check and the
 connection.</p>
+<p><strong>Security-header grade.</strong> After a trace, a line under the legs gives the
+HTTP Observatory grade of leg A's response headers (§37.4), with a link to the
+Observatory. It scores only what the trace already returned — no request
+leaves the server for it — and says it is partial: redirects, Subresource
+Integrity, CORS and certificate trust are graded by the Observatory, not here.</p>
+<h3 id="374-http-observatory">37.4 HTTP Observatory</h3>
+<p><strong>Troubleshooting › HTTP Observatory</strong> (<code>/observatory/</code>), in the Global,
+FortiWeb and FortiADC ADOMs. It grades every site an appliance publishes with
+the tests and the scoring of the MDN HTTP Observatory
+(developer.mozilla.org/observatory, algorithm version 6), then says <strong>who</strong>
+produced each result and, on a FortiWeb, applies the fix.</p>
+<p><strong>What is graded.</strong> One row per FortiWeb server policy or FortiADC virtual
+server: its VIP, the HTTP and HTTPS ports it serves (both, when the policy has
+an HTTP and an HTTPS service), and a <strong>site name</strong> — the <code>Host</code> and SNI the
+requests carry. The site name defaults to the first plain name of the policy's
+Protected Hostnames group and can be changed per row; the address dialled is
+always the policy's VIP, never a name you type, so the page needs only the
+<code>view</code> permission and no free-target permission. A disabled policy, or one
+whose VIP cannot be resolved, is listed with the reason and not graded.</p>
+<p><strong>What is fetched</strong>, as the Observatory does it: <code>https://&lt;site&gt;/</code> and
+<code>http://&lt;site&gt;/</code>, each following its redirects, then <code>/robots.txt</code> and a CORS
+preflight (<code>OPTIONS</code> with <code>Origin: https://observatory.satom.invalid</code>). A
+redirect is followed only while it stays on the policy — the same name or the
+VIP, on a port the policy serves; a hop anywhere else is recorded as <em>not
+followed: outside this policy</em> and never dialled. The certificate is checked
+against this node's trust store; an untrusted one is a graded finding, not a
+failed scan.</p>
+<p><strong>The grade.</strong> Twelve tests: Content Security Policy, Cookies, Cross-Origin
+Embedder Policy, Cross-Origin Opener Policy, CORS, Redirection, Referrer
+Policy, HSTS, Subresource Integrity, X-Content-Type-Options, X-Frame-Options
+and Cross-Origin Resource Policy. Every site starts at 100; penalties are
+subtracted first, and bonuses count only when the penalties leave the site at
+90 or more. Three differences from mozilla.org, all stated on the page: the
+HSTS preload list is not consulted (a preloaded site does not get its +5), a
+non-numeric HSTS <code>max-age</code> is invalid (mozilla.org passes it by accident), and
+the registrable domain the SRI test uses comes from a short built-in suffix
+list instead of the full Public Suffix List.</p>
+<p><strong>Who.</strong> Each test carries one of:</p>
+<table>
+<thead>
+<tr>
+<th>Badge</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>FortiWeb</strong></td>
+<td>The appliance sets it: an HTTP Header Security row, HSTS or the HTTP-to-HTTPS redirect on the server policy, its own <code>cookiesession1</code> cookie. A header the profile adds <strong>replaces</strong> the one the application sends (measured on FortiWeb 8.0.6).</td>
+</tr>
+<tr>
+<td><strong>Application</strong></td>
+<td>The backend sent it and FortiWeb passed it through.</td>
+</tr>
+<tr>
+<td><strong>Certificate</strong></td>
+<td>The points are lost to an untrusted certificate: HSTS and the redirect test fail whatever the headers say. The summary shows the grade the site would get with a trusted certificate, and the fix links to Cert Manager.</td>
+</tr>
+<tr>
+<td><strong>Not sent</strong></td>
+<td>Nobody sends it.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Fixes</strong> (FortiWeb, <code>config_write</code>). Tick them in the result, set the
+options, press <strong>Preview changes</strong>: the page lists every write in order, the
+server policies it reaches and the grade the site would get. <strong>Apply</strong> sends
+the writes through the same path as the object editor — re-read from the
+device after each one — and grades the site again.</p>
+<table>
+<thead>
+<tr>
+<th>Fix</th>
+<th>What it writes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Set X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Content-Security-Policy</td>
+<td>A row in the Web Protection Profile's HTTP Header Security profile; a profile named <code>satom-hdr-&lt;policy&gt;</code> is created and attached when there is none. An existing row for that header has its value changed instead of getting a twin.</td>
+</tr>
+<tr>
+<td>Set Cross-Origin-Resource/Opener/Embedder-Policy</td>
+<td>The same, on builds whose profile rows accept them (FortiWeb 8.0.6 does, 7.6.8 does not — the build's choices come from the API library, and a header the build cannot carry is shown as unavailable with that reason).</td>
+</tr>
+<tr>
+<td>Enable HSTS</td>
+<td><code>hsts-header</code>, <code>hsts-max-age</code> (one year by default), <code>hsts-include-subdomains</code>, <code>hsts-preload</code> on the server policy. Needs an HTTPS service.</td>
+</tr>
+<tr>
+<td>Redirect HTTP to HTTPS</td>
+<td><code>http-to-https</code> on the server policy (FortiWeb answers 301 to the HTTPS service port). Needs both services.</td>
+</tr>
+<tr>
+<td>Harden FortiWeb's own cookie</td>
+<td><code>internal-cookie-secure</code>, <code>-httponly</code>, <code>-samesite</code> on the server policy. <code>Secure</code> is added on HTTPS responses only.</td>
+</tr>
+<tr>
+<td>Cookie flags for the application's cookies</td>
+<td><code>secure-cookie</code>, <code>http-only</code>, <code>samesite</code> on the profile's Cookie Security policy; one named <code>satom-ck-&lt;policy&gt;</code> with <code>security-mode no</code> (no signing or encryption) is created and attached when there is none. <code>HttpOnly</code> is offered on only when a session cookie lacks it: it hides cookies from the page's JavaScript.</td>
+</tr>
+</tbody>
+</table>
+<p>Refused before anything is sent: a template-managed Web Protection Profile
+(change it in the Template Library), an edit lease another user holds, a
+value that would not pass the test, a Content Security Policy that does not
+parse, and a policy without a Web Protection Profile for the profile-based
+fixes. When the change reaches other server policies (the Web Protection
+Profile or the header profile is shared), they are named and <strong>Apply</strong> needs
+the confirmation tick. Every scan is audited as <code>observatory.scan</code>, every fix
+as <code>observatory.fix</code> (refusals as <code>observatory.fix.refused</code>). Subresource
+Integrity and CORS are page content: they are explained, never "fixed" on the
+appliance. FortiADC sites are graded and explained; the fixes are FortiWeb
+only.</p>
+<p><strong>History and schedule.</strong> Every grade is kept (60 per site): <strong>History</strong> lists
+them and opens any of them with its findings recomputed against the current
+configuration. The scheduled action <strong>HTTP Observatory — grade published
+sites</strong> (<code>observatory_scan</code>, Administrator → Automation) grades every site of
+its targets and names a grade lower than the previous run first in its
+summary. Stored results keep headers, statuses, redirect routes and cookie
+flags — never cookie values or page bodies.</p>
 <hr>
 <h2 id="38-bookmarks-the-panel-you-file-yourself">38. Bookmarks: the panel you file yourself</h2>
 <p>The sidebar is organised the way the <strong>product</strong> is organised. <code>Bookmarks</code>
@@ -8505,8 +8626,8 @@ the page instead of on a manual.</p>
 discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
-   the console is either <strong>on the map</strong> (123 today) or <strong>excluded with a written
-   reason</strong> (154 today — JSON feeds, downloads, redirects and fragments that
+   the console is either <strong>on the map</strong> (124 today) or <strong>excluded with a written
+   reason</strong> (156 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>
 <li><strong>Nothing here is a second source of truth.</strong> Paths are generated from the

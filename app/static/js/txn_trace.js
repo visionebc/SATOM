@@ -145,7 +145,34 @@
         lastWindow = r.d.window || null;
         render(r.d);
         renderCookies(r.d);
+        obsGrade(r.d);
       }).catch(e => { $('fw-tt-err').textContent = String(e); });
+    }
+
+    // The security-header grade of leg A's response (HTTP Observatory
+    // scoring, headers only) and a way to the full site grade. Scores what the
+    // trace already returned; no extra request leaves this server.
+    function obsGrade(d) {
+      const box = $('fw-tt-obsgrade');
+      if (!box) return;
+      box.innerHTML = '';
+      const a = (d.legs || []).find(l => l.leg === 'a' && l.ok);
+      if (!a) return;
+      const rq = a.request || {};
+      post('/observatory/api/grade-headers', {
+        headers: a.headers || [], set_cookie: a.set_cookie || [],
+        url: (rq.scheme || 'https') + '://' + (rq.host || '') + (rq.path || '/')
+      }).then(r => {
+        if (!r.d || !r.d.ok) return;
+        const g = r.d.grade || '';
+        const cls = g.charAt(0) === 'A' ? 'fw-badge-success' : g.charAt(0) === 'B' ? 'fw-badge-info'
+          : g.charAt(0) === 'C' ? 'fw-badge-warning' : 'fw-badge-danger';
+        box.innerHTML = '<div class="small d-flex align-items-center gap-2 flex-wrap">' +
+          '<i class="bi bi-clipboard2-pulse"></i> Security headers of leg A ' +
+          '<span class="fw-badge ' + cls + '" style="font-weight:700">' + esc(g) + '</span> ' +
+          esc(r.d.score) + ' <span class="text-muted">(' + esc(r.d.note) + ')</span>' +
+          '<a class="btn btn-sm btn-fw-outline" href="/observatory/">Open in HTTP Observatory</a></div>';
+      }).catch(() => {});
     }
 
     function ms(v) { return (v === null || v === undefined) ? '—' : v + ' ms'; }

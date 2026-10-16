@@ -6,6 +6,35 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.2.1] - 2026-10-16
+
+### Changed — HTTP Observatory: pick the sites to grade from a searchable checkbox list (2026-10-16)
+
+- An appliance can publish hundreds of server policies, so the **Published
+  sites** table no longer lists them all. A **Select sites** list next to the
+  appliance selector has a checkbox per policy and a search box (policy name,
+  site name, Protected Hostnames, VIP); only the ticked sites appear in the
+  table. A search hides items, it never unticks them — the ticked set is kept
+  apart from what the search shows.
+- **Select all matches** ticks what the search shows and keeps what was
+  already ticked; **Clear selection** unticks everything; the ✕ on a row
+  removes that site. **Grade all** is now **Grade selected (N)**, where N
+  counts only the ticked sites that can be graded.
+- The selection is remembered per appliance in the browser.
+
+### Fixed
+
+- HTTP Observatory: opening **Select sites** on a screen around 1280 px wide
+  scrolled the whole *Published sites* card sideways, cutting off its title and
+  the Policy column. The menu is now positioned outside the card, the header
+  controls no longer spread apart when they wrap, and policy names and ports no
+  longer break mid-word (narrow screens scroll the table instead).
+- HTTP Observatory: after switching appliance, the previous appliance's sites
+  stayed tickable until the new list arrived (about 20 s for 50 policies), and
+  **Grade selected** would have sent those policy names with the new
+  appliance. The list is now cleared while the new one loads, and an answer
+  for an appliance that is no longer selected is discarded.
+
 ## [3.2.0] - 2026-10-16
 
 ### Added — HTTP Observatory: grade every published site, see who caused each finding, fix it on the FortiWeb (2026-10-16)

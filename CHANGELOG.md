@@ -6,17 +6,46 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
-### Added — Operations › Wiki: articles by ADOM, profile and group, with topics, tags and revisions (2026-10-16)
+## [3.3.0] - 2026-10-16
+
+### Added — Operations › Wiki: articles by ADOM, profile and group, with topics, tags and versions (2026-10-16)
 
 - **Wiki** is the first entry of Operations in every device ADOM and of the
-  Global block. Articles are Markdown, kept with every revision, in a topic
-  tree and with free tags; the list filters by text, ADOM, status, topic, tag
-  and "mine", on the server.
+  Global block. Articles are Markdown, in a topic tree and with free tags,
+  each with a one- or two-sentence **description** shown under its title.
+- **Menu and search.** A left-hand menu on the list and on every article
+  holds **New article**, a search box, the topic tree (with the number of
+  readable articles; a topic counts its sub-topics, and the branch you are in
+  is open) and the tags. A search matches when every word appears somewhere:
+  title, description, text, a tag, the author, or the name or description of
+  the article's topic or any topic above it. The list also filters by ADOM
+  (one checkbox per active ADOM plus **Global**), status, topic, tag and
+  "mine", on the server. The two columns follow the Wiki's own width, not the
+  window's, so a scaled display no longer pushes the menu on top.
+- **Rich-text editor.** Articles are written in a WYSIWYG editor (Toast UI
+  Editor 3.2.2, vendored, no usage statistics, in the console's language)
+  that stores Markdown; without JavaScript the plain Markdown field remains.
+  Pasted or dropped files are refused — link an image by its `https://`
+  address. **New article** opens a dialog; an error keeps what was typed.
+- **Drafts and versions.** Editing autosaves a draft 2.5 s after the last
+  change (and on leaving the page). Readers keep the published text until
+  someone presses **Publish**, which releases the draft as a new numbered
+  version with an optional *What changed* note; publishing nothing new makes
+  no version, and **Discard draft** drops the pending changes. A new article
+  is a draft only its author sees until its first publication. **History**
+  lists every version, each readable as it was.
+- **Editing together.** Anyone with `wiki.write` who can read an article can
+  edit its text. If someone else saved the draft in the meantime, the save is
+  refused and autosave stops — nobody's text is overwritten. Who can read it,
+  archiving and deleting stay with the author and the moderators.
 - **Audience.** An article is published to Global or to chosen ADOMs and can
   be limited to profiles and to Wiki groups (a reader needs one of the
   profiles OR one of the groups). ADOM confinement of the reader's profile
   always applies. An article a user may not read is absent from the list,
-  the tag suggestions and the counts, and answers 404 by id.
+  the tag suggestions and the counts, and answers 404 by id. In the editor
+  **Global** is its own checkbox, ticked by default; ticking an ADOM clears
+  it and unticking the last ADOM ticks it again. ADOMs an editor cannot list
+  are kept when they save.
 - **Wiki groups** (moderators): people across profiles, such as a team.
 - **Permissions** `wiki.view` (readonly and up), `wiki.write` (operator and
   up) and `wiki.moderate` (admin): moderators read and edit every article

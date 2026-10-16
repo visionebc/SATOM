@@ -9077,14 +9077,17 @@ built the way it is, what to check first when a backend fails.
 
 ### 46.1 Who can read an article
 
-The editor's **Who can read it** card sets the audience. Three filters, and a
-reader must pass all of them:
+The editor's **Who can read it** card sets the audience. A reader must pass
+both filters:
 
-| Filter | Nothing ticked means | Example |
+| Filter | Default | Example |
 |---|---|---|
-| **ADOMs** | Global: every ADOM | FortiWeb + FortiADC |
-| **Profiles** and **Groups** | everyone who can see those ADOMs | the `admin` profile, or the *Network team* group |
-| **Status** | — | *Draft* (only you), *Published*, *Archived* |
+| **ADOMs** | **Global** ticked: every ADOM | FortiWeb + FortiADC |
+| **Profiles** and **Groups** | nothing ticked: everyone who can see those ADOMs | the `admin` profile, or the *Network team* group |
+
+**Global** is its own checkbox. Ticking an ADOM clears it; unticking the last
+ADOM ticks it again. ADOMs you cannot list yourself stay on the article when
+you save it.
 
 - With profiles or groups ticked, a reader needs one of the ticked profiles
   **or** membership of one of the ticked groups.
@@ -9103,20 +9106,51 @@ reader must pass all of them:
 Each article sits in at most one **topic**, in a tree (*FortiWeb › Certificates*).
 Filtering by a topic includes its sub-topics. **Tags** are free: type them
 comma-separated; they are stored in lower case, so `TLS` and `tls` are one
-tag. The list filters by text (title and body), ADOM, status, topic, tag and
-"mine". In a device ADOM the list opens on that ADOM's articles plus the
-Global ones; in the Global ADOM it opens on every ADOM.
+tag. The **Description** (one or two sentences) is shown under the title in
+the list and on the article.
 
-Every save that changes the title or the text keeps a revision. **Revision N**
-on the article opens the history; each revision can be read as it was.
+The menu on the left of the list and of every article holds **New article**,
+**Search the Wiki**, the topic tree — each topic with the number of articles
+you can read, sub-topics included; the branch you are in is open — and the
+tags. A search matches an article when every word appears somewhere in its
+title, description, text, tags, author, or the name or description of its
+topic or any topic above it. The list also filters by ADOM (one checkbox per
+active ADOM plus **Global**), status, topic, tag and **Mine**. In a device
+ADOM the list opens on that ADOM's articles plus the Global ones; in the
+Global ADOM it opens on every ADOM. When the Wiki is narrower than about
+520 px the menu moves above the list.
 
-### 46.3 Permissions and moderation
+### 46.3 Writing, drafts and versions
+
+**New article** opens a dialog; the full editor is behind **Edit** on any
+article you may edit. The text is written in a rich-text editor that stores
+Markdown (without JavaScript the plain Markdown field remains). Pasted or
+dropped files are not stored: link an image by its `https://` address.
+
+- **Changes are saved automatically as a draft**, 2.5 seconds after you stop
+  typing and when you leave the page; **Save draft** saves at once. Readers
+  keep the published version until someone presses **Publish**.
+- **Publish** releases the draft as a new numbered version, with an optional
+  *What changed* note. Publishing with nothing new creates no version.
+- **Discard draft** drops the unpublished changes; readers are unaffected.
+- A new article is a draft only you can see until its first publication.
+- **History** lists every published version; each can be read as it was.
+- If someone else saved the draft while you were editing, your save is
+  refused and autosave stops with a message: reload to see their changes.
+  Nobody's text is overwritten.
+- **Archive** (on the article) takes it out of the default list without
+  deleting it; **Restore** brings it back.
+
+### 46.4 Permissions and moderation
 
 | Permission | Allows |
 |---|---|
 | `wiki.view` (*Read the Wiki*) | open the Wiki and read the articles whose audience includes you |
-| `wiki.write` (*Write Wiki articles*) | create articles and edit or delete your own |
+| `wiki.write` (*Write Wiki articles*) | create articles; edit the text, topic and tags of any article you can read |
 | `wiki.moderate` (*Moderate the Wiki*, admin) | read, edit and delete every article; manage **Topics** and **Groups** |
+
+Who can read an article, archiving it and deleting it stay with its author
+and the moderators; other editors see the audience fields disabled.
 
 The `readonly` system profile has `wiki.view`, `operator` adds `wiki.write`,
 and `admin` has all three. Custom profiles get none of them until an

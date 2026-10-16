@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Fixed · 13 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changes · 0 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Fixed · 13 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changes · 0 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,11 +59,16 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Fixed · 13 entries</span>
-        <ul class="rel-leads"><li>Wiki</li><li>Audience</li><li>Wiki groups</li><li class="rel-more">… and 10 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
+        <ul class="rel-leads"></ul>
+      </a>
+      <a class="rel-nav-item" href="v3.3.0.html" data-rel-version="3.3.0">
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 3.3.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
+        <span class="rel-nav-meta">2026-10-16 · Fixed · 20 entries</span>
+        <ul class="rel-leads"><li>Wiki</li><li>Menu and search</li><li>Rich-text editor</li><li class="rel-more">… and 17 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.2.1.html" data-rel-version="3.2.1">
-        <span class="rel-nav-head"><span class="rel-nav-v">Version 3.2.1</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 3.2.1</span></span>
         <span class="rel-nav-meta">2026-10-16 · Fixed · 5 entries</span>
         <ul class="rel-leads"><li>Select all matches</li><li class="rel-more">… and 4 more</li></ul>
       </a>
@@ -375,89 +380,8 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="added--operations--wiki-articles-by-adom-profile-and-group-with-topics-tags-and-revisions-2026-10-16">Added — Operations › Wiki: articles by ADOM, profile and group, with topics, tags and revisions (2026-10-16)</h3>
-<ul>
-<li><strong>Wiki</strong> is the first entry of Operations in every device ADOM and of the
-  Global block. Articles are Markdown, kept with every revision, in a topic
-  tree and with free tags; the list filters by text, ADOM, status, topic, tag
-  and "mine", on the server.</li>
-<li><strong>Audience.</strong> An article is published to Global or to chosen ADOMs and can
-  be limited to profiles and to Wiki groups (a reader needs one of the
-  profiles OR one of the groups). ADOM confinement of the reader's profile
-  always applies. An article a user may not read is absent from the list,
-  the tag suggestions and the counts, and answers 404 by id.</li>
-<li><strong>Wiki groups</strong> (moderators): people across profiles, such as a team.</li>
-<li><strong>Permissions</strong> <code>wiki.view</code> (readonly and up), <code>wiki.write</code> (operator and
-  up) and <code>wiki.moderate</code> (admin): moderators read and edit every article
-  and manage topics and groups.</li>
-<li>Deleting the last profile or group an article was limited to leaves it
-  readable by its author and moderators only, never by everyone.</li>
-<li>The requester asked: "a wiki and knowledge base in the style of articles,
-  where users post things that others can look up; the user decides which
-  ADOM a post belongs to; at the top of the Operations menu."</li>
-</ul>
-<h3 id="added--http-observatory-revert-a-fix-csp-in-report-only-first-the-hsts-preload-list-csv-and-pdf-exports-nightly-grading-2026-10-16">Added — HTTP Observatory: revert a fix, CSP in Report-Only first, the HSTS preload list, CSV and PDF exports, nightly grading (2026-10-16)</h3>
-<ul>
-<li><strong>Revert a fix.</strong> Every set of fixes applied from the page is kept with, for
-  each write, the fields it changed and what they held before, and the id of
-  every row it added. <strong>History → Fixes applied to this site</strong> lists them;
-  <strong>Revert</strong> (also offered right after <strong>Apply</strong>) reads the appliance again,
-  shows what it would undo — newest write first — and, on confirmation,
-  restores those fields, removes the rows the fix added and deletes the
-  profiles it created. The site is graded again afterwards. A field someone
-  changed after the fix is left as it is and named ("hsts-max-age is now 600
-  (the fix wrote 31536000)"), never overwritten; a row someone edited is not
-  removed, and a profile is deleted only when every row in it is one the fix
-  added and nothing else uses it. A revert that reaches other server policies
-  needs the same acknowledgement as the fix, and a template-managed profile or
-  someone else's edit lease refuses it. Fields are restored before the
-  switch that governs them is turned off, one switch per write: FortiWeb 8.0.6
-  answers 200 and keeps the old <code>hsts-max-age</code> / <code>hsts-include-subdomains</code> when
-  they arrive in the same request as <code>hsts-header disable</code> (measured). Needs
-  <em>config write</em>; audited (<code>observatory.fix.revert</code>).</li>
-<li><strong>Content Security Policy in two steps.</strong> When a site has no CSP, the
-  finding now offers <strong>Step 1 — send it as Content-Security-Policy-Report-Only</strong>
-  (FortiWeb 7.6.8 and 8.0.6 profile rows accept it): browsers report what the
-  policy would block and block nothing, so a policy can be watched before it
-  can break the site. The preview says the grade does not change — the MDN
-  Observatory scores Report-Only like no CSP. Once a Report-Only row exists,
-  the finding names it and <strong>Step 2 — enforce it</strong> starts from that exact
-  policy.</li>
-<li><strong>HSTS preload list.</strong> The node now holds Chromium's HSTS preload list —
-  the file the MDN HTTP Observatory reads — so a preloaded site gets the same
-  +5 (<code>hsts-preloaded</code>) it gets on mozilla.org, and an HTTP chain whose every
-  host is preloaded passes Redirection (<code>redirection-all-redirects-preloaded</code>).
-  The lookup and both rules follow MDN's source (an exact name always counts,
-  a parent name only with includeSubDomains, an untrusted certificate does not
-  cancel it). The new <strong>HTTP Observatory — refresh the HSTS preload list</strong>
-  action downloads it weekly (a failed download keeps the stored list); the
-  page footer shows its size and age, with <strong>Refresh now</strong> and <strong>Import file</strong>
-  (for a node without internet access) for operators with <em>Run operations</em>.
-  Each scan records which list it was graded with.</li>
-<li><strong>Exports.</strong> <strong>Export CSV</strong> on <em>Published sites</em>: every site of the
-  appliance with its latest grade, score and the result of each of the ten
-  tests (an appliance that cannot be listed exports its stored grades, marked
-  so). <strong>PDF report</strong> on a result: the grade, what was graded, and per test who
-  produced it and what fixes it — the same findings the page shows. Both are
-  audited (<code>observatory.export</code>); cells are spreadsheet-safe.</li>
-<li><strong>Nightly grading armed by default.</strong> <em>HTTP Observatory — grade published
-  sites</em> (daily 05:30) and the weekly preload refresh (Monday 05:00) join the
-  system automations a node seeds for itself and that <code>satom diagnose install</code>
-  checks; <code>satom execute seed actions --yes</code> adds them to an existing node.
-  Until now the Observatory graded only when someone clicked.</li>
-</ul>
-<h3 id="fixed">Fixed</h3>
-<ul>
-<li>The HTTP Observatory site picker labels added in 3.2.1 (<strong>Select sites</strong>,
-  <strong>Select all matches</strong>, <strong>Clear selection</strong>, <strong>Grade selected</strong>, the search
-  placeholder) were untranslated in Spanish, German, French and Italian.</li>
-<li>On a phone the ADOM chooser shown after sign-in could not be scrolled: the
-  six product cards were taller than the screen and centred in a fixed box,
-  so the header, <strong>Global</strong> and <strong>FortiGate</strong> sat off-screen out of reach.
-  The chooser now scrolls, and on narrow or short (landscape) screens each
-  ADOM is a compact row — all six fit on a 390 × 844 phone without scrolling.</li>
-</ul>
-<p class="rel-prevnext"><a href="v3.2.1.html">Version 3.2.1 →</a></p>
+
+<p class="rel-prevnext"><a href="v3.3.0.html">Version 3.3.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

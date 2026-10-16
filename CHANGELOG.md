@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.3.1] - 2026-10-16
+
 ### Fixed
 
 - The Schema builds one-click harvest and the `schema_harvest` scheduled

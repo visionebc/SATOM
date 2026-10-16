@@ -1791,6 +1791,14 @@ def create_app(config_override: object | None = None) -> Flask:
             # --- Wiki article description (2026-10-16, migration wiki02) ---
             'wiki_articles': [
                 ('summary', "VARCHAR(300) DEFAULT '' NOT NULL"),
+                # --- drafts + versions (2026-10-16, migration wiki03) ---
+                ('draft_data', "TEXT"),
+                ('draft_rev', "INTEGER DEFAULT 0 NOT NULL"),
+                ('draft_saved_at', "TIMESTAMP"),
+                ('draft_user_id', "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
+            ],
+            'wiki_revisions': [
+                ('summary', "VARCHAR(300) DEFAULT '' NOT NULL"),
             ],
             # --- ADOM confinement per profile (2026-10-15) ---
             # '' = every ADOM, which is what every existing profile grants.

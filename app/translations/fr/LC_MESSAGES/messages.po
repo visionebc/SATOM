@@ -25266,3 +25266,79 @@ msgid "%(num)d article"
 msgid_plural "%(num)d articles"
 msgstr[0] "%(num)d article"
 msgstr[1] "%(num)d articles"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Archive"
+msgstr "Archiver"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Changes are saved automatically as a draft. Readers keep the published version until you publish; every publication is a new version."
+msgstr "Les modifications sont enregistrées automatiquement comme brouillon. Les lecteurs voient la version publiée jusqu'à la publication ; chaque publication est une nouvelle version."
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Continue editing"
+msgstr "Continuer la modification"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Discard draft"
+msgstr "Abandonner le brouillon"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Discard the unpublished changes? Readers keep the published version."
+msgstr "Abandonner les modifications non publiées ? Les lecteurs gardent la version publiée."
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Draft not saved"
+msgstr "Brouillon non enregistré"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Draft saved %(time)s"
+msgstr "Brouillon enregistré %(time)s"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Draft saved by %(user)s at %(time)s UTC"
+msgstr "Brouillon enregistré par %(user)s le %(time)s UTC"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Draft — not published yet"
+msgstr "Brouillon — pas encore publié"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "None ticked = everyone who can see those ADOMs. Otherwise a reader needs one of the ticked profiles OR membership of one of the ticked groups. Whoever can read it and writes in the Wiki can also edit it."
+msgstr "Rien de coché = tous ceux qui voient ces ADOM. Sinon, un lecteur doit avoir l'un des profils cochés OU appartenir à l'un des groupes cochés. Qui peut le lire et écrit dans le Wiki peut aussi le modifier."
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Not published yet"
+msgstr "Pas encore publié"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Only the author and Wiki moderators change who can read an article."
+msgstr "Seuls l'auteur et les modérateurs du Wiki changent qui peut lire un article."
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Published version"
+msgstr "Version publiée"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Readers see the published version"
+msgstr "Les lecteurs voient la version publiée"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Save draft"
+msgstr "Enregistrer le brouillon"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Saved automatically as a draft only you can see until you publish it."
+msgstr "Enregistré automatiquement comme brouillon visible de vous seul jusqu'à sa publication."
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Saving draft…"
+msgstr "Enregistrement du brouillon…"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Unpublished changes"
+msgstr "Modifications non publiées"
+
+#: wiki drafts and versions (2026-10-16)
+msgid "Unpublished changes saved by %(user)s at %(time)s UTC. Readers see the published version below."
+msgstr "Modifications non publiées enregistrées par %(user)s le %(time)s UTC. Les lecteurs voient la version publiée ci-dessous."

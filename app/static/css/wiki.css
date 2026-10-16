@@ -1,8 +1,12 @@
 /* Operations › Wiki. Light theme only, like the rest of the product: cards
    are .fw-card, colours come from --fw-* and the .fw-badge-* set. */
 
-.wiki-layout { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 16px; align-items: start; }
-@media (max-width: 991px) { .wiki-layout { grid-template-columns: minmax(0, 1fr); } }
+/* Two columns decided by the WIKI's own width (container queries), not the
+   window's: a maximised window with display scaling can be < 992 CSS px
+   wide and still have room for both columns. */
+.wiki-layout { container: wikilayout / inline-size; display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px; gap: 16px; align-items: start; }
+@container wikilayout (max-width: 720px) { .wiki-layout > * { grid-column: 1 / -1; } }
 
 .wiki-list-item { padding: 12px 16px; border-bottom: 1px solid var(--fw-border-light); }
 .wiki-list-item:last-child { border-bottom: 0; }
@@ -45,9 +49,15 @@
 
 /* The Wiki's own menu (wiki/_nav.html): left column on the list and on
    every article; above the content on narrow screens. */
-.wiki-shell { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 16px; align-items: start; }
-@media (max-width: 991px) { .wiki-shell { grid-template-columns: minmax(0, 1fr); } }
-.wiki-nav-tree { max-height: 60vh; overflow-y: auto; }
+.wiki-shell { container: wikishell / inline-size; display: grid;
+  grid-template-columns: 250px minmax(0, 1fr); gap: 20px; align-items: start; }
+/* The Wiki's menu is a left panel that stays in view while the article scrolls. */
+.wiki-nav { position: sticky; top: calc(var(--fw-topbar-height, 50px) + 14px); max-height: calc(100vh - var(--fw-topbar-height, 50px) - 28px); overflow-y: auto;
+  padding-right: 4px; }
+@container wikishell (max-width: 640px) {
+  .wiki-shell > * { grid-column: 1 / -1; }
+  .wiki-shell > .wiki-nav { position: static; max-height: none; overflow: visible; }
+}
 .wiki-nav-link { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 3px 6px; border-radius: 6px;
   color: var(--fw-text-primary); text-decoration: none; min-width: 0; }
 .wiki-nav-link:hover { background: var(--fw-surface-alt); }
@@ -83,3 +93,12 @@
 .wiki-rich .toastui-editor-contents { font-family: inherit; font-size: 14px; }
 .wiki-modal-body { background: var(--fw-content-bg, #F3F6FC); }
 .wiki-nav .fw-card { margin-bottom: 0; }
+
+.wiki-adom-filter { border: 0; padding: 0; margin: 0; min-width: 0; }
+.wiki-adom-filter legend { float: none; width: auto; font-size: inherit; }
+.wiki-adom-boxes { display: flex; flex-wrap: wrap; gap: 2px 4px; padding: 4px 0; }
+.wiki-autosave { font-size: 12px; color: var(--fw-text-secondary); }
+.wiki-autosave.is-failed { color: #8B1C2A; }
+.wiki-draft-note { padding: 8px 12px; border-radius: var(--fw-radius); font-size: 13px;
+  background: #FFF7E0; border: 1px solid #F0D58A; color: #7A5700; }
+.wiki-draft-note a { color: #7A5700; font-weight: 600; }

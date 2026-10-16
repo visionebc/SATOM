@@ -1,7 +1,9 @@
 {#  The article form's fields, shared by the editor page (wiki/edit.html) and
     the "New article" dialog (wiki/_new_modal.html). Expects the
     views/wiki._editor_context() names: article, form, topics, adoms,
-    profiles, groups; ``default_topic`` preselects a topic for a new article.
+    profiles, groups, may_set_audience, draft_rev; ``default_topic``
+    preselects a topic for a new article. There is no status field: the
+    editor autosaves a draft and the Publish button releases a version.
     After a refused save ``form`` holds what was typed, so the author never
     loses the text to a validation message.
 
@@ -11,7 +13,6 @@
 {% set v_title = f.title if form else (article.title if article else '') %}
 {% set v_summary = f.summary if form else (article.summary if article else '') %}
 {% set v_body = f.body if form else (article.body if article else '') %}
-{% set v_status = f.status if form else (article.status if article else 'draft') %}
 {% set v_topic = (f.topic_id | int if f.topic_id else none) if form else (article.topic_id if article else default_topic) %}
 {% set v_tags = f.tags if form else (article.tags | map(attribute='name') | join(', ') if article else '') %}
 {% set v_adoms = f.adoms if form else (article.adoms if article else []) %}
@@ -20,6 +21,7 @@
 {% set v_groups = (f.groups | map('int') | list) if form else (article.groups | map(attribute='id') | list if article else []) %}
 {% set ui_locale = {'es': 'es', 'de': 'de', 'fr': 'fr', 'it': 'it'}.get(ui_lang or 'en', '') %}
 
+<input type="hidden" name="draft_rev" value="{{ draft_rev or 0 }}" data-wiki-rev>
 <div class="wiki-layout">
   <div class="fw-card"><div class="fw-card-body">
     <label class="form-label small mb-1" for="wiki-title">{{ _('Title') }}</label>
@@ -47,7 +49,7 @@
     <div class="wiki-preview wiki-body d-none" data-wiki-preview data-loading="{{ _('Rendering…') }}"></div>
     <div class="form-text" style="font-size:11px;">{{ _('Headings, lists, tables, code blocks and links; switch to Markdown at the bottom of the editor. HTML is shown as text. Do not paste passwords, keys or tokens: everyone in the audience can read the article and its history.') }}</div>
 
-    {% if article %}
+    {% if article and article.revision %}
     <label class="form-label small mb-1 mt-3" for="wiki-note">{{ _('What changed (optional)') }}</label>
     <input class="form-control form-control-sm" id="wiki-note" name="note" maxlength="200" value="{{ f.note or '' }}">
     {% endif %}
@@ -55,13 +57,6 @@
 
   <aside class="d-flex flex-column gap-3">
     <div class="fw-card"><div class="fw-card-body">
-      <label class="form-label small mb-1" for="wiki-status">{{ _('Status') }}</label>
-      <select class="form-select form-select-sm mb-3" id="wiki-status" name="status">
-        <option value="draft" {{ 'selected' if v_status == 'draft' }}>{{ _('Draft — only you') }}</option>
-        <option value="published" {{ 'selected' if v_status == 'published' }}>{{ _('Published') }}</option>
-        <option value="archived" {{ 'selected' if v_status == 'archived' }}>{{ _('Archived') }}</option>
-      </select>
-
       <label class="form-label small mb-1" for="wiki-topic">{{ _('Topic') }}</label>
       <select class="form-select form-select-sm mb-3" id="wiki-topic" name="topic_id">
         <option value="">{{ _('No topic') }}</option>
@@ -79,6 +74,8 @@
 
     <div class="fw-card"><div class="fw-card-body">
       <div class="fw-form-section-title mb-2">{{ _('Who can read it') }}</div>
+      {% if not may_set_audience %}<div class="form-text mb-2" style="font-size:11px;">{{ _('Only the author and Wiki moderators change who can read an article.') }}</div>{% endif %}
+      <fieldset {{ 'disabled' if not may_set_audience }}>
       <span class="form-label small mb-1 d-block">{{ _('ADOMs') }}</span>
       <div class="wiki-choice-list mb-1" data-wiki-adoms>
         <div class="form-check"><input class="form-check-input" type="checkbox" name="adoms" value="global" id="wiki-adom-global" data-wiki-global {{ 'checked' if v_global }}>
@@ -106,7 +103,8 @@
           <label class="form-check-label small" for="wiki-grp-{{ gr.id }}">{{ gr.name }}</label></div>
         {% else %}<div class="text-muted small">{{ _('No groups yet.') }}</div>{% endfor %}
       </div>
-      <div class="form-text" style="font-size:11px;">{{ _('None ticked = everyone who can see those ADOMs. Otherwise a reader needs one of the ticked profiles OR membership of one of the ticked groups.') }}</div>
+      <div class="form-text" style="font-size:11px;">{{ _('None ticked = everyone who can see those ADOMs. Otherwise a reader needs one of the ticked profiles OR membership of one of the ticked groups. Whoever can read it and writes in the Wiki can also edit it.') }}</div>
+      </fieldset>
     </div></div>
   </aside>
 </div>

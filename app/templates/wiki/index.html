@@ -43,22 +43,23 @@
 
     <form class="fw-card mb-3" method="get" action="{{ url_for('wiki.index') }}">
       <div class="fw-card-body d-flex flex-wrap gap-2 align-items-end">
-        <div>
-          <label class="form-label small mb-1" for="wiki-adom">{{ _('ADOM') }}</label>
-          <select class="form-select form-select-sm" id="wiki-adom" name="adom">
-            <option value="all" {{ 'selected' if adom == 'all' }}>{{ _('All ADOMs') }}</option>
-            <option value="global" {{ 'selected' if adom == 'global' }}>{{ _('Global only') }}</option>
-            {% for k, n in adom_names.items() %}
-            <option value="{{ k }}" {{ 'selected' if adom == k }}>{{ n }} + {{ _('Global') }}</option>
+        <fieldset class="wiki-adom-filter">
+          <legend class="form-label small mb-1">{{ _('ADOMs') }}</legend>
+          <div class="wiki-adom-boxes" data-wiki-autofilter>
+            {% for k, n in adom_choices %}
+            <div class="form-check form-check-inline mb-0">
+              <input class="form-check-input" type="checkbox" name="adoms" value="{{ k }}" id="wiki-f-{{ k }}" {{ 'checked' if k in picked }}>
+              <label class="form-check-label small {{ 'fw-semibold' if k == 'global' }}" for="wiki-f-{{ k }}">{{ _('Global') if k == 'global' else n }}</label>
+            </div>
             {% endfor %}
-          </select>
-        </div>
+          </div>
+        </fieldset>
         <div>
           <label class="form-label small mb-1" for="wiki-status">{{ _('Status') }}</label>
           <select class="form-select form-select-sm" id="wiki-status" name="status">
             <option value="">{{ _('Published and drafts') }}</option>
             <option value="published" {{ 'selected' if status == 'published' }}>{{ _('Published') }}</option>
-            <option value="draft" {{ 'selected' if status == 'draft' }}>{{ _('Draft') }}</option>
+            <option value="draft" {{ 'selected' if status == 'draft' }}>{{ _('Not published yet') }}</option>
             <option value="archived" {{ 'selected' if status == 'archived' }}>{{ _('Archived') }}</option>
           </select>
         </div>
@@ -70,7 +71,7 @@
         {% if topic %}<input type="hidden" name="topic" value="{{ topic.id }}">{% endif %}
         {% if tag %}<input type="hidden" name="tag" value="{{ tag }}">{% endif %}
         <button class="btn btn-fw-primary btn-sm px-3">{{ _('Filter') }}</button>
-        {% if text or topic or tag or status or mine %}
+        {% if text or topic or tag or status or mine or request.args.getlist('adoms') %}
         <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('wiki.index') }}">{{ _('Clear') }}</a>
         {% endif %}
       </div>
@@ -100,8 +101,9 @@
         {% if a.summary %}<p class="wiki-summary">{{ a.summary }}</p>
         {% else %}{% set ex = excerpt(a.body) %}{% if ex %}<p class="wiki-excerpt">{{ ex }}</p>{% endif %}{% endif %}
         <div class="wiki-meta">
-          {% if a.status == 'draft' %}<span class="fw-badge fw-badge-warning">{{ _('Draft') }}</span>
-          {% elif a.status == 'archived' %}<span class="fw-badge fw-badge-secondary">{{ _('Archived') }}</span>{% endif %}
+          {% if a.status == 'draft' %}<span class="fw-badge fw-badge-warning">{{ _('Draft — not published yet') }}</span>
+          {% elif may_write and has_draft(a) %}<span class="fw-badge fw-badge-warning" title="{{ _('Readers see the published version') }}">{{ _('Unpublished changes') }}</span>{% endif %}
+          {% if a.status == 'archived' %}<span class="fw-badge fw-badge-secondary">{{ _('Archived') }}</span>{% endif %}
           {% set ad = a.adoms %}
           {% if ad %}{% for k in ad %}<span class="fw-badge fw-badge-info">{{ adom_names.get(k, k) }}</span>{% endfor %}
           {% else %}<span class="fw-badge fw-badge-primary">{{ _('Global') }}</span>{% endif %}

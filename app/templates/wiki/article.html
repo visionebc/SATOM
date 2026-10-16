@@ -27,7 +27,7 @@
     <h1 class="fw-page-title">{{ article.title }}</h1>
     {% if article.summary %}<p class="wiki-summary wiki-summary-lead mb-1">{{ article.summary }}</p>{% endif %}
     <div class="wiki-meta mt-1">
-      {% if article.status == 'draft' %}<span class="fw-badge fw-badge-warning">{{ _('Draft') }}</span>
+      {% if article.status == 'draft' %}<span class="fw-badge fw-badge-warning">{{ _('Draft — not published yet') }}</span>
       {% elif article.status == 'archived' %}<span class="fw-badge fw-badge-secondary">{{ _('Archived') }}</span>{% endif %}
       {{ audience(article, adom_names) }}
       {% for t in article.tags %}<a class="wiki-tag" href="{{ url_for('wiki.index', tag=t.name) }}">#{{ t.name }}</a>{% endfor %}
@@ -35,19 +35,39 @@
     <div class="wiki-meta mt-1">
       <span>{{ article.author.username if article.author else _('deleted user') }}</span>
       <span>{{ _('Updated') }} {{ article.updated_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
-      <a href="{{ url_for('wiki.history', article_id=article.id) }}">{{ _('Revision') }} {{ article.revision }}</a>
+      {% if article.revision %}<a href="{{ url_for('wiki.history', article_id=article.id) }}">{{ _('Version') }} {{ article.revision }}</a>{% endif %}
     </div>
   </div>
-  <div class="d-flex gap-2">
+  <div class="d-flex gap-2 flex-wrap justify-content-end">
     {% if may_edit %}
-    <a class="btn btn-fw-primary btn-sm" href="{{ url_for('wiki.edit', article_id=article.id) }}"><i class="bi bi-pencil me-1"></i>{{ _('Edit') }}</a>
+    <a class="btn btn-fw-primary btn-sm" href="{{ url_for('wiki.edit', article_id=article.id) }}"><i class="bi bi-pencil me-1"></i>{{ _('Continue editing') if has_draft else _('Edit') }}</a>
+    {% endif %}
+    {% if may_manage and article.revision %}
+    <form method="post" action="{{ url_for('wiki.set_status', article_id=article.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% if article.status == 'archived' %}
+      <button class="btn btn-sm btn-outline-secondary" name="status" value="published"><i class="bi bi-box-arrow-up me-1"></i>{{ _('Restore') }}</button>
+      {% else %}
+      <button class="btn btn-sm btn-outline-secondary" name="status" value="archived"><i class="bi bi-archive me-1"></i>{{ _('Archive') }}</button>
+      {% endif %}
+    </form>
+    {% endif %}
+    {% if may_manage %}
     <form method="post" action="{{ url_for('wiki.delete', article_id=article.id) }}" data-wiki-confirm="{{ _('Delete this article and its history?') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+      <button class="btn btn-sm btn-outline-danger" title="{{ _('Delete') }}"><i class="bi bi-trash"></i></button>
     </form>
     {% endif %}
   </div>
 </div>
+
+{% if has_draft and may_edit %}
+<div class="wiki-draft-note mb-3">
+  <i class="bi bi-pencil-square me-1"></i>
+  {{ _('Unpublished changes saved by %(user)s at %(time)s UTC. Readers see the published version below.', user=(article.draft_user.username if article.draft_user else '?'), time=article.draft_saved_at.strftime('%Y-%m-%d %H:%M') if article.draft_saved_at else '') }}
+  <a href="{{ url_for('wiki.edit', article_id=article.id) }}">{{ _('Continue editing') }}</a>
+</div>
+{% endif %}
 
 <div class="fw-card"><div class="fw-card-body wiki-body">
   {% if article.body.strip() %}{{ html }}{% else %}<p class="text-muted">{{ _('This article has no text yet.') }}</p>{% endif %}

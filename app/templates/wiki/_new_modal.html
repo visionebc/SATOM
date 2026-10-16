@@ -1,6 +1,8 @@
 {#  "New article" dialog, opened from the Wiki menu (wiki/_nav.html). It
-    posts to /wiki/new asking for JSON: a refused save shows its message
-    here and keeps everything typed; a saved one opens the article. The
+    autosaves a draft (the first save creates the article; later ones go to
+    its edit URL) and Publish releases version 1, all as JSON: a refused
+    save shows its message here and keeps everything typed. Closing keeps
+    the draft. The
     trigger is a link to /wiki/new, so without JavaScript it is the page.  #}
 {% if may_write and new_editor %}
 <div class="modal fade fw-modal" id="wiki-new-modal" tabindex="-1" aria-labelledby="wiki-new-title" aria-hidden="true">
@@ -14,14 +16,20 @@
       </div>
       <div class="modal-body wiki-modal-body">
         <div class="alert alert-danger py-2 small d-none" role="alert" data-wiki-error></div>
+        <div class="form-text mb-2" style="font-size:12px;">{{ _('Saved automatically as a draft only you can see until you publish it.') }}</div>
         {% with article=none, form=none, topics=new_editor.topics, adoms=new_editor.adoms,
-                profiles=new_editor.profiles, groups=new_editor.groups, default_topic=new_editor.default_topic %}
+                profiles=new_editor.profiles, groups=new_editor.groups, default_topic=new_editor.default_topic,
+                may_set_audience=true, draft_rev=0 %}
         {% include "wiki/_editor_fields.html" %}
         {% endwith %}
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
-        <button class="btn btn-fw-primary btn-sm px-4" data-wiki-save>{{ _('Save') }}</button>
+        <span class="wiki-autosave me-auto" data-wiki-autosave aria-live="polite"
+              data-saving="{{ _('Saving draft…') }}" data-saved="{{ _('Draft saved %(time)s', time='{t}') }}"
+              data-failed="{{ _('Draft not saved') }}"></span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{{ _('Close') }}</button>
+        <button class="btn btn-sm btn-outline-secondary" name="action" value="draft">{{ _('Save draft') }}</button>
+        <button class="btn btn-fw-primary btn-sm px-4" name="action" value="publish" data-wiki-publish>{{ _('Publish') }}</button>
       </div>
     </form>
   </div>

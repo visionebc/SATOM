@@ -14,8 +14,10 @@ Groups are the Wiki's own (``wiki_groups``): a SATOM profile is a bundle of
 permissions, one per user, so it cannot say "the network team" across
 profiles. A group can.
 
-Every save of the body keeps a ``WikiRevision``; the article row holds the
-current text so lists and search never join the history.
+Editing writes a shared, autosaved DRAFT; readers keep the released text
+until someone publishes, and every publication is a new numbered version
+(``WikiRevision``). The article row holds the released text so lists and
+search never join the history.
 """
 from __future__ import annotations
 
@@ -137,13 +139,27 @@ class WikiArticle(db.Model):
     #: rows on purpose: a deleted profile drops its row, and "no row" must not
     #: turn a restricted article into everybody's (services/wiki_access.py).
     audience_restricted = db.Column(db.Boolean, nullable=False, default=False)
-    revision = db.Column(db.Integer, nullable=False, default=1)
+    #: Number of the last RELEASED version (0 = never published). A version
+    #: is made only by publishing (services/wiki.publish).
+    revision = db.Column(db.Integer, nullable=False, default=0)
+    #: The shared working draft of a published article, autosaved by
+    #: whoever edits it: validated form values as JSON (services/wiki.
+    #: save_draft). Readers keep seeing the released fields above until it
+    #: is published. A never-published article is its own draft (None here).
+    draft_data = db.Column(db.Text, nullable=True)
+    #: Bumped by every draft save; an editor whose page holds an older
+    #: number gets a conflict instead of overwriting someone else's text.
+    draft_rev = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    draft_saved_at = db.Column(db.DateTime, nullable=True)
+    draft_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"),
+                              nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     published_at = db.Column(db.DateTime, nullable=True)
 
     topic = db.relationship("WikiTopic")
-    author = db.relationship("User")
+    author = db.relationship("User", foreign_keys=[author_id])
+    draft_user = db.relationship("User", foreign_keys=[draft_user_id])
     tags = db.relationship(WikiTag, secondary=wiki_article_tags, lazy="select",
                            order_by=WikiTag.name)
     profiles = db.relationship("Profile", secondary=wiki_article_profiles, lazy="select")
@@ -170,6 +186,7 @@ class WikiRevision(db.Model):
                            nullable=False, index=True)
     number = db.Column(db.Integer, nullable=False)
     title = db.Column(db.String(200), nullable=False)
+    summary = db.Column(db.String(300), nullable=False, default="", server_default="")
     body = db.Column(db.Text, nullable=False, default="")
     note = db.Column(db.String(200), nullable=False, default="")
     edited_by = db.Column(db.String(64), nullable=False, default="")

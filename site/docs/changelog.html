@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#331---2026-10-16">[3.3.1] - 2026-10-16</a>
       <a href="#330---2026-10-16">[3.3.0] - 2026-10-16</a>
       <a href="#321---2026-10-16">[3.2.1] - 2026-10-16</a>
       <a href="#320---2026-10-16">[3.2.0] - 2026-10-16</a>
@@ -104,7 +105,6 @@
       <a href="#192---2026-08-09">[1.9.2] - 2026-08-09</a>
       <a href="#191---2026-08-09">[1.9.1] - 2026-08-09</a>
       <a href="#190---2026-08-08">[1.9.0] - 2026-08-08</a>
-      <a href="#180---2026-08-07">[1.8.0] - 2026-08-07</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="changelog">Changelog</h1>
@@ -112,6 +112,24 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="331---2026-10-16">[3.3.1] - 2026-10-16</h2>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li>The Schema builds one-click harvest and the <code>schema_harvest</code> scheduled
+  action ran a second FortiAnalyzer harvest that took the build from the
+  inventory row and stored nothing when the walk failed. They now run the same
+  harvest as the API-library job: the build is read off the box, and a walk
+  that read nothing, was refused or broke is stored unhealthy with its reason
+  (the action and the page report it as a failure, naming the evidence row).</li>
+<li><code>flask apilib schema-harvest</code> (and <code>satom execute apilib harvest</code>) answered
+  "unsupported" for a FortiAnalyzer or FortiAuthenticator while the
+  <code>schema_harvest</code> action ran their adapters; the command now takes the same
+  path. The satom CLI prints a FortiAnalyzer answer as its one <code>schema</code> row
+  instead of an empty <code>cli_tree</code> line.</li>
+<li>The API library documentation said FortiGate's REST schema arrives only by
+  pack or import; it is harvested live (only its CLI <code>tree</code> arrives by pack or
+  import).</li>
+</ul>
 <h2 id="330---2026-10-16">[3.3.0] - 2026-10-16</h2>
 <h3 id="added--operations--wiki-articles-by-adom-profile-and-group-with-topics-tags-and-versions-2026-10-16">Added — Operations › Wiki: articles by ADOM, profile and group, with topics, tags and versions (2026-10-16)</h3>
 <ul>
@@ -226,7 +244,7 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   counted. The cooldown key is unchanged, so a reading moving from 96 % to
   97 % does not re-send the alert.</li>
 </ul>
-<h3 id="fixed">Fixed</h3>
+<h3 id="fixed_1">Fixed</h3>
 <ul>
 <li>The HTML part of alert mail inserted titles and details unescaped and
   without line breaks: a multi-line device finding ran together into one
@@ -258,7 +276,7 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   counts only the ticked sites that can be graded.</li>
 <li>The selection is remembered per appliance in the browser.</li>
 </ul>
-<h3 id="fixed_1">Fixed</h3>
+<h3 id="fixed_2">Fixed</h3>
 <ul>
 <li>HTTP Observatory: opening <strong>Select sites</strong> on a screen around 1280 px wide
   scrolled the whole <em>Published sites</em> card sideways, cutting off its title and
@@ -1755,7 +1773,7 @@ because gettext falls back to the English text without a word.</p>
 <li>Fleet view (all devices: consensus, agree/differ, your scheme pattern) and
   CSV export (formula-safe).</li>
 </ul>
-<h3 id="fixed_2">Fixed</h3>
+<h3 id="fixed_3">Fixed</h3>
 <ul>
 <li><strong>A FortiGate never had a configuration tree.</strong> <code>device_sync.snapshot_for</code>
   sent <code>kind=fortigate</code> to the FortiWeb sweep, which failed every endpoint, so
@@ -5172,7 +5190,7 @@ the socket is root on the host. Reference:
   to System → Container operations.</li>
 <li>Safeguards §195; <code>tests/test_docker_agent.py</code>, <code>tests/test_container_ops.py</code>.</li>
 </ul>
-<h3 id="fixed_3">Fixed</h3>
+<h3 id="fixed_4">Fixed</h3>
 <ul>
 <li><strong><code>satom-docker.sh health</code> checks the application again.</strong> It built its
   <code>/healthz</code> URL from the retired <code>SATOM_HTTP_BIND</code> and stopped with "unbound
@@ -6543,7 +6561,7 @@ in silence.</p>
 <li>The window ceiling in the prose is read from <code>scout_ladder.MAX_WINDOW_MIN</code>
   at render, so it cannot disagree with the clamp.</li>
 </ul>
-<h3 id="fixed_4">Fixed</h3>
+<h3 id="fixed_5">Fixed</h3>
 <ul>
 <li><code>walk_help()</code> degraded by re-reading the very attribute whose absence it was
   degrading from, so an unreadable engine constant raised instead of falling
@@ -6588,7 +6606,7 @@ the product names them:</p>
   gate. The split between the two Automation pages is the permission boundary;
   this is not, and a value in <code>user_settings</code> may not be asked to be one.</li>
 </ul>
-<h3 id="fixed_5">Fixed</h3>
+<h3 id="fixed_6">Fixed</h3>
 <ul>
 <li>The calendar applied the filter in the view rather than the template. A row
   hidden in Jinja is still read, still counted in the day badges and still fed
@@ -8382,7 +8400,7 @@ an opaque <code>-651</code> at deploy time.</p>
   one counter it fed ("walks that FAILED") is read from the scan rows instead.</p>
 </li>
 </ul>
-<h3 id="fixed_6">Fixed</h3>
+<h3 id="fixed_7">Fixed</h3>
 <ul>
 <li>
 <p><strong>An EMPTY stored copy is a warned state, everywhere it matters.</strong> <code>blob is
@@ -8689,7 +8707,7 @@ an opaque <code>-651</code> at deploy time.</p>
   cannot be migrated until someone uploads the file).</p>
 </li>
 </ul>
-<h3 id="fixed_7">Fixed</h3>
+<h3 id="fixed_8">Fixed</h3>
 <ul>
 <li>
 <p><strong>The shortcut that would have mislabelled every Lua script.</strong> "The plan
@@ -8889,7 +8907,7 @@ an opaque <code>-651</code> at deploy time.</p>
   outside this product.</p>
 </li>
 </ul>
-<h3 id="fixed_8">Fixed</h3>
+<h3 id="fixed_9">Fixed</h3>
 <ul>
 <li><code>not_listable()</code> accepted <strong>multicast</strong> addresses. <code>ipaddress</code> answers
   <code>is_global == True</code> for <code>224.0.0.1</code>, because that property asks "outside the
@@ -8979,7 +8997,7 @@ an opaque <code>-651</code> at deploy time.</p>
   zero rows, and only one of the four is an answer.</p>
 </li>
 </ul>
-<h3 id="fixed_9">Fixed</h3>
+<h3 id="fixed_10">Fixed</h3>
 <ul>
 <li>The Admin Console pane for Sentinel → Context re-listed the section's
   context keys by hand, so a key added to the single shared builder reached
@@ -9001,7 +9019,7 @@ an opaque <code>-651</code> at deploy time.</p>
   logsearch route.</li>
 </ul>
 <h2 id="1171---2026-08-23">[1.17.1] - 2026-08-23</h2>
-<h3 id="fixed_10">Fixed</h3>
+<h3 id="fixed_11">Fixed</h3>
 <ul>
 <li><strong>The two buttons that reveal a sibling pane did nothing.</strong> <em>Response engine
   → Response policy</em> (in the Incidents console) and <em>Architecture → Incidents
@@ -9059,7 +9077,7 @@ named modes, and the on-demand sweep is a job over the devices you pick.</p>
   reason they could go: until now the Context button was the <em>only</em> way to
   reach that page.</li>
 </ul>
-<h3 id="fixed_11">Fixed</h3>
+<h3 id="fixed_12">Fixed</h3>
 <ul>
 <li>Every POST form in the Context, Response policy and incidents-console
   sections carries the return marker, so a save or a delete fired inside the
@@ -9070,7 +9088,7 @@ named modes, and the on-demand sweep is a job over the devices you pick.</p>
 <h2 id="1161---2026-08-23">[1.16.1] - 2026-08-23</h2>
 <p>The Admin Console menu could not be opened. Eleven inline blocks were being
 dropped by the browser, silently.</p>
-<h3 id="fixed_12">Fixed</h3>
+<h3 id="fixed_13">Fixed</h3>
 <ul>
 <li><strong>The Admin Console side menu expands again.</strong> The accordion script moved
   into the shared <code>settings/_nav.html</code> partial in 1.14.0 and lost the
@@ -9133,7 +9151,7 @@ dropped by the browser, silently.</p>
   to <code>SPEC</code> without a hint fails here, as does a hint that never reaches the
   HTML on <strong>either</strong> surface. 16 mutations, all biting.</li>
 </ul>
-<h3 id="fixed_13">Fixed</h3>
+<h3 id="fixed_14">Fixed</h3>
 <ul>
 <li>Two of those guards read <code>fw_hints.js</code> for <code>container: 'body'</code> and
   <code>turbo:before-render</code> and were answered by the file's own header comment,
@@ -9218,7 +9236,7 @@ Console, beside its settings.</p>
   order the menu draws them</strong>: every previous guard stayed green while the two
   orders drifted, because each row was still present and still correct.</li>
 </ul>
-<h3 id="fixed_14">Fixed</h3>
+<h3 id="fixed_15">Fixed</h3>
 <ul>
 <li><code>tests/test_settings_nav_groups.py</code> sliced the menu script by anchoring on
   the line that happened to follow it in the console page. With the script in
@@ -9362,7 +9380,7 @@ missing half was the half that writes.</strong></p>
   that can be down at the same moment. It is a legible failure, not a fix —
   free space still has to be watched from outside the node.</li>
 </ul>
-<h3 id="fixed_15">Fixed</h3>
+<h3 id="fixed_16">Fixed</h3>
 <ul>
 <li>⚠ <strong>A decline is now honoured in the fields that NAME the declined section.</strong>
   Declining a section removed the item from the plan and stopped there — while
@@ -9485,7 +9503,7 @@ missing half was the half that writes.</strong></p>
   enabled by the installer. Expiry of a live block lives in that tick: a node
   without it can hold a block that nothing will ever lift.</li>
 </ul>
-<h3 id="fixed_16">Fixed</h3>
+<h3 id="fixed_17">Fixed</h3>
 <ul>
 <li><strong>The response runner had no role guard.</strong> Found by reading the standby after
   the rest of this round had shipped: the timer is present there and disabled,
@@ -9654,7 +9672,7 @@ missing half was the half that writes.</strong></p>
   <code>tests/test_secret_backend.py</code> (30 tests, safeguards §103).</p>
 </li>
 </ul>
-<h3 id="fixed_17">Fixed</h3>
+<h3 id="fixed_18">Fixed</h3>
 <ul>
 <li>
 <p><strong>A stale process could send <code>__stored-in-vault__</code> to an appliance as a
@@ -9861,7 +9879,7 @@ missing half was the half that writes.</strong></p>
   unprotected cutover; <code>failed == 0</code> does not cover this, because the
   referencing rule only fails when it is itself in the plan.</li>
 </ul>
-<h3 id="fixed_18">Fixed</h3>
+<h3 id="fixed_19">Fixed</h3>
 <ul>
 <li>The <em>View Backups</em> link is emitted once, not once per branch. Splitting it
   into an owns-the-chassis case and a points-at-the-owner case duplicated the
@@ -9931,7 +9949,7 @@ missing half was the half that writes.</strong></p>
   unpinned, so an offline bundle built on two different days could ship two
   different ORM versions).</li>
 </ul>
-<h3 id="fixed_19">Fixed</h3>
+<h3 id="fixed_20">Fixed</h3>
 <ul>
 <li>
 <p><strong>Three POST buttons could never be submitted.</strong> The Rebuild button on
@@ -10716,7 +10734,7 @@ missing half was the half that writes.</strong></p>
   approval gate, and carries any existing ticket reference so a re-request
   updates a ticket instead of opening a second one for the same window.</li>
 </ul>
-<h3 id="fixed_20">Fixed</h3>
+<h3 id="fixed_21">Fixed</h3>
 <ul>
 <li>
 <p><strong>A standby that serves traffic is now restarted by an update, instead of
@@ -11594,7 +11612,7 @@ missing half was the half that writes.</strong></p>
   survived three project renames in the first place.</p>
 </li>
 </ul>
-<h3 id="fixed_21">Fixed</h3>
+<h3 id="fixed_22">Fixed</h3>
 <ul>
 <li><strong>The translation layer had never produced a single translation.</strong> It read
   <code>.content</code> off the provider result, whose field is <code>.text</code>, through a
@@ -11837,7 +11855,7 @@ missing half was the half that writes.</strong></p>
   configured platform.</li>
 </ul>
 <h2 id="192---2026-08-09">[1.9.2] - 2026-08-09</h2>
-<h3 id="fixed_22">Fixed</h3>
+<h3 id="fixed_23">Fixed</h3>
 <ul>
 <li><strong>The object editor no longer offers a free text box for a field that only
   accepts the name of an existing object.</strong> Twenty reference fields — eighteen
@@ -11864,7 +11882,7 @@ missing half was the half that writes.</strong></p>
   blocks a save; the affected fields come back as <code>unverified_refs</code>.</li>
 </ul>
 <h2 id="191---2026-08-09">[1.9.1] - 2026-08-09</h2>
-<h3 id="fixed_23">Fixed</h3>
+<h3 id="fixed_24">Fixed</h3>
 <ul>
 <li><strong>A migrated Custom Access Rule now carries the conditions it matches on.</strong>
   A rule was declared in the dependency map as a leaf, so a clone or a
@@ -11999,7 +12017,7 @@ missing half was the half that writes.</strong></p>
   single cost chip every other analysis on the page uses.</p>
 </li>
 </ul>
-<h3 id="fixed_24">Fixed</h3>
+<h3 id="fixed_25">Fixed</h3>
 <ul>
 <li>
 <p><strong>A carve-out on a shared profile reported failure for a change it had
@@ -12186,7 +12204,7 @@ missing half was the half that writes.</strong></p>
   operator to another screen to push it.</li>
 </ul>
 <h2 id="180---2026-08-07">[1.8.0] - 2026-08-07</h2>
-<h3 id="fixed_25">Fixed</h3>
+<h3 id="fixed_26">Fixed</h3>
 <ul>
 <li>
 <p><strong>The AI Advisor's replies were saved and never shown.</strong> After Send, the
@@ -12365,7 +12383,7 @@ durability problem solved. Anyone who sealed on 1.7.0 should re-run
 <code>satom execute seal recovery</code> on the primary and confirm the check reports the
 envelope as reachable. 1.7.0 stays published; this entry is the public record
 that it carries the defect.</p>
-<h3 id="fixed_26">Fixed</h3>
+<h3 id="fixed_27">Fixed</h3>
 <ul>
 <li><strong>The sealed recovery envelope was unreachable by every mechanism that
   carries it.</strong> <code>satom execute seal recovery</code> runs as root and wrote
@@ -12475,7 +12493,7 @@ that it carries the defect.</p>
   <code>advisor.configure</code>. See <code>docs/ai-advisor.md</code>.</p>
 </li>
 </ul>
-<h3 id="fixed_27">Fixed</h3>
+<h3 id="fixed_28">Fixed</h3>
 <ul>
 <li><strong>Nine probes answered "I could not tell" with a value that means "fine".</strong>
   Scoping resolved to the Global console and showed every product; a malformed
@@ -12613,7 +12631,7 @@ that it carries the defect.</p>
   its API, so the page listed zero targets and zero devices. A page that can
   only fail is worse than one that is not offered.</li>
 </ul>
-<h3 id="fixed_28">Fixed</h3>
+<h3 id="fixed_29">Fixed</h3>
 <ul>
 <li><strong>The publication redaction rule was a roster, not a shape.</strong> It enumerated
   the appliances that existed the day it was written, so every unit onboarded
@@ -12900,7 +12918,7 @@ that it carries the defect.</p>
   column holding anything else was left alone.</li>
 <li>Alert bodies now name the Thresholds scope that governs the finding.</li>
 </ul>
-<h3 id="fixed_29">Fixed</h3>
+<h3 id="fixed_30">Fixed</h3>
 <ul>
 <li><strong><code>satom diagnose code</code> now sees the artifact gunicorn actually caches.</strong> It
   compared the newest <code>.py</code> against each process start time, so a change that
@@ -13100,7 +13118,7 @@ that it carries the defect.</p>
   shadowing the tracked templates under <code>app/templates/backups/</code>.</li>
 </ul>
 <h2 id="141---2026-08-05">[1.4.1] - 2026-08-05</h2>
-<h3 id="fixed_30">Fixed</h3>
+<h3 id="fixed_31">Fixed</h3>
 <ul>
 <li>
 <p><strong>The installation page was answering a question about the appliances.</strong>
@@ -13407,7 +13425,7 @@ that it carries the defect.</p>
   [SATOM-LICENSE-TAGS]</p>
 </li>
 </ul>
-<h3 id="fixed_31">Fixed</h3>
+<h3 id="fixed_32">Fixed</h3>
 <ul>
 <li>
 <p><strong>A missing systemd unit is no longer reported as a failed one.</strong>
@@ -14152,7 +14170,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   does not render where it matters. The vendored copy was already in the tree
   and unused.</li>
 </ul>
-<h3 id="fixed_32">Fixed</h3>
+<h3 id="fixed_33">Fixed</h3>
 <ul>
 <li><strong><code>/docs/api</code> was public and served the document unredacted.</strong> The route
   needed no session and rendered <code>docs/api_v1.md</code> verbatim, so a management
@@ -14450,7 +14468,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   <code>Appliance</code>; the column is <code>maintenance</code>.</li>
 </ul>
 <h2 id="122---2026-07-27">[1.2.2] - 2026-07-27</h2>
-<h3 id="fixed_33">Fixed</h3>
+<h3 id="fixed_34">Fixed</h3>
 <ul>
 <li><strong><code>app/services/cert_service.py</code> did not parse.</strong> An <code>import os</code> had been
   placed above <code>from __future__ import annotations</code>, which is a hard
@@ -14501,7 +14519,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li><strong>Rule recorded in <code>docs/overview.md</code></strong>: a new safeguard lands in
   <code>docs/safeguards.md</code> in the same commit that introduces it.</li>
 </ul>
-<h3 id="fixed_34">Fixed</h3>
+<h3 id="fixed_35">Fixed</h3>
 <ul>
 <li>Offline bundle checksums used an absolute path, so <code>sha256sum -c</code> failed in
   the directory the file was downloaded to. Now basename-only, as the RHEL
@@ -14565,7 +14583,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   Manager</strong>. Vendor names (FortiWeb, FortiADC, FortiAnalyzer) are untouched:
   the product manages those appliances and has to name them.</li>
 </ul>
-<h3 id="fixed_35">Fixed</h3>
+<h3 id="fixed_36">Fixed</h3>
 <ul>
 <li><strong>Scheduler and git-publish were silently dead</strong> after the privilege drop:
   both guard scripts used <code>runuser</code>, which only works as root. The scheduler
@@ -14625,7 +14643,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   bundles), generic package-manager support, public site (GitHub Pages),
   package registry artifacts.</li>
 </ul>
-<h3 id="fixed_36">Fixed</h3>
+<h3 id="fixed_37">Fixed</h3>
 <ul>
 <li>Upgrade-event timestamps now render in local time (<code>| localtime</code>) instead
   of raw UTC.</li>

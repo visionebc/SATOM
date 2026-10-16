@@ -50,11 +50,11 @@
 /* The Wiki's own menu (wiki/_nav.html): left column on the list and on
    every article; above the content on narrow screens. */
 .wiki-shell { container: wikishell / inline-size; display: grid;
-  grid-template-columns: 250px minmax(0, 1fr); gap: 20px; align-items: start; }
+  grid-template-columns: 220px minmax(0, 1fr); gap: 18px; align-items: start; }
 /* The Wiki's menu is a left panel that stays in view while the article scrolls. */
 .wiki-nav { position: sticky; top: calc(var(--fw-topbar-height, 50px) + 14px); max-height: calc(100vh - var(--fw-topbar-height, 50px) - 28px); overflow-y: auto;
   padding-right: 4px; }
-@container wikishell (max-width: 640px) {
+@container wikishell (max-width: 520px) {
   .wiki-shell > * { grid-column: 1 / -1; }
   .wiki-shell > .wiki-nav { position: static; max-height: none; overflow: visible; }
 }

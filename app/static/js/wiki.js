@@ -203,6 +203,10 @@
       const err = form.querySelector('[data-wiki-error]');
       const rev = form.querySelector('[data-wiki-rev]');
       let timer = null, inflight = Promise.resolve(), lastSent = null, stopped = false;
+      // NOT form.action: the Save draft / Publish buttons are named "action",
+      // and a control with that name shadows the property (it returns the
+      // buttons, and the save went to ".../[object RadioNodeList]").
+      function target() { return form.getAttribute('action') || window.location.pathname; }
 
       function say(state, time) {
         if (!note) return;
@@ -235,7 +239,7 @@
         return !(t && t.value.trim()) && !(b && b.value.trim());
       }
       function post(action) {
-        return fetch(form.action, {
+        return fetch(target(), {
           method: 'POST',
           headers: { Accept: 'application/json', 'X-CSRFToken': csrf() },
           body: payload(action)
@@ -258,7 +262,7 @@
               if (rev) rev.value = d.draft_rev;
               if (d.edit_url && !form.dataset.articleId) {
                 form.dataset.articleId = String(d.id);
-                form.action = d.edit_url;
+                form.setAttribute('action', d.edit_url);
               }
               if (err) err.classList.add('d-none');
               say('saved', d.saved_at);
@@ -279,7 +283,7 @@
         if (stopped || !document.body.contains(form)) return;
         if (fingerprint() === lastSent || (!form.dataset.articleId && blank())) return;
         clearTimeout(timer);
-        if (navigator.sendBeacon) navigator.sendBeacon(form.action, payload('draft'));
+        if (navigator.sendBeacon) navigator.sendBeacon(target(), payload('draft'));
       }
       function leave(url) {
         stopped = true;

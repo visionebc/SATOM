@@ -1,22 +1,22 @@
 {
+  "schema": "satom.upgrade-feed/1",
+  "product": "satom",
+  "version": "2.12.0",
+  "released": "2026-10-06",
+  "release_url": "https://github.com/visionebc/SATOM/releases/tag/v2.12.0",
+  "package": {
+    "name": "satom-update-2.12.0.tar.gz",
+    "url": "https://github.com/visionebc/SATOM/releases/download/v2.12.0/satom-update-2.12.0.tar.gz",
+    "sha256": "b0595021b07154f6b6c4d98788c3756253cc5902fc04052b605fd1f7022a3852",
+    "size": 68251656
+  },
+  "signing_key": {
+    "name": "satom-release-2026.pub",
+    "fingerprint": "SHA256:cYv9NxiJjMn/K6srKxXg2kdvROP2g6fzgfMXU6sxPyA",
+    "url": "https://github.com/visionebc/SATOM/releases/download/v2.12.0/satom-release-2026.pub"
+  },
   "api_pack": {
     "name": "satom-apipack-2.12.0.tar.gz",
     "url": "https://github.com/visionebc/SATOM/releases/download/v2.12.0/satom-apipack-2.12.0.tar.gz"
-  },
-  "package": {
-    "name": "satom-update-2.12.0.tar.gz",
-    "sha256": "b0595021b07154f6b6c4d98788c3756253cc5902fc04052b605fd1f7022a3852",
-    "size": 68251656,
-    "url": "https://github.com/visionebc/SATOM/releases/download/v2.12.0/satom-update-2.12.0.tar.gz"
-  },
-  "product": "satom",
-  "release_url": "https://github.com/visionebc/SATOM/releases/tag/v2.12.0",
-  "released": "2026-10-06",
-  "schema": "satom.upgrade-feed/1",
-  "signing_key": {
-    "fingerprint": "SHA256:cYv9NxiJjMn/K6srKxXg2kdvROP2g6fzgfMXU6sxPyA",
-    "name": "satom-release-2026.pub",
-    "url": "https://github.com/visionebc/SATOM/releases/download/v2.12.0/satom-release-2026.pub"
-  },
-  "version": "2.12.0"
+  }
 }

@@ -15,7 +15,7 @@ because the sha256 only exists then -- which is also why the feed is committed
 after the release tag rather than inside it (the package contains the tree, so
 the tree cannot contain the package's own hash).
 
-The package itself is NOT stored here: it is a ~64 MB release asset, and a
+The package itself is NOT stored here: it is a ~100 MB release asset, and a
 folder of them in git would grow every clone by that much per release (and
 GitHub refuses files over 100 MB). The feed points at the asset; the reader is
 deploy/upgrade_feed.py.
@@ -72,8 +72,29 @@ def entry(version, sha256, size, released, repo, api_pack=True, api_pack_sha256=
     return doc
 
 
+# Reading order of an entry, for the people who open the file: what the release
+# is, then the update package and the key that verifies it, then the two pack
+# lanes, which are separate artefacts with keys of their own. sort_keys put
+# `package` straight under `knowledge_feed`, where it read as part of it.
+# Nodes read keys by name (deploy/upgrade_feed.py), so the order changes nothing
+# for them. Keys not listed here follow, sorted.
+_ORDER = {
+    None: ("schema", "product", "version", "released", "release_url", "package",
+           "signing_key", "api_pack", "knowledge_feed"),
+    "package": ("name", "url", "sha256", "size"),
+    "signing_key": ("name", "fingerprint", "url"),
+    "api_pack": ("name", "url", "sha256"),
+}
+
+
+def _ordered(doc: dict, key=None) -> dict:
+    order = _ORDER.get(key, ())
+    names = [k for k in order if k in doc] + sorted(k for k in doc if k not in order)
+    return {k: _ordered(doc[k], k) if isinstance(doc[k], dict) else doc[k] for k in names}
+
+
 def _dump(doc) -> str:
-    return json.dumps(doc, indent=2, sort_keys=True) + "\n"
+    return json.dumps(_ordered(doc), indent=2) + "\n"
 
 
 def write(out: Path, doc: dict) -> list:
@@ -86,7 +107,13 @@ def write(out: Path, doc: dict) -> list:
 
     entries = []
     for f in out.glob("satom-update-*.json"):
-        entries.append(json.loads(f.read_text()))
+        d = json.loads(f.read_text())
+        entries.append(d)
+        # Same content, one layout: an entry written before _ORDER is rewritten
+        # once, so every file in the folder reads the same way.
+        if f.read_text() != _dump(d):
+            f.write_text(_dump(d))
+            changed.append(f.name)
     entries.sort(key=lambda d: _vkey(d["version"]), reverse=True)
     latest = out / "latest.json"
     if not latest.exists() or latest.read_text() != _dump(entries[0]):

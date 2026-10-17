@@ -12,8 +12,21 @@ is the index of those packages:
 | `README.md` | This page, with the table below. |
 
 The packages themselves are **release assets**, linked from the table. They are
-about 64 MB each; storing them in git would add that much to every clone per
+about 100 MB each; storing them in git would add that much to every clone per
 release, and GitHub refuses files over 100 MB.
+
+## What an entry holds
+
+Each `.json` describes three separate artefacts, each with its own key:
+
+| Block | Artefact | Signed with |
+|-------|----------|-------------|
+| `package` | The **update package** `satom-update-<version>.tar.gz`: what `update fetch` downloads and applies. | `satom-release-2026` — named in `signing_key` |
+| `api_pack` | The release's **API library pack** `satom-apipack-<version>.tar.gz`. Not part of the update; imported separately. | `satom-apipack-2026`, the `api_pack` lane key (`deploy/pack-keys/api_pack/`) |
+| `knowledge_feed` | Only a URL: where the rolling **knowledge packs** are published (their own `latest.json`). Nothing here downloads them. | `satom-knowledge-2026`, the `knowledge` lane key (`deploy/pack-keys/knowledge/`) |
+
+A node trusts each key for its own purpose only: a pack signed with the release
+key is refused, and so is an update package signed with a lane key.
 
 ## Update a node that can reach GitHub (no download by hand)
 

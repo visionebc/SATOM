@@ -6,6 +6,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed
+
+- The system-upgrade feed (`satom-system-upgrades/*.json`) lists an entry in
+  reading order — the release, then the update package and the key that
+  verifies it, then the API library pack and the knowledge feed URL — instead
+  of alphabetically, where `package` sat right under `knowledge_feed` and read
+  as part of it. Every published entry was rewritten once; the content is
+  unchanged and nodes read the keys by name. The folder's README now says what
+  each block is and which key signs it.
+
 ## [3.3.2] - 2026-10-17
 
 ### Fixed

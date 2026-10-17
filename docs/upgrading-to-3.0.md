@@ -34,7 +34,16 @@ appliance credentials, and every piece of data this node measured itself —
 
 1. **Update as usual** (Software Update → *Check* / *Apply*, or an offline
    package). On a pair, update each node (user guide §22.2).
-2. **Arm the two new scheduled actions, once, on the primary:**
+2. **Updating to 3.3.2 or later: nothing to do here.** The update finishes
+   itself even when the node's older runner applies it
+   (`deploy/upgrade-converge.sh`, called from `install-runner.sh`): it
+   installs and arms the units the old runner did not know (the Script Library's
+   `satom-scripts.path`), provisions the SQL console's read-only role, and
+   creates, once, the scheduled actions 3.x introduced — `knowledge_fetch`,
+   `signature_check`, `observatory_scan`, `hsts_preload_refresh` — and only
+   those, so an action you deleted from the 2.x set does not come back. The
+   update's step log names what it did (*refresh update runner*). Updating to
+   3.0.0–3.3.1, arm the new scheduled actions once on the primary:
 
    ```bash
    sudo satom execute seed actions          # shows the plan

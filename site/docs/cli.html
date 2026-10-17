@@ -161,7 +161,7 @@ licence.</p>
   ##        ##  ##        ##      ####      ##        ##  ##        ##
   ############  ##        ##      ####      ############  ##        ##
 
-  SATOM operator CLI 3.3.1
+  SATOM operator CLI 3.3.2
   System Automation &amp; Task Orchestration Manager
   Made by VisionEBC  ·  https://visionebc.com
   {primary-node} · primary · root
@@ -578,8 +578,8 @@ challenge.</p>
 <td>Runs <code>nginx -t</code> first and refuses on invalid config</td>
 </tr>
 <tr>
-<td><code>execute seed actions [--yes]</code></td>
-<td><strong>Creates the protections a fresh install does not.</strong> Prints the plan; <code>--yes</code> applies</td>
+<td><code>execute seed actions [--yes] [--upgrade]</code></td>
+<td><strong>Creates the protections a fresh install does not.</strong> Prints the plan; <code>--yes</code> applies; <code>--upgrade</code> limits it to the actions 3.x introduced (what an update from 2.x runs by itself)</td>
 </tr>
 <tr>
 <td><code>execute update code [&lt;target&gt;]</code></td>

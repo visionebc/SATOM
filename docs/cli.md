@@ -107,7 +107,7 @@ licence.
   ##        ##  ##        ##      ####      ##        ##  ##        ##
   ############  ##        ##      ####      ############  ##        ##
 
-  SATOM operator CLI 3.3.1
+  SATOM operator CLI 3.3.2
   System Automation & Task Orchestration Manager
   Made by VisionEBC  ·  https://visionebc.com
   satom-node-1 · primary · root
@@ -325,7 +325,7 @@ challenge.
 | `execute restart-all` | On a primary, runs `flask db upgrade` when the schema is behind the newest migration (a standby follows by replication); compiles any language catalogue older than its `.po`; restarts the stack in dependency order; then `nginx -t` + reload, then verify |
 | `execute enable\|disable <unit>` | Timers and `.path` units. `disable updater` is refused — see below |
 | `execute reload nginx` | Runs `nginx -t` first and refuses on invalid config |
-| `execute seed actions [--yes]` | **Creates the protections a fresh install does not.** Prints the plan; `--yes` applies |
+| `execute seed actions [--yes] [--upgrade]` | **Creates the protections a fresh install does not.** Prints the plan; `--yes` applies; `--upgrade` limits it to the actions 3.x introduced (what an update from 2.x runs by itself) |
 | `execute update code [<target>]` | **Queues** a git update (or a rollback, by commit) for the privileged runner |
 | `execute update pip <pkg> <ver>` | Curated allowlist only. Node-local: the venv is not replicated |
 | `execute update status [<id>]` | The runner's `steps[]` log (any user) |

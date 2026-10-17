@@ -3474,6 +3474,28 @@ satom-release-2026.pub`, run once per node; compare the fingerprint in the
 release notes first. Database migrations run as part of the apply. If one
 fails, the update rolls back and the status log says which backup to restore.
 
+**Updating from 2.x.** An update is applied by the runner already installed on
+the node, so a 2.x node jumping to 3.x is updated by its 2.x runner, which knows
+nothing about what 3.x added. From 3.3.2 the release finishes that itself
+(`deploy/upgrade-converge.sh`, run by `install-runner.sh` whenever the update
+runner calls it):
+
+- installs and arms every unit the applying runner did not install — today the
+  Script Library's `satom-scripts.{path,service}` and its queue directories;
+- provisions the SQL console's read-only role (primary; a standby skips it);
+- creates, **once**, the scheduled actions introduced by 3.x —
+  `knowledge_fetch`, `signature_check`, `observatory_scan`,
+  `hsts_preload_refresh` (`satom execute seed actions --upgrade`). Actions of the
+  2.x set are not recreated, so one you deleted on purpose stays deleted.
+
+Every problem is a warning in the *refresh update runner* step and never fails
+the update. The Script Library also needs bubblewrap (`bwrap`): if the node
+lacks it, the step says so; install it under **Settings → General → System
+packages**. A node already taken from 2.x to 3.0.0–3.3.1 is finished by
+updating it to 3.3.2, or by hand: `sudo satom execute reinstall units`,
+`sudo bash /opt/satom/deploy/install-console-role.sh` and
+`sudo satom execute seed actions --yes` on the primary.
+
 How packages are built and signed:
 [docs/offline-update-packages.md](offline-update-packages.md).
 
@@ -3582,9 +3604,11 @@ under the table.
 
 **The scheduled action has to exist.** Scheduled actions are data, not code,
 so an update does not create `knowledge_fetch` (nor `signature_check`, §8.1).
-Run `sudo satom execute seed actions --yes` once on the primary after updating
-to 3.0 — it creates only the missing rows and never touches the ones you
-edited — or create them on the Scheduled Actions page. The buttons on this card
+An update to 3.3.2 or later creates them itself, once, on the primary (see
+§22.2, *Updating from 2.x*). Coming from an older 3.x release, run
+`sudo satom execute seed actions --yes` once on the primary — it creates only
+the missing rows and never touches the ones you edited — or create them on the
+Scheduled Actions page. The buttons on this card
 work without it.
 
 **Air-gapped network.** On a machine with Internet access, download the pack
@@ -9058,8 +9082,10 @@ knowledge comes from and which key may sign it**:
 | New: FortiGate workspace | read-only (§17.4) |
 | New: signature database freshness | daily `signature_check` and a device alert (§8.1) |
 
-**What to do.** Online: update, then run `sudo satom execute seed actions
---yes` once on the primary so `knowledge_fetch` and `signature_check` exist.
+**What to do.** Online: update. An update to 3.3.2 or later also installs the
+Script Library unit, the SQL console role and the 3.x scheduled actions by
+itself; going to an older 3.x, run `sudo satom execute seed actions --yes` once
+on the primary so `knowledge_fetch` and `signature_check` exist.
 Air-gapped: the same, then download the knowledge pack elsewhere and upload it
 under **API library packs** (§22.4). **Verify** with `satom show trust` (three
 purposes: `update`, `api_pack`, `knowledge`) and `satom show knowledge`.

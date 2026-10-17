@@ -16,6 +16,33 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   unchanged and nodes read the keys by name. The folder's README now says what
   each block is and which key signs it.
 
+- The offline update package no longer carries every pinned wheel (~55 MB of
+  the ~105 MB package) when most releases change none of them. The builder
+  records the full resolved set in the manifest (`wheelset`) and, given the
+  `wheelset`s of the published packages (`WHEEL_BASELINE`, passed by the
+  release pipeline), ships only the wheels that not every one of those
+  releases already has; `min_from_version` rises to the oldest of them, so an
+  older node is refused by the version rules before anything changes and
+  applies an earlier full package first. Packages built before `wheelset`
+  existed never count as a baseline (their venv is not on record and their
+  runner has no preflight), so the first package built with this change still
+  carries every wheel. Offline install bundles and the image are unchanged:
+  fresh installs always get everything.
+
+### Fixed
+
+- Applying an update package now checks, before the database backup and
+  before the tree is touched, that every requirement is either installed in
+  the venv or shipped in the package (`pip install --dry-run --no-index`, as
+  the service account). A missing wheel is refused by name with nothing
+  changed, instead of failing at the dependency step after the tree was
+  replaced and rolled back.
+- The dependency step of a package apply could never read the package's
+  wheels: pip runs as the service account and the verified package sits in a
+  0700 root-only staging directory. Any release that changed a dependency
+  failed there and rolled back. The wheels (and the new `requirements.txt`)
+  are now copied to a root-owned, read-only wheelhouse that pip can open.
+
 ## [3.3.2] - 2026-10-17
 
 ### Fixed

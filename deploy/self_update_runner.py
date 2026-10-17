@@ -1615,6 +1615,96 @@ def _venv_tag():
     return (r.stdout or "").strip()
 
 
+PIP_DRY_RUN_SINCE = (22, 2)
+_PIP_MISSING_RES = (
+    re.compile(r"No matching distribution found for ([^\s;]+)"),
+    re.compile(r"Could not find a version that satisfies the requirement ([^\s;]+)"),
+)
+_REQ_MEMBERS = ("requirements.txt", "./requirements.txt")
+
+
+def _make_wheelhouse(pkg_dir, up):
+    """Root-owned, world-READABLE copy of the package's wheels plus the NEW
+    requirements.txt (read straight out of the verified app.tar.gz).
+
+    pip runs as the service account, and the staging directory is 0700 root on
+    purpose (the account must not be able to swap a verified file). So pip
+    could never read ``pkg_dir/wheels`` -- an apply that needed a new wheel
+    failed at step 7, after the tree was already replaced. Root owns every
+    entry here and nothing is writable by the account, so readable is enough.
+    """
+    import shutil
+    import tarfile
+    house = Path(tempfile.mkdtemp(prefix="satom-wheels-", dir="/var/tmp"))
+    os.chmod(house, 0o755)
+    wdir = house / "wheels"
+    wdir.mkdir()
+    os.chmod(wdir, 0o755)
+    for w in sorted((Path(pkg_dir) / "wheels").glob("*.whl")):
+        if not w.is_file() or w.is_symlink():
+            continue
+        shutil.copyfile(w, wdir / w.name)
+        os.chmod(wdir / w.name, 0o644)
+    req = None
+    with tarfile.open(Path(pkg_dir) / "app.tar.gz", "r:gz") as tf:
+        for name in _REQ_MEMBERS:
+            try:
+                m = tf.getmember(name)
+            except KeyError:
+                continue
+            if m.isfile() and m.size < 1024 * 1024:
+                req = tf.extractfile(m).read()
+            break
+    if req is None:
+        raise up.PackageError("app.tar.gz has no requirements.txt")
+    (house / "requirements.txt").write_bytes(req)
+    os.chmod(house / "requirements.txt", 0o644)
+    return house
+
+
+def _pip_dry_run_ok():
+    """(supported, 'pip X.Y'): `pip install --dry-run` exists since 22.2."""
+    r = run([str(VENV / "python"), "-m", "pip", "--version"], timeout=60,
+            user=APP_USER)
+    m = re.search(r"pip (\d+)\.(\d+)", r.stdout or "")
+    if not m:
+        return False, "pip (version unknown)"
+    return (int(m.group(1)), int(m.group(2))) >= PIP_DRY_RUN_SINCE, m.group(0)
+
+
+def dependency_preflight(st, wheelhouse, manifest, cur):
+    """Refuse, before anything changes, a package whose requirements this
+    node's venv cannot meet from what is installed plus what is shipped."""
+    st.begin("dependency preflight")
+    shipped = len(list((Path(wheelhouse) / "wheels").glob("*.whl")))
+    mode = manifest.get("wheels_mode") or "full"
+    supported, pipv = _pip_dry_run_ok()
+    if not supported:
+        st.step("dependency preflight", True,
+                "skipped: %s has no --dry-run (22.2+); %s package, %d wheel(s)"
+                % (pipv, mode, shipped))
+        return
+    p = run([str(VENV / "pip"), "install", "--dry-run", "--quiet", "--no-index",
+             "--find-links", str(Path(wheelhouse) / "wheels"),
+             "-r", str(Path(wheelhouse) / "requirements.txt")],
+            timeout=600, user=APP_USER)
+    if p.returncode == 0:
+        st.step("dependency preflight", True,
+                "every requirement is installed or shipped (%s package, %d wheel(s))"
+                % (mode, shipped))
+        return
+    out = (p.stderr or "") + "\n" + (p.stdout or "")
+    missing = sorted({m.group(1) for rx in _PIP_MISSING_RES for m in rx.finditer(out)})
+    msg = ("dependencies cannot be met offline: %s neither installed in this venv "
+           "nor shipped in the package (%s, %d wheel(s)). Nothing was changed. "
+           "Apply an earlier full update package or one built with a "
+           "min_from_version at or below %s, then retry"
+           % (", ".join(missing) or "(see pip output)", mode, shipped, cur))
+    st.step("dependency preflight", False,
+            msg if missing else (msg + " | " + out.strip()[-300:]))
+    raise RuntimeError(msg)
+
+
 def package_change(req_path):
     """Apply a SIGNED OFFLINE UPDATE PACKAGE uploaded through the web console.
 
@@ -1646,6 +1736,7 @@ def package_change(req_path):
 
     up = None
     stage = None
+    wheelhouse = None
     ok_adopt, adopt_detail = adopt_tree()
     if adopt_detail != "already a git checkout" or not ok_adopt:
         st.step("adopt the installed tree into git", ok_adopt, adopt_detail)
@@ -1715,7 +1806,9 @@ def package_change(req_path):
                                "the request did not allow a downgrade" % (new, cur))
         min_from = str(manifest.get("min_from_version") or "")
         if min_from and up.compare_versions(cur, min_from) < 0:
-            raise RuntimeError("package requires %s or newer; this node runs %s"
+            raise RuntimeError("package requires %s or newer; this node runs %s. "
+                               "Apply an earlier update package whose minimum "
+                               "version this node meets first, then this one"
                                % (min_from, cur))
         tags = list(manifest.get("python_tags") or [])
         mine = _venv_tag()
@@ -1724,6 +1817,14 @@ def package_change(req_path):
                                % (", ".join(tags), mine))
         st.step("version rules", True, "%s -> %s%s"
                 % (cur, new, " (DOWNGRADE, explicitly allowed)" if cmp_ < 0 else ""))
+
+        # -- 4b. can the dependencies be met? Decided BEFORE anything changes.
+        # A package may ship only the wheels a supported node could be missing
+        # (select_wheels in update_package.py), so "is every requirement either
+        # installed or shipped?" is now a real question. Asked after step 6 it
+        # used to cost a replaced tree and a rollback.
+        wheelhouse = _make_wheelhouse(pkg_dir, up)
+        dependency_preflight(st, wheelhouse, manifest, cur)
 
         # -- 5. backup BEFORE anything is replaced ---------------------------
         # A downgrade does not reverse migrations, so the database dump is the
@@ -1796,7 +1897,9 @@ def package_change(req_path):
         st.step("restore tree ownership", cok, cdetail)
 
         # -- 7. dependencies, strictly offline -------------------------------
-        wheels = pkg_dir / "wheels"
+        # From the wheelhouse, not from pkg_dir: pip runs as the service
+        # account, which cannot traverse the 0700 root-only staging directory.
+        wheels = wheelhouse / "wheels"
         st.begin("pip install (offline, from the package)")
         p = run([str(VENV / "pip"), "install", "-q", "--no-index",
                  "--find-links", str(wheels), "-r", str(APP / "requirements.txt")],
@@ -1947,6 +2050,9 @@ def package_change(req_path):
         if stage:
             import shutil as _sh
             _sh.rmtree(stage, ignore_errors=True)
+        if wheelhouse:
+            import shutil as _sh
+            _sh.rmtree(wheelhouse, ignore_errors=True)
 
 
 PROMOTE_SCRIPT = Path("/usr/local/sbin/satom-promote.sh")

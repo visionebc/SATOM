@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
-# Build an OFFLINE UPDATE PACKAGE — application code + every pinned wheel.
+# Build an OFFLINE UPDATE PACKAGE — application code + the pinned wheels a
+# supported node may be missing.
+#
+# Without WHEEL_BASELINE the package carries every pinned wheel (full). With it
+# (JSON {version: [name==ver]} from published packages' `wheelset`), it carries
+# only the wheels that not every baseline release already has, and
+# min_from_version rises to the oldest baseline release (see select_wheels in
+# deploy/update_package.py). The full resolved set is always recorded in the
+# manifest as `wheelset`.
 #
 # This is NOT the offline install bundle. The install bundle carries OS packages
 # (.deb/.rpm) and stands up a node from nothing; this carries only what an
@@ -71,29 +79,62 @@ else
 fi
 
 # ------------------------------------------------------------------- wheels
+# Resolve the FULL set into a side directory first: it is recorded in the
+# manifest (`wheelset`) whatever the package ends up shipping, because the
+# next release computes its delta against it.
+ALL_WHEELS="$STAGE/all-wheels"
+mkdir -p "$ALL_WHEELS"
 echo "--> downloading wheels for requirements.txt (cp${WHEEL_PY/./}, ${WHEEL_PLATFORMS// /, })"
 PLAT_ARGS=()
 for p in $WHEEL_PLATFORMS; do PLAT_ARGS+=(--platform "$p"); done
 "$PY" -m pip download --quiet --only-binary=:all: \
       --python-version "$WHEEL_PY" --implementation cp "${PLAT_ARGS[@]}" \
-      --dest "$PKG/wheels" -r "$APP/requirements.txt" \
+      --dest "$ALL_WHEELS" -r "$APP/requirements.txt" \
   || { echo "!!! pip download failed — the package would apply with no deps" >&2; exit 1; }
-WHEELS=$(find "$PKG/wheels" -name '*.whl' | wc -l)
+WHEELS=$(find "$ALL_WHEELS" -name '*.whl' | wc -l)
 [ "$WHEELS" -gt 0 ] || { echo "!!! no wheels downloaded" >&2; exit 1; }
-echo "    $WHEELS wheel(s)"
+echo "    $WHEELS wheel(s) resolved"
+
+# WHEEL_BASELINE (optional): JSON {"<version>": ["name==ver", ...]} -- the
+# `wheelset` of every published package that has one. The release pipeline
+# builds it from the packages it published. Unset or empty = full package.
+WHEEL_BASELINE="${WHEEL_BASELINE:-}"
+if [ -n "$WHEEL_BASELINE" ] && [ ! -f "$WHEEL_BASELINE" ]; then
+  echo "!!! WHEEL_BASELINE $WHEEL_BASELINE does not exist" >&2; exit 1
+fi
 
 # --------------------------------------------------------------- manifest
-echo "--> manifest.json"
+echo "--> wheel selection + manifest.json"
 MIN_FROM="$MIN_FROM" PKG_DIR="$PKG" APP_DIR="$APP" WHEEL_PY="$WHEEL_PY" \
 VERSION="$VERSION" COMMIT="$COMMIT" BUILT_AT="$BUILT_AT" \
+ALL_WHEELS="$ALL_WHEELS" WHEEL_BASELINE="$WHEEL_BASELINE" \
 "$PY" - <<'PYEOF'
-import os, re, sys, sysconfig
+import json, os, re, shutil, sys, sysconfig
 from pathlib import Path
 
 app = Path(os.environ["APP_DIR"])
 pkg = Path(os.environ["PKG_DIR"])
 sys.path.insert(0, str(app / "deploy"))
 import update_package as up
+
+all_dir = Path(os.environ["ALL_WHEELS"])
+all_names = sorted(w.name for w in all_dir.glob("*.whl"))
+baseline = {}
+if os.environ.get("WHEEL_BASELINE"):
+    baseline = json.loads(Path(os.environ["WHEEL_BASELINE"]).read_text())
+    if not isinstance(baseline, dict):
+        sys.exit("!!! WHEEL_BASELINE must be a JSON object {version: [name==ver]}")
+sel = up.select_wheels(all_names, baseline, os.environ.get("MIN_FROM", ""),
+                       os.environ["VERSION"])
+for n in sel["keep"]:
+    shutil.copy2(all_dir / n, pkg / "wheels" / n)
+min_from = sel["min_from_version"]
+if sel["mode"] == "delta":
+    print("    delta against %s: shipping %d of %d wheel(s); min_from_version %s"
+          % (", ".join(sel["baseline"]), len(sel["keep"]), len(all_names), min_from))
+else:
+    print("    full: shipping all %d wheel(s) (no package with a recorded wheelset)"
+          % len(all_names))
 
 files = {}
 for p in sorted(pkg.rglob("*")):
@@ -111,7 +152,9 @@ for line in (app / "requirements.txt").read_text().splitlines():
 # supports; one with a compiled wheel is pinned to the tag it was built for.
 # Getting this wrong is the RHEL-9 trap (system python 3.9 vs cp311 wheels):
 # the apply would fail deep inside pip instead of in preflight.
-names = [w.name for w in (pkg / "wheels").glob("*.whl")]
+# Judged on the FULL resolved set, not on what a delta happens to ship: a
+# delta with no compiled wheel still needs the venv the full set was built for.
+names = all_names
 pure = all(re.search(r"-(?:py2\.)?py3-none-any\.whl$", n) for n in names)
 if pure:
     tags = ["*"]
@@ -126,10 +169,16 @@ manifest = up.build_manifest(
     python_tags=tags,
     requirements=reqs,
     files=files,
-    min_from_version=os.environ.get("MIN_FROM", ""),
-    notes="Offline update package: application code + pinned wheels. "
-          "Apply from Settings -> Software Update, or with "
-          "'satom execute update package'.",
+    min_from_version=min_from,
+    notes=("Offline update package: application code + the pinned wheels a node "
+           "on %s or newer may be missing. " % min_from
+           if sel["mode"] == "delta" else
+           "Offline update package: application code + pinned wheels. ")
+          + "Apply from Settings -> Software Update, or with "
+            "'satom execute update package'.",
+    wheelset=[up.wheel_key(n) for n in all_names],
+    wheels_mode=sel["mode"],
+    wheels_baseline=sel["baseline"],
 )
 (pkg / "manifest.json").write_bytes(up.dump_manifest(manifest))
 print("    version %s, %d file(s), python tags %s"

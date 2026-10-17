@@ -603,11 +603,12 @@ def compare_versions(a: str, b: str) -> int:
 
 
 def build_manifest(*, version, commit, built_at, python_tags, requirements,
-                   files, min_from_version="", notes="") -> dict:
+                   files, min_from_version="", notes="", wheelset=None,
+                   wheels_mode="", wheels_baseline=None) -> dict:
     """Assemble a manifest. Deliberately carries NO hostname, path or operator
     identity: the package is published, and a published artifact must not
     describe the estate that built it."""
-    return {
+    m = {
         "schema": SCHEMA,
         "product": PRODUCT,
         "version": str(version),
@@ -619,6 +620,98 @@ def build_manifest(*, version, commit, built_at, python_tags, requirements,
         "files": files,
         "notes": str(notes or ""),
     }
+    # Optional, additive keys: a node that predates them ignores them.
+    if wheelset is not None:
+        m["wheelset"] = sorted(wheelset)
+    if wheels_mode:
+        m["wheels_mode"] = str(wheels_mode)
+    if wheels_baseline is not None:
+        m["wheels_baseline"] = sorted(wheels_baseline, key=version_tuple)
+    return m
+
+
+# ---------------------------------------------------------------------------
+# Which wheels an update package has to carry
+# ---------------------------------------------------------------------------
+# A package used to carry EVERY pinned wheel (~55 MB) although most releases
+# change none of them. It now carries only the wheels some supported node could
+# be missing. "Supported" is defined by what we can actually KNOW: a node runs
+# the venv of the package it applied, and a package records its full resolved
+# wheel set in the manifest (`wheelset`). Packages built before that field
+# existed say nothing reliable about their venv, and their runners have no
+# dependency preflight -- so they never count as a baseline, and a delta
+# package raises min_from_version to the oldest release that does. A node older
+# than that is refused by the version rules (before anything is touched) and
+# applies an earlier full package first. Fresh installs (offline bundles,
+# image) are not affected: they always carry every wheel.
+WHEEL_NAME_RE = re.compile(r"^([A-Za-z0-9_.]+)-([A-Za-z0-9_.!+]+)(-\d[^-]*)?-[^-]+-[^-]+-[^-]+\.whl$")
+
+
+def wheel_key(filename) -> str:
+    """``Flask_SQLAlchemy-3.1.1-py3-none-any.whl`` -> ``flask-sqlalchemy==3.1.1``.
+
+    Name normalised per PEP 503, so a key from a filename and a key from a
+    requirement line compare equal."""
+    m = WHEEL_NAME_RE.match(os.path.basename(str(filename)))
+    if not m:
+        raise PackageError("not a wheel filename: %s" % filename)
+    return "%s==%s" % (re.sub(r"[-_.]+", "-", m.group(1)).lower(), m.group(2))
+
+
+def select_wheels(wheel_names, baseline=None, min_from_version="", version=""):
+    """Decide which of ``wheel_names`` (the full resolved set) the package ships.
+
+    ``baseline`` maps a released version to that release's ``wheelset``. Only
+    entries older than ``version`` count. Returns a dict:
+
+    * ``keep``: filenames to ship,
+    * ``mode``: ``"full"`` (no usable baseline) or ``"delta"``,
+    * ``min_from_version``: raised to the oldest baseline release in delta mode,
+    * ``baseline``: the releases the delta was computed against.
+
+    A wheel is left out only when EVERY baseline release already has that exact
+    ``name==version``: any node at or above min_from_version then has it.
+    """
+    names = sorted(os.path.basename(str(n)) for n in wheel_names)
+    usable = {}
+    for v, keys in (baseline or {}).items():
+        if not keys or not VERSION_RE.match(str(v)):
+            continue
+        if version and compare_versions(str(v), str(version)) >= 0:
+            continue
+        usable[str(v)] = set(keys)
+    if min_from_version:
+        usable = {v: k for v, k in usable.items()
+                  if compare_versions(v, min_from_version) >= 0}
+    if not usable:
+        return {"keep": names, "mode": "full",
+                "min_from_version": str(min_from_version or ""), "baseline": []}
+    floor = min(usable, key=version_tuple)
+    eff = str(min_from_version or "")
+    if not eff or compare_versions(floor, eff) > 0:
+        eff = floor
+    common = set.intersection(*usable.values())
+    keep = [n for n in names if wheel_key(n) not in common]
+    return {"keep": keep, "mode": "delta", "min_from_version": eff,
+            "baseline": sorted(usable, key=version_tuple)}
+
+
+def read_package_wheelset(path):
+    """(version, wheelset or None) of a package tarball, from its manifest only.
+
+    None means the package predates ``wheelset`` and cannot serve as a
+    baseline. Reads one member; never extracts anything."""
+    root = archive_root(path)
+    with tarfile.open(path, "r:gz") as tf:
+        try:
+            mem = tf.getmember(root + "/manifest.json")
+        except KeyError:
+            raise PackageError("%s has no manifest.json" % path)
+        if not mem.isfile() or mem.size > 16 * 1024 ** 2:
+            raise PackageError("%s: manifest.json is not a sane regular file" % path)
+        data = json.loads(tf.extractfile(mem).read().decode("utf-8"))
+    ws = data.get("wheelset")
+    return str(data.get("version") or ""), (list(ws) if isinstance(ws, list) else None)
 
 
 def dump_manifest(manifest: dict) -> bytes:

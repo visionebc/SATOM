@@ -515,7 +515,7 @@ Everything that changes state. **Root required.** Without it each command refuse
 | `satom execute disable <unit>` | yes | — | Disable a timer. Refuses the privileged runner. |
 | `satom execute reload nginx` | yes | — | Validate the config, then reload nginx. |
 | `satom execute reset theme` | yes | — | Activate the built-in theme — the way back from a palette that made the console unreadable. |
-| `satom execute seed actions [--yes]` | yes | — | The minimum scheduled actions. Shows the plan; --yes applies. |
+| `satom execute seed actions [--yes] [--upgrade]` | yes | — | The minimum scheduled actions. Shows the plan; --yes applies. |
 | `satom execute update code [<target>]` | yes | — | Queue a git update — or a rollback, by passing a commit. |
 | `satom execute update pip <package> <version>` | yes | — | Queue a curated-allowlist package change. Node-local. |
 | `satom execute update package <file.tar.gz> [--yes] [--allow-downgrade] [--no-backup]` | yes | ! | Apply a SIGNED offline update package. Works with no network. |

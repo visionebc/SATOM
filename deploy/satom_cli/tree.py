@@ -263,7 +263,7 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
         ),
         _group("seed", "Create state a fresh install does NOT create for you.",
             _n("actions", "The minimum scheduled actions. Shows the plan; --yes applies.",
-               run=f.seed_actions, needs_root=True, usage="execute seed actions [--yes]"),
+               run=f.seed_actions, needs_root=True, usage="execute seed actions [--yes] [--upgrade]"),
         ),
         _group("update", "Code and dependency updates (via the privileged queue).",
             _n("code", "Queue a git update — or a rollback, by passing a commit.",

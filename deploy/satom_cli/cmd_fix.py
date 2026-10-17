@@ -105,6 +105,18 @@ SEED_PLAN = [
      {"weekday": 0, "time": "05:00"}, {}, "global"),
 ]
 
+# The plan as it stood in 2.11.0, the last 2.x release. `seed actions --upgrade`
+# (run by deploy/upgrade-converge.sh after an update applied by an OLDER runner)
+# creates only the rows OUTSIDE this set: those were introduced by 3.x, so a node
+# coming from 2.x cannot have had them, and creating them cannot bring back an
+# action the operator deleted on purpose. The full `seed actions` still fills
+# every gap.
+PRE_3X_ACTIONS = frozenset((
+    "deep_monitor", "device_inspect", "device_sync", "inventory_snapshot",
+    "metrics_scrape", "monitor_report", "sentinel_baseline", "sentinel_sweep",
+    "sentinel_vuln_sync", "system_backup",
+))
+
 
 def _yes(args):
     return "--yes" in args
@@ -322,7 +334,10 @@ def seed_actions(ctx, args):
                "streaming replication carries the rows here.")
         return r
     apply_ = _yes(args)
-    payload = json.dumps({"apply": apply_, "rows": SEED_PLAN})
+    rows = SEED_PLAN
+    if "--upgrade" in args:
+        rows = [p for p in SEED_PLAN if p[0] not in PRE_3X_ACTIONS]
+    payload = json.dumps({"apply": apply_, "rows": rows})
     rc, out, err = _app_stdin(ctx, _SEED_CODE, payload, timeout=180)
     if rc != 0:
         r = Result("bad", "could not read the action catalogue", exit_code=4)

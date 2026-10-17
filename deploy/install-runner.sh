@@ -233,3 +233,20 @@ echo "  code       : ${LIB_DIR} (root:root, system python ${RUN_PY})"
 echo "  trust store: ${TRUST_DIR} ($(ls -1 "$TRUST_DIR"/*.pub 2>/dev/null | wc -l) key(s))"
 echo "  sbin       : ${SBIN_DIR} ($(for f in $SBIN_FILES; do [ -f "${DEPLOY_SRC}/${f}" ] && printf '%s ' "$f"; done))"
 echo "  verify     : satom diagnose privilege"
+
+# ---- finish an update an older runner applied ----------------------------
+# [SATOM-UPGRADE-CONVERGE] Every runner since 2.x runs THIS file from the new
+# tree, so it is where an older runner's update gets finished: the units, the
+# console role and the 3.x scheduled actions that runner does not know about
+# (deploy/upgrade-converge.sh). Only when the update runner is our parent -- the
+# installer and 'reinstall runner' set up those parts themselves. Last, so an old
+# runner's step log (the output's tail) shows it. Capped at 150 s: a 2.x runner
+# gives this whole script 180 s and does not survive the timeout.
+parent="$(tr '\0' ' ' < "/proc/${PPID}/cmdline" 2>/dev/null || true)"
+if [ -f "${DEPLOY_SRC}/upgrade-converge.sh" ]; then
+  case "$parent" in
+    *self_update_runner.py*)
+      FM_APP_DIR="$APP_DIR" SATOM_DEPLOY_SRC="$DEPLOY_SRC" SATOM_RUN_PY="$RUN_PY" \
+        timeout 150 bash "${DEPLOY_SRC}/upgrade-converge.sh" || true ;;
+  esac
+fi

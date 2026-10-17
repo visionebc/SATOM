@@ -3950,6 +3950,27 @@ key it is signed with (<code>satom-release-2026.pub</code>). A node installed <s
 satom-release-2026.pub</code>, run once per node; compare the fingerprint in the
 release notes first. Database migrations run as part of the apply. If one
 fails, the update rolls back and the status log says which backup to restore.</p>
+<p><strong>Updating from 2.x.</strong> An update is applied by the runner already installed on
+the node, so a 2.x node jumping to 3.x is updated by its 2.x runner, which knows
+nothing about what 3.x added. From 3.3.2 the release finishes that itself
+(<code>deploy/upgrade-converge.sh</code>, run by <code>install-runner.sh</code> whenever the update
+runner calls it):</p>
+<ul>
+<li>installs and arms every unit the applying runner did not install — today the
+  Script Library's <code>satom-scripts.{path,service}</code> and its queue directories;</li>
+<li>provisions the SQL console's read-only role (primary; a standby skips it);</li>
+<li>creates, <strong>once</strong>, the scheduled actions introduced by 3.x —
+  <code>knowledge_fetch</code>, <code>signature_check</code>, <code>observatory_scan</code>,
+  <code>hsts_preload_refresh</code> (<code>satom execute seed actions --upgrade</code>). Actions of the
+  2.x set are not recreated, so one you deleted on purpose stays deleted.</li>
+</ul>
+<p>Every problem is a warning in the <em>refresh update runner</em> step and never fails
+the update. The Script Library also needs bubblewrap (<code>bwrap</code>): if the node
+lacks it, the step says so; install it under <strong>Settings → General → System
+packages</strong>. A node already taken from 2.x to 3.0.0–3.3.1 is finished by
+updating it to 3.3.2, or by hand: <code>sudo satom execute reinstall units</code>,
+<code>sudo bash /opt/satom/deploy/install-console-role.sh</code> and
+<code>sudo satom execute seed actions --yes</code> on the primary.</p>
 <p>How packages are built and signed:
 <a href="offline-update-packages.html">docs/offline-update-packages.md</a>.</p>
 <h3 id="223-api-library-packs">22.3 API library packs</h3>
@@ -4084,9 +4105,11 @@ arrives by replication. The last result (status, message, time, pack) is shown
 under the table.</p>
 <p><strong>The scheduled action has to exist.</strong> Scheduled actions are data, not code,
 so an update does not create <code>knowledge_fetch</code> (nor <code>signature_check</code>, §8.1).
-Run <code>sudo satom execute seed actions --yes</code> once on the primary after updating
-to 3.0 — it creates only the missing rows and never touches the ones you
-edited — or create them on the Scheduled Actions page. The buttons on this card
+An update to 3.3.2 or later creates them itself, once, on the primary (see
+§22.2, <em>Updating from 2.x</em>). Coming from an older 3.x release, run
+<code>sudo satom execute seed actions --yes</code> once on the primary — it creates only
+the missing rows and never touches the ones you edited — or create them on the
+Scheduled Actions page. The buttons on this card
 work without it.</p>
 <p><strong>Air-gapped network.</strong> On a machine with Internet access, download the pack
 named by the feed and its <code>.sha256</code> file from the release page (the card links
@@ -10264,8 +10287,10 @@ knowledge comes from and which key may sign it</strong>:</p>
 </tr>
 </tbody>
 </table>
-<p><strong>What to do.</strong> Online: update, then run <code>sudo satom execute seed actions
---yes</code> once on the primary so <code>knowledge_fetch</code> and <code>signature_check</code> exist.
+<p><strong>What to do.</strong> Online: update. An update to 3.3.2 or later also installs the
+Script Library unit, the SQL console role and the 3.x scheduled actions by
+itself; going to an older 3.x, run <code>sudo satom execute seed actions --yes</code> once
+on the primary so <code>knowledge_fetch</code> and <code>signature_check</code> exist.
 Air-gapped: the same, then download the knowledge pack elsewhere and upload it
 under <strong>API library packs</strong> (§22.4). <strong>Verify</strong> with <code>satom show trust</code> (three
 purposes: <code>update</code>, <code>api_pack</code>, <code>knowledge</code>) and <code>satom show knowledge</code>.

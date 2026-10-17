@@ -6,6 +6,34 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.3.2] - 2026-10-17
+
+### Fixed
+
+- An update from 2.x to 3.x ended green with the node half-done. An update is
+  applied by the runner already installed on the node, and a 2.x runner knows
+  nothing about what 3.x added: it never installed the Script Library's
+  `satom-scripts.{path,service}` (runs stayed queued for good), never
+  provisioned the SQL console's read-only role (the console refused every
+  query), and nothing created the scheduled actions 3.x introduced. The one
+  root-side file every runner since 2.x executes from the new release is
+  `deploy/install-runner.sh`, so it now runs `deploy/upgrade-converge.sh` when
+  the update runner calls it: it installs and arms the units the applying
+  runner did not install (and the Script Library's queue directories),
+  provisions the console role on the primary, and creates, once, the scheduled
+  actions 3.x introduced — `knowledge_fetch`, `signature_check`,
+  `observatory_scan`, `hsts_preload_refresh`. Every problem is a warning in the
+  update's *refresh update runner* step and never fails the update; the step
+  also warns when bubblewrap, which the Script Library needs, is missing.
+  The manual `satom execute seed actions --yes` after updating from 2.x is no
+  longer needed.
+
+### Added
+
+- `satom execute seed actions --upgrade` creates only the scheduled actions
+  introduced after 2.11.0, so an action of the 2.x set that the operator
+  deleted on purpose is not recreated. The update runs it by itself.
+
 ## [3.3.1] - 2026-10-16
 
 ### Fixed

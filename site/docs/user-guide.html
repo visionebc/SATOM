@@ -2026,13 +2026,12 @@ nothing else, can rebuild the installation from any copy.</p>
   <strong>unreachable</strong> envelope. A node with no envelope is noisy on purpose.</li>
 </ul>
 <h3 id="111-cloning-one-deploy-into-another">11.1 Cloning one deploy into another</h3>
-<p>A bundle puts <strong>this</strong> deploy back the way it was. To copy a deploy's data into a
-<strong>different</strong> installation (lab → production, an old pair → a new one) use a
+<p>A bundle puts <strong>this</strong> deploy back the way it was. To copy a deploy's
+<strong>configuration</strong> into a <strong>different</strong> installation (lab → production, an old pair → a new one) use a
 clone: the two installations keep their own <code>FERNET_KEY</code>, their own identity and
 their own HA pair, and no key ever leaves either node.</p>
 <ol>
-<li>On the source primary: <code>sudo satom execute clone export --yes</code>
-   (<code>--with-firmware</code> adds the firmware images). The bundle lands in
+<li>On the source primary: <code>sudo satom execute clone export --yes</code>. The bundle lands in
    <code>data/clone-exports/</code> and the command prints a <strong>passphrase once</strong> — it is
    stored nowhere.</li>
 <li>Copy the file to the target primary. Both deploys must run the <strong>same SATOM
@@ -2045,11 +2044,48 @@ their own HA pair, and no key ever leaves either node.</p>
    the same appliances, then <code>sudo satom execute clone release --yes</code>.
    <code>satom get clone status</code> says whether the node is still holding a clone.</li>
 </ol>
-<p>What travels: every table except the node's leases and its signature store; the
-per-appliance config backups, the live config tree and its history; Script
-Library scripts and schedules; integration hooks; WAF artifacts; branding.
-<strong>Queued script and hook requests stay behind</strong> — the target would run them a
-second time.</p>
+<p>What travels is <strong>configuration only</strong>: appliances and their credentials, users,
+profiles and settings, scheduled action definitions, templates, baselines,
+exceptions, probes and scrape targets, dashboards, the wiki, the API library;
+Script Library scripts and schedules; integration hooks; WAF artifacts;
+branding.</p>
+<p>What stays behind:</p>
+<table>
+<thead>
+<tr>
+<th>Left behind</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Backups: the device vault (<code>data/backups/</code>) and the system bundles</td>
+<td>backups, not configuration</td>
+</tr>
+<tr>
+<td>Config history: the SoT store and the live config tree (<code>data/reports/</code>)</td>
+<td>history of the source's appliances</td>
+</tr>
+<tr>
+<td>Device cache (objects, snapshots, certificates, hardware, NICs)</td>
+<td>the first sync after <code>clone release</code> reads it again from the appliances</td>
+</tr>
+<tr>
+<td>Runs, logs, samples, incidents, notifications, change requests</td>
+<td>the target produces its own</td>
+</tr>
+<tr>
+<td>Firmware images</td>
+<td>the target keeps its own</td>
+</tr>
+<tr>
+<td>Queued script and hook requests</td>
+<td>the target would run them a second time</td>
+</tr>
+</tbody>
+</table>
+<p>The list of left-behind tables is the target's, not the bundle's: a bundle that
+carries one of them is refused.</p>
 <p>How the secrets travel: the export re-encrypts every Fernet token it finds —
 columns, settings and tokens inside JSON settings — under a one-time transfer
 key, and seals that key with the passphrase (scrypt + AES-GCM). The import opens
@@ -2063,14 +2099,22 @@ backup server, signature store, recovery escrow and alert state. <strong>Account
 not stay:</strong> after the import you log in with the source's users and passwords,
 and every browser session opened before the import is logged out — a session
 names a user by number, and the numbers now belong to the source's accounts.</p>
-<p>The import replaces the target's data:</p>
+<p>The import replaces the target's configuration:</p>
 <ul>
 <li>Before anything changes it checks every checksum, the passphrase and the
   schema, and refuses a bundle exported from this same deploy (use
   <code>satom execute restore db</code> for that). It refuses on a standby.</li>
 <li>It takes a safety bundle of the current database, stops the web, scheduler
-  and reconciler, replaces the rows in one transaction and moves the replaced
-  file sets to <code>data/clone-prev-&lt;time&gt;/</code> instead of deleting them.</li>
+  and reconciler, and replaces the rows in one transaction. In the same
+  transaction it <strong>empties the target's own history, device cache and backup
+  index</strong>: those rows name appliances by number, and after the import the
+  numbers belong to the source's appliances. The target's system bundles,
+  firmware and signature store are kept.</li>
+<li>It moves the replaced file sets, the target's device vault, live config tree
+  and SoT store to <code>data/clone-prev-&lt;time&gt;/</code> instead of deleting them; the
+  directories themselves stay, empty, for the next sync and backup.</li>
+<li>Until the first device sync after the release, the target shows the
+  appliances without their objects.</li>
 <li><strong>The imported deploy starts held:</strong> every scheduled action, Script Library
   schedule and hook that was enabled is switched off, and so are alert e-mail
   and the NetBox push. Two installations polling and writing the same
@@ -2088,7 +2132,7 @@ appliances.</p>
 <ul>
 <li><strong>Export</strong> queues the export and shows the <strong>passphrase once</strong>, in the page,
   at the moment you click. The finished bundle is listed with a download
-  button. Firmware images stay out unless you tick <em>Include firmware images</em>.</li>
+  button.</li>
 <li><strong>Upload</strong> puts a bundle into the target's import inbox (<code>data/clone-imports/</code>)
   and shows what it would bring: source node and version, tables, rows, file
   sets, and every reason it cannot be imported here (a different schema, a
@@ -2111,7 +2155,7 @@ job's status. On a standby the pane is read-only. In the container runtime the
 pane is read-only too, because there is no privileged runner there. A job the
 runner cannot finish within 25 minutes is stopped, and the web, scheduler and
 reconciler are started again; run imports that big from a shell.</p>
-<p>A clone copies a whole deploy; copying only some of it (by category or by
+<p>A clone copies a deploy's whole configuration; copying only some of it (by category or by
 appliance) into a deploy that keeps its own data is not available yet.</p>
 <p>Diagnose Log Collection (under Operations › Troubleshooting) and Import Backup
 (next to Device Backups under <strong>Operations</strong>) are covered in §27. Neither is a backup: one collects read-only diagnostics over SSH, the

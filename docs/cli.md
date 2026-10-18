@@ -545,8 +545,8 @@ Everything that changes state. **Root required.** Without it each command refuse
 | `satom execute backup db` | yes | — | pg_dump the application database into data/system_backups/. |
 | `satom execute backup git` | yes | — | git bundle --all, including the parked safety refs. |
 | `satom execute restore db <file> --yes` | yes | ! | Replace the database from a bundle. Dumps the current one first. |
-| `satom execute clone export [--with-firmware] [--yes]` | yes | — | Write a clone bundle of this deploy. Secrets travel re-encrypted under a one-time key; the passphrase is printed once. |
-| `satom execute clone import <bundle.tar.gz> [--yes]` | yes | ! | Replace this deploy's data with a clone bundle's. Keeps this node's identity and holds every schedule until released. |
+| `satom execute clone export [--yes]` | yes | — | Write a clone bundle of this deploy's configuration (no backups, history or firmware). Secrets travel re-encrypted under a one-time key; the passphrase is printed once. |
+| `satom execute clone import <bundle.tar.gz> [--yes]` | yes | ! | Replace this deploy's configuration with a clone bundle's. Keeps this node's identity and holds every schedule until released. |
 | `satom execute clone release [--yes]` | yes | — | Re-enable what an import held: schedules, alert e-mail, NetBox push, hooks. |
 | `satom execute admin reset-password <username>` | yes | — | Set a password (asked interactively, never in argv); re-enables the account. |
 | `satom execute admin unlock <username>` | yes | — | Clear a lockout. Touches neither the password nor the enabled flag. |

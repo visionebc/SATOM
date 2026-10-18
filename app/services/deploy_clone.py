@@ -16,7 +16,13 @@ their own FERNET_KEY, their own identity and their own HA pair:
 * the imported deploy starts QUARANTINED: every schedule, alert e-mail, NetBox
   push and hook that was enabled on the source is switched off until an
   operator releases it. Two installations polling and writing the same
-  appliances is what a clone otherwise produces, silently.
+  appliances is what a clone otherwise produces, silently;
+* only CONFIGURATION travels (:data:`LEFT_BEHIND`): no backups, no config
+  history, no system bundles, no firmware, and nothing the target reads again
+  from the appliances or produces itself once released (device cache, runs,
+  samples, incidents, logs). The target's own rows of that kind are emptied
+  and its vault, live config tree and SoT store are set aside: they describe
+  appliances it no longer has.
 
 Scope ``full`` replaces the target's data. Partial clones reuse this format.
 """
@@ -35,7 +41,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
-FORMAT = "satom-clone/1"
+FORMAT = "satom-clone/2"   # /1 carried backups and history
 SCOPE_FULL = "full"
 PASSPHRASE_ENV = "SATOM_CLONE_PASSPHRASE"
 
@@ -43,16 +49,47 @@ QUARANTINE_KEY = "deployclone.quarantine"
 LAST_IMPORT_KEY = "deployclone.last_import"
 
 #: Tables that describe the node, not the estate: leases held by this node's
-#: processes, and the signature store, which every node fetches for itself
-#: (its rows only make sense next to that node's data/signatures/).
+#: processes, the signature store, which every node fetches for itself (its
+#: rows only make sense next to that node's data/signatures/), and the
+#: firmware catalogue, whose rows point at this node's data/firmware/. Never
+#: exported; the target's rows survive the import untouched.
 NODE_LOCAL_TABLES = frozenset({
     "resource_locks",
     "signature_entries", "signature_changes", "signature_snapshots",
     "knowledge_signature_meta",
+    "firmware_images",
 })
-#: Rows that point at files under data/firmware/. They travel with the files
-#: or not at all: rows without their images are a catalogue of missing files.
-FIRMWARE_TABLES = frozenset({"firmware_images"})
+
+#: What a clone leaves behind, by reason: it carries configuration only.
+#: Unlike the node-local tables, the TARGET's rows here are emptied by the
+#: import -- they name appliances by id, and after the import those ids belong
+#: to the source's appliances. The first sync after 'clone release' reads the
+#: device cache again; the rest the target produces itself.
+LEFT_BEHIND = {
+    "backups": ("config_backups",),
+    "config history": ("sot_version", "exception_version"),
+    "device cache": (
+        "device_snapshots", "device_objects", "device_server_policies",
+        "device_server_pools", "device_web_protection_profiles",
+        "device_certificate", "device_hardware", "appliance_nics",
+        "object_absences", "inventory_snapshots",
+        "waf_artifact_ref", "waf_artifact_scan"),
+    "runs and logs": (
+        "scheduled_action_run", "scheduled_action_target", "sync_runs",
+        "change_history", "audit_logs", "notifications", "bug_reports",
+        "observatory_scans", "observatory_fixes", "policy_clone_events",
+        "process_runs", "process_run_steps", "provision_runs",
+        "upgrade_prep", "change_request", "change_request_event", "cr_preps",
+        "managed_certificate_event", "template_review_events",
+        "translation_run", "advisor_conversations", "advisor_messages",
+        "advisor_proposals", "advisor_request_log", "advisor_export_log"),
+    "monitoring and incidents": (
+        "monitor_sample", "monitor_rollup", "monitor_report",
+        "sentinel_baseline", "sentinel_incident", "sentinel_incident_event",
+        "sentinel_event", "sentinel_evidence", "sentinel_anomaly",
+        "sentinel_action", "sentinel_action_result", "sentinel_block_entry"),
+}
+LEFT_BEHIND_TABLES = frozenset(t for ts in LEFT_BEHIND.values() for t in ts)
 
 #: app_settings keys that are the node's own. Never exported, and the target's
 #: values survive the import untouched.
@@ -123,8 +160,9 @@ def imports_dir() -> Path:
     return d
 
 
-def _file_sets(with_firmware: bool) -> list:
-    """(name, directory, subdirectories or None for all).
+def _file_sets() -> list:
+    """(name, directory, subdirectories or None for all) -- the files a clone
+    carries: configuration authored on the source.
 
     Queues are left behind on purpose: data/scripts/queue and
     data/integrations/queue are requests the SOURCE's runners were asked to
@@ -132,28 +170,31 @@ def _file_sets(with_firmware: bool) -> list:
     """
     from . import integration_hooks as ih
     from . import script_library as sl
-    from . import system_backup as sb
     from . import waf_artifacts as wa
-    sets = [
-        ("vault", sb.vault_dir(), None),
-        ("reports", sb.reports_dir(), None),
-        ("sot", sb.sot_dir(), None),
+    return [
         ("scripts", sl.ROOT, ("library", "schedules")),
         ("integrations", ih.HOOKS_DIR.parent, ("hooks",)),
         ("artifacts", wa.store_dir(), ("objects",)),
         ("branding", _data_root() / "branding", None),
     ]
-    if with_firmware:
-        sets.append(("firmware", _data_root() / "firmware", None))
-    return sets
+
+
+def _left_behind_dirs() -> list:
+    """(name, directory) the clone does not carry and the import sets aside on
+    the target: the device vault (backups), the live config tree and the SoT
+    store (config history). System bundles and firmware are neither carried
+    nor touched -- they are the target's own."""
+    from . import system_backup as sb
+    return [("vault", sb.vault_dir()), ("reports", sb.reports_dir()),
+            ("sot", sb.sot_dir())]
 
 
 def is_node_local_setting(key: str) -> bool:
     return any(key.startswith(p) for p in NODE_LOCAL_SETTING_PREFIXES)
 
 
-def _skipped_tables(with_firmware: bool) -> frozenset:
-    return NODE_LOCAL_TABLES | (frozenset() if with_firmware else FIRMWARE_TABLES)
+def _skipped_tables() -> frozenset:
+    return NODE_LOCAL_TABLES | LEFT_BEHIND_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -327,9 +368,10 @@ def _is_replica() -> bool:
 # export
 # ---------------------------------------------------------------------------
 
-def export_clone(*, with_firmware: bool = False, by: str = "system",
+def export_clone(*, by: str = "system",
                  out_dir: Path | None = None, passphrase: str | None = None) -> dict:
-    """Write a clone bundle of this whole deploy. Read-only on the node.
+    """Write a clone bundle of this deploy's configuration. Read-only on the
+    node.
 
     Returns the bundle's name, path, size and the passphrase -- the only time
     the passphrase exists anywhere outside the operator's hands. The console
@@ -355,7 +397,7 @@ def export_clone(*, with_firmware: bool = False, by: str = "system",
     stage = out_dir / ("_stage-" + ts)
     (stage / "tables").mkdir(mode=0o700, parents=True)
     (stage / "files").mkdir(mode=0o700)
-    skip = _skipped_tables(with_firmware)
+    skip = _skipped_tables()
     tables, files, rows_total = {}, {}, 0
     try:
         for t in db.metadata.sorted_tables:
@@ -380,7 +422,7 @@ def export_clone(*, with_firmware: bool = False, by: str = "system",
             rows_total += n
         db.session.rollback()          # end the read transaction
 
-        for fname, d, subdirs in _file_sets(with_firmware):
+        for fname, d, subdirs in _file_sets():
             path = stage / "files" / (fname + ".tar")
             count, size = 0, 0
             with tarfile.open(path, "w") as tar:
@@ -407,9 +449,10 @@ def export_clone(*, with_firmware: bool = False, by: str = "system",
             json.dumps(_seal_key(transfer, passphrase, source), indent=2))
         manifest = {"format": FORMAT, "scope": SCOPE_FULL,
                     "created": datetime.utcnow().isoformat(timespec="seconds") + "Z",
-                    "by": by, "source": source, "with_firmware": with_firmware,
+                    "by": by, "source": source,
                     "tables": tables, "files": files, "rekey": rk.counts(),
-                    "node_local_tables": sorted(skip),
+                    "node_local_tables": sorted(NODE_LOCAL_TABLES),
+                    "left_behind_tables": sorted(LEFT_BEHIND_TABLES),
                     "node_local_setting_prefixes": list(NODE_LOCAL_SETTING_PREFIXES)}
         (stage / "manifest.json").write_text(json.dumps(manifest, indent=2))
 
@@ -422,8 +465,7 @@ def export_clone(*, with_firmware: bool = False, by: str = "system",
         shutil.rmtree(stage, ignore_errors=True)
 
     _audit("deploy_clone.export", name,
-           {"tables": len(tables), "rows": rows_total, "rekey": rk.counts(),
-            "with_firmware": with_firmware})
+           {"tables": len(tables), "rows": rows_total, "rekey": rk.counts()})
     return {"ok": True, "name": name, "path": str(out_dir / name),
             "size": (out_dir / name).stat().st_size, "passphrase": passphrase,
             "tables": len(tables), "rows": rows_total,
@@ -492,11 +534,18 @@ def compat_problems(manifest: dict) -> list:
                         % (src.get("alembic") or "none",
                            _alembic_revision() or "none"))
     meta = db.metadata.tables
-    skip = set(manifest.get("node_local_tables") or ())
+    # What the bundle may lack is decided HERE, not by the bundle: a bundle
+    # declaring a table "left behind" must not make this node keep rows that
+    # name another deploy's appliances.
+    skip = set(NODE_LOCAL_TABLES | LEFT_BEHIND_TABLES)
     for name, info in sorted((manifest.get("tables") or {}).items()):
         t = meta.get(name)
         if t is None:
             problems.append("table %s is not in this node's schema" % name)
+            continue
+        if name in skip:
+            problems.append("table %s is not configuration and must not travel"
+                            % name)
             continue
         if list(info.get("columns") or []) != [c.name for c in t.columns]:
             problems.append("table %s has different columns here" % name)
@@ -634,10 +683,11 @@ def _quarantine_files(record: dict) -> None:
 
 def import_clone(bundle: Path, passphrase: str, *, by: str = "system",
                  safety: bool = True) -> dict:
-    """Replace this deploy's data with a clone bundle's. DESTRUCTIVE.
+    """Replace this deploy's configuration with a clone bundle's. DESTRUCTIVE.
 
     Order: verify everything -> safety bundle -> stage files -> one DB
-    transaction (rows + quarantine) -> swap file sets -> hold file-backed
+    transaction (rows + quarantine; the left-behind tables emptied) -> swap
+    file sets and set the left-behind directories aside -> hold file-backed
     schedules and hooks. Anything that fails before the commit leaves the node
     exactly as it was.
     """
@@ -679,8 +729,7 @@ def import_clone(bundle: Path, passphrase: str, *, by: str = "system",
 
         # Stage the file sets next to their destinations: the swap after the
         # commit is then a rename, not an extraction that can fail halfway.
-        sets = {n: (d, sub) for n, d, sub in
-                _file_sets(bool(manifest.get("with_firmware")))}
+        sets = {n: (d, sub) for n, d, sub in _file_sets()}
         staged = {}
         for fname in manifest.get("files") or {}:
             if fname not in sets:
@@ -694,6 +743,10 @@ def import_clone(bundle: Path, passphrase: str, *, by: str = "system",
 
         order = [t for t in db.metadata.sorted_tables
                  if t.name in (manifest.get("tables") or {})]
+        emptied = [t for t in db.metadata.sorted_tables
+                   if t.name in LEFT_BEHIND_TABLES]
+        wipe = [t for t in db.metadata.sorted_tables
+                if t in order or t in emptied]
         kept = [(r.key, r.value) for r in db.session.query(AppSetting).all()
                 if is_node_local_setting(r.key)]
         record = {"at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
@@ -705,7 +758,7 @@ def import_clone(bundle: Path, passphrase: str, *, by: str = "system",
         # rows that no longer exist.
         db.session.expunge_all()
         try:
-            for t in reversed(order):
+            for t in reversed(wipe):
                 db.session.execute(t.delete())
             for t in order:
                 counts[t.name] = _insert_table(t, _rows(work, t), rk)
@@ -718,7 +771,7 @@ def import_clone(bundle: Path, passphrase: str, *, by: str = "system",
                                         value=session_epoch.new_value()))
             _quarantine_db(record)
             db.session.flush()
-            _reset_sequences(order)
+            _reset_sequences(wipe)
             db.session.commit()
         except Exception:
             db.session.rollback()
@@ -745,6 +798,18 @@ def import_clone(bundle: Path, passphrase: str, *, by: str = "system",
                     dst.mkdir(parents=True, exist_ok=True)
             shutil.rmtree(tmp, ignore_errors=True)
             swapped.append(fname)
+        set_aside = []
+        for fname, d in _left_behind_dirs():
+            # The contents move, not the directory: it may be a mount point or
+            # a symlink, and it keeps its owner and mode for the next writer.
+            children = sorted(d.iterdir()) if d.is_dir() else []
+            if not children:
+                continue
+            keep = prev / fname
+            keep.mkdir(parents=True, exist_ok=True)
+            for child in children:
+                shutil.move(str(child), str(keep / child.name))
+            set_aside.append(fname)
 
         _quarantine_files(record)
         record["previous_files"] = str(prev) if prev.exists() else ""
@@ -758,7 +823,9 @@ def import_clone(bundle: Path, passphrase: str, *, by: str = "system",
                 "rekey": rk.counts(), "safety": safety_name,
                 "held_actions": len(record["actions"])})
         return {"ok": True, "rows": sum(counts.values()), "tables": len(counts),
-                "files": swapped, "rekey": rk.counts(), "safety": safety_name,
+                "files": swapped, "set_aside": set_aside,
+                "emptied_tables": len(emptied),
+                "rekey": rk.counts(), "safety": safety_name,
                 "quarantine": quarantine_summary(record),
                 "previous_files": record["previous_files"],
                 "unreadable_secrets": unreadable,
@@ -984,7 +1051,6 @@ def preflight(path: Path, passphrase: str | None = None) -> dict:
             "source": {k: (manifest.get("source") or {}).get(k)
                        for k in ("node", "version", "alembic")},
             "created": manifest.get("created"),
-            "with_firmware": bool(manifest.get("with_firmware")),
             "tables": len(tables),
             "rows": sum(int((t or {}).get("rows") or 0) for t in tables.values()),
             "files": {k: int((v or {}).get("files") or 0)
@@ -1045,8 +1111,8 @@ def job_status(uid: str) -> dict | None:
     return st if isinstance(st, dict) and st.get("kind") == RUNNER_KIND else None
 
 
-def request_job(action: str, *, by: str, passphrase: str, name: str | None = None,
-                with_firmware: bool = False) -> str:
+def request_job(action: str, *, by: str, passphrase: str,
+                name: str | None = None) -> str:
     """Queue an export or an import for the privileged runner. Returns its id.
 
     Everything that can be refused here is refused here -- standby, container,
@@ -1089,8 +1155,6 @@ def request_job(action: str, *, by: str, passphrase: str, name: str | None = Non
         if pf["problems"]:
             raise CloneError("; ".join(pf["problems"]))
         req["bundle"] = p.name
-    else:
-        req["with_firmware"] = bool(with_firmware)
 
     su.REQ_DIR.mkdir(parents=True, exist_ok=True)
     su.STATUS_DIR.mkdir(parents=True, exist_ok=True)
@@ -1112,7 +1176,7 @@ def request_job(action: str, *, by: str, passphrase: str, name: str | None = Non
         fh.write(json.dumps(req))
     tmp.rename(su.REQ_DIR / (uid + ".json"))
     _audit("deploy_clone.request", req.get("bundle") or "export",
-           {"action": action, "id": uid, "with_firmware": bool(with_firmware)})
+           {"action": action, "id": uid})
     return uid
 
 

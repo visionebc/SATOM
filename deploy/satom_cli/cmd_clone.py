@@ -19,7 +19,8 @@ from .context import run
 from .render import Result
 
 PASSPHRASE_ENV = "SATOM_CLONE_PASSPHRASE"
-EXPORT_USAGE = "execute clone export [--with-firmware] [--yes]"
+EXPORT_USAGE = "execute clone export [--yes]"
+FORMAT = "satom-clone/2"
 IMPORT_USAGE = "execute clone import <bundle.tar.gz> [--yes]"
 RELEASE_USAGE = "execute clone release [--yes]"
 
@@ -31,7 +32,7 @@ arg = json.loads(sys.stdin.read())
 app = create_app()
 with app.app_context():
     try:
-        print(json.dumps(dc.export_clone(with_firmware=arg["firmware"], by=arg["by"],
+        print(json.dumps(dc.export_clone(by=arg["by"],
                                          passphrase=arg["passphrase"] or None)))
     except dc.CloneError as exc:
         print(json.dumps({"ok": False, "detail": str(exc)}))
@@ -96,21 +97,24 @@ def _fmt_size(n):
 
 # -- export ----------------------------------------------------------------
 def export(ctx, args):
-    """Write a clone bundle of this whole deploy. Read-only on the node."""
+    """Write a clone bundle of this deploy's configuration. Read-only on the
+    node."""
     refused = _refuse_standby(ctx, "An export")
     if refused:
         return refused
-    firmware = "--with-firmware" in args
     if not _yes(args):
         r = Result("warn", "clone export requires confirmation", exit_code=2)
-        r.lines("the bundle carries", [
-            "every table except the node-local ones (leases, signature store)",
-            "per-appliance config backups, live config tree and history",
+        r.lines("the bundle carries configuration only", [
+            "appliances and their credentials, users, profiles, settings",
+            "scheduled action definitions, templates, exceptions, probes",
             "Script Library scripts + schedules, integration hooks",
-            "WAF artifacts, branding" + (", firmware images" if firmware
-                                         else " (firmware: add --with-firmware)"),
+            "WAF artifacts, branding, the API library",
         ])
         r.lines("it does NOT carry", [
+            "backups: the device vault and the system bundles",
+            "config history (SoT store) and the live config tree",
+            "the device cache: the first sync after release reads it again",
+            "runs, logs, samples, incidents, notifications, firmware",
             "this node's FERNET_KEY or CA: every secret is re-encrypted under",
             "a one-time transfer key, sealed with a passphrase printed once",
             "HA role, node certificate, backup server: the target keeps its own",
@@ -123,7 +127,7 @@ def export(ctx, args):
     # it arrives here in the environment, never in argv.
     given = os.environ.get(PASSPHRASE_ENV) or ""
     rc, out, err = _app_stdin(ctx, _EXPORT_CODE,
-                              json.dumps({"firmware": firmware, "passphrase": given,
+                              json.dumps({"passphrase": given,
                                           "by": "console" if given else "cli"}),
                               timeout=3600)
     res = _last_json(out) if rc == 0 else None
@@ -172,7 +176,8 @@ def _manifest(path):
 
 
 def import_(ctx, args):
-    """Replace this deploy's data with a clone bundle's. Heavily gated."""
+    """Replace this deploy's configuration with a clone bundle's. Heavily
+    gated."""
     refused = _refuse_standby(ctx, "An import")
     if refused:
         return refused
@@ -186,7 +191,7 @@ def import_(ctx, args):
         m = _manifest(src)
     except (tarfile.TarError, OSError, ValueError) as exc:
         return Result("bad", "not a readable clone bundle: %s" % exc, exit_code=2)
-    if not m or m.get("format") != "satom-clone/1":
+    if not m or m.get("format") != FORMAT:
         return Result("bad", "not a SATOM clone bundle (format %r)"
                       % ((m or {}).get("format")), exit_code=2)
     source = m.get("source") or {}
@@ -208,11 +213,15 @@ def import_(ctx, args):
             "2. open the transfer key with the passphrase (asked, never in argv)",
             "3. take a safety bundle of the CURRENT database",
             "4. stop web, scheduler, reconciler",
-            "5. replace the data; secrets are re-encrypted under THIS node's key",
-            "6. this node's HA role, certificate and backup server are kept",
-            "7. set the replaced file sets aside under data/clone-prev-<time>/",
-            "8. HOLD every schedule, alert e-mail, NetBox push and hook",
-            "9. start the services again and verify /healthz",
+            "5. replace the configuration; secrets are re-encrypted under THIS node's key",
+            "6. empty this node's history, device cache and backup index",
+            "   (they name appliances it will no longer have)",
+            "7. this node's HA role, certificate, backup server, system bundles",
+            "   and firmware are kept",
+            "8. set the replaced files, the vault, the live config tree and the",
+            "   SoT store aside under data/clone-prev-<time>/",
+            "9. HOLD every schedule, alert e-mail, NetBox push and hook",
+            "10. start the services again and verify /healthz",
         ])
         r.note("Accounts are replaced too: afterwards you log in with the "
                "SOURCE's users and passwords, and every open web session ends.")
@@ -262,6 +271,8 @@ def import_(ctx, args):
         rk = res.get("rekey") or {}
         steps.append(("rows", "%s in %s tables" % (res.get("rows"), res.get("tables"))))
         steps.append(("files", ", ".join(res.get("files") or []) or "(none)"))
+        steps.append(("set aside", ", ".join(res.get("set_aside") or []) or "(none)"))
+        steps.append(("tables emptied", str(res.get("emptied_tables", 0))))
         steps.append(("secrets re-encrypted", str(rk.get("rekeyed", 0))))
         steps.append(("safety bundle", res.get("safety") or "(none)"))
         steps.append(("previous files", res.get("previous_files") or "(none)"))

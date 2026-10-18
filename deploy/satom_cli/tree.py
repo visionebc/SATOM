@@ -366,12 +366,13 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
                run=f.restore_db, needs_root=True, danger=True,
                usage="execute restore db <file> --yes"),
         ),
-        _group("clone", "Copy this deploy's data into another deploy.",
-            _n("export", "Write a clone bundle of this deploy. Secrets travel re-encrypted "
-                         "under a one-time key; the passphrase is printed once.",
+        _group("clone", "Copy this deploy's configuration into another deploy.",
+            _n("export", "Write a clone bundle of this deploy's configuration (no backups, "
+                         "history or firmware). Secrets travel re-encrypted under a "
+                         "one-time key; the passphrase is printed once.",
                run=cl.export, needs_root=True, usage=cl.EXPORT_USAGE),
-            _n("import", "Replace this deploy's data with a clone bundle's. Keeps this "
-                         "node's identity and holds every schedule until released.",
+            _n("import", "Replace this deploy's configuration with a clone bundle's. Keeps "
+                         "this node's identity and holds every schedule until released.",
                run=cl.import_, needs_root=True, danger=True, usage=cl.IMPORT_USAGE),
             _n("release", "Re-enable what an import held: schedules, alert e-mail, "
                           "NetBox push, hooks.",

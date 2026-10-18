@@ -1864,13 +1864,12 @@ nothing else, can rebuild the installation from any copy.
 
 ### 11.1 Cloning one deploy into another
 
-A bundle puts **this** deploy back the way it was. To copy a deploy's data into a
-**different** installation (lab → production, an old pair → a new one) use a
+A bundle puts **this** deploy back the way it was. To copy a deploy's
+**configuration** into a **different** installation (lab → production, an old pair → a new one) use a
 clone: the two installations keep their own `FERNET_KEY`, their own identity and
 their own HA pair, and no key ever leaves either node.
 
-1. On the source primary: `sudo satom execute clone export --yes`
-   (`--with-firmware` adds the firmware images). The bundle lands in
+1. On the source primary: `sudo satom execute clone export --yes`. The bundle lands in
    `data/clone-exports/` and the command prints a **passphrase once** — it is
    stored nowhere.
 2. Copy the file to the target primary. Both deploys must run the **same SATOM
@@ -1883,11 +1882,25 @@ their own HA pair, and no key ever leaves either node.
    the same appliances, then `sudo satom execute clone release --yes`.
    `satom get clone status` says whether the node is still holding a clone.
 
-What travels: every table except the node's leases and its signature store; the
-per-appliance config backups, the live config tree and its history; Script
-Library scripts and schedules; integration hooks; WAF artifacts; branding.
-**Queued script and hook requests stay behind** — the target would run them a
-second time.
+What travels is **configuration only**: appliances and their credentials, users,
+profiles and settings, scheduled action definitions, templates, baselines,
+exceptions, probes and scrape targets, dashboards, the wiki, the API library;
+Script Library scripts and schedules; integration hooks; WAF artifacts;
+branding.
+
+What stays behind:
+
+| Left behind | Why |
+|---|---|
+| Backups: the device vault (`data/backups/`) and the system bundles | backups, not configuration |
+| Config history: the SoT store and the live config tree (`data/reports/`) | history of the source's appliances |
+| Device cache (objects, snapshots, certificates, hardware, NICs) | the first sync after `clone release` reads it again from the appliances |
+| Runs, logs, samples, incidents, notifications, change requests | the target produces its own |
+| Firmware images | the target keeps its own |
+| Queued script and hook requests | the target would run them a second time |
+
+The list of left-behind tables is the target's, not the bundle's: a bundle that
+carries one of them is refused.
 
 How the secrets travel: the export re-encrypts every Fernet token it finds —
 columns, settings and tokens inside JSON settings — under a one-time transfer
@@ -1904,14 +1917,22 @@ not stay:** after the import you log in with the source's users and passwords,
 and every browser session opened before the import is logged out — a session
 names a user by number, and the numbers now belong to the source's accounts.
 
-The import replaces the target's data:
+The import replaces the target's configuration:
 
 - Before anything changes it checks every checksum, the passphrase and the
   schema, and refuses a bundle exported from this same deploy (use
   `satom execute restore db` for that). It refuses on a standby.
 - It takes a safety bundle of the current database, stops the web, scheduler
-  and reconciler, replaces the rows in one transaction and moves the replaced
-  file sets to `data/clone-prev-<time>/` instead of deleting them.
+  and reconciler, and replaces the rows in one transaction. In the same
+  transaction it **empties the target's own history, device cache and backup
+  index**: those rows name appliances by number, and after the import the
+  numbers belong to the source's appliances. The target's system bundles,
+  firmware and signature store are kept.
+- It moves the replaced file sets, the target's device vault, live config tree
+  and SoT store to `data/clone-prev-<time>/` instead of deleting them; the
+  directories themselves stay, empty, for the next sync and backup.
+- Until the first device sync after the release, the target shows the
+  appliances without their objects.
 - **The imported deploy starts held:** every scheduled action, Script Library
   schedule and hook that was enabled is switched off, and so are alert e-mail
   and the NetBox push. Two installations polling and writing the same
@@ -1929,7 +1950,7 @@ appliances.
 
 - **Export** queues the export and shows the **passphrase once**, in the page,
   at the moment you click. The finished bundle is listed with a download
-  button. Firmware images stay out unless you tick *Include firmware images*.
+  button.
 - **Upload** puts a bundle into the target's import inbox (`data/clone-imports/`)
   and shows what it would bring: source node and version, tables, rows, file
   sets, and every reason it cannot be imported here (a different schema, a
@@ -1953,7 +1974,7 @@ pane is read-only too, because there is no privileged runner there. A job the
 runner cannot finish within 25 minutes is stopped, and the web, scheduler and
 reconciler are started again; run imports that big from a shell.
 
-A clone copies a whole deploy; copying only some of it (by category or by
+A clone copies a deploy's whole configuration; copying only some of it (by category or by
 appliance) into a deploy that keeps its own data is not available yet.
 
 

@@ -8,21 +8,25 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
-- Deploy clones: copy one installation's data into another
+- Deploy clones: copy one installation's configuration into another
   (`satom execute clone export`, `clone import`, `clone release`,
   `satom get clone status`). Requested as "being able to migrate data from one
-  SATOM deploy to another". The bundle carries every table except the node's
-  leases and signature store, plus the per-appliance config backups, the config
-  tree and its history, Script Library scripts and schedules, hooks, WAF
-  artifacts and branding (firmware with `--with-firmware`); queued script and
-  hook requests stay behind. No node key travels: every Fernet token, including
+  SATOM deploy to another", then narrowed to "only configs go, not bundles, and
+  not backups either". The bundle carries configuration only: the tables that
+  hold it, Script Library scripts and schedules, hooks, WAF artifacts and
+  branding. Backups (device vault, system bundles), config history (SoT store,
+  live config tree), the device cache (read again by the first sync after the
+  release), runs, logs, samples, incidents and firmware stay behind, and so do
+  queued script and hook requests. On the target the import empties its own
+  rows of those kinds, because they name appliances by number, and sets its
+  vault, live config tree and SoT store aside; its system bundles and firmware
+  are kept. A bundle carrying a left-behind table is refused. No node key travels: every Fernet token, including
   those inside JSON settings, is re-encrypted under a one-time transfer key
   sealed with a passphrase printed once, and re-encrypted under the target's
   own key on import. The target keeps its HA role, node certificate, backup
   server and recovery escrow; every web session opened before the import ends
   (sessions now carry an epoch that the import rotates). The import checks checksums, passphrase and
-  schema before changing anything, takes a safety bundle, sets the replaced
-  files aside, and leaves the deploy **held** — scheduled actions, script
+  schema before changing anything, takes a safety bundle, and leaves the deploy **held** — scheduled actions, script
   schedules, hooks, alert e-mail and the NetBox push stay off until
   `clone release`, which re-enables exactly what was held and restarts the
   schedules from now. User guide §11.1.

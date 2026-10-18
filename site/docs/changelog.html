@@ -114,21 +114,25 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
-<li>Deploy clones: copy one installation's data into another
+<li>Deploy clones: copy one installation's configuration into another
   (<code>satom execute clone export</code>, <code>clone import</code>, <code>clone release</code>,
   <code>satom get clone status</code>). Requested as "being able to migrate data from one
-  SATOM deploy to another". The bundle carries every table except the node's
-  leases and signature store, plus the per-appliance config backups, the config
-  tree and its history, Script Library scripts and schedules, hooks, WAF
-  artifacts and branding (firmware with <code>--with-firmware</code>); queued script and
-  hook requests stay behind. No node key travels: every Fernet token, including
+  SATOM deploy to another", then narrowed to "only configs go, not bundles, and
+  not backups either". The bundle carries configuration only: the tables that
+  hold it, Script Library scripts and schedules, hooks, WAF artifacts and
+  branding. Backups (device vault, system bundles), config history (SoT store,
+  live config tree), the device cache (read again by the first sync after the
+  release), runs, logs, samples, incidents and firmware stay behind, and so do
+  queued script and hook requests. On the target the import empties its own
+  rows of those kinds, because they name appliances by number, and sets its
+  vault, live config tree and SoT store aside; its system bundles and firmware
+  are kept. A bundle carrying a left-behind table is refused. No node key travels: every Fernet token, including
   those inside JSON settings, is re-encrypted under a one-time transfer key
   sealed with a passphrase printed once, and re-encrypted under the target's
   own key on import. The target keeps its HA role, node certificate, backup
   server and recovery escrow; every web session opened before the import ends
   (sessions now carry an epoch that the import rotates). The import checks checksums, passphrase and
-  schema before changing anything, takes a safety bundle, sets the replaced
-  files aside, and leaves the deploy <strong>held</strong> — scheduled actions, script
+  schema before changing anything, takes a safety bundle, and leaves the deploy <strong>held</strong> — scheduled actions, script
   schedules, hooks, alert e-mail and the NetBox push stay off until
   <code>clone release</code>, which re-enables exactly what was held and restarts the
   schedules from now. User guide §11.1.</li>

@@ -1646,11 +1646,9 @@ def deploy_clone_export():
     """Queue an export. The passphrase is chosen HERE and returned once, in
     this response: the runner's result is a status file and must not hold it."""
     from ..services import deploy_clone as dc
-    body = request.get_json(silent=True) or {}
     passphrase = dc.new_passphrase()
     try:
-        uid = dc.request_job('export', by=current_user.username, passphrase=passphrase,
-                             with_firmware=body.get('with_firmware') is True)
+        uid = dc.request_job('export', by=current_user.username, passphrase=passphrase)
     except dc.CloneError as exc:
         return jsonify({'error': str(exc)}), 400
     return _no_store(jsonify({'uid': uid, 'passphrase': passphrase}))

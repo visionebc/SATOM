@@ -1438,16 +1438,16 @@ longer matches the console you are running.</p>
 <td>Replace the database from a bundle. Dumps the current one first.</td>
 </tr>
 <tr>
-<td><code>satom execute clone export [--with-firmware] [--yes]</code></td>
+<td><code>satom execute clone export [--yes]</code></td>
 <td style="text-align: center;">yes</td>
 <td style="text-align: center;">—</td>
-<td>Write a clone bundle of this deploy. Secrets travel re-encrypted under a one-time key; the passphrase is printed once.</td>
+<td>Write a clone bundle of this deploy's configuration (no backups, history or firmware). Secrets travel re-encrypted under a one-time key; the passphrase is printed once.</td>
 </tr>
 <tr>
 <td><code>satom execute clone import &lt;bundle.tar.gz&gt; [--yes]</code></td>
 <td style="text-align: center;">yes</td>
 <td style="text-align: center;">!</td>
-<td>Replace this deploy's data with a clone bundle's. Keeps this node's identity and holds every schedule until released.</td>
+<td>Replace this deploy's configuration with a clone bundle's. Keeps this node's identity and holds every schedule until released.</td>
 </tr>
 <tr>
 <td><code>satom execute clone release [--yes]</code></td>

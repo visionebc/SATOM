@@ -2645,8 +2645,6 @@ def clone_job(req_path):
     if path is not None:
         cmd.append(str(path))
     cmd.append("--yes")
-    if action == "export" and req.get("with_firmware") is True:
-        cmd.append("--with-firmware")
     env = dict(os.environ, SATOM_CLONE_PASSPHRASE=passphrase)
     passphrase = None
     st.begin("satom execute clone %s" % action)

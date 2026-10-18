@@ -408,7 +408,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*123 commands in 45 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*127 commands in 47 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -430,6 +430,7 @@ Read state. Every command below works as **any user** — this is the half of th
 | `satom get certificate list` | — | — | Every certificate this node holds, not just the served one. |
 | `satom get backup status` | — | — | All four, side by side, with their real ages. |
 | `satom get backup list` | — | — | Database bundles you can hand to 'execute restore db'. |
+| `satom get clone status` | — | — | Last clone import and whether this node is still holding it. |
 | `satom get scheduler status` | — | — | What exists, when it last ran, what is overdue. |
 | `satom get api versions [<product>]` | — | — | Firmware lines SATOM has evidence for, and how much. |
 | `satom get api preflight <appliance\|line> <object> <field>... [--product <p>]` | — | — | Would a payload of these fields be understood on that line? 'unmeasured' is an answer, never a yes. |
@@ -544,6 +545,9 @@ Everything that changes state. **Root required.** Without it each command refuse
 | `satom execute backup db` | yes | — | pg_dump the application database into data/system_backups/. |
 | `satom execute backup git` | yes | — | git bundle --all, including the parked safety refs. |
 | `satom execute restore db <file> --yes` | yes | ! | Replace the database from a bundle. Dumps the current one first. |
+| `satom execute clone export [--with-firmware] [--yes]` | yes | — | Write a clone bundle of this deploy. Secrets travel re-encrypted under a one-time key; the passphrase is printed once. |
+| `satom execute clone import <bundle.tar.gz> [--yes]` | yes | ! | Replace this deploy's data with a clone bundle's. Keeps this node's identity and holds every schedule until released. |
+| `satom execute clone release [--yes]` | yes | — | Re-enable what an import held: schedules, alert e-mail, NetBox push, hooks. |
 | `satom execute admin reset-password <username>` | yes | — | Set a password (asked interactively, never in argv); re-enables the account. |
 | `satom execute admin unlock <username>` | yes | — | Clear a lockout. Touches neither the password nor the enabled flag. |
 | `satom execute scheduler run <action-id>` | yes | — | Fire one action NOW as a manual run. |

@@ -2025,6 +2025,64 @@ nothing else, can rebuild the installation from any copy.</p>
   <code>satom diagnose recovery</code>, which reports an absent, stale, unreadable or
   <strong>unreachable</strong> envelope. A node with no envelope is noisy on purpose.</li>
 </ul>
+<h3 id="111-cloning-one-deploy-into-another">11.1 Cloning one deploy into another</h3>
+<p>A bundle puts <strong>this</strong> deploy back the way it was. To copy a deploy's data into a
+<strong>different</strong> installation (lab → production, an old pair → a new one) use a
+clone: the two installations keep their own <code>FERNET_KEY</code>, their own identity and
+their own HA pair, and no key ever leaves either node.</p>
+<ol>
+<li>On the source primary: <code>sudo satom execute clone export --yes</code>
+   (<code>--with-firmware</code> adds the firmware images). The bundle lands in
+   <code>data/clone-exports/</code> and the command prints a <strong>passphrase once</strong> — it is
+   stored nowhere.</li>
+<li>Copy the file to the target primary. Both deploys must run the <strong>same SATOM
+   version</strong>: the import compares the schema revision and every table's columns
+   and refuses on any difference.</li>
+<li>On the target primary: <code>sudo satom execute clone import &lt;file&gt;</code> shows the
+   plan; add <code>--yes</code> to run it (the passphrase is asked on the terminal, or read
+   from <code>$SATOM_CLONE_PASSPHRASE</code>, never from argv).</li>
+<li>Check the appliances and schedules, make sure the source no longer acts on
+   the same appliances, then <code>sudo satom execute clone release --yes</code>.
+   <code>satom get clone status</code> says whether the node is still holding a clone.</li>
+</ol>
+<p>What travels: every table except the node's leases and its signature store; the
+per-appliance config backups, the live config tree and its history; Script
+Library scripts and schedules; integration hooks; WAF artifacts; branding.
+<strong>Queued script and hook requests stay behind</strong> — the target would run them a
+second time.</p>
+<p>How the secrets travel: the export re-encrypts every Fernet token it finds —
+columns, settings and tokens inside JSON settings — under a one-time transfer
+key, and seals that key with the passphrase (scrypt + AES-GCM). The import opens
+it and re-encrypts every token under the target's own key, then checks that the
+target can open every token in the database and lists any it cannot. A secret
+kept in the external vault travels as its vault marker; the target reaches it
+through the same vault configuration, which travels with the bundle, and the
+export says how many there are.</p>
+<p>What the target keeps: its HA role and peer, node certificate and identity key,
+backup server, signature store, recovery escrow and alert state. <strong>Accounts do
+not stay:</strong> after the import you log in with the source's users and passwords,
+and every browser session opened before the import is logged out — a session
+names a user by number, and the numbers now belong to the source's accounts.</p>
+<p>The import replaces the target's data:</p>
+<ul>
+<li>Before anything changes it checks every checksum, the passphrase and the
+  schema, and refuses a bundle exported from this same deploy (use
+  <code>satom execute restore db</code> for that). It refuses on a standby.</li>
+<li>It takes a safety bundle of the current database, stops the web, scheduler
+  and reconciler, replaces the rows in one transaction and moves the replaced
+  file sets to <code>data/clone-prev-&lt;time&gt;/</code> instead of deleting them.</li>
+<li><strong>The imported deploy starts held:</strong> every scheduled action, Script Library
+  schedule and hook that was enabled is switched off, and so are alert e-mail
+  and the NetBox push. Two installations polling and writing the same
+  appliances is what a clone otherwise produces without anyone noticing.
+  <code>clone release</code> switches back on exactly what was held — what was already off
+  on the source stays off — and computes each schedule's next run from now, so
+  the held period is not replayed.</li>
+<li>Rollback: <code>satom execute restore db &lt;safety bundle&gt; --yes</code>, and the
+  previous file sets from <code>data/clone-prev-&lt;time&gt;/</code>.</li>
+</ul>
+<p>A clone copies a whole deploy; copying only some of it (by category or by
+appliance) into a deploy that keeps its own data is not available yet.</p>
 <p>Diagnose Log Collection (under Operations › Troubleshooting) and Import Backup
 (next to Device Backups under <strong>Operations</strong>) are covered in §27. Neither is a backup: one collects read-only diagnostics over SSH, the
 other parses a config file entirely offline.</p>

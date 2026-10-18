@@ -1862,6 +1862,69 @@ nothing else, can rebuild the installation from any copy.
   `satom diagnose recovery`, which reports an absent, stale, unreadable or
   **unreachable** envelope. A node with no envelope is noisy on purpose.
 
+### 11.1 Cloning one deploy into another
+
+A bundle puts **this** deploy back the way it was. To copy a deploy's data into a
+**different** installation (lab → production, an old pair → a new one) use a
+clone: the two installations keep their own `FERNET_KEY`, their own identity and
+their own HA pair, and no key ever leaves either node.
+
+1. On the source primary: `sudo satom execute clone export --yes`
+   (`--with-firmware` adds the firmware images). The bundle lands in
+   `data/clone-exports/` and the command prints a **passphrase once** — it is
+   stored nowhere.
+2. Copy the file to the target primary. Both deploys must run the **same SATOM
+   version**: the import compares the schema revision and every table's columns
+   and refuses on any difference.
+3. On the target primary: `sudo satom execute clone import <file>` shows the
+   plan; add `--yes` to run it (the passphrase is asked on the terminal, or read
+   from `$SATOM_CLONE_PASSPHRASE`, never from argv).
+4. Check the appliances and schedules, make sure the source no longer acts on
+   the same appliances, then `sudo satom execute clone release --yes`.
+   `satom get clone status` says whether the node is still holding a clone.
+
+What travels: every table except the node's leases and its signature store; the
+per-appliance config backups, the live config tree and its history; Script
+Library scripts and schedules; integration hooks; WAF artifacts; branding.
+**Queued script and hook requests stay behind** — the target would run them a
+second time.
+
+How the secrets travel: the export re-encrypts every Fernet token it finds —
+columns, settings and tokens inside JSON settings — under a one-time transfer
+key, and seals that key with the passphrase (scrypt + AES-GCM). The import opens
+it and re-encrypts every token under the target's own key, then checks that the
+target can open every token in the database and lists any it cannot. A secret
+kept in the external vault travels as its vault marker; the target reaches it
+through the same vault configuration, which travels with the bundle, and the
+export says how many there are.
+
+What the target keeps: its HA role and peer, node certificate and identity key,
+backup server, signature store, recovery escrow and alert state. **Accounts do
+not stay:** after the import you log in with the source's users and passwords,
+and every browser session opened before the import is logged out — a session
+names a user by number, and the numbers now belong to the source's accounts.
+
+The import replaces the target's data:
+
+- Before anything changes it checks every checksum, the passphrase and the
+  schema, and refuses a bundle exported from this same deploy (use
+  `satom execute restore db` for that). It refuses on a standby.
+- It takes a safety bundle of the current database, stops the web, scheduler
+  and reconciler, replaces the rows in one transaction and moves the replaced
+  file sets to `data/clone-prev-<time>/` instead of deleting them.
+- **The imported deploy starts held:** every scheduled action, Script Library
+  schedule and hook that was enabled is switched off, and so are alert e-mail
+  and the NetBox push. Two installations polling and writing the same
+  appliances is what a clone otherwise produces without anyone noticing.
+  `clone release` switches back on exactly what was held — what was already off
+  on the source stays off — and computes each schedule's next run from now, so
+  the held period is not replayed.
+- Rollback: `satom execute restore db <safety bundle> --yes`, and the
+  previous file sets from `data/clone-prev-<time>/`.
+
+A clone copies a whole deploy; copying only some of it (by category or by
+appliance) into a deploy that keeps its own data is not available yet.
+
 
 Diagnose Log Collection (under Operations › Troubleshooting) and Import Backup
 (next to Device Backups under **Operations**) are covered in §27. Neither is a backup: one collects read-only diagnostics over SSH, the

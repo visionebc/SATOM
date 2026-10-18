@@ -125,8 +125,16 @@ def create_app(config_override: object | None = None) -> Flask:
 
     @login_manager.user_loader
     def load_user(user_id: str):
+        from .auth import session_epoch as _epoch
         from .models import User
+        # The id alone does not identify an account across a clone import:
+        # the users table is replaced underneath the sessions.
+        if not _epoch.session_is_current():
+            return None
         return db.session.get(User, int(user_id))
+
+    from .auth import session_epoch as _session_epoch
+    _session_epoch.init_app(app)
 
     # Idle session lock (Settings -> General -> Session Lock). Registered
     # before every other before_request gate so a locked session reaches none.

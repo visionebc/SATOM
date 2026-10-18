@@ -734,7 +734,7 @@ check. <code>tests/test_docs_publication.py</code> fails the suite when this blo
 longer matches the console you are running.</p>
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-<p><em>123 commands in 45 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
+<p><em>127 commands in 47 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
 <h3 id="get"><code>get</code></h3>
 <p>Read state. Every command below works as <strong>any user</strong> — this is the half of the console that has to keep working when everything else does not.</p>
 <table>
@@ -830,6 +830,12 @@ longer matches the console you are running.</p>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td>Database bundles you can hand to 'execute restore db'.</td>
+</tr>
+<tr>
+<td><code>satom get clone status</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td>Last clone import and whether this node is still holding it.</td>
 </tr>
 <tr>
 <td><code>satom get scheduler status</code></td>
@@ -1430,6 +1436,24 @@ longer matches the console you are running.</p>
 <td style="text-align: center;">yes</td>
 <td style="text-align: center;">!</td>
 <td>Replace the database from a bundle. Dumps the current one first.</td>
+</tr>
+<tr>
+<td><code>satom execute clone export [--with-firmware] [--yes]</code></td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: center;">—</td>
+<td>Write a clone bundle of this deploy. Secrets travel re-encrypted under a one-time key; the passphrase is printed once.</td>
+</tr>
+<tr>
+<td><code>satom execute clone import &lt;bundle.tar.gz&gt; [--yes]</code></td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: center;">!</td>
+<td>Replace this deploy's data with a clone bundle's. Keeps this node's identity and holds every schedule until released.</td>
+</tr>
+<tr>
+<td><code>satom execute clone release [--yes]</code></td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: center;">—</td>
+<td>Re-enable what an import held: schedules, alert e-mail, NetBox push, hooks.</td>
 </tr>
 <tr>
 <td><code>satom execute admin reset-password &lt;username&gt;</code></td>

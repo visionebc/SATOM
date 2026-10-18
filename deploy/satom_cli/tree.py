@@ -14,6 +14,7 @@ one moment a traceback is least useful.
 from . import cmd_apipack as ap
 from . import cmd_apiver as v
 from . import cmd_checks as k
+from . import cmd_clone as cl
 from . import cmd_content as c
 from . import cmd_diagnose as d
 from . import cmd_docs as b
@@ -86,6 +87,10 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
             _n("status", "All four, side by side, with their real ages.", run=o.backup_status),
             _n("list", "Database bundles you can hand to 'execute restore db'.",
                run=o.backup_list),
+        ),
+        _group("clone", "Deploy clones.",
+            _n("status", "Last clone import and whether this node is still holding it.",
+               run=cl.status),
         ),
         _group("scheduler", "Scheduled actions.",
             _n("status", "What exists, when it last ran, what is overdue.",
@@ -360,6 +365,17 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
             _n("db", "Replace the database from a bundle. Dumps the current one first.",
                run=f.restore_db, needs_root=True, danger=True,
                usage="execute restore db <file> --yes"),
+        ),
+        _group("clone", "Copy this deploy's data into another deploy.",
+            _n("export", "Write a clone bundle of this deploy. Secrets travel re-encrypted "
+                         "under a one-time key; the passphrase is printed once.",
+               run=cl.export, needs_root=True, usage=cl.EXPORT_USAGE),
+            _n("import", "Replace this deploy's data with a clone bundle's. Keeps this "
+                         "node's identity and holds every schedule until released.",
+               run=cl.import_, needs_root=True, danger=True, usage=cl.IMPORT_USAGE),
+            _n("release", "Re-enable what an import held: schedules, alert e-mail, "
+                          "NetBox push, hooks.",
+               run=cl.release, needs_root=True, usage=cl.RELEASE_USAGE),
         ),
         _group("admin", "Accounts, for when nobody can log in.",
             _n("reset-password", "Set a password (asked interactively, never in argv); re-enables the account.",

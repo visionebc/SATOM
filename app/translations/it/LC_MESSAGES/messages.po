@@ -25377,3 +25377,103 @@ msgstr "Modifiche non pubblicate"
 #: wiki drafts and versions (2026-10-16)
 msgid "Unpublished changes saved by %(user)s at %(time)s UTC. Readers see the published version below."
 msgstr "Modifiche non pubblicate salvate da %(user)s il %(time)s UTC. I lettori vedono la versione pubblicata qui sotto."
+
+#: deploy clone (2026-10-18)
+msgid "Accounts are replaced too: afterwards you log in with the source's users and passwords, and every open session — yours included — ends. This deploy's history, device cache and backup index are emptied, because they name appliances it will no longer have; its system bundles and firmware are kept. A safety bundle of the current database is written first; the replaced files, the device vault, the live config tree and the SoT store are set aside under data/clone-prev-<time>/."
+msgstr "Anche gli account vengono sostituiti: dopo si accede con gli utenti e le password dell'origine, e ogni sessione aperta — compresa la tua — termina. Lo storico, la cache dei dispositivi e l'indice dei backup di questo deploy vengono svuotati, perché nominano appliance che non avrà più; i suoi bundle di sistema e il suo firmware restano. Prima viene scritto un bundle di sicurezza del database attuale; i file sostituiti, il vault dei dispositivi, l'albero di configurazione attivo e l'archivio SoT vengono messi da parte in data/clone-prev-<time>/."
+
+#: deploy clone (2026-10-18)
+msgid "An import REPLACES this deploy's configuration."
+msgstr "Un'importazione SOSTITUISCE la configurazione di questo deploy."
+
+#: deploy clone (2026-10-18)
+msgid "An import starts HELD: nothing the source had scheduled acts on appliances until you release it below."
+msgstr "Un'importazione parte SOSPESA: niente di ciò che l'origine aveva pianificato agisce sulle appliance finché non lo rilasci qui sotto."
+
+#: deploy clone (2026-10-18)
+msgid "Before releasing, check the appliances and schedules, and make sure the SOURCE deploy no longer acts on the same appliances. Release turns back on exactly what the import switched off; schedules restart from now and the held period is not replayed."
+msgstr "Prima di rilasciare, controlla le appliance e le pianificazioni, e assicurati che il deploy di ORIGINE non agisca più sulle stesse appliance. Il rilascio riaccende esattamente ciò che l'importazione ha spento; le pianificazioni ripartono da adesso e il periodo sospeso non viene rieseguito."
+
+#: deploy clone (2026-10-18)
+msgid "Both deploys must run the same SATOM version."
+msgstr "Entrambi i deploy devono eseguire la stessa versione di SATOM."
+
+#: deploy clone (2026-10-18)
+msgid "Configuration only: no backups (device vault, system bundles), no config history, no firmware, and no runs, logs, samples or incidents. The device cache is not copied either — the first sync after the release reads it again from the appliances."
+msgstr "Solo configurazione: niente backup (vault dei dispositivi, bundle di sistema), niente storico di configurazione, niente firmware e niente esecuzioni, log, campioni o incidenti. Nemmeno la cache dei dispositivi viene copiata — la prima sincronizzazione dopo il rilascio la rilegge dalle appliance."
+
+#: deploy clone (2026-10-18)
+msgid "Copies the configuration of a SATOM installation into another one: appliances and their credentials, users and profiles, settings, scheduled action definitions, templates, exceptions, probes, the Script Library, hooks, WAF artifacts, branding and the API library. It is not a restore — each deploy keeps its own encryption key, HA role, node certificate and backup server — and it is not"
+msgstr "Copia la configurazione di un'installazione SATOM in un'altra: appliance e relative credenziali, utenti e profili, impostazioni, definizioni delle azioni pianificate, modelli, eccezioni, sonde, la Libreria di script, hook, artefatti WAF, branding e la libreria API. Non è un ripristino — ogni deploy mantiene la propria chiave di cifratura, il ruolo HA, il certificato del nodo e il server di backup — e non è"
+
+#: deploy clone (2026-10-18)
+msgid "Deploy Clone"
+msgstr "Clona deploy"
+
+#: deploy clone (2026-10-18)
+msgid "Export this deploy"
+msgstr "Esporta questo deploy"
+
+#: deploy clone (2026-10-18)
+msgid "Held after an import"
+msgstr "Sospeso dopo un'importazione"
+
+#: deploy clone (2026-10-18)
+msgid "Import a clone into this deploy"
+msgstr "Importa un clone in questo deploy"
+
+#: deploy clone (2026-10-18)
+msgid "No key leaves either node: every secret is re-encrypted under a one-time transfer key, sealed with a passphrase that this page shows once."
+msgstr "Nessuna chiave lascia alcuno dei nodi: ogni segreto viene ricifrato con una chiave di trasferimento monouso, sigillata con una passphrase che questa pagina mostra una sola volta."
+
+#: deploy clone (2026-10-18)
+msgid "Passphrase from the export"
+msgstr "Passphrase dell'esportazione"
+
+#: deploy clone (2026-10-18)
+msgid "Passphrase — shown once, stored nowhere"
+msgstr "Passphrase — mostrata una volta, non salvata da nessuna parte"
+
+#: deploy clone (2026-10-18)
+msgid "Recent clone jobs"
+msgstr "Lavori di clonazione recenti"
+
+#: deploy clone (2026-10-18)
+msgid "Release"
+msgstr "Rilascia"
+
+#: deploy clone (2026-10-18)
+msgid "Replace this deploy's configuration"
+msgstr "Sostituisci la configurazione di questo deploy"
+
+#: deploy clone (2026-10-18)
+msgid "Type IMPORT"
+msgstr "Digita IMPORT"
+
+#: deploy clone (2026-10-18)
+msgid "Uploaded bundle"
+msgstr "Bundle caricato"
+
+#: deploy clone (2026-10-18)
+msgid "Write it down now. Without it the bundle cannot be imported, and it cannot be recovered from this node."
+msgstr "Annotala adesso. Senza di essa il bundle non può essere importato, e non può essere recuperata da questo nodo."
+
+#: deploy clone (2026-10-18)
+msgid "Writes a clone bundle of this deploy's configuration on this node. Read-only for this deploy."
+msgstr "Scrive su questo nodo un bundle di clonazione della configurazione di questo deploy. Sola lettura per questo deploy."
+
+#: deploy clone (2026-10-18)
+msgid "Written"
+msgstr "Scritto"
+
+#: deploy clone (2026-10-18)
+msgid "nothing acts on appliances"
+msgstr "niente agisce sulle appliance"
+
+#: deploy clone (2026-10-18)
+msgid "type RELEASE"
+msgstr "digita RELEASE"
+
+#: deploy clone (2026-10-18)
+msgid "under Fleet & Devices, which copies configuration between appliances."
+msgstr "in Flotta e dispositivi, che copia la configurazione tra appliance."

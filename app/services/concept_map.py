@@ -654,6 +654,9 @@ EXCLUDED: dict[str, str] = {
     "self_update.package_feed": "json feed",
     "self_update.apipack_inspect": "json feed",
     "self_update.ha_link_check": "json feed — the HA card's Re-check button",
+    # Fetched by the Deploy Clone pane (Settings) when it opens and while a
+    # job runs; the pane itself is settings.index.
+    "settings.deploy_clone_state": "json feed",
     "analysis.data": "json feed", "analysis.inventory": "json feed",
     "analysis.deep_objects": "json feed", "analysis.faz_ops": "json feed",
     "analysis.freshness": "json feed", "analysis.orphans": "json feed",

@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changed · Fixed · 4 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changes · 0 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changed · Fixed · 4 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changes · 0 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,11 +59,16 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changed · Fixed · 4 entries</span>
-        <ul class="rel-leads"><li class="rel-more">… and 4 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
+        <ul class="rel-leads"></ul>
+      </a>
+      <a class="rel-nav-item" href="v3.3.3.html" data-rel-version="3.3.3">
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 3.3.3</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
+        <span class="rel-nav-meta">2026-10-18 · Added · Changed · Fixed · 6 entries</span>
+        <ul class="rel-leads"><li class="rel-more">… and 6 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.3.2.html" data-rel-version="3.3.2">
-        <span class="rel-nav-head"><span class="rel-nav-v">Version 3.3.2</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 3.3.2</span></span>
         <span class="rel-nav-meta">2026-10-17 · Fixed · Added · 2 entries</span>
         <ul class="rel-leads"><li class="rel-more">… and 2 more</li></ul>
       </a>
@@ -390,47 +395,8 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="changed">Changed</h3>
-<ul>
-<li>
-<p>The system-upgrade feed (<code>satom-system-upgrades/*.json</code>) lists an entry in
-  reading order — the release, then the update package and the key that
-  verifies it, then the API library pack and the knowledge feed URL — instead
-  of alphabetically, where <code>package</code> sat right under <code>knowledge_feed</code> and read
-  as part of it. Every published entry was rewritten once; the content is
-  unchanged and nodes read the keys by name. The folder's README now says what
-  each block is and which key signs it.</p>
-</li>
-<li>
-<p>The offline update package no longer carries every pinned wheel (~55 MB of
-  the ~105 MB package) when most releases change none of them. The builder
-  records the full resolved set in the manifest (<code>wheelset</code>) and, given the
-  <code>wheelset</code>s of the published packages (<code>WHEEL_BASELINE</code>, passed by the
-  release pipeline), ships only the wheels that not every one of those
-  releases already has; <code>min_from_version</code> rises to the oldest of them, so an
-  older node is refused by the version rules before anything changes and
-  applies an earlier full package first. Packages built before <code>wheelset</code>
-  existed never count as a baseline (their venv is not on record and their
-  runner has no preflight), so the first package built with this change still
-  carries every wheel. Offline install bundles and the image are unchanged:
-  fresh installs always get everything.</p>
-</li>
-</ul>
-<h3 id="fixed">Fixed</h3>
-<ul>
-<li>Applying an update package now checks, before the database backup and
-  before the tree is touched, that every requirement is either installed in
-  the venv or shipped in the package (<code>pip install --dry-run --no-index</code>, as
-  the service account). A missing wheel is refused by name with nothing
-  changed, instead of failing at the dependency step after the tree was
-  replaced and rolled back.</li>
-<li>The dependency step of a package apply could never read the package's
-  wheels: pip runs as the service account and the verified package sits in a
-  0700 root-only staging directory. Any release that changed a dependency
-  failed there and rolled back. The wheels (and the new <code>requirements.txt</code>)
-  are now copied to a root-owned, read-only wheelhouse that pip can open.</li>
-</ul>
-<p class="rel-prevnext"><a href="v3.3.2.html">Version 3.3.2 →</a></p>
+
+<p class="rel-prevnext"><a href="v3.3.3.html">Version 3.3.3 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.3.3] - 2026-10-18
+
 ### Added
 
 - Deploy clones: copy one installation's configuration into another

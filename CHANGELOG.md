@@ -26,6 +26,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   schedules, hooks, alert e-mail and the NetBox push stay off until
   `clone release`, which re-enables exactly what was held and restarts the
   schedules from now. User guide §11.1.
+- Deploy clones from the web console: `Settings → Source of Truth & Backup →
+  Deploy Clone` (requested as "put it in the web too, in Settings"). Export
+  shows the passphrase once in the page and lists the bundle for download;
+  upload preflights a bundle (source, version, tables, rows, and why it cannot
+  be imported here); import checks the passphrase before queueing and needs
+  `IMPORT` typed out; release needs `RELEASE`. Export and import run in the
+  privileged runner through the installed CLI, because an import stops the web
+  service. The passphrase reaches the runner only in the request file, which the
+  runner deletes first; it is never in a job's status. `clone export` now takes
+  the passphrase from `$SATOM_CLONE_PASSPHRASE` when it is set (at least 16
+  characters) and does not print it back.
 
 ### Changed
 

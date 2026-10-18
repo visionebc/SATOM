@@ -57,6 +57,12 @@
    "Software Update Repository" and stays under System, away from this group.
    A label is the only place that distinction is visible before a click.
 
+   "Deploy Clone" joined that group on 2026-10-18 at the operator's request:
+   it copies a whole installation's data (database, vault, SoT history) into
+   another installation, i.e. the same estate the backup bundles carry.  It is
+   NOT "Clone / Migrate" under Fleet & Devices, which copies configuration
+   between appliances -- the two labels must never converge.
+
    Its six entries are ordered by what they are, not by when they were added:
    the four CONFIGURATION surfaces first (Settings, Context, Response policy,
    Border blocklist -- and Context is configuration, however little it looks
@@ -86,7 +92,8 @@
      'perm': 'user_manage'}]},
   {'key': 'sot', 'label': _('Source of Truth & Backup'), 'icon': 'bi-hdd-network', 'admin': true, 'items': [
     {'t': 'tab-sot',         'icon': 'bi-file-earmark-diff','label': _('Configuration SoT')},
-    {'t': 'tab-backupsrv',   'icon': 'bi-hdd-network',      'label': _('Backup Server')}]},
+    {'t': 'tab-backupsrv',   'icon': 'bi-hdd-network',      'label': _('Backup Server')},
+    {'t': 'tab-deployclone', 'icon': 'bi-copy',             'label': _('Deploy Clone')}]},
   {'key': 'access', 'label': _('Access & Identity'), 'icon': 'bi-people', 'admin': true, 'items': [
     {'t': 'tab-users',       'icon': 'bi-people',           'label': _('Users')},
     {'t': 'tab-profiles',    'icon': 'bi-person-badge',     'label': _('Profiles'),

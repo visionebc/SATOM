@@ -2081,6 +2081,36 @@ names a user by number, and the numbers now belong to the source's accounts.</p>
 <li>Rollback: <code>satom execute restore db &lt;safety bundle&gt; --yes</code>, and the
   previous file sets from <code>data/clone-prev-&lt;time&gt;/</code>.</li>
 </ul>
+<p><strong>From the console:</strong> <code>Settings → Source of Truth &amp; Backup → Deploy Clone</code>
+(admins, <code>user_manage</code>) does the same four steps without a shell. It is not
+<em>Clone / Migrate</em> under Fleet &amp; Devices, which copies configuration between
+appliances.</p>
+<ul>
+<li><strong>Export</strong> queues the export and shows the <strong>passphrase once</strong>, in the page,
+  at the moment you click. The finished bundle is listed with a download
+  button. Firmware images stay out unless you tick <em>Include firmware images</em>.</li>
+<li><strong>Upload</strong> puts a bundle into the target's import inbox (<code>data/clone-imports/</code>)
+  and shows what it would bring: source node and version, tables, rows, file
+  sets, and every reason it cannot be imported here (a different schema, a
+  bundle from this same deploy). Uploads through the page stop at the front
+  end's limit (400 MB on a standard install); copy larger bundles to the node
+  and use the CLI.</li>
+<li><strong>Import</strong> asks for the passphrase and for <code>IMPORT</code> typed out, checks the
+  passphrase <strong>before</strong> it queues anything, then runs. Your session ends with
+  everyone else's: log in again with the <strong>source's</strong> account, and <em>Recent
+  clone jobs</em> shows each step of the import.</li>
+<li><strong>Release</strong> (shown while the deploy is held) needs <code>RELEASE</code> typed out.</li>
+</ul>
+<p>Export and import do not run in the web process. They are queued for the
+privileged runner (<code>satom-updater</code>), which runs the installed CLI — the same
+code as the commands above — because an import has to stop the web service
+that is serving the page. The passphrase reaches the runner in the request
+file only. The runner deletes that file before it does anything else, the HA
+datasync does not copy that directory, and the passphrase is never written to a
+job's status. On a standby the pane is read-only. In the container runtime the
+pane is read-only too, because there is no privileged runner there. A job the
+runner cannot finish within 25 minutes is stopped, and the web, scheduler and
+reconciler are started again; run imports that big from a shell.</p>
 <p>A clone copies a whole deploy; copying only some of it (by category or by
 appliance) into a deploy that keeps its own data is not available yet.</p>
 <p>Diagnose Log Collection (under Operations › Troubleshooting) and Import Backup
@@ -4620,8 +4650,8 @@ deletes its bindings, and says so.</p>
 <p>The assignment picker spans both FortiWeb and FortiADC appliances — the catalog
 is a single <strong>global</strong> one, not per-ADOM.</p>
 <h2 id="26-settings-tab-by-tab">26. Settings, tab by tab</h2>
-<p><code>Settings</code> is one page with a <strong>grouped sidebar</strong>: <strong>11 groups, 35 panels</strong>.
-Ten of the groups (33 panels) are admin-only (<code>user_manage</code>); the remaining
+<p><code>Settings</code> is one page with a <strong>grouped sidebar</strong>: <strong>11 groups, 36 panels</strong>.
+Ten of the groups (34 panels) are admin-only (<code>user_manage</code>); the remaining
 one — <strong>My Account</strong>, holding <strong>Security</strong> and <strong>Change Password</strong> — is
 self-service and is the only group a non-admin sees. A group with nothing you may see is not
 rendered at all, so the menu never offers a section that is not there.</p>
@@ -4639,7 +4669,7 @@ rendered at all, so the menu never offers a section that is not there.</p>
 </tr>
 <tr>
 <td><strong>Source of Truth &amp; Backup</strong></td>
-<td>Configuration SoT · Backup Server</td>
+<td>Configuration SoT · Backup Server · Deploy Clone</td>
 </tr>
 <tr>
 <td><strong>Access &amp; Identity</strong></td>
@@ -4693,6 +4723,10 @@ tab. It is where SATOM is wired to systems it does not own — NetBox
 — and it is filed under System because that is what it configures. It had no
 menu entry at all until 2026-09-21; the page existed and worked, but the only
 way to reach it was to type <code>/settings/integrations</code>.</p>
+<p><strong>Deploy Clone</strong> copies a whole installation's data into this one, or exports
+this one for another (§11.1). It sits in Source of Truth &amp; Backup because it
+moves the same estate the backup bundles carry. It is not <em>Clone / Migrate</em>
+under Fleet &amp; Devices, which copies configuration from one appliance to another.</p>
 <p><strong>Path Diagnostics is its own group, below Sentinel.</strong> Its <em>Settings</em> panel holds only
 <em>where to look and how long to wait</em> — the default look-back window, the
 FortiAnalyzer ADOM and device selector the border rung queries, the two

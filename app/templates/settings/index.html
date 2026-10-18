@@ -954,6 +954,11 @@
     </form>
   </div>
 
+  <!-- DEPLOY CLONE TAB -->
+  <div class="tab-pane fade" id="tab-deployclone">
+    {% if is_admin %}{% include 'settings/_deploy_clone.html' %}{% endif %}
+  </div>
+
   <!-- USERS TAB -->
   <div class="tab-pane fade" id="tab-users">
     {% include 'users/_panel.html' %}

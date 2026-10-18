@@ -2550,8 +2550,174 @@ def syspkg_install(req_path):
     st.finish("success", package=key)
 
 
+# ---------------------------------------------------------------------------
+# deploy clone (kind: "clone") -- Settings > Source of Truth & Backup
+# ---------------------------------------------------------------------------
+# [SATOM-RUNNER-NO-APP-IMPORT] The console queues; this runs the INSTALLED CLI
+# ('satom execute clone export|import --yes'), which is root-owned and comes
+# from the last signed deploy/ -- the same code an operator runs by hand. An
+# import has to stop satom.service, the worker that queued it, which is why it
+# cannot run anywhere but here.
+#
+# The passphrase is taken out of the request and the request file is deleted
+# before anything else; it reaches the CLI in its environment, and no step,
+# detail or field of the status file ever carries it.
+_CLONE_ACTIONS = ("export", "import")
+_CLONE_NAME_RE = re.compile(r"^satom-clone-[A-Za-z0-9._-]+\.tar\.gz$")
+_CLONE_MIN_PASSPHRASE = 16
+#: Below satom-updater.service's TimeoutStartSec (1800): a CLI killed by
+#: systemd mid-import would leave the console stopped with nobody to restart it.
+_CLONE_TIMEOUT = 1500
+#: What the CLI import stops; started again here if the CLI itself is killed.
+_CLONE_UNITS = ("satom.service", "satom-scheduler.service", "satom-reconciler.service")
+
+
+def _clone_cli():
+    import shutil
+    for c in (shutil.which("satom"), "/usr/local/sbin/satom"):
+        if c and os.path.isfile(c):
+            st = os.stat(c)
+            # root-owned and not writable by anyone else: the CLI is what root
+            # runs here, so a copy the service account can edit is refused.
+            if st.st_uid == 0 and not st.st_mode & 0o022:
+                return c
+    return ""
+
+
+def clone_job(req_path):
+    """Export or import a deploy clone for the console (root, CLI-bounded)."""
+    req = _read_request(req_path)
+    uid = req.get("id") or Path(req_path).stem
+    passphrase = req.pop("passphrase", None)
+    try:
+        os.remove(req_path)  # dequeue -- and the only copy of the passphrase on disk
+    except OSError:
+        pass
+    st = Status(uid, req)
+    action = req.get("action")
+    action = action if isinstance(action, str) else ""
+    st.d["kind"] = "clone"
+    st.d["action"] = action
+    st.flush()
+
+    if action not in _CLONE_ACTIONS:
+        st.step("validate action", False, "%r is not a clone action" % action)
+        st.finish("failed", error="action not allowed")
+        return
+    if not isinstance(passphrase, str) or len(passphrase) < _CLONE_MIN_PASSPHRASE \
+            or any(c in passphrase for c in "\x00\r\n"):
+        st.step("validate passphrase", False, "missing or malformed")
+        st.finish("failed", error="passphrase refused")
+        return
+    path = None
+    if action == "import":
+        name = req.get("bundle")
+        if not isinstance(name, str) or not _CLONE_NAME_RE.match(name):
+            st.step("validate bundle", False, "%r is not a clone bundle name" % (name,))
+            st.finish("failed", error="bundle refused")
+            return
+        path = APP / "data" / "clone-imports" / name
+        try:
+            import stat as _stat
+            ok = _stat.S_ISREG(os.lstat(path).st_mode)
+        except OSError:
+            ok = False
+        if not ok:
+            st.step("validate bundle", False, "%s is not a regular file in the import inbox"
+                    % name)
+            st.finish("failed", error="bundle missing")
+            return
+        st.d["target"] = name
+    role = _svc_node_role()
+    if role != "primary":
+        st.step("validate role", False, "clones run on the PRIMARY; this node is %s" % role)
+        st.finish("failed", error="primary only")
+        return
+    cli = _clone_cli()
+    if not cli:
+        st.step("satom CLI", False, "no root-owned satom CLI on this node; "
+                "reinstall it with 'sudo bash %s/deploy/install-cli.sh'" % APP)
+        st.finish("failed", error="CLI missing")
+        return
+    st.step("validate", True, "%s requested by %s" % (action, req.get("requested_by") or "?"))
+
+    cmd = [cli, "--json", "execute", "clone", action]
+    if path is not None:
+        cmd.append(str(path))
+    cmd.append("--yes")
+    if action == "export" and req.get("with_firmware") is True:
+        cmd.append("--with-firmware")
+    env = dict(os.environ, SATOM_CLONE_PASSPHRASE=passphrase)
+    passphrase = None
+    st.begin("satom execute clone %s" % action)
+    try:
+        p = run(cmd, timeout=_CLONE_TIMEOUT, env=env)
+    except subprocess.TimeoutExpired:
+        env = None
+        st.step("satom execute clone %s" % action, False,
+                "no result after %d s; the CLI was stopped" % _CLONE_TIMEOUT)
+        if action == "import":
+            for unit in _CLONE_UNITS:
+                r = run(["systemctl", "start", unit], timeout=180)
+                st.step("start %s" % unit, r.returncode == 0, (r.stderr or "")[-200:])
+            st.step("GET /healthz", health_ok(), "")
+        st.finish("failed", error="timed out -- run it from a shell with "
+                  "'sudo satom execute clone %s'" % action)
+        return
+    env = None
+    try:
+        out = json.loads(p.stdout or "")
+    except ValueError:
+        out = None
+    if not isinstance(out, dict):
+        st.step("satom execute clone %s" % action, False,
+                ((p.stderr or "") + (p.stdout or ""))[-400:] or "no output")
+        st.finish("failed", error="the CLI gave no result")
+        return
+    ok = out.get("status") in ("ok", "warn") and p.returncode == 0
+    data = out.get("data") if isinstance(out.get("data"), dict) else {}
+    if action == "export":
+        # Only the machine fields: the CLI's text sections are not copied for
+        # an export, so nothing it prints can land in this file.
+        if ok:
+            rk = data.get("rekey") if isinstance(data.get("rekey"), dict) else {}
+            st.step("bundle written", True, "%s (%s bytes, %s tables, %s rows, %s secrets "
+                    "re-encrypted)" % (data.get("name"), data.get("size"), data.get("tables"),
+                                       data.get("rows"), rk.get("rekeyed", 0)))
+            if rk.get("vaulted"):
+                st.step("external vault", True, "%s secret(s) live in the external vault; "
+                        "the target reaches them through the same vault configuration"
+                        % rk["vaulted"], warn=True)
+            st.finish("success", bundle=data.get("name"), size=data.get("size"))
+        else:
+            st.step("export", False, " ".join(str(n) for n in out.get("notes") or [])[-400:]
+                    or str(out.get("title") or ""))
+            st.finish("failed", error=str(out.get("title") or "export failed"))
+        return
+    for sec in out.get("sections") or []:
+        if not isinstance(sec, dict):
+            continue
+        if sec.get("kind") == "lines":
+            # e.g. "secrets this node cannot open" -- names, never values
+            st.step(str(sec.get("heading")), False,
+                    "; ".join(str(x) for x in sec.get("body") or []))
+            continue
+        if sec.get("kind") != "rows":
+            continue
+        for row in sec.get("body") or []:
+            if isinstance(row, (list, tuple)) and len(row) == 2:
+                st.step("%s: %s" % (sec.get("heading"), row[0]), True, str(row[1]))
+    for note in out.get("notes") or []:
+        st.step("note", True, str(note))
+    if ok:
+        st.finish("success", bundle=req.get("bundle"))
+    else:
+        st.finish("failed", error=str(out.get("title") or "import failed"))
+
+
 _HANDLERS = {
     "": "process",
+    "clone": "clone_job",
     "promote": "promote",
     "pip": "pip_change",
     "package": "package_change",

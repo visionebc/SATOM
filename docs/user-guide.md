@@ -1922,6 +1922,37 @@ The import replaces the target's data:
 - Rollback: `satom execute restore db <safety bundle> --yes`, and the
   previous file sets from `data/clone-prev-<time>/`.
 
+**From the console:** `Settings → Source of Truth & Backup → Deploy Clone`
+(admins, `user_manage`) does the same four steps without a shell. It is not
+*Clone / Migrate* under Fleet & Devices, which copies configuration between
+appliances.
+
+- **Export** queues the export and shows the **passphrase once**, in the page,
+  at the moment you click. The finished bundle is listed with a download
+  button. Firmware images stay out unless you tick *Include firmware images*.
+- **Upload** puts a bundle into the target's import inbox (`data/clone-imports/`)
+  and shows what it would bring: source node and version, tables, rows, file
+  sets, and every reason it cannot be imported here (a different schema, a
+  bundle from this same deploy). Uploads through the page stop at the front
+  end's limit (400 MB on a standard install); copy larger bundles to the node
+  and use the CLI.
+- **Import** asks for the passphrase and for `IMPORT` typed out, checks the
+  passphrase **before** it queues anything, then runs. Your session ends with
+  everyone else's: log in again with the **source's** account, and *Recent
+  clone jobs* shows each step of the import.
+- **Release** (shown while the deploy is held) needs `RELEASE` typed out.
+
+Export and import do not run in the web process. They are queued for the
+privileged runner (`satom-updater`), which runs the installed CLI — the same
+code as the commands above — because an import has to stop the web service
+that is serving the page. The passphrase reaches the runner in the request
+file only. The runner deletes that file before it does anything else, the HA
+datasync does not copy that directory, and the passphrase is never written to a
+job's status. On a standby the pane is read-only. In the container runtime the
+pane is read-only too, because there is no privileged runner there. A job the
+runner cannot finish within 25 minutes is stopped, and the web, scheduler and
+reconciler are started again; run imports that big from a shell.
+
 A clone copies a whole deploy; copying only some of it (by category or by
 appliance) into a deploy that keeps its own data is not available yet.
 
@@ -4159,8 +4190,8 @@ is a single **global** one, not per-ADOM.
 
 ## 26. Settings, tab by tab
 
-`Settings` is one page with a **grouped sidebar**: **11 groups, 35 panels**.
-Ten of the groups (33 panels) are admin-only (`user_manage`); the remaining
+`Settings` is one page with a **grouped sidebar**: **11 groups, 36 panels**.
+Ten of the groups (34 panels) are admin-only (`user_manage`); the remaining
 one — **My Account**, holding **Security** and **Change Password** — is
 self-service and is the only group a non-admin sees. A group with nothing you may see is not
 rendered at all, so the menu never offers a section that is not there.
@@ -4168,7 +4199,7 @@ rendered at all, so the menu never offers a section that is not there.
 | Group | Panels |
 |---|---|
 | **System** | General · Software Update Repository · Scout · Integrations |
-| **Source of Truth & Backup** | Configuration SoT · Backup Server |
+| **Source of Truth & Backup** | Configuration SoT · Backup Server · Deploy Clone |
 | **Access & Identity** | Users · Profiles · Authentication · Access Control · Vault |
 | **Certificates & Trust** | Certificate Manager · Node TLS · Trust store |
 | **Network & DNS** | DNS Lookup · DNS Records |
@@ -4194,6 +4225,11 @@ tab. It is where SATOM is wired to systems it does not own — NetBox
 — and it is filed under System because that is what it configures. It had no
 menu entry at all until 2026-09-21; the page existed and worked, but the only
 way to reach it was to type `/settings/integrations`.
+
+**Deploy Clone** copies a whole installation's data into this one, or exports
+this one for another (§11.1). It sits in Source of Truth & Backup because it
+moves the same estate the backup bundles carry. It is not *Clone / Migrate*
+under Fleet & Devices, which copies configuration from one appliance to another.
 
 **Path Diagnostics is its own group, below Sentinel.** Its *Settings* panel holds only
 *where to look and how long to wait* — the default look-back window, the

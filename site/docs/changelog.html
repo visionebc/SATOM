@@ -132,6 +132,17 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   schedules, hooks, alert e-mail and the NetBox push stay off until
   <code>clone release</code>, which re-enables exactly what was held and restarts the
   schedules from now. User guide §11.1.</li>
+<li>Deploy clones from the web console: <code>Settings → Source of Truth &amp; Backup →
+  Deploy Clone</code> (requested as "put it in the web too, in Settings"). Export
+  shows the passphrase once in the page and lists the bundle for download;
+  upload preflights a bundle (source, version, tables, rows, and why it cannot
+  be imported here); import checks the passphrase before queueing and needs
+  <code>IMPORT</code> typed out; release needs <code>RELEASE</code>. Export and import run in the
+  privileged runner through the installed CLI, because an import stops the web
+  service. The passphrase reaches the runner only in the request file, which the
+  runner deletes first; it is never in a job's status. <code>clone export</code> now takes
+  the passphrase from <code>$SATOM_CLONE_PASSPHRASE</code> when it is set (at least 16
+  characters) and does not print it back.</li>
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>

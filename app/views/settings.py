@@ -1612,6 +1612,146 @@ def test_backup_srv():
     return jsonify(bksrv.test_connection())
 
 
+# ── Deploy Clone (copy another deploy's data into this one) ──
+# The worker only lists, preflights, queues and releases. Export and import
+# run in the privileged runner through the installed CLI: an import stops the
+# service answering this request. See app/services/deploy_clone.py.
+
+def _no_store(resp):
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
+
+
+@bp.route('/deploy-clone/state')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def deploy_clone_state():
+    from .. import runtime
+    from ..services import deploy_clone as dc
+    from ..services import self_update as su
+    st = dc.status()
+    q = st.pop('quarantine', None) or {}      # the held ids stay server-side
+    st['held_since'], st['held_bundle'] = q.get('at'), q.get('bundle')
+    return _no_store(jsonify({
+        'node': su.this_node_name(), 'role': su.node_role(),
+        'container': runtime.is_container_runtime(),
+        'upload_limit_mb': (current_app.config.get('MAX_CONTENT_LENGTH') or 0) // (1024 * 1024),
+        'jobs': dc.recent_jobs(), **st}))
+
+
+@bp.route('/deploy-clone/export', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def deploy_clone_export():
+    """Queue an export. The passphrase is chosen HERE and returned once, in
+    this response: the runner's result is a status file and must not hold it."""
+    from ..services import deploy_clone as dc
+    body = request.get_json(silent=True) or {}
+    passphrase = dc.new_passphrase()
+    try:
+        uid = dc.request_job('export', by=current_user.username, passphrase=passphrase,
+                             with_firmware=body.get('with_firmware') is True)
+    except dc.CloneError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return _no_store(jsonify({'uid': uid, 'passphrase': passphrase}))
+
+
+@bp.route('/deploy-clone/upload', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def deploy_clone_upload():
+    from ..services import deploy_clone as dc
+    f = request.files.get('bundle')
+    if not f or not f.filename:
+        return jsonify({'error': 'choose a clone bundle to upload'}), 400
+    try:
+        return jsonify(dc.save_upload(f.stream, f.filename))
+    except dc.CloneError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@bp.route('/deploy-clone/uploads/<name>')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def deploy_clone_preflight(name):
+    from ..services import deploy_clone as dc
+    p = dc.bundle_path('uploads', name)
+    if p is None:
+        abort(404)
+    try:
+        return jsonify(dc.preflight(p))
+    except dc.CloneError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@bp.route('/deploy-clone/import', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def deploy_clone_import():
+    from ..services import deploy_clone as dc
+    body = request.get_json(silent=True) or {}
+    if body.get('confirm') != 'IMPORT':
+        return jsonify({'error': 'not confirmed -- type IMPORT'}), 400
+    try:
+        uid = dc.request_job('import', by=current_user.username,
+                             passphrase=str(body.get('passphrase') or ''),
+                             name=str(body.get('name') or ''))
+    except dc.CloneError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return _no_store(jsonify({'uid': uid}))
+
+
+@bp.route('/deploy-clone/release', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def deploy_clone_release():
+    from ..services import deploy_clone as dc
+    body = request.get_json(silent=True) or {}
+    if body.get('confirm') != 'RELEASE':
+        return jsonify({'error': 'not confirmed -- type RELEASE'}), 400
+    try:
+        return jsonify(dc.release_quarantine(by=current_user.username))
+    except dc.CloneError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@bp.route('/deploy-clone/job/<uid>')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def deploy_clone_job(uid):
+    from ..services import deploy_clone as dc
+    st = dc.job_status(uid)
+    if st is None:
+        return jsonify({'state': 'unknown'}), 404
+    return _no_store(jsonify(st))
+
+
+@bp.route('/deploy-clone/download/<name>')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def deploy_clone_download(name):
+    from flask import send_file
+    from ..services import deploy_clone as dc
+    p = dc.bundle_path('exports', name)
+    if p is None:
+        abort(404)
+    log_action('deploy_clone.download', target=name)
+    return send_file(str(p), as_attachment=True, download_name=name)
+
+
+@bp.route('/deploy-clone/delete', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def deploy_clone_delete():
+    from ..services import deploy_clone as dc
+    body = request.get_json(silent=True) or {}
+    try:
+        dc.delete_bundle(str(body.get('where') or ''), str(body.get('name') or ''))
+    except dc.CloneError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'ok': True})
+
+
 # ── Email / SMTP ──────────────────────────────────────────
 
 @bp.route('/email', methods=['POST'])

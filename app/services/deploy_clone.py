@@ -78,6 +78,15 @@ QUARANTINE_FLAGS = (
 _TOKEN_RX = re.compile(r"gAAAAA[A-Za-z0-9_\-]{60,}={0,2}")
 _NAME_RX = re.compile(r"^satom-clone-[A-Za-z0-9._-]+\.tar\.gz$")
 
+#: A passphrase handed in (console, $SATOM_CLONE_PASSPHRASE) is refused below
+#: this; the generated ones are six words.
+MIN_PASSPHRASE_LEN = 16
+
+#: Request kind the privileged runner executes for the console. The runner
+#: holds its own copy of the action list (it never imports this package).
+RUNNER_KIND = "clone"
+RUNNER_ACTIONS = ("export", "import")
+
 
 class CloneError(Exception):
     """A clone that must not proceed. Raised before anything is written."""
@@ -99,6 +108,16 @@ def _data_root() -> Path:
 def exports_dir() -> Path:
     from . import system_backup as sb
     d = _data_root() / "clone-exports"
+    d.mkdir(mode=0o700, parents=True, exist_ok=True)
+    sb._keep_private_dir(d)
+    return d
+
+
+def imports_dir() -> Path:
+    """Bundles waiting to be imported. The CLI copies a bundle here before it
+    hands it to the app; the console uploads straight into it."""
+    from . import system_backup as sb
+    d = _data_root() / "clone-imports"
     d.mkdir(mode=0o700, parents=True, exist_ok=True)
     sb._keep_private_dir(d)
     return d
@@ -309,20 +328,26 @@ def _is_replica() -> bool:
 # ---------------------------------------------------------------------------
 
 def export_clone(*, with_firmware: bool = False, by: str = "system",
-                 out_dir: Path | None = None) -> dict:
+                 out_dir: Path | None = None, passphrase: str | None = None) -> dict:
     """Write a clone bundle of this whole deploy. Read-only on the node.
 
     Returns the bundle's name, path, size and the passphrase -- the only time
-    the passphrase exists anywhere outside the operator's hands.
+    the passphrase exists anywhere outside the operator's hands. The console
+    passes one in: it has already shown it to the operator, because the export
+    itself runs in the privileged runner and its result is a status file that
+    must never hold it.
     """
     from cryptography.fernet import Fernet
     from ..extensions import db
-    from . import recovery, recovery_seal, system_backup as sb
+    from . import recovery, system_backup as sb
 
+    if passphrase is not None and len(passphrase) < MIN_PASSPHRASE_LEN:
+        raise CloneError("the passphrase must be at least %d characters"
+                         % MIN_PASSPHRASE_LEN)
     source_key = _node_fernet()
     transfer = Fernet.generate_key()
     rk = _Rekeyer(source_key, Fernet(transfer))
-    passphrase = recovery_seal.generate_passphrase(6)
+    passphrase = passphrase or new_passphrase()
     out_dir = Path(out_dir) if out_dir else exports_dir()
     ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     node = re.sub(r"[^A-Za-z0-9.-]", "-", socket.gethostname())[:60] or "node"
@@ -436,6 +461,22 @@ def _read_manifest(root: Path) -> dict:
 
 def check_bundle(root: Path, manifest: dict) -> list:
     """Every reason this bundle cannot be imported HERE. Empty = importable."""
+    problems = compat_problems(manifest)
+    for name, info in sorted((manifest.get("tables") or {}).items()):
+        p = root / "tables" / (name + ".jsonl.gz")
+        if not p.is_file() or _sha256(p) != info.get("sha256"):
+            problems.append("table %s is missing or altered" % name)
+    for name, info in sorted((manifest.get("files") or {}).items()):
+        p = root / "files" / (name + ".tar")
+        if not p.is_file() or _sha256(p) != info.get("sha256"):
+            problems.append("file set %s is missing or altered" % name)
+    return problems
+
+
+def compat_problems(manifest: dict) -> list:
+    """The reasons that need only the manifest: same deploy, schema revision,
+    tables and columns. The console asks this before queueing an import, so an
+    operator hears it in the page and not from a runner minutes later."""
     from ..extensions import db
     from . import recovery
     problems = []
@@ -459,15 +500,8 @@ def check_bundle(root: Path, manifest: dict) -> list:
             continue
         if list(info.get("columns") or []) != [c.name for c in t.columns]:
             problems.append("table %s has different columns here" % name)
-        p = root / "tables" / (name + ".jsonl.gz")
-        if not p.is_file() or _sha256(p) != info.get("sha256"):
-            problems.append("table %s is missing or altered" % name)
     for name in sorted(set(meta) - set(manifest.get("tables") or {}) - skip):
         problems.append("table %s exists here but not in the bundle" % name)
-    for name, info in sorted((manifest.get("files") or {}).items()):
-        p = root / "files" / (name + ".tar")
-        if not p.is_file() or _sha256(p) != info.get("sha256"):
-            problems.append("file set %s is missing or altered" % name)
     return problems
 
 
@@ -845,14 +879,241 @@ def status() -> dict:
         last = json.loads(last) if last else None
     except ValueError:
         last = None
-    exports = []
-    d = _data_root() / "clone-exports"
-    if d.is_dir():
-        for p in sorted(d.glob("satom-clone-*.tar.gz"), reverse=True):
-            exports.append({"name": p.name, "size": p.stat().st_size})
     q = quarantine_state()
     return {"quarantine": q, "held": quarantine_summary(q) if q else None,
-            "last_import": last, "exports": exports}
+            "last_import": last, "exports": _listing("clone-exports"),
+            "uploads": _listing("clone-imports")}
+
+
+# ---------------------------------------------------------------------------
+# console (Settings > Source of Truth & Backup > Deploy Clone)
+# ---------------------------------------------------------------------------
+# The web worker never exports or imports by itself. An import stops the very
+# service that answers the page, and an export of a large deploy outlives a
+# request; both are queued for the privileged runner (satom-updater), which
+# runs the installed CLI -- the same code path as 'satom execute clone ...'.
+# What runs here is cheap and read-only: listing, the manifest preflight, the
+# passphrase check, and the release (a few rows, no service stops).
+
+_WHERE = {"exports": "clone-exports", "uploads": "clone-imports"}
+
+
+def _listing(sub: str) -> list:
+    out = []
+    d = _data_root() / sub
+    if d.is_dir():
+        for p in sorted(d.glob("satom-clone-*.tar.gz"), reverse=True):
+            if p.is_symlink() or not p.is_file():
+                continue
+            st = p.stat()
+            out.append({"name": p.name, "size": st.st_size,
+                        "mtime": datetime.utcfromtimestamp(st.st_mtime)
+                        .isoformat(timespec="seconds") + "Z"})
+    return out
+
+
+def new_passphrase() -> str:
+    from . import recovery_seal
+    return recovery_seal.generate_passphrase(6)
+
+
+def bundle_path(where: str, name: str) -> Path | None:
+    """The bundle ``name`` in exports|uploads, or None. Names are checked
+    before a path is built: they arrive from a URL or a form."""
+    sub = _WHERE.get(where)
+    if not sub or not isinstance(name, str) or not _NAME_RX.match(name):
+        return None
+    p = _data_root() / sub / name
+    if p.is_symlink() or not p.is_file():
+        return None
+    return p
+
+
+def delete_bundle(where: str, name: str) -> None:
+    p = bundle_path(where, name)
+    if p is None:
+        raise CloneError("no such bundle: %s" % name)
+    p.unlink()
+    _audit("deploy_clone.delete", name, {"where": where})
+
+
+def _peek(path: Path) -> tuple:
+    """(manifest, transfer-key envelope) from the head of the archive.
+
+    Read as a stream and stopped as soon as both are in hand: the export writes
+    them first, so a preflight of a large bundle decompresses kilobytes, not
+    the whole file. Anything else in front of them is a bundle this module did
+    not write.
+    """
+    found = {}
+    try:
+        with tarfile.open(path, "r|gz") as tar:
+            for i, m in enumerate(tar):
+                if m.name in ("manifest.json", "transfer-key.json") and m.isfile() \
+                        and m.size < 4 * 1024 * 1024:
+                    found[m.name] = json.loads(tar.extractfile(m).read().decode("utf-8"))
+                if len(found) == 2 or i >= 4:
+                    break
+    except (tarfile.TarError, OSError, EOFError, ValueError) as exc:
+        raise CloneError("not a readable clone bundle: %s" % exc) from exc
+    manifest = found.get("manifest.json")
+    if not isinstance(manifest, dict) or manifest.get("format") != FORMAT:
+        raise CloneError("not a SATOM clone bundle (format %r)"
+                         % ((manifest or {}).get("format")
+                            if isinstance(manifest, dict) else None))
+    keydoc = found.get("transfer-key.json")
+    if not isinstance(keydoc, dict):
+        raise CloneError("bundle has no readable transfer key")
+    return manifest, keydoc
+
+
+def preflight(path: Path, passphrase: str | None = None) -> dict:
+    """What an import of ``path`` would bring, and why it cannot happen here.
+
+    With a passphrase the transfer key is opened as well; a wrong one raises
+    (one message for wrong and altered, as at import). The checksums are NOT
+    verified here -- that needs the whole archive, and the import does it
+    before it writes anything.
+    """
+    path = Path(path)
+    manifest, keydoc = _peek(path)
+    if passphrase is not None:
+        _unseal_key(keydoc, passphrase)
+    tables = manifest.get("tables") or {}
+    return {"name": path.name, "size": path.stat().st_size,
+            "source": {k: (manifest.get("source") or {}).get(k)
+                       for k in ("node", "version", "alembic")},
+            "created": manifest.get("created"),
+            "with_firmware": bool(manifest.get("with_firmware")),
+            "tables": len(tables),
+            "rows": sum(int((t or {}).get("rows") or 0) for t in tables.values()),
+            "files": {k: int((v or {}).get("files") or 0)
+                      for k, v in (manifest.get("files") or {}).items()},
+            "problems": compat_problems(manifest)}
+
+
+def save_upload(stream, filename: str) -> dict:
+    """Store an uploaded bundle in the import inbox and preflight it.
+
+    Written 0600 under a temporary name and renamed only once it reads as a
+    clone bundle: a half-uploaded or foreign file never shows up as importable.
+    """
+    from . import system_backup as sb
+    name = Path(filename or "").name
+    if not _NAME_RX.match(name):
+        raise CloneError("expected a file named satom-clone-<node>-<time>.tar.gz "
+                         "(as the export writes it)")
+    inbox = imports_dir()
+    dest = inbox / name
+    if dest.exists() or dest.is_symlink():
+        raise CloneError("%s is already uploaded; delete it first" % name)
+    tmp = inbox / (".upload-%s" % os.urandom(6).hex())
+    try:
+        with sb._open_private(tmp) as fh:
+            shutil.copyfileobj(stream, fh, 1 << 20)
+        _peek(tmp)
+        tmp.rename(dest)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+    _audit("deploy_clone.upload", name, {"size": dest.stat().st_size})
+    return preflight(dest)
+
+
+def _clone_jobs() -> list:
+    from . import self_update as su
+    out = []
+    if su.STATUS_DIR.is_dir():
+        for p in su.STATUS_DIR.glob("*.json"):
+            try:
+                d = json.loads(p.read_text())
+            except (OSError, ValueError):
+                continue
+            if isinstance(d, dict) and d.get("kind") == RUNNER_KIND:
+                out.append(d)
+    out.sort(key=lambda d: d.get("updated_at") or "", reverse=True)
+    return out
+
+
+def recent_jobs(limit: int = 10) -> list:
+    return _clone_jobs()[:limit]
+
+
+def job_status(uid: str) -> dict | None:
+    from . import self_update as su
+    st = su.update_status(uid)
+    return st if isinstance(st, dict) and st.get("kind") == RUNNER_KIND else None
+
+
+def request_job(action: str, *, by: str, passphrase: str, name: str | None = None,
+                with_firmware: bool = False) -> str:
+    """Queue an export or an import for the privileged runner. Returns its id.
+
+    Everything that can be refused here is refused here -- standby, container,
+    a job already in flight, a bundle that is not importable, a wrong
+    passphrase -- so the operator hears it in the page. The runner checks the
+    shape of the request again on its side.
+
+    The passphrase travels in the REQUEST file only: the runner deletes that
+    file before it does anything else, data/update-requests/ is excluded from
+    the HA datasync, and nothing writes it to a status file.
+    """
+    from datetime import timedelta
+    import uuid
+    from .. import runtime
+    from . import self_update as su
+
+    if action not in RUNNER_ACTIONS:
+        raise CloneError("unknown clone action %r" % (action,))
+    if runtime.is_container_runtime():
+        raise CloneError("the container runtime has no privileged runner; "
+                         "copy the data with the CLI on a host install")
+    if _is_replica():
+        raise CloneError("this node is a read-only standby; use the primary")
+    stale = (datetime.utcnow() - timedelta(hours=3)).isoformat()
+    for j in _clone_jobs():
+        if j.get("state") in ("queued", "running") and \
+                (j.get("updated_at") or "") > stale:
+            raise CloneError("a clone %s is already %s (%s); wait for it to end"
+                             % (j.get("action", "job"), j["state"], j.get("id")))
+    if not passphrase or len(passphrase) < MIN_PASSPHRASE_LEN:
+        raise CloneError("the passphrase must be at least %d characters"
+                         % MIN_PASSPHRASE_LEN)
+    req = {"kind": RUNNER_KIND, "action": action, "requested_by": by,
+           "passphrase": passphrase}
+    if action == "import":
+        p = bundle_path("uploads", name or "")
+        if p is None:
+            raise CloneError("no uploaded bundle named %r" % (name,))
+        pf = preflight(p, passphrase)
+        if pf["problems"]:
+            raise CloneError("; ".join(pf["problems"]))
+        req["bundle"] = p.name
+    else:
+        req["with_firmware"] = bool(with_firmware)
+
+    su.REQ_DIR.mkdir(parents=True, exist_ok=True)
+    su.STATUS_DIR.mkdir(parents=True, exist_ok=True)
+    uid = datetime.utcnow().strftime("%Y%m%d-%H%M%S-clone-") + uuid.uuid4().hex[:6]
+    node, role = su.this_node_name(), su.node_role()
+    req.update(id=uid, requested_at=datetime.utcnow().isoformat() + "Z",
+               node=node, role=role, origin="settings-deploy-clone")
+    # Status first, as for service actions: an import restarts the worker that
+    # wrote this, and a request with no status row is a click that vanished.
+    (su.STATUS_DIR / (uid + ".json")).write_text(json.dumps({
+        "id": uid, "state": "queued", "steps": [], "kind": RUNNER_KIND,
+        "action": action, "target": req.get("bundle") or "export",
+        "requested_by": by, "node": node, "role": role,
+        "origin": "settings-deploy-clone",
+        "updated_at": datetime.utcnow().isoformat() + "Z"}))
+    tmp = su.REQ_DIR / ("." + uid + ".tmp")
+    with open(os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600),
+              "w") as fh:
+        fh.write(json.dumps(req))
+    tmp.rename(su.REQ_DIR / (uid + ".json"))
+    _audit("deploy_clone.request", req.get("bundle") or "export",
+           {"action": action, "id": uid, "with_firmware": bool(with_firmware)})
+    return uid
 
 
 def _audit(action: str, target: str, extra: dict) -> None:

@@ -31,7 +31,8 @@ arg = json.loads(sys.stdin.read())
 app = create_app()
 with app.app_context():
     try:
-        print(json.dumps(dc.export_clone(with_firmware=arg["firmware"], by="cli")))
+        print(json.dumps(dc.export_clone(with_firmware=arg["firmware"], by=arg["by"],
+                                         passphrase=arg["passphrase"] or None)))
     except dc.CloneError as exc:
         print(json.dumps({"ok": False, "detail": str(exc)}))
 """
@@ -117,7 +118,13 @@ def export(ctx, args):
         ])
         r.note("Re-run:  sudo satom %s --yes" % EXPORT_USAGE.replace(" [--yes]", ""))
         return r
-    rc, out, err = _app_stdin(ctx, _EXPORT_CODE, json.dumps({"firmware": firmware}),
+    # The console chooses the passphrase and shows it before queueing the
+    # export (the runner's result is a status file, which must never hold it);
+    # it arrives here in the environment, never in argv.
+    given = os.environ.get(PASSPHRASE_ENV) or ""
+    rc, out, err = _app_stdin(ctx, _EXPORT_CODE,
+                              json.dumps({"firmware": firmware, "passphrase": given,
+                                          "by": "console" if given else "cli"}),
                               timeout=3600)
     res = _last_json(out) if rc == 0 else None
     if not res or not res.get("ok"):
@@ -133,7 +140,10 @@ def export(ctx, args):
         ("files", ", ".join("%s %s" % (k, v) for k, v in sorted((res.get("files") or {}).items()))),
         ("secrets re-encrypted", str(rk.get("rekeyed", 0))),
     ])
-    r.lines("passphrase (shown ONCE, stored nowhere)", ["  " + res["passphrase"]])
+    if given:
+        r.lines("passphrase", ["  the one supplied in $%s (not repeated here)" % PASSPHRASE_ENV])
+    else:
+        r.lines("passphrase (shown ONCE, stored nowhere)", ["  " + res["passphrase"]])
     if rk.get("vaulted"):
         r.worst("warn")
         r.note("%d secret(s) live in the external vault. The target reaches them "
@@ -144,7 +154,8 @@ def export(ctx, args):
         r.note("%d token-shaped value(s) this node's key cannot open were copied "
                "as they are: they were already unreadable here." % rk["foreign"])
     r.note("Copy the file to the target and run there:  sudo satom %s" % IMPORT_USAGE)
-    r.set(path=res["path"], size=res.get("size"), rekey=rk)
+    r.set(path=res["path"], name=res.get("name"), size=res.get("size"), rekey=rk,
+          tables=res.get("tables"), rows=res.get("rows"))
     return r
 
 

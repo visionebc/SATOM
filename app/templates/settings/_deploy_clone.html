@@ -1,0 +1,375 @@
+{#
+   Settings > Source of Truth & Backup > Deploy Clone.
+
+   The same operation as 'satom execute clone export|import|release' (see
+   app/services/deploy_clone.py). This pane never exports or imports in the
+   web worker: both are queued for the privileged runner, which runs the
+   installed CLI -- an import stops the very service that answers this page.
+   What happens here is listing, the manifest preflight, the passphrase check,
+   the queueing and the release.
+
+   The export passphrase is chosen by the server when the export is queued and
+   shown ONCE in this page. It is never in a status file, a flash message (the
+   session cookie is signed, not encrypted) or a log.
+#}
+<div id="dc-root" data-state="{{ url_for('settings.deploy_clone_state') }}"
+     data-export="{{ url_for('settings.deploy_clone_export') }}"
+     data-upload="{{ url_for('settings.deploy_clone_upload') }}"
+     data-import="{{ url_for('settings.deploy_clone_import') }}"
+     data-release="{{ url_for('settings.deploy_clone_release') }}"
+     data-delete="{{ url_for('settings.deploy_clone_delete') }}"
+     data-job="{{ url_for('settings.deploy_clone_job', uid='JOBID') }}"
+     data-preflight="{{ url_for('settings.deploy_clone_preflight', name='NAME') }}"
+     data-download="{{ url_for('settings.deploy_clone_download', name='NAME') }}">
+
+  <div class="fw-card">
+    <div class="fw-card-header"><i class="bi bi-copy me-1"></i>{{ _('Deploy Clone') }}</div>
+    <div class="p-3">
+      <p class="text-muted" style="font-size:13px;">{{ _('Copies the data of a whole SATOM installation into another one: database, per-appliance config backups, live config tree and history, Script Library, hooks, WAF artifacts and branding. It is not a restore — each deploy keeps its own encryption key, HA role, node certificate and backup server — and it is not') }} <strong>{{ _('Clone / Migrate') }}</strong> {{ _('under Fleet & Devices, which copies configuration between appliances.') }}</p>
+      <ul class="text-muted" style="font-size:13px;">
+        <li>{{ _('No key leaves either node: every secret is re-encrypted under a one-time transfer key, sealed with a passphrase that this page shows once.') }}</li>
+        <li>{{ _('Both deploys must run the same SATOM version.') }}</li>
+        <li>{{ _('An import starts HELD: nothing the source had scheduled acts on appliances until you release it below.') }}</li>
+      </ul>
+      <div id="dc-node" class="small text-muted"></div>
+      <div id="dc-blocked" class="alert alert-warning small mt-2 mb-0 d-none"></div>
+    </div>
+  </div>
+
+  <div id="dc-held" class="fw-card mt-3 d-none">
+    <div class="fw-card-header"><i class="bi bi-pause-circle me-1"></i>{{ _('Held after an import') }}
+      <span class="fw-badge fw-badge-warning ms-2">{{ _('nothing acts on appliances') }}</span></div>
+    <div class="p-3">
+      <div id="dc-held-body" class="small mb-2"></div>
+      <p class="text-muted" style="font-size:13px;">{{ _('Before releasing, check the appliances and schedules, and make sure the SOURCE deploy no longer acts on the same appliances. Release turns back on exactly what the import switched off; schedules restart from now and the held period is not replayed.') }}</p>
+      <div class="d-flex gap-2 align-items-center">
+        <input type="text" id="dc-release-confirm" class="form-control fw-form-control form-control-sm" style="max-width:180px;" placeholder="{{ _('type RELEASE') }}" autocomplete="off">
+        <button type="button" id="dc-release-btn" class="btn btn-fw-primary btn-sm"><i class="bi bi-play-circle me-1"></i>{{ _('Release') }}</button>
+      </div>
+      <div id="dc-release-msg" class="small mt-2"></div>
+    </div>
+  </div>
+
+  <div class="fw-card mt-3">
+    <div class="fw-card-header"><i class="bi bi-box-arrow-up me-1"></i>{{ _('Export this deploy') }}</div>
+    <div class="p-3">
+      <p class="text-muted" style="font-size:13px;">{{ _('Writes a clone bundle on this node. Read-only for this deploy. Firmware images are left out unless you include them — they can make the bundle too large to upload through this page.') }}</p>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" id="dc-firmware">
+        <label class="form-check-label small" for="dc-firmware">{{ _('Include firmware images') }}</label>
+      </div>
+      <button type="button" id="dc-export-btn" class="btn btn-fw-primary btn-sm"><i class="bi bi-box-arrow-up me-1"></i>{{ _('Export') }}</button>
+      <div id="dc-pass" class="alert alert-warning mt-3 mb-0 d-none">
+        <div class="fw-bold small mb-1">{{ _('Passphrase — shown once, stored nowhere') }}</div>
+        <div class="d-flex gap-2 align-items-center">
+          <code id="dc-pass-value" class="fs-6 user-select-all"></code>
+          <button type="button" id="dc-pass-copy" class="btn btn-sm btn-outline-secondary"><i class="bi bi-clipboard"></i></button>
+        </div>
+        <div class="small mt-1">{{ _('Write it down now. Without it the bundle cannot be imported, and it cannot be recovered from this node.') }}</div>
+      </div>
+      <div id="dc-export-job" class="small mt-2"></div>
+      <div class="table-responsive mt-3">
+        <table class="table table-sm align-middle mb-0">
+          <thead><tr><th>{{ _('Bundle') }}</th><th>{{ _('Size') }}</th><th>{{ _('Written') }}</th><th></th></tr></thead>
+          <tbody id="dc-exports"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="fw-card mt-3">
+    <div class="fw-card-header"><i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Import a clone into this deploy') }}</div>
+    <div class="p-3">
+      <div class="alert alert-danger small">
+        <strong>{{ _('An import REPLACES this deploy\'s data.') }}</strong>
+        {{ _('Accounts are replaced too: afterwards you log in with the source\'s users and passwords, and every open session — yours included — ends. A safety bundle of the current database is written first; the replaced files are set aside under data/clone-prev-<time>/.') }}
+      </div>
+      <form id="dc-upload-form" class="d-flex gap-2 align-items-center flex-wrap">
+        <input type="file" name="bundle" id="dc-file" accept=".tar.gz,.gz" class="form-control form-control-sm" style="max-width:420px;">
+        <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-upload me-1"></i>{{ _('Upload') }}</button>
+        <span id="dc-upload-limit" class="small text-muted"></span>
+      </form>
+      <div id="dc-upload-msg" class="small mt-2"></div>
+      <div class="table-responsive mt-3">
+        <table class="table table-sm align-middle mb-0">
+          <thead><tr><th>{{ _('Uploaded bundle') }}</th><th>{{ _('Size') }}</th><th>{{ _('Uploaded') }}</th><th></th></tr></thead>
+          <tbody id="dc-uploads"></tbody>
+        </table>
+      </div>
+      <div id="dc-plan" class="border rounded p-3 mt-3 d-none">
+        <div class="fw-bold small mb-2">{{ _('Import') }} <code id="dc-plan-name"></code></div>
+        <div id="dc-plan-body" class="small mb-2"></div>
+        <div class="row g-2 align-items-end">
+          <div class="col-md-5">
+            <label class="form-label small mb-1" for="dc-passphrase">{{ _('Passphrase from the export') }}</label>
+            <input type="password" id="dc-passphrase" class="form-control fw-form-control form-control-sm font-monospace" autocomplete="off">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small mb-1" for="dc-import-confirm">{{ _('Type IMPORT') }}</label>
+            <input type="text" id="dc-import-confirm" class="form-control fw-form-control form-control-sm" autocomplete="off">
+          </div>
+          <div class="col-md-4">
+            <button type="button" id="dc-import-btn" class="btn btn-danger btn-sm"><i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Replace this deploy\'s data') }}</button>
+          </div>
+        </div>
+        <div id="dc-import-job" class="small mt-2"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="fw-card mt-3">
+    <div class="fw-card-header"><i class="bi bi-clock-history me-1"></i>{{ _('Recent clone jobs') }}</div>
+    <div class="p-3">
+      <div id="dc-last" class="small text-muted mb-2"></div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead><tr><th>{{ _('Job') }}</th><th>{{ _('Action') }}</th><th>{{ _('State') }}</th><th>{{ _('By') }}</th><th>{{ _('Updated') }}</th><th></th></tr></thead>
+          <tbody id="dc-jobs"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  'use strict';
+  var root = document.getElementById('dc-root');
+  if (!root) return;
+  var m = document.querySelector('meta[name="csrf-token"]');
+  var CSRF = m ? m.content : '';
+  var U = root.dataset;
+  var $ = function (id) { return document.getElementById(id); };
+  var blocked = '';
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+  function size(n) {
+    n = Number(n || 0);
+    if (n >= 1073741824) return (n / 1073741824).toFixed(1) + ' GB';
+    if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+    return Math.max(1, Math.round(n / 1024)) + ' KB';
+  }
+  function msg(el, text, kind) {
+    el.className = 'small mt-2 ' + (kind === 'bad' ? 'text-danger' : kind === 'ok' ? 'text-success' : 'text-muted');
+    el.textContent = text || '';
+  }
+  // A JSON answer, or null when the session is gone (the login page comes
+  // back as HTML after a redirect) -- which is exactly what an import does.
+  function asJson(r) {
+    var ct = r.headers.get('content-type') || '';
+    if (r.redirected || ct.indexOf('application/json') < 0) return Promise.resolve(null);
+    return r.json().then(function (d) { d.__status = r.status; return d; });
+  }
+  function postJson(url, body) {
+    return fetch(url, {method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF},
+      body: JSON.stringify(body || {})}).then(asJson);
+  }
+  function badge(state) {
+    var k = {success: 'fw-badge-success', failed: 'fw-badge-danger', running: 'fw-badge-info',
+             queued: 'fw-badge-secondary'}[state] || 'fw-badge-secondary';
+    return '<span class="fw-badge ' + k + '">' + esc(state || '?') + '</span>';
+  }
+  function stepsHtml(st) {
+    var rows = (st.steps || []).map(function (s) {
+      var mark = s.ok ? (s.warn ? '<i class="bi bi-exclamation-triangle text-warning"></i>'
+                                : '<i class="bi bi-check-circle text-success"></i>')
+                      : '<i class="bi bi-x-circle text-danger"></i>';
+      return '<div>' + mark + ' <strong>' + esc(s.name) + '</strong> ' +
+             '<span class="text-muted">' + esc(s.detail) + '</span></div>';
+    });
+    if (st.current) rows.push('<div><span class="spinner-border spinner-border-sm"></span> ' +
+                              esc(st.current.name) + '</div>');
+    if (st.error) rows.push('<div class="text-danger">' + esc(st.error) + '</div>');
+    return rows.join('');
+  }
+
+  function watch(uid, el, isImport) {
+    function tick() {
+      fetch(U.job.replace('JOBID', encodeURIComponent(uid)),
+            {credentials: 'same-origin', cache: 'no-store'}).then(asJson).then(function (st) {
+        if (st === null) {
+          el.innerHTML = isImport
+            ? '<div class="alert alert-info small mb-0">' + esc('The import ended every session on this deploy, as it must: the accounts are now the source\'s. Log in again with the SOURCE deploy\'s username and password; this pane then shows the result under Recent clone jobs.') + '</div>'
+            : '<span class="text-danger">' + esc('Your session ended; log in again to see the result.') + '</span>';
+          return;
+        }
+        el.innerHTML = '<div class="mb-1">' + badge(st.state) + ' <code>' + esc(uid) + '</code></div>' + stepsHtml(st);
+        if (st.state === 'queued' || st.state === 'running') { setTimeout(tick, 3000); }
+        else { load(); }
+      }).catch(function () { setTimeout(tick, 5000); });
+    }
+    tick();
+  }
+
+  function renderBundles(tbody, list, where) {
+    if (!list || !list.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-muted small">' + esc('None.') + '</td></tr>';
+      return;
+    }
+    tbody.innerHTML = list.map(function (b) {
+      var acts = '';
+      if (where === 'exports') {
+        acts += '<a class="btn btn-sm btn-outline-secondary me-1" href="' +
+                esc(U.download.replace('NAME', encodeURIComponent(b.name))) + '"><i class="bi bi-download"></i></a>';
+      } else {
+        acts += '<button type="button" class="btn btn-sm btn-outline-secondary me-1" data-dc-plan="' + esc(b.name) + '">' +
+                esc('Import…') + '</button>';
+      }
+      acts += '<button type="button" class="btn btn-sm btn-outline-danger" data-dc-del="' + esc(where) + '" data-name="' +
+              esc(b.name) + '"><i class="bi bi-trash"></i></button>';
+      return '<tr><td><code class="small">' + esc(b.name) + '</code></td><td class="small">' + size(b.size) +
+             '</td><td class="small">' + esc(b.mtime || '') + '</td><td class="text-end text-nowrap">' + acts + '</td></tr>';
+    }).join('');
+  }
+
+  function load() {
+    fetch(U.state, {credentials: 'same-origin', cache: 'no-store'}).then(asJson).then(function (d) {
+      if (!d) return;
+      $('dc-node').textContent = 'This node: ' + (d.node || '?') + ' (' + (d.role || '?') + ').';
+      blocked = d.container ? 'The container runtime has no privileged runner: export and import from a host install with the CLI.'
+              : d.role === 'standby' ? 'This node is the standby. Export, import and release run on the primary; its data reaches this node by replication.'
+              : '';
+      $('dc-blocked').textContent = blocked;
+      $('dc-blocked').classList.toggle('d-none', !blocked);
+      ['dc-export-btn', 'dc-import-btn', 'dc-release-btn'].forEach(function (id) { $(id).disabled = !!blocked; });
+      $('dc-upload-limit').textContent = d.upload_limit_mb ? 'Up to ' + d.upload_limit_mb + ' MB through this page (the front end may allow less); larger bundles: copy the file and use the CLI.' : '';
+      var held = d.held;
+      $('dc-held').classList.toggle('d-none', !held);
+      if (held) {
+        $('dc-held-body').innerHTML = 'Since <strong>' + esc(d.held_since || '?') + '</strong>' +
+          (d.held_bundle ? ' (bundle <code>' + esc(d.held_bundle) + '</code>)' : '') + ': ' +
+          esc(held.actions) + ' scheduled action(s), ' + esc(held.script_schedules) + ' script schedule(s), ' +
+          esc(held.hooks) + ' hook(s)' + (held.flags && held.flags.length ? ', settings ' + esc(held.flags.join(', ')) : '') + '.';
+      }
+      renderBundles($('dc-exports'), d.exports, 'exports');
+      renderBundles($('dc-uploads'), d.uploads, 'uploads');
+      var li = d.last_import;
+      $('dc-last').innerHTML = li ? 'Last import: <strong>' + esc(li.at) + '</strong> from ' +
+        esc((li.source || {}).node || '?') + ' (bundle <code>' + esc(li.bundle) + '</code>, safety bundle <code>' +
+        esc(li.safety || '-') + '</code>).' : 'No import on this deploy yet.';
+      var jobs = d.jobs || [];
+      $('dc-jobs').innerHTML = jobs.length ? jobs.map(function (j, i) {
+        return '<tr><td><code class="small">' + esc(j.id) + '</code></td><td class="small">' + esc(j.action) +
+          (j.target && j.target !== 'export' ? ' <code>' + esc(j.target) + '</code>' : '') + '</td><td>' + badge(j.state) +
+          '</td><td class="small">' + esc(j.requested_by) + '</td><td class="small">' + esc(j.updated_at) +
+          '</td><td><button type="button" class="btn btn-sm btn-link p-0" data-dc-log="' + i + '">Log</button></td></tr>' +
+          '<tr class="d-none" id="dc-log-' + i + '"><td colspan="6" class="small">' + stepsHtml(j) + '</td></tr>';
+      }).join('') : '<tr><td colspan="6" class="text-muted small">' + esc('None.') + '</td></tr>';
+    });
+  }
+
+  $('dc-export-btn').addEventListener('click', function () {
+    var el = $('dc-export-job');
+    msg(el, 'Queueing…');
+    postJson(U['export'], {with_firmware: $('dc-firmware').checked}).then(function (d) {
+      if (!d || d.error) { msg(el, (d && d.error) || 'Could not queue the export.', 'bad'); return; }
+      $('dc-pass-value').textContent = d.passphrase;
+      $('dc-pass').classList.remove('d-none');
+      watch(d.uid, el, false);
+    });
+  });
+  $('dc-pass-copy').addEventListener('click', function () {
+    try { navigator.clipboard.writeText($('dc-pass-value').textContent); } catch (e) {}
+  });
+
+  $('dc-upload-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var f = $('dc-file').files[0], el = $('dc-upload-msg');
+    if (!f) { msg(el, 'Choose a clone bundle first.', 'bad'); return; }
+    var fd = new FormData();
+    fd.append('bundle', f);
+    msg(el, 'Uploading ' + f.name + ' (' + size(f.size) + ')…');
+    fetch(U.upload, {method: 'POST', credentials: 'same-origin', headers: {'X-CSRFToken': CSRF}, body: fd})
+      .then(function (r) {
+        if (r.status === 413) return {error: 'The file is larger than this page accepts; copy it to the node and use the CLI.'};
+        return asJson(r);
+      }).then(function (d) {
+        if (!d || d.error) { msg(el, (d && d.error) || 'Upload failed.', 'bad'); return; }
+        msg(el, 'Uploaded ' + d.name + '.', 'ok');
+        $('dc-file').value = '';
+        load();
+        showPlan(d);
+      }).catch(function () { msg(el, 'Upload failed.', 'bad'); });
+  });
+
+  function showPlan(p) {
+    $('dc-plan').classList.remove('d-none');
+    $('dc-plan-name').textContent = p.name;
+    $('dc-plan').dataset.name = p.name;
+    var files = Object.keys(p.files || {}).sort().map(function (k) { return k + ' ' + p.files[k]; }).join(', ');
+    var html = '<div>From <strong>' + esc((p.source || {}).node || '?') + '</strong> (SATOM ' +
+      esc((p.source || {}).version || '?') + '), written ' + esc(p.created || '?') + '.</div>' +
+      '<div>' + esc(p.tables) + ' tables, ' + esc(p.rows) + ' rows; files: ' + esc(files || 'none') +
+      (p.with_firmware ? '; includes firmware' : '') + '.</div>';
+    if (p.problems && p.problems.length) {
+      html += '<div class="text-danger mt-1"><strong>Cannot be imported here:</strong><ul class="mb-0">' +
+        p.problems.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul></div>';
+    }
+    $('dc-plan-body').innerHTML = html;
+    $('dc-import-btn').disabled = !!blocked || !!(p.problems && p.problems.length);
+    msg($('dc-import-job'), '');
+  }
+
+  root.addEventListener('click', function (e) {
+    var t = e.target.closest ? e.target.closest('[data-dc-plan],[data-dc-del],[data-dc-log]') : null;
+    if (!t) return;
+    if (t.dataset.dcLog !== undefined) {
+      var row = $('dc-log-' + t.dataset.dcLog);
+      if (row) row.classList.toggle('d-none');
+      return;
+    }
+    if (t.dataset.dcPlan) {
+      fetch(U.preflight.replace('NAME', encodeURIComponent(t.dataset.dcPlan)), {credentials: 'same-origin'})
+        .then(asJson).then(function (d) {
+          if (!d || d.error) { msg($('dc-upload-msg'), (d && d.error) || 'Could not read the bundle.', 'bad'); return; }
+          showPlan(d);
+        });
+      return;
+    }
+    if (t.dataset.dcDel) {
+      if (!window.confirm('Delete ' + t.dataset.name + ' from this node?')) return;
+      postJson(U['delete'], {where: t.dataset.dcDel, name: t.dataset.name}).then(function (d) {
+        if (!d || d.error) { window.alert((d && d.error) || 'Delete failed.'); return; }
+        if ($('dc-plan').dataset.name === t.dataset.name) $('dc-plan').classList.add('d-none');
+        load();
+      });
+    }
+  });
+
+  $('dc-import-btn').addEventListener('click', function () {
+    var el = $('dc-import-job');
+    msg(el, 'Checking the passphrase and queueing…');
+    postJson(U['import'], {name: $('dc-plan').dataset.name, passphrase: $('dc-passphrase').value,
+                           confirm: $('dc-import-confirm').value.trim()}).then(function (d) {
+      if (!d || d.error) { msg(el, (d && d.error) || 'Could not queue the import.', 'bad'); return; }
+      $('dc-passphrase').value = '';
+      $('dc-import-btn').disabled = true;
+      watch(d.uid, el, true);
+    });
+  });
+
+  $('dc-release-btn').addEventListener('click', function () {
+    var el = $('dc-release-msg');
+    postJson(U.release, {confirm: $('dc-release-confirm').value.trim()}).then(function (d) {
+      if (!d || d.error) { msg(el, (d && d.error) || 'Release failed.', 'bad'); return; }
+      msg(el, 'Released: ' + d.actions + ' scheduled action(s), ' + d.script_schedules +
+          ' script schedule(s), ' + d.hooks + ' hook(s).', 'ok');
+      load();
+    });
+  });
+
+  // Loaded when the pane is opened, not with every Settings page: it lists
+  // files and status rows nobody on the other 30 panes asked for.
+  var loaded = false;
+  function lazy() { if (!loaded) { loaded = true; load(); } }
+  document.addEventListener('shown.bs.tab', function (e) {
+    if ((e.target.getAttribute('data-bs-target') || '') === '#tab-deployclone') lazy();
+  }, true);
+  if (location.hash === '#tab-deployclone' || $('tab-deployclone').classList.contains('active')) lazy();
+})();
+</script>

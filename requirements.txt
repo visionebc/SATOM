@@ -10,7 +10,7 @@ gunicorn==26.2.0
 PyYAML==6.0.3
 Werkzeug==3.1.9
 python-dotenv==1.2.2
-paramiko==5.0.0
+paramiko==5.1.0
 psycopg[binary]==3.3.6
 Flask-Migrate==4.0.7
 ldap3==2.9.1

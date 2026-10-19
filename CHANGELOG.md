@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.3.4] - 2026-10-19
+
 ### Added
 
 - Naming variables and site tokens (FA-0001). Requested as: "you have
@@ -44,6 +46,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   it used to drop the whole segment (and orphan the line profiles naming it).
 - The Network Segments page and its view no longer describe segments as the
   back-end pool's networks: the wizard has always used them for the VIP.
+
+- Update packages are built as deltas from this release on. 3.3.3 was the
+  first package that records the full set of wheels it was built with, so a
+  package now ships only the wheels 3.3.3 does not already have and accepts
+  only a node on 3.3.3 or newer. A node on 3.3.2 or older is refused at
+  **Upgrade path** ("requires 3.3.3 or newer") with nothing changed: apply
+  `satom-update-3.3.3.tar.gz` (release v3.3.3) first, then this one. Offline
+  install bundles and the container image still carry everything.
 
 ### Fixed
 

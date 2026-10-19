@@ -3605,7 +3605,7 @@ blocking one disables Apply:
 | Archive | Is the file a well-formed package? |
 | Signature & integrity | Is it signed by a trusted key, and do the contents match what was signed? |
 | Version | Where does this move the node? |
-| Upgrade path | Is this node new enough to accept it? |
+| Upgrade path | Is this node new enough to accept it? (From 3.3.4, packages need 3.3.3 or newer: a node on 3.3.2 or older applies `satom-update-3.3.3.tar.gz` first.) |
 | Python / Dependencies | Are the shipped wheels the ones this node needs? |
 | Disk space | Is there room? |
 | This node | Which machine, in which role, you are about to change. |

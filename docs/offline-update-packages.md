@@ -6,8 +6,8 @@ package mirror.
 
 This is not the offline **install** bundle. That one carries OS packages and
 stands a node up from nothing; this carries only what an update needs — the
-application code and every pinned Python wheel — so it is roughly a quarter of
-the size.
+application code and the pinned Python wheels a node on a supported starting
+version can be missing — so it is a fraction of the size.
 
 ---
 
@@ -132,7 +132,7 @@ satom-update-<version>/
     manifest.json      the signed document
     manifest.sig       base64 Ed25519 signature over manifest.json's BYTES
     app.tar.gz         the application tree at that revision
-    wheels/*.whl       every pinned dependency
+    wheels/*.whl       the pinned dependencies a node may be missing
 ```
 
 The signature covers the manifest's **exact bytes** — no canonicalisation, so
@@ -150,6 +150,14 @@ wheel is pure Python and `["cpXY"]` when any of them is compiled. Getting this
 wrong is the RHEL-9 trap — system Python 3.9 against cp311 wheels — where the
 apply would otherwise die deep inside pip on a node with no network to fall
 back on.
+
+`wheelset` lists every wheel the release was resolved with, shipped or not.
+From 3.3.4 a package ships only the wheels that not every earlier package
+with a `wheelset` already had, and `min_from_version` rises to the oldest of
+those releases (3.3.3, the first one that recorded it). A node below that is
+refused at **Upgrade path** with nothing changed. Coming from 3.3.2 or older
+you apply `satom-update-3.3.3.tar.gz` first — it carries every wheel — and
+then the newer package.
 
 ---
 

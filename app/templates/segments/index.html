@@ -17,7 +17,7 @@
       <i class="bi bi-hdd-network me-2 text-accent"></i>{{ _('Network Segments') }}
     </h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      {{ _('Named back-end networks (CIDR + interface + gateway) from which a new policy builds its server pool. Each segment can be scoped to a classification value (leave blank for "any").') }}
+      {{ _('Named networks a new server policy puts its VIP on. A segment holds one or more networks (CIDR + gateway, optionally its own interface): when the VIP is reserved from IPAM it is taken from the first network with a free address, then the next; a VIP typed by hand must sit in one of them. Each segment can be scoped to a classification value (leave blank for "any").') }}
     </p>
   </div>
 </div>
@@ -65,7 +65,7 @@
       <div class="fw-table-wrapper">
         <table class="fw-table" id="segments-table">
           <thead>
-            <tr><th>{{ _('Name') }}</th><th>{{ _('Zone') }}</th><th>{{ _('Line') }}</th><th>{{ _('Departments') }}</th><th>CIDR</th><th>{{ _('Interface') }}</th><th>{{ _('Gateway') }}</th><th>{{ _('Note') }}</th><th></th></tr>
+            <tr><th>{{ _('Name') }}</th><th>{{ _('Zone') }}</th><th>{{ _('Line') }}</th><th>{{ _('Departments') }}</th><th>{{ _('Networks') }}</th><th>{{ _('Interface') }}</th><th>{{ _('Note') }}</th><th></th></tr>
           </thead>
           <tbody id="segments-body">
             {% for s in segments %}
@@ -96,9 +96,24 @@
                   {% for d in s.departments if d not in classification.departments %}<option value="{{ d }}" selected>{{ d }} (custom)</option>{% endfor %}
                 </select>
               </td>
-              <td><input class="form-control form-control-sm" name="seg_cidr[]" value="{{ s.cidr }}" placeholder="192.0.2.0/24"></td>
-              <td><input class="form-control form-control-sm" name="seg_interface[]" value="{{ s.interface }}" placeholder="{{ _('port1') }}"></td>
-              <td><input class="form-control form-control-sm" name="seg_gateway[]" value="{{ s.gateway }}"></td>
+              <td>
+                {# Same rule as the departments: the POSTED value is the hidden
+                   field (a JSON list); the lines below only edit it, so a page
+                   whose JS never ran saves the networks the row already had. #}
+                <input type="hidden" name="seg_networks[]" value='{{ s.networks | tojson }}'>
+                <div class="seg-nets" data-js="seg-nets">
+                  {% for n in s.networks %}
+                  <div class="d-flex gap-1 mb-1 seg-net">
+                    <input class="form-control form-control-sm" data-f="cidr" value="{{ n.cidr }}" placeholder="192.0.2.0/24" style="min-width:130px;">
+                    <input class="form-control form-control-sm" data-f="gateway" value="{{ n.gateway }}" placeholder="{{ _('gateway') }}" style="min-width:110px;">
+                    <input class="form-control form-control-sm" data-f="interface" value="{{ n.interface }}" placeholder="{{ _('interface') }}" style="width:90px;" title="{{ _('Blank = the segment interface') }}">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-js="seg-net-del" title="{{ _('Remove this network') }}">&times;</button>
+                  </div>
+                  {% endfor %}
+                </div>
+                <button type="button" class="btn btn-sm btn-link p-0" data-js="seg-net-add" style="font-size:12px;"><i class="bi bi-plus-lg me-1"></i>{{ _('Add network') }}</button>
+              </td>
+              <td><input class="form-control form-control-sm" name="seg_interface[]" value="{{ s.interface }}" placeholder="{{ _('port1') }}" title="{{ _('The interface of every network that does not name its own') }}"></td>
               <td><input class="form-control form-control-sm" name="seg_note[]" value="{{ s.note }}"></td>
               <td><button type="button" class="btn btn-sm btn-outline-danger" data-js="seg-remove"><i class="bi bi-trash"></i></button></td>
             </tr>
@@ -158,12 +173,52 @@ function addSegmentRow() {
     '<td>' + clsSelect('seg_zone[]', CLS.zones) + '</td>' +
     '<td>' + clsSelect('seg_line[]', CLS.lines) + '</td>' +
     '<td>' + deptCell() + '</td>' +
-    '<td><input class="form-control form-control-sm" name="seg_cidr[]" placeholder="192.0.2.0/24"></td>' +
+    '<td><input type="hidden" name="seg_networks[]" value="[]"><div class="seg-nets" data-js="seg-nets"></div>' +
+    '<button type="button" class="btn btn-sm btn-link p-0" data-js="seg-net-add" style="font-size:12px;"><i class="bi bi-plus-lg me-1"></i>Add network</button></td>' +
     '<td><input class="form-control form-control-sm" name="seg_interface[]" placeholder="port1" value="port1"></td>' +
-    '<td><input class="form-control form-control-sm" name="seg_gateway[]"></td>' +
     '<td><input class="form-control form-control-sm" name="seg_note[]"></td>' +
     '<td><button type="button" class="btn btn-sm btn-outline-danger" data-js="seg-remove"><i class="bi bi-trash"></i></button></td>';
   body.appendChild(tr);
+  addNetwork(tr.querySelector('[data-js="seg-nets"]'));
+}
+function netLine() {
+  var div = document.createElement('div');
+  div.className = 'd-flex gap-1 mb-1 seg-net';
+  [['cidr', '192.0.2.0/24', 'min-width:130px;'], ['gateway', 'gateway', 'min-width:110px;'],
+   ['interface', 'interface', 'width:90px;']].forEach(function (f) {
+    var inp = document.createElement('input');
+    inp.className = 'form-control form-control-sm';
+    inp.setAttribute('data-f', f[0]);
+    inp.placeholder = f[1];
+    inp.setAttribute('style', f[2]);
+    div.appendChild(inp);
+  });
+  var del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'btn btn-sm btn-outline-secondary';
+  del.setAttribute('data-js', 'seg-net-del');
+  del.title = 'Remove this network';
+  del.innerHTML = '&times;';
+  div.appendChild(del);
+  return div;
+}
+function addNetwork(box) {
+  var line = netLine();
+  box.appendChild(line);
+  line.querySelector('input').focus();
+}
+// The networks of one row -> its hidden field, in the order shown (the
+// order an address is taken in).
+function syncNets(td) {
+  var hidden = td.querySelector('input[name="seg_networks[]"]');
+  if (!hidden) { return; }
+  var nets = [];
+  td.querySelectorAll('.seg-net').forEach(function (line) {
+    var n = {};
+    line.querySelectorAll('input[data-f]').forEach(function (i) { n[i.getAttribute('data-f')] = i.value.trim(); });
+    if (n.cidr || n.gateway) { nets.push(n); }
+  });
+  hidden.value = JSON.stringify(nets);
 }
 (function () {
   var addBtn = document.querySelector('[data-js="seg-add"]');
@@ -173,7 +228,14 @@ function addSegmentRow() {
   // Rows are also added dynamically — delegate so new rows are covered too.
   body.addEventListener('click', function (event) {
     var btn = event.target.closest('[data-js="seg-remove"]');
-    if (btn) { btn.closest('tr').remove(); }
+    if (btn) { btn.closest('tr').remove(); return; }
+    var add = event.target.closest('[data-js="seg-net-add"]');
+    if (add) { addNetwork(add.closest('td').querySelector('[data-js="seg-nets"]')); syncNets(add.closest('td')); return; }
+    var del = event.target.closest('[data-js="seg-net-del"]');
+    if (del) { var td = del.closest('td'); del.closest('.seg-net').remove(); syncNets(td); }
+  });
+  body.addEventListener('input', function (event) {
+    if (event.target.closest('.seg-net')) { syncNets(event.target.closest('td')); }
   });
   // Delegated so rows added after load are covered by the same one binding.
   body.addEventListener('change', function (event) {

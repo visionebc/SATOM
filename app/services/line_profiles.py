@@ -259,7 +259,7 @@ def line_plan(line: str, product: str = "fortiweb") -> LinePlan:
             P_NO_CERT_CLASS,
             "this line does not declare a certificate class"))
     for seg in plan.segments:
-        if not (seg.get("cidr") or "").strip():
+        if not segment_cidrs(seg):
             plan.problems.append(Problem(
                 P_SEGMENT_NO_CIDR,
                 f"segment {seg.get('name')!r} has no CIDR, so no address can "
@@ -283,23 +283,70 @@ def line_plan(line: str, product: str = "fortiweb") -> LinePlan:
     return plan
 
 
-def pool_for(plan: LinePlan, segment_name: str = "") -> str:
-    """Which IPAM pool an address for this line comes from.
+def segment_networks(seg: dict | None) -> list[dict]:
+    """A segment's networks in allocation order (``settings_store`` shape)."""
+    if not seg:
+        return []
+    nets = seg.get("networks")
+    return list(nets) if isinstance(nets, list) else store.normalize_networks(seg)
 
-    The profile's explicit pool wins; otherwise the chosen segment's CIDR.
-    Returns "" when neither is known — the caller must then ASK, because the
-    provider's configured default is a fleet-wide pool and silently reaching
-    for it puts a policy on a network this line was never given.
+
+def segment_cidrs(seg: dict | None) -> list[str]:
+    return [n["cidr"] for n in segment_networks(seg) if (n.get("cidr") or "").strip()]
+
+
+def pools_for(plan: LinePlan, segment_name: str = "") -> list[str]:
+    """Every IPAM pool an address for this line may come from, in order.
+
+    The profile's explicit pool wins (and is the only one); otherwise the
+    chosen segment's CIDRs, first network first — an allocation takes the
+    first one with a free address (FA-0002). [] when nothing is known — the
+    caller must then ASK, because the provider's configured default is a
+    fleet-wide pool and silently reaching for it puts a policy on a network
+    this line was never given.
     """
     if plan.ipam_pool:
-        return plan.ipam_pool
+        return [plan.ipam_pool]
     by_name = index_by_name(plan.segments)
     if segment_name:
-        seg = by_name.get(segment_name)
-        return (seg.get("cidr") or "").strip() if seg else ""
+        return segment_cidrs(by_name.get(segment_name))
     for seg in plan.segments:
-        return (seg.get("cidr") or "").strip()
-    return ""
+        return segment_cidrs(seg)
+    return []
+
+
+def pool_for(plan: LinePlan, segment_name: str = "") -> str:
+    """The FIRST pool of :func:`pools_for` ("" when none)."""
+    pools = pools_for(plan, segment_name)
+    return pools[0] if pools else ""
+
+
+def network_of(seg: dict | None, address: str) -> dict | None:
+    """The network of *seg* whose CIDR holds *address* (None: none does, or
+    the address is not an IP)."""
+    import ipaddress
+    try:
+        # A FortiWeb VIP is often typed with its mask (198.51.100.5/24).
+        ip = ipaddress.ip_address((address or "").strip().split("/", 1)[0])
+    except ValueError:
+        return None
+    for net in segment_networks(seg):
+        try:
+            if net.get("cidr") and ip in ipaddress.ip_network(net["cidr"], strict=False):
+                return net
+        except ValueError:
+            continue
+    return None
+
+
+def interface_for(seg: dict | None, address: str = "", pool: str = "") -> str:
+    """The interface a VIP on *seg* goes on: that of the network holding the
+    address (or named by the pool it came from), else the segment's own."""
+    seg = seg or {}
+    net = network_of(seg, address)
+    if net is None and pool:
+        net = next((n for n in segment_networks(seg) if n.get("cidr") == pool), None)
+    return ((net or {}).get("interface") or "").strip() or (seg.get("interface") or "")
 
 
 def lines_overview(product: str = "fortiweb") -> list[dict]:

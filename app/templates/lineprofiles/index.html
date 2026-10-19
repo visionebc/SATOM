@@ -78,7 +78,7 @@
     <div class="mb-3" style="font-size:12.5px;">
       <div class="text-muted mb-1">{{ _('Resolved segments') }}</div>
       {% for s in plan.segments %}
-        <span class="fw-badge fw-badge-primary">{{ s.name }}{% if s.cidr %} · {{ s.cidr }}{% endif %}{% if s.interface %} · {{ s.interface }}{% endif %}</span>
+        <span class="fw-badge fw-badge-primary">{{ s.name }}{% set _c = (s.networks or []) | map(attribute='cidr') | select | list %}{% if _c %} · {{ _c | join(', ') }}{% elif s.cidr %} · {{ s.cidr }}{% endif %}{% if s.interface %} · {{ s.interface }}{% endif %}</span>
       {% else %}
         <span class="text-muted">{{ _('— none —') }}</span>
       {% endfor %}
@@ -102,7 +102,7 @@
           <select class="form-select form-select-sm" name="segments" multiple size="5">
             {% for s in all_segments %}
             <option value="{{ s.name }}" {% if prof and s.name in prof.segments %}selected{% endif %}>
-              {{ s.name }}{% if s.cidr %} — {{ s.cidr }}{% endif %}
+              {{ s.name }}{% set _c = (s.networks or []) | map(attribute='cidr') | select | list %}{% if _c %} — {{ _c | join(', ') }}{% elif s.cidr %} — {{ s.cidr }}{% endif %}
             </option>
             {% endfor %}
           </select>

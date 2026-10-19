@@ -16531,6 +16531,36 @@ every side:</p>
 <li><strong>New-build watch never raises</strong> into the firmware probe or the scheduler, and
   notifies once per product and build.</li>
 </ul>
+<h2 id="214--names-built-from-a-site-and-segments-with-several-networks-teststest_naming_variablespy-teststest_segment_networkspy-2026-10-19">§214 — names built from a site, and segments with several networks (<code>tests/test_naming_variables.py</code>, <code>tests/test_segment_networks.py</code>, 2026-10-19)</h2>
+<ul>
+<li><strong>A token SATOM builds from is one it fills in.</strong> <code>naming.allowed_tokens</code>
+  is the one answer per scheme entry: site tokens (<code>{name}</code> <code>{host}</code> <code>{port}</code>)
+  plus the variables of the SAME product; the Exception WPP keeps <code>{name}</code>
+  only (it is named from a policy, not a site); Managed Certificate its cert
+  tokens. The page, Discovery's Adopt and the save all ask it.</li>
+<li><strong>A variable list is computed in order or not stored.</strong> A variable reads a
+  site token or one defined above it (no forward reference, so no cycle); the
+  regex and the replacement are executed once on save, so a <code>\2</code> with one
+  group fails there and not at the first policy. Removing a variable a pattern
+  still uses refuses the whole save, naming the pattern.</li>
+<li><strong>The preview is the server's regex.</strong> <code>/naming/preview</code> returns the token
+  values; the browser only substitutes them, so JavaScript's regex dialect
+  never decides a name.</li>
+<li><strong>A name the device would refuse is refused before the first write</strong>
+  (<code>naming_unsafe</code>: only letters, digits, <code>_</code>, <code>-</code>), and a port nobody typed
+  is announced in the plan (<code>port_source=default</code>).</li>
+<li><strong>Several networks: tried in order, every refusal said.</strong> A network no
+  backend can serve is a warning naming it; the plan blocks only when none can
+  be used. At apply, a refused allocation moves to the next network and the
+  step lists each refusal; the release after a later failure goes to the
+  network the address came from (<code>took_pool</code>), the VIP to that network's
+  interface. A hand-typed VIP outside every network blocks
+  (<code>address_not_in_segment</code>).</li>
+<li><strong>Old data reads unchanged.</strong> A segment without <code>networks</code> is one network
+  from its <code>cidr</code>/<code>gateway</code>, and those scalars mirror the first network for
+  every reader written for one. A bad CIDR drops that network, never the
+  segment.</li>
+</ul>
     </div>
   </div>
 </section>

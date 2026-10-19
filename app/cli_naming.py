@@ -36,19 +36,26 @@ def _scheme(product: str):
     """table -> the Naming scheme pattern of its entry ('' when none)."""
     from .services import settings_store as store
     from .views.naming import _catalog, _scheme_key
+    from .views.naming import _free_tokens
     overrides = store.naming_overrides(product)
     defaults = {e.key: e.default for e in _catalog(product)}
+    # Same rule as the page: a catalog element's {host} and variables match
+    # free text when existing names are checked against it.
+    free = _free_tokens(store.naming_variables(product))
 
-    def pattern(table: str) -> str:
+    def pattern(table: str) -> tuple[str, tuple]:
         key = _scheme_key(product, table)
-        return (overrides.get(key) or "").strip() or defaults.get(key, "") or ""
+        return ((overrides.get(key) or "").strip() or defaults.get(key, "") or "",
+                free if key in defaults else ())
     return pattern
 
 
-def _table(t: dict, full: bool, scheme_pattern: str) -> dict:
+def _table(t: dict, full: bool, scheme: tuple) -> dict:
     from .services import naming_discovery as nd
+    scheme_pattern, free = scheme
     exc = t.get("exceptions") or []
-    check = nd.conformance(scheme_pattern, t.get("names") or []) if scheme_pattern else None
+    check = (nd.conformance(scheme_pattern, t.get("names") or [], free=free)
+             if scheme_pattern else None)
     return {
         "table": t["table"], "label": t.get("label") or t["table"],
         "section": t.get("section") or "", "status": t.get("status") or "",
@@ -122,7 +129,7 @@ def discover_cmd(device, product, table):
             "missing": [x.name for x, an in loaded if an is None],
             "tables": [{"table": r["table"], "label": r["label"], "section": r["section"],
                         "consensus": r["consensus"], "agree": r["agree"], "single": r["single"],
-                        "scheme": pattern(r["table"]) or None,
+                        "scheme": pattern(r["table"])[0] or None,
                         "devices": [{"device": d["device"], "main": d["main"],
                                      "conform": d["conform"], "user": d["user"]}
                                     for d in r["devices"]]}

@@ -64,6 +64,9 @@ def _rows(body: dict) -> list[dict]:
             'web_address': web,
             'hostname': str((raw or {}).get('hostname') or '').strip(),
             'address': str((raw or {}).get('address') or '').strip(),
+            # The port {port} renders with. A creating flow (an automation,
+            # the wizard's Port column) gives it; blank = the planner's rule.
+            'port': str((raw or {}).get('port') or '').strip(),
         })
     if rows:
         return rows
@@ -72,7 +75,8 @@ def _rows(body: dict) -> list[dict]:
         return []
     return [{'web_address': web,
              'hostname': str(body.get('hostname') or '').strip(),
-             'address': str(body.get('address') or '').strip()}]
+             'address': str(body.get('address') or '').strip(),
+             'port': str(body.get('port') or '').strip()}]
 
 
 def _common(body: dict) -> dict:
@@ -170,10 +174,12 @@ def apply(appliance_id: int):
             r = run.get('result') or {}
             log_action('spo_wizard.apply',
                        detail='device=%s line=%s dept=%s segment=%s addr=%s '
-                              'pool=%s(%s) ipam=%s dns=%s ok=%s stranded=%d'
+                              'pool=%s(%s) network=%s port=%s(%s) ipam=%s dns=%s '
+                              'ok=%s stranded=%d'
                               % (appl.name, p.line, p.department or '-',
                                  p.segment.get('name') or '-', p.web_address,
                                  p.pool_name or '-', p.pool_mode,
+                                 p.vip_pool or '-', p.port or '-', p.port_source or '-',
                                  (p.ipam_backend or '-')
                                  + ('(chosen)' if p.ipam_pick else ''),
                                  (p.dns_backend or '-')

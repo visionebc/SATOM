@@ -17,17 +17,46 @@ This module is the pure engine behind that screen:
 * :data:`NAMING_ELEMENTS` — the catalog of nameable objects (both products),
   each with a sensible default pattern.
 * :func:`slugify` — turn a web address into a FortiWeb/FortiADC-safe token.
+* :func:`site_tokens` — the values a pattern can use for one site: the
+  :data:`SITE_TOKENS` (``{name}``, ``{host}``, ``{port}``) plus the
+  operator's own **variables**, each one a regular-expression rewrite of a
+  token (``host_u`` = ``{host}`` with ``\\.`` → ``_``), defined per product.
 * :func:`render_names` — apply a scheme to a web address → ``{key: name}``.
 
-No Qt, no network, no I/O: the patterns are passed in by the caller.
+No Qt, no network, no I/O: the patterns and variables are passed in by the
+caller.
 """
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 
-# The single substitution token a pattern may contain: the site identifier.
+# The site identifier: the web address, slugified. Every default pattern uses it.
 TOKEN = "{name}"
+
+#: Tokens SATOM fills in from the site itself when it builds a name:
+#: ``name`` (the slug), ``host`` (the host exactly as typed, lower-cased,
+#: dots kept) and ``port`` (the port the creating flow gives — the wizard's
+#: Port field, the port in the address, or the flow's default).
+SITE_TOKENS = ("name", "host", "port")
+
+#: What an object name SATOM builds may contain: letters, digits, ``_`` and
+#: ``-``. Operators report the devices refusing a dot in these names
+#: (FA-0001), so a pattern that writes ``{host}`` as it is is refused in the
+#: preview instead of being discovered on the device halfway through a run.
+SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+# ── Operator variables ──────────────────────────────────────────────────────
+#: A variable name: lower case, starts with a letter, no braces.
+VARIABLE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+#: Names a variable may not take: the site tokens, the certificate tokens and
+#: the tokens Discovery writes into the patterns it finds (a variable called
+#: ``num`` would change what every discovered pattern means).
+RESERVED_TOKENS = frozenset({"name", "host", "port", "class", "cn", "date", "serial",
+                             "proto", "adom", "vdom", "num", "ip", "device"})
+MAX_VARIABLES = 20
+MAX_REGEX_LEN = 200
+MAX_REPLACE_LEN = 100
 
 # Certificate names carry MORE than the site id — the class (server/client/…),
 # the CN, the issue date (so the OLD and NEW cert coexist during a maintenance
@@ -270,23 +299,40 @@ def table_overrides(overrides: dict[str, str] | None) -> dict[str, str]:
             if k.startswith(TABLE_PREFIX) and isinstance(v, str) and v.strip()}
 
 
-def pattern_problem(key: str, pattern: str) -> str:
+#: Derived elements rendered from something other than a site: the
+#: exception-WPP clone is named from the SERVER POLICY's name
+#: (``wpp_clone_flow``), so it has a ``{name}`` and nothing else.
+NAME_ONLY_ELEMENTS = frozenset({"wpp_exception"})
+
+
+def allowed_tokens(key: str, variables=None) -> set[str] | None:
+    """The tokens SATOM fills in for scheme entry *key* (None = not limited:
+    the entry documents a convention and any Discovery token may appear)."""
+    e = _BY_KEY.get(key)
+    if e is None or not e.derives:
+        return None
+    if e.section == SECTION_CERT:
+        return {"name"} | {t.strip("{}") for t in CERT_TOKENS}
+    if e.key in NAME_ONLY_ELEMENTS:
+        return {"name"}
+    return set(SITE_TOKENS) | {v["name"] for v in normalize_variables(variables)}
+
+
+def pattern_problem(key: str, pattern: str, variables=None) -> str:
     """Why *pattern* cannot be stored for scheme entry *key* ("" = it can).
 
-    Only an element SATOM derives names from is limited: it fills in
-    ``{name}`` (and the Certificate Manager its cert tokens), so any other
-    token would be written to the device literally."""
+    Only an element SATOM derives names from is limited: it fills in the
+    :data:`SITE_TOKENS` and the product's variables (the Certificate Manager
+    its cert tokens), so any other token would be written to the device
+    literally."""
     pattern = (pattern or "").strip()
     if not pattern:
         return ""
     if pattern.count("{") != pattern.count("}") or "{}" in pattern:
         return "unbalanced braces"
-    e = _BY_KEY.get(key)
-    if e is None or not e.derives:
+    allowed = allowed_tokens(key, variables)
+    if allowed is None:
         return ""
-    allowed = {"name"}
-    if e.section == SECTION_CERT:
-        allowed |= {t.strip("{}") for t in CERT_TOKENS}
     extra = sorted(set(_TOKEN_RE.findall(pattern)) - allowed)
     if extra:
         return ("SATOM builds new names from this pattern and only fills in "
@@ -316,6 +362,126 @@ def slugify(web_address: str) -> str:
 def render_one(pattern: str, slug: str) -> str:
     """Apply one pattern to an already-computed slug (capped at the safe length)."""
     return pattern.replace(TOKEN, slug)[:MAX_NAME_LEN]
+
+
+def split_address(web_address: str) -> tuple[str, str]:
+    """``(host, port)`` of a web address; port is "" when the address has none.
+
+    ``https://Shop.Example.com:8443/x`` → ``("shop.example.com", "8443")``.
+    The host keeps its dots: that is the point of ``{host}``.
+    """
+    s = (web_address or "").strip().lower()
+    s = re.sub(r"^[a-z][a-z0-9+.-]*://", "", s)
+    s = s.split("/", 1)[0].split("?", 1)[0]
+    host, _, port = s.partition(":")
+    return host.strip("."), (port if port.isdigit() else "")
+
+
+# --------------------------------------------------------------------------- #
+#  Operator variables                                                         #
+# --------------------------------------------------------------------------- #
+def normalize_variables(raw) -> list[dict]:
+    """The stored shape of a variable list, whatever arrives: a list of
+    ``{name, source, regex, replace}`` with strings stripped. Rows without a
+    name are dropped; nothing is validated here (see :func:`variable_problems`),
+    so a list saved by an older build still reads."""
+    out: list[dict] = []
+    for row in raw if isinstance(raw, (list, tuple)) else ():
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name") or "").strip().lower()
+        if not name:
+            continue
+        out.append({"name": name,
+                    "source": str(row.get("source") or "").strip().lower().strip("{}"),
+                    "regex": str(row.get("regex") or ""),
+                    "replace": str(row.get("replace") or "")})
+    return out
+
+
+def variable_problems(variables) -> list[str]:
+    """Every reason this variable list cannot be stored ([] = it can).
+
+    A variable reads a SITE token or a variable defined ABOVE it — never one
+    below, so the order on the page is the order they are computed in and a
+    cycle cannot be written. The regex must compile and the replacement must
+    be applicable (a ``\\2`` with one group fails here, not at the first
+    policy built)."""
+    rows = normalize_variables(variables)
+    problems: list[str] = []
+    if len(rows) > MAX_VARIABLES:
+        problems.append(f"at most {MAX_VARIABLES} variables")
+    known = set(SITE_TOKENS)
+    for i, v in enumerate(rows, 1):
+        tag = f"variable {i} ({v['name']})"
+        if not VARIABLE_NAME_RE.match(v["name"]):
+            problems.append(f"{tag}: a name is lower-case letters, digits and _, "
+                            "starting with a letter (at most 32)")
+            continue
+        if v["name"] in RESERVED_TOKENS:
+            problems.append(f"{tag}: {{{v['name']}}} is a token SATOM or Discovery "
+                            "already fills in — pick another name")
+            continue
+        if v["name"] in known:
+            problems.append(f"{tag}: defined twice")
+            continue
+        if v["source"] not in known:
+            problems.append(f"{tag}: it reads {{{v['source'] or '?'}}}, which is "
+                            "neither " + ", ".join("{" + t + "}" for t in SITE_TOKENS)
+                            + " nor a variable defined above it")
+        if not v["regex"]:
+            problems.append(f"{tag}: the regular expression is empty")
+        elif len(v["regex"]) > MAX_REGEX_LEN or len(v["replace"]) > MAX_REPLACE_LEN:
+            problems.append(f"{tag}: regex at most {MAX_REGEX_LEN} characters, "
+                            f"replacement at most {MAX_REPLACE_LEN}")
+        else:
+            try:
+                re.compile(v["regex"]).sub(v["replace"], "shop.example.com")
+            except (re.error, IndexError) as exc:
+                problems.append(f"{tag}: {exc}")
+        known.add(v["name"])
+    return problems
+
+
+def site_tokens(web_address: str, port: str | int | None = "",
+                variables=None) -> dict[str, str]:
+    """Every token value for one site: ``{name}``, ``{host}``, ``{port}`` and
+    then each variable in order. *port* wins over the port in the address.
+
+    A variable that fails at render time (only possible for a list stored
+    around :func:`variable_problems`) renders empty rather than raising: the
+    caller's empty-name and safe-name guards then refuse the plan, which is
+    a clean refusal instead of a 500."""
+    host, addr_port = split_address(web_address)
+    tokens = {"name": slugify(web_address), "host": host,
+              "port": str(port).strip() if str(port or "").strip() else addr_port}
+    for v in normalize_variables(variables):
+        src = tokens.get(v["source"], "")
+        try:
+            tokens[v["name"]] = re.sub(v["regex"], v["replace"], src) if v["regex"] else src
+        except (re.error, IndexError):
+            tokens[v["name"]] = ""
+    return tokens
+
+
+def render_pattern(pattern: str, tokens: dict[str, str]) -> str:
+    """Substitute every known token of *pattern* (unknown ones stay literal —
+    :func:`pattern_problem` keeps those out of the patterns SATOM builds
+    from) and cap at :data:`MAX_NAME_LEN`."""
+    out = _TOKEN_RE.sub(lambda m: tokens.get(m.group(1), m.group(0)), pattern or "")
+    return out[:MAX_NAME_LEN]
+
+
+def unsafe_name(name: str) -> str:
+    """Why *name* cannot be an object name SATOM builds ("" = it can)."""
+    if not name:
+        return "renders empty"
+    if SAFE_NAME_RE.match(name):
+        return ""
+    bad = sorted({c for c in name if not re.match(r"[A-Za-z0-9_-]", c)})
+    return ("contains " + " ".join(repr(c) for c in bad)
+            + " — only letters, digits, _ and - are allowed; rewrite it with a "
+              "variable (Administrator → Naming)")
 
 
 def render_cert_name(
@@ -348,17 +514,22 @@ def render_names(
     web_address: str,
     overrides: dict[str, str] | None = None,
     product: str = DEFAULT_PRODUCT,
+    *,
+    port: str | int | None = "",
+    variables=None,
 ) -> dict[str, str]:
     """``{element_key: derived_name}`` for one product's elements, from one
-    web address.
+    web address (and the port the creating flow gives).
 
     This is what a "new object from just a web address" flow consumes: the
     operator types the address, this returns the full naming map for the chosen
-    product's objects.
+    product's objects. *variables* are the product's own (see
+    :func:`site_tokens`); with none, only ``{name}``/``{host}``/``{port}`` are
+    filled in.
     """
-    slug = slugify(web_address)
+    tokens = site_tokens(web_address, port, variables)
     return {
-        key: render_one(pat, slug)
+        key: render_pattern(pat, tokens)
         for key, pat in effective_scheme(overrides, product).items()
     }
 
@@ -390,7 +561,16 @@ __all__ = [
     "table_key",
     "table_overrides",
     "pattern_problem",
+    "allowed_tokens",
     "slugify",
+    "split_address",
     "render_one",
+    "render_pattern",
     "render_names",
+    "SITE_TOKENS",
+    "RESERVED_TOKENS",
+    "normalize_variables",
+    "variable_problems",
+    "site_tokens",
+    "unsafe_name",
 ]

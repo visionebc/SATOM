@@ -649,9 +649,34 @@ that the box is empty. The same live read confirms that the line's <strong>Web
 Protection Profile exists on the device</strong>; a missing profile blocks the plan
 (deploy the template first) instead of failing at the last step.</p>
 <p><strong>Names follow Administrator → Naming.</strong> Object names are rendered from the
-saved Naming patterns for the device's product, falling back to the defaults
-for any element left empty. When the wizard issues a certificate, the created
-policy serves HTTPS with it (predefined <code>HTTPS</code> service + that certificate).</p>
+saved Naming patterns and variables for the device's product (§13.3), falling
+back to the defaults for any element left empty. When the wizard issues a
+certificate, the created policy serves HTTPS with it (predefined <code>HTTPS</code>
+service + that certificate).</p>
+<p><strong>The port of each domain</strong> goes into <code>{port}</code> in the names. Each domain row
+has a <strong>Port</strong> column, and a flow that creates policies through the wizard's
+API passes <code>port</code> per domain. Left blank, the port written in the address is
+used (<code>shop.example.com:8443</code>); with none there, <code>443</code> when the policy carries
+a certificate and <code>80</code> when it does not, and the plan warns that a name carries
+a port nobody typed. The preview prints the four derived names and where the
+port came from (<em>given</em>, <em>from the address</em>, <em>default</em>). A name with a
+character the devices refuse (anything but letters, digits, <code>_</code> and <code>-</code>; a dot
+from <code>{host}</code> is the usual one) blocks the plan as <code>naming_unsafe</code>. Rewrite it
+with a variable.</p>
+<p><strong>A segment can hold several networks.</strong> On <strong>Network Segments</strong> each segment
+lists one or more networks (CIDR + gateway, optionally an interface of its
+own; blank uses the segment's interface). With <strong>Reserve the VIP from IPAM</strong>,
+the VIP is taken from the <strong>first network with a free address</strong>: if IPAM
+refuses one (full, or any other error) the next is tried, and the address step
+says which networks refused and why. The preview lists the order. A network no
+IPAM backend can serve is reported as a warning ("will NOT be tried"); only
+when none can be used does the plan block. The VIP goes on the interface of
+the network it came from, and an address released after a later failure goes
+back to that same network. A <strong>VIP typed by hand</strong> must sit in one of the
+segment's networks (<code>address_not_in_segment</code> otherwise; <code>{ip}/24</code> is
+accepted). The gateway is recorded with each network; no flow writes it to the
+device. Segments saved before this change read as one network, unchanged, and
+a CIDR the page cannot parse drops that network only, never the segment.</p>
 <p><strong>Line profiles</strong> are declared on Global ADOM → Administrator → <strong>Line
 Profiles</strong> and are always filed as FortiWeb profiles — the product the wizard
 reads them for.</p>
@@ -2585,9 +2610,50 @@ number is listed and marked so.</p>
 <p><strong>Scheme</strong> holds the pattern of each object type. Entries marked <strong>builds
 names</strong> (the FortiWeb catalog: server policy, pool, WPP, certificate…) are
 the ones SATOM fills in when it creates objects from a web address, so they
-take <code>{name}</code> only (Managed Certificate: <code>{class}</code> <code>{cn}</code> <code>{date}</code>
-<code>{serial}</code>). Every other entry documents your convention and may use any
-Discovery token. Next to each input: what Discovery found on the devices
+take the site tokens and the product's variables only (Managed Certificate:
+<code>{class}</code> <code>{cn}</code> <code>{date}</code> <code>{serial}</code>; Exception WPP: <code>{name}</code>, the policy's
+name). Every other entry documents your convention and may use any
+Discovery token.</p>
+<p>The site tokens:</p>
+<table>
+<thead>
+<tr>
+<th>Token</th>
+<th>Value for <code>https://Blabla.Example.com:8443/x</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>{name}</code></td>
+<td><code>blabla-example-com</code> — the slug, as before</td>
+</tr>
+<tr>
+<td><code>{host}</code></td>
+<td><code>blabla.example.com</code> — the host as typed, dots kept</td>
+</tr>
+<tr>
+<td><code>{port}</code></td>
+<td>the port the creating flow gives (the wizard's <strong>Port</strong>), else <code>8443</code> from the address</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Variables</strong> (the table above the patterns, one list <strong>per product</strong>) rewrite
+a token with a regular expression so the name is one the devices accept. Each
+row has a name, the token it <strong>reads</strong> (a site token or a variable above it,
+never one below), a <strong>regular expression</strong> (Python syntax, every match
+replaced, <code>\1</code> for a group) and what to <strong>replace with</strong>. Use it in a pattern
+as <code>{its_name}</code>. Example: <code>host_u</code> reads <code>host</code>, replaces <code>\.</code> with <code>_</code>; the
+pattern <code>{host_u}-{port}</code> gives <code>blabla_example_com-443</code>. The <strong>Sample web
+address</strong> and <strong>Port</strong> fields preview every pattern live; the token values
+come from the server, so the preview is what the wizard will build. A
+variable list that cannot be computed (a reserved name such as <code>num</code>, an
+unknown source, a regex that does not compile, a <code>\2</code> with one group) saves
+nothing, and removing a variable a pattern still uses is refused with the
+pattern named. <strong>Restore defaults</strong> resets the patterns and keeps the
+variables. FortiADC works the same way with its own list; no SATOM flow builds
+FortiADC names yet, so there they are a reference a future flow uses as is.
+Existing names are checked against a catalog pattern with <code>{host}</code> and every
+variable read as free text. Next to each input: what Discovery found on the devices
 (<strong>all devices agree</strong> / <strong>devices differ</strong>), <strong>use it</strong> to copy it in, and a
 live count of the existing names that follow the pattern you type. Use the
 filter box or <strong>Only types with objects on a device</strong> to narrow the list.</p>
@@ -8854,7 +8920,7 @@ discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
    the console is either <strong>on the map</strong> (125 today) or <strong>excluded with a written
-   reason</strong> (163 today — JSON feeds, downloads, redirects and fragments that
+   reason</strong> (164 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>
 <li><strong>Nothing here is a second source of truth.</strong> Paths are generated from the

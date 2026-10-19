@@ -23,6 +23,7 @@ K_POLL_INTERVAL = "general.poll_interval"          # seconds -- RETIRED: nothing
 K_SHOW_RAW = "general.show_raw_config"             # "1" / "0" -- RETIRED: nothing read it
 K_LOG_LEVELS = "general.log_levels"                # JSON list
 K_NAMING = "naming.scheme"                          # JSON dict of overrides
+K_NAMING_VARIABLES = "naming.variables"             # + ".<product>": JSON list (FA-0001)
 K_CLS_PREFIX = "classification."                    # + zones|lines|departments -> JSON list
 K_SEGMENTS = "network.segments"                     # JSON list of dicts
 K_IP_WHITELIST = "access.ip_whitelist"              # JSON list of {ip, note}
@@ -48,6 +49,12 @@ SEGMENT_STR_FIELDS = ("name", "zone", "line", "cidr", "interface", "gateway", "n
 #: which is what made the three name-resolvers disagree about which row wins.
 SEGMENT_LIST_FIELDS = ("departments",)
 SEGMENT_FIELDS = SEGMENT_STR_FIELDS + SEGMENT_LIST_FIELDS
+#: One network of a segment (FA-0002). A segment holds a LIST of them, in
+#: the order an address is taken from: the first with a free address wins.
+#: ``interface`` empty = the segment's own ``interface``. The scalar
+#: ``cidr``/``gateway`` of a segment mirror its FIRST network, so every
+#: consumer written for one network keeps reading the same value.
+SEGMENT_NETWORK_FIELDS = ("cidr", "gateway", "interface")
 
 DEFAULTS = {
     K_APP_NAME: "SATOM",
@@ -339,6 +346,28 @@ def reset_naming(product: str = "fortiweb") -> None:
     set_json(_naming_key(product), {})
 
 
+def _naming_variables_key(product: str = "fortiweb") -> str:
+    return f"{K_NAMING_VARIABLES}.{product or 'fortiweb'}"
+
+
+def naming_variables(product: str = "fortiweb") -> list[dict]:
+    """The product's naming variables (FA-0001), in computation order."""
+    from . import naming
+    return naming.normalize_variables(get_json(_naming_variables_key(product), []))
+
+
+def save_naming_variables(rows: list[dict], product: str = "fortiweb") -> list[str]:
+    """Validate and store. Returns the refusals; on any, NOTHING is written —
+    a variable list half-applied would rename objects nobody reviewed."""
+    from . import naming
+    clean = naming.normalize_variables(rows)
+    problems = naming.variable_problems(clean)
+    if problems:
+        return problems
+    set_json(_naming_variables_key(product), clean)
+    return []
+
+
 # ---- Classification (zones / lines / departments) -------------------------
 def classification(kind: str) -> list[str]:
     if kind not in CLASSIFICATION_KINDS:
@@ -402,13 +431,45 @@ def normalize_departments(value) -> list[str]:
     return out
 
 
+def normalize_networks(row: dict) -> list[dict]:
+    """The ONE reader of a segment's networks, whatever era the row is from.
+
+    A ``networks`` list is the current shape. A row without one (every blob
+    written before FA-0002, and a stale page) is ONE network made of its
+    scalar ``cidr``/``gateway``. Entries with neither a CIDR nor a gateway
+    are dropped; anything that is not a dict is ignored, never an error.
+    """
+    raw = row.get("networks") if isinstance(row, dict) else None
+    if not isinstance(raw, list):
+        raw = [{"cidr": row.get("cidr"), "gateway": row.get("gateway")}] \
+            if isinstance(row, dict) else []
+    out: list[dict] = []
+    for net in raw:
+        if not isinstance(net, dict):
+            continue
+        clean = {f: str(net.get(f, "") or "").strip() for f in SEGMENT_NETWORK_FIELDS}
+        if clean["cidr"] or clean["gateway"]:
+            out.append(clean)
+    return out
+
+
+def _mirror_first_network(seg: dict) -> None:
+    """Scalar ``cidr``/``gateway`` = the first network that has a CIDR."""
+    nets = seg.get("networks") or []
+    first = next((n for n in nets if n["cidr"]), nets[0] if nets else None)
+    seg["cidr"] = first["cidr"] if first else ""
+    seg["gateway"] = first["gateway"] if first else ""
+
+
 def segments() -> list[dict]:
     """Live segments, always in the CURRENT shape.
 
     Rows written before departments became a list are read through
-    :func:`normalize_departments`, so a blob nobody has re-saved yet still
-    answers ``departments`` -- one reader, no migration flag, and no consumer
-    that has to know which era its data came from.
+    :func:`normalize_departments`, and rows written before a segment could
+    hold several networks through :func:`normalize_networks`, so a blob
+    nobody has re-saved yet still answers ``departments`` and ``networks``
+    -- one reader, no migration flag, and no consumer that has to know which
+    era its data came from.
     """
     out: list[dict] = []
     for row in get_json(K_SEGMENTS, []):
@@ -419,6 +480,8 @@ def segments() -> list[dict]:
         if raw is None:
             raw = row.get("department")          # legacy single-value column
         seg["departments"] = normalize_departments(raw)
+        seg["networks"] = normalize_networks(row)
+        _mirror_first_network(seg)
         out.append(seg)
     return out
 
@@ -462,15 +525,25 @@ def save_segments(rows: list[dict]) -> None:
     clean: list[dict] = []
     seen: dict[str, int] = {}
     dupes: list[str] = []
+    twice: list[str] = []
     for row in rows:
         name = (row.get("name") or "").strip()
-        cidr = (row.get("cidr") or "").strip()
-        if not name and not cidr:
+        nets = normalize_networks(row)
+        if not name and not nets:
             continue  # skip wholly-blank rows
         seg: dict = {f: (str(row.get(f, "") or "")).strip()
                      for f in SEGMENT_STR_FIELDS}
         seg["departments"] = normalize_departments(
             row.get("departments", row.get("department")))
+        # The same network listed twice in ONE segment would be tried twice
+        # and counted twice; which copy's gateway is right is not this
+        # function's call, so it refuses.
+        cidrs = [n["cidr"] for n in nets if n["cidr"]]
+        if len(set(cidrs)) != len(cidrs):
+            twice.append(f"{name or '(unnamed)'}: "
+                         + ", ".join(sorted({c for c in cidrs if cidrs.count(c) > 1})))
+        seg["networks"] = nets
+        _mirror_first_network(seg)
         if name:
             if name in seen and name not in dupes:
                 dupes.append(name)
@@ -482,6 +555,10 @@ def save_segments(rows: list[dict]) -> None:
             ", ".join(repr(d) for d in dupes) +
             " — a segment name identifies one network, so add the extra "
             "department to the existing row instead of adding a second row.")
+    if twice:
+        raise SegmentError(
+            "a segment lists the same network twice (" + "; ".join(twice) +
+            ") — keep one entry per CIDR.")
     set_json(K_SEGMENTS, clean)
 
 

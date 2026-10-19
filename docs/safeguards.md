@@ -17083,3 +17083,33 @@ every side:
   harvest is used once and never stored.
 - **New-build watch never raises** into the firmware probe or the scheduler, and
   notifies once per product and build.
+
+## §214 — names built from a site, and segments with several networks (`tests/test_naming_variables.py`, `tests/test_segment_networks.py`, 2026-10-19)
+
+- **A token SATOM builds from is one it fills in.** `naming.allowed_tokens`
+  is the one answer per scheme entry: site tokens (`{name}` `{host}` `{port}`)
+  plus the variables of the SAME product; the Exception WPP keeps `{name}`
+  only (it is named from a policy, not a site); Managed Certificate its cert
+  tokens. The page, Discovery's Adopt and the save all ask it.
+- **A variable list is computed in order or not stored.** A variable reads a
+  site token or one defined above it (no forward reference, so no cycle); the
+  regex and the replacement are executed once on save, so a `\2` with one
+  group fails there and not at the first policy. Removing a variable a pattern
+  still uses refuses the whole save, naming the pattern.
+- **The preview is the server's regex.** `/naming/preview` returns the token
+  values; the browser only substitutes them, so JavaScript's regex dialect
+  never decides a name.
+- **A name the device would refuse is refused before the first write**
+  (`naming_unsafe`: only letters, digits, `_`, `-`), and a port nobody typed
+  is announced in the plan (`port_source=default`).
+- **Several networks: tried in order, every refusal said.** A network no
+  backend can serve is a warning naming it; the plan blocks only when none can
+  be used. At apply, a refused allocation moves to the next network and the
+  step lists each refusal; the release after a later failure goes to the
+  network the address came from (`took_pool`), the VIP to that network's
+  interface. A hand-typed VIP outside every network blocks
+  (`address_not_in_segment`).
+- **Old data reads unchanged.** A segment without `networks` is one network
+  from its `cidr`/`gateway`, and those scalars mirror the first network for
+  every reader written for one. A bad CIDR drops that network, never the
+  segment.

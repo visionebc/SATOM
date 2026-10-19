@@ -25477,3 +25477,79 @@ msgstr "digita RELEASE"
 #: deploy clone (2026-10-18)
 msgid "under Fleet & Devices, which copies configuration between appliances."
 msgstr "in Flotta e dispositivi, che copia la configurazione tra appliance."
+
+#: FA-0001/FA-0002
+msgid "Add network"
+msgstr "Aggiungi rete"
+
+#: FA-0001/FA-0002
+msgid "Add variable"
+msgstr "Aggiungi variabile"
+
+#: FA-0001/FA-0002
+msgid "Blank = the segment interface"
+msgstr "Vuoto = l’interfaccia del segmento"
+
+#: FA-0001/FA-0002
+msgid "Each variable reads a token (or a variable above it) and applies a regular-expression replacement to it (Python syntax, every match replaced). Use it in any pattern by its name in braces."
+msgstr "Ogni variabile legge un token (o una variabile definita sopra) e vi applica una sostituzione con espressione regolare (sintassi Python, ogni corrispondenza viene sostituita). Usala in qualsiasi pattern con il suo nome tra parentesi graffe."
+
+#: FA-0001/FA-0002
+msgid "Entries marked “builds names” are the ones SATOM fills in when it creates objects: they take those tokens and the variables only. The others document your convention and may use any Discovery token"
+msgstr "Le voci contrassegnate «costruisce nomi» sono quelle che SATOM compila quando crea oggetti: accettano solo questi token e le variabili. Le altre documentano la vostra convenzione e possono usare qualsiasi token di Discovery"
+
+#: FA-0001/FA-0002
+msgid "gateway"
+msgstr "gateway"
+
+#: FA-0001/FA-0002
+msgid "Named networks a new server policy puts its VIP on. A segment holds one or more networks (CIDR + gateway, optionally its own interface): when the VIP is reserved from IPAM it is taken from the first network with a free address, then the next; a VIP typed by hand must sit in one of them. Each segment can be scoped to a classification value (leave blank for \"any\")."
+msgstr "Reti con nome su cui una nuova server policy colloca il suo VIP. Un segmento contiene una o più reti (CIDR + gateway, facoltativamente una propria interfaccia): quando il VIP viene riservato dall’IPAM è preso dalla prima rete con un indirizzo libero, altrimenti dalla successiva; un VIP digitato a mano deve trovarsi in una di esse. Ogni segmento può essere limitato a un valore di classificazione (lasciare vuoto per \"qualsiasi\")."
+
+#: FA-0001/FA-0002
+msgid "Networks"
+msgstr "Reti"
+
+#: FA-0001/FA-0002
+msgid "Reads"
+msgstr "Legge"
+
+#: FA-0001/FA-0002
+msgid "Regular expression"
+msgstr "Espressione regolare"
+
+#: FA-0001/FA-0002
+msgid "Remove this network"
+msgstr "Rimuovi questa rete"
+
+#: FA-0001/FA-0002
+msgid "Sample value"
+msgstr "Valore di esempio"
+
+#: FA-0001/FA-0002
+msgid "SATOM fills this pattern in when it creates objects: only the tokens and variables listed above are substituted."
+msgstr "SATOM compila questo pattern quando crea oggetti: vengono sostituiti solo i token e le variabili indicati sopra."
+
+#: FA-0001/FA-0002
+msgid "the host as typed (dots kept) and"
+msgstr "l’host come digitato (punti mantenuti) e"
+
+#: FA-0001/FA-0002
+msgid "The interface of every network that does not name its own"
+msgstr "L’interfaccia di ogni rete che non ne indica una propria"
+
+#: FA-0001/FA-0002
+msgid "the port the creating flow gives."
+msgstr "la porta fornita dal flusso che crea l’oggetto."
+
+#: FA-0001/FA-0002
+msgid "The variables and the preview work the same as for FortiWeb, so a flow that builds FortiADC names uses them unchanged."
+msgstr "Le variabili e l’anteprima funzionano come per FortiWeb, quindi un flusso che genera nomi FortiADC le usa invariate."
+
+#: FA-0001/FA-0002
+msgid "Variables"
+msgstr "Variabili"
+
+#: FA-0001/FA-0002
+msgid "Variables (below) rewrite a token with a regular expression, for a name the devices accept"
+msgstr "Le variabili (sotto) riscrivono un token con un’espressione regolare, per un nome che i dispositivi accettano"

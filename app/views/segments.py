@@ -1,8 +1,12 @@
 """**Network Segments** — standalone admin page.
 
-Named back-end networks (CIDR + interface + gateway) from which a new policy
-builds its server pool, each scoped to a classification value. Ported out of the
-Settings console into its own page (Administrator section).
+Named networks a new server policy puts its VIP on (``spo_wizard`` reserves
+the VIP from a segment's CIDRs and binds it to the segment's interface — it was
+described here as the back-end pool's network, which no code ever did). A
+segment holds one or more networks (CIDR + gateway, optionally an interface of
+its own), tried in order when IPAM hands out the address (FA-0002); each
+segment is scoped to a classification value. Ported out of the Settings console
+into its own page (Administrator section).
 
 Admin-only (USER_MANAGE), mirroring the desktop Settings console.
 """

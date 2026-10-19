@@ -177,6 +177,7 @@
             <label class="fw-form-label mb-0" style="font-size:12px;">{{ t.label }} — {{ _('pattern') }}</label>
             <input type="text" name="pattern" class="form-control form-control-sm fw-form-control nd-adapt-input" style="max-width:340px;"
                    value="{{ t.adapt_seed }}" data-derives="{{ '1' if t.derives else '0' }}"
+                   data-allowed="{{ t.allowed | tojson | forceescape }}" data-free="{{ t.free | tojson | forceescape }}"
                    data-names="{{ t.names | tojson | forceescape }}">
             <span class="nd-adapt-check" style="font-size:12px;"></span>
             <button type="submit" class="btn btn-sm btn-fw-primary ms-auto"><i class="bi bi-check-lg me-1"></i>{{ _('Save to scheme') }}</button>
@@ -274,8 +275,10 @@
   function check(inp) {
     var out = inp.parentNode.querySelector('.nd-adapt-check');
     var pat = inp.value.trim();
-    var warn = (pat && inp.getAttribute('data-derives') === '1') ? NP.derivesProblem(pat, false) : '';
-    var r = pat ? NP.check(pat, JSON.parse(inp.getAttribute('data-names') || '[]'), PROTO) : null;
+    var allowed = JSON.parse(inp.getAttribute('data-allowed') || 'null');
+    var warn = (pat && inp.getAttribute('data-derives') === '1') ? NP.derivesProblem(pat, allowed || false) : '';
+    var r = pat ? NP.check(pat, JSON.parse(inp.getAttribute('data-names') || '[]'), PROTO,
+                           JSON.parse(inp.getAttribute('data-free') || '[]')) : null;
     var save = inp.form.querySelector('button[type=submit]');
     save.disabled = !!warn || !r;
     inp.classList.toggle('is-invalid', !!warn || (pat && !r));

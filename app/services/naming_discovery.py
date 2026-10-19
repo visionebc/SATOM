@@ -593,15 +593,20 @@ def pattern_tokens(pattern: str) -> set[str]:
     return set(_TOKEN_RE.findall(pattern or ""))
 
 
-def pattern_regex(pattern: str, *, capture: bool = False):
-    """A full-match, case-insensitive regex for a (discovered or adopted) pattern."""
+def pattern_regex(pattern: str, *, capture: bool = False, free=()):
+    """A full-match, case-insensitive regex for a (discovered or adopted) pattern.
+
+    *free* names tokens that match free text like ``{name}`` does: on a
+    catalog element ``{host}`` and the naming variables are filled in from
+    the site (``blabla_example_com``), not one separator-free part."""
     if not pattern:
         return None
+    free = set(free or ())
     out, pos, seen = [], 0, set()
     for m in _TOKEN_RE.finditer(pattern):
         out.append(re.escape(pattern[pos:m.start()]))
         tok = m.group(1)
-        if tok == "name":
+        if tok == "name" or tok in free:
             body = ".+?"
         elif tok in ("port", "num"):
             body = r"\d+"
@@ -619,8 +624,8 @@ def pattern_regex(pattern: str, *, capture: bool = False):
     return re.compile("^" + "".join(out) + "$", re.IGNORECASE)
 
 
-def conformance(pattern: str, names: list[str]) -> dict:
-    rx = pattern_regex(pattern)
+def conformance(pattern: str, names: list[str], *, free=()) -> dict:
+    rx = pattern_regex(pattern, free=free)
     if rx is None:
         return {"pattern": pattern, "conform": 0, "total": len(names), "misses": []}
     misses = [n for n in names if not rx.match(n)]
@@ -631,15 +636,19 @@ def conformance(pattern: str, names: list[str]) -> dict:
 def scheme_compatible(pattern: str) -> tuple[bool, str]:
     """Can this pattern be written into the Naming scheme as it is?
 
-    The scheme substitutes ``{name}`` only (``naming.render_names``); any
-    other token would reach a device as literal text."""
-    extra = pattern_tokens(pattern) - {"name"}
+    The scheme fills in the site tokens (``naming.SITE_TOKENS``) and the
+    product's variables (``naming.render_names``); a Discovery token such as
+    ``{adom}`` or ``{num}`` would reach a device as literal text. Checked
+    here without the variables: a discovered pattern never carries one."""
+    from .naming import SITE_TOKENS
+    extra = pattern_tokens(pattern) - set(SITE_TOKENS)
     if extra:
-        return False, ("the naming scheme only fills in {name}; "
+        return False, ("the naming scheme only fills in "
+                       + ", ".join("{" + t + "}" for t in SITE_TOKENS) + "; "
                        + ", ".join("{" + t + "}" for t in sorted(extra))
                        + " would be written literally")
-    if "{name}" not in (pattern or ""):
-        return False, "the pattern has no {name} part"
+    if not ({"name", "host"} & pattern_tokens(pattern)):
+        return False, "the pattern has no {name} or {host} part"
     return True, ""
 
 

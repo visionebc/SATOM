@@ -55,6 +55,11 @@ POOL_EXISTING = "existing"  # already on THIS device; bind it, create nothing
 POOL_SHARED = "shared"      # a sibling plan in the same batch creates it
 POOL_MODES = (POOL_NEW, POOL_EXISTING, POOL_SHARED)
 
+#: Where ``{port}`` came from (``SpoPlan.port_source``).
+PORT_GIVEN = "given"
+PORT_ADDRESS = "address"
+PORT_DEFAULT = "default"
+
 #: Naming elements every policy needs. These are the REAL keys
 #: ``services.naming`` emits — checked against it by a guard, because inventing
 #: them is exactly how this module first shipped an unnamed policy.
@@ -77,10 +82,22 @@ class SpoPlan:
     line: str
     web_address: str
     hostname: str = ""
+    #: The port the names were rendered with (``{port}``) and where it came
+    #: from: ``given`` (the creating flow / the wizard's Port field),
+    #: ``address`` (``shop.example.com:8443``) or ``default`` (443 with a
+    #: certificate, 80 without).
+    port: str = ""
+    port_source: str = ""
     names: dict = field(default_factory=dict)
     segment: dict = field(default_factory=dict)
     department: str = ""              # narrows the choice; never invents one
-    pool: str = ""                    # the IPAM ADDRESS pool
+    pool: str = ""                    # the IPAM ADDRESS pool (the first one)
+    #: Every IPAM pool the address may come from, in order (FA-0002), and
+    #: the ones that resolved to a backend able to allocate — the list
+    #: ``apply_plan`` walks. ``vip_pool`` is the one the VIP came from.
+    pools: list = field(default_factory=list)
+    ipam_candidates: list = field(default_factory=list)
+    vip_pool: str = ""
     #: The FortiWeb SERVER pool the policy binds. A different object from
     #: ``pool`` above: one hands out IP addresses, the other holds real
     #: servers. They are spelled out separately everywhere they appear
@@ -132,10 +149,13 @@ class SpoPlan:
             "appliance_id": self.appliance_id, "product": self.product,
             "line": self.line, "line_source": self.line_source,
             "web_address": self.web_address, "hostname": self.hostname,
+            "port": self.port, "port_source": self.port_source,
             "names": self.names, "segment": self.segment,
             "department": self.department,
             "segment_departments": list(self.segment.get("departments") or []),
-            "pool": self.pool,
+            "pool": self.pool, "pools": list(self.pools),
+            "ipam_candidates": list(self.ipam_candidates),
+            "vip_pool": self.vip_pool,
             "pool_name": self.pool_name, "pool_mode": self.pool_mode,
             "pool_from": self.pool_from,
             "use_ipam": self.use_ipam, "address": self.address,
@@ -161,7 +181,8 @@ def build_plan(appliance, *, line: str, web_address: str,
                issue_cert: bool = False, backends=None,
                ipam_backend_id: object = None, dns_backend_id: object = None,
                pool_name: str = "", pool_mode: str = POOL_NEW,
-               pool_from: str = "", product: str = "") -> SpoPlan:
+               pool_from: str = "", product: str = "",
+               port: object = "") -> SpoPlan:
     """Everything the run will do, and every reason it cannot. Writes nothing."""
     product = product or getattr(appliance, "kind", "") or "fortiweb"
     web_address = (web_address or "").strip()
@@ -184,10 +205,36 @@ def build_plan(appliance, *, line: str, web_address: str,
             "no_web_address", "a web address is required — every object name "
             "is derived from it"))
         return plan
-    # The operator's saved patterns (Administrator -> Naming) win over the
-    # defaults; passing None here once made that page a no-op for the wizard.
+    # -- the port {port} renders with. Given > in the address > default. ----
+    given = str(port if port is not None else "").strip()
+    addr_port = naming.split_address(web_address)[1]
+    if given:
+        plan.port, plan.port_source = given, PORT_GIVEN
+    elif addr_port:
+        plan.port, plan.port_source = addr_port, PORT_ADDRESS
+    else:
+        plan.port = "443" if plan.issue_cert else "80"
+        plan.port_source = PORT_DEFAULT
+    if not (plan.port.isdigit() and 1 <= int(plan.port) <= 65535):
+        plan.blockers.append(Blocker(
+            "bad_port", f"the port {plan.port!r} is not a TCP port (1-65535)"))
+
+    # The operator's saved patterns AND variables (Administrator -> Naming)
+    # win over the defaults; passing None here once made that page a no-op
+    # for the wizard.
+    overrides = store.naming_overrides(product)
     plan.names = naming.render_names(
-        web_address, store.naming_overrides(product), product)
+        web_address, overrides, product, port=plan.port,
+        variables=store.naming_variables(product))
+    scheme = naming.effective_scheme(overrides, product)
+    if plan.port_source == PORT_DEFAULT and any(
+            "{port}" in (scheme.get(k) or "") for k in REQUIRED_NAMES):
+        # Not a blocker: the default is a real decision with a stated rule.
+        # But a name that carries a port nobody typed must say so.
+        plan.warnings.append(
+            f"no port was given, so {{port}} in the names is {plan.port} "
+            + ("(the policy carries a certificate)" if plan.issue_cert
+               else "(no certificate)") + " — give the port to override it")
     # The naming scheme is operator-editable, and a key that is missing or
     # renders empty does NOT crash — it produces an object called "", which
     # FortiWeb accepts far enough to be confusing. Refuse instead. (This
@@ -200,6 +247,15 @@ def build_plan(appliance, *, line: str, web_address: str,
             "naming_incomplete",
             "the naming scheme produced no name for: " + ", ".join(missing)
             + " — fix it in Administrator -> Naming"))
+    # A name the device would refuse (a dot from {host}, a space a variable
+    # left) is refused HERE, before an address is reserved for it.
+    unsafe = [(k, plan.names[k], naming.unsafe_name(plan.names[k]))
+              for k in REQUIRED_NAMES if (plan.names.get(k) or "").strip()
+              and naming.unsafe_name(plan.names[k])]
+    if unsafe:
+        plan.blockers.append(Blocker(
+            "naming_unsafe",
+            "; ".join(f"{k} {n!r} {why}" for k, n, why in unsafe)))
 
     # -- which SERVER pool -------------------------------------------------
     plan.pool_mode = pool_mode if pool_mode in POOL_MODES else POOL_NEW
@@ -277,7 +333,11 @@ def build_plan(appliance, *, line: str, web_address: str,
             "segment_not_chosen",
             f"line {plan.line!r} receives {len(available)} segments — pick one"))
 
-    plan.pool = lp.pool_for(lplan, (plan.segment.get("name") or ""))
+    # Every network the address may come from, in order (FA-0002): the
+    # first with a free address wins at apply. ``pool`` stays the first one
+    # so a reader written for one network keeps its meaning.
+    plan.pools = lp.pools_for(lplan, (plan.segment.get("name") or ""))
+    plan.pool = plan.pools[0] if plan.pools else ""
 
     # -- addressing -------------------------------------------------------
     if plan.use_ipam:
@@ -286,48 +346,36 @@ def build_plan(appliance, *, line: str, web_address: str,
                 "no_pool", "IPAM allocation was requested but neither the "
                            "line profile nor the segment says which pool to "
                            "take the address from"))
-        from . import dns_providers as _dp
-        res = _dp.choose("ipam", plan.pool, plan.ipam_pick)
-        if res.code == _dp.NO_BACKEND:
-            plan.blockers.append(Blocker(
-                "no_ipam_provider", "IPAM allocation was requested but no "
-                                    "backend carries the IPAM role"))
-        elif plan.ipam_pick and not res.ok:
-            # A rejected CHOICE is its own refusal. Folding it into
-            # "not resolved" would send an operator who named a backend off
-            # to fix the scope rules, when the fix is to that one row (or to
-            # the choice itself).
-            plan.blockers.append(Blocker(
-                "ipam_backend_rejected",
-                f"the chosen IPAM backend cannot reserve this address: "
-                f"{res.detail}"))
-        elif not res.ok:
-            # A pool no backend claims, or two claiming it equally. Reported
-            # under its own code and NOT folded into "none configured": the
-            # fix is different (scope a backend / break the tie) and an
-            # operator told "none is configured" while three are would go
-            # looking in the wrong place.
-            plan.blockers.append(Blocker(
-                "ipam_not_resolved",
-                f"IPAM allocation was requested but {res.detail}"))
+        refusals: list[Blocker] = []
+        caps_seen: dict = {}
+        for pool in (plan.pools or [""]):
+            cand, why = _ipam_candidate(plan, pool, len(plan.pools) > 1, caps_seen)
+            if cand:
+                plan.ipam_candidates.append(cand)
+            elif all((b.code, b.detail) != (why.code, why.detail) for b in refusals):
+                refusals.append(why)
+        if plan.ipam_candidates:
+            first = plan.ipam_candidates[0]
+            plan.ipam_backend = first["backend"]
+            plan.ipam_backend_id = first["backend_id"]
+            # A network that cannot be used is said out loud, not skipped
+            # in silence: the operator listed it expecting it to be tried.
+            for b in refusals:
+                plan.warnings.append(f"this network will NOT be tried: {b.detail}")
         else:
-            plan.ipam_backend = res.backend.name
-            plan.ipam_backend_id = res.backend.id
-            caps = _dp.capabilities_of(res.backend)
-            if caps is None:
-                plan.blockers.append(Blocker(
-                    "ipam_unreachable",
-                    f"{res.backend.name} was chosen to reserve the address "
-                    "but did not answer — unreachable or misconfigured"))
-            elif not caps.can_allocate:
-                plan.blockers.append(Blocker(
-                    "ipam_cannot_allocate",
-                    f"{res.backend.name} ({caps.label}) does not hand out "
-                    "addresses"))
+            plan.blockers.extend(refusals)
     elif not plan.address:
         plan.blockers.append(Blocker(
             "no_address", "no VIP address given and IPAM allocation was not "
                           "requested"))
+    elif lp.segment_cidrs(plan.segment) and lp.network_of(plan.segment, plan.address) is None:
+        # A typed VIP must sit on one of the segment's networks: otherwise the
+        # VIP goes on an interface that does not carry its subnet, which the
+        # device accepts and nothing answers on (FA-0002).
+        plan.blockers.append(Blocker(
+            "address_not_in_segment",
+            f"the VIP {plan.address} is in none of the networks of segment "
+            f"{plan.segment.get('name')!r} ({', '.join(lp.segment_cidrs(plan.segment))})"))
     if plan.ipam_pick and not plan.use_ipam:
         # A control that silently does nothing reads as a control that worked.
         plan.warnings.append(
@@ -428,6 +476,44 @@ def build_plan(appliance, *, line: str, web_address: str,
     # -- name collision, read from the LIVE device ------------------------
     _collision_check(appliance, plan)
     return plan
+
+
+def _ipam_candidate(plan: "SpoPlan", pool: str, several: bool, caps_seen: dict):
+    """``(candidate, None)`` when *pool* can hand out the VIP, else
+    ``(None, Blocker)`` saying why. One pool's verdict, the codes the
+    single-network wizard always used, so a one-network segment reads exactly
+    as before."""
+    from . import dns_providers as _dp
+    where = f" (network {pool})" if several and pool else ""
+    res = _dp.choose("ipam", pool, plan.ipam_pick)
+    if res.code == _dp.NO_BACKEND:
+        return None, Blocker("no_ipam_provider", "IPAM allocation was requested "
+                                                 "but no backend carries the IPAM role")
+    if plan.ipam_pick and not res.ok:
+        # A rejected CHOICE is its own refusal. Folding it into "not
+        # resolved" would send an operator who named a backend off to fix the
+        # scope rules, when the fix is to that one row (or to the choice).
+        return None, Blocker("ipam_backend_rejected",
+                             f"the chosen IPAM backend cannot reserve this address"
+                             f"{where}: {res.detail}")
+    if not res.ok:
+        # A pool no backend claims, or two claiming it equally. Its own code,
+        # NOT "none configured": the fix is different (scope a backend / break
+        # the tie).
+        return None, Blocker("ipam_not_resolved",
+                             f"IPAM allocation was requested but {res.detail}{where}")
+    if res.backend.id not in caps_seen:
+        caps_seen[res.backend.id] = _dp.capabilities_of(res.backend)
+    caps = caps_seen[res.backend.id]
+    if caps is None:
+        return None, Blocker("ipam_unreachable",
+                             f"{res.backend.name} was chosen to reserve the address"
+                             f"{where} but did not answer — unreachable or misconfigured")
+    if not caps.can_allocate:
+        return None, Blocker("ipam_cannot_allocate",
+                             f"{res.backend.name} ({caps.label}) does not hand out "
+                             f"addresses{where}")
+    return {"pool": pool, "backend": res.backend.name, "backend_id": res.backend.id}, None
 
 
 def _wpp_firmware_warning(appliance, plan: SpoPlan) -> None:
@@ -554,6 +640,7 @@ def apply_plan(appliance, plan: SpoPlan, *, dry_run: bool = True,
     took_address = ""
     address_ref = ""
     address_backend = None
+    took_pool = ""
     dns_record_id = ""
     dns_backend = None
 
@@ -587,7 +674,7 @@ def apply_plan(appliance, plan: SpoPlan, *, dry_run: bool = True,
             try:
                 dns_providers.release_address(took_address, ref=address_ref,
                                               backend_id=address_backend,
-                                              pool=plan.pool)
+                                              pool=took_pool or plan.pool)
                 compensated.append(f"released {took_address}")
             except Exception as exc:  # noqa: BLE001
                 stranded.append(f"address {took_address} could not be "
@@ -599,26 +686,49 @@ def apply_plan(appliance, plan: SpoPlan, *, dry_run: bool = True,
     # -- 1. address -------------------------------------------------------
     vip = plan.address
     if plan.use_ipam:
+        # The networks in order (FA-0002). A plan built before candidates
+        # existed (or by hand) still has the one pool and backend it named.
+        cands = list(plan.ipam_candidates) or [
+            {"pool": plan.pool, "backend": plan.ipam_backend,
+             "backend_id": plan.ipam_backend_id}]
         if dry_run:
+            rest = [c["pool"] for c in cands[1:]]
             steps.append(RunStep(STEP_ADDRESS, "Reserve an address",
                                  detail=f"would take the next free address "
-                                        f"from {plan.pool}"))
+                                        f"from {cands[0]['pool']}"
+                                        + (f", then {', '.join(rest)} if it "
+                                           "has none free" if rest else "")))
             vip = vip or "<allocated at apply>"
+            plan.vip_pool = cands[0]["pool"]
         else:
-            try:
-                addr = dns_providers.allocate_address(
-                    hostname=plan.hostname or plan.web_address, pool=plan.pool,
-                    backend_id=plan.ipam_backend_id)
-            except Exception as exc:  # noqa: BLE001
+            addr, refused = None, []
+            for cand in cands:
+                try:
+                    addr = dns_providers.allocate_address(
+                        hostname=plan.hostname or plan.web_address,
+                        pool=cand["pool"], backend_id=cand["backend_id"])
+                except Exception as exc:  # noqa: BLE001
+                    # Nothing was taken: an allocation that raised returned
+                    # no address. Try the next network, and SAY this one
+                    # refused — in the step, not only in a log.
+                    refused.append(f"{cand['pool']}: {exc}")
+                    continue
+                took_pool = cand["pool"]
+                break
+            if addr is None:
                 steps.append(RunStep(STEP_ADDRESS, "Reserve an address",
-                                     ok=False, detail=str(exc)))
-                return fail(f"IPAM refused to allocate: {exc}")
+                                     ok=False, detail="; ".join(refused)))
+                return fail("IPAM refused to allocate"
+                            + (" from every network" if len(cands) > 1 else "")
+                            + ": " + "; ".join(refused))
             vip = addr.address
             took_address, address_ref = addr.address, addr.ref
             address_backend = addr.backend_id
+            plan.vip_pool = took_pool
             steps.append(RunStep(STEP_ADDRESS, "Reserve an address",
                                  detail=f"{addr.address} from "
-                                        f"{addr.pool or plan.pool}"))
+                                        f"{addr.pool or took_pool}"
+                                        + (f" ({'; '.join(refused)})" if refused else "")))
     else:
         steps.append(RunStep(STEP_ADDRESS, "Address",
                              detail=f"using the supplied {vip}"))
@@ -753,7 +863,7 @@ def object_payload(plan: SpoPlan, vip: str, certificate: str = "") -> dict:
         ("Virtual Server", _CREATE_EPS["vserver"], {"name": vserver}, None),
         ("VIP", _CREATE_EPS["vip"],
          {"name": n["vip"], "vip": vip,
-          "interface": seg.get("interface") or ""}, vserver),
+          "interface": lp.interface_for(seg, vip, plan.vip_pool)}, vserver),
     ]
     # ONLY a "new" pool is created. Re-creating one that already exists fails
     # on the device; re-creating a SHARED one races the sibling plan that owns
@@ -826,6 +936,7 @@ def build_batch(appliance, *, rows, existing_pool: str = "",
         plan = build_plan(appliance, web_address=web,
                           hostname=str(row.get("hostname") or ""),
                           address=str(row.get("address") or ""),
+                          port=str(row.get("port") or ""),
                           pool_name=name, pool_mode=mode,
                           pool_from=pool_from, **common)
 

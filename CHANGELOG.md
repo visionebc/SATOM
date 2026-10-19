@@ -6,6 +6,45 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- Naming variables and site tokens (FA-0001). Requested as: "you have
+  variables like NAME; it would be useful to add others such as the port and
+  the URL, because the name should be the URL with some changes — Fortinet
+  does not accept '.' in names. When the user enters blabla.example.com
+  port 443 the SPO should be blabla_example_com-443; being able to define
+  variables with a regex would help a lot", with the port given by the flow
+  that creates the policy, the same logic for FortiADC, per product. Patterns
+  SATOM builds names from now take `{host}` (the host as typed) and `{port}`
+  besides `{name}`, and Administrator → Naming has a **Variables** table per
+  product: each variable reads a token or a variable above it and applies a
+  regular-expression replacement (`host_u` = `{host}` with `\.` → `_`, so
+  `{host_u}-{port}` gives `blabla_example_com-443`). The preview is computed
+  by the server. A variable list that cannot be computed saves nothing, and
+  removing a variable a pattern still uses is refused. The new-policy wizard
+  has a **Port** column per domain (also `port` in its API body); blank uses
+  the port in the address, else 443 with a certificate and 80 without, with a
+  warning. A derived name with a character other than letters, digits, `_`
+  and `-` blocks the plan (`naming_unsafe`) instead of failing on the device.
+- Network segments with several networks (FA-0002). Requested as: "for CIDR
+  and gateway it would be better to be able to add more than one, so the user
+  does not have to choose; the system does the control automatically", when
+  the address is assigned automatically. A segment holds an ordered list of
+  networks (CIDR + gateway, optionally its own interface). With IPAM the VIP
+  is taken from the first network with a free address, then the next; the
+  address step names every network that refused, the VIP goes on that
+  network's interface and a later failure releases the address to the network
+  it came from. A network no backend can serve is a warning, not a blocker,
+  unless none can be used. A VIP typed by hand must sit in one of the networks.
+  Analysis, the Bookmarks segment lens and Line Profiles read every network.
+
+### Changed
+
+- A CIDR the Network Segments page cannot parse now drops that network only;
+  it used to drop the whole segment (and orphan the line profiles naming it).
+- The Network Segments page and its view no longer describe segments as the
+  back-end pool's networks: the wizard has always used them for the VIP.
+
 ## [3.3.3] - 2026-10-18
 
 ### Added

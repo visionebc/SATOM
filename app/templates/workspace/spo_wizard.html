@@ -175,6 +175,16 @@
   const $ = (id) => document.getElementById(id);
   let lastOk = false;
 
+  // A segment's networks (FA-0002), first one first: the order an address
+  // is taken in. Older rows without ``networks`` still carry ``cidr``.
+  function netList(s) {
+    const nets = (s && s.networks) || [];
+    if (!nets.length) { return (s && s.cidr) || ''; }
+    return nets.map(function (n) {
+      return n.cidr + (n.interface ? ' (' + n.interface + ')' : '');
+    }).filter(Boolean).join(', ');
+  }
+
   function segmentsFor(line) {
     const p = PLANS[line];
     return p ? p.segments : [];
@@ -226,7 +236,7 @@
       o.value = s.name;
       // The departments are ON the option: two rows reading "name — cidr" and
       // nothing else is what made a shared network impossible to tell apart.
-      o.textContent = s.name + (s.cidr ? ' — ' + s.cidr : '')
+      o.textContent = s.name + (netList(s) ? ' — ' + netList(s) : '')
                     + (depts.length ? '  ·  ' + depts.join(', ') : '  ·  no department');
       sel.appendChild(o);
     });
@@ -317,7 +327,8 @@
     const row = document.createElement('div');
     row.className = 'row g-2 mb-1 w-domain-row';
     row.innerHTML =
-      '<div class="col-md-4"><input class="form-control form-control-sm w-d-web"></div>' +
+      '<div class="col-md-3"><input class="form-control form-control-sm w-d-web"></div>' +
+      '<div class="col-md-1"><input class="form-control form-control-sm w-d-port" inputmode="numeric"></div>' +
       '<div class="col-md-4"><input class="form-control form-control-sm w-d-host"></div>' +
       '<div class="col-md-3"><input class="form-control form-control-sm w-d-vip"></div>' +
       '<div class="col-md-1 d-flex align-items-start">' +
@@ -326,7 +337,13 @@
     const web = row.querySelector('.w-d-web');
     const host = row.querySelector('.w-d-host');
     const vip = row.querySelector('.w-d-vip');
+    const port = row.querySelector('.w-d-port');
     web.placeholder = 'shop.example.com';
+    // The port {port} renders with in the names. Blank = the port in the
+    // address, else 443 with a certificate / 80 without (the planner's rule).
+    port.placeholder = 'port';
+    port.title = 'Port for {port} in the object names \u2014 blank: the address\u2019s port, else 443 with a certificate, 80 without';
+    port.value = seed.port || '';
     host.placeholder = 'hostname to publish \u2014 blank = do not publish';
     vip.placeholder = 'VIP \u2014 blank when using IPAM';
     web.value = seed.web_address || '';
@@ -345,6 +362,7 @@
     return domainRows().map(function (r) {
       return {
         web_address: r.querySelector('.w-d-web').value.trim(),
+        port: r.querySelector('.w-d-port').value.trim(),
         hostname: r.querySelector('.w-d-host').value.trim(),
         address: r.querySelector('.w-d-vip').value.trim()
       };
@@ -478,6 +496,7 @@
       web_address: first.web_address || '',
       hostname: first.hostname || '',
       address: first.address || '',
+      port: first.port || '',
       use_ipam: $('w-use-ipam').checked,
       issue_cert: $('w-cert').checked,
       // The mode goes over the wire EXPLICITLY, and the pool name goes with
@@ -523,11 +542,13 @@
       const dl = (plan.segment_departments || []);
       html += '<div class="mb-2" style="font-size:12.5px;">' +
               '<span class="fw-badge fw-badge-info">' + esc(plan.segment.name) + '</span> ' +
-              esc(plan.segment.cidr || '') +
+              esc(netList(plan.segment)) +
               (plan.segment.interface ? ' on ' + esc(plan.segment.interface) : '') +
               (dl.length ? ' &middot; serves ' + esc(dl.join(', ')) : ' &middot; no department') +
               (plan.department ? ' &middot; building for <strong>' + esc(plan.department) + '</strong>' : '') +
-              (plan.pool ? ' &middot; pool ' + esc(plan.pool) : '') +
+              ((plan.pools || []).length > 1
+                ? ' &middot; pools, first with a free address: ' + esc(plan.pools.join(' \u2192 '))
+                : (plan.pool ? ' &middot; pool ' + esc(plan.pool) : '')) +
               '</div>';
     }
     // Printed for every plan that resolved one, chosen or not: "an address
@@ -559,6 +580,21 @@
               esc(POOL_WORDS[plan.pool_mode] || plan.pool_mode) +
               (plan.pool_from
                 ? ' &middot; members copied from ' + esc(plan.pool_from) : '') +
+              '</div>';
+    }
+    // The names the scheme derived, and which port went into {port}: a name
+    // the operator only meets on the device is a name nobody reviewed.
+    if (plan.names && plan.names.server_policy) {
+      const PORT_WORDS = { given: 'given', address: 'from the address',
+                           'default': 'default' };
+      html += '<div class="mb-2" style="font-size:12.5px;">' +
+              '<span class="fw-badge fw-badge-info">NAMES</span> ' +
+              ['server_policy', 'virtual_server', 'vip', 'server_pool']
+                .filter(function (k) { return plan.names[k]; })
+                .map(function (k) { return '<code>' + esc(plan.names[k]) + '</code>'; })
+                .join(' &middot; ') +
+              (plan.port ? ' &middot; port ' + esc(plan.port) + ' (' +
+                esc(PORT_WORDS[plan.port_source] || plan.port_source) + ')' : '') +
               '</div>';
     }
     if (plan.blockers.length) {

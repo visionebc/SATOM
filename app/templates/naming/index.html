@@ -27,8 +27,11 @@
       {{ _('One entry per object type: every type the device sync reads for this product — the same list Discovery reads — including the ones no device has an object of yet.') }}
       {{ _('Next to each pattern: what Discovery found on the devices and how many existing names follow your pattern.') }}
       <code>{name}</code> {{ _('is the site identifier, sanitised automatically') }}
-      (<code>shop.example.com → shop-example-com</code>).
-      {{ _('Entries marked “builds names” are the ones SATOM fills in when it creates objects: they take') }} <code>{name}</code> {{ _('only. The others document your convention and may use any Discovery token') }}
+      (<code>shop.example.com → shop-example-com</code>),
+      <code>{host}</code> {{ _('the host as typed (dots kept) and') }} <code>{port}</code> {{ _('the port the creating flow gives.') }}
+      {{ _('Variables (below) rewrite a token with a regular expression, for a name the devices accept') }}
+      (<code>{host_u}-{port}</code> → <code>shop_example_com-443</code>).
+      {{ _('Entries marked “builds names” are the ones SATOM fills in when it creates objects: they take those tokens and the variables only. The others document your convention and may use any Discovery token') }}
       (<code>{port}</code>, <code>{proto}</code>, <code>{adom}</code>, <code>{num}</code>, …).
       {{ _('Clearing a field restores its default (or leaves the type without a pattern).') }}
     </p>
@@ -61,6 +64,7 @@
     <div class="alert alert-secondary py-2 mb-3" style="font-size:12.5px;">
       <i class="bi bi-info-circle me-1"></i><strong>{{ _('Reference only.') }}</strong>
       {{ _('FortiADC patterns document your convention; the FortiADC object editor and the virtual-server wizard do not fill in or check names from them.') }}
+      {{ _('The variables and the preview work the same as for FortiWeb, so a flow that builds FortiADC names uses them unchanged.') }}
     </div>
     {% endif %}
     {% if not has_devices %}
@@ -71,7 +75,11 @@
     <div class="row g-2 align-items-center mb-2">
       <div class="col-auto"><label class="fw-form-label mb-0" for="naming-sample">{{ _('Sample web address') }}</label></div>
       <div class="col-auto" style="min-width:240px;">
-        <input type="text" id="naming-sample" class="form-control form-control-sm fw-form-control" value="shop.example.com">
+        <input type="text" id="naming-sample" class="form-control form-control-sm fw-form-control" value="{{ sample_address }}">
+      </div>
+      <div class="col-auto"><label class="fw-form-label mb-0" for="naming-sample-port">{{ _('Port') }}</label></div>
+      <div class="col-auto" style="width:90px;">
+        <input type="text" id="naming-sample-port" class="form-control form-control-sm fw-form-control" value="{{ sample_port }}" inputmode="numeric">
       </div>
       <div class="col-auto"><span class="text-muted" id="naming-slug" style="font-size:12px;"></span></div>
       <div class="col-auto ms-lg-auto" style="min-width:220px;">
@@ -88,6 +96,35 @@
     <form method="POST" action="{{ url_for('naming.save') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="product" value="{{ current_product }}">
+      <input type="hidden" name="variables_posted" value="1">
+      <div class="nm-variables mt-2" id="nm-variables">
+        <div class="text-muted text-uppercase" style="font-size:12px; letter-spacing:.5px;">{{ _('Variables') }} — {{ product_label }}</div>
+        <p class="text-muted mb-1" style="font-size:12px;">
+          {{ _('Each variable reads a token (or a variable above it) and applies a regular-expression replacement to it (Python syntax, every match replaced). Use it in any pattern by its name in braces.') }}
+        </p>
+        <div class="fw-table-wrapper">
+          <table class="fw-table" style="font-size:12.5px;">
+            <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Reads') }}</th><th>{{ _('Regular expression') }}</th><th>{{ _('Replace with') }}</th><th>{{ _('Sample value') }}</th><th></th></tr></thead>
+            <tbody id="nm-var-body">
+              {% for v in naming_variables %}
+              <tr class="nm-var-row">
+                <td><input class="form-control form-control-sm fw-form-control nm-var" name="var_name[]" value="{{ v.name }}" placeholder="host_u"></td>
+                <td><input class="form-control form-control-sm fw-form-control nm-var" name="var_source[]" value="{{ v.source }}" placeholder="host" list="nm-var-sources"></td>
+                <td><input class="form-control form-control-sm fw-form-control nm-var" name="var_regex[]" value="{{ v.regex }}" placeholder="\."></td>
+                <td><input class="form-control form-control-sm fw-form-control nm-var" name="var_replace[]" value="{{ v.replace }}" placeholder="_"></td>
+                <td><code class="nm-var-value"></code></td>
+                <td><button type="button" class="btn btn-sm btn-outline-danger nm-var-del" title="{{ _('Remove') }}"><i class="bi bi-trash"></i></button></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <datalist id="nm-var-sources">{% for t in site_tokens %}<option value="{{ t }}">{% endfor %}</datalist>
+        <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="nm-var-add"><i class="bi bi-plus-lg me-1"></i>{{ _('Add variable') }}</button>
+          <span class="text-danger" id="nm-var-problems" style="font-size:12px;"></span>
+        </div>
+      </div>
       {% for section, entries in naming_sections.items() %}
       {% set seen_n = entries | selectattr('seen') | list | length %}
       <details class="nm-section mt-3" {{ 'open' if section in catalog_sections or seen_n else '' }}>
@@ -101,7 +138,7 @@
             <label class="fw-form-label mb-1 d-flex align-items-center gap-1 flex-wrap" for="nm_{{ e.key }}">
               <span>{{ e.label }}</span>
               {% if e.table %}<code class="text-muted" style="font-size:10.5px;">{{ e.table }}</code>{% endif %}
-              {% if e.derives %}<span class="fw-badge fw-badge-info" title="{{ _('SATOM fills this pattern in when it creates objects: only {name} is substituted.') }}">{{ _('builds names') }}</span>{% endif %}
+              {% if e.derives %}<span class="fw-badge fw-badge-info" title="{{ _('SATOM fills this pattern in when it creates objects: only the tokens and variables listed above are substituted.') }}">{{ _('builds names') }}</span>{% endif %}
               {% if e.numeric %}<span class="text-muted" style="font-size:11px;">{{ _('keyed by number on the devices') }}</span>{% endif %}
               {% if not e.seen and e.table %}<span class="text-muted" style="font-size:11px;">{{ _('no objects on any device yet') }}</span>
                 {%- if not e.shape %} <span class="text-muted nm-unmeasured" style="font-size:11px;" title="{{ _('No build of these devices measured whether this endpoint is a list of objects or one settings block. It stays listed until a device holds an object or the API library measures it.') }}">· {{ _('list or settings block not measured') }}</span>{% endif %}{% endif %}
@@ -111,6 +148,9 @@
                      id="nm_{{ e.key }}" name="nm_{{ e.key }}" data-key="{{ e.key }}"
                      data-derives="{{ '1' if e.derives else '0' }}"
                      data-cert="{{ '1' if '{class}' in e.default else '0' }}"
+                     data-allowed="{{ e.allowed | tojson | forceescape }}"
+                     data-free="{{ e.free | tojson | forceescape }}"
+                     data-curated="{{ '1' if e.curated else '0' }}"
                      data-default="{{ e.default }}"
                      data-names="{{ e.names | tojson | forceescape }}"
                      value="{{ e.value }}" placeholder="{{ e.default or (e.found.consensus if e.found else '') }}"
@@ -154,24 +194,59 @@
 <script nonce="{{ csp_nonce }}">
 (function () {
   var NP = window.NamingPattern, PROTO = {{ proto_words | tojson }};
+  var PREVIEW = "{{ url_for('naming.preview') }}", CSRF = "{{ csrf_token() }}";
+  var SITE = ['name', 'host', 'port'], CERT = ['name', 'class', 'cn', 'date', 'serial'];
   var sampleEl = document.getElementById('naming-sample');
+  var portEl = document.getElementById('naming-sample-port');
+  var varBody = document.getElementById('nm-var-body');
+  // Token values of the sample site, computed by the SERVER (the variables
+  // are Python regular expressions). Seeded with the saved variables.
+  var TOKENS = {{ sample_tokens | tojson }};
+  var VARNAMES = Object.keys(TOKENS).filter(function (t) { return SITE.indexOf(t) < 0; });
+
+  function varRows() {
+    return Array.prototype.slice.call(varBody.querySelectorAll('.nm-var-row'));
+  }
+  function postedVariables() {
+    return varRows().map(function (r) {
+      var f = r.querySelectorAll('input');
+      return { name: f[0].value.trim(), source: f[1].value.trim(), regex: f[2].value, replace: f[3].value };
+    }).filter(function (v) { return v.name || v.regex; });
+  }
+  // The server sends what it allows for the SAVED variables; the page
+  // follows the variables being edited, so the site-token entries are
+  // recomputed here (the server re-checks on save).
+  function allowedFor(inp) {
+    var allowed = JSON.parse(inp.getAttribute('data-allowed') || 'null');
+    if (!allowed) return null;
+    if (allowed.indexOf('class') >= 0) return CERT;
+    if (allowed.indexOf('host') < 0) return ['name'];
+    return SITE.concat(VARNAMES);
+  }
 
   function refreshOne(inp) {
     var box = inp.closest('.nm-entry');
-    var slug = NP.slugify(sampleEl ? sampleEl.value : '');
     var pat = inp.value.trim() || inp.getAttribute('data-default') || '';
+    var allowed = allowedFor(inp);
+    var site = !!allowed && allowed.indexOf('host') >= 0;
+    var free = JSON.parse(inp.getAttribute('data-free') || '[]').length ? ['host'].concat(VARNAMES) : [];
     var pv = box.querySelector('.nm-preview');
-    if (pv) pv.textContent = pat ? NP.sample(pat, slug) : '—';
+    var name = pat ? (site || inp.getAttribute('data-curated') === '1' ? NP.render(pat, TOKENS) : NP.sample(pat, TOKENS.name || '')) : '';
+    if (pv) pv.textContent = pat ? name : '—';
     var warn = '';
-    if (inp.value.trim() && inp.getAttribute('data-derives') === '1') {
-      warn = NP.derivesProblem(inp.value.trim(), inp.getAttribute('data-cert') === '1');
+    if (pat && inp.getAttribute('data-derives') === '1' && allowed) {
+      warn = NP.derivesProblem(pat, allowed);
+      if (!warn && site) {
+        var bad = NP.unsafe(name);
+        if (bad) warn = 'the sample renders ' + JSON.stringify(name) + ': ' + bad;
+      }
     }
     inp.classList.toggle('is-invalid', !!warn);
     inp.title = warn || inp.getAttribute('data-note') || '';
     var chk = box.querySelector('.nm-check');
     if (!chk) return;
     var names = JSON.parse(inp.getAttribute('data-names') || '[]');
-    var r = pat ? NP.check(pat, names, PROTO) : null;
+    var r = pat ? NP.check(pat, names, PROTO, free) : null;
     if (warn) { chk.textContent = warn; chk.className = 'nm-check ms-auto text-danger'; return; }
     if (!r) { chk.textContent = pat ? 'invalid pattern' : 'no pattern'; chk.className = 'nm-check ms-auto text-muted'; return; }
     chk.textContent = r.conform + '/' + r.total + ' existing names follow'
@@ -180,8 +255,57 @@
   }
   function refreshAll() {
     var slugEl = document.getElementById('naming-slug');
-    if (slugEl && sampleEl) slugEl.textContent = 'slug: ' + (NP.slugify(sampleEl.value) || '∅');
+    if (slugEl) slugEl.textContent = 'name: ' + (TOKENS.name || '∅') + ' · host: ' + (TOKENS.host || '∅')
+      + ' · port: ' + (TOKENS.port || '∅');
+    varRows().forEach(function (r) {
+      var n = r.querySelector('input').value.trim().toLowerCase();
+      r.querySelector('.nm-var-value').textContent = Object.prototype.hasOwnProperty.call(TOKENS, n) ? TOKENS[n] : '';
+    });
     document.querySelectorAll('.naming-input').forEach(refreshOne);
+  }
+  var timer = null;
+  function askServer() {
+    clearTimeout(timer);
+    timer = setTimeout(function () {
+      fetch(PREVIEW, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+        body: JSON.stringify({ address: sampleEl.value, port: portEl.value, variables: postedVariables() })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        TOKENS = d.tokens || {};
+        VARNAMES = d.variables || [];
+        document.getElementById('nm-var-problems').textContent = (d.problems || []).join(' · ');
+        refreshAll();
+      }).catch(function () {
+        document.getElementById('nm-var-problems').textContent = 'preview unavailable — the server re-checks on save';
+      });
+    }, 250);
+  }
+  function cell(name, placeholder, extra) {
+    var td = document.createElement('td');
+    var inp = document.createElement('input');
+    inp.className = 'form-control form-control-sm fw-form-control nm-var';
+    inp.name = name;
+    inp.placeholder = placeholder;
+    if (extra) inp.setAttribute('list', extra);
+    td.appendChild(inp);
+    return td;
+  }
+  function addVarRow() {
+    var tr = document.createElement('tr');
+    tr.className = 'nm-var-row';
+    tr.appendChild(cell('var_name[]', 'host_u'));
+    tr.appendChild(cell('var_source[]', 'host', 'nm-var-sources'));
+    tr.appendChild(cell('var_regex[]', '\\.'));
+    tr.appendChild(cell('var_replace[]', '_'));
+    var val = document.createElement('td');
+    val.innerHTML = '<code class="nm-var-value"></code>';
+    tr.appendChild(val);
+    var del = document.createElement('td');
+    del.innerHTML = '<button type="button" class="btn btn-sm btn-outline-danger nm-var-del" title="Remove"><i class="bi bi-trash"></i></button>';
+    tr.appendChild(del);
+    varBody.appendChild(tr);
+    tr.querySelector('input').focus();
   }
   function applyFilter() {
     var q = (document.getElementById('naming-filter').value || '').trim().toLowerCase();
@@ -209,7 +333,14 @@
       window.location.href = this.dataset.url + '?product=' + this.value;
     });
   }
-  if (sampleEl) { sampleEl.addEventListener('input', function (event) { refreshAll(); }); }
+  sampleEl.addEventListener('input', function (event) { askServer(); });
+  portEl.addEventListener('input', function (event) { askServer(); });
+  varBody.addEventListener('input', function (event) { askServer(); });
+  varBody.addEventListener('click', function (event) {
+    var btn = event.target.closest('.nm-var-del');
+    if (btn) { btn.closest('tr').remove(); askServer(); }
+  });
+  document.getElementById('nm-var-add').addEventListener('click', function (event) { addVarRow(); });
   document.querySelectorAll('.naming-input').forEach(function (inp) {
     if (inp.title) inp.setAttribute('data-note', inp.title);
     inp.addEventListener('input', function (event) { refreshOne(inp); });

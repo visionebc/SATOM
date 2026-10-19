@@ -402,10 +402,15 @@ def _segments_block(f: dict) -> dict:
     for s in segs:
         if not keep(s):
             continue
-        hosts = _cidr_hosts(s.get("cidr") or "")
+        # Every network of the segment counts (FA-0002); ``cidr`` lists them
+        # all, first one first, so the table never hides a second network.
+        cidrs = [n["cidr"] for n in (s.get("networks") or []) if n.get("cidr")] \
+            or ([s["cidr"]] if s.get("cidr") else [])
+        hosts = sum(_cidr_hosts(c) for c in cidrs)
         total_ips += hosts
         rows.append({
-            "name": s.get("name") or "", "cidr": s.get("cidr") or "",
+            "name": s.get("name") or "", "cidr": ", ".join(cidrs),
+            "networks": list(s.get("networks") or []),
             "ips": hosts, "interface": s.get("interface") or "",
             "gateway": s.get("gateway") or "",
             "zone": s.get("zone") or "", "line": s.get("line") or "",

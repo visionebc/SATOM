@@ -293,15 +293,18 @@ def segment_of(host: str, segments: Iterable[dict]) -> str:
     except ValueError:
         return NO_SEGMENT
     for seg in segments or []:
-        cidr = (seg.get("cidr") or "").strip()
-        if not cidr:
-            continue
-        try:
-            net = ipaddress.ip_network(cidr, strict=False)
-        except ValueError:
-            continue
-        if addr in net:
-            return (seg.get("name") or "").strip() or cidr
+        # Every network of the segment (FA-0002), not only the first.
+        cidrs = [(n.get("cidr") or "").strip() for n in (seg.get("networks") or [])] \
+            or [(seg.get("cidr") or "").strip()]
+        for cidr in cidrs:
+            if not cidr:
+                continue
+            try:
+                net = ipaddress.ip_network(cidr, strict=False)
+            except ValueError:
+                continue
+            if addr in net:
+                return (seg.get("name") or "").strip() or cidr
     return NO_SEGMENT
 
 

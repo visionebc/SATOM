@@ -531,9 +531,36 @@ Protection Profile exists on the device**; a missing profile blocks the plan
 (deploy the template first) instead of failing at the last step.
 
 **Names follow Administrator → Naming.** Object names are rendered from the
-saved Naming patterns for the device's product, falling back to the defaults
-for any element left empty. When the wizard issues a certificate, the created
-policy serves HTTPS with it (predefined `HTTPS` service + that certificate).
+saved Naming patterns and variables for the device's product (§13.3), falling
+back to the defaults for any element left empty. When the wizard issues a
+certificate, the created policy serves HTTPS with it (predefined `HTTPS`
+service + that certificate).
+
+**The port of each domain** goes into `{port}` in the names. Each domain row
+has a **Port** column, and a flow that creates policies through the wizard's
+API passes `port` per domain. Left blank, the port written in the address is
+used (`shop.example.com:8443`); with none there, `443` when the policy carries
+a certificate and `80` when it does not, and the plan warns that a name carries
+a port nobody typed. The preview prints the four derived names and where the
+port came from (*given*, *from the address*, *default*). A name with a
+character the devices refuse (anything but letters, digits, `_` and `-`; a dot
+from `{host}` is the usual one) blocks the plan as `naming_unsafe`. Rewrite it
+with a variable.
+
+**A segment can hold several networks.** On **Network Segments** each segment
+lists one or more networks (CIDR + gateway, optionally an interface of its
+own; blank uses the segment's interface). With **Reserve the VIP from IPAM**,
+the VIP is taken from the **first network with a free address**: if IPAM
+refuses one (full, or any other error) the next is tried, and the address step
+says which networks refused and why. The preview lists the order. A network no
+IPAM backend can serve is reported as a warning ("will NOT be tried"); only
+when none can be used does the plan block. The VIP goes on the interface of
+the network it came from, and an address released after a later failure goes
+back to that same network. A **VIP typed by hand** must sit in one of the
+segment's networks (`address_not_in_segment` otherwise; `198.51.100.5/24` is
+accepted). The gateway is recorded with each network; no flow writes it to the
+device. Segments saved before this change read as one network, unchanged, and
+a CIDR the page cannot parse drops that network only, never the segment.
 
 **Line profiles** are declared on Global ADOM → Administrator → **Line
 Profiles** and are always filed as FortiWeb profiles — the product the wizard
@@ -2368,9 +2395,36 @@ number is listed and marked so.
 **Scheme** holds the pattern of each object type. Entries marked **builds
 names** (the FortiWeb catalog: server policy, pool, WPP, certificate…) are
 the ones SATOM fills in when it creates objects from a web address, so they
-take `{name}` only (Managed Certificate: `{class}` `{cn}` `{date}`
-`{serial}`). Every other entry documents your convention and may use any
-Discovery token. Next to each input: what Discovery found on the devices
+take the site tokens and the product's variables only (Managed Certificate:
+`{class}` `{cn}` `{date}` `{serial}`; Exception WPP: `{name}`, the policy's
+name). Every other entry documents your convention and may use any
+Discovery token.
+
+The site tokens:
+
+| Token | Value for `https://Blabla.Example.com:8443/x` |
+|---|---|
+| `{name}` | `blabla-example-com` — the slug, as before |
+| `{host}` | `blabla.example.com` — the host as typed, dots kept |
+| `{port}` | the port the creating flow gives (the wizard's **Port**), else `8443` from the address |
+
+**Variables** (the table above the patterns, one list **per product**) rewrite
+a token with a regular expression so the name is one the devices accept. Each
+row has a name, the token it **reads** (a site token or a variable above it,
+never one below), a **regular expression** (Python syntax, every match
+replaced, `\1` for a group) and what to **replace with**. Use it in a pattern
+as `{its_name}`. Example: `host_u` reads `host`, replaces `\.` with `_`; the
+pattern `{host_u}-{port}` gives `blabla_example_com-443`. The **Sample web
+address** and **Port** fields preview every pattern live; the token values
+come from the server, so the preview is what the wizard will build. A
+variable list that cannot be computed (a reserved name such as `num`, an
+unknown source, a regex that does not compile, a `\2` with one group) saves
+nothing, and removing a variable a pattern still uses is refused with the
+pattern named. **Restore defaults** resets the patterns and keeps the
+variables. FortiADC works the same way with its own list; no SATOM flow builds
+FortiADC names yet, so there they are a reference a future flow uses as is.
+Existing names are checked against a catalog pattern with `{host}` and every
+variable read as free text. Next to each input: what Discovery found on the devices
 (**all devices agree** / **devices differ**), **use it** to copy it in, and a
 live count of the existing names that follow the pattern you type. Use the
 filter box or **Only types with objects on a device** to narrow the list.
@@ -7936,7 +7990,7 @@ discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
    the console is either **on the map** (125 today) or **excluded with a written
-   reason** (163 today — JSON feeds, downloads, redirects and fragments that
+   reason** (164 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the

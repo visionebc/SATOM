@@ -161,6 +161,34 @@ def _load(appliance, product: str, labels: dict):
 
 # ── the scheme: one entry per object type ───────────────────────────────────
 
+#: The sample site the page previews with until the operator types another.
+SAMPLE_ADDRESS = "shop.example.com"
+SAMPLE_PORT = "443"
+
+
+def _free_tokens(variables) -> tuple[str, ...]:
+    """Tokens that match free text when an existing name is checked against a
+    catalog pattern: ``{host}`` and every variable (a rewritten host is
+    several parts, not one)."""
+    return ("host",) + tuple(v["name"] for v in naming_svc.normalize_variables(variables))
+
+
+def _posted_variables(form) -> list[dict]:
+    """The variable rows of the Scheme form. Every column posts one value per
+    row (no multi-selects), so matching by index is safe."""
+    cols = {f: form.getlist(f"var_{f}[]") for f in ("name", "source", "regex", "replace")}
+    rows = []
+    for i, name in enumerate(cols["name"]):
+        def col(f):
+            vals = cols[f]
+            return vals[i] if i < len(vals) else ""
+        if not (name or "").strip() and not col("regex").strip():
+            continue          # a blank row the operator added and left
+        rows.append({"name": name, "source": col("source"), "regex": col("regex"),
+                     "replace": col("replace")})
+    return rows
+
+
 def _scheme_key(product: str, table: str) -> str:
     return SCHEME_ELEMENT_OF.get(product, {}).get(table) or naming_svc.table_key(table)
 
@@ -177,13 +205,14 @@ def _migrate_adopted(product: str) -> None:
     if not legacy:
         return
     overrides = dict(store.naming_overrides(product))
+    variables = store.naming_variables(product)
     moved, dropped = [], []
     for table, entry in legacy.items():
         pattern = ((entry or {}).get("pattern") or "").strip()
         key = _scheme_key(product, table)
         if not pattern or overrides.get(key):
             continue
-        if naming_svc.pattern_problem(key, pattern):
+        if naming_svc.pattern_problem(key, pattern, variables):
             dropped.append(f"{table}={pattern}")
             continue
         overrides[key] = pattern
@@ -226,6 +255,7 @@ def _scheme_model(product: str) -> dict:
             b["factory"] += t.get("factory") or 0
     found = {r["table"]: r for r in nd.fleet_view(analyses)}
     overrides = store.naming_overrides(product)
+    variables = store.naming_variables(product)
     mapping = SCHEME_ELEMENT_OF.get(product, {})
     table_of = {v: k for k, v in mapping.items()}
 
@@ -234,16 +264,22 @@ def _scheme_model(product: str) -> dict:
         names = sorted(set(info.get("names") or ()))
         value = (overrides.get(key) or "").strip()
         pattern = value or default
+        allowed = naming_svc.allowed_tokens(key, variables)
+        # A catalog element is filled in from a SITE: {host} and the
+        # variables are free text there, not Discovery's one-part field.
+        free = _free_tokens(variables) if curated else ()
         return {
             "key": key, "label": label, "section": section, "table": table,
             "default": default, "value": value, "pattern": pattern,
             "derives": derives, "note": note, "curated": curated,
+            "allowed": sorted(allowed) if allowed is not None else None,
+            "free": list(free),
             "seen": bool(table and (types.get(table) or {}).get("seen")),
             "numeric": bool(table and (types.get(table) or {}).get("numeric")),
             "shape": (types.get(table or "") or {}).get("shape") or "",
             "found": found.get(table or ""), "names": names[:NAMES_FOR_LIVE_CHECK],
             "user": len(names), "factory": info.get("factory", 0),
-            "check": nd.conformance(pattern, names) if pattern and names else None,
+            "check": nd.conformance(pattern, names, free=free) if pattern and names else None,
         }
 
     entries = []
@@ -263,7 +299,7 @@ def _scheme_model(product: str) -> dict:
     for x in entries:
         sections.setdefault(x["section"], []).append(x)
     return {"entries": entries, "sections": sections, "fleet": fleet,
-            "analyses": analyses, "overrides": overrides,
+            "analyses": analyses, "overrides": overrides, "variables": variables,
             "by_key": {x["key"]: x for x in entries}, "by_table":
             {x["table"]: x for x in entries if x["table"]}}
 
@@ -292,6 +328,10 @@ def index():
         n_set=sum(1 for x in entries if x["value"]),
         has_devices=bool(model["fleet"]),
         proto_words=_proto_words(),
+        naming_variables=model["variables"],
+        site_tokens=naming_svc.SITE_TOKENS,
+        sample_address=SAMPLE_ADDRESS, sample_port=SAMPLE_PORT,
+        sample_tokens=naming_svc.site_tokens(SAMPLE_ADDRESS, SAMPLE_PORT, model["variables"]),
     )
 
 
@@ -304,9 +344,18 @@ def save():
     if request.form.get('action') == 'reset':
         store.reset_naming(product)
         log_action('naming.save', detail=f'Reset {label} naming to defaults')
-        flash(f'{label} naming patterns restored to defaults.', 'success')
+        flash(f'{label} naming patterns restored to defaults (variables kept).', 'success')
         return redirect(url_for('naming.index', product=product))
     model = _scheme_model(product)
+    # The variables come first: every pattern below is checked against the
+    # list being SAVED, not the stored one, so a pattern can use a variable
+    # added in the same press.
+    variables = (naming_svc.normalize_variables(_posted_variables(request.form))
+                 if request.form.get('variables_posted') == '1' else model["variables"])
+    problems = naming_svc.variable_problems(variables)
+    if problems:
+        flash('Nothing saved — the variables are not valid: ' + ' · '.join(problems), 'danger')
+        return redirect(url_for('naming.index', product=product))
     # Start from what is stored: an entry whose object type left the sweep
     # (another build, a device removed) keeps its pattern.
     scheme = dict(model["overrides"])
@@ -315,7 +364,7 @@ def save():
         if ('nm_' + key) not in request.form:
             continue
         value = (request.form.get('nm_' + key) or '').strip()
-        problem = naming_svc.pattern_problem(key, value)
+        problem = naming_svc.pattern_problem(key, value, variables)
         if problem:
             refused.append(f'{model["by_key"][key]["label"]}: {problem}')
             continue
@@ -323,14 +372,48 @@ def save():
             scheme[key] = value
         else:
             scheme.pop(key, None)
+    # A variable removed (or renamed) while a pattern that stays still uses
+    # it: that pattern would reach the device with the token as literal text.
+    # Refuse the whole save, naming the pattern — never drop the pattern.
+    orphaned = [f'{model["by_key"][k]["label"] if k in model["by_key"] else k}: {p}'
+                for k, p in naming_svc.effective_scheme(scheme, product).items()
+                if naming_svc.pattern_problem(k, p, variables)]
+    if orphaned:
+        flash('Nothing saved — these patterns use a variable that would no longer '
+              'exist: ' + ' · '.join(orphaned), 'danger')
+        return redirect(url_for('naming.index', product=product))
     store.save_naming(scheme, product)
+    if variables != model["variables"]:
+        store.save_naming_variables(variables, product)
     log_action('naming.save',
-               detail=f'{label}: {len([v for v in scheme.values() if v.strip()])} patterns'
+               detail=f'{label}: {len([v for v in scheme.values() if v.strip()])} patterns, '
+               f'{len(variables)} variable(s)'
+               + (f' ({", ".join(v["name"] for v in variables)})' if variables else '')
                + (f'; refused {len(refused)}' if refused else ''))
     if refused:
         flash('Not saved (kept the previous pattern): ' + ' · '.join(refused), 'warning')
     flash(f'{label} naming patterns saved.', 'success')
     return redirect(url_for('naming.index', product=product))
+
+
+@bp.route('/preview', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def preview():
+    """The token values of a sample site under the variables ON THE PAGE
+    (saved or not). The browser substitutes them into each pattern, exactly
+    what :func:`naming.render_pattern` does, so the preview is computed by
+    the server's regex engine and not a JavaScript approximation of it."""
+    from flask import jsonify
+    body = request.get_json(silent=True) or {}
+    variables = naming_svc.normalize_variables(body.get('variables') or [])[:naming_svc.MAX_VARIABLES]
+    address = str(body.get('address') or '')[:255]
+    port = str(body.get('port') or '')[:5]
+    return jsonify({
+        'tokens': naming_svc.site_tokens(address, port, variables),
+        'problems': naming_svc.variable_problems(variables),
+        'variables': [v['name'] for v in variables],
+    })
 
 
 # ── Discovery: the convention the devices already follow ─────────────────────
@@ -345,9 +428,13 @@ def _annotate(analysis: dict, product: str, model: dict) -> None:
         pattern = e["pattern"] if e else (model["overrides"].get(key) or "")
         t["scheme_key"] = key
         t["scheme_set"] = bool(model["overrides"].get(key))
-        t["scheme"] = nd.conformance(pattern, names) if pattern else None
+        t["scheme"] = (nd.conformance(pattern, names, free=(e or {}).get("free") or ())
+                       if pattern else None)
         t["derives"] = bool(e and e["derives"])
-        problem = naming_svc.pattern_problem(key, t["main"]) if t.get("main") else ""
+        t["allowed"] = (e or {}).get("allowed")
+        t["free"] = (e or {}).get("free") or []
+        problem = (naming_svc.pattern_problem(key, t["main"], model["variables"])
+                   if t.get("main") else "")
         t["can_adopt"] = bool(t.get("main")) and not problem and t["main"] != pattern
         t["adopt_why"] = problem
         t["adapt_seed"] = t.get("main") or pattern or ""
@@ -464,7 +551,7 @@ def discovery_adopt():
     if not pattern or nd.pattern_regex(pattern) is None:
         flash('Nothing to adopt: the pattern is empty.', 'warning')
         return redirect(back)
-    problem = naming_svc.pattern_problem(key, pattern)
+    problem = naming_svc.pattern_problem(key, pattern, store.naming_variables(product))
     if problem:
         flash(f'{table}: {pattern} not adopted — {problem}. Use “Adopt & adapt” to change it.',
               'warning')

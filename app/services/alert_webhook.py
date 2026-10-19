@@ -119,32 +119,45 @@ VAULT_PATH = "alerts/webhook"
 VAULT_FIELD = "secret"
 
 
-def secret() -> str:
-    """The shared HMAC secret, decrypted, or ``""`` if unset.
+def secret_state() -> tuple:
+    """``(secret, problem)``: the decrypted HMAC secret (``""`` if none can be
+    used) and why a CONFIGURED secret could not be read (``""`` otherwise).
 
     Follows the vault mode like every other credential: the vault copy first,
     then the local Fernet copy (``vault`` mode keeps only the sentinel there).
 
-    A store that cannot be read is treated as no secret rather than raising:
+    A store that cannot be read still yields no secret rather than raising:
     the alternative is that a rotated Fernet key or a sealed vault stops alert
-    delivery entirely, which trades a signature for the alerts themselves.
+    delivery entirely, which trades a signature for the alerts themselves. But
+    it is REPORTED: until 2026-10-19 a configured secret the vault could not
+    hand over looked exactly like "no secret set" on the page, and deliveries
+    went out unsigned without a word.
     """
     raw = _get(K_SECRET)
     if not raw:
-        return ""
+        return "", ""
     from . import secret_backend as sb
+    vault_err = ""
     try:
         vaulted = sb.get_field(VAULT_PATH, VAULT_FIELD)
-    except Exception:  # noqa: BLE001 — vault-only and unreadable
-        vaulted = ""
+    except Exception as exc:  # noqa: BLE001 — vault-only and unreadable
+        vaulted, vault_err = "", str(exc) or exc.__class__.__name__
     if vaulted:
-        return vaulted
+        return vaulted, ""
     try:
         from .encryption import decrypt
         local = decrypt(raw) or ""
     except Exception:  # noqa: BLE001 — an unreadable vault is not a secret
-        return ""
-    return "" if local == sb.VAULT_SENTINEL else local
+        return "", "the local copy could not be decrypted (FERNET_KEY changed?)"
+    if local == sb.VAULT_SENTINEL:
+        return "", ("the secret is stored in the vault, which could not be "
+                    "read: %s" % (vault_err or "no value at %s" % VAULT_PATH))
+    return local, ""
+
+
+def secret() -> str:
+    """The shared HMAC secret, or ``""``; see :func:`secret_state`."""
+    return secret_state()[0]
 
 
 def secret_location() -> str:
@@ -215,13 +228,17 @@ def config() -> dict:
     is set.  The template renders this dict into HTML; a secret that reaches a
     page reaches every screenshot, cache and proxy log of that page."""
     url = _get(K_URL)
+    key, problem = secret_state()
     return {
         "url": url,
         "url_problem": url_problem(url),
         "format": _get(K_FORMAT) if _get(K_FORMAT) in FORMATS else "satom",
         "timeout": _int(K_TIMEOUT, TIMEOUT_DEFAULT, TIMEOUT_MIN, TIMEOUT_MAX),
         "retries": _int(K_RETRIES, RETRIES_DEFAULT, RETRIES_MIN, RETRIES_MAX),
-        "secret_set": bool(secret()),
+        # Configured, readable or not: an unreadable secret is a fault to show,
+        # not an absent one to invite a new value for.
+        "secret_set": bool(key or problem),
+        "secret_problem": problem,
         "secret_location": secret_location(),
         "signature_header": SIG_HEADER,
         "timestamp_header": TS_HEADER,
@@ -437,18 +454,29 @@ def emit(findings: list, node: str, *, dry_run: bool = False,
                 "detail": "nothing matched this sink's filter"}
 
     body = build_body(selected, cfg, node, ts, did)
-    headers = headers_for(body, ts, did, secret())
+    key, problem = secret_state()
+    headers = headers_for(body, ts, did, key)
+    # Sent anyway (an alert beats a signature), but never silently unsigned.
+    warning = ("sent UNSIGNED: %s" % problem) if problem else ""
+    if warning:
+        import logging
+        logging.getLogger(__name__).warning("alert webhook %s", warning)
     if dry_run:
-        return {"ok": True, "sent": 0, "matched": len(selected),
-                "dry_run": True, "delivery_id": did,
-                "signed": SIG_HEADER in headers,
-                "sample": body.decode("utf-8", "replace")[:2000]}
+        out = {"ok": True, "sent": 0, "matched": len(selected),
+               "dry_run": True, "delivery_id": did,
+               "signed": SIG_HEADER in headers,
+               "sample": body.decode("utf-8", "replace")[:2000]}
+        if warning:
+            out["warning"] = warning
+        return out
 
     res = _post(cfg["url"], body, headers, cfg["timeout"], cfg["retries"],
                 sleep=sleep)
     res["matched"] = len(selected)
     res["delivery_id"] = did
     res["signed"] = SIG_HEADER in headers
+    if warning:
+        res["warning"] = warning
     return res
 
 

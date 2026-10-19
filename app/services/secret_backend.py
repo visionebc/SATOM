@@ -341,10 +341,94 @@ def read(path: str) -> dict | None:
 
 
 def write(path: str, data: dict) -> None:
-    cfg = config(reveal=False)
-    tok = _token(cfg)
-    _request(cfg, "POST", "%s/data/%s" % (cfg["mount"], path.strip("/")),
-             token=tok, body={"data": {k: ("" if v is None else str(v)) for k, v in data.items()}})
+    with _writing(path):
+        cfg = config(reveal=False)
+        tok = _token(cfg)
+        _request(cfg, "POST", "%s/data/%s" % (cfg["mount"], path.strip("/")),
+                 token=tok, body={"data": {k: ("" if v is None else str(v)) for k, v in data.items()}})
+
+
+# ---------------------------------------------------------------------------
+# stale vault copies (mirror mode)
+# ---------------------------------------------------------------------------
+#: In ``mirror`` a vault write that fails is not an error for the caller: the
+#: local copy is written anyway, as the mode promises. But the vault still
+#: holds the PREVIOUS value, and every read goes to the vault first — so a
+#: password or HMAC secret rotated while the vault was down silently reverted
+#: to the old one as soon as the vault came back (2026-10-19). A path whose
+#: vault write failed gets one row here; reads skip the vault for it until a
+#: write succeeds (an edit, or Settings > Vault > Migrate).
+#:
+#: Staged in the caller's session, NOT committed here: the marker must land in
+#: the same transaction as the newer local copy it points at. Committing here
+#: would also commit whatever half-applied form the caller has pending.
+K_STALE_PREFIX = "vault.stale."
+
+
+def _stale_key(path: str) -> str:
+    # Hashed: the key column is 128 characters and appliance names are free.
+    import hashlib
+    return K_STALE_PREFIX + hashlib.sha256(
+        path.strip("/").encode("utf-8")).hexdigest()[:32]
+
+
+def _stage_stale(path: str, stale: bool) -> None:
+    from ..extensions import db
+    key = _stale_key(path)
+    row = db.session.get(AppSetting, key)
+    if stale:
+        if row is None:
+            row = AppSetting(key=key)
+            db.session.add(row)
+        row.value = json.dumps({"path": path.strip("/"),
+                                "at": time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                                    time.gmtime())})
+    elif row is not None:
+        db.session.delete(row)
+
+
+def is_stale(path: str) -> bool:
+    try:
+        return AppSetting.get(_stale_key(path)) is not None
+    except Exception:  # noqa: BLE001 — table not there yet: nothing is stale
+        return False
+
+
+def stale_paths() -> list:
+    """Vault paths whose copy is older than SATOM's, oldest-first."""
+    rows = AppSetting.query.filter(
+        AppSetting.key.like(K_STALE_PREFIX + "%")).all()
+    out = []
+    for row in rows:
+        try:
+            out.append(json.loads(row.value))
+        except (TypeError, ValueError):
+            out.append({"path": "?", "at": ""})
+    return sorted(out, key=lambda d: d.get("at", ""))
+
+
+class _writing:
+    """Mark *path* stale when the write fails outside vault-only mode, clear
+    the mark when it succeeds. In vault-only mode a failed write is refused by
+    every caller and the local copy is not touched, so the vault copy is still
+    the newest one there is."""
+
+    def __init__(self, path: str):
+        self.path = path
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            if exc_type is None:
+                _stage_stale(self.path, False)
+            elif not authoritative():
+                _stage_stale(self.path, True)
+        except Exception:  # noqa: BLE001 — never mask the write's own outcome
+            log.warning("vault: could not record the state of %s", self.path,
+                        exc_info=True)
+        return False
 
 
 def delete(path: str) -> None:
@@ -404,6 +488,19 @@ def health() -> dict:
     out["ok"] = True
     out["detail"] = "Vault %s reachable, unsealed, mount %r readable." % (
         out["version"] or "?", cfg["mount"])
+    # Reachable now is not the same as up to date: a write that failed while it
+    # was not left the vault with the previous value of these secrets.
+    try:
+        stale = stale_paths()
+    except Exception:  # noqa: BLE001
+        stale = []
+    out["stale"] = [d.get("path", "?") for d in stale]
+    if stale:
+        out["detail"] += (
+            " %d secret(s) changed while the vault could not be written (%s): "
+            "the vault copy is OLDER, so SATOM uses its own copy until you run "
+            "“Migrate existing credentials”." % (
+                len(stale), ", ".join(out["stale"][:10])))
     return out
 
 
@@ -424,6 +521,8 @@ def get_appliance_password(name: str) -> str | None:
     """
     if not active():
         return None
+    if is_stale(appliance_path(name)):
+        return None   # SATOM's copy is the newer one; see K_STALE_PREFIX
     try:
         data = read(appliance_path(name))
     except VaultError as exc:
@@ -462,11 +561,12 @@ def put_appliance_password(appliance, plaintext: str) -> bool:
     # A KV v2 write REPLACES the record: rotating the API credential must not
     # silently drop the separate SSH login stored beside it. A failed read
     # raises rather than writing a record that would lose it.
-    if getattr(appliance, "ssh_password_enc", None):
-        kept = (read(appliance_path(appliance.name)) or {}).get("ssh_password")
-        if kept:
-            record["ssh_password"] = kept
-    write(appliance_path(appliance.name), record)
+    with _writing(appliance_path(appliance.name)):
+        if getattr(appliance, "ssh_password_enc", None):
+            kept = (read(appliance_path(appliance.name)) or {}).get("ssh_password")
+            if kept:
+                record["ssh_password"] = kept
+        write(appliance_path(appliance.name), record)
     return True
 
 
@@ -475,6 +575,8 @@ def get_appliance_ssh_password(name: str) -> str | None:
     Same failure contract as :func:`get_appliance_password`."""
     if not active():
         return None
+    if is_stale(appliance_path(name)):
+        return None   # SATOM's copy is the newer one; see K_STALE_PREFIX
     try:
         data = read(appliance_path(name))
     except VaultError as exc:
@@ -499,12 +601,13 @@ def put_appliance_ssh_password(appliance, plaintext: str) -> bool:
     if not (appliance.name or "").strip():
         log.warning("vault: refusing to store an SSH password for an unnamed appliance")
         return False
-    data = read(appliance_path(appliance.name)) or {}
-    if plaintext:
-        data["ssh_password"] = plaintext
-    else:
-        data.pop("ssh_password", None)
-    write(appliance_path(appliance.name), data)
+    with _writing(appliance_path(appliance.name)):
+        data = read(appliance_path(appliance.name)) or {}
+        if plaintext:
+            data["ssh_password"] = plaintext
+        else:
+            data.pop("ssh_password", None)
+        write(appliance_path(appliance.name), data)
     return True
 
 
@@ -512,6 +615,8 @@ def get_field(path: str, field: str) -> str | None:
     """Generic read for the non-appliance secrets (RADIUS, LDAP bind, git)."""
     if not active():
         return None
+    if is_stale(path):
+        return None   # SATOM's copy is the newer one; see K_STALE_PREFIX
     try:
         data = read(path)
     except VaultError as exc:
@@ -663,6 +768,10 @@ def migrate_local_to_vault(dry_run: bool = True) -> dict:
         except VaultError as exc:
             note("hook-secret", name, "failed", str(exc))
 
+    if not dry_run:
+        # Every verified copy cleared its stale mark in write(); persist that.
+        from ..extensions import db
+        db.session.commit()
     return out
 
 

@@ -45,6 +45,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - The Network Segments page and its view no longer describe segments as the
   back-end pool's networks: the wizard has always used them for the VIP.
 
+### Fixed
+
+- In **Store in both** (vault mode `mirror`), a secret changed while the vault
+  could not be written (appliance password or SSH login, LDAP bind, RADIUS
+  secret, alert-webhook secret, integration-hook secret) kept its new value
+  only in SATOM, while every read still went to the vault first. As soon as
+  the vault answered again SATOM went back to the OLD value. Such a path is
+  now marked in the same transaction as the new local copy. Reads skip the
+  vault for it until a write succeeds (an edit, or **Migrate existing
+  credentials**), and **Test connection** lists the paths whose vault copy is
+  older.
+- An alert-webhook signing secret the vault could not hand over was shown as
+  "not set", and deliveries went out unsigned without a word. The page now
+  shows **unreadable — deliveries go unsigned** with the reason, and the
+  delivery result carries `warning: "sent UNSIGNED: …"` (also logged). The
+  alert is still delivered: an alert beats a signature.
+
 ## [3.3.3] - 2026-10-18
 
 ### Added

@@ -25516,3 +25516,7 @@ msgstr "Variablen"
 #: FA-0001/FA-0002
 msgid "Variables (below) rewrite a token with a regular expression, for a name the devices accept"
 msgstr "Variablen (unten) schreiben ein Token per regulärem Ausdruck um, für einen Namen, den die Geräte akzeptieren"
+
+#: alert webhook secret unreadable
+msgid "unreadable — deliveries go unsigned"
+msgstr "nicht lesbar — Zustellungen gehen unsigniert hinaus"

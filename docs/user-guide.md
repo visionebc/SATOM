@@ -5055,7 +5055,11 @@ requests older than your tolerance and a captured POST cannot be replayed
 forever. Retries are bounded and selective: 408/425/429 and 5xx are repeated
 with backoff, every other 4xx fails once and reports the status. The signing
 secret is stored encrypted and never rendered back, so a blank field means
-"unchanged" — removing one needs the explicit checkbox. Pick the
+"unchanged" — removing one needs the explicit checkbox. It follows the vault
+mode (Settings → Vault) like the other credentials. If it is configured but
+cannot be read (vault unreachable in vault-only mode), the field shows
+**unreadable — deliveries go unsigned** and each delivery result carries a
+`sent UNSIGNED` warning: the alert still goes out, without a signature. Pick the
 **Slack-compatible** encoding for Slack, Mattermost or Rocket.Chat; Teams and
 Discord want their own shapes, and those are integration hooks.
 

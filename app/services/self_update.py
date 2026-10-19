@@ -428,6 +428,12 @@ def lib_versions() -> dict:
     return out
 
 
+def _pip_index() -> dict:
+    """The package index a pip change uses (``update_sources.target``)."""
+    from . import update_sources as usrc
+    return usrc.target(usrc.INDEX)
+
+
 def request_pip_change(package: str, version: str, by: str, *,
                        action: str = "upgrade",
                        bump_requirements: bool = True,
@@ -459,6 +465,15 @@ def request_pip_change(package: str, version: str, by: str, *,
     if not _VER_RE.match(version):
         raise ValueError("version %r is not a valid version string" % version)
 
+    # The package index (Settings → General → Update sources), read on THIS
+    # node -- a peer asked for the same change reads it on itself. A source
+    # configured but unusable (an unreadable token) refuses the change instead
+    # of letting pip quietly fall back to pypi.org.
+    index = _pip_index()
+    if index["problem"]:
+        raise ValueError("the package index in Update sources cannot be used: %s"
+                         % index["problem"])
+
     REQ_DIR.mkdir(parents=True, exist_ok=True)
     STATUS_DIR.mkdir(parents=True, exist_ok=True)
     uid = datetime.utcnow().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
@@ -475,14 +490,23 @@ def request_pip_change(package: str, version: str, by: str, *,
         "role": node_role(),
         "origin": origin,
     }
+    if index["custom"]:
+        req["index_url"] = index["url"]
+        if index["auth"]:
+            req["index_user"], req["index_token"] = index["auth"][1], index["auth"][2]
     (STATUS_DIR / (uid + ".json")).write_text(json.dumps({
         "id": uid, "state": "queued", "steps": [], "kind": "pip",
         "package": package, "action": action, "target": version,
         "requested_by": by, "node": req["node"], "role": req["role"],
         "origin": origin,
         "updated_at": datetime.utcnow().isoformat() + "Z"}))
+    # 0600 from the first byte: the request may carry the index token, and the
+    # queue directory is world-listable. Root (the runner) reads it and deletes
+    # it before doing anything else.
     tmp = REQ_DIR / ("." + uid + ".tmp")
-    tmp.write_text(json.dumps(req))
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(req))
     tmp.rename(REQ_DIR / (uid + ".json"))
     return uid
 

@@ -25541,3 +25541,43 @@ msgstr "Las variables (abajo) reescriben un token con una expresión regular, pa
 #: alert webhook secret unreadable
 msgid "unreadable — deliveries go unsigned"
 msgstr "ilegible — los envíos salen sin firma"
+
+#: update sources
+msgid "Custom URL"
+msgstr "URL personalizada"
+
+#: update sources
+msgid "None — public URL"
+msgstr "Ninguna — URL pública"
+
+#: update sources
+msgid "Python libraries"
+msgstr "Librerías de Python"
+
+#: update sources
+msgid "Update packages"
+msgstr "Paquetes de actualización"
+
+#: update sources
+msgid "Update sources"
+msgstr "Fuentes de actualización"
+
+#: update sources
+msgid "User + token"
+msgstr "Usuario + token"
+
+#: update sources
+msgid "Reads the update feed (latest.json) set in Settings → General → Update sources — by default the public repository. Nothing is downloaded until you press Download."
+msgstr "Lee el feed de actualizaciones (latest.json) configurado en Configuración → General → Fuentes de actualización — por defecto, el repositorio público. No se descarga nada hasta que pulses Descargar."
+
+#: update sources
+msgid "The feed (latest.json) Software Update & HA reads to find and download the newest signed package."
+msgstr "El feed (latest.json) que Software Update & HA lee para encontrar y descargar el paquete firmado más reciente."
+
+#: update sources
+msgid "Python (pip) libraries only: the package index the Libraries card checks and the updater installs from (a pip “simple” index: Nexus, Artifactory, devpi, GitLab…). System packages (apt, zypper, dnf) keep coming from the operating system’s repositories."
+msgstr "Solo librerías de Python (pip): el índice de paquetes que consulta la tarjeta Libraries y desde el que instala el actualizador (un índice «simple» de pip: Nexus, Artifactory, devpi, GitLab…). Los paquetes del sistema (apt, zypper, dnf) siguen viniendo de los repositorios del sistema operativo."
+
+#: update sources
+msgid "Where this installation looks for updates. Leave a source on Default, or point it at an internal pipeline or mirror — public (URL only) or with a user and token. Changing a source changes where the files come from, not whether they are trusted: update packages are still verified against this node’s trust store. Both nodes of an HA pair use the same sources."
+msgstr "Dónde busca actualizaciones esta instalación. Deja una fuente en Predeterminado, o apúntala a un pipeline o espejo interno — público (solo URL) o con usuario y token. Cambiar una fuente cambia de dónde vienen los ficheros, no si son de confianza: los paquetes de actualización se siguen verificando contra el almacén de confianza de este nodo. Los dos nodos de un par HA usan las mismas fuentes."

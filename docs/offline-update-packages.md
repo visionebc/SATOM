@@ -59,8 +59,13 @@ for ever, and GitHub refuses files over 100 MB.
 - The feed is an **address book, not a trust decision**. A download that does
   not match the feed's size and sha256 is deleted before it gets a real name;
   one that matches is still refused unless a trusted key signed it.
-- HTTPS only, redirects included. `SATOM_UPGRADE_FEED=<https-url>` points a
-  node at a mirror of `latest.json` (a proxy or an internal web server).
+- HTTPS only, redirects included. **Settings → General → Update sources**
+  points the console at another `latest.json` (an internal pipeline or
+  mirror), public or with a user and token. The token goes only to that host
+  and never follows a redirect. `SATOM_UPGRADE_FEED=<https-url>` in the node's
+  environment changes the default. The CLI does not read the console setting:
+  `satom execute update fetch --feed <https-url> [--user <name>]`, with the
+  token in `$SATOM_FEED_TOKEN`.
 - **Nothing polls.** The feed is read when an operator asks; an on-premise
   security product does not phone home on a timer.
 - As root, the CLI loads the downloader only from the root-owned runner

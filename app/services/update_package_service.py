@@ -175,19 +175,37 @@ def _current_version() -> str:
     return app_version()
 
 
+def _feed_target(url: str = "") -> tuple:
+    """``(url, auth, problem, custom)`` for a feed fetch. An explicit ``url``
+    (tests, a one-off) is fetched as given; otherwise the source configured in
+    Settings → General → Update sources, with its user and token."""
+    if url:
+        return url, None, "", True
+    from . import update_sources as usrc
+    t = usrc.target(usrc.FEED)
+    return t["url"], t["auth"], t["problem"], t["custom"]
+
+
 def check_feed(url: str = "", timeout: float = 8) -> dict:
     """What the feed offers compared with this node. Never raises: a node with
     no internet gets ``reachable: False`` and the reason, which the page shows
     next to the upload form."""
     cur = _current_version()
+    url, auth, problem, custom = _feed_target(url)
+    if problem:
+        return {"reachable": False, "feed_url": url, "custom": custom,
+                "current_version": cur,
+                "error": "the update feed in Settings → General → Update sources "
+                         "cannot be used: %s" % problem}
     try:
-        doc = feed.fetch_feed(url, timeout=timeout)
+        doc = feed.fetch_feed(url, timeout=timeout, auth=auth)
     except FeedError as exc:
-        return {"reachable": False, "error": str(exc), "feed_url": url or feed.feed_url(),
-                "current_version": cur}
+        return {"reachable": False, "error": str(exc), "feed_url": url,
+                "custom": custom, "current_version": cur}
     pkg = doc["package"]
     staged = (upload_dir() / pkg["name"]).is_file()
     return {"reachable": True, "error": "", "feed_url": doc["_feed_url"],
+            "custom": custom, "authenticated": bool(auth),
             "current_version": cur, "version": doc["version"],
             "released": doc.get("released") or "", "package": pkg,
             "release_url": doc.get("release_url") or "",
@@ -199,8 +217,12 @@ def check_feed(url: str = "", timeout: float = 8) -> dict:
 def download_from_feed(url: str = "", progress=None) -> dict:
     """Fetch the feed's package into the staging area (sha256-checked), then
     prune old uploads. Applying is still the operator's decision."""
-    doc = feed.fetch_feed(url)
-    path = feed.download_package(doc, upload_dir(), progress=progress)
+    url, auth, problem, _custom = _feed_target(url)
+    if problem:
+        raise FeedError("the update feed in Settings → General → Update sources "
+                        "cannot be used: %s" % problem)
+    doc = feed.fetch_feed(url, auth=auth)
+    path = feed.download_package(doc, upload_dir(), progress=progress, auth=auth)
     _prune_uploads(keep=KEEP_UPLOADS, protect=path.name)
     return {"name": path.name, "size": path.stat().st_size,
             "version": doc["version"], "sha256": doc["package"]["sha256"]}

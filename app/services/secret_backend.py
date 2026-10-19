@@ -785,6 +785,8 @@ SETTING_SECRETS = (
      "auth/ldap", "bind_password"),
     ("Alert webhook HMAC secret", "alerts.webhook.secret",
      "alerts/webhook", "secret"),
+    ("Update feed token", "updates.feed.token_enc", "updates/feed", "token"),
+    ("Package index token", "updates.index.token_enc", "updates/index", "token"),
 )
 
 _HOOK_PREFIX = "integrations.secret."

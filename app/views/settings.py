@@ -316,6 +316,69 @@ def library_updates():
 
 
 # --------------------------------------------------------------------------
+# Update sources — General tab        [SATOM-UPDATE-SOURCES]
+# --------------------------------------------------------------------------
+# Where Software Update finds packages and where the Libraries card checks and
+# installs from. The token is write-only: it is never sent back to the browser.
+
+
+def _update_source_form(payload: dict) -> dict:
+    return {
+        'custom': payload.get('mode') == 'custom',
+        'url': str(payload.get('url') or ''),
+        'auth': payload.get('auth') == 'basic',
+        'user': str(payload.get('user') or ''),
+        'token': str(payload.get('token') or ''),
+    }
+
+
+@bp.route('/update-sources')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def update_sources_state():
+    from ..services import update_sources as usrc
+    return jsonify(usrc.state())
+
+
+@bp.route('/update-sources', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def update_sources_save():
+    from ..services import update_sources as usrc
+    payload = request.get_json(silent=True) or {}
+    kind = payload.get('kind')
+    if kind not in usrc.KINDS:
+        return jsonify(ok=False, errors=['unknown update source']), 400
+    form = _update_source_form(payload)
+    try:
+        errors = usrc.save(kind, **form)
+    except ValueError as exc:
+        errors = [str(exc)]
+    if errors:
+        return jsonify(ok=False, errors=errors), 400
+    db.session.commit()
+    cfg = usrc.config(kind)
+    # The audit row names the source and whether it authenticates, never the token.
+    log_action('settings.update_sources', kind,
+               {'custom': cfg['custom'], 'url': cfg['effective_url'],
+                'auth': cfg['auth'], 'user': cfg['user']})
+    return jsonify(ok=True, config=cfg)
+
+
+@bp.route('/update-sources/test', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def update_sources_test():
+    """Reach the source the form describes (saved or not) and say what it offers."""
+    from ..services import update_sources as usrc
+    payload = request.get_json(silent=True) or {}
+    kind = payload.get('kind')
+    if kind not in usrc.KINDS:
+        return jsonify(ok=False, error='unknown update source'), 400
+    return jsonify(usrc.test(kind, **_update_source_form(payload)))
+
+
+# --------------------------------------------------------------------------
 # Service control — General tab       [SATOM-SERVICE-CONTROL-VIEWS]
 # --------------------------------------------------------------------------
 # The web worker never runs systemctl for a state change; it enqueues a request

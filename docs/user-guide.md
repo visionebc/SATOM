@@ -3727,6 +3727,16 @@ applied until you press **Apply**. From a shell:
 uploads the file. Details:
 [offline-update-packages.md §1.1](offline-update-packages.md).
 
+The feed is the public repository unless **Settings → General → Update
+sources** names another one (§26.1), for example an internal pipeline that
+republishes the signed packages. The message after *Check* names the source it
+read. A package from any source still has to pass the signature check against
+this node's trust store, so pointing the feed somewhere else changes where the
+bytes come from, never what the node accepts. From a shell the CLI does not
+read that setting: `sudo SATOM_FEED_TOKEN=<token> satom execute update fetch
+--feed <https-url> --user <name> --yes` (the token only from the environment,
+never the command line).
+
 ### 22.4 Knowledge packs — online fetch and air-gapped upload
 
 Release notes, the Upgrade Advisory, upgrade paths and the public FortiGuard
@@ -4454,21 +4464,23 @@ separate updater** and is easy to confuse with §22:
 They are different mechanisms with different blast radii, and they are
 deliberately not merged. Practical notes:
 
-- **"Check for updates"** is the only thing that reaches PyPI, and it does so
-  *outside* the page render — the Settings page itself never touches the network,
-  so an unreachable PyPI cannot hang or 500 it. Results are cached for hours;
-  the button forces a fresh look. The status line names the source
-  (`pypi.org`). A package PyPI did not answer for shows **not checked**, never
-  a green tick.
-- **Where the versions come from.** The check asks `https://pypi.org`. An
-  **Upgrade** or **Rollback** runs `pip` in the node's virtual environment
-  (`/opt/satom/venv`) for that one pinned version, against pip's configured
-  index: pypi.org, unless the node has its own pip configuration (for example
-  `/etc/pip.conf` pointing at an internal mirror).
+- **"Check for updates"** is the only thing that reaches the package index, and
+  it does so *outside* the page render — the Settings page itself never touches
+  the network, so an unreachable index cannot hang or 500 it. Results are cached
+  for hours; the button forces a fresh look. The status line names the source
+  (`pypi.org`, or the index set in **Update sources**). A package the index did
+  not answer for shows **not checked**, never a green tick.
+- **Where the versions come from.** By default the check asks `https://pypi.org`,
+  and an **Upgrade** or **Rollback** runs `pip` in the node's virtual environment
+  (`/opt/satom/venv`) for that one pinned version against pip's configured index
+  (pypi.org, unless the node has its own pip configuration). With an index set in
+  **Update sources** (below), both the check and the install use that index, and
+  the job log shows a **package index** step naming it.
 - **On an offline (air-gapped) node** pypi.org is not reachable, so the card
   says *versions were NOT checked* and offers no Upgrade. That is expected:
   there, the libraries move with the **signed update package** (§22, Software
-  Update & HA). Each package carries the wheels for the release's
+  Update & HA), unless an internal index is reachable and set in **Update
+  sources**. Each package carries the wheels for the release's
   `requirements.txt` and installs them strictly offline (`--no-index`), so
   applying it brings every library to the version that release pins.
 - **The web worker never runs `pip`.** It writes a request that the privileged
@@ -4516,6 +4528,48 @@ directories. All of them are mounted read-only.
   never a package name or a command, and nothing here removes a package.
 - New installs bring `bubblewrap` with them (online and offline bundles). This
   card is how a node installed before that gets it.
+
+**Update sources**, under System Information, says where this installation
+looks for updates. There are two sources, and each is set on its own: leave
+either on **Default**, or point one or both at an internal pipeline or mirror.
+
+| Source | Default | What reads it |
+|---|---|---|
+| **Update packages** | the public feed (`satom-system-upgrades/latest.json`), or `SATOM_UPGRADE_FEED` when the node's environment sets it | Software Update & HA: *Check for a newer package online* and *Download & stage* (§22) |
+| **Python libraries** | `https://pypi.org/simple` | the Libraries card's *Check for updates*, and every Upgrade / Rollback |
+
+- A custom source is an `https://` URL. For update packages it is the URL of a
+  `latest.json` in the same format as the public one. For libraries it is a
+  pip "simple" index, the URL you would give pip as `--index-url`: Nexus,
+  Artifactory, devpi, a GitLab or Gitea package registry, or pypi.org itself.
+  It covers the Python (pip) libraries only: operating-system packages (apt,
+  zypper, dnf, including the System packages card) keep coming from the
+  operating system's own repositories.
+- **Authentication** is *None* (a public URL) or **User + token** (HTTP Basic).
+  For a service that only issues tokens, use the user name its documentation
+  gives for token access (for example `__token__` on PyPI-compatible
+  registries).
+- **Test** reaches the source the form describes, saved or not, and says what
+  it offers: the version the feed names, or the newest Flask on the index.
+  **Save** stores it. A blank token field keeps the stored token.
+- **The token is write-only.** It is stored like every other credential, in the
+  vault when one is configured (`updates/feed`, `updates/index`) and encrypted
+  locally otherwise. It is never sent back to the page or written to the audit
+  log. It goes only to the URL's own host and never follows a redirect, so a
+  feed whose package lives on a CDN does not hand the CDN your token. pip gets
+  it through its environment, never on a command line, and it is masked in
+  every log line.
+- **A source that cannot be used is refused, not replaced.** If a source is
+  set but its token cannot be read (the vault is sealed, or the key changed),
+  the check, the download and the library change all stop with that reason.
+  None of them quietly falls back to the public default.
+- **Trust does not change with the source.** An update package from an internal
+  pipeline is verified against this node's trust store exactly like one from
+  the public feed. A pipeline that republishes the signed packages works as is.
+  One that builds its own packages needs its signing key added with
+  `satom execute trust add-key`, as a deliberate decision.
+- Both nodes of an HA pair use the same sources: the settings replicate with
+  the database.
 
 ### 26.1b Services — starting, stopping and restarting this node's units
 

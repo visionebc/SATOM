@@ -319,7 +319,7 @@
           <div class="d-flex flex-wrap align-items-center gap-2">
             <button type="button" class="btn btn-outline-secondary btn-sm" id="feed-check-btn">
               <i class="bi bi-cloud-download me-1"></i>{{ _('Check for a newer package online') }}</button>
-            <span class="small text-muted" id="feed-msg">{{ _('Reads satom-system-upgrades/latest.json from the public repository. Nothing is downloaded until you press Download.') }}</span>
+            <span class="small text-muted" id="feed-msg">{{ _('Reads the update feed (latest.json) set in Settings → General → Update sources — by default the public repository. Nothing is downloaded until you press Download.') }}</span>
           </div>
           <div class="d-none mt-2 small" id="feed-offer">
             <span id="feed-offer-text"></span>
@@ -1078,16 +1078,20 @@
         }
         var pkg = d.package || {};
         var mb = ((pkg.size || 0) / 1048576).toFixed(1);
+        // Where the answer came from: the operator must be able to tell the
+        // public feed from an internal pipeline without opening Settings.
+        var src = ' <span class="text-muted">· source <code>' + escapeHtml(d.feed_url || '') + '</code>' +
+                  (d.authenticated ? ' (with user + token)' : '') + '</span>';
         if (!d.newer) {
           feedSay('<span class="text-success">Up to date</span> — the newest package is ' +
-                  escapeHtml(d.version) + ' and this node runs ' + escapeHtml(d.current_version) + '.');
+                  escapeHtml(d.version) + ' and this node runs ' + escapeHtml(d.current_version) + '.' + src);
           return;
         }
         feedSay('');
         document.getElementById('feed-offer-text').innerHTML =
           '<strong>' + escapeHtml(d.version) + '</strong> is available (this node runs ' +
           escapeHtml(d.current_version) + '): <code>' + escapeHtml(pkg.name) + '</code>, ' + mb +
-          ' MB' + (d.staged ? ' — <em>already staged below</em>' : '') + '.';
+          ' MB' + (d.staged ? ' — <em>already staged below</em>' : '') + '.' + src;
         document.getElementById('feed-offer').classList.remove('d-none');
       })
       .catch(function (e) { feedBtn.removeAttribute('disabled');

@@ -240,6 +240,62 @@
       </div>
     </div>
 
+    <!-- UPDATE SOURCES  [SATOM-UPDATE-SOURCES]
+         Where Software Update finds packages and where Libraries checks and
+         installs from. Each source on its own; the token is write-only. -->
+    {% if current_user.can('user_manage') %}
+    <div class="row g-3 mt-1" id="us-card">
+      <div class="col-12">
+        <div class="fw-card">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('Update sources') }}</span>
+          </div>
+          <div class="fw-card-body">
+            <div class="form-text mb-2">{{ _('Where this installation looks for updates. Leave a source on Default, or point it at an internal pipeline or mirror — public (URL only) or with a user and token. Changing a source changes where the files come from, not whether they are trusted: update packages are still verified against this node’s trust store. Both nodes of an HA pair use the same sources.') }}</div>
+            <div class="row g-3">
+              {% for kind, title, icon, hint, placeholder in [
+                   ('feed', _('Update packages'), 'bi-cloud-download', _('The feed (latest.json) Software Update & HA reads to find and download the newest signed package.'), 'https://pipeline.example.com/satom/latest.json'),
+                   ('index', _('Python libraries'), 'bi-boxes', _('Python (pip) libraries only: the package index the Libraries card checks and the updater installs from (a pip “simple” index: Nexus, Artifactory, devpi, GitLab…). System packages (apt, zypper, dnf) keep coming from the operating system’s repositories.'), 'https://nexus.example.com/repository/pypi/simple')] %}
+              <div class="col-lg-6 us-src" data-kind="{{ kind }}">
+                <div class="fw-card-header px-0 pt-0 pb-1">
+                  <span class="fw-card-title" style="font-size:13px;"><i class="bi {{ icon }} me-2 text-accent"></i>{{ title }}</span>
+                </div>
+                <div class="text-muted mb-2" style="font-size:11px;">{{ hint }}</div>
+                <label class="form-label mb-1" style="font-size:12px;" for="us-{{ kind }}-mode">{{ _('Source') }}</label>
+                <select class="form-select form-select-sm mb-1 us-mode" id="us-{{ kind }}-mode">
+                  <option value="default">{{ _('Default') }}</option>
+                  <option value="custom">{{ _('Custom URL') }}</option>
+                </select>
+                <div class="text-muted mb-2 us-default" style="font-size:11px;"></div>
+                <div class="us-custom" style="display:none;">
+                  <input type="url" class="form-control form-control-sm font-monospace mb-2 us-url" id="us-{{ kind }}-url"
+                         placeholder="{{ placeholder }}" aria-label="{{ _('Custom URL') }}">
+                  <label class="form-label mb-1" style="font-size:12px;" for="us-{{ kind }}-auth">{{ _('Authentication') }}</label>
+                  <select class="form-select form-select-sm mb-2 us-auth" id="us-{{ kind }}-auth">
+                    <option value="none">{{ _('None — public URL') }}</option>
+                    <option value="basic">{{ _('User + token') }}</option>
+                  </select>
+                  <div class="row g-2 us-cred" style="display:none;">
+                    <div class="col-6"><input type="text" class="form-control form-control-sm us-user" autocomplete="off"
+                                              placeholder="{{ _('User') }}" aria-label="{{ _('User') }}"></div>
+                    <div class="col-6"><input type="password" class="form-control form-control-sm us-token" autocomplete="new-password"
+                                              placeholder="{{ _('Token') }}" aria-label="{{ _('Token') }}"></div>
+                  </div>
+                </div>
+                <div class="d-flex gap-2 mt-2">
+                  <button type="button" class="btn btn-sm btn-outline-secondary us-test"><i class="bi bi-plug me-1"></i>{{ _('Test') }}</button>
+                  <button type="button" class="btn btn-sm btn-primary us-save"><i class="bi bi-check2 me-1"></i>{{ _('Save') }}</button>
+                </div>
+                <div class="us-msg mt-2" style="font-size:11px;"></div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     <!-- SERVICE CONTROL  [SATOM-SERVICE-CONTROL-CARD] -->
     <div class="row g-3 mt-1">
       <div class="col-12">
@@ -5223,6 +5279,11 @@ function checkLibraryUpdates(force) {
       libRenderActions();
       if (!meta || !data) return;
       meta.style.display = '';
+      if (data.error) {
+        // A configured index that cannot be used is never replaced by pypi.org.
+        meta.textContent = 'Update check failed: ' + data.error + ' (Settings → General → Update sources).';
+        return;
+      }
       if (data.unreachable) {
         meta.textContent = src + ' is not reachable from this node: versions were NOT checked'
           + (data.checked_at ? ' (last good check ' + new Date(data.checked_at * 1000).toLocaleString() + ')' : '')
@@ -5247,6 +5308,96 @@ function checkLibraryUpdates(force) {
 }
 document.addEventListener('DOMContentLoaded', function () {
   libLoadState(); checkLibraryUpdates(false); libLoadDrift(); libResumeJob();
+});
+
+// --- Update sources [SATOM-UPDATE-SOURCES] ---------------------------------
+// The token is write-only: the server says only whether one is stored, and a
+// blank token field on save keeps it.
+var US_URL = "{{ url_for('settings.update_sources_state') }}";
+var US_SAVE_URL = "{{ url_for('settings.update_sources_save') }}";
+var US_TEST_URL = "{{ url_for('settings.update_sources_test') }}";
+function usBox(kind) { return document.querySelector('.us-src[data-kind="' + kind + '"]'); }
+function usSay(box, text, cls) {
+  var m = box.querySelector('.us-msg');
+  m.className = 'us-msg mt-2 ' + (cls || '');
+  m.textContent = text;
+}
+function usSync(box) {
+  var custom = box.querySelector('.us-mode').value === 'custom';
+  box.querySelector('.us-custom').style.display = custom ? '' : 'none';
+  box.querySelector('.us-default').style.display = custom ? 'none' : '';
+  box.querySelector('.us-cred').style.display =
+    (custom && box.querySelector('.us-auth').value === 'basic') ? '' : 'none';
+}
+function usFill(kind, c) {
+  var box = usBox(kind);
+  if (!box || !c) return;
+  box.querySelector('.us-mode').value = c.custom ? 'custom' : 'default';
+  box.querySelector('.us-url').value = c.url || '';
+  box.querySelector('.us-auth').value = c.auth ? 'basic' : 'none';
+  box.querySelector('.us-user').value = c.user || '';
+  var tok = box.querySelector('.us-token');
+  tok.value = '';
+  tok.placeholder = c.has_token ? 'Token stored — leave blank to keep' : 'Token';
+  box.querySelector('.us-default').textContent = 'Default: ' + (c.default_url || '');
+  usSync(box);
+  if (c.url_problem || c.problem) {
+    usSay(box, 'Cannot be used as configured: ' + (c.url_problem || c.problem), 'text-danger');
+  } else {
+    usSay(box, 'In use: ' + (c.effective_url || '') + (c.auth ? ' (user ' + c.user + ' + token)' : ''), 'text-muted');
+  }
+}
+function usForm(box) {
+  return {
+    kind: box.getAttribute('data-kind'),
+    mode: box.querySelector('.us-mode').value,
+    url: box.querySelector('.us-url').value.trim(),
+    auth: box.querySelector('.us-auth').value,
+    user: box.querySelector('.us-user').value.trim(),
+    token: box.querySelector('.us-token').value
+  };
+}
+function usPost(url, body) {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': libCsrf() },
+    body: JSON.stringify(body)
+  }).then(function (r) { return r.json(); });
+}
+function usLoad() {
+  fetch(US_URL, { headers: { 'Accept': 'application/json' } })
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function (d) { usFill('feed', d.feed); usFill('index', d.index); })
+    .catch(function () {});
+}
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('.us-src').forEach(function (box) {
+    box.querySelector('.us-mode').addEventListener('change', function () { usSync(box); });
+    box.querySelector('.us-auth').addEventListener('change', function () { usSync(box); });
+    box.querySelector('.us-test').addEventListener('click', function () {
+      usSay(box, 'Testing…', 'text-muted');
+      usPost(US_TEST_URL, usForm(box))
+        .then(function (d) {
+          if (d.ok) usSay(box, 'OK — ' + d.message + ' (source ' + d.source + ')', 'text-success');
+          else usSay(box, 'Failed: ' + (d.error || 'no answer'), 'text-danger');
+        })
+        .catch(function () { usSay(box, 'Failed: SATOM did not answer the request.', 'text-danger'); });
+    });
+    box.querySelector('.us-save').addEventListener('click', function () {
+      usPost(US_SAVE_URL, usForm(box))
+        .then(function (d) {
+          if (!d.ok) { usSay(box, 'Not saved: ' + (d.errors || ['rejected']).join('; '), 'text-danger'); return; }
+          usFill(box.getAttribute('data-kind'), d.config);
+          usSay(box, 'Saved. In use: ' + d.config.effective_url, 'text-success');
+          // A new index makes the Libraries card's answer stale: ask again.
+          if (box.getAttribute('data-kind') === 'index' && typeof checkLibraryUpdates === 'function') {
+            checkLibraryUpdates(true);
+          }
+        })
+        .catch(function () { usSay(box, 'Not saved: SATOM did not answer the request.', 'text-danger'); });
+    });
+  });
+  if (document.getElementById('us-card')) usLoad();
 });
 
 // --- System packages [SATOM-SYSPKG-CARD] ---------------------------------

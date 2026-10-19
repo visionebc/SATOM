@@ -25,9 +25,15 @@ as root from a copy in ``/usr/local/lib/satom-runner``):
 Nothing calls this on its own. A node fetches the feed when an operator asks
 (the Software Update button or ``satom execute update fetch``) -- an on-premise
 security product does not phone home on a timer.
+
+The feed may live on an internal pipeline (Settings → General → Update
+sources) that asks for a user and token. ``auth`` is ``(host, user, token)``:
+the credentials go as HTTP Basic ONLY to that exact host, as an unredirected
+header, so a redirect -- to a CDN, or anywhere else -- never carries them.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -35,6 +41,7 @@ import re
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlsplit
 
 FEED_SCHEMA = "satom.upgrade-feed/1"
 DEFAULT_FEED_URL = ("https://raw.githubusercontent.com/visionebc/SATOM/main/"
@@ -65,16 +72,42 @@ class _HttpsOnlyRedirect(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def _open(url: str, timeout: float):
+def url_host(url: str) -> str:
+    """Lower-case host of ``url`` (``""`` when it has none)."""
+    try:
+        return (urlsplit(url or "").hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+def _request(url: str, auth=None) -> urllib.request.Request:
+    """The GET for ``url``. With ``auth`` = ``(host, user, token)`` and ``url``
+    on exactly that host, it carries HTTP Basic as an UNREDIRECTED header:
+    urllib copies only ordinary headers onto a redirect, so the credentials
+    never follow one, not even back to the same host."""
+    req = urllib.request.Request(url, headers={"User-Agent": _UA})
+    if auth:
+        host, user, token = auth
+        if host and user and token and url_host(url) == (host or "").lower():
+            cred = base64.b64encode(("%s:%s" % (user, token)).encode()).decode()
+            req.add_unredirected_header("Authorization", "Basic " + cred)
+    return req
+
+
+def _open(url: str, timeout: float, auth=None):
     if not (url or "").lower().startswith("https://"):
         raise FeedError("only https:// URLs are fetched (got %r)" % url)
     opener = urllib.request.build_opener(_HttpsOnlyRedirect())
-    req = urllib.request.Request(url, headers={"User-Agent": _UA})
+    req = _request(url, auth)
     try:
         return opener.open(req, timeout=timeout)
     except FeedError:
         raise
     except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403):
+            raise FeedError("%s answered HTTP %s: the source wants credentials, or "
+                            "refused the ones configured (Settings → General → "
+                            "Update sources)" % (url, exc.code)) from None
         raise FeedError("%s answered HTTP %s" % (url, exc.code)) from None
     except (urllib.error.URLError, OSError) as exc:
         reason = getattr(exc, "reason", exc)
@@ -121,40 +154,43 @@ def parse_feed(raw: bytes) -> dict:
     return doc
 
 
-def fetch_small(url: str, timeout: float = 10, max_bytes: int = MAX_FEED_BYTES) -> bytes:
+def fetch_small(url: str, timeout: float = 10, max_bytes: int = MAX_FEED_BYTES,
+               auth=None) -> bytes:
     """GET a small document (a feed) over HTTPS with this module's rules:
     https only, redirects included, at most ``max_bytes``. Shared by the
     knowledge-pack feed (``app/services/knowledge_fetch.py``) so both feeds go
     through the same client, proxy environment and TLS verification."""
-    with _open(url, timeout) as resp:
+    with _open(url, timeout, auth) as resp:
         raw = resp.read(max_bytes + 1)
     if len(raw) > max_bytes:
         raise FeedError("the feed at %s is larger than %d KB" % (url, max_bytes // 1024))
     return raw
 
 
-def fetch_feed(url: str = "", timeout: float = 10) -> dict:
+def fetch_feed(url: str = "", timeout: float = 10, auth=None) -> dict:
     """Download and validate the feed document."""
     url = url or feed_url()
-    doc = parse_feed(fetch_small(url, timeout))
+    doc = parse_feed(fetch_small(url, timeout, auth=auth))
     doc["_feed_url"] = url
     return doc
 
 
-def download_package(feed: dict, dest_dir, progress=None, timeout: float = 60) -> Path:
+def download_package(feed: dict, dest_dir, progress=None, timeout: float = 60,
+                     auth=None) -> Path:
     """Download the package the feed names into ``dest_dir``.
 
     Streams to a hidden ``.part`` file and only renames it once the byte count
     and the sha256 match the feed; a mismatch deletes it. ``progress(done,
-    total)`` is called every few MB. Returns the final path.
+    total)`` is called every few MB. Returns the final path. ``auth`` reaches
+    the package only when it is on the same host as the feed (see ``_request``).
     """
     pkg = feed["package"]
     return download_file(pkg["url"], pkg["name"], pkg["sha256"], pkg["size"], dest_dir,
-                         progress=progress, timeout=timeout)
+                         progress=progress, timeout=timeout, auth=auth)
 
 
 def download_file(url: str, name: str, want_sha: str, size: int, dest_dir,
-                  progress=None, timeout: float = 60) -> Path:
+                  progress=None, timeout: float = 60, auth=None) -> Path:
     """Download ``url`` to ``dest_dir/name``, atomically and verified.
 
     The file only appears under ``name`` once exactly ``size`` bytes arrived
@@ -174,7 +210,7 @@ def download_file(url: str, name: str, want_sha: str, size: int, dest_dir,
     done = 0
     last = 0
     try:
-        with _open(url, timeout) as resp, open(part, "wb") as fh:
+        with _open(url, timeout, auth) as resp, open(part, "wb") as fh:
             while True:
                 chunk = resp.read(1 << 20)
                 if not chunk:
@@ -206,5 +242,5 @@ def download_file(url: str, name: str, want_sha: str, size: int, dest_dir,
     return final
 
 
-__all__ = ["FEED_SCHEMA", "DEFAULT_FEED_URL", "FeedError", "feed_url", "parse_feed",
+__all__ = ["FEED_SCHEMA", "DEFAULT_FEED_URL", "FeedError", "feed_url", "url_host", "parse_feed",
            "fetch_feed", "fetch_small", "download_package", "download_file", "PKG_RE"]

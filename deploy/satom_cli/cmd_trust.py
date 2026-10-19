@@ -448,7 +448,9 @@ def update_package(ctx, args):
     return _follow(ctx, uid, new)
 
 
-FETCH_USAGE = "execute update fetch [--yes] [--download-only] [--feed <https-url>]"
+#: ``--user`` takes the token from $SATOM_FEED_TOKEN, never from argv.
+FETCH_USAGE = ("execute update fetch [--yes] [--download-only] [--feed <https-url>] "
+               "[--user <name>]")
 
 
 def _feed_module():
@@ -483,8 +485,23 @@ def update_fetch(ctx, args):
     if "--feed" in args:
         i = args.index("--feed")
         url = args[i + 1] if i + 1 < len(args) else ""
+    # An internal pipeline behind HTTP Basic: the user on the command line, the
+    # token ONLY from the environment (argv is visible to every local user).
+    # The console's Settings → General → Update sources is not read here: this
+    # runs as root and does not load the application.
+    auth = None
+    if "--user" in args:
+        i = args.index("--user")
+        user = args[i + 1] if i + 1 < len(args) else ""
+        token = os.environ.get("SATOM_FEED_TOKEN", "")
+        if not user or user.startswith("--") or not token:
+            return Result("bad", "update fetch").lines("", [
+                "--user needs a name, and the token in $SATOM_FEED_TOKEN",
+                "usage: satom " + FETCH_USAGE])
+        auth = (fd.url_host(url or fd.feed_url()), user, token)
+    kw = {"auth": auth} if auth else {}
     try:
-        doc = fd.fetch_feed(url)
+        doc = fd.fetch_feed(url, **kw)
     except fd.FeedError as exc:
         return Result("bad", "update fetch").lines("", [
             str(exc), "",
@@ -527,7 +544,7 @@ def update_fetch(ctx, args):
 
     try:
         try:
-            got = fd.download_package(doc, private, progress=progress)
+            got = fd.download_package(doc, private, progress=progress, **kw)
         except fd.FeedError as exc:
             return Result("bad", "update fetch").lines("", ["download refused: %s" % exc])
         path = uploads / Path(got).name

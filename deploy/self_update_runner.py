@@ -1255,10 +1255,66 @@ def _installed_version(pkg):
     return r.stdout.strip() if r.returncode == 0 else ""
 
 
-def _pip_install(spec):
-    """pip install a single pinned spec (pkg==ver) as the app user."""
+def _pip_install(spec, env=None):
+    """pip install a single pinned spec (pkg==ver) as the app user. ``env``
+    (from :func:`_pip_index_env`) points pip at the configured index."""
     return run([str(VENV / "pip"), "install", "-q", spec],
-               timeout=900, user=APP_USER)
+               timeout=900, user=APP_USER, env=env)
+
+
+#: A package index the request may name: https, a host, an optional port and a
+#: path. No userinfo (credentials arrive in their own fields), no query, no
+#: whitespace -- this value ends up in pip's environment.
+_INDEX_URL_RE = re.compile(r"^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%+/-]*)?$")
+_CRED_BAD = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _pip_index_env(req):
+    """``(env, where, secret)`` for a pip change.
+
+    No ``index_url`` in the request: ``(None, "pip default ...", "")`` -- pip uses
+    its own configuration, as before. Otherwise the index (Settings -> General ->
+    Update sources) goes to pip as ``PIP_INDEX_URL``, with the user and token
+    percent-encoded into it. Through the ENVIRONMENT, never argv: a process's
+    command line is readable by every local user, its environment only by its
+    owner and root. ``where`` names the index without the credentials, for the
+    status log; ``secret`` is what :func:`_redact` must remove from any output.
+    Raises ``ValueError`` on anything malformed: a request the web side did not
+    validate is refused here, not handed to pip.
+    """
+    from urllib.parse import quote
+    url = (req.get("index_url") or "").strip()
+    if not url:
+        return None, "pip default (pypi.org unless pip.conf names another index)", ""
+    if not _INDEX_URL_RE.match(url) or len(url) > 500:
+        raise ValueError("refusing package index URL %r" % url)
+    user = req.get("index_user") or ""
+    token = req.get("index_token") or ""
+    if not isinstance(user, str) or not isinstance(token, str):
+        raise ValueError("refusing malformed index credentials")
+    if user or token:
+        if (not user or not token or ":" in user or len(user) > 128
+                or len(token) > 1024 or _CRED_BAD.search(user + token)):
+            raise ValueError("refusing malformed index credentials")
+        full = "https://%s:%s@%s" % (quote(user, safe=""), quote(token, safe=""),
+                                     url[len("https://"):])
+        where = "%s (as %s)" % (url, user)
+    else:
+        full, where = url, url
+    env = dict(os.environ)
+    env["PIP_INDEX_URL"] = full
+    return env, where, token
+
+
+def _redact(text, secret):
+    """``text`` with the token (raw and percent-encoded) masked."""
+    if not text or not secret:
+        return text
+    from urllib.parse import quote
+    for s in {secret, quote(secret, safe="")}:
+        if s:
+            text = text.replace(s, "****")
+    return text
 
 
 def _record_lib_version(pkg, previous, current, action, by):
@@ -1407,11 +1463,21 @@ def pip_change(req_path):
                   new_version=version, rolled_back=False)
         return
 
+    try:
+        pip_env, where, secret = _pip_index_env(req)
+    except ValueError as e:
+        st.step("package index", False, str(e))
+        st.finish("failed", error="bad package index")
+        return
+    # Where the bytes come from, in the job log: an operator asking "where did
+    # this version come from?" reads it here.
+    st.step("package index", True, where)
+
     extras = _req_extras(pkg)
     try:
-        p = _pip_install("%s%s==%s" % (pkg, extras, version))
+        p = _pip_install("%s%s==%s" % (pkg, extras, version), env=pip_env)
         st.step("pip install %s%s==%s" % (pkg, extras, version), p.returncode == 0,
-                p.stderr or p.stdout)
+                _redact(p.stderr or p.stdout, secret))
         if p.returncode != 0:
             raise RuntimeError("pip install failed")
 
@@ -1447,11 +1513,11 @@ def pip_change(req_path):
         return
 
     except Exception as e:
-        st.step("ERROR", False, str(e))
+        st.step("ERROR", False, _redact(str(e), secret))
         # ---- auto-rollback to the previously-installed version ----
         try:
             if previous:
-                rb = _pip_install("%s%s==%s" % (pkg, extras, previous))
+                rb = _pip_install("%s%s==%s" % (pkg, extras, previous), env=pip_env)
                 subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
                 subprocess.run(["systemctl", "restart", SCHED], timeout=60)
                 ok = health_ok()
@@ -1462,10 +1528,11 @@ def pip_change(req_path):
                 st.step("rollback", False, "no previous version recorded — cannot auto-revert")
                 ok = False
             st.finish("failed", package=pkg, previous_version=previous,
-                      new_version=previous, rolled_back=True, recovered=ok, error=str(e))
+                      new_version=previous, rolled_back=True, recovered=ok,
+                      error=_redact(str(e), secret))
         except Exception as e2:
             st.finish("failed", package=pkg, rolled_back=True, recovered=False,
-                      error="%s ; rollback error: %s" % (e, e2))
+                      error=_redact("%s ; rollback error: %s" % (e, e2), secret))
 
 
 

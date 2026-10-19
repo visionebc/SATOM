@@ -6,6 +6,36 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **Settings → General → Update sources**: point the update packages and the
+  Python libraries at another URL, such as an internal pipeline or mirror.
+  Requested as: "also let them be downloaded from another URL, an internal
+  pipeline, with a user and token or open with just the URL; both, or only
+  one, the user decides". Two independent sources, each **Default** or a
+  custom `https://` URL, each public or with a **user + token** (HTTP Basic):
+  - *Update packages*: the feed (`latest.json`) that Software Update & HA reads
+    to find and download the newest signed package. Packages from any source
+    are still verified against the node's trust store. The page now names the
+    source it read.
+  - *Python libraries*: the package index the Libraries card checks and the
+    updater installs from, read through the Simple API every pip index serves
+    (Nexus, Artifactory, devpi, GitLab, pypi.org). The job log of each change
+    has a **package index** step saying where it installed from.
+  - **Test** reaches the source the form describes, saved or not, and says
+    what it offers.
+  - The token follows the vault mode like every other credential and is
+    write-only: it is never sent back to the browser or written to the audit
+    log. It only goes to the URL's own host and never follows a redirect. It
+    reaches pip through the environment, never the command line, and it is
+    masked in every log line.
+  - A source that is configured but cannot be used, for example because its
+    token cannot be read, is refused with the reason. SATOM never falls back
+    to the public default without saying so.
+  - Both nodes of an HA pair use the same sources.
+  - `satom execute update fetch` gains `--user <name>`. The token is read
+    from `$SATOM_FEED_TOKEN`.
+
 ### Fixed
 
 - Settings → General → Libraries said "All tracked libraries up to date", with

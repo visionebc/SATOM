@@ -5112,7 +5112,7 @@ either on <strong>Default</strong>, or point one or both at an internal pipeline
 <tr>
 <td><strong>Python libraries</strong></td>
 <td><code>https://pypi.org/simple</code></td>
-<td>the Libraries card's <em>Check for updates</em>, and every Upgrade / Rollback</td>
+<td>the Libraries card's <em>Check for updates</em>, every Upgrade / Rollback, and the dependency step of an update from the repository (§22)</td>
 </tr>
 </tbody>
 </table>
@@ -5141,7 +5141,13 @@ either on <strong>Default</strong>, or point one or both at an internal pipeline
 <li><strong>A source that cannot be used is refused, not replaced.</strong> If a source is
   set but its token cannot be read (the vault is sealed, or the key changed),
   the check, the download and the library change all stop with that reason.
-  None of them quietly falls back to the public default.</li>
+  None of them quietly falls back to the public default. An update from the
+  repository is the exception, on purpose: it is not stopped over its
+  dependency step, which changes nothing unless <code>requirements.txt</code> changed. Its
+  log has a <strong>package index</strong> step that names the index used, or says why pip
+  used its own default: a warning when the configured index could not be read,
+  or a note when the update came from the standby's reconciler, which does not
+  read the settings.</li>
 <li><strong>Trust does not change with the source.</strong> An update package from an internal
   pipeline is verified against this node's trust store exactly like one from
   the public feed. A pipeline that republishes the signed packages works as is.

@@ -991,6 +991,21 @@ def process(req_path):
         st.finish("failed", error=bad)
         return
 
+    # The package index for the dependency step (Settings -> General -> Update
+    # sources), checked before anything is touched.
+    try:
+        pip_env, where, secret = _pip_index_env(req)
+    except ValueError as e:
+        st.step("package index", False, str(e))
+        st.finish("failed", error="bad package index")
+        return
+    if req.get("do_pip", True):
+        problem = req.get("index_problem")
+        note = problem or req.get("index_note")
+        st.step("package index", True,
+                str(note)[:300] if isinstance(note, str) and note else where,
+                warn=isinstance(problem, str) and bool(problem))
+
     snapshot = git("rev-parse", "HEAD").stdout.strip()
     st.step("snapshot current commit", True, snapshot[:12])
 
@@ -1045,8 +1060,10 @@ def process(req_path):
         if req.get("do_pip", True):
             st.begin("pip install -r requirements.txt")
             p = run([str(VENV / "pip"), "install", "-q", "-r",
-                     str(APP / "requirements.txt")], timeout=900, user=APP_USER)
-            st.step("pip install -r requirements.txt", p.returncode == 0, p.stderr)
+                     str(APP / "requirements.txt")], timeout=900, user=APP_USER,
+                    env=pip_env)
+            st.step("pip install -r requirements.txt", p.returncode == 0,
+                    _redact(p.stderr, secret))
             if p.returncode != 0:
                 raise RuntimeError("pip install failed")
 
@@ -1203,7 +1220,8 @@ def process(req_path):
             git("reset", "--hard", snapshot)
             if req.get("do_pip", True):
                 run([str(VENV / "pip"), "install", "-q", "-r",
-                     str(APP / "requirements.txt")], timeout=900, user=APP_USER)
+                     str(APP / "requirements.txt")], timeout=900, user=APP_USER,
+                    env=pip_env)
             # The update already compiled the NEW .po; put back the catalogue
             # of the code that runs again.
             compile_catalogues(st, "pybabel compile (rolled-back catalogues)")

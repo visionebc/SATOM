@@ -376,6 +376,8 @@ def request_update(target: str, by: str, *, do_pip: bool = True,
         "role": role or node_role(),
         "origin": origin,
     }
+    if do_pip:
+        _add_update_index(req)
     # A "queued" status up front so the UI has something to poll immediately.
     (STATUS_DIR / (uid + ".json")).write_text(json.dumps({
         "id": uid, "state": "queued", "steps": [],
@@ -384,10 +386,42 @@ def request_update(target: str, by: str, *, do_pip: bool = True,
         "origin": req.get("origin", "manual"),
         "updated_at": datetime.utcnow().isoformat() + "Z"}))
     # Write to a hidden temp then rename INTO the watched dir → atomic trigger.
+    # 0600 from the first byte: the request may carry the index token.
     tmp = REQ_DIR / ("." + uid + ".tmp")
-    tmp.write_text(json.dumps(req))
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(req))
     tmp.rename(REQ_DIR / (uid + ".json"))
     return uid
+
+
+def _add_update_index(req: dict) -> None:
+    """The package index (Settings → General → Update sources) for a code
+    update's ``pip install -r requirements.txt``.
+
+    Unlike a Libraries change, a code update is never REFUSED over it. The
+    reconciler that converges the standby runs without an application context
+    and cannot read settings, and that step is a no-op whenever the update does
+    not change requirements.txt; blocking the update would stop the pair from
+    converging over a step that usually does nothing. Instead the request says
+    why the index is not used, and the runner puts it in the update's log --
+    as a warning when a configured index could not be used.
+    """
+    from flask import has_app_context
+    if not has_app_context():
+        req["index_note"] = ("Update sources not read here (no application "
+                             "context: the reconciler or a script); pip uses "
+                             "its own default")
+        return
+    index = _pip_index()
+    if index["problem"]:
+        req["index_problem"] = ("the package index in Update sources cannot be "
+                                "used (%s); pip uses its own default" % index["problem"])
+        return
+    if index["custom"]:
+        req["index_url"] = index["url"]
+        if index["auth"]:
+            req["index_user"], req["index_token"] = index["auth"][1], index["auth"][2]
 
 
 LIB_VERSIONS_DIR = APP_DIR / "data" / "lib-versions"

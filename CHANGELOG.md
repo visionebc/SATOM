@@ -6,6 +6,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+
+- An update **from the repository** installed its dependencies
+  (`pip install -r requirements.txt`, and the same step of its rollback) from
+  pip's default index, ignoring the package index set in **Settings → General →
+  Update sources** (3.3.6). It now uses that index, with its user and token, and
+  the update's log has a **package index** step naming it. A code update is
+  never refused over the index: when the index cannot be read (the standby's
+  reconciler runs without the settings, or the token cannot be read) the step
+  says so, as a warning in the second case, and pip uses its own default. That
+  step changes nothing unless the update changes `requirements.txt`.
+
 ## [3.3.6] - 2026-10-19
 
 Upgrade path unchanged from 3.3.5: the update package accepts a node on 3.3.3

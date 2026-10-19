@@ -4536,7 +4536,7 @@ either on **Default**, or point one or both at an internal pipeline or mirror.
 | Source | Default | What reads it |
 |---|---|---|
 | **Update packages** | the public feed (`satom-system-upgrades/latest.json`), or `SATOM_UPGRADE_FEED` when the node's environment sets it | Software Update & HA: *Check for a newer package online* and *Download & stage* (§22) |
-| **Python libraries** | `https://pypi.org/simple` | the Libraries card's *Check for updates*, and every Upgrade / Rollback |
+| **Python libraries** | `https://pypi.org/simple` | the Libraries card's *Check for updates*, every Upgrade / Rollback, and the dependency step of an update from the repository (§22) |
 
 - A custom source is an `https://` URL. For update packages it is the URL of a
   `latest.json` in the same format as the public one. For libraries it is a
@@ -4562,7 +4562,13 @@ either on **Default**, or point one or both at an internal pipeline or mirror.
 - **A source that cannot be used is refused, not replaced.** If a source is
   set but its token cannot be read (the vault is sealed, or the key changed),
   the check, the download and the library change all stop with that reason.
-  None of them quietly falls back to the public default.
+  None of them quietly falls back to the public default. An update from the
+  repository is the exception, on purpose: it is not stopped over its
+  dependency step, which changes nothing unless `requirements.txt` changed. Its
+  log has a **package index** step that names the index used, or says why pip
+  used its own default: a warning when the configured index could not be read,
+  or a note when the update came from the standby's reconciler, which does not
+  read the settings.
 - **Trust does not change with the source.** An update package from an internal
   pipeline is verified against this node's trust store exactly like one from
   the public feed. A pipeline that republishes the signed packages works as is.

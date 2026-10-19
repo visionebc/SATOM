@@ -5021,7 +5021,20 @@ deliberately not merged. Practical notes:</p>
 <li><strong>"Check for updates"</strong> is the only thing that reaches PyPI, and it does so
   <em>outside</em> the page render — the Settings page itself never touches the network,
   so an unreachable PyPI cannot hang or 500 it. Results are cached for hours;
-  the button forces a fresh look.</li>
+  the button forces a fresh look. The status line names the source
+  (<code>pypi.org</code>). A package PyPI did not answer for shows <strong>not checked</strong>, never
+  a green tick.</li>
+<li><strong>Where the versions come from.</strong> The check asks <code>https://pypi.org</code>. An
+  <strong>Upgrade</strong> or <strong>Rollback</strong> runs <code>pip</code> in the node's virtual environment
+  (<code>/opt/satom/venv</code>) for that one pinned version, against pip's configured
+  index: pypi.org, unless the node has its own pip configuration (for example
+  <code>/etc/pip.conf</code> pointing at an internal mirror).</li>
+<li><strong>On an offline (air-gapped) node</strong> pypi.org is not reachable, so the card
+  says <em>versions were NOT checked</em> and offers no Upgrade. That is expected:
+  there, the libraries move with the <strong>signed update package</strong> (§22, Software
+  Update &amp; HA). Each package carries the wheels for the release's
+  <code>requirements.txt</code> and installs them strictly offline (<code>--no-index</code>), so
+  applying it brings every library to the version that release pins.</li>
 <li><strong>The web worker never runs <code>pip</code>.</strong> It writes a request that the privileged
   updater applies, and the allowlist is enforced in both places. A package that
   is not on the list is refused before it reaches the queue.</li>

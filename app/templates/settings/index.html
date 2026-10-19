@@ -4957,7 +4957,12 @@ function libBadge(sev, latest) {
     patch:  ['#3b82f6', '#fff',    'patch'],
     update: ['#64748b', '#fff',    'update available']
   };
-  if (sev === 'none' || !latest) {
+  if (!latest) {
+    // No answer from the index for this package: NOT checked, never "up to date".
+    return '<span class="lib-update-badge lib-unchecked" title="not checked — the package index did not answer"'
+         + ' style="color:#3D4550;font-size:11px;"><i class="bi bi-question-circle"></i> not checked</span>';
+  }
+  if (sev === 'none') {
     return '<span class="lib-update-badge" title="up to date" style="color:#10b981;font-size:12px;">'
          + '<i class="bi bi-check-circle-fill"></i></span>';
   }
@@ -5194,6 +5199,8 @@ function checkLibraryUpdates(force) {
     .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
     .then(function (data) {
       var pkgs = (data && data.packages) || [];
+      var src = (data && data.source) || 'pypi.org';
+      var unchecked = (data && data.unchecked) || [];
       var outdated = 0;
       pkgs.forEach(function (p) {
         var row = libRowEl(p.name);
@@ -5204,17 +5211,35 @@ function checkLibraryUpdates(force) {
         if (p.latest) row.setAttribute('data-latest', p.latest);
         if (p.severity !== 'none' && p.latest) outdated++;
       });
+      if (data && data.unreachable) {
+        // Rows without a previous good result: not checked, never a green tick.
+        unchecked.forEach(function (name) {
+          var row = libRowEl(name);
+          if (!row || row.getAttribute('data-latest')) return;
+          var cell = row.querySelector('.lib-update-badge');
+          if (cell) cell.outerHTML = libBadge('none', '');
+        });
+      }
       libRenderActions();
-      if (meta && data && data.checked_at) {
+      if (!meta || !data) return;
+      meta.style.display = '';
+      if (data.unreachable) {
+        meta.textContent = src + ' is not reachable from this node: versions were NOT checked'
+          + (data.checked_at ? ' (last good check ' + new Date(data.checked_at * 1000).toLocaleString() + ')' : '')
+          + '. An offline node gets its libraries from the signed update package (Software Update & HA).';
+        return;
+      }
+      if (data.checked_at) {
         var when = new Date(data.checked_at * 1000).toLocaleString();
-        meta.style.display = '';
         meta.textContent = (outdated
           ? outdated + ' update' + (outdated === 1 ? '' : 's') + ' available'
-          : 'All tracked libraries up to date') + ' · checked ' + when;
+          : (unchecked.length ? 'No updates found' : 'All tracked libraries up to date'))
+          + (unchecked.length ? ' · ' + unchecked.length + ' not checked' : '')
+          + ' · source ' + src + ' · checked ' + when;
       }
     })
     .catch(function () {
-      if (meta) { meta.style.display = ''; meta.textContent = 'Update check unavailable (PyPI unreachable).'; }
+      if (meta) { meta.style.display = ''; meta.textContent = 'Update check failed: SATOM did not answer the request.'; }
     })
     .finally(function () {
       if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Check for updates'; }

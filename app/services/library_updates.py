@@ -14,6 +14,12 @@ for that package, never an exception or a hung request. Lookups run concurrently
 so the whole set resolves well within the gunicorn worker timeout, and results
 are cached in-process (``_CACHE_TTL``) so repeated Settings visits don't re-hit
 PyPI.
+
+``latest=None`` means NOT CHECKED, never "up to date". A package PyPI did not
+answer for is listed in ``unchecked``; when none answered (an air-gapped node,
+a proxy, no DNS) the result carries ``unreachable=True`` and is not cached as a
+good check. Before this, an offline node reported "All tracked libraries up to
+date" after checking nothing.
 """
 from __future__ import annotations
 
@@ -33,13 +39,20 @@ except Exception:  # pragma: no cover - packaging ships with pip, effectively al
 
 from .system_info import _LIBRARIES
 
+#: Where the check looks, shown on the card so an operator knows what to open.
+SOURCE = "pypi.org"
 _PYPI = "https://pypi.org/pypi/{name}/json"
 _HTTP_TIMEOUT = 3.0          # per-request hard cap (seconds)
 _MAX_WORKERS = 8             # concurrent PyPI lookups
 _CACHE_TTL = 6 * 3600        # 6 hours
+#: After a check where PyPI answered nothing, page loads reuse that verdict for
+#: this long instead of waiting on the timeouts again. The button still retries.
+_UNREACHABLE_TTL = 600
 
 _lock = threading.Lock()
-_cache: dict[str, Any] = {"checked_at": 0.0, "packages": []}
+_cache: dict[str, Any] = {"checked_at": 0.0, "packages": [], "source": SOURCE,
+                          "unchecked": []}
+_failed: dict[str, Any] = {"at": 0.0, "unchecked": []}
 
 
 def _severity(installed: str, latest: str) -> str:
@@ -103,26 +116,44 @@ def _collect() -> dict[str, Any]:
     # Preserve the curated display order regardless of completion order.
     order = {n: i for i, n in enumerate(_LIBRARIES)}
     packages.sort(key=lambda p: order.get(p["name"], 999))
-    return {"checked_at": time.time(), "packages": packages}
+    answered = {p["name"] for p in packages if p["latest"]}
+    unchecked = [n for n, _ in installed if n not in answered]
+    return {"checked_at": time.time(), "packages": packages, "source": SOURCE,
+            "unchecked": unchecked, "installed_count": len(installed)}
+
+
+def _unreachable(now: float, unchecked: list[str]) -> dict[str, Any]:
+    """The last good result (if any) marked as NOT refreshed: PyPI answered
+    for no package. ``checked_at`` stays the time of that good result."""
+    out = dict(_cache)
+    out.update(unreachable=True, attempted_at=now, source=SOURCE,
+               unchecked=list(unchecked))
+    return out
 
 
 def check(force: bool = False) -> dict[str, Any]:
     """Return cached update info, refreshing from PyPI when stale (or forced).
 
-    Best-effort and thread-safe. Never raises: on total failure returns whatever
-    is cached (possibly the empty initial cache).
+    Best-effort and thread-safe. Never raises: when PyPI answers for no package
+    the result says ``unreachable`` instead of passing an unchecked list off as
+    up to date.
     """
     now = time.time()
     with _lock:
         fresh = (now - _cache["checked_at"]) < _CACHE_TTL and _cache["packages"]
         if fresh and not force:
             return dict(_cache)
+        if not force and (now - _failed["at"]) < _UNREACHABLE_TTL:
+            return _unreachable(_failed["at"], _failed["unchecked"])
 
     # Network work happens OUTSIDE the lock so concurrent callers don't serialize.
     data = _collect()
     with _lock:
-        # Only overwrite on a non-empty result, so a transient PyPI outage doesn't
-        # wipe a previously-good cache.
+        if data["installed_count"] and len(data["unchecked"]) >= data["installed_count"]:
+            # Nothing answered. Keep the previous good result, never overwrite it.
+            _failed.update(at=data["checked_at"], unchecked=data["unchecked"])
+            return _unreachable(data["checked_at"], data["unchecked"])
+        _failed.update(at=0.0, unchecked=[])
         if data["packages"]:
             _cache.update(data)
         return dict(_cache)

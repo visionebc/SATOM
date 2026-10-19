@@ -6,6 +6,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+
+- Settings → General → Libraries said "All tracked libraries up to date", with
+  a green tick on every row, on a node that cannot reach pypi.org (an
+  air-gapped install, a proxy, no DNS): a package PyPI did not answer for was
+  counted as current, and that empty check was cached as a good one. Reported
+  as: "on the closed system I can't see how to update the libraries or where
+  they come from". Now a package with no answer shows **not checked**; when
+  none answered the card says pypi.org is not reachable from this node, that
+  versions were NOT checked, and that an offline node gets its libraries from
+  the signed update package. The status line names the source (`pypi.org`)
+  and how many packages went unchecked, an unreachable result never replaces
+  a previous good check, and Settings page loads reuse an unreachable verdict
+  for 10 minutes instead of waiting on the timeouts again (the button always
+  retries).
+
 ## [3.3.5] - 2026-10-19
 
 Upgrade path unchanged from 3.3.4: the update package accepts a node on 3.3.3

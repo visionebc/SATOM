@@ -6,6 +6,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.3.5] - 2026-10-19
+
+Upgrade path unchanged from 3.3.4: the update package accepts a node on 3.3.3
+or newer. A node on 3.3.2 or older applies `satom-update-3.3.3.tar.gz`
+(release v3.3.3) first, then this one.
+
 ### Fixed
 
 - A single click on a list row opened it instead of selecting it, so Clone,

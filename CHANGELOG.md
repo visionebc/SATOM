@@ -6,6 +6,24 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.3.7] - 2026-10-19
+
+Upgrade path unchanged from 3.3.6: the update package accepts a node on 3.3.3
+or newer. A node on 3.3.2 or older applies `satom-update-3.3.3.tar.gz`
+(release v3.3.3) first, then this one.
+
+The public repository's history was rewritten on 2026-10-19: commit messages
+now use the current product name only, and the release tags v1.1 to v2.2.0
+(with their GitHub releases) were removed. Commit IDs changed; a clone made
+before that date has to be cloned again.
+
+### Changed
+
+- Dependencies: **SQLAlchemy 2.1.5** (was 2.1.4) and **paramiko 5.1.0** (was
+  5.0.0), both upgraded from **Settings → General → Libraries** on the
+  reference cluster and pinned in `requirements.txt`. The offline bundles and
+  the update package carry the new wheels.
+
 ### Fixed
 
 - An update **from the repository** installed its dependencies

@@ -315,17 +315,12 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 // ============================================================
-// Table Row Click Navigation
+// Table rows: no shared click handler
 // ============================================================
-document.addEventListener('DOMContentLoaded', function () {
-  document.querySelectorAll('tr[data-href]').forEach(function (row) {
-    row.style.cursor = 'pointer';
-    row.addEventListener('click', function (e) {
-      if (e.target.closest('button, a, input, select')) return;
-      window.location.href = row.getAttribute('data-href');
-    });
-  });
-});
+// Lists with a toolbar (Clone, Save as template, Delete...) select a row on
+// a single click and open it on double-click or Enter; each list template
+// binds that itself. A shared single-click handler here navigated away
+// before the selection could be used (tests/test_row_select_click.py).
 
 // ============================================================
 // Tag Input Helper

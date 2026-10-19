@@ -6,6 +6,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+
+- A single click on a list row opened it instead of selecting it, so Clone,
+  Clone to, Deep clone, Save as template and Delete could never be used on a
+  row. Reported as: "everywhere there are lists, clicking goes into the
+  configuration, so in the end I can't clone it or make it a template — it
+  opens the config directly and I can't just select it". The list pages
+  already selected on click and opened on double-click, as this guide
+  describes, but a shared handler in `main.js` (there since the first
+  release) also navigated on every single click on a row and won the race.
+  It is gone: on FortiWeb, FortiGate, FortiAuthenticator, FortiADC and
+  FortiAnalyzer object lists, the Server Policy list and the sub-tables of an
+  object dialog, a click selects the row and arms the toolbar; double-click
+  or Enter opens it. Guard: `tests/test_row_select_click.py`.
+
 ## [3.3.4] - 2026-10-19
 
 ### Added

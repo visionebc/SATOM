@@ -2474,13 +2474,30 @@ def _pkg_install_cmd(mgr, name):
     }[mgr]
 
 
+# [SATOM-RUNNER-NO-APP-IMPORT] A COPY of app/services/sandbox.root_dirs_argv,
+# asserted equal by tests/test_sandbox_root_dirs.py. Mirrors the host's /bin,
+# /sbin, /lib, /lib64: symlinks on a usr-merged host, real directories on
+# SLES/Leap 15, where /lib64 holds the ELF loader (SA-0002).
+_ROOT_DIRS = ("bin", "sbin", "lib", "lib64")
+
+
+def _root_dirs_argv(root="/"):
+    out = []
+    for name in _ROOT_DIRS:
+        host = os.path.join(root, name)
+        if os.path.islink(host):
+            out += ["--symlink", os.readlink(host), "/" + name]
+        elif os.path.isdir(host):
+            out += ["--ro-bind", host, "/" + name]
+    return out
+
+
 def _bwrap_works_for_app_user():
     """bubblewrap installed is not bubblewrap usable: the app user must be
     allowed to create namespaces. Same flags the product's jail uses."""
     p = run(["bwrap", "--unshare-all", "--die-with-parent",
-             "--ro-bind", "/usr", "/usr", "--symlink", "usr/lib", "/lib",
-             "--symlink", "usr/lib64", "/lib64", "--symlink", "usr/bin", "/bin",
-             "--proc", "/proc", "--dev", "/dev", "/usr/bin/true"],
+             "--ro-bind", "/usr", "/usr"] + _root_dirs_argv()
+            + ["--proc", "/proc", "--dev", "/dev", "/usr/bin/true"],
             timeout=30, user=APP_USER, cwd="/")
     return p.returncode == 0, (p.stderr or p.stdout or "").strip()
 

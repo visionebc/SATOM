@@ -67,6 +67,27 @@ _HEAD_MAX = 16 * 1024
 _CONNECT_TIMEOUT = 10.0
 
 
+# The top-level system directories, mirrored as THIS host lays them out. A
+# usr-merged host (Debian 12, RHEL 9) has them as symlinks into /usr; SLES and
+# Leap 15 have real /bin, /sbin, /lib and /lib64, and /lib64 holds the ELF
+# loader and libc -- a made-up ``/lib64 -> usr/lib64`` there makes every exec
+# in the jail fail with "execvp ...: No such file or directory" (SA-0002).
+# A real directory is mounted read-only: it is system code, like /usr.
+ROOT_DIRS = ("bin", "sbin", "lib", "lib64")
+
+
+def root_dirs_argv(root: str = "/") -> list[str]:
+    """bwrap flags that reproduce the host's /bin, /sbin, /lib, /lib64."""
+    out: list[str] = []
+    for name in ROOT_DIRS:
+        host = os.path.join(root, name)
+        if os.path.islink(host):
+            out += ["--symlink", os.readlink(host), "/" + name]
+        elif os.path.isdir(host):
+            out += ["--ro-bind", host, "/" + name]
+    return out
+
+
 def available() -> bool:
     return shutil.which(BWRAP) is not None
 
@@ -96,9 +117,7 @@ def jail_argv(argv: list[str], workdir: str, *,
     if bwrap is None:
         return None
     out = [bwrap, "--unshare-all", "--die-with-parent", "--new-session",
-           "--ro-bind", "/usr", "/usr",
-           "--symlink", "usr/bin", "/bin", "--symlink", "usr/sbin", "/sbin",
-           "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib64", "/lib64",
+           "--ro-bind", "/usr", "/usr", *root_dirs_argv(),
            "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"]
     for path in _ETC_RO:
         out += ["--ro-bind-try", path, path]
@@ -162,6 +181,20 @@ def egress_verdict(peer_ip: str, local_ip: str) -> str | None:
     return None
 
 
+def _bind_unix(srv: socket.socket, path: str) -> None:
+    """bind() a unix socket at ``path`` whatever its length.
+
+    sun_path holds 108 bytes, so a long work directory (a long TMPDIR, a test
+    runner's tmp_path) raised "AF_UNIX path too long" before the jail even
+    started. The directory is reached through /proc/self/fd, which is short.
+    """
+    fd = os.open(os.path.dirname(path) or ".", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        srv.bind("/proc/self/fd/%d/%s" % (fd, os.path.basename(path)))
+    finally:
+        os.close(fd)
+
+
 class EgressProxy:
     """HTTP CONNECT + absolute-URI proxy on a unix socket, with the rule above.
 
@@ -182,7 +215,7 @@ class EgressProxy:
     # -- lifecycle ---------------------------------------------------------
     def start(self) -> "EgressProxy":
         srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        srv.bind(self.sock_path)
+        _bind_unix(srv, self.sock_path)
         os.chmod(self.sock_path, 0o600)
         srv.listen(32)
         self._srv = srv

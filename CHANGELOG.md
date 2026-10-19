@@ -47,6 +47,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- The operator-Python sandbox did not work on SLES / openSUSE Leap 15 (SA-0002).
+  Installing `bubblewrap` from Settings → General → System packages ended
+  "installed, but satom cannot create namespaces: bwrap: execvp /usr/bin/true:
+  No such file or directory". The jail assumed a usr-merged system and made
+  `/lib64` a link to `usr/lib64`, but on SUSE 15 `/bin`, `/sbin`, `/lib` and
+  `/lib64` are real directories and `/lib64` holds the program loader, so
+  nothing could start. The same layout was used by integration hooks, Script
+  Library and the Python console, so all three would have failed on such a
+  node. The jail now mirrors the host: a link where the host has a link, a
+  read-only mount where it has a directory. Reproduced and verified on
+  Leap 15.6 as an unprivileged account.
+- The sandbox egress proxy failed with "AF_UNIX path too long" when the run's
+  work directory had a long path (a long `TMPDIR`), before the jail started.
+  The socket is now bound and reached independently of the path length.
 - In **Store in both** (vault mode `mirror`), a secret changed while the vault
   could not be written (appliance password or SSH login, LDAP bind, RADIUS
   secret, alert-webhook secret, integration-hook secret) kept its new value

@@ -4483,7 +4483,10 @@ deliberately not merged. Practical notes:
 **operating-system** packages SATOM depends on. Today the list holds one:
 `bubblewrap`, the sandbox for operator Python (integration hooks, the Python
 console, Script Library). Without it that code is refused, never run
-unconfined.
+unconfined. The sandbox mounts only `/usr` plus `/bin`, `/sbin`, `/lib` and
+`/lib64` exactly as the host has them, so it works on usr-merged systems
+(Debian 12, RHEL 9) and on SLES / openSUSE Leap 15, where those are real
+directories. All of them are mounted read-only.
 
 - One column per registered node. **ok** means the package is installed *and*
   the sandbox actually works for the service account. **installed, not usable**

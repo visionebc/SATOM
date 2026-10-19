@@ -14,7 +14,9 @@ import sys
 import threading
 
 PORT = 3128
-SOCK = os.path.join(os.getcwd(), ".satom-egress.sock")
+# Relative on purpose: the relay process never leaves the work directory, and
+# an absolute path to a deep work directory overflows the 108-byte sun_path.
+SOCK = ".satom-egress.sock"
 
 
 def _pump(src, dst):

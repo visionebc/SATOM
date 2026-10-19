@@ -11,7 +11,7 @@ belt-and-suspenders and its guarantees are pinned by
                           INVISIBLE inside the sandbox.
   * ``--unshare-all``  -> new user/pid/net/ipc/uts/cgroup namespaces. No network
                           namespace = no socket can leave the box (no exfil).
-  * only ``/usr`` (+ the usr-merge symlinks), ``/proc``, ``/dev`` and a fresh
+  * only ``/usr`` (+ the host /bin /sbin /lib /lib64, read-only), ``/proc``, ``/dev`` and a fresh
                           ``tmpfs /tmp`` are mounted. ``/opt/satom``
                           (the ``.env``, the DB, the keyring, the code) is NOT
                           bound, so a script literally cannot open a secret or
@@ -40,6 +40,8 @@ import subprocess
 import tempfile
 import time
 from typing import Any
+
+from .sandbox import root_dirs_argv
 
 # Absolute isolation caps (defence in depth; the hard guarantees are the
 # namespaces + the minimal bind set — these just stop resource exhaustion).
@@ -97,10 +99,7 @@ def _bwrap_argv(workdir: str) -> list[str]:
         "--setenv", "LANG", "C.UTF-8",
         "--setenv", "PYTHONDONTWRITEBYTECODE", "1",
         "--ro-bind", "/usr", "/usr",
-        "--symlink", "usr/bin", "/bin",
-        "--symlink", "usr/lib", "/lib",
-        "--symlink", "usr/lib64", "/lib64",
-        "--symlink", "usr/sbin", "/sbin",
+        *root_dirs_argv(),
         "--proc", "/proc",
         "--dev", "/dev",
         "--tmpfs", "/tmp",

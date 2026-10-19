@@ -153,6 +153,20 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li>The operator-Python sandbox did not work on SLES / openSUSE Leap 15 (SA-0002).
+  Installing <code>bubblewrap</code> from Settings → General → System packages ended
+  "installed, but satom cannot create namespaces: bwrap: execvp /usr/bin/true:
+  No such file or directory". The jail assumed a usr-merged system and made
+  <code>/lib64</code> a link to <code>usr/lib64</code>, but on SUSE 15 <code>/bin</code>, <code>/sbin</code>, <code>/lib</code> and
+  <code>/lib64</code> are real directories and <code>/lib64</code> holds the program loader, so
+  nothing could start. The same layout was used by integration hooks, Script
+  Library and the Python console, so all three would have failed on such a
+  node. The jail now mirrors the host: a link where the host has a link, a
+  read-only mount where it has a directory. Reproduced and verified on
+  Leap 15.6 as an unprivileged account.</li>
+<li>The sandbox egress proxy failed with "AF_UNIX path too long" when the run's
+  work directory had a long path (a long <code>TMPDIR</code>), before the jail started.
+  The socket is now bound and reached independently of the path length.</li>
 <li>In <strong>Store in both</strong> (vault mode <code>mirror</code>), a secret changed while the vault
   could not be written (appliance password or SSH login, LDAP bind, RADIUS
   secret, alert-webhook secret, integration-hook secret) kept its new value

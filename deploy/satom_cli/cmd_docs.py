@@ -12,7 +12,7 @@ from .render import Result
 from .runbooks import ORDER, RUNBOOKS
 
 # The canonical layout. Written out because half of a recovery is knowing where
-# to look, and because the rename from fortinet-manager left stale paths in DB
+# to look, and because an earlier product rename left stale paths in DB
 # rows and documentation for weeks after the code was clean.
 PATHS = [
     ("/opt/satom", "application tree, owned by the service account"),

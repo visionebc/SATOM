@@ -44,7 +44,7 @@ from .branding import live_products as _live_products  # noqa: E402
 
 VALID_PRODUCTS = _live_products("tokens")
 
-TOKEN_PREFIX = "fmk"  # Fortinet-Manager-Key
+TOKEN_PREFIX = "fmk"  # legacy prefix, kept so tokens already issued stay valid
 
 # --------------------------------------------------------------------------- #
 #  Fine-grained authorization — the "what" and the "where" (Phase 2)           #

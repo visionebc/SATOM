@@ -4128,6 +4128,8 @@ jail the root and `/dev` are read-only, a single file is at most 256 MB and the
 output is read as it arrives (twice the 64 KB shown is kept). At most 50 runs
 wait in the queue (a full queue is refused with that message) and run records
 are kept 30 days (3,000 at most); a queued or running record is never pruned.
+The unit has no systemd start limit (it starts once per queued run), and a
+file in the queue that is not a run request is moved to `data/scripts/rejected/`.
 A site that needs more raises the limits in a systemd drop-in
 (`systemctl edit satom-scripts.service`). The integration-hooks runner
 (`satom-integrations.service`) has the same limits.

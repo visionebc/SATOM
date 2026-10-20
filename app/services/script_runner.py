@@ -345,6 +345,9 @@ def main() -> int:
         sys.stderr.write("script_runner: pruning old run records failed: %s\n" % exc)
     if not SL.REQ_DIR.is_dir():
         return 0
+    stray = sandbox.sweep_queue(SL.REQ_DIR, SL.ROOT / "rejected")
+    if stray:
+        sys.stderr.write("script_runner: moved out of the queue: %s\n" % ", ".join(stray))
     batch = sorted(p for p in SL.REQ_DIR.glob("*.json")
                    if not p.name.startswith("."))[:MAX_DRAIN]
     if not batch:

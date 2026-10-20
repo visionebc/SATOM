@@ -335,14 +335,21 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
     longer dials an address it refuses: link-local (cloud metadata) and HA
     node addresses got a TCP handshake before the refusal (found by the live
     test, where the metadata address timed out instead of being refused).</li>
-<li>
-<p>A run stopped by the memory limit now says so ("killed (SIGKILL): most
+<li>A run stopped by the memory limit now says so ("killed (SIGKILL): most
     often the memory limit…") instead of a bare exit code; the limit is a hard
     <code>MemoryMax</code> with no <code>MemoryHigh</code> throttle, which in the live test kept a
     runaway run stalled until its timeout. The units use <code>OOMPolicy=continue</code>
     and the jail runs at <code>oom_score_adj</code> 1000: in the live test systemd's
     default stopped the whole runner at the memory limit, with every other run
-    in it, and left the run marked "running".</p>
+    in it, and left the run marked "running".</li>
+<li>
+<p><strong>Six quick script runs stopped the Script Library for good</strong> (pre-existing,
+    found by the live test): the runner starts once per queued request, and
+    systemd's default start limit (5 in 10 s) failed the unit and its <code>.path</code>
+    watcher, so no script ran again until someone ran <code>systemctl reset-failed</code>.
+    Both runner units now have no start limit, and both runners move anything
+    they cannot process out of their queue (to <code>rejected/</code>), so a stray file
+    cannot make the watcher spin either.</p>
 </li>
 <li>
 <p><strong>Connections refuse dangerous destinations</strong> (found in this release's

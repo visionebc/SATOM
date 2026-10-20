@@ -92,6 +92,45 @@ def root_dirs_argv(root: str = "/") -> list[str]:
     return out
 
 
+def sweep_queue(req_dir, reject_dir, *, grace: float = 60.0, now: float | None = None) -> list[str]:
+    """Move out of a runner's queue whatever the runner will never process:
+    anything that is not a ``*.json`` request, and a dot-file (an atomic
+    write in flight) older than *grace* seconds. The queue is watched by a
+    ``DirectoryNotEmpty=`` path unit, so one stray file would otherwise start
+    the runner again and again, for nothing. Returns the names moved."""
+    import time
+    req_dir, reject_dir = Path(req_dir), Path(reject_dir)
+    if not req_dir.is_dir():
+        return []
+    now = time.time() if now is None else now
+    moved = []
+    for p in req_dir.iterdir():
+        name = p.name
+        try:
+            young = now - p.lstat().st_mtime < grace
+        except OSError:
+            continue
+        if name.startswith("."):
+            if young:
+                continue
+        elif name.endswith(".json") and p.is_file() and not p.is_symlink():
+            continue
+        try:
+            reject_dir.mkdir(parents=True, exist_ok=True)
+            os.replace(str(p), str(reject_dir / ("%d-%s" % (int(now), name.lstrip(".")))))
+            moved.append(name)
+        except OSError:
+            try:
+                if p.is_dir() and not p.is_symlink():
+                    shutil.rmtree(p, ignore_errors=True)
+                else:
+                    p.unlink()
+                moved.append(name)
+            except OSError:
+                pass
+    return moved
+
+
 def available() -> bool:
     return shutil.which(BWRAP) is not None
 

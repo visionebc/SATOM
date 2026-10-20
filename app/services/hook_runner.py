@@ -552,6 +552,10 @@ def main() -> int:
         reconcile_stale_claims()
         if not REQ_DIR.is_dir():
             return 0
+        from .sandbox import sweep_queue
+        stray = sweep_queue(REQ_DIR, REQ_DIR.parent / "rejected")
+        if stray:
+            sys.stderr.write("hook_runner: moved out of the queue: %s\n" % ", ".join(stray))
         for path in sorted(REQ_DIR.glob("*.json"))[:MAX_DRAIN]:
             try:
                 process_request_file(path)

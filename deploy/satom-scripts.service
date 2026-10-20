@@ -10,6 +10,12 @@
 Description=SATOM Script Library runner (unprivileged, oneshot, no database)
 After=network.target
 
+# One start per queued request: systemd's default start limit (5 in 10 s)
+# stopped this unit -- and with it the .path watcher, for good, until
+# someone ran reset-failed -- after six quick runs (measured on a1). The
+# runner itself bounds its work (MAX_DRAIN per start, and it moves anything
+# it cannot process out of the queue, so DirectoryNotEmpty cannot spin).
+StartLimitIntervalSec=0
 [Service]
 Type=oneshot
 User=satom

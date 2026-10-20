@@ -223,6 +223,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
     and the jail runs at `oom_score_adj` 1000: in the live test systemd's
     default stopped the whole runner at the memory limit, with every other run
     in it, and left the run marked "running".
+  - **Six quick script runs stopped the Script Library for good** (pre-existing,
+    found by the live test): the runner starts once per queued request, and
+    systemd's default start limit (5 in 10 s) failed the unit and its `.path`
+    watcher, so no script ran again until someone ran `systemctl reset-failed`.
+    Both runner units now have no start limit, and both runners move anything
+    they cannot process out of their queue (to `rejected/`), so a stray file
+    cannot make the watcher spin either.
 
 - **Connections refuse dangerous destinations** (found in this release's
   Connections before it shipped): a base URL, an OAuth2 token URL or a

@@ -25581,3 +25581,49 @@ msgstr "Solo librerías de Python (pip): el índice de paquetes que consulta la 
 #: update sources
 msgid "Where this installation looks for updates. Leave a source on Default, or point it at an internal pipeline or mirror — public (URL only) or with a user and token. Changing a source changes where the files come from, not whether they are trusted: update packages are still verified against this node’s trust store. Both nodes of an HA pair use the same sources."
 msgstr "Dónde busca actualizaciones esta instalación. Deja una fuente en Predeterminado, o apúntala a un pipeline o espejo interno — público (solo URL) o con usuario y token. Cambiar una fuente cambia de dónde vienen los ficheros, no si son de confianza: los paquetes de actualización se siguen verificando contra el almacén de confianza de este nodo. Los dos nodos de un par HA usan las mismas fuentes."
+
+#: theme import from a site
+msgid "API token from that node"
+msgstr "Token de API de ese nodo"
+
+msgid "Another SATOM node"
+msgstr "Otro nodo SATOM"
+
+msgid "Brings the theme exactly as it is there: colours, logo and favicon. Create a token with the read scope on that node, under API Tokens. It is used for this one request and is not stored."
+msgstr "Trae el tema tal como está allí: colores, logo y favicon. Cree en ese nodo un token con el alcance read, en API Tokens. Se usa solo para esta petición y no se guarda."
+
+msgid "Build theme"
+msgstr "Crear tema"
+
+msgid "Copy theme"
+msgstr "Copiar tema"
+
+msgid "If that node uses a private CA, add that CA to this node's trust store first:"
+msgstr "Si ese nodo usa una CA privada, añada antes esa CA al almacén de confianza de este nodo:"
+
+msgid "Import from a site"
+msgstr "Importar desde un sitio"
+
+msgid "Import from a site…"
+msgstr "Importar desde un sitio…"
+
+msgid "Node address"
+msgstr "Dirección del nodo"
+
+msgid "Site address"
+msgstr "Dirección del sitio"
+
+msgid "Takes the site's brand colours (sidebar, top bar, accent, gradients), its square icon as the logo and its favicon. The layout, page background, text colours and font stay SATOM's. Every colour pair is kept readable (4.5:1)."
+msgstr "Toma los colores de marca del sitio (barra lateral, barra superior, acento, degradados), su icono cuadrado como logo y su favicon. El diseño, el fondo de página, los colores del texto y la fuente siguen siendo los de SATOM. Cada par de colores se mantiene legible (4.5:1)."
+
+msgid "The theme is created but not applied: review it in the editor, then Apply."
+msgstr "El tema se crea pero no se aplica: revíselo en el editor y luego pulse Aplicar."
+
+msgid "This node fetches the page itself, so it needs a route to the site. Internal sites are allowed; loopback and link-local addresses are not."
+msgstr "Este nodo descarga la página por sí mismo, así que necesita una ruta hasta el sitio. Se permiten sitios internos; las direcciones loopback y link-local, no."
+
+msgid "Website"
+msgstr "Sitio web"
+
+msgid "its active theme"
+msgstr "su tema activo"

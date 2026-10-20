@@ -3299,12 +3299,34 @@ Practical notes:
   changes nothing for anyone. **Preview** renders the current form values without
   saving.
 - **Export / import moves a theme between installs.** Export downloads a small
-  JSON file — *token overrides only*, no ids and no node state — so it imports
-  cleanly onto any install regardless of what themes that one already has. Import
-  checks the file's schema tag and **validates every token by kind before the
-  theme is created**: a file with a bad value is rejected in full, naming the
-  offending tokens, rather than partially imported. A name that already exists is
-  suffixed rather than overwritten.
+  JSON file (schema `satom.ui-theme/2`): the token overrides plus the logo and
+  favicon, with no ids and no node state, so it imports cleanly onto any install
+  regardless of what themes that one already has. Files exported before v2 carry
+  the tokens only and still import. Import checks the file's schema tag and
+  **validates every token and asset before the theme is created**: a file with a
+  bad value, or an "image" that is not one, is rejected in full, naming what
+  failed, rather than partially imported. A name that already exists is suffixed
+  rather than overwritten.
+- **Import from a site… takes a look from somewhere else**, without a file. The
+  result is always a new theme that is **not applied**: open it with *Edit*,
+  look at the preview, then *Apply*.
+  - *Another SATOM node:* its address and an API token created **on that node**
+    (API Tokens, scope `read`). The theme arrives exactly as it is there,
+    colours, logo and favicon; leave *Theme name* empty for its active theme.
+    The token is used for that one request and is not stored. If the other node
+    uses a private CA, add the CA under *Trust store* first.
+  - *A website:* its brand colour becomes the accent, sidebar, top bar,
+    gradients and glows; a dark header or navigation becomes the sidebar; its
+    square icon becomes the logo and its favicon the favicon. Every colour pair
+    is kept readable (4.5:1); the accent is darkened if the site's own colour
+    would be unreadable on white. The layout, page background, text colours and
+    font stay SATOM's. The top-bar mark is a small square, so a wide wordmark is
+    skipped (and the report says so). Upload the logo you want in the editor
+    afterwards if the site's icon is not it.
+  - After either import, one line per decision says where each value came
+    from. The node fetches the page itself, so it needs a route to the site.
+    Internal sites are allowed; loopback and link-local addresses (including
+    cloud metadata) are refused.
 - **If you lock yourself out** with two dark colours: *Revert to the shipped
   look* on this page, activate any built-in, or from a shell on the node run
   `satom execute reset theme`.

@@ -6,6 +6,49 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **Settings → User Interface → Appearance → Import from a site…** builds a
+  theme from somewhere else, as a new theme that is **not applied** until you
+  review it and press Apply. Asked for as "a button to take a template from
+  another site: the logo, the colours, the left sidebar".
+  - **Another SATOM node:** its address plus an API token minted there with the
+    `read` scope. The theme arrives exactly as it is there, logo and favicon
+    included: the active theme, or the one named. The token is used for that
+    one request and is not stored. New endpoints `GET /api/v1/ui/theme` and
+    `GET /api/v1/ui/themes` (`read`).
+  - **A website:** its brand colour (from `theme-color`, a brand-named CSS
+    variable, or the most used colour) becomes the accent, sidebar, top bar,
+    gradients and glows, and a dark header/navigation becomes the sidebar.
+    Its square icon becomes the logo and its favicon the favicon. Every
+    audited colour pair is pushed to 4.5:1. The layout, page canvas, text
+    colours and font stay SATOM's. A report lists where each value came from.
+  - The node fetches only `http(s)` URLs with no credentials in them. It
+    refuses loopback, link-local (cloud metadata), multicast and reserved
+    addresses, re-checks every redirect, never sends a token to a redirected
+    host, verifies TLS against the trust store and caps every size. Internal
+    sites are allowed.
+
+### Fixed
+
+- **Export** left out the theme's logo and favicon, so a theme moved to
+  another node arrived without its brand mark and nothing said so. The file is
+  now schema `satom.ui-theme/2` and carries both. Version 1 files still import.
+- The top-bar logo no longer stretches: a non-square upload keeps its
+  proportions in the 28 px slot (`object-fit: contain`).
+- **System backup bundles** did not include `data/branding/`, even though
+  `docs/theming.md` said they did. A restore onto a rebuilt node brought back
+  every custom theme without its logo and favicon. Bundles now carry those
+  files and a restore puts them back next to the theme rows. A bundle made
+  before this change has no such folder and leaves the node's files alone.
+
+### Security
+
+- Theme SVGs are served under a `sandbox` Content-Security-Policy, so an SVG
+  opened directly cannot run script even if the sanitiser misses something.
+  The sanitiser now also removes unquoted event handlers, `iframe`, `embed`,
+  `object` and external links.
+
 ## [3.3.7] - 2026-10-19
 
 Upgrade path unchanged from 3.3.6: the update package accepts a node on 3.3.3

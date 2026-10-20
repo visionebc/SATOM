@@ -4456,9 +4456,75 @@
           <input type="file" name="themefile" accept="application/json,.json" class="form-control form-control-sm" style="max-width:260px;">
           <button class="btn btn-sm btn-fw-secondary" type="submit">{{ _('Import theme') }}</button>
         </form>
+        <button class="btn btn-sm btn-fw-primary" type="button" id="theme-from-site-toggle"
+                aria-expanded="false" aria-controls="theme-from-site">
+          <i class="bi bi-globe2 me-1"></i>{{ _('Import from a site…') }}
+        </button>
         <span class="text-muted ms-auto" style="font-size:11.5px;">
           {{ _('Built-in themes are the recovery path if a palette turns the console unreadable.') }}
         </span>
+      </div>
+    </div>
+
+    <!-- ── import from a site (website or another SATOM node) ─────────── -->
+    <div class="fw-card mt-3" id="theme-from-site" hidden>
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-globe2 me-2 text-accent"></i>{{ _('Import from a site') }}</span>
+        <span class="text-muted" style="font-size:12px;">{{ _('The theme is created but not applied: review it in the editor, then Apply.') }}</span>
+      </div>
+      <div class="fw-card-body">
+        <div class="row g-4">
+          <div class="col-lg-6">
+            <form method="post" action="{{ url_for('settings.import_theme_from_site') }}" id="theme-site-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div class="fw-section-title" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--fw-text-secondary);border-bottom:1px solid var(--fw-border-light);padding-bottom:4px;margin-bottom:10px;">{{ _('Website') }}</div>
+              <label class="form-label" for="theme-site-url">{{ _('Site address') }}</label>
+              <div class="input-group input-group-sm">
+                <input type="text" class="form-control" name="site_url" id="theme-site-url"
+                       placeholder="https://www.example.com" maxlength="500" required spellcheck="false">
+                <button class="btn btn-fw-primary" type="submit">{{ _('Build theme') }}</button>
+              </div>
+              <div class="form-text" style="font-size:11.5px;">
+                {{ _("Takes the site's brand colours (sidebar, top bar, accent, gradients), its square icon as the logo and its favicon. The layout, page background, text colours and font stay SATOM's. Every colour pair is kept readable (4.5:1).") }}
+              </div>
+              <div class="form-text" style="font-size:11.5px;">
+                {{ _('This node fetches the page itself, so it needs a route to the site. Internal sites are allowed; loopback and link-local addresses are not.') }}
+              </div>
+            </form>
+          </div>
+          <div class="col-lg-6">
+            <form method="post" action="{{ url_for('settings.import_theme_from_node') }}" id="theme-node-form" autocomplete="off">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div class="fw-section-title" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--fw-text-secondary);border-bottom:1px solid var(--fw-border-light);padding-bottom:4px;margin-bottom:10px;">{{ _('Another SATOM node') }}</div>
+              <div class="row g-2">
+                <div class="col-md-7">
+                  <label class="form-label" for="theme-node-url">{{ _('Node address') }}</label>
+                  <input type="text" class="form-control form-control-sm" name="node_url" id="theme-node-url"
+                         placeholder="https://satom.example.com" maxlength="500" required spellcheck="false">
+                </div>
+                <div class="col-md-5">
+                  <label class="form-label" for="theme-node-theme">{{ _('Theme name') }} <span class="text-muted">{{ _('(optional)') }}</span></label>
+                  <input type="text" class="form-control form-control-sm" name="node_theme" id="theme-node-theme"
+                         placeholder="{{ _('its active theme') }}" maxlength="128">
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="theme-node-token">{{ _('API token from that node') }}</label>
+                  <div class="input-group input-group-sm">
+                    <input type="password" class="form-control" name="node_token" id="theme-node-token"
+                           placeholder="fmk_…" required autocomplete="new-password" spellcheck="false">
+                    <button class="btn btn-fw-primary" type="submit">{{ _('Copy theme') }}</button>
+                  </div>
+                </div>
+              </div>
+              <div class="form-text" style="font-size:11.5px;">
+                {{ _('Brings the theme exactly as it is there: colours, logo and favicon. Create a token with the read scope on that node, under API Tokens. It is used for this one request and is not stored.') }}
+              </div>
+              <div class="form-text" style="font-size:11.5px;">
+                {{ _("If that node uses a private CA, add that CA to this node's trust store first:") }} <a href="#tab-catrust" data-tab-jump="#tab-catrust">{{ _('Trust store') }}</a>
+              </div>
+            </form>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -4585,6 +4651,23 @@
     var contrastBox = document.getElementById('theme-contrast');
     var label = document.getElementById('theme-editing-label');
     var stopBtn = document.getElementById('theme-preview-stop');
+
+    // "Import from a site…" opens the website / SATOM-node panel and focuses
+    // its first field; a second click closes it.
+    var siteToggle = document.getElementById('theme-from-site-toggle');
+    var sitePanel = document.getElementById('theme-from-site');
+    if (siteToggle && sitePanel) {
+      siteToggle.addEventListener('click', function () {
+        var open = sitePanel.hidden;
+        sitePanel.hidden = !open;
+        siteToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (open) {
+          sitePanel.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+          var first = document.getElementById('theme-site-url');
+          if (first) { first.focus({preventScroll: true}); }
+        }
+      });
+    }
     var root = document.documentElement;
     var previewing = false;
 

@@ -98,6 +98,8 @@ Paths are relative to the base URL. **Scope** is the minimum token scope;
 | `GET`  | `/adc/rule-types` | read | — | The allow-list of FortiADC rule types (§7) |
 | `GET`  | `/adc/rules` | read | — | FortiADC rules of a type, read from the appliance (§7) |
 | `POST` | `/adc/rules` | write | `adc_rule_draft` (+ `adc_rule_apply` for `"apply": true`) | Create a FortiADC rule (§7) |
+| `GET`  | `/ui/themes` | read | — | The theme names on this node and which one is active (§8) |
+| `GET`  | `/ui/theme` | read | — | One theme as a `satom.ui-theme/2` document: tokens, logo and favicon; the active theme, or `?name=` (§8) |
 
 The write endpoints are rate-limited to **30/min**, like `/actions/<id>/run`.
 
@@ -462,3 +464,21 @@ straight to the appliance because there is no desired-state store for it. So:
 an error code exists in the code and not in this page — a manual that quietly
 loses an endpoint looks identical to one that is complete, and a reader who
 cannot find a capability concludes the product does not have it.*
+
+## 8. Sharing the console theme — `/api/v1/ui/*`
+
+Another SATOM node calls `GET /ui/theme` when an admin uses **Settings →
+Appearance → Import from a site… → Another SATOM node**. Mint a `read` token on
+the node that HAS the theme and paste it on the node that wants it; the token is
+used for that one request and is not stored there.
+
+* `GET /ui/theme` returns the active theme; `GET /ui/theme?name=<theme name>`
+  any other one (`404 not_found` if no theme has that name).
+* The answer is the same document **Export** downloads (schema
+  `satom.ui-theme/2`): `name`, `description`, `tokens` (overrides only) and
+  `assets.logo` / `assets.favicon` as `{"type": "png"|"svg", "data": <base64>}`.
+  The receiving node validates it exactly like an imported file: one bad token
+  or an asset that is not an image refuses the whole document.
+* `read` is enough on purpose: a theme is colours plus the logo the sign-in
+  page already shows to anyone, and nothing on this surface writes.
+* Rate-limited to 30/min.

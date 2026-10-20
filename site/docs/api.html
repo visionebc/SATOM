@@ -67,6 +67,7 @@
       <a href="#5-errors">5. Errors</a>
       <a href="#6-waf-carve-outs--apiv1waf-fortiweb">6. WAF carve-outs — /api/v1/waf/* (FortiWeb)</a>
       <a href="#7-fortiadc-rules--apiv1adc">7. FortiADC rules — /api/v1/adc/*</a>
+      <a href="#8-sharing-the-console-theme--apiv1ui">8. Sharing the console theme — /api/v1/ui/*</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="api-v1--integration-manual">API v1 — Integration Manual</h1>
@@ -274,6 +275,20 @@ The API never issues an HTML login redirect — you always get JSON.</p>
 <td>write</td>
 <td><code>adc_rule_draft</code> (+ <code>adc_rule_apply</code> for <code>"apply": true</code>)</td>
 <td>Create a FortiADC rule (§7)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/ui/themes</code></td>
+<td>read</td>
+<td>—</td>
+<td>The theme names on this node and which one is active (§8)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/ui/theme</code></td>
+<td>read</td>
+<td>—</td>
+<td>One theme as a <code>satom.ui-theme/2</code> document: tokens, logo and favicon; the active theme, or <code>?name=</code> (§8)</td>
 </tr>
 </tbody>
 </table>
@@ -781,6 +796,23 @@ straight to the appliance because there is no desired-state store for it. So:</p
 an error code exists in the code and not in this page — a manual that quietly
 loses an endpoint looks identical to one that is complete, and a reader who
 cannot find a capability concludes the product does not have it.*</p>
+<h2 id="8-sharing-the-console-theme--apiv1ui">8. Sharing the console theme — <code>/api/v1/ui/*</code></h2>
+<p>Another SATOM node calls <code>GET /ui/theme</code> when an admin uses <strong>Settings →
+Appearance → Import from a site… → Another SATOM node</strong>. Mint a <code>read</code> token on
+the node that HAS the theme and paste it on the node that wants it; the token is
+used for that one request and is not stored there.</p>
+<ul>
+<li><code>GET /ui/theme</code> returns the active theme; <code>GET /ui/theme?name=&lt;theme name&gt;</code>
+  any other one (<code>404 not_found</code> if no theme has that name).</li>
+<li>The answer is the same document <strong>Export</strong> downloads (schema
+  <code>satom.ui-theme/2</code>): <code>name</code>, <code>description</code>, <code>tokens</code> (overrides only) and
+  <code>assets.logo</code> / <code>assets.favicon</code> as <code>{"type": "png"|"svg", "data": &lt;base64&gt;}</code>.
+  The receiving node validates it exactly like an imported file: one bad token
+  or an asset that is not an image refuses the whole document.</li>
+<li><code>read</code> is enough on purpose: a theme is colours plus the logo the sign-in
+  page already shows to anyone, and nothing on this surface writes.</li>
+<li>Rate-limited to 30/min.</li>
+</ul>
     </div>
   </div>
 </section>

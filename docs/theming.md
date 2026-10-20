@@ -143,18 +143,68 @@ the system backup bundles, so a custom logo survives a failover and a restore.
 (The per-ADOM marks live under `static/img`, which is node-local and outside
 both — a difference worth knowing before assuming a logo replicated.)
 
-SVGs are sanitised (scripts, event handlers and `javascript:` stripped) because
-they go into the DOM. Rasters are re-encoded through Pillow and fitted to
-256 px, which is also what rejects a file that merely claims to be an image.
+SVGs are sanitised (script, `foreignObject`, `iframe`/`embed`/`object`, event
+handlers in any quoting, `javascript:`, and links other than `#id` or an
+embedded image are stripped). The asset route then serves SVG under
+`Content-Security-Policy: default-src 'none'; …; sandbox`, so whatever the
+sanitiser missed cannot run even when the file is opened directly. Rasters are
+re-encoded through Pillow and fitted to 256 px, which is also what rejects a
+file that merely claims to be an image. The top bar shows the mark at 28 × 28
+px with `object-fit: contain`, so a non-square upload keeps its proportions.
 
 ---
 
 ## 7. Sharing a theme
 
-**Export** produces portable JSON — schema `satom.ui-theme/1`, token overrides
-only, no ids or node state — so it imports on any install regardless of its own
-theme list. **Import** runs the same validation as the editor and refuses the
-whole file if any token fails, rather than importing a partial palette.
+**Export** produces portable JSON, schema `satom.ui-theme/2`: the token
+overrides plus the logo and favicon (base64), with no ids or node state, so it
+imports on any install regardless of its own theme list. Version 1 files
+(tokens only, everything exported before v2) still import. **Import** runs the
+same validation as the editor and refuses the whole file if any token or asset
+fails, rather than importing a partial theme.
+
+**Import from a site…** (next to Import) brings a look in without a file. Both
+ways create a new, **inactive** theme; review it in the editor, then Apply.
+
+* **Another SATOM node.** Give its address and an API token minted there with
+  the `read` scope (**API Tokens**). This node fetches `GET /api/v1/ui/theme`
+  (the active theme, or the one named in *Theme name*) and imports the same v2
+  document Export produces, logo and favicon included. The token is used for
+  that one request: it is not stored, logged or shown again. A node that uses
+  a private CA needs that CA in **Settings → Trust store** first; TLS is always
+  verified.
+* **A website.** This node reads the page and up to six of its stylesheets and
+  builds a theme from what it finds (`app/services/theme_from_site.py`):
+  * **Colours.** The brand colour comes from the page's `theme-color`, else a
+    brand-named CSS variable (`--primary`, `--brand-*`, `--accent`…), else the
+    most used saturated colour. It becomes the accent, sidebar, top bar,
+    gradients and glows; a second colour of a different hue becomes the active
+    marker and the accent gradient. A dark background on a
+    header/nav/sidebar rule becomes the sidebar, so a site with a dark
+    navigation keeps it. Every audited pair is pushed to 4.5:1 (the accent is
+    darkened if it would be unreadable on white), so an imported palette never
+    needs "apply anyway".
+  * **Logo.** The top-bar mark is a 28 × 28 px square, so the site's square
+    icon wins: apple-touch-icon, then its largest icon, and only then a logo
+    image from its header, if it is no wider than 1.6:1. A wide wordmark is
+    skipped and said so: squeezed into the square it is unreadable, and it is
+    usually drawn dark-on-white for a white header.
+  * **Favicon.** Its icon link closest to 64 px, else `/favicon.ico`.
+  * **Not taken:** the layout (SATOM's is fixed), the page canvas, text and
+    status colours (§8), and the font (a web font is blocked by the console's
+    CSP and missing on offline nodes).
+
+  After the import, one line per decision says where each value came from.
+
+**What the node will fetch.** Only `http://` and `https://`, with no
+credentials in the URL. Loopback, link-local (169.254.0.0/16, which holds
+cloud metadata services), multicast, unspecified and reserved destinations are
+refused, by name (`localhost`) and by every address the name resolves to, and
+every redirect is checked again. Internal (RFC 1918) addresses are allowed:
+a company site or a peer node usually lives on one. Page 2 MB, stylesheet
+1.5 MB, image 4 MB, document 12 MB, 10 s per request, 4 redirects; an API token
+is sent to the host the operator typed and never to a host a redirect points
+at. Both routes are admin-only and rate-limited (20/min).
 
 ---
 

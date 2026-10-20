@@ -217,15 +217,63 @@ theme-level logo is the white-label switch, not a replacement for those.</p>
 the system backup bundles, so a custom logo survives a failover and a restore.
 (The per-ADOM marks live under <code>static/img</code>, which is node-local and outside
 both — a difference worth knowing before assuming a logo replicated.)</p>
-<p>SVGs are sanitised (scripts, event handlers and <code>javascript:</code> stripped) because
-they go into the DOM. Rasters are re-encoded through Pillow and fitted to
-256 px, which is also what rejects a file that merely claims to be an image.</p>
+<p>SVGs are sanitised (script, <code>foreignObject</code>, <code>iframe</code>/<code>embed</code>/<code>object</code>, event
+handlers in any quoting, <code>javascript:</code>, and links other than <code>#id</code> or an
+embedded image are stripped). The asset route then serves SVG under
+<code>Content-Security-Policy: default-src 'none'; …; sandbox</code>, so whatever the
+sanitiser missed cannot run even when the file is opened directly. Rasters are
+re-encoded through Pillow and fitted to 256 px, which is also what rejects a
+file that merely claims to be an image. The top bar shows the mark at 28 × 28
+px with <code>object-fit: contain</code>, so a non-square upload keeps its proportions.</p>
 <hr>
 <h2 id="7-sharing-a-theme">7. Sharing a theme</h2>
-<p><strong>Export</strong> produces portable JSON — schema <code>satom.ui-theme/1</code>, token overrides
-only, no ids or node state — so it imports on any install regardless of its own
-theme list. <strong>Import</strong> runs the same validation as the editor and refuses the
-whole file if any token fails, rather than importing a partial palette.</p>
+<p><strong>Export</strong> produces portable JSON, schema <code>satom.ui-theme/2</code>: the token
+overrides plus the logo and favicon (base64), with no ids or node state, so it
+imports on any install regardless of its own theme list. Version 1 files
+(tokens only, everything exported before v2) still import. <strong>Import</strong> runs the
+same validation as the editor and refuses the whole file if any token or asset
+fails, rather than importing a partial theme.</p>
+<p><strong>Import from a site…</strong> (next to Import) brings a look in without a file. Both
+ways create a new, <strong>inactive</strong> theme; review it in the editor, then Apply.</p>
+<ul>
+<li><strong>Another SATOM node.</strong> Give its address and an API token minted there with
+  the <code>read</code> scope (<strong>API Tokens</strong>). This node fetches <code>GET /api/v1/ui/theme</code>
+  (the active theme, or the one named in <em>Theme name</em>) and imports the same v2
+  document Export produces, logo and favicon included. The token is used for
+  that one request: it is not stored, logged or shown again. A node that uses
+  a private CA needs that CA in <strong>Settings → Trust store</strong> first; TLS is always
+  verified.</li>
+<li><strong>A website.</strong> This node reads the page and up to six of its stylesheets and
+  builds a theme from what it finds (<code>app/services/theme_from_site.py</code>):</li>
+<li><strong>Colours.</strong> The brand colour comes from the page's <code>theme-color</code>, else a
+    brand-named CSS variable (<code>--primary</code>, <code>--brand-*</code>, <code>--accent</code>…), else the
+    most used saturated colour. It becomes the accent, sidebar, top bar,
+    gradients and glows; a second colour of a different hue becomes the active
+    marker and the accent gradient. A dark background on a
+    header/nav/sidebar rule becomes the sidebar, so a site with a dark
+    navigation keeps it. Every audited pair is pushed to 4.5:1 (the accent is
+    darkened if it would be unreadable on white), so an imported palette never
+    needs "apply anyway".</li>
+<li><strong>Logo.</strong> The top-bar mark is a 28 × 28 px square, so the site's square
+    icon wins: apple-touch-icon, then its largest icon, and only then a logo
+    image from its header, if it is no wider than 1.6:1. A wide wordmark is
+    skipped and said so: squeezed into the square it is unreadable, and it is
+    usually drawn dark-on-white for a white header.</li>
+<li><strong>Favicon.</strong> Its icon link closest to 64 px, else <code>/favicon.ico</code>.</li>
+<li><strong>Not taken:</strong> the layout (SATOM's is fixed), the page canvas, text and
+    status colours (§8), and the font (a web font is blocked by the console's
+    CSP and missing on offline nodes).</li>
+</ul>
+<p>After the import, one line per decision says where each value came from.</p>
+<p><strong>What the node will fetch.</strong> Only <code>http://</code> and <code>https://</code>, with no
+credentials in the URL. Loopback, link-local (169.254.0.0/16, which holds
+cloud metadata services), multicast, unspecified and reserved destinations are
+refused, by name (<code>localhost</code>) and by every address the name resolves to, and
+every redirect is checked again. Internal (RFC 1918) addresses are allowed:
+a company site or a peer node usually lives on one. Page 2 MB, stylesheet
+1.5 MB, image 4 MB, document 12 MB, 10 s per request, 4 redirects; an API token
+is sent to the host the operator typed and never to a host a redirect points
+at. Both routes are admin-only and rate-limited (20/min).</p>
 <hr>
 <h2 id="8-what-a-theme-cannot-repaint">8. What a theme cannot repaint</h2>
 <p>Status badges and a handful of decorative tints still carry literal colours in

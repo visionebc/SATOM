@@ -85,6 +85,13 @@ def sot_dir() -> Path:
     return _ss.store_dir()
 
 
+def branding_dir() -> Path:
+    """Theme logos and favicons (``data/branding``). The ``ui_themes`` rows in
+    the dump name these files, so they travel and restore together."""
+    from . import theme_portable as _tp
+    return _tp.asset_dir()
+
+
 def parse_db_url(uri: str) -> dict:
     """Parse a SQLAlchemy Postgres URI into pg_dump connection params."""
     # strip the +driver (postgresql+psycopg -> postgresql)
@@ -202,6 +209,13 @@ def create_backup(*, include_reports: bool = True, publish_git: bool = False,
             # instance would have history rows pointing at nothing.
             shutil.copytree(sot_dir(), stage / "sot")
             detail.append("sot/ included")
+
+        # Not gated on include_reports: these belong to the ui_themes rows in
+        # the dump, and a restore without them leaves every custom theme
+        # pointing at a logo and favicon that are not there.
+        if branding_dir().is_dir() and any(branding_dir().iterdir()):
+            shutil.copytree(branding_dir(), stage / "branding")
+            detail.append("branding/ included")
 
         # The SEALED recovery envelope travels with the bundle -- and only
         # because it is sealed. The material inside (FERNET_KEY, the internal
@@ -535,6 +549,14 @@ def restore_backup(name: str, *, conn: dict | None = None,
             shutil.rmtree(dst, ignore_errors=True)
             shutil.copytree(root / "sot", dst)
             detail += "; sot restored"
+        if (root / "branding").is_dir():
+            # Replaced, like sot/: the files must match the ui_themes rows the
+            # dump just restored. A bundle from before branding travelled has
+            # no branding/ and leaves the node's files alone.
+            dst = branding_dir()
+            shutil.rmtree(dst, ignore_errors=True)
+            shutil.copytree(root / "branding", dst)
+            detail += "; branding restored"
         if key_findings:
             # Prepended, not appended: this outranks every pg_restore warning
             # above it. A restore that "succeeded" into an unreadable

@@ -25,7 +25,7 @@ from flask_login import login_required, current_user
 
 from ..auth.decorators import require_permission
 from ..auth.password_policy import password_problem
-from ..extensions import csrf
+from ..extensions import csrf, limiter
 from ..models import db, Permission, User, Profile, Appliance, visible_appliances
 from ..services import settings_store as store
 from ..services import lang_policy, langs as lang_registry
@@ -2663,24 +2663,19 @@ from pathlib import Path as _Path
 from flask import send_from_directory as _send_from_directory
 
 from ..models_theme import UiTheme
+from ..services import theme_portable
 from ..services import theme_service as theme_svc
 
-_THEME_ASSET_KINDS = ('logo', 'favicon')
-_THEME_RASTER_EXT = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.ico'}
-_THEME_LOGO_MAX_PX = 256
+_THEME_ASSET_KINDS = theme_portable.ASSET_KINDS
+_THEME_RASTER_EXT = theme_portable.RASTER_EXT
 
 
 def _theme_dir() -> _Path:
-    """``data/branding`` — under ``data/`` on purpose.
-
-    ``satom-ha-datasync`` replicates ``data/`` to the standby and the system
-    backup bundles include it, so a custom logo survives a failover and a
-    restore. ``static/img`` (where the per-ADOM marks live) is node-local and
-    outside both.
-    """
-    d = _Path(__file__).resolve().parents[2] / 'data' / 'branding'
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    """``data/branding``: replicated to the standby by ``satom-ha-datasync``
+    and carried by the system backup bundles, so a custom logo survives a
+    failover and a restore. ``static/img`` (where the per-ADOM marks live) is
+    node-local and in neither. The resolver is ``theme_portable.asset_dir``."""
+    return theme_portable.asset_dir()
 
 
 def _theme_slug(name: str, exclude_id: int | None = None) -> str:
@@ -2709,44 +2704,16 @@ def _form_tokens() -> dict:
 def _save_theme_asset(theme: UiTheme, file, kind: str) -> str | None:
     """Store an uploaded brand asset. Returns an error string, or ``None``.
 
-    SVG is sanitised rather than resized (it goes into the DOM); rasters are
-    re-encoded through Pillow, which is also what rejects a file that merely
-    claims to be an image.
+    The rules (SVG sanitised, rasters re-encoded through Pillow and fitted to
+    256 px) live in ``theme_portable.store_asset``, shared with the imports.
     """
     if not file or not file.filename:
         return None
     ext = _os.path.splitext(file.filename)[1].lower()
-    dest = _theme_dir()
-    if ext == '.svg':
-        raw = file.read()
-        if len(raw) > 512 * 1024:
-            return 'SVG too large (max 512 KB).'
-        text = raw.decode('utf-8', 'replace')
-        text = _re.sub(r'(?is)<script.*?>.*?</script>', '', text)
-        text = _re.sub(r'(?is)<foreignObject.*?>.*?</foreignObject>', '', text)
-        text = _re.sub(r'(?i)\son\w+\s*=\s*"[^"]*"', '', text)
-        text = _re.sub(r"(?i)\son\w+\s*=\s*'[^']*'", '', text)
-        text = _re.sub(r'(?i)javascript:', '', text)
-        if '<svg' not in text.lower():
-            return 'Not a valid SVG file.'
-        rel = 'theme-%d-%s.svg' % (theme.id, kind)
-        (dest / rel).write_text(text, encoding='utf-8')
-    elif ext in _THEME_RASTER_EXT:
-        try:
-            from PIL import Image
-            img = Image.open(file.stream)
-            img.load()
-            if img.mode not in ('RGBA', 'RGB'):
-                img = img.convert('RGBA')
-            img.thumbnail((_THEME_LOGO_MAX_PX, _THEME_LOGO_MAX_PX), Image.LANCZOS)
-            rel = 'theme-%d-%s.png' % (theme.id, kind)
-            img.save(str(dest / rel), 'PNG')
-        except Exception as exc:  # noqa: BLE001
-            return 'Image could not be processed: %s' % exc
-    else:
+    if ext not in _THEME_RASTER_EXT and ext != '.svg':
         return 'Unsupported %s type (use PNG, JPG, WEBP, GIF, ICO or SVG).' % kind
-    setattr(theme, kind, rel)
-    return None
+    raw = file.read(theme_portable.MAX_RASTER_BYTES + 1)
+    return theme_portable.store_asset(theme, kind, raw, ext, _theme_dir())
 
 
 def _theme_redirect():
@@ -2767,7 +2734,14 @@ def theme_asset(theme_id, kind):
     rel = getattr(row, kind, '') or ''
     if not rel or '/' in rel or '\\' in rel:
         abort(404)
-    return _send_from_directory(str(_theme_dir()), rel, max_age=300)
+    resp = _send_from_directory(str(_theme_dir()), rel, max_age=300)
+    if rel.endswith('.svg'):
+        # Opened directly (not through <img>), an SVG is a document on this
+        # origin. The sanitiser strips script; this makes anything it missed
+        # inert: no script, no network, a unique opaque origin.
+        resp.headers['Content-Security-Policy'] = (
+            "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox")
+    return resp
 
 
 @bp.route('/appearance/preview', methods=['POST'])
@@ -2942,16 +2916,78 @@ def delete_theme(tid):
 @bp.route('/appearance/themes/<int:tid>/export')
 @login_required
 def export_theme(tid):
-    """Portable JSON — token overrides only, no ids or node state, so it can be
-    imported on any install regardless of its own theme list."""
+    """Portable JSON, schema ``satom.ui-theme/2``: the token overrides plus the
+    logo and favicon (base64), no ids or node state, so it imports on any
+    install regardless of its own theme list. Version 1 carried the tokens
+    only, and a theme arrived on another node without its logo."""
     if not _is_admin():
         abort(403)
     row = UiTheme.query.get_or_404(tid)
-    resp = jsonify({'schema': 'satom.ui-theme/1', 'name': row.name,
-                    'description': row.description, 'tokens': row.tokens})
+    resp = jsonify(theme_portable.export_document(row, _theme_dir()))
     resp.headers['Content-Disposition'] = \
         'attachment; filename="satom-theme-%s.json"' % row.slug
     return resp
+
+
+def _free_theme_name(base: str) -> str:
+    name, n = base, 1
+    # Loop until free: a single "(imported)" suffix collided on the third
+    # import of the same file and the unique constraint turned it into a 500.
+    while UiTheme.query.filter_by(name=name).first():
+        name = '%s (imported)' % base if n == 1 else '%s (imported %d)' % (base, n)
+        n += 1
+    return name
+
+
+def _create_imported_theme(parsed, action: str, source: str = ''):
+    """Store a parsed theme (file, node or website) as a NEW, INACTIVE theme.
+
+    Flashes the reason and returns ``None`` when anything is refused — one bad
+    token or an asset that is not an image refuses the whole import, because a
+    theme that arrives half (colours without the logo it was exported with)
+    looks like a working import that silently lost something.
+    """
+    if parsed.errors:
+        for e in parsed.errors[:8]:
+            flash('Import rejected — %s' % e, 'danger')
+        return None
+    name = _free_theme_name(parsed.name)
+    row = UiTheme(slug=_theme_slug(name), name=name,
+                  description=parsed.description, builtin=False,
+                  created_by=getattr(current_user, 'username', '') or '')
+    row.tokens = parsed.tokens
+    db.session.add(row)
+    db.session.flush()          # need the id for the asset filenames
+    written: list = []
+    for kind in _THEME_ASSET_KINDS:
+        if kind not in parsed.assets:
+            continue
+        raw, ext = parsed.assets[kind]
+        err = theme_portable.store_asset(row, kind, raw, ext, _theme_dir())
+        if err:
+            db.session.rollback()
+            # Only what THIS import wrote: a glob on the id could reach files
+            # this request never created.
+            for rel in written:
+                try:
+                    (_theme_dir() / rel).unlink()
+                except OSError:
+                    pass
+            flash('Import rejected — %s: %s' % (kind, err), 'danger')
+            return None
+        written.append(getattr(row, kind))
+    db.session.commit()
+    theme_svc.invalidate()
+    log_action(action, detail='name=%s%s' % (name, ' source=%s' % source if source else ''))
+    if theme_svc.has_unreadable(row.tokens):
+        flash('Theme %r has text below %.1f:1 contrast in places: review it in the '
+              'editor before applying it.' % (name, theme_svc.CONTRAST_FAIL), 'warning')
+    return row
+
+
+def _brought(parsed) -> str:
+    kinds = [k for k in _THEME_ASSET_KINDS if k in parsed.assets]
+    return (' with its %s' % ' and '.join(kinds)) if kinds else ''
 
 
 @bp.route('/appearance/import', methods=['POST'])
@@ -2965,35 +3001,77 @@ def import_theme():
         flash('Choose a theme JSON file to import.', 'warning')
         return _theme_redirect()
     try:
-        payload = _json.loads(file.read().decode('utf-8', 'replace'))
+        payload = _json.loads(file.read(theme_portable.MAX_DOCUMENT_BYTES + 1)
+                              .decode('utf-8', 'replace'))
     except Exception:
         flash('That file is not valid JSON.', 'danger')
         return _theme_redirect()
-    if not isinstance(payload, dict) or payload.get('schema') != 'satom.ui-theme/1':
-        flash('Not a SATOM theme file (expected schema satom.ui-theme/1).', 'danger')
+    parsed = theme_portable.parse_document(payload)
+    row = _create_imported_theme(parsed, 'settings.theme.import')
+    if row is not None:
+        flash('Theme %r imported%s.' % (row.name, _brought(parsed)), 'success')
+    return _theme_redirect()
+
+
+@bp.route('/appearance/import/node', methods=['POST'])
+@limiter.limit('20 per minute')
+@login_required
+def import_theme_from_node():
+    """Copy a theme from another SATOM node over its /api/v1 (``GET
+    /api/v1/ui/theme``). The API token is used for that one request: it is not
+    stored, logged or echoed back."""
+    if not _is_admin():
+        abort(403)
+    from urllib.parse import urlsplit as _urlsplit
+    node = (request.form.get('node_url') or '').strip()
+    wanted = (request.form.get('node_theme') or '').strip()[:128]
+    try:
+        doc = theme_portable.fetch_from_node(node, request.form.get('node_token') or '',
+                                             wanted)
+    except theme_portable.FetchError as exc:
+        flash('Could not fetch the theme: %s' % exc, 'danger')
         return _theme_redirect()
-    clean, errors = theme_svc.validate_tokens(payload.get('tokens') or {})
-    if errors:
-        for e in errors[:8]:
-            flash('Import rejected — %s' % e, 'danger')
+    parsed = theme_portable.parse_document(doc)
+    host = _urlsplit(node).netloc
+    parsed.name = ('%s (from %s)' % (parsed.name, host))[:100]
+    row = _create_imported_theme(parsed, 'settings.theme.import_node', source=host)
+    if row is not None:
+        flash('Theme %r copied from %s%s. It is not applied yet: review it, then '
+              'Apply.' % (row.name, host, _brought(parsed)), 'success')
+    return _theme_redirect()
+
+
+@bp.route('/appearance/import/site', methods=['POST'])
+@limiter.limit('20 per minute')
+@login_required
+def import_theme_from_site():
+    """Build a theme from a website's brand colours, icon and favicon
+    (``services/theme_from_site.py``). Created inactive, with a report of
+    where each value came from."""
+    if not _is_admin():
+        abort(403)
+    from urllib.parse import urlsplit as _urlsplit
+
+    from ..services import theme_from_site
+    url = (request.form.get('site_url') or '').strip()
+    try:
+        parsed, report = theme_from_site.build(url)
+    except theme_portable.FetchError as exc:
+        flash('Could not read the site: %s' % exc, 'danger')
         return _theme_redirect()
-    base = (str(payload.get('name') or 'Imported theme')).strip()[:100]
-    name, n = base, 1
-    # Loop until free: a single "(imported)" suffix collided on the third
-    # import of the same file and the unique constraint turned it into a 500.
-    while UiTheme.query.filter_by(name=name).first():
-        name = '%s (imported)' % base if n == 1 else '%s (imported %d)' % (base, n)
-        n += 1
-    row = UiTheme(slug=_theme_slug(name), name=name,
-                  description=str(payload.get('description') or '')[:300],
-                  builtin=False,
-                  created_by=getattr(current_user, 'username', '') or '')
-    row.tokens = clean
-    db.session.add(row)
-    db.session.commit()
-    theme_svc.invalidate()
-    log_action('settings.theme.import', detail='name=%s' % name)
-    flash('Theme %r imported.' % name, 'success')
+    host = _urlsplit(url if '://' in url else 'https://' + url).netloc
+    if not parsed.tokens and not parsed.assets:
+        flash('Nothing usable found on %s: no brand colour, icon or favicon.' % host,
+              'warning')
+        for line in report[:8]:
+            flash(line, 'info')
+        return _theme_redirect()
+    row = _create_imported_theme(parsed, 'settings.theme.import_site', source=host)
+    if row is not None:
+        flash('Theme %r created from %s. It is not applied yet: review it, then '
+              'Apply.' % (row.name, host), 'success')
+        for line in report[:10]:
+            flash(line, 'info')
     return _theme_redirect()
 
 

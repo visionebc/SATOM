@@ -25560,3 +25560,49 @@ msgstr "Nur Python-Bibliotheken (pip): der Paketindex, den die Karte Libraries p
 #: update sources
 msgid "Where this installation looks for updates. Leave a source on Default, or point it at an internal pipeline or mirror — public (URL only) or with a user and token. Changing a source changes where the files come from, not whether they are trusted: update packages are still verified against this node’s trust store. Both nodes of an HA pair use the same sources."
 msgstr "Wo diese Installation nach Updates sucht. Lassen Sie eine Quelle auf Standard oder richten Sie sie auf eine interne Pipeline oder einen Spiegel — öffentlich (nur URL) oder mit Benutzer und Token. Eine andere Quelle ändert, woher die Dateien kommen, nicht, ob ihnen vertraut wird: Update-Pakete werden weiterhin gegen den Vertrauensspeicher dieses Knotens geprüft. Beide Knoten eines HA-Paares verwenden dieselben Quellen."
+
+#: theme import from a site
+msgid "API token from that node"
+msgstr "API-Token dieses Knotens"
+
+msgid "Another SATOM node"
+msgstr "Ein anderer SATOM-Knoten"
+
+msgid "Brings the theme exactly as it is there: colours, logo and favicon. Create a token with the read scope on that node, under API Tokens. It is used for this one request and is not stored."
+msgstr "Übernimmt das Thema genau so, wie es dort ist: Farben, Logo und Favicon. Erstellen Sie auf diesem Knoten unter API Tokens ein Token mit dem Bereich read. Es wird nur für diese eine Anfrage verwendet und nicht gespeichert."
+
+msgid "Build theme"
+msgstr "Thema erstellen"
+
+msgid "Copy theme"
+msgstr "Thema kopieren"
+
+msgid "If that node uses a private CA, add that CA to this node's trust store first:"
+msgstr "Verwendet dieser Knoten eine private CA, fügen Sie diese CA zuerst dem Vertrauensspeicher dieses Knotens hinzu:"
+
+msgid "Import from a site"
+msgstr "Von einer Website importieren"
+
+msgid "Import from a site…"
+msgstr "Von einer Website importieren…"
+
+msgid "Node address"
+msgstr "Knotenadresse"
+
+msgid "Site address"
+msgstr "Website-Adresse"
+
+msgid "Takes the site's brand colours (sidebar, top bar, accent, gradients), its square icon as the logo and its favicon. The layout, page background, text colours and font stay SATOM's. Every colour pair is kept readable (4.5:1)."
+msgstr "Übernimmt die Markenfarben der Website (Seitenleiste, obere Leiste, Akzent, Verläufe), ihr quadratisches Symbol als Logo und ihr Favicon. Layout, Seitenhintergrund, Textfarben und Schrift bleiben die von SATOM. Jedes Farbpaar bleibt lesbar (4.5:1)."
+
+msgid "The theme is created but not applied: review it in the editor, then Apply."
+msgstr "Das Thema wird erstellt, aber nicht angewendet: prüfen Sie es im Editor und wenden Sie es dann an."
+
+msgid "This node fetches the page itself, so it needs a route to the site. Internal sites are allowed; loopback and link-local addresses are not."
+msgstr "Dieser Knoten ruft die Seite selbst ab und braucht daher eine Route zur Website. Interne Websites sind erlaubt, Loopback- und Link-Local-Adressen nicht."
+
+msgid "Website"
+msgstr "Website"
+
+msgid "its active theme"
+msgstr "sein aktives Thema"

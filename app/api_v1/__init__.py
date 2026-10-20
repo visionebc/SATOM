@@ -21,3 +21,5 @@ from . import routes  # noqa: E402,F401
 # error handlers registered there cover these views too.
 from . import waf  # noqa: E402,F401
 from . import adc  # noqa: E402,F401
+# Read-only: lets another node copy this node's theme (Settings -> Appearance).
+from . import ui  # noqa: E402,F401

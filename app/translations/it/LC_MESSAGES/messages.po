@@ -26015,3 +26015,7 @@ msgstr "App condivise con esso"
 #: app/templates/script_library/edit.html
 msgid "Studio connections this script may call with satom_script.connection(\"id\"). The runner makes the call with the connection's credential, which the script never sees; only declared connections are reachable, whatever the network setting. A connection with a secret needs the vault."
 msgstr "Connessioni di Studio che questo script può chiamare con satom_script.connection(\"id\"). Il runner esegue la chiamata con la credenziale della connessione, che lo script non vede mai; sono raggiungibili solo le connessioni dichiarate, qualunque sia l'impostazione di rete. Una connessione con un segreto richiede il vault."
+
+#: app/templates/studio/connection.html
+msgid "Verify the server certificate against the trust store (unticked: still encrypted, not verified; a server without TLS is refused)"
+msgstr "Verificare il certificato del server con l'archivio attendibile (deselezionato: sempre cifrato, non verificato; un server senza TLS viene rifiutato)"

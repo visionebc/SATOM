@@ -37,6 +37,9 @@
         <div class="col-md-4"><label class="form-label small" for="cn-port">{{ _('Port') }}</label><input class="form-control form-control-sm" id="cn-port" type="number" value="{{ c.port or 5432 }}"></div>
         <div class="col-md-6"><label class="form-label small" for="cn-database">{{ _('Database') }}</label><input class="form-control form-control-sm" id="cn-database" value="{{ c.database }}" maxlength="128"></div>
         <div class="col-md-6"><label class="form-label small" for="cn-username">{{ _('User') }}</label><input class="form-control form-control-sm" id="cn-username" value="{{ c.username }}" maxlength="255"></div>
+        {# Always encrypted (services/studio_http.pg_sslmode): ticked = verify-full
+           against the trust store, unticked = require. Never prefer. #}
+        <div class="col-md-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="cn-verify_tls" {{ 'checked' if c.verify_tls }}><label class="form-check-label small" for="cn-verify_tls">{{ _('Verify the server certificate against the trust store (unticked: still encrypted, not verified; a server without TLS is refused)') }}</label></div></div>
         {% endif %}
         <div class="col-md-6"><label class="form-label small" for="cn-timeout">{{ _('Timeout (s)') }}</label><input class="form-control form-control-sm" id="cn-timeout" type="number" min="1" max="120" value="{{ c.timeout }}"></div>
       </div>

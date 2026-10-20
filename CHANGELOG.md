@@ -6,6 +6,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.3.8] - 2026-10-20
+
+Upgrade path unchanged from 3.3.7: the update package accepts a node on 3.3.3
+or newer. A node on 3.3.2 or older applies `satom-update-3.3.3.tar.gz`
+(release v3.3.3) first, then this one.
+
+The upgrade creates the Python Studio tables (migration `studio01`) and installs
+new versions of `satom-scripts.service` and `satom-integrations.service`, which
+now carry resource limits (memory, tasks, CPU, a memory-backed `/tmp`). A site
+whose scripts need more raises them in a systemd drop-in.
+
 ### Added
 
 - **Python Studio → Examples**: working examples of every Studio piece,

@@ -126,8 +126,12 @@ def _fonts() -> dict:
                 if os.path.isfile(path):
                     found[style] = path
                     break
-        if not all(k in found for k in ("", "B", "I", "BI")):
+        if not all(k in found for k in ("", "B")):
             continue
+        # Debian's fonts-dejavu-core ships no oblique faces: italic falls back
+        # to the upright one rather than losing DejaVu's Unicode coverage.
+        found.setdefault("I", found[""])
+        found.setdefault("BI", found["B"])
         names = {}
         for style, path in found.items():
             names[style] = family + style

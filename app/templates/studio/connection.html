@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}{{ c.name }} — Connection{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex align-items-start">
+  <div>
+    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('studio.index', pane='connections') }}">{{ _('Python Studio') }}</a> › {{ _('Connections') }}</div>
+    <h1 class="fw-page-title"><i class="bi bi-plug me-2 text-accent"></i>{{ c.name }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;"><code>{{ c.slug }}</code> · {{ 'HTTP API' if c.kind == 'http' else 'PostgreSQL' }}</p>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.index', pane='connections') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Python Studio') }}</a>
+    <button type="button" class="btn btn-primary btn-sm" id="cn-save"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
+  </div>
+</div>
+<div id="cn-msg" class="mb-2" style="font-size:12px;"></div>
+<div class="row g-3">
+  <div class="col-xl-6">
+    <div class="fw-card"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-sliders me-2 text-accent"></i>{{ _('Settings') }}</span></div>
+      <div class="fw-card-body row g-2" style="font-size:13px;">
+        <div class="col-12"><label class="form-label small" for="cn-name">{{ _('Name') }}</label><input class="form-control form-control-sm" id="cn-name" value="{{ c.name }}" maxlength="120"></div>
+        <div class="col-12"><label class="form-label small" for="cn-description">{{ _('Description') }}</label><input class="form-control form-control-sm" id="cn-description" value="{{ c.description }}" maxlength="2000"></div>
+        {% if c.kind == 'http' %}
+        <div class="col-12"><label class="form-label small" for="cn-base_url">{{ _('Base URL') }}</label><input class="form-control form-control-sm" id="cn-base_url" value="{{ c.base_url }}" placeholder="https://api.example.com/v2" maxlength="500">
+          <div class="form-text">{{ _('Every call stays under this URL. Redirects are not followed.') }}</div></div>
+        <div class="col-md-6"><label class="form-label small" for="cn-auth">{{ _('Authentication') }}</label>
+          <select class="form-select form-select-sm" id="cn-auth">
+            {% for a, label in [('none', _('None')), ('basic', _('Basic (user + password)')), ('bearer', _('Bearer token')), ('api_key', _('API key in a header')), ('oauth2', _('OAuth2 client credentials'))] %}
+            <option value="{{ a }}" {{ 'selected' if c.auth == a }}>{{ label }}</option>{% endfor %}
+          </select></div>
+        <div class="col-md-6 cn-auth-user"><label class="form-label small" for="cn-username">{{ _('User / client id') }}</label><input class="form-control form-control-sm" id="cn-username" value="{{ c.username }}" maxlength="255"></div>
+        <div class="col-md-6 cn-auth-header"><label class="form-label small" for="cn-header_name">{{ _('Header name') }}</label><input class="form-control form-control-sm" id="cn-header_name" value="{{ c.header_name }}" placeholder="X-API-Key" maxlength="128"></div>
+        <div class="col-md-6 cn-auth-oauth"><label class="form-label small" for="cn-token_url">{{ _('Token URL') }}</label><input class="form-control form-control-sm" id="cn-token_url" value="{{ c.token_url }}" maxlength="500"></div>
+        <div class="col-md-6 cn-auth-oauth"><label class="form-label small" for="cn-scope">{{ _('Scope') }}</label><input class="form-control form-control-sm" id="cn-scope" value="{{ c.scope }}" maxlength="500"></div>
+        <div class="col-md-6"><div class="form-check mt-4"><input class="form-check-input" type="checkbox" id="cn-verify_tls" {{ 'checked' if c.verify_tls }}><label class="form-check-label small" for="cn-verify_tls">{{ _('Verify the TLS certificate (trust store)') }}</label></div></div>
+        {% else %}
+        <div class="col-md-8"><label class="form-label small" for="cn-host">{{ _('Host') }}</label><input class="form-control form-control-sm" id="cn-host" value="{{ c.host }}" maxlength="255"></div>
+        <div class="col-md-4"><label class="form-label small" for="cn-port">{{ _('Port') }}</label><input class="form-control form-control-sm" id="cn-port" type="number" value="{{ c.port or 5432 }}"></div>
+        <div class="col-md-6"><label class="form-label small" for="cn-database">{{ _('Database') }}</label><input class="form-control form-control-sm" id="cn-database" value="{{ c.database }}" maxlength="128"></div>
+        <div class="col-md-6"><label class="form-label small" for="cn-username">{{ _('User') }}</label><input class="form-control form-control-sm" id="cn-username" value="{{ c.username }}" maxlength="255"></div>
+        {% endif %}
+        <div class="col-md-6"><label class="form-label small" for="cn-timeout">{{ _('Timeout (s)') }}</label><input class="form-control form-control-sm" id="cn-timeout" type="number" min="1" max="120" value="{{ c.timeout }}"></div>
+      </div>
+    </div>
+    <div class="fw-card mt-3"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-key me-2 text-accent"></i>{{ _('Secret') }}</span>
+        <span id="cn-secret-state" class="ms-2">{% if has_secret %}<span class="fw-badge fw-badge-success">{{ _('stored') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('not set') }}</span>{% endif %}</span></div>
+      <div class="fw-card-body" style="font-size:13px;">
+        {% if secret_problem %}<div class="alert alert-warning py-1 px-2 mb-2" style="font-size:12px;">{{ secret_problem }}</div>{% endif %}
+        <p class="text-muted" style="font-size:12px;">{{ _('Password, token, API key or client secret. Kept in the vault, or encrypted when there is no vault, and never shown again: this page can only replace or clear it.') }}</p>
+        <div class="d-flex gap-2">
+          <input class="form-control form-control-sm" type="password" id="cn-secret" autocomplete="new-password" placeholder="{{ _('New value') }}">
+          <button type="button" class="btn btn-outline-primary btn-sm" id="cn-secret-set">{{ _('Replace') }}</button>
+          <button type="button" class="btn btn-outline-danger btn-sm" id="cn-secret-clear">{{ _('Clear') }}</button>
+        </div>
+      </div>
+    </div>
+    <div class="mt-3"><button type="button" class="btn btn-outline-danger btn-sm" id="cn-delete"><i class="bi bi-trash me-1"></i>{{ _('Delete connection') }}</button></div>
+  </div>
+  <div class="col-xl-6">
+    <div class="fw-card"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-play-circle me-2 text-accent"></i>{{ _('Test') }}</span></div>
+      <div class="fw-card-body" style="font-size:13px;">
+        {% if c.kind == 'http' %}
+        <div class="d-flex gap-2 mb-2">
+          <input class="form-control form-control-sm" id="cn-t-path" placeholder="/status">
+          <button type="button" class="btn btn-primary btn-sm" id="cn-test"><i class="bi bi-play-fill me-1"></i>GET</button>
+        </div>
+        <label class="form-label small" for="cn-t-extract">{{ _('JSON path to try on the answer') }}</label>
+        <input class="form-control form-control-sm mb-2" id="cn-t-extract" placeholder="items[*].name">
+        <div class="form-text mb-2">{{ _('a.b[0].c picks one value; items[*].name collects a field from every item. App steps use the same syntax.') }}</div>
+        {% else %}
+        <textarea class="form-control form-control-sm mb-2" id="cn-t-sql" rows="3" style="font-family:ui-monospace,Menlo,monospace;" placeholder="SELECT 1 AS ok"></textarea>
+        <button type="button" class="btn btn-primary btn-sm mb-2" id="cn-test"><i class="bi bi-play-fill me-1"></i>{{ _('Run read-only') }}</button>
+        {% endif %}
+        <div id="cn-t-status" class="mb-1"></div>
+        <pre id="cn-t-out" class="p-2 mb-2" style="min-height:120px;max-height:45vh;overflow:auto;font-size:11px;background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:8px;white-space:pre-wrap;"></pre>
+        <div class="text-muted small mb-1" id="cn-t-extract-label" style="display:none;">{{ _('JSON path result') }}</div>
+        <pre id="cn-t-extract-out" class="p-2 mb-0" style="display:none;max-height:20vh;overflow:auto;font-size:11px;background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:8px;white-space:pre-wrap;"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+<script type="application/json" id="cn-config">{{ {
+  'slug': c.slug, 'kind': c.kind,
+  'urls': {'save': url_for('studio.connection_save', slug=c.slug), 'secret': url_for('studio.connection_secret', slug=c.slug),
+           'test': url_for('studio.connection_test', slug=c.slug), 'delete': url_for('studio.connection_delete', slug=c.slug),
+           'back': url_for('studio.index', pane='connections')}
+}|tojson }}</script>
+<script src="{{ asset('js/studio_connection.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}{{ store.name }} — Data store{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex align-items-start">
+  <div>
+    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('studio.index', pane='stores') }}">{{ _('Python Studio') }}</a> › {{ _('Data stores') }}</div>
+    <h1 class="fw-page-title"><i class="bi bi-table me-2 text-accent"></i><span id="st-title">{{ store.name }}</span></h1>
+    <p class="text-muted mb-0" style="font-size:13px;"><code>{{ store.slug }}</code> · <span id="st-count">{{ count }}</span> {{ _('rows') }} · {{ _('limit') }} {{ limits.rows }}</p>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.index', pane='stores') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Python Studio') }}</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.store_export', slug=store.slug) }}"><i class="bi bi-download me-1"></i>{{ _('Export CSV') }}</a>
+    <label class="btn btn-outline-secondary btn-sm mb-0"><i class="bi bi-upload me-1"></i>{{ _('Import CSV') }}<input type="file" id="st-import" accept=".csv,text/csv" hidden></label>
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-3" role="tablist">
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#st-tab-rows" type="button"><i class="bi bi-list-ul me-1"></i>{{ _('Rows') }}</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#st-tab-schema" type="button"><i class="bi bi-layout-three-columns me-1"></i>{{ _('Columns') }}</button></li>
+</ul>
+<div id="st-msg" class="mb-2" style="font-size:12px;"></div>
+<div class="tab-content">
+  <div class="tab-pane fade show active" id="st-tab-rows">
+    <div class="fw-toolbar">
+      <div class="fw-search-box"><i class="bi bi-search search-icon"></i><input type="text" id="st-search" placeholder="{{ _('Search rows…') }}"></div>
+      <button type="button" class="btn btn-fw-primary btn-sm ms-auto" id="st-add"><i class="bi bi-plus-lg me-1"></i>{{ _('Add row') }}</button>
+    </div>
+    <div class="fw-table-wrapper"><table class="fw-table" id="st-rows"><thead></thead><tbody></tbody></table></div>
+  </div>
+  <div class="tab-pane fade" id="st-tab-schema">
+    <div class="fw-card"><div class="fw-card-body" style="font-size:13px;">
+      <div class="row g-2 mb-3">
+        <div class="col-md-5"><label class="form-label small" for="st-name">{{ _('Name') }}</label><input class="form-control form-control-sm" id="st-name" maxlength="120"></div>
+        <div class="col-md-7"><label class="form-label small" for="st-desc">{{ _('Description') }}</label><input class="form-control form-control-sm" id="st-desc" maxlength="2000"></div>
+      </div>
+      <p class="text-muted" style="font-size:12px;">{{ _('Removing a column or changing its type never deletes stored values: a removed column comes back with its values if you add it again. Every row also has _id, _created_at, _updated_at and _by.') }}</p>
+      <table class="table table-sm align-middle" style="font-size:13px;">
+        <thead><tr><th>{{ _('Column') }}</th><th>{{ _('Label') }}</th><th>{{ _('Type') }}</th><th>{{ _('Required') }}</th><th></th></tr></thead>
+        <tbody id="st-cols"></tbody>
+      </table>
+      <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-primary btn-sm" id="st-col-add"><i class="bi bi-plus-lg me-1"></i>{{ _('Add column') }}</button>
+        <button type="button" class="btn btn-primary btn-sm ms-auto" id="st-save-schema"><i class="bi bi-save me-1"></i>{{ _('Save columns') }}</button>
+      </div>
+      <hr>
+      <button type="button" class="btn btn-outline-danger btn-sm" id="st-delete"><i class="bi bi-trash me-1"></i>{{ _('Delete data store') }}</button>
+    </div></div>
+  </div>
+</div>
+
+<div class="modal fade fw-modal" id="st-row-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title" id="st-row-title"></h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button></div>
+    <div class="modal-body"><form id="st-row-form"></form><div id="st-row-err" style="font-size:12px;color:#8B1C2A;"></div></div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-outline-danger me-auto" id="st-row-del">{{ _('Delete row') }}</button>
+      <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+      <button type="button" class="btn btn-fw-primary" id="st-row-save">{{ _('Save') }}</button>
+    </div>
+  </div></div>
+</div>
+
+<script type="application/json" id="st-config">{{ {
+  'slug': store.slug, 'name': store.name, 'description': store.description,
+  'columns': store.columns, 'rows': rows, 'types': column_types, 'maxColumns': limits.columns,
+  'urls': {
+    'schema': url_for('studio.store_schema', slug=store.slug),
+    'rows': url_for('studio.store_rows', slug=store.slug),
+    'row': url_for('studio.store_row_update', slug=store.slug, rid=0)[:-1],
+    'import': url_for('studio.store_import', slug=store.slug),
+    'delete': url_for('studio.store_delete', slug=store.slug),
+    'back': url_for('studio.index', pane='stores')
+  }
+}|tojson }}</script>
+<script src="{{ asset('js/studio_store.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

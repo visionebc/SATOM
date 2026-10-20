@@ -38,6 +38,12 @@
         <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'console' }}" data-bs-toggle="list" href="#studio-pane-console" role="tab" data-pane="console">
           <i class="bi bi-terminal me-2"></i>{{ _('Console') }}</a>
         {% endif %}
+        {% if can_library %}
+        <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'stores' }}" data-bs-toggle="list" href="#studio-pane-stores" role="tab" data-pane="stores">
+          <i class="bi bi-table me-2"></i>{{ _('Data stores') }}<span class="fw-badge fw-badge-secondary ms-auto">{{ stores|length }}</span></a>
+        <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'connections' }}" data-bs-toggle="list" href="#studio-pane-connections" role="tab" data-pane="connections">
+          <i class="bi bi-plug me-2"></i>{{ _('Connections') }}<span class="fw-badge fw-badge-secondary ms-auto">{{ connections|length }}</span></a>
+        {% endif %}
       </div>
       {% if can_library and scripts %}
       <div class="px-3 pt-2 pb-1 text-muted text-uppercase" style="font-size:10px;letter-spacing:.04em;">{{ _('Open a script') }}</div>
@@ -120,6 +126,64 @@
       </div>
       {% endif %}
 
+      {% if can_library %}
+      <div class="tab-pane fade {{ 'show active' if pane == 'stores' }}" id="studio-pane-stores" role="tabpanel">
+        <div class="fw-card sl-how"><div class="fw-card-body py-2 d-flex gap-2" style="font-size:12px;">
+          <i class="bi bi-table text-accent" style="font-size:18px;"></i>
+          <span>{{ _('Tables you define here, with typed columns. Apps read and write their rows; you can also edit them by hand, and export or import CSV. No SQL is involved: a data store cannot reach any other SATOM table.') }}</span>
+        </div></div>
+        <div class="d-flex mb-2"><button type="button" class="btn btn-fw-primary btn-sm ms-auto" data-bs-toggle="modal" data-bs-target="#stNewModal"><i class="bi bi-plus-lg me-1"></i>{{ _('New data store') }}</button></div>
+        <div class="fw-table-wrapper">
+          <table class="fw-table" id="stTable">
+            <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Columns') }}</th><th>{{ _('Rows') }}</th><th>{{ _('Last change') }}</th><th class="actions-col">{{ _('Actions') }}</th></tr></thead>
+            <tbody>
+            {% for s in stores %}
+              <tr>
+                <td><a href="{{ url_for('studio.store', slug=s.slug) }}"><strong>{{ s.name }}</strong></a>
+                  <div class="text-muted" style="font-size:11px;"><code>{{ s.slug }}</code>{% if s.description %} · {{ s.description|truncate(80) }}{% endif %}</div></td>
+                <td>{{ s.columns }}</td><td>{{ s.rows }}</td>
+                <td style="font-size:13px;white-space:nowrap;">{{ s.updated_at.strftime('%Y-%m-%d %H:%M') if s.updated_at else '' }} · {{ s.updated_by }}</td>
+                <td class="actions-col">
+                  <a class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" href="{{ url_for('studio.store', slug=s.slug) }}" title="{{ _('Open') }}"><i class="bi bi-pencil"></i></a>
+                  <a class="btn btn-sm btn-outline-secondary btn-sm-icon" href="{{ url_for('studio.store_export', slug=s.slug) }}" title="{{ _('Export CSV') }}"><i class="bi bi-download"></i></a>
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="5" class="text-muted p-3">{{ _('No data stores yet.') }}</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="tab-pane fade {{ 'show active' if pane == 'connections' }}" id="studio-pane-connections" role="tabpanel">
+        <div class="fw-card sl-how"><div class="fw-card-body py-2 d-flex gap-2" style="font-size:12px;">
+          <i class="bi bi-plug text-accent" style="font-size:18px;"></i>
+          <span>{{ _('External APIs and PostgreSQL databases, with their credential kept in the vault or encrypted, never shown again. App steps call them; every call stays under the base URL of the connection and redirects are not followed.') }}</span>
+        </div></div>
+        <div class="d-flex mb-2"><button type="button" class="btn btn-fw-primary btn-sm ms-auto" data-bs-toggle="modal" data-bs-target="#cnNewModal"><i class="bi bi-plus-lg me-1"></i>{{ _('New connection') }}</button></div>
+        <div class="fw-table-wrapper">
+          <table class="fw-table" id="cnTable">
+            <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Kind') }}</th><th>{{ _('Target') }}</th><th>{{ _('Authentication') }}</th><th>{{ _('Last change') }}</th></tr></thead>
+            <tbody>
+            {% for c in connections %}
+              <tr>
+                <td><a href="{{ url_for('studio.connection', slug=c.slug) }}"><strong>{{ c.name }}</strong></a>
+                  <div class="text-muted" style="font-size:11px;"><code>{{ c.slug }}</code></div></td>
+                <td>{{ 'HTTP API' if c.kind == 'http' else 'PostgreSQL' }}</td>
+                <td><code style="font-size:12px;">{{ c.base_url if c.kind == 'http' else (c.host ~ ':' ~ (c.port or 5432) ~ '/' ~ c.database) }}</code></td>
+                <td>{{ c.auth }}</td>
+                <td style="font-size:13px;white-space:nowrap;">{{ c.updated_at.strftime('%Y-%m-%d %H:%M') if c.updated_at else '' }} · {{ c.updated_by }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="5" class="text-muted p-3">{{ _('No connections yet.') }}</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
       {% if can_console %}
       <div class="tab-pane fade {{ 'show active' if pane == 'console' }}" id="studio-pane-console" role="tabpanel">
         {% include "studio/_console.html" %}
@@ -154,6 +218,37 @@
     </div>
   </div>
 </div>
+{% for mid, title, action, extra in [
+     ('stNewModal', _('New data store'), url_for('studio.store_create'), ''),
+     ('cnNewModal', _('New connection'), url_for('studio.connection_create'), 'kind')] %}
+<div class="modal fade fw-modal" id="{{ mid }}" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title"><i class="bi bi-plus-lg me-2"></i>{{ title }}</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button></div>
+    <form method="post" action="{{ action }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="modal-body">
+        <label class="fw-form-label" for="{{ mid }}-name">{{ _('Name') }} <span class="text-danger">*</span></label>
+        <input class="form-control mb-3" id="{{ mid }}-name" name="name" required maxlength="120">
+        <label class="fw-form-label" for="{{ mid }}-slug">{{ _('Id') }} <span class="text-danger">*</span></label>
+        <input class="form-control" id="{{ mid }}-slug" name="slug" required pattern="[a-z0-9][a-z0-9_\-]{1,47}" maxlength="48">
+        <div class="form-text">{{ _('Lowercase letters, digits, - and _. It cannot be changed later.') }}</div>
+        {% if extra == 'kind' %}
+        <label class="fw-form-label mt-3" for="{{ mid }}-kind">{{ _('Kind') }}</label>
+        <select class="form-select" id="{{ mid }}-kind" name="kind">
+          <option value="http">{{ _('HTTP API') }}</option>
+          <option value="postgres">PostgreSQL</option>
+        </select>
+        {% endif %}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+        <button class="btn btn-fw-primary" type="submit"><i class="bi bi-plus-lg me-1"></i>{{ _('Create') }}</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+{% endfor %}
 <script type="application/json" id="sl-config">{{ {'urls': {'run': url_for('script_library.run_status', rid='RID')}}|tojson }}</script>
 <script src="{{ asset('js/script_library.js') }}" nonce="{{ csp_nonce }}"></script>
 {% endif %}

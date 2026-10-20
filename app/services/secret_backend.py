@@ -752,21 +752,23 @@ def migrate_local_to_vault(dry_run: bool = True) -> dict:
         except VaultError as exc:
             note("setting", label, "failed", str(exc))
 
-    # Integration-hook secrets: one app_settings row per name.
-    for key, name, local in _hook_secret_rows(note):
-        if local == VAULT_SENTINEL:
-            note("hook-secret", name, "skipped", "already vault-owned")
-            continue
-        if dry_run:
-            note("hook-secret", name, "copied", "would copy")
-            continue
-        try:
-            put_field(_hook_path(name), "value", local)
-            back = (read(_hook_path(name)) or {}).get("value")
-            note("hook-secret", name, "copied" if back == local else "failed",
-                 "verified" if back == local else "read-back did not match")
-        except VaultError as exc:
-            note("hook-secret", name, "failed", str(exc))
+    # Integration-hook and Python Studio connection secrets: one app_settings
+    # row per name (_PREFIXED_SECRETS).
+    for kind, prefix, path_of in _PREFIXED_SECRETS:
+        for key, name, local in _prefixed_secret_rows(kind, prefix, note):
+            if local == VAULT_SENTINEL:
+                note(kind, name, "skipped", "already vault-owned")
+                continue
+            if dry_run:
+                note(kind, name, "copied", "would copy")
+                continue
+            try:
+                put_field(path_of(name), "value", local)
+                back = (read(path_of(name)) or {}).get("value")
+                note(kind, name, "copied" if back == local else "failed",
+                     "verified" if back == local else "read-back did not match")
+            except VaultError as exc:
+                note(kind, name, "failed", str(exc))
 
     if not dry_run:
         # Every verified copy cleared its stale mark in write(); persist that.
@@ -796,22 +798,44 @@ def _hook_path(name: str) -> str:
     return "hooks/%s" % name
 
 
-def _hook_secret_rows(note):
-    """(key, NAME, local plaintext) of every stored hook secret; an
+_CONNECTION_PREFIX = "studio.connection.secret."
+
+
+def _connection_path(name: str) -> str:
+    return "studio/connections/%s" % name
+
+
+#: Secrets kept one ``app_settings`` row per name: (kind, key prefix, vault
+#: path of a name). ONE list for migrate and scrub, like SETTING_SECRETS.
+_PREFIXED_SECRETS = (
+    ("hook-secret", _HOOK_PREFIX, _hook_path),
+    ("connection-secret", _CONNECTION_PREFIX, _connection_path),
+)
+
+
+def _prefixed_secret_rows(kind, prefix, note):
+    """(key, name, local plaintext) of every stored secret under *prefix*; an
     undecryptable row is reported through ``note`` and skipped."""
-    rows = AppSetting.query.filter(AppSetting.key.like(_HOOK_PREFIX + "%")) \
+    rows = AppSetting.query.filter(AppSetting.key.like(prefix + "%")) \
         .order_by(AppSetting.key).all()
     for row in rows:
-        name = row.key[len(_HOOK_PREFIX):]
+        if not row.key.startswith(prefix):     # LIKE treats _ and % as wildcards
+            continue
+        name = row.key[len(prefix):]
         try:
             local = encryption.decrypt(row.value) if row.value else ""
         except Exception as exc:  # noqa: BLE001
-            note("hook-secret", name, "failed", "local copy undecryptable: %s" % exc)
+            note(kind, name, "failed", "local copy undecryptable: %s" % exc)
             continue
         if not local:
-            note("hook-secret", name, "skipped", "no value stored")
+            note(kind, name, "skipped", "no value stored")
             continue
         yield row.key, name, local
+
+
+def _hook_secret_rows(note):
+    """(key, NAME, local plaintext) of every stored hook secret."""
+    return _prefixed_secret_rows("hook-secret", _HOOK_PREFIX, note)
 
 
 def scrub_local_copies(dry_run: bool = True) -> dict:
@@ -961,24 +985,25 @@ def scrub_local_copies(dry_run: bool = True) -> dict:
         AppSetting.set(key, encryption.encrypt(VAULT_SENTINEL))
         note("setting", label, "scrubbed", "local copy replaced by the sentinel")
 
-    # Integration-hook secrets: same rule, read back before destroying.
-    for key, name, local in _hook_secret_rows(note):
-        if local == VAULT_SENTINEL:
-            note("hook-secret", name, "skipped", "already vault-owned")
-            continue
-        try:
-            remote = (read(_hook_path(name)) or {}).get("value") or ""
-        except VaultError as exc:
-            note("hook-secret", name, "failed", "vault unreadable: %s" % exc)
-            continue
-        if remote != local:
-            note("hook-secret", name, "failed",
-                 "the vault copy is missing or differs - the local one is the last one")
-            continue
-        if dry_run:
-            note("hook-secret", name, "scrubbed", "would remove the local copy")
-            continue
-        AppSetting.set(key, encryption.encrypt(VAULT_SENTINEL))
-        note("hook-secret", name, "scrubbed", "local copy replaced by the sentinel")
+    # Integration-hook and connection secrets: same rule, read back before destroying.
+    for kind, prefix, path_of in _PREFIXED_SECRETS:
+        for key, name, local in _prefixed_secret_rows(kind, prefix, note):
+            if local == VAULT_SENTINEL:
+                note(kind, name, "skipped", "already vault-owned")
+                continue
+            try:
+                remote = (read(path_of(name)) or {}).get("value") or ""
+            except VaultError as exc:
+                note(kind, name, "failed", "vault unreadable: %s" % exc)
+                continue
+            if remote != local:
+                note(kind, name, "failed",
+                     "the vault copy is missing or differs - the local one is the last one")
+                continue
+            if dry_run:
+                note(kind, name, "scrubbed", "would remove the local copy")
+                continue
+            AppSetting.set(key, encryption.encrypt(VAULT_SENTINEL))
+            note(kind, name, "scrubbed", "local copy replaced by the sentinel")
 
     return out

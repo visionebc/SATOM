@@ -2391,6 +2391,10 @@ def create_app(config_override: object | None = None) -> Flask:
             # Operations -> Wiki. Without this import create_all() never
             # makes the wiki_* tables and the first article fails to store.
             from . import models_wiki  # noqa: F401
+            # Administrator > Studio > Python Studio: data stores, connections,
+            # apps and their runs, user groups. Without this import
+            # create_all() never makes the studio_* tables.
+            from . import models_studio  # noqa: F401
             # Sentinel's two collectors (http_status, infra) join the
             # fleet collection registry here so the scheduler sidecar — which
             # never imports a view — provisions and runs them like any other.

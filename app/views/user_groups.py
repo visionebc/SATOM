@@ -1,9 +1,11 @@
 """Administrator > Access > Groups -- named sets of users.
 
-A group is who an app is shared with (Python Studio apps, ``access``), so an
-administrator grants an app to "Network operations" once instead of person by
-person, and a new colleague gets every app of the team by joining it. Gated on
-user management, like the user list.
+A group is who an app is shared with (Python Studio apps, ``access``) and who
+reads a Wiki article (its audience), so an administrator grants an app or an
+article to "Network operations" once instead of person by person, and a new
+colleague gets every app and article of the team by joining it. Gated on user
+management, like the user list: membership decides access, so it is not a
+Wiki moderator's or an app author's to change.
 """
 from __future__ import annotations
 
@@ -15,6 +17,7 @@ from ..extensions import db
 from ..models import Permission, User
 from ..models_studio import UserGroup
 from ..services import studio_apps as SA
+from ..services import wiki as WK
 from ..services.audit import log_action
 
 bp = Blueprint("user_groups", __name__, url_prefix="/groups")
@@ -28,6 +31,7 @@ def index():
     return render_template("user_groups/index.html", groups=groups,
                            users=User.query.order_by(User.username).all(),
                            used={g.id: SA.apps_using_group(g.id) for g in groups},
+                           wiki_used={g.id: WK.articles_using_group(g.id) for g in groups},
                            gdata={str(g.id): {"name": g.name, "description": g.description,
                                               "members": [u.id for u in g.members]} for g in groups})
 
@@ -64,7 +68,9 @@ def delete(gid):
         return jsonify({"ok": False, "error": "apps share with this group: %s. Remove it there "
                         "first." % ", ".join(apps)}), 409
     name = g.name
+    # Wiki articles naming it stay restricted (fail closed), see wiki_access.
+    articles = WK.articles_using_group(gid)
     db.session.delete(g)
     db.session.commit()
-    log_action("user_group.delete", target=name)
+    log_action("user_group.delete", target=name, extra={"wiki_articles": articles})
     return jsonify({"ok": True})

@@ -10,9 +10,11 @@ hold (services/wiki_access.py is the only place that reads them):
             listed OR they belong to a listed group (none left = nobody).
 * Status  — ``draft`` (author only), ``published``, ``archived``.
 
-Groups are the Wiki's own (``wiki_groups``): a SATOM profile is a bundle of
+Groups are Administrator › Access › Groups (``user_groups``, the same groups
+Python Studio apps are shared with): a SATOM profile is a bundle of
 permissions, one per user, so it cannot say "the network team" across
-profiles. A group can.
+profiles. A group can. Until 2026-10-20 the Wiki kept groups of its own
+(``wiki_groups``); migration wiki04 merged them into ``user_groups``.
 
 Editing writes a shared, autosaved DRAFT; readers keep the released text
 until someone publishes, and every publication is a new numbered version
@@ -24,6 +26,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from .extensions import db
+from .models_studio import UserGroup, user_group_members  # noqa: F401 -- re-exported
 
 STATUSES = ("draft", "published", "archived")
 
@@ -47,7 +50,7 @@ wiki_article_groups = db.Table(
     db.Column("article_id", db.Integer,
               db.ForeignKey("wiki_articles.id", ondelete="CASCADE"), primary_key=True),
     db.Column("group_id", db.Integer,
-              db.ForeignKey("wiki_groups.id", ondelete="CASCADE"), primary_key=True),
+              db.ForeignKey("user_groups.id", ondelete="CASCADE"), primary_key=True),
 )
 
 wiki_article_tags = db.Table(
@@ -57,29 +60,6 @@ wiki_article_tags = db.Table(
     db.Column("tag_id", db.Integer,
               db.ForeignKey("wiki_tags.id", ondelete="CASCADE"), primary_key=True),
 )
-
-wiki_group_members = db.Table(
-    "wiki_group_members",
-    db.Column("group_id", db.Integer,
-              db.ForeignKey("wiki_groups.id", ondelete="CASCADE"), primary_key=True),
-    db.Column("user_id", db.Integer,
-              db.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
-)
-
-
-class WikiGroup(db.Model):
-    __tablename__ = "wiki_groups"
-
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(64), unique=True, nullable=False)
-    description = db.Column(db.Text, nullable=False, default="")
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    members = db.relationship("User", secondary=wiki_group_members, lazy="select",
-                              order_by="User.username")
-
-    def __repr__(self) -> str:
-        return "<WikiGroup %r>" % self.name
-
 
 class WikiTopic(db.Model):
     """One node of the topic tree. An article sits in at most one topic."""
@@ -163,8 +143,8 @@ class WikiArticle(db.Model):
     tags = db.relationship(WikiTag, secondary=wiki_article_tags, lazy="select",
                            order_by=WikiTag.name)
     profiles = db.relationship("Profile", secondary=wiki_article_profiles, lazy="select")
-    groups = db.relationship(WikiGroup, secondary=wiki_article_groups, lazy="select",
-                             order_by=WikiGroup.name)
+    groups = db.relationship(UserGroup, secondary=wiki_article_groups, lazy="select",
+                             order_by=UserGroup.name)
 
     @property
     def adoms(self) -> list[str]:

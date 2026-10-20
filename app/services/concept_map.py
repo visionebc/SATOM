@@ -169,7 +169,7 @@ PAGES: tuple[dict, ...] = (
        "restricted audience profile group adom global revision history",
        "Articles the people who run the console write for each other, by "
        "topic and tags, published to Global or chosen ADOMs and optionally "
-       "limited to profiles and Wiki groups."),
+       "limited to profiles and groups."),
     _p("scout.index", "Path Diagnostics", "monitoring",
        "formerly scout troubleshoot fault isolation which layer is broken localise "
        "diagnose service down slow backend firewall drop reset routing "
@@ -681,7 +681,7 @@ EXCLUDED: dict[str, str] = {
     # Operations -> Wiki: the editor and the two moderator pages are doors
     # on wiki.index (its header links them); the tag list is its JS feed.
     "wiki.new": "form", "wiki.topics": "sub-view of wiki.index",
-    "wiki.groups": "sub-view of wiki.index", "wiki.api_tags": "json feed",
+    "wiki.groups": "redirect to user_groups.index", "wiki.api_tags": "json feed",
     "database.report_column_values": "json feed", "database.table": "sub-view of database.index",
     "device_provision.data": "json feed", "dns_tool.records_list": "json feed",
     "dns_tool.records_schema": "json feed", "jobs.index": "json feed",

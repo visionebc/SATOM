@@ -34,8 +34,8 @@ from __future__ import annotations
 from sqlalchemy import and_, exists, false, or_, select, true
 
 from ..extensions import db
-from ..models_wiki import (WikiArticle, wiki_article_adoms, wiki_article_groups,
-                           wiki_article_profiles, wiki_group_members)
+from ..models_wiki import (WikiArticle, user_group_members, wiki_article_adoms,
+                           wiki_article_groups, wiki_article_profiles)
 
 READABLE = ("published", "archived")
 
@@ -96,8 +96,8 @@ def visibility_clause(user):
     my_group = exists().where(and_(
         wiki_article_groups.c.article_id == a_id,
         wiki_article_groups.c.group_id.in_(
-            select(wiki_group_members.c.group_id)
-            .where(wiki_group_members.c.user_id == uid))))
+            select(user_group_members.c.group_id)
+            .where(user_group_members.c.user_id == uid))))
     who_ok = or_(WikiArticle.audience_restricted.is_(False), my_profile, my_group)
 
     readers = and_(WikiArticle.status.in_(READABLE), adom_ok, who_ok)

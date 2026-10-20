@@ -9,8 +9,8 @@ lends its title, its tags or its count to anything a reader sees.
 
 Writes: ``wiki.write`` to create, and to edit every article one can READ
 (services/wiki_access.can_edit); the audience, archiving and deleting stay
-with the author and ``wiki.moderate`` (can_manage), as do the topic tree
-and the Wiki groups. Editing autosaves a shared draft; publishing makes a
+with the author and ``wiki.moderate`` (can_manage), as does the topic tree.
+Groups are Administrator › Access › Groups (views/user_groups.py). Editing autosaves a shared draft; publishing makes a
 new version. Creating, publishing, discarding, archiving and deleting are
 audited (an autosave is not).
 """
@@ -24,8 +24,8 @@ from sqlalchemy import or_
 from ..auth.decorators import require_permission
 from ..branding import PRODUCTS
 from ..extensions import db
-from ..models import Profile, User
-from ..models_wiki import (STATUSES, WikiArticle, WikiGroup, WikiRevision, WikiTag,
+from ..models import Permission, Profile
+from ..models_wiki import (STATUSES, UserGroup, WikiArticle, WikiRevision, WikiTag,
                            WikiTopic, wiki_article_adoms, wiki_article_tags)
 from ..services import wiki, wiki_access
 from ..services import wiki_markdown as wmd
@@ -77,7 +77,7 @@ def _editor_context(article=None, form=None) -> dict:
             "adoms": [(k, n) for k, n in _adom_names().items()
                       if k in wiki_access.assignable_adoms(current_user, _adom_keys())],
             "profiles": Profile.query.order_by(Profile.name).all(),
-            "groups": WikiGroup.query.order_by(WikiGroup.name).all(),
+            "groups": UserGroup.query.order_by(UserGroup.name).all(),
             "may_set_audience": article is None or wiki_access.can_manage(current_user, article),
             "draft_rev": article.draft_rev if article is not None else 0,
             "has_draft": bool(article is not None and wiki.has_draft(article)),
@@ -175,7 +175,8 @@ def _nav_context(*, topic_id=None, tag="") -> dict:
            "nav_total": sum(counts.values()), "nav_untopiced": int(counts.get(None, 0)),
            "nav_tag": tag, "tag_counts": _tag_counts(),
            "may_write": may_write,
-           "may_moderate": wiki_access.is_moderator(current_user)}
+           "may_moderate": wiki_access.is_moderator(current_user),
+           "may_groups": current_user.can(Permission.USER_MANAGE)}
     if may_write:
         ctx["new_editor"] = _editor_context()
         ctx["new_editor"]["default_topic"] = topic_id
@@ -384,7 +385,7 @@ def delete(article_id):
     return redirect(url_for("wiki.index"))
 
 
-# ── moderation: topics and groups ────────────────────────────────────────────
+# ── moderation: topics ────────────────────────────────────────────
 
 @bp.route("/topics", methods=["GET", "POST"])
 @login_required
@@ -419,40 +420,11 @@ def topic_delete(topic_id):
     return redirect(url_for("wiki.topics"))
 
 
-@bp.route("/groups", methods=["GET", "POST"])
-@bp.route("/groups/<int:group_id>", methods=["GET", "POST"])
+@bp.route("/groups")
+@bp.route("/groups/<int:group_id>")
 @login_required
-@require_permission("wiki.moderate")
+@require_permission("wiki.view")
 def groups(group_id=None):
-    group = (db.session.get(WikiGroup, group_id) or abort(404)) if group_id else None
-    if request.method == "POST":
-        form = {"name": request.form.get("name", ""),
-                "description": request.form.get("description", ""),
-                "members": request.form.getlist("members")}
-        try:
-            group = wiki.save_group(form, group)
-        except wiki.WikiError as exc:
-            db.session.rollback()
-            flash(str(exc), "danger")
-            return redirect(url_for("wiki.groups", group_id=group_id) if group_id
-                            else url_for("wiki.groups"))
-        log_action("wiki.group.save", target=group.name,
-                   extra={"group_id": group.id,
-                          "members": [u.username for u in group.members]})
-        flash("Group saved.", "success")
-        return redirect(url_for("wiki.groups"))
-    return render_template("wiki/groups.html", group=group,
-                           groups=WikiGroup.query.order_by(WikiGroup.name).all(),
-                           users=User.query.order_by(User.username).all())
-
-
-@bp.route("/groups/<int:group_id>/delete", methods=["POST"])
-@login_required
-@require_permission("wiki.moderate")
-def group_delete(group_id):
-    group = db.session.get(WikiGroup, group_id) or abort(404)
-    name = group.name
-    wiki.delete_group(group)
-    log_action("wiki.group.delete", target=name, extra={"group_id": group_id})
-    flash("Group deleted. Articles that named it stay restricted.", "success")
-    return redirect(url_for("wiki.groups"))
+    """The Wiki's groups are Administrator › Access › Groups since wiki04;
+    old links land there (which asks for user management itself)."""
+    return redirect(url_for("user_groups.index"))

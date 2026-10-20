@@ -2,7 +2,8 @@
 
 Reading is decided in services/wiki_access.py, never here. This module only
 validates what is written: the article form (title, body, topic, tags,
-audience) and the moderator's topic tree and groups.
+audience) and the moderator's topic tree. Groups are Administrator › Access ›
+Groups (views/user_groups.py), shared with Python Studio apps.
 
 Writing an article is two steps. :func:`save_draft` (autosaved by the
 editor) keeps a shared working draft — readers of a published article keep
@@ -18,8 +19,8 @@ from datetime import datetime
 
 from ..extensions import db
 from ..models import Profile, User
-from ..models_wiki import (STATUSES, WikiArticle, WikiGroup, WikiRevision, WikiTag,
-                           WikiTopic, wiki_article_adoms)
+from ..models_wiki import (STATUSES, UserGroup, WikiArticle, WikiRevision, WikiTag,
+                           WikiTopic, wiki_article_adoms, wiki_article_groups)
 from . import wiki_access
 
 MAX_TAGS = 12
@@ -146,7 +147,7 @@ def _values(user, form: dict, article: WikiArticle | None, *, adom_keys,
         profile_ids = sorted({int(p) for p in (form.get("profiles") or []) if str(p).isdigit()})
         group_ids = sorted({int(g) for g in (form.get("groups") or []) if str(g).isdigit()})
         found_p = Profile.query.filter(Profile.id.in_(profile_ids)).count() if profile_ids else 0
-        found_g = WikiGroup.query.filter(WikiGroup.id.in_(group_ids)).count() if group_ids else 0
+        found_g = UserGroup.query.filter(UserGroup.id.in_(group_ids)).count() if group_ids else 0
         if found_p != len(profile_ids) or found_g != len(group_ids):
             raise WikiError("A selected profile or group no longer exists.")
         restricted = bool(profile_ids or group_ids)
@@ -174,7 +175,7 @@ def _apply(article: WikiArticle, v: dict) -> None:
     article.tags = _tag_rows(v["tags"])
     article.profiles = (Profile.query.filter(Profile.id.in_(v["profiles"])).all()
                         if v["profiles"] else [])
-    article.groups = (WikiGroup.query.filter(WikiGroup.id.in_(v["groups"])).all()
+    article.groups = (UserGroup.query.filter(UserGroup.id.in_(v["groups"])).all()
                       if v["groups"] else [])
     article.audience_restricted = v["restricted"]
     db.session.flush()
@@ -473,32 +474,13 @@ def delete_topic(topic: WikiTopic) -> None:
 
 # ── groups ───────────────────────────────────────────────────────────────────
 
-def save_group(form: dict, group: WikiGroup | None = None) -> WikiGroup:
-    name = str(form.get("name") or "").strip()
-    if not name or len(name) > 64:
-        raise WikiError("A group needs a name of at most 64 characters.")
-    clash = WikiGroup.query.filter(db.func.lower(WikiGroup.name) == name.lower())
-    if group is not None:
-        clash = clash.filter(WikiGroup.id != group.id)
-    if clash.first() is not None:
-        raise WikiError("A group with that name already exists.")
-    ids = sorted({int(u) for u in (form.get("members") or []) if str(u).isdigit()})
-    members = User.query.filter(User.id.in_(ids)).all() if ids else []
-    if len(members) != len(ids):
-        raise WikiError("A selected user no longer exists.")
-    if group is None:
-        group = WikiGroup(created_at=datetime.utcnow())
-        db.session.add(group)
-    group.name = name
-    group.description = str(form.get("description") or "").strip()[:2000]
-    group.members = members
-    db.session.commit()
-    return group
-
-
-def delete_group(group: WikiGroup) -> None:
-    """Articles restricted to this group stay restricted
-    (``audience_restricted``): without it they are visible to nobody but
-    their author and the moderators, never to everybody."""
-    db.session.delete(group)
-    db.session.commit()
+def articles_using_group(group_id: int) -> list[str]:
+    """Titles of the articles whose audience names ``group_id``. Deleting the
+    group does not open them: they stay ``audience_restricted`` and, with no
+    profile or group left, only their author and the moderators read them
+    (services/wiki_access.py)."""
+    rows = (db.session.query(WikiArticle.title)
+            .join(wiki_article_groups, wiki_article_groups.c.article_id == WikiArticle.id)
+            .filter(wiki_article_groups.c.group_id == group_id)
+            .order_by(WikiArticle.title).all())
+    return [r[0] for r in rows]

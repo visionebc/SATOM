@@ -139,7 +139,7 @@ GRANULAR_PERMISSIONS: list[dict] = [
        "profiles and groups"),
     _p("wiki.moderate", "Moderate the Wiki",
        "Read and edit every article whatever its audience, and manage the "
-       "topic tree and the Wiki groups", admin_only=True),
+       "topic tree", admin_only=True),
 ]
 
 

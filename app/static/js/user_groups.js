@@ -38,7 +38,10 @@
   });
   document.querySelectorAll('.ug-del').forEach(function (b) {
     b.addEventListener('click', function () {
-      if (!window.confirm('Delete the group ' + b.getAttribute('data-name') + '?')) return;
+      var nw = parseInt(b.getAttribute('data-wiki') || '0', 10);
+      var msg = 'Delete the group ' + b.getAttribute('data-name') + '?';
+      if (nw) msg += '\n\n' + nw + ' Wiki article(s) are shared with it. They stay closed: only their authors and the Wiki moderators will read them until someone picks a new audience.';
+      if (!window.confirm(msg)) return;
       post(CFG.del + b.getAttribute('data-id') + '/delete').then(function () { window.location.reload(); })
         .catch(function (e) { $('ug-msg').innerHTML = '<span style="color:#8B1C2A;"></span>'; $('ug-msg').firstChild.textContent = e.message; });
     });

@@ -9572,7 +9572,7 @@ msgstr "Échantillons"
 
 #: app/templates/database/py_console.html:17
 msgid "Sandboxed (bubblewrap)."
-msgstr "Sandboxé (bulle d'emballage)."
+msgstr "Isolé dans un bac à sable (bubblewrap)."
 
 #: app/templates/plugins/editor.html:120
 msgid "Sandboxed preview"
@@ -25608,3 +25608,47 @@ msgstr "Site web"
 
 msgid "its active theme"
 msgstr "son thème actif"
+
+#: app/templates/studio/index.html
+msgid "Ctrl+Enter"
+msgstr "Ctrl+Entrée"
+
+#: app/templates/studio/index.html
+msgid "Explorer"
+msgstr "Explorateur"
+
+#: app/templates/studio/index.html
+msgid "Open a script"
+msgstr "Ouvrir un script"
+
+#: app/templates/studio/index.html
+msgid "Python Studio"
+msgstr "Python Studio"
+
+#: app/templates/studio/index.html
+msgid "Python console"
+msgstr "Console Python"
+
+#: app/templates/studio/index.html
+msgid "Python console examples"
+msgstr "Exemples pour la console Python"
+
+#: app/templates/studio/index.html
+msgid "Scratch space: what you run here is not saved in the script, and it runs in the console sandbox (no network, curated data only), not with the settings or credentials of this script."
+msgstr "Espace de brouillon : ce que vous exécutez ici n'est pas enregistré dans le script et s'exécute dans le bac à sable de la console (pas de réseau, données sélectionnées uniquement), pas avec les paramètres ni les identifiants de ce script."
+
+#: app/templates/studio/index.html
+msgid "The console cannot read secrets, open the network or write app files, and is capped at about 8 seconds. It receives only the read-only datasets you tick — curated, masked, SELECT-only — and never reaches the database. Every run is audited."
+msgstr "La console ne peut ni lire les secrets, ni ouvrir le réseau, ni écrire les fichiers de l'application, et elle est limitée à environ 8 secondes. Elle ne reçoit que les jeux de données en lecture seule que vous cochez — sélectionnés, masqués, SELECT uniquement — et n'atteint jamais la base de données. Chaque exécution est auditée."
+
+#: app/templates/studio/index.html
+msgid "Ticked datasets arrive as data[key], each {columns, rows} with rows as a list of dicts."
+msgstr "Les jeux cochés arrivent dans data[key], chacun sous la forme {columns, rows}, rows étant une liste de dicts."
+
+#: app/templates/studio/index.html
+msgid "Try code against the fleet data without saving it in the script"
+msgstr "Tester du code sur les données de la flotte sans l'enregistrer dans le script"
+
+#: app/templates/studio/index.html
+msgid "Write scripts with a form for operators, and try code against the fleet data in a sandboxed console."
+msgstr "Écrivez des scripts avec un formulaire pour les opérateurs et testez du code sur les données de la flotte dans une console isolée."

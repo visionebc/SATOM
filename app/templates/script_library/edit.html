@@ -3,6 +3,7 @@
 {% block content %}
 <div class="fw-page-header d-flex align-items-start">
   <div>
+    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('studio.index', pane='scripts') }}">{{ _('Python Studio') }}</a> › {{ _('Scripts') }}</div>
     <h1 class="fw-page-title"><i class="bi bi-file-earmark-code me-2 text-accent"></i><span id="sl-title">{{ script.name }}</span></h1>
     <p class="text-muted mb-0" style="font-size:13px;">
       <code>{{ script.slug }}</code> ·
@@ -13,7 +14,7 @@
     </p>
   </div>
   <div class="ms-auto d-flex gap-2">
-    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('script_library.index') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Library') }}</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.index', pane='scripts') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Python Studio') }}</a>
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('script_library.download', slug=script.slug) }}"><i class="bi bi-download me-1"></i>{{ _('Download') }}</a>
     <button type="button" class="btn btn-primary btn-sm" id="sl-save" title="{{ _('Ctrl+S. The editor also saves by itself a few seconds after you stop typing.') }}"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
     <button type="button" class="btn btn-success btn-sm" id="sl-publish"><i class="bi bi-rocket-takeoff me-1"></i>{{ _('Publish') }}</button>
@@ -33,6 +34,9 @@
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-settings" type="button"><i class="bi bi-sliders me-1"></i>{{ _('Settings') }}</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-test" type="button"><i class="bi bi-play-circle me-1"></i>{{ _('Test') }}</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-versions" type="button"><i class="bi bi-tags me-1"></i>{{ _('Versions & runs') }}</button></li>
+  {% if console %}
+  <li class="nav-item ms-auto"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sl-tab-console" type="button" title="{{ _('Try code against the fleet data without saving it in the script') }}"><i class="bi bi-terminal me-1"></i>{{ _('Console') }}</button></li>
+  {% endif %}
 </ul>
 
 <div class="tab-content">
@@ -215,6 +219,14 @@
       <button type="button" class="btn btn-outline-danger btn-sm" id="sl-delete"><i class="bi bi-trash me-1"></i>{{ _('Delete script') }}</button>
     </div>
   </div>
+
+  {% if console %}
+  {# ------------------------------------------------------------- console #}
+  <div class="tab-pane fade" id="sl-tab-console">
+    <p class="text-muted" style="font-size:12px;">{{ _('Scratch space: what you run here is not saved in the script, and it runs in the console sandbox (no network, curated data only), not with the settings or credentials of this script.') }}</p>
+    {% include "studio/_console.html" %}
+  </div>
+  {% endif %}
 </div>
 
 <div class="modal fade fw-modal" id="sl-view-modal" tabindex="-1" aria-hidden="true">

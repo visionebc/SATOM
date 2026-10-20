@@ -8,7 +8,7 @@
       {{ _('Scripts your administrators published for you. Fill in the form and run one now, or save the values with a schedule.') }}</p>
   </div>
   {% if current_user.can('studio.script_library') %}
-  <a class="btn btn-outline-secondary btn-sm ms-auto" href="{{ url_for('script_library.index') }}"><i class="bi bi-file-earmark-code me-1"></i>{{ _('Script Library') }}</a>
+  <a class="btn btn-outline-secondary btn-sm ms-auto" href="{{ url_for('studio.index', pane='scripts') }}"><i class="bi bi-file-earmark-code me-1"></i>{{ _('Script Library') }}</a>
   {% endif %}
 </div>
 

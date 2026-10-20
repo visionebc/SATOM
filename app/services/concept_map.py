@@ -617,17 +617,15 @@ PAGES: tuple[dict, ...] = (
     _p("plugins.gallery", "Plugin Gallery", "dev",
        "gallery published plugin browse custom view share",
        "Published custom views, for everyone."),
-    _p("database.py_console_page", "Python Console", "dev",
-       "python console repl shell execute code debug",
-       "A Python console against the live application."),
     _p("scripts.index", "Scripts", "automation",
        "scripts run operator form schedule cron saved run python",
        "Run the scripts your administrators published, now or on a schedule."),
-    _p("script_library.index", "Script Library", "dev",
-       "script library python form operator run sandbox publish version ide "
-       "edit compare diff versions database lookup dataset query builder "
-       "dropdown table join field",
-       "Python scripts with a form that operators fill in and run."),
+    _p("studio.index", "Python Studio", "dev",
+       "python studio console repl sandbox dataset script library form operator "
+       "run publish version ide edit compare diff versions database lookup "
+       "query builder dropdown table join field",
+       "Python scripts with a form that operators run, and a sandboxed console "
+       "over the curated datasets, in one studio."),
 )
 
 
@@ -637,6 +635,10 @@ PAGES: tuple[dict, ...] = (
 # map's coverage claim true instead of aspirational.
 # --------------------------------------------------------------------------
 EXCLUDED: dict[str, str] = {
+    "database.py_console_page": "old URL; redirects to studio.index (Console)",
+    "database.legacy_scripts": "old /database/scripts URLs; redirect to /studio/scripts",
+    "script_library.index": "redirects to studio.index (the Scripts pane)",
+    "settings.update_sources_state": "json feed",
     "factory_catalog.compare": "detail page of factory_catalog.index",
     # The New-process form is reached from the Process page and has no
     # standing of its own on the map; "where does X live" is answered by
@@ -839,14 +841,30 @@ def global_only(endpoint: str, app=None) -> bool:
     return bool(getattr(fn, "__global_only__", False)) if fn else False
 
 
-def _visible(page, user, app) -> bool:
-    perm = required_permission(page["endpoint"], app)
+def user_passes(user, perm) -> bool:
+    """Whether *user* passes a stamp: one key, or a tuple of keys any of
+    which opens the page (``require_any_permission``). ``None`` passes."""
     if perm is None:
         return True
     try:
-        return bool(user is not None and user.is_authenticated and user.can(perm))
+        if not (user is not None and user.is_authenticated):
+            return False
+        if isinstance(perm, (tuple, list, frozenset, set)):
+            return any(user.can(p) for p in perm)
+        return bool(user.can(perm))
     except Exception:  # noqa: BLE001 — an odd user object hides the row, never 500s
         return False
+
+
+def _perm_label(perm):
+    """The stamp as the map prints it: ``a or b`` for an any-of stamp."""
+    if perm is None or isinstance(perm, str):
+        return perm
+    return " or ".join(perm)
+
+
+def _visible(page, user, app) -> bool:
+    return user_passes(user, required_permission(page["endpoint"], app))
 
 
 def build(user=None, app=None) -> list[dict]:
@@ -872,7 +890,7 @@ def build(user=None, app=None) -> list[dict]:
         by_concept.setdefault(page["concept"], []).append({
             "endpoint": page["endpoint"], "label": page["label"],
             "blurb": page["blurb"], "keywords": page["keywords"],
-            "href": href, "permission": required_permission(page["endpoint"], app),
+            "href": href, "permission": _perm_label(required_permission(page["endpoint"], app)),
         })
     clusters = []
     for concept in CONCEPTS:

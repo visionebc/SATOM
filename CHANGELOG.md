@@ -8,6 +8,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Python Studio** (Administrator → Studio) joins the **Script Library** and
+  the **Python Console** in one page, as asked: "join the script library and
+  the python console in a single studio". An **Explorer** on the left switches
+  between the **Scripts** pane (the library list) and the **Console** pane
+  (the sandboxed console over the curated datasets) and opens any script in its
+  editor. The script editor gained a **Console** tab, to try code against the
+  fleet data without saving it in the script. One menu entry replaces the two.
+  Each pane keeps its own permission key and its own sandbox: the page opens
+  for a holder of `studio.script_library` **or** `studio.python_console`, and
+  the console never runs for a profile that only holds the library key. New
+  addresses: `/studio/`, `/studio/scripts/…`, `/studio/console/run`; the old
+  `/database/py-console` and `/database/scripts/…` addresses redirect (308
+  keeps the method and the body of an old POST).
+
 - **Settings → User Interface → Appearance → Import from a site…** builds a
   theme from somewhere else, as a new theme that is **not applied** until you
   review it and press Apply. Asked for as "a button to take a template from
@@ -30,6 +44,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
     sites are allowed.
 
 ### Fixed
+
+- In the Global ADOM a profile that held **only** `studio.script_library` (and
+  not `user_manage`) saw no Studio group at all, so its one tool had no menu
+  entry. It now gets the Studio group with Python Studio.
+- The Database page offered a **Python Console** button to profiles without
+  `studio.python_console`; the button now follows that key.
+- The Python console used dark-theme colours on SATOM's light pages (a pale
+  pink error text on a pale pink panel, a grey output pane); it now uses the
+  light theme's panels and the calibrated error red.
+- Translations: "Sandboxed (bubblewrap)" read in Spanish, French and Italian as
+  the packing material ("burbuja de burlete", "bulle d'emballage",
+  "imballaggio in bolle"); bubblewrap is the name of the sandbox and is no
+  longer translated.
+- The concept-map coverage guard was red on `main`: the Update sources state
+  feed (`settings.update_sources_state`) was neither mapped nor excluded.
 
 - **Export** left out the theme's logo and favicon, so a theme moved to
   another node arrived without its brand mark and nothing said so. The file is

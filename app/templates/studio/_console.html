@@ -1,0 +1,60 @@
+{# Python Studio > Console — the scratch console (was /database/py-console).
+   Shared by studio/index.html (Console pane) and the script editor (Console
+   tab). Needs `datasets` and `examples`; runs through studio.console_run.
+   Behaviour: static/js/studio_console.js. #}
+<div class="fw-card sl-how mb-3">
+  <div class="fw-card-body py-2 d-flex gap-2" style="font-size:12px;">
+    <i class="bi bi-shield-lock text-accent" style="font-size:18px;"></i>
+    <span><strong>{{ _('Sandboxed (bubblewrap).') }}</strong>
+      {{ _('The console cannot read secrets, open the network or write app files, and is capped at about 8 seconds. It receives only the read-only datasets you tick — curated, masked, SELECT-only — and never reaches the database. Every run is audited.') }}</span>
+  </div>
+</div>
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="fw-card h-100">
+      <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-collection me-2 text-accent"></i>{{ _('Data bundle') }}</span></div>
+      <div class="fw-card-body">
+        <p class="text-muted small mb-2">{{ _('Ticked datasets arrive as data[key], each {columns, rows} with rows as a list of dicts.') }}</p>
+        <div id="pyc-ds-list">
+          {% for d in datasets %}
+          <div class="form-check mb-2">
+            <input class="form-check-input pyc-ds" type="checkbox" value="{{ d.key }}" id="pyc-ds-{{ d.key }}">
+            <label class="form-check-label" for="pyc-ds-{{ d.key }}">
+              <code>{{ d.key }}</code>
+              <span class="d-block text-muted" style="font-size:11px;line-height:1.3;">{{ d.description }}</span>
+            </label>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-8">
+    <div class="fw-card">
+      <div class="fw-card-header d-flex align-items-center flex-wrap" style="gap:8px;">
+        <span class="fw-card-title" style="font-size:13px;"><i class="bi bi-terminal me-2 text-accent"></i>{{ _('Python console') }}</span>
+        <button type="button" id="btn-examples" class="btn btn-outline-primary btn-sm ms-auto">
+          <i class="bi bi-collection me-1"></i>{{ _('Browse examples') }}</button>
+        <button type="button" id="pyc-run" class="btn btn-primary btn-sm" title="{{ _('Ctrl+Enter') }}">
+          <i class="bi bi-play-fill me-1"></i>{{ _('Run') }}</button>
+      </div>
+      <div class="fw-card-body">
+        <textarea id="pyc-src" class="form-control" spellcheck="false" aria-label="{{ _('Python console') }}"
+          style="font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;min-height:300px;"
+          placeholder="# data holds the datasets you ticked on the left.&#10;# e.g. print(len(data['fleet_appliances']['rows']))"></textarea>
+        <div id="pyc-status" class="mt-2" style="font-size:12px;min-height:20px;"></div>
+        <div class="text-muted small mb-1 mt-1">{{ _('Output (stdout)') }}</div>
+        <pre id="pyc-stdout" class="p-2 mb-0" style="min-height:60px;max-height:340px;overflow:auto;font-size:12px;white-space:pre-wrap;background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:8px;"></pre>
+        <div class="mt-2" id="pyc-stderr-wrap" style="display:none;">
+          <div class="small mb-1" style="color:#8B1C2A;">{{ _('Errors (stderr)') }}</div>
+          <pre id="pyc-stderr" class="p-2 mb-0" style="max-height:240px;overflow:auto;font-size:12px;white-space:pre-wrap;background:#FBEFF1;border:1px solid #E7B8C0;border-radius:8px;color:#8B1C2A;"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% set exb_title = _('Python console examples') %}
+{% include '_example_browser.html' %}
+<script nonce="{{ csp_nonce }}" id="ex-catalog" type="application/json">{{ examples|tojson }}</script>
+<script type="application/json" id="pyc-config">{{ {'run': url_for('studio.console_run')}|tojson }}</script>
+<script src="{{ asset('js/studio_console.js') }}" nonce="{{ csp_nonce }}"></script>

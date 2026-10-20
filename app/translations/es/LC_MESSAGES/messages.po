@@ -9572,7 +9572,7 @@ msgstr "Muestras"
 
 #: app/templates/database/py_console.html:17
 msgid "Sandboxed (bubblewrap)."
-msgstr "En un entorno aislado (burbuja de burlete)."
+msgstr "En un entorno aislado (bubblewrap)."
 
 #: app/templates/plugins/editor.html:120
 msgid "Sandboxed preview"
@@ -25627,3 +25627,47 @@ msgstr "Sitio web"
 
 msgid "its active theme"
 msgstr "su tema activo"
+
+#: app/templates/studio/index.html
+msgid "Ctrl+Enter"
+msgstr "Ctrl+Enter"
+
+#: app/templates/studio/index.html
+msgid "Explorer"
+msgstr "Explorador"
+
+#: app/templates/studio/index.html
+msgid "Open a script"
+msgstr "Abrir un script"
+
+#: app/templates/studio/index.html
+msgid "Python Studio"
+msgstr "Python Studio"
+
+#: app/templates/studio/index.html
+msgid "Python console"
+msgstr "Consola de Python"
+
+#: app/templates/studio/index.html
+msgid "Python console examples"
+msgstr "Ejemplos de la consola de Python"
+
+#: app/templates/studio/index.html
+msgid "Scratch space: what you run here is not saved in the script, and it runs in the console sandbox (no network, curated data only), not with the settings or credentials of this script."
+msgstr "Espacio de pruebas: lo que ejecutes aquí no se guarda en el script y corre en el entorno aislado de la consola (sin red, solo datos curados), no con los ajustes ni las credenciales de este script."
+
+#: app/templates/studio/index.html
+msgid "The console cannot read secrets, open the network or write app files, and is capped at about 8 seconds. It receives only the read-only datasets you tick — curated, masked, SELECT-only — and never reaches the database. Every run is audited."
+msgstr "La consola no puede leer secretos, abrir la red ni escribir ficheros de la aplicación, y tiene un límite de unos 8 segundos. Solo recibe los conjuntos de datos de solo lectura que marques —curados, enmascarados, solo SELECT— y nunca llega a la base de datos. Cada ejecución queda auditada."
+
+#: app/templates/studio/index.html
+msgid "Ticked datasets arrive as data[key], each {columns, rows} with rows as a list of dicts."
+msgstr "Los conjuntos marcados llegan como data[key], cada uno {columns, rows} con rows como lista de dicts."
+
+#: app/templates/studio/index.html
+msgid "Try code against the fleet data without saving it in the script"
+msgstr "Prueba código con los datos de la flota sin guardarlo en el script"
+
+#: app/templates/studio/index.html
+msgid "Write scripts with a form for operators, and try code against the fleet data in a sandboxed console."
+msgstr "Escribe scripts con un formulario para los operadores y prueba código con los datos de la flota en una consola aislada."

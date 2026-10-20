@@ -557,7 +557,7 @@
          custom profile holding one but no Administrator group keeps the
          standalone group here (partials/nav_studio.html). #}
       {% if not current_user.can('user_manage') %}
-      {% if current_user.is_authenticated and (current_user.can('studio.python_console') or current_user.can('studio.plugin_studio') or current_user.can('studio.lua_studio')) %}
+      {% if current_user.is_authenticated and (current_user.can('studio.python_console') or current_user.can('studio.script_library') or current_user.can('studio.plugin_studio') or current_user.can('studio.lua_studio')) %}
       {% include 'partials/nav_studio.html' %}
       {% endif %}
       {# Not an {% else %}: a Studio holder without user_manage lost Process. #}

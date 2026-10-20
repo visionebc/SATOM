@@ -411,7 +411,7 @@ def create_app(config_override: object | None = None) -> Flask:
             # 'adc_api' is the ADC-scoped API hub. RBAC still gates each write.
             adc_bps = {'concept_map', 'adc', 'adc_api', 'appliances', 'settings', 'audit',
                        'jobs', 'notifications', 'profiles', 'users',
-                       'database', 'script_library', 'locks',
+                       'database', 'script_library', 'studio', 'locks',
                        # 'advisor' and 'adom_assets' are rendered into EVERY
                        # ADOM's sidebar by partials/nav_advisor.html and
                        # partials/nav_adom_assets.html. Both were missing from
@@ -512,7 +512,7 @@ def create_app(config_override: object | None = None) -> Flask:
             faz_bps = {'concept_map', 'faz', 'faz_api', 'appliances', 'settings', 'audit', 'jobs',
                        'notifications', 'profiles', 'users',
                        'advisor', 'adom_assets', 'console',   # see the adc_bps note
-                       'database', 'script_library', 'locks', 'firmware', 'segments',
+                       'database', 'script_library', 'studio', 'locks', 'firmware', 'segments',
                        'device_provision',
                        # Change Types is an Administration page, mirrored
                        # into every ADOM for the same reason Change Requests
@@ -566,7 +566,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        # sidebar offers neither, the seeded cap_firmware is
                        # False and services/backup.py has no
                        # FortiAuthenticator transport — both were URL-only.
-                       'database', 'script_library', 'locks', 'segments',
+                       'database', 'script_library', 'studio', 'locks', 'segments',
                        'device_provision',
                        # Change Types is an Administration page, mirrored
                        # into every ADOM for the same reason Change Requests
@@ -625,7 +625,7 @@ def create_app(config_override: object | None = None) -> Flask:
             fgt_bps = {'concept_map', 'fgt', 'fgt_api', 'appliances', 'settings', 'audit',
                        'jobs', 'notifications', 'profiles', 'users',
                        'advisor', 'adom_assets', 'console',   # see the adc_bps note
-                       'database', 'script_library', 'locks', 'segments', 'device_provision',
+                       'database', 'script_library', 'studio', 'locks', 'segments', 'device_provision',
                        'cr_types', 'process', 'scheduled_actions',
                        'scout', 'calendar_plan',   # see the faz_bps note
                        'architecture', 'netarch', 'metrics', 'search', 'analysis',
@@ -771,14 +771,8 @@ def create_app(config_override: object | None = None) -> Flask:
         be offered to a profile the page then answers 403 to. Endpoints with
         no stamp (login-only, or gated in the body) stay visible."""
         from flask_login import current_user
-        from .services.concept_map import required_permission
-        perm = required_permission(endpoint, app)
-        if perm is None:
-            return True
-        try:
-            return bool(current_user.is_authenticated and current_user.can(perm))
-        except Exception:  # noqa: BLE001 - an odd user object hides the link, never 500s
-            return False
+        from .services.concept_map import required_permission, user_passes
+        return user_passes(current_user, required_permission(endpoint, app))
 
     @app.template_global()
     def device_scope_owner(appl):
@@ -2679,6 +2673,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.locks", "bp"),
         ("app.views.database", "bp"),
         ("app.views.script_library", "bp"),
+        ("app.views.studio", "bp"),
         ("app.views.scripts", "bp"),
         ("app.views.system_backup", "bp"),
         ("app.views.self_update", "bp"),

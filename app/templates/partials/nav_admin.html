@@ -18,9 +18,11 @@
    System holds System Automations since 2026-10-14 (operator): SATOM's own
    automations are administration, not the fleet work under Automation.
 
-   Studio holds Python Console, Plugin Studio and Lua Studio in the Global
-   ADOM (partials/nav_studio.html); in a device ADOM it holds Python Console,
-   because the two studios live in that ADOM's Plugins group. Without
+   Studio holds Python Studio, Plugin Studio and Lua Studio in the Global
+   ADOM (partials/nav_studio.html); in a device ADOM it holds Python Studio,
+   because the two other studios live in that ADOM's Plugins group. Python
+   Studio (2026-10-20) is the Script Library and the Python console in one
+   page; its link follows either key (require_any_permission). Without
    user_manage the group is replaced by the Process entry on its own
    (partials/nav_process_group.html), as before.
    ========================================================================= #}
@@ -126,13 +128,9 @@
     {% if _pk == 'global' %}
     {% with studio_entries_only = True %}{% include 'partials/nav_studio.html' %}{% endwith %}
     {% else %}
-    {% if current_user.can('studio.python_console') and may_open('database.py_console_page') %}
-    <a class="fw-nav-item {{ 'active' if request.endpoint == 'database.py_console_page' else '' }}" href="{{ url_for('database.py_console_page') }}">
-      <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Python Console') }}</span></a>
-    {% endif %}
-    {% if current_user.can('studio.script_library') and may_open('script_library.index') %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint == 'script_library' else '' }}" href="{{ url_for('script_library.index') }}">
-      <i class="bi bi-file-earmark-code fw-nav-icon"></i><span>{{ _('Script Library') }}</span></a>
+    {% if may_open('studio.index') %}{# studio.python_console OR studio.script_library #}
+    <a class="fw-nav-item {{ 'active' if request.blueprint in ['studio', 'script_library'] else '' }}" href="{{ url_for('studio.index') }}">
+      <i class="bi bi-code-slash fw-nav-icon"></i><span>{{ _('Python Studio') }}</span></a>
     {% endif %}
     {% endif %}
 {% endset %}
@@ -140,7 +138,7 @@
 {% set _s_system %}
     {% include "partials/nav_collection.html" %}
     {% if may_open('database.index') %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint == 'database' and request.endpoint != 'database.py_console_page' else '' }}" href="{{ url_for('database.index') }}">
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'database' else '' }}" href="{{ url_for('database.index') }}">
       <i class="bi bi-hdd fw-nav-icon"></i><span>{{ _('Database') }}</span></a>
     {% endif %}
     {# System Automations: SATOM's own housekeeping (syncs, backups, probes,

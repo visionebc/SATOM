@@ -396,7 +396,8 @@ FortiGate, FortiAnalyzer and FortiAuthenticator). <strong>Administrator</strong>
 into sections — Access, Change Management, Devices, Objects, Studio and System
 — and both the sections and their entries are alphabetical in the console's
 language; a section with no entry you may open is not drawn. <strong>Studio</strong> holds
-Python Console in every ADOM, and also Plugin Studio and Lua Studio in Global. The Global ADOM keeps its <strong>Global</strong> block for the fleet pages
+<strong>Python Studio</strong> (the Script Library and the Python console in one page, §23.3)
+in every ADOM, and also Plugin Studio and Lua Studio in Global. The Global ADOM keeps its <strong>Global</strong> block for the fleet pages
 and has no Operations group. A profile that cannot see one of those groups
 keeps the entry where it was before — Appliances under
 Operations, the API menu (console, Schema builds, Build compatibility) as a
@@ -4373,9 +4374,9 @@ others, and without being given user administration.</p>
 </thead>
 <tbody>
 <tr>
-<td><strong>Python Console</strong></td>
-<td><code>/database/py-console</code></td>
-<td>Throwaway Python over the curated fleet datasets</td>
+<td><strong>Python Studio</strong></td>
+<td><code>/studio</code></td>
+<td>One page, two panes: <strong>Scripts</strong> (the Script Library: Python scripts with a form that operators fill in and run, §23.4) and <strong>Console</strong> (throwaway Python over the curated fleet datasets, §23.3)</td>
 </tr>
 <tr>
 <td><strong>Plugin Studio</strong></td>
@@ -4387,13 +4388,18 @@ others, and without being given user administration.</p>
 <td><code>/lua</code></td>
 <td>Device scripts for FortiWeb <em>Web Scripting</em> and FortiADC <em>Scripting</em></td>
 </tr>
-<tr>
-<td><strong>Script Library</strong></td>
-<td><code>/database/scripts</code></td>
-<td>Python scripts with a form that operators fill in and run (§23.4)</td>
-</tr>
 </tbody>
 </table>
+<p><strong>Python Studio</strong> (since the release after 3.3.7) replaces the two menu entries
+<em>Python Console</em> and <em>Script Library</em>. On the left an <strong>Explorer</strong> switches
+between the <strong>Scripts</strong> pane and the <strong>Console</strong> pane and opens any script in
+its editor; the editor (<code>/studio/scripts/&lt;id&gt;</code>) has a <strong>Console</strong> tab too, to
+try code against the fleet data without saving it in the script. Uniting the
+pages united neither the keys nor the sandboxes: the page opens for a holder of
+<code>studio.script_library</code> <strong>or</strong> <code>studio.python_console</code>, and each pane, the
+editor's Console tab and the console's run endpoint still ask for their own
+key. The old addresses (<code>/database/py-console</code>, <code>/database/scripts/…</code>)
+redirect to the new ones.</p>
 <h3 id="231-plugin-studio-and-custom-views">23.1 Plugin Studio and Custom Views</h3>
 <p>A plugin is a Jinja body plus optional CSS and JS, bound to a list of <strong>curated
 datasets</strong> (fleet appliances, cached server policies, pools, WAF profiles,
@@ -4470,7 +4476,8 @@ in that order. Targets are <strong>FortiWeb "Web Scripting"</strong> and <strong
   preview and the real push asks twice.</li>
 </ul>
 <h3 id="233-python-console">23.3 Python Console</h3>
-<p>Admin-authored Python, run against the <strong>same curated dataset bundle</strong> the
+<p>The <strong>Console</strong> pane of Python Studio (<strong>Administrator → Studio → Python
+Studio → Console</strong>), also a tab in every script's editor. Admin-authored Python, run against the <strong>same curated dataset bundle</strong> the
 plugins use, in a bubblewrap jail with no environment, no network namespace and
 none of the application tree mounted — so a script cannot open the <code>.env</code>, the
 database or the keyring, and cannot open a socket. Wall-clock, CPU, memory and
@@ -4479,8 +4486,8 @@ the data; it never touches the database itself. Every run is audited, including
 the first kilobyte of the source.</p>
 <h3 id="234-script-library">23.4 Script Library</h3>
 <p>Python scripts you keep, with a <strong>form</strong> an operator fills in. You write and
-test them here (<strong>Administrator → Studio → Script Library</strong>, also reachable from
-the Python Console); you publish a version; operators run that version. Gated by
+test them here (<strong>Administrator → Studio → Python Studio → Scripts</strong>); you
+publish a version; operators run that version. Gated by
 <code>studio.script_library</code>.</p>
 <p><strong>A script is a small project.</strong> <code>main.py</code> is what runs; other <code>.py</code> files are
 modules it can import (<code>from lib.devices import …</code>), and text files (<code>.json</code>,
@@ -4489,7 +4496,7 @@ modules it can import (<code>from lib.devices import …</code>), and text files
 zip of a folder is unwrapped); the upload is loaded into the editor and saved
 at once, as a new version. <strong>Download</strong> gives the current state or any version
 as a zip.</p>
-<p><strong>The library page</strong> shows how scripts run in one strip at the top, a search
+<p><strong>The Scripts pane</strong> shows how scripts run in one strip at the top, a search
 box and the script table: published version, latest version (flagged when it is
 not published), form fields, network, audience and last change. Row actions:
 <strong>Edit</strong> (every edit saves a new version), <strong>Compare versions</strong>, <strong>Versions and

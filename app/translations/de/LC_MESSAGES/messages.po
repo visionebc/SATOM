@@ -25606,3 +25606,47 @@ msgstr "Website"
 
 msgid "its active theme"
 msgstr "sein aktives Thema"
+
+#: app/templates/studio/index.html
+msgid "Ctrl+Enter"
+msgstr "Strg+Enter"
+
+#: app/templates/studio/index.html
+msgid "Explorer"
+msgstr "Explorer"
+
+#: app/templates/studio/index.html
+msgid "Open a script"
+msgstr "Skript öffnen"
+
+#: app/templates/studio/index.html
+msgid "Python Studio"
+msgstr "Python Studio"
+
+#: app/templates/studio/index.html
+msgid "Python console"
+msgstr "Python-Konsole"
+
+#: app/templates/studio/index.html
+msgid "Python console examples"
+msgstr "Beispiele für die Python-Konsole"
+
+#: app/templates/studio/index.html
+msgid "Scratch space: what you run here is not saved in the script, and it runs in the console sandbox (no network, curated data only), not with the settings or credentials of this script."
+msgstr "Notizbereich: Was Sie hier ausführen, wird nicht im Skript gespeichert und läuft in der Sandbox der Konsole (kein Netzwerk, nur kuratierte Daten), nicht mit den Einstellungen oder Zugangsdaten dieses Skripts."
+
+#: app/templates/studio/index.html
+msgid "The console cannot read secrets, open the network or write app files, and is capped at about 8 seconds. It receives only the read-only datasets you tick — curated, masked, SELECT-only — and never reaches the database. Every run is audited."
+msgstr "Die Konsole kann keine Geheimnisse lesen, kein Netzwerk öffnen und keine Anwendungsdateien schreiben und ist auf etwa 8 Sekunden begrenzt. Sie erhält nur die schreibgeschützten Datensätze, die Sie ankreuzen – kuratiert, maskiert, nur SELECT – und erreicht nie die Datenbank. Jede Ausführung wird protokolliert."
+
+#: app/templates/studio/index.html
+msgid "Ticked datasets arrive as data[key], each {columns, rows} with rows as a list of dicts."
+msgstr "Angekreuzte Datensätze kommen als data[key] an, jeweils {columns, rows}, wobei rows eine Liste von Dicts ist."
+
+#: app/templates/studio/index.html
+msgid "Try code against the fleet data without saving it in the script"
+msgstr "Code mit den Flottendaten testen, ohne ihn im Skript zu speichern"
+
+#: app/templates/studio/index.html
+msgid "Write scripts with a form for operators, and try code against the fleet data in a sandboxed console."
+msgstr "Schreiben Sie Skripte mit einem Formular für Operatoren und testen Sie Code mit den Flottendaten in einer abgeschotteten Konsole."

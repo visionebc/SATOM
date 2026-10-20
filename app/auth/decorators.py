@@ -24,6 +24,24 @@ def require_permission(perm):
     return decorator
 
 
+def require_any_permission(*perms):
+    """Gate a view on holding ANY of *perms* — for a page that unites tools
+    with separate keys (Python Studio: ``studio.python_console`` and
+    ``studio.script_library``). Each part of the page still checks its own
+    key. The stamp is the tuple; ``concept_map.user_passes`` reads it."""
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            if not current_user.is_authenticated:
+                return redirect(url_for('auth.login'))
+            if not any(current_user.can(p) for p in perms):
+                abort(403)
+            return f(*args, **kwargs)
+        decorated.__required_permission__ = tuple(perms)
+        return decorated
+    return decorator
+
+
 def require_admin(f):
     return require_permission('user_manage')(f)
 

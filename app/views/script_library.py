@@ -1,4 +1,5 @@
-"""Script Library -- the administrator's side (Administrator > Studio).
+"""Script Library -- the administrator's side (Administrator > Studio >
+Python Studio, ``views.studio``; the library list is its Scripts pane).
 
 Write a script (a small multi-file project), define the form operators fill
 in, test it in the sandbox, publish frozen versions. Storage and validation
@@ -20,7 +21,7 @@ from ..services import script_library as SL
 from ..services import script_vault as SV
 from ..services.audit import log_action
 
-bp = Blueprint("script_library", __name__, url_prefix="/database/scripts")
+bp = Blueprint("script_library", __name__, url_prefix="/studio/scripts")
 PERM = "studio.script_library"
 
 
@@ -44,11 +45,8 @@ def _err(exc: Exception, code: int = 400):
 @login_required
 @require_permission(PERM)
 def index():
-    from ..services import sandbox
-    return render_template("script_library/index.html",
-                           scripts=SL.list_scripts(),
-                           runs=SL.recent_runs(limit=15),
-                           sandbox_ok=sandbox.available())
+    """The list is Python Studio's Scripts pane."""
+    return redirect(url_for("studio.index", pane="scripts"))
 
 
 @bp.route("/create", methods=["POST"])
@@ -62,7 +60,7 @@ def create():
     except SL.ScriptError as exc:
         from flask import flash
         flash(str(exc), "danger")
-        return redirect(url_for("script_library.index"))
+        return redirect(url_for("studio.index", pane="scripts"))
     log_action("script_library.create", target=slug)
     return redirect(url_for("script_library.edit", slug=slug))
 
@@ -144,8 +142,12 @@ def edit(slug):
         abort(404)
     if script is None:
         abort(404)
-    from ..services import sandbox
+    from ..services import sandbox, plugin_sandbox, py_examples
+    console = current_user.can("studio.python_console")
     return render_template("script_library/edit.html", script=script,
+                           console=console,
+                           datasets=plugin_sandbox.dataset_catalog() if console else [],
+                           examples=py_examples.all_examples() if console else [],
                            vault_ok=SV.available(),
                            cred_status=SV.status(slug, script.get("credentials") or []),
                            runs=SL.recent_runs(slug, limit=20),
@@ -368,7 +370,7 @@ def delete(slug):
     log_action("script_library.delete", target=slug, extra={"credentials_forgotten": names})
     if request.is_json:
         return jsonify({"ok": True})
-    return redirect(url_for("script_library.index"))
+    return redirect(url_for("studio.index", pane="scripts"))
 
 
 @bp.route("/runs/<rid>")

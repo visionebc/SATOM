@@ -114,10 +114,27 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
-<li><strong>Settings → User Interface → Appearance → Import from a site…</strong> builds a
+<li>
+<p><strong>Python Studio</strong> (Administrator → Studio) joins the <strong>Script Library</strong> and
+  the <strong>Python Console</strong> in one page, as asked: "join the script library and
+  the python console in a single studio". An <strong>Explorer</strong> on the left switches
+  between the <strong>Scripts</strong> pane (the library list) and the <strong>Console</strong> pane
+  (the sandboxed console over the curated datasets) and opens any script in its
+  editor. The script editor gained a <strong>Console</strong> tab, to try code against the
+  fleet data without saving it in the script. One menu entry replaces the two.
+  Each pane keeps its own permission key and its own sandbox: the page opens
+  for a holder of <code>studio.script_library</code> <strong>or</strong> <code>studio.python_console</code>, and
+  the console never runs for a profile that only holds the library key. New
+  addresses: <code>/studio/</code>, <code>/studio/scripts/…</code>, <code>/studio/console/run</code>; the old
+  <code>/database/py-console</code> and <code>/database/scripts/…</code> addresses redirect (308
+  keeps the method and the body of an old POST).</p>
+</li>
+<li>
+<p><strong>Settings → User Interface → Appearance → Import from a site…</strong> builds a
   theme from somewhere else, as a new theme that is <strong>not applied</strong> until you
   review it and press Apply. Asked for as "a button to take a template from
-  another site: the logo, the colours, the left sidebar".</li>
+  another site: the logo, the colours, the left sidebar".</p>
+</li>
 <li><strong>Another SATOM node:</strong> its address plus an API token minted there with the
     <code>read</code> scope. The theme arrives exactly as it is there, logo and favicon
     included: the active theme, or the one named. The token is used for that
@@ -137,9 +154,27 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
-<li><strong>Export</strong> left out the theme's logo and favicon, so a theme moved to
+<li>In the Global ADOM a profile that held <strong>only</strong> <code>studio.script_library</code> (and
+  not <code>user_manage</code>) saw no Studio group at all, so its one tool had no menu
+  entry. It now gets the Studio group with Python Studio.</li>
+<li>The Database page offered a <strong>Python Console</strong> button to profiles without
+  <code>studio.python_console</code>; the button now follows that key.</li>
+<li>The Python console used dark-theme colours on SATOM's light pages (a pale
+  pink error text on a pale pink panel, a grey output pane); it now uses the
+  light theme's panels and the calibrated error red.</li>
+<li>Translations: "Sandboxed (bubblewrap)" read in Spanish, French and Italian as
+  the packing material ("burbuja de burlete", "bulle d'emballage",
+  "imballaggio in bolle"); bubblewrap is the name of the sandbox and is no
+  longer translated.</li>
+<li>
+<p>The concept-map coverage guard was red on <code>main</code>: the Update sources state
+  feed (<code>settings.update_sources_state</code>) was neither mapped nor excluded.</p>
+</li>
+<li>
+<p><strong>Export</strong> left out the theme's logo and favicon, so a theme moved to
   another node arrived without its brand mark and nothing said so. The file is
-  now schema <code>satom.ui-theme/2</code> and carries both. Version 1 files still import.</li>
+  now schema <code>satom.ui-theme/2</code> and carries both. Version 1 files still import.</p>
+</li>
 <li>The top-bar logo no longer stretches: a non-square upload keeps its
   proportions in the 28 px slot (<code>object-fit: contain</code>).</li>
 <li><strong>System backup bundles</strong> did not include <code>data/branding/</code>, even though

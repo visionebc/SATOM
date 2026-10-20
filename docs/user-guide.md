@@ -278,7 +278,8 @@ FortiGate, FortiAnalyzer and FortiAuthenticator). **Administrator** is split
 into sections — Access, Change Management, Devices, Objects, Studio and System
 — and both the sections and their entries are alphabetical in the console's
 language; a section with no entry you may open is not drawn. **Studio** holds
-Python Console in every ADOM, and also Plugin Studio and Lua Studio in Global. The Global ADOM keeps its **Global** block for the fleet pages
+**Python Studio** (the Script Library and the Python console in one page, §23.3)
+in every ADOM, and also Plugin Studio and Lua Studio in Global. The Global ADOM keeps its **Global** block for the fleet pages
 and has no Operations group. A profile that cannot see one of those groups
 keeps the entry where it was before — Appliances under
 Operations, the API menu (console, Schema builds, Build compatibility) as a
@@ -3844,10 +3845,20 @@ others, and without being given user administration.
 
 | Tool | Page | What it authors |
 |---|---|---|
-| **Python Console** | `/database/py-console` | Throwaway Python over the curated fleet datasets |
+| **Python Studio** | `/studio` | One page, two panes: **Scripts** (the Script Library: Python scripts with a form that operators fill in and run, §23.4) and **Console** (throwaway Python over the curated fleet datasets, §23.3) |
 | **Plugin Studio** | `/plugins` | Server-rendered custom views/widgets, published as **Custom Views** |
 | **Lua Studio** | `/lua` | Device scripts for FortiWeb *Web Scripting* and FortiADC *Scripting* |
-| **Script Library** | `/database/scripts` | Python scripts with a form that operators fill in and run (§23.4) |
+
+**Python Studio** (since the release after 3.3.7) replaces the two menu entries
+*Python Console* and *Script Library*. On the left an **Explorer** switches
+between the **Scripts** pane and the **Console** pane and opens any script in
+its editor; the editor (`/studio/scripts/<id>`) has a **Console** tab too, to
+try code against the fleet data without saving it in the script. Uniting the
+pages united neither the keys nor the sandboxes: the page opens for a holder of
+`studio.script_library` **or** `studio.python_console`, and each pane, the
+editor's Console tab and the console's run endpoint still ask for their own
+key. The old addresses (`/database/py-console`, `/database/scripts/…`)
+redirect to the new ones.
 
 ### 23.1 Plugin Studio and Custom Views
 
@@ -3930,7 +3941,8 @@ in that order. Targets are **FortiWeb "Web Scripting"** and **FortiADC
 
 ### 23.3 Python Console
 
-Admin-authored Python, run against the **same curated dataset bundle** the
+The **Console** pane of Python Studio (**Administrator → Studio → Python
+Studio → Console**), also a tab in every script's editor. Admin-authored Python, run against the **same curated dataset bundle** the
 plugins use, in a bubblewrap jail with no environment, no network namespace and
 none of the application tree mounted — so a script cannot open the `.env`, the
 database or the keyring, and cannot open a socket. Wall-clock, CPU, memory and
@@ -3941,8 +3953,8 @@ the first kilobyte of the source.
 ### 23.4 Script Library
 
 Python scripts you keep, with a **form** an operator fills in. You write and
-test them here (**Administrator → Studio → Script Library**, also reachable from
-the Python Console); you publish a version; operators run that version. Gated by
+test them here (**Administrator → Studio → Python Studio → Scripts**); you
+publish a version; operators run that version. Gated by
 `studio.script_library`.
 
 **A script is a small project.** `main.py` is what runs; other `.py` files are
@@ -3953,7 +3965,7 @@ zip of a folder is unwrapped); the upload is loaded into the editor and saved
 at once, as a new version. **Download** gives the current state or any version
 as a zip.
 
-**The library page** shows how scripts run in one strip at the top, a search
+**The Scripts pane** shows how scripts run in one strip at the top, a search
 box and the script table: published version, latest version (flagged when it is
 not published), form fields, network, audience and last change. Row actions:
 **Edit** (every edit saves a new version), **Compare versions**, **Versions and

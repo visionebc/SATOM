@@ -25995,3 +25995,7 @@ msgstr "Conjuntos de usuarios con nombre. Las apps de Python Studio se comparten
 #: app/templates/studio/app.html
 msgid "Apps shared with it"
 msgstr "Apps compartidas con él"
+
+#: app/templates/script_library/edit.html
+msgid "Studio connections this script may call with satom_script.connection(\"id\"). The runner makes the call with the connection's credential, which the script never sees; only declared connections are reachable, whatever the network setting. A connection with a secret needs the vault."
+msgstr "Conexiones de Studio que este script puede llamar con satom_script.connection(\"id\"). El runner hace la llamada con la credencial de la conexión, que el script nunca ve; solo se alcanzan las conexiones declaradas, sea cual sea el ajuste de red. Una conexión con secreto necesita el vault."

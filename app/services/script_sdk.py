@@ -25,6 +25,13 @@ it for ``tcp``). Nothing of ``/opt/satom`` is on ``sys.path`` in the jail.
 ``tcp``     a TCP socket through the sandbox proxy, for SSH and other non-HTTP
             protocols (only when the script has network access); HTTP(S)
             clients use the proxy on their own.
+``connection``  a Connection the script declares (App Studio):
+            ``connection("crm").get("/tickets", params={"open": 1}).json()``.
+            SATOM makes the call with the connection's credential, which the
+            script never sees; only the connection's base URL is reachable,
+            whatever the script's network mode. A PostgreSQL connection
+            answers ``.query("SELECT ...", [params])`` (read-only unless
+            ``write=True``).
 """
 from __future__ import annotations
 
@@ -33,7 +40,8 @@ import os
 import sys
 import time
 
-__all__ = ["inputs", "result", "log", "tcp", "secret", "script", "version"]
+__all__ = ["inputs", "result", "log", "tcp", "secret", "script", "version",
+           "connection", "ConnectionError"]
 
 _RESULT_FD_ENV = "SATOM_RESULT_FD"
 
@@ -87,3 +95,107 @@ def result(data) -> None:
 def tcp(host: str, port: int, timeout: float = 10.0):
     from satom_sdk import tcp as _tcp
     return _tcp(host, port, timeout)
+
+
+_CONN_SOCK = ".satom-conn.sock"
+
+
+class ConnectionError(Exception):  # noqa: A001 -- the name scripts expect
+    """A connection call SATOM refused or that failed."""
+
+
+class Response:
+    def __init__(self, data: dict):
+        self.status_code = int(data.get("status") or 0)
+        self.status = self.status_code
+        self.headers = dict(data.get("headers") or {})
+        self.text = str(data.get("text") or "")
+        self.truncated = bool(data.get("truncated"))
+        self.elapsed_ms = data.get("elapsed_ms")
+
+    @property
+    def ok(self) -> bool:
+        return 200 <= self.status_code < 300
+
+    def json(self):
+        return json.loads(self.text) if self.text.strip() else None
+
+    def raise_for_status(self) -> "Response":
+        if not self.ok:
+            raise ConnectionError("HTTP %s: %s" % (self.status_code, self.text[:300]))
+        return self
+
+    def __repr__(self) -> str:
+        return "<Response %s>" % self.status_code
+
+
+def _broker(req: dict) -> dict:
+    import socket
+    home = os.environ.get("HOME") or os.getcwd()
+    fd = os.open(home, os.O_RDONLY | os.O_DIRECTORY)
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        try:
+            s.connect("/proc/self/fd/%d/%s" % (fd, _CONN_SOCK))
+        except OSError:
+            raise ConnectionError("this run has no connections: declare them in the "
+                                  "script's settings (App Studio connections)")
+        s.sendall(json.dumps(req).encode("utf-8") + b"\n")
+        buf = b""
+        while b"\n" not in buf:
+            chunk = s.recv(65536)
+            if not chunk:
+                break
+            buf += chunk
+    finally:
+        s.close()
+        os.close(fd)
+    try:
+        data = json.loads(buf.split(b"\n", 1)[0].decode("utf-8"))
+    except ValueError:
+        raise ConnectionError("no answer from the connection broker")
+    if isinstance(data, dict) and data.get("error"):
+        raise ConnectionError(data["error"])
+    return data
+
+
+class Connection:
+    """A declared Connection. HTTP: ``get/post/put/patch/delete/request``.
+    PostgreSQL: ``query``."""
+
+    def __init__(self, key: str):
+        self.key = key
+
+    def request(self, method: str, path: str = "", *, params=None, json=None,
+                data=None, headers=None) -> Response:
+        return Response(_broker({"connection": self.key, "method": method,
+                                 "path": path, "params": params, "json": json,
+                                 "data": data, "headers": headers}))
+
+    def get(self, path: str = "", **kw) -> Response:
+        return self.request("GET", path, **kw)
+
+    def post(self, path: str = "", **kw) -> Response:
+        return self.request("POST", path, **kw)
+
+    def put(self, path: str = "", **kw) -> Response:
+        return self.request("PUT", path, **kw)
+
+    def patch(self, path: str = "", **kw) -> Response:
+        return self.request("PATCH", path, **kw)
+
+    def delete(self, path: str = "", **kw) -> Response:
+        return self.request("DELETE", path, **kw)
+
+    def query(self, sql: str, params=None, *, write: bool = False,
+              max_rows: int = 1000) -> dict:
+        return _broker({"connection": self.key, "sql": sql, "params": params,
+                        "write": bool(write), "max_rows": max_rows})
+
+    def __repr__(self) -> str:
+        return "<Connection %s>" % self.key
+
+
+def connection(key: str) -> Connection:
+    """A Connection this script declares, by key."""
+    return Connection(str(key))

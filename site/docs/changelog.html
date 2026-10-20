@@ -163,7 +163,11 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   redirects are returned, never followed; a step cannot set the credential
   header. The secret is write-only, kept in the vault or encrypted by the vault
   mode, redacted out of errors, and the vault migrate / scrub actions cover it.
-  A Test button tries a call and a JSON path.</p>
+  A Test button tries a call and a JSON path. <strong>Script Library scripts</strong> call
+  the connections they declare with <code>satom_script.connection("crm").get(...)</code>
+  (or <code>.query(...)</code> for PostgreSQL): the scripts runner makes the call outside
+  the sandbox and adds the credential, which reaches it only as a single-use
+  wrapped vault token, so the script never holds it.</p>
 </li>
 <li>
 <p><strong>Python Studio</strong> (Administrator → Studio) joins the <strong>Script Library</strong> and
@@ -242,10 +246,28 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="security">Security</h3>
 <ul>
-<li>Theme SVGs are served under a <code>sandbox</code> Content-Security-Policy, so an SVG
+<li>
+<p><strong>Connections refuse dangerous destinations</strong> (found in this release's
+  Connections before it shipped): a base URL, an OAuth2 token URL or a
+  PostgreSQL host could point at this node's loopback services (the metrics
+  store and the cache have no authentication), at the cloud metadata address
+  or at any address of the node, and any user of an app could make SATOM call
+  it — including by just opening a form whose list is filled from an API.
+  Every call now resolves the host once, refuses it when any address is
+  loopback, link-local, multicast, unspecified, reserved or this node's own,
+  and dials the checked address (Host header and TLS server name keep the
+  name). Internal (RFC 1918) addresses stay allowed. The OAuth2 token URL must
+  be https (the client secret travels in it), and PostgreSQL no longer uses
+  <code>sslmode=prefer</code>, which sends the password in clear to a server without TLS:
+  <code>verify-full</code> against the trust store with TLS verification on, <code>require</code>
+  with it off.</p>
+</li>
+<li>
+<p>Theme SVGs are served under a <code>sandbox</code> Content-Security-Policy, so an SVG
   opened directly cannot run script even if the sanitiser misses something.
   The sanitiser now also removes unquoted event handlers, <code>iframe</code>, <code>embed</code>,
-  <code>object</code> and external links.</li>
+  <code>object</code> and external links.</p>
+</li>
 </ul>
 <h2 id="337---2026-10-19">[3.3.7] - 2026-10-19</h2>
 <p>Upgrade path unchanged from 3.3.6: the update package accepts a node on 3.3.3

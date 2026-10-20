@@ -76,6 +76,7 @@ MAX_REVISIONS = 100
 COALESCE_SECONDS = 600
 REVISION_KINDS = ("created", "save", "upload", "restore")
 MAX_CREDENTIALS = 10
+MAX_CONNECTIONS = 10
 TIMEOUT_MIN, TIMEOUT_MAX, TIMEOUT_DEFAULT = 5, 900, 60
 OUTPUT_CAP = 64 * 1024
 RESULT_CAP = 256 * 1024
@@ -378,7 +379,33 @@ def clean_settings(meta: dict) -> dict:
             "description": str(meta.get("description") or "").strip()[:2000],
             "network": network, "audience": audience, "timeout": timeout,
             "fields": clean_fields(meta.get("fields")),
-            "credentials": clean_credentials(meta.get("credentials"))}
+            "credentials": clean_credentials(meta.get("credentials")),
+            "connections": clean_connections(meta.get("connections"))}
+
+
+def clean_connections(raw: Any) -> list[str]:
+    """Slugs of the Studio connections a script declares (it may call only
+    these, through the runner's broker). Only the FORM is checked here: this
+    module is imported by the database-free runner; the web side checks that
+    each one exists when a run is queued."""
+    if raw in (None, ""):
+        return []
+    if isinstance(raw, str):
+        raw = [x.strip() for x in raw.replace(",", "\n").splitlines()]
+    if not isinstance(raw, list):
+        raise ScriptError("connections must be a list of connection ids")
+    out: list[str] = []
+    for k in raw:
+        k = str(k or "").strip()
+        if not k:
+            continue
+        if not _SLUG_RE.match(k):
+            raise ScriptError("%r is not a connection id" % k)
+        if k not in out:
+            out.append(k)
+    if len(out) > MAX_CONNECTIONS:
+        raise ScriptError("at most %d connections" % MAX_CONNECTIONS)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -466,8 +493,12 @@ _SNAPSHOT_KEYS = ("name", "description", "network", "audience", "timeout",
 
 
 def _snapshot_hash(files: dict[str, str], meta: dict) -> str:
-    blob = json.dumps({"files": files, **{k: meta.get(k) for k in _SNAPSHOT_KEYS}},
-                      sort_keys=True, default=str)
+    snap = {"files": files, **{k: meta.get(k) for k in _SNAPSHOT_KEYS}}
+    # Declared connections (2026-10-20) join the hash only when there are
+    # some: an empty list must not make every older script look changed.
+    if meta.get("connections"):
+        snap["connections"] = meta["connections"]
+    blob = json.dumps(snap, sort_keys=True, default=str)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
@@ -715,6 +746,7 @@ def _publish(d: Path, slug: str, note: str, by: str) -> dict:
     _write_tree(vdir / "files", files)
     frozen = {k: meta.get(k) for k in ("name", "fields", "network", "timeout", "entry")}
     frozen["credentials"] = meta.get("credentials") or []
+    frozen["connections"] = meta.get("connections") or []
     frozen.update({"n": n, "published_by": by, "published_at": _utcnow(),
                    "note": str(note or "").strip()[:500]})
     _write_json(vdir / "meta.json", frozen)
@@ -758,7 +790,8 @@ def restore(slug: str, n: int, by: str) -> dict:
     return save_draft(slug, v["files"], {**meta, "fields": v["fields"],
                                          "network": v["network"],
                                          "timeout": v["timeout"],
-                                         "credentials": v.get("credentials") or []},
+                                         "credentials": v.get("credentials") or [],
+                                         "connections": v.get("connections") or []},
                       by, kind="restore", note="from v%d" % int(n))
 
 
@@ -867,7 +900,7 @@ _NO_USER = object()
 
 def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
                 trigger: str = "test", node: str = "", wrap=None,
-                sealed: dict | None = None, user=_NO_USER) -> dict:
+                sealed: dict | None = None, user=_NO_USER, connect=None) -> dict:
     """Validate the inputs against the form OF THAT VERSION and queue a run.
 
     ``version_ref``: ``"draft"`` (administrators' test runs) or a published
@@ -881,7 +914,13 @@ def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
 
     ``sealed``: ``{"fields": [password field names], "wrap": callable ->
     (token, vault_info)}`` -- the saved password values of a schedule, kept
-    in the vault and delivered wrapped like credentials."""
+    in the vault and delivered wrapped like credentials.
+
+    ``connect(slugs) -> (entries, missing)`` hands over the Studio
+    connections the script declares (``studio_connections.for_runner``, the
+    default): definitions plus single-use wrapped vault tokens for their
+    secrets, which the runner unwraps OUTSIDE the jail (``studio_broker``).
+    No secret of a connection is ever written into the request."""
     slug = validate_slug(slug)
     if version_ref == "draft":
         meta = _read_json(_dir(slug) / "meta.json")
@@ -895,12 +934,14 @@ def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
             raise ScriptError("%s line %s: %s" % (p["file"], p["line"], p["message"]))
         fields, network, timeout = meta["fields"], meta["network"], meta["timeout"]
         creds = meta.get("credentials") or []
+        conns = meta.get("connections") or []
     else:
         frozen = version(slug, int(version_ref))
         if frozen is None:
             raise ScriptError("no version %s of %r" % (version_ref, slug))
         fields, network, timeout = frozen["fields"], frozen["network"], frozen["timeout"]
         creds = frozen.get("credentials") or []
+        conns = frozen.get("connections") or []
         version_ref = int(version_ref)
     sealed_fields = set((sealed or {}).get("fields") or [])
     pw_names = {f["name"] for f in fields if f["type"] == "password"}
@@ -924,6 +965,19 @@ def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
                                           adoms_of(user) if user is not None else None)
         except db_lookup.LookupError_ as exc:
             raise ScriptError(str(exc))
+    conn_req: dict[str, Any] = {}
+    if conns:
+        if connect is None:
+            # Imported here, like db_lookup above: only the web side queues
+            # runs, and the runner that imports this module has no database.
+            from .studio_connections import for_runner as connect
+        try:
+            conn_req, conn_missing = connect(conns)
+        except ValueError as exc:
+            raise ScriptError(str(exc))
+        if conn_missing:
+            raise ScriptError("this script declares connections that do not exist: %s"
+                              % ", ".join(conn_missing))
     tokens, missing, vault_info = {}, [], {}
     sealed_req = None
     if sealed_fields:
@@ -950,14 +1004,27 @@ def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
                             for n, v in db_payload.items()
                             if isinstance(v, dict) and "rows" in v},
                          **{n: "********" for n in sealed_fields}}, "node": node,
-              "credentials": [c["name"] for c in creds], "credentials_missing": missing}
+              "credentials": [c["name"] for c in creds], "credentials_missing": missing,
+              "connections": list(conns)}
     _write_json(STATUS_DIR / (rid + ".json"), status)
     req = {"request_id": rid, "slug": slug, "version": version_ref,
            "inputs": {**inputs, **db_payload}, "requested_by": by, "trigger": trigger,
            "queued_at": now, "credentials": tokens, "vault": vault_info,
-           "sealed_inputs": sealed_req}
+           "sealed_inputs": sealed_req, "connections": conn_req,
+           "ca_bundle": _trust_bundle() if conn_req else ""}
     _write_json(REQ_DIR / (rid + ".json"), req, mode=0o600)
     return status
+
+
+def _trust_bundle() -> str:
+    """The node's TLS trust bundle path (Settings > Trust store) for the
+    connection calls the runner makes; '' = the public roots."""
+    try:
+        from . import trust_store
+        v = trust_store.verify_param()
+    except Exception:  # noqa: BLE001
+        return ""
+    return v if isinstance(v, str) else ""
 
 
 def run_status(rid: str) -> dict | None:

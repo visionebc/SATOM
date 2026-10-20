@@ -19,21 +19,26 @@ The secret (password, token, API key, client secret) is never a column of
 secret -- and ``secret_backend`` migrates and scrubs it with them. It is
 write-only from the UI and is redacted out of every error text.
 
-Calls are made by SATOM itself (an app step, the Test button), never by a
-Script Library script: a script gets the RESULT as an input, so script code
-never holds the credential.
+Calls are made by SATOM, never with the credential in a script's hands: an
+app step and the Test button call from the web worker, and a Script Library
+script that DECLARES a connection calls through the runner's broker
+(``studio_broker``): the script sends the request, the runner — outside the
+jail — adds the credential, which reaches the runner only as a single-use
+wrapped vault token. Every one of those calls goes through the same core
+(``studio_http``): base-URL lock, no redirects, redaction, and a destination
+check that refuses loopback, link-local (cloud metadata), multicast, reserved
+and this node's own addresses.
 """
 from __future__ import annotations
 
 import json
 import re
-import threading
-import time
-from urllib.parse import urlsplit, urlunsplit, quote
+from urllib.parse import urlsplit, urlunsplit
 
 from ..extensions import db
 from ..models import AppSetting
 from ..models_studio import StudioConnection
+from . import studio_http as H
 
 KINDS = ("http", "postgres")
 HTTP_AUTH = ("none", "basic", "bearer", "api_key", "oauth2")
@@ -50,8 +55,8 @@ _HEADER_RE = re.compile(r"^[A-Za-z0-9-]{1,128}$")
 _CTRL = re.compile(r"[\x00-\x1f\x7f]")
 
 
-class ConnectionError_(ValueError):
-    pass
+#: One exception for the whole connection layer, raised by studio_http too.
+ConnectionError_ = H.ConnectionError_
 
 
 def vault_path(slug: str) -> str:
@@ -134,8 +139,9 @@ def save(c: StudioConnection, form: dict, by: str) -> None:
         if auth == "oauth2":
             tu = (form.get("token_url") or "").strip()
             p = urlsplit(tu)
-            if p.scheme not in ("http", "https") or not p.hostname or p.username:
-                raise ConnectionError_("OAuth2 needs a token URL http(s)://host/path")
+            if p.scheme != "https" or not p.hostname or p.username:
+                # https only: the client secret travels in this request's body.
+                raise ConnectionError_("OAuth2 needs a token URL https://host/path")
             c.token_url = tu[:500]
             c.scope = (form.get("scope") or "").strip()[:500]
             if not c.username:
@@ -230,28 +236,23 @@ def set_secret(slug: str, value: str) -> None:
 
 
 def _redactor(*secrets):
-    vals = sorted({s for s in secrets if s and len(s) >= 3}, key=len, reverse=True)
-
-    def red(text) -> str:
-        t = str(text)
-        for v in vals:
-            t = t.replace(v, "********")
-        return t
-    return red
+    return H.redactor(*secrets)
 
 
 # --------------------------------------------------------------------------- #
-#  HTTP                                                                        #
+#  HTTP and PostgreSQL — the wire part lives in services.studio_http, which    #
+#  the database-free Script Library runner uses too (studio_broker).           #
 # --------------------------------------------------------------------------- #
 #: Test seam: an ``httpx.MockTransport`` in tests, ``None`` (the network) here.
+#: With a transport nothing reaches the network, so the destination check
+#: (studio_http.resolve) does not run either.
 _transport = None
 
 _TOKENS: dict[str, tuple[str, float]] = {}
-_TOK_LOCK = threading.Lock()
 
 
 def _forget_token(slug: str) -> None:
-    with _TOK_LOCK:
+    with H._LOCK:
         _TOKENS.pop(slug, None)
 
 
@@ -262,166 +263,53 @@ def _verify(c: StudioConnection):
     return trust_store.verify_param()
 
 
+def definition(c: StudioConnection) -> dict:
+    """The connection as ``studio_http`` reads it — everything but the secret."""
+    return {"slug": c.slug, "kind": c.kind, "base_url": c.base_url, "host": c.host,
+            "port": c.port, "database": c.database, "auth": c.auth,
+            "username": c.username, "header_name": c.header_name,
+            "token_url": c.token_url, "scope": c.scope,
+            "verify_tls": bool(c.verify_tls), "timeout": c.timeout}
+
+
 def build_url(c: StudioConnection, path: str) -> str:
     """*path* joined under the base URL. Refuses anything that would leave it."""
-    path = str(path or "")
-    if _CTRL.search(path):
-        raise ConnectionError_("the path has control characters")
-    if "://" in path or path.startswith("//") or "\\" in path:
-        raise ConnectionError_("a path is relative to the connection's base URL; "
-                               "an absolute URL is refused")
-    base = urlsplit(c.base_url)
-    rel, _, qs = path.partition("?")
-    segs = [s for s in rel.split("/") if s not in ("", ".")]
-    if ".." in segs:
-        raise ConnectionError_("a path cannot climb above the base URL (..)")
-    full = base.path.rstrip("/") + ("/" + "/".join(quote(s, safe="@:+,;=%-._~!$&'()*")
-                                                   for s in segs) if segs else "")
-    return urlunsplit((base.scheme, base.netloc, full or "/", qs, ""))
-
-
-def _oauth_token(c: StudioConnection, secret: str, client) -> str:
-    with _TOK_LOCK:
-        cached = _TOKENS.get(c.slug)
-        if cached and cached[1] > time.time():
-            return cached[0]
-    data = {"grant_type": "client_credentials", "client_id": c.username,
-            "client_secret": secret}
-    if c.scope:
-        data["scope"] = c.scope
-    r = client.post(c.token_url, data=data, follow_redirects=False)
-    if r.status_code >= 400:
-        raise ConnectionError_("the token endpoint answered HTTP %d" % r.status_code)
-    try:
-        j = r.json()
-        tok = str(j["access_token"])
-        ttl = float(j.get("expires_in") or 300)
-    except (ValueError, KeyError, TypeError):
-        raise ConnectionError_("the token endpoint did not return an access_token") from None
-    with _TOK_LOCK:
-        _TOKENS[c.slug] = (tok, time.time() + max(30.0, ttl - 30.0))
-    return tok
-
-
-def _headers(c: StudioConnection, secret: str, client) -> dict:
-    h = {"Accept": "application/json", "User-Agent": "SATOM-Studio"}
-    if c.auth == "basic":
-        import base64
-        h["Authorization"] = "Basic " + base64.b64encode(
-            ("%s:%s" % (c.username, secret)).encode()).decode()
-    elif c.auth == "bearer":
-        h["Authorization"] = "Bearer " + secret
-    elif c.auth == "api_key":
-        h[c.header_name] = secret
-    elif c.auth == "oauth2":
-        h["Authorization"] = "Bearer " + _oauth_token(c, secret, client)
-    return h
+    return H.build_url(c.base_url, path)
 
 
 def http_call(c: StudioConnection, method: str = "GET", path: str = "", *,
               query: dict | None = None, body=None, headers: dict | None = None) -> dict:
     """One call. ``{status, ok, json|text, headers, ms, url}``. Raises
     ``ConnectionError_`` (secrets redacted) when no answer came back."""
-    import httpx
     if c.kind != "http":
         raise ConnectionError_("%s is not an HTTP connection" % c.slug)
-    method = (method or "GET").upper()
-    if method not in METHODS:
-        raise ConnectionError_("unknown method %r" % method)
     secret, problem = secret_state(c.slug)
     if c.auth != "none" and not secret:
         raise ConnectionError_(problem or "no secret is stored for %s" % c.slug)
-    red = _redactor(secret)
-    url = build_url(c, path)
-    extra = {}
-    for k, v in (headers or {}).items():
-        k = str(k)
-        if not _HEADER_RE.match(k) or k.lower() in ("authorization", "host", "cookie") \
-                or (c.header_name and k.lower() == c.header_name.lower()):
-            raise ConnectionError_("header %r cannot be set by a step" % k)
-        extra[k] = str(v)
-    t0 = time.monotonic()
-    try:
-        with httpx.Client(timeout=c.timeout, verify=_verify(c), follow_redirects=False,
-                          transport=_transport) as cl:
-            h = _headers(c, secret, cl)
-            h.update(extra)
-            kw = {"params": {str(k): str(v) for k, v in (query or {}).items()} or None,
-                  "headers": h}
-            if body is not None and method != "GET":
-                if isinstance(body, (dict, list)):
-                    kw["json"] = body
-                else:
-                    kw["content"] = str(body).encode()
-            with cl.stream(method, url, **kw) as r:
-                chunks, size = [], 0
-                for chunk in r.iter_bytes():
-                    size += len(chunk)
-                    if size > MAX_BODY:
-                        raise ConnectionError_("the answer is larger than %d MiB"
-                                               % (MAX_BODY // 1024 // 1024))
-                    chunks.append(chunk)
-                raw = b"".join(chunks)
-                status, ctype = r.status_code, r.headers.get("content-type", "")
-                loc = r.headers.get("location", "")
-    except ConnectionError_:
-        raise
-    except Exception as exc:  # noqa: BLE001 -- transport
-        raise ConnectionError_(red("%s: %s" % (exc.__class__.__name__, exc))) from None
-    ms = int((time.monotonic() - t0) * 1000)
-    text = raw.decode("utf-8", "replace")
-    out = {"status": status, "ok": 200 <= status < 300, "ms": ms, "url": url,
-           "content_type": ctype}
-    if loc:
-        out["location"] = loc
-    try:
-        out["json"] = json.loads(text) if text.strip() else None
-    except ValueError:
-        out["text"] = red(text[:200_000])
-    return out
+    return H.http_request(definition(c), secret, method, path, query=query, body=body,
+                          headers=headers, verify=_verify(c), transport=_transport,
+                          tokens=_TOKENS)
 
 
-# --------------------------------------------------------------------------- #
-#  PostgreSQL                                                                  #
-# --------------------------------------------------------------------------- #
 def pg_query(c: StudioConnection, sql: str, params: dict | None = None, *,
              write: bool = False, limit: int = 1000) -> dict:
     """``{columns, rows, rowcount, ms}``. READ ONLY unless *write*."""
-    import psycopg
     if c.kind != "postgres":
         raise ConnectionError_("%s is not a PostgreSQL connection" % c.slug)
-    sql = str(sql or "").strip()
-    if not sql:
+    if not str(sql or "").strip():
         raise ConnectionError_("the SQL is empty")
     secret, problem = secret_state(c.slug)
     if not secret:
         raise ConnectionError_(problem or "no password is stored for %s" % c.slug)
-    red = _redactor(secret)
-    limit = max(1, min(int(limit or 1000), MAX_SQL_ROWS))
-    t0 = time.monotonic()
-    try:
-        with psycopg.connect(host=c.host, port=c.port or 5432, dbname=c.database,
-                             user=c.username, password=secret,
-                             connect_timeout=min(c.timeout, 30),
-                             sslmode="prefer",
-                             options="-c statement_timeout=%d" % (c.timeout * 1000),
-                             application_name="satom-studio") as conn:
-            conn.read_only = not write
-            with conn.cursor() as cur:
-                cur.execute(sql, params or None)
-                cols = [d.name for d in cur.description] if cur.description else []
-                rows = []
-                if cols:
-                    for rec in cur.fetchmany(limit):
-                        rows.append({k: (v if isinstance(v, (int, float, str, bool, type(None)))
-                                         else str(v)) for k, v in zip(cols, rec)})
-                rowcount = cur.rowcount
-            if write:
-                conn.commit()
-    except Exception as exc:  # noqa: BLE001
-        raise ConnectionError_(red("%s: %s" % (exc.__class__.__name__, exc))) from None
-    return {"columns": cols, "rows": rows, "rowcount": rowcount,
-            "truncated": len(rows) >= limit, "ms": int((time.monotonic() - t0) * 1000)}
+    return H.pg_request(definition(c), secret, sql, params, write=write, limit=limit,
+                        ca=_ca_path(c))
+
+
+def _ca_path(c: StudioConnection) -> str:
+    """The trust bundle FILE for a verified PostgreSQL connection ('' = the
+    public roots, studio_http picks them)."""
+    v = _verify(c)
+    return v if isinstance(v, str) else ""
 
 
 # --------------------------------------------------------------------------- #
@@ -479,3 +367,65 @@ def test(c: StudioConnection, method: str = "GET", path: str = "", sql: str = ""
         return {"ok": True, "status": "connected", "ms": r["ms"], "body": r}
     except ConnectionError_ as exc:
         return {"ok": False, "error": str(exc)}
+
+
+# --------------------------------------------------------------------------- #
+#  for the Script Library runner (studio_broker)                               #
+# --------------------------------------------------------------------------- #
+def needs_secret(c: StudioConnection) -> bool:
+    return c.kind == "postgres" or (c.auth or "none") != "none"
+
+
+def for_runner(slugs: list[str]) -> tuple[dict, list[str]]:
+    """``({slug: {"def", "wrapped"?, "vault"?}}, [missing slugs])`` for the
+    connections a script declares.
+
+    The secret NEVER goes into the queued request file: when a connection has
+    one, the vault answers a wrapped read and the request carries only that
+    single-use token (``script_vault``'s rule for script credentials), which
+    the runner unwraps outside the jail. Without a vault holding the secret
+    the run is refused, saying why. A connection without authentication needs
+    no token."""
+    from . import secret_backend as sb
+    from . import script_vault as sv
+    out, missing = {}, []
+    for slug in slugs or []:
+        c = get(slug)
+        if c is None:
+            missing.append(slug)
+            continue
+        entry: dict = {"def": definition(c)}
+        if needs_secret(c):
+            if not has_secret(slug):
+                raise ConnectionError_("connection %s has no secret stored" % slug)
+            if not sb.active():
+                raise ConnectionError_(
+                    "connection %s has a secret, and a script receives connection "
+                    "secrets only from the vault (single-use wrapped tokens, never "
+                    "written to disk): configure Settings > Vault" % slug)
+            cfg = sb.config(reveal=False)
+            try:
+                token = sv._wrapped_read(cfg, sb._token(cfg), vault_path(slug))
+            except Exception as exc:  # noqa: BLE001
+                raise ConnectionError_("connection %s: the vault refused the wrapped "
+                                       "read (%s)" % (slug, exc))
+            if not token:
+                raise ConnectionError_(
+                    "connection %s: its secret is not in the vault (the vault mode "
+                    "keeps it in SATOM only — run Settings > Vault > migrate)" % slug)
+            entry["wrapped"] = token
+            entry["vault"] = sv._vault_info(cfg)
+        out[slug] = entry
+    return out, missing
+
+
+def used_by_scripts(slug: str) -> list[str]:
+    """Script Library scripts whose draft or published version declares
+    connection ``slug``."""
+    from . import script_library as SL
+    out = []
+    for s in SL.list_scripts():
+        meta = SL.get(s["slug"]) or {}
+        if slug in (meta.get("connections") or []):
+            out.append(s["slug"])
+    return out

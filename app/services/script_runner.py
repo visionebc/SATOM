@@ -31,6 +31,7 @@ from typing import Any
 
 from . import sandbox
 from . import script_library as SL
+from . import studio_broker
 
 PYTHON = SL.APP_DIR / "venv" / "bin" / "python"
 SDK_SRC = Path(__file__).resolve().parent / "script_sdk.py"
@@ -115,6 +116,16 @@ def _credential_secrets(secrets: dict) -> dict[str, str]:
     return out
 
 
+def _ca_bundle(req: dict):
+    """``verify=`` for connection calls: the node's trust bundle when the
+    web side named one this unit can read, else the public roots. Never
+    False — a connection that turns TLS verification off says so itself."""
+    path = str(req.get("ca_bundle") or "")
+    if path and os.path.isfile(path) and os.access(path, os.R_OK):
+        return path
+    return True
+
+
 def _cap(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
@@ -140,7 +151,8 @@ def _resolve(req: dict) -> tuple[dict[str, str], dict]:
     return files, {"fields": settings.get("fields") or [],
                    "network": settings.get("network") or "none",
                    "timeout": int(settings.get("timeout") or SL.TIMEOUT_DEFAULT),
-                   "credentials": [c.get("name") for c in settings.get("credentials") or []]}
+                   "credentials": [c.get("name") for c in settings.get("credentials") or []],
+                   "connections": list(settings.get("connections") or [])}
 
 
 def run_request(req: dict) -> dict:
@@ -180,8 +192,26 @@ def run_request(req: dict) -> dict:
                       "run waited too long" % exc)
         inputs = dict(inputs)
         inputs.update({k: v for k, v in opened.items() if k in allowed})
+    conns: dict[str, tuple[dict, str]] = {}
+    offered = req.get("connections") if isinstance(req.get("connections"), dict) else {}
+    for key, entry in offered.items():
+        if key not in settings["connections"] or not isinstance(entry, dict):
+            continue                      # only what this version declares
+        # The secret arrives ONLY as a single-use wrapped vault token
+        # (studio_connections.for_runner); a plaintext one is never read.
+        secret = ""
+        if entry.get("wrapped"):
+            try:
+                secret = unwrap(entry.get("vault") or {}, str(entry["wrapped"])).get("value", "")
+            except SL.ScriptError as exc:
+                return _write_status(
+                    rid, status="failed", finished_at=SL._utcnow(),
+                    error="the secret of connection %s could not be unwrapped (%s): "
+                          "already used or expired" % (key, exc))
+        conns[key] = (entry.get("def") or {}, secret)
     secrets = SL.secret_inputs(settings["fields"], inputs)
     secrets.update(_credential_secrets(creds))
+    secrets.update({"connection %s" % k: v for k, (_d, v) in conns.items() if v})
     network = settings["network"] if settings["network"] in SL.NETWORK_MODES else "none"
     timeout = max(SL.TIMEOUT_MIN, min(SL.TIMEOUT_MAX, settings["timeout"]))
 
@@ -201,10 +231,20 @@ def run_request(req: dict) -> dict:
                "SATOM_RESULT_FD": str(resfh.fileno())}
         stdin = json.dumps({"inputs": inputs, "secrets": creds,
                             "script": req.get("slug"), "version": req.get("version")})
-        out = sandbox.execute(str(PYTHON), SL.ENTRY, workdir, env=env,
-                              timeout=timeout, network=network,
-                              pass_fds=(resfh.fileno(),), stdin_data=stdin,
-                              verdict=EGRESS_VERDICT)
+        broker = None
+        if conns:
+            broker = studio_broker.ConnectionBroker(
+                os.path.join(workdir, studio_broker.SOCK_NAME), conns,
+                verify=_ca_bundle(req)).start()
+        try:
+            out = sandbox.execute(str(PYTHON), SL.ENTRY, workdir, env=env,
+                                  timeout=timeout, network=network,
+                                  pass_fds=(resfh.fileno(),), stdin_data=stdin,
+                                  verdict=EGRESS_VERDICT)
+        finally:
+            if broker is not None:
+                broker.close()
+        conn_log = [redact(e, secrets) for e in broker.log] if broker else []
         if out.error:
             return _write_status(rid, status="failed", finished_at=SL._utcnow(),
                                  duration_ms=int((time.monotonic() - t0) * 1000),
@@ -234,7 +274,8 @@ def run_request(req: dict) -> dict:
             exit_code=out.exit_code,
             output=_cap(redact(out.output or "", secrets), SL.OUTPUT_CAP),
             result=_redact_obj(result, secrets), error=redact(error, secrets),
-            egress=[redact(e, secrets) for e in out.egress])
+            egress=[redact(e, secrets) for e in out.egress],
+            connections_log=conn_log)
     finally:
         resfh.close()
         shutil.rmtree(workdir, ignore_errors=True)

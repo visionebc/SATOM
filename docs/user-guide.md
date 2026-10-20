@@ -4141,7 +4141,7 @@ credential, for app steps to use.
 | Kind | Settings | Authentication |
 |---|---|---|
 | **HTTP API** | Base URL, TLS verification (against the trust store), timeout | none, basic (user + password), bearer token, API key in a named header, OAuth2 client credentials (client id + secret + token URL + scope) |
-| **PostgreSQL** | Host, port, database, user, timeout | password |
+| **PostgreSQL** | Host, port, database, user, TLS verification, timeout | password |
 
 - **Every call stays under the base URL.** A step's path is joined to it; an
   absolute URL, `//`, `..` or a backslash in a path is refused, and redirects
@@ -4152,14 +4152,53 @@ credential, for app steps to use.
   encrypted with SATOM's key, by the vault mode (§26), and **Settings → Vault →
   migrate / remove local copies** covers it like the other secrets. It is
   redacted out of every error text.
+- **Where a connection may point.** SATOM resolves the host once and refuses
+  it when ANY address it resolves to is a loopback address, link-local (cloud
+  metadata lives at `169.254.169.254`), multicast, unspecified, reserved, or an
+  address of this node itself — the node's metrics store, cache and web server
+  listen there without authentication. Internal addresses (10.x, 172.16–31.x,
+  192.168.x) are allowed: internal APIs and CMDBs are what connections are for.
+  The request then goes to the address that was checked (the name stays the
+  `Host` header and the TLS server name), so a DNS answer that changes in
+  between changes nothing. The same check covers the OAuth2 token URL (https
+  only) and a PostgreSQL host, and it runs on every call — an app step, a list
+  field filled from an API when a form opens, the Test button and a script.
+  A refusal reads *"… resolves to …, a loopback address of this node; a
+  connection never dials it"*.
 - **PostgreSQL queries** take `%(name)s` parameters and run in a READ ONLY
-  transaction unless the step ticks *Allow writes*.
+  transaction unless the step ticks *Allow writes*. The connection is always
+  encrypted: with TLS verification on, the server certificate is checked
+  against the trust store (`verify-full`); off, it is encrypted without the
+  check (`require`). A server without TLS is refused — the password never
+  travels in clear.
 - **Test** tries a GET (or a read-only SQL statement) and shows the answer;
   type a JSON path (`a.b[0].c`, `items[*].name`) to see what a step would keep.
 
-Connections are called by SATOM itself, from app steps and the Test button —
-never from a Script Library script: a script receives the result as a form
-value, so script code never holds the credential.
+Connections are called by SATOM, and the credential is never in a script's
+hands. App steps and the Test button call from the web server. A **Script
+Library script** may call the connections it declares (script editor →
+**Settings → Connections**):
+
+```python
+from satom_script import connection, result
+
+crm = connection("crm")
+r = crm.get("/tickets", params={"state": "open"})      # also post/put/patch/delete
+result(r.json())
+rows = connection("cmdb").query("SELECT name FROM hosts WHERE site = %(s)s",
+                                {"s": "zrh"})["rows"]   # read-only unless write=True
+```
+
+The script sends the request to the scripts runner, which adds the credential
+OUTSIDE the sandbox and returns the answer: the token, password or client
+secret is never in the script's environment, input or files. Only declared
+connections answer, whatever the script's network setting (a script with no
+outbound access can still use them), each call is a line in the run's
+*connections* log, and a secret that shows up in the output is masked. A
+connection with a secret needs the **vault**: the run receives a single-use
+wrapped token (like script credentials, §23.4), never the secret on disk. A
+published version keeps the connections it declared. A connection that a
+script declares cannot be deleted.
 
 ### 23.7 Apps
 
@@ -8227,7 +8266,7 @@ discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
    the console is either **on the map** (125 today) or **excluded with a written
-   reason** (164 today — JSON feeds, downloads, redirects and fragments that
+   reason** (168 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the

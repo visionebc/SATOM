@@ -337,6 +337,10 @@ def connection_delete(slug):
     users = SA.used_by("connection", slug)
     if users:
         return _err("used by app(s) %s: remove it from them first" % ", ".join(users), 409)
+    scripts = SC.used_by_scripts(slug)
+    if scripts:
+        return _err("declared by script(s) %s: remove it from their settings first"
+                    % ", ".join(scripts), 409)
     SC.delete(c)
     log_action("studio.connection.delete", target=slug)
     return jsonify({"ok": True})

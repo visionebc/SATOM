@@ -625,9 +625,35 @@
       audience: $('sl-set-audience').value,
       network: $('sl-net-egress').checked ? 'egress' : 'none',
       fields: fields,
-      credentials: creds
+      credentials: creds,
+      connections: conns
     };
   }
+
+  // ================================================================ connections
+  // Studio connections the script declares: services/studio_broker.py answers
+  // satom_script.connection() for these and refuses every other.
+  var conns = (CFG.connections || []).slice();
+  function renderConns() {
+    var box = $('sl-conns');
+    if (!box) return;
+    var all = CFG.studioConnections || [];
+    box.innerHTML = all.length ? all.map(function (c) {
+      return '<label class="small"><input type="checkbox" class="sl-conn" value="' + esc(c.slug) + '"' +
+        (conns.indexOf(c.slug) >= 0 ? ' checked' : '') + '> ' + esc(c.name) + ' <code>' + esc(c.slug) + '</code>' +
+        (c.kind === 'postgres' ? ' (PostgreSQL)' : '') + (c.secret && !CFG.vaultOk ? ' <span class="fw-badge fw-badge-warning">needs the vault</span>' : '') + '</label>';
+    }).join('') : '<div class="text-muted small">No connections exist yet (Python Studio &gt; Connections).</div>';
+    conns.filter(function (k) { return !all.some(function (c) { return c.slug === k; }); }).forEach(function (k) {
+      box.insertAdjacentHTML('beforeend', '<label class="small text-danger"><input type="checkbox" class="sl-conn" value="' + esc(k) + '" checked> ' + esc(k) + ' — does not exist</label>');
+    });
+    box.querySelectorAll('.sl-conn').forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        conns = Array.prototype.filter.call(box.querySelectorAll('.sl-conn'), function (x) { return x.checked; }).map(function (x) { return x.value; });
+        setDirty(true);
+      });
+    });
+  }
+  renderConns();
 
   // ================================================================ credentials
   function credRow(c, i) {

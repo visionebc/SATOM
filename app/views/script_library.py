@@ -155,7 +155,18 @@ def edit(slug):
                                    "fields": SL.MAX_FIELDS, "timeout_min": SL.TIMEOUT_MIN,
                                    "timeout_max": SL.TIMEOUT_MAX,
                                    "suffixes": list(SL.TEXT_SUFFIXES)},
-                           field_types=SL.FIELD_TYPES, sandbox_ok=sandbox.available())
+                           field_types=SL.FIELD_TYPES, sandbox_ok=sandbox.available(),
+                           studio_connections=_studio_connections())
+
+
+def _studio_connections() -> list[dict]:
+    """The Studio connections a script may declare (Connections card)."""
+    try:
+        from ..services import studio_connections as SC
+        return [{"slug": c.slug, "name": c.name, "kind": c.kind,
+                 "secret": SC.needs_secret(c)} for c in SC.list_connections()]
+    except Exception:  # noqa: BLE001 -- the editor opens without them
+        return []
 
 
 @bp.route("/<slug>/save", methods=["POST"])

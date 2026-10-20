@@ -4662,7 +4662,7 @@ credential, for app steps to use.</p>
 </tr>
 <tr>
 <td><strong>PostgreSQL</strong></td>
-<td>Host, port, database, user, timeout</td>
+<td>Host, port, database, user, TLS verification, timeout</td>
 <td>password</td>
 </tr>
 </tbody>
@@ -4677,14 +4677,50 @@ credential, for app steps to use.</p>
   encrypted with SATOM's key, by the vault mode (§26), and <strong>Settings → Vault →
   migrate / remove local copies</strong> covers it like the other secrets. It is
   redacted out of every error text.</li>
+<li><strong>Where a connection may point.</strong> SATOM resolves the host once and refuses
+  it when ANY address it resolves to is a loopback address, link-local (cloud
+  metadata lives at <code>169.254.169.254</code>), multicast, unspecified, reserved, or an
+  address of this node itself — the node's metrics store, cache and web server
+  listen there without authentication. Internal addresses (10.x, 172.16–31.x,
+  192.168.x) are allowed: internal APIs and CMDBs are what connections are for.
+  The request then goes to the address that was checked (the name stays the
+  <code>Host</code> header and the TLS server name), so a DNS answer that changes in
+  between changes nothing. The same check covers the OAuth2 token URL (https
+  only) and a PostgreSQL host, and it runs on every call — an app step, a list
+  field filled from an API when a form opens, the Test button and a script.
+  A refusal reads <em>"… resolves to …, a loopback address of this node; a
+  connection never dials it"</em>.</li>
 <li><strong>PostgreSQL queries</strong> take <code>%(name)s</code> parameters and run in a READ ONLY
-  transaction unless the step ticks <em>Allow writes</em>.</li>
+  transaction unless the step ticks <em>Allow writes</em>. The connection is always
+  encrypted: with TLS verification on, the server certificate is checked
+  against the trust store (<code>verify-full</code>); off, it is encrypted without the
+  check (<code>require</code>). A server without TLS is refused — the password never
+  travels in clear.</li>
 <li><strong>Test</strong> tries a GET (or a read-only SQL statement) and shows the answer;
   type a JSON path (<code>a.b[0].c</code>, <code>items[*].name</code>) to see what a step would keep.</li>
 </ul>
-<p>Connections are called by SATOM itself, from app steps and the Test button —
-never from a Script Library script: a script receives the result as a form
-value, so script code never holds the credential.</p>
+<p>Connections are called by SATOM, and the credential is never in a script's
+hands. App steps and the Test button call from the web server. A <strong>Script
+Library script</strong> may call the connections it declares (script editor →
+<strong>Settings → Connections</strong>):</p>
+<pre><code class="language-python">from satom_script import connection, result
+
+crm = connection(&quot;crm&quot;)
+r = crm.get(&quot;/tickets&quot;, params={&quot;state&quot;: &quot;open&quot;})      # also post/put/patch/delete
+result(r.json())
+rows = connection(&quot;cmdb&quot;).query(&quot;SELECT name FROM hosts WHERE site = %(s)s&quot;,
+                                {&quot;s&quot;: &quot;zrh&quot;})[&quot;rows&quot;]   # read-only unless write=True
+</code></pre>
+<p>The script sends the request to the scripts runner, which adds the credential
+OUTSIDE the sandbox and returns the answer: the token, password or client
+secret is never in the script's environment, input or files. Only declared
+connections answer, whatever the script's network setting (a script with no
+outbound access can still use them), each call is a line in the run's
+<em>connections</em> log, and a secret that shows up in the output is masked. A
+connection with a secret needs the <strong>vault</strong>: the run receives a single-use
+wrapped token (like script credentials, §23.4), never the secret on disk. A
+published version keeps the connections it declared. A connection that a
+script declares cannot be deleted.</p>
 <h3 id="237-apps">23.7 Apps</h3>
 <p><strong>Python Studio → Apps</strong> builds a small application — a <strong>form</strong>, a
 <strong>diagram</strong> of steps and an <strong>output</strong> with <strong>actions</strong> — and publishes it as
@@ -9171,7 +9207,7 @@ discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
    the console is either <strong>on the map</strong> (125 today) or <strong>excluded with a written
-   reason</strong> (164 today — JSON feeds, downloads, redirects and fragments that
+   reason</strong> (168 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>
 <li><strong>Nothing here is a second source of truth.</strong> Paths are generated from the

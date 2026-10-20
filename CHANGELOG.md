@@ -56,7 +56,11 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   redirects are returned, never followed; a step cannot set the credential
   header. The secret is write-only, kept in the vault or encrypted by the vault
   mode, redacted out of errors, and the vault migrate / scrub actions cover it.
-  A Test button tries a call and a JSON path.
+  A Test button tries a call and a JSON path. **Script Library scripts** call
+  the connections they declare with `satom_script.connection("crm").get(...)`
+  (or `.query(...)` for PostgreSQL): the scripts runner makes the call outside
+  the sandbox and adds the credential, which reaches it only as a single-use
+  wrapped vault token, so the script never holds it.
 
 - **Python Studio** (Administrator → Studio) joins the **Script Library** and
   the **Python Console** in one page, as asked: "join the script library and
@@ -125,6 +129,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   before this change has no such folder and leaves the node's files alone.
 
 ### Security
+
+- **Connections refuse dangerous destinations** (found in this release's
+  Connections before it shipped): a base URL, an OAuth2 token URL or a
+  PostgreSQL host could point at this node's loopback services (the metrics
+  store and the cache have no authentication), at the cloud metadata address
+  or at any address of the node, and any user of an app could make SATOM call
+  it — including by just opening a form whose list is filled from an API.
+  Every call now resolves the host once, refuses it when any address is
+  loopback, link-local, multicast, unspecified, reserved or this node's own,
+  and dials the checked address (Host header and TLS server name keep the
+  name). Internal (RFC 1918) addresses stay allowed. The OAuth2 token URL must
+  be https (the client secret travels in it), and PostgreSQL no longer uses
+  `sslmode=prefer`, which sends the password in clear to a server without TLS:
+  `verify-full` against the trust store with TLS verification on, `require`
+  with it off.
 
 - Theme SVGs are served under a `sandbox` Content-Security-Policy, so an SVG
   opened directly cannot run script even if the sanitiser misses something.

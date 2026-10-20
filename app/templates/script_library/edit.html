@@ -160,6 +160,13 @@
         <div id="sl-creds"></div>
       </div>
     </div>
+    <div class="fw-card mt-3">
+      <div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-plug me-2 text-accent"></i>{{ _('Connections') }}</span></div>
+      <div class="fw-card-body" style="font-size:13px;">
+        <p class="text-muted" style="font-size:12px;">{{ _('Studio connections this script may call with satom_script.connection("id"). The runner makes the call with the connection\'s credential, which the script never sees; only declared connections are reachable, whatever the network setting. A connection with a secret needs the vault.') }}</p>
+        <div id="sl-conns" class="d-flex flex-wrap gap-3"></div>
+      </div>
+    </div>
   </div>
 
   {# ---------------------------------------------------------------- test #}
@@ -266,6 +273,8 @@
   'credStatus': cred_status,
   'vaultOk': vault_ok,
   'fieldTypes': field_types,
+  'studioConnections': studio_connections,
+  'connections': script.connections or [],
   'versions': script.versions,
   'revisions': script.revisions or [],
   'published': script.published,

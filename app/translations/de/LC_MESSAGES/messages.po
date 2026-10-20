@@ -25974,3 +25974,7 @@ msgstr "Benannte Gruppen von Benutzern. Apps aus Python Studio werden mit Gruppe
 #: app/templates/studio/app.html
 msgid "Apps shared with it"
 msgstr "Damit geteilte Apps"
+
+#: app/templates/script_library/edit.html
+msgid "Studio connections this script may call with satom_script.connection(\"id\"). The runner makes the call with the connection's credential, which the script never sees; only declared connections are reachable, whatever the network setting. A connection with a secret needs the vault."
+msgstr "Studio-Verbindungen, die dieses Skript mit satom_script.connection(\"id\") aufrufen darf. Der Runner führt den Aufruf mit den Zugangsdaten der Verbindung aus, die das Skript nie sieht; erreichbar sind nur deklarierte Verbindungen, unabhängig von der Netzwerkeinstellung. Eine Verbindung mit Geheimnis benötigt den Vault."

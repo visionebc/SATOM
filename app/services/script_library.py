@@ -922,6 +922,7 @@ def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
     secrets, which the runner unwraps OUTSIDE the jail (``studio_broker``).
     No secret of a connection is ever written into the request."""
     slug = validate_slug(slug)
+    _queue_has_room()
     if version_ref == "draft":
         meta = _read_json(_dir(slug) / "meta.json")
         if not meta:
@@ -1014,6 +1015,52 @@ def enqueue_run(slug: str, *, version_ref: str | int, raw_inputs: Any, by: str,
            "ca_bundle": _trust_bundle() if conn_req else ""}
     _write_json(REQ_DIR / (rid + ".json"), req, mode=0o600)
     return status
+
+
+#: Runs waiting at most. The runner works MAX_PARALLEL at a time; a queue
+#: that anyone allowed to run scripts can grow without end is a way to keep
+#: everybody else's runs waiting for hours.
+MAX_QUEUED = 50
+#: Run records kept: younger than STATUS_KEEP_DAYS, and at most STATUS_KEEP.
+STATUS_KEEP_DAYS = 30
+STATUS_KEEP = 3000
+
+
+def _queue_has_room() -> None:
+    try:
+        waiting = sum(1 for p in REQ_DIR.glob("*.json") if not p.name.startswith("."))
+    except OSError:
+        waiting = 0
+    if waiting >= MAX_QUEUED:
+        raise ScriptError("the scripts queue is full (%d runs waiting); try again when "
+                          "some have finished" % waiting)
+
+
+def prune_status(now: float | None = None) -> int:
+    """Delete finished run records older than STATUS_KEEP_DAYS, and the
+    oldest beyond STATUS_KEEP. A queued or running record is never touched.
+    Returns how many were removed."""
+    import time as _t
+    if not STATUS_DIR.is_dir():
+        return 0
+    now = now if now is not None else _t.time()
+    paths = sorted(STATUS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    gone = 0
+    for i, p in enumerate(paths):
+        try:
+            old = now - p.stat().st_mtime > STATUS_KEEP_DAYS * 86400
+        except OSError:
+            continue
+        if not old and i < STATUS_KEEP:
+            continue
+        if (_read_json(p) or {}).get("status") in ("queued", "running"):
+            continue
+        try:
+            p.unlink()
+            gone += 1
+        except OSError:
+            pass
+    return gone
 
 
 def _trust_bundle() -> str:

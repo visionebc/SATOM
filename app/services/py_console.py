@@ -21,6 +21,18 @@ belt-and-suspenders and its guarantees are pinned by
   * wall-clock (``timeout``), CPU, address-space and process-count caps
                           (``prlimit``) stop infinite loops / fork bombs /
                           memory bombs.
+  * NOTHING is writable (2026-10-20): bwrap's own root and ``/dev`` are
+                          remounted read-only and there is no ``/tmp``. Both
+                          were tmpfs as large as half the host's RAM, and a
+                          file written there is memory no RLIMIT_AS counts --
+                          the console runs inside the web service, next to
+                          gunicorn, with Postgres on the same node.
+  * RLIMIT_NPROC counts every task of the satom uid on the node (measured:
+                          ``--nproc=16`` stopped bwrap itself with 26 satom
+                          tasks running), so the cap is set per run to the
+                          tasks satom has NOW plus :data:`_EXTRA_TASKS`.
+  * the output is read as it comes and kept up to :data:`_MAX_OUTPUT`;
+                          ONE run at a time per node (``_LOCK_PATH``).
 
 The ``data`` bundle handed to the script is built by the CALLER via
 ``plugin_sandbox.load_datasets`` (the same masked, SELECT-only, curated path the
@@ -33,11 +45,13 @@ Verified live on LXC 248: bwrap 0.8.0 sandboxes correctly as the service user
 """
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 from typing import Any
 
@@ -45,11 +59,15 @@ from .sandbox import root_dirs_argv
 
 # Absolute isolation caps (defence in depth; the hard guarantees are the
 # namespaces + the minimal bind set — these just stop resource exhaustion).
-_MEM_BYTES = 1024 * 1024 * 1024      # 1 GiB address space (RLIMIT_AS)
-_MAX_PROCS = 256                     # fork-bomb ceiling (RLIMIT_NPROC, best-effort)
-_MAX_FSIZE = 16 * 1024 * 1024        # 16 MiB any single file (tmpfs scratch)
+_MEM_BYTES = 512 * 1024 * 1024       # 512 MiB address space per process (RLIMIT_AS)
+#: Tasks the run may add to what the satom uid already has: bwrap (2) and
+#: the interpreter, plus a little room. Threads are tasks too.
+_EXTRA_TASKS = 6
+_MAX_FSIZE = 16 * 1024 * 1024        # 16 MiB any single file (nothing is writable anyway)
 _MAX_NOFILE = 128
-_MAX_OUTPUT = 200_000                # cap captured stdout/stderr (chars)
+_MAX_OUTPUT = 200_000                # cap captured stdout/stderr (bytes, each)
+_LOCK_PATH = os.path.join(tempfile.gettempdir(), "satom-py-console.lock")
+_LOCK_WAIT_S = 5.0
 _DEFAULT_TIMEOUT = 8
 _MAX_TIMEOUT = 30
 
@@ -102,11 +120,54 @@ def _bwrap_argv(workdir: str) -> list[str]:
         *root_dirs_argv(),
         "--proc", "/proc",
         "--dev", "/dev",
-        "--tmpfs", "/tmp",
         "--ro-bind", workdir, "/sandbox",
+        "--remount-ro", "/",
+        "--remount-ro", "/dev",
         "--chdir", "/sandbox",
         "/usr/bin/python3", "-I", "-B", "/sandbox/harness.py",
     ]
+
+
+def _uid_tasks(uid: int | None = None) -> int:
+    """Tasks (threads included) the uid owns right now -- what RLIMIT_NPROC
+    counts."""
+    uid = os.getuid() if uid is None else uid
+    n = 0
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            with open("/proc/%s/status" % pid, encoding="ascii", errors="replace") as fh:
+                real, threads = None, 1
+                for line in fh:
+                    if line.startswith("Uid:"):
+                        real = int(line.split()[1])
+                    elif line.startswith("Threads:"):
+                        threads = int(line.split()[1])
+                        break
+        except (OSError, ValueError, IndexError):
+            continue
+        if real == uid:
+            n += threads
+    return n
+
+
+def _read_capped(stream, limit: int, out: list) -> None:
+    kept = 0
+    try:
+        while True:
+            chunk = stream.read1(65536)
+            if not chunk:
+                break
+            if kept < limit:
+                out.append(chunk[: limit - kept])
+                kept += len(out[-1])
+    except (OSError, ValueError):
+        pass
+
+
+class Busy(RuntimeError):
+    """Another console run holds the node's slot."""
 
 
 def _norm_timeout(timeout: Any) -> int:
@@ -133,6 +194,20 @@ def run_python(source: str, bundle: dict[str, Any] | None = None, *,
             "stderr": "sandbox unavailable: bubblewrap (bwrap) is not installed",
         }
 
+    lock = open(_LOCK_PATH, "a+")
+    deadline = time.monotonic() + _LOCK_WAIT_S
+    while True:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError:
+            if time.monotonic() > deadline:
+                lock.close()
+                return {"ok": False, "returncode": None, "timed_out": False,
+                        "duration_ms": 0, "stdout": "",
+                        "stderr": "the console is busy: another run is in progress on "
+                                  "this node (one at a time). Try again in a moment."}
+            time.sleep(0.2)
     workdir = tempfile.mkdtemp(prefix="pyc_")
     try:
         with open(os.path.join(workdir, "harness.py"), "w") as fh:
@@ -150,30 +225,40 @@ def run_python(source: str, bundle: dict[str, Any] | None = None, *,
             "prlimit",
             f"--as={_MEM_BYTES}",
             f"--cpu={timeout + 1}",
-            f"--nproc={_MAX_PROCS}",
+            f"--nproc={_uid_tasks() + _EXTRA_TASKS}",
             f"--fsize={_MAX_FSIZE}",
             f"--nofile={_MAX_NOFILE}",
+            "--core=0",
             "--",
         ] + _bwrap_argv(workdir)
 
         started = time.monotonic()
         timed_out = False
+        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, start_new_session=True)
+        bufs: tuple[list, list] = ([], [])
+        readers = [threading.Thread(target=_read_capped, args=(st, _MAX_OUTPUT, b),
+                                    daemon=True)
+                   for st, b in ((proc.stdout, bufs[0]), (proc.stderr, bufs[1]))]
+        for t in readers:
+            t.start()
         try:
-            proc = subprocess.run(
-                argv, capture_output=True, text=True,
-                timeout=timeout + 6,  # outer backstop beyond `timeout`
-            )
-            rc: int | None = proc.returncode
-            out, err = proc.stdout, proc.stderr
-        except subprocess.TimeoutExpired as exc:
+            rc: int | None = proc.wait(timeout=timeout + 6)  # backstop beyond `timeout`
+        except subprocess.TimeoutExpired:
             timed_out = True
             rc = None
-            out = exc.stdout or ""
-            err = exc.stderr or ""
-            if isinstance(out, bytes):
-                out = out.decode("utf-8", "replace")
-            if isinstance(err, bytes):
-                err = err.decode("utf-8", "replace")
+            try:
+                os.killpg(proc.pid, 9)
+            except OSError:
+                pass
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+        for t in readers:
+            t.join(5)
+        out = b"".join(bufs[0]).decode("utf-8", "replace")
+        err = b"".join(bufs[1]).decode("utf-8", "replace")
         duration_ms = int((time.monotonic() - started) * 1000)
 
         # GNU `timeout` reports 124 (timed out) or 128+signal (killed via
@@ -196,3 +281,7 @@ def run_python(source: str, bundle: dict[str, Any] | None = None, *,
         }
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+        finally:
+            lock.close()

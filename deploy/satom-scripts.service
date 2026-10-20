@@ -22,7 +22,6 @@ ExecStart=/opt/satom/venv/bin/python -m app.services.script_runner
 TimeoutStartSec=4500
 
 NoNewPrivileges=true
-PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ProtectKernelTunables=true
@@ -38,3 +37,19 @@ ReadWritePaths=-/opt/satom/data/scripts
 ReadOnlyPaths=-/opt/satom/data/scripts/library
 InaccessiblePaths=-/opt/satom/.env -/opt/satom/pki -/opt/satom/.ssh
 ProtectProc=invisible
+
+# Resource caps (2026-10-20). Operator code runs in this unit's cgroup, and
+# the LXC it shares with Postgres and gunicorn has a few GB of RAM: without a
+# cap, one script that allocates, forks or writes in a loop takes the node
+# down (measured: no MemoryMax, TasksMax 106611, /tmp on the root disk).
+# RLIMIT_NPROC cannot do this job -- it counts every process of the satom uid
+# on the node. The jail's work directory and its /tmp live in this unit's
+# /tmp, a tmpfs whose pages are charged to MemoryMax: no run can fill the
+# disk. A site that needs more raises these in a drop-in.
+MemoryHigh=768M
+MemoryMax=1G
+TasksMax=256
+CPUQuota=200%
+CPUWeight=20
+IOWeight=20
+TemporaryFileSystem=/tmp:size=512M,mode=1777

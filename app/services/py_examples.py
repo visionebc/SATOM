@@ -1512,6 +1512,50 @@ _EXAMPLES = [
                 print(f"{kind:14} {n}")
         """,
     },
+    # ================= Studio — feed a Data store =================
+    {
+        "id": "studio_fleet_csv_for_store",
+        "group": "Studio", "subgroup": "Data stores", "category": "Studio",
+        "title": "Fleet inventory as CSV for a Data store",
+        "name": "Fleet inventory as CSV for a Data store",
+        "description": "Print the managed appliances as CSV (name, kind, host, firmware). "
+                       "Create a data store with those four text columns, then Import CSV "
+                       "and paste this output: apps can then offer it as a list field.",
+        "tags": ["studio", "data store", "csv", "inventory"],
+        "datasets": ["fleet_appliances"],
+        "code": """
+        import csv, io
+        rows = data['fleet_appliances']['rows']
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(['name', 'kind', 'host', 'firmware'])
+        for r in sorted(rows, key=lambda r: (r.get('kind') or '', r.get('name') or '')):
+            w.writerow([r.get('name') or '', r.get('kind') or '', r.get('host') or '',
+                        (r.get('firmware') or '').split(',')[0]])
+        print(buf.getvalue().strip() if rows else 'No appliances.')
+        """,
+    },
+    {
+        "id": "studio_fortigates_for_connections",
+        "group": "Studio", "subgroup": "Connections", "category": "Studio",
+        "title": "FortiGates to point a Connection at",
+        "name": "FortiGates to point a Connection at",
+        "description": "Every managed FortiGate with the base URL a Studio connection to its "
+                       "REST API would use (https://<host>:<port>/api/v2), e.g. for the "
+                       "example connection ex-fortigate.",
+        "tags": ["studio", "connection", "fortigate"],
+        "datasets": ["fleet_appliances"],
+        "code": """
+        fgts = [r for r in data['fleet_appliances']['rows'] if r.get('kind') == 'fortigate']
+        if not fgts:
+            print('No FortiGate is managed here.')
+        for r in sorted(fgts, key=lambda r: r.get('name') or ''):
+            port = str(r.get('port') or '443')
+            host = r.get('host') or '?'
+            url = 'https://%s%s/api/v2' % (host, '' if port == '443' else ':' + port)
+            print(f"{r.get('name') or '?':20} {url}")
+        """,
+    },
 ]
 
 # Normalise every stored ``code``: strip the source indentation used for

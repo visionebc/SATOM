@@ -50,7 +50,12 @@
       var v = val(k); if (v !== undefined) body[k] = v;
     });
     if (body.verify_tls === undefined) body.verify_tls = true;
-    post(U.save, body).then(function () { msg('Saved.'); }).catch(function (e) { msg(e.message, true); });
+    post(U.save, body).then(function (d) {
+      if (d && d.secret_dropped) {
+        $('cn-secret-state').innerHTML = '<span class="fw-badge fw-badge-secondary">not set</span>';
+        msg('Saved. The destination changed, so the stored secret was cleared: enter it again.', true);
+      } else { msg('Saved.'); }
+    }).catch(function (e) { msg(e.message, true); });
   });
   function setSecret(v) {
     post(U.secret, { value: v }).then(function (d) {

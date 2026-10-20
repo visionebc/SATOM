@@ -26019,3 +26019,27 @@ msgstr "Connessioni di Studio che questo script può chiamare con satom_script.c
 #: app/templates/studio/connection.html
 msgid "Verify the server certificate against the trust store (unticked: still encrypted, not verified; a server without TLS is refused)"
 msgstr "Verificare il certificato del server con l'archivio attendibile (deselezionato: sempre cifrato, non verificato; un server senza TLS viene rifiutato)"
+
+msgid "Changing the address, the port, the authentication, the user or TLS verification clears it, so the secret can never be sent somewhere new without being typed again."
+msgstr "Cambiare l'indirizzo, la porta, l'autenticazione, l'utente o la verifica TLS lo cancella, così il segreto non può mai essere inviato a una nuova destinazione senza essere digitato di nuovo."
+
+msgid "Examples"
+msgstr "Esempi"
+
+msgid "Working examples of every Studio piece, written against the real FortiGate and NetBox APIs. Install creates the objects that are missing (ids start with ex-) and never overwrites one you edited; connections are created without a secret and pointed at a placeholder host, so nothing reaches a device until you finish their setup."
+msgstr "Esempi funzionanti di ogni componente di Studio, scritti sulle vere API di FortiGate e NetBox. Installa crea gli oggetti mancanti (i loro identificativi iniziano con ex-) e non sovrascrive mai un oggetto che hai modificato; le connessioni vengono create senza segreto e puntano a un host segnaposto, quindi nulla raggiunge un dispositivo finché non ne completi la configurazione."
+
+msgid "installed"
+msgstr "installato"
+
+msgid "partly installed"
+msgstr "installato in parte"
+
+msgid "What it creates"
+msgstr "Cosa crea"
+
+msgid "not installed"
+msgstr "non installato"
+
+msgid "To finish it"
+msgstr "Per completarlo"

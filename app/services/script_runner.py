@@ -240,7 +240,7 @@ def run_request(req: dict) -> dict:
             out = sandbox.execute(str(PYTHON), SL.ENTRY, workdir, env=env,
                                   timeout=timeout, network=network,
                                   pass_fds=(resfh.fileno(),), stdin_data=stdin,
-                                  verdict=EGRESS_VERDICT)
+                                  verdict=EGRESS_VERDICT, max_output=SL.OUTPUT_CAP * 2)
         finally:
             if broker is not None:
                 broker.close()
@@ -336,6 +336,10 @@ def reconcile_stale_claims(now: float | None = None) -> list[str]:
 
 def main() -> int:
     reconcile_stale_claims()
+    try:
+        SL.prune_status()
+    except OSError as exc:
+        sys.stderr.write("script_runner: pruning old run records failed: %s\n" % exc)
     if not SL.REQ_DIR.is_dir():
         return 0
     batch = sorted(p for p in SL.REQ_DIR.glob("*.json")

@@ -11,12 +11,22 @@ from __future__ import annotations
 from flask import Blueprint, Response, abort, jsonify, render_template, request
 from flask_login import current_user, login_required
 
-from ..extensions import db
+from ..extensions import db, limiter
 from ..models_studio import StudioApp, StudioAppRun
 from ..services import studio_apps as SA
 from ..services.audit import log_action
 
 bp = Blueprint("apps", __name__, url_prefix="/apps")
+
+#: An operator's form is small. The app-wide limit (hundreds of MB, for
+#: firmware uploads) would let a run request make a worker parse that much.
+MAX_BODY = 1024 * 1024
+
+
+@bp.before_request
+def _small_bodies():
+    from ..services.request_limits import refuse_larger_than
+    return refuse_larger_than(MAX_BODY)
 
 
 def _product_key() -> str:
@@ -62,6 +72,7 @@ def page(slug):
 
 @bp.route("/<slug>/run", methods=["POST"])
 @login_required
+@limiter.limit("30 per minute")
 def run(slug):
     a = _usable_or_404(slug)
     try:

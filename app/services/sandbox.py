@@ -63,6 +63,10 @@ _ETC_RO = ("/etc/resolv.conf", "/etc/hosts", "/etc/nsswitch.conf",
            "/etc/gai.conf", "/etc/ssl", "/etc/ca-certificates", "/etc/pki")
 
 NETWORK_MODES = ("none", "egress")
+#: Connections relayed at the same time for ONE run. The proxy lives in the
+#: runner process, outside the jail; a script must not make it start a thread
+#: per socket it opens.
+MAX_PROXY_CONCURRENT = 32
 _HEAD_MAX = 16 * 1024
 _CONNECT_TIMEOUT = 10.0
 
@@ -127,6 +131,11 @@ def jail_argv(argv: list[str], workdir: str, *,
     for path in ro_binds:
         out += ["--ro-bind", path, path]
     out += ["--bind", workdir, workdir, "--chdir", workdir]
+    # bwrap's own root is a tmpfs the jailed uid can write to, as large as
+    # half the host's RAM (47 GB measured on a1): files written there are
+    # memory. Read-only, the only writable places are the work directory and
+    # /tmp, which live in the runner unit's size-capped /tmp (TemporaryFileSystem).
+    out += ["--remount-ro", "/", "--remount-ro", "/dev"]
     return out + list(argv)
 
 
@@ -178,6 +187,9 @@ def egress_verdict(peer_ip: str, local_ip: str) -> str | None:
         return "link-local/multicast address"
     if peer == local:
         return "an address of this node"
+    from .studio_http import ha_node_ips
+    if str(peer) in ha_node_ips():
+        return "an address of a SATOM HA node"
     return None
 
 
@@ -211,6 +223,7 @@ class EgressProxy:
         self._srv: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._closed = False
+        self._slots = threading.BoundedSemaphore(MAX_PROXY_CONCURRENT)
 
     # -- lifecycle ---------------------------------------------------------
     def start(self) -> "EgressProxy":
@@ -257,7 +270,22 @@ class EgressProxy:
                 conn, _ = self._srv.accept()
             except OSError:
                 return
-            threading.Thread(target=self._serve, args=(conn,), daemon=True).start()
+            if not self._slots.acquire(blocking=False):
+                self._note("refused: more than %d connections at once" % MAX_PROXY_CONCURRENT)
+                try:
+                    conn.sendall(_reply(429, "more than %d egress connections at once"
+                                        % MAX_PROXY_CONCURRENT))
+                except OSError:
+                    pass
+                conn.close()
+                continue
+            threading.Thread(target=self._serve_slot, args=(conn,), daemon=True).start()
+
+    def _serve_slot(self, conn: socket.socket) -> None:
+        try:
+            self._serve(conn)
+        finally:
+            self._slots.release()
 
     # -- one client --------------------------------------------------------
     def _serve(self, client: socket.socket) -> None:
@@ -441,23 +469,58 @@ def kill_group(proc, grace: float = KILL_GRACE) -> None:
         pass
 
 
+#: Per-process limits inside the jail (prlimit). The MEMORY and TASK caps of
+#: a run are the runner unit's cgroup (MemoryMax / TasksMax): RLIMIT_NPROC
+#: counts every process of the satom uid on the node, gunicorn included, so
+#: it cannot be a per-run cap.
+RLIMITS = ("--fsize=%d" % (256 * 1024 * 1024), "--nofile=512", "--core=0")
+MAX_OUTPUT = 1024 * 1024
+
+
+def _rlimit_argv() -> list[str]:
+    prl = shutil.which("prlimit")
+    return [prl, *RLIMITS, "--"] if prl else []
+
+
+def _drain(stream, limit: int, sink: list, state: dict) -> None:
+    """Read *stream* to its end, keeping the first *limit* bytes: a run that
+    prints gigabytes costs the runner a buffer of *limit*, not gigabytes."""
+    kept = 0
+    try:
+        while True:
+            chunk = stream.read1(65536) if hasattr(stream, "read1") else stream.read(65536)
+            if not chunk:
+                break
+            room = limit - kept
+            if room > 0:
+                sink.append(chunk[:room])
+                kept += min(room, len(chunk))
+            if len(chunk) > max(room, 0):
+                state["dropped"] = True
+    except (OSError, ValueError):
+        pass
+
+
 def execute(python: str, script: str, workdir: str, *, env: dict[str, str],
             timeout: int, network: str = "none", pass_fds: tuple = (),
             stdin_data: str | None = None, ro_binds: tuple[str, ...] = (),
-            verdict: Callable[[str, str], str | None] = egress_verdict
-            ) -> Outcome:
+            verdict: Callable[[str, str], str | None] = egress_verdict,
+            max_output: int = MAX_OUTPUT) -> Outcome:
     """Run ``script`` (a path relative to ``workdir``) in the jail.
 
     ``env`` is the COMPLETE environment (built from nothing by the caller);
-    the proxy variables are added here when ``network == "egress"``.
+    the proxy variables are added here when ``network == "egress"``. The
+    output is read as it comes and kept up to ``max_output`` bytes.
     """
     import subprocess
+    import time
     if network not in NETWORK_MODES:
         return Outcome(error="unknown network mode %r" % network)
     argv = jail_argv(boot_argv(python, script, workdir, network=network),
                      workdir, ro_binds=ro_binds)
     if argv is None:
         return Outcome(error=SANDBOX_MISSING)
+    argv = _rlimit_argv() + argv
     env = dict(env)
     env.update(proxy_env(network))
     proxy = None
@@ -470,21 +533,41 @@ def execute(python: str, script: str, workdir: str, *, env: dict[str, str],
                 argv, cwd=workdir, env=env,
                 stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                start_new_session=True, pass_fds=tuple(pass_fds), close_fds=True,
-                text=True, errors="replace")
+                start_new_session=True, pass_fds=tuple(pass_fds), close_fds=True)
         except OSError as exc:
             return Outcome(error="could not start the jail: %s" % exc)
+        sink: list = []
+        state: dict = {}
+        reader = threading.Thread(target=_drain, args=(proc.stdout, max_output, sink, state),
+                                  daemon=True, name="satom-jail-out")
+        reader.start()
+        if stdin_data is not None:
+            def feed():
+                try:
+                    proc.stdin.write(stdin_data.encode("utf-8"))
+                except (OSError, ValueError):
+                    pass
+                finally:
+                    try:
+                        proc.stdin.close()
+                    except OSError:
+                        pass
+            threading.Thread(target=feed, daemon=True, name="satom-jail-in").start()
         timed_out = False
         try:
-            out, _ = proc.communicate(input=stdin_data, timeout=timeout)
+            proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             timed_out = True
             kill_group(proc)
             try:
-                out, _ = proc.communicate(timeout=REAP_TIMEOUT)
-            except (subprocess.TimeoutExpired, ValueError):
-                out = ""
-        return Outcome(exit_code=proc.returncode, output=out or "",
+                proc.wait(timeout=REAP_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                pass
+        reader.join(REAP_TIMEOUT)
+        out = b"".join(sink).decode("utf-8", "replace")
+        if state.get("dropped"):
+            out += "\n[... output larger than %d KiB; the rest was dropped]" % (max_output // 1024)
+        return Outcome(exit_code=proc.returncode, output=out,
                        timed_out=timed_out,
                        egress=list(proxy.log) if proxy else [])
     finally:

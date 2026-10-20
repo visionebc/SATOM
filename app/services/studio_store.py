@@ -30,6 +30,13 @@ MAX_COLUMNS = 40
 MAX_ROWS = 20000
 MAX_VALUE_CHARS = 64 * 1024
 MAX_QUERY_LIMIT = 5000
+#: Size caps (2026-10-20). ``query`` reads a whole store into the web worker
+#: to filter it, so the store's size is what one query costs: 16 MiB of JSON
+#: at most, whatever the row count; one row at most 128 KiB; and at most
+#: MAX_STORES stores.
+MAX_ROW_BYTES = 128 * 1024
+MAX_STORE_BYTES = 16 * 1024 * 1024
+MAX_STORES = 200
 FILTER_OPS = ("eq", "ne", "contains", "gt", "lt", "empty", "not_empty")
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,47}$")
@@ -171,6 +178,8 @@ def create(slug: str, name: str, by: str) -> StudioDataStore:
         raise StoreError("a name is required")
     if get(slug) is not None:
         raise StoreError("a data store with id %s already exists" % slug)
+    if StudioDataStore.query.count() >= MAX_STORES:
+        raise StoreError("there are already %d data stores, the most a node keeps" % MAX_STORES)
     s = StudioDataStore(slug=slug, name=name, columns_json=json.dumps(
         [{"name": "name", "label": "Name", "type": "text", "required": True}]),
         created_by=by, updated_by=by)
@@ -227,11 +236,38 @@ def count(store: StudioDataStore) -> int:
     return StudioRow.query.filter_by(store_id=store.id).count()
 
 
-def insert(store: StudioDataStore, values: dict, by: str) -> dict:
-    if count(store) >= MAX_ROWS:
+def size_bytes(store: StudioDataStore) -> int:
+    return int(db.session.query(db.func.coalesce(db.func.sum(db.func.length(StudioRow.data_json)), 0))
+               .filter(StudioRow.store_id == store.id).scalar() or 0)
+
+
+def _lock(store: StudioDataStore) -> None:
+    """Serialise writers of one store (Postgres: a row lock on the store), so
+    two inserts cannot both read "19 999 rows" and both write."""
+    db.session.query(StudioDataStore.id).filter(StudioDataStore.id == store.id) \
+        .with_for_update().first()
+
+
+def _encoded(data: dict) -> str:
+    raw = json.dumps(data, default=str)
+    if len(raw) > MAX_ROW_BYTES:
+        raise StoreError("a row is larger than %d KiB" % (MAX_ROW_BYTES // 1024))
+    return raw
+
+
+def _room(store: StudioDataStore, rows: int, nbytes: int) -> None:
+    if count(store) + rows > MAX_ROWS:
         raise StoreError("%s is full (%d rows)" % (store.slug, MAX_ROWS))
+    if size_bytes(store) + nbytes > MAX_STORE_BYTES:
+        raise StoreError("%s is full (%d MiB)" % (store.slug, MAX_STORE_BYTES // 1024 // 1024))
+
+
+def insert(store: StudioDataStore, values: dict, by: str) -> dict:
     data = clean_row(store.columns, values)
-    row = StudioRow(store_id=store.id, data_json=json.dumps(data, default=str),
+    raw = _encoded(data)
+    _lock(store)
+    _room(store, 1, len(raw))
+    row = StudioRow(store_id=store.id, data_json=raw,
                     created_by=by, updated_by=by)
     db.session.add(row)
     db.session.commit()
@@ -248,7 +284,12 @@ def update(store: StudioDataStore, row_id: int, values: dict, by: str) -> dict:
         v = data.get(col["name"])
         if col["required"] and (v is None or (isinstance(v, str) and not v.strip())):
             raise StoreError("%s is required" % col["name"])
-    row.data_json = json.dumps(data, default=str)
+    raw = _encoded(data)
+    grow = len(raw) - len(row.data_json or "")
+    if grow > 0:
+        _lock(store)
+        _room(store, 0, grow)
+    row.data_json = raw
     row.updated_by = by
     db.session.commit()
     return _shape(row)
@@ -376,10 +417,18 @@ def from_csv(store: StudioDataStore, text: str, by: str) -> dict:
             rows.append(clean_row(store.columns, values))
         except StoreError as exc:
             raise StoreError("line %d: %s" % (i, exc)) from None
+    raws = []
+    for i, data in enumerate(rows, start=2):
+        try:
+            raws.append(_encoded(data))
+        except StoreError as exc:
+            raise StoreError("line %d: %s" % (i, exc)) from None
+    _lock(store)
     if count(store) + len(rows) > MAX_ROWS:
         raise StoreError("the import would pass the %d-row limit" % MAX_ROWS)
-    for data in rows:
-        db.session.add(StudioRow(store_id=store.id, data_json=json.dumps(data, default=str),
+    _room(store, len(rows), sum(len(r) for r in raws))
+    for raw in raws:
+        db.session.add(StudioRow(store_id=store.id, data_json=raw,
                                  created_by=by, updated_by=by))
     db.session.commit()
     return {"imported": len(rows)}

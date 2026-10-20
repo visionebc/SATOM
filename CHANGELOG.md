@@ -8,6 +8,30 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Python Studio → Examples**: working examples of every Studio piece,
+  installed with one click, as asked: "put examples of everything in that
+  section; you can use the FortiGate API to look up a rule as an example, and
+  NetBox things". Four bundles, written against the answers a FortiGate 8.0.1
+  and NetBox 4 actually give:
+  - **FortiGate: which rule lets this traffic through?** — an app built only
+    from the diagram: the route back to the source (`monitor/router/lookup`),
+    the FortiGate's own `policy-lookup`, the matching rule from
+    `cmdb/firewall/policy`, two decisions, and actions on the verdict (save to
+    a data store, download CSV, ask for the access as a change request); the
+    same lookup as a Script Library script.
+  - **NetBox: who owns this IP address?** — a script that calls a connection,
+    and an app whose diagram runs that script.
+  - **Explain a flow** — one script with two connections (FortiGate and
+    NetBox).
+  - **Data stores: site contacts** — no external system: a list field fed by a
+    data store, a query and an upsert, published at once.
+  Ids start with `ex-`; installing never overwrites an object you edited, and
+  removing keeps what something else still uses. Connections are created
+  without a secret and pointed at a placeholder host, so nothing reaches a
+  device until their setup is finished. The console gained two examples in a
+  *Studio* group (the fleet as CSV for a data store import; every FortiGate
+  with the base URL of a connection to it). User guide §23.8.
+
 - **Python Studio apps** (Python Studio → Apps): asked for as "the user can
   create their own database, their own process defined with a diagram, add
   forms, and receive an output they can act on; the administrator creates them
@@ -129,6 +153,66 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   before this change has no such folder and leaves the node's files alone.
 
 ### Security
+
+- **Python Studio security review** (asked for as "a security test, verify as
+  well as you can that these scripts do not interfere with the
+  confidentiality, availability, etc. of SATOM"). A static review of every
+  Studio surface and an adversarial test on a running node found the
+  following; all are fixed, each pinned by `tests/test_studio_security.py`.
+  The resulting model is user guide §23.9.
+  - **A connection's secret could be sent anywhere** by whoever may edit the
+    connection: change its base URL (or OAuth2 token URL, or PostgreSQL host)
+    to a server of their own and press Test. Changing the destination — scheme,
+    host, port, authentication, header, token URL, user or TLS verification —
+    now clears the stored secret, and the page says so.
+  - **No resource limits on the scripts and hooks runners**: no memory or task
+    cap and the run's work directory on the root disk, next to Postgres. A
+    script that allocated, forked or wrote in a loop could take the node down.
+    Both units now carry `MemoryMax=1G`, `TasksMax=256`, `CPUQuota=200%`, low
+    CPU/IO weights and a 512 MB memory `/tmp`; inside the jail the root and
+    `/dev` are read-only (bwrap's own root was a writable memory filesystem
+    as large as half the host's RAM), a file is at most 256 MB, and the output
+    is read with a cap instead of being buffered whole. The scripts queue holds
+    at most 50 runs and run records are pruned after 30 days.
+  - **The Python console could exhaust the web service's memory**: it runs in
+    the web service, its jail had writable memory filesystems (`/tmp`, `/`,
+    `/dev/shm`), its process cap counted every process of the service user
+    (so it capped nothing), and its output was buffered whole. Now nothing in
+    the jail is writable, a process may address 512 MiB, the run may add only
+    a few tasks to the ones that exist, the output is read with a cap, and one
+    console run at a time per node.
+  - **One template could freeze a web worker**: Jinja's sandbox leaves `**`
+    and `*` alone and folds constants while compiling, so `{{ 2 ** 99999999 }}`
+    or `{{ 'a' * 10 ** 9 }}` ran before any limit. Exponents above 64, results
+    longer than 1 MiB, more than 1,000,000 loop items and rendered texts above
+    1 MiB are refused.
+  - **App operators could start unbounded work**: runs per user (2) and per
+    node (8) are capped, the Run button is rate-limited, run requests above
+    1 MiB are refused, lists filled from an API are cached for a minute, an
+    action runs once per run and only on the version that produced it, and app
+    runs are kept 90 days.
+  - **Operators could read data an app never showed them** through the step
+    details (a decision prints both values it compared); non-authors now see
+    which steps ran and how they ended.
+  - **A form value in an API path could leave its segment** (`1?admin=1`,
+    `%2e%2e/`): inserted values are percent-encoded, encoded `.`/`/`/`\` are
+    refused and the query string is re-encoded.
+  - **An echoed credential reached the caller**: answers are masked before a
+    step, script or operator sees them (secret, Authorization value, Basic
+    base64, OAuth2 token, JSON-escaped spellings). Password inputs are also
+    masked in their `urlencode`/`tojson`/base64 spellings.
+  - **PostgreSQL "read only" could be walked out of** with a statement list
+    (`COMMIT; SET …; COMMIT; DELETE …`) and a result had no size limit: one
+    statement through the extended protocol, read-only transaction AND session
+    default, results capped at 8 MiB, a cancel if the server ignores the
+    timeout, and `require_auth=!password` with libpq 16+.
+  - **HTTP calls had no total deadline** (a server sending a byte at a time
+    held the caller), and the other HA node was not on the refused list: both
+    fixed.
+  - **Data stores had no size limit**: 16 MiB and 20,000 rows per store,
+    128 KiB per row, 200 stores; writers of one store are serialised.
+  - The connection broker and the egress proxy (outside the jail) started a
+    thread per socket with no cap; now 8 and 32 at a time.
 
 - **Connections refuse dangerous destinations** (found in this release's
   Connections before it shipped): a base URL, an OAuth2 token URL or a

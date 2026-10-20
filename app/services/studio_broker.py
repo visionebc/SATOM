@@ -34,6 +34,10 @@ from . import studio_http as H
 SOCK_NAME = ".satom-conn.sock"
 MAX_REQUEST = 3 * 1024 * 1024
 MAX_CALLS = 500
+#: Calls served at the same time. The broker runs in the runner process,
+#: outside the jail: a script that opens sockets in a loop must not make it
+#: start a thread (and hold a buffer) per socket.
+MAX_CONCURRENT = 8
 
 
 def _bind_unix(srv: socket.socket, path: str) -> None:
@@ -58,6 +62,8 @@ class ConnectionBroker:
         self.log: list[str] = []
         self.calls = 0
         self._lock = threading.Lock()
+        self._slots = threading.BoundedSemaphore(MAX_CONCURRENT)
+        self._accepted = 0
         self._srv: socket.socket | None = None
         self._closed = False
 
@@ -104,24 +110,54 @@ class ConnectionBroker:
                 conn, _ = self._srv.accept()
             except OSError:
                 return
-            threading.Thread(target=self._serve, args=(conn,), daemon=True).start()
+            self._accepted += 1
+            if self._accepted > MAX_CALLS + MAX_CONCURRENT:
+                # Counted at accept, not after parsing: connections that never
+                # send a request line are calls too.
+                self._drop(conn, "more than %d connection calls in one run" % MAX_CALLS)
+                continue
+            if not self._slots.acquire(blocking=False):
+                self._drop(conn, "more than %d connection calls at the same time"
+                           % MAX_CONCURRENT)
+                continue
+            threading.Thread(target=self._serve_slot, args=(conn,), daemon=True).start()
+
+    def _drop(self, conn, why: str) -> None:
+        try:
+            conn.settimeout(2)
+            self._reply(conn, {"error": why})
+        except OSError:
+            pass
+        finally:
+            try:
+                conn.close()
+            except OSError:
+                pass
+
+    def _serve_slot(self, conn) -> None:
+        try:
+            self._serve(conn)
+        finally:
+            self._slots.release()
 
     # -- one call ------------------------------------------------------------
     def _serve(self, client: socket.socket) -> None:
         try:
             client.settimeout(30)
-            buf = b""
-            while b"\n" not in buf:
+            buf = bytearray()
+            while True:
                 chunk = client.recv(65536)
                 if not chunk:
                     break
                 buf += chunk
+                if b"\n" in chunk:
+                    break
                 if len(buf) > MAX_REQUEST:
                     self._reply(client, {"error": "request larger than %d KB"
                                          % (MAX_REQUEST // 1024)})
                     return
             try:
-                req = json.loads(buf.split(b"\n", 1)[0].decode("utf-8"))
+                req = json.loads(bytes(buf).split(b"\n", 1)[0].decode("utf-8"))
             except ValueError:
                 self._reply(client, {"error": "malformed request"})
                 return

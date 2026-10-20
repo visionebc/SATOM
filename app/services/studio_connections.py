@@ -117,7 +117,26 @@ def create(slug: str, name: str, kind: str, by: str) -> StudioConnection:
     return c
 
 
-def save(c: StudioConnection, form: dict, by: str) -> None:
+def destination(c: StudioConnection) -> tuple:
+    """Where the secret goes and how. The stored secret belongs to THIS
+    tuple: change any part of it and the secret is dropped (``save``), so
+    whoever may edit a connection cannot point it at a server of their own and
+    press Test to receive the token, the password or the client secret
+    (finding 2026-10-20). The path under the host is not part of it: the
+    credential is the host's to begin with."""
+    if c.kind == "http":
+        p = urlsplit(c.base_url or "")
+        return ("http", (p.scheme or "").lower(), (p.netloc or "").lower(), c.auth or "none",
+                (c.header_name or "").lower(), c.token_url or "", c.username or "",
+                bool(c.verify_tls))
+    return ("postgres", (c.host or "").lower(), int(c.port or 5432), c.database or "",
+            c.username or "", bool(c.verify_tls))
+
+
+def save(c: StudioConnection, form: dict, by: str) -> bool:
+    """Apply the form. True when the stored secret was dropped because the
+    destination changed (the caller says so; the secret is entered again)."""
+    before = destination(c) if (c.base_url or c.host) else None
     c.name = (form.get("name") or c.name).strip()[:120] or c.name
     c.description = (form.get("description") or "").strip()[:2000]
     try:
@@ -167,7 +186,12 @@ def save(c: StudioConnection, form: dict, by: str) -> None:
         c.auth = "password"
     c.updated_by = by
     _forget_token(c.slug)
+    dropped = False
+    if before is not None and destination(c) != before and has_secret(c.slug):
+        set_secret(c.slug, "")
+        dropped = True
     db.session.commit()
+    return dropped
 
 
 def delete(c: StudioConnection) -> None:

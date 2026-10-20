@@ -114,10 +114,37 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
-<li><strong>Python Studio apps</strong> (Python Studio → Apps): asked for as "the user can
+<li><strong>Python Studio → Examples</strong>: working examples of every Studio piece,
+  installed with one click, as asked: "put examples of everything in that
+  section; you can use the FortiGate API to look up a rule as an example, and
+  NetBox things". Four bundles, written against the answers a FortiGate 8.0.1
+  and NetBox 4 actually give:</li>
+<li><strong>FortiGate: which rule lets this traffic through?</strong> — an app built only
+    from the diagram: the route back to the source (<code>monitor/router/lookup</code>),
+    the FortiGate's own <code>policy-lookup</code>, the matching rule from
+    <code>cmdb/firewall/policy</code>, two decisions, and actions on the verdict (save to
+    a data store, download CSV, ask for the access as a change request); the
+    same lookup as a Script Library script.</li>
+<li><strong>NetBox: who owns this IP address?</strong> — a script that calls a connection,
+    and an app whose diagram runs that script.</li>
+<li><strong>Explain a flow</strong> — one script with two connections (FortiGate and
+    NetBox).</li>
+<li>
+<p><strong>Data stores: site contacts</strong> — no external system: a list field fed by a
+    data store, a query and an upsert, published at once.
+  Ids start with <code>ex-</code>; installing never overwrites an object you edited, and
+  removing keeps what something else still uses. Connections are created
+  without a secret and pointed at a placeholder host, so nothing reaches a
+  device until their setup is finished. The console gained two examples in a
+  <em>Studio</em> group (the fleet as CSV for a data store import; every FortiGate
+  with the base URL of a connection to it). User guide §23.8.</p>
+</li>
+<li>
+<p><strong>Python Studio apps</strong> (Python Studio → Apps): asked for as "the user can
   create their own database, their own process defined with a diagram, add
   forms, and receive an output they can act on; the administrator creates them
-  and they appear in Operations → Plugins, each with its own menu entry".</li>
+  and they appear in Operations → Plugins, each with its own menu entry".</p>
+</li>
 <li><strong>An app is a form, a diagram and an output.</strong> The form has text, number,
     date, checkbox, password and list fields; a list can take its choices from
     a data store column or from an API. The diagram is drawn in the same
@@ -246,6 +273,67 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="security">Security</h3>
 <ul>
+<li><strong>Python Studio security review</strong> (asked for as "a security test, verify as
+  well as you can that these scripts do not interfere with the
+  confidentiality, availability, etc. of SATOM"). A static review of every
+  Studio surface and an adversarial test on a running node found the
+  following; all are fixed, each pinned by <code>tests/test_studio_security.py</code>.
+  The resulting model is user guide §23.9.</li>
+<li><strong>A connection's secret could be sent anywhere</strong> by whoever may edit the
+    connection: change its base URL (or OAuth2 token URL, or PostgreSQL host)
+    to a server of their own and press Test. Changing the destination — scheme,
+    host, port, authentication, header, token URL, user or TLS verification —
+    now clears the stored secret, and the page says so.</li>
+<li><strong>No resource limits on the scripts and hooks runners</strong>: no memory or task
+    cap and the run's work directory on the root disk, next to Postgres. A
+    script that allocated, forked or wrote in a loop could take the node down.
+    Both units now carry <code>MemoryMax=1G</code>, <code>TasksMax=256</code>, <code>CPUQuota=200%</code>, low
+    CPU/IO weights and a 512 MB memory <code>/tmp</code>; inside the jail the root and
+    <code>/dev</code> are read-only (bwrap's own root was a writable memory filesystem
+    as large as half the host's RAM), a file is at most 256 MB, and the output
+    is read with a cap instead of being buffered whole. The scripts queue holds
+    at most 50 runs and run records are pruned after 30 days.</li>
+<li><strong>The Python console could exhaust the web service's memory</strong>: it runs in
+    the web service, its jail had writable memory filesystems (<code>/tmp</code>, <code>/</code>,
+    <code>/dev/shm</code>), its process cap counted every process of the service user
+    (so it capped nothing), and its output was buffered whole. Now nothing in
+    the jail is writable, a process may address 512 MiB, the run may add only
+    a few tasks to the ones that exist, the output is read with a cap, and one
+    console run at a time per node.</li>
+<li><strong>One template could freeze a web worker</strong>: Jinja's sandbox leaves <code>**</code>
+    and <code>*</code> alone and folds constants while compiling, so <code>{{ 2 ** 99999999 }}</code>
+    or <code>{{ 'a' * 10 ** 9 }}</code> ran before any limit. Exponents above 64, results
+    longer than 1 MiB, more than 1,000,000 loop items and rendered texts above
+    1 MiB are refused.</li>
+<li><strong>App operators could start unbounded work</strong>: runs per user (2) and per
+    node (8) are capped, the Run button is rate-limited, run requests above
+    1 MiB are refused, lists filled from an API are cached for a minute, an
+    action runs once per run and only on the version that produced it, and app
+    runs are kept 90 days.</li>
+<li><strong>Operators could read data an app never showed them</strong> through the step
+    details (a decision prints both values it compared); non-authors now see
+    which steps ran and how they ended.</li>
+<li><strong>A form value in an API path could leave its segment</strong> (<code>1?admin=1</code>,
+    <code>%2e%2e/</code>): inserted values are percent-encoded, encoded <code>.</code>/<code>/</code>/<code>\</code> are
+    refused and the query string is re-encoded.</li>
+<li><strong>An echoed credential reached the caller</strong>: answers are masked before a
+    step, script or operator sees them (secret, Authorization value, Basic
+    base64, OAuth2 token, JSON-escaped spellings). Password inputs are also
+    masked in their <code>urlencode</code>/<code>tojson</code>/base64 spellings.</li>
+<li><strong>PostgreSQL "read only" could be walked out of</strong> with a statement list
+    (<code>COMMIT; SET …; COMMIT; DELETE …</code>) and a result had no size limit: one
+    statement through the extended protocol, read-only transaction AND session
+    default, results capped at 8 MiB, a cancel if the server ignores the
+    timeout, and <code>require_auth=!password</code> with libpq 16+.</li>
+<li><strong>HTTP calls had no total deadline</strong> (a server sending a byte at a time
+    held the caller), and the other HA node was not on the refused list: both
+    fixed.</li>
+<li><strong>Data stores had no size limit</strong>: 16 MiB and 20,000 rows per store,
+    128 KiB per row, 200 stores; writers of one store are serialised.</li>
+<li>
+<p>The connection broker and the egress proxy (outside the jail) started a
+    thread per socket with no cap; now 8 and 32 at a time.</p>
+</li>
 <li>
 <p><strong>Connections refuse dangerous destinations</strong> (found in this release's
   Connections before it shipped): a base URL, an OAuth2 token URL or a

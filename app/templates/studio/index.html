@@ -45,6 +45,8 @@
           <i class="bi bi-plug me-2"></i>{{ _('Connections') }}<span class="fw-badge fw-badge-secondary ms-auto">{{ connections|length }}</span></a>
         <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'apps' }}" data-bs-toggle="list" href="#studio-pane-apps" role="tab" data-pane="apps">
           <i class="bi bi-app-indicator me-2"></i>{{ _('Apps') }}<span class="fw-badge fw-badge-secondary ms-auto">{{ apps|length }}</span></a>
+        <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'examples' }}" data-bs-toggle="list" href="#studio-pane-examples" role="tab" data-pane="examples">
+          <i class="bi bi-lightbulb me-2"></i>{{ _('Examples') }}<span class="fw-badge fw-badge-secondary ms-auto">{{ bundles|length }}</span></a>
         {% endif %}
       </div>
       {% if can_library and scripts %}
@@ -211,6 +213,53 @@
           </table>
         </div>
       </div>
+
+      <div class="tab-pane fade {{ 'show active' if pane == 'examples' }}" id="studio-pane-examples" role="tabpanel">
+        <div class="fw-card sl-how"><div class="fw-card-body py-2 d-flex gap-2" style="font-size:12px;">
+          <i class="bi bi-lightbulb text-accent" style="font-size:18px;"></i>
+          <span>{{ _('Working examples of every Studio piece, written against the real FortiGate and NetBox APIs. Install creates the objects that are missing (ids start with ex-) and never overwrites one you edited; connections are created without a secret and pointed at a placeholder host, so nothing reaches a device until you finish their setup.') }}</span>
+        </div></div>
+        <div id="exMsg" class="small mb-2" role="status"></div>
+        {% for b in bundles %}
+        <div class="fw-card mb-3" data-example="{{ b.key }}">
+          <div class="fw-card-header d-flex align-items-center">
+            <span class="fw-card-title" style="font-size:14px;">{{ b.title }}</span>
+            {% if b.installed %}<span class="fw-badge fw-badge-success ms-2">{{ _('installed') }}</span>
+            {% elif b.partly %}<span class="fw-badge fw-badge-warning ms-2">{{ _('partly installed') }}</span>{% endif %}
+            <div class="ms-auto d-flex gap-2">
+              {% if not b.installed %}<button type="button" class="btn btn-fw-primary btn-sm" data-ex-install="{{ b.key }}"><i class="bi bi-download me-1"></i>{{ _('Install') }}</button>{% endif %}
+              {% if b.partly %}<button type="button" class="btn btn-outline-danger btn-sm" data-ex-remove="{{ b.key }}"><i class="bi bi-trash me-1"></i>{{ _('Remove') }}</button>{% endif %}
+            </div>
+          </div>
+          <div class="fw-card-body" style="font-size:13px;">
+            <p class="mb-2">{{ b.summary }}</p>
+            <div class="row g-3">
+              <div class="col-lg-5">
+                <div class="text-muted text-uppercase mb-1" style="font-size:10px;letter-spacing:.04em;">{{ _('What it creates') }}</div>
+                <ul class="list-unstyled mb-0">
+                  {% for o in b.objects %}
+                  <li class="d-flex align-items-center gap-2 py-1">
+                    <i class="bi {{ {'connection': 'bi-plug', 'store': 'bi-table', 'script': 'bi-filetype-py', 'app': 'bi-app-indicator'}[o.kind] }} text-muted"></i>
+                    {% if o.url %}<a href="{{ o.url }}">{{ o.name }}</a>{% else %}<span>{{ o.name }}</span>{% endif %}
+                    <code style="font-size:11px;">{{ o.slug }}</code>
+                    {% if o.installed %}<span class="fw-badge fw-badge-success ms-auto">{{ _('installed') }}</span>{% else %}<span class="fw-badge fw-badge-secondary ms-auto">{{ _('not installed') }}</span>{% endif %}
+                  </li>
+                  {% endfor %}
+                </ul>
+              </div>
+              <div class="col-lg-7">
+                <div class="text-muted text-uppercase mb-1" style="font-size:10px;letter-spacing:.04em;">{{ _('To finish it') }}</div>
+                <ol class="ps-3 mb-0">{% for step in b.setup %}<li>{{ step }}</li>{% endfor %}</ol>
+              </div>
+            </div>
+            {% for c in b.code %}
+            <details class="mt-2"><summary style="font-size:12px;">{{ _('Script') }} <code>{{ c.slug }}</code> — main.py</summary>
+              <pre class="ex-code mt-2 mb-0" style="background:#F3F6FC;border:1px solid #E1E6EF;border-radius:6px;padding:10px;font-size:12px;max-height:420px;overflow:auto;">{{ c.code }}</pre></details>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
       {% endif %}
 
       {% if can_console %}
@@ -279,6 +328,8 @@
   </div></div>
 </div>
 {% endfor %}
+<script type="application/json" id="ex-config">{{ {'install': url_for('studio.example_install', key='KEY'), 'remove': url_for('studio.example_remove', key='KEY'), 'back': url_for('studio.index', pane='examples')}|tojson }}</script>
+<script src="{{ asset('js/studio_examples.js') }}" nonce="{{ csp_nonce }}"></script>
 <script type="application/json" id="sl-config">{{ {'urls': {'run': url_for('script_library.run_status', rid='RID')}}|tojson }}</script>
 <script src="{{ asset('js/script_library.js') }}" nonce="{{ csp_nonce }}"></script>
 {% endif %}

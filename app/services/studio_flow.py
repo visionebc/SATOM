@@ -36,10 +36,12 @@ always real -- that is what publishing means.
 """
 from __future__ import annotations
 
+import contextvars
 import json
 import re
 import time
 from dataclasses import dataclass, field
+from urllib.parse import quote
 
 from jinja2 import StrictUndefined, TemplateError, Undefined
 from jinja2.sandbox import ImmutableSandboxedEnvironment, SecurityError
@@ -61,11 +63,68 @@ DECISION_OPS = ("equals", "not_equals", "contains", "greater", "less", "empty",
 OUTPUT_VIEWS = ("auto", "table", "list", "keyvalue", "text", "json")
 STORE_MODES = ("insert", "update", "upsert", "delete")
 
+#: Items every ``range()`` of ONE rendered value may produce together. The
+#: sandbox caps a single range at 100 000; two nested loops are 10^10.
+MAX_TEMPLATE_ITEMS = 1_000_000
+_BUDGET: contextvars.ContextVar = contextvars.ContextVar("studio_flow_budget", default=None)
+
+
+def _budget_range(*args):
+    r = range(*args)
+    if len(r) > 100_000:
+        raise SecurityError("range() is limited to 100000 items")
+    left = _BUDGET.get()
+    if left is not None:
+        left[0] -= len(r)
+        if left[0] < 0:
+            raise SecurityError("a template may iterate over at most %d items"
+                                % MAX_TEMPLATE_ITEMS)
+    return r
+
+
+class _StudioEnv(ImmutableSandboxedEnvironment):
+    """The sandbox with ``**`` and ``*`` checked. Jinja's sandbox leaves
+    them alone, and its optimiser folds constants at COMPILE time, so
+    ``{{ 9**9**9 }}`` froze a gunicorn worker (holding the GIL) and
+    ``{{ 'a' * 10**9 }}`` filled its memory before any run limit applied.
+    Intercepted operators are never constant-folded."""
+    intercepted_binops = frozenset({"**", "*"})
+
+    def call_binop(self, context, operator, left, right):
+        if operator == "**":
+            if _number(right) and abs(right) > 64 and _number(left) and abs(left) not in (0, 1):
+                raise SecurityError("an exponent above 64 is refused")
+            return left ** right
+        if operator == "*":
+            for seq, n in ((left, right), (right, left)):
+                if isinstance(seq, (str, list, tuple)) and _number(n) and \
+                        len(seq) * max(int(n), 0) > MAX_VALUE_BYTES:
+                    raise SecurityError("the result would be longer than %d"
+                                        % MAX_VALUE_BYTES)
+            return left * right
+        return super().call_binop(context, operator, left, right)
+
+
+def _number(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _env(**kw) -> _StudioEnv:
+    e = _StudioEnv(autoescape=False, undefined=StrictUndefined, **kw)
+    e.filters["tojson"] = lambda v: json.dumps(v, default=str)
+    e.globals["range"] = _budget_range
+    return e
+
+
 #: StrictUndefined: a misspelt {{ form.hots }} is an error the author sees,
 #: not an empty string written into a data store. Optional values use
 #: {{ x | default('') }}.
-_ENV = ImmutableSandboxedEnvironment(autoescape=False, undefined=StrictUndefined)
-_ENV.filters["tojson"] = lambda v: json.dumps(v, default=str)
+_ENV = _env()
+#: For URL paths: every value a template puts in is percent-encoded, slash
+#: included, so a form value such as ``1?admin=1`` or ``../../users`` stays
+#: one path segment instead of becoming a query or a climb (finding
+#: 2026-10-20). The literal text the author wrote is not touched.
+_PATH_ENV = _env(finalize=lambda v: quote(str(v), safe=""))
 _ONE_EXPR = re.compile(r"^\s*\{\{(.+?)\}\}\s*$", re.S)
 _VAR_RE = re.compile(r"^[a-z_][a-z0-9_]{0,63}$")
 _KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
@@ -78,11 +137,42 @@ class FlowError(Exception):
 # --------------------------------------------------------------------------- #
 #  templates                                                                   #
 # --------------------------------------------------------------------------- #
+def _text(env, value: str, scope: dict) -> str:
+    """Rendered piece by piece, stopping at MAX_VALUE_BYTES: a loop that
+    writes a lot fails here instead of filling the worker's memory."""
+    out, n = [], 0
+    for chunk in env.from_string(value).generate(**scope):
+        n += len(chunk)
+        if n > MAX_VALUE_BYTES:
+            raise FlowError("the rendered text is longer than %d KiB" % (MAX_VALUE_BYTES // 1024))
+        out.append(chunk)
+    return "".join(out)
+
+
+def render_path(value, scope: dict):
+    """A URL path template: like :func:`render`, but always text, with every
+    inserted value percent-encoded (see ``_PATH_ENV``)."""
+    if not isinstance(value, str) or ("{{" not in value and "{%" not in value):
+        return value
+    token = _BUDGET.set([MAX_TEMPLATE_ITEMS])
+    try:
+        return _text(_PATH_ENV, value, scope)
+    except FlowError:
+        raise
+    except SecurityError as exc:
+        raise FlowError("template refused by the sandbox: %s" % exc) from None
+    except Exception as exc:  # noqa: BLE001
+        raise FlowError("template error in %r: %s" % (value[:80], exc)) from None
+    finally:
+        _BUDGET.reset(token)
+
+
 def render(value, scope: dict):
     """*value* with every template rendered against *scope*. See module doc."""
     if isinstance(value, str):
         if "{{" not in value and "{%" not in value:
             return value
+        token = _BUDGET.set([MAX_TEMPLATE_ITEMS])
         try:
             m = _ONE_EXPR.match(value)
             if m and "{{" not in m.group(1) and "}}" not in m.group(1):
@@ -90,7 +180,7 @@ def render(value, scope: dict):
                 if isinstance(rv, Undefined):
                     raise FlowError("%s is not defined" % m.group(1).strip())
                 return rv
-            return _ENV.from_string(value).render(**scope)
+            return _text(_ENV, value, scope)
         except FlowError:
             raise
         except SecurityError as exc:
@@ -99,6 +189,8 @@ def render(value, scope: dict):
             raise FlowError("template error in %r: %s" % (value[:80], exc)) from None
         except Exception as exc:  # noqa: BLE001 -- e.g. a ZeroDivisionError in an expression
             raise FlowError("template error in %r: %s" % (value[:80], exc)) from None
+        finally:
+            _BUDGET.reset(token)
     if isinstance(value, list):
         return [render(v, scope) for v in value]
     if isinstance(value, dict):
@@ -453,7 +545,7 @@ def _run_step(node: dict, ctx: Ctx):
         c = _connection(node, "http")
         try:
             r = SC.http_call(c, _p(node, "method", "GET") or "GET",
-                             str(render(_p(node, "path"), scope) or ""),
+                             str(render_path(_p(node, "path"), scope) or ""),
                              query=_json(node, ctx, "query", "Query string"),
                              body=_json(node, ctx, "body", "Body"))
         except SC.ConnectionError_ as exc:

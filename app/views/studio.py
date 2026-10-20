@@ -25,9 +25,18 @@ from ..services import py_examples
 from ..services.audit import log_action
 
 bp = Blueprint("studio", __name__, url_prefix="/studio")
+
+#: The largest Studio request is a CSV import (8 MiB, checked by its route).
+MAX_BODY = 12 * 1024 * 1024
+
+
+@bp.before_request
+def _bounded_bodies():
+    from ..services.request_limits import refuse_larger_than
+    return refuse_larger_than(MAX_BODY)
 CONSOLE = "studio.python_console"
 LIBRARY = "studio.script_library"
-PANES = ("scripts", "console", "stores", "connections", "apps")
+PANES = ("scripts", "console", "stores", "connections", "apps", "examples")
 
 
 def _who() -> str:
@@ -59,7 +68,55 @@ def index():
         runs=SL.recent_runs(limit=15) if can_library else [],
         datasets=plugin_sandbox.dataset_catalog() if can_console else [],
         examples=py_examples.all_examples() if can_console else [],
+        bundles=_bundles() if can_library else [],
         sandbox_ok=sandbox.available())
+
+
+def _bundles() -> list[dict]:
+    from ..services import studio_examples as EX
+    links = {"connection": "studio.connection", "store": "studio.store",
+             "script": "script_library.edit", "app": "studio.app_edit"}
+    out = EX.status()
+    for b in out:
+        for o in b["objects"]:
+            o["url"] = url_for(links[o["kind"]], slug=o["slug"]) if o["installed"] else ""
+    return out
+
+
+@bp.route("/examples/<key>/install", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def example_install(key):
+    """Create the missing objects of an example bundle. Existing objects with
+    the same id are kept as they are (an edited example survives)."""
+    from ..services import studio_examples as EX
+    from ..extensions import db
+    if key not in EX.BUNDLE_KEYS:
+        abort(404)
+    try:
+        res = EX.install(key, _who())
+    except Exception as exc:  # noqa: BLE001 -- any layer's refusal, shown as is
+        db.session.rollback()
+        return _err(exc)
+    log_action("studio.example.install", target=key, extra=res)
+    return jsonify({"ok": True, **res})
+
+
+@bp.route("/examples/<key>/remove", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def example_remove(key):
+    from ..services import studio_examples as EX
+    from ..extensions import db
+    if key not in EX.BUNDLE_KEYS:
+        abort(404)
+    try:
+        res = EX.remove(key)
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        return _err(exc)
+    log_action("studio.example.remove", target=key, extra=res)
+    return jsonify({"ok": True, **res})
 
 
 # A locked-down bwrap sandbox (services.py_console) runs ADMIN-authored
@@ -287,14 +344,15 @@ def connection_save(slug):
     from ..services import studio_connections as SC
     c = _conn_or_404(slug)
     try:
-        SC.save(c, request.get_json(silent=True) or {}, _who())
+        dropped = SC.save(c, request.get_json(silent=True) or {}, _who())
     except SC.ConnectionError_ as exc:
         from ..extensions import db
         db.session.rollback()
         return _err(exc)
     log_action("studio.connection.save", target=slug,
-               extra={"kind": c.kind, "auth": c.auth, "base_url": c.base_url, "host": c.host})
-    return jsonify({"ok": True})
+               extra={"kind": c.kind, "auth": c.auth, "base_url": c.base_url, "host": c.host,
+                      "secret_dropped": dropped})
+    return jsonify({"ok": True, "secret_dropped": dropped, "has_secret": SC.has_secret(slug)})
 
 
 @bp.route("/connections/<slug>/secret", methods=["POST"])

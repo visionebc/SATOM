@@ -30,12 +30,15 @@ approval.
 """
 from __future__ import annotations
 
+import base64
 import csv
 import io
 import json
 import re
 import threading
+import time
 from datetime import datetime, timedelta
+from urllib.parse import quote, quote_plus
 
 from ..extensions import db
 from ..models_studio import StudioApp, StudioAppRun, UserGroup, user_group_members
@@ -49,6 +52,20 @@ MAX_FIELDS = 40
 MAX_ACTIONS = 20
 MAX_OPTIONS = 500
 RUN_VARS_CAP = 256 * 1024
+#: Runs in progress at once: per user, and on the whole node. Every run is a
+#: thread of the web process; an operator holding the Run button must not be
+#: able to take every worker (finding 2026-10-20).
+MAX_RUNS_PER_USER = 2
+MAX_RUNS_TOTAL = 8
+#: Run records are kept this long.
+RUN_KEEP_DAYS = 90
+#: A list field fed by an API is fetched at most once per this many seconds
+#: (form opened, form submitted, the next operator...).
+OPTIONS_TTL = 60.0
+_OPTIONS_CACHE: dict = {}
+_OPTIONS_LOCK = threading.Lock()
+#: Actions that may run again on the same run: they change nothing.
+REPEATABLE_ACTIONS = ("download",)
 #: Test seam: run in the request thread instead of a background thread.
 RUN_INLINE = False
 
@@ -198,30 +215,46 @@ def options_for(field: dict) -> tuple[list[dict], str]:
             out.append({"value": str(v), "label": str(r.get(field.get("label_col") or "") or v)})
         return out, ""
     if typ == "api_select":
-        from . import studio_connections as SC
-        c = SC.get(field.get("connection") or "")
-        if c is None or c.kind != "http":
-            return [], "connection %s does not exist" % field.get("connection")
-        try:
-            r = SC.http_call(c, "GET", field.get("path") or "")
-        except SC.ConnectionError_ as exc:
-            return [], str(exc)
-        if not r["ok"]:
-            return [], "HTTP %d from %s" % (r["status"], c.slug)
-        items = SC.json_path(r.get("json"), field.get("list_path") or "")
-        if not isinstance(items, list):
-            return [], "the JSON path %r is not a list" % (field.get("list_path") or "$")
-        out = []
-        for it in items[:MAX_OPTIONS]:
-            if isinstance(it, dict):
-                v = it.get(field.get("value_key") or "")
-                lab = it.get(field.get("label_key") or "") or v
-            else:
-                v = lab = it
-            if v is not None:
-                out.append({"value": str(v), "label": str(lab)})
-        return out, ""
+        key = tuple(str(field.get(k) or "") for k in
+                    ("connection", "path", "list_path", "value_key", "label_key"))
+        now = time.monotonic()
+        with _OPTIONS_LOCK:
+            hit = _OPTIONS_CACHE.get(key)
+            if hit and now - hit[0] < OPTIONS_TTL:
+                return list(hit[1]), hit[2]
+        opts, problem = _api_options(field)
+        with _OPTIONS_LOCK:
+            if len(_OPTIONS_CACHE) > 500:
+                _OPTIONS_CACHE.clear()
+            _OPTIONS_CACHE[key] = (now, opts, problem)
+        return list(opts), problem
     return [], ""
+
+
+def _api_options(field: dict) -> tuple[list[dict], str]:
+    from . import studio_connections as SC
+    c = SC.get(field.get("connection") or "")
+    if c is None or c.kind != "http":
+        return [], "connection %s does not exist" % field.get("connection")
+    try:
+        r = SC.http_call(c, "GET", field.get("path") or "")
+    except SC.ConnectionError_ as exc:
+        return [], str(exc)
+    if not r["ok"]:
+        return [], "HTTP %d from %s" % (r["status"], c.slug)
+    items = SC.json_path(r.get("json"), field.get("list_path") or "")
+    if not isinstance(items, list):
+        return [], "the JSON path %r is not a list" % (field.get("list_path") or "$")
+    out = []
+    for it in items[:MAX_OPTIONS]:
+        if isinstance(it, dict):
+            v = it.get(field.get("value_key") or "")
+            lab = it.get(field.get("label_key") or "") or v
+        else:
+            v = lab = it
+        if v is not None:
+            out.append({"value": str(v), "label": str(lab)})
+    return out, ""
 
 
 def form_view(fields: list) -> list[dict]:
@@ -523,9 +556,34 @@ def definition(a: StudioApp, draft: bool) -> dict:
     return pub
 
 
+def _running_query():
+    since = datetime.utcnow() - timedelta(seconds=F.RUN_TIMEOUT + 120)
+    return StudioAppRun.query.filter(StudioAppRun.status == "running",
+                                     StudioAppRun.started_at >= since)
+
+
+def _room_for_run(username: str) -> None:
+    mine = _running_query().filter(StudioAppRun.user == username).count()
+    if mine >= MAX_RUNS_PER_USER:
+        raise AppError("you already have %d app runs in progress; wait for one to finish"
+                       % mine)
+    total = _running_query().count()
+    if total >= MAX_RUNS_TOTAL:
+        raise AppError("%d app runs are in progress on this node; try again in a moment"
+                       % total)
+
+
+def _prune_runs() -> None:
+    cutoff = datetime.utcnow() - timedelta(days=RUN_KEEP_DAYS)
+    StudioAppRun.query.filter(StudioAppRun.started_at < cutoff,
+                              StudioAppRun.status != "running").delete(synchronize_session=False)
+
+
 def start_run(a: StudioApp, *, user, product: str, raw_inputs, draft: bool = False,
               armed: bool = True) -> StudioAppRun:
     d = definition(a, draft)
+    _room_for_run(getattr(user, "username", ""))
+    _prune_runs()
     fields = d.get("fields") or []
     inputs = resolve_inputs(fields, raw_inputs)
     run = StudioAppRun(app_id=a.id, version=d.get("version") or 0, armed=bool(armed or not draft),
@@ -553,6 +611,19 @@ def _bg(flask_app, run_id, user_id, inputs, d, passwords):
             execute(run_id, user_id, inputs, d, passwords)
         finally:
             db.session.remove()
+
+
+def _spellings(secrets) -> list[str]:
+    """Each password as typed and as the usual filters write it (urlencode,
+    tojson, base64), longest first: ``{{ form.pw | urlencode }}`` copied
+    into an output must not show it either."""
+    out = set()
+    for s_ in secrets:
+        if not s_:
+            continue
+        out.update({s_, quote(s_, safe=""), quote(s_, safe="/"), quote_plus(s_),
+                    json.dumps(s_)[1:-1], base64.b64encode(s_.encode()).decode()})
+    return sorted((x for x in out if len(x) >= 3), key=len, reverse=True)
 
 
 def _mask(obj, secrets):
@@ -583,7 +654,7 @@ def execute(run_id: int, user_id, inputs: dict, d: dict, passwords=()) -> None:
         return
     user_obj = db.session.get(User, user_id) if user_id else None
     ctx = F.Ctx(form=inputs, armed=run.armed, user=run.user, user_obj=user_obj, run_id=run.id)
-    secrets = [p for p in passwords if len(p) >= 3]
+    secrets = _spellings([p for p in passwords if len(p) >= 3])
 
     def persist(steps, c):
         run.steps_json = json.dumps(_mask(steps, secrets), default=str)
@@ -622,11 +693,13 @@ def may_see_run(user, run: StudioAppRun) -> bool:
 
 
 def run_json(run: StudioAppRun, a: StudioApp, user) -> dict:
+    author = is_author(user)
     d = {"id": run.id, "status": run.status, "error": run.error, "version": run.version,
          "armed": run.armed, "user": run.user, "inputs": run.inputs, "outputs": run.outputs,
-         "steps": run.steps, "started_at": run.started_at.isoformat(timespec="seconds") + "Z",
+         "steps": run.steps if author else operator_steps(run.steps),
+         "started_at": run.started_at.isoformat(timespec="seconds") + "Z",
          "finished_at": run.finished_at.isoformat(timespec="seconds") + "Z" if run.finished_at else None}
-    if is_author(user):
+    if author:
         d["vars"] = run.vars
     if run.status == "done" and run.armed:
         try:
@@ -636,6 +709,21 @@ def run_json(run: StudioAppRun, a: StudioApp, user) -> dict:
         d["actions"] = [{"key": x["key"], "label": x["label"], "kind": x["kind"],
                          "confirm": x.get("confirm", False)} for x in acts]
     return d
+
+
+def operator_steps(steps: list) -> list[dict]:
+    """What a non-author sees of the steps: which ran, how they ended and how
+    long they took. The detail of a step (a decision prints both values it
+    compared, a query its row count) is the author's debugging view and can
+    hold data the app never chose to OUTPUT (finding 2026-10-20). Kept: the
+    message of a Fail step and of an action, which are written for the user."""
+    out = []
+    for st in steps or []:
+        keep = st.get("kind") in ("fail", "action")
+        out.append({"key": st.get("key"), "label": st.get("label"), "kind": st.get("kind"),
+                    "outcome": st.get("outcome"), "ms": st.get("ms"),
+                    "detail": st.get("detail", "") if keep else ""})
+    return out
 
 
 def recent_runs(a: StudioApp, user, limit: int = 15) -> list[StudioAppRun]:
@@ -653,10 +741,19 @@ def _action(a: StudioApp, run: StudioAppRun, key: str) -> dict:
         raise AppError("only a finished run can be acted on")
     if not run.armed:
         raise AppError("a rehearsal run has nothing real to act on")
-    acts = definition(a, run.version == 0).get("actions") or []
+    d = definition(a, run.version == 0)
+    if run.version and int(d.get("version") or 0) != int(run.version):
+        # The published version moved on: its actions are not the ones this
+        # run was made for (a new action could act on an old output).
+        raise AppError("this run used version %s and the app is now at version %s: "
+                       "run it again to act on the output" % (run.version, d.get("version")))
+    acts = d.get("actions") or []
     act = next((x for x in acts if x["key"] == key), None)
     if act is None:
         raise AppError("action %s does not exist in version %s" % (key, run.version or "draft"))
+    if act["kind"] not in REPEATABLE_ACTIONS and any(
+            st.get("key") == "action:" + key and st.get("outcome") == "ok" for st in run.steps):
+        raise AppError("%s was already done for this run" % act["label"])
     return act
 
 
@@ -743,7 +840,11 @@ def run_action(a: StudioApp, run: StudioAppRun, key: str, *, user, product: str)
             if c is None or c.kind != "http":
                 raise AppError("connection %s does not exist" % p.get("connection"))
             body = _r(F.parse_json_param(p.get("body") or "", "Body"), scope)
-            r = SC.http_call(c, p.get("method") or "POST", str(_r(p.get("path") or "", scope)), body=body)
+            try:
+                path = F.render_path(p.get("path") or "", scope)
+            except F.FlowError as exc:
+                raise AppError(str(exc)) from None
+            r = SC.http_call(c, p.get("method") or "POST", str(path), body=body)
             msg = "%s answered HTTP %d" % (c.name, r["status"])
             _log_action(run, act, r["ok"], msg)
             return {"ok": r["ok"], "message": msg}

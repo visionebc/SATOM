@@ -3845,7 +3845,7 @@ others, and without being given user administration.
 
 | Tool | Page | What it authors |
 |---|---|---|
-| **Python Studio** | `/studio` | One page, five panes: **Scripts** (the Script Library: Python scripts with a form that operators fill in and run, §23.4), **Console** (throwaway Python over the curated fleet datasets, §23.3), **Data stores** (§23.5), **Connections** (§23.6) and **Apps** (§23.7) |
+| **Python Studio** | `/studio` | One page, six panes: **Scripts** (the Script Library: Python scripts with a form that operators fill in and run, §23.4), **Console** (throwaway Python over the curated fleet datasets, §23.3), **Data stores** (§23.5), **Connections** (§23.6), **Apps** (§23.7) and **Examples** (§23.8); what Studio code cannot do to SATOM is §23.9 |
 | **Plugin Studio** | `/plugins` | Server-rendered custom views/widgets, published as **Custom Views** |
 | **Lua Studio** | `/lua` | Device scripts for FortiWeb *Web Scripting* and FortiADC *Scripting* |
 
@@ -3949,6 +3949,15 @@ database or the keyring, and cannot open a socket. Wall-clock, CPU, memory and
 process-count caps stop runaway loops. The console receives a JSON snapshot of
 the data; it never touches the database itself. Every run is audited, including
 the first kilobyte of the source.
+
+The console runs inside the web service, next to the pages everyone uses, so
+it is bounded tightly: **nothing in the jail is writable** (no `/tmp`, a
+read-only root and `/dev` — a file written to a memory filesystem is memory no
+per-process limit counts), each process may address 512 MiB, the run may start
+only a handful of processes or threads beyond those SATOM already has, the
+output is read as it arrives and kept up to 200 KB per stream, and **one run at
+a time per node** (a second one waits a few seconds, then is told the console
+is busy).
 
 ### 23.4 Script Library
 
@@ -4107,6 +4116,20 @@ private file on this node only; the runner rewrites it without them the moment
 it starts. On an HA pair `satom-scripts.path` must be enabled on both nodes. An
 update arms it on nodes installed before it existed.
 
+**What a run can use.** The runner unit carries cgroup limits, so a script that
+allocates, forks or writes in a loop stops at them instead of taking memory,
+processes or disk from the database and the web service on the same node:
+`MemoryMax=1G` (`MemoryHigh=768M`), `TasksMax=256`, `CPUQuota=200%` with a low
+CPU and I/O weight, and a private `/tmp` that is a 512 MB memory filesystem —
+the run's work directory lives there, so no run can fill the disk. Inside the
+jail the root and `/dev` are read-only, a single file is at most 256 MB and the
+output is read as it arrives (twice the 64 KB shown is kept). At most 50 runs
+wait in the queue (a full queue is refused with that message) and run records
+are kept 30 days (3,000 at most); a queued or running record is never pruned.
+A site that needs more raises the limits in a systemd drop-in
+(`systemctl edit satom-scripts.service`). The integration-hooks runner
+(`satom-integrations.service`) has the same limits.
+
 ### 23.5 Data stores
 
 **Python Studio → Data stores** holds tables you define in the UI. A data
@@ -4126,7 +4149,11 @@ store is a column list — name, label, type (`text`, `number`, `boolean`,
   like a formula is prefixed with `'`). *Import CSV* appends rows from a file
   whose header names the columns; every line is checked before any is written,
   so a file with one bad line imports nothing.
-- Limit: 20,000 rows per store, 40 columns.
+- Limits: 20,000 rows and 16 MiB per store, 128 KiB per row, 64 KiB per
+  value, 40 columns, 200 stores per node. A query reads the whole store to
+  filter it, so the size cap is what bounds one query. Two writers of the same
+  store are serialised, so a limit cannot be passed by writing at the same
+  moment.
 
 No SQL and no DDL is reachable from these pages: rows are JSON documents in
 SATOM's own database, so a data store cannot reach any other table — and it
@@ -4171,6 +4198,34 @@ credential, for app steps to use.
   against the trust store (`verify-full`); off, it is encrypted without the
   check (`require`). A server without TLS is refused — the password never
   travels in clear.
+- **Changing where a connection points clears its secret.** The stored secret
+  belongs to the destination: the scheme, host and port of the base URL, the
+  authentication, the API-key header, the token URL, the user and TLS
+  verification (for PostgreSQL: host, port, database, user and TLS). Change any
+  of them and the secret is cleared — the page says so — and must be typed
+  again; otherwise anyone allowed to edit a connection could point it at a
+  server of their own and press Test to receive the token. Renaming, the
+  description, the timeout and the path under the same host keep it.
+- **A credential that comes back is masked.** An API that echoes the request
+  (a debug endpoint, a hostile server) would return the token in its answer;
+  every answer is masked before a step, a script or an operator sees it — the
+  secret, the `Authorization` value, the Basic header's base64 form and an
+  OAuth2 access token, also in their JSON-escaped spelling.
+- **The other HA node is refused too**, like this node: every address listed
+  in `data/ha_nodes.json`. A path may not carry an encoded `.`, `/` or `\`
+  (`%2e`, `%2f`, `%5c` — the same climb, spelt to slip past the check), and
+  the query string is re-encoded pair by pair.
+- **One call has one deadline**: twice the timeout plus 5 s, whatever a slow
+  server does (a server that sends a byte at a time would otherwise hold a web
+  worker as long as it liked).
+- **PostgreSQL runs ONE statement** (the extended protocol: `SELECT 1; COMMIT;
+  …` is refused) and a read-only step is read-only twice — the transaction and
+  the session default — so a statement list cannot walk out of it. A result
+  stops at the row limit or at 8 MiB, the server stops a statement at the
+  timeout and SATOM cancels it if it does not. With libpq 16 or later, a server
+  that asks for the password in clear is refused before the password is sent.
+  The real boundary stays a **read-only role** on the remote database: a
+  function with side effects is still a single SELECT.
 - **Test** tries a GET (or a read-only SQL statement) and shows the answer;
   type a JSON path (`a.b[0].c`, `items[*].name`) to see what a step would keep.
 
@@ -4260,8 +4315,159 @@ risk, with the app and run named in it) that goes through the normal approval
 of Change Management. *Run another app* needs the user to be allowed to use
 that app.
 
+**Limits that protect the node.** App runs execute in the web service, so:
+
+- a user has at most **2 runs** in progress and the node at most **8**; the
+  Run button is also limited to 30 presses a minute, and a run request larger
+  than 1 MiB is refused (413);
+- a template cannot compute without end: `**` refuses an exponent above 64,
+  `*` refuses a result longer than 1 MiB, all the `range()` loops of one value
+  together produce at most 1,000,000 items, and a rendered text stops at 1 MiB;
+- a value a template puts into an API **path** is percent-encoded, slash
+  included: a form value such as `1?admin=1` or `../../users` stays one path
+  segment instead of becoming a query or a climb (to pass values as query
+  parameters, use the step's *Query string (JSON)*);
+- a list filled from an API is fetched at most once a minute, not on every
+  form opening;
+- an action runs **once per run** (*Download* can be repeated), and only on
+  the version that produced the run: after a new Publish, an older run's
+  actions are refused — run the app again;
+- users who are not authors see which steps ran and how they ended, not their
+  details (a decision prints both values it compared, which may be data the
+  app never chose to show); the message of a *Fail* step is shown;
+- password values are masked also in the spellings the usual filters produce
+  (`urlencode`, `tojson`, base64);
+- run records are kept 90 days.
+
 Gated by `studio.script_library` for authors; users need only to be in the
 app's access list.
+
+### 23.8 Examples
+
+**Python Studio → Examples** installs working examples of every Studio piece
+with one click. Ids start with `ex-`; installing creates only what is missing
+and never overwrites an object you edited; **Remove** deletes the objects of
+that example but keeps any of them something else still uses (another
+example's app, or your own work built on it). Connections are created
+**without a secret** and pointed at a placeholder host
+(`fortigate.example.com`, `netbox.example.com`), so nothing reaches a device
+until you open the connection, set the address and paste the token.
+
+| Example | What it shows | Objects |
+|---|---|---|
+| **FortiGate: which rule lets this traffic through?** | An app built only from the diagram, three API calls and two decisions; actions on the output: save to a data store, download CSV, ask for the access as a change request. The same lookup as a script. | connection `ex-fortigate`, data store `ex-policy-lookups`, script `ex-fortigate-policy-lookup`, app `ex-policy-finder` |
+| **NetBox: who owns this IP address?** | A script that calls a connection, and an app whose diagram **runs that script**. | connection `ex-netbox`, script `ex-netbox-ip-owner`, app `ex-ip-owner` |
+| **Explain a flow (FortiGate + NetBox)** | One script, **two connections**: who owns both ends and which rule decides the flow. Keeps working when NetBox is down. | script and app `ex-traffic-explainer` (+ the two connections) |
+| **Data stores: site contacts** | No external system: a list field fed by a data store, a query, an upsert. Published at once (every ADOM, Studio authors), so it appears under **Operations → Plugins**. | data store `ex-site-contacts` (3 sample rows), apps `ex-site-contact`, `ex-site-contact-edit` |
+
+The **Console** pane has two examples in its *Studio* group: the fleet
+inventory printed as CSV (paste it into a data store's *Import CSV*) and every
+managed FortiGate with the base URL a connection to its REST API would use.
+
+**FortiGate setup.** On the FortiGate: *System → Administrators → Create New →
+REST API Admin*, a read-only profile, this SATOM node as trusted host; copy the
+token. In SATOM open `ex-fortigate`: base URL `https://<FortiGate>/api/v2`,
+authentication *Bearer*, paste the token, **Test** with
+`/monitor/system/status`. With a self-signed certificate import its CA into
+the trust store (or untick TLS verification on a lab box).
+
+**The policy finder, step by step** (`ex-policy-finder`, the answers are the
+ones a FortiGate 8.0.1 gives):
+
+1. *Route back to the source* — `GET /monitor/router/lookup?destination=<source>`,
+   *Keep only* `results.entries[0].interface` → `srcintf` (e.g. `port1`). The
+   ingress interface is the one the FortiGate uses to reach the source.
+2. *Is there a route?* — decision `{{ srcintf | default('') }}` *not empty*;
+   no → *Fail* "The FortiGate has no route to …".
+3. *Ask the FortiGate* — `GET /monitor/firewall/policy-lookup` with query
+   `{"srcintf": "{{ srcintf }}", "sourceip": "{{ form.source }}",
+   "dest": "{{ form.destination }}",
+   "protocol": "{{ {'tcp': 6, 'udp': 17}[form.protocol] }}",
+   "destport": "{{ form.port }}"}`, keep `results` → `verdict`:
+   `{"match": true, "policy_id": 1, "policy_action": "accept"}` or
+   `{"match": false, "policy_id": 0, "sec_default_action": "deny"}`.
+4. *Does a rule match?* — decision `{{ verdict.match }}` *true*.
+5. *Read the rule* — `GET /cmdb/firewall/policy/{{ verdict.policy_id }}`,
+   keep `results[0]` → `rule` (name, interfaces, addresses, services).
+6. *Verdict* — a *Set a variable* step builds one record with a dictionary
+   expression, e.g. `'src_addr': rule.srcaddr | map(attribute='name') | join(', ')`;
+   the deny branch builds the same record with `policy_name` "(no rule matches)".
+7. *Show the verdict* as key/value. Any API error follows the *error* arrow to
+   *Fail* "The FortiGate did not answer: {{ last_error.message }}".
+
+The same lookup as a Script Library script (`ex-fortigate-policy-lookup`):
+
+```python
+from satom_script import connection, inputs, log, result
+
+fgt = connection("ex-fortigate")          # SATOM adds the token; the script never sees it
+
+def get(path, **params):
+    r = fgt.get(path, params=params or None)
+    r.raise_for_status()
+    return (r.json() or {}).get("results")
+
+src, dst = inputs["source"].strip(), inputs["destination"].strip()
+ingress = get("/monitor/router/lookup", destination=src)["entries"][0]["interface"]
+lookup = get("/monitor/firewall/policy-lookup", srcintf=ingress, sourceip=src, dest=dst,
+             protocol="6", destport=str(inputs["port"]))
+if lookup.get("match"):
+    rule = get("/cmdb/firewall/policy/%d" % lookup["policy_id"],
+               format="policyid|name|srcaddr|dstaddr|service|action")[0]
+    result({"policy": rule["name"], "action": lookup["policy_action"]})
+else:
+    result({"policy": None, "action": lookup.get("sec_default_action", "deny")})
+```
+
+**NetBox setup.** In NetBox create a read-only API token. In SATOM open
+`ex-netbox`: base URL `https://<NetBox>/api`, authentication *API key*, header
+`Authorization`, secret `Token <key>` (a v1 token; with a v2 token, NetBox
+4.5+, choose *Bearer* and paste the token alone). **Test** with `/status/`.
+The script reads `/ipam/ip-addresses/?address=<ip>` (status, DNS name, tenant,
+the device or virtual machine and interface it is assigned to) and
+`/ipam/prefixes/?contains=<ip>`, sorted most specific first (VLAN, role,
+scope, tenant):
+
+```python
+from satom_script import connection, inputs, result
+nb = connection("ex-netbox")
+ip = inputs["ip"]
+addr = nb.get("/ipam/ip-addresses/", params={"address": ip}).raise_for_status().json()
+nets = nb.get("/ipam/prefixes/", params={"contains": ip}).raise_for_status().json()
+result({"records": addr["results"], "prefixes": [p["prefix"] for p in nets["results"]]})
+```
+
+The `ex-ip-owner` app runs that script with a *Run a script* step
+(`{"ip": "{{ form.ip }}"}` → `nb`), then shows `{{ nb.owner }}` as key/value
+and `{{ nb.prefixes }}` as a table, or a text when NetBox does not know the
+address.
+
+**Data stores, step by step** (`ex-site-contact-edit`): a *Write a data store*
+step in *upsert* mode with match `{"site": "{{ form.site }}"}` and values
+`{"site": "{{ form.site }}", "contact": "{{ form.contact }}", …}` updates the
+row of that site or inserts it; a *Read a data store* step with filter
+`{"site": "{{ form.site }}"}` reads it back. The `ex-site-contact` form's
+*Site* field is a list from the data store (value and label column `site`), so
+a site added by the edit app appears in it.
+
+### 23.9 What Studio code cannot do to SATOM
+
+The rules below were checked by a security review and an adversarial test
+on a running node (2026-10-20); each one is pinned by a test
+(`tests/test_studio_security.py`).
+
+| Property | What protects it |
+|---|---|
+| **Confidentiality of SATOM** | Scripts and the console run in a bubblewrap jail with none of SATOM mounted (no `.env`, database socket, keys or other processes); the scripts runner itself has no database and no encryption key. Connection secrets reach a run only as single-use vault tokens unwrapped outside the jail. A connection never dials this node, the other HA node, loopback, link-local or reserved addresses. A connection's secret is cleared when its destination changes, and an echoed credential is masked in every answer. Operators see an app's outputs, not its step details. |
+| **Integrity of SATOM** | No SQL or DDL reaches SATOM's database from Studio: data stores are checked JSON rows. Device changes from an app are draft change requests that wait for approval. A PostgreSQL step runs one statement, read-only unless allowed. Path values cannot leave their segment. Actions run once per run, on the version that produced it. |
+| **Availability of SATOM** | The scripts and hooks runners have cgroup limits (memory 1 GiB, 256 tasks, 2 CPUs, a 512 MB memory `/tmp`); the jail's root and `/dev` are read-only and its output is read with a cap. The console has no writable path, 512 MiB per process, a task headroom and one run at a time. App runs are capped per user and per node, templates are bounded, HTTP calls have one total deadline, query results stop at 8 MiB, data stores have row, size and count limits, the scripts queue holds at most 50 runs, and request bodies to the app and Studio pages are capped. |
+
+What stays the administrator's responsibility: a **Studio author**
+(`studio.script_library`) writes code and diagrams that run with the
+connections' credentials, so grant that key as you would an administrator's;
+use **read-only** credentials on the external systems (a REST API admin with a
+read-only profile, a read-only database role) wherever a script or app only
+reads.
 
 ## 24. High availability
 

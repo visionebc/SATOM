@@ -48,7 +48,7 @@
         <span id="cn-secret-state" class="ms-2">{% if has_secret %}<span class="fw-badge fw-badge-success">{{ _('stored') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('not set') }}</span>{% endif %}</span></div>
       <div class="fw-card-body" style="font-size:13px;">
         {% if secret_problem %}<div class="alert alert-warning py-1 px-2 mb-2" style="font-size:12px;">{{ secret_problem }}</div>{% endif %}
-        <p class="text-muted" style="font-size:12px;">{{ _('Password, token, API key or client secret. Kept in the vault, or encrypted when there is no vault, and never shown again: this page can only replace or clear it.') }}</p>
+        <p class="text-muted" style="font-size:12px;">{{ _('Password, token, API key or client secret. Kept in the vault, or encrypted when there is no vault, and never shown again: this page can only replace or clear it.') }} {{ _('Changing the address, the port, the authentication, the user or TLS verification clears it, so the secret can never be sent somewhere new without being typed again.') }}</p>
         <div class="d-flex gap-2">
           <input class="form-control form-control-sm" type="password" id="cn-secret" autocomplete="new-password" placeholder="{{ _('New value') }}">
           <button type="button" class="btn btn-outline-primary btn-sm" id="cn-secret-set">{{ _('Replace') }}</button>

@@ -212,7 +212,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   - **Data stores had no size limit**: 16 MiB and 20,000 rows per store,
     128 KiB per row, 200 stores; writers of one store are serialised.
   - The connection broker and the egress proxy (outside the jail) started a
-    thread per socket with no cap; now 8 and 32 at a time.
+    thread per socket with no cap; now 8 and 32 at a time. The egress proxy no
+    longer dials an address it refuses: link-local (cloud metadata) and HA
+    node addresses got a TCP handshake before the refusal (found by the live
+    test, where the metadata address timed out instead of being refused).
+  - A run stopped by the memory limit now says so ("killed (SIGKILL): most
+    often the memory limit…") instead of a bare exit code; the limit is a hard
+    `MemoryMax` with no `MemoryHigh` throttle, which in the live test kept a
+    runaway run stalled until its timeout.
 
 - **Connections refuse dangerous destinations** (found in this release's
   Connections before it shipped): a base URL, an OAuth2 token URL or a

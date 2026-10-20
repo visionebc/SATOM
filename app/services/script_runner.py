@@ -262,6 +262,9 @@ def run_request(req: dict) -> dict:
                     note = "result() was not valid JSON"
         if out.timed_out:
             status, error = "timeout", "exceeded its %ds timeout; stopped" % timeout
+        elif out.exit_code in (-9, 137):
+            status, error = "failed", ("was killed (SIGKILL): most often the memory limit of "
+                                       "the scripts runner (MemoryMax of satom-scripts.service)")
         elif out.exit_code != 0:
             status, error = "failed", "exited with code %s" % out.exit_code
         else:

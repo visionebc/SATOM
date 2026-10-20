@@ -45,8 +45,10 @@ ProtectProc=invisible
 # RLIMIT_NPROC cannot do this job -- it counts every process of the satom uid
 # on the node. The jail's work directory and its /tmp live in this unit's
 # /tmp, a tmpfs whose pages are charged to MemoryMax: no run can fill the
-# disk. A site that needs more raises these in a drop-in.
-MemoryHigh=768M
+# disk. MemoryMax alone, no MemoryHigh: a throttle below the cap kept a
+# runaway run alive and stalled until its timeout (measured on a1); at the cap
+# the kernel ends it at once and the run record says why. A site that needs
+# more raises these in a drop-in.
 MemoryMax=1G
 TasksMax=256
 CPUQuota=200%

@@ -354,10 +354,13 @@ class EgressProxy:
             return None, "cannot resolve %s (%s)" % (host, exc.strerror or exc)
         last = "no address"
         for family, stype, proto, _, addr in infos:
-            # Pre-check the candidate so a loopback answer is never connected
-            # to at all; the post-connect check below is the authoritative one.
+            # Pre-check the candidate: an address the rule refuses on its own
+            # (loopback, link-local -- cloud metadata --, multicast, an HA node)
+            # is never connected to at all, not even for a handshake. The
+            # post-connect check below is the authoritative one; it is the only
+            # one that can see "an address of this node".
             pre = self.verdict(addr[0], "0.0.0.0" if family == socket.AF_INET else "::")
-            if pre and "loopback" in pre:
+            if pre:
                 last = pre
                 continue
             sock = socket.socket(family, stype, proto)

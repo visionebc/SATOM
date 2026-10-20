@@ -330,9 +330,16 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
     fixed.</li>
 <li><strong>Data stores had no size limit</strong>: 16 MiB and 20,000 rows per store,
     128 KiB per row, 200 stores; writers of one store are serialised.</li>
+<li>The connection broker and the egress proxy (outside the jail) started a
+    thread per socket with no cap; now 8 and 32 at a time. The egress proxy no
+    longer dials an address it refuses: link-local (cloud metadata) and HA
+    node addresses got a TCP handshake before the refusal (found by the live
+    test, where the metadata address timed out instead of being refused).</li>
 <li>
-<p>The connection broker and the egress proxy (outside the jail) started a
-    thread per socket with no cap; now 8 and 32 at a time.</p>
+<p>A run stopped by the memory limit now says so ("killed (SIGKILL): most
+    often the memory limit…") instead of a bare exit code; the limit is a hard
+    <code>MemoryMax</code> with no <code>MemoryHigh</code> throttle, which in the live test kept a
+    runaway run stalled until its timeout.</p>
 </li>
 <li>
 <p><strong>Connections refuse dangerous destinations</strong> (found in this release's

@@ -83,6 +83,14 @@
         {% if text or topic or tag or status or mine or request.args.getlist('adoms') %}
         <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('wiki.index') }}">{{ _('Clear') }}</a>
         {% endif %}
+        <div class="dropdown ms-auto">
+          <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false"
+                  title="{{ _('Every released article of this list, in one ZIP') }}"><i class="bi bi-download me-1"></i>{{ _('Export') }}</button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="{{ url_for('wiki.export_zip', format='md', **zip_args) }}">{{ _('ZIP of Markdown files') }}</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('wiki.export_zip', format='pdf', **zip_args) }}">{{ _('ZIP of PDF files') }}</a></li>
+          </ul>
+        </div>
       </div>
       {% if text or topic or tag %}
       <div class="fw-card-footer d-flex flex-wrap gap-2 align-items-center" style="font-size:12px;">

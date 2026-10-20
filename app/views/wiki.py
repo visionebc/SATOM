@@ -16,8 +16,8 @@ audited (an autosave is not).
 """
 from __future__ import annotations
 
-from flask import (Blueprint, abort, flash, g, jsonify, redirect, render_template,
-                   request, url_for)
+from flask import (Blueprint, Response, abort, flash, g, jsonify, redirect,
+                   render_template, request, url_for)
 from flask_login import current_user, login_required
 from sqlalchemy import or_
 
@@ -27,7 +27,7 @@ from ..extensions import db
 from ..models import Permission, Profile
 from ..models_wiki import (STATUSES, UserGroup, WikiArticle, WikiComment, WikiRevision,
                            WikiTag, WikiTopic, wiki_article_adoms, wiki_article_tags)
-from ..services import wiki, wiki_access, wiki_social
+from ..services import wiki, wiki_access, wiki_export, wiki_social
 from ..services import wiki_markdown as wmd
 from ..services.audit import log_action
 
@@ -87,13 +87,10 @@ def _editor_context(article=None, form=None) -> dict:
 
 # ── reading ──────────────────────────────────────────────────────────────────
 
-@bp.route("/")
-@login_required
-@require_permission("wiki.view")
-def index():
-    """The article list: filters are applied in SQL, after visibility."""
+def _filtered(args):
+    """The list's query and filters from ``args`` — the page and its ZIP
+    export use the same function, so the export holds what the list shows."""
     q = wiki_access.visible_query(current_user)
-    args = request.args
     text = (args.get("q") or "").strip()[:200]
     found = wiki.search_clause(text)
     if found is not None:
@@ -139,23 +136,38 @@ def index():
     if args.get("mine"):
         q = q.filter(WikiArticle.author_id == current_user.id)
 
+    return q, {"text": text, "topic": topic, "tag": tag, "picked": picked, "status": status}
+
+
+@bp.route("/")
+@login_required
+@require_permission("wiki.view")
+def index():
+    """The article list: filters are applied in SQL, after visibility."""
+    q, f = _filtered(request.args)
+    topic, tag = f["topic"], f["tag"]
+    args = request.args
     page = max(1, args.get("page", 1, type=int))
     pagination = (q.order_by(WikiArticle.updated_at.desc(), WikiArticle.id.desc())
                   .paginate(page=page, per_page=PER_PAGE, error_out=False))
     return render_template(
         "wiki/index.html", pagination=pagination, articles=pagination.items,
-        topic=topic, tag=tag, text=text, picked=picked,
+        topic=topic, tag=tag, text=f["text"], picked=f["picked"],
         adom_choices=[("global", "Global")] + list(_adom_names().items()),
-        status=status, mine=bool(args.get("mine")), archived=bool(args.get("archived")),
+        status=f["status"], mine=bool(args.get("mine")), archived=bool(args.get("archived")),
         adom_names=_adom_names(), current_adom=_current_adom(),
         excerpt=wmd.plain_excerpt, page_url=_page_url, has_draft=wiki.has_draft,
+        zip_args=dict({k: v for k, v in args.to_dict(flat=False).items()
+                       if k not in ("page", "format", "adom")}, adoms=f["picked"]),
         follow_topic=wiki_social.subscription(current_user, "topic", topic.id) if topic else None,
         follow_tag=wiki_social.subscription(current_user, "tag", tag) if tag else None,
         **_nav_context(topic_id=topic.id if topic else None, tag=tag))
 
 
 def _page_url(number: int) -> str:
-    args = request.args.to_dict()
+    # flat=False: the ADOM filter is a repeated ``adoms`` argument; a flat
+    # dict kept only the first ticked ADOM on page 2 and after.
+    args = request.args.to_dict(flat=False)
     args["page"] = number
     return url_for("wiki.index", **args)
 
@@ -544,3 +556,70 @@ def subscriptions():
         topics=wiki.topic_tree(), adom_choices=[("global", "Global")] + list(_adom_names().items()),
         has_mail=bool((getattr(current_user, "recovery_email", "") or "").strip()),
         **_nav_context())
+
+
+# ── export ───────────────────────────────────────────────────────────────────
+
+_MIME = {"md": "text/markdown; charset=utf-8", "pdf": "application/pdf",
+         "zip": "application/zip"}
+
+
+def _download(data, name: str, kind: str) -> Response:
+    resp = Response(data, mimetype=_MIME[kind])
+    resp.headers["Content-Disposition"] = 'attachment; filename="%s"' % name
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
+
+
+def _source_url(art) -> str:
+    return url_for("wiki.article", article_id=art.id, slug=art.slug, _external=True)
+
+
+@bp.route("/a/<int:article_id>/export.<fmt>")
+@login_required
+@require_permission("wiki.view")
+def export(article_id, fmt):
+    """One released version (``?rev=N``, default the current one) as
+    Markdown or PDF. Readers export what they can read; drafts never."""
+    if fmt not in ("md", "pdf"):
+        abort(404)
+    art = _article_or_404(article_id)
+    try:
+        rev = wiki_export.version_of(art, request.args.get("rev", type=int))
+    except wiki_export.ExportError as exc:
+        flash(str(exc), "warning")
+        return redirect(url_for("wiki.article", article_id=art.id, slug=art.slug))
+    if fmt == "md":
+        data = wiki_export.markdown_document(art, rev, adom_names=_adom_names(),
+                                             source_url=_source_url(art))
+    else:
+        data = wiki_export.pdf_document(art, rev, adom_names=_adom_names(),
+                                        exported_by=current_user.username,
+                                        source_url=_source_url(art))
+    log_action("wiki.export", target=art.slug,
+               extra={"article_id": art.id, "version": rev.number, "format": fmt})
+    return _download(data, wiki_export.filename(art, rev, fmt), fmt)
+
+
+@bp.route("/export.zip")
+@login_required
+@require_permission("wiki.view")
+def export_zip():
+    """The list as filtered on the page (same arguments), one Markdown or PDF
+    file per released article."""
+    fmt = request.args.get("format", "md")
+    if fmt not in ("md", "pdf"):
+        abort(400)
+    q, _f = _filtered(request.args)
+    released = q.filter(WikiArticle.revision > 0)
+    total = released.order_by(None).count()
+    arts = (released.order_by(WikiArticle.title, WikiArticle.id)
+            .limit(wiki_export.MAX_ZIP).all())
+    data = wiki_export.zip_document(arts, fmt, adom_names=_adom_names(),
+                                    exported_by=current_user.username,
+                                    url_for_article=_source_url, total=total)
+    log_action("wiki.export", target="list",
+               extra={"format": "zip-" + fmt, "articles": [a.id for a in arts], "total": total,
+                      "filters": request.args.to_dict(flat=False)})
+    return _download(data, "satom-wiki-%s.zip" % fmt, "zip")

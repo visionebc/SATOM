@@ -24,6 +24,39 @@ from .product_scope import scope_query as _scope_query, stamp as _stamp_product
 
 logger = logging.getLogger(__name__)
 
+#: Notices whose link contains the marker are shown only while the gate says
+#: so: ``gate(user_id, link) -> bool``, asked each time the bell is drawn. A
+#: notice is written once, but who may read what it names can change after
+#: (a Wiki article narrowed to a group the reader left). "module:function",
+#: imported on first use so this module stays import-safe everywhere.
+GATES = {"/wiki/a/": "app.services.wiki_social:bell_gate"}
+
+
+def _gate_for(link: str | None):
+    import importlib
+    for marker, target in GATES.items():
+        if link and marker in link:
+            mod, fn = target.split(":")
+            return getattr(importlib.import_module(mod), fn)
+    return None
+
+
+def _shown(user_id: int, n: Notification) -> bool:
+    gate = _gate_for(n.link)
+    if gate is None:
+        return True
+    try:
+        return bool(gate(user_id, n.link))
+    except Exception:  # noqa: BLE001 — a gate that cannot answer hides the notice
+        logger.debug("notification gate failed (link=%r)", n.link, exc_info=True)
+        return False
+
+
+def _gated(query):
+    """Rows of ``query`` a gate may hide (their link holds a marker)."""
+    from sqlalchemy import or_
+    return query.filter(or_(*[Notification.link.like("%" + m + "%") for m in GATES]))
+
 
 def push(user_id: int, title: str, *, kind: str = Notification.KIND_INFO,
          body: str | None = None, link: str | None = None,
@@ -68,9 +101,10 @@ def unread_count(user_id: int) -> int:
     if not user_id:
         return 0
     try:
-        return _scope_query(
-            Notification.query.filter_by(user_id=user_id, read=False),
-            Notification.product).count()
+        q = _scope_query(Notification.query.filter_by(user_id=user_id, read=False),
+                         Notification.product)
+        hidden = sum(1 for n in _gated(q).all() if not _shown(user_id, n))
+        return max(0, q.count() - hidden)
     except Exception:  # noqa: BLE001
         logger.debug("unread_count failed", exc_info=True)
         return 0
@@ -80,10 +114,11 @@ def recent(user_id: int, limit: int = 50) -> list[Notification]:
     if not user_id:
         return []
     try:
-        return (_scope_query(Notification.query.filter_by(user_id=user_id),
+        rows = (_scope_query(Notification.query.filter_by(user_id=user_id),
                              Notification.product)
                 .order_by(Notification.created_at.desc(), Notification.id.desc())
                 .limit(limit).all())
+        return [n for n in rows if _shown(user_id, n)]
     except Exception:  # noqa: BLE001
         logger.debug("recent failed", exc_info=True)
         return []

@@ -75,6 +75,20 @@
       return libPromise;
     }
 
+    // Comment reply / edit forms stay folded until their button is pressed.
+    function bindToggles() {
+      document.querySelectorAll('[data-wiki-toggle]').forEach(function (b) {
+        if (b.dataset.bound) return;
+        b.dataset.bound = '1';
+        b.addEventListener('click', function () {
+          const f = document.getElementById(b.getAttribute('data-wiki-toggle'));
+          if (!f) return;
+          f.hidden = !f.hidden;
+          if (!f.hidden) { const t = f.querySelector('textarea'); if (t) t.focus(); }
+        });
+      });
+    }
+
     function bindConfirms() {
       document.querySelectorAll('form[data-wiki-confirm]').forEach(function (f) {
         if (f.dataset.bound) return;
@@ -387,6 +401,7 @@
 
     function init() {
       bindConfirms();
+      bindToggles();
       bindAutofilter();
       document.querySelectorAll('form[data-wiki-form]').forEach(bindForm);
     }

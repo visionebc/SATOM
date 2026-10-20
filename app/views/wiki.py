@@ -25,9 +25,9 @@ from ..auth.decorators import require_permission
 from ..branding import PRODUCTS
 from ..extensions import db
 from ..models import Permission, Profile
-from ..models_wiki import (STATUSES, UserGroup, WikiArticle, WikiRevision, WikiTag,
-                           WikiTopic, wiki_article_adoms, wiki_article_tags)
-from ..services import wiki, wiki_access
+from ..models_wiki import (STATUSES, UserGroup, WikiArticle, WikiComment, WikiRevision,
+                           WikiTag, WikiTopic, wiki_article_adoms, wiki_article_tags)
+from ..services import wiki, wiki_access, wiki_social
 from ..services import wiki_markdown as wmd
 from ..services.audit import log_action
 
@@ -149,6 +149,8 @@ def index():
         status=status, mine=bool(args.get("mine")), archived=bool(args.get("archived")),
         adom_names=_adom_names(), current_adom=_current_adom(),
         excerpt=wmd.plain_excerpt, page_url=_page_url, has_draft=wiki.has_draft,
+        follow_topic=wiki_social.subscription(current_user, "topic", topic.id) if topic else None,
+        follow_tag=wiki_social.subscription(current_user, "tag", tag) if tag else None,
         **_nav_context(topic_id=topic.id if topic else None, tag=tag))
 
 
@@ -207,6 +209,11 @@ def article(article_id, slug=None):
         may_edit=wiki_access.can_edit(current_user, art),
         may_manage=wiki_access.can_manage(current_user, art),
         has_draft=wiki.has_draft(art),
+        comments=wiki_social.thread(art),
+        may_comment=wiki_social.can_comment(current_user, art),
+        may_change=lambda c: wiki_social.can_change_comment(current_user, c),
+        may_delete=lambda c: wiki_social.can_delete_comment(current_user, c, art),
+        watching=wiki_social.subscription(current_user, "article", art.id),
         **_nav_context(topic_id=art.topic_id))
 
 
@@ -276,6 +283,7 @@ def _write(art, *, may_set_audience: bool):
                 log_action("wiki.article.publish", target=art.slug,
                            extra={"article_id": art.id, "version": art.revision,
                                   "adoms": art.adoms, "restricted": art.audience_restricted})
+                wiki_social.notify_published(art, current_user, first=before == 0)
         else:
             first = art is None
             art = wiki.save_draft(current_user, form, art, adom_keys=_adom_keys(),
@@ -380,6 +388,7 @@ def delete(article_id):
         abort(403)
     slug, aid = art.slug, art.id
     wiki.delete_article(art)
+    wiki_social.forget_article(aid)
     log_action("wiki.article.delete", target=slug, extra={"article_id": aid})
     flash("Article deleted.", "success")
     return redirect(url_for("wiki.index"))
@@ -414,7 +423,9 @@ def topics():
 def topic_delete(topic_id):
     topic = db.session.get(WikiTopic, topic_id) or abort(404)
     label = topic.label
+    ids = wiki.descendant_ids(topic.id)
     wiki.delete_topic(topic)
+    wiki_social.forget_topics(ids)
     log_action("wiki.topic.delete", target=label, extra={"topic_id": topic_id})
     flash("Topic deleted; its articles are kept without a topic.", "success")
     return redirect(url_for("wiki.topics"))
@@ -428,3 +439,108 @@ def groups(group_id=None):
     """The Wiki's groups are Administrator › Access › Groups since wiki04;
     old links land there (which asks for user management itself)."""
     return redirect(url_for("user_groups.index"))
+
+
+# ── comments ─────────────────────────────────────────────────────────────────
+
+def _comment_or_404(art: WikiArticle, comment_id: int) -> WikiComment:
+    c = db.session.get(WikiComment, comment_id)
+    if c is None or c.article_id != art.id:
+        abort(404)
+    return c
+
+
+def _back(art, anchor=""):
+    return redirect(url_for("wiki.article", article_id=art.id, slug=art.slug) + anchor)
+
+
+@bp.route("/a/<int:article_id>/comments", methods=["POST"])
+@login_required
+@require_permission("wiki.view")
+def comment_add(article_id):
+    art = _article_or_404(article_id)
+    if not wiki_social.can_comment(current_user, art):
+        abort(403)
+    try:
+        c = wiki_social.add_comment(current_user, art, request.form.get("body"),
+                                    request.form.get("parent_id") or None)
+    except wiki_social.SocialError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+        return _back(art, "#comments")
+    log_action("wiki.comment.add", target=art.slug,
+               extra={"article_id": art.id, "comment_id": c.id, "reply_to": c.parent_id})
+    wiki_social.notify_comment(art, c, current_user)
+    return _back(art, "#c%d" % c.id)
+
+
+@bp.route("/a/<int:article_id>/comments/<int:comment_id>/edit", methods=["POST"])
+@login_required
+@require_permission("wiki.view")
+def comment_edit(article_id, comment_id):
+    art = _article_or_404(article_id)
+    c = _comment_or_404(art, comment_id)
+    if not wiki_social.can_change_comment(current_user, c):
+        abort(403)
+    try:
+        wiki_social.edit_comment(current_user, c, request.form.get("body"))
+    except wiki_social.SocialError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+    else:
+        log_action("wiki.comment.edit", target=art.slug,
+                   extra={"article_id": art.id, "comment_id": c.id})
+    return _back(art, "#c%d" % c.id)
+
+
+@bp.route("/a/<int:article_id>/comments/<int:comment_id>/delete", methods=["POST"])
+@login_required
+@require_permission("wiki.view")
+def comment_delete(article_id, comment_id):
+    art = _article_or_404(article_id)
+    c = _comment_or_404(art, comment_id)
+    if not wiki_social.can_delete_comment(current_user, c, art):
+        abort(403)
+    author = c.author.username if c.author else ""
+    wiki_social.delete_comment(c)
+    log_action("wiki.comment.delete", target=art.slug,
+               extra={"article_id": art.id, "comment_id": comment_id, "author": author})
+    flash("Comment deleted.", "success")
+    return _back(art, "#comments")
+
+
+# ── following ────────────────────────────────────────────────────────────────
+
+def _safe_next(default: str) -> str:
+    nxt = request.form.get("next") or ""
+    return nxt if nxt.startswith("/wiki/") and not nxt.startswith("//") else default
+
+
+@bp.route("/subscribe", methods=["POST"])
+@login_required
+@require_permission("wiki.view")
+def subscribe():
+    """Follow or stop following an article, a topic, a tag, an ADOM or
+    everything (``kind`` + ``ref``); ``email`` adds a mail."""
+    kind = request.form.get("kind", "")
+    on = request.form.get("on", "1") == "1"
+    try:
+        wiki_social.set_subscription(current_user, kind, request.form.get("ref"), on=on,
+                                     email=request.form.get("email") == "1")
+    except wiki_social.SocialError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+    else:
+        flash("Following." if on else "No longer following.", "success")
+    return redirect(_safe_next(url_for("wiki.subscriptions")))
+
+
+@bp.route("/subscriptions")
+@login_required
+@require_permission("wiki.view")
+def subscriptions():
+    return render_template(
+        "wiki/subscriptions.html", subs=wiki_social.my_subscriptions(current_user),
+        topics=wiki.topic_tree(), adom_choices=[("global", "Global")] + list(_adom_names().items()),
+        has_mail=bool((getattr(current_user, "recovery_email", "") or "").strip()),
+        **_nav_context())

@@ -171,3 +171,50 @@ class WikiRevision(db.Model):
     note = db.Column(db.String(200), nullable=False, default="")
     edited_by = db.Column(db.String(64), nullable=False, default="")
     edited_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
+class WikiComment(db.Model):
+    """A comment under an article; ``parent_id`` makes it a reply. Markdown,
+    rendered by services/wiki_markdown.py like the article. A deleted
+    comment that has replies keeps its row (``deleted``, body emptied) so the
+    thread under it still reads; one without replies is removed."""
+    __tablename__ = "wiki_comments"
+
+    id = db.Column(db.Integer, primary_key=True)
+    article_id = db.Column(db.Integer, db.ForeignKey("wiki_articles.id", ondelete="CASCADE"),
+                           nullable=False, index=True)
+    parent_id = db.Column(db.Integer, db.ForeignKey("wiki_comments.id", ondelete="CASCADE"),
+                          nullable=True, index=True)
+    author_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"),
+                          nullable=True, index=True)
+    body = db.Column(db.Text, nullable=False, default="")
+    deleted = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    edited_at = db.Column(db.DateTime, nullable=True)
+
+    author = db.relationship("User")
+
+
+#: What a subscription follows. ``ref``: the article id, the topic id, the
+#: normalised tag, the ADOM key ("global" = articles published to Global),
+#: or "" for ``all``.
+SUBSCRIPTION_KINDS = ("article", "topic", "tag", "adom", "all")
+
+
+class WikiSubscription(db.Model):
+    """One user following one thing. Notices go to the bell; ``email`` adds
+    a mail to the user's recovery address. Who receives a notice is decided
+    when it is sent AND when the bell shows it (services/wiki_social.py):
+    following never lets anyone read an article they could not open."""
+    __tablename__ = "wiki_subscriptions"
+    __table_args__ = (db.UniqueConstraint("user_id", "kind", "ref", name="uq_wiki_subscription"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    kind = db.Column(db.String(16), nullable=False)
+    ref = db.Column(db.String(64), nullable=False, default="", server_default="")
+    email = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    user = db.relationship("User")

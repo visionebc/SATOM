@@ -102,3 +102,16 @@
 .wiki-draft-note { padding: 8px 12px; border-radius: var(--fw-radius); font-size: 13px;
   background: #FFF7E0; border: 1px solid #F0D58A; color: #7A5700; }
 .wiki-draft-note a { color: #7A5700; font-weight: 600; }
+
+/* Comments (wiki/_comments.html): replies indent by depth, capped server-side. */
+.wiki-comments-title { font-size: 16px; font-weight: 600; margin-bottom: .6em; }
+.wiki-comment { margin: 0 0 10px calc(var(--wiki-depth, 0) * 22px); padding: 8px 12px;
+  background: #FFFFFF; border: 1px solid var(--fw-border); border-radius: var(--fw-radius); }
+.wiki-comment-head { display: flex; gap: 8px; align-items: baseline; font-size: 12px; margin-bottom: 4px; }
+.wiki-comment-head a { text-decoration: none; }
+.wiki-comment-body { font-size: 13px; }
+.wiki-comment-body > :last-child { margin-bottom: 0; }
+.wiki-comment-actions { display: flex; gap: 12px; font-size: 12px; margin-top: 4px; }
+.wiki-comment-actions .btn-link { font-size: 12px; text-decoration: none; }
+.wiki-comment-form { margin-top: 6px; }
+.wiki-comment:target { border-color: #EF5424; }

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Following') }} — {{ _('Wiki') }} — SATOM{% endblock %}
+
+{#  What the signed-in user follows in the Wiki (services/wiki_social.py).
+    A notice reaches them only for an article they can open, whatever they
+    follow; an article they can no longer open is listed without its title. #}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/wiki.css') }}" data-turbo-track="reload">
+{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('wiki.index') }}">{{ _('Wiki') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Following') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="wiki-shell">
+{% include "wiki/_nav.html" %}
+<div class="wiki-main">
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-bell me-2 text-accent"></i>{{ _('Following') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('Articles, topics, tags and ADOMs you follow. A new version or a comment puts a notice in your bell; you only ever hear about articles you can open.') }}</p>
+  </div>
+</div>
+
+{% if not has_mail %}
+<div class="wiki-draft-note mb-3"><i class="bi bi-envelope me-1"></i>{{ _('E-mail copies go to your recovery e-mail address, and you have none.') }}
+  <a href="{{ url_for('settings.index') }}#tab-security">{{ _('Add one in your account settings') }}</a></div>
+{% endif %}
+
+<div class="fw-card mb-3"><div class="fw-card-body p-0">
+<table class="fw-table table mb-0">
+  <thead><tr><th>{{ _('What') }}</th><th>{{ _('Follows') }}</th><th>{{ _('E-mail') }}</th><th class="actions-col">{{ _('Actions') }}</th></tr></thead>
+  <tbody>
+  {% for item in subs %}{% set s = item.sub %}
+  <tr>
+    <td>{{ {'article': _('Article'), 'topic': _('Topic'), 'tag': _('Tag'), 'adom': _('ADOM'), 'all': _('Everything')}[s.kind] }}</td>
+    <td>
+      {% if item.label is none %}<span class="text-muted">{{ _('An article you can no longer open') }}</span>
+      {% elif item.target and item.target[0] == 'article' %}<a href="{{ url_for('wiki.article', article_id=item.target[1].id, slug=item.target[1].slug) }}">{{ item.label }}</a>
+      {% elif item.target and item.target[0] == 'topic' %}<a href="{{ url_for('wiki.index', topic=item.target[1].id, adom='all') }}">{{ item.label }}</a>
+      {% elif item.target and item.target[0] == 'tag' %}<a href="{{ url_for('wiki.index', tag=item.target[1], adom='all') }}">{{ item.label }}</a>
+      {% else %}{{ _('Every article') if s.kind == 'all' else item.label }}{% endif %}
+    </td>
+    <td>
+      <form method="post" action="{{ url_for('wiki.subscribe') }}" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="kind" value="{{ s.kind }}"><input type="hidden" name="ref" value="{{ s.ref }}">
+        <input type="hidden" name="on" value="1"><input type="hidden" name="next" value="{{ url_for('wiki.subscriptions') }}">
+        <input type="hidden" name="email" value="{{ '0' if s.email else '1' }}">
+        <button class="btn btn-sm btn-outline-secondary" {{ 'disabled' if not has_mail and not s.email }}>{{ _('On') if s.email else _('Off') }}</button>
+      </form>
+    </td>
+    <td class="actions-col">
+      <form method="post" action="{{ url_for('wiki.subscribe') }}" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="kind" value="{{ s.kind }}"><input type="hidden" name="ref" value="{{ s.ref }}">
+        <input type="hidden" name="on" value="0"><input type="hidden" name="next" value="{{ url_for('wiki.subscriptions') }}">
+        <button class="btn btn-sm btn-outline-danger" title="{{ _('Stop following') }}"><i class="bi bi-bell-slash"></i></button>
+      </form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="text-muted p-3">{{ _('You follow nothing yet. Use Follow on an article, a topic or a tag, or add one below.') }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+
+<form class="fw-card" method="post" action="{{ url_for('wiki.subscribe') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="on" value="1"><input type="hidden" name="next" value="{{ url_for('wiki.subscriptions') }}">
+  <div class="fw-card-body">
+    <h4 class="mb-2">{{ _('Follow more') }}</h4>
+    <div class="d-flex flex-wrap gap-2 align-items-end">
+      <div>
+        <label class="form-label small mb-1" for="wiki-sub-kind">{{ _('What') }}</label>
+        <select class="form-select form-select-sm" id="wiki-sub-kind" name="kind">
+          <option value="adom">{{ _('ADOM') }}</option>
+          <option value="topic">{{ _('Topic') }}</option>
+          <option value="tag">{{ _('Tag') }}</option>
+          <option value="all">{{ _('Everything') }}</option>
+        </select>
+      </div>
+      <div>
+        <label class="form-label small mb-1" for="wiki-sub-ref">{{ _('Which') }}</label>
+        <input class="form-control form-control-sm" id="wiki-sub-ref" name="ref" list="wiki-sub-refs" maxlength="64"
+               placeholder="{{ _('ADOM key, topic number or tag') }}">
+        <datalist id="wiki-sub-refs">
+          {% for k, n in adom_choices %}<option value="{{ k }}">{{ _('ADOM') }}: {{ n }}</option>{% endfor %}
+          {% for row in topics %}<option value="{{ row.topic.id }}">{{ _('Topic') }}: {{ row.topic.label }}</option>{% endfor %}
+          {% for name, n in tag_counts %}<option value="{{ name }}">{{ _('Tag') }}: #{{ name }}</option>{% endfor %}
+        </datalist>
+      </div>
+      <div class="form-check mb-1">
+        <input class="form-check-input" type="checkbox" name="email" value="1" id="wiki-sub-mail" {{ 'disabled' if not has_mail }}>
+        <label class="form-check-label small" for="wiki-sub-mail">{{ _('Also by e-mail') }}</label>
+      </div>
+      <button class="btn btn-fw-primary btn-sm">{{ _('Follow') }}</button>
+    </div>
+    <div class="form-text" style="font-size:11px;">{{ _('An ADOM: every article shown there, published to it or to Global. Global: the articles published to Global. A topic includes the topics under it.') }}</div>
+  </div>
+</form>
+</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/wiki.js') }}"></script>
+{% endblock %}

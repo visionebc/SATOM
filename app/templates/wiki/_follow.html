@@ -1,0 +1,18 @@
+{#  Follow / stop following one thing (views/wiki.subscribe). ``sub`` is the
+    user's WikiSubscription for it, or None. With a recovery address the
+    user can add an e-mail to the bell notice.                            #}
+{% macro follow(kind, ref, sub, next_url, label=None) %}
+<form method="post" action="{{ url_for('wiki.subscribe') }}" class="d-inline-flex align-items-center gap-1 wiki-follow">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="kind" value="{{ kind }}">
+  <input type="hidden" name="ref" value="{{ ref }}">
+  <input type="hidden" name="next" value="{{ next_url }}">
+  {% if sub %}
+  <input type="hidden" name="on" value="0">
+  <button class="btn btn-sm btn-outline-secondary" title="{{ _('Stop following') }}"><i class="bi bi-bell-fill me-1"></i>{{ _('Following') }}{% if sub.email %} · {{ _('e-mail') }}{% endif %}</button>
+  {% else %}
+  <input type="hidden" name="on" value="1">
+  <button class="btn btn-sm btn-outline-secondary" title="{{ _('Get a notice in the bell when this changes') }}"><i class="bi bi-bell me-1"></i>{{ label or _('Follow') }}</button>
+  {% endif %}
+</form>
+{% endmacro %}

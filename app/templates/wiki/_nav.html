@@ -61,6 +61,7 @@
   </div></div>
   {% endif %}
 
+  <a class="small text-decoration-none {{ 'fw-semibold' if request.endpoint == 'wiki.subscriptions' }}" href="{{ url_for('wiki.subscriptions') }}"><i class="bi bi-bell me-1"></i>{{ _('Following') }}</a>
   {% if may_groups %}
   <a class="small text-decoration-none" href="{{ url_for('user_groups.index') }}" title="{{ _('Administrator › Access › Groups') }}"><i class="bi bi-people me-1"></i>{{ _('Groups') }}</a>
   {% endif %}

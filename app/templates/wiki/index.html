@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ _('Wiki') }} — SATOM{% endblock %}
+{% from 'wiki/_follow.html' import follow %}
 
 {#  Operations › Wiki (2026-10-16). The list is filtered in SQL after
     services/wiki_access.py: what is not readable is not counted, listed or
@@ -35,9 +36,17 @@
 
   <div class="wiki-main">
     {% if topic %}
-    <div class="wiki-topic-head mb-3">
-      <div class="wiki-topic-path">{% for t in topic.path %}{% if not loop.first %} › {% endif %}<a href="{{ url_for('wiki.index', topic=t.id, adom='all') }}">{{ t.name }}</a>{% endfor %}</div>
-      {% if topic.description %}<p class="mb-0">{{ topic.description }}</p>{% endif %}
+    <div class="wiki-topic-head mb-3 d-flex gap-2 align-items-start">
+      <div class="me-auto">
+        <div class="wiki-topic-path">{% for t in topic.path %}{% if not loop.first %} › {% endif %}<a href="{{ url_for('wiki.index', topic=t.id, adom='all') }}">{{ t.name }}</a>{% endfor %}</div>
+        {% if topic.description %}<p class="mb-0">{{ topic.description }}</p>{% endif %}
+      </div>
+      {{ follow('topic', topic.id, follow_topic, request.full_path, _('Follow topic')) }}
+    </div>
+    {% elif tag %}
+    <div class="wiki-topic-head mb-3 d-flex gap-2 align-items-center">
+      <div class="me-auto wiki-topic-path">#{{ tag }}</div>
+      {{ follow('tag', tag, follow_tag, request.full_path, _('Follow tag')) }}
     </div>
     {% endif %}
 

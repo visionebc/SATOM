@@ -1,0 +1,62 @@
+{#  Comments under an article (services/wiki_social.thread): depth-first,
+    replies indented up to wiki_social.MAX_DEPTH. Markdown rendered by the
+    same sanitiser as the article. Reply and edit forms are folded until
+    their button is pressed (wiki.js, data-wiki-toggle).                 #}
+<section class="wiki-comments mt-3" id="comments">
+  <h3 class="wiki-comments-title">{{ _('Comments') }} <span class="text-muted">({{ comments | rejectattr('comment.deleted') | list | length }})</span></h3>
+  {% if article.status == 'archived' %}
+  <p class="text-muted small">{{ _('This article is archived: its comments can be read but no new ones added.') }}</p>
+  {% endif %}
+
+  {% for item in comments %}{% set c = item.comment %}
+  <article class="wiki-comment" id="c{{ c.id }}" style="--wiki-depth: {{ item.depth }};">
+    <header class="wiki-comment-head">
+      <strong>{{ c.author.username if c.author else _('deleted user') }}</strong>
+      <a class="text-muted" href="#c{{ c.id }}">{{ c.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</a>
+      {% if c.edited_at %}<span class="text-muted">· {{ _('edited') }}</span>{% endif %}
+    </header>
+    {% if c.deleted %}
+    <p class="text-muted fst-italic mb-1">{{ _('Comment deleted.') }}</p>
+    {% else %}
+    <div class="wiki-body wiki-comment-body">{{ item.html }}</div>
+    <div class="wiki-comment-actions">
+      {% if may_comment %}<button type="button" class="btn btn-link btn-sm p-0" data-wiki-toggle="reply-{{ c.id }}">{{ _('Reply') }}</button>{% endif %}
+      {% if may_change(c) %}<button type="button" class="btn btn-link btn-sm p-0" data-wiki-toggle="edit-{{ c.id }}">{{ _('Edit') }}</button>{% endif %}
+      {% if may_delete(c) %}
+      <form method="post" action="{{ url_for('wiki.comment_delete', article_id=article.id, comment_id=c.id) }}" class="d-inline" data-wiki-confirm="{{ _('Delete this comment?') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-link btn-sm p-0 text-danger">{{ _('Delete') }}</button>
+      </form>
+      {% endif %}
+    </div>
+    {% if may_comment %}
+    <form method="post" action="{{ url_for('wiki.comment_add', article_id=article.id) }}" class="wiki-comment-form" id="reply-{{ c.id }}" hidden>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="parent_id" value="{{ c.id }}">
+      <textarea class="form-control form-control-sm" name="body" rows="3" maxlength="20000" required aria-label="{{ _('Reply') }}"></textarea>
+      <button class="btn btn-fw-primary btn-sm mt-1">{{ _('Reply') }}</button>
+    </form>
+    {% endif %}
+    {% if may_change(c) %}
+    <form method="post" action="{{ url_for('wiki.comment_edit', article_id=article.id, comment_id=c.id) }}" class="wiki-comment-form" id="edit-{{ c.id }}" hidden>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <textarea class="form-control form-control-sm" name="body" rows="3" maxlength="20000" required aria-label="{{ _('Edit') }}">{{ c.body }}</textarea>
+      <button class="btn btn-fw-primary btn-sm mt-1">{{ _('Save') }}</button>
+    </form>
+    {% endif %}
+    {% endif %}
+  </article>
+  {% else %}
+  <p class="text-muted small">{{ _('No comments yet.') }}</p>
+  {% endfor %}
+
+  {% if may_comment %}
+  <form method="post" action="{{ url_for('wiki.comment_add', article_id=article.id) }}" class="wiki-comment-form mt-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="form-label small mb-1" for="wiki-new-comment">{{ _('Add a comment') }}</label>
+    <textarea class="form-control form-control-sm" id="wiki-new-comment" name="body" rows="3" maxlength="20000" required></textarea>
+    <div class="form-text" style="font-size:11px;">{{ _('Markdown. Everyone who can read this article reads your comment; the people following it get a notice.') }}</div>
+    <button class="btn btn-fw-primary btn-sm mt-1">{{ _('Comment') }}</button>
+  </form>
+  {% endif %}
+</section>

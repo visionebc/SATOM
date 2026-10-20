@@ -36,8 +36,8 @@ import re
 from urllib.parse import urlsplit, urlunsplit
 
 from ..extensions import db
-from ..models import AppSetting
 from ..models_studio import StudioConnection
+from . import prefixed_secret as PS
 from . import studio_http as H
 
 KINDS = ("http", "postgres")
@@ -204,59 +204,21 @@ def delete(c: StudioConnection) -> None:
 #  the secret                                                                  #
 # --------------------------------------------------------------------------- #
 def has_secret(slug: str) -> bool:
-    return bool((AppSetting.get(_key(slug)) or "").strip())
+    return PS.present(_key(slug))
 
 
 def secret_state(slug: str) -> tuple[str, str]:
-    """``(secret, problem)``; vault first, then the local copy."""
-    raw = (AppSetting.get(_key(slug)) or "").strip()
-    if not raw:
-        return "", ""
-    from . import secret_backend as sb
-    vault_err = ""
-    try:
-        vaulted = sb.get_field(vault_path(slug), VAULT_FIELD)
-    except Exception as exc:  # noqa: BLE001
-        vaulted, vault_err = "", str(exc) or exc.__class__.__name__
-    if vaulted:
-        return vaulted, ""
-    try:
-        from .encryption import decrypt
-        local = decrypt(raw) or ""
-    except Exception:  # noqa: BLE001
-        return "", "the local copy of the secret could not be decrypted (FERNET_KEY changed?)"
-    if local == sb.VAULT_SENTINEL:
-        return "", ("the secret is stored in the vault, which could not be read: %s"
-                    % (vault_err or "no value at %s" % vault_path(slug)))
-    return local, ""
+    """``(secret, problem)``; vault first, then the local copy
+    (services/prefixed_secret.py)."""
+    return PS.state(_key(slug), vault_path(slug), VAULT_FIELD)
 
 
 def set_secret(slug: str, value: str) -> None:
-    from .encryption import encrypt
-    from . import secret_backend as sb
-    key, path = _key(slug), vault_path(slug)
     _forget_token(slug)
-    if not value:
-        AppSetting.set(key, "")
-        try:
-            if sb.active():
-                sb.delete(path)
-        except Exception:  # noqa: BLE001
-            pass
-        return
-    if len(value) > 8192:
-        raise ConnectionError_("the secret is longer than 8192 characters")
-    stored = False
     try:
-        stored = sb.put_field(path, VAULT_FIELD, value)
-    except Exception:  # noqa: BLE001
-        if sb.authoritative():
-            raise ConnectionError_("the vault is the only secret store and refused the "
-                                   "write; the secret was not saved")
-    if stored and sb.authoritative():
-        AppSetting.set(key, encrypt(sb.VAULT_SENTINEL))
-    else:
-        AppSetting.set(key, encrypt(value))
+        PS.store(_key(slug), vault_path(slug), value, VAULT_FIELD)
+    except PS.SecretStoreError as exc:
+        raise ConnectionError_(str(exc)) from None
 
 
 def _redactor(*secrets):

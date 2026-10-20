@@ -25,9 +25,10 @@ from ..auth.decorators import require_permission
 from ..branding import PRODUCTS
 from ..extensions import db
 from ..models import Permission, Profile
-from ..models_wiki import (STATUSES, UserGroup, WikiArticle, WikiComment, WikiRevision,
-                           WikiTag, WikiTopic, wiki_article_adoms, wiki_article_tags)
-from ..services import wiki, wiki_access, wiki_export, wiki_social
+from ..models_wiki import (STATUSES, UserGroup, WikiArticle, WikiComment,
+                           WikiConfluenceLink, WikiConfluenceTarget, WikiRevision, WikiTag,
+                           WikiTopic, wiki_article_adoms, wiki_article_tags)
+from ..services import wiki, wiki_access, wiki_confluence, wiki_export, wiki_social
 from ..services import wiki_markdown as wmd
 from ..services.audit import log_action
 
@@ -226,6 +227,7 @@ def article(article_id, slug=None):
         may_change=lambda c: wiki_social.can_change_comment(current_user, c),
         may_delete=lambda c: wiki_social.can_delete_comment(current_user, c, art),
         watching=wiki_social.subscription(current_user, "article", art.id),
+        **_confluence_context(art),
         **_nav_context(topic_id=art.topic_id))
 
 
@@ -399,10 +401,13 @@ def delete(article_id):
     if not wiki_access.can_manage(current_user, art):
         abort(403)
     slug, aid = art.slug, art.id
+    pages = [l.page_url for l in wiki_confluence.links(art)]
     wiki.delete_article(art)
     wiki_social.forget_article(aid)
-    log_action("wiki.article.delete", target=slug, extra={"article_id": aid})
-    flash("Article deleted.", "success")
+    log_action("wiki.article.delete", target=slug,
+               extra={"article_id": aid, "confluence_pages_left": pages})
+    flash("Article deleted." + (" Its Confluence pages were not deleted: %s"
+                                % ", ".join(pages) if pages else ""), "success")
     return redirect(url_for("wiki.index"))
 
 
@@ -623,3 +628,145 @@ def export_zip():
                extra={"format": "zip-" + fmt, "articles": [a.id for a in arts], "total": total,
                       "filters": request.args.to_dict(flat=False)})
     return _download(data, "satom-wiki-%s.zip" % fmt, "zip")
+
+
+# ── Confluence ───────────────────────────────────────────────────────────────
+
+def _confluence_context(art) -> dict:
+    """The article page's Confluence block: shown to whoever may publish it
+    (its author and the moderators) once a target exists."""
+    if not wiki_confluence.can_publish(current_user, art):
+        return {"confluence": None}
+    tgts = wiki_confluence.targets(enabled_only=True)
+    lnks = wiki_confluence.links(art)
+    if not tgts and not lnks:
+        return {"confluence": None}
+    try:
+        findings = wiki_confluence.scan(art)
+    except wiki_export.ExportError:
+        findings = []
+    return {"confluence": {"targets": tgts, "links": lnks, "findings": findings,
+                           "narrow": wiki_confluence.is_narrow(art),
+                           "may_override": wiki_access.is_moderator(current_user)}}
+
+
+@bp.route("/a/<int:article_id>/confluence", methods=["POST"])
+@login_required
+@require_permission("wiki.view")
+def confluence_publish(article_id):
+    art = _article_or_404(article_id)
+    if not wiki_confluence.can_publish(current_user, art):
+        abort(403)
+    t = db.session.get(WikiConfluenceTarget, request.form.get("target_id", type=int) or 0)
+    if t is None:
+        abort(404)
+    back = url_for("wiki.article", article_id=art.id, slug=art.slug) + "#confluence"
+    override = request.form.get("override_scan") == "1"
+    try:
+        link, created = wiki_confluence.publish(
+            t, art, current_user, acknowledged=request.form.get("acknowledge") == "1",
+            override_scan=override, source_url=_source_url(art))
+    except wiki_confluence.ConfluenceError as exc:
+        db.session.rollback()
+        log_action("wiki.confluence.refused", target=art.slug,
+                   extra={"article_id": art.id, "target": t.name, "reason": str(exc)[:300],
+                          "findings": exc.findings})
+        flash(str(exc), "danger")
+        return redirect(back)
+    log_action("wiki.confluence.publish", target=art.slug,
+               extra={"article_id": art.id, "target": t.name, "page_id": link.page_id,
+                      "version": link.published_revision, "created": created,
+                      "scan_overridden": override and bool(wiki_confluence.scan(art))})
+    flash(("Published to %s as a new page." if created else "Updated the page in %s.")
+          % t.name, "success")
+    return redirect(back)
+
+
+@bp.route("/a/<int:article_id>/confluence/<int:link_id>/forget", methods=["POST"])
+@login_required
+@require_permission("wiki.view")
+def confluence_forget(article_id, link_id):
+    """SATOM stops updating that page; the page itself stays in Confluence."""
+    art = _article_or_404(article_id)
+    if not wiki_access.can_manage(current_user, art):
+        abort(403)
+    link = db.session.get(WikiConfluenceLink, link_id)
+    if link is None or link.article_id != art.id:
+        abort(404)
+    url = link.page_url
+    db.session.delete(link)
+    db.session.commit()
+    log_action("wiki.confluence.forget", target=art.slug,
+               extra={"article_id": art.id, "page_url": url})
+    flash("SATOM no longer updates that page. It is still in Confluence.", "success")
+    return redirect(url_for("wiki.article", article_id=art.id, slug=art.slug) + "#confluence")
+
+
+def _target_form() -> dict:
+    f = request.form
+    return {"name": f.get("name", ""), "flavor": f.get("flavor", "cloud"),
+            "base_url": f.get("base_url", ""), "space_key": f.get("space_key", ""),
+            "parent_page_id": f.get("parent_page_id", ""), "auth": f.get("auth", "basic"),
+            "username": f.get("username", ""), "verify_tls": f.get("verify_tls") == "1",
+            "enabled": f.get("enabled") == "1"}
+
+
+@bp.route("/confluence", methods=["GET", "POST"])
+@bp.route("/confluence/<int:target_id>", methods=["GET", "POST"])
+@login_required
+@require_permission("wiki.moderate")
+def confluence_targets(target_id=None):
+    t = (db.session.get(WikiConfluenceTarget, target_id) or abort(404)) if target_id else None
+    if request.method == "POST":
+        try:
+            t, dropped = wiki_confluence.save_target(t, _target_form(), current_user.username)
+            secret = request.form.get("secret", "")
+            if secret:
+                wiki_confluence.set_secret(t, secret)
+        except wiki_confluence.ConfluenceError as exc:
+            db.session.rollback()
+            flash(str(exc), "danger")
+            return redirect(url_for("wiki.confluence_targets", target_id=target_id)
+                            if target_id else url_for("wiki.confluence_targets"))
+        log_action("wiki.confluence.target", target=t.name,
+                   extra={"target_id": t.id, "flavor": t.flavor, "base_url": t.base_url,
+                          "space": t.space_key, "secret_set": bool(secret),
+                          "secret_dropped": dropped})
+        flash("Target saved." + (" Its address or account changed, so the stored credential "
+                                 "was removed: enter it again." if dropped and not secret
+                                 else ""), "warning" if dropped and not secret else "success")
+        return redirect(url_for("wiki.confluence_targets", target_id=t.id))
+    return render_template("wiki/confluence.html", target=t,
+                           targets=wiki_confluence.targets(),
+                           has_secret=wiki_confluence.has_secret,
+                           counts=dict(db.session.query(WikiConfluenceLink.target_id,
+                                                        db.func.count(WikiConfluenceLink.id))
+                                       .group_by(WikiConfluenceLink.target_id).all()),
+                           **_nav_context())
+
+
+@bp.route("/confluence/<int:target_id>/test", methods=["POST"])
+@login_required
+@require_permission("wiki.moderate")
+def confluence_test(target_id):
+    t = db.session.get(WikiConfluenceTarget, target_id) or abort(404)
+    try:
+        sp = wiki_confluence.space(t)
+    except wiki_confluence.ConfluenceError as exc:
+        flash("Test failed: %s" % exc, "danger")
+    else:
+        flash("Reached space %s (%s)." % (sp["name"], t.space_key), "success")
+    return redirect(url_for("wiki.confluence_targets", target_id=t.id))
+
+
+@bp.route("/confluence/<int:target_id>/delete", methods=["POST"])
+@login_required
+@require_permission("wiki.moderate")
+def confluence_delete(target_id):
+    t = db.session.get(WikiConfluenceTarget, target_id) or abort(404)
+    name = t.name
+    wiki_confluence.delete_target(t)
+    log_action("wiki.confluence.target_delete", target=name, extra={"target_id": target_id})
+    flash("Target deleted. Its pages stay in Confluence; SATOM no longer updates them.",
+          "success")
+    return redirect(url_for("wiki.confluence_targets"))

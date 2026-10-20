@@ -85,6 +85,8 @@
   {% if article.body.strip() %}{{ html }}{% else %}<p class="text-muted">{{ _('This article has no text yet.') }}</p>{% endif %}
 </div></div>
 
+{% if confluence %}{% include "wiki/_confluence.html" %}{% endif %}
+
 {% if article.status != 'draft' %}
 {% include "wiki/_comments.html" %}
 {% endif %}

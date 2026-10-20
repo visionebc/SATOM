@@ -218,3 +218,55 @@ class WikiSubscription(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
     user = db.relationship("User")
+
+
+class WikiConfluenceTarget(db.Model):
+    """A Confluence space articles are published to (services/
+    wiki_confluence.py). One way: SATOM writes the page, Confluence never
+    writes back, and an edit made in Confluence is replaced by the next
+    publication. The credential is not here: ``wiki.confluence.secret.<id>``
+    (Fernet) or the vault, like every SATOM secret."""
+    __tablename__ = "wiki_confluence_targets"
+
+    FLAVORS = ("cloud", "datacenter")
+    AUTHS = ("basic", "bearer")
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), unique=True, nullable=False)
+    #: ``cloud`` = REST API v2 under https://<site>.atlassian.net/wiki;
+    #: ``datacenter`` = Server / Data Center REST API (/rest/api/content).
+    flavor = db.Column(db.String(16), nullable=False, default="cloud")
+    base_url = db.Column(db.String(500), nullable=False, default="")
+    space_key = db.Column(db.String(64), nullable=False, default="")
+    #: Pages are created under this page when set (Confluence page id).
+    parent_page_id = db.Column(db.String(32), nullable=False, default="", server_default="")
+    #: ``basic`` = e-mail + API token (Cloud) or user + password;
+    #: ``bearer`` = a personal access token (Data Center).
+    auth = db.Column(db.String(16), nullable=False, default="basic")
+    username = db.Column(db.String(255), nullable=False, default="", server_default="")
+    verify_tls = db.Column(db.Boolean, nullable=False, default=True, server_default=db.true())
+    enabled = db.Column(db.Boolean, nullable=False, default=True, server_default=db.true())
+    created_by = db.Column(db.String(64), nullable=False, default="", server_default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
+class WikiConfluenceLink(db.Model):
+    """Which Confluence page an article was published to, and which version
+    it holds. The page id is what later publications update."""
+    __tablename__ = "wiki_confluence_links"
+    __table_args__ = (db.UniqueConstraint("article_id", "target_id", name="uq_wiki_confluence_link"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    article_id = db.Column(db.Integer, db.ForeignKey("wiki_articles.id", ondelete="CASCADE"),
+                           nullable=False, index=True)
+    target_id = db.Column(db.Integer,
+                          db.ForeignKey("wiki_confluence_targets.id", ondelete="CASCADE"),
+                          nullable=False, index=True)
+    page_id = db.Column(db.String(32), nullable=False)
+    page_url = db.Column(db.String(1000), nullable=False, default="")
+    published_revision = db.Column(db.Integer, nullable=False, default=0)
+    published_at = db.Column(db.DateTime, nullable=True)
+    published_by = db.Column(db.String(64), nullable=False, default="", server_default="")
+
+    target = db.relationship(WikiConfluenceTarget)

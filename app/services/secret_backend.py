@@ -805,11 +805,19 @@ def _connection_path(name: str) -> str:
     return "studio/connections/%s" % name
 
 
+_CONFLUENCE_PREFIX = "wiki.confluence.secret."
+
+
+def _confluence_path(name: str) -> str:
+    return "wiki/confluence/%s" % name
+
+
 #: Secrets kept one ``app_settings`` row per name: (kind, key prefix, vault
 #: path of a name). ONE list for migrate and scrub, like SETTING_SECRETS.
 _PREFIXED_SECRETS = (
     ("hook-secret", _HOOK_PREFIX, _hook_path),
     ("connection-secret", _CONNECTION_PREFIX, _connection_path),
+    ("confluence-secret", _CONFLUENCE_PREFIX, _confluence_path),
 )
 
 

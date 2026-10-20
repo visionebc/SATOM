@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Confluence') }} — {{ _('Wiki') }} — SATOM{% endblock %}
+
+{#  Wiki moderators: the Confluence spaces articles can be published to
+    (services/wiki_confluence.py). The credential is write-only here: it is
+    kept in the vault or encrypted, and changing the address, flavour,
+    authentication or account drops it.                                  #}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/wiki.css') }}" data-turbo-track="reload">
+{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('wiki.index') }}">{{ _('Wiki') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Confluence') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="wiki-shell">
+{% include "wiki/_nav.html" %}
+<div class="wiki-main">
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-box-arrow-up-right me-2 text-accent"></i>{{ _('Confluence') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('Spaces the authors and moderators can publish Wiki articles to. One way: SATOM writes the page and replaces it on every publication; nothing comes back from Confluence.') }}</p>
+  </div>
+</div>
+
+<div class="fw-card mb-3"><div class="fw-card-body p-0">
+<table class="fw-table table mb-0">
+  <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Space') }}</th><th>{{ _('Address') }}</th><th>{{ _('Credential') }}</th><th>{{ _('Pages') }}</th><th class="actions-col">{{ _('Actions') }}</th></tr></thead>
+  <tbody>
+  {% for t in targets %}
+  <tr>
+    <td><a href="{{ url_for('wiki.confluence_targets', target_id=t.id) }}">{{ t.name }}</a>
+      {% if not t.enabled %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('disabled') }}</span>{% endif %}</td>
+    <td>{{ t.space_key }}{% if t.parent_page_id %} <span class="text-muted small">› {{ t.parent_page_id }}</span>{% endif %}</td>
+    <td class="small">{{ t.base_url }} <span class="text-muted">({{ 'Cloud' if t.flavor == 'cloud' else 'Data Center' }})</span></td>
+    <td>{% if has_secret(t) %}<span class="fw-badge fw-badge-success">{{ _('stored') }}</span>{% else %}<span class="fw-badge fw-badge-warning">{{ _('missing') }}</span>{% endif %}</td>
+    <td>{{ counts.get(t.id, 0) }}</td>
+    <td class="actions-col text-nowrap">
+      <form method="post" action="{{ url_for('wiki.confluence_test', target_id=t.id) }}" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-outline-secondary">{{ _('Test') }}</button>
+      </form>
+      <form method="post" action="{{ url_for('wiki.confluence_delete', target_id=t.id) }}" class="d-inline" data-wiki-confirm="{{ _('Delete this target? Its pages stay in Confluence; SATOM stops updating them.') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-outline-danger" title="{{ _('Delete') }}"><i class="bi bi-trash"></i></button>
+      </form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="text-muted p-3">{{ _('No Confluence space yet.') }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+
+<form class="fw-card" method="post" action="{{ url_for('wiki.confluence_targets', target_id=target.id) if target else url_for('wiki.confluence_targets') }}" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="fw-card-body">
+    <div class="d-flex align-items-center mb-2">
+      <h4 class="me-auto mb-0">{{ _('Edit %(name)s', name=target.name) if target else _('New target') }}</h4>
+      {% if target %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('wiki.confluence_targets') }}">{{ _('New target') }}</a>{% endif %}
+    </div>
+    <div class="row g-2">
+      <div class="col-md-4">
+        <label class="form-label small mb-1" for="cf-name">{{ _('Name') }}</label>
+        <input class="form-control form-control-sm" id="cf-name" name="name" maxlength="80" required value="{{ target.name if target else '' }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1" for="cf-flavor">{{ _('Confluence') }}</label>
+        <select class="form-select form-select-sm" id="cf-flavor" name="flavor">
+          <option value="cloud" {{ 'selected' if not target or target.flavor == 'cloud' }}>Cloud (REST API v2)</option>
+          <option value="datacenter" {{ 'selected' if target and target.flavor == 'datacenter' }}>Data Center / Server</option>
+        </select>
+      </div>
+      <div class="col-md-5">
+        <label class="form-label small mb-1" for="cf-url">{{ _('Address') }}</label>
+        <input class="form-control form-control-sm" id="cf-url" name="base_url" maxlength="500" required placeholder="https://example.atlassian.net/wiki" value="{{ target.base_url if target else '' }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1" for="cf-space">{{ _('Space key') }}</label>
+        <input class="form-control form-control-sm" id="cf-space" name="space_key" maxlength="64" required value="{{ target.space_key if target else '' }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1" for="cf-parent">{{ _('Parent page id (optional)') }}</label>
+        <input class="form-control form-control-sm" id="cf-parent" name="parent_page_id" maxlength="32" inputmode="numeric" value="{{ target.parent_page_id if target else '' }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1" for="cf-auth">{{ _('Authentication') }}</label>
+        <select class="form-select form-select-sm" id="cf-auth" name="auth">
+          <option value="basic" {{ 'selected' if not target or target.auth == 'basic' }}>{{ _('User + API token') }}</option>
+          <option value="bearer" {{ 'selected' if target and target.auth == 'bearer' }}>{{ _('Personal access token') }}</option>
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small mb-1" for="cf-user">{{ _('User (e-mail on Cloud)') }}</label>
+        <input class="form-control form-control-sm" id="cf-user" name="username" maxlength="255" value="{{ target.username if target else '' }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label small mb-1" for="cf-secret">{{ _('API token / password') }}</label>
+        <input class="form-control form-control-sm" id="cf-secret" name="secret" type="password" maxlength="8192" autocomplete="new-password"
+               placeholder="{{ _('Stored — leave empty to keep it') if target and has_secret(target) else '' }}">
+        <div class="form-text" style="font-size:11px;">{{ _('Never shown again. Kept in the vault when one is configured, else encrypted. Changing the address, the flavour, the authentication or the user removes it.') }}</div>
+      </div>
+      <div class="col-md-6 d-flex flex-column justify-content-center gap-1">
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="verify_tls" value="1" id="cf-tls" {{ 'checked' if not target or target.verify_tls }}>
+          <label class="form-check-label small" for="cf-tls">{{ _('Verify the TLS certificate (trust store)') }}</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="enabled" value="1" id="cf-on" {{ 'checked' if not target or target.enabled }}>
+          <label class="form-check-label small" for="cf-on">{{ _('Enabled') }}</label></div>
+      </div>
+    </div>
+    <button class="btn btn-fw-primary btn-sm mt-2">{{ _('Save') }}</button>
+  </div>
+</form>
+</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/wiki.js') }}"></script>
+{% endblock %}

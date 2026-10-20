@@ -6,6 +6,57 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+The upgrade runs migrations `wiki04` (Wiki groups merged into Administrator ›
+Access › Groups), `wiki05` (comments and subscriptions) and `wiki06`
+(Confluence spaces and pages).
+
+### Added
+
+- **Wiki: comments, following, export and Confluence** — the rest of the Wiki
+  plan, as asked: "do the Wiki and Confluence".
+  - **Comments** under every published article, in threads (Reply), in
+    Markdown with the article's own sanitiser. Written by whoever can read the
+    article and holds `wiki.write`; edited by their author; deleted by their
+    author, the article's author or a moderator (a comment with replies is
+    blanked so the thread still reads). Archived articles keep theirs, closed.
+  - **Following**: an article, a topic (sub-topics included), a tag, an ADOM
+    (its articles and the Global ones), Global, or everything, from a
+    **Follow** button or **Wiki › Following**. New versions and comments put a
+    notice in the bell, sent only to people who can open the article at that
+    moment and never to the person who acted. The bell asks again whenever it
+    is drawn, so narrowing an article's audience later hides the notices
+    already sent; deleting an article deletes them. Optional e-mail to the
+    recovery address, one message per person, with the title, description or
+    comment excerpt and the link only.
+  - **Export** of an article's published version (current, or any version from
+    History) as Markdown with a YAML header or as PDF rendered on the node, and
+    of the filtered list as a ZIP of either. Drafts never leave; images are not
+    downloaded into the PDF (SATOM does not fetch an address an author typed).
+  - **Publish to Confluence**, one way: moderators set up spaces (Cloud REST
+    API v2 or Data Center), the credential write-only in the vault or
+    encrypted; the article's author or a moderator publishes its published
+    version, the first time as a new page, then always to that page id with
+    the next version. An article not for everyone needs an explicit
+    acknowledgement, and a credential scan (keys, tokens, FortiOS `ENC`
+    secrets, passwords in URLs or headers) stops the publication, naming kind
+    and line only; a moderator may override, audited. The calls go through the
+    same checked path as Studio connections (no loopback, link-local, this
+    node or its HA peer; no redirects; credential redacted from errors).
+
+### Changed
+
+- **Wiki groups are Administrator › Access › Groups**, the groups Python Studio
+  apps are shared with: one list of teams instead of two that drift apart.
+  The upgrade merges the Wiki's groups into it (same name in any case = one
+  group, members added together) and keeps every article's audience. Groups
+  are managed by whoever manages users; the Access › Groups page counts the
+  Wiki articles naming each group, and deleting one leaves them closed.
+
+### Fixed
+
+- The Wiki list's page 2 and later kept only the first ticked ADOM of the
+  filter.
+
 ## [3.3.8] - 2026-10-20
 
 Upgrade path unchanged from 3.3.7: the update package accepts a node on 3.3.3

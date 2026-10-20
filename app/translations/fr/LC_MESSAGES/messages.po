@@ -26008,3 +26008,216 @@ msgstr "non installé"
 
 msgid "To finish it"
 msgstr "Pour le terminer"
+
+msgid "Named sets of users. Python Studio apps and Wiki articles are shared with groups or with people: add a colleague to a group and they get every app and article of that group."
+msgstr "Ensembles nommés d'utilisateurs. Les apps Python Studio et les articles du Wiki sont partagés avec des groupes ou des personnes : ajoutez un collègue à un groupe et il reçoit toutes les apps et tous les articles de ce groupe."
+
+msgid "Wiki articles"
+msgstr "Articles du Wiki"
+
+msgid "Comments"
+msgstr "Commentaires"
+
+msgid "This article is archived: its comments can be read but no new ones added."
+msgstr "Cet article est archivé : ses commentaires restent lisibles, mais on ne peut plus en ajouter."
+
+msgid "edited"
+msgstr "modifié"
+
+msgid "Comment deleted."
+msgstr "Commentaire supprimé."
+
+msgid "Reply"
+msgstr "Répondre"
+
+msgid "Delete this comment?"
+msgstr "Supprimer ce commentaire ?"
+
+msgid "No comments yet."
+msgstr "Aucun commentaire pour l'instant."
+
+msgid "Add a comment"
+msgstr "Ajouter un commentaire"
+
+msgid "Markdown. Everyone who can read this article reads your comment; the people following it get a notice."
+msgstr "Markdown. Tous ceux qui peuvent lire cet article lisent votre commentaire ; ceux qui le suivent reçoivent un avis."
+
+msgid "Confluence"
+msgstr "Confluence"
+
+msgid "page %(id)s"
+msgstr "page %(id)s"
+
+msgid "up to date"
+msgstr "à jour"
+
+msgid "holds version %(n)d, current is %(m)d"
+msgstr "contient la version %(n)d, l'actuelle est la %(m)d"
+
+msgid "Stop updating this page? It stays in Confluence."
+msgstr "Ne plus mettre à jour cette page ? Elle reste dans Confluence."
+
+msgid "Forget"
+msgstr "Oublier"
+
+msgid "This article looks like it holds credentials; it will not be published until they are removed:"
+msgstr "Cet article semble contenir des identifiants ; il ne sera pas publié tant qu'ils n'auront pas été retirés :"
+
+msgid "%(kind)s on line %(line)d"
+msgstr "%(kind)s à la ligne %(line)d"
+
+msgid "Space"
+msgstr "Espace"
+
+msgid "This article is not for everyone in SATOM. The readers of that Confluence space may read it."
+msgstr "Cet article n'est pas destiné à tout le monde dans SATOM. Les lecteurs de cet espace Confluence peuvent le lire."
+
+msgid "I checked: these are not credentials (moderator, audited)"
+msgstr "J'ai vérifié : ce ne sont pas des identifiants (modérateur, audité)"
+
+msgid "Publish version %(n)d"
+msgstr "Publier la version %(n)d"
+
+msgid "The published version goes, never a draft. An edit made in Confluence is replaced on the next publication."
+msgstr "C'est la version publiée qui part, jamais un brouillon. Une modification faite dans Confluence est remplacée à la publication suivante."
+
+msgid "Stop following"
+msgstr "Ne plus suivre"
+
+msgid "Following"
+msgstr "Suivi"
+
+msgid "e-mail"
+msgstr "e-mail"
+
+msgid "Get a notice in the bell when this changes"
+msgstr "Recevoir un avis dans la cloche quand cela change"
+
+msgid "Follow"
+msgstr "Suivre"
+
+msgid "Administrator › Access › Groups"
+msgstr "Administrateur › Accès › Groupes"
+
+msgid "Markdown (.md)"
+msgstr "Markdown (.md)"
+
+msgid "PDF"
+msgstr "PDF"
+
+msgid "The published version; unpublished changes are not exported."
+msgstr "La version publiée ; les modifications non publiées ne sont pas exportées."
+
+msgid "Spaces the authors and moderators can publish Wiki articles to. One way: SATOM writes the page and replaces it on every publication; nothing comes back from Confluence."
+msgstr "Espaces où les auteurs et les modérateurs peuvent publier des articles du Wiki. Dans un seul sens : SATOM écrit la page et la remplace à chaque publication ; rien ne revient de Confluence."
+
+msgid "Credential"
+msgstr "Identifiant"
+
+msgid "Pages"
+msgstr "Pages"
+
+msgid "Delete this target? Its pages stay in Confluence; SATOM stops updating them."
+msgstr "Supprimer cette cible ? Ses pages restent dans Confluence ; SATOM ne les met plus à jour."
+
+msgid "No Confluence space yet."
+msgstr "Aucun espace Confluence pour l'instant."
+
+msgid "Edit %(name)s"
+msgstr "Modifier %(name)s"
+
+msgid "New target"
+msgstr "Nouvelle cible"
+
+msgid "Space key"
+msgstr "Clé de l'espace"
+
+msgid "Parent page id (optional)"
+msgstr "Id de la page parente (facultatif)"
+
+msgid "User + API token"
+msgstr "Utilisateur + jeton d'API"
+
+msgid "Personal access token"
+msgstr "Jeton d'accès personnel"
+
+msgid "User (e-mail on Cloud)"
+msgstr "Utilisateur (e-mail sur Cloud)"
+
+msgid "API token / password"
+msgstr "Jeton d'API / mot de passe"
+
+msgid "Stored — leave empty to keep it"
+msgstr "Enregistré — laissez vide pour le conserver"
+
+msgid "Never shown again. Kept in the vault when one is configured, else encrypted. Changing the address, the flavour, the authentication or the user removes it."
+msgstr "N'est plus jamais affiché. Conservé dans le coffre (vault) s'il y en a un, sinon chiffré. Changer l'adresse, la variante, l'authentification ou l'utilisateur le supprime."
+
+msgid "Articles written by the people who run this console. Each one is published to Global or to chosen ADOMs, and can be limited to profiles and groups."
+msgstr "Articles écrits par les personnes qui exploitent cette console. Chacun est publié dans Global ou dans les ADOM choisis, et peut être limité à des profils et des groupes."
+
+msgid "Follow topic"
+msgstr "Suivre le thème"
+
+msgid "Follow tag"
+msgstr "Suivre l'étiquette"
+
+msgid "Every released article of this list, in one ZIP"
+msgstr "Tous les articles publiés de cette liste, dans un ZIP"
+
+msgid "ZIP of Markdown files"
+msgstr "ZIP de fichiers Markdown"
+
+msgid "ZIP of PDF files"
+msgstr "ZIP de fichiers PDF"
+
+msgid "Articles, topics, tags and ADOMs you follow. A new version or a comment puts a notice in your bell; you only ever hear about articles you can open."
+msgstr "Articles, thèmes, étiquettes et ADOM que vous suivez. Une nouvelle version ou un commentaire dépose un avis dans votre cloche ; vous n'êtes averti que des articles que vous pouvez ouvrir."
+
+msgid "E-mail copies go to your recovery e-mail address, and you have none."
+msgstr "Les copies par e-mail vont à votre adresse de récupération, et vous n'en avez pas."
+
+msgid "Add one in your account settings"
+msgstr "Ajoutez-en une dans les paramètres de votre compte"
+
+msgid "Follows"
+msgstr "Suit"
+
+msgid "E-mail"
+msgstr "E-mail"
+
+msgid "Article"
+msgstr "Article"
+
+msgid "Tag"
+msgstr "Étiquette"
+
+msgid "Everything"
+msgstr "Tout"
+
+msgid "An article you can no longer open"
+msgstr "Un article que vous ne pouvez plus ouvrir"
+
+msgid "Every article"
+msgstr "Tous les articles"
+
+msgid "Off"
+msgstr "Non"
+
+msgid "You follow nothing yet. Use Follow on an article, a topic or a tag, or add one below."
+msgstr "Vous ne suivez rien pour l'instant. Utilisez Suivre sur un article, un thème ou une étiquette, ou ajoutez-en un ci-dessous."
+
+msgid "Follow more"
+msgstr "Suivre autre chose"
+
+msgid "Which"
+msgstr "Lequel"
+
+msgid "ADOM key, topic number or tag"
+msgstr "Clé d'ADOM, numéro de thème ou étiquette"
+
+msgid "Also by e-mail"
+msgstr "Aussi par e-mail"
+
+msgid "An ADOM: every article shown there, published to it or to Global. Global: the articles published to Global. A topic includes the topics under it."
+msgstr "Un ADOM : tous les articles qui y sont affichés, publiés dans celui-ci ou dans Global. Global : les articles publiés dans Global. Un thème inclut les thèmes qui en dépendent."

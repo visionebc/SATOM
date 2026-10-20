@@ -5051,8 +5051,11 @@ no longer enforced, and offers a button to clear the dead row.
 **Groups** (Administrator → Access → Groups) are named sets of users, managed
 with *Manage users*. Python Studio apps are shared with groups or people
 (§23.7): add a colleague to a group and they get every app shared with it. A
-group an app is shared with cannot be deleted until it is removed from the app. These are not the Wiki's groups (Wiki › Groups), which govern
-the Wiki only.
+group an app is shared with cannot be deleted until it is removed from the app.
+The same groups limit who reads a Wiki article (§46.1); the **Wiki articles**
+column counts the articles naming each group. Deleting a group a Wiki article
+names is allowed and leaves that article closed (its author and the
+moderators only), never open to everyone.
 
 **Users** is the account list — create, disable, delete, assign a profile, and
 per row: **Reset password** (local accounts only; 12 to 1024 characters),
@@ -8476,7 +8479,7 @@ discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
    the console is either **on the map** (125 today) or **excluded with a written
-   reason** (168 today — JSON feeds, downloads, redirects and fragments that
+   reason** (171 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the
@@ -9835,7 +9838,7 @@ dropped files are not stored: link an image by its `https://` address.
 |---|---|
 | `wiki.view` (*Read the Wiki*) | open the Wiki and read the articles whose audience includes you |
 | `wiki.write` (*Write Wiki articles*) | create articles; edit the text, topic and tags of any article you can read |
-| `wiki.moderate` (*Moderate the Wiki*, admin) | read, edit and delete every article; manage **Topics** and **Groups** |
+| `wiki.moderate` (*Moderate the Wiki*, admin) | read, edit and delete every article; manage **Topics** and the **Confluence** spaces; publish to Confluence despite a credential warning |
 
 Who can read an article, archiving it and deleting it stay with its author
 and the moderators; other editors see the audience fields disabled.
@@ -9844,10 +9847,136 @@ The `readonly` system profile has `wiki.view`, `operator` adds `wiki.write`,
 and `admin` has all three. Custom profiles get none of them until an
 administrator adds them under **Profiles**.
 
-**Groups** (Wiki › Groups) name people across profiles — a team, an on-call
-rota. A group is the Wiki's own; it grants nothing outside the Wiki.
+**Groups** name people across profiles — a team, an on-call rota. They are
+**Administrator › Access › Groups** (§23.7), the same groups Python Studio
+apps are shared with, and are managed by whoever manages users
+(`user_manage`); the Wiki menu links there. A group grants nothing by itself:
+it is a name an article's audience or an app's access can use. The Access ›
+Groups page says how many Wiki articles name each group, and deleting one
+leaves those articles closed (author and moderators only), never open. Until
+2026-10-20 the Wiki kept groups of its own; the upgrade merged them into
+Access › Groups (same name, any case = one group, members added together).
 
 Raw HTML in an article is shown as text, and links to anything but `http`,
 `https`, `mailto`, in-page anchors and relative addresses are removed. Do not
 paste passwords, keys or tokens into an article: everyone in its audience can
 read it and every earlier revision.
+
+### 46.5 Comments
+
+Under every published article, **Comments** holds a discussion in threads:
+**Reply** answers a comment, and replies are indented under it (five levels
+on screen; deeper replies stay at the fifth). Comments are Markdown with the
+same rules as articles: raw HTML is text, unsafe links are removed.
+
+- Whoever can read the article and holds `wiki.write` comments. A reader
+  with `wiki.view` only reads the comments.
+- An archived article keeps its comments readable; no new ones are added. A
+  draft has no comments.
+- **Edit** is for the comment's author only. **Delete** is for its author,
+  the article's author and the moderators. A comment with replies is
+  replaced by *Comment deleted.* so the thread under it still reads; one
+  without replies disappears.
+
+### 46.6 Following and notices
+
+**Follow** (on an article, on a topic's list, on a tag's list) or
+**Wiki › Following** puts a notice in your bell when something you follow
+changes:
+
+| You follow | You hear about |
+|---|---|
+| an article | its new versions and its comments |
+| a topic | new versions of the articles in it or in any topic under it |
+| a tag | new versions of the articles carrying it |
+| an ADOM | new versions of the articles shown there: published to it, or to Global |
+| Global | new versions of the articles published to Global |
+| everything | every new version |
+
+- You follow an article you comment on, and an author follows their article
+  from its first publication; **Following** stops either.
+- Whoever you answered hears *X replied to you* even if they stopped following.
+- You are never told about your own publication or comment.
+- **A notice reaches only people who can open the article when it is sent**,
+  whatever they follow. The bell asks again every time it is drawn: if an
+  article's audience is narrowed later, or you leave the group or the ADOM
+  that let you read it, its notices leave your bell. Deleting an article
+  deletes its notices and the subscriptions to it.
+- The notice lands in the bell of an ADOM where you can read the article
+  (for a Global article, your own ADOM).
+- **E-mail** (per subscription) also sends a message to your **recovery
+  e-mail address** (Settings › Security), one message per person, when
+  e-mail is enabled under Settings › Email. It carries the title, the
+  description or the start of the comment and the link — never the article
+  text. Unlike the bell, a sent e-mail cannot be taken back when the
+  audience changes later.
+
+### 46.7 Export: Markdown, PDF and ZIP
+
+**Export** on an article downloads its **published** version as Markdown
+(`.md`) or PDF; **History** exports any earlier version the same way.
+Unpublished changes are never exported, and a draft that was never published
+has nothing to export. You export what you can read: an article you cannot
+open answers *not found*.
+
+- **Markdown** is the text exactly as written, under a YAML header: title,
+  description, topic, tags, audience, version, author, editor and date, the
+  article's address and the export time.
+- **PDF** is rendered on the node (no browser) from the same safe HTML the
+  page shows: headings, lists, quotes, code, tables. **Images are not
+  downloaded** — SATOM does not reach out to an address an author typed —
+  the PDF shows their description and link. Text uses DejaVu Sans when the
+  node has it, else Bitstream Vera; characters neither font has show as
+  boxes.
+- **Export** on the article list downloads a ZIP of every published article
+  the list shows with its current filters (ADOMs, topic, tag, search,
+  status, Mine): one `.md` or `.pdf` per article in a folder per topic, plus
+  a `README.txt`. One ZIP holds at most 500 articles; the README says how many
+  were left out.
+- Every export is in the audit log (`wiki.export`).
+
+### 46.8 Publishing to Confluence
+
+An article's author or a moderator can publish its published version to a
+Confluence space. It is **one way**: SATOM writes the page, nothing comes
+back, and an edit made in Confluence is replaced at the next publication (the
+page says so in its last line).
+
+**Setting up a space (moderators): Wiki › Confluence.**
+
+| Field | |
+|---|---|
+| **Confluence** | *Cloud* (REST API v2, `https://<site>.atlassian.net/wiki` — `/wiki` is added for an `atlassian.net` address) or *Data Center / Server* (`/rest/api/content`) |
+| **Address** | `https://` only: the credential travels with every call |
+| **Space key** | the space pages are created in |
+| **Parent page id** | optional; new pages go under it (the number in the page's address) |
+| **Authentication** | *User + API token* (Cloud: your Atlassian e-mail and an API token) or *Personal access token* (Data Center) |
+| **API token / password** | write-only; kept in the vault when one is configured, else encrypted. Changing the address, the flavour, the authentication or the user removes it, so a stored credential is never sent somewhere new by an edit |
+
+**Test** reads the space and shows its name.
+
+**Publishing (article page › Confluence).** Pick the space and press
+**Publish version N**:
+
+- the first publication creates a page and SATOM remembers its id; later
+  ones update **that page** with the next Confluence version, even if its
+  title changed; a page deleted in Confluence is created again;
+- an article published to some ADOMs or limited to profiles or groups needs
+  the box *The readers of that Confluence space may read it* — Confluence
+  does not know SATOM's audience;
+- **credential check**: the title, description and text are scanned for what
+  looks like a credential (private keys, cloud and Git tokens, JSON Web
+  Tokens, FortiOS `set … ENC …` lines, `user:password@` in a URL,
+  `Authorization:` headers, `password: …`-style values that are not
+  placeholders such as `<password>` or `${VAR}`). A finding is listed by kind
+  and line, never by value, and stops the publication. A moderator may tick
+  *these are not credentials* and publish; that is audited;
+- the block shows each page, the version it holds and whether it is up to
+  date; **Forget** stops updating a page and leaves it in Confluence.
+  Deleting the article or the space in SATOM also leaves the pages there.
+
+The call goes through the same checked path as Python Studio connections:
+no address of the node itself, its HA peer, loopback or link-local; no
+redirect followed; the credential removed from every error message. Every
+publication, refusal and setting change is in the audit log
+(`wiki.confluence.*`).

@@ -339,7 +339,10 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <p>A run stopped by the memory limit now says so ("killed (SIGKILL): most
     often the memory limit…") instead of a bare exit code; the limit is a hard
     <code>MemoryMax</code> with no <code>MemoryHigh</code> throttle, which in the live test kept a
-    runaway run stalled until its timeout.</p>
+    runaway run stalled until its timeout. The units use <code>OOMPolicy=continue</code>
+    and the jail runs at <code>oom_score_adj</code> 1000: in the live test systemd's
+    default stopped the whole runner at the memory limit, with every other run
+    in it, and left the run marked "running".</p>
 </li>
 <li>
 <p><strong>Connections refuse dangerous destinations</strong> (found in this release's

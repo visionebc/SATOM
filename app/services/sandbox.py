@@ -481,8 +481,17 @@ MAX_OUTPUT = 1024 * 1024
 
 
 def _rlimit_argv() -> list[str]:
+    """prlimit for the per-process limits, and choom so that when the unit
+    reaches MemoryMax the kernel picks the jail, never the runner that records
+    the run (oom_score_adj 1000; raising one's own score needs no privilege)."""
+    out: list[str] = []
+    choom = shutil.which("choom")
+    if choom:
+        out += [choom, "-n", "1000", "--"]
     prl = shutil.which("prlimit")
-    return [prl, *RLIMITS, "--"] if prl else []
+    if prl:
+        out += [prl, *RLIMITS, "--"]
+    return out
 
 
 def _drain(stream, limit: int, sink: list, state: dict) -> None:

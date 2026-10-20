@@ -219,7 +219,10 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   - A run stopped by the memory limit now says so ("killed (SIGKILL): most
     often the memory limit…") instead of a bare exit code; the limit is a hard
     `MemoryMax` with no `MemoryHigh` throttle, which in the live test kept a
-    runaway run stalled until its timeout.
+    runaway run stalled until its timeout. The units use `OOMPolicy=continue`
+    and the jail runs at `oom_score_adj` 1000: in the live test systemd's
+    default stopped the whole runner at the memory limit, with every other run
+    in it, and left the run marked "running".
 
 - **Connections refuse dangerous destinations** (found in this release's
   Connections before it shipped): a base URL, an OAuth2 token URL or a

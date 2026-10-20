@@ -51,6 +51,11 @@ ProtectProc=invisible
 # more raises these in a drop-in.
 MemoryMax=1G
 TasksMax=256
+# The kernel ends the process that hit MemoryMax -- the script, whose jail
+# runs at oom_score_adj 1000 -- and the runner carries on and records it.
+# The default (stop) stopped the whole unit, runner and every other run with
+# it, and left the run marked "running" (measured on a1).
+OOMPolicy=continue
 CPUQuota=200%
 CPUWeight=20
 IOWeight=20

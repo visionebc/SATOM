@@ -4630,7 +4630,9 @@ update arms it on nodes installed before it existed.</p>
 <p><strong>What a run can use.</strong> The runner unit carries cgroup limits, so a script that
 allocates, forks or writes in a loop stops at them instead of taking memory,
 processes or disk from the database and the web service on the same node:
-<code>MemoryMax=1G</code> (a run that reaches it is ended at once, and its record says the memory limit stopped it), <code>TasksMax=256</code>, <code>CPUQuota=200%</code> with a low
+<code>MemoryMax=1G</code> (a run that reaches it is ended at once — the kernel picks the
+script, never the runner, and its record says the memory limit stopped it),
+<code>TasksMax=256</code>, <code>CPUQuota=200%</code> with a low
 CPU and I/O weight, and a private <code>/tmp</code> that is a 512 MB memory filesystem —
 the run's work directory lives there, so no run can fill the disk. Inside the
 jail the root and <code>/dev</code> are read-only, a single file is at most 256 MB and the

@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}{{ a.name }} — App{% endblock %}
+{% block content %}
+{# Python Studio > Apps > editor (views.studio.app_edit). Settings, the form,
+   the diagram (process_editor.js with the app step kinds), the output
+   actions, test runs of the draft and publishing. #}
+<div class="fw-page-header d-flex align-items-start">
+  <div>
+    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('studio.index', pane='apps') }}">{{ _('Python Studio') }}</a> › {{ _('Apps') }}</div>
+    <h1 class="fw-page-title"><i class="bi {{ a.icon }} me-2 text-accent"></i><span id="ap-title">{{ a.name }}</span></h1>
+    <p class="text-muted mb-0" style="font-size:13px;"><code>{{ a.slug }}</code> ·
+      {% if a.status == 'published' and a.version %}<span class="fw-badge fw-badge-success" id="ap-pub">v{{ a.version }} {{ _('published') }}</span>
+      {% elif a.version %}<span class="fw-badge fw-badge-warning" id="ap-pub">v{{ a.version }} {{ _('unpublished') }}</span>
+      {% else %}<span class="fw-badge fw-badge-secondary" id="ap-pub">{{ _('not published') }}</span>{% endif %}
+      <span id="ap-state" class="ms-2"></span></p>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.index', pane='apps') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Python Studio') }}</a>
+    {% if a.version %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('apps.page', slug=a.slug) }}"><i class="bi bi-box-arrow-up-right me-1"></i>{{ _('Open as a user') }}</a>{% endif %}
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-3" role="tablist">
+  {% for id, icon, label in [('settings', 'bi-sliders', _('Settings')), ('form', 'bi-ui-checks', _('Form')), ('diagram', 'bi-diagram-3', _('Diagram')),
+                             ('actions', 'bi-lightning', _('Actions')), ('test', 'bi-play-circle', _('Test')), ('publish', 'bi-rocket-takeoff', _('Publish'))] %}
+  <li class="nav-item"><button class="nav-link {{ 'active' if loop.first }}" data-bs-toggle="tab" data-bs-target="#ap-tab-{{ id }}" type="button"><i class="bi {{ icon }} me-1"></i>{{ label }}</button></li>
+  {% endfor %}
+</ul>
+
+<div class="tab-content">
+  {# ------------------------------------------------------------ settings #}
+  <div class="tab-pane fade show active" id="ap-tab-settings">
+    <div class="row g-3">
+      <div class="col-xl-6"><div class="fw-card"><div class="fw-card-body row g-2" style="font-size:13px;">
+        <div class="col-md-8"><label class="form-label small" for="ap-name">{{ _('Name (the menu entry)') }}</label><input class="form-control form-control-sm" id="ap-name" value="{{ a.name }}" maxlength="120"></div>
+        <div class="col-md-4"><label class="form-label small" for="ap-icon">{{ _('Icon') }}</label><input class="form-control form-control-sm" id="ap-icon" value="{{ a.icon }}" maxlength="31" placeholder="bi-app-indicator"></div>
+        <div class="col-12"><label class="form-label small" for="ap-desc">{{ _('Description (shown to users)') }}</label><textarea class="form-control form-control-sm" id="ap-desc" rows="3" maxlength="2000">{{ a.description }}</textarea></div>
+        <div class="col-12"><label class="form-label small d-block">{{ _('Where it appears (Operations > Plugins of these ADOMs)') }}</label>
+          <div class="form-check form-check-inline"><input class="form-check-input ap-adom" type="checkbox" id="ap-adom-all" value="*" {{ 'checked' if '*' in a.adoms }}><label class="form-check-label" for="ap-adom-all"><strong>{{ _('Every ADOM') }}</strong></label></div>
+          {% for k, label in adoms %}
+          <div class="form-check form-check-inline"><input class="form-check-input ap-adom" type="checkbox" id="ap-adom-{{ k }}" value="{{ k }}" {{ 'checked' if k in a.adoms }}><label class="form-check-label" for="ap-adom-{{ k }}">{{ label }}</label></div>
+          {% endfor %}
+          <div class="form-text">{{ _('In the Global ADOM the app is under Global > Plugins.') }}</div></div>
+      </div></div></div>
+      <div class="col-xl-6"><div class="fw-card"><div class="fw-card-body" style="font-size:13px;">
+        <label class="form-label small d-block">{{ _('Who may use it') }}</label>
+        <p class="text-muted" style="font-size:12px;">{{ _('The groups and the people ticked here, plus every Python Studio author. Nobody else sees the menu entry or can open the app.') }}
+          {% if current_user.can('user_manage') %}<a href="{{ url_for('user_groups.index') }}">{{ _('Manage groups') }}</a>{% endif %}</p>
+        <div class="row">
+          <div class="col-md-6"><div class="text-muted small mb-1">{{ _('Groups') }}</div>
+            <div style="max-height:240px;overflow:auto;">
+            {% for g in groups %}<div class="form-check"><input class="form-check-input ap-group" type="checkbox" id="ap-g-{{ g.id }}" value="{{ g.id }}" {{ 'checked' if g.id in a.access.groups }}><label class="form-check-label" for="ap-g-{{ g.id }}">{{ g.name }} <span class="text-muted">({{ g.members|length }})</span></label></div>
+            {% else %}<div class="text-muted small">{{ _('No groups yet.') }}</div>{% endfor %}</div></div>
+          <div class="col-md-6"><div class="text-muted small mb-1">{{ _('People') }}</div>
+            <div style="max-height:240px;overflow:auto;">
+            {% for u in users %}<div class="form-check"><input class="form-check-input ap-user" type="checkbox" id="ap-u-{{ u.id }}" value="{{ u.id }}" {{ 'checked' if u.id in a.access.users }}><label class="form-check-label" for="ap-u-{{ u.id }}">{{ u.username }}</label></div>{% endfor %}</div></div>
+        </div>
+      </div></div></div>
+    </div>
+    <button type="button" class="btn btn-primary btn-sm mt-3" id="ap-save-settings"><i class="bi bi-save me-1"></i>{{ _('Save settings') }}</button>
+  </div>
+
+  {# ---------------------------------------------------------------- form #}
+  <div class="tab-pane fade" id="ap-tab-form">
+    <div class="fw-card"><div class="fw-card-body" style="font-size:13px;">
+      <p class="text-muted" style="font-size:12px;">{{ _('Each field arrives in the diagram as {{ form.name }}. Lists can take their choices from a data store column or from an API. Password values are masked in every run record.') }}</p>
+      <div id="ap-fields"></div>
+      <div class="d-flex gap-2 mt-2">
+        <button type="button" class="btn btn-outline-primary btn-sm" id="ap-field-add"><i class="bi bi-plus-lg me-1"></i>{{ _('Add field') }}</button>
+        <button type="button" class="btn btn-primary btn-sm ms-auto" id="ap-save-form"><i class="bi bi-save me-1"></i>{{ _('Save form') }}</button>
+      </div>
+    </div></div>
+  </div>
+
+  {# ------------------------------------------------------------- diagram #}
+  <div class="tab-pane fade" id="ap-tab-diagram">
+    <div class="fw-card mb-3">
+      <div class="fw-card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-diagram-3 me-2"></i>{{ _('Diagram') }}</span>
+        <span id="proc-status" class="text-muted" style="font-weight:400;font-size:12px;"></span>
+      </div>
+      <div class="fw-card-body p-0">
+        <div class="d-flex" style="min-height:560px;">
+          <div style="width:200px;border-right:1px solid var(--fw-border,#DFE1E6);padding:10px;">
+            <div class="text-muted mb-1" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">{{ _('Add a step') }}</div>
+            {% for group, title in [('flow', _('Flow')), ('data', _('Data')), ('act', _('Actions'))] %}
+              <div class="mt-2 mb-1" style="font-size:11px;font-weight:600;color:#5E6C84;">{{ title }}</div>
+              {% for k in kinds if k.group == group %}
+              <button type="button" class="btn btn-sm btn-outline-secondary w-100 mb-1 text-start proc-add" data-kind="{{ k.key }}" title="{{ k.summary }}" style="font-size:12px;">{{ k.label }}</button>
+              {% endfor %}
+            {% endfor %}
+          </div>
+          <div style="flex:1;min-width:0;position:relative;">
+            <div class="p-2 border-bottom d-flex gap-2 align-items-center" style="font-size:12px;">
+              <button type="button" id="proc-connect" class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-right me-1"></i>{{ _('Connect') }}</button>
+              <button type="button" id="proc-delete" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash me-1"></i>{{ _('Delete selected') }}</button>
+              <button type="button" id="proc-fit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrows-fullscreen me-1"></i>{{ _('Fit') }}</button>
+              <span class="text-muted ms-auto" id="proc-hint"></span>
+              <button type="button" id="proc-save" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save diagram') }}</button>
+            </div>
+            <div id="proc-canvas" style="height:510px;overflow:hidden;background:#FAFBFC;"></div>
+          </div>
+          <div style="width:320px;border-left:1px solid var(--fw-border,#DFE1E6);padding:10px;overflow:auto;max-height:560px;">
+            <div class="text-muted mb-2" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">{{ _('Selected step') }}</div>
+            <div id="proc-inspector" class="text-muted" style="font-size:12.5px;">{{ _('Click a step to edit it.') }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="text-muted" style="font-size:12px;">{{ _('Arrows: a step ends ok or error, a decision yes or no. An error follows only an error arrow: with none, the run stops there as failed. Templates: {{ form.field }}, {{ rows }}, {{ rows | length }}; a value that is exactly one {{ expression }} keeps its type.') }}</div>
+  </div>
+
+  {# ------------------------------------------------------------- actions #}
+  <div class="tab-pane fade" id="ap-tab-actions">
+    <div class="fw-card"><div class="fw-card-body" style="font-size:13px;">
+      <p class="text-muted" style="font-size:12px;">{{ _('Buttons under the output of a finished run. A change to a device is never made from here: the change request action raises a draft change request, which goes through the normal approval.') }}</p>
+      <div id="ap-actions"></div>
+      <div class="d-flex gap-2 mt-2">
+        <select class="form-select form-select-sm" id="ap-action-kind" style="width:auto;">
+          {% for s in action_schema %}<option value="{{ s.key }}">{{ s.label }}</option>{% endfor %}
+        </select>
+        <button type="button" class="btn btn-outline-primary btn-sm" id="ap-action-add"><i class="bi bi-plus-lg me-1"></i>{{ _('Add action') }}</button>
+        <button type="button" class="btn btn-primary btn-sm ms-auto" id="ap-save-actions"><i class="bi bi-save me-1"></i>{{ _('Save actions') }}</button>
+      </div>
+    </div></div>
+  </div>
+
+  {# ---------------------------------------------------------------- test #}
+  <div class="tab-pane fade" id="ap-tab-test">
+    <div class="row g-3">
+      <div class="col-lg-4"><div class="fw-card"><div class="fw-card-body">
+        <form id="ap-test-form"></form>
+        <div class="form-check my-2"><input class="form-check-input" type="checkbox" id="ap-rehearsal" checked>
+          <label class="form-check-label small" for="ap-rehearsal">{{ _('Rehearsal: steps that write are described, not executed') }}</label></div>
+        <button type="button" class="btn btn-primary btn-sm" id="ap-test-run"><i class="bi bi-play-fill me-1"></i>{{ _('Run the saved draft') }}</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="ap-test-reload" title="{{ _('Reload the form after saving it') }}"><i class="bi bi-arrow-clockwise"></i></button>
+      </div></div></div>
+      <div class="col-lg-8"><div id="ap-test-out" class="text-muted" style="font-size:13px;">{{ _('Save, then run the draft here. Operators keep running the published version.') }}</div></div>
+    </div>
+  </div>
+
+  {# ------------------------------------------------------------- publish #}
+  <div class="tab-pane fade" id="ap-tab-publish">
+    <div class="fw-card mb-3"><div class="fw-card-body" style="font-size:13px;">
+      <div id="ap-problems">
+      {% if problems %}<div class="alert alert-warning py-2" style="font-size:12px;"><strong>{{ _('Fix before publishing:') }}</strong><ul class="mb-0">{% for p in problems %}<li>{{ p }}</li>{% endfor %}</ul></div>
+      {% else %}<div class="text-success small mb-2"><i class="bi bi-check-circle me-1"></i>{{ _('The draft is ready to publish.') }}</div>{% endif %}
+      </div>
+      <p class="text-muted" style="font-size:12px;">{{ _('Publishing freezes the draft as a new version. The menu entry and every run use it until the next Publish; editing the draft changes nothing for users.') }}
+        {% if a.published %}{{ _('Published version:') }} v{{ a.version }} ({{ a.published.at|replace('T', ' ') }}, {{ a.published.by }}).{% endif %}</p>
+      <div class="d-flex gap-2 align-items-center">
+        <input class="form-control form-control-sm" id="ap-note" placeholder="{{ _('What changed (optional)') }}" maxlength="200" style="max-width:360px;">
+        <button type="button" class="btn btn-success btn-sm" id="ap-publish"><i class="bi bi-rocket-takeoff me-1"></i>{{ _('Publish') }}</button>
+        {% if a.status == 'published' %}<button type="button" class="btn btn-outline-warning btn-sm" id="ap-unpublish">{{ _('Unpublish (remove from the menu)') }}</button>{% endif %}
+        <button type="button" class="btn btn-outline-danger btn-sm ms-auto" id="ap-delete"><i class="bi bi-trash me-1"></i>{{ _('Delete app') }}</button>
+      </div>
+      {% if used_by %}<div class="form-text">{{ _('Run by other apps:') }} {{ used_by|join(', ') }}</div>{% endif %}
+    </div></div>
+    <div class="fw-card"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Runs') }}</span></div>
+      <div class="fw-table-wrapper mb-0" style="border:0;border-radius:0;"><table class="fw-table">
+        <thead><tr><th>#</th><th>{{ _('Started') }}</th><th>{{ _('User') }}</th><th>{{ _('Version') }}</th><th>{{ _('Status') }}</th></tr></thead>
+        <tbody>{% for r in runs %}<tr><td><a href="{{ url_for('apps.run_page', rid=r.id) }}">{{ r.id }}</a></td><td style="font-size:13px;">{{ r.started_at.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ r.user }}</td>
+          <td>{{ 'v%s' % r.version if r.version else 'draft' }}{% if not r.armed %} · {{ _('rehearsal') }}{% endif %}</td>
+          <td><span class="fw-badge fw-badge-{{ {'done': 'success', 'failed': 'danger'}.get(r.status, 'info') }}">{{ r.status }}</span></td></tr>
+        {% else %}<tr><td colspan="5" class="text-muted p-3">{{ _('No runs yet.') }}</td></tr>{% endfor %}</tbody>
+      </table></div></div>
+  </div>
+</div>
+
+<script type="application/json" id="proc-data" nonce="{{ csp_nonce }}">{{ {
+  'graph': a.graph, 'canEdit': True, 'saveUrl': url_for('studio.app_graph', slug=a.slug),
+  'csrf': csrf_token(), 'actions': [], 'hooks': [], 'kinds': kinds_json, 'branches': branches,
+  'branchNote': 'ok/error after a step, yes/no after a decision. always is followed for any outcome except error.'
+} | tojson }}</script>
+<script type="application/json" id="ap-config">{{ {
+  'slug': a.slug, 'fields': a.fields, 'actions': a.actions, 'fieldTypes': field_types,
+  'actionSchema': action_schema, 'choices': choices,
+  'urls': {'settings': url_for('studio.app_settings', slug=a.slug), 'draft': url_for('studio.app_draft', slug=a.slug),
+           'form': url_for('studio.app_form', slug=a.slug), 'test': url_for('studio.app_test', slug=a.slug),
+           'publish': url_for('studio.app_publish', slug=a.slug), 'unpublish': url_for('studio.app_unpublish', slug=a.slug),
+           'delete': url_for('studio.app_delete', slug=a.slug), 'back': url_for('studio.index', pane='apps')}
+}|tojson }}</script>
+<script src="{{ url_for('static', filename='js/process_editor.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/apps_run.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('js/studio_app.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

@@ -38,7 +38,7 @@
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
 {% if product.key != 'global' and not product.placeholder %}
-{% set _g_ops = request.blueprint in ['backups','import_backup','plugins','lua_studio','wiki'] %}
+{% set _g_ops = request.blueprint in ['backups','import_backup','plugins','lua_studio','wiki','apps'] %}
 {% set _m_bak = adom_menu('backups', product) %}
 {% set _m_imp = adom_menu('import_backup', product) %}
 {% set _m_tpl = adom_menu('templates', product) %}

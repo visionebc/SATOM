@@ -98,6 +98,18 @@
     fail: { c: "#8B1C2A", m: "pa2", t: "fail" },
     unknown: { c: "#7A5700", m: "pa3", t: "unknown" }
   };
+  var BRANCH_KEYS = ["always", "pass", "fail", "unknown"];
+  /* A host page may bring its own arrow outcomes (Python Studio apps:
+     always/ok/error/yes/no). Colours map onto the four calibrated markers. */
+  if (DATA.branches && DATA.branches.length) {
+    var MARK = { "#5E6C84": "pa0", "#15692A": "pa1", "#8B1C2A": "pa2", "#7A5700": "pa3" };
+    BRANCH = {};
+    BRANCH_KEYS = [];
+    DATA.branches.forEach(function (b) {
+      BRANCH[b.key] = { c: b.color, m: MARK[b.color] || "pa0", t: b.key === "always" ? "" : (b.label || b.key) };
+      BRANCH_KEYS.push(b.key);
+    });
+  }
 
   function draw() {
     while (root.firstChild) root.removeChild(root.firstChild);
@@ -288,7 +300,7 @@
       var wrap = field("Follow when the step ends");
       var s = document.createElement("select");
       s.className = "form-select form-select-sm";
-      ["always", "pass", "fail", "unknown"].forEach(function (b) {
+      BRANCH_KEYS.forEach(function (b) {
         var o = document.createElement("option");
         o.value = b; o.textContent = b;
         if (e.branch === b) o.selected = true;
@@ -303,8 +315,8 @@
       var note = document.createElement("div");
       note.className = "form-text";
       note.style.fontSize = "11px";
-      note.textContent = "An explicit outcome always wins over always, so a " +
-        "recovery branch is reachable in exactly the graphs that need it.";
+      note.textContent = DATA.branchNote || ("An explicit outcome always wins over always, so a " +
+        "recovery branch is reachable in exactly the graphs that need it.");
       insp.appendChild(note);
       return;
     }

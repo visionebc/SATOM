@@ -8,6 +8,56 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Python Studio apps** (Python Studio → Apps): asked for as "the user can
+  create their own database, their own process defined with a diagram, add
+  forms, and receive an output they can act on; the administrator creates them
+  and they appear in Operations → Plugins, each with its own menu entry".
+  - **An app is a form, a diagram and an output.** The form has text, number,
+    date, checkbox, password and list fields; a list can take its choices from
+    a data store column or from an API. The diagram is drawn in the same
+    editor as Process, with app steps: Set a variable, Decision, Fail, Output,
+    Read / Write a data store, Query a database (PostgreSQL), Call an API, Run a
+    script (the published Script Library version). Steps read the form and
+    earlier results through sandboxed templates (`{{ form.host }}`,
+    `{{ rows }}`); an undefined name is an error, not an empty value. A step
+    ends ok or error (a decision yes or no); an error follows only an error
+    arrow, never "always", so a flow does not carry on with data it never got.
+  - **Publishing freezes a version.** The menu entry and every run use it until
+    the next Publish; editing the draft changes nothing for users. A draft with
+    problems (no Start, an arrow to nowhere, a form field the diagram reads but
+    the form lacks) cannot be published. Test runs of the draft can be a
+    **rehearsal**: steps that write are described, not executed.
+  - **Where and who are the author's choice**: the ADOMs it appears in (in
+    Global, under Global → Plugins), and the **groups or people** who may use
+    it, plus every Python Studio author. Nobody else sees the entry or can open
+    the app, its runs or their actions (404).
+  - **Actions on the output** (buttons under a finished run): save to a data
+    store, download CSV or JSON (spreadsheet-safe), send to a connection, run
+    another app with the output, or **raise a change request**. A change to a
+    device is never made from an app: it becomes a DRAFT change request through
+    the existing create path and waits for the normal approval.
+  - Runs execute in the background and the page follows them; password values
+    are masked in every run record; a run left "running" by a service restart is
+    reported as interrupted.
+- **Groups** (Administrator → Access → Groups): named sets of users, managed
+  with the user-management key. Apps are shared with groups or people; a group
+  an app is shared with cannot be deleted (409, names the apps).
+- **Data stores** (Python Studio → Data stores): tables defined in the UI with
+  typed columns (text, number, boolean, date, json); rows are added, edited and
+  deleted by hand or by apps, filtered, and exported / imported as CSV (the
+  import is all-or-nothing, the export spreadsheet-safe). No SQL or DDL is
+  reachable from the UI and a data store cannot reach any other SATOM table; a
+  schema change never deletes stored values. They live in the SATOM database,
+  so they replicate to the standby and travel in every backup and clone.
+- **Connections** (Python Studio → Connections): external HTTP APIs (none,
+  basic, bearer, API key in a header, OAuth2 client credentials) and external
+  PostgreSQL databases (read-only unless a step allows writes). Every call stays
+  under the base URL: absolute URLs, `//`, `..` and backslashes are refused and
+  redirects are returned, never followed; a step cannot set the credential
+  header. The secret is write-only, kept in the vault or encrypted by the vault
+  mode, redacted out of errors, and the vault migrate / scrub actions cover it.
+  A Test button tries a call and a JSON path.
+
 - **Python Studio** (Administrator → Studio) joins the **Script Library** and
   the **Python Console** in one page, as asked: "join the script library and
   the python console in a single studio". An **Explorer** on the left switches
@@ -44,6 +94,9 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
     sites are allowed.
 
 ### Fixed
+
+- A required text column of a data store could be blanked with an empty
+  string (only a missing value counted as missing).
 
 - In the Global ADOM a profile that held **only** `studio.script_library` (and
   not `user_manage`) saw no Studio group at all, so its one tool had no menu

@@ -411,7 +411,7 @@ def create_app(config_override: object | None = None) -> Flask:
             # 'adc_api' is the ADC-scoped API hub. RBAC still gates each write.
             adc_bps = {'concept_map', 'adc', 'adc_api', 'appliances', 'settings', 'audit',
                        'jobs', 'notifications', 'profiles', 'users',
-                       'database', 'script_library', 'studio', 'locks',
+                       'database', 'script_library', 'studio', 'apps', 'user_groups', 'locks',
                        # 'advisor' and 'adom_assets' are rendered into EVERY
                        # ADOM's sidebar by partials/nav_advisor.html and
                        # partials/nav_adom_assets.html. Both were missing from
@@ -512,7 +512,7 @@ def create_app(config_override: object | None = None) -> Flask:
             faz_bps = {'concept_map', 'faz', 'faz_api', 'appliances', 'settings', 'audit', 'jobs',
                        'notifications', 'profiles', 'users',
                        'advisor', 'adom_assets', 'console',   # see the adc_bps note
-                       'database', 'script_library', 'studio', 'locks', 'firmware', 'segments',
+                       'database', 'script_library', 'studio', 'apps', 'user_groups', 'locks', 'firmware', 'segments',
                        'device_provision',
                        # Change Types is an Administration page, mirrored
                        # into every ADOM for the same reason Change Requests
@@ -566,7 +566,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        # sidebar offers neither, the seeded cap_firmware is
                        # False and services/backup.py has no
                        # FortiAuthenticator transport — both were URL-only.
-                       'database', 'script_library', 'studio', 'locks', 'segments',
+                       'database', 'script_library', 'studio', 'apps', 'user_groups', 'locks', 'segments',
                        'device_provision',
                        # Change Types is an Administration page, mirrored
                        # into every ADOM for the same reason Change Requests
@@ -625,7 +625,7 @@ def create_app(config_override: object | None = None) -> Flask:
             fgt_bps = {'concept_map', 'fgt', 'fgt_api', 'appliances', 'settings', 'audit',
                        'jobs', 'notifications', 'profiles', 'users',
                        'advisor', 'adom_assets', 'console',   # see the adc_bps note
-                       'database', 'script_library', 'studio', 'locks', 'segments', 'device_provision',
+                       'database', 'script_library', 'studio', 'apps', 'user_groups', 'locks', 'segments', 'device_provision',
                        'cr_types', 'process', 'scheduled_actions',
                        'scout', 'calendar_plan',   # see the faz_bps note
                        'architecture', 'netarch', 'metrics', 'search', 'analysis',
@@ -761,6 +761,23 @@ def create_app(config_override: object | None = None) -> Flask:
         ``.endpoint`` (services/adom_menu.py)."""
         from .services.adom_menu import state
         return state(key, product)
+
+    @app.template_global()
+    def studio_apps_menu(product_key):
+        """Published Python Studio apps the current user may open in this ADOM
+        (services.studio_apps.menu), once per request."""
+        from flask import g as _g
+        from flask_login import current_user
+        cache = getattr(_g, "_studio_apps_menu", None)
+        if cache is None:
+            cache = _g._studio_apps_menu = {}
+        if product_key not in cache:
+            try:
+                from .services.studio_apps import menu
+                cache[product_key] = menu(current_user, product_key)
+            except Exception:  # noqa: BLE001 -- a menu must never 500 the page
+                cache[product_key] = []
+        return cache[product_key]
 
     @app.template_global()
     def may_open(endpoint):
@@ -2678,6 +2695,8 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.database", "bp"),
         ("app.views.script_library", "bp"),
         ("app.views.studio", "bp"),
+        ("app.views.apps", "bp"),
+        ("app.views.user_groups", "bp"),
         ("app.views.scripts", "bp"),
         ("app.views.system_backup", "bp"),
         ("app.views.self_update", "bp"),

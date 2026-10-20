@@ -11,12 +11,17 @@
    Since 2026-10-14 (operator) Plugins is a subgroup of Operations, after
    Automation (included by partials/nav_operations.html); base.html no longer
    draws it as a group of its own. Same entries, same gates.
+
+   Python Studio apps (2026-10-20) follow as entries of their own: the
+   published apps this user may open in this ADOM (studio_apps_menu ->
+   services.studio_apps.menu, the one authority on who and where).
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
 {% if product.key != 'global' and not product.placeholder %}
 {% set _m_plg = adom_menu('plugins', product) %}
 {% set _m_lua = adom_menu('lua_studio', product) %}
-<div class="fw-nav-subgroup{{ ' open' if request.blueprint in ['plugins','lua_studio'] }}" data-nav-subgroup="Plugins">
+{% set _apps = studio_apps_menu(product.key) %}
+<div class="fw-nav-subgroup{{ ' open' if request.blueprint in ['plugins','lua_studio','apps'] }}" data-nav-subgroup="Plugins">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-puzzle fw-nav-icon" style="color:#3b82f6;"></i><span>{{ _('Plugins') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
     {% if may_open('plugins.gallery') %}
@@ -37,6 +42,7 @@
       <i class="bi bi-braces fw-nav-icon"></i><span>{{ _('Lua Studio') }}</span></a>
     {% else %}{{ nav_off('bi-braces', _('Lua Studio'), _m_lua.reason) }}{% endif %}
     {% endif %}
+    {% include 'partials/nav_apps_entries.html' %}
   </div>
 </div>
 {% endif %}

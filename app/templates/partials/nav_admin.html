@@ -41,6 +41,10 @@
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'users' else '' }}" href="{{ url_for('users.index') }}">
       <i class="bi bi-people fw-nav-icon"></i><span>{{ _('Users') }}</span></a>
     {% endif %}
+    {% if may_open('user_groups.index') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'user_groups' else '' }}" href="{{ url_for('user_groups.index') }}">
+      <i class="bi bi-people-fill fw-nav-icon"></i><span>{{ _('Groups') }}</span></a>
+    {% endif %}
 {% endset %}
 
 {% set _s_change %}

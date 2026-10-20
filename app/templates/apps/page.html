@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ a.name }}{% endblock %}
+{% block content %}
+{# A Python Studio app, the operator's side (views.apps.page). #}
+<div class="fw-page-header d-flex align-items-start">
+  <div>
+    <div class="text-muted" style="font-size:12px;">{{ _('Plugins') }}</div>
+    <h1 class="fw-page-title"><i class="bi {{ a.icon }} me-2 text-accent"></i>{{ a.name }}</h1>
+    {% if a.description %}<p class="text-muted mb-0" style="font-size:13px;white-space:pre-line;">{{ a.description }}</p>{% endif %}
+  </div>
+  {% if current_user.can('studio.script_library') %}
+  <div class="ms-auto"><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.app_edit', slug=a.slug) }}"><i class="bi bi-pencil me-1"></i>{{ _('Edit in Python Studio') }}</a></div>
+  {% endif %}
+</div>
+{% if unpublished %}
+<div class="alert alert-warning" style="font-size:13px;">{{ _('This app has no published version yet.') }}</div>
+{% else %}
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="fw-card"><div class="fw-card-body">
+      <form id="app-form">{% include "apps/_form.html" %}</form>
+      <button type="button" class="btn btn-fw-primary btn-sm mt-1" id="app-run"><i class="bi bi-play-fill me-1"></i>{{ _('Run') }}</button>
+      {% if a.status != 'published' %}<div class="form-text">{{ _('Not in the menu: unpublished. Authors can still run the last published version.') }}</div>{% endif %}
+    </div></div>
+    {% if runs %}
+    <div class="fw-card mt-3"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Recent runs') }}</span></div>
+      <ul class="list-unstyled mb-0 p-2" style="font-size:12px;">
+        {% for r in runs %}
+        <li class="py-1"><a href="{{ url_for('apps.run_page', rid=r.id) }}">#{{ r.id }}</a>
+          <span class="fw-badge fw-badge-{{ {'done': 'success', 'failed': 'danger'}.get(r.status, 'info') }}">{{ r.status }}</span>
+          <span class="text-muted">{{ r.started_at.strftime('%Y-%m-%d %H:%M') }} · {{ r.user }}{% if r.version == 0 %} · draft{% endif %}</span></li>
+        {% endfor %}
+      </ul></div>
+    {% endif %}
+  </div>
+  <div class="col-lg-8"><div id="app-out" class="text-muted" style="font-size:13px;">{{ _('Fill in the form and press Run. The result appears here.') }}</div></div>
+</div>
+<script type="application/json" id="app-run-config">{{ {'form': 'app-form', 'runBtn': 'app-run', 'out': 'app-out', 'runUrl': url_for('apps.run', slug=a.slug)}|tojson }}</script>
+<script src="{{ asset('js/apps_run.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endif %}
+{% endblock %}

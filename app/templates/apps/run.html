@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ a.name }} — run #{{ run.id }}{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex align-items-start">
+  <div>
+    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('apps.page', slug=a.slug) }}">{{ a.name }}</a> › {{ _('Run') }} #{{ run.id }}</div>
+    <h1 class="fw-page-title"><i class="bi {{ a.icon }} me-2 text-accent"></i>{{ a.name }}</h1>
+  </div>
+  <div class="ms-auto"><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('apps.page', slug=a.slug) }}"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Run again') }}</a></div>
+</div>
+<div id="app-out" style="font-size:13px;"></div>
+<script type="application/json" id="app-run-config">{{ {'out': 'app-out', 'statusUrl': url_for('apps.run_status', rid=run.id)}|tojson }}</script>
+<script src="{{ asset('js/apps_run.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

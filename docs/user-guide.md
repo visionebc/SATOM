@@ -3845,7 +3845,7 @@ others, and without being given user administration.
 
 | Tool | Page | What it authors |
 |---|---|---|
-| **Python Studio** | `/studio` | One page, two panes: **Scripts** (the Script Library: Python scripts with a form that operators fill in and run, §23.4) and **Console** (throwaway Python over the curated fleet datasets, §23.3) |
+| **Python Studio** | `/studio` | One page, five panes: **Scripts** (the Script Library: Python scripts with a form that operators fill in and run, §23.4), **Console** (throwaway Python over the curated fleet datasets, §23.3), **Data stores** (§23.5), **Connections** (§23.6) and **Apps** (§23.7) |
 | **Plugin Studio** | `/plugins` | Server-rendered custom views/widgets, published as **Custom Views** |
 | **Lua Studio** | `/lua` | Device scripts for FortiWeb *Web Scripting* and FortiADC *Scripting* |
 
@@ -4106,6 +4106,123 @@ namespaces, none of SATOM mounted). A queued run holds the form values in a
 private file on this node only; the runner rewrites it without them the moment
 it starts. On an HA pair `satom-scripts.path` must be enabled on both nodes. An
 update arms it on nodes installed before it existed.
+
+### 23.5 Data stores
+
+**Python Studio → Data stores** holds tables you define in the UI. A data
+store is a column list — name, label, type (`text`, `number`, `boolean`,
+`date`, `json`) and *required* — plus rows. Every row also has `_id`,
+`_created_at`, `_updated_at` and `_by`.
+
+- **Rows** are added, edited and deleted from the store's page (click a row to
+  edit it), by hand or by apps. Every value is checked against its column's
+  type on the way in, and a column that is not declared is refused rather than
+  dropped — a typo in an app's mapping must not write an empty column.
+- **Columns** can be added, renamed, reordered, retyped and removed at any
+  time. Nothing stored is ever deleted by that: a removed column comes back
+  with its values if you add it again, and a retyped one is re-checked on the
+  next write.
+- **CSV:** *Export CSV* writes every row (spreadsheet-safe: a cell that starts
+  like a formula is prefixed with `'`). *Import CSV* appends rows from a file
+  whose header names the columns; every line is checked before any is written,
+  so a file with one bad line imports nothing.
+- Limit: 20,000 rows per store, 40 columns.
+
+No SQL and no DDL is reachable from these pages: rows are JSON documents in
+SATOM's own database, so a data store cannot reach any other table — and it
+replicates to the standby and travels in backups and clones like the rest of
+the configuration. Gated by `studio.script_library`.
+
+### 23.6 Connections
+
+**Python Studio → Connections** names an external system once, with its
+credential, for app steps to use.
+
+| Kind | Settings | Authentication |
+|---|---|---|
+| **HTTP API** | Base URL, TLS verification (against the trust store), timeout | none, basic (user + password), bearer token, API key in a named header, OAuth2 client credentials (client id + secret + token URL + scope) |
+| **PostgreSQL** | Host, port, database, user, timeout | password |
+
+- **Every call stays under the base URL.** A step's path is joined to it; an
+  absolute URL, `//`, `..` or a backslash in a path is refused, and redirects
+  are returned as the answer, never followed. A step cannot set the
+  `Authorization` header, the API-key header, `Host` or `Cookie`.
+- **The secret** (password, token, API key, client secret) is write-only: the
+  page can replace or clear it and never shows it. It is kept in the vault, or
+  encrypted with SATOM's key, by the vault mode (§26), and **Settings → Vault →
+  migrate / remove local copies** covers it like the other secrets. It is
+  redacted out of every error text.
+- **PostgreSQL queries** take `%(name)s` parameters and run in a READ ONLY
+  transaction unless the step ticks *Allow writes*.
+- **Test** tries a GET (or a read-only SQL statement) and shows the answer;
+  type a JSON path (`a.b[0].c`, `items[*].name`) to see what a step would keep.
+
+Connections are called by SATOM itself, from app steps and the Test button —
+never from a Script Library script: a script receives the result as a form
+value, so script code never holds the credential.
+
+### 23.7 Apps
+
+**Python Studio → Apps** builds a small application — a **form**, a
+**diagram** of steps and an **output** with **actions** — and publishes it as
+its own entry in **Operations → Plugins** (in the Global ADOM: **Global →
+Plugins**).
+
+The editor has six tabs:
+
+- **Settings** — name and icon of the menu entry, description, **where** it
+  appears (the ADOMs you tick, or every ADOM) and **who** may use it (the
+  groups and the people you tick; every Python Studio author can too). Nobody
+  else sees the entry or can open the app, its runs or their actions.
+- **Form** — the fields the user fills in: text, textarea, number, date,
+  checkbox, password and three lists — a fixed list, a list from a **data
+  store** column (value and label columns) and a list from an **API** (a
+  connection, a path, the JSON path of the list and the value / label keys).
+  The value chosen must be one of the choices the server reads again.
+- **Diagram** — the same editor as Process. Steps: *Start*, *End*, *Set a
+  variable*, *Decision* (equals, not equals, contains, greater, less, empty,
+  not empty, true → yes / no), *Fail* (stop with a message), *Output* (a value
+  shown as a table, list, key/value, text or JSON), *Read a data store*,
+  *Write a data store* (insert, update, upsert, delete), *Query a database*,
+  *Call an API* (with *Keep only (JSON path)*) and *Run a script* (the
+  published version of a Script Library script, with its form values). A step
+  saves its result under a name (*Save the result as*).
+- **Actions** — buttons under the output of a finished run: *Save to a data
+  store*, *Download* (CSV or JSON), *Send to a connection*, *Run another app
+  with the output*, *Raise a change request*. Each can ask for confirmation.
+- **Test** — runs the saved draft, as a **rehearsal** by default: steps that
+  write (data store writes, SQL with writes allowed, API calls other than GET)
+  are described, not executed.
+- **Publish** — lists what must be fixed first, freezes the draft as version
+  N, and **Unpublish** removes the entry from the menu.
+
+**Templates.** Text parameters are templates rendered in a sandbox:
+`{{ form.host }}`, `{{ rows }}`, `{{ rows | length }}`,
+`{{ response.items[0].id }}`. A value that is exactly one `{{ expression }}`
+keeps its type, so a query result reaches a script or an output as a list,
+not as text. An undefined name is an error the run shows; write
+`{{ x | default('') }}` for an optional one. JSON parameters (filters, values,
+bodies) are JSON whose strings are templates.
+
+**Arrows.** A step ends *ok* or *error*; a decision ends *yes* or *no*. The run
+follows the arrow of that outcome, otherwise the *always* arrow — except after
+an error: an error follows only an *error* arrow, and with none the run stops
+there as failed (the message is in `{{ last_error }}` on an error path). A loop
+is allowed and stops after 200 steps; a run stops after 10 minutes.
+
+**Running.** The user fills in the form and presses **Run**; the run continues
+in the background and the page follows it, then shows the outputs, the
+actions and the steps. Password values are masked in every run record. Each
+user sees their own runs; authors see all of them and the run's variables.
+
+**Actions and devices.** *Raise a change request* never changes a device: it
+creates a **draft** change request (title, reason, change type, device ids,
+risk, with the app and run named in it) that goes through the normal approval
+of Change Management. *Run another app* needs the user to be allowed to use
+that app.
+
+Gated by `studio.script_library` for authors; users need only to be in the
+app's access list.
 
 ## 24. High availability
 
@@ -4681,6 +4798,12 @@ no longer enforced, and offers a button to clear the dead row.
 > your **Profile** page. Each ADOM can carry a different one.
 
 ### 26.3 Users and Profiles
+
+**Groups** (Administrator → Access → Groups) are named sets of users, managed
+with *Manage users*. Python Studio apps are shared with groups or people
+(§23.7): add a colleague to a group and they get every app shared with it. A
+group an app is shared with cannot be deleted until it is removed from the app. These are not the Wiki's groups (Wiki › Groups), which govern
+the Wiki only.
 
 **Users** is the account list — create, disable, delete, assign a profile, and
 per row: **Reset password** (local accounts only; 12 to 1024 characters),

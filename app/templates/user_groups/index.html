@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Groups{% endblock %}
+{% block content %}
+{# Administrator > Access > Groups (views.user_groups). #}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-people-fill me-2 text-accent"></i>{{ _('Groups') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('Named sets of users. Python Studio apps are shared with groups or with people: add a colleague to a group and they get every app of that group.') }}</p>
+  </div>
+  <div><button type="button" class="btn btn-fw-primary" id="ug-new"><i class="bi bi-plus-lg me-1"></i>{{ _('New group') }}</button></div>
+</div>
+<div id="ug-msg" class="mb-2" style="font-size:12px;"></div>
+<div class="fw-table-wrapper">
+  <table class="fw-table">
+    <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Members') }}</th><th>{{ _('Apps shared with it') }}</th><th class="actions-col">{{ _('Actions') }}</th></tr></thead>
+    <tbody>
+    {% for g in groups %}
+      <tr>
+        <td><strong>{{ g.name }}</strong>{% if g.description %}<div class="text-muted" style="font-size:11px;">{{ g.description }}</div>{% endif %}</td>
+        <td style="font-size:13px;">{{ g.members|map(attribute='username')|join(', ') or '—' }}</td>
+        <td style="font-size:13px;">{{ used[g.id]|join(', ') or '—' }}</td>
+        <td class="actions-col">
+          <button type="button" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1 ug-edit" data-id="{{ g.id }}" title="{{ _('Edit') }}"><i class="bi bi-pencil"></i></button>
+          <button type="button" class="btn btn-sm btn-outline-danger btn-sm-icon ug-del" data-id="{{ g.id }}" data-name="{{ g.name }}" title="{{ _('Delete') }}"><i class="bi bi-trash"></i></button>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="text-muted p-3">{{ _('No groups yet.') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="modal fade fw-modal" id="ug-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title" id="ug-title">{{ _('Group') }}</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button></div>
+    <div class="modal-body" style="font-size:13px;">
+      <label class="fw-form-label" for="ug-name">{{ _('Name') }} <span class="text-danger">*</span></label>
+      <input class="form-control mb-2" id="ug-name" maxlength="64">
+      <label class="fw-form-label" for="ug-desc">{{ _('Description') }}</label>
+      <input class="form-control mb-2" id="ug-desc" maxlength="2000">
+      <div class="fw-form-label">{{ _('Members') }}</div>
+      <div style="max-height:260px;overflow:auto;" id="ug-members">
+        {% for u in users %}<div class="form-check"><input class="form-check-input" type="checkbox" value="{{ u.id }}" id="ug-u-{{ u.id }}"><label class="form-check-label" for="ug-u-{{ u.id }}">{{ u.username }}{% if not u.is_active %} <span class="text-muted">({{ _('inactive') }})</span>{% endif %}</label></div>{% endfor %}
+      </div>
+      <div id="ug-err" style="font-size:12px;color:#8B1C2A;"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+      <button type="button" class="btn btn-fw-primary" id="ug-save">{{ _('Save') }}</button>
+    </div>
+  </div></div>
+</div>
+<script type="application/json" id="ug-config">{{ {
+  'data': gdata, 'save': url_for('user_groups.save'),
+  'del': url_for('user_groups.delete', gid=0)[:-8]
+}|tojson }}</script>
+<script src="{{ asset('js/user_groups.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

@@ -1,0 +1,6 @@
+{# One entry per published Python Studio app this user may open in this ADOM
+   (services.studio_apps.menu). Needs `_apps` = studio_apps_menu(product.key). #}
+{% for _ap in _apps %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'apps' and request.view_args and request.view_args.get('slug') == _ap.slug else '' }}" href="{{ url_for('apps.page', slug=_ap.slug) }}">
+  <i class="bi {{ _ap.icon }} fw-nav-icon"></i><span>{{ _ap.name }}</span></a>
+{% endfor %}

@@ -4376,7 +4376,7 @@ others, and without being given user administration.</p>
 <tr>
 <td><strong>Python Studio</strong></td>
 <td><code>/studio</code></td>
-<td>One page, two panes: <strong>Scripts</strong> (the Script Library: Python scripts with a form that operators fill in and run, §23.4) and <strong>Console</strong> (throwaway Python over the curated fleet datasets, §23.3)</td>
+<td>One page, five panes: <strong>Scripts</strong> (the Script Library: Python scripts with a form that operators fill in and run, §23.4), <strong>Console</strong> (throwaway Python over the curated fleet datasets, §23.3), <strong>Data stores</strong> (§23.5), <strong>Connections</strong> (§23.6) and <strong>Apps</strong> (§23.7)</td>
 </tr>
 <tr>
 <td><strong>Plugin Studio</strong></td>
@@ -4619,6 +4619,128 @@ namespaces, none of SATOM mounted). A queued run holds the form values in a
 private file on this node only; the runner rewrites it without them the moment
 it starts. On an HA pair <code>satom-scripts.path</code> must be enabled on both nodes. An
 update arms it on nodes installed before it existed.</p>
+<h3 id="235-data-stores">23.5 Data stores</h3>
+<p><strong>Python Studio → Data stores</strong> holds tables you define in the UI. A data
+store is a column list — name, label, type (<code>text</code>, <code>number</code>, <code>boolean</code>,
+<code>date</code>, <code>json</code>) and <em>required</em> — plus rows. Every row also has <code>_id</code>,
+<code>_created_at</code>, <code>_updated_at</code> and <code>_by</code>.</p>
+<ul>
+<li><strong>Rows</strong> are added, edited and deleted from the store's page (click a row to
+  edit it), by hand or by apps. Every value is checked against its column's
+  type on the way in, and a column that is not declared is refused rather than
+  dropped — a typo in an app's mapping must not write an empty column.</li>
+<li><strong>Columns</strong> can be added, renamed, reordered, retyped and removed at any
+  time. Nothing stored is ever deleted by that: a removed column comes back
+  with its values if you add it again, and a retyped one is re-checked on the
+  next write.</li>
+<li><strong>CSV:</strong> <em>Export CSV</em> writes every row (spreadsheet-safe: a cell that starts
+  like a formula is prefixed with <code>'</code>). <em>Import CSV</em> appends rows from a file
+  whose header names the columns; every line is checked before any is written,
+  so a file with one bad line imports nothing.</li>
+<li>Limit: 20,000 rows per store, 40 columns.</li>
+</ul>
+<p>No SQL and no DDL is reachable from these pages: rows are JSON documents in
+SATOM's own database, so a data store cannot reach any other table — and it
+replicates to the standby and travels in backups and clones like the rest of
+the configuration. Gated by <code>studio.script_library</code>.</p>
+<h3 id="236-connections">23.6 Connections</h3>
+<p><strong>Python Studio → Connections</strong> names an external system once, with its
+credential, for app steps to use.</p>
+<table>
+<thead>
+<tr>
+<th>Kind</th>
+<th>Settings</th>
+<th>Authentication</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>HTTP API</strong></td>
+<td>Base URL, TLS verification (against the trust store), timeout</td>
+<td>none, basic (user + password), bearer token, API key in a named header, OAuth2 client credentials (client id + secret + token URL + scope)</td>
+</tr>
+<tr>
+<td><strong>PostgreSQL</strong></td>
+<td>Host, port, database, user, timeout</td>
+<td>password</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Every call stays under the base URL.</strong> A step's path is joined to it; an
+  absolute URL, <code>//</code>, <code>..</code> or a backslash in a path is refused, and redirects
+  are returned as the answer, never followed. A step cannot set the
+  <code>Authorization</code> header, the API-key header, <code>Host</code> or <code>Cookie</code>.</li>
+<li><strong>The secret</strong> (password, token, API key, client secret) is write-only: the
+  page can replace or clear it and never shows it. It is kept in the vault, or
+  encrypted with SATOM's key, by the vault mode (§26), and <strong>Settings → Vault →
+  migrate / remove local copies</strong> covers it like the other secrets. It is
+  redacted out of every error text.</li>
+<li><strong>PostgreSQL queries</strong> take <code>%(name)s</code> parameters and run in a READ ONLY
+  transaction unless the step ticks <em>Allow writes</em>.</li>
+<li><strong>Test</strong> tries a GET (or a read-only SQL statement) and shows the answer;
+  type a JSON path (<code>a.b[0].c</code>, <code>items[*].name</code>) to see what a step would keep.</li>
+</ul>
+<p>Connections are called by SATOM itself, from app steps and the Test button —
+never from a Script Library script: a script receives the result as a form
+value, so script code never holds the credential.</p>
+<h3 id="237-apps">23.7 Apps</h3>
+<p><strong>Python Studio → Apps</strong> builds a small application — a <strong>form</strong>, a
+<strong>diagram</strong> of steps and an <strong>output</strong> with <strong>actions</strong> — and publishes it as
+its own entry in <strong>Operations → Plugins</strong> (in the Global ADOM: <strong>Global →
+Plugins</strong>).</p>
+<p>The editor has six tabs:</p>
+<ul>
+<li><strong>Settings</strong> — name and icon of the menu entry, description, <strong>where</strong> it
+  appears (the ADOMs you tick, or every ADOM) and <strong>who</strong> may use it (the
+  groups and the people you tick; every Python Studio author can too). Nobody
+  else sees the entry or can open the app, its runs or their actions.</li>
+<li><strong>Form</strong> — the fields the user fills in: text, textarea, number, date,
+  checkbox, password and three lists — a fixed list, a list from a <strong>data
+  store</strong> column (value and label columns) and a list from an <strong>API</strong> (a
+  connection, a path, the JSON path of the list and the value / label keys).
+  The value chosen must be one of the choices the server reads again.</li>
+<li><strong>Diagram</strong> — the same editor as Process. Steps: <em>Start</em>, <em>End</em>, <em>Set a
+  variable</em>, <em>Decision</em> (equals, not equals, contains, greater, less, empty,
+  not empty, true → yes / no), <em>Fail</em> (stop with a message), <em>Output</em> (a value
+  shown as a table, list, key/value, text or JSON), <em>Read a data store</em>,
+  <em>Write a data store</em> (insert, update, upsert, delete), <em>Query a database</em>,
+  <em>Call an API</em> (with <em>Keep only (JSON path)</em>) and <em>Run a script</em> (the
+  published version of a Script Library script, with its form values). A step
+  saves its result under a name (<em>Save the result as</em>).</li>
+<li><strong>Actions</strong> — buttons under the output of a finished run: <em>Save to a data
+  store</em>, <em>Download</em> (CSV or JSON), <em>Send to a connection</em>, <em>Run another app
+  with the output</em>, <em>Raise a change request</em>. Each can ask for confirmation.</li>
+<li><strong>Test</strong> — runs the saved draft, as a <strong>rehearsal</strong> by default: steps that
+  write (data store writes, SQL with writes allowed, API calls other than GET)
+  are described, not executed.</li>
+<li><strong>Publish</strong> — lists what must be fixed first, freezes the draft as version
+  N, and <strong>Unpublish</strong> removes the entry from the menu.</li>
+</ul>
+<p><strong>Templates.</strong> Text parameters are templates rendered in a sandbox:
+<code>{{ form.host }}</code>, <code>{{ rows }}</code>, <code>{{ rows | length }}</code>,
+<code>{{ response.items[0].id }}</code>. A value that is exactly one <code>{{ expression }}</code>
+keeps its type, so a query result reaches a script or an output as a list,
+not as text. An undefined name is an error the run shows; write
+<code>{{ x | default('') }}</code> for an optional one. JSON parameters (filters, values,
+bodies) are JSON whose strings are templates.</p>
+<p><strong>Arrows.</strong> A step ends <em>ok</em> or <em>error</em>; a decision ends <em>yes</em> or <em>no</em>. The run
+follows the arrow of that outcome, otherwise the <em>always</em> arrow — except after
+an error: an error follows only an <em>error</em> arrow, and with none the run stops
+there as failed (the message is in <code>{{ last_error }}</code> on an error path). A loop
+is allowed and stops after 200 steps; a run stops after 10 minutes.</p>
+<p><strong>Running.</strong> The user fills in the form and presses <strong>Run</strong>; the run continues
+in the background and the page follows it, then shows the outputs, the
+actions and the steps. Password values are masked in every run record. Each
+user sees their own runs; authors see all of them and the run's variables.</p>
+<p><strong>Actions and devices.</strong> <em>Raise a change request</em> never changes a device: it
+creates a <strong>draft</strong> change request (title, reason, change type, device ids,
+risk, with the app and run named in it) that goes through the normal approval
+of Change Management. <em>Run another app</em> needs the user to be allowed to use
+that app.</p>
+<p>Gated by <code>studio.script_library</code> for authors; users need only to be in the
+app's access list.</p>
 <h2 id="24-high-availability">24. High availability</h2>
 <p>Global → Administrator → <strong>High Availability</strong> (admin, <code>user_manage</code>). This page
 was <strong>split out of Software Update</strong> so that the two questions get their own nav
@@ -5251,6 +5373,11 @@ banner: it is a personal appearance preference, saved against your account, on
 your <strong>Profile</strong> page. Each ADOM can carry a different one.</p>
 </blockquote>
 <h3 id="263-users-and-profiles">26.3 Users and Profiles</h3>
+<p><strong>Groups</strong> (Administrator → Access → Groups) are named sets of users, managed
+with <em>Manage users</em>. Python Studio apps are shared with groups or people
+(§23.7): add a colleague to a group and they get every app shared with it. A
+group an app is shared with cannot be deleted until it is removed from the app. These are not the Wiki's groups (Wiki › Groups), which govern
+the Wiki only.</p>
 <p><strong>Users</strong> is the account list — create, disable, delete, assign a profile, and
 per row: <strong>Reset password</strong> (local accounts only; 12 to 1024 characters),
 <strong>Clear 2FA</strong> (shown when the account has two-factor enabled) and <strong>Unlock</strong>

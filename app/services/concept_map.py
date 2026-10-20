@@ -620,12 +620,17 @@ PAGES: tuple[dict, ...] = (
     _p("scripts.index", "Scripts", "automation",
        "scripts run operator form schedule cron saved run python",
        "Run the scripts your administrators published, now or on a schedule."),
+    _p("user_groups.index", "Groups", "access",
+       "group groups team users members share app access people",
+       "Named sets of users; Python Studio apps are shared with groups or people."),
     _p("studio.index", "Python Studio", "dev",
        "python studio console repl sandbox dataset script library form operator "
        "run publish version ide edit compare diff versions database lookup "
-       "query builder dropdown table join field",
-       "Python scripts with a form that operators run, and a sandboxed console "
-       "over the curated datasets, in one studio."),
+       "query builder dropdown table join field data store connection api "
+       "postgres app plugin diagram process flow output action",
+       "Python scripts with a form, a sandboxed console, data stores, "
+       "connections to external APIs and databases, and apps (form + diagram + "
+       "output) published into Operations > Plugins."),
 )
 
 

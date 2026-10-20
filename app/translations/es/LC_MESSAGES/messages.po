@@ -25671,3 +25671,327 @@ msgstr "Prueba código con los datos de la flota sin guardarlo en el script"
 #: app/templates/studio/index.html
 msgid "Write scripts with a form for operators, and try code against the fleet data in a sandboxed console."
 msgstr "Escribe scripts con un formulario para los operadores y prueba código con los datos de la flota en una consola aislada."
+
+#: app/templates/studio/app.html
+msgid "Data stores"
+msgstr "Almacenes de datos"
+
+#: app/templates/studio/app.html
+msgid "Apps"
+msgstr "Apps"
+
+#: app/templates/studio/app.html
+msgid "Tables you define here, with typed columns. Apps read and write their rows; you can also edit them by hand, and export or import CSV. No SQL is involved: a data store cannot reach any other SATOM table."
+msgstr "Tablas que defines aquí, con columnas tipadas. Las apps leen y escriben sus filas; también puedes editarlas a mano y exportar o importar CSV. No interviene SQL: un almacén de datos no puede llegar a ninguna otra tabla de SATOM."
+
+#: app/templates/studio/app.html
+msgid "New data store"
+msgstr "Nuevo almacén de datos"
+
+#: app/templates/studio/app.html
+msgid "No data stores yet."
+msgstr "Aún no hay almacenes de datos."
+
+#: app/templates/studio/app.html
+msgid "A form, a diagram of steps (data stores, connections, scripts, decisions) and an output with actions. Published apps get their own entry in Operations > Plugins, for the ADOMs and the groups or people you pick."
+msgstr "Un formulario, un diagrama de pasos (almacenes de datos, conexiones, scripts, decisiones) y un resultado con acciones. Las apps publicadas tienen su propia entrada en Operations > Plugins, para los ADOM y los grupos o personas que elijas."
+
+#: app/templates/studio/app.html
+msgid "New app"
+msgstr "Nueva app"
+
+#: app/templates/studio/app.html
+msgid "Shared with"
+msgstr "Compartida con"
+
+#: app/templates/studio/app.html
+msgid "unpublished"
+msgstr "sin publicar"
+
+#: app/templates/studio/app.html
+msgid "every ADOM"
+msgstr "todos los ADOM"
+
+#: app/templates/studio/app.html
+msgid "group(s)"
+msgstr "grupo(s)"
+
+#: app/templates/studio/app.html
+msgid "person(s)"
+msgstr "persona(s)"
+
+#: app/templates/studio/app.html
+msgid "No apps yet."
+msgstr "Aún no hay apps."
+
+#: app/templates/studio/app.html
+msgid "External APIs and PostgreSQL databases, with their credential kept in the vault or encrypted, never shown again. App steps call them; every call stays under the base URL of the connection and redirects are not followed."
+msgstr "APIs externas y bases de datos PostgreSQL, con su credencial guardada en el vault o cifrada, y que nunca se vuelve a mostrar. Los pasos de las apps las llaman; cada llamada se queda bajo la URL base de la conexión y no se siguen redirecciones."
+
+#: app/templates/studio/app.html
+msgid "New connection"
+msgstr "Nueva conexión"
+
+#: app/templates/studio/app.html
+msgid "No connections yet."
+msgstr "Aún no hay conexiones."
+
+#: app/templates/studio/app.html
+msgid "HTTP API"
+msgstr "API HTTP"
+
+#: app/templates/studio/app.html
+msgid "limit"
+msgstr "límite"
+
+#: app/templates/studio/app.html
+msgid "Import CSV"
+msgstr "Importar CSV"
+
+#: app/templates/studio/app.html
+msgid "Search rows…"
+msgstr "Buscar filas…"
+
+#: app/templates/studio/app.html
+msgid "Add row"
+msgstr "Añadir fila"
+
+#: app/templates/studio/app.html
+msgid "Removing a column or changing its type never deletes stored values: a removed column comes back with its values if you add it again. Every row also has _id, _created_at, _updated_at and _by."
+msgstr "Quitar una columna o cambiar su tipo nunca borra los valores guardados: una columna quitada vuelve con sus valores si la añades de nuevo. Cada fila tiene además _id, _created_at, _updated_at y _by."
+
+#: app/templates/studio/app.html
+msgid "Column"
+msgstr "Columna"
+
+#: app/templates/studio/app.html
+msgid "Add column"
+msgstr "Añadir columna"
+
+#: app/templates/studio/app.html
+msgid "Save columns"
+msgstr "Guardar columnas"
+
+#: app/templates/studio/app.html
+msgid "Delete data store"
+msgstr "Borrar el almacén de datos"
+
+#: app/templates/studio/app.html
+msgid "Every call stays under this URL. Redirects are not followed."
+msgstr "Cada llamada se queda bajo esta URL. No se siguen redirecciones."
+
+#: app/templates/studio/app.html
+msgid "Basic (user + password)"
+msgstr "Basic (usuario + contraseña)"
+
+#: app/templates/studio/app.html
+msgid "API key in a header"
+msgstr "Clave de API en una cabecera"
+
+#: app/templates/studio/app.html
+msgid "OAuth2 client credentials"
+msgstr "OAuth2 client credentials"
+
+#: app/templates/studio/app.html
+msgid "User / client id"
+msgstr "Usuario / id de cliente"
+
+#: app/templates/studio/app.html
+msgid "Header name"
+msgstr "Nombre de la cabecera"
+
+#: app/templates/studio/app.html
+msgid "Token URL"
+msgstr "URL del token"
+
+#: app/templates/studio/app.html
+msgid "Verify the TLS certificate (trust store)"
+msgstr "Verificar el certificado TLS (almacén de confianza)"
+
+#: app/templates/studio/app.html
+msgid "Password, token, API key or client secret. Kept in the vault, or encrypted when there is no vault, and never shown again: this page can only replace or clear it."
+msgstr "Contraseña, token, clave de API o secreto de cliente. Se guarda en el vault, o cifrado si no hay vault, y nunca se vuelve a mostrar: esta página solo puede sustituirlo o borrarlo."
+
+#: app/templates/studio/app.html
+msgid "New value"
+msgstr "Valor nuevo"
+
+#: app/templates/studio/app.html
+msgid "Replace"
+msgstr "Sustituir"
+
+#: app/templates/studio/app.html
+msgid "Delete connection"
+msgstr "Borrar la conexión"
+
+#: app/templates/studio/app.html
+msgid "JSON path to try on the answer"
+msgstr "Ruta JSON que probar sobre la respuesta"
+
+#: app/templates/studio/app.html
+msgid "a.b[0].c picks one value; items[*].name collects a field from every item. App steps use the same syntax."
+msgstr "a.b[0].c toma un valor; items[*].name recoge un campo de cada elemento. Los pasos de las apps usan la misma sintaxis."
+
+#: app/templates/studio/app.html
+msgid "Run read-only"
+msgstr "Ejecutar en solo lectura"
+
+#: app/templates/studio/app.html
+msgid "JSON path result"
+msgstr "Resultado de la ruta JSON"
+
+#: app/templates/studio/app.html
+msgid "Open as a user"
+msgstr "Abrir como usuario"
+
+#: app/templates/studio/app.html
+msgid "Name (the menu entry)"
+msgstr "Nombre (la entrada del menú)"
+
+#: app/templates/studio/app.html
+msgid "Description (shown to users)"
+msgstr "Descripción (la ven los usuarios)"
+
+#: app/templates/studio/app.html
+msgid "Where it appears (Operations > Plugins of these ADOMs)"
+msgstr "Dónde aparece (Operations > Plugins de estos ADOM)"
+
+#: app/templates/studio/app.html
+msgid "Every ADOM"
+msgstr "Todos los ADOM"
+
+#: app/templates/studio/app.html
+msgid "In the Global ADOM the app is under Global > Plugins."
+msgstr "En el ADOM Global la app está en Global > Plugins."
+
+#: app/templates/studio/app.html
+msgid "Who may use it"
+msgstr "Quién puede usarla"
+
+#: app/templates/studio/app.html
+msgid "The groups and the people ticked here, plus every Python Studio author. Nobody else sees the menu entry or can open the app."
+msgstr "Los grupos y las personas marcados aquí, más cada autor de Python Studio. Nadie más ve la entrada del menú ni puede abrir la app."
+
+#: app/templates/studio/app.html
+msgid "Manage groups"
+msgstr "Gestionar grupos"
+
+#: app/templates/studio/app.html
+msgid "People"
+msgstr "Personas"
+
+#: app/templates/studio/app.html
+msgid "Save settings"
+msgstr "Guardar ajustes"
+
+#: app/templates/studio/app.html
+msgid "Each field arrives in the diagram as {{ form.name }}. Lists can take their choices from a data store column or from an API. Password values are masked in every run record."
+msgstr "Cada campo llega al diagrama como {{ form.name }}. Las listas pueden tomar sus opciones de una columna de un almacén de datos o de una API. Los valores de contraseña se enmascaran en cada registro de ejecución."
+
+#: app/templates/studio/app.html
+msgid "Save form"
+msgstr "Guardar formulario"
+
+#: app/templates/studio/app.html
+msgid "Flow"
+msgstr "Flujo"
+
+#: app/templates/studio/app.html
+msgid "Data"
+msgstr "Datos"
+
+#: app/templates/studio/app.html
+msgid "Arrows: a step ends ok or error, a decision yes or no. An error follows only an error arrow: with none, the run stops there as failed. Templates: {{ form.field }}, {{ rows }}, {{ rows | length }}; a value that is exactly one {{ expression }} keeps its type."
+msgstr "Flechas: un paso termina en ok o error; una decisión, en yes o no. Un error solo sigue una flecha error: si no hay ninguna, la ejecución se detiene ahí como fallida. Plantillas: {{ form.field }}, {{ rows }}, {{ rows | length }}; un valor que es exactamente una {{ expression }} conserva su tipo."
+
+#: app/templates/studio/app.html
+msgid "Buttons under the output of a finished run. A change to a device is never made from here: the change request action raises a draft change request, which goes through the normal approval."
+msgstr "Botones bajo el resultado de una ejecución terminada. Desde aquí nunca se hace un cambio en un equipo: la acción de change request crea un change request en borrador, que pasa por la aprobación normal."
+
+#: app/templates/studio/app.html
+msgid "Add action"
+msgstr "Añadir acción"
+
+#: app/templates/studio/app.html
+msgid "Save actions"
+msgstr "Guardar acciones"
+
+#: app/templates/studio/app.html
+msgid "Rehearsal: steps that write are described, not executed"
+msgstr "Ensayo: los pasos que escriben se describen, no se ejecutan"
+
+#: app/templates/studio/app.html
+msgid "Run the saved draft"
+msgstr "Ejecutar el borrador guardado"
+
+#: app/templates/studio/app.html
+msgid "Reload the form after saving it"
+msgstr "Recargar el formulario después de guardarlo"
+
+#: app/templates/studio/app.html
+msgid "Save, then run the draft here. Operators keep running the published version."
+msgstr "Guarda y luego ejecuta aquí el borrador. Los operadores siguen ejecutando la versión publicada."
+
+#: app/templates/studio/app.html
+msgid "Fix before publishing:"
+msgstr "Corrige antes de publicar:"
+
+#: app/templates/studio/app.html
+msgid "The draft is ready to publish."
+msgstr "El borrador está listo para publicar."
+
+#: app/templates/studio/app.html
+msgid "Publishing freezes the draft as a new version. The menu entry and every run use it until the next Publish; editing the draft changes nothing for users."
+msgstr "Publicar congela el borrador como una versión nueva. La entrada del menú y cada ejecución la usan hasta la siguiente publicación; editar el borrador no cambia nada para los usuarios."
+
+#: app/templates/studio/app.html
+msgid "Published version:"
+msgstr "Versión publicada:"
+
+#: app/templates/studio/app.html
+msgid "Unpublish (remove from the menu)"
+msgstr "Despublicar (quitar del menú)"
+
+#: app/templates/studio/app.html
+msgid "Delete app"
+msgstr "Borrar la app"
+
+#: app/templates/studio/app.html
+msgid "Run by other apps:"
+msgstr "La ejecutan otras apps:"
+
+#: app/templates/studio/app.html
+msgid "Edit in Python Studio"
+msgstr "Editar en Python Studio"
+
+#: app/templates/studio/app.html
+msgid "This app has no published version yet."
+msgstr "Esta app aún no tiene una versión publicada."
+
+#: app/templates/studio/app.html
+msgid "Not in the menu: unpublished. Authors can still run the last published version."
+msgstr "No está en el menú: sin publicar. Los autores aún pueden ejecutar la última versión publicada."
+
+#: app/templates/studio/app.html
+msgid "Fill in the form and press Run. The result appears here."
+msgstr "Rellena el formulario y pulsa Run. El resultado aparece aquí."
+
+#: app/templates/studio/app.html
+msgid "Run again"
+msgstr "Ejecutar de nuevo"
+
+#: app/templates/studio/app.html
+msgid "The choices could not be read:"
+msgstr "No se pudieron leer las opciones:"
+
+#: app/templates/studio/app.html
+msgid "This app has no form: press Run."
+msgstr "Esta app no tiene formulario: pulsa Run."
+
+#: app/templates/studio/app.html
+msgid "Named sets of users. Python Studio apps are shared with groups or with people: add a colleague to a group and they get every app of that group."
+msgstr "Conjuntos de usuarios con nombre. Las apps de Python Studio se comparten con grupos o con personas: añade a un compañero a un grupo y recibe todas las apps de ese grupo."
+
+#: app/templates/studio/app.html
+msgid "Apps shared with it"
+msgstr "Apps compartidas con él"

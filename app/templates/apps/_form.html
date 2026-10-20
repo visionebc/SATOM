@@ -1,0 +1,33 @@
+{# The form of a Python Studio app (services.studio_apps.form_view). `prefix`
+   keeps ids unique when the editor's Test tab and a page share a document.
+   Values are read by static/js/apps_run.js (name = field name). #}
+{% set prefix = prefix|default('f-') %}
+{% for f in fields %}
+<div class="mb-2">
+  {% if f.type == 'checkbox' %}
+  <div class="form-check">
+    <input class="form-check-input" type="checkbox" name="{{ f.name }}" id="{{ prefix }}{{ f.name }}" {{ 'checked' if f.default in ('1', 'true', 'yes', 'on') }}>
+    <label class="form-check-label" for="{{ prefix }}{{ f.name }}">{{ f.label }}</label>
+  </div>
+  {% else %}
+  <label class="form-label small mb-1" for="{{ prefix }}{{ f.name }}">{{ f.label }}{% if f.required %} <span class="text-danger">*</span>{% endif %}</label>
+  {% if f.type == 'textarea' %}
+  <textarea class="form-control form-control-sm" name="{{ f.name }}" id="{{ prefix }}{{ f.name }}" rows="3" {{ 'required' if f.required }}>{{ f.default }}</textarea>
+  {% elif f.type in ('select', 'store_select', 'api_select') %}
+  <select class="form-select form-select-sm" name="{{ f.name }}" id="{{ prefix }}{{ f.name }}" {{ 'required' if f.required }}>
+    {% if not f.required %}<option value="">—</option>{% endif %}
+    {% for o in f.choices %}<option value="{{ o.value }}" {{ 'selected' if o.value == f.default }}>{{ o.label }}</option>{% endfor %}
+  </select>
+  {% if f.problem %}<div class="form-text" style="color:#8B1C2A;">{{ _('The choices could not be read:') }} {{ f.problem }}</div>{% endif %}
+  {% else %}
+  <input class="form-control form-control-sm" name="{{ f.name }}" id="{{ prefix }}{{ f.name }}"
+         type="{{ {'number': 'number', 'password': 'password', 'date': 'date'}.get(f.type, 'text') }}"
+         {% if f.type == 'number' %}step="any"{% endif %} {% if f.type == 'password' %}autocomplete="new-password"{% endif %}
+         value="{{ f.default if f.type != 'password' else '' }}" {{ 'required' if f.required }}>
+  {% endif %}
+  {% endif %}
+  {% if f.help %}<div class="form-text">{{ f.help }}</div>{% endif %}
+</div>
+{% else %}
+<p class="text-muted small">{{ _('This app has no form: press Run.') }}</p>
+{% endfor %}

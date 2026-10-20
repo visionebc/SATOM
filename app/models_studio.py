@@ -134,7 +134,7 @@ class UserGroup(db.Model):
 class StudioApp(db.Model):
     __tablename__ = "studio_apps"
 
-    STATUSES = ("draft", "testing", "published")
+    STATUSES = ("draft", "published")
 
     id = db.Column(db.Integer, primary_key=True)
     slug = db.Column(db.String(48), unique=True, nullable=False, index=True)

@@ -6,6 +6,33 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.4.1] - 2026-10-21
+
+A documentation release: the API that SATOM exposes to your systems is now
+named and presented as what it is, the **SATOM API**, so it can no longer be
+confused with the Fortinet device APIs SATOM drives internally. No code path,
+schema or behaviour changes.
+
+### Changed
+
+- **The integration manual is the "SATOM API v1 — Integration Manual".** It
+  opens by stating that this is SATOM's own API, for your systems to talk to
+  SATOM, and that it is not the device API (which keeps its own manuals, Device
+  APIs & the endpoint registry and API library). The base URL is now written as
+  `https://<your-satom-host>/api/v1`, the address of your own server: the
+  examples used to name the vendor's internal host, which is not where a
+  customer's SATOM answers.
+- **The site navigation says "SATOM API"** instead of "API", on every
+  generated and hand-written page of the manual a node serves at `/manual/`,
+  and the documentation index names the manual "SATOM API v1 — integration
+  manual".
+- **SATOM API is a feature of its own** on the Features page: what a token is,
+  what it can read, what it can act on, what it can author, what no token can
+  ever do, and the OpenAPI document the API serves about itself.
+- **Documentation Center:** the article is now "SATOM API (REST v1)" and has a
+  top-level category of its own, **SATOM API**, instead of sitting under
+  Technical.
+
 ## [3.4.0] - 2026-10-21
 
 SATOM is mapped to the Network Automation Forum's framework in this release

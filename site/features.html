@@ -29,7 +29,7 @@
         <a href="safeguards.html">Safeguards</a>
         <a href="docs.html">Docs</a>
         <a href="releases.html">Releases</a>
-        <a href="docs/api.html">API</a>
+        <a href="docs/api.html">SATOM API</a>
         <a href="install.html">Install</a>
       </div>
       <div class="theme-pick" role="group" aria-label="Colour theme">
@@ -63,6 +63,7 @@
   <a href="#security" title="Security &amp; access"><span>Security &amp; access</span></a>
   <a href="#privilege" title="Privilege model"><span>Privilege model</span></a>
   <a href="#automation" title="Automation &amp; self-update"><span>Automation &amp; self-update</span></a>
+  <a href="#satom-api" title="SATOM API"><span>SATOM API</span></a>
   <a href="#cli" title="Operator console"><span>Operator console</span></a>
   <a href="#certs" title="Certificates"><span>Certificates</span></a>
   <a href="#monitoring" title="Monitoring &amp; probes"><span>Monitoring &amp; probes</span></a>
@@ -279,6 +280,20 @@
         </ul>
       </div>
 
+      <div class="dsec reveal" id="satom-api">
+        <h2><span class="hico">🔌</span> SATOM API</h2>
+        <p class="lead">SATOM's own REST API, for <b>your</b> systems to talk to SATOM — versioned at <code>/api/v1</code>, token-scoped, and described by an OpenAPI 3.0 document it serves itself. It is not the Fortinet device API SATOM uses internally to manage the appliances.</p>
+        <ul class="feat">
+          <li><b>Tokens issued by an administrator</b>, each with a scope (<code>read</code> ⊂ <code>write</code> ⊂ <code>admin</code>), a product binding and an explicit list of capabilities. A token never exceeds its owner's role, sees only what it was granted, and every call is audited.</li>
+          <li><b>Read the fleet SATOM has recorded</b>: the appliance inventory and health, configuration history and diffs, findings, the metrics store and the resource history of the SATOM nodes themselves.</li>
+          <li><b>Act through what an operator approved</b>: trigger pre-created Scheduled Actions by id, run Processes, approve a Change Request from an external ticketing system.</li>
+          <li><b>Author on a curated allow-list</b>: WAF exceptions on FortiWeb, FortiADC rules, and Intent — templates, bindings and baselines. A push to a device is the console's own canary-gated job, never a direct write.</li>
+          <li><b>Deliberately narrow.</b> No token, of any scope, can upgrade, flash or reboot a device, run a destructive action, or author an administrator account, an interface or a route.</li>
+          <li><b>The API describes itself</b>: <code>GET /api/v1/openapi.json</code> is generated from the routes that actually ship, so the contract cannot drift from the code.</li>
+        </ul>
+        <div class="callout"><span class="cico">📘</span><p>Every endpoint, the error format and a complete worked example are in the <a href="docs/api.html">SATOM API v1 integration manual</a>.</p></div>
+      </div>
+
       <div class="dsec reveal" id="cli">
         <h2><span class="hico">⌨️</span> Operator console</h2>
         <p class="lead">A local command-line tool for the node whose web interface is the thing that is broken — <b>96 commands</b> across four verbs.</p>
@@ -462,7 +477,7 @@
       <a href="safeguards.html">Safeguards</a>
       <a href="docs.html">Docs</a>
       <a href="releases.html">Releases</a>
-      <a href="docs/api.html">API</a>
+      <a href="docs/api.html">SATOM API</a>
       <a href="install.html">Install</a>
       <a href="https://github.com/visionebc/SATOM">Source</a>
     </div>

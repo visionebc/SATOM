@@ -1,9 +1,16 @@
-# API v1 — Integration Manual
+# SATOM API v1 — Integration Manual
 
-The **SATOM** exposes a small, versioned, **token-authenticated**
+> **This is SATOM's own API** — the one your systems use to talk to SATOM.
+> It is **not** the Fortinet device API that SATOM uses internally to manage
+> FortiWeb, FortiADC, FortiGate, FortiAnalyzer and FortiAuthenticator (that one
+> is documented in [device-api.md](device-api.md) and
+> [api-library.md](api-library.md)).
+
+**SATOM** exposes a small, versioned, **token-authenticated**
 HTTP API at `/api/v1` for third-party integrations and automation.
 
-- **Base URL:** `https://satom.example.net/api/v1`
+- **Base URL:** `https://<your-satom-host>/api/v1` — the address of your own
+  SATOM server
 - **Auth:** every request carries `Authorization: Bearer <token>`
 - **Format:** JSON in, JSON out (always — even on errors)
 
@@ -356,7 +363,7 @@ Then the integrator calls:
 
 ```bash
 TOKEN="fmk_abc123_def456..."
-BASE="https://satom.example.net/api/v1"
+BASE="https://<your-satom-host>/api/v1"
 
 # 1. Verify the token
 curl -s -H "Authorization: Bearer $TOKEN" $BASE/ping | jq
@@ -427,11 +434,11 @@ nothing is written — it is never silently downgraded to a draft.
 
 ```bash
 # 1. What may I author?
-curl -sH "$AUTH" https://satom/api/v1/waf/exception-types | jq '.types[].key'
+curl -sH "$AUTH" https://<your-satom-host>/api/v1/waf/exception-types | jq '.types[].key'
 
 # 2. File one (draft — no device is touched)
 curl -sX POST -H "$AUTH" -H 'Content-Type: application/json' \
-  https://satom/api/v1/waf/exceptions -d '{
+  https://<your-satom-host>/api/v1/waf/exceptions -d '{
     "appliance_id": 3,
     "wpp_mkey": "wpp-app1",
     "exc_type": "allow_method_exception_item",
@@ -598,13 +605,13 @@ readings are `null`. Its last known numbers are not repeated.
 
 ```bash
 curl -s -H "Authorization: Bearer $TOKEN" \
-  "https://satom.example.net/api/v1/system/nodes/history?range=7d&metrics=disk_used_gb"
+  "https://<your-satom-host>/api/v1/system/nodes/history?range=7d&metrics=disk_used_gb"
 ```
 
 ## 10. The API as a document — `GET /openapi.json`
 
 ```bash
-curl -s -H "Authorization: Bearer $TOKEN" https://satom.example.net/api/v1/openapi.json
+curl -s -H "Authorization: Bearer $TOKEN" https://<your-satom-host>/api/v1/openapi.json
 ```
 
 An **OpenAPI 3.0** document of every path and method this API serves, built
@@ -832,7 +839,7 @@ store's own (`status`, `data.resultType`, `data.result`).
 ```bash
 curl -s -H "Authorization: Bearer $TOKEN" --get \
   --data-urlencode 'expr=max by (device) (satom_box_cpu_pct)' \
-  https://satom.example.net/api/v1/metrics/query
+  https://<your-satom-host>/api/v1/metrics/query
 ```
 
 ### Additional error codes
@@ -905,8 +912,8 @@ to a `global` token only — the console applies the same rule.
 ```sh
 # rehearse, then arm once the rehearsal is clean
 curl -s -X POST -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
-  -d '{"appliance_id": 7}' https://satom.example.com/api/v1/processes/3/run
+  -d '{"appliance_id": 7}' https://<your-satom-host>/api/v1/processes/3/run
 curl -s -X POST -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
-  -d '{"appliance_id": 7, "armed": true}' https://satom.example.com/api/v1/processes/3/run
+  -d '{"appliance_id": 7, "armed": true}' https://<your-satom-host>/api/v1/processes/3/run
 #  -> 403 capability_denied unless the token holds process_arm
 ```

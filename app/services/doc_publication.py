@@ -198,8 +198,9 @@ PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
      "Service certificates, node-to-node encryption, enforced database TLS and the live encryption probes."),
     ("acme-certificate-manager.md", "acme", "ACME / Let's Encrypt certificates", "\U0001f4dc",
      "Automated issuance, the DNS-provider catalog, and how credentials reach the signer without leaking."),
-    ("api_v1.md", "api", "API v1 — integration manual", "\U0001f50c",
-     "How a third party authenticates and drives the platform with a token."),
+    ("api_v1.md", "api", "SATOM API v1 — integration manual", "\U0001f50c",
+     "SATOM's own REST API for your systems — not the device API: how a third "
+     "party authenticates and drives the platform with a token."),
     ("device-api.md", "device-api", "Device APIs & the endpoint registry", "\U0001f52d",
      "The API consoles that drive the appliances, the registry that makes a moved firmware URI a row edit instead of a release, and the firmware-line evidence that says which fields a release actually takes."),
     ("api-library.md", "api-library", "API library — what each firmware build serves", "\U0001f4da",

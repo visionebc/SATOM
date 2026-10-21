@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>API v1 — integration manual — SATOM</title>
-<meta name="description" content="How a third party authenticates and drives the platform with a token.">
+<title>SATOM API v1 — integration manual — SATOM</title>
+<meta name="description" content="SATOM&#x27;s own REST API for your systems — not the device API: how a third party authenticates and drives the platform with a token.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -30,7 +30,7 @@
         <a href="../safeguards.html">Safeguards</a>
         <a href="../docs.html" class="active">Docs</a>
         <a href="../releases.html">Releases</a>
-        <a href="../docs/api.html">API</a>
+        <a href="../docs/api.html">SATOM API</a>
         <a href="../install.html">Install</a>
       </div>
       <div class="theme-pick" role="group" aria-label="Colour theme">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../docs.html" style="color:inherit;text-decoration:none;">← Documentation</a></p>
-  <h1>🔌 API v1 — integration manual</h1>
-  <p class="sub">How a third party authenticates and drives the platform with a token.</p>
+  <h1>🔌 SATOM API v1 — integration manual</h1>
+  <p class="sub">SATOM&#x27;s own REST API for your systems — not the device API: how a third party authenticates and drives the platform with a token.</p>
   <div class="callout" style="margin-top:18px;">
     <span class="cico">🕶️</span>
     <p><b>Published copy.</b> Internal addresses, hostnames and device names are replaced
@@ -76,11 +76,19 @@
       <a href="#14-processes--apiv1processes">14. Processes — /api/v1/processes/*</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="api-v1--integration-manual">API v1 — Integration Manual</h1>
-<p>The <strong>SATOM</strong> exposes a small, versioned, <strong>token-authenticated</strong>
+<h1 id="satom-api-v1--integration-manual">SATOM API v1 — Integration Manual</h1>
+<blockquote>
+<p><strong>This is SATOM's own API</strong> — the one your systems use to talk to SATOM.
+It is <strong>not</strong> the Fortinet device API that SATOM uses internally to manage
+FortiWeb, FortiADC, FortiGate, FortiAnalyzer and FortiAuthenticator (that one
+is documented in <a href="device-api.html">device-api.md</a> and
+<a href="api-library.html">api-library.md</a>).</p>
+</blockquote>
+<p><strong>SATOM</strong> exposes a small, versioned, <strong>token-authenticated</strong>
 HTTP API at <code>/api/v1</code> for third-party integrations and automation.</p>
 <ul>
-<li><strong>Base URL:</strong> <code>https://{host}.example.net/api/v1</code></li>
+<li><strong>Base URL:</strong> <code>https://&lt;your-satom-host&gt;/api/v1</code> — the address of your own
+  SATOM server</li>
 <li><strong>Auth:</strong> every request carries <code>Authorization: Bearer &lt;token&gt;</code></li>
 <li><strong>Format:</strong> JSON in, JSON out (always — even on errors)</li>
 </ul>
@@ -746,7 +754,7 @@ makes the change un-runnable again.</p>
 </ol>
 <p>Then the integrator calls:</p>
 <pre><code class="language-bash">TOKEN=&quot;fmk_abc123_def456...&quot;
-BASE=&quot;https://{host}.example.net/api/v1&quot;
+BASE=&quot;https://&lt;your-satom-host&gt;/api/v1&quot;
 
 # 1. Verify the token
 curl -s -H &quot;Authorization: Bearer $TOKEN&quot; $BASE/ping | jq
@@ -873,11 +881,11 @@ administrator on the token and <strong>cannot be requested in the call</strong>:
 <p>A draft-only token that sends <code>"apply": true</code> gets <code>403 capability_denied</code> and
 nothing is written — it is never silently downgraded to a draft.</p>
 <pre><code class="language-bash"># 1. What may I author?
-curl -sH &quot;$AUTH&quot; https://satom/api/v1/waf/exception-types | jq '.types[].key'
+curl -sH &quot;$AUTH&quot; https://&lt;your-satom-host&gt;/api/v1/waf/exception-types | jq '.types[].key'
 
 # 2. File one (draft — no device is touched)
 curl -sX POST -H &quot;$AUTH&quot; -H 'Content-Type: application/json' \
-  https://satom/api/v1/waf/exceptions -d '{
+  https://&lt;your-satom-host&gt;/api/v1/waf/exceptions -d '{
     &quot;appliance_id&quot;: 3,
     &quot;wpp_mkey&quot;: &quot;wpp-app1&quot;,
     &quot;exc_type&quot;: &quot;allow_method_exception_item&quot;,
@@ -1117,10 +1125,10 @@ readings are <code>null</code>. Its last known numbers are not repeated.</p>
 <li>A bad <code>range</code>, <code>node</code> or <code>metrics</code> is <code>400 bad_request</code>.</li>
 </ul>
 <pre><code class="language-bash">curl -s -H &quot;Authorization: Bearer $TOKEN&quot; \
-  &quot;https://{host}.example.net/api/v1/system/nodes/history?range=7d&amp;metrics=disk_used_gb&quot;
+  &quot;https://&lt;your-satom-host&gt;/api/v1/system/nodes/history?range=7d&amp;metrics=disk_used_gb&quot;
 </code></pre>
 <h2 id="10-the-api-as-a-document--get-openapijson">10. The API as a document — <code>GET /openapi.json</code></h2>
-<pre><code class="language-bash">curl -s -H &quot;Authorization: Bearer $TOKEN&quot; https://{host}.example.net/api/v1/openapi.json
+<pre><code class="language-bash">curl -s -H &quot;Authorization: Bearer $TOKEN&quot; https://&lt;your-satom-host&gt;/api/v1/openapi.json
 </code></pre>
 <p>An <strong>OpenAPI 3.0</strong> document of every path and method this API serves, built
 <strong>at request time</strong> from the live routes: the scope each view enforces
@@ -1333,7 +1341,7 @@ store's own (<code>status</code>, <code>data.resultType</code>, <code>data.resul
 </ul>
 <pre><code class="language-bash">curl -s -H &quot;Authorization: Bearer $TOKEN&quot; --get \
   --data-urlencode 'expr=max by (device) (satom_box_cpu_pct)' \
-  https://{host}.example.net/api/v1/metrics/query
+  https://&lt;your-satom-host&gt;/api/v1/metrics/query
 </code></pre>
 <h3 id="additional-error-codes_2">Additional error codes</h3>
 <table>
@@ -1408,9 +1416,9 @@ to run answers 400 <code>invalid_diagram</code> with the problems listed.</p>
 to a <code>global</code> token only — the console applies the same rule.</p>
 <pre><code class="language-sh"># rehearse, then arm once the rehearsal is clean
 curl -s -X POST -H &quot;Authorization: Bearer $T&quot; -H 'Content-Type: application/json' \
-  -d '{&quot;appliance_id&quot;: 7}' https://satom.example.com/api/v1/processes/3/run
+  -d '{&quot;appliance_id&quot;: 7}' https://&lt;your-satom-host&gt;/api/v1/processes/3/run
 curl -s -X POST -H &quot;Authorization: Bearer $T&quot; -H 'Content-Type: application/json' \
-  -d '{&quot;appliance_id&quot;: 7, &quot;armed&quot;: true}' https://satom.example.com/api/v1/processes/3/run
+  -d '{&quot;appliance_id&quot;: 7, &quot;armed&quot;: true}' https://&lt;your-satom-host&gt;/api/v1/processes/3/run
 #  -&gt; 403 capability_denied unless the token holds process_arm
 </code></pre>
     </div>
@@ -1427,7 +1435,7 @@ curl -s -X POST -H &quot;Authorization: Bearer $T&quot; -H 'Content-Type: applic
       <a href="../safeguards.html">Safeguards</a>
       <a href="../docs.html">Docs</a>
       <a href="../releases.html">Releases</a>
-      <a href="../docs/api.html">API</a>
+      <a href="../docs/api.html">SATOM API</a>
       <a href="../install.html">Install</a>
       <a href="https://github.com/visionebc/SATOM">Source</a>
     </div>

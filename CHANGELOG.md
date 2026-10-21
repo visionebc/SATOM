@@ -6,6 +6,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **"the index answered but lists no release of Flask" now says what answered**
+  (SA-0004). The **Test** of Settings → General → Update sources → Python
+  libraries gave that one sentence for a sign-in page behind a redirect, a
+  product's front page, a JSON API that is not the Simple API and a private
+  registry without Flask alike. It now names the final URL, its content type
+  and any redirect, says which of those it is, and where the pip index URL
+  usually lives on Nexus, Artifactory, devpi and GitLab.
+- An index that answers a JSON request with its own JSON API instead of the
+  Simple API (PEP 691) is asked again for the HTML page pip reads, by the
+  **Test** and by the Libraries check alike.
+
 ## [3.4.2] - 2026-10-21
 
 A fix release: every connection SATOM opens to an address you configure now

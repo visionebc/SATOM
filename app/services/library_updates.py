@@ -201,11 +201,81 @@ def _auth_header(url: str, auth) -> dict:
     return {"Authorization": "Basic " + cred}
 
 
+def _is_simple_json(r: httpx.Response) -> bool:
+    """A JSON answer that is the Simple API (PEP 691: ``files`` or ``versions``)."""
+    try:
+        doc = r.json()
+    except Exception:  # noqa: BLE001
+        return False
+    return isinstance(doc, dict) and ("files" in doc or "versions" in doc)
+
+
 def _simple_get(client: httpx.Client, base: str, name: str, auth) -> httpx.Response:
     url = base.rstrip("/") + "/" + _normalize(name) + "/"
     headers = {"Accept": _SIMPLE_ACCEPT}
     headers.update(_auth_header(url, auth))
-    return client.get(url, headers=headers)
+    r = client.get(url, headers=headers)
+    # Some indexes answer any JSON Accept with their OWN JSON API (devpi's
+    # {"result": …}, a repository manager's REST view) instead of PEP 691.
+    # pip asks for HTML; so does the retry, and that page is the Simple API.
+    ctype = r.headers.get("content-type", "").split(";")[0].strip().lower()
+    if r.status_code == 200 and ctype.endswith("json") and not _is_simple_json(r):
+        html = dict(headers, Accept="text/html")
+        r2 = client.get(url, headers=html)
+        if r2.status_code == 200:
+            return r2
+    return r
+
+
+#: Where the Simple API usually lives, for the "Test" message.
+_INDEX_URL_HINT = ("a pip index URL normally ends in /simple -- Nexus "
+                   "…/repository/<repo>/simple, Artifactory …/artifactory/api/pypi/<repo>/simple, "
+                   "devpi …/<user>/<index>/+simple, GitLab …/packages/pypi/simple, "
+                   "pypi.org https://pypi.org/simple")
+
+
+def _why_no_release(r: httpx.Response, requested: str, name: str) -> str:
+    """What the server sent instead of a project page with releases of ``name``.
+
+    "lists no release" alone sent the operator guessing (SA-0004): a login page
+    behind a redirect, an application's front page, a JSON API that is not the
+    Simple API and a private registry without that project all read the same.
+    """
+    final = str(r.url)
+    ctype = r.headers.get("content-type", "").split(";")[0].strip().lower() or "no content type"
+    where = "%s (%s)" % (final, ctype)
+    if r.history and final.rstrip("/") != requested.rstrip("/"):
+        where = "%s, redirected from %s" % (where, requested)
+    if ctype.endswith("json"):
+        try:
+            doc = r.json()
+        except Exception:  # noqa: BLE001
+            return "%s: the body is not valid JSON" % where
+        if not (isinstance(doc, dict) and ("files" in doc or "versions" in doc)):
+            keys = ", ".join(sorted(doc)[:6]) if isinstance(doc, dict) else type(doc).__name__
+            return ("%s: JSON that is not the Simple API (keys: %s); %s"
+                    % (where, keys or "none", _INDEX_URL_HINT))
+        files = [str(f.get("filename") or "") for f in doc.get("files") or []
+                 if isinstance(f, dict)]
+    else:
+        p = _Anchors()
+        p.feed(r.content.decode("utf-8", "replace"))
+        files = [n for n, _ in p.files]
+        if not files:
+            m = re.search(r"<title[^>]*>(.*?)</title>", r.content.decode("utf-8", "replace"),
+                          re.I | re.S)
+            title = " ".join(m.group(1).split())[:80] if m else ""
+            looks = ("a sign-in page" if re.search(r"log ?in|sign ?in|auth", title + final, re.I)
+                     else "not a package index page")
+            return ("%s: the page has no download links%s -- %s; %s"
+                    % (where, (" (title %r)" % title) if title else "", looks, _INDEX_URL_HINT))
+    versions = [v for v in (_version_of(f) for f in files) if v is not None]
+    if not versions:
+        return ("%s: %d link(s), none of them a %s distribution file (e.g. %s) -- "
+                "this registry does not carry %s (a private registry without a PyPI proxy?)"
+                % (where, len(files), name, ", ".join(files[:3]), name))
+    return ("%s: only yanked or pre-release files of %s (%d file(s))"
+            % (where, name, len(files)))
 
 
 def _latest_on_index(client: httpx.Client, base: str, name: str, auth) -> str | None:
@@ -244,8 +314,9 @@ def probe_index(url: str, auth, name: str = "Flask") -> dict:
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": "the answer is not a package index page: %s" % exc}
     if not latest:
-        return {"ok": False, "error": "the index answered but lists no release of %s"
-                                      % name}
+        requested = url.rstrip("/") + "/" + _normalize(name) + "/"
+        return {"ok": False, "error": "the index answered but lists no release of %s: %s"
+                                      % (name, _why_no_release(r, requested, name))}
     return {"ok": True, "latest": latest}
 
 

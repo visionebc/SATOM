@@ -92,6 +92,13 @@ Access › Groups), `wiki05` (comments and subscriptions) and `wiki06`
 
 ### Fixed
 
+- **A SATOM node's disk read about 4 points emptier than it was.** The
+  percentage was used ÷ total, which counts the ~5 % ext4 keeps for root;
+  PostgreSQL and SATOM do not run as root. On a1 it read 77.7 % while `df`
+  and `satom get system health` read 82 %, and the 92 % critical, meant to
+  fire before PostgreSQL can no longer write WAL, would have fired at 97 % of
+  what PostgreSQL can write. It is now df's figure (used ÷ used + free), and
+  the node tile shows used and free space.
 - **The SATOM nodes' CPU alert could never fire.** Settings → Thresholds →
   *SATOM machine* still held the load-average limits (150 % / 400 % of cores)
   after the grader moved to the container's own CPU use on 2026-08-11, and

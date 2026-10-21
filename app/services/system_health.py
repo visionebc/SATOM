@@ -216,9 +216,17 @@ def host_stats() -> dict:
         if du.total in seen_totals:  # same filesystem — don't repeat it
             continue
         seen_totals.add(du.total)
+        # ``pct`` is the share of the space a NON-root writer can use, the
+        # number ``df`` prints: ext4 keeps ~5 % for root, and PostgreSQL (and
+        # the app) run as their own users. used/total read 77.7 % on a1 while
+        # df and ``satom get system health`` read 82 % (2026-10-21), and the
+        # 92 % critical meant to fire "before Postgres cannot write WAL" sat at
+        # 97 % of what Postgres can actually write.
+        usable = du.used + du.free
         disks.append({"mount": label, "total_gb": round(du.total / 1e9, 1),
                       "used_gb": round(du.used / 1e9, 1),
-                      "pct": round(100 * du.used / du.total, 1)})
+                      "avail_gb": round(du.free / 1e9, 1),
+                      "pct": round(100 * du.used / usable, 1) if usable else None})
     return {
         "hostname": socket.gethostname(),
         "cpus": cpus,

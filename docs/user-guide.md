@@ -2523,7 +2523,10 @@ page it sits on:
 The **host machine** row grades disk, memory and CPU **on both HA nodes**, and
 it exists because nothing in the product used to measure its own box. Its
 limits live in Settings → Thresholds under the *SATOM machine* scope. CPU is
-the share of the node's own cores busy (0–100 %; warning 80, critical 95). The
+the share of the node's own cores busy (0–100 %; warning 80, critical 95).
+Disk is the share of the space a non-root writer can use, the figure `df`
+prints: the ~5 % ext4 keeps for root is left out, because PostgreSQL is not
+root. The
 hypervisor's load average is shown next to it, labelled as the host's, and is
 not graded. Disk turns
 critical at 92 %, deliberately below 95: a full filesystem stops PostgreSQL

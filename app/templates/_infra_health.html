@@ -92,7 +92,10 @@
       (hs.uptime_s?' · up '+Math.floor(hs.uptime_s/86400)+'d':'')+'</div>'+
       caprow('CPU',cpu,(hs.load?hs.load[0]:'?')+' / '+(hs.cpus||'?')+(cpu!=null?' · '+cpu+'%':''))+
       caprow('RAM',mem,gb(hs.mem_used_mb)+(mem!=null?' · '+mem+'%':''))+
-      caprow('Disk',dsk,(d0?d0.used_gb+' / '+d0.total_gb+' GB · '+d0.pct+'%':'?')));
+      // pct is of the space a non-root writer can use (df's Use%), so the
+      // label names what is free rather than the raw size it is not a share of.
+      caprow('Disk',dsk,(d0?(d0.avail_gb!=null?d0.used_gb+' GB used · '+d0.avail_gb+' GB free':
+        d0.used_gb+' / '+d0.total_gb+' GB')+' · '+d0.pct+'%':'?')));
   }
 
   function gitTile(g){

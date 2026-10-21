@@ -210,12 +210,37 @@ Wiki gains comments, following, export and Confluence publishing.</p>
 <li>The syslog receiver card says that enabling the receiver does not open the
   node's packet filter: allow the chosen port from the appliances' management
   networks on every node, primary and standby.</li>
+<li><strong>The offline installer on a bare Debian 12 container</strong> needed four
+  workarounds, now fixed: the guided installer takes <code>curl</code> from the bundle
+  instead of dying on "curl is missing"; only the packages the image lacks
+  are installed and the base packages (<code>systemd</code>, <code>udev</code>, PAM, <code>libc6</code>) are
+  never replaced, so the bundle's closure cannot break the base system; the
+  database is created UTF8 on every image (a <code>C</code>-locale image gave SQL_ASCII
+  and a misleading authentication hint); nginx is restarted after the vhost
+  is written, so the install no longer ends with "does not accept
+  connections on 443". The guided installer's <code>--help</code> no longer promises
+  <code>SETUP_EXISTING=update</code> for a native install.</li>
+<li><strong>The documented upgrade path from 3.3.2 or older did not work as
+  written</strong> — see <em>Before you upgrade</em>.</li>
 </ul>
 <h2 id="before-you-upgrade">Before you upgrade<a class="dc-anchor" href="#before-you-upgrade" title="Permanent link">#</a></h2>
 <ul>
 <li><strong>Coming from 3.3.2 or older:</strong> apply <code>satom-update-3.3.3.tar.gz</code> (release
   v3.3.3) first, then this package. This package accepts only a node on 3.3.3
-  or newer.</li>
+  or newer. <strong>Install the 3.3.3 package's own update runner before applying
+  it:</strong> the runner those nodes carry points pip at a staging directory only
+  root can read, so the apply fails at <code>pip install</code> and rolls back — every
+  time, with the data intact (measured on a 2.11.0 node). As root, after the
+  console's preflight has verified the package: extract <code>deploy/</code> from the
+  package's <code>app.tar.gz</code> into a root-only directory and run
+  <code>SATOM_DEPLOY_SRC=&lt;that dir&gt;/deploy bash &lt;that dir&gt;/deploy/install-runner.sh</code>;
+  then apply the package from Software Update as usual. The exact commands are
+  in the update manual (<em>docs/offline-update-packages.md</em> §3) of the product
+  tree. A node on 3.3.3 or newer never needs this step.</li>
+<li><strong>Installing 3.4.0 from an offline bundle on a bare container image</strong> works
+  without the four workarounds the 2.11.0 bundle needed (curl from the
+  bundle, base packages never replaced, UTF8 database, nginx restarted after
+  the vhost) — see <em>Fixed</em>.</li>
 <li><strong>Database changes:</strong> the upgrade runs migrations <code>wiki04</code> (Wiki groups
   merged into Access → Groups), <code>wiki05</code> (comments and subscriptions),
   <code>wiki06</code> (Confluence spaces and pages), <code>orch01</code> (process triggers and the

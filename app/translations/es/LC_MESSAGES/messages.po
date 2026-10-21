@@ -26273,3 +26273,33 @@ msgstr "Todavía no hay muestras en este rango. La acción metrics scrape regist
 
 msgid "The metrics store did not answer:"
 msgstr "El almacén de métricas no respondió:"
+
+msgid "Start this process when"
+msgstr "Iniciar este proceso cuando"
+
+msgid "— the Run button only —"
+msgstr "— solo el botón Ejecutar —"
+
+msgid "Only for these ADOMs"
+msgstr "Solo para estos ADOM"
+
+msgid "Only for these appliance ids"
+msgstr "Solo para estos ids de equipo"
+
+msgid "Alert families"
+msgstr "Familias de alertas"
+
+msgid "Severity floor"
+msgstr "Severidad mínima"
+
+msgid "Runs per hour, at most"
+msgstr "Ejecuciones por hora, como máximo"
+
+msgid "Arm triggered walks"
+msgstr "Armar los recorridos disparados"
+
+msgid "armed on trigger"
+msgstr "armado al dispararse"
+
+msgid "rehearsal on trigger"
+msgstr "ensayo al dispararse"

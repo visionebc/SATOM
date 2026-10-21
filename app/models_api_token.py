@@ -72,6 +72,8 @@ CAPABILITIES = ("backend_edit", "backend_config", "policy_status", "cert_swap",
                 "adc_rule_draft", "adc_rule_apply",
                 # --- live inventory (see EXPLICIT_ONLY below) -----------------
                 "inventory",
+                # --- Process walks, ARMED (see EXPLICIT_ONLY below) -----------
+                "process_arm",
                 # --- catalog groups added 2026-10-15 (CATALOG_EXPLICIT below) -
                 "cert_renew", "monitoring", "sentinel", "feeds",
                 "api_library", "netbox")
@@ -99,6 +101,10 @@ EXPLICIT_ONLY_CAPABILITIES = frozenset({
     # a capability an operator grants, not one every pre-existing token inherits
     # the day the feature ships.
     "inventory",
+    # 'process_arm' = POST /api/v1/processes/<id>/run with "armed": true. An
+    # armed walk writes whatever the diagram writes, from outside, with nobody
+    # at the screen. A rehearsal (the default) needs only the write scope.
+    "process_arm",
 })
 
 # ---------------------------------------------------------------------------
@@ -136,6 +142,7 @@ CAPABILITY_DESC = {
     "adc_rule_draft": "PREVIEW a FortiADC carve-out (never touches a device)",
     "adc_rule_apply": "CREATE a FortiADC carve-out on the appliance",
     "inventory": "ASK a device its running firmware, live (reads the device, writes only this inventory)",
+    "process_arm": "WALK a Process ARMED from the API (its write steps really write); unarmed walks need only the write scope",
 }
 CAPABILITY_GROUPS = (
     ("Server policies (AppID-scopable)",
@@ -147,6 +154,7 @@ CAPABILITY_GROUPS = (
     ("FortiWeb objects (always explicit)", ("waf_exception_draft", "waf_exception_apply")),
     ("FortiADC objects (always explicit)", ("adc_rule_draft", "adc_rule_apply")),
     ("Live inventory (always explicit)", ("inventory",)),
+    ("Processes (always explicit)", ("process_arm",)),
 )
 
 # An object capability is only meaningful on a token bound to the matching
@@ -164,6 +172,9 @@ CAPABILITY_PRODUCTS = {
     # it is declared. 'global' is excluded because authorize_object() already
     # lets a global token through every product binding.
     "inventory": tuple(p for p in VALID_PRODUCTS if p != "global"),
+    # A process is offered per ADOM; the route checks the process's own ADOM
+    # list against the token, so the capability itself binds to every product.
+    "process_arm": tuple(p for p in VALID_PRODUCTS if p != "global"),
 }
 
 # Every runnable catalog action → the capability tag it belongs to. An action

@@ -65,7 +65,26 @@ RUNNING = "running"
 WAITING = "waiting"      # parked on a manual gate; a human must answer
 DONE = "done"
 ABORTED = "aborted"
-RUN_STATUSES = (RUNNING, WAITING, DONE, ABORTED)
+#: An event asked for a walk and the trigger rules refused it (an instance of
+#: this process is already running on that appliance, or the hourly budget is
+#: spent). Recorded as a RUN with no steps so the refusal shows in the same
+#: history an operator reads — a trigger that is silently dropped is a plan
+#: that "never fires" with no trace of why.
+RUN_SKIPPED = "skipped"
+RUN_STATUSES = (RUNNING, WAITING, DONE, ABORTED, RUN_SKIPPED)
+
+#: ``ProcessRun.trigger`` values. ``manual`` is the Run button; ``event`` is an
+#: integration/alert event matched by the process's trigger (process_triggers);
+#: ``schedule`` is the ``run_process`` scheduled action; ``api`` is /api/v1.
+TRIGGER_MANUAL = "manual"
+TRIGGER_EVENT = "event"
+TRIGGER_SCHEDULE = "schedule"
+TRIGGER_API = "api"
+TRIGGERS = (TRIGGER_MANUAL, TRIGGER_EVENT, TRIGGER_SCHEDULE, TRIGGER_API)
+
+#: Event-triggered runs a process may start per hour when the operator sets no
+#: other budget. One alert storm must not queue hundreds of walks.
+DEFAULT_TRIGGER_RATE_LIMIT = 10
 
 # ── run verdicts (only meaningful once status == DONE) ─────────────────────
 OK = "ok"                # every step that ran passed, and every step ran
@@ -117,6 +136,28 @@ class Process(db.Model):
     products = _json_prop("products_text", [])
 
     enabled = db.Column(db.Boolean, nullable=False, default=True)
+
+    #: EVENT TRIGGER (orch01). An integration-hook catalogue event name
+    #: (``integration_hooks.EVENTS``) that starts a walk of this process, or ''
+    #: for "the Run button only". The dispatch lives in
+    #: ``services.process_triggers``; it creates a JOB and never walks inline in
+    #: the caller (an alert evaluation or a hook dispatch is not the place to
+    #: open SSH sessions).
+    trigger_event = db.Column(db.String(64), nullable=False, default="")
+    #: JSON narrowing of the event: ``products`` (ADOM keys), ``appliance_ids``,
+    #: ``families`` and ``min_severity`` (alert.fired only). Empty = any.
+    trigger_filter_text = db.Column("trigger_filter_json", db.Text, nullable=False,
+                                    default="{}")
+    trigger_filter = _json_prop("trigger_filter_text", {})
+    #: False = a triggered walk is a REHEARSAL (every write node dry-runs).
+    #: True means SATOM writes to appliances with nobody in front of the
+    #: screen; the form says so in one sentence and the default is off.
+    armed_on_trigger = db.Column(db.Boolean, nullable=False, default=False)
+    #: Event-triggered runs allowed per hour for THIS process. Per process
+    #: rather than one global knob: a "collect diagnostics" plan may run on
+    #: every alert, a "fail over" plan should not.
+    trigger_rate_limit = db.Column(db.Integer, nullable=False,
+                                   default=DEFAULT_TRIGGER_RATE_LIMIT)
 
     created_by = db.Column(db.String(120), nullable=False, default="")
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
@@ -211,6 +252,11 @@ class ProcessRun(db.Model):
     summary = db.Column(db.Text, nullable=False, default="")
 
     trigger = db.Column(db.String(32), nullable=False, default="manual")
+    #: What started an event/schedule/api run: the finding or event key
+    #: (``cert.expiry.satom-node-1``, ``upgrade.failed:7``), the scheduled
+    #: action id, or the API token id. '' for the Run button. Stored so a walk
+    #: can be traced back to the thing that asked for it (orch01).
+    trigger_key = db.Column(db.String(200), nullable=False, default="")
     started_by = db.Column(db.String(120), nullable=False, default="")
     started_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
     ended_at = db.Column(db.DateTime, nullable=True)

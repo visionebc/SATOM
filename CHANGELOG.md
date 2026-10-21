@@ -7,10 +7,42 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 The upgrade runs migrations `wiki04` (Wiki groups merged into Administrator ›
-Access › Groups), `wiki05` (comments and subscriptions) and `wiki06`
-(Confluence spaces and pages).
+Access › Groups), `wiki05` (comments and subscriptions), `wiki06`
+(Confluence spaces and pages) and `orch01` (Process event triggers and the
+key a run was started by).
 
 ### Added
+
+- **Processes start from events, on a schedule and from the API; a
+  Compensate step undoes a walk** — asked as "do every phase of the NAF
+  alignment plan", the Orchestrator phase: an operator-drawn procedure could
+  only be started by the Run button, nothing could roll a walk back, and no
+  machine could start one. A process now names a **trigger event** from the
+  integration-hook catalogue (`alert.fired`, `upgrade.failed`, `change.approved`
+  …), narrowed by ADOM, appliance, alert family and a severity floor. The walk
+  is **queued as a job** the moment the event is noticed and never runs inside
+  the alert evaluation or the hook dispatch that noticed it (those run inside
+  the scheduler's cycle). Three rules bound a storm, each refusal recorded as a
+  run with status `skipped` and the reason: one running instance per process
+  and appliance, a budget of runs per process per hour (default 10), and
+  rehearsal unless *Arm triggered walks* is on — which the form says, in red,
+  means SATOM writes with nobody at the screen. A finding that started a walk
+  owes the alert cooldown; one that was skipped does not. Device findings now
+  carry the appliance id (`alert.fired` payload: `appliance_id`) so a trigger
+  can point the walk at the device. **Walk a process** is a new action of the
+  operator catalogue (rehearsal unless its `armed` parameter is on; an armed
+  walk of a diagram that writes runs only bound to a change request; flagged
+  dangerous, so never through the generic actions API). The new **Compensate**
+  step undoes what the walk wrote before it, newest first — only the steps that
+  recorded an inverse (a status a catalogue action flipped, an Observatory fix,
+  a provisioning run); a write with no inverse is named `unknown`, never
+  guessed, and a failed write is never replayed. The inverse travels with the
+  step, so a walk resumed after a manual gate still knows what it wrote. And
+  the API: `GET /api/v1/processes`, `POST /api/v1/processes/<id>/run`
+  (rehearsal by default; `"armed": true` needs the new explicit `process_arm`
+  capability) and `GET /api/v1/process-runs/<id>`, under the token's ADOM
+  exactly as the console. Every run carries what started it (`trigger_key`:
+  the finding key, the scheduled action, the API token).
 
 - **The manual on every node, Documentation Center included** — asked as
   "put the Documentation Center there too", for the sign-in page's

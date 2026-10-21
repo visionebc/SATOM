@@ -145,6 +145,17 @@ of a subscriber that does not exist, so nothing is stamped and the run says so.
 An escalation from `warning` to `critical` bypasses the cooldown. The condition
 got worse, and that is new information.
 
+**Process triggers are not a sink.** A Process whose trigger is `alert.fired`
+receives every fresh finding, whether or not the engine master switch or any
+sink is on — it is a plan the operator drew, not a channel. The dispatch
+*queues a job* and returns; the walk never runs inside the evaluation. A
+finding that started a walk is stamped like one the hook subsystem accepted
+(the same "it left this process" rule); a finding whose walk was *skipped*
+(an instance already running, the hourly budget spent) is not stamped, so it
+is not silenced on behalf of a walk that did not happen. The run reports
+`processes: {queued, skipped, rows}`. See the user guide, §42 *Starting a
+process from an event*.
+
 ---
 
 ## 5. Webhook

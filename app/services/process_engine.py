@@ -62,6 +62,9 @@ class Ctx:
     results: dict = field(default_factory=dict)
     run_id: int = 0
     user: str = ""
+    #: node key -> kind, for the one step that reads the walk backwards
+    #: (``compensate`` must know which earlier steps were writes).
+    kinds: dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -148,8 +151,14 @@ def start_key(graph: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def start_run(proc, *, appliance=None, armed: bool = False,
-              trigger: str = "manual", user: str = "", product: str = "") -> ProcessRun:
-    """Snapshot the graph and walk it. Commits."""
+              trigger: str = "manual", user: str = "", product: str = "",
+              trigger_key: str = "") -> ProcessRun:
+    """Snapshot the graph and walk it. Commits.
+
+    ``trigger_key`` names what asked for the walk when ``trigger`` is not the
+    Run button (a finding key, an event key, a scheduled action, an API
+    token). It is provenance only; nothing branches on it.
+    """
     from ..models import db
 
     graph = proc.graph()
@@ -159,6 +168,7 @@ def start_run(proc, *, appliance=None, armed: bool = False,
         appliance_id=getattr(appliance, "id", None),
         appliance_name=getattr(appliance, "name", "") or "",
         armed=bool(armed), status=RUNNING, trigger=trigger, started_by=user or "",
+        trigger_key=(trigger_key or "")[:200],
     )
     db.session.add(run)
     db.session.commit()
@@ -205,9 +215,11 @@ def advance(run: ProcessRun, *, appliance=None, resume_from: str = "",
     # Outcomes of everything already recorded, so a Decision resumed after a
     # gate can still see the steps that ran before the pause.
     ctx = Ctx(appliance=appliance, armed=bool(run.armed), run_id=run.id,
-              user=run.started_by or "")
+              user=run.started_by or "",
+              kinds={k: str(n.get("kind") or "") for k, n in nodes.items()})
     for st in run.steps:
-        ctx.results[st.node_key] = pk.StepResult(st.status, st.detail, st.output)
+        out, undo = pk.decode_undo(st.output)
+        ctx.results[st.node_key] = pk.StepResult(st.status, st.detail, out, undo=undo)
 
     seq = max([st.seq for st in run.steps], default=0)
     executed = {st.node_key for st in run.steps if st.status != SKIPPED}
@@ -244,7 +256,8 @@ def advance(run: ProcessRun, *, appliance=None, resume_from: str = "",
             run_id=run.id, seq=seq, node_key=cursor,
             kind=str(node.get("kind") or ""),
             label=str(node.get("label") or cursor),
-            status=res.status, detail=res.detail, output=res.output or "",
+            status=res.status, detail=res.detail,
+            output=pk.encode_undo(res.output or "", res.undo),
             dry_run=bool(kind and kind.writes and not run.armed),
             started_at=started, ended_at=datetime.utcnow(),
         )

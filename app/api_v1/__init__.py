@@ -25,3 +25,5 @@ from . import adc  # noqa: E402,F401
 from . import ui  # noqa: E402,F401
 # Read-only: CPU / memory / disk of the SATOM nodes, now and over time.
 from . import system  # noqa: E402,F401
+# Orchestration: walk a Process (rehearsal by default; armed needs process_arm).
+from . import processes  # noqa: E402,F401

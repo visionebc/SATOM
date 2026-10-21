@@ -26254,3 +26254,33 @@ msgstr "Aucun échantillon dans cette plage pour l'instant. L'action metrics scr
 
 msgid "The metrics store did not answer:"
 msgstr "Le magasin de métriques n'a pas répondu :"
+
+msgid "Start this process when"
+msgstr "Démarrer ce processus quand"
+
+msgid "— the Run button only —"
+msgstr "— le bouton Exécuter seulement —"
+
+msgid "Only for these ADOMs"
+msgstr "Seulement pour ces ADOM"
+
+msgid "Only for these appliance ids"
+msgstr "Seulement pour ces identifiants d'équipement"
+
+msgid "Alert families"
+msgstr "Familles d'alertes"
+
+msgid "Severity floor"
+msgstr "Gravité minimale"
+
+msgid "Runs per hour, at most"
+msgstr "Exécutions par heure, au plus"
+
+msgid "Arm triggered walks"
+msgstr "Armer les parcours déclenchés"
+
+msgid "armed on trigger"
+msgstr "armé au déclenchement"
+
+msgid "rehearsal on trigger"
+msgstr "répétition au déclenchement"

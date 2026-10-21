@@ -252,6 +252,8 @@ EVENTS: dict[str, dict[str, Any]] = {
             "title": "str \u2014 one line, operator-facing",
             "detail": "str \u2014 the evidence",
             "product": "str \u2014 owning ADOM, '' when fleet-wide",
+            "appliance_id": "int|null \u2014 the appliance a device finding is "
+                            "about; null for fleet-wide findings",
             "node": "str \u2014 the SATOM node that evaluated it",
             "fired_at": "str \u2014 ISO-8601",
         },
@@ -730,6 +732,19 @@ def dispatch(event: str, payload: dict[str, Any], *, by: str = "system",
     now = _utcnow()
     node = os.environ.get("FM_NODE_NAME") or ""
     out: list[dict[str, Any]] = []
+
+    # Process triggers ride on the same event door, for every event EXCEPT
+    # ``alert.fired``: the alert module hands its fresh findings to the
+    # trigger service itself (``alerts.run``), because this function is only
+    # reached for the findings the hooks sink accepted, and a Process trigger
+    # must not depend on a notification sink being on. Queues a job; never
+    # walks here. A trigger failure is not a hook failure.
+    if not dry_run and event != "alert.fired":
+        try:
+            from . import process_triggers
+            process_triggers.on_event(event, payload or {}, by=by)
+        except Exception:  # noqa: BLE001 — the hooks below still fire
+            pass
 
     for hook in hooks_for_event(event):
         slug = hook["slug"]

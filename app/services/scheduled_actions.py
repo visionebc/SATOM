@@ -702,6 +702,23 @@ USER_ACTIONS: list[ActionSpec] = [
                 "POST/PUT/DELETE go through the snapshot+audit+dry-run write "
                 "path. Build it in the Custom REST card on the form.",
     ),
+    # Orchestration: walk a Process (Administrator > Process) on a schedule.
+    # ``danger=True`` on purpose — an ARMED process writes whatever its diagram
+    # writes, so this action is kept off the generic /api/v1/actions door
+    # (danger actions are not api_runnable); the API walks a process through
+    # /api/v1/processes/<id>/run under the explicit ``process_arm`` grant
+    # instead. One walk per target appliance; a diagram with no device steps
+    # still walks once per target, so give such an action one target.
+    ActionSpec(
+        "run_process", "Walk a process", "user",
+        needs_targets=True, danger=True,
+        products=("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator", "fortigate"),
+        summary="Walk a Process (Administrator > Process) against each target at "
+                "a scheduled time. Params: process_key; armed (default off = "
+                "rehearsal, every write step dry-runs). An ARMED walk of a "
+                "diagram that writes runs only bound to an approved change "
+                "request, like every other write action.",
+    ),
 ]
 
 # key -> ActionSpec for both scopes.
@@ -1223,6 +1240,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_custom_rest(appliance, params, dry_run)
         if key in ("policy_set_status", "backend_set_status", "backend_set_config", "swap_certificate"):
             return _do_user_op(key, appliance, params, dry_run)
+        if key == "run_process":
+            return _do_run_process(appliance, params, dry_run)
         return {"ok": False, "summary": f"No executor for {key!r}.", "log": ""}
     except Exception as exc:  # noqa: BLE001 - run_action must never raise
         return {
@@ -1905,6 +1924,65 @@ def _verify_suffix(result) -> str:
 
 
 # --- user-scope object ops (mutate the box via FortiWebOps) ----------------- #
+def _do_run_process(appliance, params: dict, dry_run: bool) -> dict:
+    """Walk ONE process against ONE appliance from a scheduled action.
+
+    ``armed`` is a PARAM of the action (default off): a scheduled walk is a
+    rehearsal unless the operator said otherwise when scheduling it, exactly
+    like the Run button. The page's preview (``dry_run``) forces a rehearsal
+    whatever the param says. An armed walk of a diagram that WRITES is
+    refused unless the action is bound to a change request
+    (``change_request_id`` in params, validated by ``execute_and_record``):
+    the same gate every other write action in this catalogue answers to.
+    """
+    from ..models_process import Process, TRIGGER_SCHEDULE
+    from . import process_engine as engine
+    from . import process_kinds as pk
+
+    key = str(params.get("process_key") or "").strip()
+    if not key:
+        return {"ok": False, "summary": "run_process: no process_key given.", "log": ""}
+    proc = Process.query.filter_by(key=key).first()
+    if proc is None:
+        return {"ok": False, "summary": f"run_process: no process {key!r}.", "log": ""}
+    if not proc.enabled:
+        return {"ok": False, "summary": f"run_process: process {key!r} is disabled.",
+                "log": ""}
+    graph = proc.graph()
+    problems = pk.validate_graph(graph)
+    if problems:
+        return {"ok": False, "summary": f"run_process: {key!r} cannot run: {problems[0]}",
+                "log": "\n".join(problems)}
+    if pk.needs_appliance(graph) and appliance is None:
+        return {"ok": False, "summary": f"run_process: {key!r} acts on a device and "
+                "the action has no target.", "log": ""}
+    armed = str(params.get("armed", "")).strip().lower() in ("1", "true", "yes", "on")
+    if dry_run:
+        armed = False
+    if armed and pk.writes(graph) and _as_int(params.get("change_request_id")) is None:
+        return {"ok": False,
+                "summary": f"run_process: an ARMED walk of {key!r} writes to appliances "
+                           "and runs only bound to an approved change request. "
+                           "Schedule it through a change request, or leave it unarmed.",
+                "log": ""}
+    if armed and not pk.writes(graph):
+        armed = False  # same rule as the Run button: an armed read-only plan is noise
+    run = engine.start_run(proc, appliance=appliance, armed=armed,
+                           trigger=TRIGGER_SCHEDULE, user="schedule",
+                           product=str(params.get("product") or ""),
+                           trigger_key="scheduled-action:%s" % (params.get("_action_id") or ""))
+    c = run.counts()
+    ok = run.status == "done" and run.verdict == "ok"
+    if run.status == "waiting":
+        ok = True  # parked on a gate is not a failure; the run page says so
+    prefix = "" if armed else "[rehearsal] "
+    summary = (f"{prefix}process {key!r} run #{run.id}: {run.verdict or run.status} "
+               f"({c['pass']} pass, {c['fail']} fail, {c['unknown']} unknown, "
+               f"{c['skipped']} skipped)")
+    return {"ok": ok, "summary": summary, "log": run.summary or "",
+            "process_run_id": run.id}
+
+
 def _do_user_op(key: str, appliance, params: dict, dry_run: bool) -> dict:
     if appliance is None:
         return {"ok": False, "summary": f"{key} needs a target device.", "log": ""}
@@ -1974,8 +2052,20 @@ def _do_user_op(key: str, appliance, params: dict, dry_run: bool) -> dict:
         summary = label + _verify_suffix(result)
     else:
         summary = f"{label} - {err}" if err else f"{label} - failed"
-    return {"ok": ok, "summary": summary,
-            "log": json.dumps(result.get("request") or {})[:_LOG_MAX]}
+    out = {"ok": ok, "summary": summary,
+           "log": json.dumps(result.get("request") or {})[:_LOG_MAX]}
+    # The inverse, for a Process ``compensate`` step. ONLY the status flips:
+    # their inverse is the same action the other way and needs no previous
+    # value. A config change or a certificate swap would need the value the
+    # device held before, which this executor never read — so it records no
+    # inverse and compensate names the step as "cannot be undone by SATOM"
+    # instead of guessing an address to point a backend at.
+    if ok and not dry_run and key in ("policy_set_status", "backend_set_status"):
+        inverse = {k: v for k, v in params.items()
+                   if k in ("policy", "server_pool", "member")}
+        inverse["enabled"] = not enabled
+        out["undo"] = {"domain": "user_op", "action": key, "params": inverse}
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -2233,6 +2323,11 @@ def _run_targets(action_row, spec: ActionSpec, params: dict, *,
     fails: list[str] = []
     lines: list[str] = []
     planned = len(targets)
+    # The row's id travels with the params so an executor that records
+    # provenance (run_process -> ProcessRun.trigger_key) can name the action
+    # that fired it. Underscored: not an operator field, never validated.
+    params = dict(params)
+    params.setdefault("_action_id", action_row.id)
     for appliance in targets:
         name = getattr(appliance, "name", "(no device)")
         total += 1

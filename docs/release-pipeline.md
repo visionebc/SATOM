@@ -159,6 +159,18 @@ site. The suite fails if they are stale, so this is a reminder rather than a
 rule you can forget — but running it after the tests and before the sync saves
 a round trip.
 
+**NAF Framework pin.** [docs/naf-alignment.md](naf-alignment.md) maps SATOM
+to the Network Automation Forum's framework
+(https://reference.networkautomation.forum/Framework/Framework/) at a pinned upstream commit
+(today `da82b12`), because the framework has no version number. At every cut, diff the upstream
+`docs/Framework/Framework.md` of https://github.com/Network-Automation-Forum/reference
+against the pinned commit; if it changed, re-run the mapping and bump the pin
+on every surface that names it (the alignment document, `README.md`,
+`site/architecture.html`, `NOTICE`). Also update the matrix rows this release
+changes — the status line at the top of that document is derived from the
+matrix and a test fails when they disagree. This is a checklist step, never a
+network call inside a test.
+
 ---
 
 ## Stage 4 — Publish

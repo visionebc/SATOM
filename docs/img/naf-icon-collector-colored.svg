@@ -1,0 +1,9 @@
+<!-- Network Automation Forum, "The NAF Framework" reference diagrams (https://github.com/Network-Automation-Forum/reference, docs/Framework/images/, commit da82b12). Released under CC0 1.0; reproduced unchanged except for this attribution comment. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <rect width="24" height="24" rx="6" fill="#F43F5E"/>
+  <g fill="#000000">
+    <path d="M6 11l6-6 6 6" opacity="0.4"/>
+    <path d="M6 15l6-6 6 6" opacity="0.7"/>
+    <path d="M6 19l6-6 6 6"/>
+  </g>
+</svg>

@@ -6,6 +6,10 @@ signatures, HTTP outcomes, appliance internals, the VM the appliance runs in,
 the hypervisor under that, the backend behind it and vulnerability
 intelligence — into single incidents that explain themselves.
 
+**NAF block:** Observability — correlation and enrichment of the actual
+state; its autonomous responses hand over to the Executor through the gate
+order described below ([naf-alignment.md](naf-alignment.md)).
+
 The console lives at `/sentinel`. Its in-product documentation page
 (`/sentinel/docs`) renders the weight table, the action catalog and the
 settings list **from the running code**, so those numbers cannot go stale the

@@ -80,6 +80,24 @@ Access › Groups), `wiki05` (comments and subscriptions) and `wiki06`
     and line only; a moderator may override, audited. The calls go through the
     same checked path as Studio connections (no loopback, link-local, this
     node or its HA peer; no redirects; credential redacted from errors).
+- **SATOM mapped to the NAF Framework** — the first step of "do every phase
+  of the NAF alignment plan, test each one, then release, document and
+  publish everything". The Network Automation Forum's vendor-neutral
+  reference model (six functional blocks around the infrastructure; no
+  version number, so SATOM pins upstream commit `da82b12`, CC0 1.0) now has
+  its own manual page, `SATOM and the NAF Framework`: why SATOM aligns with
+  it, what SATOM calls each block — the one collision worth knowing is that
+  SATOM's *Source of Truth* is the framework's *Observability*, not its
+  *Intent* — and a conformance matrix, one row per requirement sentence,
+  each with its status and the file that is the evidence. The status line
+  ("mapped to the NAF Framework, with N documented deviations") is derived
+  from the matrix by a test, which also owns the word *conformant*: no
+  published document may claim it while a MUST row is open. The README, the
+  architecture page of the product site, the engineering, overview,
+  management, API, alerting, CLI-writer, Sentinel and metrics manuals and the
+  user guide say which block each part of SATOM is; the release checklist
+  diffs the upstream framework against the pin at every cut. The framework's
+  diagram and block icons are reproduced unchanged (`NOTICE`).
 
 ### Changed
 

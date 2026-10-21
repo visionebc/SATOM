@@ -51,6 +51,12 @@ Managing these appliances directly has real business risks:
   authority.
 - **Integrate:** other systems can read fleet data through a restricted,
   token-based API that cannot perform dangerous actions.
+- **Fit an industry reference model:** SATOM is mapped to the NAF Framework,
+  a vendor-neutral model of what a network automation system is made of,
+  published by the Network Automation Forum. The mapping names what SATOM
+  does in the framework's words, so an auditor or a partner can place it
+  without learning our vocabulary first — and it lists, honestly, what the
+  framework asks for that SATOM does not do yet ([details](naf-alignment.md)).
 
 ## 4. How mature is it?
 
@@ -107,6 +113,10 @@ Managing these appliances directly has real business risks:
    and tracked, not sent automatically).
 5. Continuous integration runners so the test suite runs automatically on
    every code push.
+6. Close the open rows of the NAF Framework mapping ([naf-alignment.md](naf-alignment.md)
+   §7): an API for templates and baselines, programmatic access to the
+   configuration and metrics history, and — if wanted — collecting syslog and
+   SNMP directly instead of through FortiAnalyzer.
 
 ## 9. Glossary
 
@@ -120,3 +130,6 @@ Managing these appliances directly has real business risks:
 | **Change Request** | A recorded, approved maintenance window that authorizes risky work |
 | **Certificate** | The cryptographic file that makes a website show the padlock (HTTPS); it expires and must be renewed |
 | **Registry** | The app's catalog of device commands, editable as data — how the app adapts to new firmware without reprogramming |
+| **NAF Framework** | The Network Automation Forum's vendor-neutral reference model of a network automation system: six functional blocks (Intent, Executor, Collector, Observability, Orchestrator, Presentation) around the infrastructure. SATOM is mapped to it ([naf-alignment.md](naf-alignment.md)) |
+| **Source of truth (SATOM)** | The app's own name for the stored history of what is *actually* configured on each device. In NAF terms this is *Observability*; the *desired* state (NAF *Intent*) is what SATOM calls templates and baselines |
+| **Intent / Observability / Collector / Executor / Orchestrator / Presentation** | The NAF blocks: the desired state; the actual state and its history; reading the devices; writing the devices; coordinating workflows; the screens, CLI and API people use |

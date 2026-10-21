@@ -126,6 +126,16 @@ app/templates|static Jinja + Turbo Drive + CSP-safe vanilla JS.
 <p><strong>Dependency direction:</strong> <code>views → services → {clients, registry, models}</code>.
 Keep it acyclic; services must stay importable without a request context —
 the background-job workers and the scheduler sidecar run them headless.</p>
+<p><strong>The same layers in NAF Framework terms.</strong> SATOM is mapped to the Network
+Automation Forum's reference model (six functional blocks around the
+infrastructure; <a href="naf-alignment.html">naf-alignment.md</a> has the source, the
+pinned commit and the conformance matrix). <code>clients/</code> and the read side of
+the device services are the <em>Collector</em>; the write side (<code>cli_writer</code>,
+<code>fortiweb_ops</code>, provisioning) is the <em>Executor</em>; the device cache, the
+configuration history and the time-series store are <em>Observability</em> (what
+SATOM calls its "source of truth"); templates, baselines and bindings are
+<em>Intent</em>; the Process engine, Scheduled Actions and Change Requests are the
+<em>Orchestrator</em>; <code>views/</code>, <code>api_v1/</code> and the CLI are <em>Presentation</em>.</p>
 <p><strong>Design pillars:</strong></p>
 <ul>
 <li><strong>DB-first reads</strong> (<code>services/read_layer.py</code>): pages render from the local
@@ -372,12 +382,16 @@ semaphore.</p>
 <p><code>client_for(appliance)</code> dispatches by <code>appliance.kind</code> — use it instead of
 importing a concrete client in views.</p>
 <h2 id="7-service-layer-map">7. Service layer map</h2>
-<p>Grouped tour of <code>app/services/</code> (~80 modules):</p>
+<p>Grouped tour of <code>app/services/</code> (~80 modules). The NAF block each group
+belongs to is given in brackets (<a href="naf-alignment.html">naf-alignment.md</a> §4 is
+the full naming table):</p>
 <ul>
-<li><strong>Device I/O &amp; cache:</strong> <code>device_sync</code>, <code>deep_capture</code>, <code>analysis_deep</code>,
+<li><strong>Device I/O &amp; cache</strong> [NAF: Collector for the reads, Observability for
+  the cache]: <code>device_sync</code>, <code>deep_capture</code>, <code>analysis_deep</code>,
   <code>read_layer</code>, <code>device_store</code>, <code>rediscovery</code>, <code>inventory_metrics</code>,
   <code>device_context</code>, <code>hardware</code>, <code>ha</code>, <code>cluster</code>.</li>
-<li><strong>Policy &amp; objects:</strong> <code>policy_ops</code> (clone/migrate/enable/disable +
+<li><strong>Policy &amp; objects</strong> [NAF: Executor for the writes; <code>baselines</code> and
+  <code>templates</code> are Intent]: <code>policy_ops</code> (clone/migrate/enable/disable +
   preflight), <code>policy_form</code>, <code>policy_graph</code>, <code>policy_links</code>, <code>objform</code> (the
   form engine), <code>fortiweb_field_schema</code> (create-field seeds), <code>clone</code>,
   <code>clone_rules</code> (admin dummy-IP policy), <code>capacity</code>, <code>naming</code>, <code>baselines</code>,
@@ -390,12 +404,12 @@ importing a concrete client in views.</p>
   <code>exception_detect</code>, <code>regex_lab</code>, <code>section_taxonomy</code>, <code>wp_menu</code>.</li>
 <li><strong>Certificates:</strong> <code>cert_manager</code> (scan/issue/lifecycle/dispatch-by-kind),
   <code>cert_adc</code>, <code>cert_ssh</code>, <code>cert_probe</code>.</li>
-<li><strong>Ops &amp; automation:</strong> <code>jobs</code> (framework), <code>deep_jobs</code>, <code>scheduled_actions</code>
+<li><strong>Ops &amp; automation</strong> [NAF: Orchestrator]: <code>jobs</code> (framework), <code>deep_jobs</code>, <code>scheduled_actions</code>
   (catalog + executor), <code>scheduler</code> (pure next-run math), <code>change_requests</code>,
   <code>backup</code> (REST + SSH fallback vault), <code>logcollect</code>, <code>inspector</code>,
   <code>flash_report</code>, <code>release_notes</code>, <code>git_service</code>, <code>system backup</code> (via
   views/system_backup).</li>
-<li><strong>Platform:</strong> <code>product_scope</code>, <code>access</code>/<code>auth_store</code>/<code>directory_auth</code>
+<li><strong>Platform</strong> [NAF: Presentation for access and notifications]: <code>product_scope</code>, <code>access</code>/<code>auth_store</code>/<code>directory_auth</code>
   (RBAC + LDAP/RADIUS), <code>audit</code>, <code>notifications</code>, <code>email_service</code>,
   <code>encryption</code>, <code>lock_service</code>, <code>db_reports</code>/<code>report_builder</code>,
   <code>dbintrospect</code>, <code>dns_tool</code>, <code>dns_providers/</code> (the N-backend IPAM/DDI

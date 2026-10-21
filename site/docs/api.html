@@ -82,6 +82,14 @@ HTTP API at <code>/api/v1</code> for third-party integrations and automation.</p
 <p>This surface is <strong>deliberately narrow</strong>. It cannot upgrade, flash or reboot a
 device, and it cannot run any action flagged <em>destructive</em> — no token, of any
 scope, can reach those.</p>
+<p>In the terms of the NAF Framework (<a href="naf-alignment.html">naf-alignment.md</a>) this
+API is part of <em>Presentation</em>: the door other systems use. What it opens onto
+today is the appliance inventory and health (<em>Observability</em>, read), the
+pre-created Scheduled Actions and the external approval of a Change Request
+(<em>Orchestrator</em>), and the curated object authoring below (<em>Intent</em>, for WAF
+carve-outs and FortiADC rules only). It does <strong>not</strong> yet expose templates,
+baselines or bindings, nor the configuration history, findings or metrics
+store; those are the open rows of the conformance matrix.</p>
 <p>There are exactly <strong>two</strong> ways to change anything, and they are not
 interchangeable:</p>
 <ol>

@@ -56,6 +56,13 @@ Browser ──▶ edge nginx (LXC 241 @ 192.0.2.40)
   by a restart.
 - **Registry** is the reason the app survives firmware changes: adapting to a new
   firmware is a **data** edit (a registry row), not code.
+- **In NAF Framework terms** (the Network Automation Forum's vendor-neutral
+  reference model, see [naf-alignment.md](naf-alignment.md)): the device cache
+  and configuration history are *Observability*; templates and baselines are
+  *Intent*; device sync, deep capture and metrics collection are the
+  *Collector*; the REST and CLI write paths are the *Executor*; Processes,
+  Scheduled Actions and Change Requests are the *Orchestrator*; the console,
+  the CLI and API v1 are *Presentation*. The names differ, the blocks do not.
 
 ## 3. Deployment
 

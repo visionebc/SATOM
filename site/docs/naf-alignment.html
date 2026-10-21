@@ -65,8 +65,8 @@
       <a href="#3-the-framework-in-one-picture">3. The framework in one picture</a>
       <a href="#4-what-satom-calls-each-block">4. What SATOM calls each block</a>
       <a href="#5-how-to-read-the-matrix">5. How to read the matrix</a>
-      <a href="#6-conformance-matrix--state-at-v338">6. Conformance matrix — state at v3.3.8</a>
-      <a href="#7-the-open-rows-and-what-closes-them">7. The open rows, and what closes them</a>
+      <a href="#6-conformance-matrix--state-at-v340-unreleased-head">6. Conformance matrix — state at v3.4.0 (unreleased HEAD)</a>
+      <a href="#7-what-the-status-line-counts-and-what-remains-partial">7. What the status line counts, and what remains partial</a>
       <a href="#8-keeping-this-page-honest">8. Keeping this page honest</a>
     </aside>
     <div class="doc-body mdx">
@@ -78,7 +78,7 @@ honest. The matrix in §6 is the <strong>only</strong> place the conformance sta
 recorded; every other document links here instead of repeating it.</p>
 <p><strong>Status line (generated from the matrix, checked by a test):</strong></p>
 <p><!-- naf-verdict:begin -->
-SATOM is mapped to the NAF Framework (commit da82b12), with 4 documented deviations.
+SATOM is conformant to the NAF Framework (commit da82b12): every MUST requirement is met.
 <!-- naf-verdict:end --></p>
 </blockquote>
 <hr>
@@ -98,8 +98,10 @@ SATOM is mapped to the NAF Framework (commit da82b12), with 4 documented deviati
   diagram and the block icons on this page are reproduced from it unchanged
   (see <code>NOTICE</code>); their use follows the project's brand guidelines (block icon
   to the left of the block title).</li>
-<li><strong>There is no NAF certification.</strong> The wording used here and everywhere
-  else in SATOM is <em>mapped to</em>, never <em>certified</em>.</li>
+<li><strong>There is no NAF certification.</strong> The conformance recorded here is a
+  self-assessment against the pinned commit, checked by a test in this
+  repository; the wording is <em>conformant (self-assessed)</em> or <em>mapped to</em>,
+  never <em>certified</em>.</li>
 </ul>
 <h2 id="2-why-satom-aligns-with-it">2. Why SATOM aligns with it</h2>
 <ol>
@@ -198,7 +200,7 @@ baselines (Observability). The user guide says which one it means each time.</p>
   conformance with the framework while any MUST row is not <code>met</code>; when every
   MUST row is <code>met</code>, the status line changes and the word becomes available.</li>
 </ul>
-<h2 id="6-conformance-matrix--state-at-v338">6. Conformance matrix — state at v3.3.8</h2>
+<h2 id="6-conformance-matrix--state-at-v340-unreleased-head">6. Conformance matrix — state at v3.4.0 (unreleased HEAD)</h2>
 <!-- naf-matrix:begin -->
 <table>
 <thead>
@@ -222,15 +224,15 @@ baselines (Observability). The user guide says which one it means each time.</p>
 <td>Intent</td>
 <td>MUST</td>
 <td>Create, read, update and delete the desired state</td>
-<td>partial</td>
-<td>GUI only today: <code>app/views/templates.py</code>, <code>app/services/templates.py</code>; API CRUD is the open item</td>
+<td>met</td>
+<td>The console (<code>app/views/templates.py</code>, <code>app/services/templates.py</code>) and API v1 (<code>app/api_v1/intent.py</code>: templates, versions, bindings and baselines; versions are immutable, so an update is a new version, as in the console)</td>
 </tr>
 <tr>
 <td>Intent</td>
 <td>MUST</td>
 <td>Expose that data through a standardized, documented API</td>
-<td>gap</td>
-<td><code>app/api_v1/routes.py</code> has no template, baseline or binding route</td>
+<td>met</td>
+<td><code>app/api_v1/intent.py</code> (read with scope <code>read</code>; write with the explicit <code>template_draft</code> / <code>template_apply</code> capabilities), documented in <code>docs/api_v1.md</code> §11–§12 and in the OpenAPI document of <code>app/api_v1/openapi.py</code></td>
 </tr>
 <tr>
 <td>Intent</td>
@@ -313,8 +315,8 @@ baselines (Observability). The user guide says which one it means each time.</p>
 <td>Collector</td>
 <td>MUST</td>
 <td>Extend beyond device APIs to SNMP, syslog, flow telemetry and packet capture</td>
-<td>accepted-gap — logs reach SATOM through FortiAnalyzer; there is no SNMP client, syslog receiver or flow collector, in a Fortinet-only estate</td>
-<td><code>app/services/faz_logs.py</code></td>
+<td>met</td>
+<td>SNMP v2c polling per appliance (<code>app/services/snmp_client.py</code>, <code>app/services/snmp_collect.py</code>) and a syslog receiver in the scheduler sidecar (<code>app/services/syslog_receiver.py</code>), both under the <code>satom_scrape_up</code> contract; logs also arrive through FortiAnalyzer (<code>app/services/faz_logs.py</code>). Scope stated in <code>docs/metrics-architecture.md</code>: SNMPv3, traps, NetFlow/sFlow and packet capture are out of scope</td>
 </tr>
 <tr>
 <td>Collector</td>
@@ -334,8 +336,8 @@ baselines (Observability). The user guide says which one it means each time.</p>
 <td>Observability</td>
 <td>MUST</td>
 <td>Powerful programmatic access to that history</td>
-<td>gap</td>
-<td>The time-series store is bound to loopback without an API in front of it; there is no configuration-history or diff route in <code>app/api_v1/routes.py</code></td>
+<td>met</td>
+<td><code>app/api_v1/observability.py</code>: configuration history and diff per appliance over the Source of Truth, current findings, and a read-only MetricsQL query route over SATOM's own series (the time-series store itself stays on loopback)</td>
 </tr>
 <tr>
 <td>Observability</td>
@@ -348,8 +350,8 @@ baselines (Observability). The user guide says which one it means each time.</p>
 <td>Observability</td>
 <td>SHOULD</td>
 <td>Events when the actual state differs from the intended state</td>
-<td>gap</td>
-<td><code>app/services/alerts.py</code> (drift) compares a configuration with its previous snapshot, not with the bound template</td>
+<td>met</td>
+<td><code>app/services/intent_compliance.py</code> compares each bound device with its rendered template (key-subset diff); the <em>Intent deviation</em> check in <code>app/services/alerts.py</code> raises the finding and the typed hook event <code>intent.deviation</code>; <code>Config drift</code> (previous snapshot) remains a separate check</td>
 </tr>
 <tr>
 <td>Observability</td>
@@ -369,15 +371,15 @@ baselines (Observability). The user guide says which one it means each time.</p>
 <td>Orchestrator</td>
 <td>SHOULD</td>
 <td>Event-driven execution (synchronous, asynchronous, scheduled)</td>
-<td>partial</td>
-<td>Integration hooks react to events (<code>app/services/integration_hooks.py</code>); a Process starts only by hand (<code>app/views/process.py</code>)</td>
+<td>met</td>
+<td>A Process declares a trigger event and filter; <code>app/services/process_triggers.py</code> starts the walk as a background job (never inside the scheduler tick), one running walk per process and device, rate-limited per process, rehearsal unless <em>armed on trigger</em>; hooks (<code>app/services/integration_hooks.py</code>), the console, Scheduled Actions and <code>app/api_v1/processes.py</code> are the other doors</td>
 </tr>
 <tr>
 <td>Orchestrator</td>
 <td>SHOULD</td>
 <td>Reverse or compensating actions on error</td>
-<td>partial</td>
-<td>Reverts exist per domain (<code>app/services/observatory_fix.py</code>, <code>app/services/provision_runner.py</code>); nothing chains them</td>
+<td>met</td>
+<td>The <em>Compensate</em> step in <code>app/services/process_kinds.py</code> undoes the walk's recorded steps newest first through each domain's own inverse (status flips, <code>app/services/observatory_fix.py</code>, <code>app/services/provision_runner.py</code>); a step without a recorded inverse is named <code>unknown</code>, never guessed</td>
 </tr>
 <tr>
 <td>Orchestrator</td>
@@ -390,8 +392,8 @@ baselines (Observability). The user guide says which one it means each time.</p>
 <td>Orchestrator</td>
 <td>SHOULD</td>
 <td>Scheduled execution of a workflow</td>
-<td>partial</td>
-<td>Scheduled Actions (<code>app/services/scheduled_actions.py</code>) are schedulable; Processes are not</td>
+<td>met</td>
+<td>The <code>run_process</code> action in <code>app/services/scheduled_actions.py</code> walks a Process on any schedule (armed only when the action is armed and change-controlled)</td>
 </tr>
 <tr>
 <td>Orchestrator</td>
@@ -432,8 +434,8 @@ baselines (Observability). The user guide says which one it means each time.</p>
 <td>Cross-cutting</td>
 <td>SHOULD</td>
 <td>Machine-friendly APIs documented via schema</td>
-<td>partial</td>
-<td><code>docs/api_v1.md</code> is prose; there is no OpenAPI document</td>
+<td>met</td>
+<td><code>app/api_v1/openapi.py</code> builds an OpenAPI 3.0 document from the live routes at <code>GET /api/v1/openapi.json</code>; <code>tests/test_api_v1_openapi.py</code> fails on any undocumented route; <code>docs/api_v1.md</code> remains the prose manual</td>
 </tr>
 </tbody>
 </table>
@@ -441,31 +443,31 @@ baselines (Observability). The user guide says which one it means each time.</p>
 
 <p>Infrastructure has no rows: the framework places no requirement on the
 network itself.</p>
-<h2 id="7-the-open-rows-and-what-closes-them">7. The open rows, and what closes them</h2>
-<p>The status line counts four MUST rows that are not <code>met</code>:</p>
+<h2 id="7-what-the-status-line-counts-and-what-remains-partial">7. What the status line counts, and what remains partial</h2>
+<p>The status line counts no MUST rows that are not <code>met</code>: with release 3.4.0
+every MUST requirement of the framework is met, and the test that owns the
+word now allows <em>conformant</em>. This is a <strong>self-assessment</strong> against the
+pinned commit — the Network Automation Forum issues no certification — and
+it is only as good as the matrix above, which is why every row names its
+evidence and a test checks the file exists.</p>
+<p>Three rows are deliberately not <code>met</code>, all SHOULD or MAY:</p>
 <ol>
-<li><strong>Intent — create, read, update and delete the desired state.</strong> Possible
-   from the console, not from outside it. Closing it means create, update and
-   delete routes for templates, bindings and baselines under the same
-   capability model as the WAF carve-outs, with every apply going through the
-   existing dry-run → canary path.</li>
-<li><strong>Intent — a documented API for the desired state.</strong> Templates, baselines
-   and bindings have no route in API v1 at all; read routes close this row,
-   and the write routes above close the previous one.</li>
-<li><strong>Observability — programmatic access to the history.</strong> The configuration
-   history and the time-series store are complete but reachable only from
-   inside the console. Closing it means configuration-history and diff
-   routes, a findings route, and a read-only metrics query route in front of
-   the loopback-bound store.</li>
-<li><strong>Collector — telemetry beyond device APIs.</strong> Accepted for now: in a
-   Fortinet-only estate, logs and flows arrive through FortiAnalyzer. A
-   syslog receiver and SNMP polling would close it; the row says so rather
-   than hiding the choice.</li>
+<li><strong>Intent — a neutral model derived into vendor artefacts</strong> (<code>accepted-gap</code>).
+   SATOM is a Fortinet-specific product; its templates are the vendor's own
+   objects. The row stays open on purpose.</li>
+<li><strong>Intent — a unified view across sources</strong> and <strong>Collector — normalise
+   across vendors</strong> (<code>partial</code>). Both are single-vendor by the same decision;
+   IP addressing is delegated to NetBox rather than modelled twice.</li>
+<li><strong>Executor — idempotent operations</strong> and <strong>Orchestrator — correlate events</strong>
+   (<code>partial</code>). Idempotence is designed for but not measured as a property;
+   correlation is limited to cooldowns and drift attribution.</li>
 </ol>
-<p>SHOULD rows marked <code>partial</code> or <code>gap</code> (event-driven Processes, compensation,
-scheduled Processes, intent deviation events, a schema-documented API) are
-the roadmap behind the MUST rows; each becomes <code>met</code> in the release that
-ships it, and this page changes in that same release.</p>
+<p>Scope statements that keep the MUST rows honest: the Collector row is met by
+SNMP v2c polling and a syslog receiver — SNMPv3, traps, flow telemetry and
+packet capture are out of scope and <code>docs/metrics-architecture.md</code> says so;
+the Intent write API never writes to a device directly (a push is the
+console's own canary-gated job); the metrics query route is the only way to
+the time-series store from outside, which stays bound to loopback.</p>
 <h2 id="8-keeping-this-page-honest">8. Keeping this page honest</h2>
 <ul>
 <li><strong>One matrix.</strong> The Documentation Center article and every other manual

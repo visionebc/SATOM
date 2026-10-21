@@ -51,7 +51,7 @@ Managing these appliances directly has real business risks:
   authority.
 - **Integrate:** other systems can read fleet data through a restricted,
   token-based API that cannot perform dangerous actions.
-- **Fit an industry reference model:** SATOM is mapped to the NAF Framework,
+- **Fit an industry reference model:** SATOM is conformant to the NAF Framework (self-assessed, every MUST requirement met),
   a vendor-neutral model of what a network automation system is made of,
   published by the Network Automation Forum. The mapping names what SATOM
   does in the framework's words, so an auditor or a partner can place it

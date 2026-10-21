@@ -206,7 +206,10 @@ appliances).
   management, API, alerting, CLI-writer, Sentinel and metrics manuals and the
   user guide say which block each part of SATOM is; the release checklist
   diffs the upstream framework against the pin at every cut. The framework's
-  diagram and block icons are reproduced unchanged (`NOTICE`).
+  diagram and block icons are reproduced unchanged (`NOTICE`). With the
+  other entries of this release every MUST row of the matrix is `met`, so
+  the status line reads *conformant (self-assessed — the forum issues no
+  certification)*; three SHOULD/MAY rows stay partial by design.
 
 ### Changed
 

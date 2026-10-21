@@ -69,6 +69,11 @@
       <a href="#7-fortiadc-rules--apiv1adc">7. FortiADC rules — /api/v1/adc/*</a>
       <a href="#8-sharing-the-console-theme--apiv1ui">8. Sharing the console theme — /api/v1/ui/*</a>
       <a href="#9-satom-node-resources--apiv1system">9. SATOM node resources — /api/v1/system/*</a>
+      <a href="#10-the-api-as-a-document--get-openapijson">10. The API as a document — GET /openapi.json</a>
+      <a href="#11-intent-read--apiv1templates-bindings-baselines">11. Intent, read — /api/v1/templates, /bindings, /baselines</a>
+      <a href="#12-intent-write--templates-bindings-and-baselines">12. Intent, write — templates, bindings and baselines</a>
+      <a href="#13-observability--configuration-history-findings-metrics">13. Observability — configuration history, findings, metrics</a>
+      <a href="#14-processes--apiv1processes">14. Processes — /api/v1/processes/*</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="api-v1--integration-manual">API v1 — Integration Manual</h1>
@@ -84,13 +89,13 @@ device, and it cannot run any action flagged <em>destructive</em> — no token, 
 scope, can reach those.</p>
 <p>In the terms of the NAF Framework (<a href="naf-alignment.html">naf-alignment.md</a>) this
 API is part of <em>Presentation</em>: the door other systems use. What it opens onto
-today is the appliance inventory and health (<em>Observability</em>, read), the
-pre-created Scheduled Actions and the external approval of a Change Request
-(<em>Orchestrator</em>), and the curated object authoring below (<em>Intent</em>, for WAF
-carve-outs and FortiADC rules only). It does <strong>not</strong> yet expose templates,
-baselines or bindings, nor the configuration history, findings or metrics
-store; those are the open rows of the conformance matrix.</p>
-<p>There are exactly <strong>two</strong> ways to change anything, and they are not
+is the appliance inventory, health, configuration history, findings and the
+metrics store (<em>Observability</em>), the pre-created Scheduled Actions, the
+Processes and the external approval of a Change Request (<em>Orchestrator</em>), and
+the object authoring below — WAF carve-outs, FortiADC rules, templates,
+bindings and baselines (<em>Intent</em>). The OpenAPI document (§10) describes every
+route of this surface.</p>
+<p>There are exactly <strong>three</strong> ways to change anything, and they are not
 interchangeable:</p>
 <ol>
 <li><strong>Scheduled Actions</strong> (§3) — operational moves an operator pre-created for
@@ -99,7 +104,13 @@ interchangeable:</p>
 <li><strong>Object authoring</strong> (§6 FortiWeb, §7 FortiADC) — you write your own WAF
    carve-out or FortiADC rule. Only a type on a <strong>curated allow-list</strong>, and only
    if an administrator granted your token the matching <strong>capability</strong>.</li>
+<li><strong>Intent</strong> (§12) — templates, bindings and baselines: desired state. Only
+   with the <code>template_draft</code> / <code>template_apply</code> capabilities, and a push to a
+   device is the console's own canary-gated job, never a direct write.</li>
 </ol>
+<p>The same page also exposes what SATOM has <em>recorded</em> — configuration history
+and diffs, findings, metrics (§13) — and describes itself as an OpenAPI
+document (§10).</p>
 <p>Object authoring is <strong>not</strong> a proxy to the appliance configuration database. No
 token, of any scope, can author an administrator account, an interface or a
 route through this API: those types are not on the list, and the list is
@@ -312,6 +323,188 @@ The API never issues an HTML login redirect — you always get JSON.</p>
 <td>read</td>
 <td><code>monitoring</code>, only on a capability-restricted token</td>
 <td>The same readings over time (§9). <strong>Global</strong> token only</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/openapi.json</code></td>
+<td>read</td>
+<td>—</td>
+<td>This API as an OpenAPI 3.0 document, built from the live routes (§10)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/templates</code></td>
+<td>read</td>
+<td>—</td>
+<td>Templates of the token's ADOM (§11)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/templates/&lt;id&gt;</code></td>
+<td>read</td>
+<td>—</td>
+<td>One template: body, versions, review history, bindings (§11)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/bindings</code></td>
+<td>read</td>
+<td>—</td>
+<td>Template bindings of the ADOM, <code>?appliance=&lt;id&gt;</code> for one device (§11)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/baselines</code></td>
+<td>read</td>
+<td>—</td>
+<td>Baselines of the token's ADOM (§11)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/baselines/&lt;id&gt;</code></td>
+<td>read</td>
+<td>—</td>
+<td>One baseline with its templates (§11)</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/templates</code></td>
+<td>write</td>
+<td><code>template_draft</code></td>
+<td>Create a template, or a new version of one (§12)</td>
+</tr>
+<tr>
+<td><code>PUT</code></td>
+<td><code>/templates/&lt;id&gt;</code></td>
+<td>write</td>
+<td><code>template_draft</code></td>
+<td>Save a new version (versions are immutable) (§12)</td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td><code>/templates/&lt;id&gt;</code></td>
+<td>write</td>
+<td><code>template_draft</code></td>
+<td>Delete an unlocked version (§12)</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/templates/&lt;id&gt;/approve</code></td>
+<td>write</td>
+<td><code>template_apply</code></td>
+<td>Approve (four-eyes: never the author) (§12)</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/templates/&lt;id&gt;/reject</code></td>
+<td>write</td>
+<td><code>template_apply</code></td>
+<td>Reject with a reason (§12)</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/templates/&lt;id&gt;/unapprove</code></td>
+<td>write</td>
+<td><code>template_apply</code></td>
+<td>Revoke an approval (§12)</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/templates/&lt;id&gt;/apply</code></td>
+<td>write</td>
+<td><code>template_apply</code></td>
+<td>Preview, or start the canary-gated apply job (§12)</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/bindings</code></td>
+<td>write</td>
+<td><code>template_draft</code></td>
+<td>Bind a device to a template family (§12)</td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td><code>/bindings/&lt;id&gt;</code></td>
+<td>write</td>
+<td><code>template_draft</code></td>
+<td>Remove a binding (§12)</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/baselines</code></td>
+<td>write</td>
+<td><code>template_draft</code></td>
+<td>Create a baseline (§12)</td>
+</tr>
+<tr>
+<td><code>PUT</code></td>
+<td><code>/baselines/&lt;id&gt;</code></td>
+<td>write</td>
+<td><code>template_draft</code></td>
+<td>Update a baseline (§12)</td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td><code>/baselines/&lt;id&gt;</code></td>
+<td>write</td>
+<td><code>template_draft</code></td>
+<td>Delete a baseline (§12)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/appliances/&lt;id&gt;/config-history</code></td>
+<td>read</td>
+<td>—</td>
+<td>Recorded configuration versions of one device (§13)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/appliances/&lt;id&gt;/config-diff</code></td>
+<td>read</td>
+<td>—</td>
+<td>What changed between two versions, <code>?from=&amp;to=</code> (§13)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/findings</code></td>
+<td>read</td>
+<td><code>monitoring</code>, only on a capability-restricted token</td>
+<td>What the alert engine finds right now (§13)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/metrics/query</code></td>
+<td>read</td>
+<td><code>monitoring</code>, only on a capability-restricted token</td>
+<td>A read-only MetricsQL query over SATOM's own series (§13)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/processes</code></td>
+<td>read</td>
+<td>—</td>
+<td>The processes the token's ADOM may see (§14)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/processes/&lt;id&gt;</code></td>
+<td>read</td>
+<td>—</td>
+<td>One process, with its diagram (§14)</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/processes/&lt;id&gt;/run</code></td>
+<td>write</td>
+<td><code>process_arm</code> for <code>"armed": true</code></td>
+<td>Walk a process — a <strong>rehearsal</strong> unless armed (§14)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/process-runs/&lt;id&gt;</code></td>
+<td>read</td>
+<td>—</td>
+<td>One walk and its steps; poll a run parked on a manual gate (§14)</td>
 </tr>
 </tbody>
 </table>
@@ -619,12 +812,22 @@ curl -s -H &quot;Authorization: Bearer $TOKEN&quot; $BASE/actions/runs/99 | jq
 <tr>
 <td>409</td>
 <td><code>disabled</code></td>
-<td>The action is disabled</td>
+<td>The action — or the process — is disabled</td>
 </tr>
 <tr>
 <td>409</td>
 <td><code>already_running</code></td>
 <td>The action is already running</td>
+</tr>
+<tr>
+<td>403</td>
+<td><code>capability_denied</code></td>
+<td><code>"armed": true</code> on a process walk without the <code>process_arm</code> capability (§14)</td>
+</tr>
+<tr>
+<td>400</td>
+<td><code>appliance_required</code> / <code>invalid_diagram</code></td>
+<td>A process walk needs a device, or its diagram cannot run yet (§14)</td>
 </tr>
 <tr>
 <td>429</td>
@@ -915,6 +1118,300 @@ readings are <code>null</code>. Its last known numbers are not repeated.</p>
 </ul>
 <pre><code class="language-bash">curl -s -H &quot;Authorization: Bearer $TOKEN&quot; \
   &quot;https://{host}.example.net/api/v1/system/nodes/history?range=7d&amp;metrics=disk_used_gb&quot;
+</code></pre>
+<h2 id="10-the-api-as-a-document--get-openapijson">10. The API as a document — <code>GET /openapi.json</code></h2>
+<pre><code class="language-bash">curl -s -H &quot;Authorization: Bearer $TOKEN&quot; https://{host}.example.net/api/v1/openapi.json
+</code></pre>
+<p>An <strong>OpenAPI 3.0</strong> document of every path and method this API serves, built
+<strong>at request time</strong> from the live routes: the scope each view enforces
+(<code>x-satom-scope</code>), the explicit capabilities it asks for
+(<code>x-satom-capabilities</code>), its path parameters and its documented responses.
+It is not written by hand and it is not generated into a file at release
+time, so it cannot lag behind the code: a route is in the document the
+moment it is registered. Feed it to a client generator or a request
+explorer; this page remains the prose explanation of <em>why</em> each gate exists.</p>
+<p>The security scheme is <code>bearerAuth</code> (HTTP bearer). Scope and capabilities are
+vendor extensions because OpenAPI's own security scopes describe OAuth, not
+SATOM's owner-capped ladder.</p>
+<hr>
+<h2 id="11-intent-read--apiv1templates-bindings-baselines">11. Intent, read — <code>/api/v1/templates</code>, <code>/bindings</code>, <code>/baselines</code></h2>
+<p>In the vocabulary of the NAF Framework this is the <strong>Intent</strong> block: the
+desired state SATOM keeps as <strong>Templates</strong> (versioned, reviewed bodies),
+<strong>Template bindings</strong> (which device a template family governs, with its
+per-device values) and <strong>Baselines</strong> (a scoped assembly of approved
+templates). Reading needs the <code>read</code> scope and an owner who may open the
+Templates page (<code>operations.view</code>, else <code>403 owner_forbidden</code>). Everything
+is scoped to the token's ADOM exactly like a console session of that ADOM:
+another product's template or baseline is <code>404 not_found</code>, never a 403.</p>
+<h3 id="get-templates"><code>GET /templates</code></h3>
+<p>Newest version first. Filters: <code>?kind=</code>, <code>?status=pending|approved|rejected</code>
+(anything else is <code>400 bad_request</code>), <code>?name=</code>. Rows carry identity, status,
+author, provenance and the build they were written for — <strong>not the body</strong>.</p>
+<h3 id="get-templatesid"><code>GET /templates/&lt;id&gt;</code></h3>
+<p>The template with its <code>body</code>, <code>exceptions</code>, <code>validated_builds</code>, every
+<code>versions[]</code> of its family (<code>id</code>, <code>version</code>, <code>status</code>, <code>author</code>,
+<code>created_at</code>), the <code>review_history[]</code> (who approved, rejected or revoked,
+when, why) and its <code>bindings[]</code>.</p>
+<h3 id="get-bindings"><code>GET /bindings</code></h3>
+<p>Bindings of every device the token may see; <code>?appliance=&lt;id&gt;</code> narrows to one
+device (<code>404</code> when it is not in the ADOM). Each: <code>appliance_id</code>, <code>kind</code>,
+<code>name</code>, <code>pinned_version</code> (<code>null</code> = follow the newest approved version),
+<code>variables</code>, <code>note</code>, <code>created_by</code>.</p>
+<h3 id="get-baselines--get-baselinesid"><code>GET /baselines</code> / <code>GET /baselines/&lt;id&gt;</code></h3>
+<p>The baselines of the ADOM with their scope (<code>zone</code>, <code>line</code>, <code>department</code>);
+the detail lists the <code>templates[]</code> that compose it (<code>id</code>, <code>kind</code>, <code>name</code>,
+<code>version</code>, <code>section</code>, <code>position</code>).</p>
+<hr>
+<h2 id="12-intent-write--templates-bindings-and-baselines">12. Intent, write — templates, bindings and baselines</h2>
+<p>Two <strong>explicit-only</strong> capabilities, in the same model as §6: an empty
+capability list authorises none of this, and the caller never picks its own
+privilege.</p>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>What it allows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>template_draft</code></td>
+<td>Create a template or a new version of one, delete an unlocked version, bind or unbind a device, author baselines. <strong>Never touches an appliance.</strong> The owner must hold <code>operations.template_save</code>.</td>
+</tr>
+<tr>
+<td><code>template_apply</code></td>
+<td>Approve, reject or revoke a template (owner must hold <code>operations.template_approve</code>, an administrator permission) and <strong>push</strong> a template to devices (owner must hold <code>operations.template_apply</code>).</td>
+</tr>
+</tbody>
+</table>
+<p>A token bound to one product may hold them for that product only; a
+<code>global</code> token for every product. Every call is audited with the token's
+public id, and the records it creates carry <code>api:&lt;public_id&gt;</code> as author or
+reviewer. The write endpoints are rate-limited to 30/min; <code>apply</code> to 10/min.</p>
+<h3 id="post-templates"><code>POST /templates</code></h3>
+<pre><code class="language-json">{&quot;kind&quot;: &quot;web-protection-profile&quot;, &quot;name&quot;: &quot;api-wpp&quot;, &quot;body&quot;: {...},
+ &quot;note&quot;: &quot;&quot;, &quot;exceptions&quot;: null, &quot;source_firmware&quot;: &quot;7.6.8&quot;}
+</code></pre>
+<p>Creates a <strong>pending</strong> draft of the token's ADOM (<code>201</code>), or — when the
+kind/name already exists — the next version of that family. <code>body</code> must be
+a JSON object; an unknown kind, a missing name or an unknown build is <code>400
+bad_request</code>. <code>source_firmware</code> is optional: it records the build the body
+was written for, which is what lets a later build be <em>compared</em> against it.</p>
+<h3 id="put-templatesid"><code>PUT /templates/&lt;id&gt;</code></h3>
+<p>Versions are immutable, as in the console: this saves a <strong>new version</strong> of
+the same family (<code>body</code>, <code>note</code>, <code>exceptions</code>; fields absent keep the
+predecessor's), pending, with the predecessor's build stamp. The answer is
+the new version.</p>
+<h3 id="delete-templatesid"><code>DELETE /templates/&lt;id&gt;</code></h3>
+<p>Deletes one version. A locked (curated) template is <code>409 locked</code>.</p>
+<h3 id="post-templatesidapprove--reject--unapprove"><code>POST /templates/&lt;id&gt;/approve</code> · <code>/reject</code> · <code>/unapprove</code></h3>
+<p>The review lifecycle. Approval is the four-eyes rule of the console: the
+token that authored the template may not approve it (<code>409 review_refused</code>).
+<code>reject</code> takes <code>{"reason": "..."}</code>. Every verdict lands in the template's
+review history with the token as reviewer.</p>
+<h3 id="post-templatesidapply"><code>POST /templates/&lt;id&gt;/apply</code></h3>
+<pre><code class="language-json">{&quot;appliance_ids&quot;: [12, 13], &quot;confirm&quot;: false, &quot;override_reason&quot;: &quot;&quot;}
+</code></pre>
+<p>This is the console's own path and nothing else:</p>
+<ul>
+<li><strong>Without <code>confirm</code></strong> (or with anything but the boolean <code>true</code>): a
+  <strong>preview</strong> — the per-device plan, the firmware-compatibility verdicts and
+  any unresolved <code>{{ variable }}</code> — and <strong>no device is contacted for real</strong>.</li>
+<li><strong>With <code>confirm: true</code></strong>: the same gates run (unresolved variables and a
+  refused firmware check are <code>409 apply_refused</code>, with the console's
+  <code>compat</code> report), then the apply starts as the <strong>background job</strong> the
+  console starts: canary device first, the rest only if the canary succeeds.
+  The answer is <code>202 {"mode": "apply", "job_id": ...}</code>; the job's progress
+  and its completion audit row are the console's. <code>override_reason</code> is
+  honoured only for an owner holding <code>operations.template_approve</code>, exactly
+  like the console's override.</li>
+<li>More than one device is a <strong>fleet rollout</strong>: the template must be
+  approved (<code>409 apply_refused</code>) and the owner must hold <code>operations.apply</code>
+  (<code>403 owner_forbidden</code>).</li>
+<li>An appliance outside the token's ADOM is <code>404 not_found</code> for the whole
+  call.</li>
+</ul>
+<p>There is no endpoint that writes a template to a device directly, and
+<code>apply</code> never bypasses the dry-run → canary order.</p>
+<h3 id="post-bindings--delete-bindingsid"><code>POST /bindings</code> · <code>DELETE /bindings/&lt;id&gt;</code></h3>
+<pre><code class="language-json">{&quot;template_id&quot;: 7, &quot;appliance_id&quot;: 12, &quot;pinned_version&quot;: null,
+ &quot;variables&quot;: {&quot;hostname&quot;: &quot;app.example&quot;}, &quot;note&quot;: &quot;&quot;}
+</code></pre>
+<p>Creates or updates the binding of a device to the template's family.
+Desired state only: nothing is pushed. A device of another product
+(<code>400 bad_request</code>: a FortiWeb template cannot govern a FortiADC) or a pinned
+version that does not exist is refused. Deleting a binding leaves the device
+as it is.</p>
+<h3 id="post-baselines--put-baselinesid--delete-baselinesid"><code>POST /baselines</code> · <code>PUT /baselines/&lt;id&gt;</code> · <code>DELETE /baselines/&lt;id&gt;</code></h3>
+<pre><code class="language-json">{&quot;name&quot;: &quot;zone-a&quot;, &quot;zone&quot;: &quot;A&quot;, &quot;line&quot;: &quot;&quot;, &quot;department&quot;: &quot;&quot;,
+ &quot;template_ids&quot;: [7, 9], &quot;note&quot;: &quot;&quot;}
+</code></pre>
+<p>Only <strong>approved</strong> templates of the token's ADOM can compose a baseline
+(<code>400 bad_request</code> otherwise). <code>PUT</code> changes the fields present and keeps
+the others. Deleting a baseline leaves its templates untouched.</p>
+<h3 id="additional-error-codes_1">Additional error codes</h3>
+<table>
+<thead>
+<tr>
+<th>HTTP</th>
+<th><code>error</code></th>
+<th>When</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>403</td>
+<td><code>owner_forbidden</code></td>
+<td>The owner lacks the permission the call needs (<code>operations.view</code>, <code>operations.template_save</code>, <code>operations.template_approve</code>, <code>operations.template_apply</code>, <code>operations.apply</code>)</td>
+</tr>
+<tr>
+<td>409</td>
+<td><code>locked</code></td>
+<td>The template is locked (curated) and cannot be deleted</td>
+</tr>
+<tr>
+<td>409</td>
+<td><code>review_refused</code></td>
+<td>The authoring token tried to approve its own template</td>
+</tr>
+<tr>
+<td>409</td>
+<td><code>apply_refused</code></td>
+<td>Unresolved variables, an unapproved template for a fleet rollout, or the firmware-compatibility gate refused</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="13-observability--configuration-history-findings-metrics">13. Observability — configuration history, findings, metrics</h2>
+<p>In the vocabulary of the NAF Framework this is the <strong>Observability</strong> block:
+what SATOM has <strong>recorded</strong> about the estate. SATOM calls the configuration
+history its <em>Source of Truth</em>; it is the history of the <strong>actual</strong> state of
+every device. Everything here is read-only and needs the <code>read</code> scope.</p>
+<h3 id="get-appliancesidconfig-history"><code>GET /appliances/&lt;id&gt;/config-history</code></h3>
+<p>The recorded configuration versions of one device, newest first (<code>?limit=</code>,
+default 30, at most 200). A version is identified by its <code>sha256</code>: an
+unchanged configuration records no new version, so the list is the list of
+<em>changes</em>. Each row: <code>id</code>, <code>sha256</code>, <code>taken_at</code>, <code>last_seen_at</code>, <code>size_raw</code>,
+<code>size_gz</code>, <code>total_objects</code>, <code>section_count</code>, <code>source</code>, and whether the
+payload was <code>evacuated</code> to the backup server. Device secrets were stripped
+when the version was recorded.</p>
+<h3 id="get-appliancesidconfig-difffromreftoref"><code>GET /appliances/&lt;id&gt;/config-diff?from=&lt;ref&gt;&amp;to=&lt;ref&gt;</code></h3>
+<p>What changed between two versions of the same device (<code>from</code> and <code>to</code> are
+version ids or <code>sha256</code> hashes from <code>config-history</code>; a version of another
+device is <code>404 not_found</code>). The answer lists <code>added[]</code>, <code>removed[]</code> and
+<code>changed[]</code> object paths (<code>section/endpoint/key</code>), <code>changed_detail[]</code> with
+per-field before/after for the first changed objects, <code>identical</code>, and
+<code>truncated</code> when the lists were capped. A version whose payload is no longer
+available is <code>410 blob_missing</code>.</p>
+<h3 id="get-findings"><code>GET /findings</code></h3>
+<p>What the alert engine finds <strong>right now</strong>: every enabled check is evaluated
+on the call (the same evaluation as <em>Settings → Alerts → Preview</em>), so the
+call costs a check cycle and is rate-limited to 6/min. Each finding: <code>key</code>,
+<code>family</code>, <code>severity</code> (<code>critical</code> / <code>warning</code> / <code>info</code>), <code>title</code>, <code>detail</code>
+and, for a device finding, <code>product</code>. A token bound to a product receives
+that product's findings only; the installation's own (certificates, host,
+backups, code) need a <code>global</code> token. A token restricted to named
+capabilities must hold <code>monitoring</code> (<code>403 capability_denied</code>).</p>
+<h3 id="get-metricsqueryexpr"><code>GET /metrics/query?expr=…</code></h3>
+<p>A read-only <strong>MetricsQL</strong> query over SATOM's metrics store. Instant query by
+default; a range query with <code>start</code> and <code>end</code> (unix seconds, at most 90 days
+apart) and <code>step</code> (<code>60s</code>, <code>5m</code>, <code>1h</code>…; default <code>60s</code>). The answer is the
+store's own (<code>status</code>, <code>data.resultType</code>, <code>data.result</code>).</p>
+<ul>
+<li>Only SATOM's <strong>own series</strong> (<code>satom_*</code>) may be read. An expression naming
+  any other series is <code>400 bad_request</code> and never reaches the store; so is an
+  expression that names no series at all.</li>
+<li>The store answers within <strong>10 s</strong> or the call is <code>504 store_timeout</code>; a
+  store error is <code>502 store_unavailable</code>. Never an empty <code>200</code>.</li>
+<li>A token bound to a product receives only the series labelled with its own
+  devices (<code>device</code> / <code>kind</code>); the SATOM nodes' own readings and other
+  products' devices are filtered out of the answer. A <code>global</code> token
+  receives everything.</li>
+<li>The store itself stays on loopback with no account of its own; this route
+  is the only way in from outside. A token restricted to named capabilities
+  must hold <code>monitoring</code>.</li>
+</ul>
+<pre><code class="language-bash">curl -s -H &quot;Authorization: Bearer $TOKEN&quot; --get \
+  --data-urlencode 'expr=max by (device) (satom_box_cpu_pct)' \
+  https://{host}.example.net/api/v1/metrics/query
+</code></pre>
+<h3 id="additional-error-codes_2">Additional error codes</h3>
+<table>
+<thead>
+<tr>
+<th>HTTP</th>
+<th><code>error</code></th>
+<th>When</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>410</td>
+<td><code>blob_missing</code></td>
+<td>A version's payload is no longer available (pruned and not on the backup server)</td>
+</tr>
+<tr>
+<td>502</td>
+<td><code>store_unavailable</code></td>
+<td>The metrics store answered an error</td>
+</tr>
+<tr>
+<td>504</td>
+<td><code>store_timeout</code></td>
+<td>The metrics store did not answer within 10 s</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="14-processes--apiv1processes">14. Processes — <code>/api/v1/processes/*</code></h2>
+<p>Walk a <strong>Process</strong> (Administrator → Process: a diagram of checks, gates and
+actions SATOM walks and judges) from outside, and read what a walk did. This is
+the NAF Orchestrator's "startable by a machine" door, and it is as narrow as
+the Run button.</p>
+<p><strong>Access.</strong> <code>read</code> lists and reads; <code>write</code> walks. The token's ADOM sees
+exactly the processes the console would show it (a process is offered per
+ADOM; a <code>global</code> token sees every one, drafts included). <strong>A walk from the API
+is a rehearsal by default</strong>: every write step dry-runs and the run says so.
+<code>"armed": true</code> additionally needs the explicit <strong><code>process_arm</code></strong> capability on
+the token — tokens minted before this surface existed can rehearse and cannot
+write. Rate-limited to 30/min like the other write endpoints.</p>
+<h3 id="get-processes--get-processesid"><code>GET /processes</code> / <code>GET /processes/&lt;id&gt;</code></h3>
+<pre><code class="language-json">{&quot;processes&quot;: [
+  {&quot;id&quot;: 3, &quot;key&quot;: &quot;dr-failover-check&quot;, &quot;name&quot;: &quot;DR failover check&quot;,
+   &quot;products&quot;: [&quot;fortiweb&quot;], &quot;enabled&quot;: true,
+   &quot;needs_appliance&quot;: true, &quot;writes&quot;: true, &quot;steps&quot;: 7,
+   &quot;trigger_event&quot;: &quot;alert.fired&quot;,
+   &quot;trigger_filter&quot;: {&quot;families&quot;: [&quot;device&quot;], &quot;min_severity&quot;: &quot;critical&quot;},
+   &quot;armed_on_trigger&quot;: false, &quot;trigger_rate_limit&quot;: 10,
+   &quot;updated_at&quot;: &quot;2026-10-21T02:10:00&quot;}]}
+</code></pre>
+<p><code>GET /processes/&lt;id&gt;</code> adds <code>"graph"</code> (the nodes and arrows, as the editor
+stores them).</p>
+<h3 id="post-processesidrun"><code>POST /processes/&lt;id&gt;/run</code></h3>
+<p>Body: <code>{"appliance_id": 7, "armed": false}</code> — both optional. <code>appliance_id</code> is
+required when <code>needs_appliance</code> is true (400 <code>appliance_required</code>). The walk
+runs inline and the answer is the finished run (or the run parked on a manual
+gate — <code>status: "waiting"</code>, <code>waiting_node</code>), with its steps:</p>
+<pre><code class="language-json">{&quot;id&quot;: 41, &quot;process_key&quot;: &quot;dr-failover-check&quot;, &quot;appliance&quot;: &quot;fw-dmz-02&quot;,
+ &quot;armed&quot;: false, &quot;status&quot;: &quot;done&quot;, &quot;verdict&quot;: &quot;ok&quot;,
+ &quot;summary&quot;: &quot;5 step(s) ran and every one of them passed.&quot;,
+ &quot;trigger&quot;: &quot;api&quot;, &quot;trigger_key&quot;: &quot;api-token:1f3a…&quot;, &quot;started_by&quot;: &quot;svc-noc&quot;,
+ &quot;counts&quot;: {&quot;pass&quot;: 5, &quot;fail&quot;: 0, &quot;unknown&quot;: 0, &quot;skipped&quot;: 0},
+ &quot;steps&quot;: [{&quot;seq&quot;: 1, &quot;key&quot;: &quot;start&quot;, &quot;kind&quot;: &quot;start&quot;, &quot;status&quot;: &quot;pass&quot;,
+            &quot;detail&quot;: &quot;process entered&quot;, &quot;dry_run&quot;: false, &quot;undo_recorded&quot;: false}, …]}
+</code></pre>
+<p>Arming a diagram that only reads is dropped silently, as on the Run button.
+A disabled process answers 409 <code>disabled</code>; a diagram the editor would refuse
+to run answers 400 <code>invalid_diagram</code> with the problems listed.</p>
+<h3 id="get-process-runsid"><code>GET /process-runs/&lt;id&gt;</code></h3>
+<p>The same document, for polling. A run whose process has been deleted is shown
+to a <code>global</code> token only — the console applies the same rule.</p>
+<pre><code class="language-sh"># rehearse, then arm once the rehearsal is clean
+curl -s -X POST -H &quot;Authorization: Bearer $T&quot; -H 'Content-Type: application/json' \
+  -d '{&quot;appliance_id&quot;: 7}' https://satom.example.com/api/v1/processes/3/run
+curl -s -X POST -H &quot;Authorization: Bearer $T&quot; -H 'Content-Type: application/json' \
+  -d '{&quot;appliance_id&quot;: 7, &quot;armed&quot;: true}' https://satom.example.com/api/v1/processes/3/run
+#  -&gt; 403 capability_denied unless the token holds process_arm
 </code></pre>
     </div>
   </div>

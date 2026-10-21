@@ -1,7 +1,7 @@
 """collector: SNMP v2c polling per appliance
 
 Revision ID: coll01
-Revises: wiki06
+Revises: orch01
 Create Date: 2026-10-21
 
 Three columns on ``appliances`` for the opt-in SNMP collector
@@ -15,7 +15,7 @@ from app import migration_guard as guard
 import sqlalchemy as sa
 
 revision = 'coll01'
-down_revision = 'wiki06'
+down_revision = 'orch01'
 branch_labels = None
 depends_on = None
 

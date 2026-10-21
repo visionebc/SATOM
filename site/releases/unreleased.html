@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 8 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 12 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 8 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 12 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added · Changed · Fixed · 8 entries</span>
-        <ul class="rel-leads"><li>The manual on every node, Documentation Center included</li><li>Resource history of the SATOM nodes</li><li>Wiki: comments, following, export and Confluence</li><li class="rel-more">… and 5 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Added · Changed · Fixed · 12 entries</span>
+        <ul class="rel-leads"><li>The API describes itself, and reads and writes intent and observations</li><li>Intent deviation: a bound device that no longer matches its template is a finding</li><li>Processes start from events, on a schedule and from the API; a Compensate step undoes a walk</li><li class="rel-more">… and 9 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.3.8.html" data-rel-version="3.3.8">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.3.8</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -421,10 +421,119 @@
     <div class="doc-body">
       <div class="mdx">
 <p>The upgrade runs migrations <code>wiki04</code> (Wiki groups merged into Administrator ›
-Access › Groups), <code>wiki05</code> (comments and subscriptions) and <code>wiki06</code>
-(Confluence spaces and pages).</p>
+Access › Groups), <code>wiki05</code> (comments and subscriptions), <code>wiki06</code>
+(Confluence spaces and pages), <code>orch01</code> (Process event triggers and the
+key a run was started by) and <code>coll01</code> (SNMP polling fields on
+appliances).</p>
 <h3 id="added">Added</h3>
 <ul>
+<li><strong>The API describes itself, and reads and writes intent and observations</strong>
+  — part of "do every phase of the NAF alignment plan". Three things the
+  console had and the API did not:</li>
+<li><code>GET /api/v1/openapi.json</code>: an OpenAPI 3.0 document of every route,
+    built at request time from the live router, the scope each view
+    enforces and its docstring. Nothing is kept in a second list, so a route
+    added tomorrow is documented the moment it is registered, and a view
+    without a summary is a test failure rather than an undocumented endpoint.</li>
+<li><strong>Intent</strong> (NAF's name for desired state): <code>GET /templates</code>,
+    <code>/templates/&lt;id&gt;</code> (body, versions, review history, bindings),
+    <code>/bindings</code>, <code>/baselines</code>, scoped to the token's ADOM like a console
+    session. Writing needs two new explicit-only capabilities, in the model
+    of the WAF carve-outs: <code>template_draft</code> creates templates and versions,
+    bindings and baselines and never touches a device; <code>template_apply</code>
+    approves (four-eyes: never the author) and pushes a template through
+    the console's own path — a dry-run preview unless <code>confirm</code> is true,
+    then the canary-gated background job behind the firmware gate. A fleet
+    rollout still needs an approved template and an owner holding <em>Run
+    operations</em>. An empty capability list authorises none of it: a token
+    minted before this release cannot roll a template out.</li>
+<li><strong>Observability</strong> (what SATOM has recorded): <code>GET
+    /appliances/&lt;id&gt;/config-history</code> and <code>config-diff?from=&amp;to=</code> over the
+    Source of Truth, <code>GET /findings</code> (what the alert engine finds now,
+    scoped to the product), and <code>GET /metrics/query</code>, a read-only MetricsQL
+    proxy that accepts only SATOM's own <code>satom_*</code> series, answers within
+    10 s or says so, and hands a product-bound token only its own devices'
+    series. The metrics store itself stays on loopback with no account of
+    its own; this route is the only way in from outside.
+  The API manual has four new sections (§10–§13); the manual guard now
+  covers every module.</li>
+<li><strong>Intent deviation: a bound device that no longer matches its template is
+  a finding</strong> — phase 3 of the NAF Framework alignment plan, asked as "do
+  every phase of the NAF alignment plan, test each one, then release,
+  document and publish everything". Until now nothing compared desired state
+  with actual state: <em>Config drift</em> says a device changed, and a device that
+  drifted three weeks ago and has been stable since raised nothing while not
+  running what it was bound to. The health engine's new <strong>Intent deviation</strong>
+  check (on by default, its own toggle and sink family <code>intent</code>) renders each
+  binding's template with the device's variables and compares it, field by
+  field, against the cached device objects — the key-subset diff the approval
+  modal already uses, never equality against a raw snapshot, because an
+  appliance fills in what the template never set. Measured on {device}
+  (7.6.8) and {device} (8.0.6): the appliance answers <code>"4"</code> to a <code>4</code>, counts
+  its own sub-table rows in <code>sz_*</code> and renumbers <code>*_val</code> handles; those are
+  ignored, and sub-table rows are reported <em>unmeasured</em> rather than guessed
+  at. One warning per binding, keyed <code>intent.&lt;device&gt;:&lt;binding&gt;:&lt;hash&gt;</code> so a
+  corrected device goes quiet and a differently broken one is news; the
+  finding names the fields that differ and never a value, and <em>maintenance</em>
+  and the drift exclude list silence it like drift. The bindings table in the
+  template dialog shows the same verdict as a <strong>Compliance</strong> column (met /
+  deviates / unmeasured, reason in the tooltip), and hooks can subscribe to
+  the typed event <code>intent.deviation</code> (keys only, no values) beside
+  <code>alert.fired</code>. A template body may now name its collection as the registry
+  logical name, the cmdb tail or the full REST path: all three resolve to the
+  same cached object. In NAF terms this is the Observability block's "event
+  when the actual state differs from the intended one".</li>
+<li><strong>Processes start from events, on a schedule and from the API; a
+  Compensate step undoes a walk</strong> — asked as "do every phase of the NAF
+  alignment plan", the Orchestrator phase: an operator-drawn procedure could
+  only be started by the Run button, nothing could roll a walk back, and no
+  machine could start one. A process now names a <strong>trigger event</strong> from the
+  integration-hook catalogue (<code>alert.fired</code>, <code>upgrade.failed</code>, <code>change.approved</code>
+  …), narrowed by ADOM, appliance, alert family and a severity floor. The walk
+  is <strong>queued as a job</strong> the moment the event is noticed and never runs inside
+  the alert evaluation or the hook dispatch that noticed it (those run inside
+  the scheduler's cycle). Three rules bound a storm, each refusal recorded as a
+  run with status <code>skipped</code> and the reason: one running instance per process
+  and appliance, a budget of runs per process per hour (default 10), and
+  rehearsal unless <em>Arm triggered walks</em> is on — which the form says, in red,
+  means SATOM writes with nobody at the screen. A finding that started a walk
+  owes the alert cooldown; one that was skipped does not. Device findings now
+  carry the appliance id (<code>alert.fired</code> payload: <code>appliance_id</code>) so a trigger
+  can point the walk at the device. <strong>Walk a process</strong> is a new action of the
+  operator catalogue (rehearsal unless its <code>armed</code> parameter is on; an armed
+  walk of a diagram that writes runs only bound to a change request; flagged
+  dangerous, so never through the generic actions API). The new <strong>Compensate</strong>
+  step undoes what the walk wrote before it, newest first — only the steps that
+  recorded an inverse (a status a catalogue action flipped, an Observatory fix,
+  a provisioning run); a write with no inverse is named <code>unknown</code>, never
+  guessed, and a failed write is never replayed. The inverse travels with the
+  step, so a walk resumed after a manual gate still knows what it wrote. And
+  the API: <code>GET /api/v1/processes</code>, <code>POST /api/v1/processes/&lt;id&gt;/run</code>
+  (rehearsal by default; <code>"armed": true</code> needs the new explicit <code>process_arm</code>
+  capability) and <code>GET /api/v1/process-runs/&lt;id&gt;</code>, under the token's ADOM
+  exactly as the console. Every run carries what started it (<code>trigger_key</code>:
+  the finding key, the scheduled action, the API token).</li>
+<li><strong>Collection beyond the device APIs: SNMP polling and a syslog receiver</strong>
+  — phase 6 of the NAF Framework alignment ("do every phase of the NAF
+  alignment plan, test each one, then release, document and publish
+  everything"). Until now every collector read the appliance's own REST or
+  CLI, and the one log path was a FortiAnalyzer. A new <code>snmp</code> collector
+  polls an appliance over SNMP v2c — <code>sysUpTime</code>, the interface table with
+  its 64-bit byte counters, CPU / memory / disk from the vendor MIB (FortiWeb
+  verified on 7.6.8; the other products' OIDs are the documented ones with
+  HOST-RESOURCES as fallback) — on a client written on the standard library,
+  so the offline bundles carry no new wheel. It is opt-in per appliance: the
+  edit form gains a switch, the port and the community string, stored like
+  the passwords and never shown again; switching it off disables the target
+  rather than leaving a red row. A syslog receiver (UDP and TCP, RFC 3164 /
+  RFC 5424 / the Fortinet <code>key=value</code> body) runs inside the scheduler sidecar
+  on the primary, off by default, bound to 5514 unless told otherwise, and
+  keeps only what known senders say: anything else is dropped and counted.
+  Monitoring → Collection shows both — SNMP per appliance, the receiver's
+  state, counts per device, drops, its settings, and (Global only) the last
+  500 messages with credential-shaped values blanked. SNMPv3, traps, flows
+  and packet capture are out of scope and the manual says so. The upgrade
+  runs migration <code>coll01</code> (three columns on <code>appliances</code>).</li>
 <li><strong>The manual on every node, Documentation Center included</strong> — asked as
   "put the Documentation Center there too", for the sign-in page's
   <em>Documentation</em> link. That link pointed only at the public site, which a
@@ -510,7 +619,10 @@ Access › Groups), <code>wiki05</code> (comments and subscriptions) and <code>w
   management, API, alerting, CLI-writer, Sentinel and metrics manuals and the
   user guide say which block each part of SATOM is; the release checklist
   diffs the upstream framework against the pin at every cut. The framework's
-  diagram and block icons are reproduced unchanged (<code>NOTICE</code>).</li>
+  diagram and block icons are reproduced unchanged (<code>NOTICE</code>). With the
+  other entries of this release every MUST row of the matrix is <code>met</code>, so
+  the status line reads <em>conformant (self-assessed — the forum issues no
+  certification)</em>; three SHOULD/MAY rows stay partial by design.</li>
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>

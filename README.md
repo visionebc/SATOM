@@ -169,16 +169,18 @@ plane on every page load. See [docs/engineering.md](docs/engineering.md).
 
 ### Where SATOM sits in the NAF Framework
 
-SATOM is **mapped to the NAF Framework** — the Network Automation Forum's
-vendor-neutral reference model of six functional blocks (Intent, Executor,
-Collector, Observability, Orchestrator, Presentation) around the network
+SATOM is **conformant to the NAF Framework** (self-assessed; the forum
+issues no certification) — the Network Automation Forum's vendor-neutral
+reference model of six functional blocks (Intent, Executor, Collector,
+Observability, Orchestrator, Presentation) around the network
 infrastructure — at its pinned commit `da82b12`
 (https://reference.networkautomation.forum/Framework/Framework/, CC0 1.0).
 The mapping translates SATOM's names into the framework's (what SATOM calls
 the *Source of Truth* is the framework's *Observability*, not its *Intent*)
 and records, requirement by requirement, what is met, what is partial and
-what is deliberately not pursued. The status line, the number of documented
-deviations and the matrix live in one place and are checked by a test:
+what is deliberately not pursued. Every MUST requirement is met; three
+SHOULD/MAY rows stay partial by design (single vendor). The status line and
+the matrix live in one place and are checked by a test:
 [docs/naf-alignment.md](docs/naf-alignment.md).
 
 ## Quick start

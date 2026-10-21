@@ -8,7 +8,7 @@
 > **Status line (generated from the matrix, checked by a test):**
 >
 > <!-- naf-verdict:begin -->
-> SATOM is mapped to the NAF Framework (commit da82b12), with 4 documented deviations.
+> SATOM is conformant to the NAF Framework (commit da82b12): every MUST requirement is met.
 > <!-- naf-verdict:end -->
 
 ---
@@ -29,8 +29,10 @@
   diagram and the block icons on this page are reproduced from it unchanged
   (see `NOTICE`); their use follows the project's brand guidelines (block icon
   to the left of the block title).
-- **There is no NAF certification.** The wording used here and everywhere
-  else in SATOM is *mapped to*, never *certified*.
+- **There is no NAF certification.** The conformance recorded here is a
+  self-assessment against the pinned commit, checked by a test in this
+  repository; the wording is *conformant (self-assessed)* or *mapped to*,
+  never *certified*.
 
 ## 2. Why SATOM aligns with it
 
@@ -99,14 +101,14 @@ baselines (Observability). The user guide says which one it means each time.
   conformance with the framework while any MUST row is not `met`; when every
   MUST row is `met`, the status line changes and the word becomes available.
 
-## 6. Conformance matrix — state at v3.3.8
+## 6. Conformance matrix — state at v3.4.0 (unreleased HEAD)
 
 <!-- naf-matrix:begin -->
 | Block | Level | Requirement | Status | Evidence |
 |---|---|---|---|---|
 | Intent | MUST | Represent any network-related aspect in a structured form | met | `app/models.py` (Template, Baseline), `app/models_tpl_binding.py`, `app/services/baselines.py` |
-| Intent | MUST | Create, read, update and delete the desired state | partial | GUI only today: `app/views/templates.py`, `app/services/templates.py`; API CRUD is the open item |
-| Intent | MUST | Expose that data through a standardized, documented API | gap | `app/api_v1/routes.py` has no template, baseline or binding route |
+| Intent | MUST | Create, read, update and delete the desired state | met | The console (`app/views/templates.py`, `app/services/templates.py`) and API v1 (`app/api_v1/intent.py`: templates, versions, bindings and baselines; versions are immutable, so an update is a new version, as in the console) |
+| Intent | MUST | Expose that data through a standardized, documented API | met | `app/api_v1/intent.py` (read with scope `read`; write with the explicit `template_draft` / `template_apply` capabilities), documented in `docs/api_v1.md` §11–§12 and in the OpenAPI document of `app/api_v1/openapi.py` |
 | Intent | SHOULD | Model in a neutral representation derived into vendor artefacts | accepted-gap — SATOM is a Fortinet-specific product by design; `app/services/template_compat.py` translates between firmware builds, not between vendors | `app/services/template_compat.py` |
 | Intent | SHOULD | A unified view of the desired state across sources | partial | Templates and baselines are unified; IP addressing is delegated to NetBox through `app/services/netbox_client.py` |
 | Intent | SHOULD | Governance metadata, validation, versioned access | met | `app/services/templates.py` (versions, approval, author, source firmware), `app/services/template_compat.py` |
@@ -118,55 +120,56 @@ baselines (Observability). The user guide says which one it means each time.
 | Executor | SHOULD | Transactional execution | met | CLI sessions abort on the first error and re-read (`app/services/cli_writer.py`); REST writes are verified by `app/services/device_verify.py` |
 | Executor | MAY | Imperative and declarative, idempotent operations | partial | Declarative templates (`app/services/template_bindings.py`) next to imperative actions; idempotence is not measured as a property |
 | Collector | MUST | Retrieve live data over the read interfaces | met | REST clients, read-only SSH (`app/services/ssh_ops.py`), FortiAnalyzer JSON-RPC (`app/services/faz_logs.py`), `app/services/metrics_collect.py` |
-| Collector | MUST | Extend beyond device APIs to SNMP, syslog, flow telemetry and packet capture | accepted-gap — logs reach SATOM through FortiAnalyzer; there is no SNMP client, syslog receiver or flow collector, in a Fortinet-only estate | `app/services/faz_logs.py` |
+| Collector | MUST | Extend beyond device APIs to SNMP, syslog, flow telemetry and packet capture | met | SNMP v2c polling per appliance (`app/services/snmp_client.py`, `app/services/snmp_collect.py`) and a syslog receiver in the scheduler sidecar (`app/services/syslog_receiver.py`), both under the `satom_scrape_up` contract; logs also arrive through FortiAnalyzer (`app/services/faz_logs.py`). Scope stated in `docs/metrics-architecture.md`: SNMPv3, traps, NetFlow/sFlow and packet capture are out of scope |
 | Collector | SHOULD | Normalise values across vendors and methods | partial | Normalised across firmware builds and channels (`app/services/api_library.py`), single vendor by design |
 | Observability | MUST | Persist historical data | met | `app/services/sot_store.py` (content-addressed configuration history), `app/services/metrics_collect.py` (time-series store), the audit log |
-| Observability | MUST | Powerful programmatic access to that history | gap | The time-series store is bound to loopback without an API in front of it; there is no configuration-history or diff route in `app/api_v1/routes.py` |
+| Observability | MUST | Powerful programmatic access to that history | met | `app/api_v1/observability.py`: configuration history and diff per appliance over the Source of Truth, current findings, and a read-only MetricsQL query route over SATOM's own series (the time-series store itself stays on loopback) |
 | Observability | SHOULD | A capable query language | met | MetricsQL dashboards (`app/services/vm_store.py`), internal to the console |
-| Observability | SHOULD | Events when the actual state differs from the intended state | gap | `app/services/alerts.py` (drift) compares a configuration with its previous snapshot, not with the bound template |
+| Observability | SHOULD | Events when the actual state differs from the intended state | met | `app/services/intent_compliance.py` compares each bound device with its rendered template (key-subset diff); the *Intent deviation* check in `app/services/alerts.py` raises the finding and the typed hook event `intent.deviation`; `Config drift` (previous snapshot) remains a separate check |
 | Observability | MAY | Enrichment with contextual and third-party information | met | `app/services/release_advisor.py`, `app/services/drift_attribution.py`, Sentinel (`app/services/sentinel/`) |
 | Orchestrator | MUST | Coordinate processes across the blocks without touching the network directly | met | `app/services/process_engine.py`, `app/services/cr_orchestrator.py` |
-| Orchestrator | SHOULD | Event-driven execution (synchronous, asynchronous, scheduled) | partial | Integration hooks react to events (`app/services/integration_hooks.py`); a Process starts only by hand (`app/views/process.py`) |
-| Orchestrator | SHOULD | Reverse or compensating actions on error | partial | Reverts exist per domain (`app/services/observatory_fix.py`, `app/services/provision_runner.py`); nothing chains them |
+| Orchestrator | SHOULD | Event-driven execution (synchronous, asynchronous, scheduled) | met | A Process declares a trigger event and filter; `app/services/process_triggers.py` starts the walk as a background job (never inside the scheduler tick), one running walk per process and device, rate-limited per process, rehearsal unless *armed on trigger*; hooks (`app/services/integration_hooks.py`), the console, Scheduled Actions and `app/api_v1/processes.py` are the other doors |
+| Orchestrator | SHOULD | Reverse or compensating actions on error | met | The *Compensate* step in `app/services/process_kinds.py` undoes the walk's recorded steps newest first through each domain's own inverse (status flips, `app/services/observatory_fix.py`, `app/services/provision_runner.py`); a step without a recorded inverse is named `unknown`, never guessed |
 | Orchestrator | SHOULD | Dry-run of a workflow | met | Unarmed Process runs (`app/services/process_engine.py`) |
-| Orchestrator | SHOULD | Scheduled execution of a workflow | partial | Scheduled Actions (`app/services/scheduled_actions.py`) are schedulable; Processes are not |
+| Orchestrator | SHOULD | Scheduled execution of a workflow | met | The `run_process` action in `app/services/scheduled_actions.py` walks a Process on any schedule (armed only when the action is armed and change-controlled) |
 | Orchestrator | SHOULD | Logging and traceability of past and current workflows | met | `app/models_process.py` (ProcessRun, ProcessRunStep), `app/models_cr_types.py`, the audit log |
 | Orchestrator | MAY | Correlate events and infer the course of action | partial | Cooldown and `app/services/drift_attribution.py` only |
 | Presentation | MUST | Robust and flexible authentication and authorization | met | Local accounts with TOTP, LDAP and RADIUS (`app/services/directory_auth.py`), RBAC with ADOM scoping (`app/services/access.py`), owner-capped API tokens (`app/models_api_token.py`) |
 | Presentation | MAY | Many forms: GUI, ITSM, messaging, documentation, dashboards | met | The console, NetBox and ticket integrations (`app/services/change_requests.py`), hooks, the Documentation Center (`app/views/manual.py`) |
 | Cross-cutting | SHOULD | Version control and CI/CD for every component | met | Signed releases (`docs/release-pipeline.md`), the audit runner, the reconciler |
-| Cross-cutting | SHOULD | Machine-friendly APIs documented via schema | partial | `docs/api_v1.md` is prose; there is no OpenAPI document |
+| Cross-cutting | SHOULD | Machine-friendly APIs documented via schema | met | `app/api_v1/openapi.py` builds an OpenAPI 3.0 document from the live routes at `GET /api/v1/openapi.json`; `tests/test_api_v1_openapi.py` fails on any undocumented route; `docs/api_v1.md` remains the prose manual |
 <!-- naf-matrix:end -->
 
 Infrastructure has no rows: the framework places no requirement on the
 network itself.
 
-## 7. The open rows, and what closes them
+## 7. What the status line counts, and what remains partial
 
-The status line counts four MUST rows that are not `met`:
+The status line counts no MUST rows that are not `met`: with release 3.4.0
+every MUST requirement of the framework is met, and the test that owns the
+word now allows *conformant*. This is a **self-assessment** against the
+pinned commit — the Network Automation Forum issues no certification — and
+it is only as good as the matrix above, which is why every row names its
+evidence and a test checks the file exists.
 
-1. **Intent — create, read, update and delete the desired state.** Possible
-   from the console, not from outside it. Closing it means create, update and
-   delete routes for templates, bindings and baselines under the same
-   capability model as the WAF carve-outs, with every apply going through the
-   existing dry-run → canary path.
-2. **Intent — a documented API for the desired state.** Templates, baselines
-   and bindings have no route in API v1 at all; read routes close this row,
-   and the write routes above close the previous one.
-3. **Observability — programmatic access to the history.** The configuration
-   history and the time-series store are complete but reachable only from
-   inside the console. Closing it means configuration-history and diff
-   routes, a findings route, and a read-only metrics query route in front of
-   the loopback-bound store.
-4. **Collector — telemetry beyond device APIs.** Accepted for now: in a
-   Fortinet-only estate, logs and flows arrive through FortiAnalyzer. A
-   syslog receiver and SNMP polling would close it; the row says so rather
-   than hiding the choice.
+Three rows are deliberately not `met`, all SHOULD or MAY:
 
-SHOULD rows marked `partial` or `gap` (event-driven Processes, compensation,
-scheduled Processes, intent deviation events, a schema-documented API) are
-the roadmap behind the MUST rows; each becomes `met` in the release that
-ships it, and this page changes in that same release.
+1. **Intent — a neutral model derived into vendor artefacts** (`accepted-gap`).
+   SATOM is a Fortinet-specific product; its templates are the vendor's own
+   objects. The row stays open on purpose.
+2. **Intent — a unified view across sources** and **Collector — normalise
+   across vendors** (`partial`). Both are single-vendor by the same decision;
+   IP addressing is delegated to NetBox rather than modelled twice.
+3. **Executor — idempotent operations** and **Orchestrator — correlate events**
+   (`partial`). Idempotence is designed for but not measured as a property;
+   correlation is limited to cooldowns and drift attribution.
+
+Scope statements that keep the MUST rows honest: the Collector row is met by
+SNMP v2c polling and a syslog receiver — SNMPv3, traps, flow telemetry and
+packet capture are out of scope and `docs/metrics-architecture.md` says so;
+the Intent write API never writes to a device directly (a push is the
+console's own canary-gated job); the metrics query route is the only way to
+the time-series store from outside, which stays bound to loopback.
 
 ## 8. Keeping this page honest
 

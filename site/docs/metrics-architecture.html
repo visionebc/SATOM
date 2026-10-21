@@ -232,6 +232,13 @@ turns one device call into many series. Series identity lives in <em>labels</em>
 <td>60 min</td>
 <td>HTTP transaction counts, top-N policies</td>
 </tr>
+<tr>
+<td><code>snmp</code></td>
+<td>every product — <strong>opt-in per appliance</strong></td>
+<td>1 GET + 1 bounded walk</td>
+<td>3 min</td>
+<td>uptime, interface state and byte counters, CPU / memory / disk over SNMP v2c (§2c)</td>
+</tr>
 </tbody>
 </table>
 <p>The <strong>products</strong> column is not decoration. A collector declares which appliance
@@ -264,6 +271,51 @@ you at all are in
   the target rows. An action that goes permanently red over a dead appliance is
   an action the operator learns to skip.</li>
 </ul>
+<h3 id="2c-beyond-the-device-apis-snmp-and-syslog">2c. Beyond the device APIs: SNMP and syslog</h3>
+<p>Everything in §2 reads the appliance's own REST or CLI. The NAF Framework's
+Collector block asks for more than that ("SNMP, syslog, flows, pcap"), and the
+honest reason it was missing is that in a Fortinet-only estate log bodies
+arrive through a FortiAnalyzer. Two collectors now read the standard
+management plane as well; flows and packet capture stay out of scope, stated.</p>
+<p><strong><code>snmp</code> — <code>services/snmp_collect.py</code> on <code>services/snmp_client.py</code>.</strong> A
+v2c client on the standard library alone (GET / GETNEXT / GETBULK and a
+bounded walk; BER subset of RFC 3416/3417), because the venv carries no SNMP
+library and the offline bundles ship exactly the pinned wheels. <strong>SNMPv3 is
+not implemented</strong> (USM: authentication, privacy, engine discovery — RFC 3414)
+and the user guide says so. Per poll: <code>sysUpTime</code>, the interface table
+(<code>ifDescr</code>, <code>ifOperStatus</code>, <code>ifHCInOctets</code>/<code>ifHCOutOctets</code> with the 32-bit
+counters as fallback) and CPU / memory / disk from the vendor MIB —
+<code>VENDOR_OIDS</code> marks each product <em>verified</em> or not: FortiWeb's
+<code>fwSysCpuUsage</code> (.107.2.1.5), <code>fwSysMemUsage</code> (.7) and <code>fwSysLogDiskUsage</code>
+(.9) were measured on {device} 7.6.8 against REST <code>system_resource</code>
+(5 / 79 / 3 vs 5 / 80 / 3); the FortiGate, FortiADC, FortiAnalyzer and
+FortiAuthenticator OIDs are the documented ones and fall back to
+HOST-RESOURCES when the agent lacks them. Rules it keeps: <strong>opt-in per
+appliance</strong> (<code>Appliance.snmp_enabled</code> + a community string stored like the
+passwords — Fernet column, vault mirror, kept across a password rotation);
+the <code>requires</code> hook on the collector keeps the target off every device
+nobody configured, and the appliance form's switch disables the target
+instead of leaving a red row; a failed poll is <code>satom_scrape_up{collector="snmp"} 0</code>
+through the shared runner; a reading the agent lacks is skipped, never 0;
+<strong>the community string is in no label, detail, log line, exception or page</strong>.</p>
+<p><strong>syslog — <code>services/syslog_receiver.py</code>.</strong> UDP + TCP on one <code>selectors</code>
+thread <strong>inside the scheduler sidecar</strong> (<code>scheduler_runtime.tick</code> starts,
+stops and drains it; the gunicorn workers never own the socket and read the
+sidecar's journal <code>state/syslog-receiver.json</code>). RFC 3164, RFC 5424 and the
+Fortinet <code>key=value</code> body (<code>devname=</code> names the sender); TCP octet counting
+and newline framing. <strong>Off by default</strong> (<code>collector.syslog.enabled</code>), bind
+<code>0.0.0.0:5514</code> — 514 needs a redirect or <code>CAP_NET_BIND_SERVICE</code> on the unit,
+which lives under <code>deploy/</code> and is therefore a signed-release change —
+<strong>never on a standby</strong>, and <strong>only known senders</strong>: the appliances'
+management addresses (hostnames resolved, refreshed every 5 min) plus the
+operator's extra networks; a stranger is dropped and counted
+(<code>satom_syslog_dropped_total{reason="unknown_source"|"unparseable"|"oversize"}</code>).
+Each pass writes <code>satom_syslog_messages_total{device,kind,facility,severity}</code>,
+<code>satom_syslog_up{device}</code> (1 = a message since the previous pass, 0 =
+silence, <strong>for every known appliance</strong> — absence is not health here either)
+and <code>satom_syslog_receiver_up</code>, locally and to the peer like every series.
+The last 500 messages are kept in memory, every line through
+<code>secret_scan.redact</code> first, and shown to Global only.</p>
 <h3 id="2b-how-this-overlaps-deep-monitors-and-service-monitor">2b. How this overlaps Deep monitors and Service Monitor</h3>
 <p>It overlaps a lot, and it is worth being precise rather than reassuring. The
 four pages are not four subsystems -- Analytics is a <em>renderer</em>, and the two

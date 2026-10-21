@@ -66,7 +66,7 @@
       <a href="#4-cooldown-and-what-is-allowed-to-stamp-it">4. Cooldown, and what is allowed to stamp it</a>
       <a href="#5-webhook">5. Webhook</a>
       <a href="#6-syslog-and-cef-feed">6. Syslog and CEF feed</a>
-      <a href="#7-integration-hooks-and-alertfired">7. Integration hooks and alert.fired</a>
+      <a href="#7-integration-hooks-alertfired-and-intentdeviation">7. Integration hooks, alert.fired and intent.deviation</a>
       <a href="#8-not-implemented-and-said-so-on-the-page">8. Not implemented, and said so on the page</a>
       <a href="#9-proving-a-delivery-path-works">9. Proving a delivery path works</a>
     </aside>
@@ -170,6 +170,11 @@ existed, and the map is explicit rather than clever:</p>
 <td>Config drift</td>
 </tr>
 <tr>
+<td><code>intent.</code></td>
+<td><code>intent</code></td>
+<td>Intent deviation</td>
+</tr>
+<tr>
 <td><code>action.</code></td>
 <td><code>actions</code></td>
 <td>Scheduled automation</td>
@@ -193,6 +198,24 @@ or whose version the daily <code>signature_check</code> action could not read �
 <code>device.signature_source_missing</code>: FortiWebs are registered but no signature
 source is configured (or the configured one no longer exists), so nothing feeds
 the local signature index. They ride the <em>Device health</em> toggle.</p>
+<p><strong><code>drift</code> and <code>intent</code> are two different questions.</strong> <em>Config drift</em> says a
+device <strong>changed</strong>: a new version in the configuration history (the
+source of truth) that SATOM did not write. <em>Intent deviation</em> says a device
+<strong>does not match what it was meant to run</strong>: the rendered template a device is
+bound to (§29.1.4 of the user guide), compared field by field against the
+cached device objects — whether the device changed yesterday or never
+received the template at all. A device that drifted three weeks ago and has
+been stable since raises no drift and still deviates. The comparison is local
+(the same key-subset diff the approval modal shows), ignores what the
+appliance derives on its own (<code>sz_*</code> row counters, <code>*_val</code> handles, the
+sub-table edit echo), compares only top-level objects (sub-table rows are
+reported <em>unmeasured</em>), and names the <strong>keys</strong> that differ, never their
+values. The key is <code>intent.&lt;device&gt;:&lt;binding id&gt;:&lt;hash&gt;</code>: the same deviation
+fires once per cooldown window, a corrected device goes quiet, a device that
+deviates <em>differently</em> mints a new key. <code>maintenance</code> and <code>alerts.drift_exclude</code>
+silence it exactly as they silence drift. In NAF Framework terms this is the
+Observability block's "event when the actual state differs from the intended
+one".</p>
 <p>Two families are <strong>unfilterable</strong> and no sink configuration can drop them:</p>
 <ul>
 <li><code>engine</code> — the alert engine itself failed. A channel silenced by a crashed
@@ -256,7 +279,7 @@ able to make a dead mailbox look alive.</p>
 <p>Every sink has exactly two knobs and no more:</p>
 <ul>
 <li><strong>minimum severity</strong> — <code>info</code>, <code>warning</code> or <code>critical</code>;</li>
-<li><strong>family mask</strong> — the seven maskable families above.</li>
+<li><strong>family mask</strong> — the maskable families above.</li>
 </ul>
 <table>
 <thead>
@@ -341,6 +364,16 @@ Stamping the cooldown there would silence the finding for six hours on behalf
 of a subscriber that does not exist, so nothing is stamped and the run says so.</p>
 <p>An escalation from <code>warning</code> to <code>critical</code> bypasses the cooldown. The condition
 got worse, and that is new information.</p>
+<p><strong>Process triggers are not a sink.</strong> A Process whose trigger is <code>alert.fired</code>
+receives every fresh finding, whether or not the engine master switch or any
+sink is on — it is a plan the operator drew, not a channel. The dispatch
+<em>queues a job</em> and returns; the walk never runs inside the evaluation. A
+finding that started a walk is stamped like one the hook subsystem accepted
+(the same "it left this process" rule); a finding whose walk was <em>skipped</em>
+(an instance already running, the hourly budget spent) is not stamped, so it
+is not silenced on behalf of a walk that did not happen. The run reports
+<code>processes: {queued, skipped, rows}</code>. See the user guide, §42 <em>Starting a
+process from an event</em>.</p>
 <hr>
 <h2 id="5-webhook">5. Webhook</h2>
 <p>One HTTP POST per evaluation, carrying every finding that sink accepted — not
@@ -510,10 +543,12 @@ assume.</p>
 the event was well-formed, and the defect lived in what a <em>receiver</em> would
 conclude.</p>
 <hr>
-<h2 id="7-integration-hooks-and-alertfired">7. Integration hooks and <code>alert.fired</code></h2>
+<h2 id="7-integration-hooks-alertfired-and-intentdeviation">7. Integration hooks, <code>alert.fired</code> and <code>intent.deviation</code></h2>
 <p>A hook is a small Python script SATOM runs when it emits an event; the sandbox,
 the secret store and the runner are documented in the user guide. Alerting adds
-one event to that catalog.</p>
+two events to that catalog: the generic <code>alert.fired</code>, carried by every
+finding, and the typed <code>intent.deviation</code>, carried by the <em>Intent deviation</em>
+findings only.</p>
 <p><code>alert.fired</code> fires <strong>once per finding</strong>, only for findings fresh out of the
 cooldown window, and <strong>only from the writable primary</strong>.</p>
 <table>
@@ -530,7 +565,7 @@ cooldown window, and <strong>only from the writable primary</strong>.</p>
 </tr>
 <tr>
 <td><code>family</code></td>
-<td><code>cert</code> · <code>git</code> · <code>device</code> · <code>backup</code> · <code>drift</code> · <code>actions</code> · <code>host</code> · <code>catalog</code> · <code>engine</code> · <code>unknown</code></td>
+<td><code>cert</code> · <code>git</code> · <code>device</code> · <code>backup</code> · <code>drift</code> · <code>intent</code> · <code>actions</code> · <code>host</code> · <code>catalog</code> · <code>engine</code> · <code>unknown</code></td>
 </tr>
 <tr>
 <td><code>severity</code></td>
@@ -558,6 +593,14 @@ cooldown window, and <strong>only from the writable primary</strong>.</p>
 </tr>
 </tbody>
 </table>
+<p><code>intent.deviation</code> fires for the same finding, at the same moment and under
+the same sink filter and cooldown as its <code>alert.fired</code> twin — <strong>bind a hook to
+one of the two, not both</strong>, or it runs twice. Where <code>alert.fired</code> folds the
+evidence into <code>detail</code>, the typed event carries it as data: <code>appliance_id</code>,
+<code>appliance</code>, <code>product</code>, <code>binding_id</code>, <code>template_id</code>, <code>kind</code>, <code>name</code>,
+<code>version</code>, <code>deviations</code> (per object: <code>endpoint</code>, <code>mkey</code>, <code>reason</code>, <code>keys</code> —
+field <strong>names</strong> only, never values), <code>deviation_count</code>, <code>compared</code>, <code>node</code>,
+<code>fired_at</code>. The hook editor shows the full shape and an example.</p>
 <h3 id="starters">Starters</h3>
 <p><strong>Starters, not vendor adapters.</strong> Teams wants an Adaptive Card inside an
 <code>attachments</code> envelope, Discord wants <code>content</code>, Opsgenie wants its own schema.

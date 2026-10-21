@@ -466,7 +466,13 @@ that will not come online.</p>
    log in with this SSH user and SSH password, and the other read-only SSH
    sessions also log in as the SSH user. If you change the
    SSH user while a separate SSH password is stored, enter that password again
-   in the same save (or remove it), as for a username change.
+   in the same save (or remove it), as for a username change.</p>
+<p><strong>SNMP polling (opt-in).</strong> The Edit page also carries the <code>snmp</code>
+   collector's switch, port (161) and <strong>community string</strong> — stored like the
+   passwords, never shown again, removable with its checkbox. Enabling it
+   needs a community string; it provisions the <code>snmp</code> scrape target at once,
+   and switching it off disables that target. What is polled and what the
+   appliance must allow is in §14.7.
 2. <strong>Test connection</strong> — validates REST reachability and credentials.
 3. <strong>Discovery / Rediscovery</strong> — sweeps every registry endpoint and stores the
    device's full configuration in the local cache (recorded as a harvest with
@@ -3072,8 +3078,57 @@ many policies the fleet grows.</p>
 <td>FortiWeb, FortiADC — <strong>only when mapped</strong></td>
 <td>3 min</td>
 </tr>
+<tr>
+<td><code>snmp</code> — uptime, interfaces (state, byte counters), CPU / memory / disk over SNMP v2c</td>
+<td>every product — <strong>opt-in per appliance</strong></td>
+<td>3 min</td>
+</tr>
 </tbody>
 </table>
+<h4 id="beyond-the-device-apis-snmp-polling-and-the-syslog-receiver">Beyond the device APIs: SNMP polling and the syslog receiver</h4>
+<p>Every collector above reads the appliance's own REST or CLI. Two do not, and
+they are what a customer's monitoring already speaks:</p>
+<ul>
+<li><strong><code>snmp</code></strong> polls the appliance over <strong>SNMP v2c</strong> — <code>sysUpTime</code>, the
+  interface table (operational state and the 64-bit byte counters, 32-bit on a
+  build without <code>ifXTable</code>) and CPU / memory / disk from the vendor MIB
+  (FortiWeb verified on 7.6.8; the other products' OIDs are the documented ones
+  and fall back to HOST-RESOURCES when the agent lacks them). It is <strong>opt-in
+  per appliance</strong>: open the appliance's edit form, switch on <em>Poll this
+  appliance over SNMP v2c</em>, set the port (161) and the <strong>community string</strong>,
+  which is stored like the passwords (encrypted, mirrored to the vault when one
+  is configured) and never shown again. On the appliance, allow SNMP on the
+  management interface and list this node — and its HA peer — as a query host.
+  Switching it off disables the target instead of leaving a row that goes red.
+  Series: <code>satom_snmp_sysuptime_seconds</code>, <code>satom_snmp_if_oper_up</code>,
+  <code>satom_snmp_if_in_octets_total</code> / <code>_out_octets_total</code> (labels <code>iface</code>,
+  <code>ifindex</code>), <code>satom_snmp_cpu_pct</code>, <code>satom_snmp_mem_pct</code>, <code>satom_snmp_disk_pct</code>;
+  a failed poll writes <code>satom_scrape_up{collector="snmp"} 0</code>. <strong>SNMPv3 is not
+  supported</strong> (no User Security Model yet; it arrives when a customer needs
+  it), and SATOM sends no traps and receives none.</li>
+<li>The <strong>syslog receiver</strong> takes the appliances' own event stream directly —
+  UDP and TCP, RFC 3164 and RFC 5424 framing, the Fortinet <code>key=value</code> body
+  with or without a header. It is <strong>off by default</strong>; the card on this page
+  switches it on, sets the bind address and port (default <strong>5514</strong>: port 514
+  needs a port redirect or <code>CAP_NET_BIND_SERVICE</code> on <code>satom-scheduler.service</code>,
+  which is a signed-release change, not a setting) and lists extra sender
+  networks. Only <strong>known senders</strong> are kept — the appliances' management
+  addresses, plus the extra networks under their own address; anything else is
+  dropped <strong>and counted</strong> (<code>satom_syslog_dropped_total{reason}</code>). The listener
+  runs inside the scheduler sidecar on the primary (never on a standby, never
+  in the web workers); the page shows what the sidecar last journalled: state,
+  counts per device, drops, and — in Global only — the last 500 messages with
+  credential-shaped values blanked. Series: <code>satom_syslog_messages_total</code>
+  (device, facility, severity), <code>satom_syslog_up{device}</code> (1 when a message
+  arrived since the previous pass, 0 for silence, for every known appliance),
+  <code>satom_syslog_dropped_total{reason}</code>, <code>satom_syslog_receiver_up</code>. Log
+  <em>bodies</em> at scale stay with the FortiAnalyzer; flows (NetFlow/sFlow) and
+  packet capture are out of scope and stated as such. On a FortiWeb, point
+  <code>config log syslog-policy</code> (a server row with this node's address, the port
+  and <code>proto udp</code>) at the node and enable <code>config log syslogd</code> with that
+  policy — measured on 7.6.8: a server row changed while <code>syslogd</code> is already
+  enabled is not picked up until <code>syslogd</code> is disabled and enabled again.</li>
+</ul>
 <p>Each row is editable in place: <strong>interval</strong> (1–1440 minutes), <strong>enabled</strong>, and
 <strong>top-N</strong> (1–200) on the two collectors that have one. The expensive collectors
 are bounded twice — a longer interval <em>and</em> a top-N cut ranked by live
@@ -3675,9 +3730,15 @@ report. Registration and the details:
 <p>Administrators issue bearer tokens (API Tokens section) for the <code>/api/v1</code>
 integration surface. Scope model: <code>read ⊂ write ⊂ admin</code>, capped by the
 owner's own role, bound to one product (ADOM). The plaintext token is shown
-<strong>once</strong> at creation. The API is read-biased: mutations happen only by
-triggering pre-created scheduled actions; nothing destructive is reachable by
-any token. Full reference: <a href="api.html">docs/api_v1.md</a>.</p>
+<strong>once</strong> at creation. The API is read-biased: a token can trigger
+pre-created scheduled actions, author WAF carve-outs and FortiADC rules from
+a curated allow-list, and — with the <code>template_draft</code> / <code>template_apply</code>
+capabilities — read and write <strong>templates, bindings and baselines</strong>, where a
+push to a device is the console's own canary-gated job. Nothing destructive
+is reachable by any token. The API also exposes what SATOM has recorded
+(configuration history and diffs, findings, a read-only metrics query) and
+describes itself as an OpenAPI document at <code>/api/v1/openapi.json</code>, built
+from the live routes. Full reference: <a href="api.html">docs/api_v1.md</a>.</p>
 <h2 id="19-appearance-logo-colours--themes">19. Appearance: logo, colours &amp; themes</h2>
 <p><code>Settings → Appearance</code> (administrators). Four palettes ship — <strong>SATOM Aurora</strong>
 (the default), <strong>Slate</strong>, <strong>Graphite</strong> and the original <strong>Classic</strong> — and you
@@ -6082,7 +6143,10 @@ policy (what happens then), and the two are kept apart deliberately.</p>
 <li><strong>Enable alert dispatch</strong> and the <strong>alert recipients</strong>. Blank recipients fall
   back to the email tab's defaults, and the page prints what that fallback
   currently resolves to.</li>
-<li><strong>Checks enabled</strong> — tick the individual health checks that may raise mail.</li>
+<li><strong>Checks enabled</strong> — tick the individual health checks that may raise mail
+  (cert expiry, git divergence, device health, backup freshness, config
+  drift, intent deviation, scheduled automation, host resources, API catalog
+  integrity).</li>
 <li>Delivery-shaping numbers: certificate warning days, a <strong>cooldown</strong> in hours so
   a flapping condition cannot mail every sweep, git-behind and git-unpushed
   limits (a local commit that never reached the remote is a <em>silent</em> push
@@ -6123,7 +6187,7 @@ decides for itself what it wants to hear. Every sink has exactly two knobs: a
 <strong>minimum severity</strong> and a <strong>family mask</strong>. A pattern language was deliberately
 not built: the rule everybody writes is "everything", which is this with more
 surface to get wrong.</p>
-<p>The seven maskable families are the same seven checks as <em>Checks enabled</em>, and
+<p>The maskable families are the same checks as <em>Checks enabled</em>, and
 the mask is written in the family's own name — which is not always the name of
 the key prefix behind it:</p>
 <table>
@@ -6161,6 +6225,11 @@ the key prefix behind it:</p>
 <td><code>drift.</code></td>
 </tr>
 <tr>
+<td><code>intent</code></td>
+<td>Intent deviation</td>
+<td><code>intent.</code></td>
+</tr>
+<tr>
 <td><code>actions</code></td>
 <td>Scheduled automation</td>
 <td><code>action.</code></td>
@@ -6177,6 +6246,20 @@ the key prefix behind it:</p>
 </tr>
 </tbody>
 </table>
+<p><strong>Config drift</strong> and <strong>Intent deviation</strong> answer different questions. Drift
+says a device <em>changed</em> (a new version in the configuration history that
+SATOM did not write, §26.5). Intent deviation says a device <em>does not match
+what it was meant to run</em>: the template it is bound to (§29.1.4), rendered
+with the device's variables, compared field by field against the cached
+device objects — whether it changed yesterday or never received the template.
+It raises one warning per binding, keyed <code>intent.&lt;device&gt;:&lt;binding&gt;:&lt;hash&gt;</code>,
+so the same deviation fires once per cooldown and a corrected device goes
+quiet by itself; it names the fields that differ, never their values; it
+ignores what the appliance derives on its own (<code>sz_*</code> row counters, <code>*_val</code>
+handles); sub-table rows are not compared; and <em>maintenance</em> and the drift
+exclude list silence it like drift. A hook can subscribe to it as
+<code>intent.deviation</code> (§35.3). The reference is
+<a href="alerting.html">alerting.md</a>.</p>
 <table>
 <thead>
 <tr>
@@ -7164,9 +7247,20 @@ For each binding you choose:</p>
 <p>A device has at most one binding per family; binding it again updates the
 binding. The bindings table shows, per device, the version it follows, the
 build it is checked against, the verdict (<em>fits</em> / <em>does not fit</em>, with the
-reason) and its variables. A binding whose family has no approved version, or
-whose pinned version no longer exists, whose device reports no firmware, or
-that leaves a variable unset, shows as not fitting.</p>
+reason), its <strong>compliance</strong> and its variables. A binding whose family has no
+approved version, or whose pinned version no longer exists, whose device
+reports no firmware, or that leaves a variable unset, shows as not fitting.</p>
+<p><strong>Compliance</strong> is whether the device still runs what the template says:
+<strong>met</strong> (every compared object matches), <strong>deviates</strong> (at least one does not —
+the tooltip counts them, and the <em>Intent deviation</em> alert, §26.6, names the
+fields) or <strong>unmeasured</strong> (nothing could be compared: no approved version, a
+variable unset, a collection the device sync has not cached — the tooltip says
+which). It is computed locally from the cached device objects, the same way
+the approval modal diffs a write, so opening the dialog never contacts a
+device; it ignores what the appliance derives on its own and compares
+top-level objects only (sub-table rows count as not compared). <em>Fits</em> and
+<em>compliance</em> are different questions: a template can fit a build perfectly and
+still not be what the device runs.</p>
 <p><strong>Variables.</strong> A value that differs per device (an address, a host name) is
 written in the body as <code>{{ name }}</code> (letters, digits, <code>_</code>, <code>.</code>, <code>-</code>). The View
 dialog lists the names the body asks for. A value that is exactly one
@@ -8676,17 +8770,23 @@ tracker outage can never break the change request itself.</p>
 <p>A hook is a small Python script SATOM runs when it emits an event. The usual use
 is opening a change ticket in your own CRM and handing the reference back.</p>
 <p>Events: <code>change.requested</code>, <code>change.approved</code>, <code>window.opening</code>,
-<code>window.closing</code>, <code>upgrade.finished</code>, <code>upgrade.failed</code> and <code>alert.fired</code>. The
-editor lists the exact payload each one carries. <code>window.opening</code> and
+<code>window.closing</code>, <code>upgrade.finished</code>, <code>upgrade.failed</code>, <code>alert.fired</code> and
+<code>intent.deviation</code>. The editor lists the exact payload each one carries. <code>window.opening</code> and
 <code>window.closing</code> fire when a change starts and finishes, whether or not NetBox
 is configured; <code>window.closing</code> carries the change's status (<code>completed</code>,
 <code>failed</code>) as its <code>outcome</code>.</p>
-<p><code>alert.fired</code> is the health engine's, and it behaves unlike the other six: it
+<p><code>alert.fired</code> is the health engine's, and it behaves unlike the change events: it
 fires <strong>once per finding</strong> rather than once per change, only for findings fresh
 out of the cooldown window, and <strong>only from the writable primary</strong>. It is off
 until you switch the <em>Integration hooks</em> sink on in <strong>Settings → Email &amp;
 Alerts</strong>, and a hook bound to it receives the finding's <code>key</code>, <code>family</code>,
-<code>severity</code>, <code>title</code>, <code>detail</code>, <code>product</code>, <code>node</code> and <code>fired_at</code>.</p>
+<code>severity</code>, <code>title</code>, <code>detail</code>, <code>product</code>, <code>node</code> and <code>fired_at</code>.
+<code>intent.deviation</code> is the typed twin of an <em>Intent deviation</em> finding
+(§26.6): same moment, same sink filter, same cooldown, but the evidence
+arrives as data — the device, the binding, the template version and, per
+deviating object, the endpoint, the key and the <strong>field names</strong> that differ
+(never their values). Bind a hook to one of the two, not both, or it runs
+twice.</p>
 <p><strong>Starters.</strong> <em>New hook</em> offers a working script you own the moment you save
 it: <strong>CRM change ticket</strong> (<code>change.requested</code>), <strong>Telegram</strong>, <strong>Slack</strong> and
 <strong>Microsoft Teams</strong> (all three on <code>alert.fired</code>). Picking one preselects the
@@ -10487,6 +10587,11 @@ into five consoles at once.</p>
 <td>queues one integration hook on this node and waits for its verdict</td>
 <td><strong>yes, when armed</strong></td>
 </tr>
+<tr>
+<td>Compensate</td>
+<td>undoes what the walk wrote before it, newest change first — only the steps that recorded an inverse; the rest are named as <code>unknown</code></td>
+<td><strong>yes, when armed</strong></td>
+</tr>
 </tbody>
 </table>
 <p>No step reimplements a question the product already answers somewhere else.
@@ -10632,10 +10737,76 @@ second door into the appliance.</p>
 drawn box carries a shape and a caption; it does not carry the step kind or the
 parameters that make a step runnable, so importing one would produce a diagram
 that looks like your plan and cannot execute a single check.</p>
+<h3 id="starting-a-process-from-an-event">Starting a process from an event</h3>
+<p>A process can be started by an <strong>event</strong> instead of the Run button. On the
+process form, <em>Trigger → Start this process when</em> names one event of the
+integration-hook catalogue (<code>alert.fired</code>, <code>upgrade.failed</code>, <code>change.approved</code>,
+<code>window.opening</code> …). When that event fires, the walk is <strong>queued as a job</strong> —
+visible on the Jobs page — and runs there. It never runs inside the alert
+evaluation or the hook dispatch that noticed the event: those run inside the
+scheduler's cycle, and a diagram with SSH reads and a manual gate walked there
+would stall every scheduled action behind it.</p>
+<p>A trigger can be <strong>narrowed</strong>: to some ADOMs, to some appliance ids, and for
+<code>alert.fired</code> to some alert families and a severity floor. A narrowing never
+widens — an event that names no appliance does not match a filter that lists
+some. For a device finding, the appliance the finding is about becomes the
+appliance the walk is pointed at; a diagram with device steps is skipped, with
+the reason, when the event names none.</p>
+<p>Three rules bound a storm, and each refusal is recorded as a run with status
+<strong><code>skipped</code></strong> and the reason in its summary, so "the plan never fired" always
+has a trace:</p>
+<ul>
+<li><strong>one running instance per process and appliance</strong> — a second event while a
+  walk is running or parked on a gate is skipped, never queued behind it;</li>
+<li><strong>a budget per process per hour</strong> (<em>Runs per hour, at most</em>, default 10) —
+  spent means skipped; skipped rows do not count against it;</li>
+<li><strong>rehearsal unless the process says otherwise</strong> — <em>Arm triggered walks</em> is
+  off by default. On, SATOM writes to your appliances with nobody at the
+  screen, every time the event fires. The form says so in red.</li>
+</ul>
+<p>A finding that started a walk owes the alert cooldown exactly like one the
+hook subsystem accepted; a finding that was skipped owes nothing, so it is not
+silenced for six hours on behalf of a walk that did not happen. Event triggers
+fire on the writable primary only. Every triggered run carries the finding or
+event key (<em>trigger</em> on the run page and in the history) so a walk can be
+traced back to the thing that asked for it.</p>
+<h3 id="scheduling-a-process">Scheduling a process</h3>
+<p><strong>Walk a process</strong> is an action of the Scheduled Actions catalogue (the
+operator catalogue): pick the process by key and the appliances to walk it
+against, and it runs once per target at the scheduled time. It is a
+<strong>rehearsal</strong> unless the action's <code>armed</code> parameter is on, and the page's
+preview forces a rehearsal whatever the parameter says. An armed walk of a
+diagram that writes runs <strong>only bound to an approved change request</strong>, like
+every other write action in the catalogue. The run records the schedule that
+fired it. The action is flagged dangerous, so it is never offered through the
+generic <code>/api/v1/actions</code> door — the API has its own, below.</p>
+<h3 id="compensation">Compensation</h3>
+<p><strong>Compensate</strong> is the step that undoes what the walk wrote before it, newest
+change first. It undoes only what a step <strong>recorded an inverse for</strong>: a status a
+Catalogue action flipped (a server policy or a backend enabled or disabled —
+the inverse is the same action the other way), an Observatory fix (reverted
+through the Observatory's own revert) and a provisioning run (rolled back
+through its own rollback). A write with no inverse — a Console script, an
+Integration hook, a backend repointed to an address nobody read first — is
+<strong>named as <code>unknown</code></strong>, never guessed: "SATOM cannot undo this one" is a
+sentence an operator can act on, and a guessed inverse aimed at a load balancer
+is not. A write that failed is never replayed either; what landed is unknown.</p>
+<p>Unarmed, Compensate sends nothing and lists what it would undo. Armed, it stops
+at the first inverse that fails, and the step ends <code>fail</code> with the rest named.
+The inverse a step recorded is kept with the step, so a walk answered after a
+manual gate still knows what it wrote before the pause.</p>
+<h3 id="walking-a-process-from-the-api">Walking a process from the API</h3>
+<p><code>GET /api/v1/processes</code>, <code>POST /api/v1/processes/&lt;id&gt;/run</code> and
+<code>GET /api/v1/process-runs/&lt;id&gt;</code> let an outside system list, start and poll a
+walk, under the token's ADOM exactly as the console would show it. A run from
+the API is a <strong>rehearsal by default</strong>; <code>"armed": true</code> needs the explicit
+<code>process_arm</code> capability on the token, on top of the <code>write</code> scope. See the API
+manual, §10.</p>
 <h3 id="permissions">Permissions</h3>
 <p>Reading a process and its runs needs <code>view</code> — that includes <strong>Export XML</strong>,
 which hands back the content the page already shows. Drawing, editing,
-importing, running and answering a gate need <code>config_write</code>.</p>
+importing, running and answering a gate need <code>config_write</code> — and so does
+setting a trigger, which is part of the form.</p>
 <hr>
 <h2 id="43-upgrading-to-20">43. Upgrading to 2.0</h2>
 <p><strong>Read this if you are coming from 1.20.0 or earlier.</strong> The upgrade itself is

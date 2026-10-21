@@ -312,6 +312,15 @@ installer needs egress to the distribution mirrors and to PyPI.
 There is one bundle PER distribution FAMILY — the installer rejects a bundle
 from the wrong family with a clear message:
 - **Debian 12**: full `.deb` dependency closure + `wheels/` + `app.tar.gz`.
+  The closure is resolved on the build machine and recorded in
+  `bundle/debs-closure.txt`; the installer does **not** force it onto the
+  target. A package the image already has at the bundle's version or newer is
+  skipped, and the base packages (`systemd`, `udev`, PAM, `libc6` and their
+  libraries) are never replaced when any version is present — the OS image
+  owns those, and forcing a newer point release of them over an older image
+  broke the base system. Only what the image lacks is installed. On a bare
+  container image without `curl`, the guided installer takes it from the
+  bundle instead of asking for a package manager that has no network.
 - **RHEL 9**: `bundle/rpms/` is a local dnf repository (with metadata) — dnf
   resolves only what the machine actually needs; it includes `python3.11` (the
   app's pins require Python >= 3.10 and the system python3 on EL9 is 3.9) and

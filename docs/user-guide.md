@@ -3742,7 +3742,7 @@ blocking one disables Apply:
 | Archive | Is the file a well-formed package? |
 | Signature & integrity | Is it signed by a trusted key, and do the contents match what was signed? |
 | Version | Where does this move the node? |
-| Upgrade path | Is this node new enough to accept it? (From 3.3.4, packages need 3.3.3 or newer: a node on 3.3.2 or older applies `satom-update-3.3.3.tar.gz` first.) |
+| Upgrade path | Is this node new enough to accept it? (From 3.3.4, packages need 3.3.3 or newer: a node on 3.3.2 or older applies `satom-update-3.3.3.tar.gz` first — and installs that package's own update runner before applying it, because the older runner cannot read the wheels a package ships; the step is in the update manual, [docs/offline-update-packages.md](offline-update-packages.md) §3.) |
 | Python / Dependencies | Are the shipped wheels the ones this node needs? |
 | Disk space | Is there room? |
 | This node | Which machine, in which role, you are about to change. |

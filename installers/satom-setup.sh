@@ -111,7 +111,9 @@ Variables for --yes (all optional unless stated otherwise):
   SETUP_JOIN_KEY                      (native secondary: the primary's join key)
   SETUP_SECONDARY_IP                  (native primary)
   SETUP_JOIN_FILE                     (docker standby: join file generated on the primary)
-  SETUP_EXISTING=update|reinstall|abort   (if there is already an install)
+  SETUP_EXISTING=reinstall|abort      (native install already present; an update
+                                       is an update package, Software Update page)
+  SETUP_EXISTING=update|abort         (docker install already present)
 EOF
 }
 
@@ -181,6 +183,30 @@ ask_yn() {  # ask_yn "question" y|n [PRESET_VAR] -> rc 0 = yes
 # Utilities
 # ─────────────────────────────────────────────────────────────────────────────
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# [SATOM-SETUP-CURL] A bare Debian container image has no curl, and an OFFLINE
+# install has nowhere to fetch it from -- but the bundle next to this script
+# carries curl_*.deb and its libraries, and install-satom.sh would install them
+# a step later. Dying here on "curl is missing" sent the operator to a package
+# manager that has no network (measured on a Debian 12 container, 2026-10-21).
+# Install curl from the bundle when there is one; the online path keeps the
+# plain check.
+curl_from_bundle() {
+    local d="$SCRIPT_DIR/bundle/debs" f list=""
+    [ -d "$d" ] || return 1
+    have dpkg || return 1
+    for f in "$d"/libunistring2_*.deb "$d"/libidn2-0_*.deb "$d"/libpsl5_*.deb \
+             "$d"/libbrotli1_*.deb "$d"/libnghttp2-14_*.deb "$d"/libssh2-1_*.deb \
+             "$d"/librtmp1_*.deb "$d"/libsasl2-2_*.deb "$d"/libldap-2.5-0_*.deb \
+             "$d"/libcurl4_*.deb "$d"/curl_*.deb; do
+        [ -e "$f" ] && list="$list $f"
+    done
+    [ -n "$list" ] || return 1
+    # shellcheck disable=SC2086
+    dpkg -i $list >>"${LOG:-/dev/null}" 2>&1 || true
+    have curl || return 1
+    ok "curl installed from the offline bundle"
+}
 ver_ge() { [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -1)" = "$2" ]; }   # ver_ge A B -> A >= B
 port_owner() {
     have ss || { echo ""; return; }
@@ -300,7 +326,8 @@ check_requirements() {
     if   [ "$disk_mb" -ge 15000 ]; then ok "Free disk on /: $((disk_mb/1024)) GB"
     elif [ "$disk_mb" -ge 8000 ];  then warn "Free disk on /: $((disk_mb/1024)) GB — Docker needs ~15 GB"
     else die "Free disk on /: ${disk_mb} MB — not enough (8 GB minimum)"; fi
-    have curl || die "curl is missing (install it with the package manager: ${PKG} install curl)"
+    have curl || curl_from_bundle \
+        || die "curl is missing (install it with the package manager: ${PKG} install curl)"
     have openssl || die "openssl is missing (${PKG} install openssl)"
     have tar || die "tar is missing"
     NODE_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)"

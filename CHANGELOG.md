@@ -14,7 +14,10 @@ commit `da82b12`; the matrix with every row and its evidence is
 [docs/naf-alignment.md](docs/naf-alignment.md). The upgrade path is unchanged
 from 3.3.8: the update package accepts a node on 3.3.3 or newer. A node on
 3.3.2 or older applies `satom-update-3.3.3.tar.gz` (release v3.3.3) first,
-then this one.
+then this one — and on such a node the 3.3.3 package's own update runner must
+be installed BEFORE applying it (its runner cannot install the wheels the
+package ships; see *Fixed* below and
+[docs/offline-update-packages.md](docs/offline-update-packages.md) §3).
 
 The upgrade runs migrations `wiki04` (Wiki groups merged into Administrator ›
 Access › Groups), `wiki05` (comments and subscriptions), `wiki06`
@@ -277,6 +280,47 @@ template and never writes.
   chart.
 - The Wiki list's page 2 and later kept only the first ticked ADOM of the
   filter.
+- **The offline installer, measured on a bare Debian 12 container** (an
+  install of 2.11.0 from its bundle, done to rehearse the upgrade path to this
+  release) needed four workarounds, each a defect in `installers/` that every
+  release since carried:
+  - The guided installer died on "curl is missing" although the bundle next
+    to it carried `curl` and an offline install has no package manager to
+    fetch it with. It now installs curl from the bundle; the online path keeps
+    the check. Its `--help` also promised `SETUP_EXISTING=update` for a native
+    install that only accepts `reinstall|abort` (an update is an update
+    package); the help now says what the installer does.
+  - Forcing the bundle's whole dependency closure with `dpkg -i` upgraded
+    `libsystemd0`, `libudev1` and `libpam-modules` over an older point release
+    and pulled `libelogind0` in as an alternative provider — "unmet
+    dependencies: systemd, udev, libpam-modules-bin", the install aborted
+    halfway with no network to repair it. The installer now installs only
+    what the image lacks, never replaces a base package that is present, and
+    the bundle builder leaves the alternative providers out and records the
+    closure it resolved (`bundle/debs-closure.txt`).
+  - On an image whose locale is `C` the PostgreSQL cluster is SQL_ASCII and
+    a plain `createdb` inherited it; psycopg then returned bytes and
+    `flask create-db` died two steps later under a hint that blamed
+    authentication. The database is now created `UTF8` from `template0` with
+    the C locale on every distribution, an existing database that is not
+    UTF8 is refused with its encoding named, and the hint names both causes.
+  - nginx never read the vhost: the Debian package had started it with the
+    distro's default site before the vhost existed, `enable --now` is a no-op
+    on a running service, and the readiness check then failed on an install
+    that was otherwise complete. The installer restarts nginx after writing
+    the vhost (a restart, not a reload — the openSUSE `$MAINPID` race stays
+    closed).
+- **The documented upgrade path for a node on 3.3.2 or older did not work
+  as written.** Those nodes run an update runner that points pip at a staging
+  directory only root can read, so the first package that ships a wheel the
+  venv lacks — the prescribed `satom-update-3.3.3.tar.gz` included — fails at
+  `pip install` and rolls back cleanly, every time; the runner that fixed it
+  (3.3.3) is inside the very package it cannot apply. The release notes and
+  the update manual now give the step that works: install the package's own
+  runner first (`deploy/install-runner.sh` from the verified package, as
+  root), then apply the package. Measured on a 2.11.0 node: the first apply
+  rolled back, the second — after that step — upgraded to 3.3.3 with the
+  data intact.
 
 ## [3.3.8] - 2026-10-20
 

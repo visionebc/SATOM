@@ -37,12 +37,24 @@ command -v apt-get >/dev/null || { echo "Requires Debian/apt"; exit 1; }
 
 rm -rf "$STAGE"; mkdir -p "$STAGE/bundle/debs" "$STAGE/bundle/wheels" "$STAGE/bundle/lego" "$STAGE/bundle/victoria-metrics"
 
+# Alternative providers the recursive resolver drags in through `a | b`
+# dependencies. The target already runs one provider (the image's systemd);
+# shipping the other and forcing it with dpkg breaks the base system
+# ("unmet dependencies: systemd, udev, libpam-modules-bin", Debian 12 container,
+# 2026-10-21). The installer applies the matching rule on its side
+# (install-satom.sh [SATOM-BUNDLE-DEBS]); this list keeps them out of the bundle.
+BUNDLE_EXCLUDE=(libelogind0 elogind libpam-elogind)
+
 echo "==> 1/4 Downloading .debs (full dependency closure)"
 apt-get update -qq
 DEPS=$(apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts \
         --no-breaks --no-replaces --no-enhances "${PKGS[@]}" \
-        | grep '^[a-z0-9]' | sort -u)
+        | grep '^[a-z0-9]' | sort -u \
+        | grep -vxF -f <(printf '%s\n' "${BUNDLE_EXCLUDE[@]}"))
 (cd "$STAGE/bundle/debs" && apt-get download $DEPS 2>/dev/null || true)
+# The closure as resolved, recorded next to the debs so a support bundle can
+# say what the installer had to choose from.
+printf '%s\n' $DEPS > "$STAGE/bundle/debs-closure.txt"
 N=$(ls "$STAGE/bundle/debs" | wc -l)
 echo "    $N .deb packages"
 [ "$N" -gt 50 ] || { echo "ERROR: too few debs — something went wrong"; exit 1; }

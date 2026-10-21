@@ -340,6 +340,47 @@ elif [ -d "$BUNDLE_DIR" ] && [ -d "$BUNDLE_DIR/rpms" ]; then
     esac
 fi
 
+# [SATOM-BUNDLE-DEBS] Which .debs of the bundle this machine actually installs.
+# The bundle carries the FULL dependency closure, resolved on the build machine,
+# and the target image is never the same point release. Forcing the whole
+# closure with `dpkg -i --skip-same-version` upgraded libsystemd0, libudev1 and
+# libpam-modules over an older image and pulled libelogind0 in as an
+# alternative provider -> "unmet dependencies: systemd, udev,
+# libpam-modules-bin" and an install aborted halfway, with no network to repair
+# it (Debian 12 container, 2026-10-21). Rules:
+#   - a package already installed at the bundle's version or newer is skipped;
+#   - a BASE package (systemd, udev, PAM, libc and their libraries) is never
+#     touched when ANY version of it is installed: the OS image owns those;
+#   - everything else is installed, or upgraded when the bundle's is newer.
+BUNDLE_BASE_PKGS="systemd udev libsystemd0 libudev1 libpam0g libpam-modules libpam-modules-bin libpam-runtime libc6 libc-bin libgcc-s1 libstdc++6 init-system-helpers dpkg apt"
+bundle_select_debs() {
+    local deb pkg ver inst
+    for deb in "$BUNDLE_DIR"/debs/*.deb; do
+        [ -e "$deb" ] || continue
+        pkg="$(dpkg-deb -f "$deb" Package 2>/dev/null || true)"
+        ver="$(dpkg-deb -f "$deb" Version 2>/dev/null || true)"
+        [ -n "$pkg" ] || continue
+        inst="$(dpkg-query -W -f='${Version}' "$pkg" 2>/dev/null || true)"
+        if [ -n "$inst" ]; then
+            if dpkg --compare-versions "$inst" ge "$ver"; then continue; fi
+            case " $BUNDLE_BASE_PKGS " in *" $pkg "*) continue ;; esac
+        fi
+        echo "$deb"
+    done
+}
+bundle_install_debs() {
+    local list
+    list="$(bundle_select_debs)"
+    if [ -z "$list" ]; then
+        echo "bundle debs: nothing to install (every package present at a satisfying version)" >>"$INSTALL_LOG"
+        return 0
+    fi
+    echo "bundle debs selected:" >>"$INSTALL_LOG"; echo "$list" >>"$INSTALL_LOG"
+    # shellcheck disable=SC2086
+    dpkg -i $list >>"$INSTALL_LOG" 2>&1 \
+        || apt-get -y -f --no-download install >>"$INSTALL_LOG" 2>&1
+}
+
 echo ""
 echo "┌──────────────────────────────────────────────────────────┐"
 echo "│  SATOM ${VERSION} — Installer $( [ $OFFLINE -eq 1 ] && echo '(OFFLINE, local bundle)' || echo '(ONLINE)' )"
@@ -875,9 +916,9 @@ if [ ${#MISSING[@]} -gt 0 ]; then
     if [ $OFFLINE -eq 1 ]; then
         say "Installing from the offline bundle (${#MISSING[@]} packages + dependencies)"
         if [ -d "$BUNDLE_DIR/debs" ]; then
-            # The bundle carries the full dependency closure; dpkg skips what is already installed.
-            dpkg -i --skip-same-version "$BUNDLE_DIR"/debs/*.deb >>"$INSTALL_LOG" 2>&1 \
-                || apt-get -y -f --no-download install >>"$INSTALL_LOG" 2>&1 \
+            # The bundle carries the full dependency closure; only what this
+            # image lacks is installed ([SATOM-BUNDLE-DEBS] above).
+            bundle_install_debs \
                 || die "Failed installing the bundle's debs (check $INSTALL_LOG)"
         elif [ -d "$BUNDLE_DIR/rpms-suse" ]; then
             # zypper: it is given a repo directory OF ITS OWN (--reposd-dir) that
@@ -1010,10 +1051,9 @@ ZREPO
             upgrade expat openssl-libs sqlite-libs zlib \
             >>"$INSTALL_LOG" 2>&1 || rc=1
     elif [ -d "$BUNDLE_DIR/debs" ]; then
-        # dpkg over the full set already upgrades whatever is newer; repeated
-        # here in case the general pass skipped something.
-        dpkg -i --skip-same-version "$BUNDLE_DIR"/debs/*.deb \
-            >>"$INSTALL_LOG" 2>&1 || rc=1
+        # The general pass already upgraded whatever the bundle has newer;
+        # repeated here in case it skipped something ([SATOM-BUNDLE-DEBS]).
+        bundle_install_debs || rc=1
     fi
     return $rc
 }
@@ -1334,9 +1374,25 @@ ok "PostgreSQL ${PGV} — data=${PGDATA} conf=${PGCONF}"
 if [ "$ROLE" != "secondary" ]; then
     DB_PASS=$(openssl rand -hex 24)
     runuser -u postgres -- psql -qc "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='${DB_USER}') THEN CREATE ROLE ${DB_USER} LOGIN PASSWORD '${DB_PASS}'; ELSE ALTER ROLE ${DB_USER} PASSWORD '${DB_PASS}'; END IF; END \$\$;"
-    runuser -u postgres -- psql -qtc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1 \
-        || runuser -u postgres -- createdb -O "$DB_USER" "$DB_NAME"
-    ok "DB ${DB_NAME} + role ${DB_USER} ready"
+    # [SATOM-DB-UTF8] The database is created UTF8 EXPLICITLY, from template0.
+    # A plain `createdb` inherits the cluster's encoding, and a cluster
+    # initialised on an image whose locale is C (every Debian container
+    # template, many minimal cloud images) is SQL_ASCII. psycopg then hands the
+    # application `bytes` where it expects text and `flask create-db` dies with
+    #   TypeError: cannot use a string pattern on a bytes-like object
+    # two steps later, under a hint that blamed authentication (measured on a
+    # Debian 12 container, 2026-10-21). UTF8 with the C locale is valid on every
+    # PostgreSQL and needs no locale the image might not carry.
+    if runuser -u postgres -- psql -qtc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1; then
+        _db_enc="$(runuser -u postgres -- psql -tAc "SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname='${DB_NAME}'" | xargs)"
+        [ "$_db_enc" = "UTF8" ] \
+            || die "The existing database ${DB_NAME} is ${_db_enc:-unknown}, not UTF8. SATOM stores text in UTF8 only; drop it (dropdb ${DB_NAME}) or point the installer at another name, then run again."
+    else
+        runuser -u postgres -- createdb -O "$DB_USER" -E UTF8 -T template0 \
+            --lc-collate=C --lc-ctype=C "$DB_NAME" >>"$INSTALL_LOG" 2>&1 \
+            || die "createdb ${DB_NAME} failed (check $INSTALL_LOG)"
+    fi
+    ok "DB ${DB_NAME} (UTF8) + role ${DB_USER} ready"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1632,8 +1688,9 @@ if [ "$ROLE" != "secondary" ]; then
     # stale by setting ADMIN_PASS below.
     SATOM_ADMIN_PASSWORD="$ADMIN_PASS" FLASK_APP=wsgi.py venv/bin/flask create-db >>"$INSTALL_LOG" 2>&1 \
         || die "flask create-db failed — the schema could not be initialized.
-       Check the end of $INSTALL_LOG (usual cause: the app cannot
-       authenticate against PostgreSQL)"
+       Check the end of $INSTALL_LOG. Usual causes: the app cannot
+       authenticate against PostgreSQL, or the database is not UTF8
+       ('cannot use a string pattern on a bytes-like object' = SQL_ASCII)"
     # [SATOM-ALEMBIC-STAMP] create-db builds the schema from the models, which
     # IS the head revision -- but without a recorded revision the first update's
     # `flask db upgrade` starts from the very first migration. Record it now.
@@ -2026,19 +2083,26 @@ elif command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q 'Status:
     ok "ufw: ports $(echo "$FW_PORTS" | sed 's# #/tcp, #g')/tcp opened"
 fi
 nginx -t >>"$INSTALL_LOG" 2>&1 || die "nginx -t failed (check $INSTALL_LOG)"
-# SATOM-NGINX-START: start nginx and WAIT until it really serves. Do NOT reload here.
+# SATOM-NGINX-START: (re)start nginx and WAIT until it really serves. Do NOT reload here.
 # openSUSE ships the unit as Type=simple with ExecStart='nginx -g "daemon off;"' and
 # ExecReload='/bin/kill -s HUP $MAINPID'. systemd considers the service started as soon
 # as it exec()s, BEFORE nginx has written /run/nginx.pid, so an immediate
 # 'systemctl reload' finds $MAINPID empty: the kill exits with status 2, systemd takes
 # down the WHOLE service and the installer dies with the install already complete and correct.
 # Debian and RHEL do not see it because their units are forking with PIDFile and systemd
-# waits for the pid before calling the start good -> there the race is invisible. The
-# reload was also redundant: nginx has just started with this very config, validated by
-# the 'nginx -t' on the line above.
+# waits for the pid before calling the start good -> there the race is invisible.
+# A RESTART, not a reload: on Debian the nginx package starts the daemon from its
+# postinst with the distro's default site, BEFORE this vhost exists. 'enable --now'
+# is then a no-op on a service that is already running, nothing ever reads the
+# vhost, and the readiness loop below dies with "does not accept connections on
+# 443" on an install that is otherwise complete (measured on a Debian 12
+# container, 2026-10-21). 'restart' starts a stopped nginx and re-reads the
+# config of a running one; it never depends on $MAINPID, so the openSUSE race
+# above cannot bite it.
 # Waiting for a non-empty pid file is not cosmetic: it is what makes safe the
 # 'systemctl reload nginx' that cert_service runs live through sudoers.
-systemctl enable --now nginx >>"$INSTALL_LOG" 2>&1 \
+systemctl enable nginx >>"$INSTALL_LOG" 2>&1 || true
+systemctl restart nginx >>"$INSTALL_LOG" 2>&1 \
     || die "nginx did not start (diagnose with: systemctl status nginx)"
 _nginx_ready=0
 for _i in $(seq 1 30); do

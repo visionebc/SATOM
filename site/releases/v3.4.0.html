@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Version 3.4.0 — SATOM</title>
-<meta name="description" content="Released on 2026-10-21 — Added · Changed · Fixed · 15 entries.">
+<meta name="description" content="Released on 2026-10-21 — Added · Changed · Fixed · 17 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Version 3.4.0 <span class="rel-badge rel-now">current release</span></h1>
-  <p class="sub">Released on 2026-10-21 — Added · Changed · Fixed · 15 entries.</p>
+  <p class="sub">Released on 2026-10-21 — Added · Changed · Fixed · 17 entries.</p>
 </header>
 
 <section class="wrap">
@@ -64,8 +64,8 @@
       </a>
       <a class="rel-nav-item is-active" href="v3.4.0.html" data-rel-version="3.4.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.4.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
-        <span class="rel-nav-meta">2026-10-21 · Added · Changed · Fixed · 15 entries</span>
-        <ul class="rel-leads"><li>The API describes itself, and reads and writes intent and observations</li><li>Intent deviation: a bound device that no longer matches its template is a finding</li><li>Processes start from events, on a schedule and from the API; a Compensate step undoes a walk</li><li class="rel-more">… and 12 more</li></ul>
+        <span class="rel-nav-meta">2026-10-21 · Added · Changed · Fixed · 17 entries</span>
+        <ul class="rel-leads"><li>The API describes itself, and reads and writes intent and observations</li><li>Intent deviation: a bound device that no longer matches its template is a finding</li><li>Processes start from events, on a schedule and from the API; a Compensate step undoes a walk</li><li class="rel-more">… and 14 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.3.8.html" data-rel-version="3.3.8">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.3.8</span></span>
@@ -431,7 +431,10 @@ commit <code>da82b12</code>; the matrix with every row and its evidence is
 <a href="../docs/naf-alignment.html">docs/naf-alignment.md</a>. The upgrade path is unchanged
 from 3.3.8: the update package accepts a node on 3.3.3 or newer. A node on
 3.3.2 or older applies <code>satom-update-3.3.3.tar.gz</code> (release v3.3.3) first,
-then this one.</p>
+then this one — and on such a node the 3.3.3 package's own update runner must
+be installed BEFORE applying it (its runner cannot install the wheels the
+package ships; see <em>Fixed</em> below and
+<a href="../docs/offline-update-packages.html">docs/offline-update-packages.md</a> §3).</p>
 <p>The upgrade runs migrations <code>wiki04</code> (Wiki groups merged into Administrator ›
 Access › Groups), <code>wiki05</code> (comments and subscriptions), <code>wiki06</code>
 (Confluence spaces and pages), <code>orch01</code> (Process event triggers and the
@@ -692,6 +695,47 @@ template and never writes.</p>
   chart.</li>
 <li>The Wiki list's page 2 and later kept only the first ticked ADOM of the
   filter.</li>
+<li><strong>The offline installer, measured on a bare Debian 12 container</strong> (an
+  install of 2.11.0 from its bundle, done to rehearse the upgrade path to this
+  release) needed four workarounds, each a defect in <code>installers/</code> that every
+  release since carried:</li>
+<li>The guided installer died on "curl is missing" although the bundle next
+    to it carried <code>curl</code> and an offline install has no package manager to
+    fetch it with. It now installs curl from the bundle; the online path keeps
+    the check. Its <code>--help</code> also promised <code>SETUP_EXISTING=update</code> for a native
+    install that only accepts <code>reinstall|abort</code> (an update is an update
+    package); the help now says what the installer does.</li>
+<li>Forcing the bundle's whole dependency closure with <code>dpkg -i</code> upgraded
+    <code>libsystemd0</code>, <code>libudev1</code> and <code>libpam-modules</code> over an older point release
+    and pulled <code>libelogind0</code> in as an alternative provider — "unmet
+    dependencies: systemd, udev, libpam-modules-bin", the install aborted
+    halfway with no network to repair it. The installer now installs only
+    what the image lacks, never replaces a base package that is present, and
+    the bundle builder leaves the alternative providers out and records the
+    closure it resolved (<code>bundle/debs-closure.txt</code>).</li>
+<li>On an image whose locale is <code>C</code> the PostgreSQL cluster is SQL_ASCII and
+    a plain <code>createdb</code> inherited it; psycopg then returned bytes and
+    <code>flask create-db</code> died two steps later under a hint that blamed
+    authentication. The database is now created <code>UTF8</code> from <code>template0</code> with
+    the C locale on every distribution, an existing database that is not
+    UTF8 is refused with its encoding named, and the hint names both causes.</li>
+<li>nginx never read the vhost: the Debian package had started it with the
+    distro's default site before the vhost existed, <code>enable --now</code> is a no-op
+    on a running service, and the readiness check then failed on an install
+    that was otherwise complete. The installer restarts nginx after writing
+    the vhost (a restart, not a reload — the openSUSE <code>$MAINPID</code> race stays
+    closed).</li>
+<li><strong>The documented upgrade path for a node on 3.3.2 or older did not work
+  as written.</strong> Those nodes run an update runner that points pip at a staging
+  directory only root can read, so the first package that ships a wheel the
+  venv lacks — the prescribed <code>satom-update-3.3.3.tar.gz</code> included — fails at
+  <code>pip install</code> and rolls back cleanly, every time; the runner that fixed it
+  (3.3.3) is inside the very package it cannot apply. The release notes and
+  the update manual now give the step that works: install the package's own
+  runner first (<code>deploy/install-runner.sh</code> from the verified package, as
+  root), then apply the package. Measured on a 2.11.0 node: the first apply
+  rolled back, the second — after that step — upgraded to 3.3.3 with the
+  data intact.</li>
 </ul>
 <p class="rel-prevnext"><a href="unreleased.html">← Unreleased — the next release</a> · <a href="v3.3.8.html">Version 3.3.8 →</a></p>
       </div>

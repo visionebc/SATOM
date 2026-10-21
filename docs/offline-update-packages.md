@@ -164,6 +164,34 @@ refused at **Upgrade path** with nothing changed. Coming from 3.3.2 or older
 you apply `satom-update-3.3.3.tar.gz` first — it carries every wheel — and
 then the newer package.
 
+**On a node on 3.3.2 or older, install the 3.3.3 package's runner first.**
+Those nodes run an update runner that stages the package in a directory only
+root can read and then points `pip` — running as the service account — at the
+wheels inside it; pip ignores the unreadable directory and the apply fails at
+`pip install` with `No matching distribution found`, then rolls back cleanly.
+The runner that reads the wheels from a readable place is in 3.3.3, inside the
+very package the old runner cannot apply, and pip runs before the runner is
+replaced, so the package cannot heal the node by itself. Measured on a 2.11.0
+node on 2026-10-21: the first apply rolled back to the previous commit with
+the data intact; the apply after the step below upgraded to 3.3.3. The step,
+as root on the node, after the console's preflight has verified the package's
+signature (upload it under Software Update and read the preflight — Apply is
+what fails, not the verification):
+
+```bash
+mkdir -m 700 /root/satom-3.3.3-deploy
+tar xzf satom-update-3.3.3.tar.gz -C /root/satom-3.3.3-deploy --strip-components=1
+tar xzf /root/satom-3.3.3-deploy/app.tar.gz -C /root/satom-3.3.3-deploy deploy/
+SATOM_DEPLOY_SRC=/root/satom-3.3.3-deploy/deploy \
+    bash /root/satom-3.3.3-deploy/deploy/install-runner.sh
+# then apply satom-update-3.3.3.tar.gz from the Software Update page as usual
+rm -rf /root/satom-3.3.3-deploy
+```
+
+`install-runner.sh` installs the root-owned runner copy and converges the
+node's units and roles; it does not touch the application tree or the
+database. A node on 3.3.3 or newer never needs this step.
+
 ---
 
 ## 4. Managing the trust store

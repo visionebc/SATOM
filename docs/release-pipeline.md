@@ -232,6 +232,17 @@ GitHub unreachable) is kept and named in the log, never deleted: it may be the
 last copy anywhere. Unversioned files are not considered. A dry run prints the
 plan and removes nothing.
 
+**Each downloads page carries only the current release.** The product site's
+`/downloads/` page links this release's files on GitHub, and the documentation
+gate refuses a release whose page still names an older version. The staging
+node also serves a `/downloads/` of its own with the files themselves (the update
+package and the API library pack, with their checksums), for clients that cannot
+rely on GitHub: the `staging_downloads` step copies them from the download
+catalog, verifies every checksum on the node before swapping them in, moves what
+was there to a dated backup directory instead of deleting it, and then reads the
+page back over HTTP — the listing must be exactly this release's four files and
+the update package's bytes must match its checksum.
+
 The builders (one per bundle family, plus the Docker builder) are build-only
 machines that do not start at boot. Verification and publication start them
 again to read their artefacts, so the run stops every one of them when it

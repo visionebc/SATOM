@@ -6,6 +6,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.4.3] - 2026-10-21
+
+A fix release for the package index **Test** in Settings → General → Update
+sources: when an index answers without listing the package, the message now
+says what answered and what to change.
+
 ### Fixed
 
 - **"the index answered but lists no release of Flask" now says what answered**

@@ -101,7 +101,8 @@ def csp_for(page: Path) -> str:
             "connect-src 'self'",
             "object-src 'none'",
             "base-uri 'none'",
-            "form-action 'none'",
+            # The release notes sidebar search is a GET form to releases.html.
+            "form-action 'self'",
             "frame-ancestors 'none'",
         ))
         if len(_csp_cache) > 4096:

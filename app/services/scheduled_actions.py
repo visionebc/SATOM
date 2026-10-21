@@ -2056,11 +2056,12 @@ def _do_user_op(key: str, appliance, params: dict, dry_run: bool) -> dict:
            "log": json.dumps(result.get("request") or {})[:_LOG_MAX]}
     # The inverse, for a Process ``compensate`` step. ONLY the status flips:
     # their inverse is the same action the other way and needs no previous
-    # value. A config change or a certificate swap would need the value the
-    # device held before, which this executor never read — so it records no
-    # inverse and compensate names the step as "cannot be undone by SATOM"
-    # instead of guessing an address to point a backend at.
-    if ok and not dry_run and key in ("policy_set_status", "backend_set_status"):
+    # value, so it is known on a preview as well (a rehearsed walk lists it;
+    # an armed walk replays it). A config change or a certificate swap would
+    # need the value the device held before, which this executor never read —
+    # so it records no inverse and compensate names the step as "cannot be
+    # undone by SATOM" instead of guessing an address to point a backend at.
+    if ok and key in ("policy_set_status", "backend_set_status"):
         inverse = {k: v for k, v in params.items()
                    if k in ("policy", "server_pool", "member")}
         inverse["enabled"] = not enabled

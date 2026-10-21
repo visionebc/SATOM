@@ -419,11 +419,13 @@ def _run_action(node, ctx) -> StepResult:
         # raises, but "documents" is not "cannot"; my crash is not their outage.
         return StepResult(UNKNOWN, "the action raised: %s" % exc)
     prefix = "rehearsed (not armed): " if dry else ""
-    # The inverse the action recorded, kept ONLY for a real write that
-    # succeeded: a rehearsal changed nothing, so there is nothing to undo, and
-    # a failed write may have landed half — compensate must say "unknown" for
-    # it, not replay an inverse of something that never happened.
-    undo = res.get("undo") if (res.get("ok") and not dry) else None
+    # The inverse the action recorded, kept when the action succeeded — on a
+    # rehearsal too, so that a Compensate step in the same (unarmed) walk can
+    # list what it WOULD undo; a run is armed or not for its whole walk, so a
+    # rehearsed inverse is only ever rehearsed back. A failed write may have
+    # landed half: compensate must say "unknown" for it, not replay an
+    # inverse of something that never fully happened.
+    undo = res.get("undo") if res.get("ok") else None
     return StepResult(PASS if res.get("ok") else FAIL,
                       prefix + (res.get("summary") or key), res.get("log") or "",
                       undo=undo if isinstance(undo, dict) else None)

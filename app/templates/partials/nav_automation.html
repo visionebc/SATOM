@@ -46,7 +46,7 @@
 {% set _m_pr = adom_menu('provisioning', product) %}
 {% set _m_cm = adom_menu('cert_manager', product) %}
 {% endif %}
-{% set _auto_bps = ['upgrade_flow','migration_report','automations','scripts','device_provision','provisioning','change_requests','cert_manager'] %}
+{% set _auto_bps = ['upgrade_flow','migration_report','automations','event_automations','scripts','device_provision','provisioning','change_requests','cert_manager'] %}
 {# Device ADOMs: a subgroup of Operations since 2026-10-14 (operator), included
    by partials/nav_operations.html — base.html no longer draws it as a group
    there. Global and placeholder ADOMs have no Operations group and keep the
@@ -105,7 +105,7 @@
     {% if (product.key == 'global' or _dev) and current_user.can('config_write') %}
     {% if may_open('automations.index') %}
     {% if product.key == 'global' or _m_au.on %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint == 'automations' else '' }}" href="{{ url_for('automations.index', _adom=product.key) }}">
+    <a class="fw-nav-item {{ 'active' if request.blueprint in ('automations', 'event_automations') else '' }}" href="{{ url_for('automations.index', _adom=product.key) }}">
       <i class="bi bi-calendar2-check fw-nav-icon"></i><span>{{ _('Automations') }}</span></a>
     {% else %}{{ nav_off('bi-calendar2-check', _('Automations'), _m_au.reason) }}{% endif %}
     {% endif %}

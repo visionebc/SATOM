@@ -1471,6 +1471,21 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
                            "skipped": sum(1 for r in proc_rows if r["status"] == "skipped"),
                            "rows": proc_rows}
     triggered_keys.update(r["key"] for r in proc_rows if r["status"] == "queued")
+    # Triggers (Administrator > Triggers) and the event automations bound to
+    # them (Automation > Automations > On a trigger): the same rule as the
+    # process triggers above -- every fresh finding, whatever the sinks say,
+    # queued as jobs, and a finding that started an automation owes a cooldown.
+    try:
+        from . import trigger_engine
+        trig_rows = trigger_engine.on_findings(fresh, node)
+    except Exception as exc:  # noqa: BLE001 — report, do not sink the run
+        trig_rows = []
+        result["delivery_failed"].append("triggers: %s" % exc)
+    result["triggers"] = {
+        "queued": sum(1 for r in trig_rows if r["status"] == "queued"),
+        "suppressed": sum(1 for r in trig_rows if r["status"] == "suppressed"),
+        "rows": trig_rows}
+    triggered_keys.update(r["key"] for r in trig_rows if r["status"] == "queued")
 
     # A finding no notification sink accepted reached nobody. It is not
     # ``dispatched`` and — see the cooldown note below — it is not stamped

@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}{{ auto.name if auto else _('New automation') }} — {{ _('On a trigger') }}{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <span>{{ _('Automation') }}</span><span class="separator">/</span>
+  <a href="{{ url_for('.index') }}">{{ _('On a trigger') }}</a><span class="separator">/</span>
+  <span>{{ auto.name if auto else _('New') }}</span>
+</div>
+{% endblock %}
+{% block content %}
+{% set f = request.form %}
+{% set cur_kind = (auto.kind if auto else f.get('kind', '')) %}
+{% set cur_trigger = (auto.trigger_id if auto else (f.get('trigger_id')|int if f.get('trigger_id') else preselect_trigger)) %}
+{% macro pv(kind, name, default='') -%}
+{%- if f.get('p_' ~ kind ~ '_' ~ name) is not none -%}{{ f.get('p_' ~ kind ~ '_' ~ name) }}
+{%- elif auto and auto.kind == kind and params.get(name) is not none -%}{{ params.get(name) }}
+{%- else -%}{{ default }}{%- endif -%}
+{%- endmacro %}
+{% macro target_sel(kind, label) %}
+  <label class="form-label">{{ label }}</label>
+  <select class="form-select form-select-sm" name="target_{{ kind }}">
+    <option value="">{{ _('— choose —') }}</option>
+    {% for val, text in choices[kind] %}<option value="{{ val }}" {{ 'selected' if (auto and auto.kind == kind and auto.target == val) or f.get('target_' ~ kind) == val }}>{{ text }}</option>{% endfor %}
+  </select>
+  {% if not choices[kind] %}<div class="form-text text-warning">{{ _('Nothing to choose from yet.') }}</div>{% endif %}
+{% endmacro %}
+
+<div class="fw-page-header">
+  <h1 class="fw-page-title"><i class="bi bi-lightning-charge me-2 text-accent"></i>{{ auto.name if auto else _('New automation') }}</h1>
+</div>
+{% include 'partials/_automation_tabs.html' %}
+{% if problems %}
+<div class="fw-alert fw-alert-danger mb-3"><ul class="mb-0">{% for p in problems %}<li>{{ p }}</li>{% endfor %}</ul></div>
+{% elif current_problems %}
+<div class="fw-alert fw-alert-warning mb-3">{{ _('This automation cannot run right now:') }}<ul class="mb-0">{% for p in current_problems %}<li>{{ p }}</li>{% endfor %}</ul></div>
+{% endif %}
+
+<form method="POST" action="{{ url_for('.edit', id=auto.id) if auto else url_for('.new') }}" class="fw-card p-3 mb-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row g-3">
+    <div class="col-md-3"><label class="form-label">{{ _('Key') }}</label>
+      <input class="form-control form-control-sm" name="key" value="{{ auto.key if auto else f.get('key', '') }}" {{ 'readonly' if auto }} required pattern="[a-z0-9][a-z0-9_-]{1,47}"></div>
+    <div class="col-md-5"><label class="form-label">{{ _('Name') }}</label>
+      <input class="form-control form-control-sm" name="name" value="{{ auto.name if auto else f.get('name', '') }}" required></div>
+    <div class="col-md-4"><label class="form-label">{{ _('When this trigger matches') }}</label>
+      <select class="form-select form-select-sm" name="trigger_id" required>
+        <option value="">{{ _('— choose —') }}</option>
+        {% for t in triggers %}<option value="{{ t.id }}" {{ 'selected' if cur_trigger == t.id }}>{{ t.key }} — {{ t.event }}{{ '' if t.enabled else ' (disabled)' }}</option>{% endfor %}
+      </select></div>
+    <div class="col-12"><label class="form-label">{{ _('Description') }}</label>
+      <textarea class="form-control form-control-sm" name="description" rows="2">{{ auto.description if auto else f.get('description', '') }}</textarea></div>
+    <div class="col-md-4"><label class="form-label">{{ _('Do') }}</label>
+      <select class="form-select form-select-sm" name="kind" id="ea-kind" required>
+        <option value="">{{ _('— choose —') }}</option>
+        {% for k, label in kinds.items() %}<option value="{{ k }}" {{ 'selected' if cur_kind == k }}>{{ _(label) }}</option>{% endfor %}
+      </select></div>
+  </div>
+
+  <p class="small text-muted mt-2 mb-1">{{ _('Text fields are templates over the event: {{ event.title }}, {{ event.appliance_id }}, {{ event.data.ticket }}… and {{ trigger.key }}. An optional value is written {{ x | default(\'\') }}.') }}</p>
+
+  <div class="ea-kind border rounded p-2 mt-2" data-kind="process">
+    <div class="row g-2"><div class="col-md-6">{{ target_sel('process', _('Process')) }}</div>
+      <div class="col-md-6"><label class="form-label">{{ _('Appliance (id or name)') }}</label>
+        <input class="form-control form-control-sm" name="p_process_appliance" value="{{ pv('process', 'appliance') }}" placeholder="{{ _('empty = the appliance the event names') }}"></div></div>
+    <p class="small text-muted mb-0 mt-1">{{ _('One walk at a time per process and appliance, within the process\'s own hourly budget. Unarmed = every write step dry-runs.') }}</p>
+  </div>
+  <div class="ea-kind border rounded p-2 mt-2" data-kind="app">
+    <div class="row g-2"><div class="col-md-6">{{ target_sel('app', _('Published app')) }}</div>
+      <div class="col-md-6"><label class="form-label">{{ _('Form values (JSON)') }}</label>
+        <textarea class="form-control form-control-sm font-monospace" rows="3" name="p_app_inputs" placeholder='{"device": "{{ "{{ event.appliance_id }}" }}"}'>{{ pv('app', 'inputs') }}</textarea></div></div>
+    <p class="small text-muted mb-0 mt-1">{{ _('Runs as the owner, who must be allowed to use the app. Inside the diagram the whole event is {{ event }}. Unarmed = the published version runs as a rehearsal.') }}</p>
+  </div>
+  <div class="ea-kind border rounded p-2 mt-2" data-kind="script">
+    <div class="row g-2"><div class="col-md-6">{{ target_sel('script', _('Published script')) }}</div>
+      <div class="col-md-6"><label class="form-label">{{ _('Form values (JSON)') }}</label>
+        <textarea class="form-control form-control-sm font-monospace" rows="3" name="p_script_inputs">{{ pv('script', 'inputs') }}</textarea></div></div>
+  </div>
+  <div class="ea-kind border rounded p-2 mt-2" data-kind="api_call">
+    <div class="row g-2">
+      <div class="col-md-4">{{ target_sel('api_call', _('HTTP connection')) }}</div>
+      <div class="col-md-4"><label class="form-label">{{ _('Endpoint (API Catalog id)') }}</label>
+        <input class="form-control form-control-sm" name="p_api_call_operation" value="{{ pv('api_call', 'operation') }}" list="ea-ops">
+        <datalist id="ea-ops">{% for conn, cat in catalog.items() %}{% for op in cat.ops %}<option value="{{ op.id }}">{{ conn }}: {{ op.method }} {{ op.path }}</option>{% endfor %}{% endfor %}</datalist></div>
+      <div class="col-md-4"><label class="form-label">{{ _('Path parameters (JSON)') }}</label>
+        <input class="form-control form-control-sm font-monospace" name="p_api_call_path_params" value="{{ pv('api_call', 'path_params') }}"></div>
+      <div class="col-md-2"><label class="form-label">{{ _('Method') }}</label>
+        <select class="form-select form-select-sm" name="p_api_call_method">{% for m in ('GET', 'POST', 'PUT', 'PATCH', 'DELETE') %}<option {{ 'selected' if pv('api_call', 'method', 'GET') == m }}>{{ m }}</option>{% endfor %}</select></div>
+      <div class="col-md-4"><label class="form-label">{{ _('Path (without an endpoint id)') }}</label>
+        <input class="form-control form-control-sm" name="p_api_call_path" value="{{ pv('api_call', 'path') }}"></div>
+      <div class="col-md-3"><label class="form-label">{{ _('Query (JSON)') }}</label>
+        <input class="form-control form-control-sm font-monospace" name="p_api_call_query" value="{{ pv('api_call', 'query') }}"></div>
+      <div class="col-md-3"><label class="form-label">{{ _('Keep only (JSON path)') }}</label>
+        <input class="form-control form-control-sm" name="p_api_call_extract" value="{{ pv('api_call', 'extract') }}"></div>
+      <div class="col-12"><label class="form-label">{{ _('Body (JSON)') }}</label>
+        <textarea class="form-control form-control-sm font-monospace" rows="3" name="p_api_call_body">{{ pv('api_call', 'body') }}</textarea></div>
+    </div>
+    <p class="small text-muted mb-0 mt-1">{{ _('A connection pinned to an API Catalog version calls only endpoints of that version. Unarmed = anything but GET is recorded, not sent.') }}</p>
+  </div>
+  <div class="ea-kind border rounded p-2 mt-2" data-kind="sql_query">
+    <div class="row g-2"><div class="col-md-4">{{ target_sel('sql_query', _('PostgreSQL connection')) }}</div>
+      <div class="col-md-4"><label class="form-label">{{ _('Allow writes') }}</label>
+        <select class="form-select form-select-sm" name="p_sql_query_allow_writes">{% for v in ('no', 'yes') %}<option {{ 'selected' if pv('sql_query', 'allow_writes', 'no') == v }}>{{ v }}</option>{% endfor %}</select></div>
+      <div class="col-md-4"><label class="form-label">{{ _('Parameters (JSON)') }}</label>
+        <input class="form-control form-control-sm font-monospace" name="p_sql_query_params" value="{{ pv('sql_query', 'params') }}"></div>
+      <div class="col-12"><label class="form-label">{{ _('SQL') }}</label>
+        <textarea class="form-control form-control-sm font-monospace" rows="3" name="p_sql_query_sql">{{ pv('sql_query', 'sql') }}</textarea></div></div>
+  </div>
+  <div class="ea-kind border rounded p-2 mt-2" data-kind="store_write">
+    <div class="row g-2"><div class="col-md-4">{{ target_sel('store_write', _('Data store')) }}</div>
+      <div class="col-md-2"><label class="form-label">{{ _('Mode') }}</label>
+        <select class="form-select form-select-sm" name="p_store_write_mode">{% for v in ('insert', 'update', 'upsert', 'delete') %}<option {{ 'selected' if pv('store_write', 'mode', 'insert') == v }}>{{ v }}</option>{% endfor %}</select></div>
+      <div class="col-md-6"><label class="form-label">{{ _('Match (JSON)') }}</label>
+        <input class="form-control form-control-sm font-monospace" name="p_store_write_match" value="{{ pv('store_write', 'match') }}"></div>
+      <div class="col-12"><label class="form-label">{{ _('Values (JSON)') }}</label>
+        <textarea class="form-control form-control-sm font-monospace" rows="3" name="p_store_write_values">{{ pv('store_write', 'values') }}</textarea></div></div>
+  </div>
+  <div class="ea-kind border rounded p-2 mt-2" data-kind="hook">
+    {{ target_sel('hook', _('Integration hook')) }}
+    <p class="small text-muted mb-0 mt-1">{{ _('The hook receives this trigger\'s event as ctx.payload, whatever event it is bound to; a disabled hook is skipped.') }}</p>
+  </div>
+  <div class="ea-kind border rounded p-2 mt-2" data-kind="action">
+    {{ target_sel('action', _('Scheduled action')) }}
+    <p class="small text-muted mb-0 mt-1">{{ _('Runs now, exactly as configured — its targets, and its change-request gate for reboot, upgrade, failover, certificate lifecycle and custom REST. A danger action runs only from an armed automation.') }}</p>
+  </div>
+  <div class="ea-kind border rounded p-2 mt-2" data-kind="notify">
+    <div class="row g-2">
+      <div class="col-md-8"><label class="form-label">{{ _('Title') }}</label>
+        <input class="form-control form-control-sm" name="p_notify_title" value="{{ pv('notify', 'title') }}" placeholder="{{ '{{ event.title }}' }}"></div>
+      <div class="col-md-4"><label class="form-label">{{ _('Level') }}</label>
+        <select class="form-select form-select-sm" name="p_notify_level">{% for v in ('info', 'error') %}<option {{ 'selected' if pv('notify', 'level', 'info') == v }}>{{ v }}</option>{% endfor %}</select></div>
+      <div class="col-12"><label class="form-label">{{ _('Body') }}</label>
+        <textarea class="form-control form-control-sm" rows="3" name="p_notify_body">{{ pv('notify', 'body') }}</textarea></div>
+      <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" id="ea-bell" name="p_notify_bell" value="1" {{ 'checked' if (auto and auto.kind == 'notify' and params.get('bell')) or f.get('p_notify_bell') }}>
+        <label class="form-check-label" for="ea-bell">{{ _('Bell (administrators)') }}</label></div></div>
+      <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" id="ea-mail" name="p_notify_email_alerts" value="1" {{ 'checked' if (auto and auto.kind == 'notify' and params.get('email_alerts')) or f.get('p_notify_email_alerts') }}>
+        <label class="form-check-label" for="ea-mail">{{ _('E-mail the alert recipients') }}</label></div></div>
+      <div class="col-md-6"><label class="form-label">{{ _('E-mail also to') }}</label>
+        <input class="form-control form-control-sm" name="p_notify_email_to" value="{{ pv('notify', 'email_to') }}" placeholder="ops@example.com, …"></div>
+    </div>
+  </div>
+
+  <div class="row g-3 mt-1 align-items-end">
+    <div class="col-md-5"><div class="form-check">
+      <input class="form-check-input" type="checkbox" name="armed" id="ea-armed" value="1" {{ 'checked' if (auto and auto.armed) or f.get('armed') }}>
+      <label class="form-check-label" for="ea-armed"><strong>{{ _('Armed') }}</strong> — {{ _('writes for real with nobody at the screen. Off = a rehearsal: write steps are recorded, not executed.') }}</label></div>
+      <div class="form-text">{{ _('Applies to processes, apps, API calls, SQL, data-store writes and danger scheduled actions.') }}</div></div>
+    <div class="col-md-3"><div class="form-check">
+      <input class="form-check-input" type="checkbox" name="enabled" id="ea-enabled" value="1" {{ 'checked' if (not auto) or auto.enabled }}>
+      <label class="form-check-label" for="ea-enabled">{{ _('Enabled') }}</label></div></div>
+    <div class="col-md-4 text-end">
+      {% if auto %}<span class="small text-muted me-2">{{ _('Runs as') }} {{ auto.owner }}</span>{% endif %}
+      <button class="btn btn-fw-primary"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button></div>
+  </div>
+</form>
+
+{% if auto %}
+<div class="row g-3 mb-3">
+  <div class="col-lg-8">
+    <form method="POST" action="{{ url_for('.test', id=auto.id) }}" class="fw-card p-3 h-100">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <h6>{{ _('Test — a rehearsal') }}</h6>
+      <p class="small text-muted mb-2">{{ _('Runs once as a job, never armed and never chained, with the trigger event\'s documented example — or the payload you paste.') }}</p>
+      <textarea class="form-control form-control-sm font-monospace mb-2" name="payload" rows="3"></textarea>
+      <button class="btn btn-sm btn-fw-secondary"><i class="bi bi-play me-1"></i>{{ _('Run a rehearsal') }}</button>
+    </form>
+  </div>
+  <div class="col-lg-4">
+    <div class="fw-card p-3 h-100">
+      <h6>{{ _('Trigger') }}</h6>
+      <p class="small mb-2"><code>{{ auto.trigger.key }}</code> {{ _('on') }} <code>{{ auto.trigger.event }}</code>{% if not auto.trigger.enabled %} <span class="fw-badge fw-badge-warning">{{ _('disabled') }}</span>{% endif %}</p>
+      {% if current_user.can('user_manage') %}<a class="btn btn-sm btn-fw-secondary" href="{{ url_for('triggers.edit', id=auto.trigger_id) }}">{{ _('Open the trigger') }}</a>{% endif %}
+      <form method="POST" action="{{ url_for('.delete', id=auto.id) }}" class="d-inline ms-1 js-confirm" data-confirm="{{ _('Delete this automation?') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-outline-danger">{{ _('Delete') }}</button></form>
+    </div>
+  </div>
+</div>
+<div class="fw-card" id="history">
+  <div class="p-2 border-bottom"><strong>{{ _('Runs') }}</strong></div>
+  {% include 'event_automations/_runs.html' %}
+</div>
+{% endif %}
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var sel = document.getElementById('ea-kind');
+  var armed = document.getElementById('ea-armed');
+  var armable = {{ armable|list|tojson }};
+  function show() {
+    document.querySelectorAll('.ea-kind').forEach(function (el) {
+      el.hidden = el.getAttribute('data-kind') !== sel.value;
+    });
+    if (armed) { armed.disabled = armable.indexOf(sel.value) < 0; }
+  }
+  if (sel) { sel.addEventListener('change', show); show(); }
+})();
+</script>
+{% endblock %}

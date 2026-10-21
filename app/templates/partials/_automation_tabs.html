@@ -1,0 +1,10 @@
+{# Automation > Automations: two tabs, one page in the menu (2026-10-22).
+   "Scheduled" is the clock (views/scheduled_actions.py, automations surface);
+   "On a trigger" is the event side (views/event_automations.py), the
+   implementation of the triggers created under Administrator > Triggers. #}
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item"><a class="nav-link {{ 'active' if request.blueprint == 'automations' }}"
+      href="{{ url_for('automations.index', _adom=product.key) }}"><i class="bi bi-calendar2-check me-1"></i>{{ _('Scheduled') }}</a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if request.blueprint == 'event_automations' }}"
+      href="{{ url_for('event_automations.index', _adom=product.key) }}"><i class="bi bi-lightning-charge me-1"></i>{{ _('On a trigger') }}</a></li>
+</ul>

@@ -196,6 +196,7 @@ def request_crq(cr, *, by: str = "operator") -> dict:
                           tracker_result.get("detail") or "no detail"))
 
     results = hooks.dispatch("change.requested", payload, by=by)
+    _emit_triggers("change.requested", payload, cr, by=by)
     detail = (f"{len(payload['devices'])} device(s), {len(evidence)} with a "
               f"stored pre-upgrade run"
               + (f", {len(uncovered)} without" if uncovered else ""))
@@ -584,6 +585,7 @@ def _dispatch_per_device(cr, *, ok: bool, summary: str, by: str) -> int:
             sent += len(hooks.dispatch(event, payload, by=by))
         except Exception as exc:  # noqa: BLE001
             _safe_log(cr, f"{event} dispatch failed for {dev.name}: {exc}")
+        _emit_triggers(event, payload, cr, by=by)
     return sent
 
 
@@ -604,10 +606,24 @@ def _dispatch_quiet(event: str, cr, *, by: str, extra: dict | None = None) -> in
         results = hooks.dispatch(event, payload, by=by)
     except Exception as exc:  # noqa: BLE001
         _safe_log(cr, f"{event} dispatch failed: {exc}")
+        results = None
+    _emit_triggers(event, payload, cr, by=by)
+    if results is None:
         return 0
     if results:
         _safe_log(cr, f"{event} dispatched to {len(results)} hook(s)")
     return len(results)
+
+
+def _emit_triggers(event: str, payload: dict, cr, *, by: str) -> int:
+    """The same event to Administrator > Triggers (services.trigger_engine).
+    Independent of the hooks: a hook that failed to queue must not cost the
+    change its automations, and a trigger never raises into a change."""
+    from . import trigger_engine
+    n = trigger_engine.emit_quiet(event, payload, by=by)
+    if n:
+        _safe_log(cr, f"{event} started {n} event automation(s)")
+    return n
 
 
 def _safe_log(cr, line: str) -> None:

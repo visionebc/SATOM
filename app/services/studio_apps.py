@@ -137,6 +137,12 @@ def choices() -> dict:
     from . import studio_apis as SAPI
     out["catalog"] = SAPI.choices()
     try:
+        from ..models_process import Process
+        out["processes"] = [p.key for p in Process.query.filter_by(enabled=True)
+                            .order_by(Process.key).all()]
+    except Exception:  # noqa: BLE001 -- the editor must open without the table
+        out["processes"] = []
+    try:
         from ..views.change_requests import cr_type_entries
         out["cr_actions"] = [e["key"] for e in cr_type_entries()]
     except Exception:  # noqa: BLE001
@@ -582,35 +588,42 @@ def _prune_runs() -> None:
 
 
 def start_run(a: StudioApp, *, user, product: str, raw_inputs, draft: bool = False,
-              armed: bool = True) -> StudioAppRun:
+              armed: bool = True, rehearsal: bool = False, inline: bool = False,
+              event: dict | None = None) -> StudioAppRun:
+    """Start a run. ``rehearsal`` forces even a published version to record
+    its writes instead of executing them (an event automation that is not
+    armed). ``inline`` runs in the caller's thread -- the event automation's
+    job worker, which is already off the request. ``event`` is the payload of
+    the event that started the run, ``{{ event }}`` in the diagram."""
     d = definition(a, draft)
     _room_for_run(getattr(user, "username", ""))
     _prune_runs()
     fields = d.get("fields") or []
     inputs = resolve_inputs(fields, raw_inputs)
-    run = StudioAppRun(app_id=a.id, version=d.get("version") or 0, armed=bool(armed or not draft),
+    run = StudioAppRun(app_id=a.id, version=d.get("version") or 0,
+                       armed=bool(armed or not draft) and not rehearsal,
                        user=getattr(user, "username", ""), product=product or "",
                        inputs_json=json.dumps(shown_inputs(fields, inputs), default=str))
     db.session.add(run)
     db.session.commit()
     passwords = [str(inputs[f["name"]]) for f in fields
                  if f["type"] == "password" and inputs.get(f["name"])]
-    if RUN_INLINE:
-        execute(run.id, getattr(user, "id", None), inputs, d, passwords)
+    if RUN_INLINE or inline:
+        execute(run.id, getattr(user, "id", None), inputs, d, passwords, event=event)
         db.session.refresh(run)
     else:
         from flask import current_app
         flask_app = current_app._get_current_object()
         threading.Thread(target=_bg, args=(flask_app, run.id, getattr(user, "id", None),
-                                           inputs, d, passwords),
+                                           inputs, d, passwords, event),
                          name="studio-app-run-%d" % run.id, daemon=True).start()
     return run
 
 
-def _bg(flask_app, run_id, user_id, inputs, d, passwords):
+def _bg(flask_app, run_id, user_id, inputs, d, passwords, event=None):
     with flask_app.app_context():
         try:
-            execute(run_id, user_id, inputs, d, passwords)
+            execute(run_id, user_id, inputs, d, passwords, event=event)
         finally:
             db.session.remove()
 
@@ -649,13 +662,16 @@ def _capped(obj) -> str:
     return s
 
 
-def execute(run_id: int, user_id, inputs: dict, d: dict, passwords=()) -> None:
+def execute(run_id: int, user_id, inputs: dict, d: dict, passwords=(),
+            event: dict | None = None) -> None:
     from ..models import User
     run = db.session.get(StudioAppRun, run_id)
     if run is None:
         return
     user_obj = db.session.get(User, user_id) if user_id else None
     ctx = F.Ctx(form=inputs, armed=run.armed, user=run.user, user_obj=user_obj, run_id=run.id)
+    if event is not None:
+        ctx.vars["event"] = event
     secrets = _spellings([p for p in passwords if len(p) >= 3])
 
     def persist(steps, c):

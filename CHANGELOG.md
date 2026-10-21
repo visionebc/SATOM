@@ -6,6 +6,41 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **Triggers and automations on a trigger — SATOM as an orchestrator.** The
+  operator asked for triggers on alerts, created under Administrator and
+  implemented under Automations, with everything SATOM has — external and
+  internal APIs, Python scripts, Studio — usable together. Administrator →
+  Change Management → **Triggers** defines the *condition*: one event
+  (`alert.fired`, `intent.deviation`, `change.requested`, `change.approved`,
+  `window.opening`, `window.closing`, `upgrade.finished`, `upgrade.failed`,
+  the new `automation.finished`, and the new `api.event`) narrowed by ADOM,
+  alert family, minimum severity, appliance, key and type globs, text, the
+  finished automation and its outcome, and JSON payload conditions; a cooldown
+  per subject and a budget of matches per hour bound a storm, and **Preview**
+  checks the conditions against the alert engine's findings right now or a
+  pasted payload without firing anything. Automations → **On a trigger**
+  holds the *implementation*: when a trigger matches, walk a Process, run a
+  published Python Studio app (with the event as `{{ event }}`), run a Script
+  Library script, call an HTTP connection (API Catalog endpoints on a pinned
+  connection), query a PostgreSQL connection, write a Studio data store, run
+  an integration hook, run an existing scheduled action now, or notify (bell
+  and e-mail). Text fields are templates over the event. Automations are
+  rehearsals unless **armed**, run as their owner, always as a job (never
+  inside the alert evaluation), and every match, refusal and run is recorded
+  with a link to the real record. A finished automation emits
+  `automation.finished`, so one automation can follow another's outcome; a
+  chain stops after 3 hops. **Test** runs one rehearsal with the event's
+  documented example.
+- **`POST /api/v1/events`** (`write` scope): an outside system posts an
+  event that starts every matching `api.event` trigger's automations;
+  **`GET /api/v1/triggers`** (`read`) lists the triggers.
+- **Python Studio: a "Walk a process" app step.** One app diagram can now
+  call an API, run a script, query a database and walk a device runbook,
+  continuing on the walk's verdict. A rehearsal run walks it unarmed; an armed
+  run walks it armed only for a user who holds `config_write`.
+
 ## [3.4.5] - 2026-10-22
 
 Python Studio gets an **API Catalog**: the versions of an API someone publishes,

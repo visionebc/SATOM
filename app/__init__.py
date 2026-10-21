@@ -451,6 +451,10 @@ def create_app(config_override: object | None = None) -> Flask:
                        # console, so pinning its editor to one ADOM would let
                        # four consoles use wording they cannot see or correct.
                        'cr_types',
+                       # Triggers (Administrator) and their implementation
+                       # (Automations > On a trigger): drawn in every ADOM's
+                       # Administrator / Automation menus, like Process.
+                       'triggers', 'event_automations',
                        # Process is drawn into EVERY Administrator block by
                        # partials/nav_process.html, so it must be reachable in
                        # every ADOM or the entry is a live link that goes
@@ -523,6 +527,10 @@ def create_app(config_override: object | None = None) -> Flask:
                        # console, so pinning its editor to one ADOM would let
                        # four consoles use wording they cannot see or correct.
                        'cr_types',
+                       # Triggers (Administrator) and their implementation
+                       # (Automations > On a trigger): drawn in every ADOM's
+                       # Administrator / Automation menus, like Process.
+                       'triggers', 'event_automations',
                        # Process is drawn into EVERY Administrator block by
                        # partials/nav_process.html, so it must be reachable in
                        # every ADOM or the entry is a live link that goes
@@ -577,6 +585,10 @@ def create_app(config_override: object | None = None) -> Flask:
                        # console, so pinning its editor to one ADOM would let
                        # four consoles use wording they cannot see or correct.
                        'cr_types',
+                       # Triggers (Administrator) and their implementation
+                       # (Automations > On a trigger): drawn in every ADOM's
+                       # Administrator / Automation menus, like Process.
+                       'triggers', 'event_automations',
                        # Process is drawn into EVERY Administrator block by
                        # partials/nav_process.html, so it must be reachable in
                        # every ADOM or the entry is a live link that goes
@@ -629,7 +641,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        'jobs', 'notifications', 'profiles', 'users',
                        'advisor', 'adom_assets', 'console',   # see the adc_bps note
                        'database', 'script_library', 'studio', 'apps', 'user_groups', 'locks', 'segments', 'device_provision',
-                       'cr_types', 'process', 'scheduled_actions',
+                       'cr_types', 'process', 'scheduled_actions', 'triggers', 'event_automations',
                        'scout', 'calendar_plan',   # see the faz_bps note
                        'architecture', 'netarch', 'metrics', 'search', 'analysis',
                        'fleet_objects', 'dns_tool',
@@ -2378,6 +2390,10 @@ def create_app(config_override: object | None = None) -> Flask:
             # the tables and the first save 500s.
             from . import models_i18n  # noqa: F401
             from . import models_cr_types  # noqa: F401
+            # Triggers + event automations (the orchestrator). Without
+            # this import create_all() never makes the four tables and
+            # every alert evaluation that looks for a trigger errors.
+            from . import models_triggers  # noqa: F401
             # Bookmarks panel (bookmarks + per-user placement/favourites).
             # Without this import create_all() never makes the tables and
             # the first render of the side panel 500s.
@@ -2685,6 +2701,10 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.monitor_reports", "bp"),
         ("app.views.metrics_admin", "bp"),
         ("app.views.cr_types", "bp"),
+        # Administrator > Change Management > Triggers (the condition) and
+        # Automation > Automations > On a trigger (its implementation).
+        ("app.views.triggers", "bp"),
+        ("app.views.event_automations", "bp"),
         ("app.views.capacity", "bp"),
         # Administrator → Diagnostic Battery. NOT /web-prefixed: it works on
         # the active ADOM (every device ADOM, plus a summary in Global).
@@ -2763,7 +2783,8 @@ def _register_blueprints(app: Flask) -> None:
         "app.views.signatures", "app.views.structure",
         "app.views.classification", "app.views.segments", "app.views.naming",
         "app.views.line_profiles", "app.views.spo_wizard",
-        "app.views.scheduled_actions", "app.views.change_requests",
+        "app.views.scheduled_actions", "app.views.event_automations",
+        "app.views.change_requests",
         "app.views.upgrade_flow",
         "app.views.migration_report",
         "app.views.provisioning", "app.views.firmware",

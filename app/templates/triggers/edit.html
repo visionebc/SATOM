@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}{{ trig.name if trig else _('New trigger') }} — {{ _('Triggers') }}{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <span>{{ _('Administrator') }}</span><span class="separator">/</span>
+  <a href="{{ url_for('.index') }}">{{ _('Triggers') }}</a><span class="separator">/</span>
+  <span>{{ trig.name if trig else _('New') }}</span>
+</div>
+{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <h1 class="fw-page-title"><i class="bi bi-lightning-charge me-2 text-accent"></i>{{ trig.name if trig else _('New trigger') }}</h1>
+</div>
+{% if problems %}
+<div class="fw-alert fw-alert-danger mb-3"><ul class="mb-0">{% for p in problems %}<li>{{ p }}</li>{% endfor %}</ul></div>
+{% endif %}
+
+<form method="POST" action="{{ url_for('.edit', id=trig.id) if trig else url_for('.new') }}" class="fw-card p-3 mb-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row g-3">
+    <div class="col-md-3"><label class="form-label">{{ _('Key') }}</label>
+      <input class="form-control form-control-sm" name="key" value="{{ trig.key if trig else request.form.get('key', '') }}" {{ 'readonly' if trig }} required pattern="[a-z0-9][a-z0-9_-]{1,47}">
+      <div class="form-text">{{ _('Lowercase, digits, - and _. Automations and the API name it.') }}</div></div>
+    <div class="col-md-5"><label class="form-label">{{ _('Name') }}</label>
+      <input class="form-control form-control-sm" name="name" value="{{ trig.name if trig else request.form.get('name', '') }}" required></div>
+    <div class="col-md-4"><label class="form-label">{{ _('Event') }}</label>
+      <select class="form-select form-select-sm" name="event" id="trig-event" required>
+        <option value="">{{ _('— choose —') }}</option>
+        {% for e in event_names %}<option value="{{ e }}" {{ 'selected' if (trig and trig.event == e) or request.form.get('event') == e }}>{{ e }}</option>{% endfor %}
+      </select></div>
+    <div class="col-12"><label class="form-label">{{ _('Description') }}</label>
+      <textarea class="form-control form-control-sm" name="description" rows="2">{{ trig.description if trig else request.form.get('description', '') }}</textarea></div>
+  </div>
+
+  <div class="small text-muted mt-2" id="trig-event-help">
+    {% for e in event_names %}<div data-ev="{{ e }}" class="trig-ev-help" hidden><strong>{{ e }}</strong> — {{ events[e].description }}
+      <details class="mt-1"><summary>{{ _('Payload fields') }}</summary><ul class="mb-0">{% for k, v in events[e].payload.items() %}<li><code>{{ k }}</code> {{ v }}</li>{% endfor %}</ul></details></div>{% endfor %}
+  </div>
+
+  <h6 class="mt-3">{{ _('Conditions') }} <span class="small text-muted">{{ _('(all must hold; empty = any; a condition on a field the event does not carry is not met)') }}</span></h6>
+  <div class="row g-3">
+    <div class="col-md-4"><label class="form-label">{{ _('ADOMs (product)') }}</label>
+      <select class="form-select form-select-sm" name="products" multiple size="4">
+        {% for p in products|sort %}<option value="{{ p }}" {{ 'selected' if p in (cond.products or []) }}>{{ p }}</option>{% endfor %}
+      </select></div>
+    <div class="col-md-4"><label class="form-label">{{ _('Alert families') }}</label>
+      <select class="form-select form-select-sm" name="families" multiple size="4">
+        {% for f in families %}<option value="{{ f }}" {{ 'selected' if f in (cond.families or []) }}>{{ f }}</option>{% endfor %}
+      </select></div>
+    <div class="col-md-4"><label class="form-label">{{ _('Minimum severity') }}</label>
+      <select class="form-select form-select-sm" name="min_severity">
+        <option value="">{{ _('any') }}</option>
+        {% for s in severities %}<option value="{{ s }}" {{ 'selected' if cond.min_severity == s }}>{{ s }}</option>{% endfor %}
+      </select>
+      <label class="form-label mt-2">{{ _('Appliance ids') }}</label>
+      <input class="form-control form-control-sm" name="appliance_ids" value="{{ (cond.appliance_ids or [])|join(', ') }}" placeholder="3, 7"></div>
+    <div class="col-md-4"><label class="form-label">{{ _('Key matches (glob)') }}</label>
+      <input class="form-control form-control-sm" name="key_glob" value="{{ cond.key_glob or '' }}" placeholder="device.*"></div>
+    <div class="col-md-4"><label class="form-label">{{ _('Text contains') }}</label>
+      <input class="form-control form-control-sm" name="text_contains" value="{{ cond.text_contains or '' }}" placeholder="{{ _('title, detail, summary or reason') }}"></div>
+    <div class="col-md-4"><label class="form-label">{{ _('API event type (glob)') }}</label>
+      <input class="form-control form-control-sm" name="api_type" value="{{ cond.api_type or '' }}" placeholder="ticket.*"></div>
+    <div class="col-md-4"><label class="form-label">{{ _('Automation outcome') }}</label>
+      <select class="form-select form-select-sm" name="outcome">
+        <option value="">{{ _('any') }}</option>
+        {% for o in ('ok', 'failed', 'skipped') %}<option value="{{ o }}" {{ 'selected' if cond.outcome == o }}>{{ o }}</option>{% endfor %}
+      </select></div>
+    <div class="col-md-8"><label class="form-label">{{ _('Finished automations (keys, comma separated)') }}</label>
+      <input class="form-control form-control-sm" name="automations" value="{{ (cond.automations or [])|join(', ') }}" list="trig-auto-keys">
+      <datalist id="trig-auto-keys">{% for k in automation_keys %}<option value="{{ k }}">{% endfor %}</datalist></div>
+    <div class="col-12"><label class="form-label">{{ _('Payload conditions (JSON)') }}</label>
+      <textarea class="form-control form-control-sm font-monospace" name="where" rows="3" placeholder='[{"field": "data.priority", "op": "equals", "value": "P1"}]'>{{ (cond.where|tojson) if cond.where else '' }}</textarea>
+      <div class="form-text">{{ _('Each row: field (dotted path into the payload), op') }} ({{ where_ops|join(', ') }}), {{ _('value.') }}</div></div>
+  </div>
+
+  <h6 class="mt-3">{{ _('Bounds') }}</h6>
+  <div class="row g-3 align-items-end">
+    <div class="col-md-3"><label class="form-label">{{ _('Cooldown per subject (minutes)') }}</label>
+      <input class="form-control form-control-sm" type="number" min="0" name="cooldown_minutes" value="{{ trig.cooldown_minutes if trig else 60 }}">
+      <div class="form-text">{{ _('The same alert key / change / API subject matches again only after this. 0 = every time.') }}</div></div>
+    <div class="col-md-3"><label class="form-label">{{ _('Matches per hour') }}</label>
+      <input class="form-control form-control-sm" type="number" min="0" name="rate_limit_per_hour" value="{{ trig.rate_limit_per_hour if trig else 20 }}">
+      <div class="form-text">{{ _('Past this budget a match is recorded as suppressed. 0 = no budget.') }}</div></div>
+    <div class="col-md-3"><div class="form-check">
+      <input class="form-check-input" type="checkbox" name="enabled" id="trig-enabled" value="1" {{ 'checked' if (not trig) or trig.enabled }}>
+      <label class="form-check-label" for="trig-enabled">{{ _('Enabled') }}</label></div></div>
+    <div class="col-md-3 text-end"><button class="btn btn-fw-primary"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button></div>
+  </div>
+</form>
+
+{% if trig %}
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="fw-card p-3 h-100">
+      <h6>{{ _('Bound automations') }}</h6>
+      {% if trig.automations %}
+      <ul class="small mb-2">{% for a in trig.automations %}<li><a href="{{ url_for('event_automations.edit', id=a.id, _adom=a.product or 'global') }}">{{ a.name }}</a> — {{ a.kind }} <code>{{ a.target }}</code>{% if not a.enabled %} <span class="fw-badge fw-badge-secondary">{{ _('disabled') }}</span>{% endif %}{% if a.armed %} <span class="fw-badge fw-badge-danger">{{ _('armed') }}</span>{% endif %}</li>{% endfor %}</ul>
+      {% else %}<p class="small text-muted">{{ _('Nothing is bound yet: a match is recorded and nothing else happens.') }}</p>{% endif %}
+      <a class="btn btn-sm btn-fw-secondary" href="{{ url_for('event_automations.new', _adom=product.key) }}?trigger={{ trig.id }}"><i class="bi bi-plus-lg me-1"></i>{{ _('Bind an automation') }}</a>
+      <form method="POST" action="{{ url_for('.delete', id=trig.id) }}" class="d-inline ms-2 js-confirm" data-confirm="{{ _('Delete this trigger?') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-outline-danger">{{ _('Delete') }}</button></form>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <form method="POST" action="{{ url_for('.preview', id=trig.id) }}" class="fw-card p-3 h-100">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <h6>{{ _('Preview — would it match?') }}</h6>
+      <p class="small text-muted mb-2">{{ _('Nothing is fired. Alert triggers are checked against the alert engine\'s findings right now; paste a payload to check any event.') }}</p>
+      <textarea class="form-control form-control-sm font-monospace mb-2" name="payload" rows="3" placeholder='{"key": "device.fortiweb01", "severity": "critical"}'>{{ preview_payload or '' }}</textarea>
+      <button class="btn btn-sm btn-fw-secondary"><i class="bi bi-search me-1"></i>{{ _('Preview') }}</button>
+      {% if preview %}
+      <table class="table table-sm mt-2 mb-0"><tbody>
+        {% for r in preview %}<tr><td>{% if r.ok %}<span class="fw-badge fw-badge-success">{{ _('match') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('no') }}</span>{% endif %}</td>
+          <td class="small">{{ r.label }}{% if r.subject %} <span class="text-muted">({{ r.subject }})</span>{% endif %}{% if r.why %}<br><span class="text-muted">{{ r.why }}</span>{% endif %}</td></tr>{% endfor %}
+      </tbody></table>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<div class="fw-card mt-3">
+  <div class="p-2 border-bottom"><strong>{{ _('Matches of this trigger') }}</strong></div>
+  <div class="table-responsive">
+  <table class="table table-sm mb-0 align-middle">
+    <thead><tr><th>{{ _('When (UTC)') }}</th><th>{{ _('Subject') }}</th><th>{{ _('Outcome') }}</th><th>{{ _('Automations started') }}</th><th>{{ _('By') }}</th></tr></thead>
+    <tbody>
+    {% for f in fires %}
+      <tr><td class="small">{{ f.fired_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td class="small">{{ f.subject or '—' }}</td>
+        <td>{% if f.status == 'matched' %}<span class="fw-badge fw-badge-success">{{ _('matched') }}</span>{% else %}<span class="fw-badge fw-badge-warning">{{ _('suppressed') }}</span>{% endif %} <span class="small text-muted">{{ f.reason }}</span></td>
+        <td class="small">{% for r in runs_by_fire.get(f.id, []) %}{{ r.automation.key if r.automation else r.automation_id }}: <span class="fw-badge fw-badge-{{ 'success' if r.status == 'ok' else ('danger' if r.status == 'failed' else 'secondary') }}">{{ r.status }}</span>{{ ', ' if not loop.last }}{% else %}—{% endfor %}</td>
+        <td class="small">{{ f.by }}</td></tr>
+    {% else %}
+      <tr><td colspan="5" class="text-muted">{{ _('No match yet.') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var sel = document.getElementById('trig-event');
+  function show() {
+    document.querySelectorAll('.trig-ev-help').forEach(function (el) {
+      el.hidden = el.getAttribute('data-ev') !== sel.value;
+    });
+  }
+  if (sel) { sel.addEventListener('change', show); show(); }
+})();
+</script>
+{% endblock %}

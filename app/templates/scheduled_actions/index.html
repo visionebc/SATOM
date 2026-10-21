@@ -29,6 +29,10 @@
 
 {# A Settings page since 2026-10-21 (FA-0005): it draws the Admin Console
    menu in links mode, like Integrations (settings/_nav.html). #}
+{# Automations has two tabs since 2026-10-22: the clock (this page) and the
+   event side (views/event_automations.py). System Automations has one. #}
+{% if not surface.in_settings %}{% include 'partials/_automation_tabs.html' %}{% endif %}
+
 {% if surface.in_settings %}<div class="fw-settings-layout">
   {% with nav_mode='links', nav_active='scheduled_actions.index', is_admin=True %}{% include "settings/_nav.html" %}{% endwith %}
   <div class="fw-settings-main">{% endif %}

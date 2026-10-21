@@ -1,0 +1,14 @@
+{# ============================================================================
+   Triggers — Administrator › Change Management. ONE definition, every
+   Administrator block (partials/nav_admin.html), 2026-10-22.
+
+   The CONDITION half of the orchestrator: what starts something. What it
+   starts is configured under Automation › Automations › On a trigger
+   (operator: "the creation of triggers goes in Administrator and the
+   implementation in Automations"). Gated by the route's own stamp
+   (USER_MANAGE) through may_open.
+   ========================================================================= #}
+{% if may_open('triggers.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'triggers' else '' }}" href="{{ url_for('triggers.index', _adom=product.key) }}">
+  <i class="bi bi-lightning-charge fw-nav-icon"></i><span>{{ _('Triggers') }}</span></a>
+{% endif %}

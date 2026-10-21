@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Triggers') }} — SATOM{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <span>{{ _('Administrator') }}</span><span class="separator">/</span><span>{{ _('Triggers') }}</span>
+</div>
+{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-lightning-charge me-2 text-accent"></i>{{ _('Triggers') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('A trigger is a condition: an event (an alert fired, a change was approved, a window is opening, an automation finished, an outside system posted an event) narrowed to the occurrences that matter. What happens when it matches is set under') }}
+      <a href="{{ url_for('event_automations.index', _adom=product.key) }}">{{ _('Automation › Automations › On a trigger') }}</a>.
+    </p>
+  </div>
+  <a class="btn btn-fw-primary" href="{{ url_for('.new') }}"><i class="bi bi-plus-lg me-1"></i>{{ _('New trigger') }}</a>
+</div>
+
+<div class="fw-card mb-3">
+  <div class="table-responsive">
+  <table class="table table-sm mb-0 align-middle">
+    <thead><tr><th>{{ _('Key') }}</th><th>{{ _('Name') }}</th><th>{{ _('Event') }}</th><th>{{ _('Conditions') }}</th>
+      <th>{{ _('Automations') }}</th><th>{{ _('Last match') }}</th><th>{{ _('State') }}</th><th></th></tr></thead>
+    <tbody>
+    {% for t in rows %}
+      <tr>
+        <td><code>{{ t.key }}</code></td>
+        <td><a href="{{ url_for('.edit', id=t.id) }}">{{ t.name }}</a></td>
+        <td><code>{{ t.event }}</code></td>
+        <td class="small text-muted">{% for k, v in t.conditions.items() %}{{ k }}={{ v if v is string else (v|tojson) }}{{ '; ' if not loop.last }}{% else %}{{ _('any occurrence') }}{% endfor %}</td>
+        <td>{% if counts[t.id].automations %}{{ counts[t.id].enabled_automations }}/{{ counts[t.id].automations }}{% else %}<span class="fw-badge fw-badge-warning">{{ _('none bound') }}</span>{% endif %}</td>
+        <td class="small">{{ t.last_fired_at.strftime('%Y-%m-%d %H:%M') if t.last_fired_at else '—' }}</td>
+        <td>{% if t.enabled %}<span class="fw-badge fw-badge-success">{{ _('enabled') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('disabled') }}</span>{% endif %}</td>
+        <td class="text-end">
+          <form method="POST" action="{{ url_for('.toggle', id=t.id) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-fw-secondary">{{ _('Disable') if t.enabled else _('Enable') }}</button></form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8" class="text-muted">{{ _('No trigger yet. Create one, then bind an automation to it.') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{% if embedded %}
+<div class="fw-card mb-3 p-3">
+  <h6 class="mb-1">{{ _('Also starting on events: processes with their own trigger') }}</h6>
+  <p class="text-muted small mb-2">{{ _('These are set on the process itself (Process › Trigger) and keep working as before. A trigger here plus a "Walk a process" automation does the same with shared conditions.') }}</p>
+  <ul class="mb-0 small">
+  {% for p in embedded %}<li><a href="{{ url_for('process.detail', pid=p.id) }}"><code>{{ p.key }}</code></a> — {{ _('on') }} <code>{{ p.trigger_event }}</code>{% if not p.enabled %} <span class="fw-badge fw-badge-secondary">{{ _('disabled') }}</span>{% endif %}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="fw-card">
+  <div class="p-2 border-bottom"><strong>{{ _('Recent matches') }}</strong></div>
+  <div class="table-responsive">
+  <table class="table table-sm mb-0 align-middle">
+    <thead><tr><th>{{ _('When (UTC)') }}</th><th>{{ _('Trigger') }}</th><th>{{ _('Event') }}</th><th>{{ _('Subject') }}</th><th>{{ _('Outcome') }}</th></tr></thead>
+    <tbody>
+    {% for f in fires %}
+      <tr><td class="small">{{ f.fired_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td><a href="{{ url_for('.edit', id=f.trigger_id) }}">{{ f.trigger.key if f.trigger else f.trigger_id }}</a></td>
+        <td><code>{{ f.event }}</code>{% if f.depth %} <span class="small text-muted">{{ _('hop') }} {{ f.depth }}</span>{% endif %}</td>
+        <td class="small">{{ f.subject or '—' }}</td>
+        <td>{% if f.status == 'matched' %}<span class="fw-badge fw-badge-success">{{ _('matched') }}</span>{% else %}<span class="fw-badge fw-badge-warning">{{ _('suppressed') }}</span>{% endif %}
+          <span class="small text-muted">{{ f.reason }}</span></td></tr>
+    {% else %}
+      <tr><td colspan="5" class="text-muted">{{ _('Nothing has matched yet.') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

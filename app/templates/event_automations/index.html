@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Automations') }} — {{ _('On a trigger') }}{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <span>{{ _('Automation') }}</span><span class="separator">/</span>
+  <a href="{{ url_for('automations.index', _adom=product.key) }}">{{ _('Automations') }}</a><span class="separator">/</span>
+  <span>{{ _('On a trigger') }}</span>
+</div>
+{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-calendar2-check me-2 text-accent"></i>{{ _('Automations') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('When a trigger matches, do something SATOM can already run: walk a process, run a Python Studio app or a Script Library script, call an API Catalog endpoint, query a database, write a data store, run an integration hook or a scheduled action, or notify. Every run is a job; a finished automation emits automation.finished, so one can follow another.') }}
+      {% if current_user.can('user_manage') %}{{ _('Triggers are created under') }} <a href="{{ url_for('triggers.index', _adom=product.key) }}">{{ _('Administrator › Triggers') }}</a>.{% else %}{{ _('Triggers are created by an administrator.') }}{% endif %}
+    </p>
+  </div>
+  <a class="btn btn-fw-primary {{ 'disabled' if not has_triggers }}" href="{{ url_for('.new') }}"><i class="bi bi-plus-lg me-1"></i>{{ _('New automation') }}</a>
+</div>
+{% include 'partials/_automation_tabs.html' %}
+{% if not has_triggers %}
+<div class="fw-alert fw-alert-info mb-3">{{ _('There is no trigger yet. An administrator creates one under Administrator › Triggers; then it can be bound here.') }}</div>
+{% endif %}
+
+<div class="fw-card mb-3">
+  <div class="table-responsive">
+  <table class="table table-sm mb-0 align-middle">
+    <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Trigger') }}</th><th>{{ _('Does') }}</th><th>{{ _('Mode') }}</th>
+      <th>{{ _('Owner') }}</th><th>{{ _('Last run') }}</th><th>{{ _('State') }}</th><th></th></tr></thead>
+    <tbody>
+    {% for a in rows %}
+      <tr>
+        <td><a href="{{ url_for('.edit', id=a.id) }}">{{ a.name }}</a><br><code class="small">{{ a.key }}</code></td>
+        <td><code>{{ a.trigger.key }}</code><br><span class="small text-muted">{{ a.trigger.event }}</span></td>
+        <td class="small">{{ kinds[a.kind] }}{% if a.target %}<br><code>{{ a.target }}</code>{% endif %}</td>
+        <td>{% if a.armed %}<span class="fw-badge fw-badge-danger">{{ _('armed') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('rehearsal') }}</span>{% endif %}</td>
+        <td class="small">{{ a.owner }}</td>
+        <td class="small">{% if a.last_run_at %}{{ a.last_run_at.strftime('%Y-%m-%d %H:%M') }} <span class="fw-badge fw-badge-{{ 'success' if a.last_status == 'ok' else ('danger' if a.last_status == 'failed' else 'secondary') }}">{{ a.last_status }}</span>{% else %}—{% endif %}</td>
+        <td>{% if a.enabled %}<span class="fw-badge fw-badge-success">{{ _('enabled') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('disabled') }}</span>{% endif %}</td>
+        <td class="text-end"><form method="POST" action="{{ url_for('.toggle', id=a.id) }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-fw-secondary">{{ _('Disable') if a.enabled else _('Enable') }}</button></form></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8" class="text-muted">{{ _('No automation runs on a trigger in this ADOM yet.') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="p-2 border-bottom"><strong>{{ _('Recent runs') }}</strong></div>
+  {% include 'event_automations/_runs.html' %}
+</div>
+{% endblock %}

@@ -1,0 +1,20 @@
+<div class="table-responsive">
+<table class="table table-sm mb-0 align-middle">
+  <thead><tr><th>{{ _('Started (UTC)') }}</th><th>{{ _('Automation') }}</th><th>{{ _('Status') }}</th><th>{{ _('What happened') }}</th><th>{{ _('Record') }}</th></tr></thead>
+  <tbody>
+  {% for r in runs %}
+    <tr><td class="small">{{ r.started_at.strftime('%Y-%m-%d %H:%M:%S') }}{% if r.test %} <span class="fw-badge fw-badge-info">{{ _('test') }}</span>{% endif %}</td>
+      <td class="small">{{ r.automation.key if r.automation else r.automation_id }}</td>
+      <td><span class="fw-badge fw-badge-{{ 'success' if r.status == 'ok' else ('danger' if r.status == 'failed' else ('primary' if r.status in ('queued', 'running') else 'secondary')) }}">{{ r.status }}</span>{% if not r.armed %} <span class="small text-muted">{{ _('rehearsal') }}</span>{% endif %}</td>
+      <td class="small" style="max-width:520px;overflow-wrap:anywhere;">{{ r.summary or '—' }}</td>
+      <td class="small">{% set ref = r.ref or '' %}
+        {% if ref.startswith('process-run:') %}<a href="{{ url_for('process.run_detail', rid=ref.split(':')[1]|int) }}">{{ ref }}</a>
+        {% elif ref.startswith('action-run:') %}{{ ref }}
+        {% else %}{{ ref or '—' }}{% endif %}
+        {% if r.job_id %}<br><a href="{{ url_for('jobs.manager') }}">{{ _('job') }} {{ r.job_id[:8] }}</a>{% endif %}</td></tr>
+  {% else %}
+    <tr><td colspan="5" class="text-muted">{{ _('No run yet.') }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>

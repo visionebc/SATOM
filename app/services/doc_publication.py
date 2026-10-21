@@ -255,6 +255,10 @@ PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
      "Authoring and injecting WAF exceptions and signature carve-outs."),
     ("fortiadc.md", "fortiadc", "FortiADC — API conventions", "\U0001f9fe",
      "REST conventions, object map and current coverage for FortiADC."),
+    ("naf-alignment.md", "naf-alignment", "SATOM and the NAF Framework", "\U0001f9e9",
+     "Where SATOM sits in the Network Automation Forum's reference model: the "
+     "source and its pinned commit, why SATOM aligns with it, what SATOM calls "
+     "each block, and the conformance matrix that a test keeps honest."),
 ]
 
 GROUPS: list[tuple[str, str, list[str]]] = [
@@ -271,7 +275,7 @@ GROUPS: list[tuple[str, str, list[str]]] = [
     ("Build & integrate", "For developers extending the platform or driving it from outside.",
      ["api", "device-api", "api-library", "build-compatibility", "migration-report",
       "cli-writer", "knowledge-harvester", "fortiauthenticator", "engineering",
-      "source-of-truth", "release-pipeline",
+      "naf-alignment", "source-of-truth", "release-pipeline",
       "release-notes"]),
     ("What changed", "Release history for the platform itself.",
      ["changelog"]),

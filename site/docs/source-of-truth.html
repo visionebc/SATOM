@@ -81,6 +81,11 @@
     <div class="doc-body mdx">
 <h1 id="source-of-truth--local-persistence-layer-for-satom">Source of Truth — Local Persistence Layer for SATOM</h1>
 <blockquote>
+<p><strong>Naming note (NAF Framework).</strong> What this document — and the product — calls
+the <em>source of truth</em> is the cache and versioned history of each appliance's
+<strong>actual</strong> configuration. In the terms of the NAF Framework that is the
+<strong>Observability</strong> block, not <em>Intent</em> (the desired state, which in SATOM is
+templates and baselines). See <a href="naf-alignment.html">naf-alignment.md</a>.</p>
 <p><strong>STATUS (2026-07-05): IMPLEMENTED.</strong> The DB-first read layer shipped in full
 (2026-07-04): <code>services/read_layer.py</code>, per-device cache layers (config /
 deep / inventory), DB-first Configuration sections, Server-Policy &amp; WPP

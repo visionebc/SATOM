@@ -1,0 +1,13 @@
+<!-- Network Automation Forum, "The NAF Framework" reference diagrams (https://github.com/Network-Automation-Forum/reference, docs/Framework/images/, commit da82b12). Released under CC0 1.0; reproduced unchanged except for this attribution comment. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <rect width="24" height="24" rx="6" fill="#64748b"/>
+  <circle cx="12" cy="12" r="3" fill="none" stroke="#FFFFFF" stroke-width="1.5"/>
+  <circle cx="5" cy="5" r="2" fill="none" stroke="#FFFFFF" stroke-width="1.5"/>
+  <circle cx="19" cy="5" r="2" fill="none" stroke="#FFFFFF" stroke-width="1.5"/>
+  <circle cx="5" cy="19" r="2" fill="none" stroke="#FFFFFF" stroke-width="1.5"/>
+  <circle cx="19" cy="19" r="2" fill="none" stroke="#FFFFFF" stroke-width="1.5"/>
+  <line x1="6.5" y1="6.5" x2="10" y2="10" stroke="#FFFFFF" stroke-width="1.5"/>
+  <line x1="17.5" y1="6.5" x2="14" y2="10" stroke="#FFFFFF" stroke-width="1.5"/>
+  <line x1="6.5" y1="17.5" x2="10" y2="14" stroke="#FFFFFF" stroke-width="1.5"/>
+  <line x1="17.5" y1="17.5" x2="14" y2="14" stroke="#FFFFFF" stroke-width="1.5"/>
+</svg>

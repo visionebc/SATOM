@@ -11,6 +11,15 @@ This surface is **deliberately narrow**. It cannot upgrade, flash or reboot a
 device, and it cannot run any action flagged *destructive* — no token, of any
 scope, can reach those.
 
+In the terms of the NAF Framework ([naf-alignment.md](naf-alignment.md)) this
+API is part of *Presentation*: the door other systems use. What it opens onto
+today is the appliance inventory and health (*Observability*, read), the
+pre-created Scheduled Actions and the external approval of a Change Request
+(*Orchestrator*), and the curated object authoring below (*Intent*, for WAF
+carve-outs and FortiADC rules only). It does **not** yet expose templates,
+baselines or bindings, nor the configuration history, findings or metrics
+store; those are the open rows of the conformance matrix.
+
 There are exactly **two** ways to change anything, and they are not
 interchangeable:
 

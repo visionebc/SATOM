@@ -53,6 +53,16 @@ Rules adapted, not redistributed:
     from that project and re-implemented in Python; no file of it is
     included and the descriptions are SATOM's own.
 
+Reference material reproduced:
+
+  The NAF Framework   https://github.com/Network-Automation-Forum/reference
+    CC0 1.0 Universal (public domain dedication)
+    docs/naf-alignment.md maps SATOM to the Network Automation Forum's
+    reference model and reproduces its minimal architecture diagram and
+    block icons unchanged (docs/img/naf-*.svg, from docs/Framework/images/
+    at commit da82b12). CC0 requires no attribution; this notice is given
+    anyway, and the framework's brand guidelines are followed.
+
 Python dependencies are declared in requirements.txt and, for offline
 installs, staged as wheels inside the bundle. They are not modified; each
 retains the license published by its author. Operating-system packages

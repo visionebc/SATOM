@@ -140,6 +140,12 @@ every device, remembers every change, and enforces our safety rules.</p>
   authority.</li>
 <li><strong>Integrate:</strong> other systems can read fleet data through a restricted,
   token-based API that cannot perform dangerous actions.</li>
+<li><strong>Fit an industry reference model:</strong> SATOM is mapped to the NAF Framework,
+  a vendor-neutral model of what a network automation system is made of,
+  published by the Network Automation Forum. The mapping names what SATOM
+  does in the framework's words, so an auditor or a partner can place it
+  without learning our vocabulary first — and it lists, honestly, what the
+  framework asks for that SATOM does not do yet (<a href="naf-alignment.html">details</a>).</li>
 </ul>
 <h2 id="4-how-mature-is-it">4. How mature is it?</h2>
 <ul>
@@ -217,6 +223,10 @@ every device, remembers every change, and enforces our safety rules.</p>
    and tracked, not sent automatically).</li>
 <li>Continuous integration runners so the test suite runs automatically on
    every code push.</li>
+<li>Close the open rows of the NAF Framework mapping (<a href="naf-alignment.html">naf-alignment.md</a>
+   §7): an API for templates and baselines, programmatic access to the
+   configuration and metrics history, and — if wanted — collecting syslog and
+   SNMP directly instead of through FortiAnalyzer.</li>
 </ol>
 <h2 id="9-glossary">9. Glossary</h2>
 <table>
@@ -258,6 +268,18 @@ every device, remembers every change, and enforces our safety rules.</p>
 <tr>
 <td><strong>Registry</strong></td>
 <td>The app's catalog of device commands, editable as data — how the app adapts to new firmware without reprogramming</td>
+</tr>
+<tr>
+<td><strong>NAF Framework</strong></td>
+<td>The Network Automation Forum's vendor-neutral reference model of a network automation system: six functional blocks (Intent, Executor, Collector, Observability, Orchestrator, Presentation) around the infrastructure. SATOM is mapped to it (<a href="naf-alignment.html">naf-alignment.md</a>)</td>
+</tr>
+<tr>
+<td><strong>Source of truth (SATOM)</strong></td>
+<td>The app's own name for the stored history of what is <em>actually</em> configured on each device. In NAF terms this is <em>Observability</em>; the <em>desired</em> state (NAF <em>Intent</em>) is what SATOM calls templates and baselines</td>
+</tr>
+<tr>
+<td><strong>Intent / Observability / Collector / Executor / Orchestrator / Presentation</strong></td>
+<td>The NAF blocks: the desired state; the actual state and its history; reading the devices; writing the devices; coordinating workflows; the screens, CLI and API people use</td>
 </tr>
 </tbody>
 </table>

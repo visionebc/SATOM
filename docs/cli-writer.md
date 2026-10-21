@@ -5,6 +5,9 @@
 > §14.3; the object-editor walkthrough is in the [User guide](user-guide.md) §7.3.
 >
 > **Since:** SATOM 2.13.0 (unreleased).
+>
+> **NAF block:** Executor — the SSH write path next to the REST one
+> ([naf-alignment.md](naf-alignment.md)).
 
 SATOM writes configuration through REST. On some builds of some products a
 setting exists only in the CLI: the API library classifies it `cli_only` (the

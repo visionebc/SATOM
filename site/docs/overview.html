@@ -122,6 +122,13 @@ the explicit "refresh" escape hatch.</p>
   by a restart.</li>
 <li><strong>Registry</strong> is the reason the app survives firmware changes: adapting to a new
   firmware is a <strong>data</strong> edit (a registry row), not code.</li>
+<li><strong>In NAF Framework terms</strong> (the Network Automation Forum's vendor-neutral
+  reference model, see <a href="naf-alignment.html">naf-alignment.md</a>): the device cache
+  and configuration history are <em>Observability</em>; templates and baselines are
+  <em>Intent</em>; device sync, deep capture and metrics collection are the
+  <em>Collector</em>; the REST and CLI write paths are the <em>Executor</em>; Processes,
+  Scheduled Actions and Change Requests are the <em>Orchestrator</em>; the console,
+  the CLI and API v1 are <em>Presentation</em>. The names differ, the blocks do not.</li>
 </ul>
 <h2 id="3-deployment">3. Deployment</h2>
 <ul>

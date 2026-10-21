@@ -11,6 +11,10 @@ on 2026-08-05, together:
 Both changes have the same root cause: the original designs were correct for a
 handful of appliances and structurally impossible for a hundred.
 
+**NAF block:** Observability for both stores (the configuration history and
+the time-series store keep the *actual* state), Collector for the scrape that
+fills the second ([naf-alignment.md](naf-alignment.md)).
+
 ---
 
 ## 1. The measurement

@@ -54,6 +54,17 @@ app/templates|static Jinja + Turbo Drive + CSP-safe vanilla JS.
 Keep it acyclic; services must stay importable without a request context —
 the background-job workers and the scheduler sidecar run them headless.
 
+**The same layers in NAF Framework terms.** SATOM is mapped to the Network
+Automation Forum's reference model (six functional blocks around the
+infrastructure; [naf-alignment.md](naf-alignment.md) has the source, the
+pinned commit and the conformance matrix). `clients/` and the read side of
+the device services are the *Collector*; the write side (`cli_writer`,
+`fortiweb_ops`, provisioning) is the *Executor*; the device cache, the
+configuration history and the time-series store are *Observability* (what
+SATOM calls its "source of truth"); templates, baselines and bindings are
+*Intent*; the Process engine, Scheduled Actions and Change Requests are the
+*Orchestrator*; `views/`, `api_v1/` and the CLI are *Presentation*.
+
 **Design pillars:**
 
 - **DB-first reads** (`services/read_layer.py`): pages render from the local
@@ -316,12 +327,16 @@ importing a concrete client in views.
 
 ## 7. Service layer map
 
-Grouped tour of `app/services/` (~80 modules):
+Grouped tour of `app/services/` (~80 modules). The NAF block each group
+belongs to is given in brackets ([naf-alignment.md](naf-alignment.md) §4 is
+the full naming table):
 
-- **Device I/O & cache:** `device_sync`, `deep_capture`, `analysis_deep`,
+- **Device I/O & cache** [NAF: Collector for the reads, Observability for
+  the cache]: `device_sync`, `deep_capture`, `analysis_deep`,
   `read_layer`, `device_store`, `rediscovery`, `inventory_metrics`,
   `device_context`, `hardware`, `ha`, `cluster`.
-- **Policy & objects:** `policy_ops` (clone/migrate/enable/disable +
+- **Policy & objects** [NAF: Executor for the writes; `baselines` and
+  `templates` are Intent]: `policy_ops` (clone/migrate/enable/disable +
   preflight), `policy_form`, `policy_graph`, `policy_links`, `objform` (the
   form engine), `fortiweb_field_schema` (create-field seeds), `clone`,
   `clone_rules` (admin dummy-IP policy), `capacity`, `naming`, `baselines`,
@@ -334,12 +349,12 @@ Grouped tour of `app/services/` (~80 modules):
   `exception_detect`, `regex_lab`, `section_taxonomy`, `wp_menu`.
 - **Certificates:** `cert_manager` (scan/issue/lifecycle/dispatch-by-kind),
   `cert_adc`, `cert_ssh`, `cert_probe`.
-- **Ops & automation:** `jobs` (framework), `deep_jobs`, `scheduled_actions`
+- **Ops & automation** [NAF: Orchestrator]: `jobs` (framework), `deep_jobs`, `scheduled_actions`
   (catalog + executor), `scheduler` (pure next-run math), `change_requests`,
   `backup` (REST + SSH fallback vault), `logcollect`, `inspector`,
   `flash_report`, `release_notes`, `git_service`, `system backup` (via
   views/system_backup).
-- **Platform:** `product_scope`, `access`/`auth_store`/`directory_auth`
+- **Platform** [NAF: Presentation for access and notifications]: `product_scope`, `access`/`auth_store`/`directory_auth`
   (RBAC + LDAP/RADIUS), `audit`, `notifications`, `email_service`,
   `encryption`, `lock_service`, `db_reports`/`report_builder`,
   `dbintrospect`, `dns_tool`, `dns_providers/` (the N-backend IPAM/DDI

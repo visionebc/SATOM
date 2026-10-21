@@ -81,6 +81,14 @@ it. Every rule below is written down because getting it wrong produces
 <p>The measurement side — what counts as bad, which thresholds, which checks —
 is the health engine, and it is documented in the user guide. This document
 starts at the moment a finding exists.</p>
+<p><strong>NAF block:</strong> Observability — findings are the "events" the framework
+expects the actual state to raise, and the delivery paths below are how they
+reach people and the Orchestrator. One precision the framework makes
+necessary: SATOM's <em>drift</em> finding means <em>the configuration changed since
+its previous snapshot</em>. It is <strong>not</strong> a comparison with the intended state
+(the bound template); the framework calls that an <em>intent deviation</em>, and
+SATOM does not raise it yet — the row is open in
+<a href="naf-alignment.html">naf-alignment.md</a>.</p>
 <hr>
 <h2 id="1-what-a-finding-is">1. What a finding is</h2>
 <p>The engine produces findings. A finding is the unit everything downstream

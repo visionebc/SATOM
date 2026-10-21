@@ -135,6 +135,19 @@ notices, scoped to the product you are working in. The bell's *Clear* only marks
 them read; **Clear all** on the Notifications page deletes them (after a
 confirmation).
 
+**The names, in the industry's words.** SATOM is mapped to the **NAF
+Framework**, the Network Automation Forum's vendor-neutral model of a network
+automation system (six blocks: Intent, Executor, Collector, Observability,
+Orchestrator, Presentation). If you know that model, read SATOM's names like
+this: the *Source of Truth* and the device cache are **Observability** (the
+actual state and its history), *Templates* and *Baselines* are **Intent**
+(the desired state), *Rediscovery* / *Deep Capture* / metrics collection are
+the **Collector**, every device write is the **Executor**, *Processes*,
+*Scheduled Actions* and *Change Requests* are the **Orchestrator**, and this
+console, the CLI and the API are **Presentation**. The full naming table, the
+source and the conformance matrix are in
+[SATOM and the NAF Framework](naf-alignment.md).
+
 ## 3. Products (ADOMs)
 
 The app currently hosts six workspaces, in the style of FortiManager ADOMs.

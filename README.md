@@ -87,7 +87,7 @@ The complete list, grouped by area. Everything below ships in this repository to
 - Provisioning workflows, hardware inventory, and capacity views.
 
 ### Source of truth & backups
-- **Configuration source of truth**: every appliance's config is harvested into per-device JSON (`reports/<device>/_config.json`) — product-aware for FortiWeb, FortiADC, and FortiAnalyzer — refreshed hourly and recorded as a hashed, versioned snapshot in a local content-addressed store (`data/sot/`, index in PostgreSQL); an unchanged config writes no new version. The store is replicated to the standby, carried in every system backup bundle and pushed off-box to the backup server. Git no longer carries device configuration.
+- **Configuration source of truth**: every appliance's config is harvested into per-device JSON (`reports/<device>/_config.json`) — product-aware for FortiWeb, FortiADC, and FortiAnalyzer — refreshed hourly and recorded as a hashed, versioned snapshot in a local content-addressed store (`data/sot/`, index in PostgreSQL); an unchanged config writes no new version. The store is replicated to the standby, carried in every system backup bundle and pushed off-box to the backup server. Git no longer carries device configuration. A naming note: this "source of truth" is the history of the **actual** configuration — in the terms of the NAF Framework it is *Observability*, not *Intent* (see [docs/naf-alignment.md](docs/naf-alignment.md)).
 - **System Backup & Restore page**: database bundles (pg_dump), device vault, application-code versions with **one-click code rollback**, and an embedded recovery runbook.
 - **Backup coverage matrix**: every backup stream (code, live DB, DB bundles, device SoT, vault, appliance-pushed configs, firmware) with format, destinations, cadence, and a **live state badge**, plus a per-device SoT freshness strip.
 - **External backup server integration** (SFTP): inventory of configs the appliances push on their own schedule, with per-device **browse / compare / search / download** modals — including a parser for FortiWeb's multi-file backup container format.
@@ -167,6 +167,20 @@ normalized local cache of each device's whole configuration
 *refresh-live* escape hatch — instead of hammering the appliance management
 plane on every page load. See [docs/engineering.md](docs/engineering.md).
 
+### Where SATOM sits in the NAF Framework
+
+SATOM is **mapped to the NAF Framework** — the Network Automation Forum's
+vendor-neutral reference model of six functional blocks (Intent, Executor,
+Collector, Observability, Orchestrator, Presentation) around the network
+infrastructure — at its pinned commit `da82b12`
+(https://reference.networkautomation.forum/Framework/Framework/, CC0 1.0).
+The mapping translates SATOM's names into the framework's (what SATOM calls
+the *Source of Truth* is the framework's *Observability*, not its *Intent*)
+and records, requirement by requirement, what is met, what is partial and
+what is deliberately not pursued. The status line, the number of documented
+deviations and the matrix live in one place and are checked by a test:
+[docs/naf-alignment.md](docs/naf-alignment.md).
+
 ## Quick start
 
 **Guided install** (Debian/Ubuntu, RHEL/Rocky/Alma 9, openSUSE/SLES 15): download
@@ -237,6 +251,7 @@ Reference documents (deep dives):
 - [docs/server_policy.md](docs/server_policy.md) — Server Policy object model, field-level
 - [docs/web_protection_profile.md](docs/web_protection_profile.md) — WPP / WAF dependency graph
 - [docs/wpp_exceptions.md](docs/wpp_exceptions.md) — WAF exceptions workflow & data model
+- [docs/naf-alignment.md](docs/naf-alignment.md) — SATOM mapped to the NAF Framework: naming table and conformance matrix
 - [docs/source-of-truth-spec.md](docs/source-of-truth-spec.md) — device cache / source-of-truth spec
 - [docs/fortiadc.md](docs/fortiadc.md) — FortiADC REST conventions
 - [docs/fortigate.md](docs/fortigate.md) — the FortiGate workspace

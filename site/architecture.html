@@ -133,6 +133,28 @@ source of truth  rate-limit +    cron catalog: syncs, backups, cert scans,
 
 <section class="wrap reveal">
   <div class="sec-head">
+    <span class="eyebrow">Reference model</span>
+    <h2>Where SATOM sits in the NAF Framework</h2>
+    <p>SATOM is <b>mapped to the NAF Framework</b> — the Network Automation Forum's vendor-neutral reference model of six functional blocks around the network infrastructure — at its pinned commit <code>da82b12</code> (<a href="https://reference.networkautomation.forum/Framework/Framework/">source</a>, CC0 1.0; the framework carries no version number, so the commit is the version). The names differ, the blocks do not.</p>
+  </div>
+  <p><img src="docs/img/naf-automation-framework-v1-minimal-white.svg" alt="The NAF Framework: Presentation on top; Observability, Orchestration and Intent in the middle; Collector and Executor below; Infrastructure at the bottom" width="900" loading="lazy"></p>
+  <table>
+    <thead><tr><th>NAF block</th><th>What SATOM calls it</th><th>When the names differ</th></tr></thead>
+    <tbody>
+      <tr><td><img src="docs/img/naf-icon-intent-colored.svg" width="18" alt=""> <b>Intent</b></td><td>Templates, template bindings, baselines, the exception library, change types, the secret vault</td><td>SATOM says <i>templates and baselines</i>; the framework says <i>Intent</i>.</td></tr>
+      <tr><td><img src="docs/img/naf-icon-observability-colored.svg" width="18" alt=""> <b>Observability</b></td><td><b>Source of Truth</b> (configuration history), monitoring, the health engine and alerts, drift, Sentinel, Scout, Release Advisor</td><td>SATOM's <i>Source of Truth</i> is the history of the <b>actual</b> configuration — Observability, not Intent.</td></tr>
+      <tr><td><img src="docs/img/naf-icon-collector-colored.svg" width="18" alt=""> <b>Collector</b></td><td>Device sync, deep capture, metrics collection, log collection, the FortiAnalyzer log view</td><td>The knowledge harvester is not the Collector: it reads vendor documentation, not the network.</td></tr>
+      <tr><td><img src="docs/img/naf-icon-executor-colored.svg" width="18" alt=""> <b>Executor</b></td><td>The CLI writer, policy operations and clone, provisioning, write actions, firmware upgrade, Observatory fix</td><td>A Process node's handler is called an "executor" in the code; that is not the framework's Executor.</td></tr>
+      <tr><td><img src="docs/img/naf-icon-orchestration-colored.svg" width="18" alt=""> <b>Orchestrator</b></td><td>Processes (Studio), Scheduled Actions, Change Requests, integration hooks</td><td>The reconciler is deployment machinery, not the Orchestrator.</td></tr>
+      <tr><td><img src="docs/img/naf-icon-presentation-colored.svg" width="18" alt=""> <b>Presentation</b></td><td>The web console, the <code>satom</code> CLI, API v1, the Documentation Center, notifications</td><td>—</td></tr>
+      <tr><td><img src="docs/img/naf-icon-infrastructure-colored.svg" width="18" alt=""> <b>Infrastructure</b></td><td>The managed FortiWeb, FortiADC, FortiGate, FortiAnalyzer and FortiAuthenticator appliances</td><td>The thing being automated, not a block of the system.</td></tr>
+    </tbody>
+  </table>
+  <p>Requirement by requirement — what is met, what is partial and what is deliberately not pursued — the conformance matrix lives in one place and is checked by a test: <a href="docs/naf-alignment.html">SATOM and the NAF Framework</a>.</p>
+</section>
+
+<section class="wrap reveal">
+  <div class="sec-head">
     <h2>High availability &amp; layered backups</h2>
     <p>Two-node active/standby clustering is built into the installer — not bolted on.</p>
   </div>

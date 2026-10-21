@@ -200,6 +200,14 @@ the product does not ship stops the release here, not on a customer's node.
 The public key is published next to it, and the release notes print its
 fingerprint.
 
+The **update feed** (`satom-system-upgrades/latest.json`) is committed on
+`main` once the package is verified, and the same bytes are attached to the
+release as `satom-update-latest.json`, so
+`https://github.com/visionebc/SATOM/releases/latest/download/satom-update-latest.json`
+always names the newest package. The asset is copied only if the committed
+feed names this release's package (version, sha256, size), and the link is
+read back anonymously right after the GitHub release is published.
+
 The **API library pack** (`satom-apipack-<ver>.tar.gz`) is different: it is
 committed to `api-packs/` in the repository **before the tag**, so the clone,
 every bundle's payload, the update package and the public mirror all carry it

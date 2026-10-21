@@ -6,6 +6,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.4.4] - 2026-10-21
+
+The update feed gets a link that never changes and works through a mirror of
+GitHub, the package index **Test** names a missing `/simple`, and the update
+package is about four times smaller.
+
+### Changed
+
+- **The update package carries only its own API pack.** Earlier packages
+  (and bundles) carried the API pack of every release since 3.0.0, although a
+  node imports only the newest; the update package drops from about 96 MB to
+  about 22 MB. Older packs stay attached to their own releases.
+
 ### Added
 
 - **A feed link that never changes, and updates through a mirror of GitHub**

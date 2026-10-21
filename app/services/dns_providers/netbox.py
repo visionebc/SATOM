@@ -40,7 +40,8 @@ class NetBoxProvider(DnsProvider):
         if not base:
             raise ProviderError("NetBox base URL is not configured.")
         token = self.cfg.get("secret") or ""
-        verify = bool(self.cfg.get("verify_ssl", True))
+        from .. import trust_store
+        verify = trust_store.httpx_verify(bool(self.cfg.get("verify_ssl", True)))
         return httpx.Client(
             base_url=base, verify=verify, timeout=12.0,
             headers={"Authorization": f"Token {token}",

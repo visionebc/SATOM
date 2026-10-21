@@ -398,6 +398,8 @@ def _post(url: str, body: bytes, headers: dict, timeout: int, retries: int,
     """POST with a bounded, selective retry.  Never raises."""
     import httpx  # lazy — keeps the import graph light for tests
 
+    from . import trust_store
+
     attempts = 0
     last = ""
     started = time.monotonic()
@@ -405,7 +407,8 @@ def _post(url: str, body: bytes, headers: dict, timeout: int, retries: int,
         attempts = i + 1
         try:
             resp = httpx.post(url, content=body, headers=headers,
-                              timeout=timeout, follow_redirects=False)
+                              timeout=timeout, follow_redirects=False,
+                              verify=trust_store.verify_param())
         except Exception as exc:  # noqa: BLE001 — transport errors are retryable
             last = "%s: %s" % (type(exc).__name__, exc)
         else:

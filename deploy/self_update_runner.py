@@ -1321,6 +1321,18 @@ def _pip_index_env(req):
         full, where = url, url
     env = dict(os.environ)
     env["PIP_INDEX_URL"] = full
+    # The index may sit behind the company CA (Settings -> Trust store). The
+    # request carries a flag, never a path: the bundle is read from the one
+    # place the app writes it, and only when that is a plain file (SA-0003).
+    if req.get("index_ca_bundle") is True:
+        bundle = APP / "pki" / "trust" / "ca-bundle.pem"
+        try:
+            plain = stat.S_ISREG(os.lstat(str(bundle)).st_mode)
+        except OSError:
+            plain = False
+        if plain:
+            env["PIP_CERT"] = str(bundle)
+            where += " (verified against the trust store)"
     return env, where, token
 
 

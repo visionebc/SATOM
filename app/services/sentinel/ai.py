@@ -127,7 +127,9 @@ def _post(url: str, body: dict, timeout: float) -> dict:
     req = urllib.request.Request(
         url, data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    from .. import trust_store
+    with urllib.request.urlopen(req, timeout=timeout,
+                                context=trust_store.ssl_context()) as resp:
         return json.loads(resp.read().decode("utf-8", "replace"))
 
 

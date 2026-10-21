@@ -118,8 +118,10 @@ def _git() -> dict:
             base = "%s://%s" % (u.scheme, u.netloc)
             out["base"] = base
             try:  # Gitea answers /api/v1/version unauthenticated
+                from . import trust_store
                 with urllib.request.urlopen(base + "/api/v1/version",
-                                            timeout=_HTTP_TIMEOUT) as r:
+                                            timeout=_HTTP_TIMEOUT,
+                                            context=trust_store.ssl_context()) as r:
                     out["reachable"] = 200 <= r.status < 500
             except urllib.error.HTTPError:
                 out["reachable"] = True  # it answered → server is up

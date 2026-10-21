@@ -218,12 +218,19 @@ def _latest_on_index(client: httpx.Client, base: str, name: str, auth) -> str | 
         return None
 
 
+def _verify():
+    """The trust store: an internal index signed by the company CA verifies."""
+    from . import trust_store
+    return trust_store.verify_param()
+
+
 def probe_index(url: str, auth, name: str = "Flask") -> dict:
     """One lookup with the reason when it fails -- the "Test" button of
     Update sources. The card's own check stays best-effort and quiet."""
     try:
         with httpx.Client(follow_redirects=True, timeout=_HTTP_TIMEOUT * 2,
-                          headers={"User-Agent": "SATOM-update-check"}) as client:
+                          headers={"User-Agent": "SATOM-update-check"},
+                          verify=_verify()) as client:
             r = _simple_get(client, url, name, auth)
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": "cannot reach %s: %s" % (url, exc)}
@@ -265,7 +272,7 @@ def _collect(tgt: dict) -> dict[str, Any]:
     headers = {"Accept": "application/json", "User-Agent": "SATOM-update-check"}
     try:
         with httpx.Client(headers=headers, follow_redirects=True,
-                          timeout=_HTTP_TIMEOUT) as client:
+                          timeout=_HTTP_TIMEOUT, verify=_verify()) as client:
             def _one(item: tuple[str, str]) -> dict[str, Any]:
                 name, cur = item
                 if custom:

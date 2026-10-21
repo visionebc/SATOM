@@ -6,6 +6,33 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.4.2] - 2026-10-21
+
+A fix release: every connection SATOM opens to an address you configure now
+verifies against the trust store, not only the connections to appliances.
+
+### Fixed
+
+- **Internal URLs in Settings no longer fail with "unable to get local issuer
+  certificate" (SA-0003).** Reported against Settings → General: an update source on an
+  internal host, signed by your company CA, failed with `[SSL:
+  CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local
+  issuer certificate` although that CA was in the trust store. The trust store
+  reached the appliance clients and a few services; everything else built its
+  own TLS client on the public roots. Now every outbound connection verifies
+  against the public roots **plus** the trust store: the update feed and its
+  packages, knowledge packs, the Python package index (its **Test** button, the
+  Libraries check and the `pip` the updater runs, which is handed the bundle
+  from its fixed place on the node), the git remote, SMTP, alert webhooks,
+  LDAP / Active Directory, the secret vault (when it names no CA of its own),
+  NetBox, ticket trackers, the DNS / IPAM providers, the AI and Sentinel
+  endpoints, App-ID sources, artifact downloads, the transaction trace and
+  operator integrations.
+- A **verify TLS** switch you turned off stays off: the trust store widens what
+  a verified connection accepts, it never turns verification back on or off.
+- A new guard fails the build when a module opens an outbound TLS connection
+  without going through the trust store, unless it is listed with the reason.
+
 ## [3.4.1] - 2026-10-21
 
 A documentation release: the API that SATOM exposes to your systems is now

@@ -38,6 +38,7 @@ import hashlib
 import json
 import os
 import re
+import ssl
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -53,6 +54,12 @@ MAX_PACKAGE_BYTES = 400 * 1024 * 1024
 PKG_RE = re.compile(r"^satom-update-[0-9][A-Za-z0-9._-]{0,60}\.tar\.gz$")
 _SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 _UA = "satom-upgrade-feed/1"
+
+#: ``() -> path | None`` of an extra CA bundle to trust on top of the system
+#: roots. The application sets it to ``trust_store.ca_file`` when it loads this
+#: module, so a feed or index on an internal host signed by the company CA
+#: verifies (SA-0003). Unset (the CLI, tests) = system roots only.
+CA_FILE_PROVIDER = None
 
 
 class FeedError(Exception):
@@ -94,10 +101,29 @@ def _request(url: str, auth=None) -> urllib.request.Request:
     return req
 
 
+def _ssl_context() -> ssl.SSLContext:
+    """System roots, plus :data:`CA_FILE_PROVIDER`'s bundle when there is one.
+    A provider that fails leaves the system roots: never unverified TLS."""
+    ctx = ssl.create_default_context()
+    path = None
+    if CA_FILE_PROVIDER is not None:
+        try:
+            path = CA_FILE_PROVIDER()
+        except Exception:  # noqa: BLE001
+            path = None
+    if path:
+        try:
+            ctx.load_verify_locations(cafile=path)
+        except (OSError, ssl.SSLError):
+            pass
+    return ctx
+
+
 def _open(url: str, timeout: float, auth=None):
     if not (url or "").lower().startswith("https://"):
         raise FeedError("only https:// URLs are fetched (got %r)" % url)
-    opener = urllib.request.build_opener(_HttpsOnlyRedirect())
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPSHandler(context=_ssl_context()), _HttpsOnlyRedirect())
     req = _request(url, auth)
     try:
         return opener.open(req, timeout=timeout)

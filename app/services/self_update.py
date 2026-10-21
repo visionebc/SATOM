@@ -45,9 +45,10 @@ _K_MODE = "ha.mode"                    # "ha" | "standalone" (admin-set, replica
 # ---------------------------------------------------------------------------
 def _git(*args, timeout: int = 120) -> subprocess.CompletedProcess:
     """Run a git command in the app repo as the current user."""
+    from .git_service import _git_env
     return subprocess.run(
         ["git", "-C", str(APP_DIR), "-c", "safe.directory=%s" % APP_DIR, *args],
-        capture_output=True, text=True, timeout=timeout,
+        capture_output=True, text=True, timeout=timeout, env=_git_env(),
     )
 
 
@@ -422,6 +423,19 @@ def _add_update_index(req: dict) -> None:
         req["index_url"] = index["url"]
         if index["auth"]:
             req["index_user"], req["index_token"] = index["auth"][1], index["auth"][2]
+        _add_index_trust(req)
+
+
+def _add_index_trust(req: dict) -> None:
+    """Tell the runner to verify a custom index against the trust store.
+
+    A flag, never a path: the runner reads the bundle from the one fixed place
+    it is written (``pki/trust/ca-bundle.pem``), so a request cannot point root
+    at another file. Only when the store holds a private CA -- otherwise pip's
+    own roots are exactly the public ones the bundle would carry (SA-0003)."""
+    from . import trust_store
+    if trust_store.ca_file():
+        req["index_ca_bundle"] = True
 
 
 LIB_VERSIONS_DIR = APP_DIR / "data" / "lib-versions"
@@ -528,6 +542,7 @@ def request_pip_change(package: str, version: str, by: str, *,
         req["index_url"] = index["url"]
         if index["auth"]:
             req["index_user"], req["index_token"] = index["auth"][1], index["auth"][2]
+        _add_index_trust(req)
     (STATUS_DIR / (uid + ".json")).write_text(json.dumps({
         "id": uid, "state": "queued", "steps": [], "kind": "pip",
         "package": package, "action": action, "target": version,

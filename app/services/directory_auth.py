@@ -32,8 +32,13 @@ def _tls(cfg: dict):
 
     from ldap3 import Tls
 
-    validate = ssl.CERT_REQUIRED if cfg.get("tls_verify", True) else ssl.CERT_NONE
-    return Tls(validate=validate)
+    from . import trust_store
+    verify = bool(cfg.get("tls_verify", True))
+    validate = ssl.CERT_REQUIRED if verify else ssl.CERT_NONE
+    # ldap3 builds its context from ca_certs_file alone, so the bundle (public
+    # roots + the trust store's private CAs) is handed over whole.
+    ca = trust_store.ca_file() if verify else None
+    return Tls(validate=validate, ca_certs_file=ca) if ca else Tls(validate=validate)
 
 
 def _server(cfg: dict):

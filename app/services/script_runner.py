@@ -85,7 +85,8 @@ def unwrap(vault: dict, token: str) -> dict:
     elif str(vault.get("ca_cert") or "").strip().startswith("-----BEGIN"):
         ctx = ssl.create_default_context(cadata=vault["ca_cert"])
     else:
-        ctx = ssl.create_default_context()
+        from . import trust_store
+        ctx = trust_store.ssl_context()
     req = urllib.request.Request(addr.rstrip("/") + "/v1/sys/wrapping/unwrap",
                                  data=b"{}", method="POST")
     req.add_header("X-Vault-Token", token)

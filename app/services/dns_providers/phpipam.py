@@ -36,7 +36,8 @@ class PhpIpamProvider(DnsProvider):
         return f"{base}/api/{app}"
 
     def _client(self) -> httpx.Client:
-        verify = bool(self.cfg.get("verify_ssl", True))
+        from .. import trust_store
+        verify = trust_store.httpx_verify(bool(self.cfg.get("verify_ssl", True)))
         token = self.cfg.get("secret") or ""
         return httpx.Client(
             base_url=self._base(), verify=verify, timeout=12.0,

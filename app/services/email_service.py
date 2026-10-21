@@ -248,11 +248,9 @@ def _build_message(cfg: dict, to: list[str], subject: str,
 
 
 def _ssl_context(verify: bool) -> ssl.SSLContext:
-    ctx = ssl.create_default_context()
-    if not verify:
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-    return ctx
+    """System roots + the trust store; ``verify=False`` = no checking."""
+    from . import trust_store
+    return trust_store.ssl_context(verify)
 
 
 def send_email(to, subject: str, body: str, *, html: str | None = None,

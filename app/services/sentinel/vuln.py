@@ -211,7 +211,9 @@ def _fetch_json(url: str, payload: dict | None = None, timeout: float = 30.0):
         url, data=data,
         headers={"Content-Type": "application/json",
                  "User-Agent": "SATOM-Sentinel/1.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    from .. import trust_store
+    with urllib.request.urlopen(req, timeout=timeout,
+                                context=trust_store.ssl_context()) as resp:
         return json.loads(resp.read().decode("utf-8", "replace"))
 
 

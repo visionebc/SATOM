@@ -244,7 +244,8 @@ def _ssl_context(cfg: dict):
         return ctx
     if ca:
         return ssl.create_default_context(cafile=ca)
-    return ssl.create_default_context()
+    from . import trust_store
+    return trust_store.ssl_context()
 
 
 def _request(cfg: dict, method: str, path: str, token: str = "", body=None) -> dict:

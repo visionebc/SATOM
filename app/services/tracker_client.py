@@ -391,7 +391,9 @@ def request(method: str, path: str, *, json=None, params=None,
         # follow_redirects=False on purpose: a tracker behind a proxy that
         # 302s to a login page would otherwise turn an auth failure into a
         # 200 with an HTML body, i.e. a green tick for a broken integration.
-        with httpx.Client(verify=cfg["verify_tls"], timeout=timeout,
+        from . import trust_store
+        with httpx.Client(verify=trust_store.httpx_verify(cfg["verify_tls"]),
+                          timeout=timeout,
                           headers=headers, follow_redirects=False) as client:
             resp = client.request(str(method or "GET").upper(), url,
                                   json=json, params=params)

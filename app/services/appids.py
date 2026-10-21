@@ -362,8 +362,9 @@ def fetch_source(source: dict[str, Any]) -> tuple[str, bytes]:
     elif kind == "basic" and source.get("username"):
         pw = decrypt(source["password_enc"]) if source.get("password_enc") else ""
         auth = (source["username"], pw)
+    from . import trust_store
     resp = httpx.get(url, headers=headers, auth=auth, timeout=30.0,
-                     follow_redirects=True)
+                     follow_redirects=True, verify=trust_store.verify_param())
     resp.raise_for_status()
     # filename from the URL tail so parse_upload picks the right parser.
     name = url.rsplit("/", 1)[-1].split("?", 1)[0] or "catalog.csv"

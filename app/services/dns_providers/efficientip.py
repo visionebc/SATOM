@@ -50,7 +50,8 @@ class EfficientIPProvider(DnsProvider):
             raise ProviderError("EfficientIP base URL is not configured.")
         user = self.cfg.get("username") or ""
         pw = self.cfg.get("secret") or ""
-        verify = bool(self.cfg.get("verify_ssl", True))
+        from .. import trust_store
+        verify = trust_store.httpx_verify(bool(self.cfg.get("verify_ssl", True)))
         return httpx.Client(base_url=base, auth=(user, pw), verify=verify,
                             timeout=12.0, headers={"Accept": "application/json"})
 

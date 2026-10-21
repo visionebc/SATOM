@@ -168,6 +168,16 @@ feed = _load_upgrade_feed()
 FeedError = feed.FeedError
 
 
+def _trust_store_ca_file():
+    from . import trust_store
+    return trust_store.ca_file()
+
+
+# Feeds and packages on an internal host signed by a CA in the trust store
+# verify; knowledge packs reuse this same module (knowledge_fetch._transport).
+feed.CA_FILE_PROVIDER = _trust_store_ca_file
+
+
 def _current_version() -> str:
     # The same answer preflight() compares against, so the feed and the
     # preflight can never disagree about whether a package is newer.

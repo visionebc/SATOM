@@ -657,7 +657,9 @@ def request(method: str, path: str, *, json=None, params=None,
         "Content-Type": "application/json",
     }
     try:
-        with httpx.Client(verify=cfg["verify_tls"], timeout=timeout,
+        from . import trust_store
+        with httpx.Client(verify=trust_store.httpx_verify(cfg["verify_tls"]),
+                          timeout=timeout,
                           headers=headers, follow_redirects=False) as client:
             resp = client.request(str(method or "GET").upper(), url,
                                   json=json, params=params)

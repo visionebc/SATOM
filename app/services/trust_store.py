@@ -393,6 +393,48 @@ def verify_param():
     return val
 
 
+# ---------------------------------------------------------------------------
+# every other outbound TLS client (Settings: update sources, SMTP, webhooks,
+# LDAP, NetBox, trackers, IPAM, AI endpoints, vault…)
+# ---------------------------------------------------------------------------
+# The store used to reach only the device clients (app.clients.base) and a few
+# services that remembered to ask. Everything an operator types a URL into on
+# the Settings page built its own client on the public roots, so an internal
+# service behind the company CA failed with "unable to get local issuer
+# certificate" although that CA was right there in the store (SA-0003).
+# tests/test_trust_store_outbound.py keeps every client on these three.
+
+def ca_file() -> str | None:
+    """Path of the bundle (public roots + enabled private CAs), or ``None``
+    when there is no private CA to add or the bundle cannot be built."""
+    v = verify_param()
+    return v if isinstance(v, str) else None
+
+
+def httpx_verify(verify: bool = True):
+    """``verify=`` for httpx honouring an operator's verify toggle: ``False``
+    stays ``False`` (their decision), ``True`` becomes the trust store."""
+    return verify_param() if verify else False
+
+
+def ssl_context(verify: bool = True) -> ssl.SSLContext:
+    """An ``ssl`` context for urllib / smtplib / ldap3: the system roots PLUS
+    the trust store (``load_verify_locations`` adds, it does not replace).
+    ``verify=False`` is the operator's explicit "do not check"."""
+    ctx = ssl.create_default_context()
+    if not verify:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+    path = ca_file()
+    if path:
+        try:
+            ctx.load_verify_locations(cafile=path)
+        except (OSError, ssl.SSLError):
+            pass  # public roots still apply: a visible failure, never no TLS
+    return ctx
+
+
 def chain_gaps() -> list[dict]:
     """Enabled intermediates whose issuer is in neither the store nor certifi.
 

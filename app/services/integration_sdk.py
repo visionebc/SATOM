@@ -190,7 +190,9 @@ class HttpClient:
                                      method=(method or "GET").upper())
         eff = self._effective_timeout(timeout)
         try:
-            with urllib.request.urlopen(req, timeout=eff) as resp:
+            from . import trust_store
+            with urllib.request.urlopen(req, timeout=eff,
+                                        context=trust_store.ssl_context()) as resp:
                 content = resp.read(MAX_BODY_BYTES)
                 return HttpResponse(getattr(resp, "status", 0) or resp.getcode(),
                                     resp.geturl(), dict(resp.headers or {}), content)

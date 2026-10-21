@@ -38,6 +38,12 @@ class ProviderError(RuntimeError):
     never includes the API key (httpx exceptions do not echo headers back)."""
 
 
+
+def _verify():
+    """The trust store: a model endpoint behind the company CA verifies."""
+    from . import trust_store
+    return trust_store.verify_param()
+
 def chat_ollama(base_url: str, model: str, system: str, messages: list[dict],
                  *, timeout: float = DEFAULT_TIMEOUT) -> ChatResult:
     url = base_url.rstrip("/") + "/api/chat"
@@ -47,7 +53,7 @@ def chat_ollama(base_url: str, model: str, system: str, messages: list[dict],
     payload.extend(messages)
     try:
         r = httpx.post(url, json={"model": model, "messages": payload, "stream": False},
-                        timeout=timeout)
+                        timeout=timeout, verify=_verify())
         r.raise_for_status()
     except httpx.HTTPError as exc:
         raise ProviderError(f"Ollama request failed: {exc}") from exc
@@ -71,7 +77,7 @@ def chat_openai_compatible(base_url: str, api_key: str, model: str, system: str,
         headers.update(extra_headers)
     try:
         r = httpx.post(url, json={"model": model, "messages": payload},
-                        headers=headers, timeout=timeout)
+                        headers=headers, timeout=timeout, verify=_verify())
         r.raise_for_status()
     except httpx.HTTPError as exc:
         raise ProviderError(f"provider request failed: {exc}") from exc
@@ -101,7 +107,8 @@ def chat_anthropic(base_url: str, api_key: str, model: str, system: str,
         "content-type": "application/json",
     }
     try:
-        r = httpx.post(url, json=body, headers=headers, timeout=timeout)
+        r = httpx.post(url, json=body, headers=headers, timeout=timeout,
+                       verify=_verify())
         r.raise_for_status()
     except httpx.HTTPError as exc:
         raise ProviderError(f"provider request failed: {exc}") from exc

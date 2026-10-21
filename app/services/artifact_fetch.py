@@ -189,7 +189,9 @@ def http_get(url: str, *, verify_tls: bool = True) -> tuple[int, dict, bytes]:
 
     check_url(url)
     _precheck(url)
-    with httpx.Client(verify=verify_tls, timeout=TIMEOUT, follow_redirects=False,
+    from . import trust_store
+    with httpx.Client(verify=trust_store.httpx_verify(verify_tls), timeout=TIMEOUT,
+                      follow_redirects=False,
                       trust_env=False) as client:
         with client.stream("GET", url, headers={
                 "Accept": "application/wsdl+xml, application/xml, text/xml, */*",

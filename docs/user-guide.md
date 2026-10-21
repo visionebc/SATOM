@@ -1825,6 +1825,15 @@ This page is the missing third position: name the CA and keep the check on.
   falls back to the public roots, never to *off*.
 - The page lists **incomplete chains**: an enabled intermediate whose issuer is
   in neither the store nor the public roots.
+- **It is not only for appliances.** Every connection SATOM opens to an
+  address you configure verifies against the same bundle (public roots plus
+  this store): the update feed and package index in Settings → General →
+  Update sources (and the `pip` the updater runs), the git remote, SMTP, alert
+  webhooks, LDAP / Active Directory, the secret vault (unless it names its own
+  CA), NetBox, ticket trackers, DNS / IPAM providers, the AI and Sentinel
+  endpoints, App-ID sources and integrations. An internal service signed by
+  your CA needs nothing but its CA here. A connection whose **verify TLS**
+  switch you turned off stays unverified.
 - **Probe** aims a real TLS handshake at any device visible in this ADOM and
   separates the three causes, because each needs a different fix: untrusted
   issuer (import a CA), hostname mismatch (correct the appliance's host, or

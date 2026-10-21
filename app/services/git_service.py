@@ -5,6 +5,7 @@ Scoped to the web-app root (the directory containing ``wsgi.py``).
 """
 from __future__ import annotations
 
+import os
 import re
 import shlex
 import subprocess
@@ -12,6 +13,23 @@ from pathlib import Path
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
+
+
+def _git_env() -> dict | None:
+    """The environment for git: ``GIT_SSL_CAINFO`` = the trust store bundle,
+    so an https remote behind the company CA verifies (SA-0003). Only inside
+    an application context -- outside one (the reconciler, a script) git keeps
+    its own roots and no database is touched."""
+    from flask import has_app_context
+    if not has_app_context():
+        return None
+    from . import trust_store
+    ca = trust_store.ca_file()
+    if not ca:
+        return None
+    env = dict(os.environ)
+    env["GIT_SSL_CAINFO"] = ca
+    return env
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parent.parent.parent  # app/services → app → root
@@ -29,7 +47,7 @@ def _git_try(root: Path, *args: str):
     try:
         r = subprocess.run(
             ["git", "-C", str(root), *args],
-            capture_output=True, text=True, timeout=20,
+            capture_output=True, text=True, timeout=20, env=_git_env(),
         )
     except Exception:  # noqa: BLE001
         return False, ""
@@ -55,7 +73,7 @@ def _run_git(root: Path, args: tuple, lines: list, redact: tuple = ()) -> int:
     try:
         r = subprocess.run(
             ["git", "-C", str(root), *args],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True, text=True, timeout=120, env=_git_env(),
         )
     except Exception as e:
         lines.append(scrub(f"$ git {' '.join(str(a) for a in args)}\n[error: {e}]"))

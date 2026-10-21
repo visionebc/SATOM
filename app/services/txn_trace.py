@@ -170,7 +170,8 @@ def send(ip: str, port: int, *, host: str, path: str = "/", scheme: str = "https
         if scheme == "https":
             verified, verify_error = None, ""
             if verify_tls:
-                vctx = ssl.create_default_context()
+                from . import trust_store   # what this node accepts (SA-0003)
+                vctx = trust_store.ssl_context()
                 try:
                     sock = vctx.wrap_socket(sock, server_hostname=sni or host)
                     verified = True

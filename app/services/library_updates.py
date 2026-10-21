@@ -241,7 +241,9 @@ def _why_no_release(r: httpx.Response, requested: str, name: str) -> str:
     behind a redirect, an application's front page, a JSON API that is not the
     Simple API and a private registry without that project all read the same.
     """
-    final = str(r.url)
+    # Without the query: a sign-in redirect carries OAuth state and return
+    # URLs there, which are noise at best and not for a settings page.
+    final = str(r.url.copy_with(query=None, fragment=None))
     ctype = r.headers.get("content-type", "").split(";")[0].strip().lower() or "no content type"
     where = "%s (%s)" % (final, ctype)
     if r.history and final.rstrip("/") != requested.rstrip("/"):

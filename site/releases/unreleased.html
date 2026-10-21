@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 4 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 8 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 4 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 8 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added · Changed · Fixed · 4 entries</span>
-        <ul class="rel-leads"><li>The manual on every node, Documentation Center included</li><li>Wiki: comments, following, export and Confluence</li><li>Wiki groups are Administrator › Access › Groups</li><li class="rel-more">… and 1 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Added · Changed · Fixed · 8 entries</span>
+        <ul class="rel-leads"><li>The manual on every node, Documentation Center included</li><li>Resource history of the SATOM nodes</li><li>Wiki: comments, following, export and Confluence</li><li class="rel-more">… and 5 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.3.8.html" data-rel-version="3.3.8">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.3.8</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -432,8 +432,9 @@ Access › Groups), <code>wiki05</code> (comments and subscriptions) and <code>w
   site's host down. Every node now serves the published pages from its own
   tree at <code>/manual/</code>: the Documentation Center (its public build, vendored in
   <code>docs-center/</code>) and the generated reference pages of <code>site/</code>. <em>Documentation</em>
-  opens the Documentation Center; <em>API documentation</em> and the AI Advisor's
-  <em>How this works</em> open their reference pages — all on the node, with the
+  opens the Documentation Center, and so does <em>Documentation</em> in the user menu
+  once signed in (the user asked for it next to Profile); <em>API documentation</em>
+  and the AI Advisor's <em>How this works</em> open their reference pages — all on the node, with the
   public site used only for a page the tree does not carry. What is served is
   the generators' redacted output, never the Markdown (the routes that
   rendered <code>docs/*.md</code> stay gone), and nothing outside those two trees or of
@@ -442,6 +443,26 @@ Access › Groups), <code>wiki05</code> (comments and subscriptions) and <code>w
   Readable without signing in, from every ADOM, and in the container image,
   which now ships both trees. The release pipeline rebuilds the copy at every
   cut (step <code>docs_center</code>). On the Concept Map as <em>Documentation Center</em>.</li>
+<li><strong>Resource history of the SATOM nodes</strong> — as asked: "show SATOM's CPU,
+  disk and RAM over time where the system health is, for the secondary node
+  too, and let the API collect this data".</li>
+<li><strong>Monitoring → SATOM health → Resource history</strong>: CPU, memory and disk
+    charts with both nodes on each, over 1 h, 6 h, 24 h, 7 days, 30 days or
+    90 days, with the warning and critical limits from Settings → Thresholds
+    drawn as dashed lines. Until now these readings were a snapshot on the
+    node tiles and were thrown away after each render.</li>
+<li>Sampled by the existing <code>metrics_scrape</code> action (every 3 minutes) into the
+    local metrics store as <code>satom_node_*</code> series, mirrored to the peer's
+    store, so a promoted standby keeps the history. Its run summary names the
+    node samples, or says why they were not recorded.</li>
+<li>A node that did not answer leaves a gap and writes <code>satom_node_up 0</code>; its
+    last numbers are never carried forward. A store that did not answer is
+    shown as an error, never as empty charts.</li>
+<li><strong>API</strong>: <code>GET /api/v1/system/nodes</code> (every node now, graded) and
+    <code>GET /api/v1/system/nodes/history</code> (<code>range</code>, <code>node</code>, <code>metrics</code>; <code>502
+    store_unavailable</code> when the store does not answer). Read scope, a token
+    bound to the global ADOM, and <code>monitoring</code> on a capability-restricted
+    token. Node addresses are not in the answer. API manual §9.</li>
 <li><strong>Wiki: comments, following, export and Confluence</strong> — the rest of the Wiki
   plan, as asked: "do the Wiki and Confluence".</li>
 <li><strong>Comments</strong> under every published article, in threads (Reply), in
@@ -472,6 +493,24 @@ Access › Groups), <code>wiki05</code> (comments and subscriptions) and <code>w
     and line only; a moderator may override, audited. The calls go through the
     same checked path as Studio connections (no loopback, link-local, this
     node or its HA peer; no redirects; credential redacted from errors).</li>
+<li><strong>SATOM mapped to the NAF Framework</strong> — the first step of "do every phase
+  of the NAF alignment plan, test each one, then release, document and
+  publish everything". The Network Automation Forum's vendor-neutral
+  reference model (six functional blocks around the infrastructure; no
+  version number, so SATOM pins upstream commit <code>da82b12</code>, CC0 1.0) now has
+  its own manual page, <code>SATOM and the NAF Framework</code>: why SATOM aligns with
+  it, what SATOM calls each block — the one collision worth knowing is that
+  SATOM's <em>Source of Truth</em> is the framework's <em>Observability</em>, not its
+  <em>Intent</em> — and a conformance matrix, one row per requirement sentence,
+  each with its status and the file that is the evidence. The status line
+  ("mapped to the NAF Framework, with N documented deviations") is derived
+  from the matrix by a test, which also owns the word <em>conformant</em>: no
+  published document may claim it while a MUST row is open. The README, the
+  architecture page of the product site, the engineering, overview,
+  management, API, alerting, CLI-writer, Sentinel and metrics manuals and the
+  user guide say which block each part of SATOM is; the release checklist
+  diffs the upstream framework against the pin at every cut. The framework's
+  diagram and block icons are reproduced unchanged (<code>NOTICE</code>).</li>
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
@@ -484,6 +523,21 @@ Access › Groups), <code>wiki05</code> (comments and subscriptions) and <code>w
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li><strong>A SATOM node's disk read about 4 points emptier than it was.</strong> The
+  percentage was used ÷ total, which counts the ~5 % ext4 keeps for root;
+  PostgreSQL and SATOM do not run as root. On a1 it read 77.7 % while <code>df</code>
+  and <code>satom get system health</code> read 82 %, and the 92 % critical, meant to
+  fire before PostgreSQL can no longer write WAL, would have fired at 97 % of
+  what PostgreSQL can write. It is now df's figure (used ÷ used + free), and
+  the node tile shows used and free space.</li>
+<li><strong>The SATOM nodes' CPU alert could never fire.</strong> Settings → Thresholds →
+  <em>SATOM machine</em> still held the load-average limits (150 % / 400 % of cores)
+  after the grader moved to the container's own CPU use on 2026-08-11, and
+  that reading never goes above 100 %, so a node pinned at 100 % graded OK.
+  The limits are now <strong>CPU busy — warning / critical, 80 % / 95 %</strong>, validated
+  as percentages; a value above 100 saved under the old meaning is read as
+  the default. Found while drawing those limits on the new Resource history
+  chart.</li>
 <li>The Wiki list's page 2 and later kept only the first ticked ADOM of the
   filter.</li>
 </ul>

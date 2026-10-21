@@ -86,6 +86,39 @@ def site_url(slug: str | None = None) -> str:
     return f"{SITE_BASE}/docs/{slug}.html"
 
 
+# ---------------------------------------------------------------------------
+# The copy every node serves itself (2026-10-21).
+#
+# The public site is one address on one host, and a management network often
+# has no route to it: the sign-in page's "Documentation" link was a dead end
+# exactly where an operator needed it, and on 2026-10-21 it was a dead end
+# everywhere (the site's host was down). Every node now serves the PUBLISHED
+# artefacts from its own tree under /manual/ (app/views/manual.py): the
+# generated pages in site/ and the public build of the Documentation Center in
+# docs-center/. Both are generator OUTPUT, already redacted and scanned, so
+# there is still exactly one redaction path. In-product links prefer that copy
+# and fall back to the public site only when this tree lacks the page.
+# ---------------------------------------------------------------------------
+MANUAL_PREFIX = "/manual"
+SITE_DIR = ROOT_DIR / "site"
+DOCS_CENTER_DIR = ROOT_DIR / "docs-center"
+
+
+def local_url(slug: str | None = None) -> str:
+    """In-product link: this node's copy first, the public site otherwise.
+
+    No slug -> the Documentation Center home. A slug -> that reference page
+    (``site/docs/<slug>.html``), the same namespace as :func:`site_url`.
+    """
+    if not slug:
+        if (DOCS_CENTER_DIR / "index.html").is_file():
+            return f"{MANUAL_PREFIX}/docs-center/"
+        return site_url()
+    if (SITE_DIR / "docs" / f"{slug}.html").is_file():
+        return f"{MANUAL_PREFIX}/docs/{slug}.html"
+    return site_url(slug)
+
+
 PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
     ("README.md", "readme", "How to read this manual", "\U0001f5fa️",
      "The map: every document, which one to read for which job, and the rules that keep the manual honest."),

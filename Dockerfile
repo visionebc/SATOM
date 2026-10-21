@@ -99,6 +99,11 @@ COPY scripts/        ./scripts/
 COPY wsgi.py VERSION requirements.txt babel.cfg ./
 COPY acme_providers.yaml ./
 COPY LICENSE NOTICE README.md CHANGELOG.md ./
+# The manual every node serves at /manual/ (app/views/manual.py): generated
+# pages and the Documentation Center's public build. Without them the links
+# fall back to the public site, which an isolated container cannot reach.
+COPY site/           ./site/
+COPY docs-center/    ./docs-center/
 
 # Runtime state lives on volumes. Created here so the container starts writable
 # even when an operator forgets a mount (dev), instead of failing at first use.

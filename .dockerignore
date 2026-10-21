@@ -39,8 +39,8 @@ logs/
 *.key
 keys/
 
-# Generated site and local operator config: not part of the application.
-site/
+# Local operator config: not part of the application. (site/ and
+# docs-center/ ARE: the image serves the manual at /manual/ -- see Dockerfile.)
 *.pre-*
 *.bak-*
 publication-rules.local.json

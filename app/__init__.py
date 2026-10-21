@@ -393,6 +393,9 @@ def create_app(config_override: object | None = None) -> Flask:
             'product.select', 'product.set_product', 'product.switch',
             'product.enter', 'product.fortiadc_home',
             'product.placeholder_home',
+            # The published manual: the same static pages for every ADOM and
+            # for anonymous visitors, so there is nothing to scope.
+            'manual.page',
         }
         if ep in always or bp_name in CHROME_BPS or ep.startswith('auth.') or _gx_kind:
             return None
@@ -1117,9 +1120,10 @@ def create_app(config_override: object | None = None) -> Flask:
 
     @app.context_processor
     def _inject_docs_url():
-        """The manual is published, not served. One address, one definition."""
-        from app.services.doc_publication import site_url
-        return {"docs_url": site_url}
+        """The node's own copy of the published manual first, the public site
+        when this tree lacks the page. One resolver, one definition."""
+        from app.services.doc_publication import local_url
+        return {"docs_url": local_url}
 
     @app.context_processor
     def _inject_user_lang():
@@ -2623,6 +2627,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.txn_trace", "bp"),
         ("app.views.observatory", "bp"),
         ("app.views.wiki", "bp"),
+        ("app.views.manual", "bp"),
         ("app.views.server_objects", "bp"),
         ("app.views.web_protection", "bp"),
         ("app.views.exceptions", "bp"),

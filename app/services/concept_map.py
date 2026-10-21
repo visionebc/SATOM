@@ -163,6 +163,10 @@ PAGES: tuple[dict, ...] = (
        "Grades every site an appliance publishes with the MDN HTTP Observatory "
        "tests, says whether FortiWeb, the application or the certificate "
        "caused each result, and applies the FortiWeb fix."),
+    _p("manual.page", "Documentation Center", "platform",
+       "documentation docs manual help guide how to user guide reference "
+       "install installation api manual offline docs center handbook",
+       "The product manual, served by this node: works without internet."),
     _p("wiki.index", "Wiki", "platform",
        "wiki knowledge base kb article articles how to howto runbook notes "
        "documentation write share team procedure topic tag search markdown "

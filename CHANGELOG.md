@@ -12,6 +12,36 @@ Access › Groups), `wiki05` (comments and subscriptions) and `wiki06`
 
 ### Added
 
+- **The API describes itself, and reads and writes intent and observations**
+  — part of "do every phase of the NAF alignment plan". Three things the
+  console had and the API did not:
+  - `GET /api/v1/openapi.json`: an OpenAPI 3.0 document of every route,
+    built at request time from the live router, the scope each view
+    enforces and its docstring. Nothing is kept in a second list, so a route
+    added tomorrow is documented the moment it is registered, and a view
+    without a summary is a test failure rather than an undocumented endpoint.
+  - **Intent** (NAF's name for desired state): `GET /templates`,
+    `/templates/<id>` (body, versions, review history, bindings),
+    `/bindings`, `/baselines`, scoped to the token's ADOM like a console
+    session. Writing needs two new explicit-only capabilities, in the model
+    of the WAF carve-outs: `template_draft` creates templates and versions,
+    bindings and baselines and never touches a device; `template_apply`
+    approves (four-eyes: never the author) and pushes a template through
+    the console's own path — a dry-run preview unless `confirm` is true,
+    then the canary-gated background job behind the firmware gate. A fleet
+    rollout still needs an approved template and an owner holding *Run
+    operations*. An empty capability list authorises none of it: a token
+    minted before this release cannot roll a template out.
+  - **Observability** (what SATOM has recorded): `GET
+    /appliances/<id>/config-history` and `config-diff?from=&to=` over the
+    Source of Truth, `GET /findings` (what the alert engine finds now,
+    scoped to the product), and `GET /metrics/query`, a read-only MetricsQL
+    proxy that accepts only SATOM's own `satom_*` series, answers within
+    10 s or says so, and hands a product-bound token only its own devices'
+    series. The metrics store itself stays on loopback with no account of
+    its own; this route is the only way in from outside.
+  The API manual has four new sections (§10–§13); the manual guard now
+  covers every module.
 - **The manual on every node, Documentation Center included** — asked as
   "put the Documentation Center there too", for the sign-in page's
   *Documentation* link. That link pointed only at the public site, which a

@@ -80,8 +80,43 @@ def token_required(scope: str = "read"):
             g.product = tok.product  # product_scope reads g.product first
             _touch(tok)
             return f(*args, **kwargs)
+        # The scope is STAMPED on the view so the OpenAPI document
+        # (app.api_v1.openapi) reads it off the function the router holds.
+        # The document is derived from what runs, never from a second list
+        # kept by hand -- a duplicated list is how the first one drifts.
+        wrapper.api_scope = scope
+        wrapper.api_capabilities = tuple(getattr(f, "api_capabilities", ()))
         return wrapper
     return decorator
+
+
+def declares_capability(*caps: str):
+    """Record the explicit capabilities a view asks the token for.
+
+    Documentation only: enforcement stays inside the view, through
+    ``ApiToken.authorize_object`` (the floor for every caller) and the extra
+    checks the view makes for ``apply``. Applied BELOW ``token_required`` so
+    the stamp reaches the wrapper the router holds.
+    """
+    def decorator(f):
+        f.api_capabilities = tuple(caps)
+        return f
+    return decorator
+
+
+def owner_permission(perm: str):
+    """``None`` when the token's owner holds *perm*, else the 403 response.
+
+    A token never exceeds the human behind it: a surface the console gates on
+    a named permission (templates on ``operations.view``, approval on
+    ``operations.template_approve``) asks the OWNER for the same one, on top
+    of the scope's own mapping.
+    """
+    owner = getattr(g, "api_token_owner", None)
+    if owner is not None and owner.can(perm):
+        return None
+    return _err(403, "owner_forbidden",
+                f"The token owner lacks the permission this call needs ('{perm}').")
 
 
 def audit_extra(**more) -> dict:

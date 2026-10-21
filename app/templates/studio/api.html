@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}{{ a.name }} — API Catalog{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex align-items-start">
+  <div>
+    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('studio.index', pane='apis') }}">{{ _('Python Studio') }}</a> › {{ _('API Catalog') }}</div>
+    <h1 class="fw-page-title"><i class="bi bi-journal-code me-2 text-accent"></i>{{ a.name }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;"><code>{{ a.slug }}</code>{% if a.owner %} · {{ a.owner }}{% endif %}{% if a.docs_url %} · <a href="{{ a.docs_url }}" target="_blank" rel="noopener noreferrer">{{ _('Documentation') }} <i class="bi bi-box-arrow-up-right"></i></a>{% endif %}</p>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.index', pane='apis') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Python Studio') }}</a>
+  </div>
+</div>
+<div id="api-msg" class="mb-2" style="font-size:12px;"></div>
+<div class="row g-3">
+  <div class="col-xl-5">
+    <div class="fw-card"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-sliders me-2 text-accent"></i>{{ _('Settings') }}</span>
+        <button type="button" class="btn btn-primary btn-sm ms-auto" id="api-save"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button></div>
+      <div class="fw-card-body row g-2" style="font-size:13px;">
+        <div class="col-12"><label class="form-label small" for="api-name">{{ _('Name') }}</label><input class="form-control form-control-sm" id="api-name" value="{{ a.name }}" maxlength="120"></div>
+        <div class="col-12"><label class="form-label small" for="api-owner">{{ _('Owner') }}</label><input class="form-control form-control-sm" id="api-owner" value="{{ a.owner }}" maxlength="120" placeholder="{{ _('The team or vendor that publishes it') }}"></div>
+        <div class="col-12"><label class="form-label small" for="api-docs_url">{{ _('Documentation link') }}</label><input class="form-control form-control-sm" id="api-docs_url" value="{{ a.docs_url }}" maxlength="500" placeholder="https://"></div>
+        <div class="col-12"><label class="form-label small" for="api-description">{{ _('Description') }}</label><textarea class="form-control form-control-sm" id="api-description" rows="3" maxlength="4000">{{ a.description }}</textarea></div>
+      </div>
+    </div>
+    <div class="fw-card mt-3"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-plug me-2 text-accent"></i>{{ _('Connections pinned to this API') }}</span></div>
+      <div class="fw-card-body" style="font-size:13px;">
+        {% for c in connections %}
+          <div><a href="{{ url_for('studio.connection', slug=c.slug) }}"><code>{{ c.slug }}</code></a> → <span class="fw-badge fw-badge-info">{{ c.api_version.version }}</span> <span class="text-muted" style="font-size:12px;">{{ c.base_url }}</span></div>
+        {% else %}
+          <div class="text-muted">{{ _('None yet. Pin one from its connection page (HTTP connections, "API version").') }}</div>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="mt-3"><button type="button" class="btn btn-outline-danger btn-sm" id="api-delete" {{ 'disabled' if connections }}><i class="bi bi-trash me-1"></i>{{ _('Delete API') }}</button>
+      {% if connections %}<span class="text-muted small ms-2">{{ _('Move its connections off it first.') }}</span>{% endif %}</div>
+  </div>
+  <div class="col-xl-7">
+    <div class="fw-card"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-layers me-2 text-accent"></i>{{ _('Versions') }}</span></div>
+      <div class="fw-card-body" style="font-size:13px;">
+        <div class="d-flex gap-2 mb-2 flex-wrap align-items-end">
+          <div><label class="form-label small mb-0" for="api-new-version">{{ _('New version') }}</label><input class="form-control form-control-sm" id="api-new-version" placeholder="2.1.0" maxlength="32" style="width:130px;"></div>
+          <div><label class="form-label small mb-0" for="api-copy-from">{{ _('Start from') }}</label>
+            <select class="form-select form-select-sm" id="api-copy-from" style="width:180px;">
+              <option value="">{{ _('empty') }}</option>
+              {% for v in versions %}<option value="{{ v.version }}">{{ v.version }} ({{ v.status }})</option>{% endfor %}
+            </select></div>
+          <button type="button" class="btn btn-fw-primary btn-sm" id="api-version-create"><i class="bi bi-plus-lg me-1"></i>{{ _('Create draft') }}</button>
+        </div>
+        <div class="fw-table-wrapper">
+          <table class="fw-table" id="apiVersions">
+            <thead><tr><th>{{ _('Version') }}</th><th>{{ _('Status') }}</th><th>{{ _('Endpoints') }}</th><th>{{ _('Source') }}</th><th>{{ _('Published') }}</th><th>{{ _('Connections') }}</th></tr></thead>
+            <tbody>
+            {% for v in versions %}
+              <tr>
+                <td><a href="{{ url_for('studio.api_version', slug=a.slug, version=v.version) }}"><strong>{{ v.version }}</strong></a></td>
+                <td><span class="fw-badge {{ {'draft': 'fw-badge-secondary', 'published': 'fw-badge-success', 'deprecated': 'fw-badge-warning'}[v.status] }}">{{ v.status }}</span></td>
+                <td>{{ v.operations|length }}</td>
+                <td>{{ v.source }}</td>
+                <td style="font-size:12px;white-space:nowrap;">{% if v.published_at %}{{ v.published_at.strftime('%Y-%m-%d %H:%M') }} · {{ v.published_by }}{% else %}—{% endif %}</td>
+                <td style="font-size:12px;">{% for s in by_version.get(v.id, []) %}<code>{{ s }}</code>{{ ', ' if not loop.last }}{% else %}—{% endfor %}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="6" class="text-muted p-3">{{ _('No versions yet: create the first draft above.') }}</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% if versions|length > 1 %}
+    <div class="fw-card mt-3"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-arrow-left-right me-2 text-accent"></i>{{ _('Compare two versions') }}</span></div>
+      <div class="fw-card-body" style="font-size:13px;">
+        <div class="d-flex gap-2 mb-2 align-items-center">
+          <select class="form-select form-select-sm" id="api-cmp-a" style="width:160px;">{% for v in versions %}<option {{ 'selected' if loop.index == 2 }}>{{ v.version }}</option>{% endfor %}</select>
+          <i class="bi bi-arrow-right"></i>
+          <select class="form-select form-select-sm" id="api-cmp-b" style="width:160px;">{% for v in versions %}<option {{ 'selected' if loop.first }}>{{ v.version }}</option>{% endfor %}</select>
+          <button type="button" class="btn btn-outline-primary btn-sm" id="api-cmp-go">{{ _('Compare') }}</button>
+        </div>
+        <div id="api-cmp-out"></div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+<script type="application/json" id="api-config">{{ {
+  'page': 'api', 'slug': a.slug,
+  'urls': {'save': url_for('studio.api_save', slug=a.slug), 'delete': url_for('studio.api_delete', slug=a.slug),
+           'create': url_for('studio.api_version_create', slug=a.slug), 'compare': url_for('studio.api_compare', slug=a.slug),
+           'back': url_for('studio.index', pane='apis')}
+}|tojson }}</script>
+<script src="{{ asset('js/studio_api.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

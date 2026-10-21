@@ -43,6 +43,8 @@
           <i class="bi bi-table me-2"></i>{{ _('Data stores') }}<span class="fw-badge fw-badge-secondary ms-auto">{{ stores|length }}</span></a>
         <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'connections' }}" data-bs-toggle="list" href="#studio-pane-connections" role="tab" data-pane="connections">
           <i class="bi bi-plug me-2"></i>{{ _('Connections') }}<span class="fw-badge fw-badge-secondary ms-auto">{{ connections|length }}</span></a>
+        <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'apis' }}" data-bs-toggle="list" href="#studio-pane-apis" role="tab" data-pane="apis">
+          <i class="bi bi-journal-code me-2"></i>{{ _('API Catalog') }}<span class="fw-badge fw-badge-secondary ms-auto">{{ apis|length }}</span></a>
         <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'apps' }}" data-bs-toggle="list" href="#studio-pane-apps" role="tab" data-pane="apps">
           <i class="bi bi-app-indicator me-2"></i>{{ _('Apps') }}<span class="fw-badge fw-badge-secondary ms-auto">{{ apps|length }}</span></a>
         <a class="list-group-item list-group-item-action d-flex align-items-center {{ 'active' if pane == 'examples' }}" data-bs-toggle="list" href="#studio-pane-examples" role="tab" data-pane="examples">
@@ -202,12 +204,41 @@
                 <td><a href="{{ url_for('studio.connection', slug=c.slug) }}"><strong>{{ c.name }}</strong></a>
                   <div class="text-muted" style="font-size:11px;"><code>{{ c.slug }}</code></div></td>
                 <td>{{ 'HTTP API' if c.kind == 'http' else 'PostgreSQL' }}</td>
-                <td><code style="font-size:12px;">{{ c.base_url if c.kind == 'http' else (c.host ~ ':' ~ (c.port or 5432) ~ '/' ~ c.database) }}</code></td>
+                <td><code style="font-size:12px;">{{ c.base_url if c.kind == 'http' else (c.host ~ ':' ~ (c.port or 5432) ~ '/' ~ c.database) }}</code>
+                  {% if c.api_version %}<div><a class="fw-badge fw-badge-info text-decoration-none" href="{{ url_for('studio.api_version', slug=c.api_version.api.slug, version=c.api_version.version) }}">{{ c.api_version.label }}</a></div>{% endif %}</td>
                 <td>{{ c.auth }}</td>
                 <td style="font-size:13px;white-space:nowrap;">{{ c.updated_at.strftime('%Y-%m-%d %H:%M') if c.updated_at else '' }} · {{ c.updated_by }}</td>
               </tr>
             {% else %}
               <tr><td colspan="5" class="text-muted p-3">{{ _('No connections yet.') }}</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="tab-pane fade {{ 'show active' if pane == 'apis' }}" id="studio-pane-apis" role="tabpanel">
+        <div class="fw-card sl-how"><div class="fw-card-body py-2 d-flex gap-2" style="font-size:12px;">
+          <i class="bi bi-journal-code text-accent" style="font-size:18px;"></i>
+          <span>{{ _('APIs someone publishes, one entry per version: import its OpenAPI or Swagger document, or type the endpoints in. A published version never changes. Pin an HTTP connection to a version and app steps and scripts can call its endpoints by id, and only those.') }}</span>
+        </div></div>
+        <div class="d-flex mb-2"><button type="button" class="btn btn-fw-primary btn-sm ms-auto" data-bs-toggle="modal" data-bs-target="#apiNewModal"><i class="bi bi-plus-lg me-1"></i>{{ _('New API') }}</button></div>
+        <div class="fw-table-wrapper">
+          <table class="fw-table" id="apiTable">
+            <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Owner') }}</th><th>{{ _('Latest published') }}</th><th>{{ _('Versions') }}</th><th>{{ _('Connections') }}</th><th>{{ _('Last change') }}</th></tr></thead>
+            <tbody>
+            {% for row in apis %}{% set a = row.a %}
+              <tr>
+                <td><a href="{{ url_for('studio.api', slug=a.slug) }}"><strong>{{ a.name }}</strong></a>
+                  <div class="text-muted" style="font-size:11px;"><code>{{ a.slug }}</code></div></td>
+                <td>{{ a.owner }}</td>
+                <td>{% if row.latest %}<span class="fw-badge fw-badge-success">{{ row.latest }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                <td>{{ row.versions }}{% if row.drafts %} <span class="fw-badge fw-badge-secondary">{{ row.drafts }} {{ _('draft') }}</span>{% endif %}</td>
+                <td style="font-size:12px;">{% for s in row.connections %}<code>{{ s }}</code>{{ ', ' if not loop.last }}{% else %}<span class="text-muted">—</span>{% endfor %}</td>
+                <td style="font-size:13px;white-space:nowrap;">{{ a.updated_at.strftime('%Y-%m-%d %H:%M') if a.updated_at else '' }} · {{ a.updated_by }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="6" class="text-muted p-3">{{ _('No APIs yet.') }}</td></tr>
             {% endfor %}
             </tbody>
           </table>
@@ -299,6 +330,7 @@
 {% for mid, title, action, extra in [
      ('stNewModal', _('New data store'), url_for('studio.store_create'), ''),
      ('cnNewModal', _('New connection'), url_for('studio.connection_create'), 'kind'),
+     ('apiNewModal', _('New API'), url_for('studio.api_create'), ''),
      ('apNewModal', _('New app'), url_for('studio.app_create'), '')] %}
 <div class="modal fade fw-modal" id="{{ mid }}" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog"><div class="modal-content">

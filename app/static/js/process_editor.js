@@ -372,10 +372,16 @@
         insp.appendChild(hookPicker(n, p));
         return;
       }
+      if (n.kind === "api_call" && p.name === "operation") {
+        insp.appendChild(operationPicker(n, p, kind.catalog || {}));
+        return;
+      }
       if (p.kind === "select") {
         insp.appendChild(selectInput(p.label, p.choices || [],
           n.params[p.name] || p.default, function (v) {
             n.params[p.name] = v; markDirty();
+            // The endpoint list belongs to the connection: redraw it.
+            if (n.kind === "api_call" && p.name === "connection") renderInspector();
           }, p.help));
         return;
       }
@@ -413,6 +419,45 @@
     });
     s.disabled = !CAN_EDIT;
     s.addEventListener("change", function () { onChange(s.value); });
+    wrap.insertBefore(s, wrap.querySelector(".form-text"));
+    return wrap;
+  }
+
+  /* Python Studio "Call an API": the endpoints of the API Catalog version the
+     chosen connection is pinned to. Picking one fills method and path (shown,
+     and what the step sends); the server re-checks it (studio_flow). */
+  function operationPicker(n, p, catalog) {
+    var cat = catalog[n.params.connection];
+    var wrap = field(p.label, cat
+      ? "API " + cat.api + " " + cat.version + ": the method and the path come from the endpoint."
+      : "The connection is not pinned to an API Catalog version: type the method and the path.");
+    var s = document.createElement("select");
+    s.className = "form-select form-select-sm";
+    var none = document.createElement("option");
+    none.value = ""; none.textContent = "— type method and path —";
+    s.appendChild(none);
+    var cur = n.params.operation || "";
+    var found = false;
+    ((cat && cat.ops) || []).forEach(function (o) {
+      var opt = document.createElement("option");
+      opt.value = o.id;
+      opt.textContent = o.method + " " + o.path + " — " + o.id + (o.summary ? " (" + o.summary + ")" : "");
+      if (o.id === cur) { opt.selected = true; found = true; }
+      s.appendChild(opt);
+    });
+    if (cur && !found) {
+      var gone = document.createElement("option");
+      gone.value = cur; gone.textContent = cur + " — not in this version";
+      gone.selected = true;
+      s.appendChild(gone);
+    }
+    s.disabled = !CAN_EDIT || !cat;
+    s.addEventListener("change", function () {
+      n.params.operation = s.value;
+      var o = ((cat && cat.ops) || []).filter(function (x) { return x.id === s.value; })[0];
+      if (o) { n.params.method = o.method; n.params.path = o.path; }
+      markDirty(); renderInspector();
+    });
     wrap.insertBefore(s, wrap.querySelector(".form-text"));
     return wrap;
   }

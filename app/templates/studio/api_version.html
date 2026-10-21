@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}{{ a.name }} {{ v.version }} — API Catalog{% endblock %}
+{% block content %}
+{% set draft = v.status == 'draft' %}
+<div class="fw-page-header d-flex align-items-start">
+  <div>
+    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('studio.index', pane='apis') }}">{{ _('Python Studio') }}</a> › {{ _('API Catalog') }} › <a href="{{ url_for('studio.api', slug=a.slug) }}">{{ a.name }}</a></div>
+    <h1 class="fw-page-title"><i class="bi bi-journal-code me-2 text-accent"></i>{{ a.name }} {{ v.version }}
+      <span class="fw-badge {{ {'draft': 'fw-badge-secondary', 'published': 'fw-badge-success', 'deprecated': 'fw-badge-warning'}[v.status] }} align-middle" style="font-size:12px;">{{ v.status }}</span></h1>
+    <p class="text-muted mb-0" style="font-size:13px;"><code>{{ a.slug }}</code> · {{ ops|length }} {{ _('endpoints') }} · {{ _('source') }}: {{ v.source }}{% if v.published_at %} · {{ _('published') }} {{ v.published_at.strftime('%Y-%m-%d %H:%M') }} {{ _('by') }} {{ v.published_by }}{% endif %}
+      {% if users %} · {{ _('pinned by') }} {% for s in users %}<a href="{{ url_for('studio.connection', slug=s) }}"><code>{{ s }}</code></a>{{ ', ' if not loop.last }}{% endfor %}{% endif %}</p>
+  </div>
+  <div class="ms-auto d-flex gap-2 flex-wrap justify-content-end">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.api', slug=a.slug) }}"><i class="bi bi-arrow-left me-1"></i>{{ a.name }}</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.api_version_export', slug=a.slug, version=v.version) }}"><i class="bi bi-download me-1"></i>{{ _('Endpoints (JSON)') }}</a>
+    {% if draft %}
+    <button type="button" class="btn btn-outline-danger btn-sm" id="av-delete"><i class="bi bi-trash me-1"></i>{{ _('Delete draft') }}</button>
+    <button type="button" class="btn btn-primary btn-sm" id="av-save"><i class="bi bi-save me-1"></i>{{ _('Save draft') }}</button>
+    <button type="button" class="btn btn-fw-primary btn-sm" id="av-publish"><i class="bi bi-send-check me-1"></i>{{ _('Publish') }}</button>
+    {% else %}
+    <button type="button" class="btn btn-outline-warning btn-sm" id="av-deprecate" data-on="{{ '0' if v.status == 'deprecated' else '1' }}">{{ _('Mark as current') if v.status == 'deprecated' else _('Deprecate') }}</button>
+    {% endif %}
+  </div>
+</div>
+<div id="av-msg" class="mb-2" style="font-size:12px;"></div>
+{% if not draft %}
+<div class="alert alert-info py-2" style="font-size:12px;"><i class="bi bi-lock me-1"></i>{{ _('A published version never changes and is never deleted, so a connection pinned to it means the same endpoints tomorrow. To change it, create a new version from it on the API page.') }}</div>
+{% endif %}
+<div class="row g-3">
+  {% if draft %}
+  <div class="col-xl-4">
+    <div class="fw-card"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-filetype-json me-2 text-accent"></i>{{ _('Import an OpenAPI document') }}</span></div>
+      <div class="fw-card-body" style="font-size:13px;">
+        <p class="text-muted" style="font-size:12px;">{{ _('OpenAPI 3 or Swagger 2, JSON or YAML, up to %(n)s MiB. Importing replaces the endpoints of this draft; you can correct them by hand afterwards. Only references inside the document are followed: nothing is downloaded.', n=limits.spec_mib) }}</p>
+        <input class="form-control form-control-sm mb-2" type="file" id="av-file" accept=".json,.yaml,.yml,application/json,text/yaml">
+        <textarea class="form-control form-control-sm mb-2" id="av-text" rows="6" style="font-family:ui-monospace,Menlo,monospace;font-size:11px;" placeholder="{{ _('…or paste the document here') }}"></textarea>
+        <button type="button" class="btn btn-outline-primary btn-sm" id="av-import"><i class="bi bi-upload me-1"></i>{{ _('Import') }}</button>
+        <div id="av-import-out" class="mt-2" style="font-size:12px;"></div>
+      </div>
+    </div>
+    <div class="fw-card mt-3"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-sliders me-2 text-accent"></i>{{ _('Version settings') }}</span></div>
+      <div class="fw-card-body" style="font-size:13px;">
+        <label class="form-label small" for="av-base_path">{{ _('Base path in the document') }}</label>
+        <input class="form-control form-control-sm" id="av-base_path" value="{{ v.base_path }}" maxlength="200" placeholder="/api/v2">
+        <div class="form-text mb-2">{{ _('Informational: endpoint paths are under the base URL of the connection, so that URL should end with this path.') }}</div>
+        <label class="form-label small" for="av-notes">{{ _('Release notes') }}</label>
+        <textarea class="form-control form-control-sm" id="av-notes" rows="4" maxlength="8000">{{ v.notes }}</textarea>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  <div class="{{ 'col-xl-8' if draft else 'col-12' }}">
+    {% if not draft and (v.base_path or v.notes) %}
+    <div class="fw-card mb-3"><div class="fw-card-body" style="font-size:13px;">
+      {% if v.base_path %}<div><span class="text-muted">{{ _('Base path in the document') }}:</span> <code>{{ v.base_path }}</code></div>{% endif %}
+      {% if v.notes %}<div class="mt-1" style="white-space:pre-wrap;">{{ v.notes }}</div>{% endif %}
+    </div></div>
+    {% endif %}
+    <div class="fw-card"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;"><i class="bi bi-list-ul me-2 text-accent"></i>{{ _('Endpoints') }}</span>
+        <input class="form-control form-control-sm ms-auto" id="av-filter" placeholder="{{ _('Filter') }}" style="max-width:220px;">
+        {% if draft %}<button type="button" class="btn btn-outline-primary btn-sm ms-2" id="av-add"><i class="bi bi-plus-lg me-1"></i>{{ _('Add endpoint') }}</button>{% endif %}</div>
+      <div class="fw-card-body" style="font-size:13px;">
+        {% if draft %}<p class="text-muted" style="font-size:12px;">{{ _('The id is what scripts and app steps call: connection("x").op("id"). Write {name} for a path parameter. Query parameters: names separated by commas.') }}</p>{% endif %}
+        <div class="fw-table-wrapper" style="max-height:70vh;overflow:auto;">
+          <table class="fw-table" id="av-table">
+            <thead><tr><th>{{ _('Id') }}</th><th>{{ _('Method') }}</th><th>{{ _('Path') }}</th><th>{{ _('Summary') }}</th><th>{{ _('Query parameters') }}</th><th>{{ _('Body') }}</th>{% if draft %}<th></th>{% endif %}</tr></thead>
+            <tbody id="av-rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script type="application/json" id="api-config">{{ {
+  'page': 'version', 'slug': a.slug, 'version': v.version, 'draft': draft, 'ops': ops,
+  'methods': methods, 'maxOps': limits.operations,
+  'urls': {'save': url_for('studio.api_version_save', slug=a.slug, version=v.version),
+           'import': url_for('studio.api_version_import', slug=a.slug, version=v.version),
+           'publish': url_for('studio.api_version_publish', slug=a.slug, version=v.version),
+           'deprecate': url_for('studio.api_version_deprecate', slug=a.slug, version=v.version),
+           'delete': url_for('studio.api_version_delete', slug=a.slug, version=v.version),
+           'back': url_for('studio.api', slug=a.slug)}
+}|tojson }}</script>
+<script src="{{ asset('js/studio_api.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

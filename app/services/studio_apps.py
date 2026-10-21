@@ -134,6 +134,8 @@ def choices() -> dict:
         out["scripts"] = [s["slug"] for s in SL.list_scripts() if s.get("published")]
     except Exception:  # noqa: BLE001 -- a broken library dir must not break the editor
         pass
+    from . import studio_apis as SAPI
+    out["catalog"] = SAPI.choices()
     try:
         from ..views.change_requests import cr_type_entries
         out["cr_actions"] = [e["key"] for e in cr_type_entries()]

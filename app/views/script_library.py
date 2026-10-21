@@ -160,11 +160,21 @@ def edit(slug):
 
 
 def _studio_connections() -> list[dict]:
-    """The Studio connections a script may declare (Connections card)."""
+    """The Studio connections a script may declare (Connections card), with
+    the API Catalog version a connection is pinned to and its endpoints (the
+    reference the editor shows for ``connection("x").op(...)``)."""
     try:
+        from ..services import studio_apis as SAPI
         from ..services import studio_connections as SC
-        return [{"slug": c.slug, "name": c.name, "kind": c.kind,
-                 "secret": SC.needs_secret(c)} for c in SC.list_connections()]
+        out = []
+        for c in SC.list_connections():
+            cat = SAPI.catalog_of(c)
+            out.append({"slug": c.slug, "name": c.name, "kind": c.kind,
+                        "secret": SC.needs_secret(c),
+                        "api": ({"api": cat["api"], "version": cat["version"],
+                                 "status": cat["status"], "ops": cat["operations"]}
+                                if cat else None)})
+        return out
     except Exception:  # noqa: BLE001 -- the editor opens without them
         return []
 

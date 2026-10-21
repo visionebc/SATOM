@@ -32,6 +32,12 @@
         <div class="col-md-6 cn-auth-oauth"><label class="form-label small" for="cn-token_url">{{ _('Token URL') }}</label><input class="form-control form-control-sm" id="cn-token_url" value="{{ c.token_url }}" maxlength="500"></div>
         <div class="col-md-6 cn-auth-oauth"><label class="form-label small" for="cn-scope">{{ _('Scope') }}</label><input class="form-control form-control-sm" id="cn-scope" value="{{ c.scope }}" maxlength="500"></div>
         <div class="col-md-6"><div class="form-check mt-4"><input class="form-check-input" type="checkbox" id="cn-verify_tls" {{ 'checked' if c.verify_tls }}><label class="form-check-label small" for="cn-verify_tls">{{ _('Verify the TLS certificate (trust store)') }}</label></div></div>
+        <div class="col-12"><label class="form-label small" for="cn-api_version_id">{{ _('API version (API Catalog)') }}</label>
+          <select class="form-select form-select-sm" id="cn-api_version_id">
+            <option value="">{{ _('None: any path under the base URL') }}</option>
+            {% for v in api_versions %}<option value="{{ v.id }}" {{ 'selected' if c.api_version_id == v.id }}>{{ v.api.name }} — {{ v.version }}{{ ' (deprecated)' if v.status == 'deprecated' }}</option>{% endfor %}
+          </select>
+          <div class="form-text">{% if c.api_version %}{{ _('Pinned: app steps and scripts reach only the %(n)s endpoints of this version, and can call them by id.', n=c.api_version.operations|length) }}{% if c.api_version.base_path %} {{ _('Its paths are under %(p)s: the base URL should end with it.', p=c.api_version.base_path) }}{% endif %} <a href="{{ url_for('studio.api_version', slug=c.api_version.api.slug, version=c.api_version.version) }}">{{ _('Endpoints') }}</a>{% else %}{{ _('Pin a published version and app steps and scripts can call its endpoints by id, and only those.') }}{% if not api_versions %} {{ _('No published version exists yet (Python Studio › API Catalog).') }}{% endif %}{% endif %}</div></div>
         {% else %}
         <div class="col-md-8"><label class="form-label small" for="cn-host">{{ _('Host') }}</label><input class="form-control form-control-sm" id="cn-host" value="{{ c.host }}" maxlength="255"></div>
         <div class="col-md-4"><label class="form-label small" for="cn-port">{{ _('Port') }}</label><input class="form-control form-control-sm" id="cn-port" type="number" value="{{ c.port or 5432 }}"></div>

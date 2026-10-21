@@ -32,6 +32,11 @@ it for ``tcp``). Nothing of ``/opt/satom`` is on ``sys.path`` in the jail.
             whatever the script's network mode. A PostgreSQL connection
             answers ``.query("SELECT ...", [params])`` (read-only unless
             ``write=True``).
+            A connection pinned to an API Catalog version calls endpoints
+            by id: ``connection("inv").op("getHost", {"id": 7}).json()``;
+            ``.operations()`` lists them and ``.catalog()`` names the API and
+            version. A request that is not an endpoint of that version is
+            refused.
 """
 from __future__ import annotations
 
@@ -186,6 +191,25 @@ class Connection:
 
     def delete(self, path: str = "", **kw) -> Response:
         return self.request("DELETE", path, **kw)
+
+    def op(self, operation: str, path_params=None, *, params=None, json=None,
+           data=None, headers=None) -> Response:
+        """Call an endpoint of the API Catalog version the connection is
+        pinned to, by id: ``op("getHost", {"id": 7})``. The method and the
+        path come from the catalog; *path_params* fill its ``{name}`` parts."""
+        return Response(_broker({"connection": self.key, "operation": str(operation),
+                                 "path_params": path_params, "params": params,
+                                 "json": json, "data": data, "headers": headers}))
+
+    def catalog(self) -> dict:
+        """``{"api", "version", "status", "operations": [...]}`` -- the API
+        Catalog version this connection is pinned to."""
+        return _broker({"connection": self.key, "list_operations": True})
+
+    def operations(self) -> list:
+        """The endpoints of the pinned version: ``[{"id", "method", "path",
+        "summary", "body", "params"}]``."""
+        return list(self.catalog().get("operations") or [])
 
     def query(self, sql: str, params=None, *, write: bool = False,
               max_rows: int = 1000) -> dict:

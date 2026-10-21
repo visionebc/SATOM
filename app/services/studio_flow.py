@@ -240,6 +240,9 @@ class Kind:
     summary: str
     params: list = field(default_factory=list)
     writes: bool = False
+    #: Anything else the editor needs (api_call: the pinned connections'
+    #: endpoint lists, for the endpoint picker).
+    extra: dict = field(default_factory=dict)
 
 
 def _save_as(default):
@@ -286,12 +289,18 @@ def kinds(choices: dict | None = None) -> list[Kind]:
               _save_as("rows")], writes=True),
         Kind("api_call", "Call an API", "act", "A request to an HTTP connection.",
              [Param("connection", "Connection", "select", True, tuple(ch.get("http", ()))),
+              Param("operation", "Endpoint (API Catalog)",
+                    help="For a connection pinned to an API version: the endpoint id. "
+                         "It sets the method and the path; leave empty to type them."),
+              Param("path_params", "Path parameters (JSON)", "json",
+                    help='For an endpoint: {"id": "{{ form.id }}"}'),
               Param("method", "Method", "select", choices=("GET", "POST", "PUT", "PATCH", "DELETE"),
                     default="GET"),
               Param("path", "Path", help="Under the base URL, e.g. /tickets/{{ form.id }}"),
               Param("query", "Query string (JSON)", "json"), Param("body", "Body (JSON)", "json"),
               Param("extract", "Keep only (JSON path)", help="e.g. items[*].name"),
-              _save_as("response")], writes=True),
+              _save_as("response")], writes=True,
+             extra={"catalog": dict(ch.get("catalog") or {})}),
         Kind("script", "Run a script", "act", "The published version of a Script Library script.",
              [Param("script", "Script", "select", True, tuple(ch.get("scripts", ()))),
               Param("inputs", "Form values (JSON)", "json", help='{"field": "{{ form.x }}"}'),
@@ -305,7 +314,7 @@ def kind_map(choices=None) -> dict:
 
 def kinds_json(choices=None) -> list[dict]:
     return [{"key": k.key, "label": k.label, "group": k.group, "summary": k.summary,
-             "params": [p.__dict__ for p in k.params]} for k in kinds(choices)]
+             "params": [p.__dict__ for p in k.params], **k.extra} for k in kinds(choices)]
 
 
 def step_writes(node: dict) -> bool:
@@ -316,8 +325,25 @@ def step_writes(node: dict) -> bool:
     if kind == "sql_query":
         return p.get("allow_writes") == "yes"
     if kind == "api_call":
+        if str(p.get("operation") or "").strip():
+            return _operation_method(p) != "GET"
         return (p.get("method") or "GET").upper() != "GET"
     return False
+
+
+def _operation_method(p: dict) -> str:
+    """The method of an api_call step's catalog endpoint. Anything that
+    cannot be resolved counts as a write, so a rehearsal never sends it."""
+    try:
+        from . import studio_api_spec as SP
+        from . import studio_apis as SA
+        from . import studio_connections as SC
+        c = SC.get(str(p.get("connection") or ""))
+        cat = SA.catalog_of(c) if c is not None else None
+        op = SP.by_id(cat["operations"], str(p.get("operation")).strip()) if cat else None
+        return op["method"] if op else "POST"
+    except Exception:  # noqa: BLE001 -- unknown = treated as a write
+        return "POST"
 
 
 # --------------------------------------------------------------------------- #
@@ -354,6 +380,8 @@ def validate_graph(graph: dict, choices: dict | None = None) -> list[str]:
                     parse_json_param(v, prm.label)
                 except FlowError as exc:
                     errs.append("%s: %s" % (k, exc))
+        if n.get("kind") == "api_call" and choices is not None:
+            errs.extend(_catalog_problems(k, p, choices))
         target = p.get("name") if n.get("kind") == "set" else p.get("save_as")
         if target not in (None, ""):
             v = str(target)
@@ -384,6 +412,23 @@ def validate_graph(graph: dict, choices: dict | None = None) -> list[str]:
         if src.get("kind") in ("end", "fail"):
             errs.append("%s ends the run: it cannot have arrows" % src.get("key"))
     return errs
+
+
+def _catalog_problems(key: str, p: dict, choices: dict) -> list[str]:
+    """An api_call step against a connection pinned to an API Catalog version
+    calls an endpoint of that version, or it is a problem (FA-0006)."""
+    from . import studio_apis as SA
+    conn = str(p.get("connection") or "")
+    cat = (choices.get("catalog") or {}).get(conn)
+    if cat is None:
+        if str(p.get("operation") or "").strip() and conn in (choices.get("http") or ()):
+            return ["%s: connection %s is not pinned to an API Catalog version, so it has "
+                    "no endpoint %s" % (key, conn, p.get("operation"))]
+        return []
+    miss = SA.endpoint_problem(cat["ops"], p)
+    if not miss:
+        return []
+    return ["%s: %s in API %s %s (connection %s)" % (key, miss, cat["api"], cat["version"], conn)]
 
 
 def references(graph: dict) -> dict:
@@ -543,9 +588,9 @@ def _run_step(node: dict, ctx: Ctx):
     if kind == "api_call":
         from . import studio_connections as SC
         c = _connection(node, "http")
+        method, path = _endpoint(node, ctx, c)
         try:
-            r = SC.http_call(c, _p(node, "method", "GET") or "GET",
-                             str(render_path(_p(node, "path"), scope) or ""),
+            r = SC.http_call(c, method, path,
                              query=_json(node, ctx, "query", "Query string"),
                              body=_json(node, ctx, "body", "Body"))
         except SC.ConnectionError_ as exc:
@@ -560,6 +605,37 @@ def _run_step(node: dict, ctx: Ctx):
     if kind == "script":
         return _run_script(node, ctx)
     raise FlowError("unknown step kind %r" % kind)
+
+
+def _endpoint(node, ctx, c) -> tuple[str, str]:
+    """``(method, path)`` of an api_call step. With an endpoint id, both come
+    from the connection's API Catalog version and the path parameters fill
+    its ``{name}`` parts; without one, the typed method and path -- which,
+    on a pinned connection, must still be an endpoint of that version."""
+    from . import studio_api_spec as SP
+    from . import studio_apis as SA
+    cat = SA.catalog_of(c)
+    oid = str(_p(node, "operation") or "").strip()
+    where = "API %s %s (connection %s)" % (cat["api"], cat["version"], c.slug) if cat else ""
+    if oid:
+        if cat is None:
+            raise FlowError("connection %s is not pinned to an API Catalog version, so it "
+                            "has no endpoint %s" % (c.slug, oid))
+        op = SP.by_id(cat["operations"], oid)
+        if op is None:
+            raise FlowError("endpoint %s is not in %s" % (oid, where))
+        values = _json(node, ctx, "path_params", "Path parameters") or {}
+        if not isinstance(values, dict):
+            raise FlowError("path parameters are an object of name: value")
+        try:
+            return op["method"], SP.fill_path(op, values)
+        except SP.SpecError as exc:
+            raise FlowError(str(exc)) from None
+    method = (_p(node, "method", "GET") or "GET").upper()
+    path = str(render_path(_p(node, "path"), ctx.scope()) or "")
+    if cat is not None and SP.find(cat["operations"], method, path) is None:
+        raise FlowError("%s %s is not an endpoint of %s" % (method, path or "/", where))
+    return method, path
 
 
 #: Test seams: how a script step queues a run and reads its status.

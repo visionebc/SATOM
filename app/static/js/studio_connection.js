@@ -23,7 +23,11 @@
       body: JSON.stringify(body || {})
     }).then(function (r) {
       return r.json().catch(function () { return { error: 'HTTP ' + r.status }; }).then(function (d) {
-        if (!r.ok || (d.ok === false && d.error && !('status' in d))) throw new Error(d.error || ('HTTP ' + r.status));
+        if (!r.ok || (d.ok === false && d.error && !('status' in d))) {
+          var err = new Error(d.error || ('HTTP ' + r.status));
+          err.data = d;
+          throw err;
+        }
         return d;
       });
     });
@@ -50,12 +54,29 @@
       var v = val(k); if (v !== undefined) body[k] = v;
     });
     if (body.verify_tls === undefined) body.verify_tls = true;
-    post(U.save, body).then(function (d) {
-      if (d && d.secret_dropped) {
-        $('cn-secret-state').innerHTML = '<span class="fw-badge fw-badge-secondary">not set</span>';
-        msg('Saved. The destination changed, so the stored secret was cleared: enter it again.', true);
-      } else { msg('Saved.'); }
-    }).catch(function (e) { msg(e.message, true); });
+    if ($('cn-api_version_id')) body.api_version_id = $('cn-api_version_id').value;
+    function send(b) {
+      return post(U.save, b).then(function (d) {
+        if (d && d.secret_dropped) {
+          $('cn-secret-state').innerHTML = '<span class="fw-badge fw-badge-secondary">not set</span>';
+          msg('Saved. The destination changed, so the stored secret was cleared: enter it again.', true);
+        } else { msg('Saved.' + (d.impact && d.impact.length ? ' ' + d.impact.length + ' app step(s) now need a fix before their app can be published again.' : '')); }
+      });
+    }
+    send(body).catch(function (e) {
+      // Another API version: the server names the app steps whose endpoint
+      // the new version lacks, and saves only when that is confirmed.
+      if (e.data && e.data.needs_confirm) {
+        if (window.confirm(e.message + ':\n\n' + e.data.impact.join('\n') +
+                           '\n\nThose steps fail when they run. Pin the connection anyway?')) {
+          body.confirm = true;
+          return send(body).catch(function (e2) { msg(e2.message, true); });
+        }
+        msg('Not saved.', true);
+        return;
+      }
+      msg(e.message, true);
+    });
   });
   function setSecret(v) {
     post(U.secret, { value: v }).then(function (d) {

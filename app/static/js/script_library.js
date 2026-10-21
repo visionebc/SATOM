@@ -641,8 +641,11 @@
     box.innerHTML = all.length ? all.map(function (c) {
       return '<label class="small"><input type="checkbox" class="sl-conn" value="' + esc(c.slug) + '"' +
         (conns.indexOf(c.slug) >= 0 ? ' checked' : '') + '> ' + esc(c.name) + ' <code>' + esc(c.slug) + '</code>' +
-        (c.kind === 'postgres' ? ' (PostgreSQL)' : '') + (c.secret && !CFG.vaultOk ? ' <span class="fw-badge fw-badge-warning">needs the vault</span>' : '') + '</label>';
+        (c.kind === 'postgres' ? ' (PostgreSQL)' : '') +
+        (c.api ? ' <span class="fw-badge fw-badge-info">' + esc(c.api.api + ' ' + c.api.version) + '</span>' : '') +
+        (c.secret && !CFG.vaultOk ? ' <span class="fw-badge fw-badge-warning">needs the vault</span>' : '') + '</label>';
     }).join('') : '<div class="text-muted small">No connections exist yet (Python Studio &gt; Connections).</div>';
+    renderCatalog(all);
     conns.filter(function (k) { return !all.some(function (c) { return c.slug === k; }); }).forEach(function (k) {
       box.insertAdjacentHTML('beforeend', '<label class="small text-danger"><input type="checkbox" class="sl-conn" value="' + esc(k) + '" checked> ' + esc(k) + ' — does not exist</label>');
     });
@@ -650,8 +653,30 @@
       cb.addEventListener('change', function () {
         conns = Array.prototype.filter.call(box.querySelectorAll('.sl-conn'), function (x) { return x.checked; }).map(function (x) { return x.value; });
         setDirty(true);
+        renderCatalog(all);
       });
     });
+  }
+  /* The API Catalog of every declared connection that is pinned to a
+     version: the endpoints the script can call with .op(), each with the
+     line to paste. Server side, the broker refuses anything else. */
+  function renderCatalog(all) {
+    var box = $('sl-conn-catalog');
+    if (!box) return;
+    var pinned = all.filter(function (c) { return c.api && conns.indexOf(c.slug) >= 0; });
+    box.innerHTML = pinned.map(function (c) {
+      var rows = (c.api.ops || []).map(function (o) {
+        var pp = (o.params || []).filter(function (p) { return p['in'] === 'path'; });
+        var args = pp.length ? ', {' + pp.map(function (p) { return '"' + p.name + '": ...'; }).join(', ') + '}' : '';
+        var line = 'connection("' + c.slug + '").op("' + o.id + '"' + args + ')';
+        return '<tr><td><code>' + esc(o.id) + '</code></td><td><span class="fw-badge fw-badge-secondary">' + esc(o.method) + '</span></td>' +
+          '<td><code>' + esc(o.path) + '</code></td><td class="text-muted">' + esc(o.summary || '') + '</td>' +
+          '<td><code style="font-size:11px;">' + esc(line) + '</code></td></tr>';
+      }).join('');
+      return '<details class="mb-2"><summary class="small"><i class="bi bi-journal-code me-1"></i>API Catalog: <strong>' + esc(c.api.api + ' ' + c.api.version) + '</strong> via <code>' + esc(c.slug) + '</code> — ' +
+        (c.api.ops || []).length + ' endpoints' + (c.api.status === 'deprecated' ? ' <span class="fw-badge fw-badge-warning">deprecated</span>' : '') + '</summary>' +
+        '<div style="max-height:40vh;overflow:auto;"><table class="table table-sm mb-0" style="font-size:12px;"><thead><tr><th>Id</th><th>Method</th><th>Path</th><th>Summary</th><th>In a script</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
+    }).join('');
   }
   renderConns();
 

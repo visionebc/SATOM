@@ -11,6 +11,8 @@ Administrator > Studio > Python Studio (2026-10-20). What lives here:
   databases (``postgres``). The secret is never a column of this table: it is
   an ``app_settings`` row (Fernet) or the vault, like every other setting
   secret (``services.studio_connections``).
+* **API Catalog** -- APIs someone publishes, one frozen endpoint list per
+  version; an HTTP connection can be pinned to one (``services.studio_apis``).
 * **Apps** -- a form, a diagram and an output, published into Operations >
   Plugins for the ADOMs and the people the administrator picks
   (``services.studio_apps``, ``services.studio_flow``).
@@ -98,11 +100,83 @@ class StudioConnection(db.Model):
     scope = db.Column(db.String(500), nullable=False, default="")
     verify_tls = db.Column(db.Boolean, nullable=False, default=True)
     timeout = db.Column(db.Integer, nullable=False, default=20)
+    #: http: the API Catalog version this connection speaks (published or
+    #: deprecated, never a draft). Set = app steps and scripts reach only that
+    #: version's endpoints, and can call them by id.
+    api_version_id = db.Column(db.Integer, db.ForeignKey("studio_api_versions.id"),
+                               nullable=True, index=True)
     created_by = db.Column(db.String(64), nullable=False, default="")
     updated_by = db.Column(db.String(64), nullable=False, default="")
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,
                            onupdate=datetime.utcnow, nullable=False)
+
+    api_version = db.relationship("StudioApiVersion", lazy="joined")
+
+
+# --------------------------------------------------------------------------- #
+#  API Catalog (FA-0006): APIs someone publishes, one row per version          #
+# --------------------------------------------------------------------------- #
+class StudioApi(db.Model):
+    __tablename__ = "studio_apis"
+
+    id = db.Column(db.Integer, primary_key=True)
+    slug = db.Column(db.String(48), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    #: Who publishes it (a team, a vendor) and where its own docs live.
+    owner = db.Column(db.String(120), nullable=False, default="")
+    docs_url = db.Column(db.String(500), nullable=False, default="")
+    description = db.Column(db.Text, nullable=False, default="")
+    created_by = db.Column(db.String(64), nullable=False, default="")
+    updated_by = db.Column(db.String(64), nullable=False, default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow, nullable=False)
+
+    versions = db.relationship("StudioApiVersion", back_populates="api", lazy="select",
+                               cascade="all, delete-orphan")
+
+
+class StudioApiVersion(db.Model):
+    """One version of an API. A draft is edited; publishing freezes it for
+    good (its endpoints never change again, and it is never deleted), so a
+    connection pinned to it means the same thing tomorrow."""
+    __tablename__ = "studio_api_versions"
+    __table_args__ = (db.UniqueConstraint("api_id", "version", name="uq_studio_api_version"),)
+
+    STATUSES = ("draft", "published", "deprecated")
+
+    id = db.Column(db.Integer, primary_key=True)
+    api_id = db.Column(db.Integer, db.ForeignKey("studio_apis.id", ondelete="CASCADE"),
+                       nullable=False, index=True)
+    version = db.Column(db.String(32), nullable=False)
+    status = db.Column(db.String(16), nullable=False, default="draft")
+    #: openapi | manual -- how the endpoint list was last filled.
+    source = db.Column(db.String(16), nullable=False, default="manual")
+    #: The path prefix the document's servers/basePath name (informational:
+    #: the connection's base URL decides where calls go).
+    base_path = db.Column(db.String(200), nullable=False, default="")
+    spec_sha256 = db.Column(db.String(64), nullable=False, default="")
+    #: JSON list of operations (services.studio_api_spec.clean_operation).
+    operations_json = db.Column(db.Text, nullable=False, default="[]")
+    notes = db.Column(db.Text, nullable=False, default="")
+    created_by = db.Column(db.String(64), nullable=False, default="")
+    updated_by = db.Column(db.String(64), nullable=False, default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow, nullable=False)
+    published_by = db.Column(db.String(64), nullable=False, default="")
+    published_at = db.Column(db.DateTime, nullable=True)
+
+    api = db.relationship("StudioApi", back_populates="versions")
+
+    @property
+    def operations(self) -> list:
+        return _loads(self.operations_json, [])
+
+    @property
+    def label(self) -> str:
+        return "%s %s" % (self.api.slug if self.api else "?", self.version)
 
 
 # --------------------------------------------------------------------------- #

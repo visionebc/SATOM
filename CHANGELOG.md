@@ -6,6 +6,27 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **API Catalog: the versions of an API someone publishes** (FA-0006). Python
+  Studio has a new **API Catalog** pane. Register an API (owner, link to its
+  documentation), then one version per release of it: import its OpenAPI 3 or
+  Swagger 2 document (JSON or YAML; only references inside the document are
+  followed) or type the endpoints in, and publish. A published version never
+  changes and is never deleted; deprecate one to move people off it, and
+  compare two versions to see which endpoints were removed, changed or added.
+  An HTTP connection can be pinned to a published version: the **Call an
+  API** app step then offers that version's endpoints in a picker (method and
+  path come from the endpoint, path parameters fill its `{name}` parts), and
+  scripts call them by id with `connection("x").op("getHost", {"id": 7})`,
+  list them with `.operations()` and name the version with `.catalog()`. On a
+  pinned connection, a request that is not an endpoint of the version is a
+  problem that blocks publishing the app, and is refused before the network
+  when a step or a script sends it. Moving a connection to another version
+  names the app steps that would lose an endpoint and needs a confirmation.
+  The script editor's Connections card lists the endpoints of every declared,
+  pinned connection.
+
 ### Changed
 
 - **Software Update, High Availability, System Automations and System Backup &

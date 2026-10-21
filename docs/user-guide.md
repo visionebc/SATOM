@@ -3968,7 +3968,7 @@ others, and without being given user administration.
 
 | Tool | Page | What it authors |
 |---|---|---|
-| **Python Studio** | `/studio` | One page, six panes: **Scripts** (the Script Library: Python scripts with a form that operators fill in and run, §23.4), **Console** (throwaway Python over the curated fleet datasets, §23.3), **Data stores** (§23.5), **Connections** (§23.6), **Apps** (§23.7) and **Examples** (§23.8); what Studio code cannot do to SATOM is §23.9 |
+| **Python Studio** | `/studio` | One page, seven panes: **Scripts** (the Script Library: Python scripts with a form that operators fill in and run, §23.4), **Console** (throwaway Python over the curated fleet datasets, §23.3), **Data stores** (§23.5), **Connections** and **API Catalog** (§23.6), **Apps** (§23.7) and **Examples** (§23.8); what Studio code cannot do to SATOM is §23.9 |
 | **Plugin Studio** | `/plugins` | Server-rendered custom views/widgets, published as **Custom Views** |
 | **Lua Studio** | `/lua` | Device scripts for FortiWeb *Web Scripting* and FortiADC *Scripting* |
 
@@ -4381,6 +4381,66 @@ connection with a secret needs the **vault**: the run receives a single-use
 wrapped token (like script credentials, §23.4), never the secret on disk. A
 published version keeps the connections it declared. A connection that a
 script declares cannot be deleted.
+
+#### API Catalog: the versions of an API someone publishes
+
+When a team (or a vendor) publishes an API you want to use, **Python Studio →
+API Catalog** keeps it, one entry per **version** of it — `inventory 1.0`,
+`inventory 1.1`, `inventory 2.0`.
+
+1. **New API**: an id, a name, the owner (who publishes it) and a link to its
+   own documentation.
+2. **Create draft** on the API page: a version number, starting empty or from
+   an earlier version.
+3. Fill the draft's endpoints: **Import** an OpenAPI 3 or Swagger 2 document
+   (JSON or YAML, uploaded or pasted, up to 8 MiB), or **Add endpoint** by
+   hand (id, method, path with `{name}` for a path parameter, summary, query
+   parameters, whether it takes a body) — or import first and correct by
+   hand. Only references inside the document are followed; nothing is
+   downloaded. HEAD/OPTIONS operations are skipped, and an `operationId` that
+   is missing, repeated or not usable is replaced by `method_path` (the import
+   says so).
+4. **Publish**. A published version **never changes and is never deleted**;
+   later changes go into a new version. **Deprecate** marks a version you want
+   people to move off; it keeps working.
+
+**Compare two versions** on the API page lists the endpoints removed (calls to
+them break), changed (method, path, parameters or body) and added. **Endpoints
+(JSON)** downloads a version's list in the shape the manual editor saves, to
+paste into another version or another SATOM.
+
+**Pin a connection to a version** (HTTP connection page → *API version*;
+published versions only). From then on:
+
+- the **Call an API** app step offers the version's endpoints in an
+  **Endpoint** picker; picking one sets the method and the path, and
+  **Path parameters** (JSON, e.g. `{"id": "{{ form.id }}"}`) fill its
+  `{name}` parts — each value percent-encoded into one segment;
+- a step that types a method and path must still name an endpoint of that
+  version: otherwise it is a problem that blocks publishing the app, and it is
+  refused when it runs, before anything reaches the network. A POST, PUT,
+  PATCH or DELETE endpoint is a write, so a rehearsal never sends it;
+- a script calls endpoints by id and only those:
+
+```python
+from satom_script import connection, result
+
+inv = connection("inventory")
+host = inv.op("getHost", {"id": 7}).json()       # method and path from the catalog
+hosts = inv.op("listHosts", params={"limit": 50}).json()
+result({"api": inv.catalog()["version"], "endpoints": len(inv.operations())})
+```
+
+  `inv.get("/hosts")` still works when `GET /hosts` is an endpoint of the
+  version; a request that is not one is refused by the scripts runner. The
+  script editor's **Connections** card shows the endpoints of every declared,
+  pinned connection with the line to paste.
+
+**Moving a connection to another version** names the app steps that call an
+endpoint the new version does not have, and saves only when you confirm;
+those apps then show the problem and cannot be published until it is fixed.
+A connection with no version keeps the old behaviour: any path under its base
+URL. An API with connections pinned to it cannot be deleted.
 
 ### 23.7 Apps
 

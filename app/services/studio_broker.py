@@ -17,7 +17,11 @@ So:
   whatever its network mode says: a script with ``network: none`` can still
   use its declared connections, and nothing else;
 * every call is one line in the run record (``connection METHOD path →
-  status``), next to the egress log.
+  status``), next to the egress log;
+* on a connection pinned to an API Catalog version (``definition["catalog"]``)
+  a request must be an endpoint of that version: by id
+  (``connection("inv").op("getHost", path_params={...})``) or as a method and
+  path the version lists. Anything else is refused before the network.
 
 DATABASE-FREE, like the runner that imports it.
 """
@@ -29,6 +33,7 @@ import socket
 import threading
 from typing import Any
 
+from . import studio_api_spec as SP
 from . import studio_http as H
 
 SOCK_NAME = ".satom-conn.sock"
@@ -205,8 +210,32 @@ class ConnectionBroker:
             self._note("connection %s sql %s → %s rows" % (
                 key, "write" if req.get("write") else "read", len(res["rows"])))
             return res
+        cat = definition.get("catalog") if isinstance(definition.get("catalog"), dict) else None
+        if req.get("list_operations"):
+            if cat is None:
+                return {"error": "connection %s is not pinned to an API Catalog version" % key}
+            return {"api": cat.get("api"), "version": cat.get("version"),
+                    "status": cat.get("status"), "operations": cat.get("operations") or []}
         method = str(req.get("method") or "GET").upper()
         path = str(req.get("path") or "")
+        if cat is not None:
+            where = "API %s %s (connection %s)" % (cat.get("api"), cat.get("version"), key)
+            oid = str(req.get("operation") or "")
+            if oid:
+                op = SP.by_id(cat.get("operations"), oid)
+                if op is None:
+                    self._note("connection %s endpoint %s refused: not in %s" % (key, oid[:80], where))
+                    return {"error": "endpoint %s is not in %s" % (oid, where)}
+                try:
+                    method, path = op["method"], SP.fill_path(op, req.get("path_params"))
+                except SP.SpecError as exc:
+                    return {"error": str(exc)}
+            elif SP.find(cat.get("operations"), method, path) is None:
+                self._note("connection %s %s %s refused: not in %s" % (key, method, path[:120], where))
+                return {"error": "%s %s is not an endpoint of %s" % (method, path or "/", where)}
+        elif req.get("operation"):
+            return {"error": "connection %s is not pinned to an API Catalog version, so it "
+                             "has no endpoint %s" % (key, req.get("operation"))}
         body = req.get("json") if req.get("json") is not None else req.get("data")
         verify = self.verify if definition.get("verify_tls", True) else False
         try:

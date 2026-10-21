@@ -169,6 +169,13 @@ def save(c: StudioConnection, form: dict, by: str) -> bool:
             c.token_url, c.scope = "", ""
         if auth == "basic" and not c.username:
             raise ConnectionError_("basic authentication needs a user")
+        if "api_version_id" in form:
+            from . import studio_apis as SA
+            try:
+                v = SA.resolve_binding(form.get("api_version_id"))
+            except SA.ApiError as exc:
+                raise ConnectionError_(str(exc)) from None
+            c.api_version_id = v.id if v else None
     else:
         host = (form.get("host") or "").strip()
         if not host or _CTRL.search(host) or "/" in host or len(host) > 255:
@@ -250,12 +257,16 @@ def _verify(c: StudioConnection):
 
 
 def definition(c: StudioConnection) -> dict:
-    """The connection as ``studio_http`` reads it — everything but the secret."""
+    """The connection as ``studio_http`` reads it — everything but the secret.
+    ``catalog`` (the pinned API Catalog version's endpoints, or None) is what
+    the script broker checks every request against."""
+    from . import studio_apis as SA
     return {"slug": c.slug, "kind": c.kind, "base_url": c.base_url, "host": c.host,
             "port": c.port, "database": c.database, "auth": c.auth,
             "username": c.username, "header_name": c.header_name,
             "token_url": c.token_url, "scope": c.scope,
-            "verify_tls": bool(c.verify_tls), "timeout": c.timeout}
+            "verify_tls": bool(c.verify_tls), "timeout": c.timeout,
+            "catalog": SA.catalog_of(c)}
 
 
 def build_url(c: StudioConnection, path: str) -> str:

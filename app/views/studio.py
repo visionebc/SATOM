@@ -36,7 +36,7 @@ def _bounded_bodies():
     return refuse_larger_than(MAX_BODY)
 CONSOLE = "studio.python_console"
 LIBRARY = "studio.script_library"
-PANES = ("scripts", "console", "stores", "connections", "apps", "examples")
+PANES = ("scripts", "console", "stores", "connections", "apis", "apps", "examples")
 
 
 def _who() -> str:
@@ -56,13 +56,23 @@ def index():
             or (pane == "console" and not can_console):
         pane = "scripts" if can_library else "console"
     from ..models_studio import StudioApp
+    from ..services import studio_apis as SAPI
     from ..services import studio_connections as SC
     from ..services import studio_store as SS
+    apis = []
+    if can_library:
+        for a in SAPI.list_apis():
+            vs = SAPI.versions(a)
+            lt = SAPI.latest(a)
+            apis.append({"a": a, "versions": len(vs), "latest": lt.version if lt else "",
+                         "drafts": sum(1 for v in vs if v.status == "draft"),
+                         "connections": [c.slug for c in SAPI.connections_of(a)]})
     return render_template(
         "studio/index.html", pane=pane,
         can_console=can_console, can_library=can_library,
         stores=SS.list_stores() if can_library else [],
         connections=SC.list_connections() if can_library else [],
+        apis=apis,
         apps=StudioApp.query.order_by(StudioApp.name).all() if can_library else [],
         scripts=SL.list_scripts() if can_library else [],
         runs=SL.recent_runs(limit=15) if can_library else [],
@@ -331,10 +341,12 @@ def connection_create():
 @require_permission(LIBRARY)
 def connection(slug):
     from ..services import studio_connections as SC
+    from ..services import studio_apis as SAPI
     c = _conn_or_404(slug)
     secret, problem = SC.secret_state(slug)
     return render_template("studio/connection.html", c=c, has_secret=SC.has_secret(slug),
-                           secret_problem=problem, http_auth=SC.HTTP_AUTH, methods=SC.METHODS)
+                           secret_problem=problem, http_auth=SC.HTTP_AUTH, methods=SC.METHODS,
+                           api_versions=SAPI.bindable() if c.kind == "http" else [])
 
 
 @bp.route("/connections/<slug>/save", methods=["POST"])
@@ -342,17 +354,38 @@ def connection(slug):
 @require_permission(LIBRARY)
 def connection_save(slug):
     from ..services import studio_connections as SC
+    from ..services import studio_apis as SAPI
     c = _conn_or_404(slug)
+    body = request.get_json(silent=True) or {}
+    before = c.api_version_id
+    # Moving the connection to another API version: the app steps that call
+    # an endpoint the new version lacks are named, and the move needs
+    # "confirm" (they stop being publishable and fail when they run).
+    impact = []
+    if c.kind == "http" and "api_version_id" in body:
+        try:
+            new = SAPI.resolve_binding(body.get("api_version_id"))
+        except SAPI.ApiError as exc:
+            return _err(exc)
+        if (new.id if new else None) != before:
+            impact = SAPI.impact(c, new)
+            if impact and not body.get("confirm"):
+                return jsonify({"ok": False, "needs_confirm": True, "impact": impact,
+                                "error": "%d app step(s) call an endpoint %s does not have"
+                                         % (len(impact), new.label)}), 409
     try:
-        dropped = SC.save(c, request.get_json(silent=True) or {}, _who())
+        dropped = SC.save(c, body, _who())
     except SC.ConnectionError_ as exc:
         from ..extensions import db
         db.session.rollback()
         return _err(exc)
     log_action("studio.connection.save", target=slug,
                extra={"kind": c.kind, "auth": c.auth, "base_url": c.base_url, "host": c.host,
-                      "secret_dropped": dropped})
-    return jsonify({"ok": True, "secret_dropped": dropped, "has_secret": SC.has_secret(slug)})
+                      "secret_dropped": dropped,
+                      "api_version": c.api_version.label if c.api_version else None,
+                      "api_version_was": before, "impact": impact})
+    return jsonify({"ok": True, "secret_dropped": dropped, "has_secret": SC.has_secret(slug),
+                    "impact": impact})
 
 
 @bp.route("/connections/<slug>/secret", methods=["POST"])
@@ -402,6 +435,224 @@ def connection_delete(slug):
     SC.delete(c)
     log_action("studio.connection.delete", target=slug)
     return jsonify({"ok": True})
+
+
+# =========================================================================== #
+#  API Catalog (Python Studio > API Catalog) -- FA-0006                        #
+# =========================================================================== #
+def _api_or_404(slug):
+    from ..services import studio_apis as SAPI
+    a = SAPI.get(slug)
+    if a is None:
+        abort(404)
+    return a
+
+
+def _version_or_404(a, version):
+    from ..services import studio_apis as SAPI
+    v = SAPI.get_version(a, version)
+    if v is None:
+        abort(404)
+    return v
+
+
+def _api_call(fn, action, target, extra=None):
+    """Run a catalog change; a refusal is a 400 with its text."""
+    from ..extensions import db
+    from ..services import studio_apis as SAPI
+    try:
+        res = fn()
+    except SAPI.ApiError as exc:
+        db.session.rollback()
+        return _err(exc)
+    log_action(action, target=target, extra=extra if extra is not None else (res or {}))
+    return jsonify({"ok": True, **(res or {})})
+
+
+@bp.route("/apis/create", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def api_create():
+    from ..services import studio_apis as SAPI
+    slug = (request.form.get("slug") or "").strip()
+    try:
+        SAPI.create(slug, request.form.get("name") or "", _who())
+    except SAPI.ApiError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("studio.index", pane="apis"))
+    log_action("studio.api.create", target=slug)
+    return redirect(url_for("studio.api", slug=slug))
+
+
+@bp.route("/apis/<slug>")
+@login_required
+@require_permission(LIBRARY)
+def api(slug):
+    from ..services import studio_apis as SAPI
+    a = _api_or_404(slug)
+    users = SAPI.connections_of(a)
+    by_version = {}
+    for c in users:
+        by_version.setdefault(c.api_version_id, []).append(c.slug)
+    return render_template("studio/api.html", a=a, versions=SAPI.versions(a),
+                           connections=users, by_version=by_version)
+
+
+@bp.route("/apis/<slug>/save", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def api_save(slug):
+    from ..services import studio_apis as SAPI
+    a = _api_or_404(slug)
+    return _api_call(lambda: SAPI.save(a, request.get_json(silent=True) or {}, _who()),
+                     "studio.api.save", slug, {})
+
+
+@bp.route("/apis/<slug>/delete", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def api_delete(slug):
+    from ..services import studio_apis as SAPI
+    a = _api_or_404(slug)
+    n = len(a.versions)
+    return _api_call(lambda: SAPI.delete(a), "studio.api.delete", slug, {"versions": n})
+
+
+@bp.route("/apis/<slug>/versions/create", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def api_version_create(slug):
+    from ..services import studio_apis as SAPI
+    a = _api_or_404(slug)
+    body = request.get_json(silent=True) or {}
+    src = None
+    if body.get("copy_from"):
+        src = SAPI.get_version(a, str(body["copy_from"]))
+        if src is None:
+            return _err("version %s does not exist" % body["copy_from"], 404)
+
+    def go():
+        v = SAPI.create_version(a, str(body.get("version") or ""), _who(), copy_from=src)
+        return {"version": v.version, "url": url_for("studio.api_version", slug=slug, version=v.version)}
+    return _api_call(go, "studio.api.version_create", slug,
+                     {"version": body.get("version"), "copy_from": body.get("copy_from")})
+
+
+@bp.route("/apis/<slug>/v/<version>")
+@login_required
+@require_permission(LIBRARY)
+def api_version(slug, version):
+    from ..services import studio_api_spec as SP
+    a = _api_or_404(slug)
+    v = _version_or_404(a, version)
+    users = [c.slug for c in _version_users(v)]
+    return render_template("studio/api_version.html", a=a, v=v, ops=v.operations,
+                           methods=SP.METHODS, param_in=SP.PARAM_IN, users=users,
+                           limits={"operations": SP.MAX_OPERATIONS,
+                                   "spec_mib": SP.MAX_SPEC_BYTES // 1024 // 1024})
+
+
+def _version_users(v):
+    from ..models_studio import StudioConnection
+    return StudioConnection.query.filter_by(api_version_id=v.id).order_by(StudioConnection.slug).all()
+
+
+@bp.route("/apis/<slug>/v/<version>/import", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def api_version_import(slug, version):
+    """An OpenAPI 3 / Swagger 2 document, uploaded or pasted (JSON or YAML)."""
+    from ..services import studio_api_spec as SP
+    from ..services import studio_apis as SAPI
+    a = _api_or_404(slug)
+    v = _version_or_404(a, version)
+    f = request.files.get("file")
+    if f is not None and f.filename:
+        raw = f.read(SP.MAX_SPEC_BYTES + 1)
+        text = raw.decode("utf-8-sig", "replace")
+    else:
+        text = str((request.get_json(silent=True) or {}).get("text") or request.form.get("text") or "")
+    if not text.strip():
+        return _err("choose a file or paste the document")
+    return _api_call(lambda: SAPI.import_openapi(v, text, _who()),
+                     "studio.api.import", "%s/%s" % (slug, version))
+
+
+@bp.route("/apis/<slug>/v/<version>/save", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def api_version_save(slug, version):
+    from ..services import studio_apis as SAPI
+    a = _api_or_404(slug)
+    v = _version_or_404(a, version)
+    body = request.get_json(silent=True) or {}
+
+    def go():
+        SAPI.save_draft(v, operations=body.get("operations"), notes=body.get("notes"),
+                        base_path=body.get("base_path"), by=_who())
+        return {"operations": len(v.operations)}
+    return _api_call(go, "studio.api.version_save", "%s/%s" % (slug, version))
+
+
+@bp.route("/apis/<slug>/v/<version>/publish", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def api_version_publish(slug, version):
+    from ..services import studio_apis as SAPI
+    a = _api_or_404(slug)
+    v = _version_or_404(a, version)
+    return _api_call(lambda: SAPI.publish(v, _who()), "studio.api.publish",
+                     "%s/%s" % (slug, version), {"operations": len(v.operations)})
+
+
+@bp.route("/apis/<slug>/v/<version>/deprecate", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def api_version_deprecate(slug, version):
+    from ..services import studio_apis as SAPI
+    a = _api_or_404(slug)
+    v = _version_or_404(a, version)
+    on = bool((request.get_json(silent=True) or {}).get("on", True))
+    return _api_call(lambda: SAPI.set_deprecated(v, on, _who()), "studio.api.deprecate",
+                     "%s/%s" % (slug, version), {"on": on})
+
+
+@bp.route("/apis/<slug>/v/<version>/delete", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def api_version_delete(slug, version):
+    from ..services import studio_apis as SAPI
+    a = _api_or_404(slug)
+    v = _version_or_404(a, version)
+    return _api_call(lambda: SAPI.delete_version(v), "studio.api.version_delete",
+                     "%s/%s" % (slug, version), {})
+
+
+@bp.route("/apis/<slug>/v/<version>/endpoints.json")
+@login_required
+@require_permission(LIBRARY)
+def api_version_export(slug, version):
+    """The endpoint list as JSON -- the same shape the manual editor saves,
+    so it can be pasted into another version or another SATOM."""
+    import json as _json
+    a = _api_or_404(slug)
+    v = _version_or_404(a, version)
+    return Response(_json.dumps(v.operations, indent=2), mimetype="application/json",
+                    headers={"Content-Disposition": "attachment; filename=%s-%s-endpoints.json"
+                             % (a.slug, v.version)})
+
+
+@bp.route("/apis/<slug>/compare")
+@login_required
+@require_permission(LIBRARY)
+def api_compare(slug):
+    from ..services import studio_apis as SAPI
+    a = _api_or_404(slug)
+    old = SAPI.get_version(a, request.args.get("a") or "")
+    new = SAPI.get_version(a, request.args.get("b") or "")
+    if old is None or new is None:
+        return _err("pick two versions of %s" % slug, 404)
+    return jsonify({"ok": True, "a": old.version, "b": new.version, **SAPI.compare(old, new)})
 
 
 # =========================================================================== #

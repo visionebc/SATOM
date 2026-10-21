@@ -21,6 +21,7 @@ from .auth import _err, token_required
 @bp.route("/ui/themes", methods=["GET"])
 @token_required("read")
 def ui_themes():
+    """The theme names on this node and which one is active."""
     from ..models_theme import UiTheme
     rows = UiTheme.query.order_by(UiTheme.name).all()
     return jsonify({"themes": [{"name": r.name, "active": bool(r.is_active),
@@ -31,6 +32,7 @@ def ui_themes():
 @limiter.limit("30 per minute")
 @token_required("read")
 def ui_theme():
+    """One theme as a ``satom.ui-theme/2`` document: tokens, logo and favicon."""
     from ..models_theme import UiTheme
     from ..services import theme_portable
     from ..services import theme_service

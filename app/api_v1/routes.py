@@ -76,6 +76,7 @@ def _token_can_touch_product(record_product: str) -> bool:
 @bp.route("/ping", methods=["GET"])
 @token_required("read")
 def ping():
+    """Identity of the token: owner, scopes, capabilities, AppIDs, product."""
     tok = g.api_token
     return jsonify({
         "ok": True,
@@ -96,6 +97,7 @@ def ping():
 @bp.route("/appliances", methods=["GET"])
 @token_required("read")
 def list_appliances():
+    """The device inventory visible to the token, with cached status."""
     q = visible_appliances(user=_owner()).order_by(Appliance.name)
     return jsonify({"appliances": [_appliance_json(a) for a in q.all()]})
 
@@ -103,6 +105,7 @@ def list_appliances():
 @bp.route("/appliances/<int:id>", methods=["GET"])
 @token_required("read")
 def get_appliance(id):
+    """One device of the token's ADOM."""
     a = visible_appliance_or_404(id, user=_owner())
     return jsonify(_appliance_json(a))
 
@@ -128,6 +131,7 @@ def get_appliance(id):
 @limiter.limit("10 per minute")
 @token_required("write")
 def firmware_check(id):
+    """Ask a device its running firmware, live, and record it (capability ``inventory``)."""
     from ..services import firmware_probe
 
     tok = g.api_token
@@ -228,6 +232,7 @@ def _action_json(row: ScheduledAction) -> dict:
 @bp.route("/actions", methods=["GET"])
 @token_required("read")
 def list_actions():
+    """The scheduled actions visible to the token, with whether each is API-runnable."""
     q = scope_query(ScheduledAction.query, ScheduledAction.product)
     q = q.order_by(ScheduledAction.name)
     return jsonify({"actions": [_action_json(r) for r in q.all()]})
@@ -237,6 +242,7 @@ def list_actions():
 @limiter.limit("30 per minute")
 @token_required("write")
 def run_action(id):
+    """Trigger a non-destructive scheduled action by id."""
     row = db.session.get(ScheduledAction, id)
     if row is None:
         return jsonify({"error": "not_found", "message": "No such action."}), 404
@@ -327,6 +333,7 @@ def run_action(id):
 @bp.route("/actions/runs/<int:run_id>", methods=["GET"])
 @token_required("read")
 def get_run(run_id):
+    """The outcome of one scheduled-action run."""
     run = db.session.get(ScheduledActionRun, run_id)
     if run is None:
         return jsonify({"error": "not_found", "message": "No such run."}), 404
@@ -368,6 +375,7 @@ def _cr_visible_to_token(cr) -> bool:
 @limiter.limit("30 per minute")
 @token_required("admin")
 def change_request_external_approval(id):
+    """Record the external approver's verdict on a change request in External mode."""
     from ..models import ChangeRequest
     from ..services import cr_orchestrator
 

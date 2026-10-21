@@ -13,14 +13,14 @@ scope, can reach those.
 
 In the terms of the NAF Framework ([naf-alignment.md](naf-alignment.md)) this
 API is part of *Presentation*: the door other systems use. What it opens onto
-today is the appliance inventory and health (*Observability*, read), the
-pre-created Scheduled Actions and the external approval of a Change Request
-(*Orchestrator*), and the curated object authoring below (*Intent*, for WAF
-carve-outs and FortiADC rules only). It does **not** yet expose templates,
-baselines or bindings, nor the configuration history, findings or metrics
-store; those are the open rows of the conformance matrix.
+is the appliance inventory, health, configuration history, findings and the
+metrics store (*Observability*), the pre-created Scheduled Actions, the
+Processes and the external approval of a Change Request (*Orchestrator*), and
+the object authoring below — WAF carve-outs, FortiADC rules, templates,
+bindings and baselines (*Intent*). The OpenAPI document (§10) describes every
+route of this surface.
 
-There are exactly **two** ways to change anything, and they are not
+There are exactly **three** ways to change anything, and they are not
 interchangeable:
 
 1. **Scheduled Actions** (§3) — operational moves an operator pre-created for
@@ -29,6 +29,13 @@ interchangeable:
 2. **Object authoring** (§6 FortiWeb, §7 FortiADC) — you write your own WAF
    carve-out or FortiADC rule. Only a type on a **curated allow-list**, and only
    if an administrator granted your token the matching **capability**.
+3. **Intent** (§12) — templates, bindings and baselines: desired state. Only
+   with the `template_draft` / `template_apply` capabilities, and a push to a
+   device is the console's own canary-gated job, never a direct write.
+
+The same page also exposes what SATOM has *recorded* — configuration history
+and diffs, findings, metrics (§13) — and describes itself as an OpenAPI
+document (§10).
 
 Object authoring is **not** a proxy to the appliance configuration database. No
 token, of any scope, can author an administrator account, an interface or a
@@ -111,6 +118,28 @@ Paths are relative to the base URL. **Scope** is the minimum token scope;
 | `GET`  | `/ui/theme` | read | — | One theme as a `satom.ui-theme/2` document: tokens, logo and favicon; the active theme, or `?name=` (§8) |
 | `GET`  | `/system/nodes` | read | `monitoring`, only on a capability-restricted token | CPU, memory and disk of every SATOM node now, graded (§9). **Global** token only |
 | `GET`  | `/system/nodes/history` | read | `monitoring`, only on a capability-restricted token | The same readings over time (§9). **Global** token only |
+| `GET`  | `/openapi.json` | read | — | This API as an OpenAPI 3.0 document, built from the live routes (§10) |
+| `GET`  | `/templates` | read | — | Templates of the token's ADOM (§11) |
+| `GET`  | `/templates/<id>` | read | — | One template: body, versions, review history, bindings (§11) |
+| `GET`  | `/bindings` | read | — | Template bindings of the ADOM, `?appliance=<id>` for one device (§11) |
+| `GET`  | `/baselines` | read | — | Baselines of the token's ADOM (§11) |
+| `GET`  | `/baselines/<id>` | read | — | One baseline with its templates (§11) |
+| `POST` | `/templates` | write | `template_draft` | Create a template, or a new version of one (§12) |
+| `PUT`  | `/templates/<id>` | write | `template_draft` | Save a new version (versions are immutable) (§12) |
+| `DELETE` | `/templates/<id>` | write | `template_draft` | Delete an unlocked version (§12) |
+| `POST` | `/templates/<id>/approve` | write | `template_apply` | Approve (four-eyes: never the author) (§12) |
+| `POST` | `/templates/<id>/reject` | write | `template_apply` | Reject with a reason (§12) |
+| `POST` | `/templates/<id>/unapprove` | write | `template_apply` | Revoke an approval (§12) |
+| `POST` | `/templates/<id>/apply` | write | `template_apply` | Preview, or start the canary-gated apply job (§12) |
+| `POST` | `/bindings` | write | `template_draft` | Bind a device to a template family (§12) |
+| `DELETE` | `/bindings/<id>` | write | `template_draft` | Remove a binding (§12) |
+| `POST` | `/baselines` | write | `template_draft` | Create a baseline (§12) |
+| `PUT`  | `/baselines/<id>` | write | `template_draft` | Update a baseline (§12) |
+| `DELETE` | `/baselines/<id>` | write | `template_draft` | Delete a baseline (§12) |
+| `GET`  | `/appliances/<id>/config-history` | read | — | Recorded configuration versions of one device (§13) |
+| `GET`  | `/appliances/<id>/config-diff` | read | — | What changed between two versions, `?from=&to=` (§13) |
+| `GET`  | `/findings` | read | `monitoring`, only on a capability-restricted token | What the alert engine finds right now (§13) |
+| `GET`  | `/metrics/query` | read | `monitoring`, only on a capability-restricted token | A read-only MetricsQL query over SATOM's own series (§13) |
 
 The write endpoints are rate-limited to **30/min**, like `/actions/<id>/run`.
 
@@ -565,3 +594,245 @@ readings are `null`. Its last known numbers are not repeated.
 curl -s -H "Authorization: Bearer $TOKEN" \
   "https://satom.example.net/api/v1/system/nodes/history?range=7d&metrics=disk_used_gb"
 ```
+
+## 10. The API as a document — `GET /openapi.json`
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" https://satom.example.net/api/v1/openapi.json
+```
+
+An **OpenAPI 3.0** document of every path and method this API serves, built
+**at request time** from the live routes: the scope each view enforces
+(`x-satom-scope`), the explicit capabilities it asks for
+(`x-satom-capabilities`), its path parameters and its documented responses.
+It is not written by hand and it is not generated into a file at release
+time, so it cannot lag behind the code: a route is in the document the
+moment it is registered. Feed it to a client generator or a request
+explorer; this page remains the prose explanation of *why* each gate exists.
+
+The security scheme is `bearerAuth` (HTTP bearer). Scope and capabilities are
+vendor extensions because OpenAPI's own security scopes describe OAuth, not
+SATOM's owner-capped ladder.
+
+---
+
+## 11. Intent, read — `/api/v1/templates`, `/bindings`, `/baselines`
+
+In the vocabulary of the NAF Framework this is the **Intent** block: the
+desired state SATOM keeps as **Templates** (versioned, reviewed bodies),
+**Template bindings** (which device a template family governs, with its
+per-device values) and **Baselines** (a scoped assembly of approved
+templates). Reading needs the `read` scope and an owner who may open the
+Templates page (`operations.view`, else `403 owner_forbidden`). Everything
+is scoped to the token's ADOM exactly like a console session of that ADOM:
+another product's template or baseline is `404 not_found`, never a 403.
+
+### `GET /templates`
+
+Newest version first. Filters: `?kind=`, `?status=pending|approved|rejected`
+(anything else is `400 bad_request`), `?name=`. Rows carry identity, status,
+author, provenance and the build they were written for — **not the body**.
+
+### `GET /templates/<id>`
+
+The template with its `body`, `exceptions`, `validated_builds`, every
+`versions[]` of its family (`id`, `version`, `status`, `author`,
+`created_at`), the `review_history[]` (who approved, rejected or revoked,
+when, why) and its `bindings[]`.
+
+### `GET /bindings`
+
+Bindings of every device the token may see; `?appliance=<id>` narrows to one
+device (`404` when it is not in the ADOM). Each: `appliance_id`, `kind`,
+`name`, `pinned_version` (`null` = follow the newest approved version),
+`variables`, `note`, `created_by`.
+
+### `GET /baselines` / `GET /baselines/<id>`
+
+The baselines of the ADOM with their scope (`zone`, `line`, `department`);
+the detail lists the `templates[]` that compose it (`id`, `kind`, `name`,
+`version`, `section`, `position`).
+
+---
+
+## 12. Intent, write — templates, bindings and baselines
+
+Two **explicit-only** capabilities, in the same model as §6: an empty
+capability list authorises none of this, and the caller never picks its own
+privilege.
+
+| Capability | What it allows |
+|---|---|
+| `template_draft` | Create a template or a new version of one, delete an unlocked version, bind or unbind a device, author baselines. **Never touches an appliance.** The owner must hold `operations.template_save`. |
+| `template_apply` | Approve, reject or revoke a template (owner must hold `operations.template_approve`, an administrator permission) and **push** a template to devices (owner must hold `operations.template_apply`). |
+
+A token bound to one product may hold them for that product only; a
+`global` token for every product. Every call is audited with the token's
+public id, and the records it creates carry `api:<public_id>` as author or
+reviewer. The write endpoints are rate-limited to 30/min; `apply` to 10/min.
+
+### `POST /templates`
+
+```json
+{"kind": "web-protection-profile", "name": "api-wpp", "body": {...},
+ "note": "", "exceptions": null, "source_firmware": "7.6.8"}
+```
+
+Creates a **pending** draft of the token's ADOM (`201`), or — when the
+kind/name already exists — the next version of that family. `body` must be
+a JSON object; an unknown kind, a missing name or an unknown build is `400
+bad_request`. `source_firmware` is optional: it records the build the body
+was written for, which is what lets a later build be *compared* against it.
+
+### `PUT /templates/<id>`
+
+Versions are immutable, as in the console: this saves a **new version** of
+the same family (`body`, `note`, `exceptions`; fields absent keep the
+predecessor's), pending, with the predecessor's build stamp. The answer is
+the new version.
+
+### `DELETE /templates/<id>`
+
+Deletes one version. A locked (curated) template is `409 locked`.
+
+### `POST /templates/<id>/approve` · `/reject` · `/unapprove`
+
+The review lifecycle. Approval is the four-eyes rule of the console: the
+token that authored the template may not approve it (`409 review_refused`).
+`reject` takes `{"reason": "..."}`. Every verdict lands in the template's
+review history with the token as reviewer.
+
+### `POST /templates/<id>/apply`
+
+```json
+{"appliance_ids": [12, 13], "confirm": false, "override_reason": ""}
+```
+
+This is the console's own path and nothing else:
+
+* **Without `confirm`** (or with anything but the boolean `true`): a
+  **preview** — the per-device plan, the firmware-compatibility verdicts and
+  any unresolved `{{ variable }}` — and **no device is contacted for real**.
+* **With `confirm: true`**: the same gates run (unresolved variables and a
+  refused firmware check are `409 apply_refused`, with the console's
+  `compat` report), then the apply starts as the **background job** the
+  console starts: canary device first, the rest only if the canary succeeds.
+  The answer is `202 {"mode": "apply", "job_id": ...}`; the job's progress
+  and its completion audit row are the console's. `override_reason` is
+  honoured only for an owner holding `operations.template_approve`, exactly
+  like the console's override.
+* More than one device is a **fleet rollout**: the template must be
+  approved (`409 apply_refused`) and the owner must hold `operations.apply`
+  (`403 owner_forbidden`).
+* An appliance outside the token's ADOM is `404 not_found` for the whole
+  call.
+
+There is no endpoint that writes a template to a device directly, and
+`apply` never bypasses the dry-run → canary order.
+
+### `POST /bindings` · `DELETE /bindings/<id>`
+
+```json
+{"template_id": 7, "appliance_id": 12, "pinned_version": null,
+ "variables": {"hostname": "app.example"}, "note": ""}
+```
+
+Creates or updates the binding of a device to the template's family.
+Desired state only: nothing is pushed. A device of another product
+(`400 bad_request`: a FortiWeb template cannot govern a FortiADC) or a pinned
+version that does not exist is refused. Deleting a binding leaves the device
+as it is.
+
+### `POST /baselines` · `PUT /baselines/<id>` · `DELETE /baselines/<id>`
+
+```json
+{"name": "zone-a", "zone": "A", "line": "", "department": "",
+ "template_ids": [7, 9], "note": ""}
+```
+
+Only **approved** templates of the token's ADOM can compose a baseline
+(`400 bad_request` otherwise). `PUT` changes the fields present and keeps
+the others. Deleting a baseline leaves its templates untouched.
+
+### Additional error codes
+
+| HTTP | `error` | When |
+|---|---|---|
+| 403 | `owner_forbidden` | The owner lacks the permission the call needs (`operations.view`, `operations.template_save`, `operations.template_approve`, `operations.template_apply`, `operations.apply`) |
+| 409 | `locked` | The template is locked (curated) and cannot be deleted |
+| 409 | `review_refused` | The authoring token tried to approve its own template |
+| 409 | `apply_refused` | Unresolved variables, an unapproved template for a fleet rollout, or the firmware-compatibility gate refused |
+
+---
+
+## 13. Observability — configuration history, findings, metrics
+
+In the vocabulary of the NAF Framework this is the **Observability** block:
+what SATOM has **recorded** about the estate. SATOM calls the configuration
+history its *Source of Truth*; it is the history of the **actual** state of
+every device. Everything here is read-only and needs the `read` scope.
+
+### `GET /appliances/<id>/config-history`
+
+The recorded configuration versions of one device, newest first (`?limit=`,
+default 30, at most 200). A version is identified by its `sha256`: an
+unchanged configuration records no new version, so the list is the list of
+*changes*. Each row: `id`, `sha256`, `taken_at`, `last_seen_at`, `size_raw`,
+`size_gz`, `total_objects`, `section_count`, `source`, and whether the
+payload was `evacuated` to the backup server. Device secrets were stripped
+when the version was recorded.
+
+### `GET /appliances/<id>/config-diff?from=<ref>&to=<ref>`
+
+What changed between two versions of the same device (`from` and `to` are
+version ids or `sha256` hashes from `config-history`; a version of another
+device is `404 not_found`). The answer lists `added[]`, `removed[]` and
+`changed[]` object paths (`section/endpoint/key`), `changed_detail[]` with
+per-field before/after for the first changed objects, `identical`, and
+`truncated` when the lists were capped. A version whose payload is no longer
+available is `410 blob_missing`.
+
+### `GET /findings`
+
+What the alert engine finds **right now**: every enabled check is evaluated
+on the call (the same evaluation as *Settings → Alerts → Preview*), so the
+call costs a check cycle and is rate-limited to 6/min. Each finding: `key`,
+`family`, `severity` (`critical` / `warning` / `info`), `title`, `detail`
+and, for a device finding, `product`. A token bound to a product receives
+that product's findings only; the installation's own (certificates, host,
+backups, code) need a `global` token. A token restricted to named
+capabilities must hold `monitoring` (`403 capability_denied`).
+
+### `GET /metrics/query?expr=…`
+
+A read-only **MetricsQL** query over SATOM's metrics store. Instant query by
+default; a range query with `start` and `end` (unix seconds, at most 90 days
+apart) and `step` (`60s`, `5m`, `1h`…; default `60s`). The answer is the
+store's own (`status`, `data.resultType`, `data.result`).
+
+* Only SATOM's **own series** (`satom_*`) may be read. An expression naming
+  any other series is `400 bad_request` and never reaches the store; so is an
+  expression that names no series at all.
+* The store answers within **10 s** or the call is `504 store_timeout`; a
+  store error is `502 store_unavailable`. Never an empty `200`.
+* A token bound to a product receives only the series labelled with its own
+  devices (`device` / `kind`); the SATOM nodes' own readings and other
+  products' devices are filtered out of the answer. A `global` token
+  receives everything.
+* The store itself stays on loopback with no account of its own; this route
+  is the only way in from outside. A token restricted to named capabilities
+  must hold `monitoring`.
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" --get \
+  --data-urlencode 'expr=max by (device) (satom_box_cpu_pct)' \
+  https://satom.example.net/api/v1/metrics/query
+```
+
+### Additional error codes
+
+| HTTP | `error` | When |
+|---|---|---|
+| 410 | `blob_missing` | A version's payload is no longer available (pruned and not on the backup server) |
+| 502 | `store_unavailable` | The metrics store answered an error |
+| 504 | `store_timeout` | The metrics store did not answer within 10 s |

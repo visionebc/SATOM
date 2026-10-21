@@ -3316,9 +3316,15 @@ report. Registration and the details:
 Administrators issue bearer tokens (API Tokens section) for the `/api/v1`
 integration surface. Scope model: `read ⊂ write ⊂ admin`, capped by the
 owner's own role, bound to one product (ADOM). The plaintext token is shown
-**once** at creation. The API is read-biased: mutations happen only by
-triggering pre-created scheduled actions; nothing destructive is reachable by
-any token. Full reference: [docs/api_v1.md](api_v1.md).
+**once** at creation. The API is read-biased: a token can trigger
+pre-created scheduled actions, author WAF carve-outs and FortiADC rules from
+a curated allow-list, and — with the `template_draft` / `template_apply`
+capabilities — read and write **templates, bindings and baselines**, where a
+push to a device is the console's own canary-gated job. Nothing destructive
+is reachable by any token. The API also exposes what SATOM has recorded
+(configuration history and diffs, findings, a read-only metrics query) and
+describes itself as an OpenAPI document at `/api/v1/openapi.json`, built
+from the live routes. Full reference: [docs/api_v1.md](api_v1.md).
 
 ## 19. Appearance: logo, colours & themes
 

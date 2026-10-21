@@ -70,6 +70,8 @@ CAPABILITIES = ("backend_edit", "backend_config", "policy_status", "cert_swap",
                 # --- object-write capabilities (see EXPLICIT_ONLY below) ------
                 "waf_exception_draft", "waf_exception_apply",
                 "adc_rule_draft", "adc_rule_apply",
+                # --- intent: templates / bindings / baselines (EXPLICIT_ONLY) -
+                "template_draft", "template_apply",
                 # --- live inventory (see EXPLICIT_ONLY below) -----------------
                 "inventory",
                 # --- catalog groups added 2026-10-15 (CATALOG_EXPLICIT below) -
@@ -93,6 +95,11 @@ CAPABILITIES = ("backend_edit", "backend_config", "policy_status", "cert_swap",
 EXPLICIT_ONLY_CAPABILITIES = frozenset({
     "waf_exception_draft", "waf_exception_apply",
     "adc_rule_draft", "adc_rule_apply",
+    # The Intent surface (app.api_v1.intent): 'template_draft' authors desired
+    # state only; 'template_apply' approves and PUSHES templates through the
+    # console's own canary-gated job. A token minted before the surface
+    # existed must not wake up able to roll a template out to the fleet.
+    "template_draft", "template_apply",
     # 'inventory' = POST /appliances/<id>/firmware-check. It writes nothing to
     # the device, but it DOES make SATOM open an authenticated session to a
     # firewall using stored admin credentials, on demand, from outside. That is
@@ -135,6 +142,8 @@ CAPABILITY_DESC = {
     "waf_exception_apply": "PUSH a filed FortiWeb carve-out onto the appliance",
     "adc_rule_draft": "PREVIEW a FortiADC carve-out (never touches a device)",
     "adc_rule_apply": "CREATE a FortiADC carve-out on the appliance",
+    "template_draft": "AUTHOR templates, bindings and baselines (desired state only — never touches a device)",
+    "template_apply": "APPROVE a template and PUSH it to devices through the canary-gated apply",
     "inventory": "ASK a device its running firmware, live (reads the device, writes only this inventory)",
 }
 CAPABILITY_GROUPS = (
@@ -146,6 +155,7 @@ CAPABILITY_GROUPS = (
     ("Feeds & integrations", ("feeds", "api_library", "netbox")),
     ("FortiWeb objects (always explicit)", ("waf_exception_draft", "waf_exception_apply")),
     ("FortiADC objects (always explicit)", ("adc_rule_draft", "adc_rule_apply")),
+    ("Templates, bindings & baselines (always explicit)", ("template_draft", "template_apply")),
     ("Live inventory (always explicit)", ("inventory",)),
 )
 
@@ -164,6 +174,10 @@ CAPABILITY_PRODUCTS = {
     # it is declared. 'global' is excluded because authorize_object() already
     # lets a global token through every product binding.
     "inventory": tuple(p for p in VALID_PRODUCTS if p != "global"),
+    # Templates exist in every product ADOM (``Template.product``); the same
+    # derivation as 'inventory', for the same reason.
+    "template_draft": tuple(p for p in VALID_PRODUCTS if p != "global"),
+    "template_apply": tuple(p for p in VALID_PRODUCTS if p != "global"),
 }
 
 # Every runnable catalog action → the capability tag it belongs to. An action

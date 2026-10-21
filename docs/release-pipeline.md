@@ -221,6 +221,17 @@ The rolling knowledge packs are published separately, signed with the
 See [api-library.md §11.6 and §12](api-library.md) and
 [knowledge-harvester.md](knowledge-harvester.md).
 
+**Old artefacts are pruned, with a public copy as the precondition.** Once
+the catalog holds this release, the pipeline keeps the artefacts of the newest
+three release versions on every build host (the primary's `dist/`, the build
+node's output directory, the release host's update builds and download
+catalog) and deletes an older copy only when the public GitHub release for
+that version carries a file of the same name — build inputs only need the
+release to exist. A version without a public release (a retired tag, a draft,
+GitHub unreachable) is kept and named in the log, never deleted: it may be the
+last copy anywhere. Unversioned files are not considered. A dry run prints the
+plan and removes nothing.
+
 The builders (one per bundle family, plus the Docker builder) are build-only
 machines that do not start at boot. Verification and publication start them
 again to read their artefacts, so the run stops every one of them when it

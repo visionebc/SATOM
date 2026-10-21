@@ -76,10 +76,23 @@ def _grade(value, warn, crit) -> str:
 
 
 def limits() -> dict:
-    """The six host thresholds, resolved once per grading pass."""
-    return {k: th.host(k).value for k in
-            ("disk_warn_pct", "disk_crit_pct", "mem_warn_pct", "mem_crit_pct",
-             "load_warn_pct", "load_crit_pct")}
+    """The six host thresholds, resolved once per grading pass.
+
+    A CPU limit above 100 was saved when these keys meant "load average per
+    CPU" (150 / 400). ``cpu_pct`` never exceeds 100, so such a value would
+    silence the CPU alert for good: it is read as the shipped default instead.
+    """
+    out = {k: th.host(k).value for k in
+           ("disk_warn_pct", "disk_crit_pct", "mem_warn_pct", "mem_crit_pct",
+            "load_warn_pct", "load_crit_pct")}
+    for k in ("load_warn_pct", "load_crit_pct"):
+        try:
+            stale = float(out[k]) > 100
+        except (TypeError, ValueError):
+            stale = False
+        if stale:
+            out[k] = next(f.default for f in th.HOST if f.key == k)
+    return out
 
 
 def grade_stats(stats: dict | None, lim: dict | None = None) -> dict:

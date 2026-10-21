@@ -227,6 +227,31 @@ def satom_data():
     })
 
 
+@bp.route('/satom-history')
+@login_required
+@require_permission(Permission.VIEW)
+def satom_history():
+    """CPU / memory / disk of both SATOM nodes over time (Resource history).
+
+    Global ADOM only, like ``/satom-data``: the series are labelled with node
+    hostnames. ``?range=1h|6h|24h|7d|30d|90d`` (default 24h). A store that did
+    not answer comes back as ``ok: false`` with its message, never as empty
+    series -- the page paints it as an error.
+    """
+    if not _global_adom():
+        return jsonify({"error": "global ADOM only"}), 403
+    from ..services import host_health, node_metrics
+    try:
+        out = node_metrics.history(request.args.get('range'),
+                                   metrics=("cpu", "mem", "disk"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    # The budgets the grader uses, so the chart draws the same lines the
+    # alert fires on.
+    out['limits'] = host_health.limits()
+    return jsonify(out)
+
+
 def _run_hw_scan(app, job_id, ids, user_id, uname, link, product=""):
     """Fleet SSH inventory sweep — a BACKGROUND job: silent unless it breaks.
 

@@ -19,6 +19,11 @@
   .ha-row { display:flex; justify-content:space-between; align-items:flex-start; gap:10px;
             font-size:.82rem; padding:5px 0; border-bottom:1px dashed rgba(148,163,184,.14); }
   .ha-row .why { font-size:.72rem; color:var(--fw-text-muted, #6B7280); }
+  /* Resource history: one chart per resource, both nodes on each. */
+  .rh-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(340px, 1fr)); gap:14px; }
+  .rh-chart { position:relative; height:200px; }
+  .rh-title { font-size:.82rem; font-weight:600; margin-bottom:6px; }
+  .rh-msg { font-size:.8rem; padding:6px 0; }
 </style>
 
 <div class="fw-page-header d-flex align-items-center justify-content-between mb-3">
@@ -33,6 +38,27 @@
 </div>
 
 {% include "_infra_health.html" %}{# Database + Services cards render into #monSystem, inside the infra grid #}
+
+{# Resource history — the same readings as the node tiles above, kept over
+   time (satom_node_* series, sampled by the metrics_scrape pass every 3 min). #}
+<div class="mon-sec-title d-flex align-items-center justify-content-between" id="rhSection">
+  <span><i class="bi bi-graph-up me-1"></i>{{ _('Resource history') }}
+    <span class="text-muted" style="text-transform:none;letter-spacing:normal;">{{ _('— CPU, memory and disk of every node') }}</span></span>
+  <span class="btn-group btn-group-sm" role="group" aria-label="{{ _('Time range') }}">
+    <button type="button" class="btn btn-outline-secondary rh-r" data-range="1h">{{ _('1 h') }}</button>
+    <button type="button" class="btn btn-outline-secondary rh-r" data-range="6h">{{ _('6 h') }}</button>
+    <button type="button" class="btn btn-outline-secondary rh-r active" data-range="24h">{{ _('24 h') }}</button>
+    <button type="button" class="btn btn-outline-secondary rh-r" data-range="7d">{{ _('7 days') }}</button>
+    <button type="button" class="btn btn-outline-secondary rh-r" data-range="30d">{{ _('30 days') }}</button>
+    <button type="button" class="btn btn-outline-secondary rh-r" data-range="90d">{{ _('90 days') }}</button>
+  </span>
+</div>
+<div id="rhMsg" class="rh-msg text-muted"></div>
+<div class="rh-grid mb-3">
+  <div class="fw-card"><div class="fw-card-body"><div class="rh-title">{{ _('CPU') }}</div><div class="rh-chart"><canvas id="rhCpu"></canvas></div></div></div>
+  <div class="fw-card"><div class="fw-card-body"><div class="rh-title">{{ _('Memory') }}</div><div class="rh-chart"><canvas id="rhMem"></canvas></div></div></div>
+  <div class="fw-card"><div class="fw-card-body"><div class="rh-title">{{ _('Disk') }}</div><div class="rh-chart"><canvas id="rhDisk"></canvas></div></div></div>
+</div>
 
 {% include "_encryption_health.html" %}
 
@@ -122,6 +148,98 @@
       '</div></div>';
   }
 
+  // --- Resource history ----------------------------------------------------
+  // The store answers on a step grid, so every series shares its timestamps:
+  // the x axis is their union and a missing sample stays a GAP (null), never
+  // a line drawn through the minutes a node did not answer.
+  var T_NO_DATA = {{ _('No samples in this range yet. The metrics scrape action records both nodes every 3 minutes.')|tojson }};
+  var T_FAILED = {{ _('The metrics store did not answer:')|tojson }};
+  var T_WARN = {{ _('warning')|tojson }};
+  var T_CRIT = {{ _('critical')|tojson }};
+  var RH = { range: '24h', charts: {} };
+  var RH_COLORS = ['#EF5424', '#4C2A85', '#15692A', '#3D4550', '#7A5700', '#8B1C2A'];
+  var RH_GRID = 'rgba(16,32,52,.09)';
+
+  function rhLabel(ts, range) {
+    var d = new Date(ts * 1000);
+    var hm = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (range === '1h' || range === '6h' || range === '24h') return hm;
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + hm;
+  }
+
+  function rhDraw(canvasId, series, stamps, range, lim) {
+    if (RH.charts[canvasId]) { RH.charts[canvasId].destroy(); delete RH.charts[canvasId]; }
+    var sets = series.map(function (s, i) {
+      var byTs = {};
+      s.points.forEach(function (p) { byTs[p[0]] = p[1]; });
+      var label = s.node + (s.mount && s.mount !== '/' ? ' · ' + s.mount : '');
+      return { label: label, data: stamps.map(function (t) { return t in byTs ? byTs[t] : null; }),
+               borderColor: RH_COLORS[i % RH_COLORS.length], backgroundColor: RH_COLORS[i % RH_COLORS.length],
+               borderWidth: 2, pointRadius: 0, tension: 0.2, spanGaps: false, fill: false };
+    });
+    [[T_WARN, lim && lim[0], '#7A5700'], [T_CRIT, lim && lim[1], '#8B1C2A']].forEach(function (b) {
+      if (!b[1]) return;
+      sets.push({ label: b[0] + ' ' + b[1] + ' %', data: stamps.map(function () { return b[1]; }),
+                  borderColor: b[2], borderDash: [5, 4], borderWidth: 1, pointRadius: 0, fill: false });
+    });
+    RH.charts[canvasId] = new Chart(document.getElementById(canvasId).getContext('2d'), {
+      type: 'line',
+      data: { labels: stamps.map(function (t) { return rhLabel(t, range); }), datasets: sets },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: '#495057', boxWidth: 12 } },
+          tooltip: { callbacks: { label: function (c) {
+            return c.dataset.label + ': ' + (c.parsed.y == null ? '—' : c.parsed.y + ' %'); } } }
+        },
+        scales: {
+          x: { ticks: { color: '#6C757D', maxTicksLimit: 8, autoSkip: true, maxRotation: 0 },
+               grid: { color: RH_GRID } },
+          y: { min: 0, max: 100, ticks: { color: '#6C757D', callback: function (v) { return v + ' %'; } },
+               grid: { color: RH_GRID } }
+        }
+      }
+    });
+  }
+
+  function loadHistory() {
+    var msg = document.getElementById('rhMsg');
+    fetch('{{ url_for("monitoring.satom_history") }}?range=' + encodeURIComponent(RH.range),
+          { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { msg.className = 'rh-msg t-crit'; msg.textContent = d.error; return; }
+        var lim = d.limits || {};
+        var stampSet = {};
+        (d.series || []).forEach(function (s) { s.points.forEach(function (p) { stampSet[p[0]] = 1; }); });
+        var stamps = Object.keys(stampSet).map(Number).sort(function (a, b) { return a - b; });
+        var by = function (k) { return (d.series || []).filter(function (s) { return s.key === k; }); };
+        rhDraw('rhCpu', by('cpu'), stamps, d.range, [lim.load_warn_pct, lim.load_crit_pct]);
+        rhDraw('rhMem', by('mem'), stamps, d.range, [lim.mem_warn_pct, lim.mem_crit_pct]);
+        rhDraw('rhDisk', by('disk'), stamps, d.range, [lim.disk_warn_pct, lim.disk_crit_pct]);
+        if (!d.ok) {
+          msg.className = 'rh-msg t-crit';
+          msg.textContent = T_FAILED + ' ' + (d.errors || []).map(function (e) { return e.key + ': ' + e.error; }).join(' · ');
+        } else if (!stamps.length) {
+          msg.className = 'rh-msg text-muted'; msg.textContent = T_NO_DATA;
+        } else {
+          msg.className = 'rh-msg text-muted'; msg.textContent = '';
+        }
+      })
+      .catch(function () { msg.className = 'rh-msg t-crit'; msg.textContent = T_FAILED; });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('.rh-r'), function (b) {
+    b.addEventListener('click', function () {
+      RH.range = b.getAttribute('data-range');
+      Array.prototype.forEach.call(document.querySelectorAll('.rh-r'), function (o) {
+        o.classList.toggle('active', o === b);
+      });
+      loadHistory();
+    });
+  });
+
   function load() {
     fetch('{{ url_for("monitoring.satom_data") }}', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
       .then(function (r) { return r.json(); })
@@ -135,10 +253,17 @@
       });
   }
 
-  document.getElementById('monRefreshBtn').addEventListener('click', load);
+  document.getElementById('monRefreshBtn').addEventListener('click', function () { load(); loadHistory(); });
   load();
+  loadHistory();
   var timer = setInterval(load, 30000);
-  document.addEventListener('turbo:before-render', function () { clearInterval(timer); }, { once: true });
+  // The series gain one sample per 3-minute scrape; re-reading them faster
+  // only redraws the same chart.
+  var hTimer = setInterval(loadHistory, 180000);
+  document.addEventListener('turbo:before-render', function () {
+    clearInterval(timer); clearInterval(hTimer);
+    Object.keys(RH.charts).forEach(function (k) { RH.charts[k].destroy(); });
+  }, { once: true });
 })();
 </script>
 {% endblock %}

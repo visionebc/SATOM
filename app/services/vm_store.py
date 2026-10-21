@@ -143,9 +143,17 @@ def query(expr: str, ts: float | None = None, timeout: float = 15.0) -> dict:
 
 
 def query_range(expr: str, start: float, end: float, step: str = "60s",
-                timeout: float = 25.0) -> dict:
-    qs = urllib.parse.urlencode({"query": expr, "start": "%f" % start,
-                                 "end": "%f" % end, "step": step})
+                timeout: float = 25.0, nocache: bool = False) -> dict:
+    """``nocache`` bypasses the store's response cache. Measured on a1
+    (v1.148, 2026-10-21): a series whose first sample was a few minutes old
+    came back from 1 h and 2 h ranges and was MISSING from 3 h, 6 h, 24 h and
+    90 d ranges; it appeared once that sample was about 5 minutes old (the
+    store's -search.cacheTimestampOffset), or at once with ``nocache``."""
+    params = {"query": expr, "start": "%f" % start, "end": "%f" % end,
+              "step": step}
+    if nocache:
+        params["nocache"] = "1"
+    qs = urllib.parse.urlencode(params)
     try:
         with _http("/api/v1/query_range?" + qs, timeout=timeout) as r:
             return json.loads(r.read().decode("utf-8"))

@@ -26219,3 +26219,36 @@ msgstr "Auch per E-Mail"
 
 msgid "An ADOM: every article shown there, published to it or to Global. Global: the articles published to Global. A topic includes the topics under it."
 msgstr "Ein ADOM: jeder dort angezeigte Artikel, in ihm oder in Global veröffentlicht. Global: die in Global veröffentlichten Artikel. Ein Thema schließt seine Unterthemen ein."
+
+msgid "Resource history"
+msgstr "Ressourcenverlauf"
+
+msgid "— CPU, memory and disk of every node"
+msgstr "— CPU, Arbeitsspeicher und Festplatte jedes Knotens"
+
+msgid "6 h"
+msgstr "6 Std."
+
+msgid "90 days"
+msgstr "90 Tage"
+
+msgid "CPU"
+msgstr "CPU"
+
+msgid "Memory"
+msgstr "Arbeitsspeicher"
+
+msgid "Disk"
+msgstr "Festplatte"
+
+msgid "warning"
+msgstr "Warnung"
+
+msgid "critical"
+msgstr "kritisch"
+
+msgid "No samples in this range yet. The metrics scrape action records both nodes every 3 minutes."
+msgstr "In diesem Zeitraum gibt es noch keine Messwerte. Die Aktion metrics scrape erfasst beide Knoten alle 3 Minuten."
+
+msgid "The metrics store did not answer:"
+msgstr "Der Metrikspeicher hat nicht geantwortet:"

@@ -705,6 +705,7 @@ EXCLUDED: dict[str, str] = {
     "metrics_admin.stores": "json feed", "monitoring.data": "json feed",
     "deep_monitor.data": "json feed", "monitor_reports.data": "json feed",
     "monitor_reports.preview": "json feed", "monitoring.satom_data": "json feed",
+    "monitoring.satom_history": "json feed",
     "service_monitor.data": "json feed", "notifications.unread": "json feed",
     "sentinel.data": "json feed",
     "sentinel.blocklist_feed":

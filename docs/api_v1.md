@@ -100,6 +100,8 @@ Paths are relative to the base URL. **Scope** is the minimum token scope;
 | `POST` | `/adc/rules` | write | `adc_rule_draft` (+ `adc_rule_apply` for `"apply": true`) | Create a FortiADC rule (§7) |
 | `GET`  | `/ui/themes` | read | — | The theme names on this node and which one is active (§8) |
 | `GET`  | `/ui/theme` | read | — | One theme as a `satom.ui-theme/2` document: tokens, logo and favicon; the active theme, or `?name=` (§8) |
+| `GET`  | `/system/nodes` | read | `monitoring`, only on a capability-restricted token | CPU, memory and disk of every SATOM node now, graded (§9). **Global** token only |
+| `GET`  | `/system/nodes/history` | read | `monitoring`, only on a capability-restricted token | The same readings over time (§9). **Global** token only |
 
 The write endpoints are rate-limited to **30/min**, like `/actions/<id>/run`.
 
@@ -482,3 +484,75 @@ used for that one request and is not stored there.
 * `read` is enough on purpose: a theme is colours plus the logo the sign-in
   page already shows to anyone, and nothing on this surface writes.
 * Rate-limited to 30/min.
+
+## 9. SATOM node resources — `/api/v1/system/*`
+
+CPU, memory and disk of the SATOM nodes themselves (not of the appliances):
+the readings behind **Monitoring → SATOM health** and its **Resource history**
+charts, for an outside monitoring system.
+
+**Access.** A `read` token bound to the **global** ADOM. A token bound to a
+product gets `403 wrong_product`, because SATOM health is Global-only and the
+API gives no more than a session gets. A token restricted to named
+capabilities also needs `monitoring` (`403 capability_denied` otherwise). An
+empty capability list is enough, as for every other `GET`. Rate-limited to
+60/min. Node addresses are never in the answer.
+
+### `GET /system/nodes`
+
+Every node as it is now, graded against Settings → Thresholds (*SATOM machine*):
+
+```json
+{"status": "ok",
+ "limits": {"disk_warn_pct": 80, "disk_crit_pct": 92, "mem_warn_pct": 80, ...},
+ "nodes": [
+  {"name": "satom-node-1", "role": "primary", "is_local": true,
+   "reachable": true, "status": "ok", "reasons": [],
+   "cpus": 4, "cpu_pct": 1.7,
+   "mem_total_mb": 4096, "mem_used_mb": 1309, "mem_pct": 32.0,
+   "disks": [{"mount": "/", "total_gb": 26.2, "used_gb": 20.4, "pct": 77.8}],
+   "uptime_s": 824592},
+  {"name": "satom-node-2", "role": null, "reachable": false,
+   "status": "unknown", "cpu_pct": null, ...}]}
+```
+
+A node that did not answer is `reachable: false`, `status: "unknown"`, and its
+readings are `null`. Its last known numbers are not repeated.
+
+### `GET /system/nodes/history`
+
+| Parameter | Values | Default |
+|---|---|---|
+| `range` | `1h`, `6h`, `24h`, `7d`, `30d`, `90d` | `24h` |
+| `node` | a node name (`satom-node-1`) | every node |
+| `metrics` | comma-separated: `cpu`, `mem`, `disk` (percent), `mem_used_mb`, `mem_total_mb`, `disk_used_gb`, `disk_total_gb`, `up` (1 answered, 0 did not) | `cpu,mem,disk` |
+
+```json
+{"ok": true, "range": "24h", "start": 1792454700, "end": 1792541100,
+ "step_s": 240, "errors": [],
+ "series": [
+  {"key": "cpu", "metric": "satom_node_cpu_pct", "unit": "%",
+   "node": "satom-node-1", "mount": null,
+   "points": [[1792454700, 2.1], [1792454940, 1.8], ...]},
+  {"key": "disk", "metric": "satom_node_disk_pct", "unit": "%",
+   "node": "satom-node-1", "mount": "/", "points": [...]}]}
+```
+
+* `points` are `[unix seconds, value]`, one per `step_s`, at most 400 per
+  series. Each is the **highest** reading in its step, so a peak is not
+  averaged away on long ranges. Steps are never finer than the 3-minute sample
+  cadence.
+* A missing point is a gap: no sample in the step plus the six minutes before
+  it (the node did not answer, or the action did not run). It is never filled
+  in.
+* Samples are written by the `metrics_scrape` scheduled action. A node only
+  has history from the release that added these series onward.
+* If the metrics store does not answer, the response is **`502
+  store_unavailable`**, with the store's message under `errors`. It is never a
+  `200` with empty series, which a poller would record as "no load".
+* A bad `range`, `node` or `metrics` is `400 bad_request`.
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://satom.example.net/api/v1/system/nodes/history?range=7d&metrics=disk_used_gb"
+```

@@ -29,6 +29,26 @@ Access › Groups), `wiki05` (comments and subscriptions) and `wiki06`
   Readable without signing in, from every ADOM, and in the container image,
   which now ships both trees. The release pipeline rebuilds the copy at every
   cut (step `docs_center`). On the Concept Map as *Documentation Center*.
+- **Resource history of the SATOM nodes** — as asked: "show SATOM's CPU,
+  disk and RAM over time where the system health is, for the secondary node
+  too, and let the API collect this data".
+  - **Monitoring → SATOM health → Resource history**: CPU, memory and disk
+    charts with both nodes on each, over 1 h, 6 h, 24 h, 7 days, 30 days or
+    90 days, with the warning and critical limits from Settings → Thresholds
+    drawn as dashed lines. Until now these readings were a snapshot on the
+    node tiles and were thrown away after each render.
+  - Sampled by the existing `metrics_scrape` action (every 3 minutes) into the
+    local metrics store as `satom_node_*` series, mirrored to the peer's
+    store, so a promoted standby keeps the history. Its run summary names the
+    node samples, or says why they were not recorded.
+  - A node that did not answer leaves a gap and writes `satom_node_up 0`; its
+    last numbers are never carried forward. A store that did not answer is
+    shown as an error, never as empty charts.
+  - **API**: `GET /api/v1/system/nodes` (every node now, graded) and
+    `GET /api/v1/system/nodes/history` (`range`, `node`, `metrics`; `502
+    store_unavailable` when the store does not answer). Read scope, a token
+    bound to the global ADOM, and `monitoring` on a capability-restricted
+    token. Node addresses are not in the answer. API manual §9.
 - **Wiki: comments, following, export and Confluence** — the rest of the Wiki
   plan, as asked: "do the Wiki and Confluence".
   - **Comments** under every published article, in threads (Reply), in
@@ -71,6 +91,14 @@ Access › Groups), `wiki05` (comments and subscriptions) and `wiki06`
 
 ### Fixed
 
+- **The SATOM nodes' CPU alert could never fire.** Settings → Thresholds →
+  *SATOM machine* still held the load-average limits (150 % / 400 % of cores)
+  after the grader moved to the container's own CPU use on 2026-08-11, and
+  that reading never goes above 100 %, so a node pinned at 100 % graded OK.
+  The limits are now **CPU busy — warning / critical, 80 % / 95 %**, validated
+  as percentages; a value above 100 saved under the old meaning is read as
+  the default. Found while drawing those limits on the new Resource history
+  chart.
 - The Wiki list's page 2 and later kept only the first ticked ADOM of the
   filter.
 

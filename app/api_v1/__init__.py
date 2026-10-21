@@ -23,3 +23,5 @@ from . import waf  # noqa: E402,F401
 from . import adc  # noqa: E402,F401
 # Read-only: lets another node copy this node's theme (Settings -> Appearance).
 from . import ui  # noqa: E402,F401
+# Read-only: CPU / memory / disk of the SATOM nodes, now and over time.
+from . import system  # noqa: E402,F401

@@ -300,12 +300,16 @@ HOST: tuple[Field, ...] = (
           "WAL, and the page has to arrive before that, not with it."),
     Field("mem_warn_pct", "Memory used — warning", "pct", 85, "%"),
     Field("mem_crit_pct", "Memory used — critical", "pct", 95, "%"),
-    Field("load_warn_pct", "Load average per CPU — warning", "num", 150,
-          "% of cores",
-          "1-minute load as a percentage of core count. 100 % means one "
-          "runnable task per core; sustained excess is queueing."),
-    Field("load_crit_pct", "Load average per CPU — critical", "num", 400,
-          "% of cores"),
+    # CPU: the share of the node's cores busy (system_health.cpu_pct, 0-100).
+    # The keys keep their old ``load_*`` names so a saved value still
+    # resolves. Until 2026-10-21 these were "load average per CPU" at 150/400:
+    # the grader moved to cpu_pct on 2026-08-11 (the hypervisor's load average
+    # is meaningless inside an LXC) and the limits stayed behind, so a node at
+    # 100 % CPU graded OK and the alert could never fire.
+    Field("load_warn_pct", "CPU busy — warning", "pct", 80, "% of cores",
+          "Share of this node's cores busy since the previous reading. "
+          "100 % means every core was busy the whole time."),
+    Field("load_crit_pct", "CPU busy — critical", "pct", 95, "% of cores"),
 )
 
 

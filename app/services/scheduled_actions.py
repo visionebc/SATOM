@@ -812,11 +812,20 @@ def _do_metrics_scrape(params: dict, dry_run: bool = False) -> dict:
                 "log": "\n".join("%s/%s" % (t.appliance.name, t.collector)
                                  for t in due)[:4000]}
     res = mc.sweep()
+    # The SATOM nodes' own CPU / memory / disk ride the same pass (SATOM
+    # health -> Resource history). node_metrics.record never raises, and a
+    # failed sample is named in the summary instead of hidden behind a green
+    # sweep.
+    from . import node_metrics
+    nm = node_metrics.record()
+    nodes_part = (", %d node sample(s)" % nm["nodes"] if nm["ok"]
+                  else ", node resources NOT recorded: %s" % (nm["detail"] or "?"))
     return {"ok": True,
             "summary": ("%(ok)d/%(targets)d target(s) ok, %(errors)d error(s), "
                         "%(series)d series, %(ms)d ms"
-                        % res) + (", %d auto-provisioned" % res["created"]
-                                  if res.get("created") else "")
+                        % res) + nodes_part
+                       + (", %d auto-provisioned" % res["created"]
+                          if res.get("created") else "")
                        + (", baseline probes created for %s"
                           % ", ".join(res["baselines"])
                           if res.get("baselines") else ""),

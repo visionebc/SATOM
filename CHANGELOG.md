@@ -6,6 +6,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.4.6] - 2026-10-22
+
+SATOM becomes an orchestrator: **triggers** created under Administrator, and
+**automations on a trigger** under Automations that walk a process, run a
+Python Studio app or script, call an API Catalog endpoint, query or write
+data, run a hook or a scheduled action, or notify — chained on each
+other's outcome, and started by outside systems through the API.
+
 ### Added
 
 - **Triggers and automations on a trigger — SATOM as an orchestrator.** The

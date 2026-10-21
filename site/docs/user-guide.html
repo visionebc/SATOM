@@ -3451,6 +3451,158 @@ See §23.4 for how saved runs behave.</p>
 and duration; Pause / Resume / Stop (cooperative — jobs park at safe
 checkpoints); orphaned jobs from a service restart are swept and marked on
 boot.</p>
+<h3 id="151-triggers-and-automations-on-a-trigger--the-orchestrator">15.1 Triggers and automations on a trigger — the orchestrator</h3>
+<p>Scheduled work starts on a clock. Work that should start <strong>when something
+happens</strong> is split in two halves, on purpose:</p>
+<ul>
+<li><strong>Triggers</strong> — the <em>condition</em>. Administrator → Change Management →
+  <strong>Triggers</strong> (<code>/administration/triggers/</code>, administrators only). A trigger
+  names one event and narrows which occurrences count.</li>
+<li><strong>Automations → On a trigger</strong> — the <em>implementation</em>. Operations →
+  Automation → <strong>Automations</strong>, tab <strong>On a trigger</strong>
+  (<code>/web/automations/on-trigger/</code>, needs <code>config_write</code>). Each automation
+  binds one trigger to one thing SATOM can already run.</li>
+</ul>
+<p>One trigger can feed several automations (a diagnostics walk, a ticket and a
+chat message off the same "critical device alert"), so the filter is written
+once.</p>
+<p><strong>Events a trigger can name</strong></p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>When</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>alert.fired</code></td>
+<td>every <em>fresh</em> alert finding (after the alert cooldown), whatever the notification sinks say — a trigger is a plan, not a channel</td>
+</tr>
+<tr>
+<td><code>intent.deviation</code></td>
+<td>a bound device differs from its template</td>
+</tr>
+<tr>
+<td><code>change.requested</code>, <code>change.approved</code></td>
+<td>a change request was submitted / approved</td>
+</tr>
+<tr>
+<td><code>window.opening</code>, <code>window.closing</code></td>
+<td>an approved change starts / ends running</td>
+</tr>
+<tr>
+<td><code>upgrade.finished</code>, <code>upgrade.failed</code></td>
+<td>per appliance, at the end of an upgrade change</td>
+</tr>
+<tr>
+<td><code>automation.finished</code></td>
+<td>an event automation ended (<code>ok</code>, <code>failed</code> or <code>skipped</code>) — this is how automations chain</td>
+</tr>
+<tr>
+<td><code>api.event</code></td>
+<td>an outside system called <code>POST /api/v1/events</code></td>
+</tr>
+</tbody>
+</table>
+<p>The trigger form lists every event's payload fields.</p>
+<p><strong>Conditions</strong> (all must hold; empty means any): ADOMs, alert families,
+minimum severity, appliance ids, alert key (glob, e.g. <code>device.*</code>), text the
+title/detail contains, API event type (glob), the finished automation and its
+outcome, and <strong>payload conditions</strong> — JSON rows <code>{"field": "data.priority",
+"op": "equals", "value": "P1"}</code> with <code>equals</code>, <code>not_equals</code>, <code>contains</code>,
+<code>glob</code>, <code>greater</code>, <code>less</code>, <code>empty</code>, <code>not_empty</code>. A condition on a field the
+event does not carry is <strong>not met</strong>: a condition narrows, it never widens.</p>
+<p><strong>Bounds</strong>: a <strong>cooldown per subject</strong> (the same alert key, change, or API
+<code>subject</code> matches again only after N minutes; 0 = every time) and a budget of
+<strong>matches per hour</strong>. A refused match is recorded as <em>suppressed</em> with the
+reason. <strong>Preview</strong> shows which of the alert engine's findings right now — or
+a payload you paste — would match, without firing anything.</p>
+<p><strong>What an automation can do</strong></p>
+<table>
+<thead>
+<tr>
+<th>Do</th>
+<th>Runs through</th>
+<th>Rehearsal (not armed)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Walk a process</td>
+<td>the Process engine; one walk at a time per process and appliance, within the process's hourly budget</td>
+<td>write steps dry-run</td>
+</tr>
+<tr>
+<td>Run a Python Studio app</td>
+<td>the published version, as the automation's owner; the whole event is <code>{{ event }}</code> in the diagram</td>
+<td>write steps are recorded, not executed</td>
+</tr>
+<tr>
+<td>Run a Script Library script</td>
+<td>the published version, through the script runner</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Call an API</td>
+<td>an HTTP connection; on a connection pinned to an API Catalog version, only that version's endpoints</td>
+<td>anything but GET is recorded, not sent</td>
+</tr>
+<tr>
+<td>Query a database / write a data store</td>
+<td>a PostgreSQL connection / a Studio data store</td>
+<td>writes are recorded</td>
+</tr>
+<tr>
+<td>Run an integration hook</td>
+<td>the de-privileged hook runner; the hook receives this event as <code>ctx.payload</code>; a disabled hook is skipped</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Run a scheduled action now</td>
+<td>the action exactly as configured, change-request gate included</td>
+<td>a <em>danger</em> action is skipped</td>
+</tr>
+<tr>
+<td>Notify</td>
+<td>the bell (administrators) and/or e-mail</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>Text fields are templates over the event: <code>{{ event.title }}</code>,
+<code>{{ event.appliance_id }}</code>, <code>{{ event.data.ticket }}</code>, and <code>{{ trigger.key }}</code>;
+an optional value is <code>{{ x | default('') }}</code>. A <strong>process</strong> automation walks
+the appliance the event names unless you give one (<code>id</code> or name).</p>
+<p><strong>Armed</strong> is off by default. On, the automation writes for real with nobody
+at the screen. An automation <strong>runs as its owner</strong> — whoever saved it last:
+the owner must be allowed to use the app it starts, and a script reads the
+owner's vault entries. <strong>Test</strong> runs it once with the event's documented
+example (or a payload you paste) as a rehearsal that is never armed and never
+chained.</p>
+<p>Every automation runs as a <strong>job</strong> (Jobs page); it never runs inside the alert
+evaluation that noticed the event. Each run is listed with what happened and
+where the real record is (<code>process-run:12</code>, <code>app-run:5</code>, <code>hook:…</code>,
+<code>action-run:9</code>).</p>
+<p><strong>Chaining.</strong> When an automation ends, SATOM emits <code>automation.finished</code>. A
+trigger on that event with condition <em>finished automation =
+collect-diagnostics</em> and <em>outcome = failed</em>, bound to an API call that opens a
+ticket, writes "when the diagnostics walk fails, open a ticket". A chain stops
+after <strong>3 hops</strong>; a deeper match is recorded as suppressed (a trigger that
+matches its own automation is a loop otherwise).</p>
+<p><strong>Python Studio apps orchestrate too.</strong> The app diagram has a <strong>Walk a
+process</strong> step: an app can call an API Catalog endpoint, run a script, query a
+database <em>and</em> walk a device runbook, deciding on each result. A rehearsal run
+walks the process unarmed; an armed run walks it armed only for a user who
+holds <code>config_write</code>.</p>
+<p><strong>From outside: <code>POST /api/v1/events</code></strong> (<code>write</code> scope) with
+<code>{"type": "deploy.done", "subject": "build-42", "appliance_id": 3,
+"data": {...}}</code> starts every <code>api.event</code> trigger whose conditions match and
+answers <code>202</code> with what was queued. The event's ADOM is the token's (a Global
+token may name one). Nothing the caller sends can arm an automation.
+<code>GET /api/v1/triggers</code> (<code>read</code>) lists the triggers.</p>
+<p>Processes that carry their <strong>own</strong> trigger (Process → Trigger) keep working;
+the Triggers page lists them so one page answers "what starts on an alert".</p>
 <h2 id="16-reports--database-tools">16. Reports &amp; database tools</h2>
 <p>Global → Administrator → <strong>Database</strong> (admin only):</p>
 <ul>

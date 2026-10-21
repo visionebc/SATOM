@@ -89,6 +89,7 @@ SURFACES: dict[str, dict] = {
         #: the first time either moves, and the drift is silent.
         'permission': Permission.CONFIG_WRITE,
         'other': ('scheduled_actions', 'System Automations'),
+        'in_settings': False,
     },
     'scheduled_actions': {
         'scope': ADMIN_SCOPE,
@@ -101,6 +102,9 @@ SURFACES: dict[str, dict] = {
                   'is added.'),
         'permission': Permission.USER_MANAGE,
         'other': ('automations', 'Automations'),
+        #: Filed under Settings since 2026-10-21 (FA-0005): the page draws
+        #: the Admin Console menu and its breadcrumb runs through Settings.
+        'in_settings': True,
     },
 }
 

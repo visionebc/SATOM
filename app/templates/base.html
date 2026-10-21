@@ -585,7 +585,8 @@
         {% endif %}
         <div class="fw-nav-divider"></div>
         {% if may_open('settings.index') %}
-        <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('settings.') else '' }}"
+        {# Pages filed under Settings (its menu's `ep` entries) light it too. #}
+        <a class="fw-nav-item {{ 'active' if request.endpoint and (request.endpoint.startswith('settings.') or request.blueprint in ('integrations', 'self_update', 'ha', 'scheduled_actions', 'system_backup')) else '' }}"
            href="{{ url_for('settings.index') }}">
           <i class="bi bi-gear fw-nav-icon"></i>
           <span>{{ _('Settings') }}</span>

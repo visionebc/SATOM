@@ -6,6 +6,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed
+
+- **Software Update, High Availability, System Automations and System Backup &
+  Restore moved to Settings** (FA-0005). They left Administrator → System:
+  Settings → System now holds Software Update (next to Software Update
+  Repository), High Availability and System Automations, and System Backup &
+  Restore sits in Source of Truth & Backup. They stay pages of their own (the
+  leaving arrow), keep their addresses and permissions, and each one draws the
+  Settings menu with itself selected and a Settings breadcrumb. System
+  Automations still opens on the ADOM you are in.
+
 ### Fixed
 
 - **An update feed that answers 404 says who answered and why** (SA-0006).

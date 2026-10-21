@@ -1,5 +1,14 @@
 {% extends "base.html" %}
 {% block title %}High Availability{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('settings.index') }}">{{ _('Settings') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('High Availability') }}</span>
+</div>
+{% endblock %}
 {% block content %}
 <div class="fw-page-header">
   <div>
@@ -8,6 +17,13 @@
       {{ _('The manager\'s cluster — node architecture, deployment mode, the HA node registry, live Postgres streaming replication and the guarded manual failover. Update the code itself from') }} <strong>{{ _('Software Update') }}</strong>.</p>
   </div>
 </div>
+
+{# A Settings page since 2026-10-21 (FA-0005): it draws the Admin Console
+   menu in links mode, like Integrations (settings/_nav.html). #}
+<div class="fw-settings-layout">
+  {% with nav_mode='links', nav_active='ha.index', is_admin=True %}{% include "settings/_nav.html" %}{% endwith %}
+  <div class="fw-settings-main">
+
 
 <style nonce="{{ csp_nonce }}">
   .ha-arch-wrap { position: relative; }
@@ -309,6 +325,8 @@
   <span id="live-state" class="badge bg-secondary ms-2">{{ _('queued') }}</span></div>
   <div class="card-body">
     <ol id="live-steps" class="small mb-0" style="list-style:decimal inside;"></ol>
+  </div>
+</div>
   </div>
 </div>
 {% endblock %}

@@ -286,8 +286,8 @@ no separate **Fleet** group, and no separate Automation group in a device ADOM
 (the Global ADOM draws Automation as a sub-menu of its Global block, above
 Jobs). The **API** sub-menu of Automation holds the console (Registry &
 console, device ADOMs) and **Schema builds** and **Build compatibility** (every
-ADOM, Global included). **System Automations** is under Administrator →
-System; Automation keeps **Automations**, the work operators schedule (§15).
+ADOM, Global included). **System Automations** is in Settings → System;
+Automation keeps **Automations**, the work operators schedule (§15).
 **Appliances** is under
 Administrator; **Certificate Manager** is under Automation (Certificate Manager in every
 ADOM: live in Global, FortiWeb and FortiADC, drawn disabled with the reason in
@@ -1863,7 +1863,7 @@ This page is the missing third position: name the CA and keep the check on.
   choice is written to the audit log. For FortiADC the vault works
   (pull/upload/download) but config *apply* has no REST transport — the page
   says so honestly.
-- **System Backup & Restore** (Global → Administrator) backs up the **manager
+- **System Backup & Restore** (Settings → Source of Truth & Backup) backs up the **manager
   itself**: a `pg_dump` of the database plus the reports tree in one bundle,
   with a verified restore path. **Create backup now** also pushes the bundle to
   the backup server when one is configured (the box is ticked by default).
@@ -3009,7 +3009,7 @@ are kept apart on purpose.
 
 Scheduled work lives on two pages, split by **who the work is for**:
 
-- **System Automations** — SATOM keeping its *own* data current. Administrator
+- **System Automations** — SATOM keeping its *own* data current. Settings
   → System → **System Automations** (`/scheduled-actions/`, administrators
   only). Every ADOM; the list shows that ADOM's rows.
 - **Automations** — work on the fleet's services that an operator plans for a
@@ -3709,7 +3709,7 @@ Backend detail, the capability matrix and the state machine:
 
 ## 22. Updating SATOM itself
 
-Administrator → **Software Update** (admin). Two paths, for two situations:
+Settings → System → **Software Update** (admin). Two paths, for two situations:
 
 1. **From the repository** — *Check*, then *Apply*. The normal path on a node
    that can reach the code remote.
@@ -4598,7 +4598,7 @@ reads.
 
 ## 24. High availability
 
-Global → Administrator → **High Availability** (admin, `user_manage`). This page
+Settings → System → **High Availability** (admin, `user_manage`). This page
 was **split out of Software Update** so that the two questions get their own nav
 entry: *Software Update* (§22) is "what code is this node running"; *High
 Availability* is "how many nodes are there, which one is primary, and is the
@@ -4798,16 +4798,16 @@ is a single **global** one, not per-ADOM.
 
 ## 26. Settings, tab by tab
 
-`Settings` is one page with a **grouped sidebar**: **11 groups, 36 panels**.
-Ten of the groups (34 panels) are admin-only (`user_manage`); the remaining
+`Settings` is one page with a **grouped sidebar**: **11 groups, 40 panels**.
+Ten of the groups (38 panels) are admin-only (`user_manage`); the remaining
 one — **My Account**, holding **Security** and **Change Password** — is
 self-service and is the only group a non-admin sees. A group with nothing you may see is not
 rendered at all, so the menu never offers a section that is not there.
 
 | Group | Panels |
 |---|---|
-| **System** | General · Software Update Repository · Scout · Integrations |
-| **Source of Truth & Backup** | Configuration SoT · Backup Server · Deploy Clone |
+| **System** | General · Software Update Repository · Software Update · High Availability · System Automations · Scout · Integrations |
+| **Source of Truth & Backup** | Configuration SoT · Backup Server · System Backup & Restore · Deploy Clone |
 | **Access & Identity** | Users · Profiles · Authentication · Access Control · Vault |
 | **Certificates & Trust** | Certificate Manager · Node TLS · Trust store |
 | **Network & DNS** | DNS Lookup · DNS Records |
@@ -4833,6 +4833,13 @@ tab. It is where SATOM is wired to systems it does not own — NetBox
 — and it is filed under System because that is what it configures. It had no
 menu entry at all until 2026-09-21; the page existed and worked, but the only
 way to reach it was to type `/settings/integrations`.
+
+**Software Update, High Availability, System Automations and System Backup &
+Restore are pages too** (↗), filed in Settings (until 3.4.4 they were under
+Administrator → System). Each keeps its own address and draws this menu with
+itself selected. *System Backup & Restore* sits with the backup surfaces; the
+other three under System. *System Automations* keeps the ADOM you are in: its
+list shows that ADOM's rows, as before.
 
 **Deploy Clone** copies a whole installation's data into this one, or exports
 this one for another (§11.1). It sits in Source of Truth & Backup because it
@@ -7667,7 +7674,7 @@ Where to read it:
 | A page says the object is **locked by another user** | A lease lock. Edit pages hold a short lease on `<kind>:<name>` per appliance and refresh it with a heartbeat; a browser that closed or crashed stops heartbeating and the lease **expires by itself in about two minutes**. Wait it out. If the holder is genuinely gone and you cannot wait, the page offers an explicit take-over — deliberately explicit, because two concurrent editors on one device object is what the lease exists to prevent. |
 | A plugin preview renders as a blank iframe | The frame is a sandboxed **opaque origin** by design (no `allow-same-origin`), so anything the plugin's JS tries to read from the parent app silently yields nothing. Use `window.pluginData` / `window.pluginParams`, which are injected into the frame — a plugin cannot fetch its datasets back (23.1). A *render* error would show as a red card instead, so a truly blank frame is usually empty output or JS reaching outward. |
 | Lua **Deploy** returns a plan instead of pushing | Correct: deploy is dry-run by default. A real push needs `config_write` **and** an explicit confirmation, and the lint gate runs again first (23.2). A refusal naming *lint failed* means the script does not parse — fix it, then mark it tested. |
-| The HA page shows the standby with growing WAL lag | Replication is streaming but not keeping up, or the standby is stalled. Read the replication card on Global → Administrator → **High Availability** (§24); it prints the sender/apply state and byte lag from Postgres itself. Do not promote a lagging standby: promotion is for a primary confirmed **down**. |
+| The HA page shows the standby with growing WAL lag | Replication is streaming but not keeping up, or the standby is stalled. Read the replication card on Settings → System → **High Availability** (§24); it prints the sender/apply state and byte lag from Postgres itself. Do not promote a lagging standby: promotion is for a primary confirmed **down**. |
 | Deployment mode / HA node changes will not save | The setting is in the **replicated** settings store, so it is writable only where Postgres is read-write — the **primary**. The standby's database is read-only and the page says so (§24). |
 | An AppID import lands zero rows, or the wrong columns | The saved column mapping does not match this file. The importer says *no rows with a non-empty AppID were found* when the `app_id` column is mapped wrong. Re-upload, re-map on the preview, and import — the corrected mapping is then reused by later uploads **and** by the nightly (§25). |
 | An AppID went **stale** after the nightly | It stopped appearing in the feed. That is a flag for review, not a deletion: the row, its billing and its policy bindings are all intact by design (§25). |

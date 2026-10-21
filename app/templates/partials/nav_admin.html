@@ -15,8 +15,9 @@
    entry added to a chunk lands in its alphabetical place by itself, and a
    profile never sees an empty toggle.
 
-   System holds System Automations since 2026-10-14 (operator): SATOM's own
-   automations are administration, not the fleet work under Automation.
+   System held System Automations from 2026-10-14 to 2026-10-21; it moved to
+   Settings with Software Update, High Availability and System Backup &
+   Restore (FA-0005, operator).
 
    Studio holds Python Studio, Plugin Studio and Lua Studio in the Global
    ADOM (partials/nav_studio.html); in a device ADOM it holds Python Studio,
@@ -145,31 +146,13 @@
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'database' else '' }}" href="{{ url_for('database.index') }}">
       <i class="bi bi-hdd fw-nav-icon"></i><span>{{ _('Database') }}</span></a>
     {% endif %}
-    {# System Automations: SATOM's own housekeeping (syncs, backups, probes,
-       feed refreshes). Moved here from Automation on 2026-10-14 (operator):
-       Automation keeps the fleet work operators schedule. Every ADOM, like
-       before; the page scopes its rows to the ADOM (_adom pins it on a hard
-       navigation). user_manage is this group's gate and the page's. #}
-    {% if may_open('scheduled_actions.index') %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint == 'scheduled_actions' else '' }}" href="{{ url_for('scheduled_actions.index', _adom=_pk) }}">
-      <i class="bi bi-clock-history fw-nav-icon"></i><span>{{ _('System Automations') }}</span></a>
-    {% endif %}
+    {# System Automations, System Backup & Restore, Software Update and High
+       Availability live in Settings since 2026-10-21 (FA-0005, operator):
+       settings/_nav.html draws them and each page draws that menu. #}
     {% if _pk == 'global' %}{# system-wide pages: the Global ADOM only #}
-    {% if may_open('system_backup.index') %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint == 'system_backup' else '' }}" href="{{ url_for('system_backup.index') }}">
-      <i class="bi bi-safe fw-nav-icon"></i><span>System Backup &amp; Restore</span></a>
-    {% endif %}
-    {% if may_open('self_update.index') %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint == 'self_update' else '' }}" href="{{ url_for('self_update.index') }}">
-      <i class="bi bi-arrow-repeat fw-nav-icon"></i><span>{{ _('Software Update') }}</span></a>
-    {% endif %}
     {% if satom_container_runtime and may_open('container_ops.index') %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'container_ops' else '' }}" href="{{ url_for('container_ops.index') }}">
       <i class="bi bi-box-seam fw-nav-icon"></i><span>{{ _('Container operations') }}</span></a>
-    {% endif %}
-    {% if may_open('ha.index') %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint == 'ha' else '' }}" href="{{ url_for('ha.index') }}">
-      <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('High Availability') }}</span></a>
     {% endif %}
     {% if may_open('reports.inbox') %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'reports' else '' }}" href="{{ url_for('reports.inbox') }}">

@@ -1,5 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Software Update{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('settings.index') }}">{{ _('Settings') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Software Update') }}</span>
+</div>
+{% endblock %}
 {% block content %}
 <div class="fw-page-header">
   <div>
@@ -9,6 +18,13 @@
       <strong>{{ _('primary') }}</strong> {{ _('only after the standby passes its health check.') }}</p>
   </div>
 </div>
+
+{# A Settings page since 2026-10-21 (FA-0005): it draws the Admin Console
+   menu in links mode, like Integrations (settings/_nav.html). #}
+<div class="fw-settings-layout">
+  {% with nav_mode='links', nav_active='self_update.index', is_admin=True %}{% include "settings/_nav.html" %}{% endwith %}
+  <div class="fw-settings-main">
+
 
 <div class="row g-3">
   <!-- Current version + this node -->
@@ -645,6 +661,8 @@
         </form>
       </div>
     </div>
+  </div>
+</div>
   </div>
 </div>
 {% endblock %}

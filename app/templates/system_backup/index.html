@@ -1,5 +1,14 @@
 {% extends "base.html" %}
 {% block title %}System Backup &amp; Restore{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('settings.index') }}">{{ _('Settings') }}</a>
+  <span class="separator">/</span>
+  <span>System Backup &amp; Restore</span>
+</div>
+{% endblock %}
 {% block content %}
 <div class="fw-page-header">
   <div>
@@ -7,6 +16,13 @@
     <p class="text-muted mb-0" style="font-size:13px;">{{ _('Everything needed to roll this system back: application') }} <strong>{{ _('code') }}</strong> {{ _('(git → self-update queue),') }} <strong>{{ _('database') }}</strong> {{ _('(pg_dump bundles),') }} <strong>{{ _('device configs') }}</strong> {{ _('(versioned local SoT store + device-pushed backups on the external backup server) and') }} <strong>{{ _('firmware') }}</strong> {{ _('(binaries on the backup server, pullable into the console).') }}</p>
   </div>
 </div>
+
+{# A Settings page since 2026-10-21 (FA-0005): it draws the Admin Console
+   menu in links mode, like Integrations (settings/_nav.html). #}
+<div class="fw-settings-layout">
+  {% with nav_mode='links', nav_active='system_backup.index', is_admin=True %}{% include "settings/_nav.html" %}{% endwith %}
+  <div class="fw-settings-main">
+
 
 {# ── Everything at a glance: every backup stream, its format, destinations, cadence and LIVE state ── #}
 <div class="card mb-3"><div class="card-header"><strong><i class="bi bi-clipboard-check me-1"></i>{{ _('Backup coverage — everything, at a glance') }}</strong></div>
@@ -646,6 +662,8 @@
       </div>
     </div>
   </div></div>
+</div>
+  </div>
 </div>
 {% endblock %}
 

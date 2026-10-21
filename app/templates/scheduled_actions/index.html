@@ -6,7 +6,8 @@
 <div class="fw-breadcrumb mb-1">
   <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <span>{{ _('Automation') }}</span>
+  {% if surface.in_settings %}<a href="{{ url_for('settings.index') }}">{{ _('Settings') }}</a>
+  {% else %}<span>{{ _('Automation') }}</span>{% endif %}
   <span class="separator">/</span>
   <span>{{ _(surface.title) }}</span>
 </div>
@@ -25,6 +26,13 @@
     <i class="bi bi-plus-lg me-1"></i>{{ _('New Action') }}
   </a>
 </div>
+
+{# A Settings page since 2026-10-21 (FA-0005): it draws the Admin Console
+   menu in links mode, like Integrations (settings/_nav.html). #}
+{% if surface.in_settings %}<div class="fw-settings-layout">
+  {% with nav_mode='links', nav_active='scheduled_actions.index', is_admin=True %}{% include "settings/_nav.html" %}{% endwith %}
+  <div class="fw-settings-main">{% endif %}
+
 
 {# The filter is a VIEW preference, saved per surface on the signed-in user's
    profile. It can hide a row but never disarm one: every automation below and
@@ -257,4 +265,6 @@
     </tbody>
   </table>
 </div>
+{% if surface.in_settings %}  </div>
+</div>{% endif %}
 {% endblock %}

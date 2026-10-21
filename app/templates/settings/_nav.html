@@ -25,7 +25,7 @@
    through the translation call.  (An identifier is not copy -- safeguards §68.)
 
    An item with `ep` instead of `t` is a link to a PAGE and is drawn with the
-   leaving arrow.  Integrations is the one entry that uses it: it is a whole
+   leaving arrow.  Integrations was the first entry to use it: it is a whole
    page of its own (/settings/integrations), not a pane of the console, and it
    had NO menu entry at all until the operator asked for one -- a page reachable
    only by typing its URL is a page that does not exist.  Sentinel's
@@ -57,6 +57,16 @@
    "Software Update Repository" and stays under System, away from this group.
    A label is the only place that distinction is visible before a click.
 
+   Software Update, High Availability, System Automations and System Backup &
+   Restore moved here from Administrator > System on 2026-10-21 (FA-0005,
+   operator request). They stay whole pages of their own, so they are `ep`
+   entries with the leaving arrow, and each page draws this menu in `links`
+   mode. System Backup & Restore sits with the backup surfaces; the other
+   three are the node's own machinery and sit under System, Software Update
+   next to the repository it pulls from. System Automations scopes its rows
+   to the ADOM, so its entry (`adom`) carries `_adom` like the Administrator
+   link it replaces: a hard navigation must not drop the ADOM.
+
    "Deploy Clone" joined that group on 2026-10-18 at the operator's request:
    it copies a whole installation's data (database, vault, SoT history) into
    another installation, i.e. the same estate the backup bundles carry.  It is
@@ -86,6 +96,12 @@
   {'key': 'system', 'label': _('System'), 'icon': 'bi-hdd-rack', 'admin': true, 'items': [
     {'t': 'tab-general',     'icon': 'bi-sliders',          'label': _('General')},
     {'t': 'tab-git',         'icon': 'bi-git',              'label': _('Software Update Repository')},
+    {'ep': 'self_update.index', 'icon': 'bi-arrow-repeat', 'label': _('Software Update'),
+     'perm': 'user_manage'},
+    {'ep': 'ha.index',       'icon': 'bi-diagram-3',        'label': _('High Availability'),
+     'perm': 'user_manage'},
+    {'ep': 'scheduled_actions.index', 'icon': 'bi-clock-history', 'label': _('System Automations'),
+     'perm': 'user_manage', 'adom': true},
     {'t': 'tab-ai',          'icon': 'bi-stars',            'label': _('Scout'),
      'perm': 'advisor.configure', 'id': 'ai-settings-tab-btn'},
     {'ep': 'integrations.index', 'icon': 'bi-plug', 'label': _('Integrations'),
@@ -93,6 +109,8 @@
   {'key': 'sot', 'label': _('Source of Truth & Backup'), 'icon': 'bi-hdd-network', 'admin': true, 'items': [
     {'t': 'tab-sot',         'icon': 'bi-file-earmark-diff','label': _('Configuration SoT')},
     {'t': 'tab-backupsrv',   'icon': 'bi-hdd-network',      'label': _('Backup Server')},
+    {'ep': 'system_backup.index', 'icon': 'bi-safe',        'label': _('System Backup & Restore'),
+     'perm': 'user_manage'},
     {'t': 'tab-deployclone', 'icon': 'bi-copy',             'label': _('Deploy Clone')}]},
   {'key': 'access', 'label': _('Access & Identity'), 'icon': 'bi-people', 'admin': true, 'items': [
     {'t': 'tab-users',       'icon': 'bi-people',           'label': _('Users')},
@@ -175,7 +193,7 @@
                and carries the leaving arrow: a menu row that looks identical to
                its neighbours but replaces the whole page is the surprise this
                marker exists to remove. #}
-            <a class="nav-link{{ ' active' if it.ep == nav_active else '' }}" href="{{ url_for(it.ep) }}">
+            <a class="nav-link{{ ' active' if it.ep == nav_active else '' }}" href="{{ url_for(it.ep, _adom=product.key) if it.adom and product else url_for(it.ep) }}">
               <i class="bi {{ it.icon }} fw-set-nav-icon"></i><span>{{ it.label }}</span>
               <i class="bi bi-box-arrow-up-right fw-set-nav-out" aria-hidden="true"></i>
             </a>

@@ -214,6 +214,82 @@
     <p class="text-muted small mb-0">{{ _('Cost tiers:') }} <em>{{ _('box / policies / interfaces') }}</em> {{ _('are one call per device (cheap — safe at 3 min for a whole fleet).') }} <em>{{ _('traffic / transactions') }}</em> {{ _('are one call') }} <strong>{{ _('per policy') }}</strong>{{ _(', so they run less often and only against the top-N policies by live connection rate. The device total is always collected.') }}</p>
     {% endif %}
 
+    {# Beyond the device APIs (services/snmp_collect, services/syslog_receiver):
+       the two collectors that do not read the appliance's own REST/CLI. #}
+    <div class="row g-3 mt-1" id="mc-beyond">
+      <div class="col-lg-5">
+        <div class="border rounded p-2 h-100">
+          <strong><i class="bi bi-broadcast me-1"></i>{{ _('SNMP polling') }}</strong>
+          <span class="text-muted small ms-1">{{ _('v2c, opt-in per appliance (edit the appliance)') }}</span>
+          <table class="table table-sm small mb-1 mt-1">
+            <thead><tr><th>{{ _('Device') }}</th><th>{{ _('SNMP') }}</th><th>{{ _('Last poll') }}</th></tr></thead>
+            <tbody>
+            {% for s in beyond.snmp %}
+              <tr>
+                <td><a href="{{ url_for('appliances.edit', id=s.id) }}" class="font-monospace">{{ s.name }}</a> <span class="text-muted">({{ s.kind }})</span></td>
+                <td>{% if s.enabled and s.has_community %}<span class="fw-badge fw-badge-success">{{ _('on') }}</span> <span class="text-muted">:{{ s.port }}</span>
+                    {% elif s.enabled %}<span class="fw-badge fw-badge-warning">{{ _('no community') }}</span>
+                    {% else %}<span class="fw-badge fw-badge-secondary">{{ _('off') }}</span>{% endif %}</td>
+                <td>{% if s.target and s.target.last_status %}<span class="fw-badge fw-badge-{{ 'success' if s.target.last_status == 'ok' else 'danger' }}">{{ s.target.last_status }}</span>
+                    <span class="text-muted">{{ (s.target.last_run_at or '')|replace('T', ' ') }}</span>
+                    {% if s.target.last_detail %}<div class="text-muted">{{ s.target.last_detail|truncate(70) }}</div>{% endif %}
+                    {% else %}<span class="text-muted">—</span>{% endif %}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="3" class="text-muted">{{ _('No appliance in this ADOM.') }}</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          <div class="text-muted small">{{ _('Series:') }} <code>satom_snmp_sysuptime_seconds</code>, <code>satom_snmp_if_*</code>, <code>satom_snmp_cpu_pct</code>, <code>satom_snmp_mem_pct</code>; {{ _('a failed poll writes') }} <code>satom_scrape_up{collector="snmp"} 0</code>.</div>
+        </div>
+      </div>
+      <div class="col-lg-7">
+        <div class="border rounded p-2 h-100" id="mc-syslog">
+          <strong><i class="bi bi-inbox me-1"></i>{{ _('Syslog receiver') }}</strong>
+          {% set sl = beyond.syslog %}
+          {% if sl.running %}<span class="fw-badge fw-badge-success ms-1">{{ _('listening') }}</span> <code>{{ sl.bind }}</code>
+          {% elif sl.config.enabled %}<span class="fw-badge fw-badge-danger ms-1">{{ _('not running') }}</span> <span class="text-muted small">{{ sl.error or sl.reason or _('the scheduler has not reported yet') }}</span>
+          {% else %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('off') }}</span>{% endif %}
+          <div class="small text-muted mt-1">
+            {{ _('Received:') }} {{ sl.received or 0 }}
+            {% if sl.dropped %}· {{ _('Dropped:') }} {% for reason, n in sl.dropped.items() %}<span class="text-danger">{{ n }} {{ reason }}</span>{{ ', ' if not loop.last }}{% endfor %}{% endif %}
+            {% if sl.known_sources is defined %}· {{ _('Known senders:') }} {{ sl.known_sources }}{% endif %}
+            {% if sl.checked_at %}· {{ _('Journalled:') }} {{ sl.checked_at|replace('T', ' ') }}{% endif %}
+          </div>
+          {% if sl.per_device %}
+          <table class="table table-sm small mb-1 mt-1">
+            <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Messages') }}</th><th>{{ _('Last') }}</th><th>{{ _('Severity') }}</th></tr></thead>
+            <tbody>{% for name, d in sl.per_device.items() %}
+              <tr><td class="font-monospace">{{ name }}</td><td>{{ d.count }}</td><td class="text-muted">{{ (d.last_at or '')|replace('T', ' ') }}</td><td>{{ d.last_severity }}</td></tr>
+            {% endfor %}</tbody>
+          </table>
+          {% endif %}
+          {% if can_write %}
+          <form method="post" action="{{ url_for('metrics_admin.syslog_settings') }}" class="row g-2 align-items-end small mt-1">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="col-auto"><div class="form-check"><input type="checkbox" class="form-check-input" name="enabled" id="sl-enabled" {{ 'checked' if sl.config.enabled }}><label class="form-check-label" for="sl-enabled">{{ _('Enabled') }}</label></div></div>
+            <div class="col-auto"><label class="form-label mb-0">{{ _('Bind address') }}</label><input type="text" class="form-control form-control-sm" name="bind_host" value="{{ sl.config.bind_host }}"></div>
+            <div class="col-auto"><label class="form-label mb-0">{{ _('Port') }}</label><input type="number" class="form-control form-control-sm" name="bind_port" min="1" max="65535" value="{{ sl.config.bind_port }}"></div>
+            <div class="col-auto"><div class="form-check"><input type="checkbox" class="form-check-input" name="tcp" id="sl-tcp" {{ 'checked' if sl.config.tcp }}><label class="form-check-label" for="sl-tcp">TCP</label></div></div>
+            <div class="col-md-4"><label class="form-label mb-0">{{ _('Extra sender networks') }}</label><input type="text" class="form-control form-control-sm" name="extra_sources" value="{{ sl.config.extra_sources }}" placeholder="198.51.100.0/24, 192.0.2.7"></div>
+            <div class="col-auto"><button class="btn btn-sm btn-outline-secondary">{{ _('Save') }}</button></div>
+            <div class="col-12 form-text">{{ _('Senders are the appliances\' management addresses; anything else is dropped and counted. UDP always; port 514 needs a redirect or CAP_NET_BIND_SERVICE on the scheduler unit (default 5514). The listener runs in the scheduler sidecar on the primary.') }}</div>
+          </form>
+          {% endif %}
+          {% if beyond.is_global and sl.recent %}
+          <details class="mt-2"><summary class="small">{{ _('Recent messages') }} ({{ sl.recent|length }}, {{ _('newest last, secrets redacted') }})</summary>
+            <div style="max-height:260px;overflow:auto;">
+            <table class="table table-sm small mb-0 font-monospace">
+              <tbody>{% for m in sl.recent %}
+                <tr><td class="text-muted text-nowrap">{{ m.at|replace('T', ' ') }}</td><td>{{ m.device }}</td><td>{{ m.severity }}</td><td>{{ m.text }}</td></tr>
+              {% endfor %}</tbody>
+            </table></div>
+          </details>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
     {# Absence is not health: a device that yields no targets would otherwise
        appear nowhere on this page and read as covered. #}
     {% if gaps %}

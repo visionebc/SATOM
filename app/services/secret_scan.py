@@ -88,3 +88,32 @@ def scan(text: str | None) -> list[dict]:
 
 def summary(findings: list[dict]) -> str:
     return "; ".join("%s on line %d" % (f["kind"], f["line"]) for f in findings)
+
+
+REDACTED = "***"
+
+
+def redact(text: str | None) -> str:
+    """``text`` with every credential-shaped value replaced by ``***``.
+
+    The same shapes and assignments :func:`scan` reports, applied in place:
+    a whole PEM block or token becomes ``***``; ``password=hunter2x!`` becomes
+    ``password=***``. Used where text from a device is shown on a page (the
+    syslog receiver's recent messages): a login line that quotes a secret must
+    not reach a screen, and the message with the value blanked is still
+    readable evidence.
+    """
+    text = str(text or "")
+    if not text:
+        return text
+    for _kind, rx in SHAPES:
+        text = rx.sub(REDACTED, text)
+
+    def _blank(m):
+        if not _looks_like_value(m.group("value").rstrip(".")):
+            return m.group(0)
+        start, end = m.start("value") - m.start(), m.end("value") - m.start()
+        whole = m.group(0)
+        return whole[:start] + REDACTED + whole[end:]
+
+    return _ASSIGN.sub(_blank, text)

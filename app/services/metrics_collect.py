@@ -124,6 +124,16 @@ COLLECTORS: dict = {
         "products": ("fortiweb",),
         "interval": 60, "params": {"top_n": 10, "hours": 1},
     },
+    # Beyond the device's own API (services/snmp_collect): the standard
+    # management plane. Opt-in per appliance — ``requires`` keeps the target
+    # off every device nobody gave a community string to.
+    "snmp": {
+        "label": "SNMP v2c — uptime, interfaces, CPU / memory (opt-in per appliance)",
+        "products": ("fortiweb", "fortiadc", "fortigate", "fortianalyzer",
+                     "fortiauthenticator"),
+        "interval": 3, "params": {"max_ifaces": 256},
+        "requires": lambda a: bool(getattr(a, "snmp_enabled", False)),
+    },
 }
 
 
@@ -802,7 +812,13 @@ def _collect_faz(appliance, params, ts) -> list:
     return lines
 
 
+def _collect_snmp(appliance, params, ts) -> list:
+    from . import snmp_collect
+    return snmp_collect.collect(appliance, params, ts)
+
+
 _RUNNERS = {
+    "snmp": _collect_snmp,
     "box": _collect_box,
     "capacity": _collect_capacity,
     "policies": _collect_policies,

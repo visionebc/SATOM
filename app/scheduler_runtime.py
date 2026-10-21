@@ -96,6 +96,17 @@ def tick(app) -> None:
                 print("script schedule %s queued" % sid, flush=True)
         except Exception as exc:  # noqa: BLE001 - never stop the loop over this
             print("script schedules: %s" % exc, flush=True)
+        # The syslog receiver lives in THIS process (one listener thread, never
+        # in the gunicorn workers). The tick only starts/stops it to match the
+        # setting and drains its counters into the store; it never waits on
+        # the network. service_tick is total.
+        try:
+            from app.services import syslog_receiver
+            syslog_receiver.service_tick()
+        except Exception as exc:  # noqa: BLE001 - never stop the loop over this
+            print("syslog receiver: %s" % exc, flush=True)
+        finally:
+            db.session.remove()
 
 
 def main() -> None:
@@ -125,6 +136,13 @@ def main() -> None:
             if i % library_jobs.TICK_S == 0:
                 drive_library_jobs(app)
             time.sleep(1)
+    # Close the syslog socket with the process, not after it: a listener left
+    # to the interpreter's exit keeps the port busy for the restart.
+    try:
+        from app.services import syslog_receiver
+        syslog_receiver.shutdown()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def drive_library_jobs(app) -> None:

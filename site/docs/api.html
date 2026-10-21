@@ -68,6 +68,7 @@
       <a href="#6-waf-carve-outs--apiv1waf-fortiweb">6. WAF carve-outs — /api/v1/waf/* (FortiWeb)</a>
       <a href="#7-fortiadc-rules--apiv1adc">7. FortiADC rules — /api/v1/adc/*</a>
       <a href="#8-sharing-the-console-theme--apiv1ui">8. Sharing the console theme — /api/v1/ui/*</a>
+      <a href="#9-satom-node-resources--apiv1system">9. SATOM node resources — /api/v1/system/*</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="api-v1--integration-manual">API v1 — Integration Manual</h1>
@@ -289,6 +290,20 @@ The API never issues an HTML login redirect — you always get JSON.</p>
 <td>read</td>
 <td>—</td>
 <td>One theme as a <code>satom.ui-theme/2</code> document: tokens, logo and favicon; the active theme, or <code>?name=</code> (§8)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/system/nodes</code></td>
+<td>read</td>
+<td><code>monitoring</code>, only on a capability-restricted token</td>
+<td>CPU, memory and disk of every SATOM node now, graded (§9). <strong>Global</strong> token only</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/system/nodes/history</code></td>
+<td>read</td>
+<td><code>monitoring</code>, only on a capability-restricted token</td>
+<td>The same readings over time (§9). <strong>Global</strong> token only</td>
 </tr>
 </tbody>
 </table>
@@ -813,6 +828,86 @@ used for that one request and is not stored there.</p>
   page already shows to anyone, and nothing on this surface writes.</li>
 <li>Rate-limited to 30/min.</li>
 </ul>
+<h2 id="9-satom-node-resources--apiv1system">9. SATOM node resources — <code>/api/v1/system/*</code></h2>
+<p>CPU, memory and disk of the SATOM nodes themselves (not of the appliances):
+the readings behind <strong>Monitoring → SATOM health</strong> and its <strong>Resource history</strong>
+charts, for an outside monitoring system.</p>
+<p><strong>Access.</strong> A <code>read</code> token bound to the <strong>global</strong> ADOM. A token bound to a
+product gets <code>403 wrong_product</code>, because SATOM health is Global-only and the
+API gives no more than a session gets. A token restricted to named
+capabilities also needs <code>monitoring</code> (<code>403 capability_denied</code> otherwise). An
+empty capability list is enough, as for every other <code>GET</code>. Rate-limited to
+60/min. Node addresses are never in the answer.</p>
+<h3 id="get-systemnodes"><code>GET /system/nodes</code></h3>
+<p>Every node as it is now, graded against Settings → Thresholds (<em>SATOM machine</em>):</p>
+<pre><code class="language-json">{&quot;status&quot;: &quot;ok&quot;,
+ &quot;limits&quot;: {&quot;disk_warn_pct&quot;: 80, &quot;disk_crit_pct&quot;: 92, &quot;mem_warn_pct&quot;: 80, ...},
+ &quot;nodes&quot;: [
+  {&quot;name&quot;: &quot;{primary-node}&quot;, &quot;role&quot;: &quot;primary&quot;, &quot;is_local&quot;: true,
+   &quot;reachable&quot;: true, &quot;status&quot;: &quot;ok&quot;, &quot;reasons&quot;: [],
+   &quot;cpus&quot;: 4, &quot;cpu_pct&quot;: 1.7,
+   &quot;mem_total_mb&quot;: 4096, &quot;mem_used_mb&quot;: 1309, &quot;mem_pct&quot;: 32.0,
+   &quot;disks&quot;: [{&quot;mount&quot;: &quot;/&quot;, &quot;total_gb&quot;: 26.2, &quot;used_gb&quot;: 20.4, &quot;pct&quot;: 77.8}],
+   &quot;uptime_s&quot;: 824592},
+  {&quot;name&quot;: &quot;{standby-node}&quot;, &quot;role&quot;: null, &quot;reachable&quot;: false,
+   &quot;status&quot;: &quot;unknown&quot;, &quot;cpu_pct&quot;: null, ...}]}
+</code></pre>
+<p>A node that did not answer is <code>reachable: false</code>, <code>status: "unknown"</code>, and its
+readings are <code>null</code>. Its last known numbers are not repeated.</p>
+<h3 id="get-systemnodeshistory"><code>GET /system/nodes/history</code></h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Values</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>range</code></td>
+<td><code>1h</code>, <code>6h</code>, <code>24h</code>, <code>7d</code>, <code>30d</code>, <code>90d</code></td>
+<td><code>24h</code></td>
+</tr>
+<tr>
+<td><code>node</code></td>
+<td>a node name (<code>{primary-node}</code>)</td>
+<td>every node</td>
+</tr>
+<tr>
+<td><code>metrics</code></td>
+<td>comma-separated: <code>cpu</code>, <code>mem</code>, <code>disk</code> (percent), <code>mem_used_mb</code>, <code>mem_total_mb</code>, <code>disk_used_gb</code>, <code>disk_total_gb</code>, <code>up</code> (1 answered, 0 did not)</td>
+<td><code>cpu,mem,disk</code></td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-json">{&quot;ok&quot;: true, &quot;range&quot;: &quot;24h&quot;, &quot;start&quot;: 1792454700, &quot;end&quot;: 1792541100,
+ &quot;step_s&quot;: 240, &quot;errors&quot;: [],
+ &quot;series&quot;: [
+  {&quot;key&quot;: &quot;cpu&quot;, &quot;metric&quot;: &quot;satom_node_cpu_pct&quot;, &quot;unit&quot;: &quot;%&quot;,
+   &quot;node&quot;: &quot;{primary-node}&quot;, &quot;mount&quot;: null,
+   &quot;points&quot;: [[1792454700, 2.1], [1792454940, 1.8], ...]},
+  {&quot;key&quot;: &quot;disk&quot;, &quot;metric&quot;: &quot;satom_node_disk_pct&quot;, &quot;unit&quot;: &quot;%&quot;,
+   &quot;node&quot;: &quot;{primary-node}&quot;, &quot;mount&quot;: &quot;/&quot;, &quot;points&quot;: [...]}]}
+</code></pre>
+<ul>
+<li><code>points</code> are <code>[unix seconds, value]</code>, one per <code>step_s</code>, at most 400 per
+  series. Each is the <strong>highest</strong> reading in its step, so a peak is not
+  averaged away on long ranges. Steps are never finer than the 3-minute sample
+  cadence.</li>
+<li>A missing point is a gap: no sample in the step plus the six minutes before
+  it (the node did not answer, or the action did not run). It is never filled
+  in.</li>
+<li>Samples are written by the <code>metrics_scrape</code> scheduled action. A node only
+  has history from the release that added these series onward.</li>
+<li>If the metrics store does not answer, the response is <strong><code>502
+  store_unavailable</code></strong>, with the store's message under <code>errors</code>. It is never a
+  <code>200</code> with empty series, which a poller would record as "no load".</li>
+<li>A bad <code>range</code>, <code>node</code> or <code>metrics</code> is <code>400 bad_request</code>.</li>
+</ul>
+<pre><code class="language-bash">curl -s -H &quot;Authorization: Bearer $TOKEN&quot; \
+  &quot;https://{host}.example.net/api/v1/system/nodes/history?range=7d&amp;metrics=disk_used_gb&quot;
+</code></pre>
     </div>
   </div>
 </section>

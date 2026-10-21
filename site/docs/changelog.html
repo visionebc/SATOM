@@ -134,6 +134,26 @@ Access › Groups), <code>wiki05</code> (comments and subscriptions) and <code>w
   Readable without signing in, from every ADOM, and in the container image,
   which now ships both trees. The release pipeline rebuilds the copy at every
   cut (step <code>docs_center</code>). On the Concept Map as <em>Documentation Center</em>.</li>
+<li><strong>Resource history of the SATOM nodes</strong> — as asked: "show SATOM's CPU,
+  disk and RAM over time where the system health is, for the secondary node
+  too, and let the API collect this data".</li>
+<li><strong>Monitoring → SATOM health → Resource history</strong>: CPU, memory and disk
+    charts with both nodes on each, over 1 h, 6 h, 24 h, 7 days, 30 days or
+    90 days, with the warning and critical limits from Settings → Thresholds
+    drawn as dashed lines. Until now these readings were a snapshot on the
+    node tiles and were thrown away after each render.</li>
+<li>Sampled by the existing <code>metrics_scrape</code> action (every 3 minutes) into the
+    local metrics store as <code>satom_node_*</code> series, mirrored to the peer's
+    store, so a promoted standby keeps the history. Its run summary names the
+    node samples, or says why they were not recorded.</li>
+<li>A node that did not answer leaves a gap and writes <code>satom_node_up 0</code>; its
+    last numbers are never carried forward. A store that did not answer is
+    shown as an error, never as empty charts.</li>
+<li><strong>API</strong>: <code>GET /api/v1/system/nodes</code> (every node now, graded) and
+    <code>GET /api/v1/system/nodes/history</code> (<code>range</code>, <code>node</code>, <code>metrics</code>; <code>502
+    store_unavailable</code> when the store does not answer). Read scope, a token
+    bound to the global ADOM, and <code>monitoring</code> on a capability-restricted
+    token. Node addresses are not in the answer. API manual §9.</li>
 <li><strong>Wiki: comments, following, export and Confluence</strong> — the rest of the Wiki
   plan, as asked: "do the Wiki and Confluence".</li>
 <li><strong>Comments</strong> under every published article, in threads (Reply), in
@@ -176,6 +196,14 @@ Access › Groups), <code>wiki05</code> (comments and subscriptions) and <code>w
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li><strong>The SATOM nodes' CPU alert could never fire.</strong> Settings → Thresholds →
+  <em>SATOM machine</em> still held the load-average limits (150 % / 400 % of cores)
+  after the grader moved to the container's own CPU use on 2026-08-11, and
+  that reading never goes above 100 %, so a node pinned at 100 % graded OK.
+  The limits are now <strong>CPU busy — warning / critical, 80 % / 95 %</strong>, validated
+  as percentages; a value above 100 saved under the old meaning is read as
+  the default. Found while drawing those limits on the new Resource history
+  chart.</li>
 <li>The Wiki list's page 2 and later kept only the first ticked ADOM of the
   filter.</li>
 </ul>

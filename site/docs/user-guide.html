@@ -2764,11 +2764,40 @@ page it sits on:</p>
   — a product workspace does not reach it, because those cards carry node
   hostnames and infrastructure addresses.</li>
 </ul>
-<p>The <strong>host machine</strong> row grades disk, memory and load <strong>on both HA nodes</strong>, and
+<p>The <strong>host machine</strong> row grades disk, memory and CPU <strong>on both HA nodes</strong>, and
 it exists because nothing in the product used to measure its own box. Its
-limits live in Settings → Thresholds under the <em>SATOM machine</em> scope. Disk turns
+limits live in Settings → Thresholds under the <em>SATOM machine</em> scope. CPU is
+the share of the node's own cores busy (0–100 %; warning 80, critical 95). The
+hypervisor's load average is shown next to it, labelled as the host's, and is
+not graded. Disk turns
 critical at 92 %, deliberately below 95: a full filesystem stops PostgreSQL
 writing WAL, so the alert has to arrive while there is still room to act on it.</p>
+<p><strong>Resource history</strong>, under the node tiles, keeps those same readings over
+time: one chart each for <strong>CPU</strong>, <strong>Memory</strong> and <strong>Disk</strong>, with every node on
+each chart, over 1 h, 6 h, 24 h, 7 days, 30 days or 90 days. The dashed lines
+are the warning and critical limits from Settings → Thresholds, so a chart
+shows the same line the alert fires on.</p>
+<ul>
+<li>The readings are sampled by the <strong><code>metrics_scrape</code></strong> scheduled action (every
+  3 minutes) and stored in the local metrics store as the <code>satom_node_*</code>
+  series, mirrored to the peer's store like every other series, so a promoted
+  standby keeps the history. If <code>metrics_scrape</code> is paused, the charts stop
+  growing; its run summary says <em>N node sample(s)</em>, or <em>node resources NOT
+  recorded</em> with the reason.</li>
+<li>A node that did not answer leaves a <strong>gap</strong>, never a line carried forward,
+  and writes <code>satom_node_up 0</code>. Each point looks back one interval plus six
+  minutes, because the action fires every 3 to 6 minutes, so a gap means no
+  reading for longer than that, not one late scrape.</li>
+<li>Each point is the highest reading in its interval, so a short peak is not
+  smoothed away on the long ranges. CPU is the share of the container's cores
+  busy since the node's previous reading.</li>
+<li>If the metrics store does not answer, the section says so in red instead of
+  drawing empty charts.</li>
+</ul>
+<p>The same data is available to an outside monitoring system through
+<code>GET /api/v1/system/nodes</code> (now) and <code>GET /api/v1/system/nodes/history</code> (over
+time), with a <code>read</code> token bound to the <strong>global</strong> ADOM — see the API v1
+manual, §9.</p>
 <h3 id="142-metrics--how-much-does-it-hold-and-who-changed-it">14.2 Metrics — <em>how much does it hold, and who changed it?</em></h3>
 <p><code>Monitoring → Metrics</code>. Inventory counts and activity for the <strong>active
 workspace</strong>, over a date range. <strong>Nothing here touches an appliance</strong> — it reads
@@ -9447,7 +9476,7 @@ discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
    the console is either <strong>on the map</strong> (126 today) or <strong>excluded with a written
-   reason</strong> (171 today — JSON feeds, downloads, redirects and fragments that
+   reason</strong> (172 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>
 <li><strong>Nothing here is a second source of truth.</strong> Paths are generated from the

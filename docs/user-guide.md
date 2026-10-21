@@ -2782,7 +2782,11 @@ they are what a customer's monitoring already speaks:
   arrived since the previous pass, 0 for silence, for every known appliance),
   `satom_syslog_dropped_total{reason}`, `satom_syslog_receiver_up`. Log
   *bodies* at scale stay with the FortiAnalyzer; flows (NetFlow/sFlow) and
-  packet capture are out of scope and stated as such.
+  packet capture are out of scope and stated as such. On a FortiWeb, point
+  `config log syslog-policy` (a server row with this node's address, the port
+  and `proto udp`) at the node and enable `config log syslogd` with that
+  policy — measured on 7.6.8: a server row changed while `syslogd` is already
+  enabled is not picked up until `syslogd` is disabled and enabled again.
 
 Each row is editable in place: **interval** (1–1440 minutes), **enabled**, and
 **top-N** (1–200) on the two collectors that have one. The expensive collectors

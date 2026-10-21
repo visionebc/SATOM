@@ -89,7 +89,7 @@ STATE_FILE = STATE_DIR / "syslog-receiver.json"
 _PRI = re.compile(r"^<(\d{1,3})>")
 _RFC5424 = re.compile(r"^(\d) (\S+) (\S+) (\S+) (\S+) (\S+) (.*)$", re.S)
 _RFC3164 = re.compile(r"^([A-Z][a-z]{2}) {1,2}(\d{1,2}) (\d\d:\d\d:\d\d) (\S+) ?(.*)$", re.S)
-_DEVNAME = re.compile(r'\bdevname="?([^"\s]+)"?')
+_DEVNAME = re.compile(r'\b(?:devname|device_id|devid)="?([^"\s]+)"?')   # FGT: devname, FWB: device_id
 _TAG = re.compile(r"^([A-Za-z0-9_./-]+)(?:\[\d+\])?:\s?(.*)$", re.S)
 _OCTET_COUNT = re.compile(rb"^(\d{1,5}) ")
 

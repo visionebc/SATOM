@@ -341,6 +341,13 @@ the Global ADOM, or the Global dashboard). The entry is shown to anyone holding
    sessions also log in as the SSH user. If you change the
    SSH user while a separate SSH password is stored, enter that password again
    in the same save (or remove it), as for a username change.
+
+   **SNMP polling (opt-in).** The Edit page also carries the `snmp`
+   collector's switch, port (161) and **community string** — stored like the
+   passwords, never shown again, removable with its checkbox. Enabling it
+   needs a community string; it provisions the `snmp` scrape target at once,
+   and switching it off disables that target. What is polled and what the
+   appliance must allow is in §14.7.
 2. **Test connection** — validates REST reachability and credentials.
 3. **Discovery / Rediscovery** — sweeps every registry endpoint and stores the
    device's full configuration in the local cache (recorded as a harvest with
@@ -2734,6 +2741,48 @@ many policies the fleet grows.
 | `faz` — log volume, storage, alerts, incidents, devices, task queue | FortiAnalyzer | 15 min |
 | `http_status` — HTTP response classes counted from the traffic log | FortiWeb | 5 min |
 | `infra` — the VM and its hypervisor host (CPU, memory, disk, network, load) | FortiWeb, FortiADC — **only when mapped** | 3 min |
+| `snmp` — uptime, interfaces (state, byte counters), CPU / memory / disk over SNMP v2c | every product — **opt-in per appliance** | 3 min |
+
+#### Beyond the device APIs: SNMP polling and the syslog receiver
+
+Every collector above reads the appliance's own REST or CLI. Two do not, and
+they are what a customer's monitoring already speaks:
+
+- **`snmp`** polls the appliance over **SNMP v2c** — `sysUpTime`, the
+  interface table (operational state and the 64-bit byte counters, 32-bit on a
+  build without `ifXTable`) and CPU / memory / disk from the vendor MIB
+  (FortiWeb verified on 7.6.8; the other products' OIDs are the documented ones
+  and fall back to HOST-RESOURCES when the agent lacks them). It is **opt-in
+  per appliance**: open the appliance's edit form, switch on *Poll this
+  appliance over SNMP v2c*, set the port (161) and the **community string**,
+  which is stored like the passwords (encrypted, mirrored to the vault when one
+  is configured) and never shown again. On the appliance, allow SNMP on the
+  management interface and list this node — and its HA peer — as a query host.
+  Switching it off disables the target instead of leaving a row that goes red.
+  Series: `satom_snmp_sysuptime_seconds`, `satom_snmp_if_oper_up`,
+  `satom_snmp_if_in_octets_total` / `_out_octets_total` (labels `iface`,
+  `ifindex`), `satom_snmp_cpu_pct`, `satom_snmp_mem_pct`, `satom_snmp_disk_pct`;
+  a failed poll writes `satom_scrape_up{collector="snmp"} 0`. **SNMPv3 is not
+  supported** (no User Security Model yet; it arrives when a customer needs
+  it), and SATOM sends no traps and receives none.
+- The **syslog receiver** takes the appliances' own event stream directly —
+  UDP and TCP, RFC 3164 and RFC 5424 framing, the Fortinet `key=value` body
+  with or without a header. It is **off by default**; the card on this page
+  switches it on, sets the bind address and port (default **5514**: port 514
+  needs a port redirect or `CAP_NET_BIND_SERVICE` on `satom-scheduler.service`,
+  which is a signed-release change, not a setting) and lists extra sender
+  networks. Only **known senders** are kept — the appliances' management
+  addresses, plus the extra networks under their own address; anything else is
+  dropped **and counted** (`satom_syslog_dropped_total{reason}`). The listener
+  runs inside the scheduler sidecar on the primary (never on a standby, never
+  in the web workers); the page shows what the sidecar last journalled: state,
+  counts per device, drops, and — in Global only — the last 500 messages with
+  credential-shaped values blanked. Series: `satom_syslog_messages_total`
+  (device, facility, severity), `satom_syslog_up{device}` (1 when a message
+  arrived since the previous pass, 0 for silence, for every known appliance),
+  `satom_syslog_dropped_total{reason}`, `satom_syslog_receiver_up`. Log
+  *bodies* at scale stay with the FortiAnalyzer; flows (NetFlow/sFlow) and
+  packet capture are out of scope and stated as such.
 
 Each row is editable in place: **interval** (1–1440 minutes), **enabled**, and
 **top-N** (1–200) on the two collectors that have one. The expensive collectors

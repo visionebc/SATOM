@@ -38,6 +38,38 @@ def _visible_targets():
     return [t for t in rows if t.appliance_id in visible]
 
 
+def _global_adom() -> bool:
+    from ..services.product_scope import GLOBAL, session_product
+    return (session_product() or GLOBAL) == GLOBAL
+
+
+def _beyond_apis() -> dict:
+    """The two collectors that do not use the appliance's own API: SNMP (per
+    appliance, opt-in) and the syslog receiver (one per node). The recent
+    messages are Global-only: a product ADOM sees its own devices' counts,
+    never another product's log lines."""
+    from ..services import snmp_collect, syslog_receiver
+    from ..models_metrics import ScrapeTarget
+    visible = visible_appliances().all()
+    targets = {t.appliance_id: t for t in ScrapeTarget.query.filter_by(
+        collector=snmp_collect.COLLECTOR).all()}
+    snmp = []
+    for a in sorted(visible, key=lambda x: x.name):
+        t = targets.get(a.id)
+        snmp.append({"id": a.id, "name": a.name, "kind": a.kind,
+                     "enabled": bool(getattr(a, "snmp_enabled", False)),
+                     "has_community": bool(getattr(a, "has_snmp_community", False)),
+                     "port": getattr(a, "snmp_port", None) or snmp_collect.DEFAULT_PORT,
+                     "target": t.to_dict() if t else None})
+    st = syslog_receiver.status()
+    is_global = _global_adom()
+    names = {a.name for a in visible}
+    per_device = {k: v for k, v in (st.get("per_device") or {}).items() if k in names or is_global}
+    st["per_device"] = per_device
+    st["recent"] = (st.get("recent") or []) if is_global else []
+    return {"snmp": snmp, "syslog": st, "is_global": is_global}
+
+
 @bp.route("/")
 @login_required
 @require_permission(Permission.VIEW)
@@ -57,7 +89,32 @@ def index():
         # peer dual-write line). The cross-node picture is /stores, fetched
         # after the page by the store card.
         peer=mc.peer_health(),
+        beyond=_beyond_apis(),
     )
+
+
+@bp.route("/syslog", methods=["POST"])
+@login_required
+@require_permission("config_write")
+def syslog_settings():
+    """The syslog receiver's settings (enabled, bind, TCP, extra sources). The
+    scheduler sidecar applies them on its next tick (≤ 45 s); the page shows
+    what the sidecar last journalled, not what this request hoped for."""
+    from ..services import audit, syslog_receiver
+    try:
+        cfg = syslog_receiver.save_config(request.form)
+    except ValueError as exc:
+        flash("Syslog receiver: %s" % exc, "danger")
+        return redirect(url_for("metrics_admin.index"))
+    audit.log_action("syslog_receiver_settings", "node",
+                     {"enabled": cfg["enabled"], "bind": "%s:%d" % (cfg["bind_host"], cfg["bind_port"]),
+                      "tcp": cfg["tcp"], "extra_sources": cfg["extra_sources"]})
+    flash("Syslog receiver %s on %s:%d — the scheduler applies it within a tick."
+          % ("enabled" if cfg["enabled"] else "disabled", cfg["bind_host"], cfg["bind_port"])
+          + (" Port %d needs a redirect or CAP_NET_BIND_SERVICE on the scheduler unit."
+             % cfg["bind_port"] if cfg["privileged_port"] else ""),
+          "success" if not cfg["privileged_port"] else "warning")
+    return redirect(url_for("metrics_admin.index"))
 
 
 @bp.route("/data")
@@ -72,7 +129,8 @@ def data():
     return jsonify({"targets": [t.to_dict() for t in targets],
                     "gaps": mc.coverage_gaps(visible_appliances().all()),
                     "vm": vm_store.health(),
-                    "peer": mc.peer_health()})
+                    "peer": mc.peer_health(),
+                    "beyond": _beyond_apis()})
 
 
 @bp.route("/target/<int:tid>", methods=["POST"])

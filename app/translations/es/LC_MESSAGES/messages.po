@@ -26273,3 +26273,84 @@ msgstr "Todavía no hay muestras en este rango. La acción metrics scrape regist
 
 msgid "The metrics store did not answer:"
 msgstr "El almacén de métricas no respondió:"
+
+msgid "a failed poll writes"
+msgstr "una consulta fallida escribe"
+
+msgid "Bind address"
+msgstr "Dirección de escucha"
+
+msgid "Community string"
+msgstr "Cadena de comunidad"
+
+msgid "Dropped:"
+msgstr "Descartados:"
+
+msgid "Extra sender networks"
+msgstr "Redes emisoras adicionales"
+
+msgid "Journalled:"
+msgstr "Registrado:"
+
+msgid "Known senders:"
+msgstr "Emisores conocidos:"
+
+msgid "Last"
+msgstr "Último"
+
+msgid "Last poll"
+msgstr "Última consulta"
+
+msgid "listening"
+msgstr "escuchando"
+
+msgid "Messages"
+msgstr "Mensajes"
+
+msgid "newest last, secrets redacted"
+msgstr "el más reciente al final, secretos ocultos"
+
+msgid "No appliance in this ADOM."
+msgstr "No hay equipos en este ADOM."
+
+msgid "no community"
+msgstr "sin comunidad"
+
+msgid "not running"
+msgstr "no está en marcha"
+
+msgid "Opt-in: nothing is polled until the switch is on and a community string is stored. On the appliance, allow SNMP on the management interface and list this node (and its HA peer) as a query host. SNMPv3 is not supported yet."
+msgstr "Opcional: no se consulta nada hasta activar el interruptor y guardar una cadena de comunidad. En el equipo, permita SNMP en la interfaz de gestión e incluya este nodo (y su par HA) como host de consulta. SNMPv3 aún no está soportado."
+
+msgid "Poll this appliance over SNMP v2c — uptime, interfaces, CPU / memory (Monitoring › Collection, collector"
+msgstr "Consultar este equipo por SNMP v2c — uptime, interfaces, CPU / memoria (Monitorización › Recolección, colector"
+
+msgid "Received:"
+msgstr "Recibidos:"
+
+msgid "Recent messages"
+msgstr "Mensajes recientes"
+
+msgid "Remove the community string"
+msgstr "Eliminar la cadena de comunidad"
+
+msgid "SNMP"
+msgstr "SNMP"
+
+msgid "SNMP polling"
+msgstr "Consulta SNMP"
+
+msgid "SNMP port"
+msgstr "Puerto SNMP"
+
+msgid "Syslog receiver"
+msgstr "Receptor syslog"
+
+msgid "the scheduler has not reported yet"
+msgstr "el planificador aún no ha informado"
+
+msgid "v2c, opt-in per appliance (edit the appliance)"
+msgstr "v2c, opcional por equipo (edite el equipo)"
+
+msgid "Senders are the appliances' management addresses; anything else is dropped and counted. UDP always; port 514 needs a redirect or CAP_NET_BIND_SERVICE on the scheduler unit (default 5514). The listener runs in the scheduler sidecar on the primary."
+msgstr "Los emisores son las direcciones de gestión de los equipos; todo lo demás se descarta y se cuenta. UDP siempre; el puerto 514 necesita una redirección o CAP_NET_BIND_SERVICE en la unidad del planificador (por defecto 5514). El receptor corre en el sidecar del planificador del primario."

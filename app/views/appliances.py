@@ -445,6 +445,31 @@ def edit_save(id):
         appliance.set_ssh_password(ssh_password)
     elif ssh_clear:
         appliance.set_ssh_password(None)
+    # SNMP polling (services/snmp_collect): only a form that renders the block
+    # may change it — the quick-edit dialog posts none, and an absent block is
+    # not "switched off". The community follows the SSH password's rules:
+    # blank keeps, the checkbox removes.
+    snmp_posted = request.form.get('snmp_present') == '1'
+    if snmp_posted:
+        appliance.snmp_enabled = request.form.get('snmp_enabled') == 'on'
+        port_raw = (request.form.get('snmp_port') or '').strip()
+        if port_raw.isdigit() and 1 <= int(port_raw) <= 65535:
+            appliance.snmp_port = int(port_raw)
+        elif not port_raw:
+            appliance.snmp_port = None
+        else:
+            db.session.rollback()
+            flash('SNMP port must be a number between 1 and 65535.', 'danger')
+            return redirect(url_for('appliances.edit', id=appliance.id))
+        snmp_community = request.form.get('snmp_community', '')
+        if snmp_community:
+            appliance.set_snmp_community(snmp_community)
+        elif request.form.get('snmp_community_clear') == 'on':
+            appliance.set_snmp_community(None)
+        if appliance.snmp_enabled and not appliance.has_snmp_community:
+            db.session.rollback()
+            flash('SNMP polling needs a community string.', 'danger')
+            return redirect(url_for('appliances.edit', id=appliance.id))
 
     # -- datasheet PDF: remove, replace, or keep --------------------------
     if request.form.get('datasheet_remove') == 'on':
@@ -470,6 +495,14 @@ def edit_save(id):
     # An edit can make a device collectable that was not: maintenance cleared,
     # product changed, host filled in. Existing targets are never touched.
     _provision_monitoring(appliance)
+    if snmp_posted:
+        # The one exception to "existing targets are never touched": the snmp
+        # target follows the appliance's own switch (off = disabled, not red).
+        try:
+            from ..services import snmp_collect
+            snmp_collect.sync_target(appliance)
+        except Exception as exc:  # noqa: BLE001 - never lose the saved row
+            current_app.logger.warning('snmp target sync for %s: %s', appliance.name, exc)
     flash(f'Appliance {appliance.name} updated.', 'success')
     return redirect(url_for('appliances.detail', id=appliance.id))
 

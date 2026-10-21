@@ -7,11 +7,33 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 The upgrade runs migrations `wiki04` (Wiki groups merged into Administrator ›
-Access › Groups), `wiki05` (comments and subscriptions) and `wiki06`
-(Confluence spaces and pages).
+Access › Groups), `wiki05` (comments and subscriptions), `wiki06`
+(Confluence spaces and pages) and `coll01` (SNMP polling fields on
+appliances).
 
 ### Added
 
+- **Collection beyond the device APIs: SNMP polling and a syslog receiver**
+  — phase 6 of the NAF Framework alignment ("do every phase of the NAF
+  alignment plan, test each one, then release, document and publish
+  everything"). Until now every collector read the appliance's own REST or
+  CLI, and the one log path was a FortiAnalyzer. A new `snmp` collector
+  polls an appliance over SNMP v2c — `sysUpTime`, the interface table with
+  its 64-bit byte counters, CPU / memory / disk from the vendor MIB (FortiWeb
+  verified on 7.6.8; the other products' OIDs are the documented ones with
+  HOST-RESOURCES as fallback) — on a client written on the standard library,
+  so the offline bundles carry no new wheel. It is opt-in per appliance: the
+  edit form gains a switch, the port and the community string, stored like
+  the passwords and never shown again; switching it off disables the target
+  rather than leaving a red row. A syslog receiver (UDP and TCP, RFC 3164 /
+  RFC 5424 / the Fortinet `key=value` body) runs inside the scheduler sidecar
+  on the primary, off by default, bound to 5514 unless told otherwise, and
+  keeps only what known senders say: anything else is dropped and counted.
+  Monitoring → Collection shows both — SNMP per appliance, the receiver's
+  state, counts per device, drops, its settings, and (Global only) the last
+  500 messages with credential-shaped values blanked. SNMPv3, traps, flows
+  and packet capture are out of scope and the manual says so. The upgrade
+  runs migration `coll01` (three columns on `appliances`).
 - **The manual on every node, Documentation Center included** — asked as
   "put the Documentation Center there too", for the sign-in page's
   *Documentation* link. That link pointed only at the public site, which a

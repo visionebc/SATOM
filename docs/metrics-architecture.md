@@ -60,6 +60,7 @@ turns one device call into many series. Series identity lives in *labels*
 | `faz` | FortiAnalyzer | 1 per device | 15 min | log volume, storage, alerts, incidents, devices, tasks |
 | `traffic` | FortiWeb | 1 per policy | 15 min | throughput, device total + top-N policies |
 | `transactions` | FortiWeb | 1 per policy | 60 min | HTTP transaction counts, top-N policies |
+| `snmp` | every product — **opt-in per appliance** | 1 GET + 1 bounded walk | 3 min | uptime, interface state and byte counters, CPU / memory / disk over SNMP v2c (§2c) |
 
 The **products** column is not decoration. A collector declares which appliance
 kinds it applies to, and the sweep skips a target whose kind is not in that
@@ -94,6 +95,55 @@ you at all are in
 * **`ok` on the scheduled action means THE SWEEP RAN.** Device failures live on
   the target rows. An action that goes permanently red over a dead appliance is
   an action the operator learns to skip.
+
+### 2c. Beyond the device APIs: SNMP and syslog
+
+Everything in §2 reads the appliance's own REST or CLI. The NAF Framework's
+Collector block asks for more than that ("SNMP, syslog, flows, pcap"), and the
+honest reason it was missing is that in a Fortinet-only estate log bodies
+arrive through a FortiAnalyzer. Two collectors now read the standard
+management plane as well; flows and packet capture stay out of scope, stated.
+
+**`snmp` — `services/snmp_collect.py` on `services/snmp_client.py`.** A
+v2c client on the standard library alone (GET / GETNEXT / GETBULK and a
+bounded walk; BER subset of RFC 3416/3417), because the venv carries no SNMP
+library and the offline bundles ship exactly the pinned wheels. **SNMPv3 is
+not implemented** (USM: authentication, privacy, engine discovery — RFC 3414)
+and the user guide says so. Per poll: `sysUpTime`, the interface table
+(`ifDescr`, `ifOperStatus`, `ifHCInOctets`/`ifHCOutOctets` with the 32-bit
+counters as fallback) and CPU / memory / disk from the vendor MIB —
+`VENDOR_OIDS` marks each product *verified* or not: FortiWeb's
+`fwSysCpuUsage` (.107.2.1.5), `fwSysMemUsage` (.7) and `fwSysLogDiskUsage`
+(.9) were measured on fortiweb17 7.6.8 against REST `system_resource`
+(5 / 79 / 3 vs 5 / 80 / 3); the FortiGate, FortiADC, FortiAnalyzer and
+FortiAuthenticator OIDs are the documented ones and fall back to
+HOST-RESOURCES when the agent lacks them. Rules it keeps: **opt-in per
+appliance** (`Appliance.snmp_enabled` + a community string stored like the
+passwords — Fernet column, vault mirror, kept across a password rotation);
+the `requires` hook on the collector keeps the target off every device
+nobody configured, and the appliance form's switch disables the target
+instead of leaving a red row; a failed poll is `satom_scrape_up{collector="snmp"} 0`
+through the shared runner; a reading the agent lacks is skipped, never 0;
+**the community string is in no label, detail, log line, exception or page**.
+
+**syslog — `services/syslog_receiver.py`.** UDP + TCP on one `selectors`
+thread **inside the scheduler sidecar** (`scheduler_runtime.tick` starts,
+stops and drains it; the gunicorn workers never own the socket and read the
+sidecar's journal `state/syslog-receiver.json`). RFC 3164, RFC 5424 and the
+Fortinet `key=value` body (`devname=` names the sender); TCP octet counting
+and newline framing. **Off by default** (`collector.syslog.enabled`), bind
+`0.0.0.0:5514` — 514 needs a redirect or `CAP_NET_BIND_SERVICE` on the unit,
+which lives under `deploy/` and is therefore a signed-release change —
+**never on a standby**, and **only known senders**: the appliances'
+management addresses (hostnames resolved, refreshed every 5 min) plus the
+operator's extra networks; a stranger is dropped and counted
+(`satom_syslog_dropped_total{reason="unknown_source"|"unparseable"|"oversize"}`).
+Each pass writes `satom_syslog_messages_total{device,kind,facility,severity}`,
+`satom_syslog_up{device}` (1 = a message since the previous pass, 0 =
+silence, **for every known appliance** — absence is not health here either)
+and `satom_syslog_receiver_up`, locally and to the peer like every series.
+The last 500 messages are kept in memory, every line through
+`secret_scan.redact` first, and shown to Global only.
 
 ### 2b. How this overlaps Deep monitors and Service Monitor
 

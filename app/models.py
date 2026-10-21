@@ -301,6 +301,12 @@ class Appliance(db.Model):
     # REST api-user (fgt02's ``lab-satom-rw``, 2026-10-14) cannot open SSH with
     # it at all. NULL = SSH logs in as ``username``.
     ssh_username = db.Column(db.String(64), nullable=True)
+    # SNMP v2c polling (services/snmp_collect): opt-in per appliance. The
+    # community string is a credential and is kept like the passwords above —
+    # Fernet column, mirrored to the vault when one is configured.
+    snmp_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    snmp_port = db.Column(db.Integer, nullable=True)                 # default 161
+    snmp_community_enc = db.Column(db.Text, nullable=True)           # Fernet-encrypted
     # --- Maintenance mode (visibility gate) -----------------------------
     # True => the appliance is HIDDEN from anyone lacking the
     # 'appliances.view_maintenance' permission (operators / read-only).
@@ -511,6 +517,57 @@ class Appliance(db.Model):
         value = (secret_backend.VAULT_SENTINEL
                  if stored and secret_backend.authoritative() else plaintext)
         self.ssh_password_enc = _fernet().encrypt(value.encode()).decode()
+
+    # -- SNMP community (services/snmp_collect) ----------------------------
+    @property
+    def has_snmp_community(self) -> bool:
+        return bool(self.snmp_community_enc)
+
+    @property
+    def snmp_community(self) -> str:
+        """The v2c community string; same vault/local contract as ``password``."""
+        from .services import secret_backend
+        vaulted = secret_backend.get_field(
+            secret_backend.appliance_path(self.name), "snmp_community")
+        if vaulted:
+            return vaulted
+        if not self.snmp_community_enc:
+            return ""
+        local = _fernet().decrypt(self.snmp_community_enc.encode()).decode()
+        if local == secret_backend.VAULT_SENTINEL:
+            raise RuntimeError(
+                "the vault owns the SNMP community for %r and this process could "
+                "not read it (vault mode is not active here)" % (self.name or "?"))
+        return local
+
+    def set_snmp_community(self, plaintext: str | None) -> None:
+        """Set the community; empty/None removes it. Vault semantics mirror
+        the password setters: the vault copy is authoritative when it is the
+        only store, and a failed mirror keeps the local copy otherwise."""
+        from .services import secret_backend
+        path = secret_backend.appliance_path(self.name)
+        if not plaintext:
+            if self.snmp_community_enc and secret_backend.active():
+                try:
+                    secret_backend.put_field(path, "snmp_community", "")
+                except Exception:  # noqa: BLE001 - removal must not need the vault
+                    pass
+            self.snmp_community_enc = None
+            return
+        stored = False
+        try:
+            if (self.name or "").strip():
+                stored = secret_backend.put_field(path, "snmp_community", plaintext)
+        except Exception:
+            if secret_backend.authoritative():
+                raise
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "vault: could not mirror the SNMP community for %r, keeping the "
+                "local copy", self.name, exc_info=True)
+        value = (secret_backend.VAULT_SENTINEL
+                 if stored and secret_backend.authoritative() else plaintext)
+        self.snmp_community_enc = _fernet().encrypt(value.encode()).decode()
 
     def _own_client(self, timeout: float = 30.0):
         """The vendor client for THIS row's own host/creds (no HA resolution)."""

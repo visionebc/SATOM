@@ -562,10 +562,15 @@ def put_appliance_password(appliance, plaintext: str) -> bool:
     # silently drop the separate SSH login stored beside it. A failed read
     # raises rather than writing a record that would lose it.
     with _writing(appliance_path(appliance.name)):
-        if getattr(appliance, "ssh_password_enc", None):
-            kept = (read(appliance_path(appliance.name)) or {}).get("ssh_password")
-            if kept:
-                record["ssh_password"] = kept
+        # ...and the same for the SNMP community (services/snmp_collect).
+        kept_fields = [f for f, col in (("ssh_password", "ssh_password_enc"),
+                                        ("snmp_community", "snmp_community_enc"))
+                       if getattr(appliance, col, None)]
+        if kept_fields:
+            before = read(appliance_path(appliance.name)) or {}
+            for f in kept_fields:
+                if before.get(f):
+                    record[f] = before[f]
         write(appliance_path(appliance.name), record)
     return True
 

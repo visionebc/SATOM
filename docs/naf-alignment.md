@@ -137,7 +137,7 @@ baselines (Observability). The user guide says which one it means each time.
 | Presentation | MUST | Robust and flexible authentication and authorization | met | Local accounts with TOTP, LDAP and RADIUS (`app/services/directory_auth.py`), RBAC with ADOM scoping (`app/services/access.py`), owner-capped API tokens (`app/models_api_token.py`) |
 | Presentation | MAY | Many forms: GUI, ITSM, messaging, documentation, dashboards | met | The console, NetBox and ticket integrations (`app/services/change_requests.py`), hooks, the Documentation Center (`app/views/manual.py`) |
 | Cross-cutting | SHOULD | Version control and CI/CD for every component | met | Signed releases (`docs/release-pipeline.md`), the audit runner, the reconciler |
-| Cross-cutting | SHOULD | Machine-friendly APIs documented via schema | met | `app/api_v1/openapi.py` builds an OpenAPI 3.0 document from the live routes at `GET /api/v1/openapi.json`; `tests/test_api_v1_openapi.py` fails on any undocumented route; `docs/api_v1.md` remains the prose manual |
+| Cross-cutting | SHOULD | Machine-friendly APIs documented via schema | met | `app/api_v1/openapi.py` builds an OpenAPI 3.0 document from the live routes, served as openapi.json under the API root; `tests/test_api_v1_openapi.py` fails on any undocumented route; `docs/api_v1.md` remains the prose manual |
 <!-- naf-matrix:end -->
 
 Infrastructure has no rows: the framework places no requirement on the

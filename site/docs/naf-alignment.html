@@ -435,7 +435,7 @@ baselines (Observability). The user guide says which one it means each time.</p>
 <td>SHOULD</td>
 <td>Machine-friendly APIs documented via schema</td>
 <td>met</td>
-<td><code>app/api_v1/openapi.py</code> builds an OpenAPI 3.0 document from the live routes at <code>GET /api/v1/openapi.json</code>; <code>tests/test_api_v1_openapi.py</code> fails on any undocumented route; <code>docs/api_v1.md</code> remains the prose manual</td>
+<td><code>app/api_v1/openapi.py</code> builds an OpenAPI 3.0 document from the live routes, served as openapi.json under the API root; <code>tests/test_api_v1_openapi.py</code> fails on any undocumented route; <code>docs/api_v1.md</code> remains the prose manual</td>
 </tr>
 </tbody>
 </table>

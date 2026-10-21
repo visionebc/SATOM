@@ -10031,8 +10031,10 @@ installation, or the public site being down.
 
 - **Documentation**, under the sign-in form, opens the Documentation Center;
   **API documentation**, and the AI Advisor's **How this works**, open their
-  reference pages. All of them point at this node. The public site is used
-  only for a page this installation does not carry.
+  reference pages. Once signed in, **Documentation** in the user menu (the
+  username at the top right, under Profile and Language) opens the same
+  Documentation Center in a new tab. All of them point at this node. The
+  public site is used only for a page this installation does not carry.
 - **No sign-in needed**, and reachable from every ADOM: it is the same
   documentation that is published on the public site.
 - **What is served** is the published, redacted output of the documentation

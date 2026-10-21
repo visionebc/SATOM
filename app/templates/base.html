@@ -279,6 +279,13 @@
             <span class="text-muted ms-1">{{ user_lang|upper if user_lang else 'not set' }}</span>
           </a>
         </li>
+        {# This node's Documentation Center (/manual/), public site only if the
+           node has no copy — same resolver as the login page's link. #}
+        <li>
+          <a class="dropdown-item" href="{{ docs_url() }}" target="_blank" rel="noopener noreferrer">
+            <i class="bi bi-book me-2"></i>{{ _('Documentation') }}
+          </a>
+        </li>
         {# Report a problem / Release Notes / Bug Reports live in the Tools
            menu (bi-tools) since 2026-09-14 — do not re-add them here. #}
         <li><hr class="dropdown-divider"></li>

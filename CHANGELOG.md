@@ -19,8 +19,9 @@ Access › Groups), `wiki05` (comments and subscriptions) and `wiki06`
   site's host down. Every node now serves the published pages from its own
   tree at `/manual/`: the Documentation Center (its public build, vendored in
   `docs-center/`) and the generated reference pages of `site/`. *Documentation*
-  opens the Documentation Center; *API documentation* and the AI Advisor's
-  *How this works* open their reference pages — all on the node, with the
+  opens the Documentation Center, and so does *Documentation* in the user menu
+  once signed in (the user asked for it next to Profile); *API documentation*
+  and the AI Advisor's *How this works* open their reference pages — all on the node, with the
   public site used only for a page the tree does not carry. What is served is
   the generators' redacted output, never the Markdown (the routes that
   rendered `docs/*.md` stay gone), and nothing outside those two trees or of

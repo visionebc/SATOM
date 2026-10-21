@@ -395,7 +395,7 @@ def create_app(config_override: object | None = None) -> Flask:
             'product.placeholder_home',
             # The published manual: the same static pages for every ADOM and
             # for anonymous visitors, so there is nothing to scope.
-            'manual.page',
+            'manual.home', 'manual.page',
         }
         if ep in always or bp_name in CHROME_BPS or ep.startswith('auth.') or _gx_kind:
             return None

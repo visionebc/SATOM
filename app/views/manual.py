@@ -111,7 +111,20 @@ def csp_for(page: Path) -> str:
     return csp
 
 
-@bp.route("/", defaults={"path": "docs-center/"})
+@bp.route("/")
+def home():
+    """The Documentation Center home, by redirect.
+
+    Not the page itself, and not ``page()`` with a default path: the pages link
+    relatively, so they must be served from /manual/docs-center/. A default on
+    the same endpoint makes the router canonicalise /manual/docs-center/ BACK to
+    /manual/ (a 308), where every relative link resolves one level too high --
+    and the redirect happens before any view runs, so even the product gate
+    sees no endpoint.
+    """
+    return redirect(url_for("manual.page", path="docs-center/"))
+
+
 @bp.route("/<path:path>")
 def page(path: str):
     if path == "docs-center":

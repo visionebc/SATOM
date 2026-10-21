@@ -101,7 +101,7 @@ baselines (Observability). The user guide says which one it means each time.
   conformance with the framework while any MUST row is not `met`; when every
   MUST row is `met`, the status line changes and the word becomes available.
 
-## 6. Conformance matrix — state at v3.4.0 (unreleased HEAD)
+## 6. Conformance matrix — state at v3.4.0
 
 <!-- naf-matrix:begin -->
 | Block | Level | Requirement | Status | Evidence |

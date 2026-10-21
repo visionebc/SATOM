@@ -3127,7 +3127,12 @@ they are what a customer's monitoring already speaks:</p>
   <code>config log syslog-policy</code> (a server row with this node's address, the port
   and <code>proto udp</code>) at the node and enable <code>config log syslogd</code> with that
   policy — measured on 7.6.8: a server row changed while <code>syslogd</code> is already
-  enabled is not picked up until <code>syslogd</code> is disabled and enabled again.</li>
+  enabled is not picked up until <code>syslogd</code> is disabled and enabled again.
+  <strong>Switching the receiver on does not open the node's own packet filter:</strong>
+  allow UDP — and TCP, if you enable it — on the chosen port from the
+  appliances' management networks on every node, the primary and the standby
+  that may take over. A filtered port looks like silence: <code>satom_syslog_up 0</code>
+  for every appliance while <code>satom_syslog_receiver_up</code> stays 1.</li>
 </ul>
 <p>Each row is editable in place: <strong>interval</strong> (1–1440 minutes), <strong>enabled</strong>, and
 <strong>top-N</strong> (1–200) on the two collectors that have one. The expensive collectors

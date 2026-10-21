@@ -6,11 +6,27 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-10-21
+
+SATOM is mapped to the Network Automation Forum's framework in this release
+— every MUST requirement met, self-assessed against the pinned upstream
+commit `da82b12`; the matrix with every row and its evidence is
+[docs/naf-alignment.md](docs/naf-alignment.md). The upgrade path is unchanged
+from 3.3.8: the update package accepts a node on 3.3.3 or newer. A node on
+3.3.2 or older applies `satom-update-3.3.3.tar.gz` (release v3.3.3) first,
+then this one.
+
 The upgrade runs migrations `wiki04` (Wiki groups merged into Administrator ›
 Access › Groups), `wiki05` (comments and subscriptions), `wiki06`
 (Confluence spaces and pages), `orch01` (Process event triggers and the
 key a run was started by) and `coll01` (SNMP polling fields on
-appliances).
+appliances). Nothing new listens or writes by default: the syslog receiver
+is off until switched on, SNMP polling is opt-in per appliance, an
+event-triggered Process starts unarmed unless its form says otherwise, and
+no existing API token gains the new `template_draft`, `template_apply` or
+`process_arm` capabilities. The one check that is on by default is *intent
+deviation* (Settings → Alerts), which compares a bound device with its
+template and never writes.
 
 ### Added
 

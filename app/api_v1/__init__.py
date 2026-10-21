@@ -30,6 +30,8 @@ from . import system  # noqa: E402,F401
 from . import intent  # noqa: E402,F401
 # NAF Observability: configuration history and diffs, findings, metrics query.
 from . import observability  # noqa: E402,F401
+# Orchestration: walk a Process (rehearsal by default; armed needs process_arm).
+from . import processes  # noqa: E402,F401
 # The OpenAPI document, built from the rules above at request time. Imported
 # LAST on purpose: it documents whatever is registered when it is asked.
 from . import openapi  # noqa: E402,F401

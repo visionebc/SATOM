@@ -9341,6 +9341,7 @@ into five consoles at once.
 | Catalogue action | invokes an automation from the Scheduled Actions catalogue | **yes, when armed** |
 | Console script | sends CLI lines to the chosen appliance | **yes, when armed** |
 | Integration hook | queues one integration hook on this node and waits for its verdict | **yes, when armed** |
+| Compensate | undoes what the walk wrote before it, newest change first — only the steps that recorded an inverse; the rest are named as `unknown` | **yes, when armed** |
 
 No step reimplements a question the product already answers somewhere else.
 That is deliberate: two authors for "is this backend reachable" is how a page
@@ -9504,11 +9505,88 @@ drawn box carries a shape and a caption; it does not carry the step kind or the
 parameters that make a step runnable, so importing one would produce a diagram
 that looks like your plan and cannot execute a single check.
 
+### Starting a process from an event
+
+A process can be started by an **event** instead of the Run button. On the
+process form, *Trigger → Start this process when* names one event of the
+integration-hook catalogue (`alert.fired`, `upgrade.failed`, `change.approved`,
+`window.opening` …). When that event fires, the walk is **queued as a job** —
+visible on the Jobs page — and runs there. It never runs inside the alert
+evaluation or the hook dispatch that noticed the event: those run inside the
+scheduler's cycle, and a diagram with SSH reads and a manual gate walked there
+would stall every scheduled action behind it.
+
+A trigger can be **narrowed**: to some ADOMs, to some appliance ids, and for
+`alert.fired` to some alert families and a severity floor. A narrowing never
+widens — an event that names no appliance does not match a filter that lists
+some. For a device finding, the appliance the finding is about becomes the
+appliance the walk is pointed at; a diagram with device steps is skipped, with
+the reason, when the event names none.
+
+Three rules bound a storm, and each refusal is recorded as a run with status
+**`skipped`** and the reason in its summary, so "the plan never fired" always
+has a trace:
+
+* **one running instance per process and appliance** — a second event while a
+  walk is running or parked on a gate is skipped, never queued behind it;
+* **a budget per process per hour** (*Runs per hour, at most*, default 10) —
+  spent means skipped; skipped rows do not count against it;
+* **rehearsal unless the process says otherwise** — *Arm triggered walks* is
+  off by default. On, SATOM writes to your appliances with nobody at the
+  screen, every time the event fires. The form says so in red.
+
+A finding that started a walk owes the alert cooldown exactly like one the
+hook subsystem accepted; a finding that was skipped owes nothing, so it is not
+silenced for six hours on behalf of a walk that did not happen. Event triggers
+fire on the writable primary only. Every triggered run carries the finding or
+event key (*trigger* on the run page and in the history) so a walk can be
+traced back to the thing that asked for it.
+
+### Scheduling a process
+
+**Walk a process** is an action of the Scheduled Actions catalogue (the
+operator catalogue): pick the process by key and the appliances to walk it
+against, and it runs once per target at the scheduled time. It is a
+**rehearsal** unless the action's `armed` parameter is on, and the page's
+preview forces a rehearsal whatever the parameter says. An armed walk of a
+diagram that writes runs **only bound to an approved change request**, like
+every other write action in the catalogue. The run records the schedule that
+fired it. The action is flagged dangerous, so it is never offered through the
+generic `/api/v1/actions` door — the API has its own, below.
+
+### Compensation
+
+**Compensate** is the step that undoes what the walk wrote before it, newest
+change first. It undoes only what a step **recorded an inverse for**: a status a
+Catalogue action flipped (a server policy or a backend enabled or disabled —
+the inverse is the same action the other way), an Observatory fix (reverted
+through the Observatory's own revert) and a provisioning run (rolled back
+through its own rollback). A write with no inverse — a Console script, an
+Integration hook, a backend repointed to an address nobody read first — is
+**named as `unknown`**, never guessed: "SATOM cannot undo this one" is a
+sentence an operator can act on, and a guessed inverse aimed at a load balancer
+is not. A write that failed is never replayed either; what landed is unknown.
+
+Unarmed, Compensate sends nothing and lists what it would undo. Armed, it stops
+at the first inverse that fails, and the step ends `fail` with the rest named.
+The inverse a step recorded is kept with the step, so a walk answered after a
+manual gate still knows what it wrote before the pause.
+
+### Walking a process from the API
+
+`GET /api/v1/processes`, `POST /api/v1/processes/<id>/run` and
+`GET /api/v1/process-runs/<id>` let an outside system list, start and poll a
+walk, under the token's ADOM exactly as the console would show it. A run from
+the API is a **rehearsal by default**; `"armed": true` needs the explicit
+`process_arm` capability on the token, on top of the `write` scope. See the API
+manual, §10.
+
 ### Permissions
 
 Reading a process and its runs needs `view` — that includes **Export XML**,
 which hands back the content the page already shows. Drawing, editing,
-importing, running and answering a gate need `config_write`.
+importing, running and answering a gate need `config_write` — and so does
+setting a trigger, which is part of the form.
 
 
 ---

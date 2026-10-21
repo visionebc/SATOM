@@ -85,6 +85,13 @@ class StepResult:
     detail: str = ""
     output: str = ""
     gate: bool = False
+    #: What a later ``compensate`` step may undo: ``{"domain": <COMPENSATORS
+    #: key>, ...}`` recorded by a write that KNOWS its inverse (a status it
+    #: flipped, a fix it applied). ``None`` for reads, rehearsals and writes
+    #: with no known inverse — compensate names those as ``unknown`` rather
+    #: than guessing. Persisted in the step's ``output`` under ``undo:`` so a
+    #: run resumed after a gate still sees it.
+    undo: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -412,8 +419,16 @@ def _run_action(node, ctx) -> StepResult:
         # raises, but "documents" is not "cannot"; my crash is not their outage.
         return StepResult(UNKNOWN, "the action raised: %s" % exc)
     prefix = "rehearsed (not armed): " if dry else ""
+    # The inverse the action recorded, kept when the action succeeded — on a
+    # rehearsal too, so that a Compensate step in the same (unarmed) walk can
+    # list what it WOULD undo; a run is armed or not for its whole walk, so a
+    # rehearsed inverse is only ever rehearsed back. A failed write may have
+    # landed half: compensate must say "unknown" for it, not replay an
+    # inverse of something that never fully happened.
+    undo = res.get("undo") if res.get("ok") else None
     return StepResult(PASS if res.get("ok") else FAIL,
-                      prefix + (res.get("summary") or key), res.get("log") or "")
+                      prefix + (res.get("summary") or key), res.get("log") or "",
+                      undo=undo if isinstance(undo, dict) else None)
 
 
 def _plan_text(plan: list) -> str:
@@ -622,6 +637,173 @@ def _run_hook(node, ctx) -> StepResult:
 
 
 # ---------------------------------------------------------------------------
+# compensation
+# ---------------------------------------------------------------------------
+#
+# A ``compensate`` step undoes what the walk wrote BEFORE it, newest first,
+# and only what a step recorded an inverse for. The engine does not know how
+# to undo anything; the DOMAIN that wrote knows, and says so in the
+# ``StepResult.undo`` record it returns. Compensate looks the domain up here
+# and hands the record back. A write with no record — a console script, a
+# hook, a config change whose previous value nobody read — is reported as
+# ``unknown``: "SATOM cannot undo this one" is a sentence an operator can act
+# on, and a guessed inverse aimed at a load balancer is not.
+
+#: The marker a step's ``output`` carries its undo record under. Persisted
+#: there so a run resumed after a manual gate still knows what to undo.
+UNDO_MARK = "\n[undo] "
+
+
+def encode_undo(output: str, undo: dict | None) -> str:
+    import json as _json
+    if not undo:
+        return output or ""
+    return (output or "") + UNDO_MARK + _json.dumps(undo, sort_keys=True)
+
+
+def decode_undo(output: str) -> tuple[str, dict | None]:
+    """``(output without the marker, undo record or None)``."""
+    import json as _json
+    text = output or ""
+    i = text.rfind(UNDO_MARK)
+    if i < 0:
+        return text, None
+    try:
+        rec = _json.loads(text[i + len(UNDO_MARK):])
+    except Exception:  # noqa: BLE001 — a corrupt tail is no record, not a crash
+        return text, None
+    return text[:i], rec if isinstance(rec, dict) else None
+
+
+def _undo_user_op(rec: dict, ctx, dry: bool) -> dict:
+    """Inverse of a status flip: run the SAME catalogue action the other way."""
+    from .scheduled_actions import get_spec, run_action
+    spec = get_spec(str(rec.get("action") or ""))
+    if spec is None:
+        return {"ok": False, "summary": "action %r is gone from the catalogue"
+                % rec.get("action")}
+    params = rec.get("params") if isinstance(rec.get("params"), dict) else {}
+    return run_action(spec, ctx.appliance, params, dry_run=dry)
+
+
+def _undo_observatory_fix(rec: dict, ctx, dry: bool) -> dict:
+    """Revert an Observatory fix by id (services.observatory_fix.revert)."""
+    from ..models import db
+    from ..models_observatory import ObservatoryFix
+    from . import observatory_fix
+    fix = db.session.get(ObservatoryFix, int(rec.get("fix_id") or 0))
+    if fix is None:
+        return {"ok": False, "summary": "fix #%s no longer exists" % rec.get("fix_id")}
+    if dry:
+        plan = observatory_fix.revert_plan(ctx.appliance, fix)
+        return {"ok": True, "summary": "would revert fix #%d: %d write(s)"
+                % (fix.id, len(plan.get("writes") or []))}
+    res = observatory_fix.revert(ctx.appliance, fix, ack_shared=True,
+                                 user_id=None)
+    return {"ok": bool(res.get("reverted")),
+            "summary": res.get("error") or ("fix #%d reverted" % fix.id)}
+
+
+def _undo_provision(rec: dict, ctx, dry: bool) -> dict:
+    """Roll a provisioning run back (services.provision_runner.rollback)."""
+    from ..models import db
+    from ..models_provision import ProvisionRun
+    from . import provision_runner
+    prow = db.session.get(ProvisionRun, int(rec.get("run_id") or 0))
+    if prow is None:
+        return {"ok": False, "summary": "provisioning run #%s no longer exists"
+                % rec.get("run_id")}
+    if dry:
+        return {"ok": True, "summary": "would roll back provisioning run #%d" % prow.id}
+    prow = provision_runner.rollback(prow)
+    status = str(getattr(prow, "status", "") or "")
+    return {"ok": "fail" not in status and "error" not in status,
+            "summary": "provisioning run #%d: %s" % (prow.id, status or "rolled back")}
+
+
+#: domain -> undo(record, ctx, dry) -> {"ok", "summary"}. A record whose
+#: domain is not here is ``unknown``, by name.
+COMPENSATORS = {
+    "user_op": _undo_user_op,
+    "observatory_fix": _undo_observatory_fix,
+    "provision": _undo_provision,
+}
+
+
+def _run_compensate(node, ctx) -> StepResult:
+    """Undo the walk so far, newest write first.
+
+    Reads ``ctx.results`` in execution order (the engine fills it as it walks
+    and reloads it from the rows on resume) and ``ctx.kinds`` to know which
+    earlier steps were WRITE kinds. Three outcomes:
+
+    * every write before this step had an inverse and every inverse ran →
+      ``pass``;
+    * an inverse failed → ``fail`` (the walk stops here; the output names
+      what is left undone);
+    * a write had no inverse → ``unknown`` — the step could not fully look
+      after the walk, and the row says which steps a person must undo.
+
+    Unarmed, nothing is sent: the inverses are listed as what WOULD run.
+    """
+    dry = not ctx.armed
+    lines: list[str] = []
+    failed = 0
+    unknown: list[str] = []
+    done = 0
+    my_key = str(node.get("key") or "")
+    # newest first — undo the last change before the one it depended on
+    for key in reversed(list(ctx.results.keys())):
+        if key == my_key:
+            continue
+        res = ctx.results[key]
+        kind = get_kind(str(ctx.kinds.get(key) or ""))
+        if kind is None or not kind.writes:
+            continue
+        if res.status != PASS:
+            # A failed or skipped write may have landed partially; an inverse
+            # of it is a guess. Named, not replayed.
+            if res.status == FAIL:
+                unknown.append("%s (the write failed; what landed is unknown)" % key)
+            continue
+        rec = res.undo
+        if not isinstance(rec, dict) or not rec.get("domain"):
+            unknown.append("%s (no inverse was recorded)" % key)
+            continue
+        fn = COMPENSATORS.get(str(rec.get("domain")))
+        if fn is None:
+            unknown.append("%s (domain %r has no compensator)" % (key, rec.get("domain")))
+            continue
+        try:
+            out = fn(rec, ctx, dry)
+        except Exception as exc:  # noqa: BLE001 — one bad undo never hides the rest
+            out = {"ok": False, "summary": "%s: %s" % (type(exc).__name__, exc)}
+        tag = "would undo" if dry else ("undid" if out.get("ok") else "FAILED to undo")
+        lines.append("[%s] %s: %s" % (tag, key, out.get("summary") or ""))
+        if out.get("ok"):
+            done += 1
+        else:
+            failed += 1
+            if not dry:
+                break  # stop at the first failure, like every other revert here
+    for u in unknown:
+        lines.append("[unknown] %s" % u)
+    output = "\n".join(lines)
+    prefix = "rehearsed (not armed): " if dry else ""
+    if failed and not dry:
+        return StepResult(FAIL, prefix + "%d undo step(s) failed; %d done, %d not undoable"
+                          % (failed, done, len(unknown)), output)
+    if unknown:
+        return StepResult(UNKNOWN, prefix + "%d step(s) %s; %d cannot be undone by SATOM — "
+                          "see the output" % (done, "would be undone" if dry else "undone",
+                                              len(unknown)), output)
+    if not done:
+        return StepResult(PASS, prefix + "nothing to undo — no earlier step wrote", output)
+    return StepResult(PASS, prefix + "%d step(s) %s" % (done, "would be undone" if dry
+                                                      else "undone"), output)
+
+
+# ---------------------------------------------------------------------------
 # catalogue
 # ---------------------------------------------------------------------------
 
@@ -722,6 +904,13 @@ _KINDS: tuple[NodeKind, ...] = (
                            help="0 passes as soon as the request is written — "
                                 "use it for notifications you cannot branch on.")),
              needs_appliance=False, writes=True, colour="#8B1C2A"),
+    NodeKind("compensate", "Compensate", "act",
+             "Undo what the walk wrote before this step, newest change first — "
+             "only the steps that recorded an inverse (a status a Catalogue "
+             "action flipped, an Observatory fix, a provisioning run). A write "
+             "with no inverse is named as 'unknown', never guessed. Unarmed, it "
+             "lists what it would undo and sends nothing.",
+             needs_appliance=False, writes=True, colour="#8B1C2A"),
 )
 
 _RUNNERS = {
@@ -731,6 +920,7 @@ _RUNNERS = {
     "ssh_check": _run_ssh_check, "device_health": _run_device_health,
     "logs_collect": _run_logs_collect, "action": _run_action,
     "console_script": _run_console_script, "hook": _run_hook,
+    "compensate": _run_compensate,
 }
 
 KIND_KEYS = tuple(k.key for k in _KINDS)

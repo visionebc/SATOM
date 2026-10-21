@@ -26252,3 +26252,33 @@ msgstr "In diesem Zeitraum gibt es noch keine Messwerte. Die Aktion metrics scra
 
 msgid "The metrics store did not answer:"
 msgstr "Der Metrikspeicher hat nicht geantwortet:"
+
+msgid "Start this process when"
+msgstr "Diesen Prozess starten, wenn"
+
+msgid "— the Run button only —"
+msgstr "— nur die Schaltfläche Ausführen —"
+
+msgid "Only for these ADOMs"
+msgstr "Nur für diese ADOMs"
+
+msgid "Only for these appliance ids"
+msgstr "Nur für diese Geräte-IDs"
+
+msgid "Alert families"
+msgstr "Alarmfamilien"
+
+msgid "Severity floor"
+msgstr "Mindestschweregrad"
+
+msgid "Runs per hour, at most"
+msgstr "Läufe pro Stunde, höchstens"
+
+msgid "Arm triggered walks"
+msgstr "Ausgelöste Durchläufe scharf schalten"
+
+msgid "armed on trigger"
+msgstr "scharf bei Auslösung"
+
+msgid "rehearsal on trigger"
+msgstr "Probelauf bei Auslösung"

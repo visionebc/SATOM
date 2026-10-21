@@ -121,7 +121,8 @@
         <tr>
           <td><a href="{{ url_for('process.run_detail', rid=r.id) }}">{{ r.id }}</a></td>
           <td>{{ r.process_name or r.process_key }}
-            {% if not r.armed %}<span class="badge bg-light text-dark border ms-1">{{ _('rehearsal') }}</span>{% endif %}</td>
+            {% if not r.armed %}<span class="badge bg-light text-dark border ms-1">{{ _('rehearsal') }}</span>{% endif %}
+            {% if r.trigger != 'manual' %}<span class="badge bg-light text-dark border ms-1" title="{{ r.trigger_key }}">{{ r.trigger }}</span>{% endif %}</td>
           <td style="font-size:12px;">{{ r.appliance_name or '—' }}</td>
           <td>
             {% if r.status == 'waiting' %}

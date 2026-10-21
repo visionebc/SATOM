@@ -140,6 +140,10 @@ Paths are relative to the base URL. **Scope** is the minimum token scope;
 | `GET`  | `/appliances/<id>/config-diff` | read | — | What changed between two versions, `?from=&to=` (§13) |
 | `GET`  | `/findings` | read | `monitoring`, only on a capability-restricted token | What the alert engine finds right now (§13) |
 | `GET`  | `/metrics/query` | read | `monitoring`, only on a capability-restricted token | A read-only MetricsQL query over SATOM's own series (§13) |
+| `GET`  | `/processes` | read | — | The processes the token's ADOM may see (§14) |
+| `GET`  | `/processes/<id>` | read | — | One process, with its diagram (§14) |
+| `POST` | `/processes/<id>/run` | write | `process_arm` for `"armed": true` | Walk a process — a **rehearsal** unless armed (§14) |
+| `GET`  | `/process-runs/<id>` | read | — | One walk and its steps; poll a run parked on a manual gate (§14) |
 
 The write endpoints are rate-limited to **30/min**, like `/actions/<id>/run`.
 
@@ -384,8 +388,10 @@ Every error is JSON with an `error` code (and usually a `message`).
 | 403 | `wrong_product` | Token's ADOM cannot touch that action's product |
 | 403 | `destructive_blocked` | Firmware upgrade/flash/reboot — never allowed via API |
 | 404 | `not_found` | No such action / run (or not visible to this token) |
-| 409 | `disabled` | The action is disabled |
+| 409 | `disabled` | The action — or the process — is disabled |
 | 409 | `already_running` | The action is already running |
+| 403 | `capability_denied` | `"armed": true` on a process walk without the `process_arm` capability (§14) |
+| 400 | `appliance_required` / `invalid_diagram` | A process walk needs a device, or its diagram cannot run yet (§14) |
 | 429 | `rate_limited` | Too many requests (run is 30/min) |
 
 Object authoring answers with these too, plus its own set — see
@@ -836,3 +842,71 @@ curl -s -H "Authorization: Bearer $TOKEN" --get \
 | 410 | `blob_missing` | A version's payload is no longer available (pruned and not on the backup server) |
 | 502 | `store_unavailable` | The metrics store answered an error |
 | 504 | `store_timeout` | The metrics store did not answer within 10 s |
+
+---
+
+## 14. Processes — `/api/v1/processes/*`
+
+Walk a **Process** (Administrator → Process: a diagram of checks, gates and
+actions SATOM walks and judges) from outside, and read what a walk did. This is
+the NAF Orchestrator's "startable by a machine" door, and it is as narrow as
+the Run button.
+
+**Access.** `read` lists and reads; `write` walks. The token's ADOM sees
+exactly the processes the console would show it (a process is offered per
+ADOM; a `global` token sees every one, drafts included). **A walk from the API
+is a rehearsal by default**: every write step dry-runs and the run says so.
+`"armed": true` additionally needs the explicit **`process_arm`** capability on
+the token — tokens minted before this surface existed can rehearse and cannot
+write. Rate-limited to 30/min like the other write endpoints.
+
+### `GET /processes` / `GET /processes/<id>`
+
+```json
+{"processes": [
+  {"id": 3, "key": "dr-failover-check", "name": "DR failover check",
+   "products": ["fortiweb"], "enabled": true,
+   "needs_appliance": true, "writes": true, "steps": 7,
+   "trigger_event": "alert.fired",
+   "trigger_filter": {"families": ["device"], "min_severity": "critical"},
+   "armed_on_trigger": false, "trigger_rate_limit": 10,
+   "updated_at": "2026-10-21T02:10:00"}]}
+```
+
+`GET /processes/<id>` adds `"graph"` (the nodes and arrows, as the editor
+stores them).
+
+### `POST /processes/<id>/run`
+
+Body: `{"appliance_id": 7, "armed": false}` — both optional. `appliance_id` is
+required when `needs_appliance` is true (400 `appliance_required`). The walk
+runs inline and the answer is the finished run (or the run parked on a manual
+gate — `status: "waiting"`, `waiting_node`), with its steps:
+
+```json
+{"id": 41, "process_key": "dr-failover-check", "appliance": "fw-dmz-02",
+ "armed": false, "status": "done", "verdict": "ok",
+ "summary": "5 step(s) ran and every one of them passed.",
+ "trigger": "api", "trigger_key": "api-token:1f3a…", "started_by": "svc-noc",
+ "counts": {"pass": 5, "fail": 0, "unknown": 0, "skipped": 0},
+ "steps": [{"seq": 1, "key": "start", "kind": "start", "status": "pass",
+            "detail": "process entered", "dry_run": false, "undo_recorded": false}, …]}
+```
+
+Arming a diagram that only reads is dropped silently, as on the Run button.
+A disabled process answers 409 `disabled`; a diagram the editor would refuse
+to run answers 400 `invalid_diagram` with the problems listed.
+
+### `GET /process-runs/<id>`
+
+The same document, for polling. A run whose process has been deleted is shown
+to a `global` token only — the console applies the same rule.
+
+```sh
+# rehearse, then arm once the rehearsal is clean
+curl -s -X POST -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
+  -d '{"appliance_id": 7}' https://satom.example.com/api/v1/processes/3/run
+curl -s -X POST -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
+  -d '{"appliance_id": 7, "armed": true}' https://satom.example.com/api/v1/processes/3/run
+#  -> 403 capability_denied unless the token holds process_arm
+```

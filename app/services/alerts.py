@@ -550,7 +550,7 @@ def _check_devices() -> list[dict]:
         except Exception as exc:  # noqa: BLE001 — one bad device never sinks the run
             findings.append({"key": f"device.error.{a.name}", "severity": SEV_WARNING,
                              "title": f"Health roll-up failed for {a.name}",
-                             "product": _product_of(a),
+                             "product": _product_of(a), "appliance_id": a.id,
                              "detail": f"device_health.collect_for() raised: {exc}"})
             continue
 
@@ -585,6 +585,9 @@ def _check_devices() -> list[dict]:
             "severity": SEV_CRITICAL if crit else SEV_WARNING,
             "title": title,
             "product": _product_of(a),
+            # The id, not only the name in the key: a process trigger resolves
+            # the appliance from it, and a name is not an identity (two ADOMs).
+            "appliance_id": a.id,
             "detail": ("\n".join(lines) +
                        f"\n\n{a.kind} appliance at {host}:{port}, probed from "
                        f"{_node()}. Full picture: /monitoring/ — thresholds: "
@@ -872,7 +875,7 @@ def _check_drift() -> list[dict]:
                 "key": f"drift.{slug}.{new.sha256[:12]}",
                 "severity": SEV_WARNING if mode == "warn" else SEV_INFO,
                 "title": f"Config change on {slug} — made through SATOM",
-                "product": _product_of(a),
+                "product": _product_of(a), "appliance_id": a.id,
                 "detail": (f"{head} SATOM recorded {len(att['receipts'])} "
                            f"write(s) to this device in {span}, the interval "
                            f"the change has to fall in, so this is an expected "
@@ -883,7 +886,7 @@ def _check_drift() -> list[dict]:
         findings.append({
             "key": f"drift.{slug}.{new.sha256[:12]}", "severity": SEV_WARNING,
             "title": f"Config drift on {slug}",
-            "product": _product_of(a),
+            "product": _product_of(a), "appliance_id": a.id,
             "detail": (f"{head} SATOM recorded no write of its own to this "
                        f"device in {span}, the interval the change has to fall "
                        f"in, so it came from the device side (CLI/GUI) or from "
@@ -1338,6 +1341,10 @@ def alert_event_payload(finding: dict, node: str) -> dict:
         "title": finding.get("title", ""),
         "detail": finding.get("detail", ""),
         "product": finding.get("product") or "",
+        # The appliance a device finding is about, when the check recorded
+        # one; None for fleet-wide findings. Process triggers resolve the
+        # device from it (services.process_triggers).
+        "appliance_id": finding.get("appliance_id"),
         "node": node or "",
         "fired_at": _now().isoformat(),
     }
@@ -1443,6 +1450,27 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
     }
     if not fresh:
         return result
+
+    # ---- orchestration path ------------------------------------------------
+    # Processes whose trigger is ``alert.fired`` get every FRESH finding,
+    # independently of the notification sinks and of the engine master
+    # switch: a trigger is a plan the operator drew, not a channel. The
+    # dispatch QUEUES a job and returns — this evaluation runs inside the
+    # scheduler tick, and a walk with SSH reads must never run here. A
+    # finding that started a walk owes a cooldown exactly like one the hook
+    # subsystem accepted (``queued_keys`` below), or a plan that reports
+    # nothing re-fires every evaluation.
+    triggered_keys: set = set()
+    try:
+        from . import process_triggers
+        proc_rows = process_triggers.on_findings(fresh, node)
+    except Exception as exc:  # noqa: BLE001 — report, do not sink the run
+        proc_rows = []
+        result["delivery_failed"].append("processes: %s" % exc)
+    result["processes"] = {"queued": sum(1 for r in proc_rows if r["status"] == "queued"),
+                           "skipped": sum(1 for r in proc_rows if r["status"] == "skipped"),
+                           "rows": proc_rows}
+    triggered_keys.update(r["key"] for r in proc_rows if r["status"] == "queued")
 
     # A finding no notification sink accepted reached nobody. It is not
     # ``dispatched`` and — see the cooldown note below — it is not stamped
@@ -1586,7 +1614,7 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
     # counted, and never arrive. The invariant lives in the loop below, which
     # iterates ``delivered | queued_keys`` and NEVER ``fresh``; this early
     # return only skips a pointless write, and a mutation of it is equivalent.
-    stamp = delivered | queued_keys
+    stamp = delivered | queued_keys | triggered_keys
     if not stamp:
         return result
     now_iso = _now().isoformat()

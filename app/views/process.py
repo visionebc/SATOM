@@ -59,6 +59,55 @@ def _appliances():
     return visible_appliances().order_by(Appliance.name).all()
 
 
+def _events():
+    """The integration-hook event catalogue a trigger may name, for the form."""
+    from ..services import integration_hooks as ih
+    return [{"name": n, "description": ih.EVENTS[n].get("description", "")}
+            for n in ih.EVENT_NAMES]
+
+
+def _read_trigger(form, proc: Process) -> str | None:
+    """Apply the trigger fields of the form to ``proc``. Returns an error
+    sentence, or None. The event must be in the catalogue (a typo would be a
+    trigger that never fires, silently); the budget is 1..1000."""
+    from ..services import integration_hooks as ih
+    event = (form.get("trigger_event") or "").strip()
+    if event and event not in ih.EVENTS:
+        return "Unknown trigger event %r." % event
+    try:
+        limit = int((form.get("trigger_rate_limit") or "10").strip())
+    except ValueError:
+        return "The hourly trigger budget must be a whole number."
+    if not 1 <= limit <= 1000:
+        return "The hourly trigger budget must be between 1 and 1000."
+    flt = {}
+    products = [p for p in form.getlist("trigger_products") if p]
+    if products:
+        flt["products"] = products
+    ids = []
+    for raw in (form.get("trigger_appliance_ids") or "").replace(";", ",").split(","):
+        raw = raw.strip()
+        if raw:
+            if not raw.isdigit():
+                return "Appliance ids in the trigger filter must be numbers."
+            ids.append(int(raw))
+    if ids:
+        flt["appliance_ids"] = ids
+    families = [f.strip() for f in (form.get("trigger_families") or "").split(",") if f.strip()]
+    if families:
+        flt["families"] = families
+    floor = (form.get("trigger_min_severity") or "").strip()
+    if floor:
+        if floor not in ("info", "warning", "critical"):
+            return "The severity floor must be info, warning or critical."
+        flt["min_severity"] = floor
+    proc.trigger_event = event
+    proc.trigger_filter = flt
+    proc.armed_on_trigger = bool(form.get("armed_on_trigger")) and bool(event)
+    proc.trigger_rate_limit = limit
+    return None
+
+
 def _proc_or_404(pid: int) -> Process:
     proc = db.session.get(Process, pid)
     if proc is None:
@@ -183,6 +232,11 @@ def create():
                            products=request.form.getlist("products"),
                            enabled=bool(request.form.get("enabled")),
                            created_by=getattr(current_user, "username", "") or "")
+            err = _read_trigger(request.form, proc)
+            if err:
+                flash(err, "danger")
+                return render_template("process/form.html", proc=None, adoms=_adoms(),
+                                       events=_events())
             db.session.add(proc)
             db.session.flush()
             # Every process starts with a Start step. An empty canvas cannot be
@@ -192,9 +246,13 @@ def create():
                                        kind="start", label="Start",
                                        pos_x=60, pos_y=60))
             db.session.commit()
-            log_action("process.create", target=proc.key, extra={"name": name, "products": proc.products})
+            log_action("process.create", target=proc.key,
+                       extra={"name": name, "products": proc.products,
+                              "trigger_event": proc.trigger_event,
+                              "armed_on_trigger": bool(proc.armed_on_trigger)})
             return redirect(url_for("process.detail", pid=proc.id))
-    return render_template("process/form.html", proc=None, adoms=_adoms())
+    return render_template("process/form.html", proc=None, adoms=_adoms(),
+                           events=_events())
 
 
 @bp.route("/<int:pid>/edit", methods=["GET", "POST"])
@@ -207,14 +265,24 @@ def edit(pid):
         if not name:
             flash("The process needs a name.", "danger")
         else:
+            err = _read_trigger(request.form, proc)
+            if err:
+                db.session.rollback()
+                flash(err, "danger")
+                return render_template("process/form.html", proc=proc, adoms=_adoms(),
+                                       events=_events())
             proc.name = name
             proc.description = (request.form.get("description") or "").strip()
             proc.products = request.form.getlist("products")
             proc.enabled = bool(request.form.get("enabled"))
             db.session.commit()
-            log_action("process.edit", target=proc.key, extra={"name": name, "products": proc.products})
+            log_action("process.edit", target=proc.key,
+                       extra={"name": name, "products": proc.products,
+                              "trigger_event": proc.trigger_event,
+                              "armed_on_trigger": bool(proc.armed_on_trigger)})
             return redirect(url_for("process.detail", pid=proc.id))
-    return render_template("process/form.html", proc=proc, adoms=_adoms())
+    return render_template("process/form.html", proc=proc, adoms=_adoms(),
+                           events=_events())
 
 
 @bp.route("/<int:pid>/delete", methods=["POST"])

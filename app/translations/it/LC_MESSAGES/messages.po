@@ -26289,3 +26289,33 @@ msgstr "Nessun campione in questo intervallo per ora. L'azione metrics scrape re
 
 msgid "The metrics store did not answer:"
 msgstr "L'archivio delle metriche non ha risposto:"
+
+msgid "Start this process when"
+msgstr "Avvia questo processo quando"
+
+msgid "— the Run button only —"
+msgstr "— solo il pulsante Esegui —"
+
+msgid "Only for these ADOMs"
+msgstr "Solo per questi ADOM"
+
+msgid "Only for these appliance ids"
+msgstr "Solo per questi id di apparato"
+
+msgid "Alert families"
+msgstr "Famiglie di avvisi"
+
+msgid "Severity floor"
+msgstr "Gravità minima"
+
+msgid "Runs per hour, at most"
+msgstr "Esecuzioni all'ora, al massimo"
+
+msgid "Arm triggered walks"
+msgstr "Arma i percorsi attivati"
+
+msgid "armed on trigger"
+msgstr "armato all'attivazione"
+
+msgid "rehearsal on trigger"
+msgstr "prova all'attivazione"

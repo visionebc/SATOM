@@ -2133,6 +2133,20 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('wave_index', 'INTEGER'),
                 ('wave_total', 'INTEGER'),
             ],
+            # --- Process event triggers (orch01, 2026-10-21) ---
+            # Mirrors migrations/versions/orch01_process_triggers.py for the
+            # nodes whose schema came from create-db and never ran Alembic.
+            # Defaults say "Run button only, rehearse, ten per hour": a plan
+            # saved before triggers existed must not start firing on upgrade.
+            'processes': [
+                ('trigger_event', "VARCHAR(64) DEFAULT ''"),
+                ('trigger_filter_json', "TEXT DEFAULT '{}'"),
+                ('armed_on_trigger', 'BOOLEAN DEFAULT FALSE'),
+                ('trigger_rate_limit', 'INTEGER DEFAULT 10'),
+            ],
+            'process_runs': [
+                ('trigger_key', "VARCHAR(200) DEFAULT ''"),
+            ],
         }
         # NOTE: a repeated key in the literal above is a SILENT loss — Python
         # keeps the last one and every column under the earlier copy is never

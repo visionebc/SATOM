@@ -11171,3 +11171,33 @@ msgstr ""
 #, python-format
 msgid "Rollout plan saved on this change: %(total)d round(s) of at most %(size)d appliance(s), %(gap)d minute(s) apart. Nothing is in Automations or on the calendar yet — the rounds are created the moment this change is approved."
 msgstr ""
+
+msgid "Start this process when"
+msgstr ""
+
+msgid "— the Run button only —"
+msgstr ""
+
+msgid "Only for these ADOMs"
+msgstr ""
+
+msgid "Only for these appliance ids"
+msgstr ""
+
+msgid "Alert families"
+msgstr ""
+
+msgid "Severity floor"
+msgstr ""
+
+msgid "Runs per hour, at most"
+msgstr ""
+
+msgid "Arm triggered walks"
+msgstr ""
+
+msgid "armed on trigger"
+msgstr ""
+
+msgid "rehearsal on trigger"
+msgstr ""

@@ -24,6 +24,13 @@
       <span class="text-muted ms-2">{{ _('ADOMs') }}</span>
       {% if proc.products %}{% for k in proc.products %}<span class="badge bg-light text-dark border ms-1">{{ k }}</span>{% endfor %}
       {% else %}<span class="text-muted">{{ _('draft — no ADOM') }}</span>{% endif %}
+      {% if proc.trigger_event %}
+      <span class="text-muted ms-2">{{ _('trigger') }}</span>
+      <code>{{ proc.trigger_event }}</code>
+      {% if proc.armed_on_trigger %}<span class="badge bg-danger ms-1">{{ _('armed on trigger') }}</span>
+      {% else %}<span class="badge bg-light text-dark border ms-1">{{ _('rehearsal on trigger') }}</span>{% endif %}
+      <span class="text-muted">· {{ proc.trigger_rate_limit or 10 }}/h</span>
+      {% endif %}
     </div>
   </div>
   <div class="d-flex gap-2">
@@ -180,7 +187,7 @@
     {% else %}
     <table class="table table-sm mb-0 align-middle">
       <thead><tr><th>#</th><th>{{ _('Verdict') }}</th><th>{{ _('Steps') }}</th>
-        <th>{{ _('Appliance') }}</th><th>{{ _('Started') }}</th><th>{{ _('By') }}</th></tr></thead>
+        <th>{{ _('Appliance') }}</th><th>{{ _('Trigger') }}</th><th>{{ _('Started') }}</th><th>{{ _('By') }}</th></tr></thead>
       <tbody>
       {% for r in runs %}
         {% set c = r.counts() %}
@@ -195,6 +202,9 @@
           <td style="font-size:12px;">{{ c['pass'] }} pass · {{ c['fail'] }} fail ·
             {{ c['unknown'] }} unknown · {{ c['skipped'] }} skipped</td>
           <td style="font-size:12px;">{{ r.appliance_name or '—' }}</td>
+          <td style="font-size:12px;">{{ r.trigger }}{% if r.trigger_key %}
+            <span class="text-muted" title="{{ r.trigger_key }}">· {{ r.trigger_key|truncate(28) }}</span>{% endif %}
+            {% if r.status == 'skipped' %}<div class="text-muted" style="font-size:11px;">{{ r.summary }}</div>{% endif %}</td>
           <td style="font-size:12px;">{{ r.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
           <td style="font-size:12px;">{{ r.started_by or '—' }}</td>
         </tr>

@@ -487,7 +487,9 @@ class Receiver:
                     "received": self.received, "dropped": dict(self.dropped),
                     "per_device": {k: dict(v) for k, v in self.per_device.items()},
                     "known_sources": len(self.sources),
-                    "recent": list(self.ring)[-RING_MAX:]}
+                    # The deque is the bound (maxlen); nothing re-slices here,
+                    # so a ring that stopped being bounded would show.
+                    "recent": list(self.ring)}
 
 
 # ── service glue (scheduler sidecar) ─────────────────────────────────────────

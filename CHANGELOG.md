@@ -6,6 +6,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An index URL without `/simple` is named, not reported as missing Flask**
+  (SA-0005). Pointed at a Sonatype Nexus repository root
+  (`…/repository/<repo>` instead of `…/repository/<repo>/simple`), the
+  **Test** of Settings → General → Update sources read Nexus' browse page and
+  said "this registry does not carry Flask", even for a pypi.org proxy. When
+  the URL has no `/simple`, **Test** now also asks `…/simple`; if that lists
+  Flask, it fails with the exact URL to save (pip uses the index URL as
+  given). If neither does, the message says the page belongs to the
+  repository manager, not that the project is missing.
+
 ## [3.4.3] - 2026-10-21
 
 A fix release for the package index **Test** in Settings → General → Update

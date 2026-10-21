@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changes · 0 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Fixed · 1 entry.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changes · 0 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Fixed · 1 entry.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
-        <ul class="rel-leads"></ul>
+        <span class="rel-nav-meta">unreleased · Fixed · 1 entry</span>
+        <ul class="rel-leads"><li>An index URL without /simple is named, not reported as missing Flask</li></ul>
       </a>
       <a class="rel-nav-item" href="v3.4.3.html" data-rel-version="3.4.3">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 3.4.3</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -440,7 +440,18 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li><strong>An index URL without <code>/simple</code> is named, not reported as missing Flask</strong>
+  (SA-0005). Pointed at a Sonatype Nexus repository root
+  (<code>…/repository/&lt;repo&gt;</code> instead of <code>…/repository/&lt;repo&gt;/simple</code>), the
+  <strong>Test</strong> of Settings → General → Update sources read Nexus' browse page and
+  said "this registry does not carry Flask", even for a pypi.org proxy. When
+  the URL has no <code>/simple</code>, <strong>Test</strong> now also asks <code>…/simple</code>; if that lists
+  Flask, it fails with the exact URL to save (pip uses the index URL as
+  given). If neither does, the message says the page belongs to the
+  repository manager, not that the project is missing.</li>
+</ul>
 <p class="rel-prevnext"><a href="v3.4.3.html">Version 3.4.3 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">

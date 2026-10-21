@@ -234,12 +234,21 @@ _INDEX_URL_HINT = ("a pip index URL normally ends in /simple -- Nexus "
                    "pypi.org https://pypi.org/simple")
 
 
-def _why_no_release(r: httpx.Response, requested: str, name: str) -> str:
+def _is_simple_root(url: str) -> bool:
+    """``url`` already names a Simple API root (…/simple, devpi's …/+simple)."""
+    return urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1] in ("simple", "+simple")
+
+
+def _why_no_release(r: httpx.Response, requested: str, name: str,
+                    simple_root: bool = True) -> str:
     """What the server sent instead of a project page with releases of ``name``.
 
     "lists no release" alone sent the operator guessing (SA-0004): a login page
     behind a redirect, an application's front page, a JSON API that is not the
     Simple API and a private registry without that project all read the same.
+    Below a URL without /simple, links that are no distribution files are a
+    repository manager's own page (Nexus' browse index, SA-0005), not proof
+    that the registry lacks the project.
     """
     # Without the query: a sign-in redirect carries OAuth state and return
     # URLs there, which are noise at best and not for a settings page.
@@ -272,6 +281,10 @@ def _why_no_release(r: httpx.Response, requested: str, name: str) -> str:
             return ("%s: the page has no download links%s -- %s; %s"
                     % (where, (" (title %r)" % title) if title else "", looks, _INDEX_URL_HINT))
     versions = [v for v in (_version_of(f) for f in files) if v is not None]
+    if not versions and not simple_root:
+        return ("%s: %d link(s), none of them a %s distribution file (e.g. %s) -- "
+                "a page of the repository manager, not its Simple API; %s"
+                % (where, len(files), name, ", ".join(files[:3]), _INDEX_URL_HINT))
     if not versions:
         return ("%s: %d link(s), none of them a %s distribution file (e.g. %s) -- "
                 "this registry does not carry %s (a private registry without a PyPI proxy?)"
@@ -296,6 +309,31 @@ def _verify():
     return trust_store.verify_param()
 
 
+def _latest_of(r: httpx.Response) -> str | None:
+    if r.status_code != 200:
+        return None
+    try:
+        return latest_from_simple(r.headers.get("content-type", ""), r.content)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _at_simple(client: httpx.Client, url: str, name: str, auth,
+               r: httpx.Response) -> tuple[str, str] | None:
+    """(…/simple URL, latest) when ``url`` is a repository root without /simple
+    whose Simple API does list ``name``. Nexus answers …/repository/<repo>/flask/
+    with its browse page (SA-0005); pip uses the URL as given, so the Test must
+    name the one to save rather than pass."""
+    if _is_simple_root(url) or r.status_code in (401, 403) or _latest_of(r):
+        return None
+    candidate = url.rstrip("/") + "/simple"
+    try:
+        latest = _latest_of(_simple_get(client, candidate, name, auth))
+    except Exception:  # noqa: BLE001 -- the first answer stays the verdict
+        return None
+    return (candidate, latest) if latest else None
+
+
 def probe_index(url: str, auth, name: str = "Flask") -> dict:
     """One lookup with the reason when it fails -- the "Test" button of
     Update sources. The card's own check stays best-effort and quiet."""
@@ -304,8 +342,14 @@ def probe_index(url: str, auth, name: str = "Flask") -> dict:
                           headers={"User-Agent": "SATOM-update-check"},
                           verify=_verify()) as client:
             r = _simple_get(client, url, name, auth)
+            fix = _at_simple(client, url, name, auth, r)
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": "cannot reach %s: %s" % (url, exc)}
+    if fix:
+        return {"ok": False, "suggested_url": fix[0],
+                "error": "%s is the repository, not its Simple API: %s answers (latest %s %s) "
+                         "-- set the index URL to %s; pip uses it exactly as given"
+                         % (url, fix[0], name, fix[1], fix[0])}
     if r.status_code in (401, 403):
         return {"ok": False, "error": "HTTP %s: the index wants credentials, or refused "
                                       "the ones given" % r.status_code}
@@ -318,7 +362,8 @@ def probe_index(url: str, auth, name: str = "Flask") -> dict:
     if not latest:
         requested = url.rstrip("/") + "/" + _normalize(name) + "/"
         return {"ok": False, "error": "the index answered but lists no release of %s: %s"
-                                      % (name, _why_no_release(r, requested, name))}
+                                      % (name, _why_no_release(r, requested, name,
+                                                               _is_simple_root(url)))}
     return {"ok": True, "latest": latest}
 
 

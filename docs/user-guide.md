@@ -2800,6 +2800,11 @@ they are what a customer's monitoring already speaks:
   and `proto udp`) at the node and enable `config log syslogd` with that
   policy — measured on 7.6.8: a server row changed while `syslogd` is already
   enabled is not picked up until `syslogd` is disabled and enabled again.
+  **Switching the receiver on does not open the node's own packet filter:**
+  allow UDP — and TCP, if you enable it — on the chosen port from the
+  appliances' management networks on every node, the primary and the standby
+  that may take over. A filtered port looks like silence: `satom_syslog_up 0`
+  for every appliance while `satom_syslog_receiver_up` stays 1.
 
 Each row is editable in place: **interval** (1–1440 minutes), **enabled**, and
 **top-N** (1–200) on the two collectors that have one. The expensive collectors

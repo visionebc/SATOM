@@ -2131,12 +2131,70 @@ def due_probes(*, session=None, force: bool = False) -> list:
     return out
 
 
+#: Wall-clock budget of one sweep, in seconds. The sweep is scheduled every 3
+#: minutes and runs INSIDE the scheduler tick, where it is one of several
+#: actions that execute one after another: a sweep that overruns its budget
+#: does not only overlap its own next trigger, it holds back every other action
+#: and every flush the tick performs after it (metrics, the syslog journal).
+#: Setting ``monitor.sweep_budget_s`` overrides the default.
+SWEEP_BUDGET_S = 120
+K_SWEEP_BUDGET = "monitor.sweep_budget_s"
+
+
+def sweep_budget_s() -> float:
+    """The configured sweep budget, or the default when unset or unreadable."""
+    try:
+        from ..models import AppSetting
+        raw = AppSetting.get(K_SWEEP_BUDGET)
+    except Exception:  # noqa: BLE001 - no settings table, no app context
+        raw = None
+    try:
+        v = float(str(raw).strip()) if raw not in (None, "") else float(SWEEP_BUDGET_S)
+    except (TypeError, ValueError):
+        return float(SWEEP_BUDGET_S)
+    return v if v > 0 else float(SWEEP_BUDGET_S)
+
+
+def record_unprobed(probe, detail: str, *, session=None) -> dict:
+    """Persist an ``unknown`` sample for a probe the sweep did not reach.
+
+    A probe the budget skipped must leave the same trace a probe that ran would:
+    an ``ok`` from the previous sweep standing unchanged would read as "still
+    healthy" on the Deep monitors page and in the alert engine, when the truth
+    is that nobody looked. ``unknown`` is the status the page and the roll-up
+    already reserve for exactly that.
+    """
+    from ..models import MonitorSample, db
+
+    session = session or db.session
+    sample = MonitorSample(
+        probe_id=probe.id, ts=datetime.utcnow(), status="unknown", ok=False,
+        fingerprint="", detail=(detail or "")[:1000], payload="{}")
+    session.add(sample)
+    probe.last_run_at = sample.ts
+    probe.last_status = sample.status
+    probe.last_detail = sample.detail
+    session.commit()
+    return {"probe": probe.name, "status": sample.status, "detail": sample.detail}
+
+
 def sweep(*, ids: list[int] | None = None, force: bool = False,
-          session=None) -> dict:
-    """Run every due probe (or an explicit id list). The scheduled entry point."""
+          session=None, budget_s: float | None = None) -> dict:
+    """Run every due probe (or an explicit id list). The scheduled entry point.
+
+    The sweep keeps a wall-clock budget (:func:`sweep_budget_s`). The network
+    half of the HTTPS probes is fetched ahead in a bounded pool and graded
+    whatever the clock says (the cost is already paid); every probe that still
+    needs a transport once the budget is spent is recorded ``unknown`` with the
+    reason, never silently left on its previous status. ``took_s`` and
+    ``unprobed`` in the result say what happened, so the scheduled action's
+    summary can print it.
+    """
     from ..models import MonitorProbe, db
 
     session = session or db.session
+    started = time.time()
+    budget = float(budget_s) if budget_s else sweep_budget_s()
     if ids:
         probes = (session.query(MonitorProbe)
                   .filter(MonitorProbe.id.in_(ids)).all())
@@ -2145,11 +2203,22 @@ def sweep(*, ids: list[int] | None = None, force: bool = False,
     # HTTPS targets are probed concurrently; everything else (SSH/REST against
     # the management plane) stays serial, and so does every database write.
     ahead = prefetch_https(probes)
-    results = [run_probe(p, session=session, https=ahead.get(p.id)) for p in probes]
+    results, unprobed = [], 0
+    for i, p in enumerate(probes):
+        if p.id not in ahead and time.time() - started >= budget:
+            unprobed += 1
+            results.append(record_unprobed(
+                p, "not probed: the sweep's %d s budget ran out after %d of %d "
+                   "probes (setting %s)" % (budget, i, len(probes), K_SWEEP_BUDGET),
+                session=session))
+            continue
+        results.append(run_probe(p, session=session, https=ahead.get(p.id)))
     counts: dict[str, int] = {}
     for r in results:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
-    return {"ran": len(results), "counts": counts, "results": results,
+    return {"ran": len(results) - unprobed, "unprobed": unprobed,
+            "took_s": round(time.time() - started, 1), "budget_s": budget,
+            "counts": counts, "results": results,
             "worst": worst([r["status"] for r in results])}
 
 

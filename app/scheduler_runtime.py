@@ -74,6 +74,12 @@ def tick(app) -> None:
                                        r["held_since"], r["next_run"]), flush=True)
         except Exception:  # noqa: BLE001 - a failed reap must not stop the tick
             db.session.rollback()
+        # The receiver's drain runs BEFORE the actions as well as after them:
+        # the actions execute one after another, and one that overruns (an
+        # Observatory run of four dead sites took 464 s on 2026-10-21) must not
+        # hold the syslog journal and its counters back for that long.
+        _drain_syslog()
+        tick_started = time.time()
         for action in scheduled_actions.due_actions(now):
             spec = action.schedule_dict
             if (not action.catch_up
@@ -84,10 +90,14 @@ def tick(app) -> None:
                 action.last_status = "missed"
                 db.session.commit()
                 continue
+            label = "#%s %s" % (action.id, action.action)
+            started = time.time()
             try:
                 scheduled_actions.execute_and_record(action, trigger="schedule")
             except Exception:  # noqa: BLE001 — one bad action must not kill the loop
                 db.session.rollback()
+            note_slow_action(label, time.time() - started)
+        note_slow_tick(time.time() - tick_started)
         # Script Library saved runs (cron): they live on disk next to the
         # scripts, so they are fired here rather than through scheduled_action.
         try:
@@ -101,12 +111,39 @@ def tick(app) -> None:
         # setting and drains its counters into the store; it never waits on
         # the network. service_tick is total.
         try:
-            from app.services import syslog_receiver
-            syslog_receiver.service_tick()
-        except Exception as exc:  # noqa: BLE001 - never stop the loop over this
-            print("syslog receiver: %s" % exc, flush=True)
+            _drain_syslog()
         finally:
             db.session.remove()
+
+
+#: An action that runs longer than this is printed with its duration, so the
+#: journal names what held the tick (every action runs serially inside it).
+SLOW_ACTION_S = 60
+
+
+def _drain_syslog() -> None:
+    try:
+        from app.services import syslog_receiver
+        syslog_receiver.service_tick()
+    except Exception as exc:  # noqa: BLE001 - never stop the loop over this
+        print("syslog receiver: %s" % exc, flush=True)
+
+
+def note_slow_action(label: str, took_s: float) -> bool:
+    """Print and return True when one action overran :data:`SLOW_ACTION_S`."""
+    if took_s < SLOW_ACTION_S:
+        return False
+    print("slow action: %s took %d s (the tick runs actions one after another; "
+          "every later action and flush waited)" % (label, took_s), flush=True)
+    return True
+
+
+def note_slow_tick(took_s: float) -> bool:
+    """Print and return True when the whole action pass overran the slow limit."""
+    if took_s < SLOW_ACTION_S:
+        return False
+    print("slow tick: the due actions took %d s in total" % took_s, flush=True)
+    return True
 
 
 def main() -> None:

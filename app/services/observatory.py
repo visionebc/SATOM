@@ -10,6 +10,7 @@ about what was kept.
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime
 
 from ..models import db
@@ -120,6 +121,83 @@ def _rank(grade: str | None) -> int:
     return GRADES.index(grade) if grade in GRADES else len(GRADES)
 
 
+#: Sites of one appliance graded at the same time. The network half of a scan
+#: (:func:`observatory_scan.scan`) touches no database; the rows are written
+#: afterwards on the calling thread, in target order.
+SCAN_WORKERS = 4
+#: Wall-clock budget of one scheduled run, in seconds. Measured on
+#: satom-node-1 on 2026-10-21: four sites, every one behind a host that was
+#: down, took 464 s one after another -- inside the scheduler tick, where that
+#: time is taken from every other action and from the flushes the tick does
+#: last. Setting ``observatory.run_budget_s`` overrides the default.
+RUN_BUDGET_S = 240
+K_RUN_BUDGET = "observatory.run_budget_s"
+
+
+def run_budget_s() -> float:
+    """The configured run budget, or the default when unset or unreadable."""
+    try:
+        from ..models import AppSetting
+        raw = AppSetting.get(K_RUN_BUDGET)
+    except Exception:  # noqa: BLE001 - no settings table, no app context
+        raw = None
+    try:
+        v = float(str(raw).strip()) if raw not in (None, "") else float(RUN_BUDGET_S)
+    except (TypeError, ValueError):
+        return float(RUN_BUDGET_S)
+    return v if v > 0 else float(RUN_BUDGET_S)
+
+
+def _budget_result(target: osc.Target, started: float, budget: float) -> dict:
+    """What a site that the budget did not reach is recorded as: an error that
+    names the budget -- never a missing row, which would leave the previous
+    grade standing as if it had been re-checked."""
+    return {"target": target.as_dict(),
+            "host": (target.default_host or target.vip or "").strip().lower(),
+            "started": started, "finished": time.time(), "grade": None, "score": None,
+            "error": "not graded: the run's %d s budget ran out (setting %s)"
+                     % (budget, K_RUN_BUDGET)}
+
+
+def scan_sites(targets: list, *, budget_s: float | None = None,
+               workers: int = SCAN_WORKERS) -> dict:
+    """``{policy: scan result}`` for every scannable target, graded concurrently
+    within one wall-clock budget. Pure network: no row is written here."""
+    from concurrent.futures import ThreadPoolExecutor, wait
+
+    from flask import current_app, has_app_context
+
+    budget = float(budget_s) if budget_s else run_budget_s()
+    started = time.time()
+    out: dict[str, dict] = {}
+    if not targets:
+        return out
+    app = current_app._get_current_object() if has_app_context() else None
+
+    def _one(t):
+        if app is None:
+            return osc.scan(t, None)
+        with app.app_context():
+            return osc.scan(t, None)
+
+    pool = ThreadPoolExecutor(max_workers=max(1, min(int(workers), len(targets))))
+    futs = {pool.submit(_one, t): t for t in targets}
+    done, pending = wait(futs, timeout=budget)
+    # A scan still running when the budget is spent keeps its own thread until
+    # its site budget (observatory_scan.SCAN_BUDGET) ends; nobody waits for it.
+    pool.shutdown(wait=False, cancel_futures=True)
+    for f in done:
+        t = futs[f]
+        try:
+            out[t.policy] = f.result()
+        except Exception as exc:  # noqa: BLE001 - one site must not sink the run
+            out[t.policy] = dict(_budget_result(t, started, budget),
+                                 error="not graded: scan crashed: %s" % exc)
+    for f in pending:
+        out[futs[f].policy] = _budget_result(futs[f], started, budget)
+    return out
+
+
 def scan_appliance(appliance, *, trigger: str = "scheduled", username: str = "system",
                    dry_run: bool = False) -> dict:
     """Every scannable site of one appliance — the scheduled action's body.
@@ -140,12 +218,13 @@ def scan_appliance(appliance, *, trigger: str = "scheduled", username: str = "sy
                 % (appliance.name, len(scannable), len(targets)),
                 "log": "\n".join("%s %s" % (t.policy, "" if t.scannable else "(skipped: %s)" % t.note)
                                  for t in targets)}
+    scans = scan_sites(scannable)
     lines, dropped, graded = [], [], 0
     for t in targets:
         if not t.scannable:
             lines.append("%s: skipped — %s" % (t.policy, t.note or "not scannable"))
             continue
-        row = run(appliance, t, trigger=trigger, username=username)
+        row = _store(appliance, scans[t.policy], trigger, username)
         if row.grade:
             graded += 1
             prev = previous(row)

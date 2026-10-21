@@ -1363,13 +1363,26 @@ def create_app(config_override: object | None = None) -> Flask:
         from flask import jsonify
         return jsonify({'ok': False, 'error': 'peer authentication required'}), 403
 
+    def _host_limits():
+        # The node's effective host thresholds (Settings > Thresholds, with
+        # the shipped defaults for anything unset): numbers only, so the
+        # unauthenticated probe can carry them. The operator CLI reads them
+        # here instead of keeping its own copy -- `satom get system health`
+        # warned the disk at a fixed 80/90 while the console graded 80/92.
+        try:
+            from .services import host_health as _hh
+            return {k: float(v) for k, v in _hh.limits().items() if v is not None}
+        except Exception:  # noqa: BLE001 - a limit is never worth a 500 here
+            return None
+
     @app.route('/healthz')
     def healthz():
         from flask import jsonify
         peer_auth = _peer_authenticated()
         if peer_auth is not True:
             # preflight reads peer_authenticated from here; keep it.
-            return jsonify({'ok': True, 'peer_authenticated': peer_auth}), 200
+            return jsonify({'ok': True, 'peer_authenticated': peer_auth,
+                            'limits': _host_limits()}), 200
         rev = {}
         try:
             from .services import self_update as _su
@@ -1390,7 +1403,7 @@ def create_app(config_override: object | None = None) -> Flask:
             pass
         return jsonify({'ok': True, 'revision': rev.get('short'),
                         'sha': rev.get('sha'), 'branch': rev.get('branch'),
-                        'db': db_state, 'host': host,
+                        'db': db_state, 'host': host, 'limits': _host_limits(),
                         'peer_authenticated': peer_auth}), 200
 
     # -- primary-aware probe (for a load balancer health check) -----------

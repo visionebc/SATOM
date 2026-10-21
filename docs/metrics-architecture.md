@@ -147,7 +147,13 @@ Each pass writes `satom_syslog_messages_total{device,kind,facility,severity}`,
 silence, **for every known appliance** — absence is not health here either)
 and `satom_syslog_receiver_up`, locally and to the peer like every series.
 The last 500 messages are kept in memory, every line through
-`secret_scan.redact` first, and shown to Global only.
+`secret_scan.redact` first, and shown to Global only. **The setting opens a
+socket, not the node's packet filter**: the operator allows the port (UDP,
+and TCP when enabled) from the appliances' management networks on every node,
+primary and standby — measured on 2026-10-21, a1's own in-container ruleset
+dropped the datagrams while the listener, the parser and the attribution all
+worked, which is exactly the "silence for every appliance, receiver up"
+signature the series above make visible.
 
 ### 2b. How this overlaps Deep monitors and Service Monitor
 

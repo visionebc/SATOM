@@ -1073,10 +1073,13 @@ def _do_deep_monitor(params: dict, dry_run: bool = False) -> dict:
     # reading it. Findings travel through the probe statuses, the Deep monitors
     # page and the alert engine — all of which can say WHICH probe and WHY.
     # A sweep that genuinely fails still raises, and ``run_action`` catches it.
+    unprobed = int(res.get("unprobed") or 0)
     return {"ok": True,
-            "summary": "Deep monitors: %d probe(s) run - worst: %s%s"
-                       % (res["ran"], res["worst"],
-                          (" - " + counts) if counts else ""),
+            "summary": "Deep monitors: %d probe(s) run in %s s - worst: %s%s%s"
+                       % (res["ran"], res.get("took_s", "?"), res["worst"],
+                          (" - " + counts) if counts else "",
+                          (" - %d NOT probed: the %d s sweep budget ran out"
+                           % (unprobed, res.get("budget_s", 0))) if unprobed else ""),
             "log": "\n".join("%s: %s - %s" % (r["status"], r["probe"], r["detail"])
                               for r in res["results"])[:4000]}
 

@@ -89,9 +89,9 @@ def system_health(ctx, args):
             r.worst("warn")
     r.rows("units", rows)
 
-    code, _ = ctx.http("http://127.0.0.1:8000/healthz")
+    code, body = ctx.http("http://127.0.0.1:8000/healthz")
     if code != 200:
-        code, _ = ctx.http("https://127.0.0.1/healthz")
+        code, body = ctx.http("https://127.0.0.1/healthz")
     r.rows("web", [("GET /healthz", code if code else "unreachable")])
     if code != 200:
         r.worst("bad")
@@ -136,19 +136,65 @@ def system_health(ctx, args):
     disk = out.splitlines()[-1].split() if rc == 0 and len(out.splitlines()) > 1 else []
     if disk:
         pct = disk[4].rstrip("%")
+        warn, crit, source = disk_limits_from_healthz(body if code == 200 else "")
         r.rows("disk", [(disk[5] if len(disk) > 5 else str(ctx.app_dir),
-                         "%s used of %s (%s%% full)" % (disk[2], disk[1], pct))])
+                         "%s used of %s (%s%% full; warn at %d%%, critical at %d%% — %s)"
+                         % (disk[2], disk[1], pct, warn, crit, source))])
+        if source == DISK_LIMITS_FALLBACK:
+            r.note("Disk limits are the shipped defaults: /healthz did not report "
+                   "Settings › Thresholds (web unreachable or an older build).")
         try:
-            if int(pct) >= 90:
-                r.worst("bad")
-                r.note("Disk at %s%% — a full disk breaks pg, git and the job "
-                       "ledger before it breaks anything visible." % pct)
-            elif int(pct) >= 80:
-                r.worst("warn")
+            verdict = disk_verdict(int(pct), warn, crit)
         except ValueError:
-            pass
+            verdict = "ok"
+        if verdict == "bad":
+            r.worst("bad")
+            r.note("Disk at %s%% — a full disk breaks pg, git and the job "
+                   "ledger before it breaks anything visible." % pct)
+        elif verdict == "warn":
+            r.worst("warn")
     r.set(role=ctx.role, healthz=code)
     return r
+
+
+#: The console's shipped defaults for the node's filesystem (Settings >
+#: Thresholds, app/services/thresholds.py HOST): used only when /healthz does
+#: not report the node's effective limits, and SAID so on the row.
+DISK_LIMIT_DEFAULTS = (80, 92)
+DISK_LIMITS_FALLBACK = "shipped defaults, not the node's settings"
+DISK_LIMITS_SOURCE = "Settings › Thresholds"
+
+
+def disk_limits_from_healthz(body):
+    """``(warn_pct, crit_pct, source)`` from the /healthz JSON the node served.
+
+    The console grades the same filesystem from Settings > Thresholds; the CLI
+    used to warn at a fixed 80/90 and could disagree with the page the
+    operator had just read. The node reports its effective limits on
+    /healthz (numbers only); anything else -- no body, no JSON, no ``limits``,
+    non-numbers -- falls back to the shipped defaults and names the fallback.
+    """
+    import json
+    warn, crit = DISK_LIMIT_DEFAULTS
+    try:
+        lim = (json.loads(body or "") or {}).get("limits") or {}
+        w, c = float(lim["disk_warn_pct"]), float(lim["disk_crit_pct"])
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return warn, crit, DISK_LIMITS_FALLBACK
+    if not (0 < w <= 100 and 0 < c <= 100):
+        return warn, crit, DISK_LIMITS_FALLBACK
+    return int(w), int(c), DISK_LIMITS_SOURCE
+
+
+def disk_verdict(pct, warn, crit):
+    """``bad`` at or above the critical limit, ``warn`` at or above the
+    warning one, else ``ok`` -- the console's ladder for the same reading."""
+    pct = int(pct)
+    if pct >= int(crit):
+        return "bad"
+    if pct >= int(warn):
+        return "warn"
+    return "ok"
 
 
 def system_performance(ctx, args):

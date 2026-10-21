@@ -1,3 +1,6 @@
+
+msgid "Switching the receiver on does not open this node's packet filter: allow the port (UDP, and TCP if enabled) from the appliances' management networks on every node, primary and standby."
+msgstr "Activar el receptor no abre el filtro de paquetes de este nodo: permita el puerto (UDP, y TCP si está activado) desde las redes de gestión de los equipos en todos los nodos, primario y standby."
 # Spanish translations for PROJECT.
 # Copyright (C) 2026 ORGANIZATION
 # This file is distributed under the same license as the PROJECT project.

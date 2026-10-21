@@ -222,6 +222,28 @@ appliances).
 
 ### Fixed
 
+- **One slow scheduled action held the whole scheduler tick.** The sidecar
+  runs the due actions one after another, and on 2026-10-21 an HTTP
+  Observatory run over four sites whose host was down took 464 s, during which
+  the deep-monitor sweep, the metrics scrape and the syslog journal's flush all
+  waited. The Observatory now grades an appliance's sites concurrently (four
+  at a time) inside a run budget (`observatory.run_budget_s`, 240 s), and a
+  site the budget did not reach is stored as *not graded — budget ran out*,
+  never left on its previous grade; the deep-monitor sweep keeps a budget of
+  its own (`monitor.sweep_budget_s`, 120 s) and records every probe it did not
+  reach as `unknown` with the reason; the sidecar drains the syslog receiver
+  before the actions as well as after them, and prints `slow action: … took
+  N s` for anything over 60 s so the journal names what held the tick.
+- **`satom get system health` graded the disk at a fixed 80 % / 90 %** while
+  the console graded the same filesystem from Settings → Thresholds (80 / 92).
+  `/healthz` now reports the node's effective host limits (numbers only) and
+  the CLI reads them from there; when it cannot, it says the limits are the
+  shipped defaults instead of implying they came from Settings.
+- **The syslog receiver's card and manual say what the setting does not do:**
+  switching it on opens a socket, not the node's packet filter — the operator
+  allows the port from the appliances' management networks on every node,
+  primary and standby (a1's own in-container ruleset dropped the datagrams
+  on 2026-10-21 while receiver, parser and attribution all worked).
 - **A SATOM node's disk read about 4 points emptier than it was.** The
   percentage was used ÷ total, which counts the ~5 % ext4 keeps for root;
   PostgreSQL and SATOM do not run as root. On a1 it read 77.7 % while `df`

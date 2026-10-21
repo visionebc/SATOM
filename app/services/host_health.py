@@ -124,11 +124,19 @@ def grade_stats(stats: dict | None, lim: dict | None = None) -> dict:
         st = worst_of([r[0] for r in rows])
         bad = [d for s, d in rows if s in ("warn", "crit")]
         if bad:
+            # The % is of the space a non-root writer can use (used + free),
+            # so the text names used and free; "20 of 26 GB" beside "82 %"
+            # read as arithmetic that does not add up.
             text = "; ".join(
-                "%s %.0f%% used (%.0f of %.0f GB, budget %g%%)"
-                % (d.get("mount") or "?", d.get("pct") or 0,
-                   d.get("used_gb") or 0, d.get("total_gb") or 0,
-                   lim["disk_warn_pct"])
+                ("%s %.0f%% used (%.0f GB used, %.0f GB free, budget %g%%)"
+                 % (d.get("mount") or "?", d.get("pct") or 0,
+                    d.get("used_gb") or 0, d.get("avail_gb") or 0,
+                    lim["disk_warn_pct"]))
+                if d.get("avail_gb") is not None else
+                ("%s %.0f%% used (%.0f of %.0f GB, budget %g%%)"
+                 % (d.get("mount") or "?", d.get("pct") or 0,
+                    d.get("used_gb") or 0, d.get("total_gb") or 0,
+                    lim["disk_warn_pct"]))
                 for d in bad[:3])
         else:
             worst_pct = max((d.get("pct") or 0) for d in disks)

@@ -262,7 +262,7 @@ EVENTS: dict[str, dict[str, Any]] = {
             "severity": "critical",
             "title": "TLS certificate expires in 3 days",
             "detail": "CN=satom-node-1.example.com expires 2026-08-16T09:00:00Z",
-            "product": "", "node": "satom-node-1",
+            "product": "", "appliance_id": None, "node": "satom-node-1",
             "fired_at": "2026-08-13T21:40:00+00:00",
         },
     },

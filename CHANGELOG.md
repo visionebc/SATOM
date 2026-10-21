@@ -42,6 +42,32 @@ Access › Groups), `wiki05` (comments and subscriptions) and `wiki06`
     its own; this route is the only way in from outside.
   The API manual has four new sections (§10–§13); the manual guard now
   covers every module.
+- **Intent deviation: a bound device that no longer matches its template is
+  a finding** — phase 3 of the NAF Framework alignment plan, asked as "do
+  every phase of the NAF alignment plan, test each one, then release,
+  document and publish everything". Until now nothing compared desired state
+  with actual state: *Config drift* says a device changed, and a device that
+  drifted three weeks ago and has been stable since raised nothing while not
+  running what it was bound to. The health engine's new **Intent deviation**
+  check (on by default, its own toggle and sink family `intent`) renders each
+  binding's template with the device's variables and compares it, field by
+  field, against the cached device objects — the key-subset diff the approval
+  modal already uses, never equality against a raw snapshot, because an
+  appliance fills in what the template never set. Measured on fortiweb17
+  (7.6.8) and fortiweb18 (8.0.6): the appliance answers `"4"` to a `4`, counts
+  its own sub-table rows in `sz_*` and renumbers `*_val` handles; those are
+  ignored, and sub-table rows are reported *unmeasured* rather than guessed
+  at. One warning per binding, keyed `intent.<device>:<binding>:<hash>` so a
+  corrected device goes quiet and a differently broken one is news; the
+  finding names the fields that differ and never a value, and *maintenance*
+  and the drift exclude list silence it like drift. The bindings table in the
+  template dialog shows the same verdict as a **Compliance** column (met /
+  deviates / unmeasured, reason in the tooltip), and hooks can subscribe to
+  the typed event `intent.deviation` (keys only, no values) beside
+  `alert.fired`. A template body may now name its collection as the registry
+  logical name, the cmdb tail or the full REST path: all three resolve to the
+  same cached object. In NAF terms this is the Observability block's "event
+  when the actual state differs from the intended one".
 - **The manual on every node, Documentation Center included** — asked as
   "put the Documentation Center there too", for the sign-in page's
   *Documentation* link. That link pointed only at the public site, which a

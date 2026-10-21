@@ -582,11 +582,17 @@ function vtRenderBindings(t) {
       ? 'No binding: an approved version governs (and locks) this profile on every device of the ADOM.'
       : 'No binding: applied only where someone pushes it.') + '</span>';
   } else {
-    el.innerHTML = '<table class="fw-table"><thead><tr><th>Device</th><th>Follows</th><th>Build</th><th>Verdict</th><th>Variables</th><th></th></tr></thead><tbody>' +
+    el.innerHTML = '<table class="fw-table"><thead><tr><th>Device</th><th>Follows</th><th>Build</th><th>Verdict</th><th>Compliance</th><th>Variables</th><th></th></tr></thead><tbody>' +
       rows.map(function (b) {
+        // Compliance: the cached device objects against the rendered template
+        // (met / deviates / unmeasured); the reason is the tooltip.
+        var comp = b.compliance || 'unmeasured';
+        var compCls = comp === 'met' ? 'fw-badge-success' : (comp === 'deviates' ? 'fw-badge-danger' : 'fw-badge-secondary');
+        var compCell = '<span class="fw-badge ' + compCls + '" data-compliance="' + vtEsc(comp) + '" title="' + vtEsc(b.compliance_reason || '') + '">' + vtEsc(comp) + '</span>' +
+          (comp === 'deviates' && b.compliance_deviations ? ' <span class="small">' + vtEsc(b.compliance_deviations) + ' object(s)</span>' : '');
         return '<tr><td>' + vtEsc(b.appliance) + '</td><td>' + (b.pinned_version ? 'v' + vtEsc(b.pinned_version) : 'newest approved' + (b.version ? ' (v' + vtEsc(b.version) + ')' : '')) +
           '</td><td>' + vtEsc(b.build || '—') + '</td><td>' + (b.blocking ? '<span class="fw-badge fw-badge-danger">does not fit</span> ' : '<span class="fw-badge fw-badge-success">fits</span> ') +
-          '<span class="small">' + vtEsc(b.reason) + '</span></td><td class="small">' + vtEsc(JSON.stringify(b.variables || {})) +
+          '<span class="small">' + vtEsc(b.reason) + '</span></td><td>' + compCell + '</td><td class="small">' + vtEsc(JSON.stringify(b.variables || {})) +
           '</td><td><button type="button" class="btn btn-sm btn-outline-danger btn-sm-icon" data-unbind="' + b.id + '" title="Remove binding"><i class="bi bi-x-lg"></i></button></td></tr>';
       }).join('') + '</tbody></table>';
     el.querySelectorAll('[data-unbind]').forEach(function (btn) {

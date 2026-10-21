@@ -56,7 +56,18 @@ def logical_for_collection(coll: str, version: str = "") -> str | None:
     None when unknown."""
     if not coll:
         return None
-    return _tail_to_logical(version).get(coll.strip("/"))
+    by_tail = _tail_to_logical(version)
+    # The object editor passes the cmdb tail; a template body may carry the
+    # full REST path (``/api/v2.0/cmdb/system/ntp``) or the registry's own
+    # logical name (``signature``). All three name one collection, and the
+    # intent comparison reads template bodies -- so all three resolve.
+    found = by_tail.get(coll.strip("/")) or by_tail.get(_norm_tail(coll))
+    if found:
+        return found
+    bare = coll.strip("/")
+    if bare in by_tail.values():
+        return bare
+    return None
 
 
 def _find(session, appliance_id, mkey, logical=None):

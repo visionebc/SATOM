@@ -173,7 +173,20 @@ def _binding_json(b) -> dict:
     except Exception as exc:  # noqa: BLE001 — one unreadable binding never hides the rest
         st = {'state': 'error', 'blocking': True,
               'reason': f'{type(exc).__name__}: {exc}'}
+    # Compliance: the cached device objects against the rendered template
+    # (services.intent_compliance). Local, no device call; one unreadable
+    # binding reads as unmeasured rather than hiding the rest.
+    try:
+        from ..services import intent_compliance as ic
+        comp = ic.binding_compliance(b, appl)
+    except Exception as exc:  # noqa: BLE001
+        comp = {'status': 'unmeasured', 'reason': f'{type(exc).__name__}: {exc}',
+                'deviations': 0, 'compared': 0}
     return {'id': b.id, 'appliance_id': b.appliance_id,
+            'compliance': comp.get('status') or 'unmeasured',
+            'compliance_reason': comp.get('reason') or '',
+            'compliance_deviations': int(comp.get('deviations') or 0),
+            'compliance_compared': int(comp.get('compared') or 0),
             'appliance': getattr(appl, 'name', '') or f'device {b.appliance_id}',
             'pinned_version': b.pinned_version, 'variables': b.variables_dict,
             'note': b.note or '', 'created_by': b.created_by or '',

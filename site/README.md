@@ -26,6 +26,12 @@ content lives in the Documentation Center). This `index.html` is still the
 page a SATOM node's own nginx serves at the root of this directory
 (`satom-pages.conf`), so keep its facts current.
 
+Every node also serves this tree itself, at `/manual/` (`app/views/manual.py`),
+together with `../docs-center/` (the Documentation Center's public build) at
+`/manual/docs-center/` — the sign-in page links there, so the manual works
+without the public site. Only page assets are served from here (HTML, CSS,
+JS, JSON, images, fonts); this README and dotfiles are not.
+
 The nav and footer written in these pages are REPLACED when the site is
 assembled: satom-site `deploy/apply_chrome.py` is the only author of the menu
 and footer of every published page, so edit them there, not here. When adding

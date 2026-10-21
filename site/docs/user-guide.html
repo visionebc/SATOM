@@ -165,6 +165,7 @@ codebase is assumed. For architecture and internals see the
 <li><a href="#44-container-operations-docker-nodes">Container operations (Docker nodes)</a></li>
 <li><a href="#45-upgrading-to-30">Upgrading to 3.0</a></li>
 <li><a href="#46-wiki-articles-the-team-writes-for-itself">Wiki: articles the team writes for itself</a></li>
+<li><a href="#47-the-manual-on-the-node-manual">The manual on the node: /manual/</a></li>
 </ol>
 <hr>
 <h2 id="1-signing-in--accounts">1. Signing in &amp; accounts</h2>
@@ -204,7 +205,10 @@ codebase is assumed. For architecture and internals see the
   that can, say, use the Lua Studio but not administer users is a configuration,
   not a feature request.
 - Every write you make is recorded in the <strong>Audit Log</strong> with before/after
-  change history.</p>
+  change history.
+- <strong>Documentation</strong> and <strong>API documentation</strong>, under the sign-in form, open
+  the manual this node serves itself — no internet needed, no sign-in
+  needed (§47).</p>
 <h2 id="2-core-concepts">2. Core concepts</h2>
 <p><strong>DB-first pages.</strong> The app keeps a local, queryable copy of each device's
 whole configuration (populated by <em>Rediscovery</em> and <em>Deep Capture</em>). Pages
@@ -9442,7 +9446,7 @@ the page instead of on a manual.</p>
 discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
-   the console is either <strong>on the map</strong> (125 today) or <strong>excluded with a written
+   the console is either <strong>on the map</strong> (126 today) or <strong>excluded with a written
    reason</strong> (171 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>
@@ -11307,6 +11311,52 @@ no address of the node itself, its HA peer, loopback or link-local; no
 redirect followed; the credential removed from every error message. Every
 publication, refusal and setting change is in the audit log
 (<code>wiki.confluence.*</code>).</p>
+<hr>
+<h2 id="47-the-manual-on-the-node-manual">47. The manual on the node: /manual/</h2>
+<p>Every node serves the product's manual itself, so it works where the public
+site cannot be reached: an isolated management network, an air-gapped
+installation, or the public site being down.</p>
+<table>
+<thead>
+<tr>
+<th>Address</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/manual/</code> (= <code>/manual/docs-center/</code>)</td>
+<td>The <strong>Documentation Center</strong>: task articles by category, learning paths per role, search</td>
+</tr>
+<tr>
+<td><code>/manual/docs/&lt;name&gt;.html</code></td>
+<td>The <strong>reference</strong> pages generated from the product's documents (user guide, installation, API, CLI…)</td>
+</tr>
+<tr>
+<td><code>/manual/docs.html</code></td>
+<td>The reference hub</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Documentation</strong>, under the sign-in form, opens the Documentation Center;
+  <strong>API documentation</strong>, and the AI Advisor's <strong>How this works</strong>, open their
+  reference pages. All of them point at this node. The public site is used
+  only for a page this installation does not carry.</li>
+<li><strong>No sign-in needed</strong>, and reachable from every ADOM: it is the same
+  documentation that is published on the public site.</li>
+<li><strong>What is served</strong> is the published, redacted output of the documentation
+  generators: the public build of the Documentation Center (without its
+  internal category) and the generated pages. The node never renders the
+  Markdown sources. Any other file in those directories (a README, a <code>.md</code>)
+  and anything outside them answers 404.</li>
+<li>The pages load nothing from the internet. The public site's web font is not
+  fetched, so the system font is used.</li>
+<li>The copy travels with every installation shape (offline bundles, update
+  packages, the container image), and the release pipeline rebuilds it at
+  every release, so the manual matches the version installed.</li>
+<li>It is on the Concept Map (§39) as <strong>Documentation Center</strong>.</li>
+</ul>
     </div>
   </div>
 </section>

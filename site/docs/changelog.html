@@ -117,6 +117,23 @@ Access › Groups), <code>wiki05</code> (comments and subscriptions) and <code>w
 (Confluence spaces and pages).</p>
 <h3 id="added">Added</h3>
 <ul>
+<li><strong>The manual on every node, Documentation Center included</strong> — asked as
+  "put the Documentation Center there too", for the sign-in page's
+  <em>Documentation</em> link. That link pointed only at the public site, which a
+  management network often cannot reach; on 2026-10-21 nobody could, with the
+  site's host down. Every node now serves the published pages from its own
+  tree at <code>/manual/</code>: the Documentation Center (its public build, vendored in
+  <code>docs-center/</code>) and the generated reference pages of <code>site/</code>. <em>Documentation</em>
+  opens the Documentation Center; <em>API documentation</em> and the AI Advisor's
+  <em>How this works</em> open their reference pages — all on the node, with the
+  public site used only for a page the tree does not carry. What is served is
+  the generators' redacted output, never the Markdown (the routes that
+  rendered <code>docs/*.md</code> stay gone), and nothing outside those two trees or of
+  another file type. Each page's own inline script is admitted by its hash,
+  never by <code>'unsafe-inline'</code>, and nothing is loaded from a third party.
+  Readable without signing in, from every ADOM, and in the container image,
+  which now ships both trees. The release pipeline rebuilds the copy at every
+  cut (step <code>docs_center</code>). On the Concept Map as <em>Documentation Center</em>.</li>
 <li><strong>Wiki: comments, following, export and Confluence</strong> — the rest of the Wiki
   plan, as asked: "do the Wiki and Confluence".</li>
 <li><strong>Comments</strong> under every published article, in threads (Reply), in

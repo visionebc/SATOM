@@ -237,6 +237,15 @@ release necessarily touches:</p>
 python3 deploy/gen_release_notes.py    # site/releases/*.html &lt;- CHANGELOG.md
 python3 deploy/stamp_site_assets.py    # asset hashes, hero pill, installer banner
 </code></pre>
+<p>The release also carries the <strong>Documentation Center</strong> every node serves at
+<code>/manual/docs-center/</code> (user guide §47). Its source is the satom-site
+repository, so it is not regenerated from this tree alone: the pipeline step
+<code>docs_center</code> (before <code>regen_pages</code>) builds satom-site <code>origin/master</code> with
+<code>docs-center/build.py --src /opt/satom --no-internal</code> and commits the result
+into <code>docs-center/</code> when it changed — only that directory, only on a clean
+tree. The build stops on any leak its scanner finds, and
+<code>tests/test_manual_local.py</code> scans the vendored copy again. By hand, see
+<code>docs-center/README.md</code>.</p>
 <p>Cutting a version means editing <code>VERSION</code> and <code>CHANGELOG.md</code>; both feed the
 site. The suite fails if they are stale, so this is a reminder rather than a
 rule you can forget — but running it after the tests and before the sync saves

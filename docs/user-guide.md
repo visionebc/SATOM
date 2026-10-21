@@ -57,6 +57,7 @@
 44. [Container operations (Docker nodes)](#44-container-operations-docker-nodes)
 45. [Upgrading to 3.0](#45-upgrading-to-30)
 46. [Wiki: articles the team writes for itself](#46-wiki-articles-the-team-writes-for-itself)
+47. [The manual on the node: /manual/](#47-the-manual-on-the-node-manual)
 
 ---
 
@@ -98,6 +99,9 @@
   not a feature request.
 - Every write you make is recorded in the **Audit Log** with before/after
   change history.
+- **Documentation** and **API documentation**, under the sign-in form, open
+  the manual this node serves itself — no internet needed, no sign-in
+  needed (§47).
 
 ## 2. Core concepts
 
@@ -8478,7 +8482,7 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (125 today) or **excluded with a written
+   the console is either **on the map** (126 today) or **excluded with a written
    reason** (171 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
@@ -9980,3 +9984,35 @@ no address of the node itself, its HA peer, loopback or link-local; no
 redirect followed; the credential removed from every error message. Every
 publication, refusal and setting change is in the audit log
 (`wiki.confluence.*`).
+
+---
+
+## 47. The manual on the node: /manual/
+
+Every node serves the product's manual itself, so it works where the public
+site cannot be reached: an isolated management network, an air-gapped
+installation, or the public site being down.
+
+| Address | What it is |
+|---|---|
+| `/manual/` (= `/manual/docs-center/`) | The **Documentation Center**: task articles by category, learning paths per role, search |
+| `/manual/docs/<name>.html` | The **reference** pages generated from the product's documents (user guide, installation, API, CLI…) |
+| `/manual/docs.html` | The reference hub |
+
+- **Documentation**, under the sign-in form, opens the Documentation Center;
+  **API documentation**, and the AI Advisor's **How this works**, open their
+  reference pages. All of them point at this node. The public site is used
+  only for a page this installation does not carry.
+- **No sign-in needed**, and reachable from every ADOM: it is the same
+  documentation that is published on the public site.
+- **What is served** is the published, redacted output of the documentation
+  generators: the public build of the Documentation Center (without its
+  internal category) and the generated pages. The node never renders the
+  Markdown sources. Any other file in those directories (a README, a `.md`)
+  and anything outside them answers 404.
+- The pages load nothing from the internet. The public site's web font is not
+  fetched, so the system font is used.
+- The copy travels with every installation shape (offline bundles, update
+  packages, the container image), and the release pipeline rebuilds it at
+  every release, so the manual matches the version installed.
+- It is on the Concept Map (§39) as **Documentation Center**.

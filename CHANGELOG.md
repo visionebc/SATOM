@@ -12,6 +12,23 @@ Access › Groups), `wiki05` (comments and subscriptions) and `wiki06`
 
 ### Added
 
+- **The manual on every node, Documentation Center included** — asked as
+  "put the Documentation Center there too", for the sign-in page's
+  *Documentation* link. That link pointed only at the public site, which a
+  management network often cannot reach; on 2026-10-21 nobody could, with the
+  site's host down. Every node now serves the published pages from its own
+  tree at `/manual/`: the Documentation Center (its public build, vendored in
+  `docs-center/`) and the generated reference pages of `site/`. *Documentation*
+  opens the Documentation Center; *API documentation* and the AI Advisor's
+  *How this works* open their reference pages — all on the node, with the
+  public site used only for a page the tree does not carry. What is served is
+  the generators' redacted output, never the Markdown (the routes that
+  rendered `docs/*.md` stay gone), and nothing outside those two trees or of
+  another file type. Each page's own inline script is admitted by its hash,
+  never by `'unsafe-inline'`, and nothing is loaded from a third party.
+  Readable without signing in, from every ADOM, and in the container image,
+  which now ships both trees. The release pipeline rebuilds the copy at every
+  cut (step `docs_center`). On the Concept Map as *Documentation Center*.
 - **Wiki: comments, following, export and Confluence** — the rest of the Wiki
   plan, as asked: "do the Wiki and Confluence".
   - **Comments** under every published article, in threads (Reply), in

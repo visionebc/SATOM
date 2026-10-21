@@ -45,6 +45,7 @@ def _gate():
 @limiter.limit("60 per minute")
 @token_required("read")
 def system_nodes():
+    """CPU, memory and disk of every SATOM node now, graded (global token only)."""
     denied = _gate()
     if denied is not None:
         return denied
@@ -56,6 +57,7 @@ def system_nodes():
 @limiter.limit("60 per minute")
 @token_required("read")
 def system_nodes_history():
+    """CPU, memory and disk of the SATOM nodes over time (global token only)."""
     denied = _gate()
     if denied is not None:
         return denied

@@ -109,6 +109,7 @@ def _appid_gate(tok):
 @bp.route("/adc/rule-types", methods=["GET"])
 @token_required("read")
 def adc_rule_types():
+    """The allow-list of FortiADC rule types a token may author."""
     out = []
     for logical, description in sorted(ADC_RULE_LOGICALS.items()):
         out.append({
@@ -133,6 +134,7 @@ def adc_rule_types():
 @bp.route("/adc/rules", methods=["GET"])
 @token_required("read")
 def adc_list_rules():
+    """FortiADC rules of one type, read from the appliance."""
     appliance, err = _fortiadc_or_error(request.args.get("appliance_id", type=int))
     if err:
         return err
@@ -156,6 +158,7 @@ def adc_list_rules():
 @limiter.limit("30 per minute")
 @token_required("write")
 def adc_create_rule():
+    """Create a FortiADC rule: a preview, or the write with ``apply`` and the capability."""
     tok = g.api_token
     body = request.get_json(silent=True) or {}
     if not isinstance(body, dict):

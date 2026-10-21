@@ -99,6 +99,7 @@ def _plan_json(plan: dict) -> dict:
 @bp.route("/waf/exception-types", methods=["GET"])
 @token_required("read")
 def waf_exception_types():
+    """The allow-list of FortiWeb WAF carve-out types a token may author."""
     out = []
     for t in store.catalog(ALLOWED_CATEGORY):
         key = t["key"]
@@ -155,6 +156,7 @@ def waf_list_exceptions():
 @bp.route("/waf/exceptions/<int:exc_id>", methods=["GET"])
 @token_required("read")
 def waf_get_exception(exc_id):
+    """One WAF carve-out this token authored (or any, with ``admin``)."""
     tok = g.api_token
     exc = store.get(exc_id)
     if exc is None or exc.category != ALLOWED_CATEGORY:
@@ -174,6 +176,7 @@ def waf_get_exception(exc_id):
 @limiter.limit("30 per minute")
 @token_required("write")
 def waf_create_exception():
+    """File a WAF carve-out as desired state; push it only with ``apply`` and the capability."""
     tok = g.api_token
     body = request.get_json(silent=True) or {}
     if not isinstance(body, dict):

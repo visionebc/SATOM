@@ -6,6 +6,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An update feed that answers 404 says who answered and why** (SA-0006).
+  The message was only "… answered HTTP 404". It now names the server, the
+  content type, the page title and any redirect (without its signed query),
+  and the usual cause for that kind of URL: a Docker registry proxy (it serves
+  images, never release files), a proxy of GitHub that is not a raw proxy of
+  `https://github.com/`, a proxy still serving a 404 it cached before the
+  release existed, or a proxy host that cannot reach GitHub's download host
+  (`release-assets.githubusercontent.com`). The same detail is added to every
+  other HTTP error of the feed, the package download and the knowledge feed.
+
 ## [3.4.4] - 2026-10-21
 
 The update feed gets a link that never changes and works through a mirror of

@@ -119,6 +119,58 @@ def _ssl_context() -> ssl.SSLContext:
     return ctx
 
 
+def _no_query(url: str) -> str:
+    """``url`` without query or fragment: a CDN redirect carries a signed token."""
+    p = urlsplit(url or "")
+    return "%s://%s%s" % (p.scheme, p.netloc, p.path)
+
+
+def _http_detail(url: str, exc) -> str:
+    """Who answered an HTTP error, as `` (server X, type, "page title"; after a
+    redirect to …)`` -- a bare "HTTP 404" does not say whether GitHub, a proxy
+    or a portal in between answered it. Empty when nothing is known."""
+    bits = []
+    hdr = getattr(exc, "headers", None)
+    if hdr is not None:
+        server = " ".join((hdr.get("Server") or "").split())[:60]
+        ctype = (hdr.get("Content-Type") or "").split(";")[0].strip()[:60]
+        bits += ["server " + server] if server else []
+        bits += [ctype] if ctype else []
+    try:
+        body = exc.read(8192) if getattr(exc, "fp", None) else b""
+    except Exception:  # noqa: BLE001 -- the error page is a hint, never a failure
+        body = b""
+    text = body.decode("utf-8", "replace")
+    m = re.search(r"<title[^>]*>(.*?)</title>", text, re.I | re.S)
+    page = " ".join(re.sub(r"<[^>]+>", " ", m.group(1) if m else text).split())[:160]
+    if page:
+        bits.append('"%s"' % page.replace('"', "'"))
+    final = getattr(exc, "url", "") or ""
+    if final and _no_query(final) != _no_query(url):
+        bits.append("after a redirect to %s" % _no_query(final))
+    return " (%s)" % ", ".join(bits) if bits else ""
+
+
+def _not_found_hint(url: str) -> str:
+    """What a 404 usually means for this kind of URL."""
+    host, path = url_host(url), urlsplit(url).path.lower()
+    if host == "github.com":
+        return "GitHub has no release file at that path; check the owner, repository and file name"
+    if "docker" in path:
+        return ("the URL names a Docker registry proxy (for example of ghcr.io); it serves "
+                "container images only, never release files. Use a raw proxy of https://github.com/")
+    if "/releases/" in path:
+        return ("the proxy did not find the file. Check, in this order: (1) the repository in "
+                "the URL is a raw proxy whose remote is https://github.com/ (the path after it "
+                "starts with the owner, e.g. /visionebc/SATOM/releases/...); (2) the proxy is "
+                "not caching an older 404 -- one asked before the release existed keeps "
+                "answering 404 until its not-found cache expires (Nexus: invalidate the "
+                "repository's cache); (3) the proxy host reaches github.com AND the download "
+                "host it redirects to (release-assets.githubusercontent.com, "
+                "objects.githubusercontent.com) -- a proxy that cannot fetch the file answers 404")
+    return "the server has no file at that path; check the URL"
+
+
 def _open(url: str, timeout: float, auth=None):
     if not (url or "").lower().startswith("https://"):
         raise FeedError("only https:// URLs are fetched (got %r)" % url)
@@ -130,11 +182,15 @@ def _open(url: str, timeout: float, auth=None):
     except FeedError:
         raise
     except urllib.error.HTTPError as exc:
+        what = _http_detail(url, exc)
         if exc.code in (401, 403):
-            raise FeedError("%s answered HTTP %s: the source wants credentials, or "
+            raise FeedError("%s answered HTTP %s%s: the source wants credentials, or "
                             "refused the ones configured (Settings → General → "
-                            "Update sources)" % (url, exc.code)) from None
-        raise FeedError("%s answered HTTP %s" % (url, exc.code)) from None
+                            "Update sources)" % (url, exc.code, what)) from None
+        if exc.code == 404:
+            raise FeedError("%s answered HTTP 404%s: %s"
+                            % (url, what, _not_found_hint(url))) from None
+        raise FeedError("%s answered HTTP %s%s" % (url, exc.code, what)) from None
     except (urllib.error.URLError, OSError) as exc:
         reason = getattr(exc, "reason", exc)
         raise FeedError("cannot reach %s (%s). A node with no route to the "

@@ -264,6 +264,44 @@ EVENTS: dict[str, dict[str, Any]] = {
             "fired_at": "2026-08-13T21:40:00+00:00",
         },
     },
+    "intent.deviation": {
+        "description": "A device bound to a template no longer matches it "
+                       "(the health engine's Intent deviation check, "
+                       "services.intent_compliance). Fires ONCE PER FINDING "
+                       "alongside alert.fired, under the same cooldown and "
+                       "sink filter, only from the writable primary; bind one "
+                       "of the two, not both. Names the keys that differ, "
+                       "never their values.",
+        "payload": {
+            "key": "str — the finding key (intent.<device>:<binding>:<hash>); "
+                   "the hash changes when the deviation changes",
+            "severity": "str — warning",
+            "appliance_id": "int — Appliance.id",
+            "appliance": "str — device name",
+            "product": "str — the device's ADOM",
+            "binding_id": "int — TemplateBinding.id",
+            "template_id": "int — the Template version the device follows",
+            "kind": "str — template kind",
+            "name": "str — template name",
+            "version": "int — template version",
+            "deviations": "list[dict] — per object: endpoint, mkey, "
+                          "reason, keys (field names only)",
+            "deviation_count": "int — objects that deviate",
+            "compared": "int — objects that were compared",
+            "node": "str — the SATOM node that evaluated it",
+            "fired_at": "str — ISO-8601",
+        },
+        "example": {
+            "key": "intent.fortiweb17:4:9f2c1a7b3d4e", "severity": "warning",
+            "appliance_id": 35, "appliance": "fortiweb17", "product": "fortiweb",
+            "binding_id": 4, "template_id": 6, "kind": "config:network",
+            "name": "dns-p", "version": 1,
+            "deviations": [{"endpoint": "/api/v2.0/cmdb/system/dns", "mkey": "",
+                            "reason": "1 field(s) differ", "keys": ["primary"]}],
+            "deviation_count": 1, "compared": 1,
+            "node": "satom-node-1", "fired_at": "2026-10-21T04:10:00+00:00",
+        },
+    },
 }
 
 EVENT_NAMES: tuple[str, ...] = tuple(EVENTS)

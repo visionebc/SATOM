@@ -59,6 +59,7 @@ K_CHK_GIT = "alerts.check.git"
 K_CHK_DEVICE = "alerts.check.device"
 K_CHK_BACKUP = "alerts.check.backup"
 K_CHK_DRIFT = "alerts.check.drift"
+K_CHK_INTENT = "alerts.check.intent"    # bound device ≠ its template (intent deviation)
 K_CHK_ACTIONS = "alerts.check.actions"
 K_CHK_HOST = "alerts.check.host"
 K_CHK_CATALOG = "alerts.check.catalog"
@@ -83,6 +84,7 @@ DEFAULTS = {
     K_CHK_DEVICE: "1",
     K_CHK_BACKUP: "1",
     K_CHK_DRIFT: "1",
+    K_CHK_INTENT: "1",
     K_CHK_ACTIONS: "1",
     K_CHK_HOST: "1",
     K_CHK_CATALOG: "1",
@@ -190,6 +192,7 @@ def config() -> dict:
             "device": _flag(K_CHK_DEVICE),
             "backup": _flag(K_CHK_BACKUP),
             "drift": _flag(K_CHK_DRIFT),
+            "intent": _flag(K_CHK_INTENT),
             "actions": _flag(K_CHK_ACTIONS),
             "host": _flag(K_CHK_HOST),
             "catalog": _flag(K_CHK_CATALOG),
@@ -256,6 +259,7 @@ def save_config(form) -> None:
     AppSetting.set(K_CHK_DEVICE, cb("check_device"))
     AppSetting.set(K_CHK_BACKUP, cb("check_backup"))
     AppSetting.set(K_CHK_DRIFT, cb("check_drift"))
+    AppSetting.set(K_CHK_INTENT, cb("check_intent"))
     AppSetting.set(K_CHK_ACTIONS, cb("check_actions"))
     AppSetting.set(K_CHK_HOST, cb("check_host"))
     AppSetting.set(K_CHK_CATALOG, cb("check_catalog"))
@@ -888,6 +892,82 @@ def _check_drift() -> list[dict]:
     return findings
 
 
+def _check_intent() -> list[dict]:
+    """One finding per binding whose device no longer matches its template.
+
+    Drift (above) says a device CHANGED; this says a device does not match
+    what the operator MEANT it to run, whether it changed yesterday or never
+    received the template at all. The comparison is local -- the rendered
+    template against the cached device objects (``services.intent_compliance``)
+    -- so it never touches the appliance, and it names the fields that differ,
+    never their values.
+
+    One finding per binding, keyed by device, binding and a hash of the
+    deviation: the same deviation fires once per cooldown window, a corrected
+    device goes quiet on its own, and a device that deviates DIFFERENTLY
+    tomorrow mints a new key. Devices in ``maintenance`` are skipped, and so are
+    the names in ``alerts.drift_exclude`` -- a box whose changes are muted is a
+    box whose compliance is not wanted either. ``unmeasured`` bindings (no
+    approved version, a variable unset, nothing cached) raise nothing: the
+    bindings table says why, and an alert that cannot tell "does not match"
+    from "could not look" would be the permanent complaint this engine has
+    already had to delete three times.
+    """
+    from ..models import Appliance
+    from . import intent_compliance as ic
+    findings: list[dict] = []
+    try:
+        results = ic.all_bindings()
+    except Exception as exc:  # noqa: BLE001
+        return [{"key": "intent.error", "severity": SEV_INFO,
+                 "title": "Intent scan: bindings unreadable", "detail": str(exc)}]
+    excluded = _drift_exclude_slugs()
+    for r in results:
+        if r.get("status") != ic.STATUS_DEVIATES:
+            continue
+        a = db_get(Appliance, r.get("appliance_id"))
+        if a is None:
+            continue
+        slug = a.name
+        if slug in excluded or getattr(a, "maintenance", False):
+            continue
+        lines = "\n".join(ic.describe(r))
+        findings.append({
+            "key": f"intent.{slug}:{r['binding_id']}:{r['hash']}",
+            "severity": SEV_WARNING,
+            "title": f"Intent deviation on {slug}: {r['name']}",
+            "product": _product_of(a),
+            "detail": (f"{a.kind} '{slug}' no longer matches template "
+                       f"{r['kind']}/{r['name']} v{r['version']} it is bound to: "
+                       f"{r['deviations']} of {r['compared'] + r['unmeasured']} "
+                       f"object(s) deviate ({r['compared']} compared"
+                       + (f", {r['unmeasured']} not compared" if r["unmeasured"] else "")
+                       + f").\n{lines}\nRe-apply the template from the Template "
+                       f"Library, or re-bind the device to the version it runs."),
+            "intent": {
+                "appliance_id": r["appliance_id"], "appliance": slug,
+                "binding_id": r["binding_id"], "template_id": r["template_id"],
+                "kind": r["kind"], "name": r["name"], "version": r["version"],
+                "deviations": [{"endpoint": d["endpoint"], "mkey": d["mkey"],
+                                "reason": d["reason"], "keys": list(d["keys"])}
+                               for d in r["deviating"]],
+                "deviation_count": r["deviations"], "compared": r["compared"],
+            },
+        })
+    return findings
+
+
+def db_get(model, ident):
+    """``db.session.get`` that treats a missing or invalid id as None."""
+    from ..extensions import db
+    if ident in (None, ""):
+        return None
+    try:
+        return db.session.get(model, int(ident))
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _check_host() -> list[dict]:
     """One finding per node whose MACHINE is degraded — disk, memory, load.
 
@@ -1181,6 +1261,7 @@ _CHECKS = [
     (K_CHK_DEVICE, _check_signatures),
     (K_CHK_BACKUP, _check_backup),
     (K_CHK_DRIFT, _check_drift),
+    (K_CHK_INTENT, _check_intent),
     (K_CHK_ACTIONS, _check_actions),
     (K_CHK_ACTIONS, _check_code),
     (K_CHK_HOST, _check_host),
@@ -1257,6 +1338,35 @@ def alert_event_payload(finding: dict, node: str) -> dict:
         "title": finding.get("title", ""),
         "detail": finding.get("detail", ""),
         "product": finding.get("product") or "",
+        "node": node or "",
+        "fired_at": _now().isoformat(),
+    }
+
+
+def intent_event_payload(finding: dict, node: str) -> dict | None:
+    """The ``intent.deviation`` payload for one intent finding, None for any
+    other finding. The typed event carries what the generic ``alert.fired``
+    folds into prose: which binding, which objects, which keys -- and never a
+    value, because the finding itself never held one."""
+    info = finding.get("intent")
+    if not isinstance(info, dict):
+        return None
+    return {
+        "key": finding.get("key", ""),
+        "severity": finding.get("severity", SEV_WARNING),
+        "appliance_id": info.get("appliance_id"),
+        "appliance": info.get("appliance", ""),
+        "product": finding.get("product") or "",
+        "binding_id": info.get("binding_id"),
+        "template_id": info.get("template_id"),
+        "kind": info.get("kind", ""),
+        "name": info.get("name", ""),
+        "version": info.get("version"),
+        "deviations": [{"endpoint": d.get("endpoint", ""), "mkey": d.get("mkey", ""),
+                        "reason": d.get("reason", ""), "keys": list(d.get("keys") or [])}
+                       for d in (info.get("deviations") or [])],
+        "deviation_count": int(info.get("deviation_count") or 0),
+        "compared": int(info.get("compared") or 0),
         "node": node or "",
         "fired_at": _now().isoformat(),
     }
@@ -1414,6 +1524,21 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
             # on behalf of a subscriber that does not exist.
             if r:
                 rows.extend(r)
+                queued_keys.add(f["key"])
+            # The typed twin of an intent finding. Same sink filter, same
+            # cooldown stamp (the key is the finding's), same once-per-finding
+            # cadence; a hook binds to alert.fired OR intent.deviation.
+            typed = intent_event_payload(f, node)
+            if typed is None:
+                continue
+            try:
+                r2 = integration_hooks.dispatch("intent.deviation", typed,
+                                                by="alerts")
+            except Exception as exc:  # noqa: BLE001
+                result["delivery_failed"].append("hooks: %s" % exc)
+                break
+            if r2:
+                rows.extend(r2)
                 queued_keys.add(f["key"])
         result["hooks"] = {"requests": len(rows),
                            "findings": len(queued_keys)}

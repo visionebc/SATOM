@@ -5488,7 +5488,10 @@ policy (what happens then), and the two are kept apart deliberately.
 - **Enable alert dispatch** and the **alert recipients**. Blank recipients fall
   back to the email tab's defaults, and the page prints what that fallback
   currently resolves to.
-- **Checks enabled** — tick the individual health checks that may raise mail.
+- **Checks enabled** — tick the individual health checks that may raise mail
+  (cert expiry, git divergence, device health, backup freshness, config
+  drift, intent deviation, scheduled automation, host resources, API catalog
+  integrity).
 - Delivery-shaping numbers: certificate warning days, a **cooldown** in hours so
   a flapping condition cannot mail every sweep, git-behind and git-unpushed
   limits (a local commit that never reached the remote is a *silent* push
@@ -5530,7 +5533,7 @@ decides for itself what it wants to hear. Every sink has exactly two knobs: a
 not built: the rule everybody writes is "everything", which is this with more
 surface to get wrong.
 
-The seven maskable families are the same seven checks as *Checks enabled*, and
+The maskable families are the same checks as *Checks enabled*, and
 the mask is written in the family's own name — which is not always the name of
 the key prefix behind it:
 
@@ -5541,9 +5544,25 @@ the key prefix behind it:
 | `device` | Device health | `device.` |
 | `backup` | Backup freshness | `backup.` |
 | `drift` | Config drift | `drift.` |
+| `intent` | Intent deviation | `intent.` |
 | `actions` | Scheduled automation | `action.` |
 | `host` | Host resources | `host.` |
 | `catalog` | API catalog integrity | `catalog.` |
+
+**Config drift** and **Intent deviation** answer different questions. Drift
+says a device *changed* (a new version in the configuration history that
+SATOM did not write, §26.5). Intent deviation says a device *does not match
+what it was meant to run*: the template it is bound to (§29.1.4), rendered
+with the device's variables, compared field by field against the cached
+device objects — whether it changed yesterday or never received the template.
+It raises one warning per binding, keyed `intent.<device>:<binding>:<hash>`,
+so the same deviation fires once per cooldown and a corrected device goes
+quiet by itself; it names the fields that differ, never their values; it
+ignores what the appliance derives on its own (`sz_*` row counters, `*_val`
+handles); sub-table rows are not compared; and *maintenance* and the drift
+exclude list silence it like drift. A hook can subscribe to it as
+`intent.deviation` (§35.3). The reference is
+[alerting.md](alerting.md).
 
 | Sink | What it is | Default |
 |---|---|---|
@@ -6475,9 +6494,21 @@ For each binding you choose:
 A device has at most one binding per family; binding it again updates the
 binding. The bindings table shows, per device, the version it follows, the
 build it is checked against, the verdict (*fits* / *does not fit*, with the
-reason) and its variables. A binding whose family has no approved version, or
-whose pinned version no longer exists, whose device reports no firmware, or
-that leaves a variable unset, shows as not fitting.
+reason), its **compliance** and its variables. A binding whose family has no
+approved version, or whose pinned version no longer exists, whose device
+reports no firmware, or that leaves a variable unset, shows as not fitting.
+
+**Compliance** is whether the device still runs what the template says:
+**met** (every compared object matches), **deviates** (at least one does not —
+the tooltip counts them, and the *Intent deviation* alert, §26.6, names the
+fields) or **unmeasured** (nothing could be compared: no approved version, a
+variable unset, a collection the device sync has not cached — the tooltip says
+which). It is computed locally from the cached device objects, the same way
+the approval modal diffs a write, so opening the dialog never contacts a
+device; it ignores what the appliance derives on its own and compares
+top-level objects only (sub-table rows count as not compared). *Fits* and
+*compliance* are different questions: a template can fit a build perfectly and
+still not be what the device runs.
 
 **Variables.** A value that differs per device (an address, a host name) is
 written in the body as `{{ name }}` (letters, digits, `_`, `.`, `-`). The View
@@ -7763,18 +7794,24 @@ A hook is a small Python script SATOM runs when it emits an event. The usual use
 is opening a change ticket in your own CRM and handing the reference back.
 
 Events: `change.requested`, `change.approved`, `window.opening`,
-`window.closing`, `upgrade.finished`, `upgrade.failed` and `alert.fired`. The
-editor lists the exact payload each one carries. `window.opening` and
+`window.closing`, `upgrade.finished`, `upgrade.failed`, `alert.fired` and
+`intent.deviation`. The editor lists the exact payload each one carries. `window.opening` and
 `window.closing` fire when a change starts and finishes, whether or not NetBox
 is configured; `window.closing` carries the change's status (`completed`,
 `failed`) as its `outcome`.
 
-`alert.fired` is the health engine's, and it behaves unlike the other six: it
+`alert.fired` is the health engine's, and it behaves unlike the change events: it
 fires **once per finding** rather than once per change, only for findings fresh
 out of the cooldown window, and **only from the writable primary**. It is off
 until you switch the *Integration hooks* sink on in **Settings → Email &
 Alerts**, and a hook bound to it receives the finding's `key`, `family`,
 `severity`, `title`, `detail`, `product`, `node` and `fired_at`.
+`intent.deviation` is the typed twin of an *Intent deviation* finding
+(§26.6): same moment, same sink filter, same cooldown, but the evidence
+arrives as data — the device, the binding, the template version and, per
+deviating object, the endpoint, the key and the **field names** that differ
+(never their values). Bind a hook to one of the two, not both, or it runs
+twice.
 
 **Starters.** *New hook* offers a working script you own the moment you save
 it: **CRM change ticket** (`change.requested`), **Telegram**, **Slack** and

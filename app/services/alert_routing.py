@@ -75,10 +75,15 @@ _PREFIX_FAMILY = {
     # wants to hear that the paths this product resolves names through
     # are wrong for a firmware line.
     "catalog": "catalog",
+    # A bound device no longer matches its template (services.intent_compliance).
+    # Its own family, not ``drift``: drift is "the device changed", this is
+    # "the device does not match what was meant", and an operator who mutes
+    # change noise on a lab box still wants to hear the second.
+    "intent": "intent",
 }
 
 #: The maskable families, in the order the settings page prints them.
-FAMILIES = ("cert", "git", "device", "backup", "drift", "actions",
+FAMILIES = ("cert", "git", "device", "backup", "drift", "intent", "actions",
             "host", "catalog")
 
 FAMILY_LABELS = {
@@ -87,6 +92,7 @@ FAMILY_LABELS = {
     "device": "Device health",
     "backup": "Backup freshness",
     "drift": "Config drift",
+    "intent": "Intent deviation",
     "actions": "Scheduled automation",
     "host": "Host resources",
     "catalog": "API catalog integrity",

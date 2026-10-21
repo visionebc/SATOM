@@ -40,6 +40,7 @@ existed, and the map is explicit rather than clever:
 | `device.` | `device` | Device health |
 | `backup.` | `backup` | Backup freshness |
 | `drift.` | `drift` | Config drift |
+| `intent.` | `intent` | Intent deviation |
 | `action.` | `actions` | Scheduled automation |
 | `host.` | `host` | Host resources |
 | `catalog.` | `catalog` | API catalog integrity |
@@ -51,6 +52,25 @@ or whose version the daily `signature_check` action could not read — and
 `device.signature_source_missing`: FortiWebs are registered but no signature
 source is configured (or the configured one no longer exists), so nothing feeds
 the local signature index. They ride the *Device health* toggle.
+
+**`drift` and `intent` are two different questions.** *Config drift* says a
+device **changed**: a new version in the configuration history (the
+source of truth) that SATOM did not write. *Intent deviation* says a device
+**does not match what it was meant to run**: the rendered template a device is
+bound to (§29.1.4 of the user guide), compared field by field against the
+cached device objects — whether the device changed yesterday or never
+received the template at all. A device that drifted three weeks ago and has
+been stable since raises no drift and still deviates. The comparison is local
+(the same key-subset diff the approval modal shows), ignores what the
+appliance derives on its own (`sz_*` row counters, `*_val` handles, the
+sub-table edit echo), compares only top-level objects (sub-table rows are
+reported *unmeasured*), and names the **keys** that differ, never their
+values. The key is `intent.<device>:<binding id>:<hash>`: the same deviation
+fires once per cooldown window, a corrected device goes quiet, a device that
+deviates *differently* mints a new key. `maintenance` and `alerts.drift_exclude`
+silence it exactly as they silence drift. In NAF Framework terms this is the
+Observability block's "event when the actual state differs from the intended
+one".
 
 Two families are **unfilterable** and no sink configuration can drop them:
 
@@ -95,7 +115,7 @@ able to make a dead mailbox look alive.
 Every sink has exactly two knobs and no more:
 
 - **minimum severity** — `info`, `warning` or `critical`;
-- **family mask** — the seven maskable families above.
+- **family mask** — the maskable families above.
 
 | sink | key | default |
 |---|---|---|
@@ -291,11 +311,13 @@ conclude.
 
 ---
 
-## 7. Integration hooks and `alert.fired`
+## 7. Integration hooks, `alert.fired` and `intent.deviation`
 
 A hook is a small Python script SATOM runs when it emits an event; the sandbox,
 the secret store and the runner are documented in the user guide. Alerting adds
-one event to that catalog.
+two events to that catalog: the generic `alert.fired`, carried by every
+finding, and the typed `intent.deviation`, carried by the *Intent deviation*
+findings only.
 
 `alert.fired` fires **once per finding**, only for findings fresh out of the
 cooldown window, and **only from the writable primary**.
@@ -303,13 +325,22 @@ cooldown window, and **only from the writable primary**.
 | field | meaning |
 |---|---|
 | `key` | stable identity — dedupe on this |
-| `family` | `cert` · `git` · `device` · `backup` · `drift` · `actions` · `host` · `catalog` · `engine` · `unknown` |
+| `family` | `cert` · `git` · `device` · `backup` · `drift` · `intent` · `actions` · `host` · `catalog` · `engine` · `unknown` |
 | `severity` | `info` · `warning` · `critical` |
 | `title` | one line, operator-facing |
 | `detail` | the evidence |
 | `product` | owning workspace, `''` when fleet-wide |
 | `node` | the node that evaluated it |
 | `fired_at` | ISO-8601 |
+
+`intent.deviation` fires for the same finding, at the same moment and under
+the same sink filter and cooldown as its `alert.fired` twin — **bind a hook to
+one of the two, not both**, or it runs twice. Where `alert.fired` folds the
+evidence into `detail`, the typed event carries it as data: `appliance_id`,
+`appliance`, `product`, `binding_id`, `template_id`, `kind`, `name`,
+`version`, `deviations` (per object: `endpoint`, `mkey`, `reason`, `keys` —
+field **names** only, never values), `deviation_count`, `compared`, `node`,
+`fired_at`. The hook editor shows the full shape and an example.
 
 ### Starters
 

@@ -66,6 +66,22 @@ for ever, and GitHub refuses files over 100 MB.
   environment changes the default. The CLI does not read the console setting:
   `satom execute update fetch --feed <https-url> [--user <name>]`, with the
   token in `$SATOM_FEED_TOKEN`.
+- **A link that never changes.** Every release also carries the feed as the
+  asset `satom-update-latest.json`:
+  `https://github.com/visionebc/SATOM/releases/latest/download/satom-update-latest.json`
+  always names the newest package.
+- **Through a mirror of GitHub.** A node that reaches GitHub only through a
+  proxy repository of `https://github.com/` (a Nexus or Artifactory *raw*
+  proxy) uses the same path under the mirror:
+  `https://<mirror>/visionebc/SATOM/releases/latest/download/satom-update-latest.json`.
+  When the feed was read from a URL on another host whose path holds
+  `/visionebc/SATOM/releases/`, the package, the signing key, the API pack and
+  the knowledge feed are fetched through that same mirror (the feed names them
+  on github.com, which such a node cannot reach), and the configured user and
+  token reach them because they are on the feed's host. **Test** and
+  `update fetch` name the mirror. A mirror caches: give the proxy a short
+  metadata/content max age, or `latest` keeps naming the previous release. A
+  Docker registry proxy (of `ghcr.io`, for example) cannot serve these files.
 - **Nothing polls.** The feed is read when an operator asks; an on-premise
   security product does not phone home on a timer.
 - As root, the CLI loads the downloader only from the root-owned runner

@@ -518,6 +518,8 @@ def update_fetch(ctx, args):
             ("offered", "%s (%s)" % (new, doc.get("released") or "?")),
             ("package", "%s  %.1f MB" % (pkg["name"], pkg["size"] / 1048576.0)),
             ("sha256", pkg["sha256"])]
+    if doc.get("_mirror"):
+        rows.insert(1, ("mirror", doc["_mirror"]))
     if not newer:
         r = Result("ok", "update fetch")
         r.rows("", rows)

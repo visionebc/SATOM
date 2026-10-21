@@ -193,10 +193,64 @@ def fetch_small(url: str, timeout: float = 10, max_bytes: int = MAX_FEED_BYTES,
     return raw
 
 
+#: Where releases are published. Every release also carries the feed as the
+#: asset ``LATEST_ASSET``, so ``<repo>/releases/latest/download/<LATEST_ASSET>``
+#: is a link that never changes.
+GITHUB_BASE = "https://github.com/"
+LATEST_ASSET = "satom-update-latest.json"
+_GH_REPO_RE = re.compile(r"^https://github\.com/([^/?#]+)/([^/?#]+)/releases/", re.I)
+
+
+def mirror_prefix(url: str, doc: dict) -> str:
+    """What stands for ``https://github.com/`` when the feed at ``url`` was read
+    through a mirror of GitHub, or ``""``.
+
+    A node that reaches GitHub only through a proxy repository (a Nexus or
+    Artifactory "raw" proxy of https://github.com/) reads the feed at
+    ``<mirror>/<owner>/<repo>/releases/latest/download/satom-update-latest.json``,
+    but the feed names its assets on github.com -- which that node cannot reach
+    (SA-0006). The package's own URL says which repository the release lives
+    in; a feed URL on another host whose path holds ``/<owner>/<repo>/releases/``
+    was read through a mirror, and everything before that path is the mirror.
+    """
+    m = _GH_REPO_RE.match(((doc.get("package") or {}).get("url") or ""))
+    if not m or url_host(url) in ("", "github.com"):
+        return ""
+    needle = "/%s/%s/releases/" % (m.group(1), m.group(2))
+    parts = urlsplit(url)
+    at = parts.path.lower().find(needle.lower())
+    if at < 0:
+        return ""
+    return "https://%s%s" % (parts.netloc, parts.path[:at + 1])
+
+
+def _through_mirror(doc: dict, prefix: str) -> None:
+    """Point the feed's own-repository URLs at the mirror ``prefix``. Only URLs
+    of the release's repository move; the human link ``release_url`` stays."""
+    m = _GH_REPO_RE.match(doc["package"]["url"])
+    own = GITHUB_BASE + "%s/%s/" % (m.group(1), m.group(2))
+
+    def moved(u):
+        if isinstance(u, str) and u.lower().startswith(own.lower()):
+            return prefix + u[len(GITHUB_BASE):]
+        return u
+    for key in ("package", "signing_key", "api_pack"):
+        if isinstance(doc.get(key), dict) and "url" in doc[key]:
+            doc[key]["url"] = moved(doc[key]["url"])
+    if "knowledge_feed" in doc:
+        doc["knowledge_feed"] = moved(doc["knowledge_feed"])
+    doc["_mirror"] = prefix
+
+
 def fetch_feed(url: str = "", timeout: float = 10, auth=None) -> dict:
-    """Download and validate the feed document."""
+    """Download and validate the feed document. Read through a mirror of
+    GitHub, its assets are fetched through the same mirror (:func:`mirror_prefix`),
+    which is also the host the configured credentials go to."""
     url = url or feed_url()
     doc = parse_feed(fetch_small(url, timeout, auth=auth))
+    prefix = mirror_prefix(url, doc)
+    if prefix:
+        _through_mirror(doc, prefix)
     doc["_feed_url"] = url
     return doc
 
@@ -269,4 +323,5 @@ def download_file(url: str, name: str, want_sha: str, size: int, dest_dir,
 
 
 __all__ = ["FEED_SCHEMA", "DEFAULT_FEED_URL", "FeedError", "feed_url", "url_host", "parse_feed",
-           "fetch_feed", "fetch_small", "download_package", "download_file", "PKG_RE"]
+           "fetch_feed", "fetch_small", "download_package", "download_file", "PKG_RE",
+           "LATEST_ASSET", "mirror_prefix"]

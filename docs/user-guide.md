@@ -5062,7 +5062,15 @@ either on **Default**, or point one or both at an internal pipeline or mirror.
 | **Python libraries** | `https://pypi.org/simple` | the Libraries card's *Check for updates*, every Upgrade / Rollback, and the dependency step of an update from the repository (§22) |
 
 - A custom source is an `https://` URL. For update packages it is the URL of a
-  `latest.json` in the same format as the public one. For libraries it is a
+  `latest.json` in the same format as the public one. Each release publishes
+  it under a link that never changes,
+  `https://github.com/visionebc/SATOM/releases/latest/download/satom-update-latest.json`.
+  **Behind a proxy repository of GitHub** (a Nexus or Artifactory *raw* proxy
+  of `https://github.com/`), use the same path under the mirror,
+  `https://<mirror>/visionebc/SATOM/releases/latest/download/satom-update-latest.json`:
+  the package is then downloaded through the mirror as well, and **Test**
+  names it. A Docker registry proxy (of `ghcr.io`, for example) is not a
+  GitHub mirror and cannot be used. For libraries it is a
   pip "simple" index, the URL you would give pip as `--index-url`: Nexus,
   Artifactory, devpi, a GitLab or Gitea package registry, or pypi.org itself.
   It covers the Python (pip) libraries only: operating-system packages (apt,

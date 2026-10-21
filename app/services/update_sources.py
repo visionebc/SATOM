@@ -306,9 +306,12 @@ def test(kind: str, **form) -> dict:
             doc = feed.fetch_feed(t["url"], auth=t["auth"])
         except feed.FeedError as exc:
             return {"ok": False, "error": str(exc)}
+        msg = "the feed offers %s (%s)" % (doc["version"], doc["package"]["name"])
+        if doc.get("_mirror"):
+            msg += "; it is downloaded through the same mirror, %s" % display_url(doc["_mirror"])
         return {"ok": True, "source": display_url(t["url"]), "version": doc["version"],
-                "package": doc["package"]["name"],
-                "message": "the feed offers %s (%s)" % (doc["version"], doc["package"]["name"])}
+                "package": doc["package"]["name"], "mirror": doc.get("_mirror") or "",
+                "message": msg}
     from . import library_updates as libupd
     probe = "Flask"
     res = libupd.probe_index(t["url"], t["auth"], probe)

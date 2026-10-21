@@ -6,6 +6,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **A feed link that never changes, and updates through a mirror of GitHub**
+  (SA-0006). Every release now also carries its update feed as the asset
+  `satom-update-latest.json`, so
+  `https://github.com/visionebc/SATOM/releases/latest/download/satom-update-latest.json`
+  always names the newest package. A node that reaches GitHub only through a
+  proxy repository (for example a Sonatype Nexus or Artifactory "raw" proxy of
+  `https://github.com/`) sets Settings → General → Update sources → Update
+  packages to the same path under its mirror,
+  `https://<mirror>/visionebc/SATOM/releases/latest/download/satom-update-latest.json`;
+  the package, the signing key and the API pack are then downloaded through
+  that mirror too (and its user and token reach them), instead of from
+  github.com. **Test** names the mirror. The package signature is still
+  verified against the node's trust store. A Docker registry proxy (for
+  example one of `ghcr.io`) cannot serve these files.
+
 ### Fixed
 
 - **An index URL without `/simple` is named, not reported as missing Flask**

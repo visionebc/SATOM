@@ -5661,7 +5661,15 @@ either on <strong>Default</strong>, or point one or both at an internal pipeline
 </table>
 <ul>
 <li>A custom source is an <code>https://</code> URL. For update packages it is the URL of a
-  <code>latest.json</code> in the same format as the public one. For libraries it is a
+  <code>latest.json</code> in the same format as the public one. Each release publishes
+  it under a link that never changes,
+  <code>https://github.com/visionebc/SATOM/releases/latest/download/satom-update-latest.json</code>.
+  <strong>Behind a proxy repository of GitHub</strong> (a Nexus or Artifactory <em>raw</em> proxy
+  of <code>https://github.com/</code>), use the same path under the mirror,
+  <code>https://&lt;mirror&gt;/visionebc/SATOM/releases/latest/download/satom-update-latest.json</code>:
+  the package is then downloaded through the mirror as well, and <strong>Test</strong>
+  names it. A Docker registry proxy (of <code>ghcr.io</code>, for example) is not a
+  GitHub mirror and cannot be used. For libraries it is a
   pip "simple" index, the URL you would give pip as <code>--index-url</code>: Nexus,
   Artifactory, devpi, a GitLab or Gitea package registry, or pypi.org itself.
   It covers the Python (pip) libraries only: operating-system packages (apt,

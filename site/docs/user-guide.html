@@ -403,8 +403,8 @@ no separate <strong>Fleet</strong> group, and no separate Automation group in a 
 (the Global ADOM draws Automation as a sub-menu of its Global block, above
 Jobs). The <strong>API</strong> sub-menu of Automation holds the console (Registry &amp;
 console, device ADOMs) and <strong>Schema builds</strong> and <strong>Build compatibility</strong> (every
-ADOM, Global included). <strong>System Automations</strong> is under Administrator →
-System; Automation keeps <strong>Automations</strong>, the work operators schedule (§15).
+ADOM, Global included). <strong>System Automations</strong> is in Settings → System;
+Automation keeps <strong>Automations</strong>, the work operators schedule (§15).
 <strong>Appliances</strong> is under
 Administrator; <strong>Certificate Manager</strong> is under Automation (Certificate Manager in every
 ADOM: live in Global, FortiWeb and FortiADC, drawn disabled with the reason in
@@ -2024,7 +2024,7 @@ This page is the missing third position: name the CA and keep the check on.</p>
   choice is written to the audit log. For FortiADC the vault works
   (pull/upload/download) but config <em>apply</em> has no REST transport — the page
   says so honestly.</li>
-<li><strong>System Backup &amp; Restore</strong> (Global → Administrator) backs up the <strong>manager
+<li><strong>System Backup &amp; Restore</strong> (Settings → Source of Truth &amp; Backup) backs up the <strong>manager
   itself</strong>: a <code>pg_dump</code> of the database plus the reports tree in one bundle,
   with a verified restore path. <strong>Create backup now</strong> also pushes the bundle to
   the backup server when one is configured (the box is ticked by default).
@@ -3312,7 +3312,7 @@ are kept apart on purpose.</p>
 <h2 id="15-automation">15. Automation</h2>
 <p>Scheduled work lives on two pages, split by <strong>who the work is for</strong>:</p>
 <ul>
-<li><strong>System Automations</strong> — SATOM keeping its <em>own</em> data current. Administrator
+<li><strong>System Automations</strong> — SATOM keeping its <em>own</em> data current. Settings
   → System → <strong>System Automations</strong> (<code>/scheduled-actions/</code>, administrators
   only). Every ADOM; the list shows that ADOM's rows.</li>
 <li><strong>Automations</strong> — work on the fleet's services that an operator plans for a
@@ -4189,7 +4189,7 @@ approver overrides it with a reason.</p>
 <p>Backend detail, the capability matrix and the state machine:
 <a href="provisioning-hypervisors.html">docs/provisioning-hypervisors.md</a>.</p>
 <h2 id="22-updating-satom-itself">22. Updating SATOM itself</h2>
-<p>Administrator → <strong>Software Update</strong> (admin). Two paths, for two situations:</p>
+<p>Settings → System → <strong>Software Update</strong> (admin). Two paths, for two situations:</p>
 <ol>
 <li><strong>From the repository</strong> — <em>Check</em>, then <em>Apply</em>. The normal path on a node
    that can reach the code remote.</li>
@@ -4499,7 +4499,7 @@ others, and without being given user administration.</p>
 <tr>
 <td><strong>Python Studio</strong></td>
 <td><code>/studio</code></td>
-<td>One page, six panes: <strong>Scripts</strong> (the Script Library: Python scripts with a form that operators fill in and run, §23.4), <strong>Console</strong> (throwaway Python over the curated fleet datasets, §23.3), <strong>Data stores</strong> (§23.5), <strong>Connections</strong> (§23.6), <strong>Apps</strong> (§23.7) and <strong>Examples</strong> (§23.8); what Studio code cannot do to SATOM is §23.9</td>
+<td>One page, seven panes: <strong>Scripts</strong> (the Script Library: Python scripts with a form that operators fill in and run, §23.4), <strong>Console</strong> (throwaway Python over the curated fleet datasets, §23.3), <strong>Data stores</strong> (§23.5), <strong>Connections</strong> and <strong>API Catalog</strong> (§23.6), <strong>Apps</strong> (§23.7) and <strong>Examples</strong> (§23.8); what Studio code cannot do to SATOM is §23.9</td>
 </tr>
 <tr>
 <td><strong>Plugin Studio</strong></td>
@@ -4901,6 +4901,60 @@ connection with a secret needs the <strong>vault</strong>: the run receives a si
 wrapped token (like script credentials, §23.4), never the secret on disk. A
 published version keeps the connections it declared. A connection that a
 script declares cannot be deleted.</p>
+<h4 id="api-catalog-the-versions-of-an-api-someone-publishes">API Catalog: the versions of an API someone publishes</h4>
+<p>When a team (or a vendor) publishes an API you want to use, <strong>Python Studio →
+API Catalog</strong> keeps it, one entry per <strong>version</strong> of it — <code>inventory 1.0</code>,
+<code>inventory 1.1</code>, <code>inventory 2.0</code>.</p>
+<ol>
+<li><strong>New API</strong>: an id, a name, the owner (who publishes it) and a link to its
+   own documentation.</li>
+<li><strong>Create draft</strong> on the API page: a version number, starting empty or from
+   an earlier version.</li>
+<li>Fill the draft's endpoints: <strong>Import</strong> an OpenAPI 3 or Swagger 2 document
+   (JSON or YAML, uploaded or pasted, up to 8 MiB), or <strong>Add endpoint</strong> by
+   hand (id, method, path with <code>{name}</code> for a path parameter, summary, query
+   parameters, whether it takes a body) — or import first and correct by
+   hand. Only references inside the document are followed; nothing is
+   downloaded. HEAD/OPTIONS operations are skipped, and an <code>operationId</code> that
+   is missing, repeated or not usable is replaced by <code>method_path</code> (the import
+   says so).</li>
+<li><strong>Publish</strong>. A published version <strong>never changes and is never deleted</strong>;
+   later changes go into a new version. <strong>Deprecate</strong> marks a version you want
+   people to move off; it keeps working.</li>
+</ol>
+<p><strong>Compare two versions</strong> on the API page lists the endpoints removed (calls to
+them break), changed (method, path, parameters or body) and added. <strong>Endpoints
+(JSON)</strong> downloads a version's list in the shape the manual editor saves, to
+paste into another version or another SATOM.</p>
+<p><strong>Pin a connection to a version</strong> (HTTP connection page → <em>API version</em>;
+published versions only). From then on:</p>
+<ul>
+<li>the <strong>Call an API</strong> app step offers the version's endpoints in an
+  <strong>Endpoint</strong> picker; picking one sets the method and the path, and
+  <strong>Path parameters</strong> (JSON, e.g. <code>{"id": "{{ form.id }}"}</code>) fill its
+  <code>{name}</code> parts — each value percent-encoded into one segment;</li>
+<li>a step that types a method and path must still name an endpoint of that
+  version: otherwise it is a problem that blocks publishing the app, and it is
+  refused when it runs, before anything reaches the network. A POST, PUT,
+  PATCH or DELETE endpoint is a write, so a rehearsal never sends it;</li>
+<li>a script calls endpoints by id and only those:</li>
+</ul>
+<pre><code class="language-python">from satom_script import connection, result
+
+inv = connection(&quot;inventory&quot;)
+host = inv.op(&quot;getHost&quot;, {&quot;id&quot;: 7}).json()       # method and path from the catalog
+hosts = inv.op(&quot;listHosts&quot;, params={&quot;limit&quot;: 50}).json()
+result({&quot;api&quot;: inv.catalog()[&quot;version&quot;], &quot;endpoints&quot;: len(inv.operations())})
+</code></pre>
+<p><code>inv.get("/hosts")</code> still works when <code>GET /hosts</code> is an endpoint of the
+  version; a request that is not one is refused by the scripts runner. The
+  script editor's <strong>Connections</strong> card shows the endpoints of every declared,
+  pinned connection with the line to paste.</p>
+<p><strong>Moving a connection to another version</strong> names the app steps that call an
+endpoint the new version does not have, and saves only when you confirm;
+those apps then show the problem and cannot be published until it is fixed.
+A connection with no version keeps the old behaviour: any path under its base
+URL. An API with connections pinned to it cannot be deleted.</p>
 <h3 id="237-apps">23.7 Apps</h3>
 <p><strong>Python Studio → Apps</strong> builds a small application — a <strong>form</strong>, a
 <strong>diagram</strong> of steps and an <strong>output</strong> with <strong>actions</strong> — and publishes it as
@@ -5134,7 +5188,7 @@ use <strong>read-only</strong> credentials on the external systems (a REST API a
 read-only profile, a read-only database role) wherever a script or app only
 reads.</p>
 <h2 id="24-high-availability">24. High availability</h2>
-<p>Global → Administrator → <strong>High Availability</strong> (admin, <code>user_manage</code>). This page
+<p>Settings → System → <strong>High Availability</strong> (admin, <code>user_manage</code>). This page
 was <strong>split out of Software Update</strong> so that the two questions get their own nav
 entry: <em>Software Update</em> (§22) is "what code is this node running"; <em>High
 Availability</em> is "how many nodes are there, which one is primary, and is the
@@ -5312,8 +5366,8 @@ deletes its bindings, and says so.</p>
 <p>The assignment picker spans both FortiWeb and FortiADC appliances — the catalog
 is a single <strong>global</strong> one, not per-ADOM.</p>
 <h2 id="26-settings-tab-by-tab">26. Settings, tab by tab</h2>
-<p><code>Settings</code> is one page with a <strong>grouped sidebar</strong>: <strong>11 groups, 36 panels</strong>.
-Ten of the groups (34 panels) are admin-only (<code>user_manage</code>); the remaining
+<p><code>Settings</code> is one page with a <strong>grouped sidebar</strong>: <strong>11 groups, 40 panels</strong>.
+Ten of the groups (38 panels) are admin-only (<code>user_manage</code>); the remaining
 one — <strong>My Account</strong>, holding <strong>Security</strong> and <strong>Change Password</strong> — is
 self-service and is the only group a non-admin sees. A group with nothing you may see is not
 rendered at all, so the menu never offers a section that is not there.</p>
@@ -5327,11 +5381,11 @@ rendered at all, so the menu never offers a section that is not there.</p>
 <tbody>
 <tr>
 <td><strong>System</strong></td>
-<td>General · Software Update Repository · Scout · Integrations</td>
+<td>General · Software Update Repository · Software Update · High Availability · System Automations · Scout · Integrations</td>
 </tr>
 <tr>
 <td><strong>Source of Truth &amp; Backup</strong></td>
-<td>Configuration SoT · Backup Server · Deploy Clone</td>
+<td>Configuration SoT · Backup Server · System Backup &amp; Restore · Deploy Clone</td>
 </tr>
 <tr>
 <td><strong>Access &amp; Identity</strong></td>
@@ -5385,6 +5439,12 @@ tab. It is where SATOM is wired to systems it does not own — NetBox
 — and it is filed under System because that is what it configures. It had no
 menu entry at all until 2026-09-21; the page existed and worked, but the only
 way to reach it was to type <code>/settings/integrations</code>.</p>
+<p><strong>Software Update, High Availability, System Automations and System Backup &amp;
+Restore are pages too</strong> (↗), filed in Settings (until 3.4.4 they were under
+Administrator → System). Each keeps its own address and draws this menu with
+itself selected. <em>System Backup &amp; Restore</em> sits with the backup surfaces; the
+other three under System. <em>System Automations</em> keeps the ADOM you are in: its
+list shows that ADOM's rows, as before.</p>
 <p><strong>Deploy Clone</strong> copies a whole installation's data into this one, or exports
 this one for another (§11.1). It sits in Source of Truth &amp; Backup because it
 moves the same estate the backup bundles carry. It is not <em>Clone / Migrate</em>
@@ -8507,7 +8567,7 @@ the authoritative answer to "what is new since we last updated".</p>
 </tr>
 <tr>
 <td>The HA page shows the standby with growing WAL lag</td>
-<td>Replication is streaming but not keeping up, or the standby is stalled. Read the replication card on Global → Administrator → <strong>High Availability</strong> (§24); it prints the sender/apply state and byte lag from Postgres itself. Do not promote a lagging standby: promotion is for a primary confirmed <strong>down</strong>.</td>
+<td>Replication is streaming but not keeping up, or the standby is stalled. Read the replication card on Settings → System → <strong>High Availability</strong> (§24); it prints the sender/apply state and byte lag from Postgres itself. Do not promote a lagging standby: promotion is for a primary confirmed <strong>down</strong>.</td>
 </tr>
 <tr>
 <td>Deployment mode / HA node changes will not save</td>

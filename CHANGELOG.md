@@ -6,6 +6,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.4.5] - 2026-10-22
+
+Python Studio gets an **API Catalog**: the versions of an API someone publishes,
+called by endpoint from app steps and scripts. Four System pages move into
+Settings, and an update feed that answers 404 says who answered and why.
+
 ### Added
 
 - **API Catalog: the versions of an API someone publishes** (FA-0006). Python

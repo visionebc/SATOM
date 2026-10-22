@@ -74,6 +74,7 @@
       <a href="#12-intent-write--templates-bindings-and-baselines">12. Intent, write — templates, bindings and baselines</a>
       <a href="#13-observability--configuration-history-findings-metrics">13. Observability — configuration history, findings, metrics</a>
       <a href="#14-processes--apiv1processes">14. Processes — /api/v1/processes/*</a>
+      <a href="#15-events-and-triggers--apiv1events-apiv1triggers">15. Events and triggers — /api/v1/events, /api/v1/triggers</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="satom-api-v1--integration-manual">SATOM API v1 — Integration Manual</h1>
@@ -506,6 +507,20 @@ The API never issues an HTML login redirect — you always get JSON.</p>
 <td>write</td>
 <td><code>process_arm</code> for <code>"armed": true</code></td>
 <td>Walk a process — a <strong>rehearsal</strong> unless armed (§14)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/triggers</code></td>
+<td>read</td>
+<td>—</td>
+<td>The triggers and their enabled automations (§15)</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/events</code></td>
+<td>write</td>
+<td>—</td>
+<td>Post an <code>api.event</code>: starts the automations of every matching trigger (§15)</td>
 </tr>
 <tr>
 <td><code>GET</code></td>
@@ -1421,6 +1436,34 @@ curl -s -X POST -H &quot;Authorization: Bearer $T&quot; -H 'Content-Type: applic
   -d '{&quot;appliance_id&quot;: 7, &quot;armed&quot;: true}' https://&lt;your-satom-host&gt;/api/v1/processes/3/run
 #  -&gt; 403 capability_denied unless the token holds process_arm
 </code></pre>
+<h2 id="15-events-and-triggers--apiv1events-apiv1triggers">15. Events and triggers — <code>/api/v1/events</code>, <code>/api/v1/triggers</code></h2>
+<p>An outside system (monitoring, CI, ticketing) starts SATOM's automations by
+posting an event. Every enabled trigger on <code>api.event</code> whose conditions match
+it (Administrator → Triggers) starts its automations (Automations → On a
+trigger), as jobs; the call answers at once with what was queued and never
+waits for a walk. The match is recorded like any other, with the token's id.</p>
+<h3 id="post-events"><code>POST /events</code></h3>
+<p>Scope <code>write</code>. Body:</p>
+<pre><code class="language-json">{&quot;type&quot;: &quot;deploy.done&quot;, &quot;subject&quot;: &quot;build-42&quot;, &quot;appliance_id&quot;: 3,
+ &quot;data&quot;: {&quot;service&quot;: &quot;shop&quot;}}
+</code></pre>
+<p><code>type</code> is required (at most 120 characters); <code>subject</code> is what the trigger's
+cooldown is counted on (<code>""</code> = the type); <code>data</code> is any JSON object up to
+32 000 bytes. The event's ADOM is the token's; a Global token may name one in
+<code>product</code>. Nothing the caller sends arms an automation: armed or not is set on
+the automation, in the console. Answers <code>202</code>:</p>
+<pre><code class="language-json">{&quot;event&quot;: &quot;api.event&quot;, &quot;type&quot;: &quot;deploy.done&quot;, &quot;matched&quot;: 1, &quot;queued&quot;: 1,
+ &quot;rows&quot;: [{&quot;trigger&quot;: &quot;ci-deploy&quot;, &quot;automation&quot;: &quot;validate-shop&quot;,
+           &quot;status&quot;: &quot;queued&quot;, &quot;job_id&quot;: &quot;…&quot;, &quot;run_id&quot;: 17, &quot;reason&quot;: &quot;&quot;}]}
+</code></pre>
+<p><code>status</code> is <code>queued</code>, <code>suppressed</code> (cooldown, hourly budget or chain depth —
+<code>reason</code> says which) or <code>error</code>. <code>400</code> for a body that is not an object, a
+missing <code>type</code>, <code>data</code> that is not an object or is too large, or an unknown
+<code>product</code>.</p>
+<h3 id="get-triggers"><code>GET /triggers</code></h3>
+<p>Scope <code>read</code>. Every trigger: <code>key</code>, <code>name</code>, <code>event</code>, <code>enabled</code>, <code>conditions</code>,
+<code>cooldown_minutes</code>, <code>rate_limit_per_hour</code> and the keys of its enabled
+<code>automations</code> — so a caller can see which <code>type</code> values anything listens to.</p>
     </div>
   </div>
 </section>

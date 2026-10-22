@@ -270,13 +270,13 @@ the data intact; the apply after the step below upgraded to 3.3.3. The step,
 as root on the node, after the console's preflight has verified the package's
 signature (upload it under Software Update and read the preflight — Apply is
 what fails, not the verification):</p>
-<pre><code class="language-bash">mkdir -m 700 /root/satom-3.3.3-deploy
-tar xzf satom-update-3.3.3.tar.gz -C /root/satom-3.3.3-deploy --strip-components=1
-tar xzf /root/satom-3.3.3-deploy/app.tar.gz -C /root/satom-3.3.3-deploy deploy/
-SATOM_DEPLOY_SRC=/root/satom-3.3.3-deploy/deploy \
-    bash /root/satom-3.3.3-deploy/deploy/install-runner.sh
+<pre><code class="language-bash">mkdir -m 700 /root/satom-3.3.3-unpacked
+tar xzf satom-update-3.3.3.tar.gz -C /root/satom-3.3.3-unpacked --strip-components=1
+tar xzf /root/satom-3.3.3-unpacked/app.tar.gz -C /root/satom-3.3.3-unpacked deploy/
+SATOM_DEPLOY_SRC=/root/satom-3.3.3-unpacked/deploy \
+    bash /root/satom-3.3.3-unpacked/deploy/install-runner.sh
 # then apply satom-update-3.3.3.tar.gz from the Software Update page as usual
-rm -rf /root/satom-3.3.3-deploy
+rm -rf /root/satom-3.3.3-unpacked
 </code></pre>
 <p><code>install-runner.sh</code> installs the root-owned runner copy and converges the
 node's units and roles; it does not touch the application tree or the

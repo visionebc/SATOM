@@ -6,6 +6,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.4.8] - 2026-10-22
+
+Integration hooks can make HTTP requests again (broken since 3.4.2), and
+the triggers, automations and API Catalog pages are translated into German,
+Spanish, French and Italian. The events API is in the API manual.
+
 ### Fixed
 
 - **Integration hooks could not make a single HTTP request** (since 3.4.2).

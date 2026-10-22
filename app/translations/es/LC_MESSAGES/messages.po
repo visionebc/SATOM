@@ -26821,3 +26821,84 @@ msgstr "salto"
 msgid "Nothing has matched yet."
 msgstr "Todavía no ha coincidido nada."
 
+
+msgid "Report Studio"
+msgstr "Estudio de informes"
+
+msgid "All plugins"
+msgstr "Todos los complementos"
+
+msgid "Only Python code is accepted."
+msgstr "Solo se acepta código Python."
+
+msgid "Plugins your administrators published for you. Fill in the form and run one now, or save the values with a schedule."
+msgstr "Complementos que sus administradores publicaron para usted. Rellene el formulario y ejecute uno ahora, o guarde los valores con una programación."
+
+msgid "No plugin has been published for you yet."
+msgstr "Aún no se ha publicado ningún complemento para usted."
+
+msgid "ADOM — built by super-admins in the Report Studio, rendered in a hard sandbox."
+msgstr "ADOM — construidas por superadministradores en el Estudio de informes, renderizadas en un sandbox estricto."
+
+msgid "Edit in Plugin Studio"
+msgstr "Editar en el Estudio de complementos"
+
+msgid "A .satomplugin package installs without an update package. Views and widgets land here (signed: testing, unsigned: draft) and update the plugin with the same slug; code plugins must be signed by a trusted key and load at the next"
+msgstr "Un paquete .satomplugin se instala sin paquete de actualización. Las vistas y los widgets llegan aquí (firmados: testing, sin firma: draft) y actualizan el plugin con el mismo slug; los plugins de código deben estar firmados por una clave de confianza y se cargan en el siguiente"
+
+msgid "Allow downgrade"
+msgstr "Permitir versión anterior"
+
+msgid "Code plugins"
+msgstr "Plugins de código"
+
+msgid "Download as a .satomplugin package"
+msgstr "Descargar como paquete .satomplugin"
+
+msgid "Each plugin is mounted at"
+msgstr "Cada plugin se monta en"
+
+msgid "Export a view to move it to another server."
+msgstr "Exporte una vista para llevarla a otro servidor."
+
+msgid "Import plugin"
+msgstr "Importar plugin"
+
+msgid "Install, enable, disable and remove take effect at the next"
+msgstr "Instalar, activar, desactivar y quitar surten efecto en el siguiente"
+
+msgid "No code plugins installed. A signed code plugin package is imported with “Import plugin” above."
+msgstr "No hay plugins de código instalados. Un paquete de plugin de código firmado se importa con «Importar plugin» arriba."
+
+msgid "Package"
+msgstr "Paquete"
+
+msgid "authored here"
+msgstr "creado aquí"
+
+msgid "behind sign-in and re-verified (signature and every file) at every start."
+msgstr "tras el inicio de sesión y se vuelve a verificar (firma y cada fichero) en cada arranque."
+
+msgid "loaded"
+msgstr "cargado"
+
+msgid "restart required"
+msgstr "requiere reinicio"
+
+msgid "signed"
+msgstr "firmado"
+
+msgid "unsigned"
+msgstr "sin firma"
+
+msgid "Named sets of users. Plugin Studio apps and Wiki articles are shared with groups or with people: add a colleague to a group and they get every app and article of that group."
+msgstr "Conjuntos de usuarios con nombre. Las apps del Estudio de complementos y los artículos de la Wiki se comparten con grupos o con personas: añada a un compañero a un grupo y recibirá todas las apps y artículos de ese grupo."
+
+msgid "No published version exists yet (Plugin Studio › API Catalog)."
+msgstr "Aún no existe ninguna versión publicada (Estudio de complementos › API Catalog)."
+
+msgid "The groups and the people ticked here, plus every Plugin Studio author. Nobody else sees the menu entry or can open the app."
+msgstr "Los grupos y las personas marcados aquí, más cada autor del Estudio de complementos. Nadie más ve la entrada del menú ni puede abrir la app."
+
+msgid "When a trigger matches, do something SATOM can already run: walk a process, run a Plugin Studio app or a Script Library script, call an API Catalog endpoint, query a database, write a data store, run an integration hook or a scheduled action, or notify. Every run is a job; a finished automation emits automation.finished, so one can follow another."
+msgstr "Cuando un trigger coincide, hace algo que SATOM ya sabe ejecutar: recorrer un proceso, ejecutar una app del Estudio de complementos o un script del Script Library, llamar a un endpoint del API Catalog, consultar una base de datos, escribir en un data store, ejecutar un hook de integración o una acción programada, o notificar. Cada ejecución es un trabajo; una automatización terminada emite automation.finished, así que una puede seguir a otra."

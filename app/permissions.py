@@ -34,7 +34,7 @@ AREAS: list[dict] = [
     {"key": "appliances", "label": "Appliances", "icon": "bi-hdd-rack",
      "desc": "Device inventory and appliance actions (console, rediscovery, upgrade)"},
     {"key": "studio", "label": "Studio", "icon": "bi-code-slash",
-     "desc": "Python Console, Plugin Studio, Lua Studio and Script Library — admin code tools"},
+     "desc": "Python Console, Report Studio, Lua Studio and Script Library — admin code tools"},
     {"key": "users", "label": "Users", "icon": "bi-people",
      "desc": "Manage application users"},
     {"key": "profiles", "label": "Profiles", "icon": "bi-person-badge",
@@ -107,7 +107,7 @@ GRANULAR_PERMISSIONS: list[dict] = [
 
     _p("studio.python_console", "Python Console",
        "Run sandboxed Python against the app's datasets", admin_only=True),
-    _p("studio.plugin_studio", "Plugin Studio",
+    _p("studio.plugin_studio", "Report Studio",
        "Author custom server-side views (plugins)", admin_only=True),
     _p("studio.lua_studio", "Lua Studio",
        "Author, lint and deploy device Lua scripts", admin_only=True),

@@ -19,8 +19,8 @@
    Settings with Software Update, High Availability and System Backup &
    Restore (FA-0005, operator).
 
-   Studio holds Python Studio, Plugin Studio and Lua Studio in the Global
-   ADOM (partials/nav_studio.html); in a device ADOM it holds Python Studio,
+   Studio holds Plugin Studio, Report Studio and Lua Studio in the Global
+   ADOM (partials/nav_studio.html); in a device ADOM it holds Plugin Studio,
    because the two other studios live in that ADOM's Plugins group. Python
    Studio (2026-10-20) is the Script Library and the Python console in one
    page; its link follows either key (require_any_permission). Without
@@ -138,7 +138,7 @@
     {% else %}
     {% if may_open('studio.index') %}{# studio.python_console OR studio.script_library #}
     <a class="fw-nav-item {{ 'active' if request.blueprint in ['studio', 'script_library'] else '' }}" href="{{ url_for('studio.index') }}">
-      <i class="bi bi-code-slash fw-nav-icon"></i><span>{{ _('Python Studio') }}</span></a>
+      <i class="bi bi-code-slash fw-nav-icon"></i><span>{{ _('Plugin Studio') }}</span></a>
     {% endif %}
     {% endif %}
 {% endset %}

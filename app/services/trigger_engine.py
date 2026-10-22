@@ -537,7 +537,7 @@ def _event_of(auto) -> str:
 # --------------------------------------------------------------------------- #
 KINDS = {
     "process": "Walk a process",
-    "app": "Run a Python Studio app",
+    "app": "Run a Plugin Studio app",
     "script": "Run a Script Library script",
     "api_call": "Call an API (HTTP connection / API Catalog)",
     "sql_query": "Query a database (PostgreSQL connection)",

@@ -1,8 +1,10 @@
-{# Global ADOM > Plugins: the published Python Studio apps this user may open
+{# Global ADOM > Plugins: the published Plugin Studio apps this user may open
    in Global (their author ticked Global or every ADOM). Not drawn when there
-   are none: an empty toggle is a promise the console does not keep. #}
+   are none: an empty toggle is a promise the console does not keep.
+   Since 2026-10-22 a user who sees Automation > Plugins finds the apps there
+   (partials/nav_automation.html); this subgroup is for everyone else. #}
 {% set _apps = studio_apps_menu('global') %}
-{% if _apps %}
+{% if _apps and not global_plugins_in_automation(product.key) %}
 <div class="fw-nav-subgroup{{ ' open' if request.blueprint == 'apps' }}" data-nav-subgroup="Plugins">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-puzzle fw-nav-icon" style="color:#3b82f6;"></i><span>{{ _('Plugins') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">

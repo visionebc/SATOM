@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}{{ 'Edit' if plugin else 'New' }} view — Plugin Studio{% endblock %}
+{% block title %}{{ 'Edit' if plugin else 'New' }} view — Report Studio{% endblock %}
 {% block content %}
 
 <div class="fw-breadcrumb">
-  <a href="{{ url_for('plugins.index') }}">{{ _('Plugin Studio') }}</a>
+  <a href="{{ url_for('plugins.index') }}">{{ _('Report Studio') }}</a>
   <span class="separator">/</span>{{ plugin.name if plugin else 'New custom view' }}
 </div>
 

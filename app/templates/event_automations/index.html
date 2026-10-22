@@ -13,7 +13,7 @@
   <div>
     <h1 class="fw-page-title"><i class="bi bi-calendar2-check me-2 text-accent"></i>{{ _('Automations') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      {{ _('When a trigger matches, do something SATOM can already run: walk a process, run a Python Studio app or a Script Library script, call an API Catalog endpoint, query a database, write a data store, run an integration hook or a scheduled action, or notify. Every run is a job; a finished automation emits automation.finished, so one can follow another.') }}
+      {{ _('When a trigger matches, do something SATOM can already run: walk a process, run a Plugin Studio app or a Script Library script, call an API Catalog endpoint, query a database, write a data store, run an integration hook or a scheduled action, or notify. Every run is a job; a finished automation emits automation.finished, so one can follow another.') }}
       {% if current_user.can('user_manage') %}{{ _('Triggers are created under') }} <a href="{{ url_for('triggers.index', _adom=product.key) }}">{{ _('Administrator › Triggers') }}</a>.{% else %}{{ _('Triggers are created by an administrator.') }}{% endif %}
     </p>
   </div>

@@ -4,7 +4,7 @@
 {% set draft = v.status == 'draft' %}
 <div class="fw-page-header d-flex align-items-start">
   <div>
-    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('studio.index', pane='apis') }}">{{ _('Python Studio') }}</a> › {{ _('API Catalog') }} › <a href="{{ url_for('studio.api', slug=a.slug) }}">{{ a.name }}</a></div>
+    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('studio.index', pane='apis') }}">{{ _('Plugin Studio') }}</a> › {{ _('API Catalog') }} › <a href="{{ url_for('studio.api', slug=a.slug) }}">{{ a.name }}</a></div>
     <h1 class="fw-page-title"><i class="bi bi-journal-code me-2 text-accent"></i>{{ a.name }} {{ v.version }}
       <span class="fw-badge {{ {'draft': 'fw-badge-secondary', 'published': 'fw-badge-success', 'deprecated': 'fw-badge-warning'}[v.status] }} align-middle" style="font-size:12px;">{{ v.status }}</span></h1>
     <p class="text-muted mb-0" style="font-size:13px;"><code>{{ a.slug }}</code> · {{ ops|length }} {{ _('endpoints') }} · {{ _('source') }}: {{ v.source }}{% if v.published_at %} · {{ _('published') }} {{ v.published_at.strftime('%Y-%m-%d %H:%M') }} {{ _('by') }} {{ v.published_by }}{% endif %}

@@ -9,7 +9,7 @@
       {% if v.network == 'egress' %}<span class="fw-badge fw-badge-info">{{ _('outbound') }}</span>{% endif %}
       · {{ _('timeout') }} {{ v.timeout }} s</p>
   </div>
-  <a class="btn btn-outline-secondary btn-sm ms-auto" href="{{ url_for('scripts.index') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Scripts') }}</a>
+  <a class="btn btn-outline-secondary btn-sm ms-auto" href="{{ url_for('scripts.index') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Plugins') }}</a>
 </div>
 
 {% if meta.description %}<div class="fw-card mb-3"><div class="fw-card-body" style="font-size:13px;white-space:pre-wrap;">{{ meta.description }}</div></div>{% endif %}

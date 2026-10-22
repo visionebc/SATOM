@@ -295,8 +295,8 @@ FortiGate, FortiAnalyzer and FortiAuthenticator). **Administrator** is split
 into sections — Access, Change Management, Devices, Objects, Studio and System
 — and both the sections and their entries are alphabetical in the console's
 language; a section with no entry you may open is not drawn. **Studio** holds
-**Python Studio** (the Script Library and the Python console in one page, §23.3)
-in every ADOM, and also Plugin Studio and Lua Studio in Global. The Global ADOM keeps its **Global** block for the fleet pages
+**Plugin Studio** (the Script Library and the Python console in one page, §23.3)
+in every ADOM, and also Report Studio and Lua Studio in Global. The Global ADOM keeps its **Global** block for the fleet pages
 and has no Operations group. A profile that cannot see one of those groups
 keeps the entry where it was before — Appliances under
 Operations, the API menu (console, Schema builds, Build compatibility) as a
@@ -3082,11 +3082,18 @@ System Automations to Automations.
   scheduler was not up for, on an action without catch-up, shows as
   **missed**.
 
-**Scripts** (Operations → Automation → **Scripts**, Global ADOM, needs
-`operations.scripts_run`, which operators hold): the Script Library scripts
-an administrator published for operators (§23.4). Pick one, fill in its form
-and **Run now**, or save the values with a cron expression as a **saved run**.
-See §23.4 for how saved runs behave.
+**Plugins** (Operations → Automation → **Plugins**, Global ADOM, needs
+`operations.scripts_run`, which operators hold; called *Scripts* until
+2026-10-22): the Script Library scripts an administrator published for you
+(§23.4). The entry is a submenu: **All plugins** opens the page, and below it
+every published plugin you may run has an entry of its own, by name.
+Publishing a script adds its entry, unpublishing removes it, and a script
+published for administrators is listed for them only — the menu applies the
+same rule as the page. In the Global ADOM the published Plugin Studio apps
+(§23.7) are listed in the same submenu, so there is one **Plugins** toggle;
+a user without Automation finds the apps under **Global → Plugins** instead.
+Pick one, fill in its form and **Run now**, or save the values with a cron
+expression as a **saved run**. See §23.4 for how saved runs behave.
 
 **Change Requests** (maintenance windows):
 
@@ -3155,7 +3162,7 @@ a payload you paste — would match, without firing anything.
 | Do | Runs through | Rehearsal (not armed) |
 |---|---|---|
 | Walk a process | the Process engine; one walk at a time per process and appliance, within the process's hourly budget | write steps dry-run |
-| Run a Python Studio app | the published version, as the automation's owner; the whole event is `{{ event }}` in the diagram | write steps are recorded, not executed |
+| Run a Plugin Studio app | the published version, as the automation's owner; the whole event is `{{ event }}` in the diagram | write steps are recorded, not executed |
 | Run a Script Library script | the published version, through the script runner | — |
 | Call an API | an HTTP connection; on a connection pinned to an API Catalog version, only that version's endpoints | anything but GET is recorded, not sent |
 | Query a database / write a data store | a PostgreSQL connection / a Studio data store | writes are recorded |
@@ -3187,7 +3194,7 @@ ticket, writes "when the diagnostics walk fails, open a ticket". A chain stops
 after **3 hops**; a deeper match is recorded as suppressed (a trigger that
 matches its own automation is a loop otherwise).
 
-**Python Studio apps orchestrate too.** The app diagram has a **Walk a
+**Plugin Studio apps orchestrate too.** The app diagram has a **Walk a
 process** step: an app can call an API Catalog endpoint, run a script, query a
 database *and* walk a device runbook, deciding on each result. A rehearsal run
 walks the process unarmed; an armed run walks it armed only for a user who
@@ -4070,11 +4077,17 @@ others, and without being given user administration.
 
 | Tool | Page | What it authors |
 |---|---|---|
-| **Python Studio** | `/studio` | One page, seven panes: **Scripts** (the Script Library: Python scripts with a form that operators fill in and run, §23.4), **Console** (throwaway Python over the curated fleet datasets, §23.3), **Data stores** (§23.5), **Connections** and **API Catalog** (§23.6), **Apps** (§23.7) and **Examples** (§23.8); what Studio code cannot do to SATOM is §23.9 |
-| **Plugin Studio** | `/plugins` | Server-rendered custom views/widgets, published as **Custom Views** |
+| **Plugin Studio** | `/studio` | One page, seven panes: **Scripts** (the Script Library: Python scripts with a form that operators fill in and run, §23.4), **Console** (throwaway Python over the curated fleet datasets, §23.3), **Data stores** (§23.5), **Connections** and **API Catalog** (§23.6), **Apps** (§23.7) and **Examples** (§23.8); what Studio code cannot do to SATOM is §23.9 |
+| **Report Studio** | `/plugins` | Server-rendered custom views/widgets, published as **Custom Views** |
 | **Lua Studio** | `/lua` | Device scripts for FortiWeb *Web Scripting* and FortiADC *Scripting* |
 
-**Python Studio** (since the release after 3.3.7) replaces the two menu entries
+> **Renamed on 2026-10-22.** *Python Studio* is now **Plugin Studio** — it
+> accepts Python code only — and the custom-view studio that carried that
+> name is now **Report Studio**. Only the labels changed: the pages
+> (`/studio`, `/plugins`) and the permission keys (`studio.plugin_studio` is
+> still the custom-view studio, shown as *Report Studio*) are the same.
+
+**Plugin Studio** (since the release after 3.3.7) replaces the two menu entries
 *Python Console* and *Script Library*. On the left an **Explorer** switches
 between the **Scripts** pane and the **Console** pane and opens any script in
 its editor; the editor (`/studio/scripts/<id>`) has a **Console** tab too, to
@@ -4085,7 +4098,7 @@ editor's Console tab and the console's run endpoint still ask for their own
 key. The old addresses (`/database/py-console`, `/database/scripts/…`)
 redirect to the new ones.
 
-### 23.1 Plugin Studio and Custom Views
+### 23.1 Report Studio and Custom Views
 
 A plugin is a Jinja body plus optional CSS and JS, bound to a list of **curated
 datasets** (fleet appliances, cached server policies, pools, WAF profiles,
@@ -4127,7 +4140,7 @@ fixed, so a parameter can only narrow data that was already loaded, never widen
 access. A `device` selector is populated from the live appliance list, scoped to
 the ADOM you are in.
 
-> **Custom Views is ADOM-scoped; Plugin Studio is not.** The read-side gallery
+> **Custom Views is ADOM-scoped; Report Studio is not.** The read-side gallery
 > ("Custom Views") is only surfaced in the FortiWeb and FortiADC ADOMs, and every
 > plugin is stamped with the ADOM it was authored in. The *authoring* pages are
 > reachable from the Global ADOM too, under Studio. Draft and testing views
@@ -4140,14 +4153,14 @@ A plugin can move between servers **without an update package** as a
 `.satomplugin` file (format `satom.plugin/1`: a zip with a manifest, the sha256
 of every file and an optional Ed25519 signature).
 
-- **Export** (the download icon on a row of the Plugin Studio list) writes an
+- **Export** (the download icon on a row of the Report Studio list) writes an
   unsigned package of that view or widget.
 - **Import plugin** (top of the list) reads a package and checks it before
   anything is written: only the files the manifest lists, each matching its
   sha256, sizes capped (10 MB package, 2 MB per file). A signature must come
   from a key this server trusts and match the manifest — a bad or unknown
   signature is refused, never treated as "unsigned".
-  - A **view or widget** becomes an ordinary Plugin Studio row: signed packages
+  - A **view or widget** becomes an ordinary Report Studio row: signed packages
     land in *testing*, unsigned ones in *draft*. A package with the slug of a
     plugin you already have **updates it in place**; an older version is
     refused unless you tick **Allow downgrade**. Updating a *published* view
@@ -4204,7 +4217,7 @@ in that order. Targets are **FortiWeb "Web Scripting"** and **FortiADC
 
 ### 23.3 Python Console
 
-The **Console** pane of Python Studio (**Administrator → Studio → Python
+The **Console** pane of Plugin Studio (**Administrator → Studio → Python
 Studio → Console**), also a tab in every script's editor. Admin-authored Python, run against the **same curated dataset bundle** the
 plugins use, in a bubblewrap jail with no environment, no network namespace and
 none of the application tree mounted — so a script cannot open the `.env`, the
@@ -4225,7 +4238,7 @@ is busy).
 ### 23.4 Script Library
 
 Python scripts you keep, with a **form** an operator fills in. You write and
-test them here (**Administrator → Studio → Python Studio → Scripts**); you
+test them here (**Administrator → Studio → Plugin Studio → Scripts**); you
 publish a version; operators run that version. Gated by
 `studio.script_library`.
 
@@ -4399,7 +4412,7 @@ A site that needs more raises the limits in a systemd drop-in
 
 ### 23.5 Data stores
 
-**Python Studio → Data stores** holds tables you define in the UI. A data
+**Plugin Studio → Data stores** holds tables you define in the UI. A data
 store is a column list — name, label, type (`text`, `number`, `boolean`,
 `date`, `json`) and *required* — plus rows. Every row also has `_id`,
 `_created_at`, `_updated_at` and `_by`.
@@ -4429,7 +4442,7 @@ the configuration. Gated by `studio.script_library`.
 
 ### 23.6 Connections
 
-**Python Studio → Connections** names an external system once, with its
+**Plugin Studio → Connections** names an external system once, with its
 credential, for app steps to use.
 
 | Kind | Settings | Authentication |
@@ -4524,7 +4537,7 @@ script declares cannot be deleted.
 
 #### API Catalog: the versions of an API someone publishes
 
-When a team (or a vendor) publishes an API you want to use, **Python Studio →
+When a team (or a vendor) publishes an API you want to use, **Plugin Studio →
 API Catalog** keeps it, one entry per **version** of it — `inventory 1.0`,
 `inventory 1.1`, `inventory 2.0`.
 
@@ -4584,7 +4597,7 @@ URL. An API with connections pinned to it cannot be deleted.
 
 ### 23.7 Apps
 
-**Python Studio → Apps** builds a small application — a **form**, a
+**Plugin Studio → Apps** builds a small application — a **form**, a
 **diagram** of steps and an **output** with **actions** — and publishes it as
 its own entry in **Operations → Plugins** (in the Global ADOM: **Global →
 Plugins**).
@@ -4593,7 +4606,7 @@ The editor has six tabs:
 
 - **Settings** — name and icon of the menu entry, description, **where** it
   appears (the ADOMs you tick, or every ADOM) and **who** may use it (the
-  groups and the people you tick; every Python Studio author can too). Nobody
+  groups and the people you tick; every Plugin Studio author can too). Nobody
   else sees the entry or can open the app, its runs or their actions.
 - **Form** — the fields the user fills in: text, textarea, number, date,
   checkbox, password and three lists — a fixed list, a list from a **data
@@ -4671,7 +4684,7 @@ app's access list.
 
 ### 23.8 Examples
 
-**Python Studio → Examples** installs working examples of every Studio piece
+**Plugin Studio → Examples** installs working examples of every Studio piece
 with one click. Ids start with `ex-`; installing creates only what is missing
 and never overwrites an object you edited; **Remove** deletes the objects of
 that example but keeps any of them something else still uses (another
@@ -5387,7 +5400,7 @@ no longer enforced, and offers a button to clear the dead row.
 ### 26.3 Users and Profiles
 
 **Groups** (Administrator → Access → Groups) are named sets of users, managed
-with *Manage users*. Python Studio apps are shared with groups or people
+with *Manage users*. Plugin Studio apps are shared with groups or people
 (§23.7): add a colleague to a group and they get every app shared with it. A
 group an app is shared with cannot be deleted until it is removed from the app.
 The same groups limit who reads a Wiki article (§46.1); the **Wiki articles**
@@ -10294,7 +10307,7 @@ and `admin` has all three. Custom profiles get none of them until an
 administrator adds them under **Profiles**.
 
 **Groups** name people across profiles — a team, an on-call rota. They are
-**Administrator › Access › Groups** (§23.7), the same groups Python Studio
+**Administrator › Access › Groups** (§23.7), the same groups Plugin Studio
 apps are shared with, and are managed by whoever manages users
 (`user_manage`); the Wiki menu links there. A group grants nothing by itself:
 it is a name an article's audience or an app's access can use. The Access ›
@@ -10421,7 +10434,7 @@ page says so in its last line).
   date; **Forget** stops updating a page and leaves it in Confluence.
   Deleting the article or the space in SATOM also leaves the pages there.
 
-The call goes through the same checked path as Python Studio connections:
+The call goes through the same checked path as Plugin Studio connections:
 no address of the node itself, its HA peer, loopback or link-local; no
 redirect followed; the credential removed from every error message. Every
 publication, refusal and setting change is in the audit log

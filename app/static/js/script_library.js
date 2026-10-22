@@ -644,7 +644,7 @@
         (c.kind === 'postgres' ? ' (PostgreSQL)' : '') +
         (c.api ? ' <span class="fw-badge fw-badge-info">' + esc(c.api.api + ' ' + c.api.version) + '</span>' : '') +
         (c.secret && !CFG.vaultOk ? ' <span class="fw-badge fw-badge-warning">needs the vault</span>' : '') + '</label>';
-    }).join('') : '<div class="text-muted small">No connections exist yet (Python Studio &gt; Connections).</div>';
+    }).join('') : '<div class="text-muted small">No connections exist yet (Plugin Studio &gt; Connections).</div>';
     renderCatalog(all);
     conns.filter(function (k) { return !all.some(function (c) { return c.slug === k; }); }).forEach(function (k) {
       box.insertAdjacentHTML('beforeend', '<label class="small text-danger"><input type="checkbox" class="sl-conn" value="' + esc(k) + '" checked> ' + esc(k) + ' — does not exist</label>');

@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Scripts — Automation{% endblock %}
+{% block title %}Plugins — Automation{% endblock %}
 {% block content %}
 <div class="fw-page-header d-flex align-items-start">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-file-earmark-play me-2 text-accent"></i>{{ _('Scripts') }}</h1>
+    <h1 class="fw-page-title"><i class="bi bi-puzzle me-2 text-accent"></i>{{ _('Plugins') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      {{ _('Scripts your administrators published for you. Fill in the form and run one now, or save the values with a schedule.') }}</p>
+      {{ _('Plugins your administrators published for you. Fill in the form and run one now, or save the values with a schedule.') }}</p>
   </div>
   {% if current_user.can('studio.script_library') %}
-  <a class="btn btn-outline-secondary btn-sm ms-auto" href="{{ url_for('studio.index', pane='scripts') }}"><i class="bi bi-file-earmark-code me-1"></i>{{ _('Script Library') }}</a>
+  <a class="btn btn-outline-secondary btn-sm ms-auto" href="{{ url_for('studio.index', pane='scripts') }}"><i class="bi bi-code-slash me-1"></i>{{ _('Plugin Studio') }}</a>
   {% endif %}
 </div>
 
@@ -36,7 +36,7 @@
     </a>
   </div>
   {% else %}
-  <div class="col-12"><div class="fw-card"><div class="fw-card-body text-muted">{{ _('No script has been published for you yet.') }}</div></div></div>
+  <div class="col-12"><div class="fw-card"><div class="fw-card-body text-muted">{{ _('No plugin has been published for you yet.') }}</div></div></div>
   {% endfor %}
 </div>
 

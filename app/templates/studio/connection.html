@@ -3,12 +3,12 @@
 {% block content %}
 <div class="fw-page-header d-flex align-items-start">
   <div>
-    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('studio.index', pane='connections') }}">{{ _('Python Studio') }}</a> › {{ _('Connections') }}</div>
+    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('studio.index', pane='connections') }}">{{ _('Plugin Studio') }}</a> › {{ _('Connections') }}</div>
     <h1 class="fw-page-title"><i class="bi bi-plug me-2 text-accent"></i>{{ c.name }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;"><code>{{ c.slug }}</code> · {{ 'HTTP API' if c.kind == 'http' else 'PostgreSQL' }}</p>
   </div>
   <div class="ms-auto d-flex gap-2">
-    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.index', pane='connections') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Python Studio') }}</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.index', pane='connections') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Plugin Studio') }}</a>
     <button type="button" class="btn btn-primary btn-sm" id="cn-save"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
   </div>
 </div>
@@ -37,7 +37,7 @@
             <option value="">{{ _('None: any path under the base URL') }}</option>
             {% for v in api_versions %}<option value="{{ v.id }}" {{ 'selected' if c.api_version_id == v.id }}>{{ v.api.name }} — {{ v.version }}{{ ' (deprecated)' if v.status == 'deprecated' }}</option>{% endfor %}
           </select>
-          <div class="form-text">{% if c.api_version %}{{ _('Pinned: app steps and scripts reach only the %(n)s endpoints of this version, and can call them by id.', n=c.api_version.operations|length) }}{% if c.api_version.base_path %} {{ _('Its paths are under %(p)s: the base URL should end with it.', p=c.api_version.base_path) }}{% endif %} <a href="{{ url_for('studio.api_version', slug=c.api_version.api.slug, version=c.api_version.version) }}">{{ _('Endpoints') }}</a>{% else %}{{ _('Pin a published version and app steps and scripts can call its endpoints by id, and only those.') }}{% if not api_versions %} {{ _('No published version exists yet (Python Studio › API Catalog).') }}{% endif %}{% endif %}</div></div>
+          <div class="form-text">{% if c.api_version %}{{ _('Pinned: app steps and scripts reach only the %(n)s endpoints of this version, and can call them by id.', n=c.api_version.operations|length) }}{% if c.api_version.base_path %} {{ _('Its paths are under %(p)s: the base URL should end with it.', p=c.api_version.base_path) }}{% endif %} <a href="{{ url_for('studio.api_version', slug=c.api_version.api.slug, version=c.api_version.version) }}">{{ _('Endpoints') }}</a>{% else %}{{ _('Pin a published version and app steps and scripts can call its endpoints by id, and only those.') }}{% if not api_versions %} {{ _('No published version exists yet (Plugin Studio › API Catalog).') }}{% endif %}{% endif %}</div></div>
         {% else %}
         <div class="col-md-8"><label class="form-label small" for="cn-host">{{ _('Host') }}</label><input class="form-control form-control-sm" id="cn-host" value="{{ c.host }}" maxlength="255"></div>
         <div class="col-md-4"><label class="form-label small" for="cn-port">{{ _('Port') }}</label><input class="form-control form-control-sm" id="cn-port" type="number" value="{{ c.port or 5432 }}"></div>

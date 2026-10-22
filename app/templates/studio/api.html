@@ -3,12 +3,12 @@
 {% block content %}
 <div class="fw-page-header d-flex align-items-start">
   <div>
-    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('studio.index', pane='apis') }}">{{ _('Python Studio') }}</a> › {{ _('API Catalog') }}</div>
+    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('studio.index', pane='apis') }}">{{ _('Plugin Studio') }}</a> › {{ _('API Catalog') }}</div>
     <h1 class="fw-page-title"><i class="bi bi-journal-code me-2 text-accent"></i>{{ a.name }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;"><code>{{ a.slug }}</code>{% if a.owner %} · {{ a.owner }}{% endif %}{% if a.docs_url %} · <a href="{{ a.docs_url }}" target="_blank" rel="noopener noreferrer">{{ _('Documentation') }} <i class="bi bi-box-arrow-up-right"></i></a>{% endif %}</p>
   </div>
   <div class="ms-auto d-flex gap-2">
-    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.index', pane='apis') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Python Studio') }}</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.index', pane='apis') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Plugin Studio') }}</a>
   </div>
 </div>
 <div id="api-msg" class="mb-2" style="font-size:12px;"></div>

@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% block title %}{{ a.name }} — App{% endblock %}
 {% block content %}
-{# Python Studio > Apps > editor (views.studio.app_edit). Settings, the form,
+{# Plugin Studio > Apps > editor (views.studio.app_edit). Settings, the form,
    the diagram (process_editor.js with the app step kinds), the output
    actions, test runs of the draft and publishing. #}
 <div class="fw-page-header d-flex align-items-start">
   <div>
-    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('studio.index', pane='apps') }}">{{ _('Python Studio') }}</a> › {{ _('Apps') }}</div>
+    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('studio.index', pane='apps') }}">{{ _('Plugin Studio') }}</a> › {{ _('Apps') }}</div>
     <h1 class="fw-page-title"><i class="bi {{ a.icon }} me-2 text-accent"></i><span id="ap-title">{{ a.name }}</span></h1>
     <p class="text-muted mb-0" style="font-size:13px;"><code>{{ a.slug }}</code> ·
       {% if a.status == 'published' and a.version %}<span class="fw-badge fw-badge-success" id="ap-pub">v{{ a.version }} {{ _('published') }}</span>
@@ -15,7 +15,7 @@
       <span id="ap-state" class="ms-2"></span></p>
   </div>
   <div class="ms-auto d-flex gap-2">
-    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.index', pane='apps') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Python Studio') }}</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.index', pane='apps') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Plugin Studio') }}</a>
     {% if a.version %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('apps.page', slug=a.slug) }}"><i class="bi bi-box-arrow-up-right me-1"></i>{{ _('Open as a user') }}</a>{% endif %}
   </div>
 </div>
@@ -44,7 +44,7 @@
       </div></div></div>
       <div class="col-xl-6"><div class="fw-card"><div class="fw-card-body" style="font-size:13px;">
         <label class="form-label small d-block">{{ _('Who may use it') }}</label>
-        <p class="text-muted" style="font-size:12px;">{{ _('The groups and the people ticked here, plus every Python Studio author. Nobody else sees the menu entry or can open the app.') }}
+        <p class="text-muted" style="font-size:12px;">{{ _('The groups and the people ticked here, plus every Plugin Studio author. Nobody else sees the menu entry or can open the app.') }}
           {% if current_user.can('user_manage') %}<a href="{{ url_for('user_groups.index') }}">{{ _('Manage groups') }}</a>{% endif %}</p>
         <div class="row">
           <div class="col-md-6"><div class="text-muted small mb-1">{{ _('Groups') }}</div>

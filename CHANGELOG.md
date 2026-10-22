@@ -8,7 +8,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
-- **Plugin packages** (`.satomplugin`, format `satom.plugin/1`): Plugin Studio
+- **Plugin packages** (`.satomplugin`, format `satom.plugin/1`): Report Studio
   can **export** a view or widget and **import** a package from another server,
   without an update package. Every file is checked against the manifest's
   sha256 and a signature must be trusted and valid; signed imports land in
@@ -18,9 +18,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   under `data/plugins/code/` and mounted at `/x/<slug>/` behind sign-in at the
   next `satom execute restart-all`. Unsigned code is refused; every start
   re-verifies the signature and every file on disk, and a failing plugin is
-  skipped, never stopping the app. Plugin Studio lists them with their state,
+  skipped, never stopping the app. Report Studio lists them with their state,
   Enable/Disable and Remove. Database: `plugins.pkg_version`,
   `plugins.pkg_signer` (migration `plgpkg01`).
+- **Plugins menu** (operator request): Operations → Automation → *Scripts* is
+  now **Plugins**, a submenu with **All plugins** (the page) and one entry per
+  published plugin the user may run, by name — the same access rule as the
+  page. In the Global ADOM the published apps are listed there too, so the
+  sidebar has one Plugins toggle.
+
+### Changed
+
+- **Studios renamed** (operator request): *Python Studio* is now **Plugin
+  Studio** and says it accepts Python code only; the custom-view studio that
+  had that name is now **Report Studio**. Labels only — URLs and permission
+  keys are unchanged. The plugin-package and code-plugin strings of the
+  Report Studio page are translated into German, Spanish, French and Italian.
 
 ## [3.4.8] - 2026-10-22
 

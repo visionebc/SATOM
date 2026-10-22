@@ -800,6 +800,34 @@ def create_app(config_override: object | None = None) -> Flask:
         return cache[product_key]
 
     @app.template_global()
+    def scripts_menu():
+        """Published Plugin Studio scripts the current user may run
+        (services.script_schedules.visible_scripts, the rule the Plugins page
+        and the run page apply), by name, once per request."""
+        from flask import g as _g
+        from flask_login import current_user
+        if not hasattr(_g, "_scripts_menu"):
+            try:
+                from .services.script_schedules import visible_scripts
+                rows = visible_scripts(current_user)
+                _g._scripts_menu = sorted(
+                    ({"slug": s["slug"], "name": s.get("name") or s["slug"]} for s in rows),
+                    key=lambda s: s["name"].lower())
+            except Exception:  # noqa: BLE001 -- a menu must never 500 the page
+                _g._scripts_menu = []
+        return _g._scripts_menu
+
+    @app.template_global()
+    def global_plugins_in_automation(product_key):
+        """Whether the Global sidebar draws Automation > Plugins for this user
+        (partials/nav_automation.html: the group needs config_write, the
+        subgroup the Plugins page's key). nav_global_apps.html asks it too, so
+        the published apps are listed in exactly one Plugins subgroup."""
+        from flask_login import current_user
+        return bool(product_key == "global" and current_user and current_user.is_authenticated
+                    and current_user.can("config_write") and may_open("scripts.index"))
+
+    @app.template_global()
     def may_open(endpoint):
         """Whether the current user passes *endpoint*'s require_permission.
 

@@ -3,12 +3,12 @@
 {% block content %}
 <div class="fw-page-header d-flex align-items-start">
   <div>
-    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('studio.index', pane='stores') }}">{{ _('Python Studio') }}</a> › {{ _('Data stores') }}</div>
+    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('studio.index', pane='stores') }}">{{ _('Plugin Studio') }}</a> › {{ _('Data stores') }}</div>
     <h1 class="fw-page-title"><i class="bi bi-table me-2 text-accent"></i><span id="st-title">{{ store.name }}</span></h1>
     <p class="text-muted mb-0" style="font-size:13px;"><code>{{ store.slug }}</code> · <span id="st-count">{{ count }}</span> {{ _('rows') }} · {{ _('limit') }} {{ limits.rows }}</p>
   </div>
   <div class="ms-auto d-flex gap-2">
-    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.index', pane='stores') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Python Studio') }}</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.index', pane='stores') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Plugin Studio') }}</a>
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.store_export', slug=store.slug) }}"><i class="bi bi-download me-1"></i>{{ _('Export CSV') }}</a>
     <label class="btn btn-outline-secondary btn-sm mb-0"><i class="bi bi-upload me-1"></i>{{ _('Import CSV') }}<input type="file" id="st-import" accept=".csv,text/csv" hidden></label>
   </div>

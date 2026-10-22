@@ -26800,3 +26800,84 @@ msgstr "Sprung"
 msgid "Nothing has matched yet."
 msgstr "Bisher hat nichts zugetroffen."
 
+
+msgid "Report Studio"
+msgstr "Report-Studio"
+
+msgid "All plugins"
+msgstr "Alle Plug-ins"
+
+msgid "Only Python code is accepted."
+msgstr "Es wird nur Python-Code akzeptiert."
+
+msgid "Plugins your administrators published for you. Fill in the form and run one now, or save the values with a schedule."
+msgstr "Plug-ins, die Ihre Administratoren für Sie veröffentlicht haben. Füllen Sie das Formular aus und führen Sie eines sofort aus, oder speichern Sie die Werte mit einem Zeitplan."
+
+msgid "No plugin has been published for you yet."
+msgstr "Für Sie wurde noch kein Plug-in veröffentlicht."
+
+msgid "ADOM — built by super-admins in the Report Studio, rendered in a hard sandbox."
+msgstr "ADOM — von Super-Admins im Report-Studio erstellt, in einer strikten Sandbox gerendert."
+
+msgid "Edit in Plugin Studio"
+msgstr "Im Plugin-Studio bearbeiten"
+
+msgid "A .satomplugin package installs without an update package. Views and widgets land here (signed: testing, unsigned: draft) and update the plugin with the same slug; code plugins must be signed by a trusted key and load at the next"
+msgstr "Ein .satomplugin-Paket wird ohne Update-Paket installiert. Ansichten und Widgets landen hier (signiert: testing, unsigniert: draft) und aktualisieren das Plug-in mit demselben Slug; Code-Plug-ins müssen von einem vertrauenswürdigen Schlüssel signiert sein und werden geladen beim nächsten"
+
+msgid "Allow downgrade"
+msgstr "Downgrade erlauben"
+
+msgid "Code plugins"
+msgstr "Code-Plug-ins"
+
+msgid "Download as a .satomplugin package"
+msgstr "Als .satomplugin-Paket herunterladen"
+
+msgid "Each plugin is mounted at"
+msgstr "Jedes Plug-in wird eingehängt unter"
+
+msgid "Export a view to move it to another server."
+msgstr "Exportieren Sie eine Ansicht, um sie auf einen anderen Server zu übertragen."
+
+msgid "Import plugin"
+msgstr "Plug-in importieren"
+
+msgid "Install, enable, disable and remove take effect at the next"
+msgstr "Installieren, Aktivieren, Deaktivieren und Entfernen wirken beim nächsten"
+
+msgid "No code plugins installed. A signed code plugin package is imported with “Import plugin” above."
+msgstr "Keine Code-Plug-ins installiert. Ein signiertes Code-Plug-in-Paket wird oben mit „Plug-in importieren“ importiert."
+
+msgid "Package"
+msgstr "Paket"
+
+msgid "authored here"
+msgstr "hier erstellt"
+
+msgid "behind sign-in and re-verified (signature and every file) at every start."
+msgstr "hinter der Anmeldung und bei jedem Start erneut geprüft (Signatur und jede Datei)."
+
+msgid "loaded"
+msgstr "geladen"
+
+msgid "restart required"
+msgstr "Neustart erforderlich"
+
+msgid "signed"
+msgstr "signiert"
+
+msgid "unsigned"
+msgstr "unsigniert"
+
+msgid "Named sets of users. Plugin Studio apps and Wiki articles are shared with groups or with people: add a colleague to a group and they get every app and article of that group."
+msgstr "Benannte Benutzergruppen. Plugin-Studio-Apps und Wiki-Artikel werden mit Gruppen oder Personen geteilt: Fügen Sie eine Kollegin oder einen Kollegen einer Gruppe hinzu, und sie erhalten alle Apps und Artikel dieser Gruppe."
+
+msgid "No published version exists yet (Plugin Studio › API Catalog)."
+msgstr "Es gibt noch keine veröffentlichte Version (Plugin-Studio › API Catalog)."
+
+msgid "The groups and the people ticked here, plus every Plugin Studio author. Nobody else sees the menu entry or can open the app."
+msgstr "Die hier angekreuzten Gruppen und Personen sowie jeder Autor des Plugin-Studios. Niemand sonst sieht den Menüeintrag oder kann die App öffnen."
+
+msgid "When a trigger matches, do something SATOM can already run: walk a process, run a Plugin Studio app or a Script Library script, call an API Catalog endpoint, query a database, write a data store, run an integration hook or a scheduled action, or notify. Every run is a job; a finished automation emits automation.finished, so one can follow another."
+msgstr "Wenn ein Trigger zutrifft, etwas tun, das SATOM bereits ausführen kann: einen Prozess durchlaufen, eine Plugin-Studio-App oder ein Skript der Script Library ausführen, einen API-Catalog-Endpoint aufrufen, eine Datenbank abfragen, in einen Datenspeicher schreiben, einen Integrations-Hook oder eine geplante Aktion ausführen oder benachrichtigen. Jeder Lauf ist ein Job; eine beendete Automatisierung sendet automation.finished, sodass eine auf die andere folgen kann."

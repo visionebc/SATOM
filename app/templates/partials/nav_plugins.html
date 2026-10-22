@@ -12,7 +12,7 @@
    Automation (included by partials/nav_operations.html); base.html no longer
    draws it as a group of its own. Same entries, same gates.
 
-   Python Studio apps (2026-10-20) follow as entries of their own: the
+   Plugin Studio apps (2026-10-20) follow as entries of their own: the
    published apps this user may open in this ADOM (studio_apps_menu ->
    services.studio_apps.menu, the one authority on who and where).
    ========================================================================= #}
@@ -33,8 +33,8 @@
     {% if current_user.is_authenticated and current_user.can('studio.plugin_studio') and may_open('plugins.index') %}
     {% if _m_plg.on %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'plugins' and request.endpoint != 'plugins.gallery' else '' }}" href="{{ url_for('plugins.index') }}">
-      <i class="bi bi-puzzle fw-nav-icon"></i><span>{{ _('Plugin Studio') }}</span></a>
-    {% else %}{{ nav_off('bi-puzzle', _('Plugin Studio'), _m_plg.reason) }}{% endif %}
+      <i class="bi bi-puzzle fw-nav-icon"></i><span>{{ _('Report Studio') }}</span></a>
+    {% else %}{{ nav_off('bi-puzzle', _('Report Studio'), _m_plg.reason) }}{% endif %}
     {% endif %}
     {% if current_user.is_authenticated and current_user.can('studio.lua_studio') and may_open('lua_studio.index') %}
     {% if _m_lua.on %}

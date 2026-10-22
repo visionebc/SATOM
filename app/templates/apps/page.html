@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ a.name }}{% endblock %}
 {% block content %}
-{# A Python Studio app, the operator's side (views.apps.page). #}
+{# A Plugin Studio app, the operator's side (views.apps.page). #}
 <div class="fw-page-header d-flex align-items-start">
   <div>
     <div class="text-muted" style="font-size:12px;">{{ _('Plugins') }}</div>
@@ -9,7 +9,7 @@
     {% if a.description %}<p class="text-muted mb-0" style="font-size:13px;white-space:pre-line;">{{ a.description }}</p>{% endif %}
   </div>
   {% if current_user.can('studio.script_library') %}
-  <div class="ms-auto"><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.app_edit', slug=a.slug) }}"><i class="bi bi-pencil me-1"></i>{{ _('Edit in Python Studio') }}</a></div>
+  <div class="ms-auto"><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.app_edit', slug=a.slug) }}"><i class="bi bi-pencil me-1"></i>{{ _('Edit in Plugin Studio') }}</a></div>
   {% endif %}
 </div>
 {% if unpublished %}

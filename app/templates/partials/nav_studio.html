@@ -1,6 +1,10 @@
 {# ============================================================================
-   STUDIO (Global ADOM) — Python Studio, Plugin Studio, Lua Studio.
-   Python Studio (2026-10-20) is the Script Library and the Python console in
+   STUDIO (Global ADOM) — Plugin Studio, Report Studio, Lua Studio.
+   Renamed 2026-10-22 (operator): Python Studio is now "Plugin Studio" and
+   the custom-view studio that held that name is "Report Studio". Labels
+   only: URLs, endpoints and permission keys (studio.plugin_studio is still
+   the custom-view studio) are unchanged.
+   Plugin Studio (2026-10-20) is the Script Library and the Python console in
    one page; its entry follows either of their two keys.
 
    Since 2026-10-13 (operator's menu order) it is a subgroup at the foot of
@@ -29,11 +33,11 @@
 {% endif %}
     {% if (_can_pyc or _can_scl) and may_open('studio.index') %}
     <a class="fw-nav-item {{ 'active' if request.blueprint in ['studio', 'script_library'] else '' }}" href="{{ url_for('studio.index') }}">
-      <i class="bi bi-code-slash fw-nav-icon"></i><span>{{ _('Python Studio') }}</span></a>
+      <i class="bi bi-code-slash fw-nav-icon"></i><span>{{ _('Plugin Studio') }}</span></a>
     {% endif %}
     {% if _can_plg and may_open('plugins.index') %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'plugins' and request.endpoint != 'plugins.gallery' else '' }}" href="{{ url_for('plugins.index') }}">
-      <i class="bi bi-puzzle fw-nav-icon"></i><span>{{ _('Plugin Studio') }}</span></a>
+      <i class="bi bi-puzzle fw-nav-icon"></i><span>{{ _('Report Studio') }}</span></a>
     {% endif %}
     {% if _can_lua and may_open('lua_studio.index') %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'lua_studio' else '' }}" href="{{ url_for('lua_studio.index') }}">

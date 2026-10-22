@@ -26837,3 +26837,84 @@ msgstr "salto"
 msgid "Nothing has matched yet."
 msgstr "Finora non ha corrisposto nulla."
 
+
+msgid "Report Studio"
+msgstr "Studio report"
+
+msgid "All plugins"
+msgstr "Tutti i plugin"
+
+msgid "Only Python code is accepted."
+msgstr "È accettato solo codice Python."
+
+msgid "Plugins your administrators published for you. Fill in the form and run one now, or save the values with a schedule."
+msgstr "Plugin che i tuoi amministratori hanno pubblicato per te. Compila il modulo ed eseguine uno ora, oppure salva i valori con una pianificazione."
+
+msgid "No plugin has been published for you yet."
+msgstr "Nessun plugin è stato ancora pubblicato per te."
+
+msgid "ADOM — built by super-admins in the Report Studio, rendered in a hard sandbox."
+msgstr "ADOM — create dai super-amministratori nello Studio report, visualizzate in una sandbox rigida."
+
+msgid "Edit in Plugin Studio"
+msgstr "Modifica nello Studio Plugin"
+
+msgid "A .satomplugin package installs without an update package. Views and widgets land here (signed: testing, unsigned: draft) and update the plugin with the same slug; code plugins must be signed by a trusted key and load at the next"
+msgstr "Un pacchetto .satomplugin si installa senza pacchetto di aggiornamento. Viste e widget arrivano qui (firmati: testing, non firmati: draft) e aggiornano il plugin con lo stesso slug; i plugin di codice devono essere firmati da una chiave fidata e si caricano al prossimo"
+
+msgid "Allow downgrade"
+msgstr "Consenti downgrade"
+
+msgid "Code plugins"
+msgstr "Plugin di codice"
+
+msgid "Download as a .satomplugin package"
+msgstr "Scarica come pacchetto .satomplugin"
+
+msgid "Each plugin is mounted at"
+msgstr "Ogni plugin è montato su"
+
+msgid "Export a view to move it to another server."
+msgstr "Esporta una vista per spostarla su un altro server."
+
+msgid "Import plugin"
+msgstr "Importa plugin"
+
+msgid "Install, enable, disable and remove take effect at the next"
+msgstr "Installazione, attivazione, disattivazione e rimozione hanno effetto al prossimo"
+
+msgid "No code plugins installed. A signed code plugin package is imported with “Import plugin” above."
+msgstr "Nessun plugin di codice installato. Un pacchetto di plugin di codice firmato si importa con «Importa plugin» qui sopra."
+
+msgid "Package"
+msgstr "Pacchetto"
+
+msgid "authored here"
+msgstr "creato qui"
+
+msgid "behind sign-in and re-verified (signature and every file) at every start."
+msgstr "dietro l'accesso e riverificato (firma e ogni file) a ogni avvio."
+
+msgid "loaded"
+msgstr "caricato"
+
+msgid "restart required"
+msgstr "riavvio richiesto"
+
+msgid "signed"
+msgstr "firmato"
+
+msgid "unsigned"
+msgstr "non firmato"
+
+msgid "Named sets of users. Plugin Studio apps and Wiki articles are shared with groups or with people: add a colleague to a group and they get every app and article of that group."
+msgstr "Insiemi di utenti con un nome. Le app dello Studio Plugin e gli articoli del Wiki si condividono con gruppi o persone: aggiunga un collega a un gruppo e riceverà tutte le app e gli articoli di quel gruppo."
+
+msgid "No published version exists yet (Plugin Studio › API Catalog)."
+msgstr "Non esiste ancora nessuna versione pubblicata (Studio Plugin › API Catalog)."
+
+msgid "The groups and the people ticked here, plus every Plugin Studio author. Nobody else sees the menu entry or can open the app."
+msgstr "I gruppi e le persone selezionati qui, più ogni autore dello Studio Plugin. Nessun altro vede la voce del menu o può aprire l'app."
+
+msgid "When a trigger matches, do something SATOM can already run: walk a process, run a Plugin Studio app or a Script Library script, call an API Catalog endpoint, query a database, write a data store, run an integration hook or a scheduled action, or notify. Every run is a job; a finished automation emits automation.finished, so one can follow another."
+msgstr "Quando un trigger corrisponde, fa qualcosa che SATOM sa già eseguire: percorrere un processo, eseguire un'app dello Studio Plugin o uno script della Script Library, chiamare un endpoint dell'API Catalog, interrogare un database, scrivere in un data store, eseguire un hook di integrazione o un'azione pianificata, oppure notificare. Ogni esecuzione è un job; un'automazione terminata emette automation.finished, così una può seguire l'altra."

@@ -6,6 +6,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [3.4.7] - 2026-10-22
+
+One way to start a process from an event: Administrator → Triggers. Each
+trigger a process carried on its own form moves there on upgrade, as a
+trigger plus a *Walk a process* automation armed exactly as before; the
+process page shows what starts it.
+
 ### Changed
 
 - **One way to start a process from an event: Administrator → Triggers.** The

@@ -126,6 +126,7 @@ page.
 | [`overview.md`](overview.md) | Architecture, deployment, security posture, and the rules the team works by. |
 | [`user-guide.md`](user-guide.md) | Day-to-day operation, screen by screen. |
 | [`cli.md`](cli.md) | The operator console: diagnose, control, rebuild — and the sudo rule to request. |
+| [`naf-alignment.md`](naf-alignment.md) | Where SATOM sits in the NAF reference model, block by block, and the conformance matrix. |
 | [`theming.md`](theming.md) | Repainting the console: design tokens, named themes, the value allowlist that keeps operator input out of the stylesheet's structure, and the contrast audit. |
 
 ### Deployment & protection

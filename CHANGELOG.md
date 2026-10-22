@@ -6,6 +6,25 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Integration hooks could not make a single HTTP request** (since 3.4.2).
+  The hook SDK reached the trust store with an import that only works inside
+  the application; in the hook's jail it raised, so every outbound call of
+  every hook — the Slack, Teams, Telegram and change-ticket starters included,
+  and the new *Run an integration hook* automations — failed. The SDK now
+  uses the trust store inside the application and, in the jail, the node's CA
+  bundle that the runner places next to it (public roots plus the node's
+  private CAs; never an unverified connection).
+- The triggers and automations pages, and the API Catalog pages of 3.4.5, are
+  translated into German, Spanish, French and Italian (144 strings each).
+- **API manual:** `POST /api/v1/events` and `GET /api/v1/triggers` are
+  documented (docs/api_v1.md §15).
+- *Walk a process* has its own change-type profile, so a change request for
+  it no longer shows "Action without a profile".
+- Clone and migrate leave trigger matches and automation runs behind, like
+  every other run history.
+
 ## [3.4.7] - 2026-10-22
 
 One way to start a process from an event: Administrator → Triggers. Each

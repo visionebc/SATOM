@@ -138,6 +138,37 @@ class HttpResponse:
         return "<HttpResponse %d %s>" % (self.status, self.url)
 
 
+#: The CA bundle the hook runner copies next to this file in the jail (the
+#: trust store's ca-bundle.pem: public roots + the node's private CAs).
+CA_BUNDLE_NAME = "ca-bundle.pem"
+
+
+def _ssl_context():
+    """The node's trust store, wherever this module runs.
+
+    Inside the app it is ``app.services.integration_sdk`` and the trust store
+    is a sibling module. In the hook jail it is ``satom_sdk.py``, alone in a
+    temp dir with no ``app`` package: ``from . import trust_store`` raised
+    ImportError there and EVERY outbound request of every hook failed
+    (3.4.2 -> 3.4.7). There it reads the bundle the runner copied beside it;
+    with none, the system roots -- never an unverified connection."""
+    import os
+    import ssl
+    try:
+        from . import trust_store  # type: ignore[attr-defined]
+        return trust_store.ssl_context()
+    except ImportError:
+        pass
+    ctx = ssl.create_default_context()
+    path = os.environ.get("SATOM_CA_BUNDLE") or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), CA_BUNDLE_NAME)
+    if os.path.isfile(path):
+        try:
+            ctx.load_verify_locations(cafile=path)
+        except (OSError, ssl.SSLError):
+            pass
+    return ctx
+
 class HttpClient:
     """A deliberately small HTTP client where the timeout is not optional."""
 
@@ -190,9 +221,8 @@ class HttpClient:
                                      method=(method or "GET").upper())
         eff = self._effective_timeout(timeout)
         try:
-            from . import trust_store
             with urllib.request.urlopen(req, timeout=eff,
-                                        context=trust_store.ssl_context()) as resp:
+                                        context=_ssl_context()) as resp:
                 content = resp.read(MAX_BODY_BYTES)
                 return HttpResponse(getattr(resp, "status", 0) or resp.getcode(),
                                     resp.geturl(), dict(resp.headers or {}), content)

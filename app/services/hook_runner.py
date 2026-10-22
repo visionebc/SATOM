@@ -71,6 +71,14 @@ CLAIM_DIR = APP_DIR / "data" / "integrations" / "claimed"
 PYTHON = APP_DIR / "venv" / "bin" / "python"
 SDK_SRC = Path(__file__).resolve().parent / "integration_sdk.py"
 
+
+def TRUST_BUNDLE() -> str:
+    """trust_store.bundle_file() without importing it (the runner stays
+    free of the app's DB layer): $SATOM_TRUST_DIR or <repo>/pki/trust."""
+    base = os.environ.get("SATOM_TRUST_DIR") or str(
+        Path(__file__).resolve().parents[2] / "pki" / "trust")
+    return os.path.join(base, "ca-bundle.pem")
+
 MAX_DRAIN = 50          # requests per invocation; the .path unit re-fires
 KILL_GRACE = sandbox.KILL_GRACE      # SIGTERM -> SIGKILL of the jail's group
 REAP_TIMEOUT = sandbox.REAP_TIMEOUT  # draining the pipes after the kill
@@ -349,6 +357,11 @@ def run_request(req: dict[str, Any], *,
         os.chmod(workdir, 0o700)
         os.chmod(resdir, 0o700)
         shutil.copyfile(SDK_SRC, os.path.join(workdir, "satom_sdk.py"))
+        # The node's CA bundle beside the SDK: the jail has no app package to
+        # import the trust store from (integration_sdk._ssl_context).
+        bundle = TRUST_BUNDLE()
+        if bundle and os.path.isfile(bundle):
+            shutil.copyfile(bundle, os.path.join(workdir, "ca-bundle.pem"))
         hook_path = os.path.join(workdir, "hook.py")
         with open(hook_path, "w", encoding="utf-8") as fh:
             fh.write(source)

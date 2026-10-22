@@ -459,6 +459,16 @@ PAGES: tuple[dict, ...] = (
        "certificate swap maintenance window operator reboot upgrade "
        "firmware ha failover certificate renewal lifecycle custom rest",
        "Fleet work you schedule for a chosen time."),
+    _p("triggers.index", "Triggers", "automation",
+       "trigger event condition alert fired when an alert orchestrator "
+       "orchestration event driven rule if this then that cooldown filter "
+       "api event change approved window opening automation finished chain",
+       "What starts an automation: an event narrowed to the occurrences that matter."),
+    _p("event_automations.index", "Automations on a trigger", "automation",
+       "automation on a trigger react to an alert run a process on an event "
+       "call an api when run a script studio app hook notify playbook "
+       "orchestrator chain rehearsal armed",
+       "What happens when a trigger matches: a process, an app, a script, an API call."),
     _p("calendar_plan.index", "Change Calendar", "automation",
        "calendar change window schedule day grid planned upcoming "
        "maintenance when timeline",
@@ -789,6 +799,8 @@ EXCLUDED: dict[str, str] = {
     "provisioning.baseline_new": "create form of provisioning.baselines",
     "scheduled_actions.new": "create form of scheduled_actions.index",
     "automations.new": "create form of automations.index",
+    "triggers.new": "create form of triggers.index",
+    "event_automations.new": "create form of event_automations.index",
     # Auth flow — reachable without a session, never a destination.
     "auth.login": "auth flow", "auth.logout": "auth flow",
     "auth.two_factor": "auth flow", "auth.forgot_password": "auth flow",

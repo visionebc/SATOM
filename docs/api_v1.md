@@ -150,6 +150,8 @@ Paths are relative to the base URL. **Scope** is the minimum token scope;
 | `GET`  | `/processes` | read | — | The processes the token's ADOM may see (§14) |
 | `GET`  | `/processes/<id>` | read | — | One process, with its diagram (§14) |
 | `POST` | `/processes/<id>/run` | write | `process_arm` for `"armed": true` | Walk a process — a **rehearsal** unless armed (§14) |
+| `GET`  | `/triggers` | read | — | The triggers and their enabled automations (§15) |
+| `POST` | `/events` | write | — | Post an `api.event`: starts the automations of every matching trigger (§15) |
 | `GET`  | `/process-runs/<id>` | read | — | One walk and its steps; poll a run parked on a manual gate (§14) |
 
 The write endpoints are rate-limited to **30/min**, like `/actions/<id>/run`.
@@ -917,3 +919,44 @@ curl -s -X POST -H "Authorization: Bearer $T" -H 'Content-Type: application/json
   -d '{"appliance_id": 7, "armed": true}' https://<your-satom-host>/api/v1/processes/3/run
 #  -> 403 capability_denied unless the token holds process_arm
 ```
+
+## 15. Events and triggers — `/api/v1/events`, `/api/v1/triggers`
+
+An outside system (monitoring, CI, ticketing) starts SATOM's automations by
+posting an event. Every enabled trigger on `api.event` whose conditions match
+it (Administrator → Triggers) starts its automations (Automations → On a
+trigger), as jobs; the call answers at once with what was queued and never
+waits for a walk. The match is recorded like any other, with the token's id.
+
+### `POST /events`
+
+Scope `write`. Body:
+
+```json
+{"type": "deploy.done", "subject": "build-42", "appliance_id": 3,
+ "data": {"service": "shop"}}
+```
+
+`type` is required (at most 120 characters); `subject` is what the trigger's
+cooldown is counted on (`""` = the type); `data` is any JSON object up to
+32 000 bytes. The event's ADOM is the token's; a Global token may name one in
+`product`. Nothing the caller sends arms an automation: armed or not is set on
+the automation, in the console. Answers `202`:
+
+```json
+{"event": "api.event", "type": "deploy.done", "matched": 1, "queued": 1,
+ "rows": [{"trigger": "ci-deploy", "automation": "validate-shop",
+           "status": "queued", "job_id": "…", "run_id": 17, "reason": ""}]}
+```
+
+`status` is `queued`, `suppressed` (cooldown, hourly budget or chain depth —
+`reason` says which) or `error`. `400` for a body that is not an object, a
+missing `type`, `data` that is not an object or is too large, or an unknown
+`product`.
+
+### `GET /triggers`
+
+Scope `read`. Every trigger: `key`, `name`, `event`, `enabled`, `conditions`,
+`cooldown_minutes`, `rate_limit_per_hour` and the keys of its enabled
+`automations` — so a caller can see which `type` values anything listens to.
+

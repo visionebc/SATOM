@@ -26363,3 +26363,440 @@ msgstr "v2c, pro Gerät zuschaltbar (Gerät bearbeiten)"
 
 msgid "Senders are the appliances' management addresses; anything else is dropped and counted. UDP always; port 514 needs a redirect or CAP_NET_BIND_SERVICE on the scheduler unit (default 5514). The listener runs in the scheduler sidecar on the primary."
 msgstr "Absender sind die Management-Adressen der Geräte; alles andere wird verworfen und gezählt. UDP immer; Port 514 braucht eine Umleitung oder CAP_NET_BIND_SERVICE in der Scheduler-Unit (Standard 5514). Der Empfänger läuft im Scheduler-Sidecar des Primärknotens."
+
+# 3.4.8 -- triggers, automations on a trigger, API Catalog (appended, not reflowed)
+msgid "Started (UTC)"
+msgstr "Gestartet (UTC)"
+
+msgid "test"
+msgstr "Test"
+
+msgid "job"
+msgstr "Job"
+
+msgid "No run yet."
+msgstr "Noch kein Lauf."
+
+msgid "New automation"
+msgstr "Neue Automatisierung"
+
+msgid "On a trigger"
+msgstr "Bei einem Trigger"
+
+msgid "Nothing to choose from yet."
+msgstr "Noch nichts zur Auswahl."
+
+msgid "This automation cannot run right now:"
+msgstr "Diese Automatisierung kann gerade nicht laufen:"
+
+msgid "When this trigger matches"
+msgstr "Wenn dieser Trigger zutrifft"
+
+msgid "Do"
+msgstr "Aktion"
+
+msgid "Text fields are templates over the event: {{ event.title }}, {{ event.appliance_id }}, {{ event.data.ticket }}… and {{ trigger.key }}. An optional value is written {{ x | default('') }}."
+msgstr "Textfelder sind Vorlagen über das Ereignis: {{ event.title }}, {{ event.appliance_id }}, {{ event.data.ticket }}… und {{ trigger.key }}. Ein optionaler Wert wird {{ x | default('') }} geschrieben."
+
+msgid "Appliance (id or name)"
+msgstr "Appliance (ID oder Name)"
+
+msgid "empty = the appliance the event names"
+msgstr "leer = die Appliance, die das Ereignis nennt"
+
+msgid "One walk at a time per process and appliance, within the process's own hourly budget. Unarmed = every write step dry-runs."
+msgstr "Ein Durchlauf gleichzeitig pro Prozess und Appliance, innerhalb des stündlichen Budgets des Prozesses. Nicht scharf = jeder Schreibschritt wird nur geprobt."
+
+msgid "Published app"
+msgstr "Veröffentlichte App"
+
+msgid "Form values (JSON)"
+msgstr "Formularwerte (JSON)"
+
+msgid "Runs as the owner, who must be allowed to use the app. Inside the diagram the whole event is {{ event }}. Unarmed = the published version runs as a rehearsal."
+msgstr "Läuft als Besitzer, der die App verwenden darf. Im Diagramm ist das ganze Ereignis {{ event }}. Nicht scharf = die veröffentlichte Version läuft als Probe."
+
+msgid "Published script"
+msgstr "Veröffentlichtes Skript"
+
+msgid "HTTP connection"
+msgstr "HTTP-Verbindung"
+
+msgid "Endpoint (API Catalog id)"
+msgstr "Endpoint (API-Catalog-ID)"
+
+msgid "Path parameters (JSON)"
+msgstr "Pfadparameter (JSON)"
+
+msgid "Path (without an endpoint id)"
+msgstr "Pfad (ohne Endpoint-ID)"
+
+msgid "Query (JSON)"
+msgstr "Query (JSON)"
+
+msgid "Keep only (JSON path)"
+msgstr "Nur behalten (JSON-Pfad)"
+
+msgid "A connection pinned to an API Catalog version calls only endpoints of that version. Unarmed = anything but GET is recorded, not sent."
+msgstr "Eine an eine API-Catalog-Version gebundene Verbindung ruft nur Endpoints dieser Version auf. Nicht scharf = alles außer GET wird protokolliert, nicht gesendet."
+
+msgid "PostgreSQL connection"
+msgstr "PostgreSQL-Verbindung"
+
+msgid "Allow writes"
+msgstr "Schreibzugriffe erlauben"
+
+msgid "Parameters (JSON)"
+msgstr "Parameter (JSON)"
+
+msgid "SQL"
+msgstr "SQL"
+
+msgid "Data store"
+msgstr "Datenspeicher"
+
+msgid "Match (JSON)"
+msgstr "Treffer (JSON)"
+
+msgid "Values (JSON)"
+msgstr "Werte (JSON)"
+
+msgid "Integration hook"
+msgstr "Integrations-Hook"
+
+msgid "The hook receives this trigger's event as ctx.payload, whatever event it is bound to; a disabled hook is skipped."
+msgstr "Der Hook erhält das Ereignis dieses Triggers als ctx.payload, egal an welches Ereignis er gebunden ist; ein deaktivierter Hook wird übersprungen."
+
+msgid "Scheduled action"
+msgstr "Geplante Aktion"
+
+msgid "Runs now, exactly as configured — its targets, and its change-request gate for reboot, upgrade, failover, certificate lifecycle and custom REST. A danger action runs only from an armed automation."
+msgstr "Läuft jetzt, genau wie konfiguriert — mit ihren Zielen und ihrer Change-Request-Sperre für Neustart, Upgrade, Failover, Zertifikatslebenszyklus und eigenes REST. Eine gefährliche Aktion läuft nur aus einer scharfen Automatisierung."
+
+msgid "Bell (administrators)"
+msgstr "Glocke (Administratoren)"
+
+msgid "E-mail the alert recipients"
+msgstr "E-Mail an die Alarmempfänger"
+
+msgid "E-mail also to"
+msgstr "E-Mail auch an"
+
+msgid "Armed"
+msgstr "Scharf"
+
+msgid "writes for real with nobody at the screen. Off = a rehearsal: write steps are recorded, not executed."
+msgstr "schreibt wirklich, ohne dass jemand vor dem Bildschirm sitzt. Aus = eine Probe: Schreibschritte werden protokolliert, nicht ausgeführt."
+
+msgid "Applies to processes, apps, API calls, SQL, data-store writes and danger scheduled actions."
+msgstr "Gilt für Prozesse, Apps, API-Aufrufe, SQL, Datenspeicher-Schreibvorgänge und gefährliche geplante Aktionen."
+
+msgid "Runs as"
+msgstr "Läuft als"
+
+msgid "Test — a rehearsal"
+msgstr "Test — eine Probe"
+
+msgid "Runs once as a job, never armed and never chained, with the trigger event's documented example — or the payload you paste."
+msgstr "Läuft einmal als Job, nie scharf und nie verkettet, mit dem dokumentierten Beispiel des Trigger-Ereignisses — oder der eingefügten Payload."
+
+msgid "Run a rehearsal"
+msgstr "Probe ausführen"
+
+msgid "Open the trigger"
+msgstr "Trigger öffnen"
+
+msgid "Delete this automation?"
+msgstr "Diese Automatisierung löschen?"
+
+msgid "When a trigger matches, do something SATOM can already run: walk a process, run a Python Studio app or a Script Library script, call an API Catalog endpoint, query a database, write a data store, run an integration hook or a scheduled action, or notify. Every run is a job; a finished automation emits automation.finished, so one can follow another."
+msgstr "Wenn ein Trigger zutrifft, etwas tun, das SATOM bereits ausführen kann: einen Prozess durchlaufen, eine Python-Studio-App oder ein Skript der Script Library ausführen, einen API-Catalog-Endpoint aufrufen, eine Datenbank abfragen, in einen Datenspeicher schreiben, einen Integrations-Hook oder eine geplante Aktion ausführen oder benachrichtigen. Jeder Lauf ist ein Job; eine beendete Automatisierung sendet automation.finished, sodass eine auf die andere folgen kann."
+
+msgid "Triggers are created under"
+msgstr "Trigger werden angelegt unter"
+
+msgid "Administrator › Triggers"
+msgstr "Administrator › Trigger"
+
+msgid "Triggers are created by an administrator."
+msgstr "Trigger werden von einem Administrator angelegt."
+
+msgid "There is no trigger yet. An administrator creates one under Administrator › Triggers; then it can be bound here."
+msgstr "Es gibt noch keinen Trigger. Ein Administrator legt einen unter Administrator › Trigger an; danach kann er hier gebunden werden."
+
+msgid "Does"
+msgstr "Aktion"
+
+msgid "No automation runs on a trigger in this ADOM yet."
+msgstr "In diesem ADOM läuft noch keine Automatisierung bei einem Trigger."
+
+msgid "Scheduled"
+msgstr "Geplant"
+
+msgid "Triggers"
+msgstr "Trigger"
+
+msgid "started by"
+msgstr "gestartet durch"
+
+msgid "Started by"
+msgstr "Gestartet durch"
+
+msgid "The Run button, a scheduled action or the API only: no trigger starts this process."
+msgstr "Nur die Schaltfläche Ausführen, eine geplante Aktion oder die API: kein Trigger startet diesen Prozess."
+
+msgid "Start it on a trigger"
+msgstr "Bei einem Trigger starten"
+
+msgid "Events start a process through Administrator › Triggers and Automations › On a trigger."
+msgstr "Ereignisse starten einen Prozess über Administrator › Trigger und Automatisierungen › Bei einem Trigger."
+
+msgid "API Catalog"
+msgstr "API Catalog"
+
+msgid "The team or vendor that publishes it"
+msgstr "Das Team oder der Hersteller, der sie veröffentlicht"
+
+msgid "Documentation link"
+msgstr "Link zur Dokumentation"
+
+msgid "Connections pinned to this API"
+msgstr "An diese API gebundene Verbindungen"
+
+msgid "None yet. Pin one from its connection page (HTTP connections, \"API version\")."
+msgstr "Noch keine. Binde eine auf der Seite ihrer Verbindung (HTTP-Verbindungen, \"API-Version\")."
+
+msgid "Delete API"
+msgstr "API löschen"
+
+msgid "Move its connections off it first."
+msgstr "Löse zuerst ihre Verbindungen davon."
+
+msgid "New version"
+msgstr "Neue Version"
+
+msgid "Start from"
+msgstr "Ausgehend von"
+
+msgid "Endpoints"
+msgstr "Endpoints"
+
+msgid "No versions yet: create the first draft above."
+msgstr "Noch keine Versionen: lege oben den ersten Entwurf an."
+
+msgid "Compare two versions"
+msgstr "Zwei Versionen vergleichen"
+
+msgid "pinned by"
+msgstr "gebunden von"
+
+msgid "Endpoints (JSON)"
+msgstr "Endpoints (JSON)"
+
+msgid "Delete draft"
+msgstr "Entwurf löschen"
+
+msgid "Mark as current"
+msgstr "Als aktuell markieren"
+
+msgid "Deprecate"
+msgstr "Als veraltet markieren"
+
+msgid "A published version never changes and is never deleted, so a connection pinned to it means the same endpoints tomorrow. To change it, create a new version from it on the API page."
+msgstr "Eine veröffentlichte Version ändert sich nie und wird nie gelöscht, daher bedeutet eine daran gebundene Verbindung morgen dieselben Endpoints. Um sie zu ändern, lege auf der API-Seite eine neue Version davon an."
+
+msgid "Import an OpenAPI document"
+msgstr "OpenAPI-Dokument importieren"
+
+#, python-format
+msgid "OpenAPI 3 or Swagger 2, JSON or YAML, up to %(n)s MiB. Importing replaces the endpoints of this draft; you can correct them by hand afterwards. Only references inside the document are followed: nothing is downloaded."
+msgstr "OpenAPI 3 oder Swagger 2, JSON oder YAML, bis %(n)s MiB. Der Import ersetzt die Endpoints dieses Entwurfs; du kannst sie danach von Hand korrigieren. Es werden nur Verweise innerhalb des Dokuments verfolgt: nichts wird heruntergeladen."
+
+msgid "…or paste the document here"
+msgstr "…oder füge das Dokument hier ein"
+
+msgid "Version settings"
+msgstr "Versionseinstellungen"
+
+msgid "Base path in the document"
+msgstr "Basispfad im Dokument"
+
+msgid "Informational: endpoint paths are under the base URL of the connection, so that URL should end with this path."
+msgstr "Zur Information: Endpoint-Pfade liegen unter der Basis-URL der Verbindung, daher sollte diese URL mit diesem Pfad enden."
+
+msgid "Release notes"
+msgstr "Versionshinweise"
+
+msgid "Add endpoint"
+msgstr "Endpoint hinzufügen"
+
+msgid "The id is what scripts and app steps call: connection(\"x\").op(\"id\"). Write {name} for a path parameter. Query parameters: names separated by commas."
+msgstr "Die ID ist das, was Skripte und App-Schritte aufrufen: connection(\"x\").op(\"id\"). Schreibe {name} für einen Pfadparameter. Query-Parameter: Namen durch Kommas getrennt."
+
+msgid "Query parameters"
+msgstr "Query-Parameter"
+
+msgid "API version (API Catalog)"
+msgstr "API-Version (API Catalog)"
+
+msgid "None: any path under the base URL"
+msgstr "Keine: jeder Pfad unter der Basis-URL"
+
+#, python-format
+msgid "Pinned: app steps and scripts reach only the %(n)s endpoints of this version, and can call them by id."
+msgstr "Gebunden: App-Schritte und Skripte erreichen nur die %(n)s Endpoints dieser Version und können sie per ID aufrufen."
+
+#, python-format
+msgid "Its paths are under %(p)s: the base URL should end with it."
+msgstr "Ihre Pfade liegen unter %(p)s: die Basis-URL sollte damit enden."
+
+msgid "Pin a published version and app steps and scripts can call its endpoints by id, and only those."
+msgstr "Binde eine veröffentlichte Version, und App-Schritte und Skripte können ihre Endpoints per ID aufrufen, und nur diese."
+
+msgid "No published version exists yet (Python Studio › API Catalog)."
+msgstr "Es gibt noch keine veröffentlichte Version (Python Studio › API Catalog)."
+
+msgid "APIs someone publishes, one entry per version: import its OpenAPI or Swagger document, or type the endpoints in. A published version never changes. Pin an HTTP connection to a version and app steps and scripts can call its endpoints by id, and only those."
+msgstr "APIs, die jemand veröffentlicht, ein Eintrag pro Version: importiere ihr OpenAPI- oder Swagger-Dokument oder gib die Endpoints ein. Eine veröffentlichte Version ändert sich nie. Binde eine HTTP-Verbindung an eine Version, und App-Schritte und Skripte können ihre Endpoints per ID aufrufen, und nur diese."
+
+msgid "New API"
+msgstr "Neue API"
+
+msgid "Latest published"
+msgstr "Zuletzt veröffentlicht"
+
+msgid "No APIs yet."
+msgstr "Noch keine APIs."
+
+msgid "New trigger"
+msgstr "Neuer Trigger"
+
+msgid "Lowercase, digits, - and _. Automations and the API name it."
+msgstr "Kleinbuchstaben, Ziffern, - und _. Automatisierungen und die API nennen ihn so."
+
+msgid "Payload fields"
+msgstr "Payload-Felder"
+
+msgid "Conditions"
+msgstr "Bedingungen"
+
+msgid "(all must hold; empty = any; a condition on a field the event does not carry is not met)"
+msgstr "(alle müssen gelten; leer = beliebig; eine Bedingung auf ein Feld, das das Ereignis nicht enthält, ist nicht erfüllt)"
+
+msgid "ADOMs (product)"
+msgstr "ADOMs (Produkt)"
+
+msgid "Appliance ids"
+msgstr "Appliance-IDs"
+
+msgid "Key matches (glob)"
+msgstr "Schlüssel passt auf (Glob)"
+
+msgid "Text contains"
+msgstr "Text enthält"
+
+msgid "title, detail, summary or reason"
+msgstr "Titel, Detail, Zusammenfassung oder Grund"
+
+msgid "API event type (glob)"
+msgstr "API-Ereignistyp (Glob)"
+
+msgid "Automation outcome"
+msgstr "Ergebnis der Automatisierung"
+
+msgid "Finished automations (keys, comma separated)"
+msgstr "Beendete Automatisierungen (Schlüssel, kommagetrennt)"
+
+msgid "Payload conditions (JSON)"
+msgstr "Payload-Bedingungen (JSON)"
+
+msgid "Each row: field (dotted path into the payload), op"
+msgstr "Jede Zeile: field (Pfad mit Punkten in die Payload), op"
+
+msgid "value."
+msgstr "value."
+
+msgid "Bounds"
+msgstr "Grenzen"
+
+msgid "Cooldown per subject (minutes)"
+msgstr "Wartezeit pro Subjekt (Minuten)"
+
+msgid "The same alert key / change / API subject matches again only after this. 0 = every time."
+msgstr "Derselbe Alarmschlüssel / Change / API-Subjekt trifft erst danach wieder zu. 0 = jedes Mal."
+
+msgid "Matches per hour"
+msgstr "Treffer pro Stunde"
+
+msgid "Past this budget a match is recorded as suppressed. 0 = no budget."
+msgstr "Nach diesem Budget wird ein Treffer als unterdrückt protokolliert. 0 = kein Budget."
+
+msgid "Bound automations"
+msgstr "Gebundene Automatisierungen"
+
+msgid "Nothing is bound yet: a match is recorded and nothing else happens."
+msgstr "Noch nichts gebunden: ein Treffer wird protokolliert, sonst passiert nichts."
+
+msgid "Bind an automation"
+msgstr "Automatisierung binden"
+
+msgid "Delete this trigger?"
+msgstr "Diesen Trigger löschen?"
+
+msgid "Preview — would it match?"
+msgstr "Vorschau — würde er zutreffen?"
+
+msgid "Nothing is fired. Alert triggers are checked against the alert engine's findings right now; paste a payload to check any event."
+msgstr "Es wird nichts ausgelöst. Alarm-Trigger werden gegen die aktuellen Befunde der Alarm-Engine geprüft; füge eine Payload ein, um ein beliebiges Ereignis zu prüfen."
+
+msgid "match"
+msgstr "Treffer"
+
+msgid "Matches of this trigger"
+msgstr "Treffer dieses Triggers"
+
+msgid "Automations started"
+msgstr "Gestartete Automatisierungen"
+
+msgid "matched"
+msgstr "zugetroffen"
+
+msgid "suppressed"
+msgstr "unterdrückt"
+
+msgid "No match yet."
+msgstr "Noch kein Treffer."
+
+msgid "A trigger is a condition: an event (an alert fired, a change was approved, a window is opening, an automation finished, an outside system posted an event) narrowed to the occurrences that matter. What happens when it matches is set under"
+msgstr "Ein Trigger ist eine Bedingung: ein Ereignis (ein Alarm wurde ausgelöst, ein Change genehmigt, ein Fenster öffnet sich, eine Automatisierung ist beendet, ein externes System hat ein Ereignis gesendet), eingegrenzt auf die Vorkommen, die zählen. Was bei einem Treffer passiert, wird festgelegt unter"
+
+msgid "Automation › Automations › On a trigger"
+msgstr "Automatisierung › Automatisierungen › Bei einem Trigger"
+
+msgid "Last match"
+msgstr "Letzter Treffer"
+
+msgid "any occurrence"
+msgstr "jedes Vorkommen"
+
+msgid "none bound"
+msgstr "keine gebunden"
+
+msgid "No trigger yet. Create one, then bind an automation to it."
+msgstr "Noch kein Trigger. Lege einen an und binde dann eine Automatisierung daran."
+
+msgid "Not converted: processes that still carry their own trigger"
+msgstr "Nicht umgewandelt: Prozesse, die noch einen eigenen Trigger tragen"
+
+msgid "A process trigger left from before 3.4.7 that the trig02 migration did not convert. It still fires; recreate it here as a trigger plus a \"Walk a process\" automation."
+msgstr "Ein Prozess-Trigger aus der Zeit vor 3.4.7, den die Migration trig02 nicht umgewandelt hat. Er löst weiterhin aus; lege ihn hier als Trigger plus eine Automatisierung \"Walk a process\" neu an."
+
+msgid "Recent matches"
+msgstr "Letzte Treffer"
+
+msgid "hop"
+msgstr "Sprung"
+
+msgid "Nothing has matched yet."
+msgstr "Bisher hat nichts zugetroffen."
+

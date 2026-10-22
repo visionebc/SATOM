@@ -79,6 +79,7 @@ LEFT_BEHIND = {
         "change_history", "audit_logs", "notifications", "bug_reports",
         "observatory_scans", "observatory_fixes", "policy_clone_events",
         "process_runs", "process_run_steps", "provision_runs", "studio_app_runs",
+        "trigger_fires", "event_automation_runs",
         "upgrade_prep", "change_request", "change_request_event", "cr_preps",
         "managed_certificate_event", "template_review_events",
         "translation_run", "advisor_conversations", "advisor_messages",

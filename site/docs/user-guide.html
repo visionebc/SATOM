@@ -5254,7 +5254,9 @@ data store, connection) refuses it with the reason.</p>
   store</strong> column (value and label columns) and a list from an <strong>API</strong> (a
   connection, a path, the JSON path of the list and the value / label keys).
   A <strong>SATOM list</strong> offers what SATOM itself holds: the FortiWeb appliances,
-  the approved Web Protection Profile templates, the usable Certificate
+  the server pools and the interfaces of the FortiWebs (read from the local
+  cache — the form never waits on a device; each choice names the FortiWebs
+  that have it), the approved Web Protection Profile templates, the usable Certificate
   Manager certificates, the certificate providers, the classification zones,
   lines and departments, or the network segments.
   The value chosen must be one of the choices the server reads again.</li>
@@ -5322,7 +5324,7 @@ a whole provisioning chain is one diagram whose failures the author routes:</p>
 </tr>
 <tr>
 <td><em>DDI: reserve by rules</em></td>
-<td>One reservation per rule row, in its order (the master unit first); <code>ip_from</code> reuses the address another unit of the step got. If one rule fails, what the step created is released before it ends in error</td>
+<td>One reservation per rule row, in its order (the master unit first); <code>ip_from</code> reuses the address another unit of the step got. If one rule fails, what the step created is released before it ends in error. <strong>Mode <em>given</em></strong>: the addresses typed in the form (<code>{"internal": …, "external": …}</code>, keyed by unit or role) — the DDI is not called at all, each rule takes its unit's or role's address (or <code>ip_from</code>'s), a rule left without one is an error, and nothing typed is an error too (never a quiet reservation). A release keeps them: <em>given in the form, never reserved</em></td>
 <td><em>DDI: release</em></td>
 </tr>
 <tr>
@@ -5342,7 +5344,7 @@ a whole provisioning chain is one diagram whose failures the author routes:</p>
 </tr>
 <tr>
 <td><em>FortiWeb: create the server policy</em></td>
-<td>Virtual server, VIP, server pool and members, then the policy (WPP template, certificate) — the SPO wizard's endpoints and writer. If one object fails, what the step wrote is deleted again</td>
+<td>Virtual server, VIP, server pool and members, then the policy (WPP template, certificate) — the SPO wizard's endpoints and writer. <strong>Port</strong>: 443 with a certificate / 80 without = the predefined service; any other port gets a custom service (<code>HTTPS-&lt;port&gt;</code> / <code>HTTP-&lt;port&gt;</code>, or the name in <code>names.service</code>), reused when the device has it. <strong>Server pool <em>existing</em></strong>: the pool is bound, nothing of it is written or removed, and the run checks it is ON the device before writing anything (the device when it answers, else the local cache — said in the step log); a new pool needs at least one real server. If one object fails, what the step wrote is deleted again</td>
 <td><em>FortiWeb: remove</em></td>
 </tr>
 <tr>

@@ -49,6 +49,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   the base URL, the session cookie reused, one new login on a 401 (the DDI API).
 - **SATOM list form fields**: FortiWebs, approved WPP templates, Certificate
   Manager certificates, certificate providers, classification and segments.
+- **New FortiWeb server policy app, round 2** (operator request): the form can
+  take **typed addresses** instead of a DDI reservation (*DDI: reserve by
+  rules* mode *given*: the DDI is not called, nothing typed is an error), the
+  **VIP interface** per FortiWeb role (a list of the fleet's interfaces; empty
+  = the FortiWeb rule's), and an **existing server pool** (a list of the
+  fleet's pools; bound, never written or removed, checked on the device before
+  any write). New lists: FortiWeb server pools and interfaces (local cache).
+
 - **Certificate providers** (operator request): the person issuing picks the
   provider (seed: *Class E*, internal only; *Class C*); the certificate
   remembers it for its renewal and revocation. Database:
@@ -90,6 +98,15 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   had that name is now **Report Studio**. Labels only — URLs and permission
   keys are unchanged. The plugin-package and code-plugin strings of the
   Report Studio page are translated into German, Spanish, French and Italian.
+
+### Fixed
+
+- **The port of a Plugin Studio server policy was only a name**: *FortiWeb:
+  create the server policy* always bound the predefined HTTPS (443) or the
+  default HTTP service, so a policy asked for 8443 listened on 443. A port
+  that is not the predefined one now gets a custom service (created, or
+  reused when the device has it; removed by the rollback only when this run
+  created it).
 
 ## [3.4.8] - 2026-10-22
 

@@ -56,6 +56,8 @@ DEVICE_KINDS = ("certificate", "fortiweb_spo", "fortiweb_spo_remove")
 #: ``satom_select`` form-field sources: what a list field may offer.
 SOURCES = (
     ("fortiweb", "FortiWeb appliances"),
+    ("fortiweb_pools", "FortiWeb server pools (local cache)"),
+    ("fortiweb_interfaces", "FortiWeb interfaces (local cache)"),
     ("wpp_templates", "Approved Web Protection Profile templates"),
     ("certificates", "Certificate Manager certificates (usable)"),
     ("cert_providers", "Certificate providers"),
@@ -102,6 +104,13 @@ def kinds(ch: dict | None = None) -> list:
              help='{"dns": "{{ form.dns }}", "extra": "{{ form.extra }}"}'),
            P("ttl", "TTL (s)"), P("device_class", "Device class", default="server"),
            P("description", "Description"), P("change_log", "Change log message"),
+           P("mode", "Addresses", default="reserve",
+             help="reserve = free addresses from the DDI; given = the addresses below, and "
+                  "the DDI is not called at all -- or {{ form.address_mode }}."),
+           P("given", "Given addresses (JSON)", "json",
+             help='Mode given: {"internal": "{{ form.internal_ip }}", "external": '
+                  '"{{ form.external_ip }}"} -- keys are units or roles; each rule takes its '
+                  "unit's or role's address (or ip_from's)."),
            F._save_as("ddi")], writes=True),
         K("ddi_reserve", "DDI: reserve an address", GROUP,
           "Reserve an A record (IPAM) in one DDI unit: reuse the name if the unit "
@@ -157,15 +166,25 @@ def kinds(ch: dict | None = None) -> list:
                                                 "refuses any zone but Internal."),
            F._save_as("certificate")], writes=True),
         K("fortiweb_spo", "FortiWeb: create the server policy", GROUP,
-          "Virtual server, VIP, server pool and members, then the server policy -- "
-          "in that order. If one object fails, the ones this step wrote are deleted "
-          "again and the step ends in error.",
+          "Virtual server, VIP, server pool and members (or an existing pool), the "
+          "service of the port when it is not the predefined one, then the server "
+          "policy -- in that order. If one object fails, the ones this step wrote are "
+          "deleted again and the step ends in error.",
           [P("appliance", "Appliance (id or name)", required=True, help="{{ fortiweb.id }}"),
            P("names", "Names (JSON)", "json", True,
              help='{"server_policy": "{{ spo }}", "virtual_server": "vs-{{ spo }}", '
-                  '"vip": "vip-{{ spo }}", "server_pool": "pool-{{ spo }}"}'),
+                  '"vip": "vip-{{ spo }}", "server_pool": "pool-{{ spo }}"} -- optional '
+                  '"service": the custom service of a non-standard port.'),
            P("vip", "VIP address", required=True, help="e.g. {{ ddi_bn.ip }}/32"),
            P("interface", "Interface", required=True, help="e.g. port1"),
+           P("port", "Port the policy listens on",
+             help="e.g. {{ form.port }}. 443 with a certificate / 80 without = the predefined "
+                  "service; another port = a custom service (reused when the device has it). "
+                  "Empty = the predefined one."),
+           P("pool_mode", "Server pool", default="new",
+             help="new = create the pool and its members; existing = bind a pool the device "
+                  "already has (it is never changed or removed) -- or {{ form.pool_mode }}."),
+           P("existing_pool", "Existing server pool", help="e.g. {{ form.existing_pool }}"),
            P("members", "Pool members (JSON)", "json",
              help='[{"ip": "{{ form.backend }}", "port": "{{ form.backend_port }}"}]'),
            P("wpp", "Web Protection Profile", help="Template id or profile name, "
@@ -260,8 +279,8 @@ def _check_ip(ip: str, subnet: str = "") -> str:
 
 def _result(rec: dict, *, unit, name, created, subnet="", tried=None) -> dict:
     return {"unit": unit, "name": name, "ip": str(rec.get("rrData") or rec.get("ip") or ""),
-            "uid": str(rec.get("uid") or ""), "created": bool(created), "subnet": subnet,
-            "tried": tried or []}
+            "uid": str(rec.get("uid") or ""), "created": bool(created), "manual": False,
+            "subnet": subnet, "tried": tried or []}
 
 
 def ddi_reserve(call, *, unit: str, name: str, subnets=(), ip: str = "", ttl=None,
@@ -346,6 +365,9 @@ def ddi_release(call, reservations, change_log: str = "") -> dict:
     items = reservations if isinstance(reservations, list) else [reservations]
     released, kept, failed = [], [], []
     for r in items:
+        if isinstance(r, dict) and r.get("manual"):
+            kept.append("%s (%s): given in the form, never reserved" % (r.get("ip") or "", r.get("unit")))
+            continue
         if not isinstance(r, dict) or not r.get("name"):
             continue
         tag = "%s %s (%s)" % (r.get("name"), r.get("ip") or "", r.get("unit"))
@@ -444,11 +466,47 @@ def render_names(patterns, values: dict) -> dict:
     return out
 
 
+def _given(raw) -> dict:
+    """``{unit or role: ip}`` with the empty entries dropped."""
+    if not isinstance(raw, dict):
+        return {}
+    return {str(k).strip(): str(v).strip() for k, v in raw.items()
+            if str(k or "").strip() and str(v if v is not None else "").strip()}
+
+
+def ddi_given(rules: list, given: dict) -> tuple[list, dict]:
+    """The same answer as :func:`ddi_reserve_set` for addresses the user TYPED:
+    nothing is asked of or written to the DDI. A rule takes the address given
+    for its unit, else for its role, else (``ip_from``) the one an earlier rule
+    got. Every reservation is ``created: false, manual: true`` -- a rollback
+    never deletes what this step never made."""
+    done, units = [], {}
+    for r in rules:
+        unit = str(r.get("unit") or "").strip()
+        role = str(r.get("role") or "").strip()
+        src = str(r.get("ip_from") or "").strip()
+        ip = given.get(unit) or given.get(role) or (units[src]["ip"] if src in units else "")
+        if not ip:
+            raise DdiError("no address was given for %s (role %s)" % (unit or "?", role or "-"))
+        try:
+            ip = str(ipaddress.ip_address(ip))
+        except ValueError:
+            raise DdiError("the address given for %s, %r, is not an IP address" % (unit, ip)) from None
+        res = {"unit": unit, "name": "", "ip": ip, "uid": "", "created": False, "manual": True,
+               "subnet": "", "tried": [], "role": role}
+        done.append(res)
+        units[unit] = res
+    return done, units
+
+
 def ddi_reserve_set(call, rules, values: dict, *, ttl=None, device_class="",
-                    description="", change_log="") -> dict:
+                    description="", change_log="", given=None) -> dict:
     """One reservation per rule, in ``order``. ``ip_from`` = a unit an earlier
     rule of THIS step reserved: register that same address. On a failure the
-    records this step created are deleted again, newest first."""
+    records this step created are deleted again, newest first.
+
+    ``given`` (``{unit or role: ip}``, any non-empty) = the user typed the
+    addresses: the DDI is not called at all (:func:`ddi_given`)."""
     rows = [r for r in (rules if isinstance(rules, list) else []) if isinstance(r, dict)]
     if not rows:
         raise DdiError("no DDI rule for this request (the rules data store has none that match)")
@@ -459,6 +517,12 @@ def ddi_reserve_set(call, rules, values: dict, *, ttl=None, device_class="",
         except (TypeError, ValueError):
             return 0.0
     rows.sort(key=num)
+    given = _given(given)
+    if given:
+        done, units = ddi_given(rows, given)
+        first = lambda role: next((d["ip"] for d in done if d.get("role") == role), "")  # noqa: E731
+        return {"reservations": done, "units": units, "manual": True,
+                "internal_ip": first("internal"), "external_ip": first("external")}
     done, units = [], {}
     try:
         for r in rows:
@@ -485,7 +549,7 @@ def ddi_reserve_set(call, rules, values: dict, *, ttl=None, device_class="",
             note = "NOT all released: %s" % exc2
         raise DdiError("%s -- %s" % (exc, note)) from None
     first = lambda role: next((d["ip"] for d in done if d.get("role") == role), "")  # noqa: E731
-    return {"reservations": done, "units": units,
+    return {"reservations": done, "units": units, "manual": False,
             "internal_ip": first("internal"), "external_ip": first("external")}
 
 
@@ -550,33 +614,128 @@ def _may_write_device(ctx) -> None:
 # --------------------------------------------------------------------------- #
 #  FortiWeb objects                                                            #
 # --------------------------------------------------------------------------- #
+EP_SERVICE = "/api/v2.0/cmdb/server-policy/service.custom"
+EP_POOL = "/api/v2.0/cmdb/server-policy/server-pool"
+
+
+def device_names(appliance, endpoint: str, *, client=None) -> tuple[list, str]:
+    """``(names, where from)`` of one cmdb collection: the DEVICE when it
+    answers (authoritative, an empty list included), else the local cache --
+    said so, because a cached name may be gone on the device (the write then
+    fails and the step removes what it wrote)."""
+    from .read_layer import cached_ref_names
+    err = ""
+    try:
+        if client is None:
+            from ..clients import client_for
+            client = client_for(appliance)
+        names, status, err = client.cmdb_names_checked(endpoint)
+        if status == "ok":
+            return list(names or []), "read on the device"
+    except Exception as exc:  # noqa: BLE001 -- the cache answers instead
+        err = "%s: %s" % (type(exc).__name__, exc)
+    return cached_ref_names(appliance.id, endpoint), \
+        "from the local cache: the device did not answer (%s)" % (str(err or "no answer")[:120])
+
+
+def _given_of(node, ctx) -> dict:
+    """The typed addresses of a ``ddi_reserve_set`` in mode ``given``; ``{}``
+    in mode ``reserve``. Mode given with nothing typed is an ERROR, never a
+    quiet fall-back to reserving in the DDI the user said not to touch."""
+    mode = (_s(node, ctx, "mode", "reserve") or "reserve").lower()
+    if mode not in ("reserve", "given"):
+        raise DdiError("addresses mode %r: reserve or given" % mode)
+    if mode == "reserve":
+        return {}
+    given = _given(F._json(node, ctx, "given", "Given addresses"))
+    if not given:
+        raise DdiError("addresses = given, but no address was typed")
+    return given
+
+
+def _pool_of(node, ctx) -> str:
+    """The existing pool to bind, ``""`` for a new one."""
+    mode = (_s(node, ctx, "pool_mode", "new") or "new").lower()
+    if mode not in ("new", "existing"):
+        raise F.FlowError("server pool mode %r: new or existing" % mode)
+    pool = _s(node, ctx, "existing_pool")
+    if mode == "existing" and not pool:
+        raise F.FlowError("server pool = existing, but no existing pool was picked")
+    return pool if mode == "existing" else ""
+#: The predefined FortiWeb services: a policy on these ports needs no object.
+_PREDEFINED = {(True, 443): "HTTPS", (False, 80): "HTTP"}
+
+
+def service_for(port, https: bool, name: str = "") -> tuple[str, bool]:
+    """``(service name, needs a custom service)`` for the port a policy
+    listens on. No port = the predefined one (HTTPS with a certificate, the
+    device's default HTTP without), which is what every policy got before the
+    port was applied. ``name`` = the custom service's name (``spo-naming``
+    object ``service``); empty = ``HTTPS-<port>`` / ``HTTP-<port>``."""
+    raw = str(port if port is not None else "").strip()
+    if not raw:
+        return ("HTTPS" if https else ""), False
+    try:
+        p = int(float(raw))
+    except ValueError:
+        raise F.FlowError("port %r is not a number" % raw) from None
+    if not 1 <= p <= 65535:
+        raise F.FlowError("port %d is outside 1-65535" % p)
+    if (https, p) in _PREDEFINED:
+        return _PREDEFINED[(https, p)], False
+    return (str(name or "").strip() or "%s-%d" % ("HTTPS" if https else "HTTP", p)), True
+
+
 def spo_steps(names: dict, *, vip: str, interface: str, members=None, wpp: str = "",
-              certificate: str = "", extra: dict | None = None) -> list[tuple]:
+              certificate: str = "", extra: dict | None = None, port=None,
+              existing_pool: str = "", service_exists: bool = False) -> list[tuple]:
     """``[(kind, label, endpoint, body, parent)]`` in dependency order -- the
-    SPO wizard's endpoints (``views.workspace._CREATE_EPS``), not a copy."""
+    SPO wizard's endpoints (``views.workspace._CREATE_EPS``), not a copy.
+
+    ``existing_pool`` = bind that pool (already on the device) and create no
+    pool and no member. ``port`` = what the policy listens on: a port that is
+    not the predefined one gets a custom service, created here unless
+    ``service_exists`` (it is then bound, and never removed)."""
     from ..views.workspace import _CREATE_EPS
-    for k in ("server_policy", "virtual_server", "vip", "server_pool"):
+    existing_pool = str(existing_pool or "").strip()
+    for k in ("server_policy", "virtual_server", "vip") + (() if existing_pool else ("server_pool",)):
         if not str(names.get(k) or "").strip():
             raise F.FlowError("names: %s is required" % k)
-    vs, pool = names["virtual_server"], names["server_pool"]
+    if not str(interface or "").strip():
+        raise F.FlowError("no VIP interface was given (form, or the FortiWeb rule)")
+    vs, pool = names["virtual_server"], existing_pool or names["server_pool"]
     steps = [("vserver", "Virtual Server " + vs, _CREATE_EPS["vserver"], {"name": vs}, None),
              ("vip", "VIP " + names["vip"], _CREATE_EPS["vip"],
-              {"name": names["vip"], "vip": vip, "interface": interface}, vs),
-             ("pool", "Server Pool " + pool, _CREATE_EPS["pool"], {"name": pool}, None)]
+              {"name": names["vip"], "vip": vip, "interface": interface}, vs)]
+    if existing_pool:
+        if members:
+            raise F.FlowError("an existing server pool (%s) keeps its own members: leave the "
+                              "real servers empty" % existing_pool)
+    else:
+        if not members:
+            raise F.FlowError("a new server pool needs at least one real server")
+        steps.append(("pool", "Server Pool " + pool, _CREATE_EPS["pool"], {"name": pool}, None))
     for i, m in enumerate(members or [], 1):
         if isinstance(m, str):
-            host, _, port = m.strip().partition(":")
-            m = {"ip": host, "port": port or "80"}
+            host, _, mport = m.strip().partition(":")
+            m = {"ip": host, "port": mport or "80"}
         if not isinstance(m, dict) or not str(m.get("ip") or "").strip():
             raise F.FlowError("pool member %d needs an ip" % i)
         steps.append(("pserver", "Pool member %d" % i, _CREATE_EPS["pserver"],
                       {"ip": str(m["ip"]).strip(), "port": str(m.get("port") or "80")}, pool))
+    service, custom = service_for(port, bool(certificate), names.get("service") or "")
+    if custom and not service_exists:
+        steps.append(("service", "Service %s (port %s)" % (service, int(float(str(port)))),
+                      EP_SERVICE, {"name": service, "port": str(int(float(str(port)))),
+                                   "protocol": "TCP"}, None))
     policy = {"name": names["server_policy"], "vserver": vs, "server-pool": pool}
     if wpp:
         policy["web-protection-profile"] = wpp
     if certificate:
-        policy["https-service"] = "HTTPS"
+        policy["https-service"] = service
         policy["certificate"] = certificate
+    elif service:
+        policy["service"] = service
     for k, v in (extra or {}).items():
         if k not in policy:
             policy[str(k)] = v
@@ -618,7 +777,7 @@ def create_spo(appliance, steps, *, ops=None) -> dict:
                 back += "; NOT removed: " + "; ".join(undone["failed"])
             raise F.FlowError("%s failed: %s -- removed again: %s"
                               % (label, res.get("error") or "refused", back))
-        if kind in ("vserver", "pool", "policy"):
+        if kind in ("vserver", "pool", "service", "policy"):
             made.append({"kind": kind, "endpoint": ep, "mkey": body["name"], "label": label})
         else:
             made.append({"kind": kind, "endpoint": ep, "parent": parent, "label": label})
@@ -672,18 +831,27 @@ def rehearse(node: dict, ctx) -> tuple:
         rows = sorted([r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else [],
                       key=lambda r: float(r.get("order") or 0) if str(r.get("order") or "0")
                       .replace(".", "", 1).isdigit() else 0.0)
+        given = _given_of(node, ctx)
+        if given:
+            done, units = ddi_given(rows, given)
+            first = lambda role: next((d["ip"] for d in done if d["role"] == role), "")  # noqa: E731
+            return "ok", {"reservations": done, "units": units, "manual": True,
+                          "internal_ip": first("internal"), "external_ip": first("external"),
+                          "rehearsal": True}, \
+                "rehearsal: addresses given, the DDI is not called: " + "; ".join(
+                    "%s %s" % (d["unit"], d["ip"]) for d in done)
         done, units = [], {}
         for r in rows:
             unit = str(r.get("unit") or "")
             ip = units[r["ip_from"]]["ip"] if r.get("ip_from") in units else PENDING_IP
             name = fill(r.get("name") or "{dns}", vals if isinstance(vals, dict) else {})
-            d = {"unit": unit, "name": name, "ip": ip, "uid": "", "created": False,
+            d = {"unit": unit, "name": name, "ip": ip, "uid": "", "created": False, "manual": False,
                  "subnet": "", "tried": [], "role": str(r.get("role") or ""), "rehearsal": True}
             done.append(d)
             units[unit] = d
         first = lambda role: next((d["ip"] for d in done if d["role"] == role), "")  # noqa: E731
         return "ok", {"reservations": done, "units": units, "internal_ip": first("internal"),
-                      "external_ip": first("external"), "rehearsal": True}, \
+                      "external_ip": first("external"), "manual": False, "rehearsal": True}, \
             "rehearsal: would reserve " + "; ".join("%s in %s%s" % (
                 d["name"], d["unit"], " (same address as %s)" % r.get("ip_from") if r.get("ip_from") else "")
                 for d, r in zip(done, rows))
@@ -707,12 +875,18 @@ def rehearse(node: dict, ctx) -> tuple:
     if kind == "fortiweb_spo":
         names = F._json(node, ctx, "names", "Names") or {}
         members = F._json(node, ctx, "members", "Pool members") or []
-        steps = spo_steps(names if isinstance(names, dict) else {}, vip=_s(node, ctx, "vip"),
+        names = names if isinstance(names, dict) else {}
+        pool, cert = _pool_of(node, ctx), _s(node, ctx, "certificate")
+        steps = spo_steps(names, vip=_s(node, ctx, "vip"),
                           interface=_s(node, ctx, "interface"),
                           members=members if isinstance(members, list) else [],
-                          wpp=_s(node, ctx, "wpp"), certificate=_s(node, ctx, "certificate"))
+                          wpp=_s(node, ctx, "wpp"), certificate=cert,
+                          port=_s(node, ctx, "port"), existing_pool=pool)
+        service, _custom = service_for(_s(node, ctx, "port"), bool(cert), names.get("service") or "")
         v = {"appliance_id": _s(node, ctx, "appliance"), "created": [],
-             "server_policy": names.get("server_policy", ""), "rehearsal": True}
+             "server_policy": names.get("server_policy", ""), "rehearsal": True,
+             "pool": pool or names.get("server_pool", ""), "pool_existing": bool(pool),
+             "service": service, "interface": _s(node, ctx, "interface")}
         return "ok", v, "rehearsal: would create on %s: %s" % (
             v["appliance_id"], ", ".join(x[1] for x in steps))
     if kind in ("ddi_release", "fortiweb_spo_remove"):
@@ -753,11 +927,15 @@ def run(node: dict, ctx) -> tuple:
         return "ok", names, ", ".join("%s=%s" % kv for kv in names.items())
     if kind == "ddi_reserve_set":
         vals = F._json(node, ctx, "values", "Values") or {}
-        res = ddi_reserve_set(_ddi_call(node, ctx), _r(node, ctx, "rules"),
+        given = _given_of(node, ctx)
+        res = ddi_reserve_set(None if given else _ddi_call(node, ctx), _r(node, ctx, "rules"),
                               vals if isinstance(vals, dict) else {},
                               ttl=_s(node, ctx, "ttl"), device_class=_s(node, ctx, "device_class"),
                               description=_s(node, ctx, "description"),
-                              change_log=_s(node, ctx, "change_log"))
+                              change_log=_s(node, ctx, "change_log"), given=given)
+        if res.get("manual"):
+            return "ok", res, "addresses given in the form, nothing reserved in the DDI: " + "; ".join(
+                "%s %s" % (d["unit"], d["ip"]) for d in res["reservations"])
         return "ok", res, "; ".join("%s %s %s in %s" % (
             "reserved" if d["created"] else "reused", d["name"], d["ip"], d["unit"])
             for d in res["reservations"])
@@ -785,11 +963,31 @@ def run(node: dict, ctx) -> tuple:
         extra = F._json(node, ctx, "extra", "Extra policy fields") or {}
         if not isinstance(names, dict) or not isinstance(members, list) or not isinstance(extra, dict):
             raise F.FlowError("names and extra are objects, members a list")
+        pool, port, cert = _pool_of(node, ctx), _s(node, ctx, "port"), _s(node, ctx, "certificate")
+        service, custom = service_for(port, bool(cert), names.get("service") or "")
+        notes = []
+        if pool:
+            have, src = device_names(a, EP_POOL)
+            if pool not in have:
+                raise F.FlowError("no server pool %r on %s (%s) -- a server pool is a per-device "
+                                  "object; nothing was written" % (pool, a.name, src))
+            notes.append("pool %s bound (%s)" % (pool, src))
+        exists = False
+        if custom:
+            have, src = device_names(a, EP_SERVICE)
+            exists = service in have
+            if exists:
+                notes.append("service %s reused (%s)" % (service, src))
         steps = spo_steps(names, vip=_s(node, ctx, "vip"), interface=_s(node, ctx, "interface"),
                           members=members, wpp=_wpp_name(_s(node, ctx, "wpp")),
-                          certificate=_s(node, ctx, "certificate"), extra=extra)
+                          certificate=cert, extra=extra, port=port, existing_pool=pool,
+                          service_exists=exists)
         res = create_spo(a, steps)
-        return "ok", res, "created on %s: %s" % (a.name, ", ".join(m["label"] for m in res["created"]))
+        res.update(pool=pool or names.get("server_pool", ""), pool_existing=bool(pool),
+                   service=service, interface=_s(node, ctx, "interface"))
+        return "ok", res, "created on %s: %s%s" % (
+            a.name, ", ".join(m["label"] for m in res["created"]),
+            (" -- " + "; ".join(notes)) if notes else "")
     if kind == "fortiweb_spo_remove":
         _may_write_device(ctx)
         spo = _r(node, ctx, "spo")
@@ -843,12 +1041,33 @@ def _run_certificate(node, ctx):
 # --------------------------------------------------------------------------- #
 #  satom_select form fields                                                    #
 # --------------------------------------------------------------------------- #
+def _fleet_objects(source: str) -> list[dict]:
+    """Pool or interface names over every FortiWeb, from the local cache (the
+    form never waits on a device). The label says which devices have it: the
+    FortiWeb is picked at run time, and the run checks the name ON it."""
+    from .interface_inventory import cached_interfaces
+    from .read_layer import cached_ref_names
+    where: dict[str, list] = {}
+    for a in fleet_order("fortiweb"):
+        if source == "fortiweb_pools":
+            names = cached_ref_names(a.id, EP_POOL)
+        else:
+            names = [str(i.get("name") or "") for i in cached_interfaces(a)]
+        for n in names:
+            if n:
+                where.setdefault(n, []).append(a.name)
+    return [{"value": n, "label": "%s (%s)" % (n, ", ".join(devs))}
+            for n, devs in sorted(where.items(), key=lambda kv: kv[0].lower())]
+
+
 def source_options(source: str) -> tuple[list[dict], str]:
     """``([{value, label}], problem)`` for a ``satom_select`` field."""
     from . import settings_store as store
     if source == "fortiweb":
         return [{"value": str(a.id), "label": "%s (%s / %s)" % (a.name, a.zone or "-", a.line or "-")}
                 for a in fleet_order("fortiweb")], ""
+    if source in ("fortiweb_pools", "fortiweb_interfaces"):
+        return _fleet_objects(source), ""
     if source == "wpp_templates":
         from ..models import Template
         rows = (Template.query.filter_by(kind=Template.KIND_WEB_PROTECTION,

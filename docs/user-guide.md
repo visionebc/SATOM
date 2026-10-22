@@ -4668,7 +4668,9 @@ The editor has six tabs:
   store** column (value and label columns) and a list from an **API** (a
   connection, a path, the JSON path of the list and the value / label keys).
   A **SATOM list** offers what SATOM itself holds: the FortiWeb appliances,
-  the approved Web Protection Profile templates, the usable Certificate
+  the server pools and the interfaces of the FortiWebs (read from the local
+  cache — the form never waits on a device; each choice names the FortiWebs
+  that have it), the approved Web Protection Profile templates, the usable Certificate
   Manager certificates, the certificate providers, the classification zones,
   lines and departments, or the network segments.
   The value chosen must be one of the choices the server reads again.
@@ -4723,11 +4725,11 @@ a whole provisioning chain is one diagram whose failures the author routes:
 |---|---|---|
 | *Render names* | Object names from patterns (`spo-{extra}-{service}-{port}`, `vs-{spo}`); an empty value takes its dash with it; a name FortiWeb would refuse is an error | — |
 | *DDI: reserve an address* | One A record (IPAM) in one DDI unit: an existing record of that name is **reused** (never deleted by a rollback); else the next free address of the first subnet that has one (`/api/dnsrr/allocate`), or a given address registered as is (the same IP in another unit). The record read back decides, not the answer's status words | *DDI: release* |
-| *DDI: reserve by rules* | One reservation per rule row, in its order (the master unit first); `ip_from` reuses the address another unit of the step got. If one rule fails, what the step created is released before it ends in error | *DDI: release* |
+| *DDI: reserve by rules* | One reservation per rule row, in its order (the master unit first); `ip_from` reuses the address another unit of the step got. If one rule fails, what the step created is released before it ends in error. **Mode *given***: the addresses typed in the form (`{"internal": …, "external": …}`, keyed by unit or role) — the DDI is not called at all, each rule takes its unit's or role's address (or `ip_from`'s), a rule left without one is an error, and nothing typed is an error too (never a quiet reservation). A release keeps them: *given in the form, never reserved* | *DDI: release* |
 | *DDI: release reservations* | Deletes what reserve steps of this run **created**; reused records are kept and named | — |
 | *Pick a FortiWeb by capacity* | The first FortiWeb by name whose zone / line / department match and whose Capacity limit has room; *Exclude* gives a second, different one | — |
 | *Certificate (issue or reuse)* | Issues with the chosen provider and deploys to the appliance, or deploys a certificate the Certificate Manager already holds; an internal-only provider refuses a non-Internal zone. Never revoked by a diagram | — |
-| *FortiWeb: create the server policy* | Virtual server, VIP, server pool and members, then the policy (WPP template, certificate) — the SPO wizard's endpoints and writer. If one object fails, what the step wrote is deleted again | *FortiWeb: remove* |
+| *FortiWeb: create the server policy* | Virtual server, VIP, server pool and members, then the policy (WPP template, certificate) — the SPO wizard's endpoints and writer. **Port**: 443 with a certificate / 80 without = the predefined service; any other port gets a custom service (`HTTPS-<port>` / `HTTP-<port>`, or the name in `names.service`), reused when the device has it. **Server pool *existing***: the pool is bound, nothing of it is written or removed, and the run checks it is ON the device before writing anything (the device when it answers, else the local cache — said in the step log); a new pool needs at least one real server. If one object fails, what the step wrote is deleted again | *FortiWeb: remove* |
 | *FortiWeb: remove a created policy* | Deletes, newest first, what a create step of this run wrote | — |
 
 The DDI steps use a Studio HTTP connection; pinned to an API Catalog version,

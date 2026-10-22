@@ -6,8 +6,22 @@
     <h1 class="fw-page-title"><i class="bi bi-puzzle me-2 text-accent"></i>{{ _('Plugin Studio') }}</h1>
     <p class="fw-page-sub">{{ _('Super-admin authored HTML/Jinja/JS views, scoped to the') }} <strong>{{ product.name if product else 'current' }}</strong> {{ _('ADOM. Rendered in a hard sandbox — read-only data, isolated iframe, a broken plugin never touches the server.') }}</p>
   </div>
-  <div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-fw-outline" href="#import-plugin"><i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Import plugin') }}</a>
     <a class="btn btn-fw-primary" href="{{ url_for('plugins.new') }}"><i class="bi bi-plus-lg me-1"></i>{{ _('New view') }}</a>
+  </div>
+</div>
+
+<div class="fw-card" id="import-plugin">
+  <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Import plugin') }}</h2></div>
+  <div class="fw-card-body">
+    <form method="post" action="{{ url_for('plugins.import_package') }}" enctype="multipart/form-data" class="d-flex align-items-center gap-3 flex-wrap">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input class="form-control" style="max-width:420px" type="file" name="package" accept=".satomplugin" required>
+      <label class="d-flex align-items-center gap-1" style="font-size:13px"><input type="checkbox" name="allow_downgrade" value="1"> {{ _('Allow downgrade') }}</label>
+      <button class="btn btn-fw-primary" type="submit"><i class="bi bi-upload me-1"></i>{{ _('Import') }}</button>
+    </form>
+    <div class="text-secondary mt-2" style="font-size:13px">{{ _('A .satomplugin package installs without an update package. Views and widgets land here (signed: testing, unsigned: draft) and update the plugin with the same slug; code plugins must be signed by a trusted key and load at the next') }} <code>satom execute restart-all</code>. {{ _('Export a view to move it to another server.') }}</div>
   </div>
 </div>
 
@@ -27,18 +41,20 @@
   {% if plugins %}
   <div class="fw-table-wrapper">
     <table class="fw-table">
-      <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Kind') }}</th><th>{{ _('Status') }}</th><th>{{ _('Datasets') }}</th><th>{{ _('Updated') }}</th><th></th></tr></thead>
+      <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Kind') }}</th><th>{{ _('Status') }}</th><th>{{ _('Package') }}</th><th>{{ _('Datasets') }}</th><th>{{ _('Updated') }}</th><th></th></tr></thead>
       <tbody>
         {% for p in plugins %}
         <tr>
           <td><i class="bi {{ p.icon }} me-2 text-accent"></i>{{ p.name }}</td>
           <td><span class="fw-badge fw-badge-secondary">{{ p.kind }}</span></td>
           <td><span class="fw-badge fw-badge-{{ {'draft':'secondary','testing':'warning','published':'success'}[p.status] }}">{{ p.status }}</span></td>
+          <td style="font-size:12px">{% if p.pkg_version %}{{ p.pkg_version }} {% if p.pkg_signer %}<span class="fw-badge fw-badge-success" title="{{ p.pkg_signer }}">{{ _('signed') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('unsigned') }}</span>{% endif %}{% else %}<span class="text-secondary">{{ _('authored here') }}</span>{% endif %}</td>
           <td class="text-secondary" style="font-size:12px">{{ p.datasets|join(', ') or '—' }}</td>
           <td class="text-secondary" style="font-size:12px">{{ p.updated_at.strftime('%Y-%m-%d %H:%M') if p.updated_at }}</td>
           <td class="text-end">
             <div class="d-inline-flex gap-1 justify-content-end flex-wrap">
               <a class="btn btn-sm btn-fw-outline" href="{{ url_for('plugins.edit', pid=p.id) }}">{{ _('Open') }}</a>
+              <a class="btn btn-sm btn-fw-outline" href="{{ url_for('plugins.export_package', pid=p.id) }}" title="{{ _('Download as a .satomplugin package') }}"><i class="bi bi-download"></i></a>
               {% if p.status == 'published' %}
               <a class="btn btn-sm btn-fw-secondary" href="{{ url_for('plugins.view', slug=p.slug) }}">{{ _('View') }}</a>
               <form method="post" action="{{ url_for('plugins.set_status', pid=p.id) }}" class="d-inline js-confirm" data-confirm="Disable (unpublish) &ldquo;{{ p.name }}&rdquo;? It will be removed from Custom Views.">
@@ -60,6 +76,45 @@
   </div>
   {% else %}
   <div class="fw-card-body text-secondary">{{ _('No plugins yet in this ADOM. Create your first custom view.') }}</div>
+  {% endif %}
+</div>
+
+<div class="fw-card" id="code-plugins">
+  <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Code plugins') }}</h2></div>
+  {% if code_plugins %}
+  <div class="fw-table-wrapper">
+    <table class="fw-table">
+      <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Version') }}</th><th>{{ _('State') }}</th><th>{{ _('Installed') }}</th><th></th></tr></thead>
+      <tbody>
+        {% for c in code_plugins %}
+        <tr>
+          <td><i class="bi {{ c.icon }} me-2 text-accent"></i>{{ c.name }} <span class="text-secondary" style="font-size:12px">{{ c.slug }}</span></td>
+          <td style="font-size:12px">{{ c.version }}{% if c.signer %} <span class="fw-badge fw-badge-success" title="{{ c.signer }}">{{ _('signed') }}</span>{% endif %}</td>
+          <td><span class="fw-badge fw-badge-{{ {'loaded':'success','restart':'warning','disabled':'secondary','error':'danger'}[c.state] }}">{{ {'loaded':_('loaded'),'restart':_('restart required'),'disabled':_('disabled'),'error':_('error')}[c.state] }}</span>{% if c.note %}<div class="text-secondary" style="font-size:12px">{{ c.note }}</div>{% endif %}</td>
+          <td class="text-secondary" style="font-size:12px">{{ c.installed_at or '—' }}{% if c.installed_by %} · {{ c.installed_by }}{% endif %}</td>
+          <td class="text-end">
+            <div class="d-inline-flex gap-1 justify-content-end flex-wrap">
+              {% if c.state == 'loaded' %}<a class="btn btn-sm btn-fw-secondary" href="{{ c.url }}">{{ _('Open') }}</a>{% endif %}
+              {% if c.installed_at %}
+              <form method="post" action="{{ url_for('plugins.code_action', slug=c.slug, action='disable' if c.enabled else 'enable') }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-fw-outline" type="submit">{{ _('Disable') if c.enabled else _('Enable') }}</button>
+              </form>
+              <form method="post" action="{{ url_for('plugins.code_action', slug=c.slug, action='remove') }}" class="d-inline js-confirm" data-confirm="Remove the code plugin &ldquo;{{ c.name }}&rdquo;? It unloads at the next restart.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-fw-danger" type="submit"><i class="bi bi-trash me-1"></i>{{ _('Remove') }}</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="fw-card-body text-secondary" style="font-size:13px">{{ _('Install, enable, disable and remove take effect at the next') }} <code>satom execute restart-all</code>. {{ _('Each plugin is mounted at') }} <code>/x/&lt;slug&gt;/</code> {{ _('behind sign-in and re-verified (signature and every file) at every start.') }}</div>
+  {% else %}
+  <div class="fw-card-body text-secondary">{{ _('No code plugins installed. A signed code plugin package is imported with “Import plugin” above.') }}</div>
   {% endif %}
 </div>
 

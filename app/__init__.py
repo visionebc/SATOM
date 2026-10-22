@@ -144,6 +144,11 @@ def create_app(config_override: object | None = None) -> Flask:
     # -- blueprints -------------------------------------------------------
     _register_blueprints(app)
 
+    # Signed code plugins (data/plugins/code/, see services.plugin_code):
+    # verified and mounted at /x/<slug>/ now; a broken one is skipped.
+    from .services import plugin_code as _plugin_code
+    _plugin_code.load_all(app)
+
     @app.route('/')
     def index():
         """The GLOBAL ADOM — fleet-wide dashboard spanning FortiWeb + FortiADC.

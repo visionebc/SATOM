@@ -20,6 +20,8 @@ from ..extensions import db
 from ..models import Plugin, Permission
 from ..services import plugin_sandbox as sandbox
 from ..services import plugin_examples as examples
+from ..services import plugin_package as pkgfmt
+from ..services import plugin_code
 from ..services.audit import log_action
 from ..services.product_scope import stamp, scope_query
 
@@ -63,8 +65,10 @@ def superadmin_required(fn):
 def index():
     plugins = (scope_query(Plugin.query, Plugin.product)
                .order_by(Plugin.updated_at.desc()).all())
+    from flask import current_app
     return render_template("plugins/list.html", plugins=plugins,
-                           datasets=sandbox.dataset_catalog())
+                           datasets=sandbox.dataset_catalog(),
+                           code_plugins=plugin_code.overview(current_app))
 
 
 @bp.route("/new")
@@ -259,6 +263,137 @@ def view(slug):
     initial = sandbox.resolve_params(plugin.param_defs, request.args)
     return render_template("plugins/view.html", plugin=plugin,
                            param_defs=param_defs, initial=initial)
+
+
+# --- Plugin packages (satom.plugin/1): import / export ----------------------
+# A package moves a plugin between servers WITHOUT an update package. Views
+# and widgets become ordinary Plugin Studio rows; code plugins (signed only)
+# are written to data/plugins/code/ and mount at /x/<slug>/ after a restart.
+@bp.route("/import", methods=["POST"])
+@superadmin_required
+def import_package():
+    from ..version import app_version
+
+    up = request.files.get("package")
+    if up is None or not up.filename:
+        flash("Choose a .satomplugin file to import.", "error")
+        return redirect(url_for("plugins.index"))
+    try:
+        pk = pkgfmt.read_package(up.read(pkgfmt.MAX_PACKAGE + 1))
+    except pkgfmt.PackageError as exc:
+        flash(f"Import refused: {exc}", "error")
+        return redirect(url_for("plugins.index"))
+    need = pk.manifest.get("min_satom")
+    if need and pkgfmt.version_tuple(need) > pkgfmt.version_tuple(app_version()):
+        flash(f"Import refused: {pk.slug} {pk.version} needs SATOM {need} or "
+              f"newer (this server runs {app_version()}).", "error")
+        return redirect(url_for("plugins.index"))
+    allow_down = request.form.get("allow_downgrade") == "1"
+    signed = f"signed {pk.signer[:16]}" if pk.signer else "unsigned"
+
+    if pk.kind == "code":
+        try:
+            plugin_code.install(pk, current_user.username, allow_downgrade=allow_down)
+        except pkgfmt.PackageError as exc:
+            flash(f"Import refused: {exc}", "error")
+            return redirect(url_for("plugins.index"))
+        log_action("plugin.code.install", target=pk.slug,
+                   extra={"version": pk.version, "signer": pk.signer})
+        flash(f"Installed code plugin “{pk.manifest['name']}” {pk.version} "
+              f"({signed}). It loads at the next `satom execute restart-all`.",
+              "success")
+        return redirect(url_for("plugins.index") + "#code-plugins")
+
+    existing = Plugin.query.filter_by(slug=pk.slug).first()
+    if existing is not None and (scope_query(Plugin.query, Plugin.product)
+                                 .filter_by(id=existing.id).first() is None):
+        flash(f"Import refused: the slug {pk.slug} belongs to a plugin of "
+              f"another ADOM.", "error")
+        return redirect(url_for("plugins.index"))
+    if (existing is not None and existing.pkg_version and not allow_down
+            and pkgfmt.version_tuple(pk.version)
+            < pkgfmt.version_tuple(existing.pkg_version)):
+        flash(f"Import refused: {pk.slug} {existing.pkg_version} is installed and "
+              f"{pk.version} is older (tick “Allow downgrade”).", "error")
+        return redirect(url_for("plugins.index"))
+
+    wanted = [str(k) for k in pk.manifest.get("datasets") or []]
+    ds = [k for k in wanted if k in sandbox.DATASETS]
+    dropped = [k for k in wanted if k not in sandbox.DATASETS]
+    if existing is None:
+        plugin = Plugin(created_by=current_user.username, product=stamp(),
+                        slug=pk.slug, status="testing" if pk.signer else "draft")
+        db.session.add(plugin)
+    else:
+        plugin = existing
+    plugin.name = pk.manifest["name"].strip()[:200]
+    plugin.kind = pk.kind
+    plugin.icon = pk.manifest["icon"]
+    plugin.jinja = pk.text("body.jinja")
+    plugin.css = pk.text("style.css")
+    plugin.js = pk.text("script.js")
+    plugin.data_sources = json.dumps(ds)
+    plugin.params = json.dumps(sandbox.clean_param_defs(pk.manifest.get("params") or []))
+    plugin.pkg_version = pk.version
+    plugin.pkg_signer = pk.signer or ""
+    note = ""
+    if plugin.status == "published":
+        # The publish gate holds for an update too: a body that no longer
+        # renders goes back to testing instead of breaking Custom Views.
+        data = sandbox.load_datasets(plugin.datasets)
+        _html, err = sandbox.safe_render(plugin.jinja, data,
+                                         sandbox.resolve_params(plugin.param_defs, {}))
+        if err:
+            plugin.status = "testing"
+            note = f" It no longer renders cleanly ({err}), so it is back in testing."
+    db.session.commit()
+    log_action("plugin.import", target=plugin.slug,
+               extra={"id": plugin.id, "version": pk.version, "signer": pk.signer,
+                      "updated": existing is not None})
+    if dropped:
+        note += " Datasets this server does not have were dropped: " + ", ".join(dropped) + "."
+    flash(f"{'Updated' if existing is not None else 'Imported'} “{plugin.name}” "
+          f"{pk.version} ({signed}) — status {plugin.status}.{note}",
+          "warning" if note else "success")
+    return redirect(url_for("plugins.edit", pid=plugin.id))
+
+
+@bp.route("/<int:pid>/export")
+@superadmin_required
+def export_package(pid):
+    from ..version import app_version
+
+    plugin = _plugin_or_404(pid)
+    try:
+        fname, data = pkgfmt.export_plugin(plugin, app_version())
+    except pkgfmt.PackageError as exc:
+        flash(f"Export failed: {exc}", "error")
+        return redirect(url_for("plugins.edit", pid=pid))
+    log_action("plugin.export", target=plugin.slug, extra={"id": plugin.id})
+    resp = make_response(data)
+    resp.headers["Content-Type"] = "application/zip"
+    resp.headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
+
+
+@bp.route("/code/<slug>/<action>", methods=["POST"])
+@superadmin_required
+def code_action(slug, action):
+    if action not in ("enable", "disable", "remove"):
+        abort(404)
+    try:
+        if action == "remove":
+            plugin_code.remove(slug)
+        else:
+            plugin_code.set_enabled(slug, action == "enable")
+    except (pkgfmt.PackageError, OSError, ValueError) as exc:
+        flash(f"{action.capitalize()} failed: {exc}", "error")
+        return redirect(url_for("plugins.index") + "#code-plugins")
+    log_action(f"plugin.code.{action}", target=slug)
+    flash(f"Code plugin {slug}: {action}d. The change takes effect at the next "
+          f"`satom execute restart-all`.", "success")
+    return redirect(url_for("plugins.index") + "#code-plugins")
 
 
 def _unique_slug(base: str) -> str:

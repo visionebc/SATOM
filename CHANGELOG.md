@@ -6,6 +6,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **Plugin packages** (`.satomplugin`, format `satom.plugin/1`): Plugin Studio
+  can **export** a view or widget and **import** a package from another server,
+  without an update package. Every file is checked against the manifest's
+  sha256 and a signature must be trusted and valid; signed imports land in
+  *testing*, unsigned in *draft*, a known slug updates in place (no silent
+  downgrade, the publish gate re-runs for a published view).
+- **Code plugins**: a signed package can carry a Flask blueprint, installed
+  under `data/plugins/code/` and mounted at `/x/<slug>/` behind sign-in at the
+  next `satom execute restart-all`. Unsigned code is refused; every start
+  re-verifies the signature and every file on disk, and a failing plugin is
+  skipped, never stopping the app. Plugin Studio lists them with their state,
+  Enable/Disable and Remove. Database: `plugins.pkg_version`,
+  `plugins.pkg_signer` (migration `plgpkg01`).
+
 ## [3.4.8] - 2026-10-22
 
 Integration hooks can make HTTP requests again (broken since 3.4.2), and

@@ -4134,6 +4134,44 @@ the ADOM you are in.
 > (and the editor's live preview) open for holders of `studio.plugin_studio`;
 > everyone else sees published views only.
 
+#### Plugin packages: import, export and code plugins
+
+A plugin can move between servers **without an update package** as a
+`.satomplugin` file (format `satom.plugin/1`: a zip with a manifest, the sha256
+of every file and an optional Ed25519 signature).
+
+- **Export** (the download icon on a row of the Plugin Studio list) writes an
+  unsigned package of that view or widget.
+- **Import plugin** (top of the list) reads a package and checks it before
+  anything is written: only the files the manifest lists, each matching its
+  sha256, sizes capped (10 MB package, 2 MB per file). A signature must come
+  from a key this server trusts and match the manifest — a bad or unknown
+  signature is refused, never treated as "unsigned".
+  - A **view or widget** becomes an ordinary Plugin Studio row: signed packages
+    land in *testing*, unsigned ones in *draft*. A package with the slug of a
+    plugin you already have **updates it in place**; an older version is
+    refused unless you tick **Allow downgrade**. Updating a *published* view
+    re-runs the publish gate — if the new body no longer renders it goes back
+    to *testing*. Datasets this server does not have are dropped and named in
+    the message. A slug that belongs to another ADOM's plugin is refused.
+  - A **code plugin** is a Python package with a Flask blueprint. It must be
+    **signed by a trusted key** (unsigned code is never installed); it is
+    written to `data/plugins/code/<slug>/` and mounted at **`/x/<slug>/`**,
+    behind sign-in, at the next `satom execute restart-all`. Every start
+    re-verifies its signature and every file on disk; a file that was changed
+    or added after install keeps it from loading, and a plugin that fails to
+    import is skipped with its error shown — it never stops SATOM from
+    starting. The **Code plugins** card lists each one as *loaded*, *restart
+    required*, *disabled* or *error*, with Enable/Disable and Remove (both take
+    effect at the next restart).
+- A package may declare `min_satom`; a server older than that refuses it.
+- The HA standby receives code plugins with the rest of `data/` and loads them
+  at its own next restart; views and widgets are database rows and replicate
+  immediately.
+
+A code plugin runs with SATOM's own privileges — the signature is the
+permission, so review a code plugin like any change to SATOM itself.
+
 ### 23.2 Lua Studio
 
 Author a device script, lint it, read a static analysis of it, and deploy it —
@@ -8815,8 +8853,8 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (126 today) or **excluded with a written
-   reason** (172 today — JSON feeds, downloads, redirects and fragments that
+   the console is either **on the map** (128 today) or **excluded with a written
+   reason** (174 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the

@@ -2759,6 +2759,10 @@ class Plugin(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,
                            onupdate=datetime.utcnow, nullable=False)
     published_at = db.Column(db.DateTime, nullable=True)
+    # Set by Import (plugin_package): the package version and the trusted
+    # signer's key id ("" = imported unsigned). NULL = authored here.
+    pkg_version = db.Column(db.String(32), nullable=True)
+    pkg_signer = db.Column(db.String(64), nullable=True)
 
     @property
     def datasets(self) -> list:

@@ -49,8 +49,8 @@
 
 {% if embedded %}
 <div class="fw-card mb-3 p-3">
-  <h6 class="mb-1">{{ _('Also starting on events: processes with their own trigger') }}</h6>
-  <p class="text-muted small mb-2">{{ _('These are set on the process itself (Process › Trigger) and keep working as before. A trigger here plus a "Walk a process" automation does the same with shared conditions.') }}</p>
+  <h6 class="mb-1">{{ _('Not converted: processes that still carry their own trigger') }}</h6>
+  <p class="text-muted small mb-2">{{ _('A process trigger left from before 3.4.7 that the trig02 migration did not convert. It still fires; recreate it here as a trigger plus a "Walk a process" automation.') }}</p>
   <ul class="mb-0 small">
   {% for p in embedded %}<li><a href="{{ url_for('process.detail', pid=p.id) }}"><code>{{ p.key }}</code></a> — {{ _('on') }} <code>{{ p.trigger_event }}</code>{% if not p.enabled %} <span class="fw-badge fw-badge-secondary">{{ _('disabled') }}</span>{% endif %}</li>{% endfor %}
   </ul>

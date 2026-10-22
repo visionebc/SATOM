@@ -10,7 +10,7 @@
 {% endblock %}
 {% block content %}
 {% set f = request.form %}
-{% set cur_kind = (auto.kind if auto else f.get('kind', '')) %}
+{% set cur_kind = (auto.kind if auto else (f.get('kind') or request.args.get('kind', ''))) %}
 {% set cur_trigger = (auto.trigger_id if auto else (f.get('trigger_id')|int if f.get('trigger_id') else preselect_trigger)) %}
 {% macro pv(kind, name, default='') -%}
 {%- if f.get('p_' ~ kind ~ '_' ~ name) is not none -%}{{ f.get('p_' ~ kind ~ '_' ~ name) }}
@@ -21,7 +21,7 @@
   <label class="form-label">{{ label }}</label>
   <select class="form-select form-select-sm" name="target_{{ kind }}">
     <option value="">{{ _('— choose —') }}</option>
-    {% for val, text in choices[kind] %}<option value="{{ val }}" {{ 'selected' if (auto and auto.kind == kind and auto.target == val) or f.get('target_' ~ kind) == val }}>{{ text }}</option>{% endfor %}
+    {% for val, text in choices[kind] %}<option value="{{ val }}" {{ 'selected' if (auto and auto.kind == kind and auto.target == val) or f.get('target_' ~ kind) == val or (not auto and not f and request.args.get('kind') == kind and request.args.get('target') == val) }}>{{ text }}</option>{% endfor %}
   </select>
   {% if not choices[kind] %}<div class="form-text text-warning">{{ _('Nothing to choose from yet.') }}</div>{% endif %}
 {% endmacro %}

@@ -3200,8 +3200,12 @@ answers `202` with what was queued. The event's ADOM is the token's (a Global
 token may name one). Nothing the caller sends can arm an automation.
 `GET /api/v1/triggers` (`read`) lists the triggers.
 
-Processes that carry their **own** trigger (Process → Trigger) keep working;
-the Triggers page lists them so one page answers "what starts on an alert".
+Since 3.4.7 this is the **only** way an event starts a process. The trigger
+a process used to carry on its own form (Process → Trigger) was moved here by
+the upgrade: each one became a trigger `process-<key>` on the same event with
+the same filter, plus a *Walk a process* automation armed exactly as the
+process was. The process form now shows **Started by** — the automations that
+walk it — and **Start it on a trigger**.
 
 ## 16. Reports & database tools
 
@@ -9747,40 +9751,33 @@ that looks like your plan and cannot execute a single check.
 
 ### Starting a process from an event
 
-A process can be started by an **event** instead of the Run button. On the
-process form, *Trigger → Start this process when* names one event of the
-integration-hook catalogue (`alert.fired`, `upgrade.failed`, `change.approved`,
-`window.opening` …). When that event fires, the walk is **queued as a job** —
-visible on the Jobs page — and runs there. It never runs inside the alert
-evaluation or the hook dispatch that noticed the event: those run inside the
-scheduler's cycle, and a diagram with SSH reads and a manual gate walked there
-would stall every scheduled action behind it.
+A process is started by an **event** through **Administrator → Triggers** and
+an automation **Walk a process** on that trigger (§15.1). The process form
+shows **Started by** (the automations that walk it) and **Start it on a
+trigger**, which opens the automation form with the process chosen. Until
+3.4.7 the trigger lived on the process form; the upgrade moved each one to a
+trigger `process-<key>` and an automation of the same name (migration
+`trig02`), so nothing that fired before stops firing.
 
-A trigger can be **narrowed**: to some ADOMs, to some appliance ids, and for
-`alert.fired` to some alert families and a severity floor. A narrowing never
-widens — an event that names no appliance does not match a filter that lists
-some. For a device finding, the appliance the finding is about becomes the
-appliance the walk is pointed at; a diagram with device steps is skipped, with
-the reason, when the event names none.
+The walk is **queued as a job** — visible on the Jobs page — and never runs
+inside the alert evaluation or the change-request bookkeeping that noticed the
+event. For a device finding, the appliance the finding is about is the one the
+walk is pointed at (or the one the automation names); a diagram with device
+steps is skipped, with the reason, when there is none.
 
-Three rules bound a storm, and each refusal is recorded as a run with status
-**`skipped`** and the reason in its summary, so "the plan never fired" always
-has a trace:
+What bounds a storm, each refusal recorded with its reason:
 
 * **one running instance per process and appliance** — a second event while a
   walk is running or parked on a gate is skipped, never queued behind it;
-* **a budget per process per hour** (*Runs per hour, at most*, default 10) —
-  spent means skipped; skipped rows do not count against it;
-* **rehearsal unless the process says otherwise** — *Arm triggered walks* is
-  off by default. On, SATOM writes to your appliances with nobody at the
-  screen, every time the event fires. The form says so in red.
+* **a budget per process per hour** (the process's trigger budget, default 10)
+  — spent means skipped;
+* the trigger's own **cooldown per subject** and **matches per hour**;
+* **rehearsal unless the automation is armed** — armed, SATOM writes to your
+  appliances with nobody at the screen.
 
-A finding that started a walk owes the alert cooldown exactly like one the
-hook subsystem accepted; a finding that was skipped owes nothing, so it is not
-silenced for six hours on behalf of a walk that did not happen. Event triggers
-fire on the writable primary only. Every triggered run carries the finding or
-event key (*trigger* on the run page and in the history) so a walk can be
-traced back to the thing that asked for it.
+A finding that started a walk owes the alert cooldown; one that was refused
+owes nothing. Every triggered run carries the finding or event key
+(*trigger* on the run page) so a walk can be traced back.
 
 ### Scheduling a process
 

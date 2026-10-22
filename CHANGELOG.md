@@ -6,6 +6,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed
+
+- **One way to start a process from an event: Administrator → Triggers.** The
+  trigger a process carried on its own form (Process → Trigger) is gone from
+  the form; the upgrade moves each existing one to a trigger
+  `process-<key>` on the same event with the same filter and a *Walk a
+  process* automation of the same name, armed exactly as the process was
+  (migration `trig02`). The process's hourly budget still applies. The process
+  form and page show **Started by** — the automations that walk it — and
+  **Start it on a trigger** opens the automation form with the process chosen.
+
 ## [3.4.6] - 2026-10-22
 
 SATOM becomes an orchestrator: **triggers** created under Administrator, and

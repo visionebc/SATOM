@@ -59,10 +59,19 @@ def _tz() -> str:
 # ---------------------------------------------------------------------------
 #  access
 # ---------------------------------------------------------------------------
+def _disabled(meta: dict) -> bool:
+    """The script's app is disabled (Plugin Studio > Apps, 2026-10-23): it is
+    offered to nobody and runs nowhere until it is enabled again."""
+    from . import studio_apps as SA
+    return bool(meta.get("slug")) and SA.script_disabled(meta["slug"])
+
+
 def can_run(user, meta: dict) -> bool:
     if user is None or not getattr(user, "is_authenticated", True):
         return False
     if not meta or not meta.get("published"):
+        return False
+    if _disabled(meta):
         return False
     if user.can("studio.script_library"):
         return True
@@ -274,6 +283,11 @@ def fire(s: dict, now=None) -> dict:
     if user is None or not user.is_active:
         return _pause(s, "owner %s is no longer active" % s.get("owner"))
     meta = SL._read_json(SL._dir(s["slug"]) / "meta.json")
+    if meta and _disabled(meta):
+        # Skipped, NOT paused: enabling the app again resumes the schedule.
+        s["last_status"] = "skipped: the app is disabled"
+        s["last_run"] = _iso(now)
+        return _save(s)
     if not can_run(user, meta):
         return _pause(s, "owner %s can no longer run this script" % s.get("owner"))
     from . import script_vault as SV

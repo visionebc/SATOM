@@ -749,6 +749,9 @@ def _run_script(node, ctx):
         meta = None
     if not meta or not meta.get("published"):
         raise FlowError("script %r has no published version" % slug)
+    from . import studio_apps as SA
+    if SA.script_disabled(slug):
+        raise FlowError("script %r is disabled (Plugin Studio > Apps)" % slug)
     inputs = _json(node, ctx, "inputs", "Form values") or {}
     try:
         st = _enqueue_script(slug, meta["published"], inputs, ctx)

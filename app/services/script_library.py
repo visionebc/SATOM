@@ -1081,6 +1081,38 @@ def run_status(rid: str) -> dict | None:
     return d or None
 
 
+def _slug_runs(slug: str) -> list[tuple[Path, dict]]:
+    if not STATUS_DIR.is_dir():
+        return []
+    out = []
+    for p in sorted(STATUS_DIR.glob("*-%s-*.json" % validate_slug(slug))):
+        d = _read_json(p)
+        if d and d.get("slug") == slug:
+            out.append((p, d))
+    return out
+
+
+def runs_full(slug: str) -> list[dict]:
+    """Every run record of *slug*, output and result included (the app's
+    Download data)."""
+    return [d for _p, d in _slug_runs(slug)]
+
+
+def delete_runs(slug: str) -> int:
+    """Delete the finished run records of *slug* (the app's Reset). A queued
+    or running record is kept: the runner still writes it."""
+    gone = 0
+    for p, d in _slug_runs(slug):
+        if d.get("status") in ("queued", "running"):
+            continue
+        try:
+            p.unlink()
+            gone += 1
+        except OSError:
+            pass
+    return gone
+
+
 def recent_runs(slug: str | None = None, limit: int = 30) -> list[dict]:
     if not STATUS_DIR.is_dir():
         return []

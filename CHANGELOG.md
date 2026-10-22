@@ -55,8 +55,36 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `managed_certificate.provider`, `studio_apps.pkg_version`,
   `studio_apps.pkg_signer` (migration `spoflow01`).
 
+- **App actions** in Plugin Studio → Apps (operator request): **Disable /
+  Enable** (out of every menu, no run starts — operator runs, event
+  automations, *Run another app*, *Run a script* steps; a saved script
+  schedule is skipped, not paused), **Download data** (zip: runs and a CSV per
+  data store), **Reset** (deletes the app's data from the database: its runs
+  and the rows of the data stores only it uses; shared stores are kept and
+  listed) and **Delete** (the app, its runs and the stores only it uses; a
+  script app takes its script, versions, saved runs and credentials).
+  Database: `studio_apps.kind`, `studio_apps.script_slug`,
+  `studio_apps.enabled` (migration `appkind01`).
+- **Templates**: what Plugin Studio → Examples installs is a template — it
+  can be edited, disabled, reset and downloaded, never deleted. The Examples
+  *Remove* button and route are gone, and every delete (app, script, data
+  store, connection) refuses a template with the reason.
+
 ### Changed
 
+- **Every plugin is an app** (operator request: "everything created should
+  be an app, even if it is only a script"): **New app** asks for the type,
+  *Flow* (form + diagram) or *Script* (Python code with a form, run in the
+  sandbox). A script app is the entry of its script — code, form, versions and
+  audience stay in the script editor and on disk for the sandbox runner, which
+  never holds a database connection. The *Scripts* pane is gone; scripts are
+  listed in **Apps** with their type, and existing scripts get their app the
+  first time an author opens Plugin Studio. The Plugins menu and *All plugins*
+  page list flow and script apps alike.
+- **Plugin Studio on the first level of the sidebar** (operator request): it
+  left Administrator → Studio and is an entry of its own, just above
+  Administrator, in every ADOM. The *Studio* section is gone; **Report
+  Studio** and **Lua Studio** are in **Plugins** in the Global ADOM too.
 - **Studios renamed** (operator request): *Python Studio* is now **Plugin
   Studio** and says it accepts Python code only; the custom-view studio that
   had that name is now **Report Studio**. Labels only — URLs and permission

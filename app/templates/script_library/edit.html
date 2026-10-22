@@ -3,7 +3,7 @@
 {% block content %}
 <div class="fw-page-header d-flex align-items-start">
   <div>
-    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('studio.index', pane='scripts') }}">{{ _('Plugin Studio') }}</a> › {{ _('Scripts') }}</div>
+    <div class="text-muted" style="font-size:12px;"><a href="{{ url_for('studio.index', pane='apps') }}">{{ _('Plugin Studio') }}</a> › {{ _('Apps') }}</div>
     <h1 class="fw-page-title"><i class="bi bi-file-earmark-code me-2 text-accent"></i><span id="sl-title">{{ script.name }}</span></h1>
     <p class="text-muted mb-0" style="font-size:13px;">
       <code>{{ script.slug }}</code> ·
@@ -14,7 +14,7 @@
     </p>
   </div>
   <div class="ms-auto d-flex gap-2">
-    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.index', pane='scripts') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Plugin Studio') }}</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('studio.index', pane='apps') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Plugin Studio') }}</a>
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('script_library.download', slug=script.slug) }}"><i class="bi bi-download me-1"></i>{{ _('Download') }}</a>
     <button type="button" class="btn btn-primary btn-sm" id="sl-save" title="{{ _('Ctrl+S. The editor also saves by itself a few seconds after you stop typing.') }}"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
     <button type="button" class="btn btn-success btn-sm" id="sl-publish"><i class="bi bi-rocket-takeoff me-1"></i>{{ _('Publish') }}</button>
@@ -224,7 +224,11 @@
       {% include "script_library/_runs.html" %}
     </div>
     <div class="mt-3 text-end">
-      <button type="button" class="btn btn-outline-danger btn-sm" id="sl-delete"><i class="bi bi-trash me-1"></i>{{ _('Delete script') }}</button>
+      {% if template %}
+      <span class="text-muted" style="font-size:12px;">{{ _('Template from Examples: it can be disabled or reset in Plugin Studio > Apps, not deleted.') }}</span>
+      {% else %}
+      <button type="button" class="btn btn-outline-danger btn-sm" id="sl-delete"><i class="bi bi-trash me-1"></i>{{ _('Delete app') }}</button>
+      {% endif %}
     </div>
   </div>
 

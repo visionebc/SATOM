@@ -88,7 +88,8 @@ def _choices() -> dict:
         'process': [(p.key, '%s — %s' % (p.key, p.name)) for p in
                     Process.query.filter_by(enabled=True).order_by(Process.key).all()],
         'app': [(a.slug, '%s — %s' % (a.slug, a.name)) for a in
-                SA.StudioApp.query.order_by(SA.StudioApp.slug).all() if a.published],
+                SA.StudioApp.query.order_by(SA.StudioApp.slug).all()
+                if a.published and a.kind != 'script'],  # a script app is the 'script' kind
         'script': [],
         'api_call': [(c.slug, c.slug) for c in SC.list_connections('http')],
         'sql_query': [(c.slug, c.slug) for c in SC.list_connections('postgres')],

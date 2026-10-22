@@ -158,14 +158,45 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   the base URL, the session cookie reused, one new login on a 401 (the DDI API).</li>
 <li><strong>SATOM list form fields</strong>: FortiWebs, approved WPP templates, Certificate
   Manager certificates, certificate providers, classification and segments.</li>
-<li><strong>Certificate providers</strong> (operator request): the person issuing picks the
+<li>
+<p><strong>Certificate providers</strong> (operator request): the person issuing picks the
   provider (seed: <em>Class E</em>, internal only; <em>Class C</em>); the certificate
   remembers it for its renewal and revocation. Database:
   <code>managed_certificate.provider</code>, <code>studio_apps.pkg_version</code>,
-  <code>studio_apps.pkg_signer</code> (migration <code>spoflow01</code>).</li>
+  <code>studio_apps.pkg_signer</code> (migration <code>spoflow01</code>).</p>
+</li>
+<li>
+<p><strong>App actions</strong> in Plugin Studio → Apps (operator request): <strong>Disable /
+  Enable</strong> (out of every menu, no run starts — operator runs, event
+  automations, <em>Run another app</em>, <em>Run a script</em> steps; a saved script
+  schedule is skipped, not paused), <strong>Download data</strong> (zip: runs and a CSV per
+  data store), <strong>Reset</strong> (deletes the app's data from the database: its runs
+  and the rows of the data stores only it uses; shared stores are kept and
+  listed) and <strong>Delete</strong> (the app, its runs and the stores only it uses; a
+  script app takes its script, versions, saved runs and credentials).
+  Database: <code>studio_apps.kind</code>, <code>studio_apps.script_slug</code>,
+  <code>studio_apps.enabled</code> (migration <code>appkind01</code>).</p>
+</li>
+<li><strong>Templates</strong>: what Plugin Studio → Examples installs is a template — it
+  can be edited, disabled, reset and downloaded, never deleted. The Examples
+  <em>Remove</em> button and route are gone, and every delete (app, script, data
+  store, connection) refuses a template with the reason.</li>
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
+<li><strong>Every plugin is an app</strong> (operator request: "everything created should
+  be an app, even if it is only a script"): <strong>New app</strong> asks for the type,
+  <em>Flow</em> (form + diagram) or <em>Script</em> (Python code with a form, run in the
+  sandbox). A script app is the entry of its script — code, form, versions and
+  audience stay in the script editor and on disk for the sandbox runner, which
+  never holds a database connection. The <em>Scripts</em> pane is gone; scripts are
+  listed in <strong>Apps</strong> with their type, and existing scripts get their app the
+  first time an author opens Plugin Studio. The Plugins menu and <em>All plugins</em>
+  page list flow and script apps alike.</li>
+<li><strong>Plugin Studio on the first level of the sidebar</strong> (operator request): it
+  left Administrator → Studio and is an entry of its own, just above
+  Administrator, in every ADOM. The <em>Studio</em> section is gone; <strong>Report
+  Studio</strong> and <strong>Lua Studio</strong> are in <strong>Plugins</strong> in the Global ADOM too.</li>
 <li><strong>Studios renamed</strong> (operator request): <em>Python Studio</em> is now <strong>Plugin
   Studio</strong> and says it accepts Python code only; the custom-view studio that
   had that name is now <strong>Report Studio</strong>. Labels only — URLs and permission

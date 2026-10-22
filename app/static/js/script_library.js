@@ -977,8 +977,9 @@
     restoreRef(view.ref);
   });
 
-  $('sl-delete').addEventListener('click', function () {
-    var typed = window.prompt('Delete this script, its versions and its draft? Run records stay.\nType the id (' + CFG.slug + ') to confirm:', '');
+  // Absent for a template (Examples): templates are never deleted.
+  if ($('sl-delete')) $('sl-delete').addEventListener('click', function () {
+    var typed = window.prompt('Delete this app for good: the script, its versions, its draft, its saved runs, run records and credentials?\nType the id (' + CFG.slug + ') to confirm:', '');
     if (typed !== CFG.slug) return;
     postJSON(URLS.delete, {}).then(function () { dirty = false; window.location.href = URLS.index; })
       .catch(function (e) { state(e.message, 'err'); });

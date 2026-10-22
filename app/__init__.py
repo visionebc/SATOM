@@ -784,7 +784,8 @@ def create_app(config_override: object | None = None) -> Flask:
 
     @app.template_global()
     def studio_apps_menu(product_key):
-        """Published Python Studio apps the current user may open in this ADOM
+        """Enabled, published Plugin Studio apps -- flow and script apps alike
+        since 2026-10-23 -- the current user may open in this ADOM
         (services.studio_apps.menu), once per request."""
         from flask import g as _g
         from flask_login import current_user
@@ -798,24 +799,6 @@ def create_app(config_override: object | None = None) -> Flask:
             except Exception:  # noqa: BLE001 -- a menu must never 500 the page
                 cache[product_key] = []
         return cache[product_key]
-
-    @app.template_global()
-    def scripts_menu():
-        """Published Plugin Studio scripts the current user may run
-        (services.script_schedules.visible_scripts, the rule the Plugins page
-        and the run page apply), by name, once per request."""
-        from flask import g as _g
-        from flask_login import current_user
-        if not hasattr(_g, "_scripts_menu"):
-            try:
-                from .services.script_schedules import visible_scripts
-                rows = visible_scripts(current_user)
-                _g._scripts_menu = sorted(
-                    ({"slug": s["slug"], "name": s.get("name") or s["slug"]} for s in rows),
-                    key=lambda s: s["name"].lower())
-            except Exception:  # noqa: BLE001 -- a menu must never 500 the page
-                _g._scripts_menu = []
-        return _g._scripts_menu
 
     @app.template_global()
     def global_plugins_in_automation(product_key):
@@ -2121,6 +2104,10 @@ def create_app(config_override: object | None = None) -> Flask:
             'studio_apps': [
                 ('pkg_version', 'VARCHAR(32)'),
                 ('pkg_signer', 'VARCHAR(64)'),
+                # --- every plugin is an app (appkind01) ---
+                ('kind', "VARCHAR(16) DEFAULT 'flow'"),
+                ('script_slug', 'VARCHAR(48)'),
+                ('enabled', 'BOOLEAN DEFAULT TRUE'),
             ],
             # --- Analytics: dashboard variables (one board, whole fleet) ---
             'monitor_dashboard': [

@@ -1311,6 +1311,22 @@ button.fw-nav-section.fw-nav-toggle {
 button.fw-nav-section.fw-nav-toggle:hover { color: var(--fw-sidebar-text-hover); }
 button.fw-nav-section.fw-nav-toggle:focus { outline: none; }
 button.fw-nav-section.fw-nav-toggle > span { flex: 1 1 auto; text-align: left; }
+/* A first-level entry that is a page, not a group (Plugin Studio,
+   2026-10-23, partials/nav_plugin_studio.html): the section typography of
+   the toggles above, no caret, and the active marker of .fw-nav-item. */
+a.fw-nav-section.fw-nav-toplink {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  text-decoration: none;
+}
+a.fw-nav-section.fw-nav-toplink:hover { color: var(--fw-sidebar-text-hover); text-decoration: none; }
+a.fw-nav-section.fw-nav-toplink.active {
+  color: #FFFFFF;
+  /* inset, not a border: a border would shift the icon off the column */
+  box-shadow: inset 3px 0 0 var(--fw-sidebar-active);
+}
+a.fw-nav-section.fw-nav-toplink > span { flex: 1 1 auto; text-align: left; }
 .fw-nav-caret {
   font-size: 10px;
   opacity: .65;

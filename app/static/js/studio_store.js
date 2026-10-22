@@ -165,7 +165,8 @@
       msg('Columns saved.' + (d.warnings && d.warnings.length ? ' ' + d.warnings.join(' · ') : ''));
     }).catch(function (err) { msg(err.message, true); });
   });
-  $('st-delete').addEventListener('click', function () {
+  // Absent for a template (Examples): templates are never deleted.
+  if ($('st-delete')) $('st-delete').addEventListener('click', function () {
     if (!window.confirm('Delete the data store ' + CFG.slug + ' and all its rows? This cannot be undone.')) return;
     post(U['delete']).then(function () { window.location = U.back; })
       .catch(function (err) { msg(err.message, true); });

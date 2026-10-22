@@ -1,6 +1,7 @@
-"""Operations > Automation > Scripts -- the operator's side of the Script Library.
+"""Automation > Plugins > All plugins -- the operator's side of Plugin Studio.
 
-Lists the published scripts the user may run, draws each script's form (the
+Lists the published apps the user may run. A flow app opens apps.page; for a
+script app (a published script) this blueprint draws the script's form (the
 fields of its PUBLISHED version), runs it now, and keeps saved runs on a cron
 schedule. Gated on ``operations.scripts_run`` (operators and administrators);
 which scripts appear is decided per script by ``script_schedules.can_run``.
@@ -41,7 +42,16 @@ def _runs_for(slug=None, limit=20):
 @require_permission(PERM)
 def index():
     from ..services import sandbox
+    from ..services import studio_apps as SA
+    from ..branding import get_product
+    from flask import g, session
+    product = get_product(getattr(g, "product", None) or session.get("product"))["key"]
+    # Every plugin is an app (2026-10-23): the flow apps of this ADOM are
+    # listed next to the script apps. Script apps keep their card (form
+    # size, network, credentials) from visible_scripts.
+    flows = [m for m in SA.menu(current_user, product) if m["kind"] == "flow"]
     return render_template("scripts/index.html", scripts=SS.visible_scripts(current_user),
+                           flows=flows,
                            schedules=SS.list_for(current_user), runs=_runs_for(),
                            sandbox_ok=sandbox.available())
 

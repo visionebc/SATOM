@@ -1,0 +1,19 @@
+{# ============================================================================
+   PLUGIN STUDIO — first level of the sidebar, every ADOM (2026-10-23).
+
+   Until then it sat in Administrator > Studio with Report Studio and Lua
+   Studio. The operator took it out to the first level and removed Studio;
+   the two other studios moved to Plugins (nav_plugins.html in a device ADOM,
+   nav_global_studios.html in Global). The entry follows the page's own key
+   (studio.python_console OR studio.script_library, via may_open), never
+   user_manage, so a custom profile holding one of those keys sees it too.
+   A link, not a toggle: the group has nothing to fold. It is a
+   .fw-nav-group so nav_state.autoopen and the accordion treat it like the
+   other first-level entries.
+   ========================================================================= #}
+{% if current_user.is_authenticated and may_open('studio.index') %}
+<div class="fw-nav-group fw-nav-group-link" data-nav-group="Plugin Studio">
+  <a class="fw-nav-section fw-nav-toplink {{ 'active' if request.blueprint in ['studio', 'script_library'] else '' }}" href="{{ url_for('studio.index') }}">
+    <i class="bi bi-code-slash fw-nav-section-icon" style="color:#8b5cf6;"></i><span>{{ _('Plugin Studio') }}</span></a>
+</div>
+{% endif %}

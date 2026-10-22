@@ -136,7 +136,9 @@ def choices() -> dict:
     out = {"stores": [s["slug"] for s in SS.list_stores()],
            "http": [c.slug for c in SC.list_connections("http")],
            "pg": [c.slug for c in SC.list_connections("postgres")],
-           "scripts": [], "apps": [a.slug for a in StudioApp.query.order_by(StudioApp.slug).all()],
+           # script apps run from their script's page, not as "run another app"
+           "scripts": [], "apps": [a.slug for a in StudioApp.query.order_by(StudioApp.slug).all()
+                                   if a.kind != "script"],
            "cr_actions": []}
     try:
         out["scripts"] = [s["slug"] for s in SL.list_scripts() if s.get("published")]
@@ -530,6 +532,248 @@ def delete(a: StudioApp) -> None:
 
 
 # --------------------------------------------------------------------------- #
+#  every plugin is an app (2026-10-23, operator: "everything created should    #
+#  be an app, even if it is only a script")                                    #
+# --------------------------------------------------------------------------- #
+#: "flow": a form and a diagram, run here. "script": the entry of a Script
+#: Library script -- its code, form, versions and audience stay in
+#: data/scripts/<script_slug>, because the sandbox runner that executes it
+#: must never hold a database connection (services.script_library).
+KINDS = ("flow", "script")
+
+
+def script_app(script_slug: str) -> StudioApp | None:
+    return StudioApp.query.filter_by(kind="script", script_slug=script_slug).first()
+
+
+def script_disabled(script_slug: str) -> bool:
+    """Whether the app of this script is disabled. A lookup that fails says
+    False: the script library must keep working without the table."""
+    try:
+        a = script_app(script_slug)
+    except Exception:  # noqa: BLE001 -- no table, or no app context at all
+        try:
+            db.session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return False
+    return a is not None and not a.enabled
+
+
+def _free_slug(base: str) -> str:
+    if get(base) is None:
+        return base
+    for i in range(1, 100):
+        cand = ("%s-%d" % (base[:44], i))
+        if get(cand) is None:
+            return cand
+    raise AppError("no free app id for %s" % base)
+
+
+def ensure_script_app(script_slug: str, by: str) -> StudioApp:
+    """The app of a script, created when missing (same id when it is free)."""
+    from . import script_library as SL
+    a = script_app(script_slug)
+    if a is not None:
+        return a
+    meta = SL.get(script_slug) or {}
+    a = StudioApp(slug=_free_slug(script_slug), name=(meta.get("name") or script_slug)[:120],
+                  description=(meta.get("description") or "")[:2000], icon="bi-filetype-py",
+                  kind="script", script_slug=script_slug, adoms_json=json.dumps(["global"]),
+                  status="published" if meta.get("published") else "draft",
+                  created_by=by, updated_by=by)
+    db.session.add(a)
+    db.session.commit()
+    return a
+
+
+def adopt_scripts(by: str = "system") -> list[str]:
+    """Give every script that has no app its app. Idempotent; called where
+    apps are listed, so a script made before 2026-10-23 (or restored from a
+    backup) is never left outside the app list."""
+    from . import script_library as SL
+    have = {s for (s,) in db.session.query(StudioApp.script_slug)
+            .filter(StudioApp.kind == "script").all()}
+    made = []
+    for s in SL.list_scripts():
+        if s["slug"] not in have:
+            made.append(ensure_script_app(s["slug"], by).slug)
+    return made
+
+
+def script_meta(a: StudioApp) -> dict:
+    from . import script_library as SL
+    try:
+        return SL._read_json(SL._dir(a.script_slug) / "meta.json") or {}
+    except Exception:  # noqa: BLE001 -- a missing or bad id reads as no script
+        return {}
+
+
+def is_template(a: StudioApp) -> bool:
+    """Templates are the objects of Plugin Studio > Examples: they can be
+    disabled, reset and downloaded, never deleted (operator, 2026-10-23)."""
+    from . import studio_examples as EX
+    if a.kind == "script":
+        return EX.is_template("script", a.script_slug or "")
+    return EX.is_template("app", a.slug)
+
+
+def list_rows() -> list[dict]:
+    """Plugin Studio > Apps: every app, flow and script alike, with what its
+    row shows. A script app reads its version and audience from the script."""
+    out = []
+    for a in StudioApp.query.order_by(StudioApp.name).all():
+        r = {"a": a, "kind": a.kind or "flow", "template": is_template(a),
+             "enabled": a.enabled, "edit_endpoint": "studio.app_edit", "edit_slug": a.slug}
+        if a.kind == "script":
+            meta = script_meta(a)
+            vs = [int(v.get("n") or 0) for v in meta.get("versions") or [] if isinstance(v, dict)]
+            # name and description are edited in the script editor
+            r.update(name=meta.get("name") or a.name, description=meta.get("description") or "",
+                     published=meta.get("published"), latest=max(vs) if vs else None,
+                     missing=not meta, audience=meta.get("audience") or "admins",
+                     edit_endpoint="script_library.edit", edit_slug=a.script_slug)
+        else:
+            r.update(name=a.name, description=a.description or "",
+                     published=a.version if a.status == "published" else None,
+                     latest=a.version or None, missing=False, audience="")
+        out.append(r)
+    return out
+
+
+def set_enabled(a: StudioApp, enabled: bool, by: str) -> None:
+    a.enabled = bool(enabled)
+    a.updated_by = by
+    db.session.commit()
+
+
+def stores_of(a: StudioApp) -> tuple[list[str], list[str]]:
+    """(stores only this app uses, stores other apps use too) -- from the
+    draft and the published version."""
+    if a.kind == "script":
+        return [], []
+    pub = a.published
+    names = _refs(a.graph, a.actions, a.fields, "store") | _refs(
+        pub.get("graph") or {}, pub.get("actions") or [], pub.get("fields") or [], "store")
+    own, shared = [], []
+    for s in sorted(names):
+        (shared if [x for x in used_by("store", s) if x != a.slug] else own).append(s)
+    return own, shared
+
+
+def reset(a: StudioApp) -> dict:
+    """Delete the app's data: its run history and the rows of the data stores
+    only it uses. Shared stores are left alone and listed. The design, the
+    versions, the connections and the settings stay."""
+    from . import script_library as SL
+    from . import studio_store as SS
+    from ..models_studio import StudioRow
+    if a.kind == "script":
+        return {"runs": SL.delete_runs(a.script_slug), "rows": 0, "stores": [], "shared": []}
+    running = StudioAppRun.query.filter_by(app_id=a.id, status="running").count()
+    if running:
+        raise AppError("%d run(s) of this app are in progress; reset when they end" % running)
+    runs = StudioAppRun.query.filter_by(app_id=a.id).delete(synchronize_session=False)
+    own, shared = stores_of(a)
+    rows = 0
+    for slug in own:
+        st = SS.get(slug)
+        if st is not None:
+            rows += StudioRow.query.filter_by(store_id=st.id).delete(synchronize_session=False)
+    db.session.commit()
+    return {"runs": runs, "rows": rows, "stores": own, "shared": shared}
+
+
+def data_zip(a: StudioApp) -> tuple[str, bytes]:
+    """Everything the app holds, as a zip: its runs (runs.json, or one JSON
+    per script run) and a CSV per data store it uses."""
+    import zipfile
+    from . import script_library as SL
+    from . import studio_store as SS
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        info = {"app": a.slug, "name": a.name, "kind": a.kind,
+                "exported_at": datetime.utcnow().isoformat(timespec="seconds") + "Z"}
+        if a.kind == "script":
+            info["script"] = a.script_slug
+            runs = SL.runs_full(a.script_slug)
+            for r in runs:
+                z.writestr("runs/%s.json" % r.get("request_id", "run"),
+                           json.dumps(r, indent=1, default=str))
+            info["runs"] = len(runs)
+        else:
+            runs = StudioAppRun.query.filter_by(app_id=a.id).order_by(StudioAppRun.id).all()
+            z.writestr("runs.json", json.dumps([{
+                "id": r.id, "status": r.status, "error": r.error, "version": r.version,
+                "armed": r.armed, "user": r.user, "product": r.product, "inputs": r.inputs,
+                "outputs": r.outputs, "steps": r.steps,
+                "started_at": r.started_at.isoformat(timespec="seconds") if r.started_at else None,
+                "finished_at": r.finished_at.isoformat(timespec="seconds") if r.finished_at else None}
+                for r in runs], indent=1, default=str))
+            info["runs"] = len(runs)
+            own, shared = stores_of(a)
+            info["stores"] = own + shared
+            for slug in own + shared:
+                st = SS.get(slug)
+                if st is not None:
+                    z.writestr("stores/%s.csv" % slug, SS.to_csv(st))
+        z.writestr("app.json", json.dumps(info, indent=1))
+    stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    return "%s-data-%s.zip" % (a.slug, stamp), buf.getvalue()
+
+
+def remove(a: StudioApp) -> dict:
+    """Delete an app for good. Refused for a template (Examples) and for an
+    app another app runs. A flow app takes its runs and the data stores only
+    it uses; a script app takes the script, its versions, saved runs, run
+    records and vaulted credentials. Connections and APIs are never deleted
+    here: they are shared and hold secrets."""
+    if is_template(a):
+        raise AppError("%s is a template (Plugin Studio > Examples): disable or reset it; "
+                       "templates are not deleted" % a.slug)
+    users = used_by("app", a.slug)
+    if users:
+        raise AppError("other app(s) run it: %s" % ", ".join(users))
+    if a.kind == "script":
+        from . import script_library as SL
+        from . import script_schedules as SSch
+        from . import script_vault as SV
+        callers = used_by("script", a.script_slug)
+        if callers:
+            raise AppError("app(s) %s run this script in a step" % ", ".join(callers))
+        meta = script_meta(a)
+        names = [c["name"] for c in meta.get("credentials") or []]
+        for s in SSch.all_schedules():
+            if s.get("slug") == a.script_slug:
+                SSch.delete(s)
+        runs = SL.delete_runs(a.script_slug)
+        if meta:
+            SL.delete(a.script_slug)
+            SV.forget(a.script_slug, names)
+        db.session.delete(a)
+        db.session.commit()
+        return {"script": a.script_slug, "runs": runs, "credentials": names}
+    from . import studio_examples as EX
+    from . import studio_store as SS
+    from ..models_studio import StudioRow
+    own, shared = stores_of(a)
+    runs = StudioAppRun.query.filter_by(app_id=a.id).delete(synchronize_session=False)
+    db.session.delete(a)
+    db.session.flush()
+    gone = []
+    for slug in own:
+        st = SS.get(slug)
+        # still unused once this app is gone (used_by reads the table), and
+        # never a template's
+        if st is not None and not used_by("store", slug) and not EX.is_template("store", slug):
+            StudioRow.query.filter_by(store_id=st.id).delete(synchronize_session=False)
+            db.session.delete(st)
+            gone.append(slug)
+    db.session.commit()
+    return {"runs": runs, "stores": gone, "shared": shared}
+
+
+# --------------------------------------------------------------------------- #
 #  who, where                                                                  #
 # --------------------------------------------------------------------------- #
 def group_ids_of(user) -> set:
@@ -565,14 +809,36 @@ def shown_in(a: StudioApp, product_key: str) -> bool:
 
 
 def menu(user, product_key: str) -> list[dict]:
-    """The published apps *user* may open in this ADOM, for the sidebar."""
+    """The enabled, published apps *user* may open in this ADOM, for the
+    sidebar and the Plugins page: flow apps by their ADOMs and access list,
+    script apps (Global only, like scripts always were) by the script's
+    audience (script_schedules.can_run) and operations.scripts_run, the key
+    of their run page. ``endpoint`` / ``target`` build the link."""
     if user is None or not getattr(user, "is_authenticated", False):
         return []
+    try:
+        adopt_scripts()
+    except Exception:  # noqa: BLE001 -- a read-only standby cannot write; list what is there
+        db.session.rollback()
     out = []
-    for a in StudioApp.query.filter_by(status="published").order_by(StudioApp.name).all():
-        if a.published and shown_in(a, product_key) and can_use(user, a):
-            out.append({"slug": a.slug, "name": a.name, "icon": a.icon})
-    return out
+    for a in StudioApp.query.filter_by(enabled=True).order_by(StudioApp.name).all():
+        if a.kind == "script":
+            if (product_key or "global") != "global" or not user.can("operations.scripts_run"):
+                continue
+            from . import script_schedules as SSch
+            meta = script_meta(a)
+            if SSch.can_run(user, meta):
+                out.append({"slug": a.slug, "name": meta.get("name") or a.name,
+                            "description": meta.get("description") or "",
+                            "icon": a.icon, "kind": "script",
+                            "endpoint": "scripts.run_page", "target": a.script_slug})
+        elif a.status == "published" and a.published and shown_in(a, product_key) \
+                and can_use(user, a):
+            out.append({"slug": a.slug, "name": a.name, "description": a.description or "",
+                        "icon": a.icon, "kind": "flow",
+                        "endpoint": "apps.page", "target": a.slug})
+    # by name as people read it: the database's order puts "Zeta" before "alpha"
+    return sorted(out, key=lambda m: m["name"].lower())
 
 
 # --------------------------------------------------------------------------- #
@@ -618,6 +884,10 @@ def start_run(a: StudioApp, *, user, product: str, raw_inputs, draft: bool = Fal
     armed). ``inline`` runs in the caller's thread -- the event automation's
     job worker, which is already off the request. ``event`` is the payload of
     the event that started the run, ``{{ event }}`` in the diagram."""
+    if not draft and not a.enabled:
+        raise AppError("%s is disabled" % a.slug)
+    if a.kind == "script":
+        raise AppError("%s is a script app: it runs from its own page" % a.slug)
     d = definition(a, draft)
     _room_for_run(getattr(user, "username", ""))
     _prune_runs()

@@ -602,6 +602,9 @@ def problems(auto, *, choices: dict | None = None) -> list[str]:
         a = SA.get(auto.target)
         if a is None:
             errs.append("app %r does not exist" % auto.target)
+        elif a.kind == "script":
+            errs.append("app %r is a script app: pick the script kind for script %r"
+                        % (auto.target, a.script_slug))
         elif not a.published:
             errs.append("app %r has no published version" % auto.target)
     elif auto.kind in FLOW_KINDS:
@@ -708,6 +711,8 @@ def _inputs(auto, scope) -> dict:
 def _do_app(auto, run, payload, scope, owner):
     from . import studio_apps as SA
     a = SA.get(auto.target)
+    if not a.enabled:  # Plugin Studio > Apps > Disable (2026-10-23)
+        return RUN_SKIPPED, "app %r is disabled" % a.slug, ""
     if not SA.can_use(owner, a):
         return RUN_SKIPPED, "the owner %r may not use app %r" % (auto.owner, a.slug), ""
     inputs = _inputs(auto, scope)

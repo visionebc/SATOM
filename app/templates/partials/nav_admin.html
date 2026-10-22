@@ -7,8 +7,9 @@
    ADOMs they belong to.
 
    SECTIONS (operator, 2026-10-14): the group is split into Access, Change
-   Management, Devices, Objects, Studio and System, and both the sections and
-   the entries inside each one are ALPHABETICAL in the console's language.
+   Management, Devices, Objects and System (Studio until 2026-10-23), and
+   both the sections and the entries inside each one are ALPHABETICAL in the
+   console's language.
    Each section below is captured as one chunk with the entries' own
    permission and ADOM conditions; nav_sections() (app/nav_sections.py) sorts
    them by their rendered labels and drops sections that end up empty. So an
@@ -19,13 +20,11 @@
    Settings with Software Update, High Availability and System Backup &
    Restore (FA-0005, operator).
 
-   Studio holds Plugin Studio, Report Studio and Lua Studio in the Global
-   ADOM (partials/nav_studio.html); in a device ADOM it holds Plugin Studio,
-   because the two other studios live in that ADOM's Plugins group. Python
-   Studio (2026-10-20) is the Script Library and the Python console in one
-   page; its link follows either key (require_any_permission). Without
-   user_manage the group is replaced by the Process entry on its own
-   (partials/nav_process_group.html), as before.
+   Studio was a section here until 2026-10-23: Plugin Studio is now a
+   first-level entry (partials/nav_plugin_studio.html) and Report Studio and
+   Lua Studio live in Plugins (operator). Without user_manage the group is
+   replaced by the Process entry on its own (partials/nav_process_group.html),
+   as before.
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
 {% set _pk = product.key %}
@@ -132,17 +131,6 @@
     {% endif %}
 {% endset %}
 
-{% set _s_studio %}
-    {% if _pk == 'global' %}
-    {% with studio_entries_only = True %}{% include 'partials/nav_studio.html' %}{% endwith %}
-    {% else %}
-    {% if may_open('studio.index') %}{# studio.python_console OR studio.script_library #}
-    <a class="fw-nav-item {{ 'active' if request.blueprint in ['studio', 'script_library'] else '' }}" href="{{ url_for('studio.index') }}">
-      <i class="bi bi-code-slash fw-nav-icon"></i><span>{{ _('Plugin Studio') }}</span></a>
-    {% endif %}
-    {% endif %}
-{% endset %}
-
 {% set _s_system %}
     {% include "partials/nav_collection.html" %}
     {% if may_open('database.index') %}
@@ -172,7 +160,6 @@
          (_('Change Management'), 'bi-clipboard2-check', 'Change Management', _s_change),
          (_('Devices'), 'bi-hdd-rack', 'Devices', _s_devices),
          (_('Objects'), 'bi-tags', 'Objects', _s_objects),
-         (_('Studio'), 'bi-code-slash', 'Studio', _s_studio),
          (_('System'), 'bi-gear', 'System', _s_system),
        ]) %}
     <div class="fw-nav-subgroup" data-nav-subgroup="{{ s.key }}">
@@ -185,6 +172,6 @@
     {% endfor %}
   </div>
 </div>
-{% elif _pk != 'global' %}{# Global draws this fallback under its Studio block #}
+{% elif _pk != 'global' %}{# Global draws this fallback in base.html #}
 {% include "partials/nav_process_group.html" %}
 {% endif %}

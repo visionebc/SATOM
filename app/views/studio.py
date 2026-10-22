@@ -36,7 +36,9 @@ def _bounded_bodies():
     return refuse_larger_than(MAX_BODY)
 CONSOLE = "studio.python_console"
 LIBRARY = "studio.script_library"
-PANES = ("scripts", "console", "stores", "connections", "apis", "apps", "examples")
+#: "scripts" is gone (2026-10-23: every script is an app); an old link to it
+#: lands on Apps.
+PANES = ("apps", "console", "stores", "connections", "apis", "examples")
 
 
 def _who() -> str:
@@ -52,10 +54,13 @@ def index():
     can_console = current_user.can(CONSOLE)
     can_library = current_user.can(LIBRARY)
     pane = request.args.get("pane")
+    if pane == "scripts":
+        pane = "apps"
     if pane not in PANES or (pane != "console" and not can_library) \
             or (pane == "console" and not can_console):
-        pane = "scripts" if can_library else "console"
-    from ..models_studio import StudioApp
+        pane = "apps" if can_library else "console"
+    from ..extensions import db
+    from ..services import studio_apps as SA
     from ..services import studio_apis as SAPI
     from ..services import studio_connections as SC
     from ..services import studio_store as SS
@@ -67,14 +72,17 @@ def index():
             apis.append({"a": a, "versions": len(vs), "latest": lt.version if lt else "",
                          "drafts": sum(1 for v in vs if v.status == "draft"),
                          "connections": [c.slug for c in SAPI.connections_of(a)]})
+        try:
+            SA.adopt_scripts(_who())
+        except Exception:  # noqa: BLE001 -- a read-only standby lists what is there
+            db.session.rollback()
     return render_template(
         "studio/index.html", pane=pane,
         can_console=can_console, can_library=can_library,
         stores=SS.list_stores() if can_library else [],
         connections=SC.list_connections() if can_library else [],
         apis=apis,
-        apps=StudioApp.query.order_by(StudioApp.name).all() if can_library else [],
-        scripts=SL.list_scripts() if can_library else [],
+        apps=SA.list_rows() if can_library else [],
         runs=SL.recent_runs(limit=15) if can_library else [],
         datasets=plugin_sandbox.dataset_catalog() if can_console else [],
         examples=py_examples.all_examples() if can_console else [],
@@ -109,23 +117,6 @@ def example_install(key):
         db.session.rollback()
         return _err(exc)
     log_action("studio.example.install", target=key, extra=res)
-    return jsonify({"ok": True, **res})
-
-
-@bp.route("/examples/<key>/remove", methods=["POST"])
-@login_required
-@require_permission(LIBRARY)
-def example_remove(key):
-    from ..services import studio_examples as EX
-    from ..extensions import db
-    if key not in EX.BUNDLE_KEYS:
-        abort(404)
-    try:
-        res = EX.remove(key)
-    except Exception as exc:  # noqa: BLE001
-        db.session.rollback()
-        return _err(exc)
-    log_action("studio.example.remove", target=key, extra=res)
     return jsonify({"ok": True, **res})
 
 
@@ -193,7 +184,9 @@ def store_create():
 def store(slug):
     from ..services import studio_store as SS
     st = _store_or_404(slug)
+    from ..services import studio_examples as EX
     return render_template("studio/store.html", store=st, column_types=SS.COLUMN_TYPES,
+                           template=EX.is_template("store", slug),
                            rows=SS.query(st, limit=SS.MAX_QUERY_LIMIT), count=SS.count(st),
                            limits={"rows": SS.MAX_ROWS, "columns": SS.MAX_COLUMNS})
 
@@ -301,7 +294,10 @@ def store_import(slug):
 def store_delete(slug):
     from ..services import studio_store as SS
     from ..services import studio_apps as SA
+    from ..services import studio_examples as EX
     st = _store_or_404(slug)
+    if EX.is_template("store", slug):
+        return _err("%s is a template (Examples): templates are not deleted" % slug, 409)
     users = SA.used_by("store", slug)
     if users:
         return _err("used by app(s) %s: remove it from them first" % ", ".join(users), 409)
@@ -344,7 +340,9 @@ def connection(slug):
     from ..services import studio_apis as SAPI
     c = _conn_or_404(slug)
     secret, problem = SC.secret_state(slug)
+    from ..services import studio_examples as EX
     return render_template("studio/connection.html", c=c, has_secret=SC.has_secret(slug),
+                           template=EX.is_template("connection", slug),
                            secret_problem=problem, http_auth=SC.HTTP_AUTH, methods=SC.METHODS,
                            api_versions=SAPI.bindable() if c.kind == "http" else [])
 
@@ -424,7 +422,10 @@ def connection_test(slug):
 def connection_delete(slug):
     from ..services import studio_connections as SC
     from ..services import studio_apps as SA
+    from ..services import studio_examples as EX
     c = _conn_or_404(slug)
+    if EX.is_template("connection", slug):
+        return _err("%s is a template (Examples): templates are not deleted" % slug, 409)
     users = SA.used_by("connection", slug)
     if users:
         return _err("used by app(s) %s: remove it from them first" % ", ".join(users), 409)
@@ -682,14 +683,27 @@ def _adom_choices() -> list[tuple[str, str]]:
 @login_required
 @require_permission(LIBRARY)
 def app_create():
+    """New app. Kind "flow" = a form and a diagram; kind "script" = Python
+    code with a form, run in the sandbox (the Script Library editor), whose
+    app is created with it under the same id."""
+    from ..services import script_library as SL
     from ..services import studio_apps as SA
     slug = (request.form.get("slug") or "").strip()
+    kind = request.form.get("kind") or "flow"
     try:
-        SA.create(slug, request.form.get("name") or "", _who())
-    except SA.AppError as exc:
+        if kind == "script":
+            if SA.get(slug) is not None:
+                raise SA.AppError("an app with id %s already exists" % slug)
+            SL.create(slug, request.form.get("name") or "", _who())
+            SA.ensure_script_app(slug, _who())
+        else:
+            SA.create(slug, request.form.get("name") or "", _who())
+    except (SA.AppError, SL.ScriptError) as exc:
         flash(str(exc), "danger")
         return redirect(url_for("studio.index", pane="apps"))
-    log_action("studio.app.create", target=slug)
+    log_action("studio.app.create", target=slug, extra={"kind": kind})
+    if kind == "script":
+        return redirect(url_for("script_library.edit", slug=slug))
     return redirect(url_for("studio.app_edit", slug=slug))
 
 
@@ -702,6 +716,8 @@ def app_edit(slug):
     from ..services import studio_apps as SA
     from ..services import studio_flow as F
     a = _app_or_404(slug)
+    if a.kind == "script":  # its form, code and versions live in the script editor
+        return redirect(url_for("script_library.edit", slug=a.script_slug))
     ch = SA.choices()
     return render_template(
         "studio/app.html", a=a, problems=SA.problems(a), kinds=F.kinds(ch),
@@ -709,7 +725,8 @@ def app_edit(slug):
         action_schema=SA.action_schema(ch), choices=ch, adoms=_adom_choices(),
         groups=UserGroup.query.order_by(UserGroup.name).all(),
         users=User.query.filter_by(is_active=True).order_by(User.username).all(),
-        runs=SA.recent_runs(a, current_user), used_by=SA.used_by("app", slug))
+        runs=SA.recent_runs(a, current_user), used_by=SA.used_by("app", slug),
+        template=SA.is_template(a))
 
 
 @bp.route("/apps/<slug>/settings", methods=["POST"])
@@ -868,11 +885,60 @@ def app_unpublish(slug):
 @login_required
 @require_permission(LIBRARY)
 def app_delete(slug):
+    """Delete for good (studio_apps.remove): never a template, never an app
+    another app runs."""
+    from ..extensions import db
     from ..services import studio_apps as SA
     a = _app_or_404(slug)
-    users = SA.used_by("app", slug)
-    if users:
-        return _err("other app(s) run it: %s" % ", ".join(users), 409)
-    SA.delete(a)
-    log_action("studio.app.delete", target=slug)
-    return jsonify({"ok": True})
+    try:
+        res = SA.remove(a)
+    except SA.AppError as exc:
+        db.session.rollback()
+        return _err(exc, 409)
+    log_action("studio.app.delete", target=slug, extra=res)
+    return jsonify({"ok": True, **res})
+
+
+@bp.route("/apps/<slug>/enable", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def app_enable(slug):
+    """Disable / enable: a disabled app leaves every menu and starts no run
+    (event automations included); nothing is deleted."""
+    from ..services import studio_apps as SA
+    a = _app_or_404(slug)
+    on = bool((request.get_json(silent=True) or {}).get("enabled"))
+    SA.set_enabled(a, on, _who())
+    log_action("studio.app.enable" if on else "studio.app.disable", target=slug)
+    return jsonify({"ok": True, "enabled": a.enabled})
+
+
+@bp.route("/apps/<slug>/reset", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def app_reset(slug):
+    """Delete the app's data from the database: its runs and the rows of the
+    data stores only it uses (studio_apps.reset). Templates too."""
+    from ..extensions import db
+    from ..services import studio_apps as SA
+    a = _app_or_404(slug)
+    try:
+        res = SA.reset(a)
+    except SA.AppError as exc:
+        db.session.rollback()
+        return _err(exc, 409)
+    log_action("studio.app.reset", target=slug, extra=res)
+    return jsonify({"ok": True, **res})
+
+
+@bp.route("/apps/<slug>/data.zip")
+@login_required
+@require_permission(LIBRARY)
+def app_data(slug):
+    """Download everything the app holds: runs and its data stores (CSV)."""
+    from ..services import studio_apps as SA
+    a = _app_or_404(slug)
+    name, data = SA.data_zip(a)
+    log_action("studio.app.data_download", target=slug, extra={"bytes": len(data)})
+    return Response(data, mimetype="application/zip",
+                    headers={"Content-Disposition": 'attachment; filename="%s"' % name})

@@ -133,6 +133,8 @@ def install(pk, by: str, *, allow_downgrade: bool = False) -> dict:
     spec = body.get("app") or {}
     slug = str(spec.get("slug") or "").strip()
     existing = SA.get(slug) if slug else None
+    if existing is not None and existing.kind == "script":
+        raise AppPackageError("%s is a script app here; an app package cannot replace it" % slug)
     if existing is not None and existing.pkg_version and not allow_downgrade and \
             P.version_tuple(pk.version) < P.version_tuple(existing.pkg_version):
         raise AppPackageError("%s %s is installed and %s is older (tick Allow downgrade)"

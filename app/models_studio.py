@@ -228,6 +228,13 @@ class StudioApp(db.Model):
     pkg_version = db.Column(db.String(32), nullable=True)
     pkg_signer = db.Column(db.String(64), nullable=True)
     actions_json = db.Column(db.Text, nullable=False, default="[]")
+    #: "flow" (form + diagram, run here) or "script" (the entry of a Script
+    #: Library script: the code, its form and its versions stay in
+    #: data/scripts/<script_slug>, run by the sandbox runner). 2026-10-23.
+    kind = db.Column(db.String(16), nullable=False, default="flow", server_default="flow")
+    script_slug = db.Column(db.String(48), nullable=True)
+    #: False = disabled: out of every menu and no run starts; nothing is lost.
+    enabled = db.Column(db.Boolean, nullable=False, default=True, server_default=db.true())
     #: The PUBLISHED snapshot ({version, fields, graph, actions, at, by, note})
     #: operators run. Editing the draft never changes it.
     published_json = db.Column(db.Text, nullable=False, default="{}")

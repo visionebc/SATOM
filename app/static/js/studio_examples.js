@@ -1,8 +1,8 @@
-/* Python Studio > Examples pane (studio/index.html): install or remove an
- * example bundle. Server side: app/views/studio.py (example_install,
- * example_remove) and app/services/studio_examples.py, which never
- * overwrites an object that already exists and keeps any object something
- * else still uses.
+/* Plugin Studio > Examples pane (studio/index.html): install an example
+ * bundle. Server side: app/views/studio.py (example_install) and
+ * app/services/studio_examples.py, which never overwrites an object that
+ * already exists. Installed examples are templates: there is no Remove
+ * (operator, 2026-10-23); an app is disabled or reset from the Apps pane.
  */
 (function () {
   'use strict';
@@ -32,20 +32,17 @@
   function done(d, verb) {
     var parts = [];
     if (d.created && d.created.length) parts.push('created ' + d.created.join(', '));
-    if (d.removed && d.removed.length) parts.push('removed ' + d.removed.join(', '));
     if (d.kept && d.kept.length) parts.push('kept ' + d.kept.join(', '));
     msg(verb + ': ' + (parts.join('; ') || 'nothing to do') + '.');
     window.setTimeout(function () { window.location = CFG.back; }, 1200);
   }
   document.addEventListener('click', function (ev) {
-    var b = ev.target.closest('[data-ex-install],[data-ex-remove]');
+    var b = ev.target.closest('[data-ex-install]');
     if (!b) return;
-    var install = b.hasAttribute('data-ex-install');
-    var key = b.getAttribute(install ? 'data-ex-install' : 'data-ex-remove');
-    if (!install && !window.confirm('Remove the objects of this example? Rows in its data stores are deleted with them; objects something else uses are kept.')) return;
+    var key = b.getAttribute('data-ex-install');
     b.disabled = true;
-    post((install ? CFG.install : CFG.remove).replace('KEY', encodeURIComponent(key)))
-      .then(function (d) { done(d, install ? 'Installed' : 'Removed'); })
+    post(CFG.install.replace('KEY', encodeURIComponent(key)))
+      .then(function (d) { done(d, 'Installed'); })
       .catch(function (e) { b.disabled = false; msg(e.message, true); });
   });
 })();

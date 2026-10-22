@@ -41,6 +41,10 @@ def _usable_or_404(slug) -> StudioApp:
     a = SA.get(slug)
     if a is None or not SA.can_use(current_user, a):
         abort(404)
+    if a.kind == "script":  # a script app runs from the script's own page
+        abort(404)
+    if not a.enabled and not SA.is_author(current_user):
+        abort(404)
     if not SA.is_author(current_user) and (a.status != "published" or not a.published
                                            or not SA.shown_in(a, _product_key())):
         abort(404)

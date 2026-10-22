@@ -45,22 +45,28 @@ def _err(exc: Exception, code: int = 400):
 @login_required
 @require_permission(PERM)
 def index():
-    """The list is Python Studio's Scripts pane."""
-    return redirect(url_for("studio.index", pane="scripts"))
+    """Every script is an app since 2026-10-23: the list is Plugin Studio's
+    Apps pane."""
+    return redirect(url_for("studio.index", pane="apps"))
 
 
 @bp.route("/create", methods=["POST"])
 @login_required
 @require_permission(PERM)
 def create():
+    """Kept for old forms and links: a script is created with its app."""
+    from ..services import studio_apps as SA
     slug = (request.form.get("slug") or "").strip()
     name = (request.form.get("name") or "").strip()
     try:
+        if SA.get(slug) is not None:
+            raise SL.ScriptError("an app with the id %r already exists" % slug)
         SL.create(slug, name, _who())
+        SA.ensure_script_app(slug, _who())
     except SL.ScriptError as exc:
         from flask import flash
         flash(str(exc), "danger")
-        return redirect(url_for("studio.index", pane="scripts"))
+        return redirect(url_for("studio.index", pane="apps"))
     log_action("script_library.create", target=slug)
     return redirect(url_for("script_library.edit", slug=slug))
 
@@ -143,9 +149,10 @@ def edit(slug):
     if script is None:
         abort(404)
     from ..services import sandbox, plugin_sandbox, py_examples
+    from ..services import studio_examples as EX
     console = current_user.can("studio.python_console")
     return render_template("script_library/edit.html", script=script,
-                           console=console,
+                           console=console, template=EX.is_template("script", slug),
                            datasets=plugin_sandbox.dataset_catalog() if console else [],
                            examples=py_examples.all_examples() if console else [],
                            vault_ok=SV.available(),
@@ -381,17 +388,26 @@ def credential(slug, name):
 @login_required
 @require_permission(PERM)
 def delete(slug):
-    script = SL.get(slug) if SL.exists(slug) else None
-    names = [c["name"] for c in (script or {}).get("credentials") or []]
+    """A script is deleted WITH its app (studio_apps.remove): templates and
+    scripts another app runs in a step are refused."""
+    from ..extensions import db
+    from ..services import studio_apps as SA
     try:
-        SL.delete(slug)
+        SL.validate_slug(slug)
+        if not SL.exists(slug):
+            raise SL.ScriptError("no script %r" % slug)
     except SL.ScriptError as exc:
         return _err(exc, 404)
-    SV.forget(slug, names)
-    log_action("script_library.delete", target=slug, extra={"credentials_forgotten": names})
+    try:
+        res = SA.remove(SA.ensure_script_app(slug, _who()))
+    except SA.AppError as exc:
+        db.session.rollback()
+        return _err(exc, 409)
+    log_action("script_library.delete", target=slug,
+               extra={"credentials_forgotten": res.get("credentials") or []})
     if request.is_json:
         return jsonify({"ok": True})
-    return redirect(url_for("studio.index", pane="scripts"))
+    return redirect(url_for("studio.index", pane="apps"))
 
 
 @bp.route("/runs/<rid>")

@@ -156,7 +156,8 @@
         <button type="button" class="btn btn-success btn-sm" id="ap-publish"><i class="bi bi-rocket-takeoff me-1"></i>{{ _('Publish') }}</button>
         {% if a.status == 'published' %}<button type="button" class="btn btn-outline-warning btn-sm" id="ap-unpublish">{{ _('Unpublish (remove from the menu)') }}</button>{% endif %}
         <a class="btn btn-outline-secondary btn-sm ms-auto" href="{{ url_for('studio.app_export', slug=a.slug) }}" title="{{ _('The app with its data stores, connections (without secrets) and API versions, as a plugin package') }}"><i class="bi bi-box-arrow-down me-1"></i>{{ _('Export package') }}</a>
-        <button type="button" class="btn btn-outline-danger btn-sm" id="ap-delete"><i class="bi bi-trash me-1"></i>{{ _('Delete app') }}</button>
+        {% if template %}<span class="fw-badge fw-badge-info" title="{{ _('Installed from Examples: disable or reset it in Plugin Studio > Apps; it cannot be deleted') }}">{{ _('Template') }}</span>
+        {% else %}<button type="button" class="btn btn-outline-danger btn-sm" id="ap-delete"><i class="bi bi-trash me-1"></i>{{ _('Delete app') }}</button>{% endif %}
       </div>
       {% if used_by %}<div class="form-text">{{ _('Run by other apps:') }} {{ used_by|join(', ') }}</div>{% endif %}
     </div></div>

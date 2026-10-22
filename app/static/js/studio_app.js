@@ -199,8 +199,9 @@
     if (!window.confirm('Remove the app from the menu? Its versions are kept.')) return;
     post(U.unpublish).then(function () { window.location.reload(); }).catch(function (e) { state(e.message, true); });
   });
-  $('ap-delete').addEventListener('click', function () {
-    if (!window.confirm('Delete the app ' + CFG.slug + ', its versions and its runs?')) return;
+  // Absent for a template (Examples): templates are never deleted.
+  if ($('ap-delete')) $('ap-delete').addEventListener('click', function () {
+    if (!window.confirm('Delete the app ' + CFG.slug + ' for good, with its versions, its runs and the data stores only it uses?')) return;
     post(U['delete']).then(function () { window.location = U.back; }).catch(function (e) { state(e.message, true); });
   });
 

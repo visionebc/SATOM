@@ -94,7 +94,8 @@
   $('cn-secret-clear').addEventListener('click', function () {
     if (window.confirm('Clear the stored secret?')) setSecret('');
   });
-  $('cn-delete').addEventListener('click', function () {
+  // Absent for a template (Examples): templates are never deleted.
+  if ($('cn-delete')) $('cn-delete').addEventListener('click', function () {
     if (!window.confirm('Delete the connection ' + CFG.slug + ' and its secret?')) return;
     post(U['delete']).then(function () { window.location = U.back; }).catch(function (e) { msg(e.message, true); });
   });

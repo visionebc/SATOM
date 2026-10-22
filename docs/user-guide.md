@@ -292,16 +292,20 @@ Automation keeps **Automations**, the work operators schedule (§15).
 Administrator; **Certificate Manager** is under Automation (Certificate Manager in every
 ADOM: live in Global, FortiWeb and FortiADC, drawn disabled with the reason in
 FortiGate, FortiAnalyzer and FortiAuthenticator). **Administrator** is split
-into sections — Access, Change Management, Devices, Objects, Studio and System
-— and both the sections and their entries are alphabetical in the console's
-language; a section with no entry you may open is not drawn. **Studio** holds
-**Plugin Studio** (the Script Library and the Python console in one page, §23.3)
-in every ADOM, and also Report Studio and Lua Studio in Global. The Global ADOM keeps its **Global** block for the fleet pages
+into sections — Access, Change Management, Devices, Objects and System — and
+both the sections and their entries are alphabetical in the console's
+language; a section with no entry you may open is not drawn. **Plugin Studio**
+(apps and the Python console in one page, §23) is an entry of its own on the
+**first level** of the sidebar, just above Administrator, in every ADOM;
+**Report Studio** and **Lua Studio** are in **Plugins** (Operations → Plugins
+in a device ADOM, Automation → Plugins — or Global → Plugins without
+Automation — in Global). Until 2026-10-23 the three sat in an Administrator
+section called *Studio*, which no longer exists. The Global ADOM keeps its **Global** block for the fleet pages
 and has no Operations group. A profile that cannot see one of those groups
 keeps the entry where it was before — Appliances under
 Operations, the API menu (console, Schema builds, Build compatibility) as a
 group of its own in a device ADOM and inside the Global block in Global
-(`registry.view` without `config_write`), Studio as a group of its own, and **Process** in a group of
+(`registry.view` without `config_write`), and **Process** in a group of
 its own — so the reorder takes no page away from anyone. Each entry keeps its
 own permission; moving it changed where it is drawn, not who sees it.
 
@@ -4089,7 +4093,7 @@ others, and without being given user administration.
 
 | Tool | Page | What it authors |
 |---|---|---|
-| **Plugin Studio** | `/studio` | One page, seven panes: **Scripts** (the Script Library: Python scripts with a form that operators fill in and run, §23.4), **Console** (throwaway Python over the curated fleet datasets, §23.3), **Data stores** (§23.5), **Connections** and **API Catalog** (§23.6), **Apps** (§23.7) and **Examples** (§23.8); what Studio code cannot do to SATOM is §23.9 |
+| **Plugin Studio** | `/studio` | One page, six panes: **Apps** (every plugin: *flow* apps, §23.7, and *script* apps — Python scripts with a form that operators fill in and run, §23.4), **Console** (throwaway Python over the curated fleet datasets, §23.3), **Data stores** (§23.5), **Connections** and **API Catalog** (§23.6) and **Examples** (§23.8); what Studio code cannot do to SATOM is §23.9 |
 | **Report Studio** | `/plugins` | Server-rendered custom views/widgets, published as **Custom Views** |
 | **Lua Studio** | `/lua` | Device scripts for FortiWeb *Web Scripting* and FortiADC *Scripting* |
 
@@ -4099,10 +4103,24 @@ others, and without being given user administration.
 > (`/studio`, `/plugins`) and the permission keys (`studio.plugin_studio` is
 > still the custom-view studio, shown as *Report Studio*) are the same.
 
+> **Every plugin is an app (2026-10-23).** What you create in Plugin Studio
+> is always an **app**, even when it is only a script. **New app** asks for
+> the type: **Flow** (a form and a diagram of steps, §23.7) or **Script**
+> (Python code with a form, run in the sandbox, §23.4). A script app is the
+> entry of its script: the code, the form, the versions and the audience are
+> edited in the script editor and stay on disk for the sandbox runner, which
+> never holds a database connection. The *Scripts* pane is gone — scripts are
+> listed in **Apps** with the type *Script*, and a script made before this
+> change gets its app the first time an author opens Plugin Studio (same id).
+> The menu lists flow and script apps alike under **Plugins**; a script app
+> opens its run page (Global ADOM only, who sees it follows its audience).
+> The menu entry itself moved too: Plugin Studio is now on the **first level**
+> of the sidebar and the *Studio* section is gone (Report Studio and Lua
+> Studio are in Plugins).
+
 **Plugin Studio** (since the release after 3.3.7) replaces the two menu entries
 *Python Console* and *Script Library*. On the left an **Explorer** switches
-between the **Scripts** pane and the **Console** pane and opens any script in
-its editor; the editor (`/studio/scripts/<id>`) has a **Console** tab too, to
+between the panes and opens any app in its editor; the editor (`/studio/scripts/<id>`) has a **Console** tab too, to
 try code against the fleet data without saving it in the script. Uniting the
 pages united neither the keys nor the sandboxes: the page opens for a holder of
 `studio.script_library` **or** `studio.python_console`, and each pane, the
@@ -4229,8 +4247,8 @@ in that order. Targets are **FortiWeb "Web Scripting"** and **FortiADC
 
 ### 23.3 Python Console
 
-The **Console** pane of Plugin Studio (**Administrator → Studio → Python
-Studio → Console**), also a tab in every script's editor. Admin-authored Python, run against the **same curated dataset bundle** the
+The **Console** pane of Plugin Studio (**Plugin Studio → Console**, first
+level of the sidebar), also a tab in every script's editor. Admin-authored Python, run against the **same curated dataset bundle** the
 plugins use, in a bubblewrap jail with no environment, no network namespace and
 none of the application tree mounted — so a script cannot open the `.env`, the
 database or the keyring, and cannot open a socket. Wall-clock, CPU, memory and
@@ -4250,9 +4268,9 @@ is busy).
 ### 23.4 Script Library
 
 Python scripts you keep, with a **form** an operator fills in. You write and
-test them here (**Administrator → Studio → Plugin Studio → Scripts**); you
-publish a version; operators run that version. Gated by
-`studio.script_library`.
+test them here (**Plugin Studio → Apps → New app → Script**; every script is
+a *script app* since 2026-10-23); you publish a version; operators run that
+version. Gated by `studio.script_library`.
 
 **A script is a small project.** `main.py` is what runs; other `.py` files are
 modules it can import (`from lib.devices import …`), and text files (`.json`,
@@ -4618,7 +4636,26 @@ URL. An API with connections pinned to it cannot be deleted.
 **Plugin Studio → Apps** builds a small application — a **form**, a
 **diagram** of steps and an **output** with **actions** — and publishes it as
 its own entry in **Operations → Plugins** (in the Global ADOM: **Global →
-Plugins**).
+Plugins**). This section is about *flow* apps; a *script* app is a script
+(§23.4) listed here with the others.
+
+**The Apps list and its Actions** (2026-10-23). One table holds every app,
+flow and script, with its **Type**, its **Status** (*enabled* / *disabled*)
+and its published version. The **Actions** column:
+
+| Action | What it does |
+|---|---|
+| **Edit** | Opens the editor (a script app: the script editor) |
+| **Disable / Enable** | A disabled app leaves every menu and starts no run — an operator run, an event automation, *Run another app*, a *Run a script* step or a saved script schedule (the schedule is *skipped*, not paused, so enabling the app resumes it). Nothing is deleted; an author can still test the draft. |
+| **Download data** | A zip: `app.json`, the runs (`runs.json`, or one JSON per run of a script) and a CSV per data store the app uses. |
+| **Export app package** / **Download the code** | The app as a `.satomplugin` package (§23.7 *packages*); for a script app, the code as a zip. |
+| **Reset** | Deletes the app's data from the database: its run history and every row of the data stores **only it** uses. Stores another app uses keep their rows (the answer lists them). The design, versions, connections and settings stay. Refused while a run of the app is in progress. You type the app id to confirm. |
+| **Delete** | Deletes the app for good: its runs and the data stores only it uses (a script app: the script, its versions, saved runs, run records and vaulted credentials). Connections and APIs are never deleted here. Refused for a **template** and for an app another app runs. You type the app id to confirm. |
+
+**Templates.** What *Examples* installs (§23.8) is a **template**: it shows
+the *Template* badge, can be edited, disabled, reset and downloaded, and is
+**never deleted** — no Delete button, and every delete route (app, script,
+data store, connection) refuses it with the reason.
 
 The editor has six tabs:
 
@@ -4766,9 +4803,9 @@ app's access list.
 
 **Plugin Studio → Examples** installs working examples of every Studio piece
 with one click. Ids start with `ex-`; installing creates only what is missing
-and never overwrites an object you edited; **Remove** deletes the objects of
-that example but keeps any of them something else still uses (another
-example's app, or your own work built on it). Connections are created
+and never overwrites an object you edited. What an example installs is a
+**template** (since 2026-10-23): it can be edited, disabled and reset from the
+Apps list, never deleted — the *Remove* button is gone. Connections are created
 **without a secret** and pointed at a placeholder host
 (`fortigate.example.com`, `netbox.example.com`), so nothing reaches a device
 until you open the connection, set the address and paste the token.

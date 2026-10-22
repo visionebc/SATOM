@@ -5,9 +5,10 @@ data stores, Script Library scripts and apps -- written against the real
 answers of the systems they talk to (FortiOS 8.0 REST API, NetBox 4 REST
 API). Installing creates what is missing and leaves alone what exists: an
 object with the same id is never overwritten, so re-installing after editing
-an example keeps the edits. Removing deletes only the objects of that bundle,
-and keeps any of them that something else still uses (another example's app,
-or real work built on top of it).
+an example keeps the edits. The installed objects are TEMPLATES
+(:func:`is_template`): since 2026-10-23 they are never deleted -- the bundle
+has no Remove any more and every Studio delete refuses them; an app can be
+disabled or reset instead (operator request).
 
 Every id starts with ``ex-``, so an example can never collide with real work,
 and every connection is created WITHOUT a secret and pointed at a placeholder
@@ -681,40 +682,12 @@ def install(key: str, by: str) -> dict:
     return {"created": created, "kept": kept}
 
 
-def _users(kind: str, slug: str) -> set:
-    from . import studio_apps as SA
-    from . import studio_connections as SC
-    users = set(SA.used_by(kind, slug))
-    if kind == "connection":
-        users |= set(SC.used_by_scripts(slug))
-    return users
+#: (kind, slug) of every object an example installs. These are the
+#: TEMPLATES: they can be edited, disabled, reset and downloaded, never
+#: deleted (operator, 2026-10-23) -- the Examples pane lost its Remove button
+#: and every delete route asks is_template first.
+TEMPLATE_OBJECTS = frozenset((k, s) for b in BUNDLES for k, s, _n in objects(b))
 
 
-def remove(key: str) -> dict:
-    """Delete the objects of bundle *key*, apps first. An object something
-    else still uses (an app or script outside this bundle -- another
-    example, or real work built on it) is KEPT and listed, never deleted from
-    under its user."""
-    from . import script_library as SL
-    from . import studio_apps as SA
-    from . import studio_connections as SC
-    from . import studio_store as SS
-    b = bundle(key)
-    removed, kept = [], []
-    for kind, slug, _n in reversed(objects(b)):
-        if not _exists(kind, slug):
-            continue
-        users = _users(kind, slug)
-        if users:
-            kept.append("%s (used by %s)" % (slug, ", ".join(sorted(users))))
-            continue
-        if kind == "app":
-            SA.delete(SA.get(slug))
-        elif kind == "script":
-            SL.delete(slug)
-        elif kind == "store":
-            SS.delete_store(SS.get(slug))
-        else:
-            SC.delete(SC.get(slug))
-        removed.append(slug)
-    return {"removed": removed, "kept": kept}
+def is_template(kind: str, slug: str) -> bool:
+    return (kind, slug) in TEMPLATE_OBJECTS

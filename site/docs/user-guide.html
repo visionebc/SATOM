@@ -409,16 +409,20 @@ Automation keeps <strong>Automations</strong>, the work operators schedule (§15
 Administrator; <strong>Certificate Manager</strong> is under Automation (Certificate Manager in every
 ADOM: live in Global, FortiWeb and FortiADC, drawn disabled with the reason in
 FortiGate, FortiAnalyzer and FortiAuthenticator). <strong>Administrator</strong> is split
-into sections — Access, Change Management, Devices, Objects, Studio and System
-— and both the sections and their entries are alphabetical in the console's
-language; a section with no entry you may open is not drawn. <strong>Studio</strong> holds
-<strong>Plugin Studio</strong> (the Script Library and the Python console in one page, §23.3)
-in every ADOM, and also Report Studio and Lua Studio in Global. The Global ADOM keeps its <strong>Global</strong> block for the fleet pages
+into sections — Access, Change Management, Devices, Objects and System — and
+both the sections and their entries are alphabetical in the console's
+language; a section with no entry you may open is not drawn. <strong>Plugin Studio</strong>
+(apps and the Python console in one page, §23) is an entry of its own on the
+<strong>first level</strong> of the sidebar, just above Administrator, in every ADOM;
+<strong>Report Studio</strong> and <strong>Lua Studio</strong> are in <strong>Plugins</strong> (Operations → Plugins
+in a device ADOM, Automation → Plugins — or Global → Plugins without
+Automation — in Global). Until 2026-10-23 the three sat in an Administrator
+section called <em>Studio</em>, which no longer exists. The Global ADOM keeps its <strong>Global</strong> block for the fleet pages
 and has no Operations group. A profile that cannot see one of those groups
 keeps the entry where it was before — Appliances under
 Operations, the API menu (console, Schema builds, Build compatibility) as a
 group of its own in a device ADOM and inside the Global block in Global
-(<code>registry.view</code> without <code>config_write</code>), Studio as a group of its own, and <strong>Process</strong> in a group of
+(<code>registry.view</code> without <code>config_write</code>), and <strong>Process</strong> in a group of
 its own — so the reorder takes no page away from anyone. Each entry keeps its
 own permission; moving it changed where it is drawn, not who sees it.</p>
 <p><strong>The Global ADOM has no device menu.</strong> It is the fleet-wide console. Its
@@ -4674,7 +4678,7 @@ others, and without being given user administration.</p>
 <tr>
 <td><strong>Plugin Studio</strong></td>
 <td><code>/studio</code></td>
-<td>One page, seven panes: <strong>Scripts</strong> (the Script Library: Python scripts with a form that operators fill in and run, §23.4), <strong>Console</strong> (throwaway Python over the curated fleet datasets, §23.3), <strong>Data stores</strong> (§23.5), <strong>Connections</strong> and <strong>API Catalog</strong> (§23.6), <strong>Apps</strong> (§23.7) and <strong>Examples</strong> (§23.8); what Studio code cannot do to SATOM is §23.9</td>
+<td>One page, six panes: <strong>Apps</strong> (every plugin: <em>flow</em> apps, §23.7, and <em>script</em> apps — Python scripts with a form that operators fill in and run, §23.4), <strong>Console</strong> (throwaway Python over the curated fleet datasets, §23.3), <strong>Data stores</strong> (§23.5), <strong>Connections</strong> and <strong>API Catalog</strong> (§23.6) and <strong>Examples</strong> (§23.8); what Studio code cannot do to SATOM is §23.9</td>
 </tr>
 <tr>
 <td><strong>Report Studio</strong></td>
@@ -4694,11 +4698,24 @@ accepts Python code only — and the custom-view studio that carried that
 name is now <strong>Report Studio</strong>. Only the labels changed: the pages
 (<code>/studio</code>, <code>/plugins</code>) and the permission keys (<code>studio.plugin_studio</code> is
 still the custom-view studio, shown as <em>Report Studio</em>) are the same.</p>
+<p><strong>Every plugin is an app (2026-10-23).</strong> What you create in Plugin Studio
+is always an <strong>app</strong>, even when it is only a script. <strong>New app</strong> asks for
+the type: <strong>Flow</strong> (a form and a diagram of steps, §23.7) or <strong>Script</strong>
+(Python code with a form, run in the sandbox, §23.4). A script app is the
+entry of its script: the code, the form, the versions and the audience are
+edited in the script editor and stay on disk for the sandbox runner, which
+never holds a database connection. The <em>Scripts</em> pane is gone — scripts are
+listed in <strong>Apps</strong> with the type <em>Script</em>, and a script made before this
+change gets its app the first time an author opens Plugin Studio (same id).
+The menu lists flow and script apps alike under <strong>Plugins</strong>; a script app
+opens its run page (Global ADOM only, who sees it follows its audience).
+The menu entry itself moved too: Plugin Studio is now on the <strong>first level</strong>
+of the sidebar and the <em>Studio</em> section is gone (Report Studio and Lua
+Studio are in Plugins).</p>
 </blockquote>
 <p><strong>Plugin Studio</strong> (since the release after 3.3.7) replaces the two menu entries
 <em>Python Console</em> and <em>Script Library</em>. On the left an <strong>Explorer</strong> switches
-between the <strong>Scripts</strong> pane and the <strong>Console</strong> pane and opens any script in
-its editor; the editor (<code>/studio/scripts/&lt;id&gt;</code>) has a <strong>Console</strong> tab too, to
+between the panes and opens any app in its editor; the editor (<code>/studio/scripts/&lt;id&gt;</code>) has a <strong>Console</strong> tab too, to
 try code against the fleet data without saving it in the script. Uniting the
 pages united neither the keys nor the sandboxes: the page opens for a holder of
 <code>studio.script_library</code> <strong>or</strong> <code>studio.python_console</code>, and each pane, the
@@ -4817,8 +4834,8 @@ in that order. Targets are <strong>FortiWeb "Web Scripting"</strong> and <strong
   preview and the real push asks twice.</li>
 </ul>
 <h3 id="233-python-console">23.3 Python Console</h3>
-<p>The <strong>Console</strong> pane of Plugin Studio (<strong>Administrator → Studio → Python
-Studio → Console</strong>), also a tab in every script's editor. Admin-authored Python, run against the <strong>same curated dataset bundle</strong> the
+<p>The <strong>Console</strong> pane of Plugin Studio (<strong>Plugin Studio → Console</strong>, first
+level of the sidebar), also a tab in every script's editor. Admin-authored Python, run against the <strong>same curated dataset bundle</strong> the
 plugins use, in a bubblewrap jail with no environment, no network namespace and
 none of the application tree mounted — so a script cannot open the <code>.env</code>, the
 database or the keyring, and cannot open a socket. Wall-clock, CPU, memory and
@@ -4835,9 +4852,9 @@ a time per node</strong> (a second one waits a few seconds, then is told the con
 is busy).</p>
 <h3 id="234-script-library">23.4 Script Library</h3>
 <p>Python scripts you keep, with a <strong>form</strong> an operator fills in. You write and
-test them here (<strong>Administrator → Studio → Plugin Studio → Scripts</strong>); you
-publish a version; operators run that version. Gated by
-<code>studio.script_library</code>.</p>
+test them here (<strong>Plugin Studio → Apps → New app → Script</strong>; every script is
+a <em>script app</em> since 2026-10-23); you publish a version; operators run that
+version. Gated by <code>studio.script_library</code>.</p>
 <p><strong>A script is a small project.</strong> <code>main.py</code> is what runs; other <code>.py</code> files are
 modules it can import (<code>from lib.devices import …</code>), and text files (<code>.json</code>,
 <code>.csv</code>, <code>.yaml</code>, …) are data it can open by relative path. Up to 64 files of
@@ -5183,7 +5200,49 @@ URL. An API with connections pinned to it cannot be deleted.</p>
 <p><strong>Plugin Studio → Apps</strong> builds a small application — a <strong>form</strong>, a
 <strong>diagram</strong> of steps and an <strong>output</strong> with <strong>actions</strong> — and publishes it as
 its own entry in <strong>Operations → Plugins</strong> (in the Global ADOM: <strong>Global →
-Plugins</strong>).</p>
+Plugins</strong>). This section is about <em>flow</em> apps; a <em>script</em> app is a script
+(§23.4) listed here with the others.</p>
+<p><strong>The Apps list and its Actions</strong> (2026-10-23). One table holds every app,
+flow and script, with its <strong>Type</strong>, its <strong>Status</strong> (<em>enabled</em> / <em>disabled</em>)
+and its published version. The <strong>Actions</strong> column:</p>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Edit</strong></td>
+<td>Opens the editor (a script app: the script editor)</td>
+</tr>
+<tr>
+<td><strong>Disable / Enable</strong></td>
+<td>A disabled app leaves every menu and starts no run — an operator run, an event automation, <em>Run another app</em>, a <em>Run a script</em> step or a saved script schedule (the schedule is <em>skipped</em>, not paused, so enabling the app resumes it). Nothing is deleted; an author can still test the draft.</td>
+</tr>
+<tr>
+<td><strong>Download data</strong></td>
+<td>A zip: <code>app.json</code>, the runs (<code>runs.json</code>, or one JSON per run of a script) and a CSV per data store the app uses.</td>
+</tr>
+<tr>
+<td><strong>Export app package</strong> / <strong>Download the code</strong></td>
+<td>The app as a <code>.satomplugin</code> package (§23.7 <em>packages</em>); for a script app, the code as a zip.</td>
+</tr>
+<tr>
+<td><strong>Reset</strong></td>
+<td>Deletes the app's data from the database: its run history and every row of the data stores <strong>only it</strong> uses. Stores another app uses keep their rows (the answer lists them). The design, versions, connections and settings stay. Refused while a run of the app is in progress. You type the app id to confirm.</td>
+</tr>
+<tr>
+<td><strong>Delete</strong></td>
+<td>Deletes the app for good: its runs and the data stores only it uses (a script app: the script, its versions, saved runs, run records and vaulted credentials). Connections and APIs are never deleted here. Refused for a <strong>template</strong> and for an app another app runs. You type the app id to confirm.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Templates.</strong> What <em>Examples</em> installs (§23.8) is a <strong>template</strong>: it shows
+the <em>Template</em> badge, can be edited, disabled, reset and downloaded, and is
+<strong>never deleted</strong> — no Delete button, and every delete route (app, script,
+data store, connection) refuses it with the reason.</p>
 <p>The editor has six tabs:</p>
 <ul>
 <li><strong>Settings</strong> — name and icon of the menu entry, description, <strong>where</strong> it
@@ -5360,9 +5419,9 @@ app's access list.</p>
 <h3 id="238-examples">23.8 Examples</h3>
 <p><strong>Plugin Studio → Examples</strong> installs working examples of every Studio piece
 with one click. Ids start with <code>ex-</code>; installing creates only what is missing
-and never overwrites an object you edited; <strong>Remove</strong> deletes the objects of
-that example but keeps any of them something else still uses (another
-example's app, or your own work built on it). Connections are created
+and never overwrites an object you edited. What an example installs is a
+<strong>template</strong> (since 2026-10-23): it can be edited, disabled and reset from the
+Apps list, never deleted — the <em>Remove</em> button is gone. Connections are created
 <strong>without a secret</strong> and pointed at a placeholder host
 (<code>fortigate.example.com</code>, <code>netbox.example.com</code>), so nothing reaches a device
 until you open the connection, set the address and paste the token.</p>

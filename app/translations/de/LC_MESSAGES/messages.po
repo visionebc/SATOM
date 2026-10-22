@@ -26944,3 +26944,70 @@ msgstr "Ein App-Paket: die App, ihre Data Stores, ihre Verbindungen (ohne Geheim
 
 msgid "Import app package"
 msgstr "App-Paket importieren"
+
+# Every plugin is an app; app actions; templates (2026-10-23)
+msgid "Build apps for operators -- a diagram of steps or a Python script, each with its form -- and try code against the fleet data in a sandboxed console."
+msgstr "Erstellen Sie Apps für Operatoren -- ein Schrittdiagramm oder ein Python-Skript, jeweils mit eigenem Formular -- und testen Sie Code gegen die Flottendaten in einer isolierten Konsole."
+
+msgid "Disable: out of every menu, no run starts; nothing is deleted"
+msgstr "Deaktivieren: aus allen Menüs entfernt, kein Lauf startet; nichts wird gelöscht"
+
+msgid "Download data: runs and data stores (zip)"
+msgstr "Daten herunterladen: Läufe und Data Stores (ZIP)"
+
+msgid "Download the code"
+msgstr "Code herunterladen"
+
+msgid "Export app package"
+msgstr "App-Paket exportieren"
+
+msgid "Flow app: a form, a diagram of steps (data stores, connections, scripts, decisions) and an output with actions, for the ADOMs and the groups or people you pick."
+msgstr "Flow-App: ein Formular, ein Schrittdiagramm (Data Stores, Verbindungen, Skripte, Entscheidungen) und eine Ausgabe mit Aktionen, für die ADOMs und die Gruppen oder Personen Ihrer Wahl."
+
+msgid "Installed from Examples: disable or reset it in Plugin Studio > Apps; it cannot be deleted"
+msgstr "Aus Examples installiert: in Plugin Studio > Apps deaktivieren oder zurücksetzen; sie kann nicht gelöscht werden"
+
+msgid "Installed from Examples: it cannot be deleted"
+msgstr "Aus Examples installiert: kann nicht gelöscht werden"
+
+msgid "No apps yet. Create one with New app."
+msgstr "Noch keine Apps. Erstellen Sie eine mit New app."
+
+msgid "Open an app"
+msgstr "Eine App öffnen"
+
+msgid "Operators run the published version until you publish another one. Published apps appear under Plugins."
+msgstr "Operatoren führen die veröffentlichte Version aus, bis Sie eine neue veröffentlichen. Veröffentlichte Apps erscheinen unter Plugins."
+
+msgid "Python code with a form, run in the sandbox"
+msgstr "Python-Code mit Formular, in der Sandbox ausgeführt"
+
+msgid "Recent script runs"
+msgstr "Letzte Skriptläufe"
+
+msgid "Reset: delete its data from the database (runs and the rows of the data stores only it uses)"
+msgstr "Zurücksetzen: löscht ihre Daten aus der Datenbank (Läufe und die Zeilen der Data Stores, die nur sie nutzt)"
+
+msgid "Script app: Python code with a form, run in a bubblewrap jail by a separate runner that has no access to the SATOM database or its keys. Global ADOM; who runs it follows its audience."
+msgstr "Skript-App: Python-Code mit Formular, in einem bubblewrap-Käfig von einem separaten Runner ausgeführt, der keinen Zugriff auf die SATOM-Datenbank oder ihre Schlüssel hat. Global-ADOM; wer sie ausführt, folgt ihrer Zielgruppe."
+
+msgid "Search apps…"
+msgstr "Apps suchen…"
+
+msgid "Template from Examples: it can be disabled or reset in Plugin Studio > Apps, not deleted."
+msgstr "Vorlage aus Examples: kann in Plugin Studio > Apps deaktiviert oder zurückgesetzt, aber nicht gelöscht werden."
+
+msgid "Template from Examples: it is not deleted."
+msgstr "Vorlage aus Examples: wird nicht gelöscht."
+
+msgid "Templates come from Examples: you can edit, disable, reset and download them, but not delete them."
+msgstr "Vorlagen stammen aus Examples: Sie können sie bearbeiten, deaktivieren, zurücksetzen und herunterladen, aber nicht löschen."
+
+msgid "What an example installs is a template: it can be edited, disabled and reset, never deleted."
+msgstr "Was ein Beispiel installiert, ist eine Vorlage: Sie kann bearbeitet, deaktiviert und zurückgesetzt, nie gelöscht werden."
+
+msgid "a form and a diagram of steps, built with the mouse"
+msgstr "ein Formular und ein Schrittdiagramm, mit der Maus gebaut"
+
+msgid "script missing"
+msgstr "Skript fehlt"

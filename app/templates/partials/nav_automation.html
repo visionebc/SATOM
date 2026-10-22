@@ -111,13 +111,14 @@
     {% else %}{{ nav_off('bi-calendar2-check', _('Automations'), _m_au.reason) }}{% endif %}
     {% endif %}
     {% endif %}
-    {# Plugins (operator, 2026-10-22; the "Scripts" entry until then): the
-       published Plugin Studio scripts this user may run, one entry each
-       (scripts_menu -> script_schedules.visible_scripts, the same rule as the
-       page), under "All plugins" (the page). Scripts are global, not per
-       device: Global ADOM only. In Global the published apps join this
-       subgroup and partials/nav_global_apps.html steps aside, so the ADOM has
-       ONE Plugins toggle (global_plugins_in_automation). #}
+    {# Plugins (operator, 2026-10-22; the "Scripts" entry until then): "All
+       plugins" (the page), Report Studio and Lua Studio (2026-10-23, out of
+       the removed Studio group) and one entry per enabled, published app this
+       user may open -- flow apps and script apps alike since every plugin is
+       an app (studio_apps_menu -> services.studio_apps.menu). Global ADOM
+       only. In Global the apps join this subgroup and
+       partials/nav_global_apps.html steps aside, so the ADOM has ONE Plugins
+       toggle (global_plugins_in_automation). #}
     {% if global_plugins_in_automation(product.key) %}
     {% set _apps = studio_apps_menu('global') %}
     <div class="fw-nav-subgroup{{ ' open' if request.blueprint in ['scripts', 'apps'] }}" data-nav-subgroup="Plugins">
@@ -125,10 +126,7 @@
       <div class="fw-nav-subgroup-body">
         <a class="fw-nav-item {{ 'active' if request.endpoint == 'scripts.index' else '' }}" href="{{ url_for('scripts.index', _adom=product.key) }}">
           <i class="bi bi-grid fw-nav-icon"></i><span>{{ _('All plugins') }}</span></a>
-        {% for _sc in scripts_menu() %}
-        <a class="fw-nav-item {{ 'active' if request.blueprint == 'scripts' and request.view_args and request.view_args.get('slug') == _sc.slug else '' }}" href="{{ url_for('scripts.run_page', slug=_sc.slug, _adom=product.key) }}">
-          <i class="bi bi-file-earmark-play fw-nav-icon"></i><span>{{ _sc.name }}</span></a>
-        {% endfor %}
+        {% include 'partials/nav_global_studios.html' %}
         {% include 'partials/nav_apps_entries.html' %}
       </div>
     </div>

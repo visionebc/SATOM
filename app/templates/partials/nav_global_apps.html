@@ -1,14 +1,18 @@
-{# Global ADOM > Plugins: the published Plugin Studio apps this user may open
-   in Global (their author ticked Global or every ADOM). Not drawn when there
-   are none: an empty toggle is a promise the console does not keep.
-   Since 2026-10-22 a user who sees Automation > Plugins finds the apps there
-   (partials/nav_automation.html); this subgroup is for everyone else. #}
+{# Global ADOM > Plugins for a user who does not see Automation > Plugins
+   (partials/nav_automation.html: config_write + the Plugins page): Report
+   Studio and Lua Studio (2026-10-23) and the enabled, published apps this
+   user may open in Global (services.studio_apps.menu). Not drawn when it
+   would be empty: an empty toggle is a promise the console does not keep. #}
+{% if not global_plugins_in_automation(product.key) %}
 {% set _apps = studio_apps_menu('global') %}
-{% if _apps and not global_plugins_in_automation(product.key) %}
-<div class="fw-nav-subgroup{{ ' open' if request.blueprint == 'apps' }}" data-nav-subgroup="Plugins">
+{% set _studios %}{% include 'partials/nav_global_studios.html' %}{% endset %}
+{% if _apps or _studios|trim %}
+<div class="fw-nav-subgroup{{ ' open' if request.blueprint in ['apps', 'scripts'] }}" data-nav-subgroup="Plugins">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-puzzle fw-nav-icon" style="color:#3b82f6;"></i><span>{{ _('Plugins') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
+    {{ _studios }}
     {% include 'partials/nav_apps_entries.html' %}
   </div>
 </div>
+{% endif %}
 {% endif %}

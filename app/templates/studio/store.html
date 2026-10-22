@@ -43,7 +43,8 @@
         <button type="button" class="btn btn-primary btn-sm ms-auto" id="st-save-schema"><i class="bi bi-save me-1"></i>{{ _('Save columns') }}</button>
       </div>
       <hr>
-      <button type="button" class="btn btn-outline-danger btn-sm" id="st-delete"><i class="bi bi-trash me-1"></i>{{ _('Delete data store') }}</button>
+      {% if template %}<span class="text-muted" style="font-size:12px;">{{ _('Template from Examples: it is not deleted.') }}</span>
+      {% else %}<button type="button" class="btn btn-outline-danger btn-sm" id="st-delete"><i class="bi bi-trash me-1"></i>{{ _('Delete data store') }}</button>{% endif %}
     </div></div>
   </div>
 </div>

@@ -1,0 +1,13 @@
+{# Global ADOM > Plugins: Report Studio and Lua Studio (2026-10-23, operator:
+   "leave them in Plugins"), the same two entries a device ADOM draws in its
+   own Plugins group (partials/nav_plugins.html). Each follows its own
+   studio.* key and its page's stamp. Included by the Global Plugins subgroup
+   wherever it is drawn (nav_automation.html or nav_global_apps.html). #}
+{% if current_user.is_authenticated and current_user.can('studio.plugin_studio') and may_open('plugins.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'plugins' and request.endpoint != 'plugins.gallery' else '' }}" href="{{ url_for('plugins.index') }}">
+  <i class="bi bi-puzzle fw-nav-icon"></i><span>{{ _('Report Studio') }}</span></a>
+{% endif %}
+{% if current_user.is_authenticated and current_user.can('studio.lua_studio') and may_open('lua_studio.index') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'lua_studio' else '' }}" href="{{ url_for('lua_studio.index') }}">
+  <i class="bi bi-braces fw-nav-icon"></i><span>{{ _('Lua Studio') }}</span></a>
+{% endif %}

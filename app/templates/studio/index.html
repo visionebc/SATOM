@@ -168,7 +168,16 @@
           <i class="bi bi-app-indicator text-accent" style="font-size:18px;"></i>
           <span>{{ _('A form, a diagram of steps (data stores, connections, scripts, decisions) and an output with actions. Published apps get their own entry in Operations > Plugins, for the ADOMs and the groups or people you pick.') }}</span>
         </div></div>
-        <div class="d-flex mb-2"><button type="button" class="btn btn-fw-primary btn-sm ms-auto" data-bs-toggle="modal" data-bs-target="#apNewModal"><i class="bi bi-plus-lg me-1"></i>{{ _('New app') }}</button></div>
+        <div class="d-flex mb-2 gap-2 align-items-center">
+          {% if current_user.can('studio.plugin_studio') %}
+          <form method="post" action="{{ url_for('plugins.import_package') }}" enctype="multipart/form-data" class="d-flex gap-2 align-items-center ms-auto" style="font-size:12px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="file" name="package" accept=".satomplugin,.zip" class="form-control form-control-sm" style="max-width:260px;" required>
+            <label class="form-check-label"><input class="form-check-input me-1" type="checkbox" name="allow_downgrade" value="1">{{ _('Allow downgrade') }}</label>
+            <button class="btn btn-outline-primary btn-sm" type="submit" title="{{ _('An app package: the app, its data stores, its connections (without secrets) and its API versions') }}"><i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Import app package') }}</button>
+          </form>
+          {% endif %}
+          <button type="button" class="btn btn-fw-primary btn-sm {{ '' if current_user.can('studio.plugin_studio') else 'ms-auto' }}" data-bs-toggle="modal" data-bs-target="#apNewModal"><i class="bi bi-plus-lg me-1"></i>{{ _('New app') }}</button></div>
         <div class="fw-table-wrapper">
           <table class="fw-table" id="apTable">
             <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Published') }}</th><th>{{ _('ADOMs') }}</th><th>{{ _('Shared with') }}</th><th>{{ _('Last change') }}</th></tr></thead>

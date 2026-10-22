@@ -34,6 +34,12 @@
   var connectFrom = null;
   var view = { x: 0, y: 0, k: 1 };
   var dirty = false;
+  /* The last run laid over the diagram: {key: {outcome, detail, ms}} (the
+   * LAST time each step ran). Set by the host page through
+   * window.SatomProcEditor.overlay(steps); drawing only, never saved. */
+  var OVERLAY = {};
+  var OUTCOME_COLOUR = { ok: "#15692A", yes: "#15692A", no: "#7A5700", error: "#8B1C2A",
+                         pass: "#15692A", fail: "#8B1C2A", unknown: "#7A5700" };
 
   var statusEl = document.getElementById("proc-status");
   var hintEl = document.getElementById("proc-hint");
@@ -153,11 +159,25 @@
       var g = el("g", { transform: "translate(" + n.x + "," + n.y + ")" });
       g.style.cursor = CAN_EDIT ? "move" : "pointer";
       var selected = sel && sel.type === "node" && sel.key === n.key;
+      var ran = OVERLAY[n.key];
+      var oc = ran ? (OUTCOME_COLOUR[ran.outcome] || "#3D4550") : null;
       g.appendChild(el("rect", {
         width: W, height: H, rx: 6,
-        fill: "#FFFFFF", stroke: selected ? "#EF5424" : "#DFE1E6",
-        "stroke-width": selected ? 2 : 1
+        fill: "#FFFFFF",
+        stroke: selected ? "#EF5424" : (oc || "#DFE1E6"),
+        "stroke-width": selected ? 2 : (oc ? 2 : 1)
       }));
+      if (ran) {
+        var tip = el("title", {});
+        tip.textContent = ran.outcome + (ran.detail ? " — " + ran.detail : "");
+        g.appendChild(tip);
+        var badge = el("text", {
+          x: W - 10, y: 38, "font-size": "10", "text-anchor": "end", "font-weight": "600",
+          fill: oc, "font-family": "Inter, sans-serif"
+        });
+        badge.textContent = ran.outcome;
+        g.appendChild(badge);
+      }
       g.appendChild(el("rect", {
         width: 4, height: H, rx: 2, fill: kind.colour || "#3D4550"
       }));
@@ -324,6 +344,28 @@
     var n = nodeByKey(sel.key);
     if (!n) { select(null); return; }
     var kind = KINDS[n.kind] || { label: n.kind, params: [], summary: "" };
+    if (OVERLAY[n.key]) {
+      var lr = OVERLAY[n.key];
+      var box = document.createElement("div");
+      box.className = "mb-2 p-2 border rounded";
+      box.style.fontSize = "12px";
+      box.style.borderColor = OUTCOME_COLOUR[lr.outcome] || "#DFE1E6";
+      var b1 = document.createElement("div");
+      b1.innerHTML = "<strong>Last run</strong> · ";
+      var b2 = document.createElement("span");
+      b2.style.color = OUTCOME_COLOUR[lr.outcome] || "#3D4550";
+      b2.textContent = lr.outcome + (lr.ms !== undefined ? " (" + lr.ms + " ms)" : "");
+      b1.appendChild(b2);
+      box.appendChild(b1);
+      if (lr.detail) {
+        var b3 = document.createElement("div");
+        b3.style.whiteSpace = "pre-wrap";
+        b3.style.wordBreak = "break-word";
+        b3.textContent = lr.detail;
+        box.appendChild(b3);
+      }
+      insp.appendChild(box);
+    }
 
     var head = document.createElement("div");
     head.className = "mb-2";
@@ -609,6 +651,21 @@
     ev.preventDefault();
     ev.returnValue = "";
   });
+
+  /* Host-page hooks (Plugin Studio apps): lay a run over the diagram and
+   * hand the graph being edited to the analyser. */
+  window.SatomProcEditor = {
+    overlay: function (steps) {
+      OVERLAY = {};
+      (steps || []).forEach(function (st) {
+        if (st && st.key) OVERLAY[st.key] = { outcome: st.outcome, detail: st.detail, ms: st.ms };
+      });
+      draw(); renderInspector();
+    },
+    clear: function () { OVERLAY = {}; draw(); renderInspector(); },
+    graph: function () { return GRAPH; },
+    select: function (key) { if (nodeByKey(key)) { select({ type: "node", key: key }); } }
+  };
 
   draw();
   if (fitBtn) fitBtn.click();

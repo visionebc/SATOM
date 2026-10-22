@@ -291,6 +291,24 @@ def import_package():
     allow_down = request.form.get("allow_downgrade") == "1"
     signed = f"signed {pk.signer[:16]}" if pk.signer else "unsigned"
 
+    if pk.kind == "app":
+        # A Plugin Studio app with its data stores, connections (no secrets)
+        # and API Catalog versions -- services.studio_app_package.
+        from ..services import studio_app_package as SAP
+        try:
+            rep = SAP.install(pk, current_user.username, allow_downgrade=allow_down)
+        except pkgfmt.PackageError as exc:
+            flash(f"Import refused: {exc}", "error")
+            return redirect(request.referrer or url_for("plugins.index"))
+        log_action("studio.app.import", target=rep["app"].slug,
+                   extra={"version": pk.version, "signer": pk.signer,
+                          "created": rep["created"], "kept": rep["kept"]})
+        flash(f"Installed app “{pk.manifest['name']}” {pk.version} ({signed}). "
+              f"Created: {', '.join(rep['created']) or 'nothing'}. "
+              f"Kept: {', '.join(rep['kept']) or 'nothing'}. "
+              f"To do: {'; '.join(rep['todo']) or 'nothing'}.", "success")
+        return redirect(url_for("studio.app_edit", slug=rep["app"].slug))
+
     if pk.kind == "code":
         try:
             plugin_code.install(pk, current_user.username, allow_downgrade=allow_down)

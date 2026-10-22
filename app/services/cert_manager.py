@@ -351,10 +351,12 @@ def _ca_secret_env(secret: str) -> dict:
     return {CA_SECRET_ENV: secret} if secret else {}
 
 
-def _signing_context(cert_class: str) -> tuple[str, str, dict, dict, list[str]]:
+def _signing_context(cert_class: str, provider: str = "") -> tuple[str, str, dict, dict, list[str]]:
     """(protocol, submit template, token mapping, child env, secrets) for the
-    ACTIVE issuance protocol. ``{csr}``/``{out}`` are added at run time."""
-    protocol = store.cert_manager_protocol()
+    issuance protocol of ``provider`` (``""`` = the configured one, see
+    :mod:`cert_providers`). ``{csr}``/``{out}`` are added at run time."""
+    from . import cert_providers
+    protocol = cert_providers.protocol_of(provider)
     ccfg = store.cert_class_config(cert_class)
     if protocol == "acme":
         acme, mapping, env, secrets = _acme_common()
@@ -379,8 +381,10 @@ def _signing_context(cert_class: str) -> tuple[str, str, dict, dict, list[str]]:
 def _revoke_context(cert: ManagedCertificate) -> tuple[str, str, dict, dict, list[str]]:
     """(protocol, revoke template, token mapping, child env, secrets). The ACME
     revoke references the CERTIFICATE ({cert}, a temp file) and its {cn}; the
-    ADCS revoke references {serial}/{request_id}."""
-    protocol = store.cert_manager_protocol()
+    ADCS revoke references {serial}/{request_id}. The protocol is the one of
+    the provider that ISSUED it."""
+    from . import cert_providers
+    protocol = cert_providers.protocol_of(getattr(cert, "provider", "") or "")
     if protocol == "acme":
         acme, mapping, env, secrets = _acme_common()
         mapping["serial"] = cert.serial or ""
@@ -433,14 +437,14 @@ def ca_request_id_from_log(log: str) -> str:
     return m.group(1) if m else ""
 
 
-def sign_csr(cert_class: str, csr_pem: str) -> tuple[str, str]:
+def sign_csr(cert_class: str, csr_pem: str, provider: str = "") -> tuple[str, str]:
     """Run the ACTIVE protocol's signing command against the CSR. Returns
     ``(cert_pem, log)``.
 
     The command template ({csr}/{out}/… — ADCS or ACME tokens) is fully
     admin-defined — this is the "the user specifies the command parameters"
     contract. Raises :class:`CertManagerError` on failure."""
-    protocol, cmd_tmpl, mapping, env, secrets = _signing_context(cert_class)
+    protocol, cmd_tmpl, mapping, env, secrets = _signing_context(cert_class, provider)
     if not cmd_tmpl:
         raise CertManagerError(
             f"no signing command configured for protocol {protocol!r} / "
@@ -771,6 +775,20 @@ def _deploy(row: ManagedCertificate, appliance, *, actor: str = "") -> str:
     return ""
 
 
+def deploy_existing(row: ManagedCertificate, appliance, *, actor: str = "") -> str:
+    """Upload a certificate the Certificate Manager already holds to
+    ``appliance`` (Plugin Studio's certificate step, mode "existing").
+    Returns "" or the error text. A certificate without its key, revoked,
+    or whose key left SATOM cannot be deployed, and says so."""
+    if row.revoked_at or row.status == "revoked":
+        return f"certificate {row.name} is revoked"
+    if row.archived_at or not row.has_private_key:
+        return f"certificate {row.name} has no private key in SATOM any more"
+    if not (row.cert_pem or "").strip():
+        return f"certificate {row.name} is not signed yet ({row.status})"
+    return _deploy(row, appliance, actor=actor)
+
+
 def _schedule_swap(new: ManagedCertificate, old: ManagedCertificate | None) -> None:
     """A deployed renewal waits for its swap date: N days after it was issued,
     but never later than the day before the certificate it replaces expires."""
@@ -817,8 +835,9 @@ def _after_issue(row: ManagedCertificate, appliance, *, deploy: bool,
 
 def create_certificate(appliance, cn: str, cert_class: str, *, extra_sans=None,
                        deploy: bool = True, supersedes: int | None = None,
-                       actor: str = "") -> dict:
-    """Full cycle for one certificate signed by the CONFIGURED CA. Returns
+                       actor: str = "", provider: str = "") -> dict:
+    """Full cycle for one certificate signed by ``provider``'s CA (``""`` =
+    the first provider, see :mod:`cert_providers`). Returns
     ``{ok, cert_id, name, error}``.
 
     Never raises — every failure is captured on the row's timeline and returned.
@@ -829,9 +848,14 @@ def create_certificate(appliance, cn: str, cert_class: str, *, extra_sans=None,
     if cert_class not in store.CERT_CLASSES:
         return {"ok": False, "error": f"unknown certificate class {cert_class!r}.", "cert_id": None}
 
+    from . import cert_providers
+    try:
+        prov = cert_providers.require(provider)
+    except cert_providers.ProviderError as exc:
+        return {"ok": False, "error": str(exc), "cert_id": None}
     ccfg = store.cert_class_config(cert_class)
     # The class template is an ADCS concept; an ACME issuer has none to need.
-    if store.cert_manager_protocol() != "acme" and not ccfg.get("template"):
+    if cert_providers.protocol_of(prov["key"]) != "acme" and not ccfg.get("template"):
         return {"ok": False,
                 "error": f"class {cert_class!r} has no ADCS template configured "
                          "(Settings → Certificate Manager).", "cert_id": None}
@@ -841,8 +865,10 @@ def create_certificate(appliance, cn: str, cert_class: str, *, extra_sans=None,
     except CertManagerError as exc:
         return {"ok": False, "error": str(exc), "cert_id": None}
 
+    row.provider = prov["key"]
+    db.session.commit()
     try:
-        cert_pem, sign_log = sign_csr(cert_class, row.csr_pem)
+        cert_pem, sign_log = sign_csr(cert_class, row.csr_pem, prov["key"])
     except CertManagerError as exc:
         _event(row, "error", False, f"sign failed: {exc}", by=actor)
         return {"ok": False, "error": str(exc), "cert_id": row.id, "name": row.name}
@@ -902,7 +928,8 @@ def renew_certificate(cert: ManagedCertificate, *, deploy: bool = True,
     else:
         res = create_certificate(appliance, _cn_of(cert), cert.cert_class,
                                  extra_sans=None, deploy=deploy,
-                                 supersedes=cert.id, actor=actor)
+                                 supersedes=cert.id, actor=actor,
+                                 provider=getattr(cert, "provider", "") or "")
         kind = "renewed"
     if res.get("ok"):
         _event(cert, "renew", True,
@@ -1670,13 +1697,15 @@ def binding_check(cert: ManagedCertificate) -> tuple[bool, list[str]]:
 # --------------------------------------------------------------------------- #
 #  Revoke — generic: whatever CA is configured, plus the revocation register    #
 # --------------------------------------------------------------------------- #
-def ca_label() -> str:
+def ca_label(provider: str = "") -> str:
     """Which CA SATOM would ask — for the register, not for logic."""
-    if store.cert_manager_protocol() == "acme":
+    from . import cert_providers
+    who = (cert_providers.label(provider) + ": ") if provider else ""
+    if cert_providers.protocol_of(provider) == "acme":
         a = store.cert_manager_acme()
-        return f"acme {a.get('directory_url') or '?'}"
+        return f"{who}acme {a.get('directory_url') or '?'}"
     a = store.cert_manager_adcs()
-    return f"adcs {a.get('ca') or '?'} / {a.get('ca_name') or '?'}"
+    return f"{who}adcs {a.get('ca') or '?'} / {a.get('ca_name') or '?'}"
 
 
 def revoke_route(cert: ManagedCertificate) -> tuple[str, str]:
@@ -1807,7 +1836,7 @@ def revoke_certificate(cert: ManagedCertificate, *, reason: str = "unspecified",
         # The CA said no: the certificate is NOT revoked. Register the attempt,
         # leave the status alone so it can be retried.
         register_revocation(cert, reason=reason, result="failed", detail=ca_log,
-                            by=actor, ca=ca_label())
+                            by=actor, ca=ca_label(getattr(cert, "provider", "") or ""))
         _event(cert, "revoke", False, ca_log, by=actor)
         return {"ok": False, "revoked": False, "bindings": bound,
                 "error": "the CA's revoke command failed", "log": ca_log}
@@ -1817,7 +1846,7 @@ def revoke_certificate(cert: ManagedCertificate, *, reason: str = "unspecified",
     cert.swap_due_at = None
     db.session.commit()
     register_revocation(cert, reason=reason, result=result, detail=ca_log,
-                        by=actor, ca=ca_label() if route == "ca" else why)
+                        by=actor, ca=ca_label(getattr(cert, "provider", "") or "") if route == "ca" else why)
     _event(cert, "revoke", True,
            f"reason={reason} ({'at the CA' if route == 'ca' else 'manual at the CA'})"
            f"{' WHILE IN USE: ' + ', '.join(bound) if bound else ''}\n{ca_log}", by=actor)

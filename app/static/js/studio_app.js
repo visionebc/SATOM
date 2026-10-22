@@ -78,6 +78,12 @@
       } else if (t === 'store_select') {
         extra = '<div class="d-flex gap-2"><select class="form-select form-select-sm" data-i="' + i + '" data-k="store">' + opts(CH.stores, f.store) + '</select>' +
           inp(i, 'value_col', f.value_col, 'value column') + inp(i, 'label_col', f.label_col, 'label column (optional)') + '</div>';
+      } else if (t === 'satom_select') {
+        extra = '<select class="form-select form-select-sm" style="max-width:420px;" data-i="' + i + '" data-k="source">' +
+          '<option value="">What the list shows…</option>' +
+          (CH.satom_sources || []).map(function (s) {
+            return '<option value="' + esc(s.key) + '"' + (s.key === f.source ? ' selected' : '') + '>' + esc(s.label) + '</option>';
+          }).join('') + '</select>';
       } else if (t === 'api_select') {
         extra = '<div class="d-flex gap-2"><select class="form-select form-select-sm" data-i="' + i + '" data-k="connection">' + opts(CH.http, f.connection) + '</select>' +
           inp(i, 'path', f.path, '/path') + inp(i, 'list_path', f.list_path, 'list JSON path, e.g. items') +
@@ -196,6 +202,46 @@
   $('ap-delete').addEventListener('click', function () {
     if (!window.confirm('Delete the app ' + CFG.slug + ', its versions and its runs?')) return;
     post(U['delete']).then(function () { window.location = U.back; }).catch(function (e) { state(e.message, true); });
+  });
+
+  /* ── diagram: analysis and the last run ──────────────────────────── */
+  function li(items, colour) {
+    return items.length ? '<ul class="mb-1" style="color:' + colour + ';">' + items.map(function (x) {
+      return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '';
+  }
+  if ($('ap-analyze')) $('ap-analyze').addEventListener('click', function () {
+    var g = window.SatomProcEditor ? window.SatomProcEditor.graph() : null;
+    post(U.analyze, g ? { graph: g } : {}).then(function (d) {
+      var sm = d.summary || {};
+      var h = '<div class="fw-card"><div class="fw-card-header"><span class="fw-card-title" style="font-size:13px;">' +
+        '<i class="bi bi-search me-2 text-accent"></i>Analysis</span><span class="text-muted ms-2" style="font-size:12px;">' +
+        sm.steps + ' steps · ' + sm.writes + ' write · ' + sm.device_writes + ' on a device · ' + sm.error_arrows + ' error arrows</span></div>' +
+        '<div class="fw-card-body">';
+      if (d.problems.length) h += '<strong style="color:#8B1C2A;">Blocks publishing</strong>' + li(d.problems, '#8B1C2A');
+      if (d.warnings.length) h += '<strong style="color:#7A5700;">Worth a look</strong>' + li(d.warnings, '#7A5700');
+      if (!d.problems.length && !d.warnings.length) h += '<div style="color:#15692A;" class="mb-2">No problems and nothing suspicious.</div>';
+      h += '<table class="table table-sm mb-0" style="font-size:12px;"><thead><tr><th>Step</th><th>Kind</th><th>Saves</th><th>Reads</th><th>On error</th></tr></thead><tbody>' +
+        d.steps.map(function (st) {
+          return '<tr data-step="' + esc(st.key) + '" style="cursor:pointer;' + (st.reachable ? '' : 'opacity:.55;') + '"><td><strong>' + esc(st.label) + '</strong><div class="text-muted"><code>' + esc(st.key) + '</code></div></td>' +
+            '<td>' + esc(st.kind_label) + (st.device ? ' <span class="fw-badge fw-badge-danger">device</span>' : (st.writes ? ' <span class="fw-badge fw-badge-warning">writes</span>' : '')) + '</td>' +
+            '<td>' + (st.saves ? '<code>' + esc(st.saves) + '</code>' : '') + '</td>' +
+            '<td>' + st.reads.concat(st.reads_form.map(function (x) { return 'form.' + x; })).map(function (x) { return '<code>' + esc(x) + '</code>'; }).join(' ') + '</td>' +
+            '<td>' + esc(st.on_error || '') + (st.undo && st.undo.length ? '<div class="text-muted">undo: ' + esc(st.undo.join(', ')) + '</div>' : '') + '</td></tr>';
+        }).join('') + '</tbody></table></div></div>';
+      $('ap-analysis').innerHTML = h;
+    }).catch(function (e) { $('ap-analysis').innerHTML = '<span style="color:#8B1C2A;">' + esc(e.message) + '</span>'; });
+  });
+  if ($('ap-analysis')) $('ap-analysis').addEventListener('click', function (e) {
+    var tr = e.target.closest('[data-step]');
+    if (tr && window.SatomProcEditor) window.SatomProcEditor.select(tr.getAttribute('data-step'));
+  });
+  if ($('ap-lastrun')) $('ap-lastrun').addEventListener('click', function () {
+    fetch(U.lastRun, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.run) { state('This app has not run yet.'); return; }
+        if (window.SatomProcEditor) window.SatomProcEditor.overlay(d.run.steps || []);
+        state('Run #' + d.run.id + ' (' + d.run.status + ') laid over the diagram: click a step for its detail.');
+      }).catch(function (e) { state(e.message, true); });
   });
 
   drawFields(); drawActions(); loadTestForm();

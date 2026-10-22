@@ -33,7 +33,11 @@ from datetime import datetime, timezone
 
 FORMAT = "satom.plugin/1"
 EXT = ".satomplugin"
-KINDS = ("view", "widget", "code")
+KINDS = ("view", "widget", "code", "app")
+#: A Plugin Studio app: its form, diagram and actions, the data stores, HTTP
+#: connections (never their secrets) and API Catalog versions it uses
+#: (``services.studio_app_package``).
+APP_FILE = "app.json"
 CONTENT_FILES = ("body.jinja", "style.css", "script.js")
 CODE_SUFFIXES = (".py", ".html", ".jinja", ".css", ".js", ".json", ".txt",
                  ".md", ".svg")
@@ -105,6 +109,8 @@ def _member_ok(name: str, kind: str, entry: str) -> bool:
         return False
     if kind in ("view", "widget"):
         return name in CONTENT_FILES
+    if kind == "app":
+        return name == APP_FILE
     return (len(parts) >= 3 and parts[0] == "code" and parts[1] == entry
             and name.endswith(CODE_SUFFIXES) and "__pycache__" not in parts)
 
@@ -135,8 +141,8 @@ def validate_manifest(m) -> dict:
     for k in ("datasets", "params"):
         if not isinstance(m.get(k, []), list):
             raise PackageError(f"'{k}' must be a list.")
-    if kind == "code" and (m.get("datasets") or m.get("params")):
-        raise PackageError("A code plugin carries no datasets or params.")
+    if kind in ("code", "app") and (m.get("datasets") or m.get("params")):
+        raise PackageError(f"A {kind} plugin carries no datasets or params.")
     if m.get("min_satom") and not VERSION_RE.match(str(m["min_satom"])):
         raise PackageError("min_satom must be X.Y.Z.")
     files = m.get("files")
@@ -242,6 +248,13 @@ def read_package(data: bytes, keys: dict[str, bytes] | None = None) -> Package:
         entry = manifest["entry"]
         check_code_entry(files[f"code/{entry}/__init__.py"],
                          f"code/{entry}/__init__.py")
+    elif manifest["kind"] == "app":
+        try:
+            body = json.loads(files[APP_FILE].decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            raise PackageError(f"{APP_FILE} is not valid JSON.")
+        if not isinstance(body, dict) or not isinstance(body.get("app"), dict):
+            raise PackageError(f"{APP_FILE} has no 'app' object.")
     else:
         for n in CONTENT_FILES:
             try:

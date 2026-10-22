@@ -107,6 +107,7 @@
       <div class="fw-card-header"><span class="fw-card-title">{{ _('Details') }}</span></div>
       <div class="fw-card-body">
         <dl class="row mb-0" style="font-size:13px;">
+          <dt class="col-4 text-muted">{{ _('Provider') }}</dt><dd class="col-8">{{ cert.provider or '—' }}</dd>
           <dt class="col-4 text-muted">{{ _('Subject') }}</dt><dd class="col-8">{{ cert.subject or '—' }}</dd>
           <dt class="col-4 text-muted">{{ _('SANs') }}</dt><dd class="col-8">{{ cert.sans | join(', ') if cert.sans else '—' }}</dd>
           <dt class="col-4 text-muted">{{ _('Serial') }}</dt><dd class="col-8"><code>{{ cert.serial or '—' }}</code></dd>

@@ -24,12 +24,14 @@
           <div class="form-text">{{ _('Every call stays under this URL. Redirects are not followed.') }}</div></div>
         <div class="col-md-6"><label class="form-label small" for="cn-auth">{{ _('Authentication') }}</label>
           <select class="form-select form-select-sm" id="cn-auth">
-            {% for a, label in [('none', _('None')), ('basic', _('Basic (user + password)')), ('bearer', _('Bearer token')), ('api_key', _('API key in a header')), ('oauth2', _('OAuth2 client credentials'))] %}
+            {% for a, label in [('none', _('None')), ('basic', _('Basic (user + password)')), ('bearer', _('Bearer token')), ('api_key', _('API key in a header')), ('oauth2', _('OAuth2 client credentials')), ('session', _('Session login (user + password)'))] %}
             <option value="{{ a }}" {{ 'selected' if c.auth == a }}>{{ label }}</option>{% endfor %}
           </select></div>
         <div class="col-md-6 cn-auth-user"><label class="form-label small" for="cn-username">{{ _('User / client id') }}</label><input class="form-control form-control-sm" id="cn-username" value="{{ c.username }}" maxlength="255"></div>
         <div class="col-md-6 cn-auth-header"><label class="form-label small" for="cn-header_name">{{ _('Header name') }}</label><input class="form-control form-control-sm" id="cn-header_name" value="{{ c.header_name }}" placeholder="X-API-Key" maxlength="128"></div>
-        <div class="col-md-6 cn-auth-oauth"><label class="form-label small" for="cn-token_url">{{ _('Token URL') }}</label><input class="form-control form-control-sm" id="cn-token_url" value="{{ c.token_url }}" maxlength="500"></div>
+        <div class="col-md-6 cn-auth-session"><label class="form-label small" for="cn-login_path">{{ _('Login path') }}</label><input class="form-control form-control-sm" id="cn-login_path" value="{{ c.token_url if c.auth == 'session' else '/api/auth/login' }}" maxlength="500">
+          <div class="form-text">{{ _('Under the base URL. SATOM posts the user and the password there and reuses the session cookie.') }}</div></div>
+        <div class="col-md-6 cn-auth-oauth"><label class="form-label small" for="cn-token_url">{{ _('Token URL') }}</label><input class="form-control form-control-sm" id="cn-token_url" value="{{ c.token_url if c.auth == 'oauth2' else '' }}" maxlength="500"></div>
         <div class="col-md-6 cn-auth-oauth"><label class="form-label small" for="cn-scope">{{ _('Scope') }}</label><input class="form-control form-control-sm" id="cn-scope" value="{{ c.scope }}" maxlength="500"></div>
         <div class="col-md-6"><div class="form-check mt-4"><input class="form-check-input" type="checkbox" id="cn-verify_tls" {{ 'checked' if c.verify_tls }}><label class="form-check-label small" for="cn-verify_tls">{{ _('Verify the TLS certificate (trust store)') }}</label></div></div>
         <div class="col-12"><label class="form-label small" for="cn-api_version_id">{{ _('API version (API Catalog)') }}</label>

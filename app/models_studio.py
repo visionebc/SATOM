@@ -223,6 +223,10 @@ class StudioApp(db.Model):
     #: The DRAFT: form fields, diagram, output actions.
     fields_json = db.Column(db.Text, nullable=False, default="[]")
     graph_json = db.Column(db.Text, nullable=False, default="{}")
+    #: The satom.plugin/1 package version last imported, and its trusted
+    #: signer key id ("" = unsigned). NULL for an app authored here.
+    pkg_version = db.Column(db.String(32), nullable=True)
+    pkg_signer = db.Column(db.String(64), nullable=True)
     actions_json = db.Column(db.Text, nullable=False, default="[]")
     #: The PUBLISHED snapshot ({version, fields, graph, actions, at, by, note})
     #: operators run. Editing the draft never changes it.

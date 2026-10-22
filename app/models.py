@@ -2136,6 +2136,9 @@ class ManagedCertificate(db.Model):
     # Windows are NULLABLE: NULL = "use the class / lifecycle-policy default",
     # which is what every row created before these columns truly is.
     origin = db.Column(db.String(16), nullable=False, default="signer")
+    #: The certificate provider that issued it (``services.cert_providers``):
+    #: a renewal and a revoke go back to the same one. "" = before providers.
+    provider = db.Column(db.String(64), nullable=True, default="")
     key_origin = db.Column(db.String(16), nullable=False, default="satom")  # satom|external
     auto_renew = db.Column(db.Boolean, nullable=False, default=True)
     renew_before_days = db.Column(db.Integer, nullable=True)  # renew N days before expiry

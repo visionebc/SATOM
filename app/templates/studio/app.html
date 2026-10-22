@@ -83,7 +83,7 @@
         <div class="d-flex" style="min-height:560px;">
           <div style="width:200px;border-right:1px solid var(--fw-border,#DFE1E6);padding:10px;">
             <div class="text-muted mb-1" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">{{ _('Add a step') }}</div>
-            {% for group, title in [('flow', _('Flow')), ('data', _('Data')), ('act', _('Actions'))] %}
+            {% for group, title in [('flow', _('Flow')), ('data', _('Data')), ('act', _('Actions')), ('satom', _('SATOM'))] %}
               <div class="mt-2 mb-1" style="font-size:11px;font-weight:600;color:#5E6C84;">{{ title }}</div>
               {% for k in kinds if k.group == group %}
               <button type="button" class="btn btn-sm btn-outline-secondary w-100 mb-1 text-start proc-add" data-kind="{{ k.key }}" title="{{ k.summary }}" style="font-size:12px;">{{ k.label }}</button>
@@ -95,6 +95,8 @@
               <button type="button" id="proc-connect" class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-right me-1"></i>{{ _('Connect') }}</button>
               <button type="button" id="proc-delete" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash me-1"></i>{{ _('Delete selected') }}</button>
               <button type="button" id="proc-fit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrows-fullscreen me-1"></i>{{ _('Fit') }}</button>
+              <button type="button" id="ap-analyze" class="btn btn-sm btn-outline-primary" title="{{ _('Explain the diagram step by step and what each failure leaves behind') }}"><i class="bi bi-search me-1"></i>{{ _('Analyze') }}</button>
+              <button type="button" id="ap-lastrun" class="btn btn-sm btn-outline-secondary" title="{{ _('Colour each step by how it ended in the newest run') }}"><i class="bi bi-clock-history me-1"></i>{{ _('Last run') }}</button>
               <span class="text-muted ms-auto" id="proc-hint"></span>
               <button type="button" id="proc-save" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save diagram') }}</button>
             </div>
@@ -107,6 +109,7 @@
         </div>
       </div>
     </div>
+    <div id="ap-analysis" class="mb-3" style="font-size:12.5px;"></div>
     <div class="text-muted" style="font-size:12px;">{{ _('Arrows: a step ends ok or error, a decision yes or no. An error follows only an error arrow: with none, the run stops there as failed. Templates: {{ form.field }}, {{ rows }}, {{ rows | length }}; a value that is exactly one {{ expression }} keeps its type.') }}</div>
   </div>
 
@@ -152,7 +155,8 @@
         <input class="form-control form-control-sm" id="ap-note" placeholder="{{ _('What changed (optional)') }}" maxlength="200" style="max-width:360px;">
         <button type="button" class="btn btn-success btn-sm" id="ap-publish"><i class="bi bi-rocket-takeoff me-1"></i>{{ _('Publish') }}</button>
         {% if a.status == 'published' %}<button type="button" class="btn btn-outline-warning btn-sm" id="ap-unpublish">{{ _('Unpublish (remove from the menu)') }}</button>{% endif %}
-        <button type="button" class="btn btn-outline-danger btn-sm ms-auto" id="ap-delete"><i class="bi bi-trash me-1"></i>{{ _('Delete app') }}</button>
+        <a class="btn btn-outline-secondary btn-sm ms-auto" href="{{ url_for('studio.app_export', slug=a.slug) }}" title="{{ _('The app with its data stores, connections (without secrets) and API versions, as a plugin package') }}"><i class="bi bi-box-arrow-down me-1"></i>{{ _('Export package') }}</a>
+        <button type="button" class="btn btn-outline-danger btn-sm" id="ap-delete"><i class="bi bi-trash me-1"></i>{{ _('Delete app') }}</button>
       </div>
       {% if used_by %}<div class="form-text">{{ _('Run by other apps:') }} {{ used_by|join(', ') }}</div>{% endif %}
     </div></div>
@@ -178,7 +182,8 @@
   'urls': {'settings': url_for('studio.app_settings', slug=a.slug), 'draft': url_for('studio.app_draft', slug=a.slug),
            'form': url_for('studio.app_form', slug=a.slug), 'test': url_for('studio.app_test', slug=a.slug),
            'publish': url_for('studio.app_publish', slug=a.slug), 'unpublish': url_for('studio.app_unpublish', slug=a.slug),
-           'delete': url_for('studio.app_delete', slug=a.slug), 'back': url_for('studio.index', pane='apps')}
+           'delete': url_for('studio.app_delete', slug=a.slug), 'back': url_for('studio.index', pane='apps'),
+           'analyze': url_for('studio.app_analyze', slug=a.slug), 'lastRun': url_for('studio.app_last_run', slug=a.slug)}
 }|tojson }}</script>
 <script src="{{ url_for('static', filename='js/process_editor.js') }}" nonce="{{ csp_nonce }}"></script>
 <script src="{{ asset('js/apps_run.js') }}" nonce="{{ csp_nonce }}"></script>

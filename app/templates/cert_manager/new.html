@@ -57,6 +57,17 @@
             {% endfor %}
           </select>
         </div>
+        {% if mode == 'signer' %}
+        <div class="col-md-6">
+          <label class="fw-form-label">{{ _('Provider') }}</label>
+          <select class="form-select fw-form-control" name="provider">
+            {% for p in providers %}
+            <option value="{{ p.key }}">{{ p.name }}{% if p.internal_only %} — {{ _('internal only') }}{% endif %}</option>
+            {% endfor %}
+          </select>
+          <div class="form-text"><a href="{{ url_for('cert_manager.providers') }}">{{ _('Manage providers') }}</a></div>
+        </div>
+        {% endif %}
         <div class="col-md-6">
           <label class="fw-form-label">{{ _('Certificate class') }}</label>
           <select class="form-select fw-form-control" name="cert_class">

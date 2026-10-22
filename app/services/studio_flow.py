@@ -318,7 +318,18 @@ def kinds(choices: dict | None = None) -> list[Kind]:
                     help="e.g. {{ form.device }} or {{ event.appliance_id }}; empty for a "
                          "process that acts on no device."),
               _save_as("process")]),
-    ]
+    ] + _satom_kinds(ch)
+
+
+def _satom_kinds(ch) -> list:
+    """The SATOM steps (DDI, capacity, certificates, FortiWeb): their own
+    module, because what they act on is SATOM's, not the diagram's."""
+    from . import studio_satom as S
+    return S.kinds(ch)
+
+
+#: Palette colour per group (the fw-badge palette, readable on white).
+GROUP_COLOURS = {"flow": "#3D4550", "data": "#4C2A85", "act": "#7A5700", "satom": "#EF5424"}
 
 
 def kind_map(choices=None) -> dict:
@@ -327,6 +338,7 @@ def kind_map(choices=None) -> dict:
 
 def kinds_json(choices=None) -> list[dict]:
     return [{"key": k.key, "label": k.label, "group": k.group, "summary": k.summary,
+             "writes": bool(k.writes), "colour": GROUP_COLOURS.get(k.group, "#3D4550"),
              "params": [p.__dict__ for p in k.params], **k.extra} for k in kinds(choices)]
 
 
@@ -334,6 +346,9 @@ def step_writes(node: dict) -> bool:
     p = node.get("params") or {}
     kind = node.get("kind")
     if kind == "store_write":
+        return True
+    from . import studio_satom as S
+    if S.writes(kind):
         return True
     if kind == "sql_query":
         return p.get("allow_writes") == "yes"
@@ -550,6 +565,9 @@ def _run_step(node: dict, ctx: Ctx):
                             "view": _p(node, "view", "auto") or "auto", "value": value})
         return "ok", None, ""
     if not ctx.armed and step_writes(node):
+        from . import studio_satom as S
+        if kind in S.KIND_KEYS:
+            return S.rehearse(node, ctx)
         plan = {k: v for k, v in (node.get("params") or {}).items() if k != "save_as"}
         return "ok", {"rehearsal": True, "would": render(plan, scope)}, "rehearsal: not executed"
     if kind == "store_query":
@@ -621,6 +639,9 @@ def _run_step(node: dict, ctx: Ctx):
         return _run_script(node, ctx)
     if kind == "process":
         return _run_process(node, ctx)
+    from . import studio_satom as S
+    if kind in S.KIND_KEYS:
+        return S.run(node, ctx)
     raise FlowError("unknown step kind %r" % kind)
 
 
@@ -815,3 +836,104 @@ def walk(graph: dict, ctx: Ctx, on_step=None) -> dict:
             break
         key = nxt
     return {"status": status, "error": error, "steps": steps}
+
+
+# --------------------------------------------------------------------------- #
+#  analysis -- what the diagram does, and what a failure leaves behind         #
+# --------------------------------------------------------------------------- #
+_READ_RE = re.compile(r"\{\{-?\s*([a-z_][a-z0-9_]*)")
+#: Names a template defines for itself ({% for r in ... %}, {% set x = ... %}).
+_LOCAL_RE = re.compile(r"\{%-?\s*(?:for|set)\s+([a-z_][a-z0-9_]*)")
+_UNDO_KINDS = ("ddi_release", "fortiweb_spo_remove")
+
+
+def _reach(edges, start, branches=None) -> set:
+    seen, todo = set(), [start]
+    while todo:
+        k = todo.pop()
+        if k in seen:
+            continue
+        seen.add(k)
+        for e in edges:
+            if e.get("src") == k and (branches is None or (e.get("branch") or "always") in branches):
+                todo.append(e.get("dst"))
+    return seen
+
+
+def analyze(graph: dict, choices: dict | None = None, fields=None) -> dict:
+    """The diagram explained, step by step, for the person editing it.
+
+    ``problems`` block publishing (``validate_graph``). ``warnings`` are what
+    a run would do that the author probably did not mean: a step nobody
+    reaches, a step that writes and has no ``error`` arrow AFTER another
+    write (a failure there stops the run and leaves the earlier write in
+    place), a variable read that no step saves, a decision with one way out.
+    Each step says what it saves, what it reads, and where an error goes --
+    for a write step, which undo steps (release / remove) that path reaches.
+    """
+    graph = graph if isinstance(graph, dict) else {}
+    nodes = [n for n in graph.get("nodes") or [] if isinstance(n, dict)]
+    edges = [e for e in graph.get("edges") or [] if isinstance(e, dict)]
+    km = kind_map(choices)
+    from . import studio_satom as S
+    by = {n.get("key"): n for n in nodes}
+    start = next((n.get("key") for n in nodes if n.get("kind") == "start"), None)
+    reachable = _reach(edges, start) if start else set()
+    form_names = {f.get("name") for f in fields or [] if isinstance(f, dict)}
+    saved = set()
+    for n in nodes:
+        p = n.get("params") or {}
+        t = p.get("name") if n.get("kind") == "set" else p.get("save_as")
+        if t:
+            saved.add(str(t))
+    builtin = set(RESERVED_VARS) | {"last_error", "last_response", "last_script",
+                                    "last_process", "range", "true", "false", "none"}
+    writers = {n.get("key") for n in nodes if step_writes(n)}
+    steps, warnings = [], []
+    for n in nodes:
+        k, p = n.get("key"), n.get("params") or {}
+        kind = km.get(n.get("kind"))
+        out = {(e.get("branch") or "always"): e.get("dst") for e in edges if e.get("src") == k}
+        text = json.dumps(p, default=str)
+        local = {m.group(1) for m in _LOCAL_RE.finditer(text)}
+        reads = sorted({m.group(1) for m in _READ_RE.finditer(text)} - builtin - local)
+        reads_form = sorted({m.group(1) for m in re.finditer(r"form\.([a-z_][a-z0-9_]*)", text)})
+        w = step_writes(n)
+        info = {"key": k, "label": n.get("label") or k, "kind": n.get("kind"),
+                "kind_label": kind.label if kind else n.get("kind"),
+                "writes": w, "device": n.get("kind") in S.DEVICE_KINDS,
+                "saves": (p.get("name") if n.get("kind") == "set" else p.get("save_as")) or "",
+                "reads": reads, "reads_form": reads_form, "next": out,
+                "reachable": k in reachable}
+        if n.get("kind") not in ("end", "fail", "decision"):
+            if "error" in out:
+                undo_path = _reach(edges, out["error"])
+                info["on_error"] = "goes to %s" % (by.get(out["error"], {}).get("label") or out["error"])
+                info["undo"] = sorted(by[x].get("label") or x for x in undo_path
+                                      if x in by and by[x].get("kind") in _UNDO_KINDS)
+            else:
+                info["on_error"] = "stops the run as failed"
+        steps.append(info)
+        if start and k not in reachable:
+            warnings.append("%s: no arrow leads here -- it never runs" % (n.get("label") or k))
+        for v in reads:
+            if v not in saved:
+                warnings.append("%s reads {{ %s }}, which no step saves" % (n.get("label") or k, v))
+        for v in reads_form:
+            if fields is not None and v not in form_names:
+                warnings.append("%s reads form.%s, which is not a field of the form"
+                                % (n.get("label") or k, v))
+        if n.get("kind") == "decision" and not ("yes" in out and "no" in out) and "always" not in out:
+            warnings.append("%s: a decision needs a yes and a no arrow (or always)" % (n.get("label") or k))
+        if w and "error" not in out and k in reachable:
+            before = [x for x in writers if x != k and k in _reach(edges, x)]
+            if before:
+                warnings.append(
+                    "%s writes and has no error arrow: if it fails the run stops, and what %s "
+                    "wrote stays" % (n.get("label") or k,
+                                     ", ".join(sorted(by[x].get("label") or x for x in before))))
+    return {"problems": validate_graph(graph, choices), "warnings": sorted(set(warnings)),
+            "steps": steps,
+            "summary": {"steps": len(nodes), "writes": len(writers),
+                        "device_writes": sum(1 for s in steps if s["device"]),
+                        "error_arrows": sum(1 for e in edges if (e.get("branch") or "") == "error")}}

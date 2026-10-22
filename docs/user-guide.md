@@ -1730,6 +1730,18 @@ unreachable. Administrator role (`user_manage`) required.
   the swap is scheduled when you import the signed certificate. Imported
   certificates are only notified: renew them outside and use **Replace**.
   **Swap now** skips the wait.
+- **Certificate providers** (Certificate Manager → **Providers**): the person
+  issuing a certificate picks the provider in **New certificate** — e.g.
+  *Class E* (the internal CA) or *Class C* (another provider). A provider is a
+  name, the protocol it is reached with (*configured* = the ADCS or ACME
+  protocol set in Settings → Certificate Manager, or ADCS / ACME explicitly)
+  and **Internal only**: a certificate of an internal-only provider may serve
+  an Internal server policy only, and the Plugin Studio certificate step
+  refuses any other zone. Every certificate remembers its provider (shown on
+  its page), so its renewal and its revocation go back to the same one. The
+  seed is *Class E* (internal only) and *Class C*; rename, add or remove them —
+  the list can never be emptied. Which provider a domain gets is the user's
+  choice: nothing is derived from the domain suffix.
 - **Revoke** works with whichever CA is configured: SATOM runs that CA's
   revoke command. When it cannot (no revoke command, or a certificate signed
   by another CA), the certificate is marked revoked and the **revocation
@@ -4447,13 +4459,19 @@ credential, for app steps to use.
 
 | Kind | Settings | Authentication |
 |---|---|---|
-| **HTTP API** | Base URL, TLS verification (against the trust store), timeout | none, basic (user + password), bearer token, API key in a named header, OAuth2 client credentials (client id + secret + token URL + scope) |
+| **HTTP API** | Base URL, TLS verification (against the trust store), timeout | none, basic (user + password), bearer token, API key in a named header, OAuth2 client credentials (client id + secret + token URL + scope), **session login** (user + password posted to a login path under the base URL; the session cookie is reused) |
 | **PostgreSQL** | Host, port, database, user, TLS verification, timeout | password |
 
 - **Every call stays under the base URL.** A step's path is joined to it; an
   absolute URL, `//`, `..` or a backslash in a path is refused, and redirects
   are returned as the answer, never followed. A step cannot set the
   `Authorization` header, the API-key header, `Host` or `Cookie`.
+- **Session login** (for APIs such as the DDI API that log in with a user and
+  a password and then work with a session cookie): SATOM posts the user and
+  the password to the **login path** (default `/api/auth/login`, always under
+  the base URL) as a form, and again as JSON when the server answers 415/422;
+  the cookie (or an `access_token` in the answer) is reused for 4 minutes, and
+  a 401 logs in again once. The cookie is redacted like the password.
 - **The secret** (password, token, API key, client secret) is write-only: the
   page can replace or clear it and never shows it. It is kept in the vault, or
   encrypted with SATOM's key, by the vault mode (§26), and **Settings → Vault →
@@ -4612,6 +4630,10 @@ The editor has six tabs:
   checkbox, password and three lists — a fixed list, a list from a **data
   store** column (value and label columns) and a list from an **API** (a
   connection, a path, the JSON path of the list and the value / label keys).
+  A **SATOM list** offers what SATOM itself holds: the FortiWeb appliances,
+  the approved Web Protection Profile templates, the usable Certificate
+  Manager certificates, the certificate providers, the classification zones,
+  lines and departments, or the network segments.
   The value chosen must be one of the choices the server reads again.
 - **Diagram** — the same editor as Process. Steps: *Start*, *End*, *Set a
   variable*, *Decision* (equals, not equals, contains, greater, less, empty,
@@ -4619,14 +4641,22 @@ The editor has six tabs:
   shown as a table, list, key/value, text or JSON), *Read a data store*,
   *Write a data store* (insert, update, upsert, delete), *Query a database*,
   *Call an API* (with *Keep only (JSON path)*) and *Run a script* (the
-  published version of a Script Library script, with its form values). A step
-  saves its result under a name (*Save the result as*).
+  published version of a Script Library script, with its form values), plus
+  the **SATOM steps** below. A step saves its result under a name (*Save the
+  result as*). **Analyze** explains the diagram being edited: what each step
+  saves and reads, where its error goes and which undo steps that path
+  reaches, and what looks wrong — a step no arrow reaches, a variable no step
+  saves, a decision with one way out, and a step that writes with no error
+  arrow AFTER another write (a failure there leaves the earlier write in
+  place). **Last run** colours every step by how it ended in the newest run
+  (a test run is laid over the diagram as it finishes); click a step for its
+  detail.
 - **Actions** — buttons under the output of a finished run: *Save to a data
   store*, *Download* (CSV or JSON), *Send to a connection*, *Run another app
   with the output*, *Raise a change request*. Each can ask for confirmation.
 - **Test** — runs the saved draft, as a **rehearsal** by default: steps that
-  write (data store writes, SQL with writes allowed, API calls other than GET)
-  are described, not executed.
+  write (data store writes, SQL with writes allowed, API calls other than GET,
+  the SATOM steps that reserve, issue or create) are described, not executed.
 - **Publish** — lists what must be fixed first, freezes the draft as version
   N, and **Unpublish** removes the entry from the menu.
 
@@ -4648,6 +4678,56 @@ is allowed and stops after 200 steps; a run stops after 10 minutes.
 in the background and the page follows it, then shows the outputs, the
 actions and the steps. Password values are masked in every run record. Each
 user sees their own runs; authors see all of them and the run's variables.
+
+**SATOM steps** (the *SATOM* group of the palette) act on what SATOM owns, so
+a whole provisioning chain is one diagram whose failures the author routes:
+
+| Step | What it does | Undo |
+|---|---|---|
+| *Render names* | Object names from patterns (`spo-{extra}-{service}-{port}`, `vs-{spo}`); an empty value takes its dash with it; a name FortiWeb would refuse is an error | — |
+| *DDI: reserve an address* | One A record (IPAM) in one DDI unit: an existing record of that name is **reused** (never deleted by a rollback); else the next free address of the first subnet that has one (`/api/dnsrr/allocate`), or a given address registered as is (the same IP in another unit). The record read back decides, not the answer's status words | *DDI: release* |
+| *DDI: reserve by rules* | One reservation per rule row, in its order (the master unit first); `ip_from` reuses the address another unit of the step got. If one rule fails, what the step created is released before it ends in error | *DDI: release* |
+| *DDI: release reservations* | Deletes what reserve steps of this run **created**; reused records are kept and named | — |
+| *Pick a FortiWeb by capacity* | The first FortiWeb by name whose zone / line / department match and whose Capacity limit has room; *Exclude* gives a second, different one | — |
+| *Certificate (issue or reuse)* | Issues with the chosen provider and deploys to the appliance, or deploys a certificate the Certificate Manager already holds; an internal-only provider refuses a non-Internal zone. Never revoked by a diagram | — |
+| *FortiWeb: create the server policy* | Virtual server, VIP, server pool and members, then the policy (WPP template, certificate) — the SPO wizard's endpoints and writer. If one object fails, what the step wrote is deleted again | *FortiWeb: remove* |
+| *FortiWeb: remove a created policy* | Deletes, newest first, what a create step of this run wrote | — |
+
+The DDI steps use a Studio HTTP connection; pinned to an API Catalog version,
+they reach only its endpoints. The steps that write to an **appliance** run
+only for a user who holds `config_write`. In a rehearsal every SATOM step is
+described and returns a value of the real result's shape (an address
+`0.0.0.0`, a certificate `<issued at run time>`), so the following steps
+render. An armed run whose diagram writes is also a **job** (Jobs page and
+toast) with one log line per step: which step failed and why.
+
+**App packages.** **Export package** (Publish tab) writes the app as a
+`satom.plugin/1` package of kind *app*: its form, diagram and actions, the
+data stores it uses (columns and rows), its HTTP connections **without their
+secrets**, and the API Catalog versions they are pinned to. **Import app
+package** (Apps pane; or the Report Studio import) installs one: missing API
+versions are created and published, missing connections created without a
+secret (set it in Connections), missing data stores created with their rows;
+an existing data store keeps its rows (new columns are added), an existing
+connection is never changed, and the app's **draft** is replaced while its
+published version and access list stay as they are. A package older than the
+installed one needs *Allow downgrade*. Signed packages come from the internal
+generator (`satom-dev/satom-plugins`).
+
+**Example — new FortiWeb server policy** (package `spo-fortiweb`): the form
+asks for the entry type (*internal*, *split*, *internal-external*), the DNS
+name (the service), an extra text for the name, the port, the real servers,
+the WPP template and the certificate (issue with a provider, or an existing
+one). The diagram reads its variables from four data stores — **spo-ddi-rules**
+(per type: units in order, record name pattern, subnets, `ip_from`; e.g. split
+= `use-{dns}.used` in bn, `{dns}` in inet, ktv with inet's address),
+**spo-fortiweb-rules** (zone, line, VIP interface, which unit's address is the
+VIP; internal-external has two rows = two FortiWebs), **spo-naming** (the
+name of every object of the tree) — names the tree, picks the FortiWeb(s) by
+capacity, reserves in the DDI, issues or deploys the certificate, creates the
+policy, and records the request in **spo-requests**. Any failure removes what
+the run created on the FortiWeb, releases its DDI records, records why, and
+ends failed with that reason. Every rule is a row the administrator edits.
 
 **Actions and devices.** *Raise a change request* never changes a device: it
 creates a **draft** change request (title, reason, change type, device ids,
@@ -8866,7 +8946,7 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (128 today) or **excluded with a written
+   the console is either **on the map** (129 today) or **excluded with a written
    reason** (174 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.

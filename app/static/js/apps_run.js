@@ -105,6 +105,9 @@
       (d.vars ? '<div class="text-muted small">Variables (authors only)</div><pre class="p-2" style="max-height:30vh;overflow:auto;font-size:11px;background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:8px;white-space:pre-wrap;">' +
         esc(JSON.stringify(d.vars, null, 2)) + '</pre>' : '') + '</details>';
     box.innerHTML = h;
+    /* In the app editor, the same run is laid over the diagram: each step
+       coloured by how it ended, its detail in the inspector. */
+    if (window.SatomProcEditor && d.steps) window.SatomProcEditor.overlay(d.steps);
     var actBox = box.querySelector('[data-actions]');
     if (actBox) actBox.addEventListener('click', function (e) {
       var b = e.target.closest('[data-act]'); if (!b) return;

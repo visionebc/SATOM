@@ -25,6 +25,7 @@ from ..models import (Appliance, ManagedCertificate, ManagedCertificateEvent,
                       visible_appliance_or_404)
 from ..services import cert_manager as cm
 from ..services import cert_probe
+from ..services import cert_providers
 from ..services import settings_store as store
 from ..services.audit import log_action
 
@@ -396,6 +397,40 @@ def settings():
 
 
 # --------------------------------------------------------------------------- #
+#  Providers                                                                     #
+# --------------------------------------------------------------------------- #
+@bp.route("/providers", methods=["GET", "POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def providers():
+    """The named certificate providers the issuing user picks from."""
+    if request.method == "POST":
+        f = request.form
+        rows = []
+        for i in range(cert_providers.MAX_PROVIDERS + 1):
+            key = (f.get("key_%d" % i) or "").strip()
+            if not key or f.get("remove_%d" % i):
+                continue
+            rows.append({"key": key, "name": f.get("name_%d" % i, ""),
+                         "protocol": f.get("protocol_%d" % i, ""),
+                         "internal_only": f.get("internal_%d" % i),
+                         "note": f.get("note_%d" % i, "")})
+        try:
+            saved = cert_providers.save(rows)
+        except cert_providers.ProviderError as exc:
+            flash(str(exc), "danger")
+            return redirect(url_for("cert_manager.providers"))
+        log_action("certmgr.providers", target="certmgr.providers",
+                   extra={"providers": [p["key"] for p in saved]})
+        flash("Certificate providers saved.", "success")
+        return redirect(url_for("cert_manager.providers"))
+    return render_template("cert_manager/providers.html",
+                           providers=cert_providers.providers(),
+                           protocol=store.cert_manager_protocol(),
+                           max_providers=cert_providers.MAX_PROVIDERS)
+
+
+# --------------------------------------------------------------------------- #
 #  New certificate                                                               #
 # --------------------------------------------------------------------------- #
 @bp.route("/new", methods=["GET", "POST"])
@@ -435,7 +470,8 @@ def new():
                 verb = "CSR generated — download it, have it signed, then import the certificate"
             else:
                 res = cm.create_certificate(appliance, cn, cert_class, extra_sans=extra,
-                                            deploy=deploy, actor=current_user.username)
+                                            deploy=deploy, actor=current_user.username,
+                                            provider=(request.form.get("provider") or "").strip())
                 verb = "created" + (" and deployed" if deploy else " (not deployed)")
         row = db.session.get(ManagedCertificate, res["cert_id"]) if res.get("cert_id") else None
         if row is not None:
@@ -461,6 +497,7 @@ def new():
         configured=store.cert_manager_configured(),
         protocol=store.cert_manager_protocol(),
         defaults={c: cm.default_policy(c) for c in store.CERT_CLASSES},
+        providers=cert_providers.providers(),
     )
 
 

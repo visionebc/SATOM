@@ -748,6 +748,51 @@ def app_draft(slug):
     return jsonify({"ok": True, "problems": SA.problems(a)})
 
 
+@bp.route("/apps/<slug>/export")
+@login_required
+@require_permission(LIBRARY)
+def app_export(slug):
+    """The app as an unsigned satom.plugin/1 package (kind app): its form,
+    diagram, actions, data stores, connections without secrets and API
+    Catalog versions."""
+    from flask import Response
+    from ..services import studio_app_package as SAP
+    from ..version import app_version
+    a = _app_or_404(slug)
+    name, data = SAP.export_app(a, app_version())
+    log_action("studio.app.export", target=slug)
+    return Response(data, mimetype="application/zip",
+                    headers={"Content-Disposition": 'attachment; filename="%s"' % name})
+
+
+@bp.route("/apps/<slug>/analyze", methods=["POST"])
+@login_required
+@require_permission(LIBRARY)
+def app_analyze(slug):
+    """What the diagram does, step by step, and what happens when each step
+    fails -- for the graph being edited (posted) or the saved draft."""
+    from ..services import studio_apps as SA
+    from ..services import studio_flow as F
+    a = _app_or_404(slug)
+    body = request.get_json(silent=True) or {}
+    graph = body.get("graph") if isinstance(body.get("graph"), dict) else a.graph
+    return jsonify({"ok": True, **F.analyze(graph, SA.choices(), fields=a.fields)})
+
+
+@bp.route("/apps/<slug>/last-run")
+@login_required
+@require_permission(LIBRARY)
+def app_last_run(slug):
+    """The newest run of this app, steps in full (the author's view) -- for
+    the diagram overlay."""
+    from ..services import studio_apps as SA
+    a = _app_or_404(slug)
+    runs = SA.recent_runs(a, current_user)
+    if not runs:
+        return jsonify({"ok": True, "run": None})
+    return jsonify({"ok": True, "run": SA.run_json(runs[0], a, current_user)})
+
+
 @bp.route("/apps/<slug>/graph", methods=["POST"])
 @login_required
 @require_permission(LIBRARY)

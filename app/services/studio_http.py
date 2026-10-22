@@ -253,6 +253,57 @@ def _oauth_token(d: dict, secret: str, client, tokens: dict, guarded: bool) -> s
     return tok
 
 
+#: Default login path of a ``session`` connection (the DDI API's).
+SESSION_LOGIN_PATH = "/api/auth/login"
+#: How long a session cookie is reused before logging in again.
+SESSION_TTL_S = 240.0
+
+
+def _session_cookie(d: dict, secret: str, client, tokens: dict, guarded: bool,
+                    fresh: bool = False) -> str:
+    """Log in with user + password and return the ``Cookie`` header value.
+
+    The login path is UNDER the base URL (``build_url``), so the password
+    goes to the same host as every other call. The body is a form first (the
+    FastAPI ``OAuth2PasswordRequestForm`` shape), then JSON when the server
+    answers 415/422 -- the DDI API's Swagger does not expand its login body,
+    and Policy Clone measured that both shapes exist in the field."""
+    slug = d.get("slug") or ""
+    key = slug + "#session"
+    if not fresh:
+        with _LOCK:
+            cached = tokens.get(key)
+            if cached and cached[1] > time.time():
+                return cached[0]
+    url = build_url(d.get("base_url") or "", d.get("token_url") or SESSION_LOGIN_PATH)
+    headers, ext = {"Accept": "application/json", "User-Agent": "SATOM-Studio"}, {}
+    target = url
+    if guarded:
+        target, host_hdr, ext = _pinned(url)
+        headers.update(host_hdr)
+    creds = {"username": d.get("username") or "", "password": secret}
+    r = client.post(target, data=creds, headers=headers, extensions=ext,
+                    follow_redirects=False)
+    if r.status_code in (415, 422):
+        r = client.post(target, json=creds, headers=headers, extensions=ext,
+                        follow_redirects=False)
+    if r.status_code >= 400:
+        raise ConnectionError_("the login endpoint answered HTTP %d" % r.status_code)
+    pairs = ["%s=%s" % (c.name, c.value) for c in r.cookies.jar]
+    tok = ""
+    try:
+        j = r.json()
+        tok = str((j or {}).get("access_token") or "") if isinstance(j, dict) else ""
+    except ValueError:
+        pass
+    if not pairs and not tok:
+        raise ConnectionError_("the login endpoint returned no session cookie or token")
+    value = ("cookie", "; ".join(pairs)) if pairs else ("bearer", tok)
+    with _LOCK:
+        tokens[key] = (value, time.time() + SESSION_TTL_S)
+    return value
+
+
 def _auth_headers(d: dict, secret: str, client, tokens: dict, guarded: bool) -> dict:
     h = {"Accept": "application/json", "User-Agent": "SATOM-Studio"}
     auth = d.get("auth") or "none"
@@ -266,6 +317,12 @@ def _auth_headers(d: dict, secret: str, client, tokens: dict, guarded: bool) -> 
         h[d.get("header_name") or "X-API-Key"] = secret
     elif auth == "oauth2":
         h["Authorization"] = "Bearer " + _oauth_token(d, secret, client, tokens, guarded)
+    elif auth == "session":
+        how, value = _session_cookie(d, secret, client, tokens, guarded)
+        if how == "cookie":
+            h["Cookie"] = value
+        else:
+            h["Authorization"] = "Bearer " + value
     return h
 
 
@@ -282,12 +339,17 @@ def _credential_values(d: dict, secret: str, headers: dict) -> list[str]:
         if k.lower() == "authorization" or (hn and k.lower() == hn):
             vals.append(str(v))
             vals.append(str(v).split(" ", 1)[-1])
+        if k.lower() == "cookie":
+            # A session cookie IS the credential while it lives.
+            vals.append(str(v))
+            vals.extend(p.split("=", 1)[-1] for p in str(v).split("; ") if "=" in p)
     return vals
 
 
 def http_request(d: dict, secret: str, method: str = "GET", path: str = "", *,
                  query: dict | None = None, body=None, headers: dict | None = None,
-                 verify=True, transport=None, tokens: dict | None = None) -> dict:
+                 verify=True, transport=None, tokens: dict | None = None,
+                 _relogged: bool = False) -> dict:
     """One call. ``{status, ok, json|text, headers?, ms, url}``. Raises
     ``ConnectionError_`` (secrets redacted) when no answer came back.
 
@@ -384,6 +446,14 @@ def http_request(d: dict, secret: str, method: str = "GET", path: str = "", *,
         out["json"] = json.loads(text) if text.strip() else None
     except ValueError:
         out["text"] = text[:200_000]
+    if auth == "session" and status == 401 and not _relogged:
+        # The reused session expired on the server before our TTL: log in
+        # again once, never in a loop.
+        with _LOCK:
+            tokens.pop((d.get("slug") or "") + "#session", None)
+        return http_request(d, secret, method, path, query=query, body=body,
+                            headers=headers, verify=verify, transport=transport,
+                            tokens=tokens, _relogged=True)
     return out
 
 

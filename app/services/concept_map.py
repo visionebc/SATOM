@@ -552,6 +552,9 @@ PAGES: tuple[dict, ...] = (
     _p("cert_manager.renewals", "Certificate Renewals", "access",
        "renewal journal acme expiry automatic certificate history",
        "The renewal journal for both nodes."),
+    _p("cert_manager.providers", "Certificate Providers", "access",
+       "certificate provider ca class e class c internal external issuer",
+       "The certificate providers a new certificate is issued with."),
 
     # ---- Platform & Administration ----------------------------------------
     _p("settings.index", "Settings", "platform",

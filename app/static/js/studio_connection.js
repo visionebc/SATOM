@@ -41,15 +41,16 @@
     var a = val('auth');
     if (a === undefined) return;
     function vis(cls, on) { document.querySelectorAll('.' + cls).forEach(function (e) { e.style.display = on ? '' : 'none'; }); }
-    vis('cn-auth-user', a === 'basic' || a === 'oauth2');
+    vis('cn-auth-user', a === 'basic' || a === 'oauth2' || a === 'session');
     vis('cn-auth-header', a === 'api_key');
     vis('cn-auth-oauth', a === 'oauth2');
+    vis('cn-auth-session', a === 'session');
   }
   if ($('cn-auth')) { $('cn-auth').addEventListener('change', authUI); authUI(); }
 
   $('cn-save').addEventListener('click', function () {
     var body = {};
-    ['name', 'description', 'base_url', 'auth', 'username', 'header_name', 'token_url', 'scope',
+    ['name', 'description', 'base_url', 'auth', 'username', 'header_name', 'token_url', 'login_path', 'scope',
      'verify_tls', 'host', 'port', 'database', 'timeout'].forEach(function (k) {
       var v = val(k); if (v !== undefined) body[k] = v;
     });

@@ -2056,6 +2056,8 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('swapped_at', 'TIMESTAMP'),
                 ('removed_at', 'TIMESTAMP'),
                 ('archived_at', 'TIMESTAMP'),
+                # --- certificate providers (spoflow01) ---
+                ('provider', "VARCHAR(64) DEFAULT ''"),
             ],
             'wpp_exceptions': [
                 ('stale', 'BOOLEAN DEFAULT FALSE'),
@@ -2114,6 +2116,11 @@ def create_app(config_override: object | None = None) -> Flask:
             # --- Plugin Studio input parameters (selectors) ---
             'plugins': [
                 ('params', "TEXT DEFAULT '[]'"),
+            ],
+            # --- Plugin Studio app packages (spoflow01) ---
+            'studio_apps': [
+                ('pkg_version', 'VARCHAR(32)'),
+                ('pkg_signer', 'VARCHAR(64)'),
             ],
             # --- Analytics: dashboard variables (one board, whole fleet) ---
             'monitor_dashboard': [

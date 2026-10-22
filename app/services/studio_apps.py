@@ -23,10 +23,18 @@ ACTIONS ON THE OUTPUT
 ---------------------
 A finished run offers the app's actions: save to a data store, download
 (CSV/JSON), send to a connection, run another app with the output, or raise a
-**change request**. A change to a DEVICE is never made from an app: it becomes
-a draft change request through ``views.change_requests.create_change_request``
-(the one implementation of "raise a change") and goes through the existing
-approval.
+**change request**. An ACTION never changes a device: it becomes a draft change
+request through ``views.change_requests.create_change_request`` (the one
+implementation of "raise a change") and goes through the existing approval.
+
+DEVICE WRITES FROM A DIAGRAM
+----------------------------
+Two kinds of STEP may write to an appliance, both only in an armed run and
+only for a user who holds ``config_write`` (the permission every other armed
+write asks for): *Walk a process* and the SATOM steps that issue a
+certificate or create / remove a server policy (``services.studio_satom``).
+An armed run whose diagram writes is also a job (:func:`_job_for`), so the
+change is followed on the Jobs page like every other one.
 """
 from __future__ import annotations
 
@@ -46,7 +54,7 @@ from . import studio_flow as F
 
 AUTHOR = "studio.script_library"
 FIELD_TYPES = ("text", "textarea", "number", "select", "checkbox", "password", "date",
-               "store_select", "api_select")
+               "store_select", "api_select", "satom_select")
 ACTION_KINDS = ("save_store", "download", "send", "run_app", "change_request")
 MAX_FIELDS = 40
 MAX_ACTIONS = 20
@@ -136,6 +144,9 @@ def choices() -> dict:
         pass
     from . import studio_apis as SAPI
     out["catalog"] = SAPI.choices()
+    from . import studio_satom as S
+    out.update(S.choices())
+    out["satom_sources"] = [{"key": k, "label": lab} for k, lab in S.SOURCES]
     try:
         from ..models_process import Process
         out["processes"] = [p.key for p in Process.query.filter_by(enabled=True)
@@ -196,6 +207,12 @@ def clean_fields(fields, ch: dict | None = None) -> list[dict]:
                      list_path=str(f.get("list_path") or "")[:200],
                      value_key=str(f.get("value_key") or "")[:100],
                      label_key=str(f.get("label_key") or "")[:100])
+        if typ == "satom_select":
+            from . import studio_satom as S
+            src = str(f.get("source") or "")
+            if src not in S.SOURCE_KEYS:
+                raise AppError("field %s: pick what the SATOM list shows" % name)
+            c["source"] = src
         out.append(c)
     return out
 
@@ -222,6 +239,12 @@ def options_for(field: dict) -> tuple[list[dict], str]:
             seen.add(str(v))
             out.append({"value": str(v), "label": str(r.get(field.get("label_col") or "") or v)})
         return out, ""
+    if typ == "satom_select":
+        from . import studio_satom as S
+        try:
+            return S.source_options(field.get("source") or "")
+        except Exception as exc:  # noqa: BLE001 -- a broken source must not break the form
+            return [], "%s: %s" % (field.get("source"), exc)
     if typ == "api_select":
         key = tuple(str(field.get(k) or "") for k in
                     ("connection", "path", "list_path", "value_key", "label_key"))
@@ -270,7 +293,7 @@ def form_view(fields: list) -> list[dict]:
     out = []
     for f in fields:
         v = dict(f)
-        if f["type"] in ("select", "store_select", "api_select"):
+        if f["type"] in ("select", "store_select", "api_select", "satom_select"):
             v["choices"], v["problem"] = options_for(f)
         out.append(v)
     return out
@@ -304,7 +327,7 @@ def resolve_inputs(fields: list, raw) -> dict:
                 out[name] = datetime.strptime(s[:10], "%Y-%m-%d").date().isoformat()
             except ValueError:
                 raise AppError("%s: a date (YYYY-MM-DD) is expected" % f["label"]) from None
-        elif typ in ("select", "store_select", "api_select"):
+        elif typ in ("select", "store_select", "api_select", "satom_select"):
             opts, problem = options_for(f)
             if s not in {o["value"] for o in opts}:
                 raise AppError("%s: %r is not one of the choices%s"
@@ -673,12 +696,17 @@ def execute(run_id: int, user_id, inputs: dict, d: dict, passwords=(),
     if event is not None:
         ctx.vars["event"] = event
     secrets = _spellings([p for p in passwords if len(p) >= 3])
+    job_id = _job_for(run, d)
+    total = max(1, len((d.get("graph") or {}).get("nodes") or []))
 
     def persist(steps, c):
         run.steps_json = json.dumps(_mask(steps, secrets), default=str)
         run.outputs_json = json.dumps(_mask(c.outputs, secrets), default=str)
         run.vars_json = _capped(_mask(c.vars, secrets))
         db.session.commit()
+        if job_id and steps:
+            last = _mask(steps[-1], secrets)
+            _job_step(job_id, min(95, int(100 * len(steps) / total)), last)
 
     try:
         res = F.walk(d.get("graph") or {}, ctx, on_step=persist)
@@ -692,6 +720,60 @@ def execute(run_id: int, user_id, inputs: dict, d: dict, passwords=(),
     run.vars_json = _capped(_mask(ctx.vars, secrets))
     run.finished_at = datetime.utcnow()
     db.session.commit()
+    if job_id:
+        _job_end(job_id, run)
+
+
+def _job_for(run: StudioAppRun, d: dict) -> str:
+    """An ARMED run whose diagram writes is also a job (Jobs page and the
+    global toast), so a change made from an app is followed where every other
+    change is -- with one log line per step: where it failed, and why. A
+    read-only run or a rehearsal changes nothing and stays a run record."""
+    graph = d.get("graph") or {}
+    if not run.armed or not any(F.step_writes(n) for n in graph.get("nodes") or []):
+        return ""
+    try:
+        from . import jobs
+        a = db.session.get(StudioApp, run.app_id)
+        job = jobs.create_job("studio_app", "%s — run #%d" % (a.name if a else "app", run.id),
+                              by=run.user, cancelable=False,
+                              meta={"app": a.slug if a else "", "run_id": run.id,
+                                    "url": "/apps/runs/%d" % run.id, "steps": []})
+        jobs.update_job(job["id"], status="running")
+        return job["id"]
+    except Exception:  # noqa: BLE001 -- the run itself must not depend on the job store
+        return ""
+
+
+def _job_step(job_id: str, pct: int, step: dict) -> None:
+    try:
+        from . import jobs
+        line = "%s: %s%s" % (step.get("label") or step.get("key"), step.get("outcome"),
+                             (" — " + str(step.get("detail"))[:300]) if step.get("detail") else "")
+
+        def add(stt):
+            # The Jobs page draws meta.steps as the job's step list.
+            stt.setdefault("meta", {}).setdefault("steps", []).append(
+                {"key": step.get("key"), "label": line[:500], "outcome": step.get("outcome"),
+                 "ok": step.get("outcome") != "error", "ms": step.get("ms"),
+                 "at": datetime.utcnow().isoformat(timespec="seconds"),
+                 "detail": str(step.get("detail") or "")[:2000]})
+        jobs.mutate_job(job_id, add)
+        jobs.set_progress(job_id, pct, line)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _job_end(job_id: str, run: StudioAppRun) -> None:
+    try:
+        from . import jobs
+        if run.status == "done":
+            jobs.finish_success(job_id, message="run #%d done" % run.id,
+                                result={"run_id": run.id, "outputs": len(run.outputs)})
+        else:
+            jobs.finish_error(job_id, run.error or "run #%d failed" % run.id)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def refresh_stale(run: StudioAppRun) -> StudioAppRun:

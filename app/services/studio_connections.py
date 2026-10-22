@@ -41,7 +41,9 @@ from . import prefixed_secret as PS
 from . import studio_http as H
 
 KINDS = ("http", "postgres")
-HTTP_AUTH = ("none", "basic", "bearer", "api_key", "oauth2")
+#: ``session`` = log in with user + password at a path under the base URL
+#: and reuse the session cookie (the DDI API, FA-0007).
+HTTP_AUTH = ("none", "basic", "bearer", "api_key", "oauth2", "session")
 PG_AUTH = ("password",)
 METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 SECRET_PREFIX = "studio.connection.secret."
@@ -165,6 +167,17 @@ def save(c: StudioConnection, form: dict, by: str) -> bool:
             c.scope = (form.get("scope") or "").strip()[:500]
             if not c.username:
                 raise ConnectionError_("OAuth2 needs the client id (in the user field)")
+        elif auth == "session":
+            lp = (form.get("login_path") or form.get("token_url") or "").strip() \
+                or "/api/auth/login"
+            if not lp.startswith("/") or "://" in lp or _CTRL.search(lp) or ".." in lp:
+                # Relative on purpose: the password only ever goes to the
+                # host of the base URL.
+                raise ConnectionError_("the login path is a path under the base URL, "
+                                       "e.g. /api/auth/login")
+            c.token_url, c.scope = lp[:500], ""
+            if not c.username:
+                raise ConnectionError_("session login needs a user")
         else:
             c.token_url, c.scope = "", ""
         if auth == "basic" and not c.username:
@@ -247,6 +260,7 @@ _TOKENS: dict[str, tuple[str, float]] = {}
 def _forget_token(slug: str) -> None:
     with H._LOCK:
         _TOKENS.pop(slug, None)
+        _TOKENS.pop(slug + "#session", None)
 
 
 def _verify(c: StudioConnection):

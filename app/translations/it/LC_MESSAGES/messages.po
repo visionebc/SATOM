@@ -26918,3 +26918,66 @@ msgstr "I gruppi e le persone selezionati qui, più ogni autore dello Studio Plu
 
 msgid "When a trigger matches, do something SATOM can already run: walk a process, run a Plugin Studio app or a Script Library script, call an API Catalog endpoint, query a database, write a data store, run an integration hook or a scheduled action, or notify. Every run is a job; a finished automation emits automation.finished, so one can follow another."
 msgstr "Quando un trigger corrisponde, fa qualcosa che SATOM sa già eseguire: percorrere un processo, eseguire un'app dello Studio Plugin o uno script della Script Library, chiamare un endpoint dell'API Catalog, interrogare un database, scrivere in un data store, eseguire un hook di integrazione o un'azione pianificata, oppure notificare. Ogni esecuzione è un job; un'automazione terminata emette automation.finished, così una può seguire l'altra."
+
+msgid "The certificate providers a new certificate is issued with"
+msgstr "I fornitori di certificati con cui viene emesso un nuovo certificato"
+
+msgid "internal only"
+msgstr "solo interno"
+
+msgid "Manage providers"
+msgstr "Gestisci i fornitori"
+
+msgid "Certificate providers"
+msgstr "Fornitori di certificati"
+
+msgid "The person issuing a certificate picks one of these. A certificate remembers the provider that issued it, so its renewal and its revocation go back to the same one."
+msgstr "Chi emette un certificato ne sceglie uno. Un certificato ricorda il fornitore che lo ha emesso, così il rinnovo e la revoca tornano allo stesso."
+
+msgid "The protocol settings (CA, templates, commands) stay in Settings › Certificate Manager; \"configured\" uses the protocol set there (now: %(p)s)."
+msgstr "Le impostazioni del protocollo (CA, modelli, comandi) restano in Impostazioni › Certificate Manager; \"configurato\" usa il protocollo impostato lì (ora: %(p)s)."
+
+msgid "Protocol"
+msgstr "Protocollo"
+
+msgid "Internal only"
+msgstr "Solo interno"
+
+msgid "new-provider"
+msgstr "nuovo-fornitore"
+
+msgid "Internal only: a certificate of this provider may serve an Internal server policy only (the Plugin Studio certificate step refuses any other zone)."
+msgstr "Solo interno: un certificato di questo fornitore può servire solo una server policy Internal (il passo certificato di Plugin Studio rifiuta qualsiasi altra zona)."
+
+msgid "Save providers"
+msgstr "Salva i fornitori"
+
+msgid "Explain the diagram step by step and what each failure leaves behind"
+msgstr "Spiega il diagramma passo per passo e cosa lascia ogni errore"
+
+msgid "Analyze"
+msgstr "Analizza"
+
+msgid "Colour each step by how it ended in the newest run"
+msgstr "Colora ogni passo in base a come è terminato nell'esecuzione più recente"
+
+msgid "The app with its data stores, connections (without secrets) and API versions, as a plugin package"
+msgstr "L'app con i suoi data store, connessioni (senza segreti) e versioni API, come pacchetto plugin"
+
+msgid "Export package"
+msgstr "Esporta pacchetto"
+
+msgid "Session login (user + password)"
+msgstr "Accesso di sessione (utente + password)"
+
+msgid "Login path"
+msgstr "Percorso di accesso"
+
+msgid "Under the base URL. SATOM posts the user and the password there and reuses the session cookie."
+msgstr "Sotto l'URL di base. SATOM invia lì utente e password e riutilizza il cookie di sessione."
+
+msgid "An app package: the app, its data stores, its connections (without secrets) and its API versions"
+msgstr "Un pacchetto app: l'app, i suoi data store, le sue connessioni (senza segreti) e le sue versioni API"
+
+msgid "Import app package"
+msgstr "Importa pacchetto app"

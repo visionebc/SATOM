@@ -25,6 +25,10 @@
        title="{{ _('Renewal history and failures for every node, with the exact error') }}">
       <i class="bi bi-arrow-repeat me-1"></i>{{ _('Renewals') }}
     </a>
+    <a class="btn btn-fw-secondary" href="{{ url_for('cert_manager.providers') }}"
+       title="{{ _('The certificate providers a new certificate is issued with') }}">
+      <i class="bi bi-building-check me-1"></i>{{ _('Providers') }}
+    </a>
     <a class="btn btn-outline-primary" href="{{ url_for('cert_manager.new', mode='external') }}"
        title="{{ _('Generate a key + CSR here, have another CA sign it, then import the certificate') }}">
       <i class="bi bi-file-earmark-text me-1"></i>{{ _('Generate CSR') }}

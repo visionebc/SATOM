@@ -412,8 +412,8 @@ FortiGate, FortiAnalyzer and FortiAuthenticator). <strong>Administrator</strong>
 into sections — Access, Change Management, Devices, Objects, Studio and System
 — and both the sections and their entries are alphabetical in the console's
 language; a section with no entry you may open is not drawn. <strong>Studio</strong> holds
-<strong>Python Studio</strong> (the Script Library and the Python console in one page, §23.3)
-in every ADOM, and also Plugin Studio and Lua Studio in Global. The Global ADOM keeps its <strong>Global</strong> block for the fleet pages
+<strong>Plugin Studio</strong> (the Script Library and the Python console in one page, §23.3)
+in every ADOM, and also Report Studio and Lua Studio in Global. The Global ADOM keeps its <strong>Global</strong> block for the fleet pages
 and has no Operations group. A profile that cannot see one of those groups
 keeps the entry where it was before — Appliances under
 Operations, the API menu (console, Schema builds, Build compatibility) as a
@@ -1892,6 +1892,18 @@ unreachable. Administrator role (<code>user_manage</code>) required.</p>
   the swap is scheduled when you import the signed certificate. Imported
   certificates are only notified: renew them outside and use <strong>Replace</strong>.
   <strong>Swap now</strong> skips the wait.</li>
+<li><strong>Certificate providers</strong> (Certificate Manager → <strong>Providers</strong>): the person
+  issuing a certificate picks the provider in <strong>New certificate</strong> — e.g.
+  <em>Class E</em> (the internal CA) or <em>Class C</em> (another provider). A provider is a
+  name, the protocol it is reached with (<em>configured</em> = the ADCS or ACME
+  protocol set in Settings → Certificate Manager, or ADCS / ACME explicitly)
+  and <strong>Internal only</strong>: a certificate of an internal-only provider may serve
+  an Internal server policy only, and the Plugin Studio certificate step
+  refuses any other zone. Every certificate remembers its provider (shown on
+  its page), so its renewal and its revocation go back to the same one. The
+  seed is <em>Class E</em> (internal only) and <em>Class C</em>; rename, add or remove them —
+  the list can never be emptied. Which provider a domain gets is the user's
+  choice: nothing is derived from the domain suffix.</li>
 <li><strong>Revoke</strong> works with whichever CA is configured: SATOM runs that CA's
   revoke command. When it cannot (no revoke command, or a certificate signed
   by another CA), the certificate is marked revoked and the <strong>revocation
@@ -3430,11 +3442,18 @@ System Automations to Automations.</p>
   the list shows <strong>Next run</strong> in that timezone with its zone. A run the
   scheduler was not up for, on an action without catch-up, shows as
   <strong>missed</strong>.</p>
-<p><strong>Scripts</strong> (Operations → Automation → <strong>Scripts</strong>, Global ADOM, needs
-<code>operations.scripts_run</code>, which operators hold): the Script Library scripts
-an administrator published for operators (§23.4). Pick one, fill in its form
-and <strong>Run now</strong>, or save the values with a cron expression as a <strong>saved run</strong>.
-See §23.4 for how saved runs behave.</p>
+<p><strong>Plugins</strong> (Operations → Automation → <strong>Plugins</strong>, Global ADOM, needs
+<code>operations.scripts_run</code>, which operators hold; called <em>Scripts</em> until
+2026-10-22): the Script Library scripts an administrator published for you
+(§23.4). The entry is a submenu: <strong>All plugins</strong> opens the page, and below it
+every published plugin you may run has an entry of its own, by name.
+Publishing a script adds its entry, unpublishing removes it, and a script
+published for administrators is listed for them only — the menu applies the
+same rule as the page. In the Global ADOM the published Plugin Studio apps
+(§23.7) are listed in the same submenu, so there is one <strong>Plugins</strong> toggle;
+a user without Automation finds the apps under <strong>Global → Plugins</strong> instead.
+Pick one, fill in its form and <strong>Run now</strong>, or save the values with a cron
+expression as a <strong>saved run</strong>. See §23.4 for how saved runs behave.</p>
 <p><strong>Change Requests</strong> (maintenance windows):</p>
 <ul>
 <li>A CR captures the window, affected devices <strong>and the server policies whose
@@ -3534,7 +3553,7 @@ a payload you paste — would match, without firing anything.</p>
 <td>write steps dry-run</td>
 </tr>
 <tr>
-<td>Run a Python Studio app</td>
+<td>Run a Plugin Studio app</td>
 <td>the published version, as the automation's owner; the whole event is <code>{{ event }}</code> in the diagram</td>
 <td>write steps are recorded, not executed</td>
 </tr>
@@ -3590,7 +3609,7 @@ collect-diagnostics</em> and <em>outcome = failed</em>, bound to an API call tha
 ticket, writes "when the diagnostics walk fails, open a ticket". A chain stops
 after <strong>3 hops</strong>; a deeper match is recorded as suppressed (a trigger that
 matches its own automation is a loop otherwise).</p>
-<p><strong>Python Studio apps orchestrate too.</strong> The app diagram has a <strong>Walk a
+<p><strong>Plugin Studio apps orchestrate too.</strong> The app diagram has a <strong>Walk a
 process</strong> step: an app can call an API Catalog endpoint, run a script, query a
 database <em>and</em> walk a device runbook, deciding on each result. A rehearsal run
 walks the process unarmed; an armed run walks it armed only for a user who
@@ -4653,12 +4672,12 @@ others, and without being given user administration.</p>
 </thead>
 <tbody>
 <tr>
-<td><strong>Python Studio</strong></td>
+<td><strong>Plugin Studio</strong></td>
 <td><code>/studio</code></td>
 <td>One page, seven panes: <strong>Scripts</strong> (the Script Library: Python scripts with a form that operators fill in and run, §23.4), <strong>Console</strong> (throwaway Python over the curated fleet datasets, §23.3), <strong>Data stores</strong> (§23.5), <strong>Connections</strong> and <strong>API Catalog</strong> (§23.6), <strong>Apps</strong> (§23.7) and <strong>Examples</strong> (§23.8); what Studio code cannot do to SATOM is §23.9</td>
 </tr>
 <tr>
-<td><strong>Plugin Studio</strong></td>
+<td><strong>Report Studio</strong></td>
 <td><code>/plugins</code></td>
 <td>Server-rendered custom views/widgets, published as <strong>Custom Views</strong></td>
 </tr>
@@ -4669,7 +4688,14 @@ others, and without being given user administration.</p>
 </tr>
 </tbody>
 </table>
-<p><strong>Python Studio</strong> (since the release after 3.3.7) replaces the two menu entries
+<blockquote>
+<p><strong>Renamed on 2026-10-22.</strong> <em>Python Studio</em> is now <strong>Plugin Studio</strong> — it
+accepts Python code only — and the custom-view studio that carried that
+name is now <strong>Report Studio</strong>. Only the labels changed: the pages
+(<code>/studio</code>, <code>/plugins</code>) and the permission keys (<code>studio.plugin_studio</code> is
+still the custom-view studio, shown as <em>Report Studio</em>) are the same.</p>
+</blockquote>
+<p><strong>Plugin Studio</strong> (since the release after 3.3.7) replaces the two menu entries
 <em>Python Console</em> and <em>Script Library</em>. On the left an <strong>Explorer</strong> switches
 between the <strong>Scripts</strong> pane and the <strong>Console</strong> pane and opens any script in
 its editor; the editor (<code>/studio/scripts/&lt;id&gt;</code>) has a <strong>Console</strong> tab too, to
@@ -4679,7 +4705,7 @@ pages united neither the keys nor the sandboxes: the page opens for a holder of
 editor's Console tab and the console's run endpoint still ask for their own
 key. The old addresses (<code>/database/py-console</code>, <code>/database/scripts/…</code>)
 redirect to the new ones.</p>
-<h3 id="231-plugin-studio-and-custom-views">23.1 Plugin Studio and Custom Views</h3>
+<h3 id="231-report-studio-and-custom-views">23.1 Report Studio and Custom Views</h3>
 <p>A plugin is a Jinja body plus optional CSS and JS, bound to a list of <strong>curated
 datasets</strong> (fleet appliances, cached server policies, pools, WAF profiles,
 managed certificates, recent audit activity, fleet counts, scheduled actions).
@@ -4718,13 +4744,49 @@ fixed, so a parameter can only narrow data that was already loaded, never widen
 access. A <code>device</code> selector is populated from the live appliance list, scoped to
 the ADOM you are in.</p>
 <blockquote>
-<p><strong>Custom Views is ADOM-scoped; Plugin Studio is not.</strong> The read-side gallery
+<p><strong>Custom Views is ADOM-scoped; Report Studio is not.</strong> The read-side gallery
 ("Custom Views") is only surfaced in the FortiWeb and FortiADC ADOMs, and every
 plugin is stamped with the ADOM it was authored in. The <em>authoring</em> pages are
 reachable from the Global ADOM too, under Studio. Draft and testing views
 (and the editor's live preview) open for holders of <code>studio.plugin_studio</code>;
 everyone else sees published views only.</p>
 </blockquote>
+<h4 id="plugin-packages-import-export-and-code-plugins">Plugin packages: import, export and code plugins</h4>
+<p>A plugin can move between servers <strong>without an update package</strong> as a
+<code>.satomplugin</code> file (format <code>satom.plugin/1</code>: a zip with a manifest, the sha256
+of every file and an optional Ed25519 signature).</p>
+<ul>
+<li><strong>Export</strong> (the download icon on a row of the Report Studio list) writes an
+  unsigned package of that view or widget.</li>
+<li><strong>Import plugin</strong> (top of the list) reads a package and checks it before
+  anything is written: only the files the manifest lists, each matching its
+  sha256, sizes capped (10 MB package, 2 MB per file). A signature must come
+  from a key this server trusts and match the manifest — a bad or unknown
+  signature is refused, never treated as "unsigned".</li>
+<li>A <strong>view or widget</strong> becomes an ordinary Report Studio row: signed packages
+    land in <em>testing</em>, unsigned ones in <em>draft</em>. A package with the slug of a
+    plugin you already have <strong>updates it in place</strong>; an older version is
+    refused unless you tick <strong>Allow downgrade</strong>. Updating a <em>published</em> view
+    re-runs the publish gate — if the new body no longer renders it goes back
+    to <em>testing</em>. Datasets this server does not have are dropped and named in
+    the message. A slug that belongs to another ADOM's plugin is refused.</li>
+<li>A <strong>code plugin</strong> is a Python package with a Flask blueprint. It must be
+    <strong>signed by a trusted key</strong> (unsigned code is never installed); it is
+    written to <code>data/plugins/code/&lt;slug&gt;/</code> and mounted at <strong><code>/x/&lt;slug&gt;/</code></strong>,
+    behind sign-in, at the next <code>satom execute restart-all</code>. Every start
+    re-verifies its signature and every file on disk; a file that was changed
+    or added after install keeps it from loading, and a plugin that fails to
+    import is skipped with its error shown — it never stops SATOM from
+    starting. The <strong>Code plugins</strong> card lists each one as <em>loaded</em>, <em>restart
+    required</em>, <em>disabled</em> or <em>error</em>, with Enable/Disable and Remove (both take
+    effect at the next restart).</li>
+<li>A package may declare <code>min_satom</code>; a server older than that refuses it.</li>
+<li>The HA standby receives code plugins with the rest of <code>data/</code> and loads them
+  at its own next restart; views and widgets are database rows and replicate
+  immediately.</li>
+</ul>
+<p>A code plugin runs with SATOM's own privileges — the signature is the
+permission, so review a code plugin like any change to SATOM itself.</p>
 <h3 id="232-lua-studio">23.2 Lua Studio</h3>
 <p>Author a device script, lint it, read a static analysis of it, and deploy it —
 in that order. Targets are <strong>FortiWeb "Web Scripting"</strong> and <strong>FortiADC
@@ -4755,7 +4817,7 @@ in that order. Targets are <strong>FortiWeb "Web Scripting"</strong> and <strong
   preview and the real push asks twice.</li>
 </ul>
 <h3 id="233-python-console">23.3 Python Console</h3>
-<p>The <strong>Console</strong> pane of Python Studio (<strong>Administrator → Studio → Python
+<p>The <strong>Console</strong> pane of Plugin Studio (<strong>Administrator → Studio → Python
 Studio → Console</strong>), also a tab in every script's editor. Admin-authored Python, run against the <strong>same curated dataset bundle</strong> the
 plugins use, in a bubblewrap jail with no environment, no network namespace and
 none of the application tree mounted — so a script cannot open the <code>.env</code>, the
@@ -4773,7 +4835,7 @@ a time per node</strong> (a second one waits a few seconds, then is told the con
 is busy).</p>
 <h3 id="234-script-library">23.4 Script Library</h3>
 <p>Python scripts you keep, with a <strong>form</strong> an operator fills in. You write and
-test them here (<strong>Administrator → Studio → Python Studio → Scripts</strong>); you
+test them here (<strong>Administrator → Studio → Plugin Studio → Scripts</strong>); you
 publish a version; operators run that version. Gated by
 <code>studio.script_library</code>.</p>
 <p><strong>A script is a small project.</strong> <code>main.py</code> is what runs; other <code>.py</code> files are
@@ -4924,7 +4986,7 @@ A site that needs more raises the limits in a systemd drop-in
 (<code>systemctl edit satom-scripts.service</code>). The integration-hooks runner
 (<code>satom-integrations.service</code>) has the same limits.</p>
 <h3 id="235-data-stores">23.5 Data stores</h3>
-<p><strong>Python Studio → Data stores</strong> holds tables you define in the UI. A data
+<p><strong>Plugin Studio → Data stores</strong> holds tables you define in the UI. A data
 store is a column list — name, label, type (<code>text</code>, <code>number</code>, <code>boolean</code>,
 <code>date</code>, <code>json</code>) and <em>required</em> — plus rows. Every row also has <code>_id</code>,
 <code>_created_at</code>, <code>_updated_at</code> and <code>_by</code>.</p>
@@ -4952,7 +5014,7 @@ SATOM's own database, so a data store cannot reach any other table — and it
 replicates to the standby and travels in backups and clones like the rest of
 the configuration. Gated by <code>studio.script_library</code>.</p>
 <h3 id="236-connections">23.6 Connections</h3>
-<p><strong>Python Studio → Connections</strong> names an external system once, with its
+<p><strong>Plugin Studio → Connections</strong> names an external system once, with its
 credential, for app steps to use.</p>
 <table>
 <thead>
@@ -4966,7 +5028,7 @@ credential, for app steps to use.</p>
 <tr>
 <td><strong>HTTP API</strong></td>
 <td>Base URL, TLS verification (against the trust store), timeout</td>
-<td>none, basic (user + password), bearer token, API key in a named header, OAuth2 client credentials (client id + secret + token URL + scope)</td>
+<td>none, basic (user + password), bearer token, API key in a named header, OAuth2 client credentials (client id + secret + token URL + scope), <strong>session login</strong> (user + password posted to a login path under the base URL; the session cookie is reused)</td>
 </tr>
 <tr>
 <td><strong>PostgreSQL</strong></td>
@@ -4980,6 +5042,12 @@ credential, for app steps to use.</p>
   absolute URL, <code>//</code>, <code>..</code> or a backslash in a path is refused, and redirects
   are returned as the answer, never followed. A step cannot set the
   <code>Authorization</code> header, the API-key header, <code>Host</code> or <code>Cookie</code>.</li>
+<li><strong>Session login</strong> (for APIs such as the DDI API that log in with a user and
+  a password and then work with a session cookie): SATOM posts the user and
+  the password to the <strong>login path</strong> (default <code>/api/auth/login</code>, always under
+  the base URL) as a form, and again as JSON when the server answers 415/422;
+  the cookie (or an <code>access_token</code> in the answer) is reused for 4 minutes, and
+  a 401 logs in again once. The cookie is redacted like the password.</li>
 <li><strong>The secret</strong> (password, token, API key, client secret) is write-only: the
   page can replace or clear it and never shows it. It is kept in the vault, or
   encrypted with SATOM's key, by the vault mode (§26), and <strong>Settings → Vault →
@@ -5058,7 +5126,7 @@ wrapped token (like script credentials, §23.4), never the secret on disk. A
 published version keeps the connections it declared. A connection that a
 script declares cannot be deleted.</p>
 <h4 id="api-catalog-the-versions-of-an-api-someone-publishes">API Catalog: the versions of an API someone publishes</h4>
-<p>When a team (or a vendor) publishes an API you want to use, <strong>Python Studio →
+<p>When a team (or a vendor) publishes an API you want to use, <strong>Plugin Studio →
 API Catalog</strong> keeps it, one entry per <strong>version</strong> of it — <code>inventory 1.0</code>,
 <code>inventory 1.1</code>, <code>inventory 2.0</code>.</p>
 <ol>
@@ -5112,7 +5180,7 @@ those apps then show the problem and cannot be published until it is fixed.
 A connection with no version keeps the old behaviour: any path under its base
 URL. An API with connections pinned to it cannot be deleted.</p>
 <h3 id="237-apps">23.7 Apps</h3>
-<p><strong>Python Studio → Apps</strong> builds a small application — a <strong>form</strong>, a
+<p><strong>Plugin Studio → Apps</strong> builds a small application — a <strong>form</strong>, a
 <strong>diagram</strong> of steps and an <strong>output</strong> with <strong>actions</strong> — and publishes it as
 its own entry in <strong>Operations → Plugins</strong> (in the Global ADOM: <strong>Global →
 Plugins</strong>).</p>
@@ -5120,12 +5188,16 @@ Plugins</strong>).</p>
 <ul>
 <li><strong>Settings</strong> — name and icon of the menu entry, description, <strong>where</strong> it
   appears (the ADOMs you tick, or every ADOM) and <strong>who</strong> may use it (the
-  groups and the people you tick; every Python Studio author can too). Nobody
+  groups and the people you tick; every Plugin Studio author can too). Nobody
   else sees the entry or can open the app, its runs or their actions.</li>
 <li><strong>Form</strong> — the fields the user fills in: text, textarea, number, date,
   checkbox, password and three lists — a fixed list, a list from a <strong>data
   store</strong> column (value and label columns) and a list from an <strong>API</strong> (a
   connection, a path, the JSON path of the list and the value / label keys).
+  A <strong>SATOM list</strong> offers what SATOM itself holds: the FortiWeb appliances,
+  the approved Web Protection Profile templates, the usable Certificate
+  Manager certificates, the certificate providers, the classification zones,
+  lines and departments, or the network segments.
   The value chosen must be one of the choices the server reads again.</li>
 <li><strong>Diagram</strong> — the same editor as Process. Steps: <em>Start</em>, <em>End</em>, <em>Set a
   variable</em>, <em>Decision</em> (equals, not equals, contains, greater, less, empty,
@@ -5133,14 +5205,22 @@ Plugins</strong>).</p>
   shown as a table, list, key/value, text or JSON), <em>Read a data store</em>,
   <em>Write a data store</em> (insert, update, upsert, delete), <em>Query a database</em>,
   <em>Call an API</em> (with <em>Keep only (JSON path)</em>) and <em>Run a script</em> (the
-  published version of a Script Library script, with its form values). A step
-  saves its result under a name (<em>Save the result as</em>).</li>
+  published version of a Script Library script, with its form values), plus
+  the <strong>SATOM steps</strong> below. A step saves its result under a name (<em>Save the
+  result as</em>). <strong>Analyze</strong> explains the diagram being edited: what each step
+  saves and reads, where its error goes and which undo steps that path
+  reaches, and what looks wrong — a step no arrow reaches, a variable no step
+  saves, a decision with one way out, and a step that writes with no error
+  arrow AFTER another write (a failure there leaves the earlier write in
+  place). <strong>Last run</strong> colours every step by how it ended in the newest run
+  (a test run is laid over the diagram as it finishes); click a step for its
+  detail.</li>
 <li><strong>Actions</strong> — buttons under the output of a finished run: <em>Save to a data
   store</em>, <em>Download</em> (CSV or JSON), <em>Send to a connection</em>, <em>Run another app
   with the output</em>, <em>Raise a change request</em>. Each can ask for confirmation.</li>
 <li><strong>Test</strong> — runs the saved draft, as a <strong>rehearsal</strong> by default: steps that
-  write (data store writes, SQL with writes allowed, API calls other than GET)
-  are described, not executed.</li>
+  write (data store writes, SQL with writes allowed, API calls other than GET,
+  the SATOM steps that reserve, issue or create) are described, not executed.</li>
 <li><strong>Publish</strong> — lists what must be fixed first, freezes the draft as version
   N, and <strong>Unpublish</strong> removes the entry from the menu.</li>
 </ul>
@@ -5160,6 +5240,92 @@ is allowed and stops after 200 steps; a run stops after 10 minutes.</p>
 in the background and the page follows it, then shows the outputs, the
 actions and the steps. Password values are masked in every run record. Each
 user sees their own runs; authors see all of them and the run's variables.</p>
+<p><strong>SATOM steps</strong> (the <em>SATOM</em> group of the palette) act on what SATOM owns, so
+a whole provisioning chain is one diagram whose failures the author routes:</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>What it does</th>
+<th>Undo</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><em>Render names</em></td>
+<td>Object names from patterns (<code>spo-{extra}-{service}-{port}</code>, <code>vs-{spo}</code>); an empty value takes its dash with it; a name FortiWeb would refuse is an error</td>
+<td>—</td>
+</tr>
+<tr>
+<td><em>DDI: reserve an address</em></td>
+<td>One A record (IPAM) in one DDI unit: an existing record of that name is <strong>reused</strong> (never deleted by a rollback); else the next free address of the first subnet that has one (<code>/api/dnsrr/allocate</code>), or a given address registered as is (the same IP in another unit). The record read back decides, not the answer's status words</td>
+<td><em>DDI: release</em></td>
+</tr>
+<tr>
+<td><em>DDI: reserve by rules</em></td>
+<td>One reservation per rule row, in its order (the master unit first); <code>ip_from</code> reuses the address another unit of the step got. If one rule fails, what the step created is released before it ends in error</td>
+<td><em>DDI: release</em></td>
+</tr>
+<tr>
+<td><em>DDI: release reservations</em></td>
+<td>Deletes what reserve steps of this run <strong>created</strong>; reused records are kept and named</td>
+<td>—</td>
+</tr>
+<tr>
+<td><em>Pick a FortiWeb by capacity</em></td>
+<td>The first FortiWeb by name whose zone / line / department match and whose Capacity limit has room; <em>Exclude</em> gives a second, different one</td>
+<td>—</td>
+</tr>
+<tr>
+<td><em>Certificate (issue or reuse)</em></td>
+<td>Issues with the chosen provider and deploys to the appliance, or deploys a certificate the Certificate Manager already holds; an internal-only provider refuses a non-Internal zone. Never revoked by a diagram</td>
+<td>—</td>
+</tr>
+<tr>
+<td><em>FortiWeb: create the server policy</em></td>
+<td>Virtual server, VIP, server pool and members, then the policy (WPP template, certificate) — the SPO wizard's endpoints and writer. If one object fails, what the step wrote is deleted again</td>
+<td><em>FortiWeb: remove</em></td>
+</tr>
+<tr>
+<td><em>FortiWeb: remove a created policy</em></td>
+<td>Deletes, newest first, what a create step of this run wrote</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>The DDI steps use a Studio HTTP connection; pinned to an API Catalog version,
+they reach only its endpoints. The steps that write to an <strong>appliance</strong> run
+only for a user who holds <code>config_write</code>. In a rehearsal every SATOM step is
+described and returns a value of the real result's shape (an address
+<code>0.0.0.0</code>, a certificate <code>&lt;issued at run time&gt;</code>), so the following steps
+render. An armed run whose diagram writes is also a <strong>job</strong> (Jobs page and
+toast) with one log line per step: which step failed and why.</p>
+<p><strong>App packages.</strong> <strong>Export package</strong> (Publish tab) writes the app as a
+<code>satom.plugin/1</code> package of kind <em>app</em>: its form, diagram and actions, the
+data stores it uses (columns and rows), its HTTP connections <strong>without their
+secrets</strong>, and the API Catalog versions they are pinned to. <strong>Import app
+package</strong> (Apps pane; or the Report Studio import) installs one: missing API
+versions are created and published, missing connections created without a
+secret (set it in Connections), missing data stores created with their rows;
+an existing data store keeps its rows (new columns are added), an existing
+connection is never changed, and the app's <strong>draft</strong> is replaced while its
+published version and access list stay as they are. A package older than the
+installed one needs <em>Allow downgrade</em>. Signed packages come from the internal
+generator (<code>{org}/satom-plugins</code>).</p>
+<p><strong>Example — new FortiWeb server policy</strong> (package <code>spo-fortiweb</code>): the form
+asks for the entry type (<em>internal</em>, <em>split</em>, <em>internal-external</em>), the DNS
+name (the service), an extra text for the name, the port, the real servers,
+the WPP template and the certificate (issue with a provider, or an existing
+one). The diagram reads its variables from four data stores — <strong>spo-ddi-rules</strong>
+(per type: units in order, record name pattern, subnets, <code>ip_from</code>; e.g. split
+= <code>use-{dns}.used</code> in bn, <code>{dns}</code> in inet, ktv with inet's address),
+<strong>spo-fortiweb-rules</strong> (zone, line, VIP interface, which unit's address is the
+VIP; internal-external has two rows = two FortiWebs), <strong>spo-naming</strong> (the
+name of every object of the tree) — names the tree, picks the FortiWeb(s) by
+capacity, reserves in the DDI, issues or deploys the certificate, creates the
+policy, and records the request in <strong>spo-requests</strong>. Any failure removes what
+the run created on the FortiWeb, releases its DDI records, records why, and
+ends failed with that reason. Every rule is a row the administrator edits.</p>
 <p><strong>Actions and devices.</strong> <em>Raise a change request</em> never changes a device: it
 creates a <strong>draft</strong> change request (title, reason, change type, device ids,
 risk, with the app and run named in it) that goes through the normal approval
@@ -5192,7 +5358,7 @@ that app.</p>
 <p>Gated by <code>studio.script_library</code> for authors; users need only to be in the
 app's access list.</p>
 <h3 id="238-examples">23.8 Examples</h3>
-<p><strong>Python Studio → Examples</strong> installs working examples of every Studio piece
+<p><strong>Plugin Studio → Examples</strong> installs working examples of every Studio piece
 with one click. Ids start with <code>ex-</code>; installing creates only what is missing
 and never overwrites an object you edited; <strong>Remove</strong> deletes the objects of
 that example but keeps any of them something else still uses (another
@@ -5990,7 +6156,7 @@ your <strong>Profile</strong> page. Each ADOM can carry a different one.</p>
 </blockquote>
 <h3 id="263-users-and-profiles">26.3 Users and Profiles</h3>
 <p><strong>Groups</strong> (Administrator → Access → Groups) are named sets of users, managed
-with <em>Manage users</em>. Python Studio apps are shared with groups or people
+with <em>Manage users</em>. Plugin Studio apps are shared with groups or people
 (§23.7): add a colleague to a group and they get every app shared with it. A
 group an app is shared with cannot be deleted until it is removed from the app.
 The same groups limit who reads a Wiki article (§46.1); the <strong>Wiki articles</strong>
@@ -9828,8 +9994,8 @@ the page instead of on a manual.</p>
 discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
-   the console is either <strong>on the map</strong> (126 today) or <strong>excluded with a written
-   reason</strong> (172 today — JSON feeds, downloads, redirects and fragments that
+   the console is either <strong>on the map</strong> (129 today) or <strong>excluded with a written
+   reason</strong> (174 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>
 <li><strong>Nothing here is a second source of truth.</strong> Paths are generated from the
@@ -11584,7 +11750,7 @@ and the moderators; other editors see the audience fields disabled.</p>
 and <code>admin</code> has all three. Custom profiles get none of them until an
 administrator adds them under <strong>Profiles</strong>.</p>
 <p><strong>Groups</strong> name people across profiles — a team, an on-call rota. They are
-<strong>Administrator › Access › Groups</strong> (§23.7), the same groups Python Studio
+<strong>Administrator › Access › Groups</strong> (§23.7), the same groups Plugin Studio
 apps are shared with, and are managed by whoever manages users
 (<code>user_manage</code>); the Wiki menu links there. A group grants nothing by itself:
 it is a name an article's audience or an app's access can use. The Access ›
@@ -11752,7 +11918,7 @@ page says so in its last line).</p>
   date; <strong>Forget</strong> stops updating a page and leaves it in Confluence.
   Deleting the article or the space in SATOM also leaves the pages there.</li>
 </ul>
-<p>The call goes through the same checked path as Python Studio connections:
+<p>The call goes through the same checked path as Plugin Studio connections:
 no address of the node itself, its HA peer, loopback or link-local; no
 redirect followed; the credential removed from every error message. Every
 publication, refusal and setting change is in the audit log

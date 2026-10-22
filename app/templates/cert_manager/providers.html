@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Certificate Manager — Providers{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <span>{{ _('Automation') }}</span><span class="separator">/</span>
+  <a href="{{ url_for('cert_manager.index') }}">{{ _('Certificate Manager') }}</a><span class="separator">/</span>
+  <span>{{ _('Providers') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-building-check me-2 text-accent"></i>{{ _('Certificate providers') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('The person issuing a certificate picks one of these. A certificate remembers the provider that issued it, so its renewal and its revocation go back to the same one.') }}
+      {{ _('The protocol settings (CA, templates, commands) stay in Settings › Certificate Manager; "configured" uses the protocol set there (now: %(p)s).', p=protocol) }}
+    </p>
+  </div>
+</div>
+
+<form method="post" class="fw-card" style="max-width:1100px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="fw-card-body p-0">
+    <div class="fw-table-wrapper mb-0" style="border:0;border-radius:0;">
+      <table class="fw-table">
+        <thead><tr><th>{{ _('Key') }}</th><th>{{ _('Name') }}</th><th>{{ _('Protocol') }}</th>
+          <th>{{ _('Internal only') }}</th><th>{{ _('Note') }}</th><th>{{ _('Remove') }}</th></tr></thead>
+        <tbody>
+        {% for p in providers %}
+          <tr>
+            <td><input class="form-control form-control-sm" name="key_{{ loop.index0 }}" value="{{ p.key }}" maxlength="48" style="max-width:150px;"></td>
+            <td><input class="form-control form-control-sm" name="name_{{ loop.index0 }}" value="{{ p.name }}" maxlength="80"></td>
+            <td><select class="form-select form-select-sm" name="protocol_{{ loop.index0 }}" style="max-width:150px;">
+              {% for v, label in [('', _('configured')), ('adcs', 'ADCS'), ('acme', 'ACME')] %}<option value="{{ v }}" {{ 'selected' if p.protocol == v }}>{{ label }}</option>{% endfor %}
+            </select></td>
+            <td class="text-center"><input class="form-check-input" type="checkbox" name="internal_{{ loop.index0 }}" value="1" {{ 'checked' if p.internal_only }}></td>
+            <td><input class="form-control form-control-sm" name="note_{{ loop.index0 }}" value="{{ p.note }}" maxlength="300"></td>
+            <td class="text-center"><input class="form-check-input" type="checkbox" name="remove_{{ loop.index0 }}" value="1"></td>
+          </tr>
+        {% endfor %}
+        {% if providers|length < max_providers %}
+          {% set i = providers|length %}
+          <tr>
+            <td><input class="form-control form-control-sm" name="key_{{ i }}" placeholder="{{ _('new-provider') }}" maxlength="48" style="max-width:150px;"></td>
+            <td><input class="form-control form-control-sm" name="name_{{ i }}" placeholder="{{ _('Name') }}" maxlength="80"></td>
+            <td><select class="form-select form-select-sm" name="protocol_{{ i }}" style="max-width:150px;">
+              {% for v, label in [('', _('configured')), ('adcs', 'ADCS'), ('acme', 'ACME')] %}<option value="{{ v }}">{{ label }}</option>{% endfor %}
+            </select></td>
+            <td class="text-center"><input class="form-check-input" type="checkbox" name="internal_{{ i }}" value="1"></td>
+            <td><input class="form-control form-control-sm" name="note_{{ i }}" maxlength="300"></td>
+            <td></td>
+          </tr>
+        {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="p-3 d-flex gap-2 align-items-center">
+    <span class="text-muted" style="font-size:12px;">{{ _('Internal only: a certificate of this provider may serve an Internal server policy only (the Plugin Studio certificate step refuses any other zone).') }}</span>
+    <button type="submit" class="btn btn-primary btn-sm ms-auto"><i class="bi bi-save me-1"></i>{{ _('Save providers') }}</button>
+  </div>
+</form>
+{% endblock %}

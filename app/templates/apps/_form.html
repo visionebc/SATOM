@@ -13,7 +13,7 @@
   <label class="form-label small mb-1" for="{{ prefix }}{{ f.name }}">{{ f.label }}{% if f.required %} <span class="text-danger">*</span>{% endif %}</label>
   {% if f.type == 'textarea' %}
   <textarea class="form-control form-control-sm" name="{{ f.name }}" id="{{ prefix }}{{ f.name }}" rows="3" {{ 'required' if f.required }}>{{ f.default }}</textarea>
-  {% elif f.type in ('select', 'store_select', 'api_select') %}
+  {% elif f.type in ('select', 'store_select', 'api_select', 'satom_select') %}
   <select class="form-select form-select-sm" name="{{ f.name }}" id="{{ prefix }}{{ f.name }}" {{ 'required' if f.required }}>
     {% if not f.required %}<option value="">—</option>{% endif %}
     {% for o in f.choices %}<option value="{{ o.value }}" {{ 'selected' if o.value == f.default }}>{{ o.label }}</option>{% endfor %}

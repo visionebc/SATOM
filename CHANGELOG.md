@@ -27,6 +27,34 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   page. In the Global ADOM the published apps are listed there too, so the
   sidebar has one Plugins toggle.
 
+- **SATOM steps in Plugin Studio apps** (operator request, FA-0007): *Render
+  names*, *DDI: reserve an address* / *reserve by rules* / *release*, *Pick a
+  FortiWeb by capacity*, *Certificate (issue or reuse)*, *FortiWeb: create the
+  server policy* / *remove a created policy*. An existing DDI record is reused
+  and never deleted; the record read back decides an allocation; a step that
+  fails half-way undoes its own writes; only what a run created is undone on
+  an error arrow; device writes need `config_write`; a rehearsal returns
+  values of the real shape.
+- **Diagram analysis and run overlay**: **Analyze** explains every step (what
+  it saves and reads, where its error goes, which undo steps that path
+  reaches) and warns about unreachable steps, unsaved variables and a write
+  without an error arrow after another write; **Last run** colours the steps
+  by how they ended. An armed app run that writes is also a **job** with one
+  log line per step.
+- **App packages**: a Plugin Studio app exports and imports as a
+  `satom.plugin/1` package of kind *app* — its data stores, its HTTP
+  connections without secrets and their API Catalog versions travel with it;
+  an import never overwrites this server's rows, connections or secrets.
+- **Session-login connections**: user + password posted to a login path under
+  the base URL, the session cookie reused, one new login on a 401 (the DDI API).
+- **SATOM list form fields**: FortiWebs, approved WPP templates, Certificate
+  Manager certificates, certificate providers, classification and segments.
+- **Certificate providers** (operator request): the person issuing picks the
+  provider (seed: *Class E*, internal only; *Class C*); the certificate
+  remembers it for its renewal and revocation. Database:
+  `managed_certificate.provider`, `studio_apps.pkg_version`,
+  `studio_apps.pkg_signer` (migration `spoflow01`).
+
 ### Changed
 
 - **Studios renamed** (operator request): *Python Studio* is now **Plugin

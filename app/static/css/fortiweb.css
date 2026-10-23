@@ -398,21 +398,11 @@ details:has(.fw-nav-item.active) > summary.fw-nav-item:not(.active) {
 .fw-nav-item { padding-right: 4px; }
 .fw-nav-subtoggle,
 summary.fw-nav-item { padding-right: 16px; }
-/* A Plugin Studio app is named by its author, up to 120 characters
-   ("New FortiWeb server policy (DDI + certificate)" showed 155 of its 294px).
-   Its label wraps to three lines before the ellipsis, the link title holds
-   the whole name, and the right padding keeps the favourite star clear of
-   the text instead of over its last letters. */
+/* A Plugin Studio app is named by its author, up to 120 characters: it
+   stays on one line and ends in the ellipsis like every other entry, the
+   link title holds the whole name, and the right padding keeps the
+   favourite star clear of the text instead of over its last letters. */
 .fw-nav-app { padding-right: 24px; }
-.fw-nav-app > span:not(.fw-nav-star) {
-  white-space: normal;
-  line-height: 18px;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  overflow-wrap: anywhere;
-}
 
 /* FortiWeb config sections — indented sub-items under "Configuration" */
 .fw-nav-subitem {

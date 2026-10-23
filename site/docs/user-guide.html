@@ -5244,7 +5244,7 @@ and its published version. The <strong>Actions</strong> column:</p>
 the <em>Template</em> badge, can be edited, disabled, reset and downloaded, and is
 <strong>never deleted</strong> — no Delete button, and every delete route (app, script,
 data store, connection) refuses it with the reason.</p>
-<p>The editor has six tabs:</p>
+<p>The editor has seven tabs:</p>
 <ul>
 <li><strong>Settings</strong> — name and icon of the menu entry, description, <strong>where</strong> it
   appears (the ADOMs you tick, or every ADOM) and <strong>who</strong> may use it (the
@@ -5277,6 +5277,8 @@ data store, connection) refuses it with the reason.</p>
   place). <strong>Last run</strong> colours every step by how it ended in the newest run
   (a test run is laid over the diagram as it finishes); click a step for its
   detail.</li>
+<li><strong>Design</strong> — how the app looks: its page and its result, laid out with
+  blocks and coloured (below).</li>
 <li><strong>Actions</strong> — buttons under the output of a finished run: <em>Save to a data
   store</em>, <em>Download</em> (CSV or JSON), <em>Send to a connection</em>, <em>Run another app
   with the output</em>, <em>Raise a change request</em>. Each can ask for confirmation.</li>
@@ -5285,6 +5287,54 @@ data store, connection) refuses it with the reason.</p>
   the SATOM steps that reserve, issue or create) are described, not executed.</li>
 <li><strong>Publish</strong> — lists what must be fixed first, freezes the draft as version
   N, and <strong>Unpublish</strong> removes the entry from the menu.</li>
+</ul>
+<p><strong>Design: the page designer</strong> (operator request, 2026-10-23). The Design tab
+lays out two surfaces of the app — switch with <strong>Page</strong> / <strong>Result</strong>:</p>
+<ul>
+<li><strong>Page</strong> — what the user opens: where each <strong>form field</strong>, the <strong>Run
+  button</strong> and the <strong>result area</strong> go, among headings, text, cards, columns,
+  tabs, images, banners, callouts and link buttons, plus the app description
+  and the recent runs.</li>
+<li><strong>Result</strong> — how a finished run is shown: the <strong>run status</strong>, each
+  <strong>Output</strong> step of the diagram where you want it (title and <em>Show as</em> can be
+  overridden, with or without a card), <strong>number tiles</strong> (a value inside an
+  output — a dotted path such as <code>summary.total</code>; a list shows how many items
+  it holds), the <strong>action buttons</strong>, the <strong>steps</strong> and <em>Other outputs</em>.</li>
+</ul>
+<p>Drag a block from the palette onto the canvas (or click it: it goes into the
+selected card / column / tab, or after the selected block), drag blocks to
+move them, and pick one on the canvas or in the <strong>Outline</strong> (up, down,
+duplicate, delete; <code>Delete</code> key, <code>Ctrl+Z</code> / <code>Ctrl+Y</code>). The inspector edits
+the block's settings and its <strong>style</strong>: background (a second colour makes a
+gradient), text and border colour — <strong>any hex colour</strong> — and padding, space
+below, corners, shadow, border, text size, weight, alignment and width from
+fixed presets. <strong>Theme</strong> (nothing selected) colours the whole app: accent
+(buttons, links), page background, text, card surface, borders, corners and
+page padding — only inside the app; the sidebar and the top bar keep SATOM's
+colours. <strong>Images</strong> are uploaded to the app (PNG, JPEG, GIF or WebP, up to
+512 KiB, at most 12; SVG is refused) and used by Image blocks. <strong>As users see
+it</strong> shows the page exactly as users get it and the result filled with the
+newest run. <strong>Start from the standard layout</strong> turns the usual layout into
+blocks to edit; <strong>Clear</strong> goes back to it.</p>
+<p>What the designer guarantees:</p>
+<ul>
+<li><strong>SATOM's styles stay.</strong> Every block is drawn with SATOM's own classes
+  (cards, buttons, tables, badges); a design only recolours and spaces them.
+  There is no HTML or CSS of your own: text is Markdown (raw HTML is shown as
+  text, <code>javascript:</code> links are dropped), a colour is a hex value and every
+  other style is one of the presets — so an app cannot run code or read what
+  a user types.</li>
+<li><strong>Nothing is lost.</strong> A field the page does not place is added before the
+  Run button; a page without a Run button or a result area gets them at the
+  end; a result without the status, <em>Other outputs</em>, the actions or the steps
+  gets them at the end.</li>
+<li><strong>Publish freezes it.</strong> The design is saved with the draft (<strong>Save
+  design</strong>) and users see it only after <strong>Publish</strong>. Publish is refused while
+  a field is placed twice, or a block names a field, an Output step or an
+  image that is not there. A colour pair that is hard to read (contrast under
+  4.5:1, or white on an accent under 3:1) is listed as a warning — allowed,
+  since colours are free.</li>
+<li>An app with no design keeps the standard layout, exactly as before.</li>
 </ul>
 <p><strong>Templates.</strong> Text parameters are templates rendered in a sandbox:
 <code>{{ form.host }}</code>, <code>{{ rows }}</code>, <code>{{ rows | length }}</code>,
@@ -5363,7 +5413,9 @@ described and returns a value of the real result's shape (an address
 render. An armed run whose diagram writes is also a <strong>job</strong> (Jobs page and
 toast) with one log line per step: which step failed and why.</p>
 <p><strong>App packages.</strong> <strong>Export package</strong> (Publish tab) writes the app as a
-<code>satom.plugin/1</code> package of kind <em>app</em>: its form, diagram and actions, the
+<code>satom.plugin/1</code> package of kind <em>app</em>: its form, diagram, actions and
+design (with its images, each named by its SHA-256 and checked again at
+install), the
 data stores it uses (columns and rows), its HTTP connections <strong>without their
 secrets</strong>, and the API Catalog versions they are pinned to. <strong>Import app
 package</strong> (Apps pane; or the Report Studio import) installs one: missing API

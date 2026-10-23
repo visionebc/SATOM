@@ -12,7 +12,7 @@
    through the active ADOM (services.product_scope):
 
      * Scheduled Actions    scope_query(ScheduledAction.product)   — list AND by-id
-     * Device Provisioning  scope_query(ProvisionRun.product)
+     * Device Provisioning  scope_query(ProvisionRun.product)  (see below)
      * Change Requests      the devices the CR names (visible_appliances)
 
    ``_adom=product.key`` pins the ADOM on HARD (non-Turbo) navigations, which
@@ -27,6 +27,12 @@
    does not have. A missing menu entry is a nuisance; that one is an outage.
    Since 2026-10-11 the other device ADOMs draw the entry DISABLED (no link,
    reason on hover) — still never a live link to FortiWeb configuration.
+
+   DEVICE AND SYSTEM PROVISIONING LIVE IN ADMINISTRATOR > DEVICES since
+   2026-10-24 (operator), with the same gates (partials/nav_admin.html).
+   Administrator is drawn only for user_manage holders, so a profile without
+   it (the operator role) still finds both here — the rule Device Console
+   already follows.
    ========================================================================= #}
 {% from 'partials/_nav_off.html' import nav_off %}
 {% from 'partials/_nav_api.html' import api_menu with context %}
@@ -43,10 +49,11 @@
 {% set _m_uf = adom_menu('upgrade_flow', product) %}
 {% set _m_mr = adom_menu('migration_report', product) %}
 {% set _m_au = adom_menu('automations', product) %}
-{% set _m_pr = adom_menu('provisioning', product) %}
 {% set _m_cm = adom_menu('cert_manager', product) %}
 {% endif %}
-{% set _auto_bps = ['upgrade_flow','migration_report','automations','event_automations','device_provision','provisioning','change_requests','cert_manager'] %}
+{# The provisioning pages open this subgroup only where their entries are in
+   it: for an administrator they sit in Administrator > Devices. #}
+{% set _auto_bps = ['upgrade_flow','migration_report','automations','event_automations','change_requests','cert_manager'] + ([] if current_user.can('user_manage') else ['device_provision','provisioning']) %}
 {# Device ADOMs: a subgroup of Operations since 2026-10-14 (operator), included
    by partials/nav_operations.html — base.html no longer draws it as a group
    there. Global and placeholder ADOMs have no Operations group and keep the
@@ -111,17 +118,10 @@
     {% else %}{{ nav_off('bi-calendar2-check', _('Automations'), _m_au.reason, ep='automations.index') }}{% endif %}
     {% endif %}
     {% endif %}
-    {% if may_open('device_provision.index') %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint == 'device_provision' else '' }}" href="{{ url_for('device_provision.index', _adom=product.key) }}">
-      <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Device Provisioning') }}</span></a>
-    {% endif %}
-    {% if _dev %}
-    {% if may_open('provisioning.index') %}
-    {% if _m_pr.on %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint == 'provisioning' else '' }}" href="{{ url_for('provisioning.index', _adom=product.key) }}">
-      <i class="bi bi-rocket-takeoff fw-nav-icon"></i><span>{{ _('System Provisioning') }}</span></a>
-    {% else %}{{ nav_off('bi-rocket-takeoff', _('System Provisioning'), _m_pr.reason, ep='provisioning.index') }}{% endif %}
-    {% endif %}
+    {# Device / System Provisioning: Administrator > Devices for user_manage
+       holders (2026-10-24, operator); here for everyone else. #}
+    {% if not current_user.can('user_manage') %}
+    {% include "partials/nav_provisioning.html" %}
     {% endif %}
     {% if current_user.can('user_manage') %}
     {% if may_open('change_requests.index') %}

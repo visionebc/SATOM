@@ -66,6 +66,10 @@
     {% else %}{{ nav_off('bi-speedometer2', _('Capacity Limits'), _m.reason, ep='capacity.index') }}{% endif %}
     {% endif %}
     {% include "partials/nav_console.html" %}
+    {# Device Provisioning and System Provisioning (2026-10-24, operator):
+       moved here from Automation, which keeps them for profiles without
+       user_manage. #}
+    {% include "partials/nav_provisioning.html" %}
     {# Diagnostic Battery: the commands Diagnose Log Collection runs, chosen
        per device ADOM (views/diag_battery.py). Global has no battery. #}
     {% if _dev and may_open('diag_battery.index') %}{% set _m = adom_menu('diag_battery', product) %}

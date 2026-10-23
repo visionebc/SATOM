@@ -3685,7 +3685,9 @@ Full reference, including the complete command tree and the runbooks:
 
 ## 21. Provisioning new appliances
 
-Two entries under **Automation**, answering different questions:
+Two entries under **Administrator → Devices** (under **Automation** for a
+profile without user management, which has no Administrator group), answering
+different questions:
 
 | Page | Question it answers |
 |---|---|
@@ -6812,10 +6814,12 @@ a half-parsed snapshot that looks real is worse than no snapshot.
 
 ## 28. System provisioning: profiles and baselines
 
-FortiWeb ADOM → Operations → Automation → **System Provisioning** — the second of the two
+FortiWeb ADOM → Administrator → Devices → **System Provisioning** (Operations →
+Automation for a profile without user management) — the second of the two
 entries named in §21. Device Provisioning builds an appliance that does not
 exist; this one applies *system* configuration to appliances that already do.
-The entry appears in the FortiWeb ADOM only.
+The entry is live in the FortiWeb ADOM only: the other device ADOMs draw it
+greyed out with the reason, and the Global ADOM does not draw it.
 
 The page lists the system profiles (tick **Hide old versions** to see only the
 newest of each), and its header carries four buttons: **Baselines** (28.4),

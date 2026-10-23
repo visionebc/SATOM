@@ -106,6 +106,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   Inter (roman and italic, `app/static/vendor/inter/`, SIL Open Font License
   1.1, byte-identical to the upstream release) is now served locally like
   every other vendored asset, so offline installs get it too.
+- **Device Provisioning and System Provisioning moved to Administrator ›
+  Devices**, in every ADOM, with the same rules as before: System
+  Provisioning is live in FortiWeb, greyed out with the reason in the other
+  device ADOMs and not drawn in Global. A profile without user management has
+  no Administrator group and still finds both in Automation, as with Device
+  Console. No permission changed. Requested by the operator: "System
+  Provisioning and Device Provisioning should be in Administrator".
+
 - **Scout leaves the sidebar until it is configured.** The Scout entry
   (Operations › Troubleshooting, every ADOM) is drawn only when Scout is
   switched on in Settings › Scout ▸ Providers AND at least one provider can

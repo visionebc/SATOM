@@ -215,7 +215,17 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   Inter (roman and italic, <code>app/static/vendor/inter/</code>, SIL Open Font License
   1.1, byte-identical to the upstream release) is now served locally like
   every other vendored asset, so offline installs get it too.</li>
-<li><strong>Scout leaves the sidebar until it is configured.</strong> The Scout entry
+<li>
+<p><strong>Device Provisioning and System Provisioning moved to Administrator ›
+  Devices</strong>, in every ADOM, with the same rules as before: System
+  Provisioning is live in FortiWeb, greyed out with the reason in the other
+  device ADOMs and not drawn in Global. A profile without user management has
+  no Administrator group and still finds both in Automation, as with Device
+  Console. No permission changed. Requested by the operator: "System
+  Provisioning and Device Provisioning should be in Administrator".</p>
+</li>
+<li>
+<p><strong>Scout leaves the sidebar until it is configured.</strong> The Scout entry
   (Operations › Troubleshooting, every ADOM) is drawn only when Scout is
   switched on in Settings › Scout ▸ Providers AND at least one provider can
   take a message (not disabled; inside the LAN unless external providers are
@@ -225,7 +235,8 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   before. The WAF exception advice uses the same test, so a switched-on Scout
   whose only provider is disabled no longer counts as available. Requested
   by the operator: "if Scout is not configured it should not appear in the
-  menu, even if it is active in Settings › Appearance".</li>
+  menu, even if it is active in Settings › Appearance".</p>
+</li>
 <li>
 <p><strong>Sentinel follows the same rule: not configured, not in the menu.</strong>
   Monitoring › Sentinel (Global ADOM) is offered only while Sentinel is

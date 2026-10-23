@@ -4080,7 +4080,9 @@ rule the tool prints itself:</p>
 <p>Full reference, including the complete command tree and the runbooks:
 <a href="cli.html">docs/cli.md</a>.</p>
 <h2 id="21-provisioning-new-appliances">21. Provisioning new appliances</h2>
-<p>Two entries under <strong>Automation</strong>, answering different questions:</p>
+<p>Two entries under <strong>Administrator → Devices</strong> (under <strong>Automation</strong> for a
+profile without user management, which has no Administrator group), answering
+different questions:</p>
 <table>
 <thead>
 <tr>
@@ -7548,10 +7550,12 @@ pre-migration comparison. A file that is encrypted, truncated or simply not a
 FortiWeb configuration is rejected with the reason and <strong>no snapshot is stored</strong> —
 a half-parsed snapshot that looks real is worse than no snapshot.</p>
 <h2 id="28-system-provisioning-profiles-and-baselines">28. System provisioning: profiles and baselines</h2>
-<p>FortiWeb ADOM → Operations → Automation → <strong>System Provisioning</strong> — the second of the two
+<p>FortiWeb ADOM → Administrator → Devices → <strong>System Provisioning</strong> (Operations →
+Automation for a profile without user management) — the second of the two
 entries named in §21. Device Provisioning builds an appliance that does not
 exist; this one applies <em>system</em> configuration to appliances that already do.
-The entry appears in the FortiWeb ADOM only.</p>
+The entry is live in the FortiWeb ADOM only: the other device ADOMs draw it
+greyed out with the reason, and the Global ADOM does not draw it.</p>
 <p>The page lists the system profiles (tick <strong>Hide old versions</strong> to see only the
 newest of each), and its header carries four buttons: <strong>Baselines</strong> (28.4),
 <strong>Compare templates</strong> (§29.3), <strong>Compatibility matrix</strong> (§29.4) and <strong>New

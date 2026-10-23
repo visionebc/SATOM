@@ -96,6 +96,10 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   reading the badge comes from. A section you fold or open stays that way;
   untouched, a section opens when it holds a problem. The page now uses the
   console's light badge colours throughout.
+- **Deep monitors, Service Monitor and Analytics explain how they differ.**
+  Each page has a **Which page?** button in its header that opens the same
+  comparison: the question each page answers, how it measures, and when to use
+  it, with the page you are on marked and links to the other two.
 - **Monitoring › Sentinel: clearer health cards; entry only while Sentinel is on.**
   The four cards (Pipeline, Behavioural baseline, CVE mirror, Response engine)
   carry their state as a coloured edge, an icon and a badge, the heartbeat

@@ -17,6 +17,8 @@
 
 {% set K = page.kinds %}
 {% block content %}
+{% from "monitoring/_pages_compare.html" import compare_button, compare_modal with context %}
+{{ compare_modal(request.blueprint) }}
 <style nonce="{{ csp_nonce }}">
   /* --------------------------------------------------------------------
      SATOM renders on a LIGHT chrome: static/css/fortiweb.css sets
@@ -166,6 +168,7 @@
   </div>
   <div class="d-flex align-items-center gap-2">
     <span id="dpStamp" class="text-muted small"></span>
+    {{ compare_button() }}
     {% if can_edit %}
     <button id="dpDiscoverBtn" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-magic me-1"></i>{{ _('Discover from device') }}</button>

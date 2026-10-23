@@ -23,6 +23,8 @@
 {% set active = (boards | selectattr('slug', 'equalto', active_slug) | list | first) or (boards | first) %}
 
 {% block content %}
+{% from "monitoring/_pages_compare.html" import compare_button, compare_modal with context %}
+{{ compare_modal(request.blueprint) }}
 <div class="fw-page-header d-flex align-items-center justify-content-between mb-3">
   <div>
     <h1 class="fw-page-title mb-0">
@@ -37,6 +39,7 @@
      marker both buttons render, look enabled and do nothing. #}
   <div class="d-flex align-items-center gap-2" data-an-scope>
     <span id="an-window" class="text-muted small"></span>
+    {{ compare_button() }}
     <button class="btn btn-sm btn-outline-secondary" data-act="cadence"
             data-bs-toggle="modal" data-bs-target="#an-cadence-modal">
       <i class="bi bi-stopwatch me-1"></i>{{ _('Collection cadence') }}</button>

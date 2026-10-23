@@ -164,6 +164,22 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
+<li><strong>Settings menu regrouped, one level deeper.</strong> <em>System › General</em> is now a
+  sub-menu holding General, Node TLS, Email &amp; Alerts and Thresholds;
+  <strong>Integrations</strong> is a group of its own (Integrations, DNS Records,
+  Hypervisors); <strong>AI</strong> holds <em>Scout</em> (Providers, Path Diagnostics,
+  Architecture) and <em>Sentinel</em> (its six entries, unchanged). The Network &amp;
+  DNS, Monitoring &amp; Alerts, Sentinel and Path Diagnostics groups are gone:
+  8 groups, 37 panels. Pane targets (<code>#tab-…</code>) did not change. Requested by
+  the operator.</li>
+<li><strong>Every Settings card has a title, starts folded and has its own anchor</strong>
+  (<code>/settings/#card-…</code>, the same in every language). A link to a card
+  switches to its panel, opens it and folds the others; a panel with one
+  card draws it open, and the card you saved is open again after the
+  redirect. Status tiles are never folded.</li>
+<li><strong>DNS Lookup's resolver list moved to the DNS Lookup page</strong> (admin-only
+  card, <code>/dns-lookup/#resolvers</code>), and DNS Lookup is also offered under
+  <em>Administrator › System</em>. Old <code>#tab-dnstool</code> links forward there.</li>
 <li><strong>Security and Change Password moved from Settings to your Profile.</strong> The
   two-factor authentication, recovery email, active session and password
   cards are now at the top of <em>Profile</em> (user menu, top right); Settings no

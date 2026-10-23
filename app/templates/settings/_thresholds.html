@@ -1,7 +1,7 @@
 {# Settings -> Thresholds. Rendered client-side from /settings/thresholds/state
    so the 4 000-line index.html does not grow another 300 lines of markup for a
    panel whose shape is DATA (services/thresholds.py) rather than layout. #}
-<div class="fw-card mb-3">
+<div class="fw-card mb-3" id="card-alert-thresholds">
   <div class="fw-card-header"><span><i class="bi bi-sliders me-2"></i>{{ _('Alert thresholds') }}</span></div>
   <div class="fw-card-body">
     <p class="text-muted mb-3">

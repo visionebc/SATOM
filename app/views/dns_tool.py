@@ -3,7 +3,8 @@
 The Global ADOM sees the whole fleet; a concrete ADOM (fortiweb / fortiadc)
 gets the SAME tool with the LB output cut to its own product — that scoping
 is inherited from ``visible_appliances()`` inside ``dns_tool.fleet_lb_rows``.
-DNS servers are variable, managed in Settings → Network & DNS → DNS Lookup.
+DNS servers are variable, managed in the admin-only resolver card at the
+bottom of this page (#resolvers; Settings until 2026-10-23).
 """
 from __future__ import annotations
 
@@ -106,6 +107,10 @@ def index():
                       for r in dns_providers.enabled_backends("dns")],
         can_manage_records=current_user.can("user_manage"),
         can_decommission=current_user.can("config_write"),
+        # The FULL list (disabled rows too) for the admin-only resolver card;
+        # ``servers`` above is only the enabled ones the lookup queries.
+        dns_tool_servers=(dns_tool.dns_servers()
+                          if current_user.can("user_manage") else []),
     )
 
 

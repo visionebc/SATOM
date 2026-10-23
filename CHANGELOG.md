@@ -58,6 +58,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Changed
 
+- **Settings menu regrouped, one level deeper.** *System › General* is now a
+  sub-menu holding General, Node TLS, Email & Alerts and Thresholds;
+  **Integrations** is a group of its own (Integrations, DNS Records,
+  Hypervisors); **AI** holds *Scout* (Providers, Path Diagnostics,
+  Architecture) and *Sentinel* (its six entries, unchanged). The Network &
+  DNS, Monitoring & Alerts, Sentinel and Path Diagnostics groups are gone:
+  8 groups, 37 panels. Pane targets (`#tab-…`) did not change. Requested by
+  the operator.
+- **Every Settings card has a title, starts folded and has its own anchor**
+  (`/settings/#card-…`, the same in every language). A link to a card
+  switches to its panel, opens it and folds the others; a panel with one
+  card draws it open, and the card you saved is open again after the
+  redirect. Status tiles are never folded.
+- **DNS Lookup's resolver list moved to the DNS Lookup page** (admin-only
+  card, `/dns-lookup/#resolvers`), and DNS Lookup is also offered under
+  *Administrator › System*. Old `#tab-dnstool` links forward there.
 - **Security and Change Password moved from Settings to your Profile.** The
   two-factor authentication, recovery email, active session and password
   cards are now at the top of *Profile* (user menu, top right); Settings no

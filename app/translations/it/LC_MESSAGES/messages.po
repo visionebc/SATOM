@@ -27141,3 +27141,6 @@ msgstr "Punti di ripristino"
 
 msgid "Saved before every upgrade: the replaced packages at their previous version, or a full copy of the Python environment. From the console of a node, even with the web down: satom execute rollback list, then satom execute rollback apply <id> --yes."
 msgstr "Salvati prima di ogni aggiornamento: i pacchetti sostituiti nella versione precedente, oppure una copia completa dell’ambiente Python. Dalla console di un nodo, anche senza interfaccia web: satom execute rollback list, poi satom execute rollback apply <id> --yes."
+
+msgid "AI"
+msgstr "IA"

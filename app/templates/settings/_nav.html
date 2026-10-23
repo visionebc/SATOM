@@ -80,6 +80,15 @@
    console.  Do not add a self-service group back: what belongs to ONE user
    lives on that user's Profile, and this menu configures the installation.
 
+   2026-10-23 restructure (operator): menus may nest ONE level ('sub' entries,
+   a heading with its own entries).  System > General holds General, Node TLS,
+   Email & Alerts and Thresholds (the Monitoring & Alerts group is gone);
+   Integrations is a group of its own with DNS Records and Hypervisors; AI
+   holds Scout (Providers, Path Diagnostics, Architecture -- Path Diagnostics
+   IS Scout's walk, app/services/scout_config.py) and Sentinel, divided as it
+   was.  The resolver list of DNS Lookup moved to the DNS Lookup page itself,
+   so Network & DNS is gone too.  Sentinel and Scout still sit LAST.
+
    Sentinel's six entries are ordered by what they are, not by when they were added:
    the four CONFIGURATION surfaces first (Settings, Context, Response policy,
    Border blocklist -- and Context is configuration, however little it looks
@@ -101,18 +110,23 @@
 {% set nav_active = nav_active | default('tab-general') %}
 {% set nav_groups = [
   {'key': 'system', 'label': _('System'), 'icon': 'bi-hdd-rack', 'admin': true, 'items': [
-    {'t': 'tab-general',     'icon': 'bi-sliders',          'label': _('General')},
+    {'sub': 'general', 'icon': 'bi-sliders', 'label': _('General'), 'items': [
+      {'t': 'tab-general',     'icon': 'bi-sliders',          'label': _('General')},
+      {'t': 'tab-nodetls',     'icon': 'bi-shield-lock-fill', 'label': _('Node TLS')},
+      {'t': 'tab-email',       'icon': 'bi-envelope',         'label': 'Email & Alerts'},
+      {'t': 'tab-thresholds',  'icon': 'bi-sliders',          'label': _('Thresholds')}]},
     {'t': 'tab-git',         'icon': 'bi-git',              'label': _('Software Update Repository')},
     {'ep': 'self_update.index', 'icon': 'bi-arrow-repeat', 'label': _('Software Update'),
      'perm': 'user_manage'},
     {'ep': 'ha.index',       'icon': 'bi-diagram-3',        'label': _('High Availability'),
      'perm': 'user_manage'},
     {'ep': 'scheduled_actions.index', 'icon': 'bi-clock-history', 'label': _('System Automations'),
-     'perm': 'user_manage', 'adom': true},
-    {'t': 'tab-ai',          'icon': 'bi-stars',            'label': _('Scout'),
-     'perm': 'advisor.configure', 'id': 'ai-settings-tab-btn'},
-    {'ep': 'integrations.index', 'icon': 'bi-plug', 'label': _('Integrations'),
-     'perm': 'user_manage'}]},
+     'perm': 'user_manage', 'adom': true}]},
+  {'key': 'integrations', 'label': _('Integrations'), 'icon': 'bi-plug', 'admin': true, 'items': [
+    {'ep': 'integrations.index', 'icon': 'bi-plug',         'label': _('Integrations'),
+     'perm': 'user_manage'},
+    {'t': 'tab-dnsrecords',  'icon': 'bi-pencil-square',    'label': _('DNS Records')},
+    {'t': 'tab-hypervisors', 'icon': 'bi-hdd-stack-fill',   'label': _('Hypervisors')}]},
   {'key': 'sot', 'label': _('Source of Truth & Backup'), 'icon': 'bi-hdd-network', 'admin': true, 'items': [
     {'t': 'tab-sot',         'icon': 'bi-file-earmark-diff','label': _('Configuration SoT')},
     {'t': 'tab-backupsrv',   'icon': 'bi-hdd-network',      'label': _('Backup Server')},
@@ -128,13 +142,8 @@
     {'t': 'tab-vault',       'icon': 'bi-safe',             'label': _('Vault')}]},
   {'key': 'certs', 'label': _('Certificates & Trust'), 'icon': 'bi-award', 'admin': true, 'items': [
     {'t': 'tab-certmgr',     'icon': 'bi-award',            'label': _('Certificate Manager')},
-    {'t': 'tab-nodetls',     'icon': 'bi-shield-lock-fill', 'label': _('Node TLS')},
     {'t': 'tab-catrust',     'icon': 'bi-patch-check-fill', 'label': _('Trust store')}]},
-  {'key': 'network', 'label': _('Network & DNS'), 'icon': 'bi-globe2', 'admin': true, 'items': [
-    {'t': 'tab-dnstool',     'icon': 'bi-globe2',           'label': _('DNS Lookup')},
-    {'t': 'tab-dnsrecords',  'icon': 'bi-pencil-square',    'label': _('DNS Records')}]},
   {'key': 'fleet', 'label': _('Fleet & Devices'), 'icon': 'bi-hdd-stack-fill', 'admin': true, 'items': [
-    {'t': 'tab-hypervisors', 'icon': 'bi-hdd-stack-fill',   'label': _('Hypervisors')},
     {'t': 'tab-adoms',       'icon': 'bi-grid-1x2',         'label': _('ADOMs')},
     {'t': 'tab-policylinks', 'icon': 'bi-link-45deg',       'label': _('Policy Links')},
     {'t': 'tab-clonerules',  'icon': 'bi-files',            'label': _('Clone / Migrate')}]},
@@ -142,56 +151,21 @@
     {'t': 'tab-appearance',  'icon': 'bi-palette',          'label': _('Appearance')},
     {'t': 'tab-languages',   'icon': 'bi-translate',        'label': _('Languages')},
     {'t': 'tab-adommenus',   'icon': 'bi-eye-slash',        'label': _('ADOM Menus')}]},
-  {'key': 'monitoring', 'label': _('Monitoring & Alerts'), 'icon': 'bi-activity', 'admin': true, 'items': [
-    {'t': 'tab-email',       'icon': 'bi-envelope',         'label': 'Email & Alerts'},
-    {'t': 'tab-thresholds',  'icon': 'bi-sliders',          'label': _('Thresholds')}]},
-  {'key': 'sentinel', 'label': _('Sentinel'), 'icon': 'bi-shield-exclamation', 'admin': true, 'items': [
-    {'t': 'tab-sentinel',          'icon': 'bi-sliders',          'label': _('Settings')},
-    {'t': 'tab-sentinel-context',  'icon': 'bi-person-check',     'label': _('Context')},
-    {'t': 'tab-sentinel-policy',   'icon': 'bi-shield-lock',      'label': _('Response policy')},
-    {'t': 'tab-sentinel-blocklist','icon': 'bi-list-columns',     'label': _('Border blocklist')},
-    {'t': 'tab-sentinel-docs',     'icon': 'bi-diagram-3',        'label': _('Architecture')},
-    {'t': 'tab-sentinel-console',  'icon': 'bi-activity',         'label': _('Incidents console')}]},
-  {'key': 'scout', 'label': _('Path Diagnostics'), 'icon': 'bi-compass', 'admin': true, 'items': [
-    {'t': 'tab-scout',       'icon': 'bi-sliders',          'label': _('Settings')},
-    {'t': 'tab-scout-docs',  'icon': 'bi-diagram-3',        'label': _('Architecture')}]}
+  {'key': 'ai', 'label': _('AI'), 'icon': 'bi-stars', 'admin': true, 'items': [
+    {'sub': 'scout', 'icon': 'bi-compass', 'label': _('Scout'), 'items': [
+      {'t': 'tab-ai',          'icon': 'bi-stars',            'label': _('Providers'),
+       'perm': 'advisor.configure', 'id': 'ai-settings-tab-btn'},
+      {'t': 'tab-scout',       'icon': 'bi-sliders',          'label': _('Path Diagnostics')},
+      {'t': 'tab-scout-docs',  'icon': 'bi-diagram-3',        'label': _('Architecture')}]},
+    {'sub': 'sentinel', 'icon': 'bi-shield-exclamation', 'label': _('Sentinel'), 'items': [
+      {'t': 'tab-sentinel',          'icon': 'bi-sliders',          'label': _('Settings')},
+      {'t': 'tab-sentinel-context',  'icon': 'bi-person-check',     'label': _('Context')},
+      {'t': 'tab-sentinel-policy',   'icon': 'bi-shield-lock',      'label': _('Response policy')},
+      {'t': 'tab-sentinel-blocklist','icon': 'bi-list-columns',     'label': _('Border blocklist')},
+      {'t': 'tab-sentinel-docs',     'icon': 'bi-diagram-3',        'label': _('Architecture')},
+      {'t': 'tab-sentinel-console',  'icon': 'bi-activity',         'label': _('Incidents console')}]}]}
 ] %}
-  <aside class="nav fw-settings-nav" id="settingsTabs" role="tablist"
-         aria-label="{{ _('Settings sections') }}">
-    {% for g in nav_groups %}
-      {% if nav_is_admin or not g.admin %}
-        {# A group with nothing the caller may see is not rendered at all —
-           an empty accordion header is a promise of a section that is not
-           there. #}
-        {% set vis = [] %}
-        {% for it in g['items'] %}
-          {% if not it.perm or (current_user and current_user.can(it.perm)) %}
-            {% set _ = vis.append(it) %}
-          {% endif %}
-        {% endfor %}
-        {% if vis %}
-        {# The anchor matches on the target OR the endpoint: a standalone page
-           names itself with whichever of the two it is, and a group that holds
-           the current page but renders collapsed hides the selection the
-           operator is looking at. #}
-        {% set holds_active = (vis | selectattr('t', 'equalto', nav_active) | list)
-                            + (vis | selectattr('ep', 'equalto', nav_active) | list) %}
-        {# Collapsed is the DEFAULT, server-side: 9 groups holding 28 sections
-           expand into a wall taller than the viewport, and the operator then
-           has to close what they never opened.  The state is rendered here and
-           not left to the script so the first paint is already the default —
-           a menu that flashes open and then folds looks like a bug. #}
-        <div class="fw-set-nav-group" role="presentation"
-             data-set-group="{{ g.key }}"{% if holds_active %} data-set-anchor="1"{% endif %}>
-          <button type="button" class="fw-set-nav-toggle" aria-expanded="false"
-                  data-set-toggle="{{ g.key }}">
-            <i class="bi {{ g.icon }} fw-set-nav-group-icon"></i>
-            <span class="fw-set-nav-group-label">{{ g.label }}</span>
-            <span class="fw-set-nav-count">{{ vis | length }}</span>
-            <i class="bi bi-chevron-down fw-set-nav-caret"></i>
-          </button>
-          <div class="fw-set-nav-body">
-            {% for it in vis %}
+{% macro nav_leaf(it) -%}
             {%- if it.ep %}
             {# An entry that leads OUT of the console.  It is drawn as a link
                and carries the leaving arrow: a menu row that looks identical to
@@ -216,6 +190,76 @@
                href="{{ url_for('settings.index') }}#{{ it.t }}">
               <i class="bi {{ it.icon }} fw-set-nav-icon"></i><span>{{ it.label }}</span>
             </a>
+            {%- endif %}
+{%- endmacro %}
+  <aside class="nav fw-settings-nav" id="settingsTabs" role="tablist"
+         aria-label="{{ _('Settings sections') }}">
+    {% for g in nav_groups %}
+      {% if nav_is_admin or not g.admin %}
+        {# A group with nothing the caller may see is not rendered at all —
+           an empty accordion header is a promise of a section that is not
+           there.  The same rule applies one level down: a sub-menu
+           ('sub' entry) whose entries are all hidden is not drawn either. #}
+        {% set vis = [] %}
+        {% set leaves = [] %}
+        {% for it in g['items'] %}
+          {% if it.sub %}
+            {% set kids = [] %}
+            {% for k in it['items'] %}
+              {% if not k.perm or (current_user and current_user.can(k.perm)) %}
+                {% set _ = kids.append(k) %}{% set _ = leaves.append(k) %}
+              {% endif %}
+            {% endfor %}
+            {% if kids %}
+              {% set _ = vis.append({'sub': it.sub, 'icon': it.icon, 'label': it.label, 'items': kids}) %}
+            {% endif %}
+          {% elif not it.perm or (current_user and current_user.can(it.perm)) %}
+            {% set _ = vis.append(it) %}{% set _ = leaves.append(it) %}
+          {% endif %}
+        {% endfor %}
+        {% if vis %}
+        {# The anchor matches on the target OR the endpoint: a standalone page
+           names itself with whichever of the two it is, and a group that holds
+           the current page but renders collapsed hides the selection the
+           operator is looking at. #}
+        {% set holds_active = (leaves | selectattr('t', 'equalto', nav_active) | list)
+                            + (leaves | selectattr('ep', 'equalto', nav_active) | list) %}
+        {# Collapsed is the DEFAULT, server-side: the groups expand into a wall
+           taller than the viewport, and the operator then has to close what
+           they never opened.  The state is rendered here and not left to the
+           script so the first paint is already the default — a menu that
+           flashes open and then folds looks like a bug.  The count is of
+           SECTIONS (leaves), not of rows: a sub-menu is a heading. #}
+        <div class="fw-set-nav-group" role="presentation"
+             data-set-group="{{ g.key }}"{% if holds_active %} data-set-anchor="1"{% endif %}>
+          <button type="button" class="fw-set-nav-toggle" aria-expanded="false"
+                  data-set-toggle="{{ g.key }}">
+            <i class="bi {{ g.icon }} fw-set-nav-group-icon"></i>
+            <span class="fw-set-nav-group-label">{{ g.label }}</span>
+            <span class="fw-set-nav-count">{{ leaves | length }}</span>
+            <i class="bi bi-chevron-down fw-set-nav-caret"></i>
+          </button>
+          <div class="fw-set-nav-body">
+            {% for it in vis %}
+            {%- if it.sub %}
+            {# One level more (operator, 2026-10-23: "submenus one level
+               more").  A sub-menu is an accordion INSIDE its group: collapsed
+               by default, and selecting a section opens the sub-menu that
+               holds it and folds its siblings. #}
+            {% set sub_active = (it['items'] | selectattr('t', 'equalto', nav_active) | list)
+                              + (it['items'] | selectattr('ep', 'equalto', nav_active) | list) %}
+            <div class="fw-set-nav-sub{{ ' open' if sub_active else '' }}" data-set-sub="{{ it.sub }}">
+              <button type="button" class="fw-set-nav-subtoggle"
+                      aria-expanded="{{ 'true' if sub_active else 'false' }}" data-set-subtoggle="{{ it.sub }}">
+                <i class="bi {{ it.icon }} fw-set-nav-icon"></i><span>{{ it.label }}</span>
+                <i class="bi bi-chevron-down fw-set-nav-caret"></i>
+              </button>
+              <div class="fw-set-nav-subbody">
+              {% for k in it['items'] %}{{ nav_leaf(k) }}
+              {% endfor %}
+              </div>
+            </div>
+            {%- else %}{{ nav_leaf(it) }}
             {%- endif %}
             {% endfor %}
           </div>
@@ -309,6 +353,27 @@
   }
   function closeGroup(g) { paint(g, false); write([]); }
 
+  // Sub-menus: the same accordion one level down.  Opening one -- by its
+  // header or by selecting a section inside it -- folds its siblings in the
+  // same group.  Not stored: the open GROUP is what is remembered, and the
+  // sub-menu that holds the selected section is drawn open by the server.
+  function paintSub(sub, open) {
+    sub.classList.toggle('open', open);
+    var btn = sub.querySelector('.fw-set-nav-subtoggle');
+    if (btn) { btn.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+  }
+  function selectSub(sub) {
+    if (!sub) { return; }
+    var g = groupOf(sub);
+    if (g) {
+      Array.prototype.forEach.call(g.querySelectorAll('.fw-set-nav-sub'), function (other) {
+        if (other !== sub) { paintSub(other, false); }
+      });
+    }
+    paintSub(sub, true);
+  }
+  function subOf(el) { return el && el.closest ? el.closest('.fw-set-nav-sub') : null; }
+
   // Restore.  Only what the operator opened before; everything else stays as
   // the server drew it.
   var saved = read();
@@ -318,6 +383,12 @@
   }
 
   nav.addEventListener('click', function (e) {
+    var subHead = e.target.closest ? e.target.closest('.fw-set-nav-subtoggle') : null;
+    if (subHead) {
+      var sub = subOf(subHead);
+      if (sub && sub.classList.contains('open')) { paintSub(sub, false); } else { selectSub(sub); }
+      return;
+    }
     var head = e.target.closest ? e.target.closest('.fw-set-nav-toggle') : null;
     if (head) {
       var g = groupOf(head);
@@ -331,7 +402,7 @@
     // the current section: from the operator's side, an accordion that
     // sometimes does not fold.
     var item = e.target.closest ? e.target.closest('[data-bs-toggle="tab"]') : null;
-    if (item) { selectGroup(groupOf(item)); }
+    if (item) { selectGroup(groupOf(item)); if (subOf(item)) { selectSub(subOf(item)); } }
   });
 
   // Anything that reveals a section also reveals its group -- and only its
@@ -339,6 +410,9 @@
   // the redirects after a save all activate a tab WITHOUT going through
   // this menu.  Without this the operator lands on a pane whose menu shows no
   // selection anywhere.
-  nav.addEventListener('shown.bs.tab', function (e) { selectGroup(groupOf(e.target)); }, true);
+  nav.addEventListener('shown.bs.tab', function (e) {
+    selectGroup(groupOf(e.target));
+    if (subOf(e.target)) { selectSub(subOf(e.target)); }
+  }, true);
 })();
 </script>

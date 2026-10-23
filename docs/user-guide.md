@@ -5218,8 +5218,8 @@ is a single **global** one, not per-ADOM.
 
 ## 26. Settings, tab by tab
 
-`Settings` is one page with a **grouped sidebar**: **10 groups, 38 panels**.
-All ten of the groups (38 panels) are admin-only (`user_manage`). Your own
+`Settings` is one page with a **grouped sidebar**: **8 groups, 37 panels**.
+All eight of the groups (37 panels) are admin-only (`user_manage`). Your own
 **Security** and **Change Password** are on your **Profile** (§1.1), not here;
 a non-admin who opens `/settings/` is sent there, and the sidebar offers
 Settings only to administrators. A group with nothing you may see is not
@@ -5227,18 +5227,37 @@ rendered at all, so the menu never offers a section that is not there.
 
 | Group | Panels |
 |---|---|
-| **System** | General · Software Update Repository · Software Update · High Availability · System Automations · Scout · Integrations |
+| **System** | *General ▸* General · Node TLS · Email & Alerts · Thresholds — Software Update Repository · Software Update · High Availability · System Automations |
+| **Integrations** | Integrations · DNS Records · Hypervisors |
 | **Source of Truth & Backup** | Configuration SoT · Backup Server · System Backup & Restore · Deploy Clone |
 | **Access & Identity** | Users · Profiles · Authentication · Access Control · Vault |
-| **Certificates & Trust** | Certificate Manager · Node TLS · Trust store |
-| **Network & DNS** | DNS Lookup · DNS Records |
-| **Fleet & Devices** | Hypervisors · ADOMs · Policy Links · Clone / Migrate |
+| **Certificates & Trust** | Certificate Manager · Trust store |
+| **Fleet & Devices** | ADOMs · Policy Links · Clone / Migrate |
 | **User Interface** | Appearance · Languages · ADOM Menus |
-| **Monitoring & Alerts** | Email & Alerts · Thresholds |
-| **Sentinel** | Settings · Context · Response policy · Border blocklist · Architecture · Incidents console |
-| **Path Diagnostics** | Settings · Architecture |
+| **AI** | *Scout ▸* Providers · Path Diagnostics · Architecture — *Sentinel ▸* Settings · Context · Response policy · Border blocklist · Architecture · Incidents console |
 
-The **Scout** panel (the AI assistant, §33) additionally needs
+A name followed by **▸** is a **sub-menu**: one level more inside its group,
+folded like the groups and opened by its own header. Selecting a section
+opens the sub-menu that holds it and folds its siblings. (Until 3.5.0 the
+menu had ten flat groups; Node TLS sat in Certificates & Trust, Email & Alerts
+and Thresholds in *Monitoring & Alerts*, DNS Records in *Network & DNS*,
+Hypervisors in Fleet & Devices, and Sentinel and Path Diagnostics were groups
+of their own.)
+
+**Every card in a panel has a title and starts folded**; click its header to
+open it. A panel with a single card draws it open. Each card has a stable
+anchor — `/settings/#card-alert-thresholds`, `#card-email-smtp-configuration`
+and so on, the same in every language — and a link to one switches to its
+panel, opens that card and folds the others. After a save, the card whose form
+you submitted is drawn open again. Status tiles (the Sentinel console's four
+health tiles) are not sections and are never folded.
+
+**DNS Lookup's resolver list is on the DNS Lookup page** (Fleet → DNS
+Lookup, and Administrator → System → DNS Lookup), in an admin-only
+*resolver servers* card at the bottom (`/dns-lookup/#resolvers`); the old
+`/settings/#tab-dnstool` link forwards there.
+
+Scout's **Providers** panel (the AI assistant, §33) additionally needs
 `advisor.configure`; an admin without it does not see the entry. **Sentinel**
 and **Path Diagnostics** settings are admin-only end to end: saving them
 (including Path Diagnostics's site-wide on/off switch)
@@ -5250,7 +5269,9 @@ ships with an empty model endpoint and stays off until one is set (for example
 (↗) for that reason: clicking it replaces the console instead of switching a
 tab. It is where SATOM is wired to systems it does not own — NetBox
 (maintenance windows and the appliance → device map) and your own Python hooks
-— and it is filed under System because that is what it configures. It had no
+— and since 2026-10-23 it heads a group of its own, **Integrations**, with the
+other two outside systems Settings wires: DNS Records (DNS/IPAM backends) and
+Hypervisors. It had no
 menu entry at all until 2026-09-21; the page existed and worked, but the only
 way to reach it was to type `/settings/integrations`.
 
@@ -5266,7 +5287,8 @@ this one for another (§11.1). It sits in Source of Truth & Backup because it
 moves the same estate the backup bundles carry. It is not *Clone / Migrate*
 under Fleet & Devices, which copies configuration from one appliance to another.
 
-**Path Diagnostics is its own group, below Sentinel.** Its *Settings* panel holds only
+**Path Diagnostics is part of Scout** (AI → Scout ▸ Path Diagnostics): it is
+Scout's walk, configured next to Scout's AI providers. Its panel holds only
 *where to look and how long to wait* — the default look-back window, the
 FortiAnalyzer ADOM and device selector the border rung queries, the two
 timeouts. What a verdict **means** is on the same panel as a read-only table:
@@ -5311,7 +5333,7 @@ read the manifest, and the repo they named declared `firmwares: []` while two
 images were loaded on the node. A setting that announces an authority nobody
 reads is worse than no setting, so it was removed rather than filled in.
 
-**Sentinel is its own group, and all six of its entries are panes.**
+**Sentinel is a sub-menu of AI, and all six of its entries are panes.**
 They are ordered by what they are, not by when they arrived: the four
 configuration surfaces first, then the reference document, then the live
 console. The Border blocklist sits last of the four because it is the one
@@ -5348,8 +5370,7 @@ function rather than a duplicate.
 Both standalone URLs are still there and unchanged — they are what the top
 navigation, the manual's links and the concept map use — and each is rendered
 from the *same* file as its pane, so the two surfaces cannot drift apart. The
-two configure-once groups sit at the bottom, in this order:
-**Monitoring & Alerts**, then **Sentinel** **last**.
+configure-once group **AI** (Scout and Sentinel) sits **last**.
 
 The menu itself is defined **once**, in `app/templates/settings/_nav.html`, and
 every Settings surface includes that one file — the console and the standalone
@@ -5376,7 +5397,7 @@ because the setting is meaningless without it. They are not repeated here:
 | **Hypervisors** | §21.1 — the Proxmox / ESXi endpoints provisioning may build on |
 | **Clone / Migrate** | §6 — dummy-VIP rewrite rules and the copy-WPP default |
 | **Appearance** | §19 — themes, tokens, logo and favicon |
-| **Sentinel** | `Settings → Sentinel → Settings` — every knob next to the pipeline it configures, the live scoring weights, and ten demonstrations runnable against the real engine, all **rendered in the pane itself**. The same section is also served standalone at `/settings/sentinel` — with the Admin Console submenu still beside it — which is where deep links and the save redirect from outside the console land. **Context**, **Response policy**, **Architecture** and **Incidents console** are panes beside it, rendered from the same files as `/sentinel/context`, `/sentinel/policies`, `/sentinel/docs` and `/sentinel/`. The incidents console's own Architecture and Context buttons went away in the same change that made those two menu entries — a duplicate control, not a door. Every element of that pane — each knob, each group heading, each of the four health chips and each link out — carries a **?**; hovering it (or focusing it, or tapping it) opens the explanation of what the control does, where the code reads it and what breaks at either extreme. That text lives in the same catalog the form is generated from, so it cannot drift from the control it describes. |
+| **Sentinel** | `Settings → AI → Sentinel → Settings` — every knob next to the pipeline it configures, the live scoring weights, and ten demonstrations runnable against the real engine, all **rendered in the pane itself**. The same section is also served standalone at `/settings/sentinel` — with the Admin Console submenu still beside it — which is where deep links and the save redirect from outside the console land. **Context**, **Response policy**, **Architecture** and **Incidents console** are panes beside it, rendered from the same files as `/sentinel/context`, `/sentinel/policies`, `/sentinel/docs` and `/sentinel/`. The incidents console's own Architecture and Context buttons went away in the same change that made those two menu entries — a duplicate control, not a door. Every element of that pane — each knob, each group heading, each of the four health chips and each link out — carries a **?**; hovering it (or focusing it, or tapping it) opens the explanation of what the control does, where the code reads it and what breaks at either extreme. That text lives in the same catalog the form is generated from, so it cannot drift from the control it describes. |
 
 The rest follow.
 
@@ -8196,7 +8217,7 @@ truth. Full design write-up: `docs/ai-advisor.md`.
 
 ### 33.1 Turning it on
 
-**Settings → Scout** (`advisor.configure`, admin-only) has three
+**Settings → AI → Scout ▸ Providers** (`advisor.configure`, admin-only) has three
 switches, all off on a fresh install: **Enable Scout**, **Allow
 read-only tool calls**, and **Allow external providers**. A local Ollama
 provider (`ollama-local`, base URL `http://localhost:11434`) is seeded
@@ -8244,7 +8265,7 @@ anywhere.
 
 | Symptom | What's happening |
 |---|---|
-| Sending a message returns *"Scout is disabled"* | The master switch in Settings → Scout is off (33.1). |
+| Sending a message returns *"Scout is disabled"* | The master switch in Settings → AI → Scout ▸ Providers is off (33.1). |
 | Sending to a non-local provider returns *"external providers are disabled"* | A provider is configured but **Allow external providers** is off — two separate gates on purpose (33.1). |
 | A provider shows *"no route to host"* / times out on the first message | If it's the local Ollama provider, a large model can take well over a minute to load into memory on a cold call — that is not a hang, wait for it (`docs/ai-advisor.md`). |
 | A chat reply mentions a proposal but no card appears | The model's fenced `` ```satom-proposal `` block did not parse as valid JSON against the schema — the chat reply still reached you, the malformed block was silently dropped rather than turned into something that only looks valid. |

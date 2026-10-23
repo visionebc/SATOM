@@ -3,7 +3,7 @@
    index() context, so this tab cannot regress the rest of that 2000+ line
    view. Gated by the caller on current_user.can('advisor.configure'). #}
 <div id="ai-settings-root">
-  <div class="fw-card">
+  <div class="fw-card" id="card-scout">
     <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Scout') }}</h2></div>
     <div class="fw-card-body">
       <p class="text-secondary" style="font-size:13px">{{ _('The advisor never writes to SATOM or an appliance directly — see') }} <a href="{{ docs_url('ai-advisor') }}" target="_blank" rel="noopener">{{ _('docs/ai-advisor.md') }}</a>{{ _('. Local Ollama traffic never leaves the LAN. Every message sent to an external provider is logged (') }}<a href="{{ url_for('audit.index') }}">{{ _('Audit log') }}</a>, action <code>advisor.send</code>), redacted of
@@ -26,7 +26,7 @@
     </div>
   </div>
 
-  <div class="fw-card">
+  <div class="fw-card" id="card-providers">
     <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Providers') }}</h2></div>
     <div class="fw-card-body">
       <div id="ai-provider-list" class="mb-3"></div>

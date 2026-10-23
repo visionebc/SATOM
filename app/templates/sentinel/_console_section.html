@@ -144,7 +144,7 @@
 {# ── pipeline honesty row ───────────────────────────────────────────────── #}
 <div class="row g-3 mb-3">
   <div class="col-md-3">
-    <div class="fw-card h-100"><div class="fw-card-body">
+    <div class="fw-card h-100" data-card-static><div class="fw-card-body">
       <div class="fw-stat-label">Pipeline{{ hint(sn_hint('health.pipeline')) }}</div>
       {% if not health.enabled %}
         <div class="fw-stat-value text-danger">disabled</div>
@@ -159,7 +159,7 @@
     </div></div>
   </div>
   <div class="col-md-3">
-    <div class="fw-card h-100"><div class="fw-card-body">
+    <div class="fw-card h-100" data-card-static><div class="fw-card-body">
       <div class="fw-stat-label">Behavioural baseline{{ hint(sn_hint('health.baseline')) }}</div>
       <div class="fw-stat-value">{{ health.baseline.usable }}<span class="text-muted" style="font-size:14px;">/{{ health.baseline.total }}</span></div>
       <div class="small text-muted">
@@ -174,7 +174,7 @@
     </div></div>
   </div>
   <div class="col-md-3">
-    <div class="fw-card h-100"><div class="fw-card-body">
+    <div class="fw-card h-100" data-card-static><div class="fw-card-body">
       <div class="fw-stat-label">CVE mirror (local){{ hint(sn_hint('health.vuln')) }}</div>
       <div class="fw-stat-value">{{ health.vuln.total }}</div>
       <div class="small text-muted">
@@ -187,7 +187,7 @@
     </div></div>
   </div>
   <div class="col-md-3">
-    <div class="fw-card h-100"><div class="fw-card-body">
+    <div class="fw-card h-100" data-card-static><div class="fw-card-body">
       <div class="fw-stat-label">Response engine{{ hint(sn_hint('console.response')) }}</div>
       {% if not health.response_armed %}
         <div class="fw-stat-value">proposals only</div>
@@ -253,7 +253,7 @@
 {% endif %}
 
 {# ── incident stats ─────────────────────────────────────────────────────── #}
-<div class="fw-card mb-3">
+<div class="fw-card mb-3" id="card-last-7-days">
   <div class="fw-card-header d-flex justify-content-between align-items-center">
     <strong><i class="bi bi-graph-up me-1"></i>Last 7 days</strong>{{ hint(sn_hint('console.stats')) }}
     <div class="btn-group btn-group-sm">
@@ -287,7 +287,7 @@
 </div>
 
 {# ── incidents ──────────────────────────────────────────────────────────── #}
-<div class="fw-card">
+<div class="fw-card" id="card-incidents">
   <div class="fw-card-header"><strong><i class="bi bi-list-ul me-1"></i>Incidents</strong>{{ hint(sn_hint('console.incidents')) }}</div>
   <div class="fw-card-body">
     {% if not incidents %}

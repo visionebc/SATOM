@@ -31,7 +31,7 @@
   <div class="tab-pane fade show active" id="tab-general">
     <div class="row g-3">
       <div class="col-lg-7">
-        <div class="fw-card">
+        <div class="fw-card" id="card-general-configuration">
           <div class="fw-card-header">
             <span class="fw-card-title"><i class="bi bi-sliders me-2 text-accent"></i>{{ _('General Configuration') }}</span>
           </div>
@@ -120,7 +120,7 @@
 
       <div class="col-lg-5">
         {% if current_user.can('user_manage') %}
-        <div class="fw-card mb-3">
+        <div class="fw-card mb-3" id="card-bug-report-notifications">
           <div class="fw-card-header">
             <span class="fw-card-title"><i class="bi bi-bug me-2 text-accent"></i>{{ _('Bug report notifications') }}</span>
           </div>
@@ -148,7 +148,7 @@
          as tall and neither table has to wrap. -->
     <div class="row g-3 mt-1">
       <div class="col-12">
-        <div class="fw-card">
+        <div class="fw-card" id="card-system-information">
           <div class="fw-card-header">
             <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>{{ _('System Information') }}</span>
           </div>
@@ -248,7 +248,7 @@
          (the whole General tab sits inside the is_admin block above). -->
     <div class="row g-3 mt-1" id="swinv-card">
       <div class="col-12">
-        <div class="fw-card">
+        <div class="fw-card" id="card-installed-software">
           <div class="fw-card-header d-flex justify-content-between align-items-center">
             <span class="fw-card-title"><i class="bi bi-stack me-2 text-accent"></i>{{ _('Installed software') }}</span>
             <span class="d-flex gap-2">
@@ -321,7 +321,7 @@
     {% if current_user.can('user_manage') %}
     <div class="row g-3 mt-1" id="us-card">
       <div class="col-12">
-        <div class="fw-card">
+        <div class="fw-card" id="card-update-sources">
           <div class="fw-card-header">
             <span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('Update sources') }}</span>
           </div>
@@ -374,7 +374,7 @@
     <!-- SERVICE CONTROL  [SATOM-SERVICE-CONTROL-CARD] -->
     <div class="row g-3 mt-1">
       <div class="col-12">
-        <div class="fw-card">
+        <div class="fw-card" id="card-services">
           <div class="fw-card-header d-flex justify-content-between align-items-center">
             <span class="fw-card-title"><i class="bi bi-hdd-stack me-2 text-accent"></i>{{ _('Services') }}</span>
             <span class="d-flex align-items-center gap-2">
@@ -435,7 +435,7 @@
 
         <!-- IP whitelist -->
         <div class="col-lg-7">
-          <div class="fw-card">
+          <div class="fw-card" id="card-ip-whitelist">
             <div class="fw-card-header">
               <span class="fw-card-title"><i class="bi bi-hdd-network-fill me-2 text-accent"></i>{{ _('IP Whitelist') }}</span>
             </div>
@@ -465,7 +465,7 @@
 
         <!-- Per-user access: handled by profiles, not by a list here -->
         <div class="col-lg-5">
-          <div class="fw-card">
+          <div class="fw-card" id="card-who-may-sign-in">
             <div class="fw-card-header">
               <span class="fw-card-title"><i class="bi bi-people-fill me-2 text-accent"></i>{{ _('Who may sign in') }}</span>
             </div>
@@ -529,7 +529,7 @@
     <div class="row g-4">
       <div class="col-lg-7">
         <!-- Repo status card -->
-        <div class="fw-card mb-3">
+        <div class="fw-card mb-3" id="card-repository">
           <div class="fw-card-header d-flex align-items-center justify-content-between">
             <span class="fw-card-title"><i class="bi bi-git me-2 text-accent"></i>{{ _('Repository') }}</span>
             <div class="d-flex gap-2">
@@ -596,7 +596,7 @@
           </div>
         </div>
         <!-- Pull card -->
-        <div class="fw-card mb-3">
+        <div class="fw-card mb-3" id="card-update-from-gitea">
           <div class="fw-card-header">
             <span class="fw-card-title"><i class="bi bi-cloud-download me-2 text-accent"></i>{{ _('Update from Gitea') }}</span>
           </div>
@@ -613,7 +613,7 @@
       </div>
       <div class="col-lg-5">
         <!-- Recent commits -->
-        <div class="fw-card mb-3">
+        <div class="fw-card mb-3" id="card-recent-commits">
           <div class="fw-card-header">
             <span class="fw-card-title"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Recent Commits') }}</span>
           </div>
@@ -624,7 +624,7 @@
           </div>
         </div>
         <!-- Manual console -->
-        <div class="fw-card">
+        <div class="fw-card" id="card-manual-git-console">
           <div class="fw-card-header">
             <span class="fw-card-title"><i class="bi bi-terminal me-2 text-accent"></i>{{ _('Manual Git Console') }}</span>
           </div>
@@ -668,7 +668,7 @@
      of them by clicking a single menu entry and never sees the others.
   #}
   <div class="tab-pane fade" id="tab-sot">
-    <div class="fw-card mb-3">
+    <div class="fw-card mb-3" id="card-what-the-configuration-sot-is">
       <div class="fw-card-header">
         <i class="bi bi-file-earmark-diff me-1"></i>{{ _('What the Configuration SoT is') }}
       </div>
@@ -690,7 +690,7 @@
        node, and it is edited once per ADOM because the four families differ
        by an order of magnitude in snapshot size.
     #}
-    <div class="fw-card">
+    <div class="fw-card" id="card-change-log-and-local-payload">
       <div class="fw-card-header">
         <i class="bi bi-clock-history me-1"></i>{{ _('Change log and local payload') }}
       </div>
@@ -721,7 +721,7 @@
     <form method="post" action="{{ url_for('settings.save_sot') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="product" value="{{ scope.key }}">
-      <div class="fw-card mt-3">
+      <div class="fw-card mt-3" id="card-sot-scope-{{ scope.key or 'all' }}">
         <div class="fw-card-header">
           <i class="bi bi-{{ 'diagram-3' if scope.key else 'globe2' }} me-1"></i>{{ scope.name }}
           {% if scope.key %}<span class="fw-badge fw-badge-info ms-2">{{ scope.key }}</span>{% endif %}
@@ -795,7 +795,7 @@
        row still filed under it, so hiding the form must not hide the rule.
     #}
     {% if sot_dormant_adoms %}
-    <div class="fw-card mt-3">
+    <div class="fw-card mt-3" id="card-inactive-adoms-that-still-carry-a">
       <div class="fw-card-header">
         <i class="bi bi-exclamation-triangle me-1"></i>{{ _('Inactive ADOMs that still carry a rule or a history') }}
       </div>
@@ -835,7 +835,7 @@
 
     <form method="post" action="{{ url_for('settings.run_sot_evacuate') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="fw-card mt-3">
+      <div class="fw-card mt-3" id="card-free-space-on-this-node-now">
         <div class="fw-card-header">
           <i class="bi bi-box-arrow-up me-1"></i>{{ _('Free space on this node now') }}
         </div>
@@ -872,7 +872,7 @@
     #}
     <form method="post" action="{{ url_for('settings.save_sot_refresh') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="fw-card mt-3">
+      <div class="fw-card mt-3" id="card-refresh-frequency">
         <div class="fw-card-header">
           <i class="bi bi-arrow-repeat me-1"></i>{{ _('Refresh frequency') }}
         </div>
@@ -913,7 +913,7 @@
   <div class="tab-pane fade" id="tab-backupsrv">
     <form method="post" action="{{ url_for('settings.save_backup_srv') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="fw-card">
+      <div class="fw-card" id="card-backup-server-access-sftp">
         <div class="fw-card-header">
           <i class="bi bi-hdd-network me-1"></i>{{ _('Backup server access (SFTP)') }}
         </div>
@@ -1000,7 +1000,7 @@
     #}
     <form method="post" action="{{ url_for('settings.save_backup_schedule') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="fw-card mt-3">
+      <div class="fw-card mt-3" id="card-system-bundle-schedule">
         <div class="fw-card-header">
           <i class="bi bi-clock-history me-1"></i>{{ _('System bundle schedule') }}
         </div>
@@ -1044,7 +1044,7 @@
     #}
     <form method="post" action="{{ url_for('settings.save_bundle_retention') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="fw-card mt-3">
+      <div class="fw-card mt-3" id="card-local-bundle-retention">
         <div class="fw-card-header">
           <i class="bi bi-hdd me-1"></i>{{ _('Local bundle retention') }}
         </div>
@@ -1073,7 +1073,7 @@
 
     <form method="post" action="{{ url_for('settings.run_bundle_evict') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="fw-card mt-3">
+      <div class="fw-card mt-3" id="card-apply-bundle-retention-now">
         <div class="fw-card-header">
           <i class="bi bi-box-arrow-up me-1"></i>{{ _('Apply bundle retention now') }}
         </div>
@@ -1115,7 +1115,7 @@
       <div class="row g-3">
 
         <div class="col-lg-7">
-          <div class="fw-card">
+          <div class="fw-card" id="card-external-secret-store-vault">
             <div class="fw-card-header">
               <i class="bi bi-safe me-1"></i>{{ _('External secret store (Vault)') }}
             </div>
@@ -1233,7 +1233,7 @@
         </div>
 
         <div class="col-lg-5">
-          <div class="fw-card mb-3">
+          <div class="fw-card mb-3" id="card-status">
             <div class="fw-card-header">
               <i class="bi bi-activity me-1"></i>{{ _('Status') }}
             </div>
@@ -1253,7 +1253,7 @@
             </div>
           </div>
 
-          <div class="fw-card">
+          <div class="fw-card" id="card-migrate-existing-credentials">
             <div class="fw-card-header">
               <i class="bi bi-arrow-left-right me-1"></i>{{ _('Migrate existing credentials') }}
             </div>
@@ -1271,7 +1271,7 @@
             </div>
           </div>
 
-          <div class="fw-card mt-3">
+          <div class="fw-card mt-3" id="card-remove-the-local-copies">
             <div class="fw-card-header">
               <i class="bi bi-eraser me-1"></i>{{ _('Remove the local copies') }}
             </div>
@@ -1300,7 +1300,7 @@
   <div class="tab-pane fade" id="tab-email">
     <div class="row g-3">
       <div class="col-lg-7">
-        <div class="fw-card">
+        <div class="fw-card" id="card-email-smtp-configuration">
           <div class="fw-card-header">
             <span class="fw-card-title"><i class="bi bi-envelope me-2 text-accent"></i>{{ _('Email (SMTP) Configuration') }}</span>
           </div>
@@ -1420,7 +1420,7 @@
       </div>
 
       <div class="col-lg-5">
-        <div class="fw-card">
+        <div class="fw-card" id="card-send-a-test-email">
           <div class="fw-card-header">
             <span class="fw-card-title"><i class="bi bi-send me-2 text-accent"></i>{{ _('Send a test email') }}</span>
           </div>
@@ -1444,7 +1444,7 @@
     <!-- ALERTS / NOTIFICATIONS -->
     <div class="row g-3 mt-1">
       <div class="col-12">
-        <div class="fw-card">
+        <div class="fw-card" id="card-alerts-notifications">
           <div class="fw-card-header">
             <span class="fw-card-title"><i class="bi bi-bell me-2 text-accent"></i>Alerts &amp; notifications</span>
           </div>
@@ -1844,7 +1844,7 @@
   <div class="tab-pane fade" id="tab-auth">
     <div class="row g-3">
       <div class="col-lg-7">
-        <div class="fw-card">
+        <div class="fw-card" id="card-authentication-source">
           <div class="fw-card-header">
             <span class="fw-card-title"><i class="bi bi-shield-lock me-2 text-accent"></i>{{ _('Authentication Source') }}</span>
           </div>
@@ -2032,7 +2032,7 @@
       </div>
 
       <div class="col-lg-5">
-        <div class="fw-card">
+        <div class="fw-card" id="card-test-connection">
           <div class="fw-card-header">
             <span class="fw-card-title"><i class="bi bi-plug me-2 text-accent"></i>{{ _('Test connection') }}</span>
           </div>
@@ -2083,7 +2083,7 @@
     <form method="POST" action="{{ url_for('settings.save_cert_manager') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-      <div class="fw-card mb-3">
+      <div class="fw-card mb-3" id="card-issuance-protocol-ca-backend">
         <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-shuffle me-2 text-accent"></i>{{ _('Issuance protocol (CA backend)') }}</span></div>
         <div class="fw-card-body">
           <div class="row g-3 align-items-end">
@@ -2104,7 +2104,7 @@
         </div>
       </div>
 
-      <div class="fw-card mb-3">
+      <div class="fw-card mb-3" id="card-adcs-connection-linux-enrolment-client">
         <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-hdd-network me-2 text-accent"></i>{{ _('ADCS connection (Linux enrolment client)') }}</span></div>
         <div class="fw-card-body">
           <div class="row g-3">
@@ -2152,7 +2152,7 @@
         </div>
       </div>
 
-      <div class="fw-card mb-3">
+      <div class="fw-card mb-3" id="card-acme-account">
         <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-globe2 me-2 text-accent"></i>{{ _('ACME / Let\'s Encrypt — account') }}</span></div>
         <div class="fw-card-body">
           <p class="text-muted mb-2" style="font-size:12px;">
@@ -2244,7 +2244,7 @@
         </div>
       </div>
 
-      <div class="fw-card mb-3">
+      <div class="fw-card mb-3" id="card-acme-domain-validation">
         <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-shield-check me-2 text-accent"></i>{{ _('ACME — domain validation') }}</span></div>
         <div class="fw-card-body">
           <div class="row g-3">
@@ -2324,7 +2324,7 @@
         </div>
       </div>
 
-      <div class="fw-card mb-3">
+      <div class="fw-card mb-3" id="card-acme-commands-advanced">
         <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-terminal me-2 text-accent"></i>{{ _('ACME — commands (advanced)') }}</span></div>
         <div class="fw-card-body">
           <div class="row g-3">
@@ -2356,7 +2356,7 @@
       </div>
 
       {% for cls, label, cfg in cert_classes %}
-      <div class="fw-card mb-3">
+      <div class="fw-card mb-3" id="card-certclass-{{ cls }}">
         <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-award me-2 text-accent"></i>{{ label }}</span></div>
         <div class="fw-card-body">
           <div class="row g-3">
@@ -2402,7 +2402,7 @@
       </div>
       {% endfor %}
 
-      <div class="fw-card mb-3">
+      <div class="fw-card mb-3" id="card-lifecycle-policy-rotation-windows-device-cleanup">
         <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-recycle me-2 text-accent"></i>{{ _('Lifecycle policy — rotation windows & device cleanup') }}</span></div>
         <div class="fw-card-body">
           <p class="text-muted mb-2" style="font-size:12px;">
@@ -2537,7 +2537,7 @@
       </div>
     </div>
 
-    <div class="fw-card mb-4">
+    <div class="fw-card mb-4" id="card-add-or-edit-a-dns-provider">
       <div class="fw-card-header">
         <span class="fw-card-title"><i class="bi bi-plus-square me-2 text-accent"></i>{{ _('Add or edit a DNS provider') }}</span>
       </div>
@@ -2599,10 +2599,9 @@
 <div class="tab-pane fade" id="tab-nodetls">
     <div class="row g-4">
       <div class="col-12" data-mark="fm-ha-arch-doc">
-        <div class="fw-card">
+        <div class="fw-card" id="card-nodetls-about">
+          <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-diagram-3 me-1 text-accent"></i>What this certificate is for &mdash; and how the nodes talk</span></div>
           <div class="fw-card-body" style="font-size:12.5px;">
-            <div class="mb-1"><i class="bi bi-diagram-3 me-1 text-accent"></i>
-              <strong>What this certificate is for &mdash; and how the nodes talk.</strong></div>
             <div class="text-muted">
               {{ _('The certificate below is served by nginx on') }} <strong>{{ _('two') }}</strong> ports from the same vhost:
               <code>:443</code> (public web access &mdash; your browser) and <code>:8443</code> (inter&#8209;node
@@ -2617,7 +2616,7 @@
         </div>
       </div>
       <div class="col-12" id="nt-activate" style="display:none;">
-        <div class="fw-card">
+        <div class="fw-card" id="card-activating-certificate">
           <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-arrow-repeat me-2 text-accent"></i><span id="nt-act-title">{{ _('Activating certificate') }}</span></span>
             <span id="nt-act-state" class="ms-auto"></span></div>
           <div class="fw-card-body">
@@ -2632,7 +2631,7 @@
         </div>
       </div>
       <div class="col-lg-6">
-        <div class="fw-card">
+        <div class="fw-card" id="card-service-certificate-nginx-443-8443">
           <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-patch-check me-2 text-accent"></i>{{ _('Service certificate (nginx :443 / :8443)') }}</span></div>
           <div class="fw-card-body">
             <div id="nt-cert-loading" class="text-muted" style="font-size:13px;">{{ _('Loading…') }}</div>
@@ -2692,7 +2691,7 @@
       </div>
 
       <div class="col-lg-6">
-        <div class="fw-card">
+        <div class="fw-card" id="card-import-certificate-pem">
           <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-upload me-2 text-accent"></i>{{ _('Import certificate (PEM)') }}</span></div>
           <div class="fw-card-body">
             <div class="btn-group btn-group-sm mb-2" role="group" aria-label="{{ _('Import mode') }}">
@@ -2772,7 +2771,7 @@
       </div>
 
       <div class="col-lg-6">
-        <div class="fw-card">
+        <div class="fw-card" id="card-node-to-node-encryption-postgres-replication">
           <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-hdd-network me-2 text-accent"></i>{{ _('Node-to-node encryption (Postgres replication)') }}</span></div>
           <div class="fw-card-body">
             <div id="nt-pg-state" style="font-size:13px;">{{ _('Loading…') }}</div>
@@ -3035,7 +3034,7 @@
   </div>
 
   <div class="tab-pane fade" id="tab-catrust">
-    <div class="fw-card" style="max-width:1040px;">
+    <div class="fw-card" id="card-tls-trust-store-certificate-authorities-satom" style="max-width:1040px;">
       <div class="fw-card-header"><i class="bi bi-patch-check-fill me-1"></i>{{ _('TLS trust store — certificate authorities SATOM accepts from devices') }}</div>
       <div class="fw-card-body">
         <p class="text-muted small mb-3">
@@ -3389,7 +3388,7 @@
   </div>
 
   <div class="tab-pane fade" id="tab-hypervisors">
-    <div class="fw-card" style="max-width:1120px;">
+    <div class="fw-card" id="card-hypervisors-where-satom-builds-appliance-machines" style="max-width:1120px;">
       <div class="fw-card-header"><span><i class="bi bi-hdd-stack-fill me-1"></i>{{ _('Hypervisors — where SATOM builds appliance machines') }}</span></div>
       <div class="fw-card-body">
         <p class="text-muted small mb-3">
@@ -3781,46 +3780,10 @@
     </script>
   </div>
 
-  <div class="tab-pane fade" id="tab-dnstool">
-    <div class="fw-card" style="max-width:780px;">
-      <div class="fw-card-header"><i class="bi bi-globe2 me-1"></i>{{ _('DNS Lookup — resolver servers') }}</div>
-      <div class="fw-card-body">
-        <p class="text-muted" style="font-size:13px;">
-          {{ _('The DNS servers the') }} <a href="{{ url_for('dns_tool.index') }}">DNS &amp; LB Lookup</a> {{ _('tool queries. The list is variable — add or remove rows at any time (blank rows are dropped). Every enabled server becomes one column in the lookup results; all ADOMs share this list.') }}
-        </p>
-        <form method="POST" action="{{ url_for('settings.save_dns_tool') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <table class="table fw-table align-middle" style="font-size:13px;">
-            <thead>
-              <tr><th style="width:32%;">{{ _('Name') }}</th><th>{{ _('Server (IP / hostname)') }}</th><th style="width:90px;" class="text-center">{{ _('Enabled') }}</th></tr>
-            </thead>
-            <tbody>
-              {% for s in dns_tool_servers %}
-              <tr>
-                <td><input type="text" name="dns_name" class="form-control fw-form-control form-control-sm" value="{{ s.name }}"></td>
-                <td><input type="text" name="dns_server" class="form-control fw-form-control form-control-sm" value="{{ s.server }}"></td>
-                <td class="text-center"><input type="checkbox" class="form-check-input" name="dns_enabled" value="{{ loop.index0 }}" {{ 'checked' if s.enabled }}></td>
-              </tr>
-              {% endfor %}
-              {% for i in range(3) %}
-              <tr>
-                <td><input type="text" name="dns_name" class="form-control fw-form-control form-control-sm" placeholder="{{ _('e.g. Extern') }}"></td>
-                <td><input type="text" name="dns_server" class="form-control fw-form-control form-control-sm" placeholder="{{ _('e.g. 192.0.2.53') }}"></td>
-                <td class="text-center"><input type="checkbox" class="form-check-input" name="dns_enabled" value="{{ (dns_tool_servers|length) + i }}" checked></td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save DNS servers') }}</button>
-        </form>
-      </div>
-    </div>
-  </div>
-
   <!-- DNS RECORDS / IPAM TAB -->
   <!-- DNS RECORDS / IPAM BACKENDS TAB -->
   <div class="tab-pane fade" id="tab-dnsrecords">
-    <div class="fw-card" style="max-width:1120px;">
+    <div class="fw-card" id="card-dns-records-ipam-ddi-backends" style="max-width:1120px;">
       <div class="fw-card-header"><i class="bi bi-pencil-square me-1"></i>{{ _('DNS Records — IPAM / DDI backends') }}</div>
       <div class="fw-card-body">
         <p class="text-muted" style="font-size:13px;">
@@ -4173,7 +4136,7 @@
 
   <!-- POLICY LINKS TAB -->
   <div class="tab-pane fade" id="tab-policylinks">
-    <div class="fw-card" style="max-width:920px;">
+    <div class="fw-card" id="card-policy-links-dynamic-deep-links" style="max-width:920px;">
       <div class="fw-card-header"><i class="bi bi-link-45deg me-1"></i>{{ _('Policy Links — dynamic deep links') }}</div>
       <div class="fw-card-body">
         <p class="text-muted" style="font-size:13px;">
@@ -4237,7 +4200,7 @@
 
   <!-- CLONE / MIGRATE TAB -->
   <div class="tab-pane fade" id="tab-clonerules">
-    <div class="fw-card" style="max-width:780px;">
+    <div class="fw-card" id="card-clone-migrate-server-policy-copy-rules" style="max-width:780px;">
       <div class="fw-card-header"><i class="bi bi-files me-1"></i>{{ _('Clone / Migrate — Server Policy copy rules') }}</div>
       <div class="fw-card-body">
         <p class="text-muted" style="font-size:13px;">
@@ -4289,9 +4252,9 @@
   <div class="tab-pane fade" id="tab-adoms">
     <div class="row g-3 mb-2">
       <div class="col-12">
-        <div class="fw-card">
+        <div class="fw-card" id="card-adoms-about">
+          <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-grid-1x2 me-1"></i>{{ _('ADOMs / Products') }}</span></div>
           <div class="fw-card-body">
-            <h5 class="mb-1"><i class="bi bi-grid-1x2 me-1"></i>{{ _('ADOMs / Products') }}</h5>
             <p class="text-muted small mb-0">
               {{ _('The catalog of ADOMs (products) is stored in the database — logo, name, description, whether it\'s active, and which subsystems it supports. Deactivating an ADOM removes it from the product selector and 404s/redirects its routes. The') }} <strong>{{ _('capability flags') }}</strong>
               (Banner, API&nbsp;Tokens, Firmware, Naming, Regex) replace the old
@@ -4307,7 +4270,8 @@
 
     <!-- existing ADOMs -->
     {% for a in adoms %}
-    <div class="fw-card mb-3">
+    <div class="fw-card mb-3" id="card-adom-{{ a.key }}">
+      <div class="fw-card-header"><span class="fw-card-title"><img src="{{ url_for('static', filename=a.mark) }}" alt="" style="width:16px;height:16px;object-fit:contain;" class="me-2">{{ a.name }} <code class="ms-1" style="font-size:11px;">{{ a.key }}</code></span></div>
       <div class="fw-card-body">
         <form method="POST" action="{{ url_for('settings.update_adom', key=a.key) }}" enctype="multipart/form-data">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -4393,9 +4357,9 @@
     {% endfor %}
 
     <!-- new ADOM -->
-    <div class="fw-card mb-3" style="border:1px dashed rgba(148,163,184,.3)">
+    <div class="fw-card mb-3" id="card-adom-new" style="border:1px dashed rgba(148,163,184,.3)">
+      <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-plus-circle me-1"></i>{{ _('Add a new ADOM') }}</span></div>
       <div class="fw-card-body">
-        <h6 class="mb-3"><i class="bi bi-plus-circle me-1"></i>{{ _('Add a new ADOM') }}</h6>
         <form method="POST" action="{{ url_for('settings.create_adom') }}" enctype="multipart/form-data">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="row g-2">
@@ -4462,7 +4426,7 @@
   <div class="tab-pane fade" id="tab-appearance">
 
     <!-- ── theme list ─────────────────────────────────────────────────── -->
-    <div class="fw-card">
+    <div class="fw-card" id="card-themes">
       <div class="fw-card-header">
         <span class="fw-card-title"><i class="bi bi-palette me-2 text-accent"></i>{{ _('Themes') }}</span>
         <span class="text-muted" style="font-size:12px;">{{ _('Active:') }} <strong>{{ theme_name }}</strong></span>
@@ -4604,7 +4568,7 @@
     </div>
 
     <!-- ── editor ─────────────────────────────────────────────────────── -->
-    <div class="fw-card mt-3">
+    <div class="fw-card mt-3" id="card-theme-editor">
       <div class="fw-card-header">
         <span class="fw-card-title"><i class="bi bi-sliders me-2 text-accent"></i>{{ _('Theme editor') }}</span>
         <span class="text-muted" id="theme-editing-label" style="font-size:12px;">{{ _('New theme') }}</span>
@@ -4694,7 +4658,7 @@
       </form>
     </div>
 
-    <div class="fw-card mt-3">
+    <div class="fw-card mt-3" id="card-what-a-theme-can-and-cannot">
       <div class="fw-card-header">
         <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>{{ _('What a theme can and cannot repaint') }}</span>
       </div>
@@ -4950,7 +4914,7 @@
 
   <!-- ADOM MENUS TAB -->
   <div class="tab-pane fade" id="tab-adommenus">
-    <div class="fw-card">
+    <div class="fw-card" id="card-adom-menus">
       <div class="fw-card-header">
         <span class="fw-card-title"><i class="bi bi-eye-slash me-2 text-accent"></i>{{ _('ADOM menus') }} <span class="text-muted" style="font-size:12px;font-weight:400;">{{ _('(every ADOM, every user)') }}</span></span>
       </div>
@@ -5736,16 +5700,144 @@ document.addEventListener('DOMContentLoaded', function () {
 // --- activate the tab named in the URL hash (after a save redirect) ---
 (function () {
   var hash = window.location.hash;
-  // Security and Change Password moved to the Profile (2026-10-23); a link or
-  // bookmark still naming the old panes lands on the same cards there.
+  // Panes that left this page (2026-10-23): Security and Change Password went
+  // to the Profile, the DNS Lookup resolver list to the DNS Lookup page.  A
+  // link or bookmark still naming the old pane lands on the same card there.
   var moved = {'#tab-security': '#security', '#tab-password': '#password'};
+  var movedTo = {'#tab-dnstool': {{ (url_for('dns_tool.index') ~ '#resolvers') | tojson }}};
   if (moved[hash]) {
     window.location.replace({{ url_for('auth.profile') | tojson }} + moved[hash]);
     return;
   }
+  if (movedTo[hash]) { window.location.replace(movedTo[hash]); return; }
   if (hash) {
     var btn = document.querySelector('[data-bs-target="' + hash + '"]');
     if (btn && window.bootstrap) { new bootstrap.Tab(btn).show(); }
+  }
+})();
+
+// --- Cards: every one titled, collapsed by default, opened by its link -----
+// Operator, 2026-10-23: "each card has its title and is collapsed ... when the
+// user clicks a link it opens the card they want and closes the others".
+// Scope: the TOP-LEVEL cards of each pane (a card nested in a card is part of
+// its parent).  Cards marked data-card-static are status tiles, not sections,
+// and are never folded.  A pane with ONE card draws it open: a menu entry
+// that lands on a single folded bar is a second click for nothing.
+// Anchors are the card ids (card-<english-slug>), the same in every language:
+//   /settings/#card-alert-thresholds  shows the pane, opens that card and
+//   folds the others in that pane.
+// After a save the redirect lands on the pane (#tab-...): the card whose form
+// was submitted is remembered for that one load and drawn open again, so the
+// operator sees the flash next to what they just changed.
+(function () {
+  var main = document.querySelector('.fw-settings-main');
+  if (!main) return;
+  var REOPEN = 'satom.settings.reopen.v1';
+  function headerOf(c) {
+    for (var i = 0; i < c.children.length; i++) {
+      if (c.children[i].classList.contains('fw-card-header')) return c.children[i];
+    }
+    return null;
+  }
+  function cardsOf(pane) {
+    return Array.prototype.filter.call(pane.querySelectorAll('.fw-card'), function (c) {
+      return !c.hasAttribute('data-card-static') && headerOf(c) &&
+             (!c.parentElement || !c.parentElement.closest('.fw-card'));
+    });
+  }
+  function setOpen(c, open) {
+    c.classList.toggle('fw-card-collapsed', !open);
+    var h = headerOf(c);
+    if (h) h.setAttribute('aria-expanded', open ? 'true' : 'false');
+    // Charts and tables that measure themselves were drawn at 0 px while folded.
+    if (open) { try { window.dispatchEvent(new Event('resize')); } catch (e) {} }
+  }
+  Array.prototype.forEach.call(main.querySelectorAll('.tab-pane'), function (pane) {
+    var cs = cardsOf(pane);
+    cs.forEach(function (c) {
+      var h = headerOf(c);
+      c.classList.add('fw-card-collapsible');
+      h.setAttribute('role', 'button');
+      h.setAttribute('tabindex', '0');
+      var caret = document.createElement('i');
+      caret.className = 'bi bi-chevron-down fw-card-caret';
+      caret.setAttribute('aria-hidden', 'true');
+      h.appendChild(caret);
+      setOpen(c, cs.length === 1);
+    });
+  });
+  function paneButton(pane) {
+    return pane && pane.id ? document.querySelector('[data-bs-target="#' + pane.id + '"]') : null;
+  }
+  // Show the pane holding card *id*, open the card, fold its siblings.
+  function openCard(id) {
+    var target = id ? document.getElementById(id) : null;
+    if (!target || !main.contains(target)) return false;
+    var c = target.classList.contains('fw-card-collapsible')
+          ? target : target.closest('.fw-card-collapsible');
+    if (!c) return false;
+    var pane = c.closest('.tab-pane');
+    var btn = paneButton(pane);
+    if (btn && window.bootstrap && !pane.classList.contains('active')) {
+      new bootstrap.Tab(btn).show();
+    }
+    cardsOf(pane).forEach(function (o) { setOpen(o, o === c); });
+    setTimeout(function () { target.scrollIntoView({block: 'start', behavior: 'smooth'}); }, 160);
+    return true;
+  }
+  function fromHash() {
+    var h = window.location.hash || '';
+    if (h.indexOf('#card-') === 0) { openCard(h.slice(1)); return true; }
+    // Any other in-page anchor (an older id such as #sn-demo, or an element
+    // inside a card) opens the card that holds it; pane targets (#tab-...)
+    // are the menu's business, handled above.
+    if (h.length > 1 && h.indexOf('#tab-') !== 0) { return openCard(h.slice(1)); }
+    return false;
+  }
+  main.addEventListener('click', function (e) {
+    var h = e.target.closest ? e.target.closest('.fw-card-collapsible > .fw-card-header') : null;
+    if (!h) return;
+    // Controls inside a header (buttons, links, switches) keep their own job.
+    if (e.target.closest('a, button, input, select, textarea, label, [data-bs-toggle]')) return;
+    var c = h.parentElement;
+    setOpen(c, c.classList.contains('fw-card-collapsed'));
+  });
+  main.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var h = e.target.classList && e.target.classList.contains('fw-card-header') ? e.target : null;
+    if (!h || !h.parentElement.classList.contains('fw-card-collapsible')) return;
+    e.preventDefault();
+    var c = h.parentElement;
+    setOpen(c, c.classList.contains('fw-card-collapsed'));
+  });
+  // A link to a card -- in a pane, in the manual, from another page -- opens
+  // it even when the hash is already that card (no hashchange fires then).
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest ? e.target.closest('a[href*="#"]') : null;
+    // Bootstrap's own toggles (collapse, tab, dropdown) keep their job.
+    if (!a || a.hasAttribute('data-bs-toggle')) return;
+    var url = new URL(a.getAttribute('href'), window.location.href);
+    if (url.pathname !== window.location.pathname || !url.hash || url.hash.indexOf('#tab-') === 0) return;
+    if (openCard(url.hash.slice(1))) {
+      e.preventDefault();
+      history.replaceState(null, '', url.hash);
+    }
+  });
+  window.addEventListener('hashchange', fromHash);
+  main.addEventListener('submit', function (e) {
+    var c = e.target.closest ? e.target.closest('.fw-card-collapsible') : null;
+    if (c && c.id) { try { sessionStorage.setItem(REOPEN, c.id); } catch (x) {} }
+  }, true);
+  if (!fromHash()) {
+    var again = null;
+    try { again = sessionStorage.getItem(REOPEN); sessionStorage.removeItem(REOPEN); } catch (x) {}
+    var c = again ? document.getElementById(again) : null;
+    var pane = c ? c.closest('.tab-pane') : null;
+    // Only when the redirect landed on that card's own pane: a save that
+    // returned somewhere else must not yank the operator back.
+    if (c && pane && pane.classList.contains('active')) {
+      cardsOf(pane).forEach(function (o) { setOpen(o, o === c); });
+    }
   }
 })();
 

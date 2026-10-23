@@ -5833,8 +5833,8 @@ deletes its bindings, and says so.</p>
 <p>The assignment picker spans both FortiWeb and FortiADC appliances — the catalog
 is a single <strong>global</strong> one, not per-ADOM.</p>
 <h2 id="26-settings-tab-by-tab">26. Settings, tab by tab</h2>
-<p><code>Settings</code> is one page with a <strong>grouped sidebar</strong>: <strong>10 groups, 38 panels</strong>.
-All ten of the groups (38 panels) are admin-only (<code>user_manage</code>). Your own
+<p><code>Settings</code> is one page with a <strong>grouped sidebar</strong>: <strong>8 groups, 37 panels</strong>.
+All eight of the groups (37 panels) are admin-only (<code>user_manage</code>). Your own
 <strong>Security</strong> and <strong>Change Password</strong> are on your <strong>Profile</strong> (§1.1), not here;
 a non-admin who opens <code>/settings/</code> is sent there, and the sidebar offers
 Settings only to administrators. A group with nothing you may see is not
@@ -5849,7 +5849,11 @@ rendered at all, so the menu never offers a section that is not there.</p>
 <tbody>
 <tr>
 <td><strong>System</strong></td>
-<td>General · Software Update Repository · Software Update · High Availability · System Automations · Scout · Integrations</td>
+<td><em>General ▸</em> General · Node TLS · Email &amp; Alerts · Thresholds — Software Update Repository · Software Update · High Availability · System Automations</td>
+</tr>
+<tr>
+<td><strong>Integrations</strong></td>
+<td>Integrations · DNS Records · Hypervisors</td>
 </tr>
 <tr>
 <td><strong>Source of Truth &amp; Backup</strong></td>
@@ -5861,35 +5865,41 @@ rendered at all, so the menu never offers a section that is not there.</p>
 </tr>
 <tr>
 <td><strong>Certificates &amp; Trust</strong></td>
-<td>Certificate Manager · Node TLS · Trust store</td>
-</tr>
-<tr>
-<td><strong>Network &amp; DNS</strong></td>
-<td>DNS Lookup · DNS Records</td>
+<td>Certificate Manager · Trust store</td>
 </tr>
 <tr>
 <td><strong>Fleet &amp; Devices</strong></td>
-<td>Hypervisors · ADOMs · Policy Links · Clone / Migrate</td>
+<td>ADOMs · Policy Links · Clone / Migrate</td>
 </tr>
 <tr>
 <td><strong>User Interface</strong></td>
 <td>Appearance · Languages · ADOM Menus</td>
 </tr>
 <tr>
-<td><strong>Monitoring &amp; Alerts</strong></td>
-<td>Email &amp; Alerts · Thresholds</td>
-</tr>
-<tr>
-<td><strong>Sentinel</strong></td>
-<td>Settings · Context · Response policy · Border blocklist · Architecture · Incidents console</td>
-</tr>
-<tr>
-<td><strong>Path Diagnostics</strong></td>
-<td>Settings · Architecture</td>
+<td><strong>AI</strong></td>
+<td><em>Scout ▸</em> Providers · Path Diagnostics · Architecture — <em>Sentinel ▸</em> Settings · Context · Response policy · Border blocklist · Architecture · Incidents console</td>
 </tr>
 </tbody>
 </table>
-<p>The <strong>Scout</strong> panel (the AI assistant, §33) additionally needs
+<p>A name followed by <strong>▸</strong> is a <strong>sub-menu</strong>: one level more inside its group,
+folded like the groups and opened by its own header. Selecting a section
+opens the sub-menu that holds it and folds its siblings. (Until 3.5.0 the
+menu had ten flat groups; Node TLS sat in Certificates &amp; Trust, Email &amp; Alerts
+and Thresholds in <em>Monitoring &amp; Alerts</em>, DNS Records in <em>Network &amp; DNS</em>,
+Hypervisors in Fleet &amp; Devices, and Sentinel and Path Diagnostics were groups
+of their own.)</p>
+<p><strong>Every card in a panel has a title and starts folded</strong>; click its header to
+open it. A panel with a single card draws it open. Each card has a stable
+anchor — <code>/settings/#card-alert-thresholds</code>, <code>#card-email-smtp-configuration</code>
+and so on, the same in every language — and a link to one switches to its
+panel, opens that card and folds the others. After a save, the card whose form
+you submitted is drawn open again. Status tiles (the Sentinel console's four
+health tiles) are not sections and are never folded.</p>
+<p><strong>DNS Lookup's resolver list is on the DNS Lookup page</strong> (Fleet → DNS
+Lookup, and Administrator → System → DNS Lookup), in an admin-only
+<em>resolver servers</em> card at the bottom (<code>/dns-lookup/#resolvers</code>); the old
+<code>/settings/#tab-dnstool</code> link forwards there.</p>
+<p>Scout's <strong>Providers</strong> panel (the AI assistant, §33) additionally needs
 <code>advisor.configure</code>; an admin without it does not see the entry. <strong>Sentinel</strong>
 and <strong>Path Diagnostics</strong> settings are admin-only end to end: saving them
 (including Path Diagnostics's site-wide on/off switch)
@@ -5900,7 +5910,9 @@ ships with an empty model endpoint and stays off until one is set (for example
 (↗) for that reason: clicking it replaces the console instead of switching a
 tab. It is where SATOM is wired to systems it does not own — NetBox
 (maintenance windows and the appliance → device map) and your own Python hooks
-— and it is filed under System because that is what it configures. It had no
+— and since 2026-10-23 it heads a group of its own, <strong>Integrations</strong>, with the
+other two outside systems Settings wires: DNS Records (DNS/IPAM backends) and
+Hypervisors. It had no
 menu entry at all until 2026-09-21; the page existed and worked, but the only
 way to reach it was to type <code>/settings/integrations</code>.</p>
 <p><strong>Software Update, High Availability, System Automations and System Backup &amp;
@@ -5913,7 +5925,8 @@ list shows that ADOM's rows, as before.</p>
 this one for another (§11.1). It sits in Source of Truth &amp; Backup because it
 moves the same estate the backup bundles carry. It is not <em>Clone / Migrate</em>
 under Fleet &amp; Devices, which copies configuration from one appliance to another.</p>
-<p><strong>Path Diagnostics is its own group, below Sentinel.</strong> Its <em>Settings</em> panel holds only
+<p><strong>Path Diagnostics is part of Scout</strong> (AI → Scout ▸ Path Diagnostics): it is
+Scout's walk, configured next to Scout's AI providers. Its panel holds only
 <em>where to look and how long to wait</em> — the default look-back window, the
 FortiAnalyzer ADOM and device selector the border rung queries, the two
 timeouts. What a verdict <strong>means</strong> is on the same panel as a read-only table:
@@ -5974,7 +5987,7 @@ firmware <em>manifest</em>; every consumer of them merely printed the URL, nothi
 read the manifest, and the repo they named declared <code>firmwares: []</code> while two
 images were loaded on the node. A setting that announces an authority nobody
 reads is worse than no setting, so it was removed rather than filled in.</p>
-<p><strong>Sentinel is its own group, and all six of its entries are panes.</strong>
+<p><strong>Sentinel is a sub-menu of AI, and all six of its entries are panes.</strong>
 They are ordered by what they are, not by when they arrived: the four
 configuration surfaces first, then the reference document, then the live
 console. The Border blocklist sits last of the four because it is the one
@@ -6007,8 +6020,7 @@ function rather than a duplicate.</p>
 <p>Both standalone URLs are still there and unchanged — they are what the top
 navigation, the manual's links and the concept map use — and each is rendered
 from the <em>same</em> file as its pane, so the two surfaces cannot drift apart. The
-two configure-once groups sit at the bottom, in this order:
-<strong>Monitoring &amp; Alerts</strong>, then <strong>Sentinel</strong> <strong>last</strong>.</p>
+configure-once group <strong>AI</strong> (Scout and Sentinel) sits <strong>last</strong>.</p>
 <p>The menu itself is defined <strong>once</strong>, in <code>app/templates/settings/_nav.html</code>, and
 every Settings surface includes that one file — the console and the standalone
 <code>/settings/sentinel</code> page alike. So the submenu no longer disappears when a deep
@@ -6057,7 +6069,7 @@ because the setting is meaningless without it. They are not repeated here:</p>
 </tr>
 <tr>
 <td><strong>Sentinel</strong></td>
-<td><code>Settings → Sentinel → Settings</code> — every knob next to the pipeline it configures, the live scoring weights, and ten demonstrations runnable against the real engine, all <strong>rendered in the pane itself</strong>. The same section is also served standalone at <code>/settings/sentinel</code> — with the Admin Console submenu still beside it — which is where deep links and the save redirect from outside the console land. <strong>Context</strong>, <strong>Response policy</strong>, <strong>Architecture</strong> and <strong>Incidents console</strong> are panes beside it, rendered from the same files as <code>/sentinel/context</code>, <code>/sentinel/policies</code>, <code>/sentinel/docs</code> and <code>/sentinel/</code>. The incidents console's own Architecture and Context buttons went away in the same change that made those two menu entries — a duplicate control, not a door. Every element of that pane — each knob, each group heading, each of the four health chips and each link out — carries a <strong>?</strong>; hovering it (or focusing it, or tapping it) opens the explanation of what the control does, where the code reads it and what breaks at either extreme. That text lives in the same catalog the form is generated from, so it cannot drift from the control it describes.</td>
+<td><code>Settings → AI → Sentinel → Settings</code> — every knob next to the pipeline it configures, the live scoring weights, and ten demonstrations runnable against the real engine, all <strong>rendered in the pane itself</strong>. The same section is also served standalone at <code>/settings/sentinel</code> — with the Admin Console submenu still beside it — which is where deep links and the save redirect from outside the console land. <strong>Context</strong>, <strong>Response policy</strong>, <strong>Architecture</strong> and <strong>Incidents console</strong> are panes beside it, rendered from the same files as <code>/sentinel/context</code>, <code>/sentinel/policies</code>, <code>/sentinel/docs</code> and <code>/sentinel/</code>. The incidents console's own Architecture and Context buttons went away in the same change that made those two menu entries — a duplicate control, not a door. Every element of that pane — each knob, each group heading, each of the four health chips and each link out — carries a <strong>?</strong>; hovering it (or focusing it, or tapping it) opens the explanation of what the control does, where the code reads it and what breaks at either extreme. That text lives in the same catalog the form is generated from, so it cannot drift from the control it describes.</td>
 </tr>
 </tbody>
 </table>
@@ -9171,7 +9183,7 @@ interpreting a WAF false positive and drafting the exception for it, drafting
 a Lua script, and searching the versioned device-configuration source of
 truth. Full design write-up: <code>docs/ai-advisor.md</code>.</p>
 <h3 id="331-turning-it-on">33.1 Turning it on</h3>
-<p><strong>Settings → Scout</strong> (<code>advisor.configure</code>, admin-only) has three
+<p><strong>Settings → AI → Scout ▸ Providers</strong> (<code>advisor.configure</code>, admin-only) has three
 switches, all off on a fresh install: <strong>Enable Scout</strong>, <strong>Allow
 read-only tool calls</strong>, and <strong>Allow external providers</strong>. A local Ollama
 provider (<code>ollama-local</code>, base URL <code>http://localhost:11434</code>) is seeded
@@ -9219,7 +9231,7 @@ anywhere.</p>
 <tbody>
 <tr>
 <td>Sending a message returns <em>"Scout is disabled"</em></td>
-<td>The master switch in Settings → Scout is off (33.1).</td>
+<td>The master switch in Settings → AI → Scout ▸ Providers is off (33.1).</td>
 </tr>
 <tr>
 <td>Sending to a non-local provider returns <em>"external providers are disabled"</em></td>

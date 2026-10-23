@@ -59,8 +59,8 @@
           <div class="text-warning">{{ _('No DNS servers configured.') }}</div>
           {% endfor %}
           {% if current_user.can('user_manage') %}
-          <a href="{{ url_for('settings.index') }}" class="d-inline-block mt-2" style="font-size:12px;">
-            <i class="bi bi-gear me-1"></i>{{ _('Manage in Settings → DNS Lookup') }}</a>
+          <a href="#resolvers" class="d-inline-block mt-2" style="font-size:12px;">
+            <i class="bi bi-gear me-1"></i>{{ _('DNS Lookup — resolver servers') }}</a>
           {% endif %}
         </div>
       </div>
@@ -766,4 +766,5 @@
 })();
 </script>
 {% endif %}
+{% if current_user.can('user_manage') %}{% include 'dns_lookup/_resolvers.html' %}{% endif %}
 {% endblock %}

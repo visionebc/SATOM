@@ -220,7 +220,6 @@ def index():
                         if _is_admin() else []),
         acme_provider_creds=(_acme_creds_state() if _is_admin() else {}),
         cert_lifecycle=(store.cert_lifecycle_policy() if _is_admin() else None),
-        dns_tool_servers=(dns_tool_svc.dns_servers() if _is_admin() else []),
         policy_links=(policy_links_svc.links() if _is_admin() else []),
         policy_link_tokens=policy_links_svc.TOKENS,
         clone_rules_cfg=(clone_rules_svc.config() if _is_admin() else None),
@@ -2224,10 +2223,10 @@ def save_dns_tool():
         saved = dns_tool_svc.save_dns_servers(rows)
     except ValueError as exc:
         flash(str(exc), 'danger')
-        return redirect(url_for('settings.index') + '#tab-dnstool')
+        return redirect(url_for('dns_tool.index') + '#resolvers')
     log_action('settings.dns_tool', target='dnstool.servers')
     flash(f'DNS server list saved ({len(saved)} servers).', 'success')
-    return redirect(url_for('settings.index') + '#tab-dnstool')
+    return redirect(url_for('dns_tool.index') + '#resolvers')
 
 
 # ---------------------------------------------------------------------------

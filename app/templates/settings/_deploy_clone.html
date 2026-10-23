@@ -22,7 +22,7 @@
      data-preflight="{{ url_for('settings.deploy_clone_preflight', name='NAME') }}"
      data-download="{{ url_for('settings.deploy_clone_download', name='NAME') }}">
 
-  <div class="fw-card">
+  <div class="fw-card" id="card-deploy-clone">
     <div class="fw-card-header"><i class="bi bi-copy me-1"></i>{{ _('Deploy Clone') }}</div>
     <div class="p-3">
       <p class="text-muted" style="font-size:13px;">{{ _('Copies the configuration of a SATOM installation into another one: appliances and their credentials, users and profiles, settings, scheduled action definitions, templates, exceptions, probes, the Script Library, hooks, WAF artifacts, branding and the API library. It is not a restore — each deploy keeps its own encryption key, HA role, node certificate and backup server — and it is not') }} <strong>{{ _('Clone / Migrate') }}</strong> {{ _('under Fleet & Devices, which copies configuration between appliances.') }}</p>
@@ -51,7 +51,7 @@
     </div>
   </div>
 
-  <div class="fw-card mt-3">
+  <div class="fw-card mt-3" id="card-export-this-deploy">
     <div class="fw-card-header"><i class="bi bi-box-arrow-up me-1"></i>{{ _('Export this deploy') }}</div>
     <div class="p-3">
       <p class="text-muted" style="font-size:13px;">{{ _('Writes a clone bundle of this deploy\'s configuration on this node. Read-only for this deploy.') }}</p>
@@ -74,7 +74,7 @@
     </div>
   </div>
 
-  <div class="fw-card mt-3">
+  <div class="fw-card mt-3" id="card-import-a-clone-into-this-deploy">
     <div class="fw-card-header"><i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Import a clone into this deploy') }}</div>
     <div class="p-3">
       <div class="alert alert-danger small">
@@ -114,7 +114,7 @@
     </div>
   </div>
 
-  <div class="fw-card mt-3">
+  <div class="fw-card mt-3" id="card-recent-clone-jobs">
     <div class="fw-card-header"><i class="bi bi-clock-history me-1"></i>{{ _('Recent clone jobs') }}</div>
     <div class="p-3">
       <div id="dc-last" class="small text-muted mb-2"></div>

@@ -63,7 +63,8 @@
 </style>
 {# ── health ─────────────────────────────────────────────────────────── #}
 {% if health %}
-<div class="fw-card mb-3">
+<div class="fw-card mb-3" id="card-sentinel-health">
+  <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-heart-pulse me-1 text-accent"></i>{{ _('Health') }}</span></div>
   <div class="fw-card-body py-2">
     <div class="d-flex flex-wrap gap-4 small align-items-center">
       <span>Pipeline:
@@ -91,7 +92,7 @@
 {% endif %}
 
 {# ── how it works ───────────────────────────────────────────────────── #}
-<div class="fw-card mb-3">
+<div class="fw-card mb-3" id="card-what-sentinel-does-stage-by-stage">
   <div class="fw-card-header"><strong>1 · {{ _('What Sentinel does, stage by stage') }}</strong></div>
   <div class="fw-card-body">
     <p class="small text-secondary mb-2">
@@ -138,7 +139,7 @@
 </div>
 
 {# ── the score ──────────────────────────────────────────────────────── #}
-<div class="fw-card mb-3">
+<div class="fw-card mb-3" id="card-the-score-and-what-each-band">
   <div class="fw-card-header"><strong>2 · {{ _('The score, and what each band permits') }}</strong></div>
   <div class="fw-card-body">
     <div class="row g-4">

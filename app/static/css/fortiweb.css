@@ -1884,6 +1884,35 @@ body.fw-entering-page {
 }
 .fw-set-nav-group.open > .fw-set-nav-body { max-height: none; opacity: 1; visibility: visible; }
 
+/* Sub-menu: one level under a group (System > General, AI > Scout / Sentinel).
+   Same accordion and caret convention as the group; its entries are indented
+   one step further so the level reads without a second icon colour. */
+.fw-set-nav-subtoggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  margin: 1px 0;
+  padding: 7px 10px 7px 16px;
+  background: none;
+  border: 0;
+  border-radius: var(--fw-radius);
+  color: var(--fw-text-primary);
+  font-family: var(--fw-font);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--fw-transition), color var(--fw-transition);
+}
+.fw-set-nav-subtoggle:hover { background: var(--fw-surface-alt); }
+.fw-set-nav-subtoggle:focus-visible { outline: 2px solid var(--fw-accent); outline-offset: -2px; }
+.fw-set-nav-subtoggle > span { flex: 1; min-width: 0; }
+.fw-set-nav-sub:not(.open) > .fw-set-nav-subtoggle .fw-set-nav-caret { transform: rotate(-90deg); }
+.fw-set-nav-sub:not(.open) > .fw-set-nav-subbody { display: none; }
+.fw-settings-nav .fw-set-nav-subbody .nav-link { padding-left: 30px; }
+
 .fw-settings-nav .nav-link {
   display: flex;
   align-items: center;
@@ -2772,3 +2801,14 @@ button.fwg-btn{cursor:pointer;}
 /* main.js wraps a bare table that overflows a phone screen in this box. */
 .fw-phone-scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .fw-phone-scroll:has(.dropdown-menu.show) { overflow: visible; }
+
+/* Settings cards (settings/index.html): titled, collapsed by default, opened
+   by their anchor (#card-...).  The caret follows the menu's convention --
+   chevron-down while open, rotated -90deg while folded. */
+.fw-card-collapsible > .fw-card-header { cursor: pointer; user-select: none; }
+.fw-card-collapsible > .fw-card-header:hover { background: var(--fw-accent-light); }
+.fw-card-collapsible > .fw-card-header:focus-visible { outline: 2px solid var(--fw-accent); outline-offset: -2px; }
+.fw-card-caret { margin-left: auto; padding-left: 10px; font-size: 11px; opacity: .65;
+                 transition: transform .2s ease; flex: none; }
+.fw-card-collapsible.fw-card-collapsed > .fw-card-header .fw-card-caret { transform: rotate(-90deg); }
+.fw-card-collapsible.fw-card-collapsed > :not(.fw-card-header) { display: none !important; }

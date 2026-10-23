@@ -115,10 +115,19 @@
             <button class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Approval history (who approved / rejected)') }}"
                     data-js="open-history" data-tpl-id="{{ t.id }}" data-tpl-name="{{ t.name }}"><i class="bi bi-clock-history"></i></button>
             {% if current_user.can('operations.template_approve') and t.status == 'pending' %}
+            {% if t.kind == 'web-protection-profile' %}
+            {# A WPP deploys on approval: the dialog asks which devices the
+               family governs (fleet | selected, views/templates.py approve). #}
+            {% set _ws = (wpp_scopes|default({})).get(t.id, {}) %}
+            <button type="button" class="btn btn-sm btn-outline-success btn-sm-icon me-1" title="{{ _('Approve (make fleet-deployable)') }}"
+                    data-js="open-approve-wpp" data-tpl-id="{{ t.id }}" data-tpl-name="{{ t.name }}" data-tpl-version="{{ t.version }}"
+                    data-scope="{{ _ws.get('scope', 'fleet') }}" data-bound="{{ _ws.get('bound', 0) }}"><i class="bi bi-check2-circle"></i></button>
+            {% else %}
             <form method="POST" action="{{ url_for('templates.approve', template_id=t.id) }}" style="display:inline;">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-sm btn-outline-success btn-sm-icon me-1" title="{{ _('Approve (make fleet-deployable)') }}"><i class="bi bi-check2-circle"></i></button>
             </form>
+            {% endif %}
             <button class="btn btn-sm btn-outline-danger btn-sm-icon me-1" title="{{ _('Reject') }}"
                     data-js="open-reject" data-tpl-id="{{ t.id }}" data-tpl-name="{{ t.name }}"><i class="bi bi-x-circle"></i></button>
             {% endif %}
@@ -427,6 +436,39 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Close') }}</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Approve a Web Protection Profile template: which devices it governs -->
+<div class="modal fade fw-modal" id="modalApproveWpp" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" id="approveWppForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-check2-circle me-2"></i>{{ _('Approve') }} <span id="aw-name"></span></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-2" style="font-size:13px;">{{ _('An approved Web Protection Profile template is deployed to the devices it governs, and is read-only on them. Which devices does this template govern?') }}</p>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="radio" name="rollout_scope" value="fleet" id="aw-fleet">
+            <label class="form-check-label" for="aw-fleet"><strong>{{ _('Every FortiWeb in this ADOM') }}</strong><br>
+              <span class="text-muted" style="font-size:12px;">{{ _('Deployed to all of them now, and again on every approved version.') }}</span></label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="rollout_scope" value="selected" id="aw-selected">
+            <label class="form-check-label" for="aw-selected"><strong>{{ _('Only the devices I pick in Mass Deploy') }}</strong><br>
+              <span class="text-muted" style="font-size:12px;">{{ _('Nothing is deployed now. Operations › Automation › Mass Deploy binds each device it deploys to, and later approved versions go to those devices only.') }}</span></label>
+          </div>
+          <div class="fw-alert fw-alert-info mt-3 mb-0" id="aw-bound" style="display:none; font-size:12px;"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check2-circle me-1"></i>{{ _('Approve template') }}</button>
+        </div>
+      </form>
     </div>
   </div>
 </div>
@@ -790,6 +832,18 @@ function openApply(id, name, approved) {
   showModal('modalApplyTemplate');
 }
 
+function openApproveWpp(btn) {
+  var d = btn.dataset;
+  document.getElementById('aw-name').textContent = d.tplName + ' v' + d.tplVersion;
+  document.getElementById('aw-fleet').checked = d.scope !== 'selected';
+  document.getElementById('aw-selected').checked = d.scope === 'selected';
+  var bound = parseInt(d.bound || '0', 10), box = document.getElementById('aw-bound');
+  box.style.display = bound ? '' : 'none';
+  box.textContent = bound ? ('This template is bound to ' + bound + ' device(s): it governs those, and approval deploys to the ones that follow the newest version, whichever option is chosen.') : '';
+  document.getElementById('approveWppForm').action = '/templates/' + d.tplId + '/approve';
+  showModal('modalApproveWpp');
+}
+
 function openReject(id, name) {
   document.getElementById('rj-name').textContent = name;
   document.getElementById('rj-reason').value = '';
@@ -862,6 +916,9 @@ function renderPreview(j) {
   });
   document.querySelectorAll('[data-js="open-history"]').forEach(function (btn) {
     btn.addEventListener('click', function (event) { openHistory(this.dataset.tplId, this.dataset.tplName); });
+  });
+  document.querySelectorAll('[data-js="open-approve-wpp"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { openApproveWpp(this); });
   });
   document.querySelectorAll('[data-js="open-reject"]').forEach(function (btn) {
     btn.addEventListener('click', function (event) { openReject(this.dataset.tplId, this.dataset.tplName); });

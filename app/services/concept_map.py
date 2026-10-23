@@ -435,6 +435,10 @@ PAGES: tuple[dict, ...] = (
     _p("templates.index", "Templates", "automation",
        "template desired state reusable config snippet draft approve",
        "Reusable configuration fragments, drafted and approved."),
+    _p("mass_deploy.index", "Mass Deploy", "automation",
+       "mass bulk deploy push template many devices fleet rollout smtp mail "
+       "ntp dns wpp web protection profile canary secret",
+       "Approved templates pushed to one or many devices in one job."),
     _p("factory_catalog.index", "Factory Catalog", "automation",
        "factory predefined default wpp web protection profile vendor catalog "
        "firmware build api version template deep rediscovery",

@@ -2547,6 +2547,9 @@ def create_app(config_override: object | None = None) -> Flask:
             # never makes template_bindings and the template lock, the apply
             # and the upgrade pre-flight fail on the first lookup.
             from . import models_tpl_binding  # noqa: F401
+            # Operations > Automation > Mass Deploy history + the rollout
+            # scope of a template family (services.template_bindings).
+            from . import models_mass_deploy  # noqa: F401
             # Fleet -> Architecture drawings. Without this import create_all()
             # never makes arch_diagrams and the page fails on its first query.
             from . import models_netarch  # noqa: F401
@@ -2836,6 +2839,7 @@ def _register_blueprints(app: Flask) -> None:
         # path, so this one picks up the /web ADOM prefix too.
         ("app.views.scheduled_actions", "user_bp"),
         ("app.views.cert_manager", "bp"),
+        ("app.views.mass_deploy", "bp"),
         ("app.views.change_requests", "bp"),
         ("app.views.upgrade_flow", "bp"),
         ("app.views.migration_report", "bp"),
@@ -2894,7 +2898,7 @@ def _register_blueprints(app: Flask) -> None:
         "app.views.release_notes", "app.views.capacity",
         "app.views.registry", "app.views.api_explorer",
         "app.views.apilib_fieldmap", "app.views.build_compat",
-        "app.views.appids",
+        "app.views.appids", "app.views.mass_deploy",
     }
     for module_path, attr in blueprints:
         try:

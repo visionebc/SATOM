@@ -29,8 +29,10 @@ from ..models import visible_appliances, visible_appliance_or_404
 from ..services import templates as lib
 from ..services import template_compat as tc
 from ..services import template_bindings as tb
+from ..services import template_apply as ta
+from ..services import secret_mask
 from ..services.audit import log_action
-from ..services.bulk import BulkRunner, iter_push_items
+from ..services.bulk import iter_push_items
 from ..extensions import db
 
 bp = Blueprint('templates', __name__, url_prefix='/templates')
@@ -48,6 +50,17 @@ def _safe_next(fallback: str) -> str:
         if not ref.scheme and not ref.netloc:
             return nxt
     return fallback
+
+
+def _wpp_scopes(rows) -> dict:
+    """``{template id: {"scope", "bound"}}`` for the pending WPP rows: what the
+    approve dialog shows (the family's rollout scope and its bound devices)."""
+    out = {}
+    for t in rows:
+        if t.kind == Template.KIND_WEB_PROTECTION and t.status == Template.STATUS_PENDING:
+            out[t.id] = {'scope': tb.family_scope(t.kind, t.name),
+                         'bound': len(tb.for_template(t))}
+    return out
 
 
 def _pretty_json(raw: str) -> str:
@@ -84,6 +97,7 @@ def index():
         appliances=visible_appliances().order_by(Appliance.name).all(),
         edit_template_id=None,
         firmware_choices=tc.known_builds(tc.session_product()),
+        wpp_scopes=_wpp_scopes(rows),
     )
 
 
@@ -252,9 +266,11 @@ def edit(template_id: int):
             flash(f'Could not save template: {exc}', 'danger')
         return redirect(_safe_next(url_for('templates.index')))
     # GET — render the library with the edit modal pre-opened for this template.
+    rows = lib.list_templates()
     return render_template(
         'templates/index.html',
-        templates=lib.list_templates(),
+        wpp_scopes=_wpp_scopes(rows),
+        templates=rows,
         kinds=Template.KINDS,
         kind_labels=lib.KIND_LABELS,
         active_kind=None,
@@ -274,28 +290,18 @@ def apply(template_id: int):
     Two-step and gated: a POST WITHOUT ``confirm`` returns a JSON dry-run preview
     (no device is contacted for real); a POST WITH ``confirm=1`` performs the
     live write (canary device first, the rest only if the canary succeeds).
+    The steps are ``services.template_apply`` — the engine Mass Deploy uses too.
+    Secret fields are never sent from the template; a fleet rollout skips no
+    device's binding (a device bound to another version is refused).
     """
     row = lib.get_template(template_id)
     if row is None:
         abort(404)
 
-    device_ids: list[int] = []
-    for value in request.form.getlist('device_ids'):
-        try:
-            device_ids.append(int(value))
-        except (TypeError, ValueError):
-            continue
+    device_ids = ta.parse_ids(request.form.getlist('device_ids'))
     confirm = request.form.get('confirm') == '1'
     wants_json = (request.form.get('format') == 'json'
                   or 'application/json' in (request.headers.get('Accept') or ''))
-    # The picker only offers visible devices; the POST is checked against the
-    # same set, so a hand-made id (a maintenance device, another ADOM's) is
-    # refused instead of reaching the bulk runner, which does not re-check.
-    visible_ids = {a.id for a in visible_appliances().all()}
-    if any(d not in visible_ids for d in device_ids):
-        if wants_json:
-            return jsonify({'ok': False, 'error': 'Unknown appliance.'}), 404
-        abort(404)
     # Single-device apply works on any status (operations.template_apply, already
     # enforced above). Multi-device = fleet rollout: needs operations.apply AND an
     # APPROVED template. This is the "approved != deployed; fleet rollout is a
@@ -313,7 +319,6 @@ def apply(template_id: int):
                                 'error': 'Template must be APPROVED before a '
                                          'multi-device (fleet) rollout.'}), 403
             abort(403)
-    items = iter_push_items(row.body_dict)
 
     if not device_ids:
         if wants_json:
@@ -321,63 +326,44 @@ def apply(template_id: int):
         flash('Select at least one device to apply to.', 'warning')
         return redirect(_safe_next(url_for('templates.index')))
 
-    targets = visible_appliances().filter(Appliance.id.in_(device_ids)).all()
-    fleet = len(device_ids) > 1
-    # A body with {{ variables }} is rendered per device from its binding; a
-    # device whose binding leaves one unset is refused (a literal placeholder
-    # would be written to the box). No override: there is no value to write.
-    bodies, missing_vars = tb.render_for_devices(row, device_ids)
-    items_by_device = {aid: iter_push_items(b) for aid, b in bodies.items()}
-    var_blocks = ['%s: no value for %s (set it on the device binding)'
-                  % (next((a.name for a in targets if a.id == aid), aid), ', '.join(m))
-                  for aid, m in sorted(missing_vars.items())]
+    plan = ta.Plan(row, device_ids, respect_pins=len(device_ids) > 1)
+    # The picker only offers visible devices; the POST is checked against the
+    # same set, so a hand-made id (a maintenance device, another ADOM's) is
+    # refused instead of reaching the bulk runner, which does not re-check.
+    if plan.unknown:
+        if wants_json:
+            return jsonify({'ok': False, 'error': 'Unknown appliance.'}), 404
+        abort(404)
 
     if not confirm:
         # Dry-run preview only — pure, never contacts a device for real. The
         # firmware check rides along so the operator sees a refusal BEFORE
         # pressing confirm, not after.
-        compat = tc.for_appliances(row, targets, require_validated=fleet)
-        # Fields a target's build does not have are stripped per device and
-        # shown in the preview (services.build_compat), never dropped silently.
-        if var_blocks:
-            compat['blocked'] = True
-            compat['blocks'] = var_blocks + list(compat.get('blocks') or [])
-        compat['variables_missing'] = {str(k): v for k, v in missing_vars.items()}
-        preview = BulkRunner(items, skips=compat.get('skips'),
-                             items_by_device=items_by_device).preview(device_ids)
+        out = plan.preview()
         log_action('template.apply.preview', target=f'{row.kind}/{row.name}',
-                   detail=f'devices={device_ids} items={len(items)} '
-                          f'compat_blocked={compat["blocked"]}')
+                   detail=f'devices={device_ids} items={out["item_count"]} '
+                          f'compat_blocked={out["compat"]["blocked"]}')
         return jsonify({
             'ok': True, 'mode': 'preview',
             'template': {'id': row.id, 'name': row.name,
                          'kind': row.kind, 'version': row.version},
-            'item_count': len(items),
-            'preview': preview,
-            'compat': compat,
-            'can_override': bool(current_user.can('operations.template_approve')),
+            **out,
+            'can_override': bool(current_user.can('operations.template_approve'))
+                            and not plan.blocks,
         })
 
-    if var_blocks:
-        msg = 'Refused: ' + '; '.join(var_blocks)
-        log_action('template.apply.refused', target=f'{row.kind}/{row.name}',
-                   detail=msg[:1500])
-        if wants_json:
-            return jsonify({'ok': False, 'error': msg}), 409
-        flash(msg, 'danger')
-        return redirect(_safe_next(url_for('templates.index')))
-    allowed, compat = tc.enforce(
-        row, targets, user=current_user,
-        override_reason=request.form.get('override_reason', ''),
-        require_validated=fleet, action='template.apply')
+    allowed, compat = plan.enforce(current_user,
+                                   request.form.get('override_reason', ''),
+                                   'template.apply')
     if not allowed:
         log_action('template.apply.refused', target=f'{row.kind}/{row.name}',
-                   detail='firmware check: ' + ' | '.join(compat['blocks'])[:1500])
-        msg = ('Refused by the firmware compatibility check: '
-               + '; '.join(compat['blocks'][:4])
-               + (' (+%d more)' % (len(compat['blocks']) - 4)
-                  if len(compat['blocks']) > 4 else '')
-               + ' — ' + compat.get('override_hint', ''))
+                   detail=' | '.join(compat['blocks'])[:1500])
+        msg = ('Refused: ' if plan.blocks else
+               'Refused by the firmware compatibility check: ') \
+            + '; '.join(compat['blocks'][:4]) \
+            + (' (+%d more)' % (len(compat['blocks']) - 4)
+               if len(compat['blocks']) > 4 else '') \
+            + ('' if plan.blocks else ' — ' + compat.get('override_hint', ''))
         if wants_json:
             return jsonify({'ok': False, 'error': msg, 'compat': compat}), 409
         flash(msg, 'danger')
@@ -389,19 +375,12 @@ def apply(template_id: int):
     # The job dock (static/js/jobs.js) picks it up and shows live progress;
     # the completion audit row is written by the job itself.
     from flask import current_app
-    from ..services.bulk import start_apply_job
-    job = start_apply_job(
-        current_app._get_current_object(),
-        title=f'Apply "{row.name}" v{row.version} to {len(device_ids)} device(s)',
-        items=items, device_ids=device_ids,
-        by=getattr(current_user, 'username', '') or '',
-        meta={'template_id': row.id, 'kind': row.kind, 'name': row.name,
-              'compat_overridden': compat['overridden']},
-        audit_action='template.apply',
-        audit_target=f'{row.kind}/{row.name}',
-        skips=compat.get('skips'), items_by_device=items_by_device)
+    job = plan.start(current_app._get_current_object(),
+                     by=getattr(current_user, 'username', '') or '', compat=compat)
     log_action('template.apply.start', target=f'{row.kind}/{row.name}',
-               detail=f'devices={device_ids} items={len(items)} job={job["id"]}')
+               detail=f'devices={device_ids} items={len(plan.items)} job={job["id"]}'
+                      + (f' secrets_kept={len(plan.secrets["kept"])}'
+                         if plan.secrets['kept'] else ''))
     if wants_json:
         return jsonify({'ok': True, 'mode': 'apply', 'job_id': job['id']}), 202
     flash(f'Rollout of "{row.name}" v{row.version} started for '
@@ -433,7 +412,9 @@ def _wpp_rollout_targets(row: Template | None = None) -> list[int]:
     governs every FortiWeb; a bound family governs only its bound devices, and
     of those only the ones whose binding FOLLOWS this version -- a device pinned
     to another version keeps it. The approval used to deploy to every FortiWeb
-    whatever the bindings said.
+    whatever the bindings said. A family whose rollout scope is ``selected``
+    (chosen at approval, or in Mass Deploy) and has no binding yet deploys to
+    no device.
     """
     ids = [a.id for a in visible_appliances()
            .filter(Appliance.kind == 'fortiweb').all()]
@@ -441,7 +422,9 @@ def _wpp_rollout_targets(row: Template | None = None) -> list[int]:
         return ids
     binds = tb.for_template(row)
     if not binds:
-        return ids
+        # A family scoped to its bound devices with none bound yet governs
+        # nobody: its devices are picked in Mass Deploy.
+        return [] if tb.is_scoped(row) else ids
     follows = set()
     for b in binds:
         t = tb.resolve(b)
@@ -456,16 +439,34 @@ def _wpp_rollout_targets(row: Template | None = None) -> list[int]:
 def approve(template_id: int):
     """Approve a pending template, making it eligible for fleet rollout.
 
-    **Web Protection Profile templates deploy fleet-wide on approval** (the team
-    rule: a template-managed WPP is read-only on the devices; a change edited +
-    approved here is what lands on EVERY device). The rollout runs as the same
-    audited background bulk job the Apply button uses (canary first).
+    **Web Protection Profile templates deploy on approval** to every device
+    the family governs (the team rule: a template-managed WPP is read-only on
+    the devices it governs; a change edited + approved here is what lands on
+    them). The rollout runs as the same audited background bulk job the Apply
+    button uses (canary first).
+
+    ``rollout_scope`` (the approve dialog, WPP only) chooses which devices an
+    UNBOUND family governs: ``fleet`` = every FortiWeb of the ADOM (the rule
+    before 2026-10-24), ``selected`` = only the devices it is deployed to from
+    Operations > Automation > Mass Deploy — a special profile meant for some
+    devices is then approved without landing on all of them.
     """
+    scope = (request.form.get('rollout_scope') or '').strip()
+    pre = lib.get_template(template_id)
+    if scope and (pre is None or pre.kind != Template.KIND_WEB_PROTECTION
+                  or scope not in ('fleet', 'selected')):
+        flash('Could not approve template: a rollout scope applies to a Web '
+              'Protection Profile template only, as "fleet" or "selected".', 'danger')
+        return redirect(_safe_next(url_for('templates.index')))
     try:
         row = lib.approve_template(template_id, reviewer=current_user.username)
     except ValueError as exc:
         flash(f'Could not approve template: {exc}', 'danger')
         return redirect(_safe_next(url_for('templates.index')))
+    if scope and scope != tb.family_scope(row.kind, row.name):
+        tb.set_family_scope(row, scope, by=current_user.username)
+        log_action('template.scope', target=f'{row.kind}/{row.name}',
+                   detail=f'rollout scope {scope} (at approval of v{row.version})')
     # The approval is FOR builds: the body's own build plus every build this
     # template's product runs in the visible fleet, each checked now.
     builds = _approval_builds(row)
@@ -489,9 +490,15 @@ def approve(template_id: int):
             and not current_app.config.get('TESTING')):
         device_ids = _wpp_rollout_targets(row)
         items = iter_push_items(row.body_dict)
+        if row.product and row.product not in ta.SUPPORTED_KINDS:
+            device_ids = []
         if items and not device_ids and tb.for_template(row):
             flash(f'"{row.name}" v{row.version} was not deployed: no bound device '
                   'follows this version (their bindings pin another one).', 'info')
+        elif items and not device_ids and tb.is_scoped(row):
+            flash(f'"{row.name}" v{row.version} is approved and governs only the '
+                  'devices it is deployed to — none yet. Pick them in Operations › '
+                  'Automation › Mass Deploy.', 'info')
         # {{ variables }} are rendered per device from its binding, as the Apply
         # button does. A device left without a value holds the whole deploy: a
         # literal placeholder must never reach a box, and there is no value to
@@ -508,7 +515,11 @@ def approve(template_id: int):
             flash(f'Fleet deploy of "{row.name}" v{row.version} HELD — {why}. '
                   'Set the values on the device bindings, then apply.', 'danger')
             return redirect(_safe_next(url_for('templates.index')))
-        items_by_device = {aid: iter_push_items(b) for aid, b in bodies.items()}
+        # Secret fields are never sent from the template (services.secret_mask):
+        # each device keeps its own; Mass Deploy is where a value is typed in.
+        items = secret_mask.prepare(items)[0]
+        items_by_device = {aid: secret_mask.prepare(iter_push_items(b))[0]
+                           for aid, b in bodies.items()}
         if device_ids and items:
             allowed, compat = tc.enforce(
                 row, visible_appliances().filter(Appliance.id.in_(device_ids)).all(),

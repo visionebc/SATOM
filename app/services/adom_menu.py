@@ -81,6 +81,11 @@ def _template_kinds() -> Iterable[str]:
     return ("fortiweb", "fortiadc")
 
 
+def _mass_deploy_kinds() -> Iterable[str]:
+    from .mass_deploy import PRODUCTS
+    return PRODUCTS
+
+
 def _lua_kinds() -> Iterable[str]:
     from ..models import LuaScript
     return LuaScript.TARGETS
@@ -150,6 +155,8 @@ ENTRIES: dict[str, Entry] = {e.key: e for e in (
           "no operator automation in the catalog targets this product"),
     Entry("provisioning", ("provisioning",), _fortiweb,
           "it composes FortiWeb configuration objects"),
+    Entry("mass_deploy", ("mass_deploy",), _mass_deploy_kinds,
+          "the bulk deploy writes FortiWeb configuration objects only"),
     # Every device ADOM since 2026-10-14 (operator); Global-only before.
     Entry("cert_manager", ("cert_manager",), _cert_kinds,
           "SATOM reads and deploys certificates on FortiWeb and FortiADC only"),

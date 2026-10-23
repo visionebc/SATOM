@@ -252,14 +252,72 @@ def render_parts_for_devices(parts, appliance_ids) -> tuple[dict, dict]:
 # lock scope
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# family rollout scope (models_mass_deploy.TemplateFamilyScope)
+# ---------------------------------------------------------------------------
+
+def family_scope(kind: str, name: str) -> str:
+    """``fleet`` (default: no binding = every device of the ADOM) or
+    ``selected`` (only bound devices; none while it has no binding)."""
+    from ..models_mass_deploy import SCOPE_FLEET, TemplateFamilyScope
+    try:
+        row = TemplateFamilyScope.query.filter_by(kind=kind, name=name).first()
+    except Exception:  # noqa: BLE001 — no table yet: the old rule
+        db.session.rollback()
+        return SCOPE_FLEET
+    return row.scope if row is not None else SCOPE_FLEET
+
+
+def selected_families(kind: str | None = None) -> set[tuple[str, str]]:
+    """``{(kind, name)}`` of the families scoped to their bound devices."""
+    from ..models_mass_deploy import SCOPE_SELECTED, TemplateFamilyScope
+    try:
+        q = TemplateFamilyScope.query.filter_by(scope=SCOPE_SELECTED)
+        if kind:
+            q = q.filter_by(kind=kind)
+        return {(r.kind, r.name) for r in q.all()}
+    except Exception:  # noqa: BLE001
+        db.session.rollback()
+        return set()
+
+
+def set_family_scope(template: Template, scope: str, *, by: str = "") -> None:
+    """Record the rollout scope of ``template``'s family (caller commits)."""
+    from datetime import datetime
+    from ..models_mass_deploy import SCOPES, TemplateFamilyScope
+    if scope not in SCOPES:
+        raise ValueError("unknown rollout scope %r" % scope)
+    row = TemplateFamilyScope.query.filter_by(kind=template.kind,
+                                              name=template.name).first()
+    if row is None:
+        row = TemplateFamilyScope(kind=template.kind, name=template.name,
+                                  product=template.product or "fortiweb")
+        db.session.add(row)
+    row.scope = scope
+    row.set_by = by or ""
+    row.set_at = datetime.utcnow()
+    db.session.flush()
+
+
+def is_scoped(template: Template) -> bool:
+    """Does the family govern only its bound devices (bindings, or the
+    ``selected`` scope)? False = every device of the ADOM."""
+    from ..models_mass_deploy import SCOPE_SELECTED
+    return bool(for_template(template)) or \
+        family_scope(template.kind, template.name) == SCOPE_SELECTED
+
+
 def locked_families(kind: str) -> dict[str, set[int] | None]:
     """``{template name: bound appliance ids, or None = every device of the ADOM}``
-    for the APPROVED templates of ``kind``."""
+    for the APPROVED templates of ``kind``. A ``selected`` family without a
+    binding locks no device (empty set)."""
     names = {t.name for t in Template.query.filter_by(
         kind=kind, status=Template.STATUS_APPROVED).all() if t.name}
     if not names:
         return {}
-    out: dict[str, set[int] | None] = {n: None for n in names}
+    selected = {n for k, n in selected_families(kind)}
+    out: dict[str, set[int] | None] = {n: (set() if n in selected else None)
+                                        for n in names}
     for b in (TemplateBinding.query.filter(TemplateBinding.kind == kind,
                                            TemplateBinding.name.in_(sorted(names)))
               .all()):
@@ -283,7 +341,7 @@ def governs(scope: set[int] | None, appliance_id) -> bool:
 def governing(appliance) -> list[tuple[Template, TemplateBinding | None]]:
     """The template versions that govern ``appliance``: every binding it has,
     plus each APPROVED family of its ADOM that has no binding at all (the
-    global rule). ``[(template, binding or None)]``."""
+    global rule) unless its scope is ``selected``. ``[(template, binding or None)]``."""
     product = getattr(appliance, "kind", "") or "fortiweb"
     out: list = []
     seen: set = set()
@@ -294,6 +352,7 @@ def governing(appliance) -> list[tuple[Template, TemplateBinding | None]]:
             out.append((t, b))
     bound_families = {(k, n) for k, n in db.session.query(
         TemplateBinding.kind, TemplateBinding.name).distinct()}
+    bound_families |= selected_families()
     latest: dict = {}
     for t in Template.query.filter_by(status=Template.STATUS_APPROVED).all():
         if (t.product or "fortiweb") != product:

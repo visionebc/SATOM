@@ -11209,3 +11209,39 @@ msgstr ""
 #: app/templates/dns_lookup/resolvers.html
 msgid "The servers DNS Lookup asks, one results column each. One list for the whole console: every ADOM uses it."
 msgstr ""
+
+#: app/templates/partials/nav_automation.html
+msgid "Mass Deploy"
+msgstr ""
+
+#: app/templates/mass_deploy/index.html
+msgid "Deploy history"
+msgstr ""
+
+#: app/templates/mass_deploy/index.html
+msgid "Preview and deploy"
+msgstr ""
+
+#: app/templates/mass_deploy/index.html
+msgid "Targets for"
+msgstr ""
+
+#: app/templates/mass_deploy/index.html
+msgid "Governs"
+msgstr ""
+
+#: app/templates/mass_deploy/index.html
+msgid "Limit this template to the selected devices"
+msgstr ""
+
+#: app/templates/templates/index.html
+msgid "Every FortiWeb in this ADOM"
+msgstr ""
+
+#: app/templates/templates/index.html
+msgid "Only the devices I pick in Mass Deploy"
+msgstr ""
+
+#: app/templates/templates/index.html
+msgid "Approve template"
+msgstr ""

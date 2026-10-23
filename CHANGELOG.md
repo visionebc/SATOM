@@ -8,6 +8,30 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Operations › Automation › Mass Deploy.** The newest approved version of
+  every template of the ADOM, pushed to one or many of its devices in one
+  canary-gated job: an SMTP server change, an NTP or DNS change, a Web
+  Protection Profile for some devices only. It shows the targets with their
+  build, fit and binding (a device bound to another version cannot be
+  selected), a preview, then the deploy, plus a per-ADOM history with the
+  result per device. It uses the Template Library's apply engine. FortiWeb
+  ADOM; disabled with the reason in the other device ADOMs. Requested by the
+  operator: "in Operations, Automation, Mass Deploy: the approved templates,
+  to implement on one or several FortiWebs, for example a change in the SMTP,
+  instead of going to each one; it must be per ADOM", and "WPP goes in too,
+  because special ones can be created that are deployed only to some; they
+  should not be put on all".
+- **Secrets are typed at deploy time.** A template never sends its own secret
+  values (passwords, PSKs, private keys). Each one is left out of the push, so
+  the device keeps its own, unless a value is typed in Mass Deploy. A typed
+  value is not stored, logged or echoed: the job record, the change history
+  and the preview show `<secret>`.
+- **Approving a Web Protection Profile template asks which devices it
+  governs:** every FortiWeb of the ADOM (deployed now, as before) or only the
+  devices picked in Mass Deploy (nothing deployed or locked until a device is
+  bound). Mass Deploy binds the devices of such a template, and can limit a
+  fleet-wide one to the selected devices.
+
 - **Settings › Appearance › Sidebar menu: hide entries, submenus and
   groups.** A tree of everything the sidebar draws in every ADOM; an
   unticked row leaves the sidebar of every user in every ADOM it appears
@@ -240,6 +264,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   name, with the favourite star drawn over the last letters. App entries
   stay on one line and end in an ellipsis that stops short of the star,
   and the link tooltip carries the whole name.
+
+- **The change history stored write payloads in clear,** including any
+  password a write carried, and the device's `ENC` ciphertext in the
+  before-snapshot. Both are masked now, and so is the result kept in a
+  fleet-apply job's record.
+- **A fleet rollout from the Template Library ignored device bindings:**
+  applying to several devices pushed the chosen version even to a device
+  pinned to another one. It is refused now, with the reason.
+- **Apply to a device SATOM cannot push templates to** (anything but FortiWeb)
+  is refused in the preview instead of being sent through the FortiWeb writer.
 
 - **Jobs: the table fits the screen at every resolution.** It needed
   1470 px and scrolled sideways below a ~1830 px window. The job ID now

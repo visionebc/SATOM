@@ -16,7 +16,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from ..models import Appliance
-from . import object_refresh
+from . import object_refresh, secret_mask
 from .fortiweb_ops import FortiWebOps
 
 _MAX_WORKERS = 8
@@ -123,7 +123,7 @@ def start_apply_job(flask_app, *, title: str, items: list[dict],
                     device_ids, by: str, meta: dict | None = None,
                     canary: int = 1, audit_action: str = "bulk.apply",
                     audit_target: str = "", skips: dict | None = None,
-                    items_by_device: dict | None = None) -> dict:
+                    items_by_device: dict | None = None, on_done=None) -> dict:
     """Launch a canary-gated fleet apply as a background job (services.jobs).
 
     Fleet writes must not run inside an HTTP request: with a large fleet the
@@ -131,6 +131,11 @@ def start_apply_job(flask_app, *, title: str, items: list[dict],
     kill it midway. The job survives the request, reports per-device progress
     to the toast dock, is **Stoppable** (cooperative — halts between devices/
     items), and writes the completion audit row itself.
+
+    The job state file (``data/jobs``, copied to the standby) holds the result
+    with every secret value masked (``services.secret_mask``): the payloads in
+    it may carry a password typed at apply time. ``on_done(job_id, summary)``
+    runs in the worker after the job is finished (Mass Deploy history).
     Returns the created job dict (poll ``/jobs/<id>``)."""
     from . import jobs
 
@@ -161,7 +166,7 @@ def start_apply_job(flask_app, *, title: str, items: list[dict],
                              "cancelled": bool(r.get("cancelled"))} for r in runs],
                 "mid_change": mid_change,
                 "unverified": sum(int(r.get("unverified") or 0) for r in runs),
-                "detail": result,
+                "detail": secret_mask.mask(result),
             }
             try:
                 from .audit import log_action
@@ -201,6 +206,11 @@ def start_apply_job(flask_app, *, title: str, items: list[dict],
                                 "(re-read failed)" if unv else
                                 " — verified on the device")),
                     result=summary)
+            if on_done is not None:
+                try:
+                    on_done(job_id, summary)
+                except Exception:  # noqa: BLE001 — history is best-effort
+                    app.logger.exception("bulk apply on_done failed")
 
     jobs.run_async(flask_app, job["id"], _worker)
     return job

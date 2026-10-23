@@ -18,7 +18,7 @@ from typing import Any
 
 from ..clients.fortiweb import FortiWebClient
 from ..models import ChangeHistory, db
-from . import delete_guard
+from . import delete_guard, secret_mask
 from .audit import log_action
 
 # Server-managed / read-only keys stripped from any payload before a write.
@@ -137,8 +137,10 @@ class FortiWebOps:
             db.session.add(ChangeHistory(
                 appliance_id=getattr(self.appliance, "id", None),
                 endpoint=endpoint or "", mkey=mkey or "", action=action,
-                before=json.dumps(before) if before is not None else "",
-                after=json.dumps(after) if after is not None else "",
+                # Secrets masked: the payload may carry a password typed at
+                # apply time, and the snapshot the device's ENC ciphertext.
+                before=json.dumps(secret_mask.mask(before)) if before is not None else "",
+                after=json.dumps(secret_mask.mask(after)) if after is not None else "",
                 dry_run=dry_run, username=_current_username(), ts=datetime.utcnow(),
             ))
             db.session.commit()

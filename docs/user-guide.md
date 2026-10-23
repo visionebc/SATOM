@@ -3267,6 +3267,76 @@ the same filter, plus a *Walk a process* automation armed exactly as the
 process was. The process form now shows **Started by** — the automations that
 walk it — and **Start it on a trigger**.
 
+### 15.2 Mass Deploy — approved templates to many devices
+
+Operations → Automation → **Mass Deploy** (FortiWeb ADOM; needs
+`operations.apply` **and** `operations.template_apply`, the permissions of a
+fleet rollout from the Template Library). The other device ADOMs draw the entry
+disabled with the reason: the bulk deploy writes FortiWeb configuration objects
+only. Global has no entry, because a template belongs to one ADOM.
+
+It is for a change that has to land on many boxes at once: a new SMTP server,
+an NTP or DNS change, a Web Protection Profile meant for some devices only.
+The page owns no deploy logic. Preview, firmware check, variables, secrets
+and the canary job are the same engine the Template Library's **Apply** uses
+(§29.1).
+
+1. **Approved templates.** The newest **approved** version of every template
+   family of the ADOM, with its kind, approver, validated builds, item count,
+   which devices it governs and the secret fields it has. An older approved
+   version is not offered: a device that must keep it is **pinned** to it by its
+   binding (§29.1.4). A template with nothing to push is listed but cannot be
+   selected.
+2. **Targets.** The ADOM's devices with their build, the template's fit on that
+   build and their binding. **Select all**, **Clear** and a **Build** filter
+   help with a large fleet. A device bound to **another version** of the
+   family cannot be selected, and the deploy refuses it if it is sent anyway.
+   Change the binding to move such a device.
+3. **Secrets.** A template never sends its own secret values (passwords, PSKs,
+   private keys, secrets). They are empty, another device's `ENC …` ciphertext,
+   or something that should not sit in a database. Each secret field of the
+   template gets a password box. Type a value to set it on every selected device;
+   leave it empty and each device keeps the one it has. What you type is
+   used for this deploy only. It is not stored, logged, sent back in the
+   preview or written to the change history or the job record (all of them
+   show `<secret>`).
+4. **Preview**, then **Deploy.** The preview contacts no device. It lists every
+   push per device, the firmware verdicts, the variables a binding leaves unset,
+   the secrets that will be set or kept, and for a Web Protection Profile the
+   devices that will be bound. **Deploy** is enabled only by a preview of the
+   same selection: change a device, a secret or the *limit* box and you
+   preview again. The deploy runs as a background job in the job dock. The first
+   device is the canary, and the rest run only if it succeeds. An approver
+   can override a firmware refusal with a reason (audited). A pinned device, a
+   missing variable or a device of another ADOM cannot be overridden.
+5. **Deploy history.** Every deploy made from this page in this ADOM: when, who,
+   the template version, the devices, the result per device (with the device's
+   error), the secret fields that were set (names only) and how many devices
+   were bound.
+
+**Example: a new SMTP server.** FortiWeb keeps its mail settings in
+**Log & Report → Email Policy** (`log/email-policy`: SMTP server, port,
+authentication, user, password, connection security, sender and recipients).
+Capture the policy of one device with **Save as template**, edit the server in
+the Template Library and have it approved. In Mass Deploy, select it, select
+the devices and type the SMTP password. Preview, then deploy.
+
+**Web Protection Profiles meant for some devices.** A WPP template governs
+either every FortiWeb of the ADOM or only the devices bound to it (§29.1.4):
+
+- A family that governs only its bound devices **binds each device it is
+  deployed to** here. The profile becomes read-only there, and later approved
+  versions are deployed to it.
+- A family that governs every FortiWeb shows **Limit this template to the
+  selected devices**. Unchecked, the template is pushed to the selected devices
+  and keeps governing all of them. Checked, the selected devices are bound and
+  from then on the template governs, locks and is deployed to bound devices
+  only.
+- To approve a special profile **without** it landing on every device, choose
+  **Only the devices I pick in Mass Deploy** in the approve dialog (§29.1).
+  Nothing is deployed at approval, and nothing is locked until Mass Deploy
+  binds a device.
+
 ## 16. Reports & database tools
 
 Global → Administrator → **Database** (admin only):
@@ -7006,13 +7076,23 @@ fleet-deployable is a separate, gated decision by someone else.
   as a **background job** in the job dock.
 - **Approval status and deployment are different things.** A template can be
   approved and never applied. The one deliberate exception: approving a **Web
-  Protection Profile** template *does* start a fleet-wide rollout immediately,
-  because the team rule is that a template-managed WPP is read-only on the devices
-  — the approved version is what must be on every one of them (§9). That
-  rollout passes the firmware check below first; when the check refuses a
-  device the rollout is **held** and the page says why. The lock follows the
-  template's device bindings (29.1.4), but the approval rollout itself goes to
-  every FortiWeb you can see in the ADOM.
+  Protection Profile** template *does* start a rollout immediately, because the
+  team rule is that a template-managed WPP is read-only on the devices it
+  governs, so the approved version is what must be on them (§9). The approve
+  dialog asks which devices those are. **Every FortiWeb in this ADOM** deploys
+  to all of them now, and again on every approved version. **Only the devices
+  I pick in Mass Deploy** deploys nothing now: the devices are chosen in
+  Operations → Automation → Mass Deploy (§15.2), which binds them. A family with
+  bindings deploys to its bound devices that follow the newest version
+  (29.1.4), whichever option is chosen. The rollout passes the firmware check
+  below first; when the check refuses a device the rollout is **held** and the
+  page says why.
+- **Secrets are never pushed from a template.** A secret field in a body
+  (a password, a PSK, a private key, a secret) is left out of every push, from
+  **Apply**, from the approval rollout and from Mass Deploy, so each device keeps
+  its own value. The preview lists those fields under *Not sent*. To set one,
+  type it in Mass Deploy (§15.2). A **fleet rollout** (Apply to several devices)
+  also refuses a device bound to another version of the family.
 
 ### 29.1.1 Firmware build and API version
 
@@ -7192,8 +7272,11 @@ without placeholders is pushed the same to every device.
 
 **The Web Protection Profile lock follows the bindings.** An approved WPP
 template with **no binding** keeps the old rule: the profile is read-only on
-every FortiWeb of its ADOM. Once it has bindings, it is read-only **only on the
-bound devices**. The lock never reaches a device of another ADOM.
+every FortiWeb of its ADOM. The exception is a template approved with **Only the
+devices I pick in Mass Deploy** (or limited there, §15.2), which governs bound
+devices only, and none until one is bound. Once a template has bindings, it is
+read-only **only on the bound devices**. The lock never reaches a device of
+another ADOM.
 
 Bindings also decide which templates the matrix counts as *bound* (29.4) and
 which templates the upgrade pre-flight checks for a device (29.5).

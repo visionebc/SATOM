@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+
+{% block title %}Mass Deploy — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Operations') }}</span>
+  <span class="separator">/</span>
+  <span>{{ _('Automation') }}</span>
+  <span class="separator">/</span>
+  <span>{{ _('Mass Deploy') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-broadcast me-2 text-accent"></i>{{ _('Mass Deploy') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('Push an approved template to one or many devices of this ADOM in one job: an SMTP server change, an NTP or DNS change, a Web Protection Profile meant for some devices only. Preview first; the deploy runs on one canary device, then on the rest only if the canary succeeds.') }}
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-fw-secondary" href="{{ url_for('templates.index') }}"
+       title="{{ _('Author, approve and version the templates offered here') }}">
+      <i class="bi bi-collection me-1"></i>{{ _('Template Library') }}
+    </a>
+  </div>
+</div>
+
+{% if not supported %}
+<div class="fw-alert fw-alert-info" style="font-size:13px;">
+  <i class="bi bi-info-circle me-1"></i>
+  {{ _('Mass Deploy works inside a FortiWeb ADOM: the bulk deploy writes FortiWeb configuration objects only. Choose the FortiWeb ADOM to use it.') }}
+</div>
+{% else %}
+
+{% if stale_template %}
+<div class="fw-alert fw-alert-warning" style="font-size:13px;">
+  <i class="bi bi-exclamation-triangle me-1"></i>
+  {{ _('That template is not the newest approved version in this ADOM. Pick one from the list.') }}
+</div>
+{% endif %}
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-check2-circle me-1"></i>{{ _('Approved templates') }}</span></div>
+  <div class="fw-card-body p-0">
+    <div class="fw-table-wrapper">
+      <table class="fw-table" id="md-templates">
+        <thead>
+          <tr>
+            <th>{{ _('Template') }}</th>
+            <th>{{ _('Kind') }}</th>
+            <th>{{ _('Version') }}</th>
+            <th>{{ _('Approved') }}</th>
+            <th>{{ _('Validated builds') }}</th>
+            <th>{{ _('Items') }}</th>
+            <th>{{ _('Governs') }}</th>
+            <th class="actions-col"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in entries %}
+          {% set t = e.t %}
+          <tr{% if selected and selected.id == t.id %} class="table-active"{% endif %} data-md-template="{{ t.id }}">
+            <td><strong>{{ t.name }}</strong>
+              {% if e.secrets %}<div class="text-muted" style="font-size:11.5px;"><i class="bi bi-key me-1"></i>{{ _('Secret fields, typed at deploy time:') }} {{ e.secrets|join(', ') }}</div>{% endif %}</td>
+            <td><span class="fw-badge fw-badge-primary">{{ e.kind_label }}</span></td>
+            <td>v{{ t.version }}</td>
+            <td style="font-size:12px; white-space:nowrap;">{{ t.reviewed_by or '—' }}<br><span class="text-muted">{{ t.reviewed_at.strftime('%Y-%m-%d %H:%M') if t.reviewed_at else '—' }}</span></td>
+            <td style="font-size:12px;">{{ e.validated|join(', ') if e.validated else '—' }}</td>
+            <td>{{ e.items }}</td>
+            <td style="font-size:12px;">{{ e.scope.text }}</td>
+            <td class="actions-col" style="white-space:nowrap;">
+              {% if e.items %}
+              <a class="btn btn-sm btn-fw-primary" href="{{ url_for('mass_deploy.index', template=t.id) }}"><i class="bi bi-arrow-right-circle me-1"></i>{{ _('Select') }}</a>
+              {% else %}
+              <span class="fw-badge fw-badge-secondary" title="{{ _('The template has nothing to push.') }}">{{ _('empty') }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8">
+            <div class="fw-empty-state">
+              <div class="fw-empty-state-title">{{ _('No approved template in this ADOM') }}</div>
+              <div class="fw-empty-state-text">{{ _('Capture an object as a template (Save as template), or author one in the Template Library, and have it approved.') }}</div>
+            </div>
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% if selected %}
+<form id="md-form" data-preview-url="{{ url_for('mass_deploy.preview', template_id=selected.id) }}"
+      data-deploy-url="{{ url_for('mass_deploy.deploy', template_id=selected.id) }}" autocomplete="off">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-hdd-stack me-1"></i>{{ _('Targets for') }} {{ selected.name }} v{{ selected.version }}</span></div>
+  <div class="fw-card-body">
+    <p class="text-muted mb-2" style="font-size:12.5px;">{{ selected_scope.text }}.
+      {% if selected_scope.wpp and selected_scope.scoped %}{{ _('Each device it is deployed to is bound to it: the profile becomes read-only there, and later approved versions are deployed to it.') }}{% endif %}</p>
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-js="md-all">{{ _('Select all') }}</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-js="md-none">{{ _('Clear') }}</button>
+      <label class="text-muted ms-2" for="md-build" style="font-size:12.5px;">{{ _('Build') }}</label>
+      <select class="form-select form-select-sm" id="md-build" style="width:auto;">
+        <option value="">{{ _('all') }}</option>
+        {% for b in devices|map(attribute='build')|reject('equalto', '')|unique|sort %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
+      </select>
+      <span class="text-muted ms-auto" style="font-size:12.5px;" id="md-count"></span>
+    </div>
+    <div class="fw-table-wrapper">
+      <table class="fw-table" id="md-devices">
+        <thead><tr><th style="width:32px;"></th><th>{{ _('Device') }}</th><th>{{ _('Build') }}</th><th>{{ _('Fit') }}</th><th>{{ _('Binding') }}</th></tr></thead>
+        <tbody>
+          {% for d in devices %}
+          <tr data-build="{{ d.build }}">
+            <td><input class="form-check-input" type="checkbox" name="device_ids" value="{{ d.a.id }}" {% if not d.selectable %}disabled{% endif %}></td>
+            <td><strong>{{ d.a.name }}</strong><div class="text-muted" style="font-size:11.5px;">{{ d.a.host }}</div></td>
+            <td style="font-size:12.5px;">{{ d.build or '—' }}</td>
+            <td style="font-size:12px;">
+              {% set cell = d.fit.cell %}
+              <span class="fw-badge fw-badge-{{ 'success' if cell == 'fits' else ('danger' if d.fit.blocking else ('warning' if cell == 'adapt' else 'secondary')) }}" title="{{ d.fit.text }}">{{ cell }}</span>
+            </td>
+            <td style="font-size:12px;">{{ d.binding }}{% if d.reason %}<div class="text-muted">{{ _('Not selectable:') }} {{ d.reason }}</div>{% endif %}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="text-muted">{{ _('No device in this ADOM.') }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if selected_scope.wpp and not selected_scope.scoped %}
+    <div class="form-check mt-3">
+      <input class="form-check-input" type="checkbox" name="limit" value="1" id="md-limit">
+      <label class="form-check-label" for="md-limit" style="font-size:13px;">
+        <strong>{{ _('Limit this template to the selected devices') }}</strong>
+        <div class="text-muted" style="font-size:12px;">{{ _('Today it governs every FortiWeb of the ADOM. Checked: the selected devices are bound to it, and from now on it governs, locks and is deployed to bound devices only. Unchecked: it is pushed to the selected devices and keeps governing all of them.') }}</div>
+      </label>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if secret_fields %}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-key me-1"></i>{{ _('Secrets') }}</span></div>
+  <div class="fw-card-body">
+    <p class="text-muted mb-2" style="font-size:12.5px;">{{ _('A template never sends its own secret values. Type a value to set it on every selected device; leave it empty and each device keeps the one it has. What you type is used for this deploy only: it is not stored, logged or shown again.') }}</p>
+    {% for f in secret_fields %}
+    <div class="row g-2 align-items-center mb-2">
+      <label class="col-md-5 col-form-label mono" style="font-size:12.5px;" for="md-sec-{{ loop.index }}">{{ f.label }}</label>
+      <div class="col-md-5"><input type="password" class="form-control form-control-sm" id="md-sec-{{ loop.index }}" name="secret:{{ f.key }}" autocomplete="new-password"></div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-eye me-1"></i>{{ _('Preview and deploy') }}</span></div>
+  <div class="fw-card-body">
+    <div class="d-flex gap-2 mb-2">
+      <button type="button" class="btn btn-outline-primary" data-js="md-preview"><i class="bi bi-eye me-1"></i>{{ _('Preview') }}</button>
+      <button type="button" class="btn btn-fw-primary" data-js="md-deploy" disabled><i class="bi bi-broadcast me-1"></i>{{ _('Deploy') }}</button>
+    </div>
+    <div id="md-result" style="font-size:13px;"></div>
+    <div id="md-compat"></div>
+    <div id="md-override" class="mt-2" style="display:none;">
+      <label class="fw-form-label" for="md-override-reason">{{ _('Override reason (approvers only, audited)') }}</label>
+      <input type="text" class="form-control form-control-sm" id="md-override-reason" name="override_reason">
+    </div>
+  </div>
+</div>
+</form>
+{% endif %}
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-clock-history me-1"></i>{{ _('Deploy history') }}</span></div>
+  <div class="fw-card-body p-0">
+    <div class="fw-table-wrapper">
+      <table class="fw-table" id="md-history">
+        <thead><tr><th>{{ _('When') }}</th><th>{{ _('By') }}</th><th>{{ _('Template') }}</th><th>{{ _('Devices') }}</th><th>{{ _('Result') }}</th></tr></thead>
+        <tbody>
+          {% for h in history %}
+          <tr>
+            <td style="font-size:12px; white-space:nowrap;">{{ h.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td style="font-size:12px;">{{ h.by or '—' }}</td>
+            <td style="font-size:12.5px;"><strong>{{ h.name }}</strong> v{{ h.version }}
+              {% if h.secrets_list %}<div class="text-muted" style="font-size:11.5px;">{{ _('Secrets set:') }} {{ h.secrets_list|join(', ') }}</div>{% endif %}
+              {% if h.bound_list %}<div class="text-muted" style="font-size:11.5px;">{{ _('Bound') }} {{ h.bound_list|length }} {{ _('device(s)') }}</div>{% endif %}</td>
+            <td style="font-size:12px;">{{ h.devices_list|map(attribute='name')|join(', ') }}</td>
+            <td style="font-size:12px;">
+              {% set tone = {'ok': 'success', 'running': 'info', 'failed': 'danger', 'aborted': 'danger', 'stopped': 'warning'}.get(h.status, 'secondary') %}
+              <span class="fw-badge fw-badge-{{ tone }}">{{ h.status }}</span> {{ h.ok_count }}/{{ h.total }}
+              {% if h.result_list %}
+              <details class="mt-1"><summary>{{ _('Per device') }}</summary>
+                <ul class="mb-0 ps-3">{% for r in h.result_list %}<li>{{ r.appliance }}: {% if r.ok %}{{ _('ok') }}{% elif r.cancelled %}{{ _('stopped') }}{% else %}<span class="text-danger">{{ r.error or _('failed') }}</span>{% endif %}</li>{% endfor %}</ul>
+              </details>
+              {% endif %}
+              {% if h.message %}<div class="text-muted">{{ h.message }}</div>{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="text-muted">{{ _('Nothing deployed from this page in this ADOM yet.') }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/template_compat.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ url_for('static', filename='js/mass_deploy.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

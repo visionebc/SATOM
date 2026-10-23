@@ -50,10 +50,11 @@
 {% set _m_mr = adom_menu('migration_report', product) %}
 {% set _m_au = adom_menu('automations', product) %}
 {% set _m_cm = adom_menu('cert_manager', product) %}
+{% set _m_md = adom_menu('mass_deploy', product) %}
 {% endif %}
 {# The provisioning pages open this subgroup only where their entries are in
    it: for an administrator they sit in Administrator > Devices. #}
-{% set _auto_bps = ['upgrade_flow','migration_report','automations','event_automations','change_requests','cert_manager'] + ([] if current_user.can('user_manage') else ['device_provision','provisioning']) %}
+{% set _auto_bps = ['upgrade_flow','migration_report','automations','event_automations','change_requests','cert_manager','mass_deploy'] + ([] if current_user.can('user_manage') else ['device_provision','provisioning']) %}
 {# Device ADOMs: a subgroup of Operations since 2026-10-14 (operator), included
    by partials/nav_operations.html — base.html no longer draws it as a group
    there. Global and placeholder ADOMs have no Operations group and keep the
@@ -141,6 +142,19 @@
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'cert_manager' else '' }}" href="{{ url_for('cert_manager.index', _adom=product.key) }}">
       <i class="bi bi-shield-lock fw-nav-icon"></i><span>{{ _('Certificate Manager') }}</span></a>
     {% else %}{{ nav_off('bi-shield-lock', _('Certificate Manager'), _m_cm.reason, ep='cert_manager.index') }}{% endif %}
+    {% endif %}
+    {# Mass Deploy (2026-10-24): the ADOM's approved templates pushed to one
+       or many of its devices in one canary-gated job. Gated like a fleet
+       rollout from the Template Library (operations.apply AND
+       operations.template_apply). LIVE where the bulk runner writes the
+       ADOM's devices (services/mass_deploy.PRODUCTS, FortiWeb), disabled with
+       the reason in the other device ADOMs; not in Global (a template belongs
+       to one ADOM). #}
+    {% if _dev and current_user.can('operations.apply') and current_user.can('operations.template_apply') and may_open('mass_deploy.index') %}
+    {% if _m_md.on %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'mass_deploy' else '' }}" href="{{ url_for('mass_deploy.index', _adom=product.key) }}">
+      <i class="bi bi-broadcast fw-nav-icon"></i><span>{{ _('Mass Deploy') }}</span></a>
+    {% else %}{{ nav_off('bi-broadcast', _('Mass Deploy'), _m_md.reason, ep='mass_deploy.index') }}{% endif %}
     {% endif %}
     {# Device Console needs config_write, but its entry lives in the
        Administrator group, which only user_manage holders see. Operators

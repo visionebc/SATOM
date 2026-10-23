@@ -228,7 +228,63 @@
       });
     });
   }
-  window.AppRun = { mount: mount, draw: draw, follow: follow, fill: fill };
+  /* A list field with "search" (_field.html): the box narrows the choices of
+   * its <select>. Every word must appear in the label or the value. The
+   * options are rebuilt, not hidden (Safari ignores hidden options). A
+   * choice the user MADE stays listed, so filtering never changes it
+   * behind their back; otherwise the first match is selected (a required
+   * list has no "—" to fall back on). Delegated: the Test tab injects its
+   * form later. */
+  function searchSelect(box) {
+    var id = box.getAttribute('data-sapp-search');
+    var sel = document.getElementById(id);
+    if (!sel) return;
+    if (!sel._sappAll) {
+      sel._sappAll = Array.prototype.map.call(sel.options, function (o) {
+        return { value: o.value, label: o.text };
+      });
+    }
+    var words = box.value.toLowerCase().split(/\s+/).filter(Boolean);
+    var cur = sel.value, keep = !!sel._sappChosen && cur !== '';
+    var total = 0, hits = [], curOpt = null;
+    sel.innerHTML = '';
+    sel._sappAll.forEach(function (o) {
+      var opt = new Option(o.label, o.value);
+      if (o.value === '') { sel.appendChild(opt); if (cur === '') curOpt = opt; return; }
+      total++;
+      var hay = (o.label + ' ' + o.value).toLowerCase();
+      var hit = words.every(function (w) { return hay.indexOf(w) >= 0; });
+      if (!hit && !(keep && o.value === cur)) return;
+      if (hit) hits.push(opt);
+      if (o.value === cur) curOpt = opt;
+      sel.appendChild(opt);
+    });
+    if (keep || !words.length) {
+      if (curOpt) curOpt.selected = true;          /* the user's choice, or nothing typed */
+    } else if (hits.length) {
+      hits[0].selected = true;                     /* typing, nothing chosen: first match */
+    } else if (sel.options.length) {
+      sel.options[0].selected = true;              /* no match: "—" (a required list ends empty) */
+    }
+    var count = document.querySelector('[data-sapp-search-count="' + id + '"]');
+    if (count) count.textContent = words.length ? hits.length + ' / ' + total : String(total);
+  }
+  document.addEventListener('input', function (e) {
+    var t = e.target;
+    if (t && t.hasAttribute && t.hasAttribute('data-sapp-search')) searchSelect(t);
+  });
+  /* A choice made by hand (not by the search box) is kept while filtering. */
+  document.addEventListener('change', function (e) {
+    var t = e.target;
+    if (t && t.tagName === 'SELECT') t._sappChosen = t.value !== '';
+  });
+  document.addEventListener('keydown', function (e) {
+    var t = e.target;
+    /* Enter in the search box would submit the form, i.e. RUN the app. */
+    if (e.key === 'Enter' && t && t.hasAttribute && t.hasAttribute('data-sapp-search')) e.preventDefault();
+  });
+
+  window.AppRun = { mount: mount, draw: draw, follow: follow, fill: fill, searchSelect: searchSelect };
 
   var cfgEl = document.getElementById('app-run-config');
   if (cfgEl) {

@@ -58,6 +58,7 @@ SOURCES = (
     ("fortiweb", "FortiWeb appliances"),
     ("fortiweb_pools", "FortiWeb server pools (local cache)"),
     ("fortiweb_interfaces", "FortiWeb interfaces (local cache)"),
+    ("fortiweb_certificates", "FortiWeb local certificates (local cache)"),
     ("wpp_templates", "Approved Web Protection Profile templates"),
     ("certificates", "Certificate Manager certificates (usable)"),
     ("cert_providers", "Certificate providers"),
@@ -148,9 +149,10 @@ def kinds(ch: dict | None = None) -> list:
            F._save_as("fortiweb")]),
         K("certificate", "Certificate (issue or reuse)", GROUP,
           "Issue a certificate with the chosen provider and deploy it to the "
-          "appliance, or deploy one that already exists in the Certificate Manager.",
+          "appliance, deploy one that already exists in the Certificate Manager, "
+          "or use one that is already on the appliance (device: nothing is written).",
           [P("mode", "Mode", default="issue",
-             help="issue or existing -- or {{ form.cert_mode }}"),
+             help="issue, existing or device -- or {{ form.cert_mode }}"),
            P("provider", "Provider",
              help="Issue only: a provider key (Certificate Manager › Providers), e.g. "
                   "{{ form.cert_provider }}. Empty = the first provider."),
@@ -159,7 +161,8 @@ def kinds(ch: dict | None = None) -> list:
            P("common_name", "Common name", help="Issue only, e.g. {{ form.dns }}"),
            P("sans", "Extra SANs", help="Comma separated."),
            P("existing", "Existing certificate (id or name)",
-             help="Existing only, e.g. {{ form.certificate }}"),
+             help="existing: a Certificate Manager id or name; device: the name of a local "
+                  "certificate on the appliance, e.g. {{ form.certificate }}"),
            P("appliance", "Appliance (id or name)", required=True,
              help="e.g. {{ fortiweb.id }}"),
            P("zone", "Zone of the policy", help="A provider marked internal-only "
@@ -616,6 +619,9 @@ def _may_write_device(ctx) -> None:
 # --------------------------------------------------------------------------- #
 EP_SERVICE = "/api/v2.0/cmdb/server-policy/service.custom"
 EP_POOL = "/api/v2.0/cmdb/server-policy/server-pool"
+#: What a server policy's ``certificate`` refers to.
+EP_CERT_LOCAL = "/api/v2.0/cmdb/system/certificate.local"
+CERT_MODES = ("issue", "existing", "device")
 
 
 def device_names(appliance, endpoint: str, *, client=None) -> tuple[list, str]:
@@ -857,9 +863,17 @@ def rehearse(node: dict, ctx) -> tuple:
                 for d, r in zip(done, rows))
     if kind == "certificate":
         mode = _s(node, ctx, "mode", "issue") or "issue"
-        v = {"id": None, "name": _s(node, ctx, "existing") if mode == "existing" else
-             "<issued at run time>", "created": mode != "existing",
+        if mode not in CERT_MODES:
+            raise F.FlowError("certificate mode %r: %s" % (mode, ", ".join(CERT_MODES)))
+        v = {"id": None, "name": _s(node, ctx, "existing") if mode != "issue" else
+             "<issued at run time>", "created": mode == "issue",
              "provider": _s(node, ctx, "provider"), "rehearsal": True}
+        if mode == "device":
+            if not v["name"]:
+                raise F.FlowError("certificate = device, but no certificate was picked")
+            v["on_device"] = True
+            return "ok", v, "rehearsal: would use %s, already on %s (checked on the device " \
+                "at run time; nothing is written)" % (v["name"] or "?", _s(node, ctx, "appliance"))
         prob = ""
         try:
             from . import cert_providers as CP
@@ -999,15 +1013,44 @@ def run(node: dict, ctx) -> tuple:
     raise F.FlowError("unknown step kind %r" % kind)
 
 
+def _device_certificate(a, name: str, zone: str):
+    """Mode ``device``: a local certificate that is ALREADY on the appliance.
+    Nothing is written; the name is checked ON the device (the cache only
+    when the device does not answer, said so). A certificate the Certificate
+    Manager also knows keeps its provider's zone rule; one it does not know
+    has no provider to check, and the step says so."""
+    from ..models import ManagedCertificate
+    from . import cert_providers as CP
+    if not name:
+        raise F.FlowError("certificate = device, but no certificate was picked")
+    have, src = device_names(a, EP_CERT_LOCAL)
+    if name not in have:
+        raise F.FlowError("no local certificate %r on %s (%s) -- a certificate is a "
+                          "per-device object; nothing was written" % (name, a.name, src))
+    row = ManagedCertificate.query.filter_by(name=name).first()
+    if row is not None:
+        prob = CP.zone_problem(row.provider, zone)
+        if prob:
+            raise F.FlowError(prob)
+        note = "provider %s" % (row.provider or "default")
+    else:
+        note = "not in the Certificate Manager: no provider zone rule to check"
+    return "ok", {"id": row.id if row is not None else None, "name": name, "created": False,
+                  "provider": (row.provider or "") if row is not None else "",
+                  "on_device": True}, "uses %s, already on %s (%s; %s)" % (name, a.name, src, note)
+
+
 def _run_certificate(node, ctx):
     from ..models import ManagedCertificate, db
     from . import cert_manager as CM
     from . import cert_providers as CP
     a = appliance_of(_s(node, ctx, "appliance"))
     mode = _s(node, ctx, "mode", "issue") or "issue"
-    if mode not in ("issue", "existing"):
-        raise F.FlowError("certificate mode %r: issue or existing" % mode)
+    if mode not in CERT_MODES:
+        raise F.FlowError("certificate mode %r: %s" % (mode, ", ".join(CERT_MODES)))
     zone = _s(node, ctx, "zone")
+    if mode == "device":
+        return _device_certificate(a, _s(node, ctx, "existing"), zone)
     if mode == "existing":
         raw = _s(node, ctx, "existing")
         row = (db.session.get(ManagedCertificate, int(raw)) if raw.isdigit()
@@ -1041,16 +1084,20 @@ def _run_certificate(node, ctx):
 # --------------------------------------------------------------------------- #
 #  satom_select form fields                                                    #
 # --------------------------------------------------------------------------- #
+_FLEET_EPS = {"fortiweb_pools": EP_POOL, "fortiweb_certificates": EP_CERT_LOCAL}
+
+
 def _fleet_objects(source: str) -> list[dict]:
-    """Pool or interface names over every FortiWeb, from the local cache (the
-    form never waits on a device). The label says which devices have it: the
-    FortiWeb is picked at run time, and the run checks the name ON it."""
+    """Pool, local certificate or interface names over every FortiWeb, from the
+    local cache (the form never waits on a device). The label says which
+    devices have it: the FortiWeb is picked at run time, and the run checks
+    the name ON it."""
     from .interface_inventory import cached_interfaces
     from .read_layer import cached_ref_names
     where: dict[str, list] = {}
     for a in fleet_order("fortiweb"):
-        if source == "fortiweb_pools":
-            names = cached_ref_names(a.id, EP_POOL)
+        if source in _FLEET_EPS:
+            names = cached_ref_names(a.id, _FLEET_EPS[source])
         else:
             names = [str(i.get("name") or "") for i in cached_interfaces(a)]
         for n in names:
@@ -1066,7 +1113,7 @@ def source_options(source: str) -> tuple[list[dict], str]:
     if source == "fortiweb":
         return [{"value": str(a.id), "label": "%s (%s / %s)" % (a.name, a.zone or "-", a.line or "-")}
                 for a in fleet_order("fortiweb")], ""
-    if source in ("fortiweb_pools", "fortiweb_interfaces"):
+    if source in ("fortiweb_pools", "fortiweb_interfaces", "fortiweb_certificates"):
         return _fleet_objects(source), ""
     if source == "wpp_templates":
         from ..models import Template

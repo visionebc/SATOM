@@ -8,6 +8,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Plugin Studio › Apps: certificates already on the FortiWebs.** A new
+  SATOM list, *FortiWeb local certificates*, offers the local certificates
+  of every FortiWeb from the local cache, each naming the FortiWebs that hold
+  it. The *Certificate* step has a third mode, **device**: it uses a
+  certificate that is already on the appliance, checks the name on the
+  device before anything is written (a missing one stops the run), and
+  writes nothing itself. A certificate the Certificate Manager also knows
+  keeps its provider's zone rule. Requested by the operator: "the plugin
+  cannot show the certificates we have; it should show the ones on the
+  FortiWebs".
+- **Plugin Studio › Apps: searchable lists.** Any list field (fixed, data
+  store, API or SATOM list) can be marked **searchable** in the Form tab.
+  It then gets a search box where every word must match, with a
+  *matches / total* counter. A choice the user made stays selected while
+  they search, and Enter in the box never runs the app. Requested by the
+  operator: "some fields should have a search when the user wants one".
+
 - **Settings › General › Installed software**: every package this installation
   runs on and its installed version, per node. **Platform components**
   (Python, PostgreSQL server and client, nginx, VictoriaMetrics, Redis,
@@ -83,6 +100,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `#tab-password` land on the same cards. The form URLs are unchanged.
   Requested by the operator: "put My Account in the profile so it is not in
   Settings".
+
+### Fixed
+
+- **Certificate Manager › certificates on the devices** no longer shows a
+  FortiWeb that refuses the REST call (HTTP 423, `-20010`: the license of the HA peer is not
+  valid) as *online with 0 certificates*. The box is now marked unreachable, with the
+  device's own message.
 
 ## [3.5.0] - 2026-10-23
 

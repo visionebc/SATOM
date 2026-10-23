@@ -55,6 +55,8 @@ from . import studio_flow as F
 AUTHOR = "studio.script_library"
 FIELD_TYPES = ("text", "textarea", "number", "select", "checkbox", "password", "date",
                "store_select", "api_select", "satom_select")
+#: The list types; any of them may add a search box over its choices (``search``).
+LIST_TYPES = ("select", "store_select", "api_select", "satom_select")
 ACTION_KINDS = ("save_store", "download", "send", "run_app", "change_request")
 MAX_FIELDS = 40
 MAX_ACTIONS = 20
@@ -215,6 +217,8 @@ def clean_fields(fields, ch: dict | None = None) -> list[dict]:
             if src not in S.SOURCE_KEYS:
                 raise AppError("field %s: pick what the SATOM list shows" % name)
             c["source"] = src
+        if typ in LIST_TYPES and f.get("search"):
+            c["search"] = True
         out.append(c)
     return out
 

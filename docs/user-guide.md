@@ -4703,12 +4703,16 @@ The editor has seven tabs:
   store** column (value and label columns) and a list from an **API** (a
   connection, a path, the JSON path of the list and the value / label keys).
   A **SATOM list** offers what SATOM itself holds: the FortiWeb appliances,
-  the server pools and the interfaces of the FortiWebs (read from the local
-  cache — the form never waits on a device; each choice names the FortiWebs
-  that have it), the approved Web Protection Profile templates, the usable Certificate
+  the server pools, the interfaces and the local certificates of the FortiWebs
+  (read from the local cache — the form never waits on a device; each choice
+  names the FortiWebs that have it), the approved Web Protection Profile templates, the usable Certificate
   Manager certificates, the certificate providers, the classification zones,
   lines and departments, or the network segments.
   The value chosen must be one of the choices the server reads again.
+  Tick **searchable** on any list to give it a search box: every word typed
+  must appear in the choice, the counter shows *matches / total*, a choice
+  you made yourself stays selected while you search, and Enter in the box
+  never runs the app.
 - **Diagram** — the same editor as Process. Steps: *Start*, *End*, *Set a
   variable*, *Decision* (equals, not equals, contains, greater, less, empty,
   not empty, true → yes / no), *Fail* (stop with a message), *Output* (a value
@@ -4814,7 +4818,7 @@ a whole provisioning chain is one diagram whose failures the author routes:
 | *DDI: reserve by rules* | One reservation per rule row, in its order (the master unit first); `ip_from` reuses the address another unit of the step got. If one rule fails, what the step created is released before it ends in error. **Mode *given***: the addresses typed in the form (`{"internal": …, "external": …}`, keyed by unit or role) — the DDI is not called at all, each rule takes its unit's or role's address (or `ip_from`'s), a rule left without one is an error, and nothing typed is an error too (never a quiet reservation). A release keeps them: *given in the form, never reserved* | *DDI: release* |
 | *DDI: release reservations* | Deletes what reserve steps of this run **created**; reused records are kept and named | — |
 | *Pick a FortiWeb by capacity* | The first FortiWeb by name whose zone / line / department match and whose Capacity limit has room; *Exclude* gives a second, different one | — |
-| *Certificate (issue or reuse)* | Issues with the chosen provider and deploys to the appliance, or deploys a certificate the Certificate Manager already holds; an internal-only provider refuses a non-Internal zone. Never revoked by a diagram | — |
+| *Certificate (issue or reuse)* | Mode *issue*: issues with the chosen provider and deploys to the appliance. *existing*: deploys a certificate the Certificate Manager already holds. *device*: uses a local certificate that is already on the appliance — checked on the device, nothing is written. An internal-only provider refuses a non-Internal zone (*device*: only when the Certificate Manager knows the certificate). Never revoked by a diagram | — |
 | *FortiWeb: create the server policy* | Virtual server, VIP, server pool and members, then the policy (WPP template, certificate) — the SPO wizard's endpoints and writer. **Port**: 443 with a certificate / 80 without = the predefined service; any other port gets a custom service (`HTTPS-<port>` / `HTTP-<port>`, or the name in `names.service`), reused when the device has it. **Server pool *existing***: the pool is bound, nothing of it is written or removed, and the run checks it is ON the device before writing anything (the device when it answers, else the local cache — said in the step log); a new pool needs at least one real server. If one object fails, what the step wrote is deleted again | *FortiWeb: remove* |
 | *FortiWeb: remove a created policy* | Deletes, newest first, what a create step of this run wrote | — |
 
@@ -4844,8 +4848,9 @@ generator (`satom-dev/satom-plugins`).
 **Example — new FortiWeb server policy** (package `spo-fortiweb`): the form
 asks for the entry type (*internal*, *split*, *internal-external*), the DNS
 name (the service), an extra text for the name, the port, the real servers,
-the WPP template and the certificate (issue with a provider, or an existing
-one). The diagram reads its variables from four data stores — **spo-ddi-rules**
+the WPP template and the certificate (issue with a provider, one already on
+the FortiWeb — the list shows which FortiWebs have it — or one from the
+Certificate Manager). The diagram reads its variables from four data stores — **spo-ddi-rules**
 (per type: units in order, record name pattern, subnets, `ip_from`; e.g. split
 = `use-{dns}.used` in bn, `{dns}` in inet, ktv with inet's address),
 **spo-fortiweb-rules** (zone, line, VIP interface, which unit's address is the

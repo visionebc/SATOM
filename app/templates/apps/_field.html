@@ -12,6 +12,14 @@
   {% if f.type == 'textarea' %}
   <textarea class="form-control form-control-sm" name="{{ f.name }}" id="{{ prefix }}{{ f.name }}" rows="3" {{ 'required' if f.required }}>{{ f.default }}</textarea>
   {% elif f.type in ('select', 'store_select', 'api_select', 'satom_select') %}
+  {% if f.search %}{# no name: the search text is never a form value (apps_run.js) #}
+  <div class="input-group input-group-sm mb-1">
+    <span class="input-group-text"><i class="bi bi-search"></i></span>
+    <input type="search" class="form-control form-control-sm" data-sapp-search="{{ prefix }}{{ f.name }}"
+           placeholder="{{ _('Search…') }}" aria-label="{{ _('Search') }} {{ f.label }}" autocomplete="off">
+    <span class="input-group-text small" data-sapp-search-count="{{ prefix }}{{ f.name }}">{{ f.choices | length }}</span>
+  </div>
+  {% endif %}
   <select class="form-select form-select-sm" name="{{ f.name }}" id="{{ prefix }}{{ f.name }}" {{ 'required' if f.required }}>
     {% if not f.required %}<option value="">—</option>{% endif %}
     {% for o in f.choices %}<option value="{{ o.value }}" {{ 'selected' if o.value == f.default }}>{{ o.label }}</option>{% endfor %}

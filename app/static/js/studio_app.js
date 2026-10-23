@@ -65,6 +65,7 @@
   });
 
   /* ── form designer ────────────────────────────────────────────────── */
+  var LIST_TYPES = ['select', 'store_select', 'api_select', 'satom_select'];
   function inp(i, k, v, ph, w) {
     return '<input class="form-control form-control-sm" data-i="' + i + '" data-k="' + k + '" value="' + esc(v || '') +
       '" placeholder="' + esc(ph || '') + '"' + (w ? ' style="max-width:' + w + 'px;"' : '') + '>';
@@ -94,6 +95,9 @@
         '<select class="form-select form-select-sm" style="max-width:150px;" data-i="' + i + '" data-k="type">' +
         CFG.fieldTypes.map(function (x) { return '<option' + (x === t ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select>' +
         '<div class="form-check"><input class="form-check-input" type="checkbox" data-i="' + i + '" data-k="required"' + (f.required ? ' checked' : '') + '><label class="form-check-label small">required</label></div>' +
+        (LIST_TYPES.indexOf(t) >= 0
+          ? '<div class="form-check" title="A search box over the choices"><input class="form-check-input" type="checkbox" data-i="' + i + '" data-k="search"' + (f.search ? ' checked' : '') + '><label class="form-check-label small">searchable</label></div>'
+          : '') +
         (t === 'password' ? '' : inp(i, 'default', f['default'], 'default', 160)) +
         '<span class="ms-auto"><button type="button" class="btn btn-sm btn-outline-secondary" data-mv="-1" data-i="' + i + '">↑</button> ' +
         '<button type="button" class="btn btn-sm btn-outline-secondary" data-mv="1" data-i="' + i + '">↓</button> ' +

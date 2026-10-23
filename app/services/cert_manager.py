@@ -2224,6 +2224,23 @@ _DEVICE_CERT_STORES = (
 )
 
 
+def _store_refusal(resp, body) -> str:
+    """``""`` when a cmdb GET answered with data; else why it did not
+    (``HTTP 423: The license of peer VM FortiWeb is not valid.``)."""
+    if resp is None:
+        return "no answer"
+    status = getattr(resp, "status_code", 200) or 200
+    err = body.get("errcode") if isinstance(body, dict) else None
+    try:
+        negative = err is not None and int(err) < 0
+    except (TypeError, ValueError):
+        negative = False
+    if status < 400 and not negative:
+        return ""
+    msg = str(body.get("message") or "") if isinstance(body, dict) else ""
+    return ("HTTP %s%s" % (status, (": " + msg) if msg else (" errcode %s" % err if err else "")))[:160]
+
+
 def list_device_certificates(appliances, *, timeout: float = 6.0) -> list[dict]:
     """Live, read-only sweep of every appliance's certificate stores.
 
@@ -2258,6 +2275,16 @@ def list_device_certificates(appliances, *, timeout: float = 6.0) -> list[dict]:
             try:
                 resp = client.api_call("GET", ep)
                 body = resp.json() if resp is not None else {}
+                refused = _store_refusal(resp, body)
+                if refused:
+                    # A 4xx / negative errcode is NOT an empty store: a box whose
+                    # REST is license-locked (423, -20010) answered "0 certs" here
+                    # while it holds them (2026-10-23).
+                    if idx == 0:
+                        entry["online"] = False
+                        entry["error"] = refused
+                        break
+                    continue
                 rows = body.get("results") if isinstance(body, dict) else []
                 if isinstance(rows, dict):  # single-mkey shape
                     rows = [rows]

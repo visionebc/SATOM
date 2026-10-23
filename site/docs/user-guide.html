@@ -5286,12 +5286,16 @@ data store, connection) refuses it with the reason.</p>
   store</strong> column (value and label columns) and a list from an <strong>API</strong> (a
   connection, a path, the JSON path of the list and the value / label keys).
   A <strong>SATOM list</strong> offers what SATOM itself holds: the FortiWeb appliances,
-  the server pools and the interfaces of the FortiWebs (read from the local
-  cache — the form never waits on a device; each choice names the FortiWebs
-  that have it), the approved Web Protection Profile templates, the usable Certificate
+  the server pools, the interfaces and the local certificates of the FortiWebs
+  (read from the local cache — the form never waits on a device; each choice
+  names the FortiWebs that have it), the approved Web Protection Profile templates, the usable Certificate
   Manager certificates, the certificate providers, the classification zones,
   lines and departments, or the network segments.
-  The value chosen must be one of the choices the server reads again.</li>
+  The value chosen must be one of the choices the server reads again.
+  Tick <strong>searchable</strong> on any list to give it a search box: every word typed
+  must appear in the choice, the counter shows <em>matches / total</em>, a choice
+  you made yourself stays selected while you search, and Enter in the box
+  never runs the app.</li>
 <li><strong>Diagram</strong> — the same editor as Process. Steps: <em>Start</em>, <em>End</em>, <em>Set a
   variable</em>, <em>Decision</em> (equals, not equals, contains, greater, less, empty,
   not empty, true → yes / no), <em>Fail</em> (stop with a message), <em>Output</em> (a value
@@ -5421,7 +5425,7 @@ a whole provisioning chain is one diagram whose failures the author routes:</p>
 </tr>
 <tr>
 <td><em>Certificate (issue or reuse)</em></td>
-<td>Issues with the chosen provider and deploys to the appliance, or deploys a certificate the Certificate Manager already holds; an internal-only provider refuses a non-Internal zone. Never revoked by a diagram</td>
+<td>Mode <em>issue</em>: issues with the chosen provider and deploys to the appliance. <em>existing</em>: deploys a certificate the Certificate Manager already holds. <em>device</em>: uses a local certificate that is already on the appliance — checked on the device, nothing is written. An internal-only provider refuses a non-Internal zone (<em>device</em>: only when the Certificate Manager knows the certificate). Never revoked by a diagram</td>
 <td>—</td>
 </tr>
 <tr>
@@ -5460,8 +5464,9 @@ generator (<code>{org}/satom-plugins</code>).</p>
 <p><strong>Example — new FortiWeb server policy</strong> (package <code>spo-fortiweb</code>): the form
 asks for the entry type (<em>internal</em>, <em>split</em>, <em>internal-external</em>), the DNS
 name (the service), an extra text for the name, the port, the real servers,
-the WPP template and the certificate (issue with a provider, or an existing
-one). The diagram reads its variables from four data stores — <strong>spo-ddi-rules</strong>
+the WPP template and the certificate (issue with a provider, one already on
+the FortiWeb — the list shows which FortiWebs have it — or one from the
+Certificate Manager). The diagram reads its variables from four data stores — <strong>spo-ddi-rules</strong>
 (per type: units in order, record name pattern, subnets, <code>ip_from</code>; e.g. split
 = <code>use-{dns}.used</code> in bn, <code>{dns}</code> in inet, ktv with inet's address),
 <strong>spo-fortiweb-rules</strong> (zone, line, VIP interface, which unit's address is the

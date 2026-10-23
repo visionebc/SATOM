@@ -824,6 +824,24 @@ def create_app(config_override: object | None = None) -> Flask:
         return user_passes(current_user, required_permission(endpoint, app))
 
     @app.template_global()
+    def sentinel_active():
+        """Whether Monitoring > Sentinel is offered: the master switch
+        ``sentinel.enabled`` (Settings > Sentinel). Off, the console can only
+        say "disabled", so the entry goes (operator, 2026-10-23); the switch
+        itself stays in Settings, and the routes still answer by URL.
+        Read once per request; an unreadable setting keeps the entry."""
+        from flask import g as _g
+        cached = getattr(_g, "_sentinel_active", None)
+        if cached is None:
+            try:
+                from .services.sentinel import config as _sn_config
+                cached = bool(_sn_config.get("enabled"))
+            except Exception:  # noqa: BLE001 -- a menu must never 500 the page
+                cached = True
+            _g._sentinel_active = cached
+        return cached
+
+    @app.template_global()
     def device_scope_owner(appl):
         """The sibling that DOES carry those verbs, for a pointer link.
 

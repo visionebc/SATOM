@@ -85,6 +85,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Changed
 
+- **Monitoring › Device health: devices grouped by ADOM, problems on the card.**
+  The cards are now grouped in one collapsible section per ADOM (FortiWeb,
+  FortiADC, FortiAuthenticator, FortiAnalyzer, FortiGate); a section's title
+  takes the colour of its worst device and shows how many are critical, in
+  warning or unknown. The rows of errors at the top of the page are gone: a
+  device with a problem is shown by the colour of its own card, and a click
+  on the card opens what is wrong and **how to fix it** — concrete steps per
+  signal (harvest, cache, deep monitors, capacity), built from the same
+  reading the badge comes from. A section you fold or open stays that way;
+  untouched, a section opens when it holds a problem. The page now uses the
+  console's light badge colours throughout.
+- **Monitoring › Sentinel: clearer health cards; entry only while Sentinel is on.**
+  The four cards (Pipeline, Behavioural baseline, CVE mirror, Response engine)
+  carry their state as a coloured edge, an icon and a badge, the heartbeat
+  age reads in s/min/h, and the baseline shows a meter. The Monitoring ›
+  Sentinel entry is offered only while Sentinel is enabled (Settings ›
+  Sentinel, where it is switched on and off); the pages still answer by URL.
 - **Wiki: Follow and Confluence move onto the articles.** Each article's card
   in the list now has its own **Follow** button (as the article page does),
   and ADOMs, Global and everything are followed from one **Follow** button
@@ -154,6 +171,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **Deep monitors / Service Monitor: closing a chart left the screen dimmed.**
+  Every visit to the page added another copy of its click handlers, so from
+  the second visit one click opened the chart (and the history, policy, edit
+  and discover dialogs) several times; closing removed one backdrop and left
+  the rest. The handlers are now dropped when you leave the page, each dialog
+  reuses one instance, and the console removes any backdrop left behind once
+  the last dialog closes. The same click doubling also made a device card
+  fold and unfold in one click.
 - **Certificate Manager › certificates on the devices** no longer shows a
   FortiWeb that refuses the REST call (HTTP 423, `-20010`: the license of the HA peer is not
   valid) as *online with 0 certificates*. The box is now marked unreachable, with the

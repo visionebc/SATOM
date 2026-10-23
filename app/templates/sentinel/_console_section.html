@@ -141,54 +141,113 @@
 })();
 </script>
 
-{# ── pipeline honesty row ───────────────────────────────────────────────── #}
-<div class="row g-3 mb-3">
-  <div class="col-md-3">
-    <div class="fw-card h-100" data-card-static><div class="fw-card-body">
-      <div class="fw-stat-label">Pipeline{{ hint(sn_hint('health.pipeline')) }}</div>
+{# ── pipeline honesty row ─────────────────────────────────────────────────
+   2026-10-23 (operator: "more formatting on the cards"): each tile carries its
+   state as a coloured accent + icon + badge, so the four answers read at a
+   glance. Colours come from the .fw-badge-* set (calibrated against white);
+   the numbers and controls are the same as before. #}
+<style nonce="{{ csp_nonce }}">
+  .sn-tiles .sn-tile { border-left:4px solid #ADB5BD; transition:box-shadow .15s; }
+  .sn-tiles .sn-tile:hover { box-shadow:var(--fw-card-shadow-hover); }
+  .sn-tile.sn-ok   { border-left-color:#15692A; } .sn-tile.sn-warn { border-left-color:#C99A06; }
+  .sn-tile.sn-crit { border-left-color:#8B1C2A; } .sn-tile.sn-info { border-left-color:#0A5F6C; }
+  .sn-tile .fw-card-body { display:flex; flex-direction:column; gap:6px; height:100%; }
+  .sn-tile-head { display:flex; align-items:center; gap:8px; }
+  .sn-tile-head .fw-stat-label { margin:0; flex:1; font-weight:600; text-transform:uppercase;
+                                 letter-spacing:.04em; font-size:11px; }
+  .sn-ico { width:30px; height:30px; border-radius:50%; display:inline-flex; align-items:center;
+            justify-content:center; font-size:15px; flex:none; background:rgba(108,117,125,.12); color:#495057; }
+  .sn-ok .sn-ico   { background:rgba(40,167,69,.14);  color:#15692A; }
+  .sn-warn .sn-ico { background:rgba(255,193,7,.22);  color:#7A5700; }
+  .sn-crit .sn-ico { background:rgba(220,53,69,.14);  color:#8B1C2A; }
+  .sn-info .sn-ico { background:rgba(23,162,184,.14); color:#0A5F6C; }
+  .sn-tile .fw-stat-value { font-size:24px; }
+  .sn-tile .sn-unit { font-size:13px; font-weight:500; color:var(--fw-text-secondary, #6B7280); }
+  .sn-meter { height:6px; border-radius:3px; background:#EAEFF9; overflow:hidden; }
+  .sn-meter > i { display:block; height:100%; background:#15692A; }
+  .sn-meter.sn-m-warn > i { background:#C99A06; }
+  .sn-tile-foot { margin-top:auto; padding-top:6px; border-top:1px solid var(--fw-border-light, #EAEFF9); }
+</style>
+{% set age = health.last_sweep_age_s %}
+{% if not health.enabled %}{% set p_st, p_badge = 'crit', 'off' %}
+{% elif age is none %}{% set p_st, p_badge = 'warn', 'no heartbeat' %}
+{% elif age > 900 %}{% set p_st, p_badge = 'warn', 'late' %}
+{% else %}{% set p_st, p_badge = 'ok', 'running' %}{% endif %}
+{% set b = health.baseline %}
+{% set b_st = 'ok' if (b.pct_usable or 0) >= 50 else ('warn' if not b.usable else 'info') %}
+{% set v_st = 'warn' if health.vuln.stale else 'ok' %}
+{% set r_st = 'warn' if health.response_armed else 'info' %}
+{% set badge_cls = {'ok': 'fw-badge-success', 'warn': 'fw-badge-warning', 'crit': 'fw-badge-danger', 'info': 'fw-badge-info'} %}
+<div class="row g-3 mb-3 sn-tiles">
+  <div class="col-md-6 col-xl-3">
+    <div class="fw-card h-100 sn-tile sn-{{ p_st }}" data-card-static><div class="fw-card-body">
+      <div class="sn-tile-head">
+        <span class="sn-ico"><i class="bi bi-activity"></i></span>
+        <span class="fw-stat-label">Pipeline{{ hint(sn_hint('health.pipeline')) }}</span>
+        <span class="fw-badge {{ badge_cls[p_st] }}">{{ p_badge }}</span>
+      </div>
       {% if not health.enabled %}
         <div class="fw-stat-value text-danger">disabled</div>
         <div class="small text-muted">Sentinel is switched off in Settings — no incidents are being created.</div>
-      {% elif health.last_sweep_age_s is none %}
+      {% elif age is none %}
         <div class="fw-stat-value text-warning">never run</div>
         <div class="small text-muted">No heartbeat in the metrics store yet. Run a sweep, or schedule <code>sentinel_sweep</code>.</div>
       {% else %}
-        <div class="fw-stat-value">{{ health.last_sweep_age_s }}s ago</div>
+        <div class="fw-stat-value">
+          {%- if age < 120 %}{{ age }}<span class="sn-unit"> s ago</span>
+          {%- elif age < 7200 %}{{ (age // 60) }}<span class="sn-unit"> min ago</span>
+          {%- else %}{{ (age // 3600) }}<span class="sn-unit"> h ago</span>{% endif -%}
+        </div>
         <div class="small text-muted">Last sweep heartbeat. Absence here means the pipeline stopped, not that it found nothing.</div>
       {% endif %}
     </div></div>
   </div>
-  <div class="col-md-3">
-    <div class="fw-card h-100" data-card-static><div class="fw-card-body">
-      <div class="fw-stat-label">Behavioural baseline{{ hint(sn_hint('health.baseline')) }}</div>
-      <div class="fw-stat-value">{{ health.baseline.usable }}<span class="text-muted" style="font-size:14px;">/{{ health.baseline.total }}</span></div>
+  <div class="col-md-6 col-xl-3">
+    <div class="fw-card h-100 sn-tile sn-{{ b_st }}" data-card-static><div class="fw-card-body">
+      <div class="sn-tile-head">
+        <span class="sn-ico"><i class="bi bi-graph-up"></i></span>
+        <span class="fw-stat-label">Behavioural baseline{{ hint(sn_hint('health.baseline')) }}</span>
+        <span class="fw-badge {{ badge_cls[b_st] }}">{{ b.pct_usable }}%</span>
+      </div>
+      <div class="fw-stat-value">{{ b.usable }}<span class="sn-unit"> / {{ b.total }} buckets</span></div>
+      <div class="sn-meter {{ '' if b_st == 'ok' else 'sn-m-warn' }}"><i style="width:{{ [b.pct_usable or 0, 100]|min }}%"></i></div>
       <div class="small text-muted">
-        buckets usable ({{ health.baseline.pct_usable }}%). {{ health.baseline.learning }} still learning —
+        buckets usable ({{ b.pct_usable }}%). {{ b.learning }} still learning —
         an immature bucket never fires.
       </div>
-      <form method="post" action="{{ url_for('sentinel.recompute') }}" class="mt-2">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
-        <button class="btn btn-fw-outline btn-sm">Recompute from the store</button>
-      </form>
+      <div class="sn-tile-foot">
+        <form method="post" action="{{ url_for('sentinel.recompute') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
+          <button class="btn btn-fw-outline btn-sm"><i class="bi bi-arrow-repeat me-1"></i>Recompute from the store</button>
+        </form>
+      </div>
     </div></div>
   </div>
-  <div class="col-md-3">
-    <div class="fw-card h-100" data-card-static><div class="fw-card-body">
-      <div class="fw-stat-label">CVE mirror (local){{ hint(sn_hint('health.vuln')) }}</div>
-      <div class="fw-stat-value">{{ health.vuln.total }}</div>
+  <div class="col-md-6 col-xl-3">
+    <div class="fw-card h-100 sn-tile sn-{{ v_st }}" data-card-static><div class="fw-card-body">
+      <div class="sn-tile-head">
+        <span class="sn-ico"><i class="bi bi-bug"></i></span>
+        <span class="fw-stat-label">CVE mirror (local){{ hint(sn_hint('health.vuln')) }}</span>
+        <span class="fw-badge {{ badge_cls[v_st] }}">{{ 'stale' if health.vuln.stale else 'current' }}</span>
+      </div>
+      <div class="fw-stat-value">{{ health.vuln.total }}<span class="sn-unit"> CVEs</span></div>
       <div class="small text-muted">
-        {{ health.vuln.kev }} on the CISA KEV list.
+        <span class="fw-badge fw-badge-danger">{{ health.vuln.kev }} KEV</span> on the CISA KEV list.
         {% if health.vuln.stale %}<span class="fw-badge fw-badge-warning">STALE</span>
           Older than {{ health.vuln.stale_days }} days — still used, and every incident says so.
         {% else %}Refreshed {{ health.vuln.newest }}.{% endif %}
       </div>
-      <div class="small text-muted mt-1">Outbound sync {{ 'enabled' if health.vuln.sync_enabled else 'OFF — the incident path never leaves this node' }}.</div>
+      <div class="sn-tile-foot small text-muted"><i class="bi bi-cloud-arrow-down me-1"></i>Outbound sync {{ 'enabled' if health.vuln.sync_enabled else 'OFF — the incident path never leaves this node' }}.</div>
     </div></div>
   </div>
-  <div class="col-md-3">
-    <div class="fw-card h-100" data-card-static><div class="fw-card-body">
-      <div class="fw-stat-label">Response engine{{ hint(sn_hint('console.response')) }}</div>
+  <div class="col-md-6 col-xl-3">
+    <div class="fw-card h-100 sn-tile sn-{{ r_st }}" data-card-static><div class="fw-card-body">
+      <div class="sn-tile-head">
+        <span class="sn-ico"><i class="bi bi-shield-lock"></i></span>
+        <span class="fw-stat-label">Response engine{{ hint(sn_hint('console.response')) }}</span>
+        <span class="fw-badge {{ badge_cls[r_st] }}">{{ 'armed' if health.response_armed else 'safe' }}</span>
+      </div>
       {% if not health.response_armed %}
         <div class="fw-stat-value">proposals only</div>
       {% else %}
@@ -198,17 +257,19 @@
         {{ health.catalog_verified }}/{{ health.catalog_total }} action transports verified against a live appliance.
         {% if health.catalog_verified == 0 %}Nothing can execute — by design, until each mechanism is proved on a device.{% endif %}
       </div>
+      <div class="sn-tile-foot">
       {%- if sn_inline %}
       {# NOT data-bs-toggle="tab": this button is outside the tab list, where
          Bootstrap refuses to build a Tab and its own click handler then throws.
          fw_pane_link.js forwards the click to the menu entry that owns the
          pane, and falls back to the standalone page. #}
-      <button type="button" class="btn btn-fw-outline btn-sm mt-2"
+      <button type="button" class="btn btn-fw-outline btn-sm"
               data-fw-pane="#tab-sentinel-policy"
-              data-fw-pane-href="{{ url_for('sentinel.policies') }}">Response policy</button>
+              data-fw-pane-href="{{ url_for('sentinel.policies') }}"><i class="bi bi-sliders me-1"></i>Response policy</button>
       {%- else %}
-      <a class="btn btn-fw-outline btn-sm mt-2" href="{{ url_for('sentinel.policies') }}">Response policy</a>
+      <a class="btn btn-fw-outline btn-sm" href="{{ url_for('sentinel.policies') }}"><i class="bi bi-sliders me-1"></i>Response policy</a>
       {%- endif %}
+      </div>
     </div></div>
   </div>
 </div>

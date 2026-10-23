@@ -8,44 +8,58 @@
 
 {% block content %}
 <style nonce="{{ csp_nonce }}">
+  /* 2026-10-23 (operator): devices grouped by ADOM in collapsible sections;
+     no banners at the top -- a problem shows ONLY as the colour of its card
+     (and of its ADOM title), and a click on the card says what is wrong and
+     how to fix it. Light theme: colours from the .fw-badge-* set, calibrated
+     against white (the dark-theme pastels this page used read at ~1.4:1). */
   .mon-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(340px, 1fr)); gap:14px; }
-  .mon-bar { height:7px; border-radius:4px; background:rgba(148,163,184,.14); overflow:hidden; }
+  .mon-bar { height:7px; border-radius:4px; background:#EAEFF9; overflow:hidden; }
   .mon-bar > i { display:block; height:100%; border-radius:4px; }
-  .mon-ok    { background:#10b981; } .mon-warn { background:#fbbf24; }
-  .mon-crit  { background:#ef4444; } .mon-nocap{ background:#475569; }
-  .t-ok { color:#10b981; } .t-warn { color:#fbbf24; } .t-crit { color:#ef4444; }
-  .mon-dev { border-left:3px solid #10b981; }
-  .mon-dev.warn { border-left-color:#fbbf24; } .mon-dev.crit { border-left-color:#ef4444; }
-  .mon-chip { display:inline-block; font-size:.7rem; padding:1px 8px; border-radius:9px;
-              background:rgba(59,130,246,.12); border:1px solid rgba(59,130,246,.25);
-              color:#93c5fd; margin-right:4px; margin-bottom:3px; white-space:nowrap; }
-  .mon-chip.hw { background:rgba(245,158,11,.10); border-color:rgba(245,158,11,.3); color:#fcd34d; }
-  .mon-chip.mut { background:rgba(100,116,139,.12); border-color:rgba(100,116,139,.3); color:#94a3b8; }
+  .mon-ok { background:#15692A; } .mon-warn { background:#C99A06; }
+  .mon-crit { background:#8B1C2A; } .mon-nocap { background:#9CA3AF; }
+  .t-warn { color:#7A5700; } .t-crit { color:#8B1C2A; }
   .mon-caprow { display:flex; align-items:center; gap:8px; margin-top:6px; font-size:.78rem; }
-  .mon-caprow .nm { width:118px; color:#94a3b8; flex:none; }
-  .mon-caprow .bar { flex:1; } .mon-caprow .qt { width:110px; text-align:right; flex:none; color:#cbd5e1; }
-  .mon-svc { display:flex; justify-content:space-between; font-size:.82rem; padding:4px 0;
-             border-bottom:1px dashed rgba(148,163,184,.08); }
-  .mon-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+  .mon-caprow .nm { width:118px; flex:none; color:#6B7280; }
+  .mon-caprow .bar { flex:1; } .mon-caprow .qt { width:110px; text-align:right; flex:none; color:#374151; }
   .mon-sec-title { font-size:.75rem; text-transform:uppercase; letter-spacing:.08em;
                    color:#64748b; margin:18px 0 8px; }
-  #monAlerts .alert, #monHealthAlerts .alert { padding:.45rem .8rem; margin-bottom:6px; font-size:.85rem; }
-  /* status pill for device cards — mirrors the infra section's .ih-badge look */
-  .mon-badge { font-size:.66rem; text-transform:uppercase; letter-spacing:.05em; padding:1px 8px;
-               border-radius:9px; border:1px solid; white-space:nowrap; }
-  .mon-b-ok   { color:#6ee7b7; background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.3); }
-  .mon-b-warn { color:#fcd34d; background:rgba(245,158,11,.12); border-color:rgba(245,158,11,.3); }
-  .mon-b-crit { color:#fca5a5; background:rgba(239,68,68,.12);  border-color:rgba(239,68,68,.3); }
-  .mon-b-unknown { color:#94a3b8; background:rgba(100,116,139,.12); border-color:rgba(100,116,139,.3); }
-  .mon-note   { font-size:.7rem; color:#64748b; margin-top:8px; }
-  /* Why the badge says what it says — never leave a non-ok state unexplained. */
-  .mon-why { margin-top:8px; display:flex; flex-direction:column; gap:3px; }
-  .mon-why div { font-size:.72rem; display:flex; gap:6px; align-items:flex-start; }
-  .mon-why .sg { flex:none; width:88px; color:#64748b; text-transform:uppercase;
-                 letter-spacing:.04em; font-size:.63rem; padding-top:1px; }
-  .mon-why .tx { color:#cbd5e1; }
-  .mon-why .r-crit .tx { color:#fca5a5; } .mon-why .r-warn .tx { color:#fcd34d; }
-  .mon-why .r-unknown .tx { color:#94a3b8; }
+  .mon-note { font-size:.7rem; color:#6B7280; margin-top:8px; }
+
+  .dh-adom { margin-bottom:12px; }
+  .dh-adom-head { width:100%; display:flex; align-items:center; gap:10px; padding:10px 14px;
+                  background:#fff; border:1px solid var(--fw-border, #DCE4F3); border-left:4px solid #15692A;
+                  border-radius:var(--fw-radius-lg, 8px); box-shadow:var(--fw-card-shadow); text-align:left;
+                  font-weight:600; color:var(--fw-text-primary, #1F2937); }
+  .dh-adom-head:hover { box-shadow:var(--fw-card-shadow-hover); }
+  .dh-adom-head .dh-caret { transition:transform .15s; color:#6B7280; }
+  .dh-adom.is-collapsed .dh-caret { transform:rotate(-90deg); }
+  .dh-adom.is-collapsed .dh-adom-body { display:none; }
+  .dh-adom-head .dh-count { font-weight:400; font-size:.8rem; color:#6B7280; }
+  .dh-adom-head .dh-tally { margin-left:auto; display:flex; gap:6px; }
+  .dh-adom-head.st-crit { border-left-color:#8B1C2A; color:#8B1C2A; }
+  .dh-adom-head.st-warn { border-left-color:#C99A06; color:#7A5700; }
+  .dh-adom-head.st-unknown { border-left-color:#ADB5BD; color:#495057; }
+  .dh-adom-body { padding-top:10px; }
+  .dh-dev { cursor:pointer; border-left:4px solid #15692A; transition:box-shadow .15s, transform .15s; }
+  .dh-dev:hover, .dh-dev:focus-visible { box-shadow:var(--fw-card-shadow-hover); transform:translateY(-1px); outline:none; }
+  .dh-dev.st-crit { border-left-color:#8B1C2A; background:#FDF5F6; }
+  .dh-dev.st-warn { border-left-color:#C99A06; background:#FFFBEB; }
+  .dh-dev.st-unknown { border-left-color:#ADB5BD; }
+  .dh-dev .dh-name { font-weight:600; }
+  .dh-dev.st-crit .dh-name { color:#8B1C2A; } .dh-dev.st-warn .dh-name { color:#7A5700; }
+  .dh-dev .dh-host { font-weight:400; color:#6B7280; font-size:.8rem; }
+  .dh-hint { font-size:.75rem; margin-top:8px; color:#6B7280; }
+  .dh-dev.st-crit .dh-hint { color:#8B1C2A; } .dh-dev.st-warn .dh-hint { color:#7A5700; }
+  /* modal: one block per reason, its fix underneath */
+  .dh-reason { border:1px solid var(--fw-border-light, #EAEFF9); border-left:4px solid #ADB5BD;
+               border-radius:6px; padding:10px 12px; margin-bottom:10px; }
+  .dh-reason.st-crit { border-left-color:#8B1C2A; } .dh-reason.st-warn { border-left-color:#C99A06; }
+  .dh-reason .dh-r-head { display:flex; align-items:center; gap:8px; font-weight:600; }
+  .dh-reason .dh-r-text { font-size:.85rem; margin:4px 0 6px; color:#374151; word-break:break-word; }
+  .dh-reason .dh-fix-title { font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; color:#6B7280; }
+  .dh-reason ol { font-size:.82rem; margin:2px 0 0; padding-left:1.2rem; }
+  .dh-sub { font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:#6B7280; margin:14px 0 6px; }
   /* HA posture rows. Moved here from /monitoring/satom on 2026-08-05: a device
      counter on the installation page is read as a claim about the installation.
      The pill uses the product's own .fw-badge set rather than a local palette —
@@ -73,11 +87,30 @@
   </div>
 </div>
 
-<div id="monHealthAlerts"></div>
-<div id="monAlerts"></div>
+<div class="mon-sec-title"><i class="bi bi-hdd-rack me-1"></i>{{ _('Devices by ADOM') }}</div>
+<div id="monDevices"></div>
 
-<div class="mon-sec-title"><i class="bi bi-hdd-rack me-1"></i>Device health &amp; capacity</div>
-<div class="mon-grid" id="monDevices"></div>
+<div class="modal fade" id="dhDevModal" tabindex="-1" aria-hidden="true" aria-labelledby="dhDevTitle">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title" id="dhDevTitle">{{ _('Device') }}</h5>
+          <div class="small text-muted" id="dhDevSub"></div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body" id="dhDevBody"></div>
+      <div class="modal-footer">
+        <a class="btn btn-sm btn-outline-secondary" id="dhDevOpen" href="#"><i class="bi bi-box-arrow-up-right me-1"></i>{{ _('Open device') }}</a>
+        {% if may_open('deep_monitor.index') %}
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('deep_monitor.index', _adom=product.key) }}"><i class="bi bi-broadcast-pin me-1"></i>{{ _('Deep monitors') }}</a>
+        {% endif %}
+        <button type="button" class="btn btn-sm btn-primary" data-bs-dismiss="modal">{{ _('Close') }}</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div class="mon-sec-title"><i class="bi bi-diagram-2 me-1"></i>{{ _('Device HA posture') }}</div>
 <div class="fw-card"><div class="fw-card-body" id="monHaPosture"></div></div>
@@ -98,30 +131,6 @@
     var w = pct == null ? 0 : Math.min(100, pct);
     return '<div class="mon-bar"><i class="mon-' + (status || 'ok') + '" style="width:' + w + '%"></i></div>';
   }
-  function renderHealthAlerts(d) {
-    var box = document.getElementById('monHealthAlerts');
-    var rows = d.health_alerts || [];
-    if (!rows.length) { box.innerHTML = ''; return; }
-    box.innerHTML = rows.slice(0, 8).map(function (a) {
-      var cls = a.status === 'crit' ? 'alert-danger' : 'alert-warning';
-      return '<div class="alert ' + cls + ' mb-1"><i class="bi bi-exclamation-octagon me-2"></i>' +
-        '<b>' + esc(a.appliance) + '</b> — ' + esc(a.label) + ': ' + esc(a.text) + '</div>';
-    }).join('') + (rows.length > 8
-      ? '<div class="text-muted small mb-2">… and ' + (rows.length - 8) + ' more</div>' : '');
-  }
-
-  function renderAlerts(d) {
-    var box = document.getElementById('monAlerts');
-    if (!d.alerts.length) { box.innerHTML = ''; return; }
-    box.innerHTML = d.alerts.slice(0, 8).map(function (a) {
-      var cls = a.status === 'crit' ? 'alert-danger' : 'alert-warning';
-      return '<div class="alert ' + cls + ' mb-1"><i class="bi bi-exclamation-triangle me-2"></i>' +
-        '<b>' + esc(a.appliance) + '</b> — ' + esc(a.object) + ' at <b>' + a.pct +
-        '%</b> of the admin cap (' + a.used + ' / ' + a.cap + ')</div>';
-    }).join('') + (d.alerts.length > 8
-      ? '<div class="text-muted small mb-2">… and ' + (d.alerts.length - 8) + ' more</div>' : '');
-  }
-
   function hwText(hw) {
     if (!hw) return '';
     var t = [];
@@ -130,28 +139,29 @@
     if (hw.disk_total_gb) t.push(hw.disk_total_gb + ' GB disk');
     return t.join(' · ');
   }
-  function devDot(worst) {
-    var c = worst === 'crit' ? '#ef4444' : worst === 'warn' ? '#fbbf24'
-          : worst === 'unknown' ? '#64748b' : '#10b981';
-    return '<span class="mon-dot" style="background:' + c + '"></span>';
-  }
+  var STATUS_LABEL = { crit: 'critical', warn: 'warning', unknown: 'unknown', ok: 'healthy' };
+  var STATUS_BADGE = { crit: 'fw-badge-danger', warn: 'fw-badge-warning',
+                       unknown: 'fw-badge-secondary', ok: 'fw-badge-success' };
+  var RANK = { unknown: 0, ok: 1, warn: 2, crit: 3 };
+  function st(s) { return STATUS_BADGE[s] ? s : 'ok'; }
   function devBadge(worst) {
     // 'unknown' is its own state on purpose: a device we have measured NOTHING
     // about must not be printed as healthy (that was the 2026-07-28 bug).
-    var m = { crit: 'mon-b-crit', warn: 'mon-b-warn', unknown: 'mon-b-unknown' };
-    var l = { crit: 'critical', warn: 'warning', unknown: 'unknown' };
-    return '<span class="mon-badge ' + (m[worst] || 'mon-b-ok') + '">' +
-      (l[worst] || 'healthy') + '</span>';
+    return '<span class="fw-badge ' + STATUS_BADGE[st(worst)] + '">' + STATUS_LABEL[st(worst)] + '</span>';
   }
-  function devWhy(health) {
-    var rs = (health && health.reasons) || [];
-    if (!rs.length) return '';
-    return '<div class="mon-why">' + rs.map(function (r) {
-      return '<div class="r-' + esc(r.status) + '"><span class="sg">' + esc(r.label) +
-        '</span><span class="tx">' + esc(r.text) + '</span></div>';
-    }).join('') + '</div>';
+  function problems(dev) {
+    return ((dev.health && dev.health.reasons) || []).filter(function (r) {
+      return r.status === 'warn' || r.status === 'crit';
+    });
   }
 
+  // ---- ADOM sections: collapsed state per ADOM, kept per browser ----------
+  // Stored as an explicit open/closed map; an ADOM the operator never touched
+  // opens when it holds a problem and stays folded when it is all healthy.
+  var STORE_KEY = 'satom.devhealth.adoms.{{ product.key }}';
+  function loadFold() { try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}') || {}; } catch (e) { return {}; } }
+  function saveFold(m) { try { localStorage.setItem(STORE_KEY, JSON.stringify(m)); } catch (e) {} }
+  var DEVICES = {};
   function renderHaPosture(d) {
     // One row per appliance, derived from the harvest cache — never a bare
     // "no clusters registered", which is what the old panel printed whenever
@@ -190,50 +200,130 @@
       : '<div class="text-muted small">No appliances registered.</div>';
   }
 
-  function renderDevices(d) {
-    var html = d.devices.map(function (dev) {
-      // Same card chrome as the Infrastructure section: dot + icon + name + status badge,
-      // muted subtitle line, capacity bars, footer note — no chips, no left border.
-      var head = '<div class="d-flex justify-content-between align-items-start">' +
-        '<b>' + devDot(dev.worst) + '<i class="bi bi-hdd-rack me-1"></i>' + esc(dev.name) +
-        ' <span class="text-muted" style="font-weight:400;">' + esc(dev.host) + '</span></b>' +
-        devBadge(dev.worst) + '</div>';
-      var meta = [esc((dev.kind || 'fortiweb').toUpperCase())];
-      if (dev.model) meta.push(esc(dev.model));
-      if (dev.firmware) meta.push(esc(dev.firmware));
-      // Manual entry wins when an operator typed it; otherwise fall back to the
-      // harvested posture, and only when it says something worth a chip —
-      // "HA standalone" on every card is noise, a cluster is news.
-      if (dev.ha_mode) meta.push('HA ' + esc(dev.ha_mode) + (dev.ha_role ? ' · ' + esc(dev.ha_role) : ''));
-      else if (dev.ha && dev.ha.status === 'clustered') meta.push('HA ' + esc(dev.ha.mode || 'clustered'));
-      var hw = hwText(dev.hw);
-      if (hw) meta.push(hw);
-      if (dev.maintenance) meta.push('maintenance');
-      var sub = '<div class="text-muted small mb-2">' + meta.join(' · ') + '</div>';
-      var caps = dev.capacity.map(function (c) {
-        var qty = c.effective_cap != null
-          ? c.used + ' / ' + c.effective_cap + (c.pct != null ? ' · ' + c.pct + '%' : '')
-          : c.used + ' · no cap';
-        return '<div class="mon-caprow"><span class="nm">' + esc(c.label) + '</span>' +
-          '<span class="bar">' + bar(c.pct, c.status) + '</span>' +
-          '<span class="qt ' + (c.status === 'crit' ? 't-crit' : c.status === 'warn' ? 't-warn' : '') + '">' + qty + '</span></div>';
-      }).join('');
-      var note = dev.hw
-        ? '<div class="mon-note"><i class="bi bi-clock-history me-1"></i>' + esc(dev.freshness) + '</div>'
-        : '<div class="mon-note"><i class="bi bi-cpu me-1"></i>no hardware inventory — use “Scan hardware (SSH)” above; rediscovery does not collect it · ' + esc(dev.freshness) + '</div>';
-      return '<div class="fw-card"><div class="fw-card-body">' +
-        head + sub + caps + devWhy(dev.health) + note +
-        '</div></div>';
+  function devCard(dev) {
+    var w = st(dev.worst);
+    var meta = [esc((dev.kind || 'fortiweb').toUpperCase())];
+    if (dev.model) meta.push(esc(dev.model));
+    if (dev.firmware) meta.push(esc(dev.firmware));
+    // Manual entry wins when an operator typed it; otherwise fall back to the
+    // harvested posture, and only when it says something worth a chip —
+    // "HA standalone" on every card is noise, a cluster is news.
+    if (dev.ha_mode) meta.push('HA ' + esc(dev.ha_mode) + (dev.ha_role ? ' · ' + esc(dev.ha_role) : ''));
+    else if (dev.ha && dev.ha.status === 'clustered') meta.push('HA ' + esc(dev.ha.mode || 'clustered'));
+    var hw = hwText(dev.hw);
+    if (hw) meta.push(hw);
+    if (dev.maintenance) meta.push('maintenance');
+    var caps = dev.capacity.map(function (c) {
+      var qty = c.effective_cap != null
+        ? c.used + ' / ' + c.effective_cap + (c.pct != null ? ' · ' + c.pct + '%' : '')
+        : c.used + ' · no cap';
+      return '<div class="mon-caprow"><span class="nm">' + esc(c.label) + '</span>' +
+        '<span class="bar">' + bar(c.pct, c.status) + '</span>' +
+        '<span class="qt ' + (c.status === 'crit' ? 't-crit' : c.status === 'warn' ? 't-warn' : '') + '">' + qty + '</span></div>';
     }).join('');
-    document.getElementById('monDevices').innerHTML =
-      html || '<div class="text-muted">No appliances registered.</div>';
+    // The reason is NOT printed on the card: the card's colour says there is a
+    // problem, the click says which one and how to fix it.
+    var n = problems(dev).length;
+    var hint = n
+      ? '<div class="dh-hint"><i class="bi bi-exclamation-triangle me-1"></i>' + n + ' problem' + (n > 1 ? 's' : '') + ' — click for the cause and the fix</div>'
+      : (w === 'unknown'
+          ? '<div class="dh-hint"><i class="bi bi-question-circle me-1"></i>not measured yet — click for details</div>'
+          : '');
+    var note = dev.hw
+      ? '<div class="mon-note"><i class="bi bi-clock-history me-1"></i>' + esc(dev.freshness) + '</div>'
+      : '<div class="mon-note"><i class="bi bi-cpu me-1"></i>no hardware inventory · ' + esc(dev.freshness) + '</div>';
+    return '<div class="fw-card dh-dev st-' + w + '" role="button" tabindex="0" data-dev="' + dev.id + '"' +
+      ' aria-label="' + esc(dev.name) + ' — ' + STATUS_LABEL[w] + '"><div class="fw-card-body">' +
+      '<div class="d-flex justify-content-between align-items-start gap-2">' +
+      '<span class="dh-name"><i class="bi bi-hdd-rack me-1"></i>' + esc(dev.name) +
+      ' <span class="dh-host">' + esc(dev.host) + '</span></span>' + devBadge(w) + '</div>' +
+      '<div class="text-muted small mb-2">' + meta.join(' · ') + '</div>' +
+      caps + hint + note + '</div></div>';
   }
+
+  function renderDevices(d) {
+    var box = document.getElementById('monDevices');
+    DEVICES = {};
+    (d.devices || []).forEach(function (x) { DEVICES[x.id] = x; });
+    if (!(d.devices || []).length) { box.innerHTML = '<div class="text-muted">No appliances registered.</div>'; return; }
+    var fold = loadFold(), single = (d.adoms || []).length === 1;
+    box.innerHTML = (d.adoms || []).map(function (g) {
+      var devs = d.devices.filter(function (x) { return x.adom === g.key; });
+      var tally = { crit: 0, warn: 0, unknown: 0 };
+      var worst = 'unknown';
+      devs.forEach(function (x) {
+        var w = st(x.worst);
+        if (tally[w] !== undefined) tally[w]++;
+        if (RANK[w] > RANK[worst]) worst = w;
+      });
+      var bad = tally.crit + tally.warn > 0;
+      var open = single || (g.key in fold ? !!fold[g.key] : bad);
+      var chips = (tally.crit ? '<span class="fw-badge fw-badge-danger">' + tally.crit + ' critical</span>' : '') +
+        (tally.warn ? '<span class="fw-badge fw-badge-warning">' + tally.warn + ' warning</span>' : '') +
+        (tally.unknown ? '<span class="fw-badge fw-badge-secondary">' + tally.unknown + ' unknown</span>' : '') +
+        (!bad && !tally.unknown ? '<span class="fw-badge fw-badge-success">all healthy</span>' : '');
+      return '<section class="dh-adom' + (open ? '' : ' is-collapsed') + '" data-adom="' + esc(g.key) + '">' +
+        '<button type="button" class="dh-adom-head st-' + worst + '" aria-expanded="' + open + '">' +
+        '<i class="bi bi-chevron-down dh-caret"></i><span>' + esc(g.name) + '</span>' +
+        '<span class="dh-count">' + devs.length + ' device' + (devs.length !== 1 ? 's' : '') + '</span>' +
+        '<span class="dh-tally">' + chips + '</span></button>' +
+        '<div class="dh-adom-body"><div class="mon-grid">' + devs.map(devCard).join('') + '</div></div></section>';
+    }).join('');
+  }
+
+  function openDevice(id) {
+    var dev = DEVICES[id];
+    if (!dev) return;
+    var w = st(dev.worst);
+    document.getElementById('dhDevTitle').innerHTML = esc(dev.name) + ' ' + devBadge(w);
+    document.getElementById('dhDevSub').textContent =
+      (dev.kind || '').toUpperCase() + ' · ' + (dev.host || '') + (dev.firmware ? ' · ' + dev.firmware : '');
+    document.getElementById('dhDevOpen').setAttribute('href', dev.url || '#');
+    var rs = (dev.health && dev.health.reasons) || [];
+    var bad = rs.filter(function (r) { return r.status === 'warn' || r.status === 'crit'; });
+    var unk = rs.filter(function (r) { return r.status === 'unknown'; });
+    function block(r) {
+      var fix = (r.fix || []).map(function (f) { return '<li>' + esc(f) + '</li>'; }).join('');
+      return '<div class="dh-reason st-' + st(r.status) + '"><div class="dh-r-head">' + esc(r.label) +
+        ' <span class="fw-badge ' + STATUS_BADGE[st(r.status)] + '">' + STATUS_LABEL[st(r.status)] + '</span></div>' +
+        '<div class="dh-r-text">' + esc(r.text) + '</div>' +
+        (fix ? '<div class="dh-fix-title"><i class="bi bi-wrench-adjustable me-1"></i>How to fix it</div><ol>' + fix + '</ol>' : '') +
+        '</div>';
+    }
+    var html = bad.length
+      ? '<div class="dh-sub">Problems</div>' + bad.map(block).join('')
+      : '<div class="alert alert-success small mb-2"><i class="bi bi-check-circle me-1"></i>No problem on any measured signal.</div>';
+    if (unk.length) html += '<div class="dh-sub">Not measured</div>' + unk.map(block).join('');
+    document.getElementById('dhDevBody').innerHTML = html;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('dhDevModal')).show();
+  }
+
+  // Delegated on the grid container, NOT on document: the container is
+  // replaced on every Turbo visit, so these can never stack up.
+  var grid = document.getElementById('monDevices');
+  grid.addEventListener('click', function (ev) {
+    var head = ev.target.closest('.dh-adom-head');
+    if (head) {
+      var sec = head.closest('.dh-adom');
+      var nowOpen = sec.classList.toggle('is-collapsed') === false;
+      head.setAttribute('aria-expanded', String(nowOpen));
+      var m = loadFold(); m[sec.getAttribute('data-adom')] = nowOpen; saveFold(m);
+      return;
+    }
+    var card = ev.target.closest('.dh-dev');
+    if (card) openDevice(card.getAttribute('data-dev'));
+  });
+  grid.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    var card = ev.target.closest('.dh-dev');
+    if (card) { ev.preventDefault(); openDevice(card.getAttribute('data-dev')); }
+  });
 
   function load() {
     fetch('{{ url_for("monitoring.data") }}', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        renderHealthAlerts(d); renderAlerts(d); renderDevices(d); renderHaPosture(d);
+        renderDevices(d); renderHaPosture(d);
         document.getElementById('monStamp').textContent =
           'updated ' + new Date().toLocaleTimeString() +
           ' · warn ≥ ' + d.thresholds.warn + '% · crit ≥ ' + d.thresholds.crit + '%';

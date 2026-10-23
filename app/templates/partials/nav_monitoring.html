@@ -45,9 +45,11 @@
        entry here that answers "what is happening right now" rather than
        displaying one measurement. Global ADOM only — the console spans
        every product's devices, and a per-ADOM copy would show a partial
-       picture under a name that promises the whole one. #}
+       picture under a name that promises the whole one.
+       2026-10-23: only while Sentinel is switched on (Settings > Sentinel);
+       off, the console has nothing to show but "disabled". #}
     {% if product.key == 'global' %}
-    {% if may_open('sentinel.index') %}
+    {% if may_open('sentinel.index') and sentinel_active() %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'sentinel' else '' }}" href="{{ url_for('sentinel.index', _adom=product.key) }}">
       <i class="bi bi-shield-exclamation fw-nav-icon"></i><span>{{ _('Sentinel') }}</span></a>
     {% endif %}

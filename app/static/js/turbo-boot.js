@@ -68,6 +68,39 @@
     return origAdd(type, listener, opts);
   };
 
+  // ── Page-scoped listeners: fwPageSignal() ───────────────────────────────────
+  // `document` outlives every Turbo visit, and a body script re-runs on each
+  // one. A body script that does document.addEventListener('click', fn) adds
+  // ANOTHER fn per visit: after two visits to Deep monitors one click on a
+  // chart opened the modal twice, two backdrops were stacked, closing removed
+  // one and the screen stayed dimmed (2026-10-23). Pass
+  // { signal: fwPageSignal() } and the listener is dropped when the next page
+  // renders. Opt-in on purpose: ~15 scripts bind ONCE behind a window.__x
+  // guard, and removing those automatically would leave them unbound.
+  // tests/test_page_scoped_listeners.py ratchets the scripts that still don't.
+  var pageCtl = null;
+  window.fwPageSignal = function () {
+    if (!pageCtl && typeof AbortController === 'function') pageCtl = new AbortController();
+    return pageCtl ? pageCtl.signal : undefined;
+  };
+  origAdd('turbo:before-render', function () {
+    if (pageCtl) { pageCtl.abort(); pageCtl = null; }
+  });
+
+  // ── Orphaned modal backdrops ─────────────────────────────────────────────────
+  // Two Modal instances on one element (a doubled handler, `new
+  // bootstrap.Modal(el)` called twice) leave a backdrop that no instance owns:
+  // the dialog closes and the page stays dark and unclickable. When the last
+  // open modal is hidden, nothing may still be dimming the page.
+  origAdd('hidden.bs.modal', function () {
+    if (document.querySelector('.modal.show, .modal[style*="display: block"]')) return;
+    var stale = document.querySelectorAll('.modal-backdrop');
+    for (var i = 0; i < stale.length; i++) stale[i].remove();
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('overflow');
+    document.body.style.removeProperty('padding-right');
+  });
+
   // ── Navigation loading feedback (progress bar + content dim) ─────────────────
   // Selecting an ADOM (/product/enter/<key>) swaps the whole chrome -- topbar
   // banner, sidebar menu, device switcher -- not just #fw-main, so a fade

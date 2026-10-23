@@ -102,6 +102,10 @@ def _device_payload(warn: float, crit: float) -> tuple[list[dict], list[dict], l
                                       'status': r['status'], 'text': r['text']})
         devices.append({
             'id': a.id, 'name': a.name, 'host': a.host,
+            # The ADOM the card is grouped under (operator, 2026-10-23: "divide
+            # the devices by ADOM"). An ADOM is a product, so it is the kind.
+            'adom': adom_key(a.kind),
+            'url': url_for('appliances.detail', id=a.id),
             'model': a.model or '', 'firmware': a.firmware or '',
             'kind': (a.kind or 'fortiweb'),
             'ha_mode': a.ha_mode or '', 'ha_role': a.ha_role_hint or '',
@@ -123,6 +127,28 @@ def _device_payload(warn: float, crit: float) -> tuple[list[dict], list[dict], l
     return devices, alerts, health_alerts, ha
 
 
+def adom_key(kind: str | None) -> str:
+    """The ADOM a device is listed under; legacy rows with no kind are
+    FortiWeb, exactly as ``visible_appliances`` scopes them."""
+    from ..services.product_scope import LEGACY_PRODUCT
+    return (kind or LEGACY_PRODUCT).strip().lower()
+
+
+def _adoms(devices: list[dict]) -> list[dict]:
+    """ADOM groups in registry order, only those holding a visible device;
+    a kind the registry does not list still gets its own group (never
+    dropped: a device missing from the page reads as a device that does not
+    exist)."""
+    from ..services.product_scope import device_products
+    names = dict(device_products())
+    present = []
+    for d in devices:
+        if d['adom'] not in present:
+            present.append(d['adom'])
+    order = [k for k in names if k in present] + [k for k in present if k not in names]
+    return [{'key': k, 'name': names.get(k, k)} for k in order]
+
+
 def _payload() -> dict:
     from ..services.product_scope import session_product
 
@@ -133,6 +159,7 @@ def _payload() -> dict:
         'scope': 'global' if is_global else (session_product() or 'global'),
         'thresholds': {'warn': warn, 'crit': crit},
         'devices': devices,
+        'adoms': _adoms(devices),
         # Appliance HA — served to EVERY ADOM (it is device data, scoped by
         # visible_appliances), unlike the manager blocks below.
         'ha': ha,

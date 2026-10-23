@@ -512,6 +512,16 @@
 (function () {
   'use strict';
   var CAN_EDIT = {{ 'true' if can_edit else 'false' }};
+  // Delegated handlers live on `document`, which survives every Turbo visit
+  // while this script re-runs on each one. Bound with the page signal so they
+  // are dropped when the next page renders; bound bare, the second visit made
+  // one click open every modal twice and closing it left the screen dimmed.
+  function docOn(type, fn) {
+    document.addEventListener(type, fn, { signal: window.fwPageSignal ? window.fwPageSignal() : undefined });
+  }
+  // One Modal instance per element: constructing a fresh one on each open
+  // stacks instances, and an instance nobody hides owns a backdrop nobody removes.
+  function showModal(id) { bootstrap.Modal.getOrCreateInstance(document.getElementById(id)).show(); }
   // Every URL is derived from the page's own mount point, so the same script
   // drives /monitoring/deep and /monitoring/services without knowing which.
   var BASE = {{ page.base|tojson }};
@@ -754,7 +764,7 @@
     document.getElementById('dpChStrip').innerHTML = '';
     document.getElementById('dpChSrc').textContent = 'Loading…';
     chSetRange('24h');
-    new bootstrap.Modal(document.getElementById('dpChartModal')).show();
+    showModal('dpChartModal');
     loadChart();
   }
 
@@ -1035,11 +1045,11 @@
     if (card) card.classList.toggle('is-collapsed', !opening);
     head.setAttribute('aria-expanded', opening ? 'true' : 'false');
   }
-  document.addEventListener('click', function (ev) {
+  docOn('click', function (ev) {
     var h = ev.target.closest ? ev.target.closest('.dp-dev-toggle') : null;
     if (h) toggleDev(h);
   });
-  document.addEventListener('keydown', function (ev) {
+  docOn('keydown', function (ev) {
     if (ev.key !== 'Enter' && ev.key !== ' ' && ev.key !== 'Spacebar') return;
     var h = ev.target.closest ? ev.target.closest('.dp-dev-toggle') : null;
     if (!h) return;
@@ -1152,7 +1162,7 @@
     document.getElementById('dpPolTitle').textContent = name;
     document.getElementById('dpPolBody').innerHTML =
       '<span class="text-muted">Loading\u2026</span>';
-    new bootstrap.Modal(document.getElementById('dpPolModal')).show();
+    showModal('dpPolModal');
     fetch(URLS.policy + '/' + aid + '?name=' + encodeURIComponent(name),
           { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
@@ -1171,7 +1181,7 @@
   }
 
   if (ROLLUP) {
-    document.addEventListener('click', function (ev) {
+    docOn('click', function (ev) {
       var row = ev.target.closest('.dp-pol-open');
       // A click on the sparkline inside a card opens the chart, not the policy.
       if (!row || ev.target.closest('.dp-chart-open')) return;
@@ -1179,7 +1189,7 @@
     });
   }
 
-  document.addEventListener('click', function (ev) {
+  docOn('click', function (ev) {
     var open = ev.target.closest('.dp-chart-open');
     if (open) { openChart(open.getAttribute('data-id')); return; }
     var r = ev.target.closest('.dp-ch-r');
@@ -1200,14 +1210,14 @@
   });
 
   // ---- history drawer -----------------------------------------------------
-  document.addEventListener('click', function (ev) {
+  docOn('click', function (ev) {
     var h = ev.target.closest('.dp-hist-open');
     if (!h) return;
     var id = h.getAttribute('data-id');
     var probe = STATE.probes.filter(function (p) { return String(p.id) === String(id); })[0];
     document.getElementById('dpHistTitle').textContent = probe ? probe.name : 'History';
     document.getElementById('dpHistBody').innerHTML = '<div class="text-muted small">Loading…</div>';
-    new bootstrap.Modal(document.getElementById('dpHistModal')).show();
+    showModal('dpHistModal');
     fetch(BASE + '/probe/' + encodeURIComponent(id) + '/history',
           { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
       .then(function (r) { return r.json(); })
@@ -1257,7 +1267,7 @@
       syncKind();
       loadPorts('', []);
       loadPolicies(document.getElementById('dpFdev').value);
-      new bootstrap.Modal(document.getElementById('dpEditModal')).show();
+      showModal('dpEditModal');
     });
 
     // Which field group each kind uses comes from the SERVER (PageSpec._GROUP),
@@ -1436,7 +1446,7 @@
         return s.trim();
       }));
       loadPolicies(p.appliance_id);
-      new bootstrap.Modal(document.getElementById('dpEditModal')).show();
+      showModal('dpEditModal');
     }
 
     document.getElementById('dpForm').addEventListener('submit', function (ev) {
@@ -1457,7 +1467,7 @@
     });
 
     document.getElementById('dpDiscoverBtn').addEventListener('click', function () {
-      new bootstrap.Modal(document.getElementById('dpDiscModal')).show();
+      showModal('dpDiscModal');
     });
     document.getElementById('dpDiscForm').addEventListener('submit', function (ev) {
       ev.preventDefault();
@@ -1467,7 +1477,7 @@
       });
     });
 
-    document.addEventListener('click', function (ev) {
+    docOn('click', function (ev) {
       var b = ev.target.closest('.dp-act');
       if (!b) return;
       var id = b.getAttribute('data-id'), act = b.getAttribute('data-act');

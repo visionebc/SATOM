@@ -373,6 +373,79 @@ def _schedule_hints(signals: dict, appliance_id) -> None:
                            f"on this node ({SEED_HINT})")
 
 
+# --- how to fix it -----------------------------------------------------------
+#: Where each fix is done, as the operator finds it in the console.
+WHERE_SYNC = ("the device page > Rediscovery, or wait for the next hourly "
+              "'device_sync'")
+WHERE_DEEP = "Monitoring > Deep monitors"
+WHERE_CAPS = "Administrator > Capacity limits"
+
+
+def remedy(key: str, sig: dict) -> list[str]:
+    """Concrete next steps for one non-ok signal, most likely fix first.
+
+    Built from the same fields the signal already carries (streak, alerting,
+    no_schedule), so the advice can never contradict the reason it sits under.
+    The Device health page shows it when a card is opened (operator,
+    2026-10-23: "show the problem and how it could be solved").
+    """
+    st = sig.get("status")
+    text = sig.get("text") or ""
+    steps: list[str] = []
+    if sig.get("no_schedule"):
+        steps.append(f"Nothing on this node is scheduled to run '{sig['no_schedule']}': "
+                     f"{SEED_HINT}, or add it under Automation > Scheduled.")
+    if key == "sync":
+        if "never harvested" in text:
+            steps.append(f"Run the first harvest: {WHERE_SYNC}.")
+        elif st in ("warn", "crit"):
+            steps += [
+                "Read the error after the dash: it names what failed (connect, TLS, 401/403, timeout).",
+                "Connect/timeout: check the device is powered on and reachable from this node "
+                "(routing, firewall, management port).",
+                "401/403: the API token or admin password stored for the device expired or "
+                "was changed - update it on the device form (Edit).",
+                f"After the fix: {WHERE_SYNC}; the badge clears on the next good run.",
+            ]
+    elif key == "cache":
+        steps += [
+            "The cached configuration is fed by the harvest: fix the Harvest reason first.",
+            f"Then refresh it: {WHERE_SYNC}.",
+        ]
+        if st == "crit":
+            steps.append("Until then every page of this device shows configuration that may "
+                         "no longer match the appliance.")
+    elif key == "probe":
+        if "no deep monitors configured" in text:
+            steps.append(f"Add monitors: {WHERE_DEEP} > Discover from device "
+                         "(this is coverage, not a fault).")
+        elif "disabled" in text:
+            steps.append(f"Re-enable the probes in {WHERE_DEEP} - a disabled probe is not a passing one.")
+        elif "suppressed" in text and st == "unknown":
+            steps.append(f"Every probe is suppressed: review the suppressions and their expiry in {WHERE_DEEP}.")
+        elif "never run" in text:
+            steps.append(f"Run them once: {WHERE_DEEP} > Probe now, and check the 'deep_monitor' schedule.")
+        elif st in ("warn", "crit"):
+            for it in (sig.get("alerting") or [])[:4]:
+                steps.append(f"{it.get('name') or it.get('kind')}: {probe_headline(it)}.")
+            steps += [
+                f"Open {WHERE_DEEP}, filter by this device and open the chart of each "
+                "alerting probe to see since when it crossed its threshold.",
+                "Fix the cause on the appliance (load, a backend down, certificate), or, if "
+                "the threshold is wrong for this box, edit the probe or suppress it with a reason.",
+            ]
+    elif key == "capacity":
+        if st == "unknown":
+            steps.append(f"Informational: no admin cap is set for this model, so capacity is not "
+                         f"graded. Set caps in {WHERE_CAPS} to have it measured.")
+        elif st in ("warn", "crit"):
+            steps += [
+                "Remove unused objects of the types listed (old policies, rules, profiles).",
+                f"Or, if the box is sized for more, raise the cap in {WHERE_CAPS}.",
+            ]
+    return steps
+
+
 # --- roll-up -----------------------------------------------------------------
 
 def collect(appliance, caps=None, meta=None, hours: float | None = None,
@@ -397,7 +470,7 @@ def collect(appliance, caps=None, meta=None, hours: float | None = None,
     if aid:
         _schedule_hints(signals, aid)
     status = worst_of([s["status"] for s in signals.values()])
-    reasons = [{"signal": k, "label": SIGNAL_LABEL[k], **v}
+    reasons = [{"signal": k, "label": SIGNAL_LABEL[k], **v, "fix": remedy(k, v)}
                for k, v in signals.items() if v["status"] != "ok"]
     reasons.sort(key=lambda r: -RANK.get(r["status"], 0))
     return {"status": status, "signals": signals, "reasons": reasons,

@@ -46,23 +46,23 @@
 {% set _m_pr = adom_menu('provisioning', product) %}
 {% set _m_cm = adom_menu('cert_manager', product) %}
 {% endif %}
-{% set _auto_bps = ['upgrade_flow','migration_report','automations','event_automations','scripts','device_provision','provisioning','change_requests','cert_manager'] %}
+{% set _auto_bps = ['upgrade_flow','migration_report','automations','event_automations','device_provision','provisioning','change_requests','cert_manager'] %}
 {# Device ADOMs: a subgroup of Operations since 2026-10-14 (operator), included
    by partials/nav_operations.html — base.html no longer draws it as a group
    there. Global and placeholder ADOMs have no Operations group and keep the
-   standalone group. Same entries, same gates, either way. #}
-{% if product.key == 'global' %}{% set _auto_bps = _auto_bps + ['apps'] %}{% endif %}
-{% if _nested %}
-<div class="fw-nav-subgroup{{ ' open' if request.blueprint in _auto_bps }}" data-nav-subgroup="Automation">
-  <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-gear-wide-connected fw-nav-icon" style="color:#8b5cf6;"></i><span>{{ _('Automation') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-  <div class="fw-nav-subgroup-body">
-{% else %}
-<div class="fw-nav-group{{ ' open' if request.blueprint in _auto_bps }}" data-nav-group="Automation">
-  <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-gear-wide-connected fw-nav-section-icon" style="color:#8b5cf6;"></i><span>{{ _('Automation') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-  <div class="fw-nav-group-body">
-{% endif %}
+   standalone group. Same entries, same gates, either way.
+
+   ORDER (operator, 2026-10-23): the entries are ALPHABETICAL in the console's
+   language, sorted from their rendered labels by nav_sorted()
+   (app/nav_sections.py, the Administrator sections' sorter), the API ▸
+   subgroup as one item under its own label. So an entry added below lands in
+   its place by itself; nothing here is written in display order. The
+   subgroup sits right above Plugins (Operations in a device ADOM, the Global
+   block in Global), and Plugins is no longer inside it in Global. #}
+{% set _a_items %}
     {# Upgrade Flow is the staged ENTRY POINT (pre-upgrade in bulk -> one change
-       -> consolidated impact -> execution), so it leads the group. LIVE only
+       -> consolidated impact -> execution); it led the group until the
+       alphabetical order (2026-10-23). LIVE only
        where the flow can run end to end (upgrade_flow.prep_kinds); in the other
        device ADOMs it is drawn disabled with the reason, because the page
        could only render an empty device list, which reads as "this fleet has
@@ -111,26 +111,6 @@
     {% else %}{{ nav_off('bi-calendar2-check', _('Automations'), _m_au.reason) }}{% endif %}
     {% endif %}
     {% endif %}
-    {# Plugins (operator, 2026-10-22; the "Scripts" entry until then): "All
-       plugins" (the page), Report Studio and Lua Studio (2026-10-23, out of
-       the removed Studio group) and one entry per enabled, published app this
-       user may open -- flow apps and script apps alike since every plugin is
-       an app (studio_apps_menu -> services.studio_apps.menu). Global ADOM
-       only. In Global the apps join this subgroup and
-       partials/nav_global_apps.html steps aside, so the ADOM has ONE Plugins
-       toggle (global_plugins_in_automation). #}
-    {% if global_plugins_in_automation(product.key) %}
-    {% set _apps = studio_apps_menu('global') %}
-    <div class="fw-nav-subgroup{{ ' open' if request.blueprint in ['scripts', 'apps'] }}" data-nav-subgroup="Plugins">
-      <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-puzzle fw-nav-icon" style="color:#3b82f6;"></i><span>{{ _('Plugins') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-      <div class="fw-nav-subgroup-body">
-        <a class="fw-nav-item {{ 'active' if request.endpoint == 'scripts.index' else '' }}" href="{{ url_for('scripts.index', _adom=product.key) }}">
-          <i class="bi bi-grid fw-nav-icon"></i><span>{{ _('All plugins') }}</span></a>
-        {% include 'partials/nav_global_studios.html' %}
-        {% include 'partials/nav_apps_entries.html' %}
-      </div>
-    </div>
-    {% endif %}
     {% if may_open('device_provision.index') %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'device_provision' else '' }}" href="{{ url_for('device_provision.index', _adom=product.key) }}">
       <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('Device Provisioning') }}</span></a>
@@ -149,10 +129,6 @@
       <i class="bi bi-clipboard2-check fw-nav-icon"></i><span>{{ _('Change Requests') }}</span></a>
     {% endif %}
     {% endif %}
-    {# API (registry & console) — its own group until 2026-10-14, a subgroup
-       here since (operator). Device ADOMs only; registry.view still gates it
-       (partials/_nav_api.html). #}
-    {{ api_menu(true) }}
     {# Schema builds / Build compatibility left this group on 2026-10-14 for the
        API subgroup (partials/_nav_api.html), where the API pages are.
        Certificate Manager: moved here from Fleet (2026-10-13). Global-only until 2026-10-14; since
@@ -172,6 +148,21 @@
     {% if not current_user.can('user_manage') %}
     {% include "partials/nav_console.html" %}
     {% endif %}
+{% endset %}
+{# API (registry & console) — its own group until 2026-10-14, a subgroup
+   here since (operator). registry.view still gates it (partials/_nav_api.html).
+   Passed to nav_sorted() as ONE block, sorted under its "API" label. #}
+{% set _a_api %}{{ api_menu(true) }}{% endset %}
+{% if _nested %}
+<div class="fw-nav-subgroup{{ ' open' if request.blueprint in _auto_bps }}" data-nav-subgroup="Automation">
+  <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-gear-wide-connected fw-nav-icon" style="color:#8b5cf6;"></i><span>{{ _('Automation') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-subgroup-body">
+{% else %}
+<div class="fw-nav-group{{ ' open' if request.blueprint in _auto_bps }}" data-nav-group="Automation">
+  <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-gear-wide-connected fw-nav-section-icon" style="color:#8b5cf6;"></i><span>{{ _('Automation') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-group-body">
+{% endif %}
+    {{ nav_sorted(_a_items, _a_api) }}
   </div>
 </div>
 {% endif %}

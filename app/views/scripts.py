@@ -1,4 +1,4 @@
-"""Automation > Plugins > All plugins -- the operator's side of Plugin Studio.
+"""Plugins > All plugins (Global ADOM) -- the operator's side of Plugin Studio.
 
 Lists the published apps the user may run. A flow app opens apps.page; for a
 script app (a published script) this blueprint draws the script's form (the

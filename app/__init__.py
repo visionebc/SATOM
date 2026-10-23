@@ -801,11 +801,12 @@ def create_app(config_override: object | None = None) -> Flask:
         return cache[product_key]
 
     @app.template_global()
-    def global_plugins_in_automation(product_key):
-        """Whether the Global sidebar draws Automation > Plugins for this user
-        (partials/nav_automation.html: the group needs config_write, the
-        subgroup the Plugins page's key). nav_global_apps.html asks it too, so
-        the published apps are listed in exactly one Plugins subgroup."""
+    def global_all_plugins_entry(product_key):
+        """Whether Global > Plugins (partials/nav_global_apps.html) draws the
+        "All plugins" entry for this user: the gate it had inside Automation
+        until 2026-10-23 (config_write, which Automation needs, and the
+        Plugins page's key). Plugins now follows Automation instead of
+        living in it (operator), with the same audience."""
         from flask_login import current_user
         return bool(product_key == "global" and current_user and current_user.is_authenticated
                     and current_user.can("config_write") and may_open("scripts.index"))
@@ -1028,6 +1029,12 @@ def create_app(config_override: object | None = None) -> Flask:
     def _nav_sections(specs):  # noqa: ANN001
         from .nav_sections import sections
         return sections(specs)
+
+    # -- sidebar: Automation's entries, alphabetical the same way (2026-10-23).
+    @app.template_global('nav_sorted')
+    def _nav_sorted(html, *blocks):  # noqa: ANN001
+        from .nav_sections import sorted_entries
+        return sorted_entries(html, *blocks)
 
     # -- sidebar: the device's own menu (FortiWeb, FortiGate, ...) is open
     # unless the operator closed it. main.js keeps the closed names in the

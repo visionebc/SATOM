@@ -33,6 +33,10 @@
    (drawn by partials/nav_fleet.html), and Jobs left the Fleet entries to
    close this group, below Plugins.
 
+   2026-10-23 (operator): Automation is drawn here again, right above Plugins
+   (below Template Library), its entries alphabetical
+   (partials/nav_automation.html).
+
    2026-10-16 (operator): Wiki (partials/nav_wiki.html) is the first entry,
    here and at the top of the Global block in base.html.
    ========================================================================= #}
@@ -68,6 +72,9 @@
       <i class="bi bi-collection fw-nav-icon"></i><span>{{ _('Template Library') }}</span></a>
     {% else %}{{ nav_off('bi-collection', _('Template Library'), _m_tpl.reason) }}{% endif %}
     {% endif %}
+    {# Automation ▸ right above Plugins (operator, 2026-10-23; below WAF
+       until then, from partials/nav_fleet.html). config_write-gated inside. #}
+    {% include 'partials/nav_automation.html' %}
     {# Plugins ▸ — the last subgroup since 2026-10-14 (operator). #}
     {% include 'partials/nav_plugins.html' %}
     {# Jobs — the last entry of Operations (operator, 2026-10-14). #}

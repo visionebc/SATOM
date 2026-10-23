@@ -46,6 +46,18 @@ def label_of(entry: str) -> str:
     return m.group(1).strip() if m else ""
 
 
+def sorted_entries(html, *blocks) -> Markup:
+    """The entries of *html* plus each whole *block*, sorted by label.
+
+    A block is a subgroup drawn as one item (Automation's API ▸): it is
+    sorted by its toggle's label and never split into its own entries. Empty
+    blocks are dropped. Used by Automation (operator, 2026-10-23: its entries
+    alphabetical), with the same key as the Administrator sections.
+    """
+    items = split_entries(html) + [str(b).strip() for b in blocks if str(b or "").strip()]
+    return Markup("\n".join(sorted(items, key=lambda e: sort_key(label_of(e)))))
+
+
 def sections(specs) -> list[dict]:
     """``[(title, icon, key, html), ...]`` → the non-empty sections, sorted.
 

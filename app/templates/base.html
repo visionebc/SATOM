@@ -346,8 +346,8 @@
         <div class="fw-nav-section fw-nav-context-label"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Global') }}</span></div>
         <div class="fw-nav-group-body">
           {% include 'partials/nav_wiki.html' %}
+          {# Global › Automation and Plugins are drawn by nav_fleet.html, above Jobs. #}
           {% include 'partials/nav_fleet.html' %}
-          {% include 'partials/nav_global_apps.html' %}
         </div>
       </div>
 

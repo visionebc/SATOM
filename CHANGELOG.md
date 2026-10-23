@@ -112,6 +112,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   left Administrator → Studio and is an entry of its own, just above
   Administrator, in every ADOM. The *Studio* section is gone; **Report
   Studio** and **Lua Studio** are in **Plugins** in the Global ADOM too.
+- **Automation sits right above Plugins, its entries alphabetical** (operator
+  request): in a device ADOM the Automation sub-menu moved from below WAF to
+  Operations, just above Plugins (below Template Library); in the Global ADOM
+  Plugins is no longer a sub-menu *inside* Automation but the one right below
+  it, with the same entries for the same users. The Automation entries (API,
+  Automations, Certificate Manager, Change Requests, Device Provisioning,
+  Migration Report, System Provisioning, Upgrade Flow…) are sorted from their
+  rendered labels, so the order is alphabetical in every console language and
+  a new entry lands in its place by itself — the rule the Administrator
+  sections already follow.
 - **Studios renamed** (operator request): *Python Studio* is now **Plugin
   Studio** and says it accepts Python code only; the custom-view studio that
   had that name is now **Report Studio**. Labels only — URLs and permission
@@ -119,6 +129,11 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   Report Studio page are translated into German, Spanish, French and Italian.
 
 ### Fixed
+
+- **Report Studio and Lua Studio links did not pin their ADOM**: in the
+  Plugins menu (device ADOMs and Global) they were the only sidebar links
+  without `_adom=`, so a new tab opened them in whichever ADOM another tab
+  chose last. They pin it now, like every other entry.
 
 - **The port of a Plugin Studio server policy was only a name**: *FortiWeb:
   create the server policy* always bound the predefined HTTPS (443) or the

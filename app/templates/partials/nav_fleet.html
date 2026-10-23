@@ -22,9 +22,9 @@
    Backend Reachability, Config Compare, Path Diagnostics, Scout), Fleet
    Objects and WAF (FortiWeb and FortiADC ADOMs only) — and Jobs last.
    Third pass (operator, 2026-10-14): Fleet Objects right below Search;
-   in a device ADOM Automation ▸ follows WAF (follows Troubleshooting where
-   there is no WAF) and Jobs closes the Operations group
-   (partials/nav_operations.html). Global keeps Jobs last here.
+   in a device ADOM Automation ▸ followed WAF until 2026-10-23 (now right
+   above Plugins, partials/nav_operations.html) and Jobs closes the
+   Operations group. Global keeps Jobs last here.
 
    Draws the ITEMS only. The caller supplies the wrapper: the Operations group
    in a device ADOM (partials/nav_operations.html — these items lead it; the
@@ -78,12 +78,16 @@
 {% if _pk in ('fortiweb', 'fortiadc') %}
 {% include 'partials/nav_waf.html' %}
 {% endif %}
-{# Automation ▸ (its API ▸ subgroup inside) right below WAF in a device ADOM
-   (operator, 2026-10-14); config_write-gated inside the partial. Global
-   draws it here too, as a subgroup above Jobs (operator, later that day:
-   "as in the other ADOMs"); only placeholder ADOMs keep a standalone group. #}
-{% if not product.placeholder %}
+{# Automation ▸ (its API ▸ subgroup inside): in a device ADOM it sat right
+   below WAF from 2026-10-14 to 2026-10-23 and is now drawn by
+   partials/nav_operations.html right above Plugins (operator). Global draws
+   it here, as a subgroup above Jobs, with Global › Plugins right below it
+   (partials/nav_global_apps.html; the same order as a device ADOM). Only
+   placeholder ADOMs keep a standalone group. config_write-gated inside the
+   partial. #}
+{% if _pk == 'global' %}
 {% include 'partials/nav_automation.html' %}
+{% include 'partials/nav_global_apps.html' %}
 {% endif %}
 {# Schema builds / Build compatibility live in the API subgroup of Automation
    (2026-10-14, partials/_nav_api.html). A profile that cannot see Automation

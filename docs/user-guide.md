@@ -280,11 +280,12 @@ menu, **Administrator**, Plugins. Operations opens with the
 fleet pages (Dashboard where the ADOM has one, Calendar, Architecture, Service
 Diagram, Monitoring, Search, DNS Lookup, Troubleshooting, Fleet Objects and WAF
 in FortiWeb and FortiADC, Jobs), then holds Device Backups and Import Backup,
-and ends with the **Automation** sub-menu;
+the **Automation** sub-menu right above **Plugins**, and Jobs last. The
+entries of Automation are alphabetical in the console's language;
 **Diagnose Log Collection** is in Operations › Troubleshooting (§27). There is
 no separate **Fleet** group, and no separate Automation group in a device ADOM
-(the Global ADOM draws Automation as a sub-menu of its Global block, above
-Jobs). The **API** sub-menu of Automation holds the console (Registry &
+(the Global ADOM draws Automation as a sub-menu of its Global block, with
+**Plugins** right below it and Jobs after them). The **API** sub-menu of Automation holds the console (Registry &
 console, device ADOMs) and **Schema builds** and **Build compatibility** (every
 ADOM, Global included). **System Automations** is in Settings → System;
 Automation keeps **Automations**, the work operators schedule (§15).
@@ -298,8 +299,7 @@ language; a section with no entry you may open is not drawn. **Plugin Studio**
 (apps and the Python console in one page, §23) is an entry of its own on the
 **first level** of the sidebar, just above Administrator, in every ADOM;
 **Report Studio** and **Lua Studio** are in **Plugins** (Operations → Plugins
-in a device ADOM, Automation → Plugins — or Global → Plugins without
-Automation — in Global). Until 2026-10-23 the three sat in an Administrator
+in a device ADOM, Global → Plugins in Global). Until 2026-10-23 the three sat in an Administrator
 section called *Studio*, which no longer exists. The Global ADOM keeps its **Global** block for the fleet pages
 and has no Operations group. A profile that cannot see one of those groups
 keeps the entry where it was before — Appliances under
@@ -3098,7 +3098,7 @@ System Automations to Automations.
   scheduler was not up for, on an action without catch-up, shows as
   **missed**.
 
-**Plugins** (Operations → Automation → **Plugins**, Global ADOM, needs
+**Plugins** (Global → **Plugins**, right below Automation, Global ADOM; needs
 `operations.scripts_run`, which operators hold; called *Scripts* until
 2026-10-22): the Script Library scripts an administrator published for you
 (§23.4). The entry is a submenu: **All plugins** opens the page, and below it
@@ -3106,8 +3106,9 @@ every published plugin you may run has an entry of its own, by name.
 Publishing a script adds its entry, unpublishing removes it, and a script
 published for administrators is listed for them only — the menu applies the
 same rule as the page. In the Global ADOM the published Plugin Studio apps
-(§23.7) are listed in the same submenu, so there is one **Plugins** toggle;
-a user without Automation finds the apps under **Global → Plugins** instead.
+(§23.7) are listed in the same submenu, so there is one **Plugins** toggle.
+**All plugins** is drawn for the users who also see Automation; the others
+find the apps and studios they may open in the same submenu.
 Pick one, fill in its form and **Run now**, or save the values with a cron
 expression as a **saved run**. See §23.4 for how saved runs behave.
 

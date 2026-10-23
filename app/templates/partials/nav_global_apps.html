@@ -1,15 +1,24 @@
-{# Global ADOM > Plugins for a user who does not see Automation > Plugins
-   (partials/nav_automation.html: config_write + the Plugins page): Report
+{# Global ADOM > Plugins, right below Automation (included by
+   partials/nav_fleet.html; operator, 2026-10-23 — until then it was a
+   subgroup INSIDE Automation for config_write users and this partial drew
+   it, after Jobs, only for the others). "All plugins" (the page) for the
+   audience it had inside Automation (global_all_plugins_entry), Report
    Studio and Lua Studio (2026-10-23) and the enabled, published apps this
-   user may open in Global (services.studio_apps.menu). Not drawn when it
-   would be empty: an empty toggle is a promise the console does not keep. #}
-{% if not global_plugins_in_automation(product.key) %}
+   user may open in Global, flow and script apps alike
+   (services.studio_apps.menu). Not drawn when it would be empty: an empty
+   toggle is a promise the console does not keep. #}
+{% if product.key == 'global' %}
 {% set _apps = studio_apps_menu('global') %}
+{% set _all = global_all_plugins_entry(product.key) %}
 {% set _studios %}{% include 'partials/nav_global_studios.html' %}{% endset %}
-{% if _apps or _studios|trim %}
+{% if _all or _apps or _studios|trim %}
 <div class="fw-nav-subgroup{{ ' open' if request.blueprint in ['apps', 'scripts'] }}" data-nav-subgroup="Plugins">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-puzzle fw-nav-icon" style="color:#3b82f6;"></i><span>{{ _('Plugins') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
+    {% if _all %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'scripts.index' else '' }}" href="{{ url_for('scripts.index', _adom=product.key) }}">
+      <i class="bi bi-grid fw-nav-icon"></i><span>{{ _('All plugins') }}</span></a>
+    {% endif %}
     {{ _studios }}
     {% include 'partials/nav_apps_entries.html' %}
   </div>

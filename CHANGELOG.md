@@ -112,10 +112,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - **Device Provisioning and System Provisioning moved to Administrator ›
   Devices**, in every ADOM, with the same rules as before: System
   Provisioning is live in FortiWeb, greyed out with the reason in the other
-  device ADOMs and not drawn in Global. A profile without user management has
-  no Administrator group and still finds both in Automation, as with Device
-  Console. No permission changed. Requested by the operator: "System
-  Provisioning and Device Provisioning should be in Administrator".
+  device ADOMs and not drawn in Global. **Device Provisioning is drawn only
+  while a hypervisor is registered** (an enabled row in Settings ›
+  Hypervisors), whatever Settings › Appearance › Sidebar menu says; without
+  one the page could only offer *Config only*, and existing machines are
+  added in Appliances and configured in System Provisioning. The page still
+  opens by URL. A profile without user management has no Administrator group
+  and still finds both in Automation, as with Device Console. No permission
+  changed. Requested by the operator: "System Provisioning and Device
+  Provisioning should be in Administrator", and that it should not show
+  without a hypervisor integration.
 
 - **Scout leaves the sidebar until it is configured.** The Scout entry
   (Operations › Troubleshooting, every ADOM) is drawn only when Scout is

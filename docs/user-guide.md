@@ -3694,7 +3694,11 @@ different questions:
 | **Device Provisioning** | *Build me an appliance that does not exist yet.* |
 | **System Provisioning** | *Apply this system profile or baseline to appliances that already exist.* |
 
-The rest of this section is the first one.
+The rest of this section is the first one. **Device Provisioning** is in the
+menu only while at least one hypervisor is registered and enabled (21.1),
+whatever Settings → Appearance → Sidebar menu says; without one, register an
+existing machine in Appliances and configure it with System Provisioning. The
+page still opens by its URL, offering *Config only* (21.6).
 
 ### 21.1 Registering a hypervisor
 

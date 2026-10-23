@@ -853,6 +853,24 @@ def create_app(config_override: object | None = None) -> Flask:
         return cached
 
     @app.template_global()
+    def hypervisor_on():
+        """Whether Device Provisioning is offered: a hypervisor is REGISTERED.
+
+        At least one enabled row in Settings > Hypervisors
+        (hypervisors.any_configured). Without one the page could only offer
+        its config_only mode, and the operator registers existing machines in
+        Appliances and configures them in System Provisioning instead
+        (operator, 2026-10-24), so the entry goes. Configuration, not
+        reachability: no render probes a hypervisor. The route still answers
+        by URL. Read once per request."""
+        from flask import g as _g
+        cached = getattr(_g, "_hypervisor_on", None)
+        if cached is None:
+            from .services.hypervisors import any_configured
+            cached = _g._hypervisor_on = any_configured()
+        return cached
+
+    @app.template_global()
     def device_scope_owner(appl):
         """The sibling that DOES carry those verbs, for a pointer link.
 

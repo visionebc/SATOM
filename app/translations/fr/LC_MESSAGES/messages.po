@@ -27137,3 +27137,11 @@ msgstr "Décochez une entrée, un sous-menu ou un groupe entier pour le retirer 
 #: app/templates/settings/_sidebar_menu.html
 msgid "The sidebar could not be read. Nothing is hidden by this page until it can."
 msgstr "Le menu latéral n'a pas pu être lu. Cette page ne masque rien tant que ce n'est pas possible."
+
+#: app/templates/dns_lookup/resolvers.html
+msgid "DNS Resolvers"
+msgstr "Résolveurs DNS"
+
+#: app/templates/dns_lookup/resolvers.html
+msgid "The servers DNS Lookup asks, one results column each. One list for the whole console: every ADOM uses it."
+msgstr "Les serveurs qu'interroge DNS Lookup, une colonne de résultats chacun. Une seule liste pour toute la console : tous les ADOM l'utilisent."

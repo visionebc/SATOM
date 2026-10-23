@@ -62,7 +62,7 @@
   <i class="bi bi-box-seam fw-nav-icon"></i><span>{{ _('Fleet Objects') }}</span></a>
 {% endif %}
 {% if may_open('dns_tool.index') %}
-<a class="fw-nav-item {{ 'active' if request.blueprint == 'dns_tool' else '' }}" href="{{ url_for('dns_tool.index') }}">
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'dns_tool' and request.endpoint != 'dns_tool.resolvers' else '' }}" href="{{ url_for('dns_tool.index') }}">
   <i class="bi bi-globe fw-nav-icon"></i><span>{{ _('DNS Lookup') }}</span></a>
 {% endif %}
 {% include 'partials/nav_troubleshooting.html' %}

@@ -59,7 +59,7 @@
           <div class="text-warning">{{ _('No DNS servers configured.') }}</div>
           {% endfor %}
           {% if current_user.can('user_manage') %}
-          <a href="#resolvers" class="d-inline-block mt-2" style="font-size:12px;">
+          <a href="{{ url_for('dns_tool.resolvers') }}" class="d-inline-block mt-2" style="font-size:12px;">
             <i class="bi bi-gear me-1"></i>{{ _('DNS Lookup — resolver servers') }}</a>
           {% endif %}
         </div>
@@ -766,5 +766,13 @@
 })();
 </script>
 {% endif %}
-{% if current_user.can('user_manage') %}{% include 'dns_lookup/_resolvers.html' %}{% endif %}
+{% if current_user.can('user_manage') %}
+<script nonce="{{ csp_nonce }}">
+  /* The resolver card sat here (#resolvers) until 2026-10-23; it is now
+     Administrator › Objects › DNS Resolvers. Old links land there. */
+  if (window.location.hash === '#resolvers') {
+    window.location.replace({{ url_for('dns_tool.resolvers') | tojson }});
+  }
+</script>
+{% endif %}
 {% endblock %}

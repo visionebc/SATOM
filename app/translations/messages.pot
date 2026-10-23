@@ -11201,3 +11201,11 @@ msgstr ""
 
 msgid "rehearsal on trigger"
 msgstr ""
+
+#: app/templates/dns_lookup/resolvers.html
+msgid "DNS Resolvers"
+msgstr ""
+
+#: app/templates/dns_lookup/resolvers.html
+msgid "The servers DNS Lookup asks, one results column each. One list for the whole console: every ADOM uses it."
+msgstr ""

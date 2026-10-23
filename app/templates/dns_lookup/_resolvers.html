@@ -1,7 +1,8 @@
-{# The resolver list of this page (AppSetting dnstool.servers). It lived in
-   Settings > Network & DNS > DNS Lookup until 2026-10-23; the operator moved
-   it next to the tool it configures. Admin-only: the save route asks
-   user_manage, and so does the include in dns_lookup/index.html. #}
+{# The DNS Lookup resolver list (AppSetting dnstool.servers), drawn by
+   dns_lookup/resolvers.html = Administrator › Objects › DNS Resolvers. It
+   lived in Settings > Network & DNS > DNS Lookup until 2026-10-23, then at the
+   foot of the lookup page; the operator moved it to Objects the same day.
+   Admin-only: the page and the save route both ask user_manage. #}
 <div class="fw-card mt-3" id="resolvers" style="max-width:780px;">
   <div class="fw-card-header"><i class="bi bi-globe2 me-1"></i>{{ _('DNS Lookup — resolver servers') }}</div>
   <div class="fw-card-body">

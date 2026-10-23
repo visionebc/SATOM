@@ -27135,3 +27135,11 @@ msgstr "Entfernen Sie das Häkchen bei einem Eintrag, einem Untermenü oder eine
 #: app/templates/settings/_sidebar_menu.html
 msgid "The sidebar could not be read. Nothing is hidden by this page until it can."
 msgstr "Die Seitenleiste konnte nicht gelesen werden. Diese Seite blendet nichts aus, bis das wieder möglich ist."
+
+#: app/templates/dns_lookup/resolvers.html
+msgid "DNS Resolvers"
+msgstr "DNS-Resolver"
+
+#: app/templates/dns_lookup/resolvers.html
+msgid "The servers DNS Lookup asks, one results column each. One list for the whole console: every ADOM uses it."
+msgstr "Die Server, die DNS Lookup abfragt, je eine Ergebnisspalte. Eine Liste für die ganze Konsole: jede ADOM verwendet sie."

@@ -247,9 +247,13 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   switches to its panel, opens it and folds the others; a panel with one
   card draws it open, and the card you saved is open again after the
   redirect. Status tiles are never folded.</li>
-<li><strong>DNS Lookup's resolver list moved to the DNS Lookup page</strong> (admin-only
-  card, <code>/dns-lookup/#resolvers</code>), and DNS Lookup is also offered under
-  <em>Administrator › System</em>. Old <code>#tab-dnstool</code> links forward there.</li>
+<li><strong>DNS Lookup's resolver list moved to Administrator › Objects › DNS
+  Resolvers</strong> (<code>/dns-lookup/resolvers</code>, admin-only): the list of DNS servers
+  the lookup asks is a page of its own, in every ADOM, and the DNS Lookup page
+  links to it from its <em>DNS servers</em> panel. DNS Lookup itself is also offered
+  under <em>Administrator › System</em>. Old <code>/settings/#tab-dnstool</code> and
+  <code>/dns-lookup/#resolvers</code> links forward to the new page, and saving the list
+  returns there.</li>
 <li><strong>Security and Change Password moved from Settings to your Profile.</strong> The
   two-factor authentication, recovery email, active session and password
   cards are now at the top of <em>Profile</em> (user menu, top right); Settings no

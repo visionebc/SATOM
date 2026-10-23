@@ -5286,10 +5286,11 @@ panel, opens that card and folds the others. After a save, the card whose form
 you submitted is drawn open again. Status tiles (the Sentinel console's four
 health tiles) are not sections and are never folded.
 
-**DNS Lookup's resolver list is on the DNS Lookup page** (Fleet → DNS
-Lookup, and Administrator → System → DNS Lookup), in an admin-only
-*resolver servers* card at the bottom (`/dns-lookup/#resolvers`); the old
-`/settings/#tab-dnstool` link forwards there.
+**DNS Lookup's resolver list is Administrator → Objects → DNS Resolvers**
+(`/dns-lookup/resolvers`, admin-only, in every ADOM); the DNS Lookup page
+(Fleet → DNS Lookup, and Administrator → System → DNS Lookup) links to it from
+its *DNS servers* panel. The old `/settings/#tab-dnstool` and
+`/dns-lookup/#resolvers` links forward there.
 
 Scout's **Providers** panel (the AI assistant, §33) additionally needs
 `advisor.configure`; an admin without it does not see the entry. **Sentinel**
@@ -6375,7 +6376,9 @@ Background: [encryption-and-node-tls.md](encryption-and-node-tls.md).
 
 - **DNS Lookup** is the resolver list behind the fleet DNS & LB Lookup tool
   (§13): a variable-length list of name + server rows, each individually
-  enabled. Clearing a row removes that server.
+  enabled. Clearing a row removes that server. It is edited on
+  Administrator → Objects → DNS Resolvers (`/dns-lookup/resolvers`), not in
+  Settings.
 - **DNS Records — IPAM / DDI backends** is the *write* side: the **registry**
   of every IPAM / DDI system SATOM may act through (used by ACME dns-01 in §10,
   by provisioning in §21 and by the Server Policy wizard in §5.1). It is a

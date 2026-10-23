@@ -135,9 +135,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   switches to its panel, opens it and folds the others; a panel with one
   card draws it open, and the card you saved is open again after the
   redirect. Status tiles are never folded.
-- **DNS Lookup's resolver list moved to the DNS Lookup page** (admin-only
-  card, `/dns-lookup/#resolvers`), and DNS Lookup is also offered under
-  *Administrator › System*. Old `#tab-dnstool` links forward there.
+- **DNS Lookup's resolver list moved to Administrator › Objects › DNS
+  Resolvers** (`/dns-lookup/resolvers`, admin-only): the list of DNS servers
+  the lookup asks is a page of its own, in every ADOM, and the DNS Lookup page
+  links to it from its *DNS servers* panel. DNS Lookup itself is also offered
+  under *Administrator › System*. Old `/settings/#tab-dnstool` and
+  `/dns-lookup/#resolvers` links forward to the new page, and saving the list
+  returns there.
 - **Security and Change Password moved from Settings to your Profile.** The
   two-factor authentication, recovery email, active session and password
   cards are now at the top of *Profile* (user menu, top right); Settings no

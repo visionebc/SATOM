@@ -5928,10 +5928,11 @@ and so on, the same in every language — and a link to one switches to its
 panel, opens that card and folds the others. After a save, the card whose form
 you submitted is drawn open again. Status tiles (the Sentinel console's four
 health tiles) are not sections and are never folded.</p>
-<p><strong>DNS Lookup's resolver list is on the DNS Lookup page</strong> (Fleet → DNS
-Lookup, and Administrator → System → DNS Lookup), in an admin-only
-<em>resolver servers</em> card at the bottom (<code>/dns-lookup/#resolvers</code>); the old
-<code>/settings/#tab-dnstool</code> link forwards there.</p>
+<p><strong>DNS Lookup's resolver list is Administrator → Objects → DNS Resolvers</strong>
+(<code>/dns-lookup/resolvers</code>, admin-only, in every ADOM); the DNS Lookup page
+(Fleet → DNS Lookup, and Administrator → System → DNS Lookup) links to it from
+its <em>DNS servers</em> panel. The old <code>/settings/#tab-dnstool</code> and
+<code>/dns-lookup/#resolvers</code> links forward there.</p>
 <p>Scout's <strong>Providers</strong> panel (the AI assistant, §33) additionally needs
 <code>advisor.configure</code>; an admin without it does not see the entry. <strong>Sentinel</strong>
 and <strong>Path Diagnostics</strong> settings are admin-only end to end: saving them
@@ -7103,7 +7104,9 @@ Monitoring → SATOM health (§14.1) points here.</p>
 <ul>
 <li><strong>DNS Lookup</strong> is the resolver list behind the fleet DNS &amp; LB Lookup tool
   (§13): a variable-length list of name + server rows, each individually
-  enabled. Clearing a row removes that server.</li>
+  enabled. Clearing a row removes that server. It is edited on
+  Administrator → Objects → DNS Resolvers (<code>/dns-lookup/resolvers</code>), not in
+  Settings.</li>
 <li><strong>DNS Records — IPAM / DDI backends</strong> is the <em>write</em> side: the <strong>registry</strong>
   of every IPAM / DDI system SATOM may act through (used by ACME dns-01 in §10,
   by provisioning in §21 and by the Server Policy wizard in §5.1). It is a

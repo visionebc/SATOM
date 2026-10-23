@@ -27156,3 +27156,11 @@ msgstr "Desmarque una entrada, un submenú o un grupo entero para quitarlo del m
 #: app/templates/settings/_sidebar_menu.html
 msgid "The sidebar could not be read. Nothing is hidden by this page until it can."
 msgstr "No se pudo leer el menú lateral. Esta página no oculta nada hasta que se pueda."
+
+#: app/templates/dns_lookup/resolvers.html
+msgid "DNS Resolvers"
+msgstr "Resolvedores DNS"
+
+#: app/templates/dns_lookup/resolvers.html
+msgid "The servers DNS Lookup asks, one results column each. One list for the whole console: every ADOM uses it."
+msgstr "Los servidores a los que pregunta DNS Lookup, una columna de resultados cada uno. Una sola lista para toda la consola: la usan todos los ADOMs."

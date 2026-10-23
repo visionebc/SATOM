@@ -2274,10 +2274,10 @@ def save_dns_tool():
         saved = dns_tool_svc.save_dns_servers(rows)
     except ValueError as exc:
         flash(str(exc), 'danger')
-        return redirect(url_for('dns_tool.index') + '#resolvers')
+        return redirect(url_for('dns_tool.resolvers'))
     log_action('settings.dns_tool', target='dnstool.servers')
     flash(f'DNS server list saved ({len(saved)} servers).', 'success')
-    return redirect(url_for('dns_tool.index') + '#resolvers')
+    return redirect(url_for('dns_tool.resolvers'))
 
 
 # ---------------------------------------------------------------------------

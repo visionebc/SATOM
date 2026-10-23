@@ -95,6 +95,12 @@
 
 {% set _s_objects %}
     {% include "partials/nav_adom_assets.html" %}
+    {# DNS Resolvers (operator, 2026-10-23): the console-wide list the DNS
+       Lookup queries. Every ADOM draws it, like the lookup itself. #}
+    {% if may_open('dns_tool.resolvers') %}
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'dns_tool.resolvers' else '' }}" href="{{ url_for('dns_tool.resolvers') }}">
+      <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('DNS Resolvers') }}</span></a>
+    {% endif %}
     {% if _dev and may_open('naming.index') %}{% set _m = adom_menu('naming', product) %}
     {% if _m.on %}
     <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('naming.') else '' }}"
@@ -138,10 +144,10 @@
       <i class="bi bi-hdd fw-nav-icon"></i><span>{{ _('Database') }}</span></a>
     {% endif %}
     {# DNS Lookup (operator, 2026-10-23): the tool stays in Fleet for every
-       network.view holder; here it is the administrator's door to it, whose
-       page carries the resolver list that used to be a Settings pane. #}
+       network.view holder; here it is the administrator's door to it. Its
+       resolver list is Objects › DNS Resolvers (above). #}
     {% if may_open('dns_tool.index') %}
-    <a class="fw-nav-item {{ 'active' if request.blueprint == 'dns_tool' else '' }}" href="{{ url_for('dns_tool.index') }}">
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'dns_tool' and request.endpoint != 'dns_tool.resolvers' else '' }}" href="{{ url_for('dns_tool.index') }}">
       <i class="bi bi-globe fw-nav-icon"></i><span>{{ _('DNS Lookup') }}</span></a>
     {% endif %}
     {# System Automations, System Backup & Restore, Software Update and High

@@ -27172,3 +27172,11 @@ msgstr "Togli la spunta a una voce, a un sottomenu o a un intero gruppo per togl
 #: app/templates/settings/_sidebar_menu.html
 msgid "The sidebar could not be read. Nothing is hidden by this page until it can."
 msgstr "Non è stato possibile leggere la barra laterale. Questa pagina non nasconde nulla finché non sarà possibile."
+
+#: app/templates/dns_lookup/resolvers.html
+msgid "DNS Resolvers"
+msgstr "Resolver DNS"
+
+#: app/templates/dns_lookup/resolvers.html
+msgid "The servers DNS Lookup asks, one results column each. One list for the whole console: every ADOM uses it."
+msgstr "I server interrogati da DNS Lookup, una colonna di risultati ciascuno. Un solo elenco per tutta la console: lo usano tutti gli ADOM."

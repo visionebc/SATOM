@@ -5706,7 +5706,7 @@ document.addEventListener('DOMContentLoaded', function () {
   // to the Profile, the DNS Lookup resolver list to the DNS Lookup page.  A
   // link or bookmark still naming the old pane lands on the same card there.
   var moved = {'#tab-security': '#security', '#tab-password': '#password'};
-  var movedTo = {'#tab-dnstool': {{ (url_for('dns_tool.index') ~ '#resolvers') | tojson }}};
+  var movedTo = {'#tab-dnstool': {{ url_for('dns_tool.resolvers') | tojson }}};
   if (moved[hash]) {
     window.location.replace({{ url_for('auth.profile') | tojson }} + moved[hash]);
     return;

@@ -114,7 +114,33 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
-<li><strong>Settings › Appearance › Sidebar menu: hide entries, submenus and
+<li><strong>Operations › Automation › Mass Deploy.</strong> The newest approved version of
+  every template of the ADOM, pushed to one or many of its devices in one
+  canary-gated job: an SMTP server change, an NTP or DNS change, a Web
+  Protection Profile for some devices only. It shows the targets with their
+  build, fit and binding (a device bound to another version cannot be
+  selected), a preview, then the deploy, plus a per-ADOM history with the
+  result per device. It uses the Template Library's apply engine. FortiWeb
+  ADOM; disabled with the reason in the other device ADOMs. Requested by the
+  operator: "in Operations, Automation, Mass Deploy: the approved templates,
+  to implement on one or several FortiWebs, for example a change in the SMTP,
+  instead of going to each one; it must be per ADOM", and "WPP goes in too,
+  because special ones can be created that are deployed only to some; they
+  should not be put on all".</li>
+<li><strong>Secrets are typed at deploy time.</strong> A template never sends its own secret
+  values (passwords, PSKs, private keys). Each one is left out of the push, so
+  the device keeps its own, unless a value is typed in Mass Deploy. A typed
+  value is not stored, logged or echoed: the job record, the change history
+  and the preview show <code>&lt;secret&gt;</code>.</li>
+<li>
+<p><strong>Approving a Web Protection Profile template asks which devices it
+  governs:</strong> every FortiWeb of the ADOM (deployed now, as before) or only the
+  devices picked in Mass Deploy (nothing deployed or locked until a device is
+  bound). Mass Deploy binds the devices of such a template, and can limit a
+  fleet-wide one to the selected devices.</p>
+</li>
+<li>
+<p><strong>Settings › Appearance › Sidebar menu: hide entries, submenus and
   groups.</strong> A tree of everything the sidebar draws in every ADOM; an
   unticked row leaves the sidebar of every user in every ADOM it appears
   in (Architecture is one row, not one per ADOM), live and disabled
@@ -123,7 +149,8 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   permission. Settings, the ADOM switcher and the device picker cannot be
   hidden; a device's own menu only as a whole. Requested by the operator:
   "in Settings, Appearance, add the option to remove menu and submenu
-  entries, for example the Architecture menu when it is not needed".</li>
+  entries, for example the Architecture menu when it is not needed".</p>
+</li>
 <li><strong>Plugin Studio › Apps: certificates already on the FortiWebs.</strong> A new
   SATOM list, <em>FortiWeb local certificates</em>, offers the local certificates
   of every FortiWeb from the local cache, each naming the FortiWebs that hold
@@ -359,6 +386,19 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   name, with the favourite star drawn over the last letters. App entries
   stay on one line and end in an ellipsis that stops short of the star,
   and the link tooltip carries the whole name.</p>
+</li>
+<li>
+<p><strong>The change history stored write payloads in clear,</strong> including any
+  password a write carried, and the device's <code>ENC</code> ciphertext in the
+  before-snapshot. Both are masked now, and so is the result kept in a
+  fleet-apply job's record.</p>
+</li>
+<li><strong>A fleet rollout from the Template Library ignored device bindings:</strong>
+  applying to several devices pushed the chosen version even to a device
+  pinned to another one. It is refused now, with the reason.</li>
+<li>
+<p><strong>Apply to a device SATOM cannot push templates to</strong> (anything but FortiWeb)
+  is refused in the preview instead of being sent through the FortiWeb writer.</p>
 </li>
 <li>
 <p><strong>Jobs: the table fits the screen at every resolution.</strong> It needed

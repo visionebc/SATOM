@@ -8262,6 +8262,14 @@ provider (`ollama-local`, base URL `http://localhost:11434`) is seeded
 Ollama host and save it — saving enables it. With the feature enabled and the
 other two switches off, chat stays entirely within the LAN.
 
+The **Scout** entry in the sidebar (Operations › Troubleshooting) is drawn
+only once Scout is configured: **Enable Scout** on and at least one provider
+that can take a message (not disabled, and inside the LAN unless **Allow
+external providers** is on). Until then it is not drawn at all, whatever
+Settings › Appearance › Sidebar menu says; `/advisor` still opens by URL and
+says what is missing. Settings is the way in on a fresh install: opening this
+tab seeds the disabled `ollama-local` provider.
+
 ### 33.2 Providers
 
 Add a provider under the same tab: `ollama` (local, no key), `openai`

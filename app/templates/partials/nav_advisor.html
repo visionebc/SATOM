@@ -8,8 +8,15 @@
    (attachable policies, exceptions, Lua scripts) happens inside the advisor
    views via visible_appliances()/product_scope, exactly like every other
    multi-product page; nothing extra is needed here.
+
+   Also gated on ``advisor_on`` (app/__init__.py, services/advisor.configured):
+   switched off in Settings › Scout, or with no usable provider, the entry is
+   not drawn at all (operator, 2026-10-23) — even if Settings › Appearance ›
+   Sidebar menu has it ticked. Unlike Path Diagnostics it is not drawn
+   disabled: the operator asked for it to disappear. Settings › Scout is
+   still where it is configured, and /advisor/ still opens by URL.
    ========================================================================= #}
-{% if current_user.is_authenticated and current_user.can('advisor.use') %}
+{% if current_user.is_authenticated and current_user.can('advisor.use') and advisor_on %}
 {% if may_open('advisor.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'advisor' else '' }}" href="{{ url_for('advisor.index', _adom=product.key) }}">
   <i class="bi bi-stars fw-nav-icon"></i><span>{{ _('Scout') }}</span></a>

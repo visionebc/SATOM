@@ -3539,6 +3539,9 @@ def hypervisor_delete(target_id: int):
 @login_required
 @require_permission('advisor.configure')
 def ai_state():
+    # The seed used to happen only on /advisor/, which the sidebar no longer
+    # links until Scout is configured: Settings is now the way in.
+    ai_advisor.ensure_default_ollama()
     return jsonify(
         ok=True, enabled=ai_advisor.enabled(), tools_on=ai_advisor.tools_enabled(),
         external_on=ai_advisor.external_allowed(), providers=ai_advisor.list_providers(),

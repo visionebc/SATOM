@@ -173,7 +173,7 @@ def available() -> bool:
     """Is a model actually reachable for this? Never guesses True."""
     try:
         from . import advisor
-        return bool(advisor.enabled() and advisor.list_providers())
+        return advisor.configured()
     except Exception:  # noqa: BLE001 — an unconfigured node is not an error
         return False
 

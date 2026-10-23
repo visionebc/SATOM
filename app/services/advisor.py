@@ -245,6 +245,22 @@ def set_flags(*, enabled_: bool | None = None, tools: bool | None = None,
         sstore.set_str(K_EXTERNAL_ALLOWED, "1" if external else "0")
 
 
+def configured() -> bool:
+    """Whether Scout can answer at all: switched on AND at least one provider a
+    send would accept (the same gates as :func:`_resolve_provider`: not
+    disabled, and inside the LAN unless external providers are allowed).
+
+    The sidebar draws Scout only when this holds (operator, 2026-10-23): an
+    entry that opens on "Scout is turned off" is a dead link. Configuration,
+    not reachability — whether the endpoint answers is the send's business,
+    and no page render probes a network endpoint."""
+    if not enabled():
+        return False
+    ext = external_allowed()
+    return any(p.get("enabled") is not False and (ext or not leaves_lan(p))
+               for p in list_providers())
+
+
 # ---------------------------------------------------------------------------
 # providers — public metadata in app_settings; secrets Fernet-encrypted under
 # a PER-PROVIDER key, same pattern as backup_server / cert_manager.

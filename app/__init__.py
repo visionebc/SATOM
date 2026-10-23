@@ -1235,6 +1235,25 @@ def create_app(config_override: object | None = None) -> Flask:
             return {"scout_on": True}
 
     @app.context_processor
+    def _inject_advisor_on():
+        """Whether Scout (the AI assistant, blueprint ``advisor``) is
+        configured, for the chrome: unconfigured, it is not drawn at all
+        (operator, 2026-10-23), whatever Settings › Appearance says.
+
+        Only for a user who may use it, so anonymous pages and users without
+        ``advisor.use`` never read the provider list. Degrades to True like
+        scout_on: a settings read that fails must not withdraw a page.
+        """
+        from flask_login import current_user
+        if not getattr(current_user, "is_authenticated", False):
+            return {"advisor_on": False}
+        from .services import advisor as _adv
+        try:
+            return {"advisor_on": current_user.can("advisor.use") and _adv.configured()}
+        except Exception:  # noqa: BLE001 - chrome must not break on a setting
+            return {"advisor_on": True}
+
+    @app.context_processor
     def _inject_ui_lang():
         """The language the page is ACTUALLY rendered in.
 

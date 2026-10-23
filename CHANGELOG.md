@@ -85,6 +85,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Changed
 
+- **Scout leaves the sidebar until it is configured.** The Scout entry
+  (Operations › Troubleshooting, every ADOM) is drawn only when Scout is
+  switched on in Settings › Scout ▸ Providers AND at least one provider can
+  take a message (not disabled; inside the LAN unless external providers are
+  allowed). Otherwise it is not drawn at all, even when Settings › Appearance ›
+  Sidebar menu has it ticked; the page still opens by URL. Settings › Scout
+  now seeds the disabled local Ollama provider, which only the Scout page did
+  before. The WAF exception advice uses the same test, so a switched-on Scout
+  whose only provider is disabled no longer counts as available. Requested
+  by the operator: "if Scout is not configured it should not appear in the
+  menu, even if it is active in Settings › Appearance".
+
 - **Monitoring › Device health: devices grouped by ADOM, problems on the card.**
   The cards are now grouped in one collapsible section per ADOM (FortiWeb,
   FortiADC, FortiAuthenticator, FortiAnalyzer, FortiGate); a section's title
